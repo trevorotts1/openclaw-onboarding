@@ -964,6 +964,183 @@ def _import_resource_profile():
         return None
 
 
+def _import_capacity():
+    """Import presentation_job.capacity beside this driver.
+
+    Fail-soft on the same terms as _import_resource_profile(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import capacity as _cap  # noqa: PLC0415
+        return _cap
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [PLAN-TIER] presentation_job.capacity is not importable "
+              f"from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) -- this "
+              f"turn's PLAN TIER was recorded in the intake ledger but NOT "
+              f"locked onto the resource profile, so the question will be "
+              f"asked again and dispatch may PARK with AF-CAPACITY-UNMEASURED. "
+              f"Fix the deploy, then re-answer resource_plan.", file=sys.stderr)
+        return None
+
+
+#: The turn id that is ALSO its own plan-tier subfield (FIX 30 folded question
+#: 10 into it), and the ledger key that subfield stores on.
+_PLAN_TIER_SUBFIELD = "resource_plan"
+
+
+def _claimed_plan_tier(qdef: Dict[str, Any], text: str) -> str:
+    """The plan-tier half of the answer AS THE CLIENT ACTUALLY GAVE IT.
+
+    WHY NOT derived["resource_plan"]. derive_structured_answer() fills an
+    unanswered subfield with its documented default, and this subfield's
+    documented default is its own ``conservative_value`` -- the literal
+    "use conservative default". MEASURED on the shipping parser: the answer
+    ``"workhorse: X@deepseek-direct; mode: ultra"`` derives
+    ``resource_plan == "use conservative default"`` even though the client
+    said nothing whatsoever about a plan. Reading the derived value would
+    therefore record a DECLINE the client never made -- locking ask-once at
+    the conservative floor 3 for a client who is actually on $100/month, and
+    doing it on the very turn where they only meant to pick a model. That is
+    a worse defect than the one this function exists to close, so the value
+    is taken from the CLAIMED half only.
+
+    Reuses the driver's own _claim_labels() rather than re-deriving the
+    routing, so the label vocabulary stays single-sourced in the bank (the
+    same rule _record_run_mode follows for its enum). Mirrors
+    derive_structured_answer()'s unlabeled-prose rule exactly: the head prose
+    routes to the first unclaimed subfield in declaration order, and
+    ``resource_plan`` is declared first with no ``conditional_on``, so it is
+    that target whenever it was not labelled by name.
+
+    Returns "" when the client did not address the plan half at all --
+    absence stays absence, exactly as it does for the run mode."""
+    labeled, prose_head = _claim_labels(qdef, text)
+    claimed = labeled.get(_PLAN_TIER_SUBFIELD, "")
+    if str(claimed).strip():
+        return str(claimed).strip().strip(";,.").strip()
+    if _PLAN_TIER_SUBFIELD in labeled:
+        return ""  # labelled but empty: an explicit blank, not prose
+    return str(prose_head or "").strip().strip(";,.").strip()
+
+
+def _record_plan_tier(qdef: Dict[str, Any], text: str,
+                      entries: Dict[str, Any]) -> int:
+    """Lock the client's PLAN TIER onto the resource profile. THE F5 WIRE.
+
+    THE DEFECT THIS CLOSES (MEASURED on v25.0.17 / eaedc0633). Production
+    intake never recorded a plan tier anywhere. The order-9 turn recorded the
+    model plan and the run mode and nothing else: no call to
+    ``resource_profile.record_plan_answer`` or ``record_conservative_default``
+    existed anywhere outside tests, docstrings and the ``capacity.py
+    --answer-plan`` operator CLI. Driving this turn with "$100/month" against
+    a profile owing an ollama-cloud answer returned rc=0 and
+    ``"validated": true`` -- a success -- while the profile stayed
+    ``plan_tier=None plan_known=None concurrency_ceiling=None locked=None``
+    and ``pending_questions()`` still returned ``['ollama-cloud']``.
+
+    Two consequences, both live on the fleet today:
+      * ASK-ONCE IS VIOLATED. The bank promises "asked once, then locked
+        forever" and the lock is the profile entry. Nothing wrote it, so an
+        Ollama client is re-asked their plan on every single deck.
+      * DISPATCH PARKS. With no locked ceiling the run PARKs on
+        AF-CAPACITY-UNMEASURED until an operator hand-runs the capacity CLI --
+        which writes capacity_override.json instead, the single-provider file
+        that pins every OTHER provider's width too.
+
+    FAIL-CLOSED, the same posture the model plan already takes. A tier the cap
+    table does not know is REFUSED right here, while the client is still in the
+    conversation, with the accepted tiers named -- never accepted-and-dropped
+    (that silent acceptance IS the defect). An OMITTED tier records nothing and
+    returns 0: this turn is asked unconditionally for its model/mode subfields,
+    but its plan half is asked ONLY when the probe left a pending question, so
+    refusing an answer that never claimed to be about a plan would break the
+    turn for every fully-detected client.
+
+    Returns 0 when nothing was owed / nothing was said / the answer was
+    recorded; 1 (after printing {"error": ...}) when the declaration is
+    refused. Called BEFORE the model plan so a refused answer never
+    half-lands."""
+    raw = _claimed_plan_tier(qdef, text)
+    if not raw:
+        return 0  # the client said nothing about a plan: absence is absence
+
+    cap = _import_capacity()
+    rp = _import_resource_profile()
+    if cap is None or rp is None:
+        return 0  # already announced loudly on stderr; the ledger keeps the answer
+
+    # WHO IS OWED AN ANSWER. Read from the probe rather than guessed here --
+    # it is the same surface the bank's own help text names as the ask-gate
+    # ("asked only when capacity.probe()['resource_profile']
+    # ['pending_questions'] is non-empty").
+    try:
+        surface = (cap.probe() or {}).get("resource_profile") or {}
+        pending = [q.get("provider") for q in (surface.get("pending_questions") or [])
+                   if q.get("id") == _PLAN_TIER_SUBFIELD and q.get("provider")]
+    except Exception as exc:  # noqa: BLE001 -- a probe failure must not kill intake
+        print(f"  WARN  [PLAN-TIER] the capacity probe failed "
+              f"({exc.__class__.__name__}: {exc}) -- cannot tell which provider "
+              f"is owed a plan answer, so the tier was recorded in the intake "
+              f"ledger but NOT locked onto the resource profile.",
+              file=sys.stderr)
+        return 0
+    # De-duplicate while keeping probe order (two sources can name one provider).
+    pending = list(dict.fromkeys(pending))
+    if not pending:
+        return 0  # a fully detected client is never asked the plan half
+
+    # THE DECLINE. Its literal comes from the BANK's own conservative_value,
+    # never a constant duplicated here -- the same single-source rule the run
+    # mode follows for its enum.
+    ann = (qdef.get("subfields") or {}).get(_PLAN_TIER_SUBFIELD) or {}
+    decline = str(ann.get("conservative_value") or "").strip().lower()
+    if decline and raw.strip().lower() == decline:
+        for provider in pending:
+            try:
+                rp.record_conservative_default(provider)
+            except Exception as exc:  # noqa: BLE001 -- a store failure is loud
+                print(json.dumps({"error": f"could not record the conservative "
+                                           f"default for {provider} "
+                                           f"({exc.__class__.__name__}): {exc}"}))
+                return 1
+        return 0
+
+    # A REAL TIER. Matched per provider against PLANS_BY_PROVIDER, so a tier
+    # that belongs to another provider's table can never be recorded against
+    # this one ("$100/month" is an ollama-cloud row, never a deepseek one).
+    matched = []
+    for provider in pending:
+        plan = cap.normalize_plan(raw, provider)
+        if plan and plan in (cap.PLANS_BY_PROVIDER.get(provider) or ()):
+            matched.append((provider, plan))
+    if not matched:
+        offers = "; ".join(
+            f"{p}: {', '.join(cap.PLANS_BY_PROVIDER.get(p) or ()) or '(none)'}"
+            for p in pending)
+        print(json.dumps({"error":
+            f"refusing the plan tier {raw!r}: it is not a plan any provider "
+            f"still owing an answer can be on. Accepted tiers -- {offers} -- "
+            f"or answer {ann.get('conservative_value')!r} to decline and keep "
+            f"the conservative default. The tier is recorded ONCE and then "
+            f"locked, so it is refused here rather than accepted and dropped."}))
+        return 1
+
+    for provider, plan in matched:
+        try:
+            rp.record_plan_answer(provider, plan)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}))
+            return 1
+        except Exception as exc:  # noqa: BLE001 -- a store failure is loud, not silent
+            print(json.dumps({"error": f"could not record the plan tier for "
+                                       f"{provider} ({exc.__class__.__name__}): "
+                                       f"{exc}"}))
+            return 1
+    return 0
+
+
 def _record_client_model_plan(derived: Dict[str, Any],
                               entries: Dict[str, Any]) -> int:
     """Persist the resource_plan turn's model subfields as a client model plan.
@@ -1271,6 +1448,17 @@ def cmd_answer(args) -> int:
         # directory): the P4-PROMPT fan-out children re-resolve routes in a
         # separate process that inherits the profile path but has no run_dir.
         if qid == "resource_plan":
+            # CLIENT PLAN TIER (F5) -- FIRST, because it is the ask-once lock.
+            # Before this wire, production intake recorded the model plan and
+            # the run mode and NOTHING about the plan tier, so the profile lock
+            # the bank promises ("asked once, then locked") was never written:
+            # an Ollama client was re-asked every deck and dispatch PARKed on
+            # AF-CAPACITY-UNMEASURED until an operator hand-ran the capacity
+            # CLI. Recorded ahead of the model plan so a refused tier never
+            # half-lands a model plan either.
+            rc = _record_plan_tier(qdef, text, entries)
+            if rc != 0:
+                return rc
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
