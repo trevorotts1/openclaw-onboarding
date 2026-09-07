@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.12"
+ONBOARDING_VERSION="v25.0.13"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -199,6 +199,31 @@ PYEOF
 # outright over a missing helper file. When the shared lib IS found, its real
 # oc_cron_tombstoned (durable file-marker check) is used instead.
 command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
+
+# ----------------------------------------------------------
+# Presentations SCHEDULER installers (F12) — shared with update-skills.sh.
+# ----------------------------------------------------------
+# SINGLE canonical definition of install_intake_poll_schedule() (FIX 61, moved
+# here verbatim from Step 6.6b below) and install_watchdog_schedule() (new), so
+# the ROLL path installs and repairs the SAME schedules the install path does,
+# with no copy-paste drift. Sourced AFTER the cron helpers above on purpose:
+# the lib guards its own fallbacks with `command -v`, so this file's richer
+# definitions win. Best-effort source, fail-closed fallbacks below.
+_lib_pres_sched_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-presentation-schedules.sh"
+if [ -f "$_lib_pres_sched_self" ]; then
+  # shellcheck source=/dev/null
+  source "$_lib_pres_sched_self"
+  export OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED=1
+fi
+# FAIL CLOSED, never `{ :; }`. A no-op returning 0 would let Step 6.6b's rc
+# latch print success on a box where nothing was ever scheduled — the exact
+# silent-success class this repo has been burned by (see the v20.0.91 notes on
+# oc_state_seed and install_onboarding_resume_cron above). Returning 1 makes
+# Step 6.6b's `error`+exit fire and say why.
+command -v install_intake_poll_schedule >/dev/null 2>&1 || install_intake_poll_schedule() { return 1; }
+command -v install_watchdog_schedule    >/dev/null 2>&1 || install_watchdog_schedule()    { return 1; }
+command -v _fix61_resolve_scripts_src   >/dev/null 2>&1 || _fix61_resolve_scripts_src()   { return 1; }
+command -v _fix61_selected_workspace    >/dev/null 2>&1 || _fix61_selected_workspace()    { return 1; }
 
 # ----------------------------------------------------------
 # Path variables are already set by the platform bootstrap block above.
@@ -4557,263 +4582,16 @@ fi
 # _FIX61_RC latches the outcome: a failed schedule install surfaces in the
 # step's exit status instead of being swallowed (Gate 8 clause 5).
 # ────────────────────────────────────────────────────────────────────────────
-install_intake_poll_schedule() {
-    local _rc=0
-    # An EMPTY $PRESENTATIONS_SCRIPTS_SRC is never a usable prefix: it collapses
-    # "$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh" to the
-    # root-anchored literal "/presentation-intake-poll.sh", and the -f test below
-    # then reports a MISSING FILE when the real fault is an UNRESOLVED DIRECTORY.
-    # That misdirection is exactly what was seen in the field, so the empty
-    # prefix is rejected on its own terms, before it is ever concatenated.
-    if [ -z "${PRESENTATIONS_SCRIPTS_SRC:-}" ]; then
-        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC is EMPTY — the presentations scripts directory was never resolved (neither the repo checkout nor the materialized department). Intake poll NOT scheduled."
-        return 1
-    fi
-    local POLL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh"
-    local TPL_SRC="$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.plist.template"
-
-    if [ ! -f "$POLL_SRC" ]; then
-        warn "FIX 61: presentation-intake-poll.sh not found at $POLL_SRC — intake poll NOT scheduled. Manual: see the script header."
-        return 1
-    fi
-
-    local _poll_workspace
-    _poll_workspace="$(_fix61_selected_workspace)" || return 1
-    local _poll_runs_dir="$_poll_workspace/departments/Presentations/runs"
-    local _poll_root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}}"
-    case "$_poll_root" in /*) ;; *) warn "FIX 61: client root must be absolute." >&2; return 1 ;; esac
-    _poll_root="${_poll_root%/}"
-    [ -n "$_poll_root" ] || return 1
-
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        # ── VPS: SILENT main-session openclaw cron, 5-minute cadence ──────────
-        if ! command -v openclaw >/dev/null 2>&1; then
-            warn "FIX 61: openclaw CLI not on PATH — intake-poll cron NOT registered. Re-run update-skills.sh later."
-            return 1
-        fi
-        if oc_cron_tombstoned "presentation-intake-poll"; then
-            warn "presentation-intake-poll is TOMBSTONED (deliberately removed) — NOT re-registering."
-            return 0
-        fi
-        if oc_cron_present "presentation-intake-poll"; then
-            success "FIX 61: intake-poll cron already installed — skipping"
-            return 0
-        fi
-        local CHANNEL_AGENT="main"
-        if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
-            CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
-        fi
-        local _poll_command
-        printf -v _poll_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q PRESENTATION_RUNS_DIR=%q bash %q' "$_poll_root" "$_poll_workspace" "$_poll_workspace" "$_poll_runs_dir" "$POLL_SRC"
-        local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: $_poll_command . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
-        if _oc_cron_silent_main "presentation-intake-poll" "$CHANNEL_AGENT" "*/5 * * * *" "America/New_York" "$POLL_PROMPT" --light-context; then
-            success "FIX 61: intake-poll cron installed (SILENT main-session, 5-min, no client auto-announce)"
-        else
-            warn "FIX 61: intake-poll cron creation FAILED — staged intake submissions will sit undispatched. Manual: openclaw cron create --name presentation-intake-poll --agent $CHANNEL_AGENT --cron '*/5 * * * *' --session main --system-event '[PRESENTATION-INTAKE-POLL] bash $POLL_SRC'"
-            _rc=1
-        fi
-    else
-        # ── Mac: launchd LaunchAgent from the rendered plist template ─────────
-        local PLIST_DIR="$HOME/Library/LaunchAgents"
-        local PLIST_DST="$PLIST_DIR/com.blackceo.presentation-intake-poll.plist"
-        local LOG_PATH="$HOME/Library/Logs/openclaw/presentation-intake-poll.log"
-        if [ ! -f "$TPL_SRC" ]; then
-            warn "FIX 61: plist template not found at $TPL_SRC — intake poll NOT scheduled. Manual: copy the template, replace <POLL_SCRIPT_PATH>/<LOG_PATH>, launchctl load."
-            return 1
-        fi
-        mkdir -p "$PLIST_DIR" "$(dirname "$LOG_PATH")"
-        # ── ENV-LOADING FIX (2026-09-06) ──────────────────────────────────
-        # launchd gives a job essentially NO environment. This render used to
-        # substitute two placeholders into a template that declared no
-        # EnvironmentVariables at all, so the poller ran with nothing — and
-        # launcher.py's fail-closed notify gate refused EVERY dispatch with
-        # AF-NOTIFY-UNCONFIGURED (5,948 consecutive refusals measured on the
-        # operator Mac) while PRESENTATION_NOTIFY_CMD was present and
-        # non-blank in all three of that box's env stores. The template now
-        # carries PATH / PRESENTATION_RUNS_DIR / PRESENTATION_NOTIFY_CMD, and
-        # this renderer must supply all three or the fix does not survive the
-        # next install.
-        #
-        # Values, resolved the same way the FIX 49 watchdog render resolved
-        # its own (never guessed, never fabricated):
-        #   PATH   — launchd supplies none. /opt/homebrew/bin carries the
-        #            interpreter this codebase is developed against;
-        #            $HOME/.npm-global/bin carries the openclaw CLI the notify
-        #            transport execs; the system prefix rides behind them.
-        #   RUNS   — the department's runs root, sibling of the scripts dir.
-        #   NOTIFY — the co-located transport, and ONLY if the file actually
-        #            exists. A PRESENTATION_NOTIFY_CMD pointing at a missing
-        #            file would trade "unconfigured" for a per-tick transport
-        #            failure, so it renders EMPTY instead and says so. Empty
-        #            is SAFE here: the poller loads the box's env store itself
-        #            and its precedence only lets a NON-BLANK process value
-        #            win, so an empty string cannot shadow the store.
-        local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
-        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
-        local _poll_notify_cmd=""
-        if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
-            _poll_notify_cmd="$_dept_scripts_dir/presentation-notify.py"
-        else
-            warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
-        fi
-        # Parse the actual template, substitute values as plist strings (never
-        # sed/XML/shell fragments), validate, then atomically promote beside the
-        # destination. Failed rendering leaves the old plist and job untouched.
-        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" <<'PY_RENDER_INTAKE_PLIST'
-import os
-from pathlib import Path
-import plistlib
-import re
-import shlex
-import sys
-import tempfile
-
-template, destination, poll, log, runtime_path, runs, notify, client_root, workspace = sys.argv[1:]
-text = Path(template).read_text()
-# The repository template has a documentation comment before its XML declaration.
-start = text.find('<?xml')
-if start < 0:
-    raise ValueError('Intake poll template has no XML declaration')
-data = plistlib.loads(text[start:].encode())
-values = {
-    '<POLL_SCRIPT_PATH>': poll, '<LOG_PATH>': log, '<POLL_PATH>': runtime_path,
-    '<PRESENTATION_RUNS_DIR>': runs,
-    # This value is parsed by shlex.split in the notification transport.
-    '<PRESENTATION_NOTIFY_CMD>': shlex.quote(notify) if notify else '',
-}
-seen = set()
-def render(value):
-    if isinstance(value, dict):
-        return {key: render(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [render(item) for item in value]
-    if isinstance(value, str):
-        if value in values:
-            seen.add(value)
-            return values[value]
-        if re.search(r'<[A-Z_]+>', value):
-            raise ValueError('Unknown or embedded intake poll placeholder')
-    return value
-result = render(data)
-if seen != set(values):
-    raise ValueError('Intake poll template is missing required placeholders')
-if (result.get('Label') != 'com.blackceo.presentation-intake-poll'
-        or result.get('ProgramArguments') != ['/bin/bash', poll]
-        or result.get('StartInterval') != 300
-        or result.get('StandardOutPath') != log
-        or result.get('StandardErrorPath') != log
-        or any(result.get('EnvironmentVariables', {}).get(key) != expected for key, expected in {
-            'PATH': runtime_path, 'PRESENTATION_RUNS_DIR': runs,
-            'PRESENTATION_NOTIFY_CMD': values['<PRESENTATION_NOTIFY_CMD>'],
-        }.items())):
-    raise ValueError('Intake poll template does not satisfy the scheduler contract')
-# Carry client context into launchd's otherwise empty environment, even when
-# scripts themselves were sourced from a shared installer checkout.
-result['EnvironmentVariables'].update({
-    'OPENCLAW_ROOT': client_root,
-    'OPENCLAW_WORKSPACE_PATH': workspace,
-    'OPENCLAW_WORKSPACE_ROOT': workspace,
-})
-encoded = plistlib.dumps(result)
-if plistlib.loads(encoded) != result:
-    raise ValueError('Intake poll plist failed round-trip validation')
-fd, candidate = tempfile.mkstemp(prefix='.presentation-intake-poll-', suffix='.plist', dir=Path(destination).parent)
-try:
-    with os.fdopen(fd, 'wb') as stream:
-        stream.write(encoded)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.chmod(candidate, 0o644)
-    os.replace(candidate, destination)
-finally:
-    if os.path.exists(candidate):
-        os.unlink(candidate)
-PY_RENDER_INTAKE_PLIST
-        then
-            warn "FIX 61: intake poll render/validation failed — prior plist and running job preserved; no launchctl changes made."
-            return 1
-        fi
-        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
-        # Reload semantics: if already loaded, unload first so a re-run picks up
-        # a re-rendered copy. 'launchctl load' on an already-loaded job is the
-        # documented "Load failed: 5: Input/output error" — treat it as loaded.
-        launchctl unload "$PLIST_DST" >/dev/null 2>&1 || true
-        if launchctl load "$PLIST_DST" >/dev/null 2>&1; then
-            success "FIX 61: launchctl load OK — com.blackceo.presentation-intake-poll scheduled every 300s"
-        elif launchctl list 2>/dev/null | grep -q 'com.blackceo.presentation-intake-poll'; then
-            success "FIX 61: com.blackceo.presentation-intake-poll already loaded (launchctl list confirms)"
-        else
-            warn "FIX 61: launchctl load FAILED and the agent is NOT loaded — intake poll NOT scheduled. Manual: launchctl load $PLIST_DST"
-            _rc=1
-        fi
-    fi
-
-    return "$_rc"
-}
-
-# Reuse the selected platform workspace; never infer client ownership from an
-# unrelated /data directory. A configured resolver failure is not a default.
-_fix61_selected_workspace() {
-    local _ws="" _root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-}}}"
-    if [ -n "${OPENCLAW_WORKSPACE_PATH:-}" ] && [ -n "${OPENCLAW_WORKSPACE_ROOT:-}" ] && [ "${OPENCLAW_WORKSPACE_PATH%/}" != "${OPENCLAW_WORKSPACE_ROOT%/}" ]; then
-        warn "FIX 61: selected workspace pins conflict; refusing another client root." >&2
-        return 1
-    fi
-    _ws="${OPENCLAW_WORKSPACE_PATH:-${OPENCLAW_WORKSPACE_ROOT:-${OC_WORKSPACE_DEFAULT:-${OC_WORKSPACE:-}}}}"
-    if [ -z "$_ws" ]; then
-        if [ -n "$_root" ]; then
-            _ws="${_root%/}/workspace"
-        elif command -v obs_resolve_workspace >/dev/null 2>&1; then
-            _ws="$(obs_resolve_workspace)" || {
-                warn "FIX 61: configured workspace resolver failed; no alternate client root selected." >&2
-                return 1
-            }
-            [ -n "$_ws" ] || { warn "FIX 61: configured workspace resolver returned no client workspace." >&2; return 1; }
-        else
-            _ws="$HOME/.openclaw/workspace"
-        fi
-    fi
-    case "$_ws" in /*) ;; *) warn "FIX 61: client workspace must be absolute." >&2; return 1 ;; esac
-    [ "${_ws%/}" != "" ] || return 1
-    printf '%s\n' "${_ws%/}"
-}
-
-# Resolve PRESENTATIONS_SCRIPTS_SRC ONCE, here, before the scheduler runs.
-# The poller and its plist template have TWO legitimate homes, and resolving
-# from a single candidate is what failed in the field:
-#   1. the repo checkout this installer is running from, and
-#   2. the MATERIALIZED department — the poller's runtime home, and the only
-#      home that exists when install.sh runs from anything that is not a full
-#      checkout (curl|bash, a trimmed payload, a re-run out of /tmp).
-# When the sole repo candidate missed, the variable stayed EMPTY and every
-# path built from it collapsed to "/presentation-intake-poll.sh".
-# Workspace resolution uses the selected platform client context. warn() writes to
-# stdout, so its calls here are redirected to stderr: this function's stdout IS
-# the resolved path and must carry nothing else.
-_fix61_resolve_scripts_src() {
-    local _c _ws=""
-    # A caller-supplied value is honoured but VALIDATED — never trusted blind.
-    if [ -n "${PRESENTATIONS_SCRIPTS_SRC:-}" ]; then
-        if [ -f "$PRESENTATIONS_SCRIPTS_SRC/presentation-intake-poll.sh" ]; then
-            printf '%s\n' "$PRESENTATIONS_SCRIPTS_SRC"
-            return 0
-        fi
-        warn "FIX 61: PRESENTATIONS_SCRIPTS_SRC was preset to '$PRESENTATIONS_SCRIPTS_SRC', which holds no presentation-intake-poll.sh — refusing to replace the explicit pin." >&2
-        return 1
-    fi
-    _c="$_SCRIPT_DIR/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
-    if [ -f "$_c/presentation-intake-poll.sh" ]; then
-        printf '%s\n' "$_c"
-        return 0
-    fi
-    _ws="$(_fix61_selected_workspace)" || return 1
-    _c="$_ws/departments/Presentations/scripts"
-    if [ -f "$_c/presentation-intake-poll.sh" ]; then
-        printf '%s\n' "$_c"
-        return 0
-    fi
-    return 1
-}
+# The three functions that used to be DEFINED here — install_intake_poll_schedule(),
+# _fix61_selected_workspace() and _fix61_resolve_scripts_src() — now live in
+# lib-presentation-schedules.sh, sourced near the top of this file, and are
+# UNCHANGED there. F12 moved them for one reason: update-skills.sh could not
+# reach a function defined inline in install.sh, so a fleet ROLL could not
+# repair the intake poll (measured: 'presentation-intake-poll' appears 0 times
+# in update-skills.sh, against 25 in this file). The same lib adds
+# install_watchdog_schedule(), which schedules presentation-watchdog.sh — the
+# stall watchdog, the board reconcile, the SUPERVISOR and run-discovery — and
+# which no installer in this repo has ever called.
 PRESENTATIONS_SCRIPTS_SRC="$(_fix61_resolve_scripts_src || true)"
 
 # This call used to sit bare under `set -e`, so a `return 1` killed the whole
@@ -4837,6 +4615,42 @@ if [ "$_FIX61_RC" -ne 0 ]; then
     exit 1
 fi
 export _FIX61_RC
+
+# ----------------------------------------------------------
+# Step 6.6c (F12a): Schedule the watchdog + supervisor
+# ----------------------------------------------------------
+# The poll scheduled above starts work. NOTHING scheduled above recovers it.
+# presentation-watchdog.sh carries four passes — stall watchdog, board
+# reconcile, SUPERVISOR (an engine process that died behind an active run gets
+# detected and, in apply mode, restarted under a bounded backed-off budget) and
+# run-discovery — and until now no installer in this repo referenced it at all
+# (measured with python3 str.count over the full file text: this file carried
+# 'presentation-watchdog' 0 times and 'supervisor' 0 times, against a
+# 'presentation-intake-poll' control of 25 in the same file). So every client
+# box shipped with the poll and with ZERO automated recovery, and every stalled
+# deck needed a human.
+#
+# NOT FATAL, unlike FIX 61 above, and the asymmetry is deliberate. A missing
+# poll means submitted work never starts — the box is inert and an abort is the
+# honest outcome. A missing watchdog means work that starts is not supervised:
+# strictly worse than having it, strictly better than a box with no
+# Presentations department at all. Aborting an entire fleet install over a
+# failed `launchctl load` would trade a real capability for a bigger outage.
+# The rc is latched, exported and stated LOUDLY instead.
+#
+# The supervisor's --apply (restart) mode is NOT armed here — see F12c in
+# lib-presentation-schedules.sh. It is gated on F2 (auto-repin) being deployed.
+_FIX12_RC=0
+set +e
+install_watchdog_schedule
+_FIX12_RC=$?
+set -e
+if [ "$_FIX12_RC" -ne 0 ]; then
+    warn "F12: watchdog/supervisor schedule install FAILED (rc=$_FIX12_RC) — this box has NO automated stall detection and NO engine-liveness supervision. A stalled deck run will sit until a human notices."
+    echo "  Presentations scripts dir resolved to: ${PRESENTATIONS_SCRIPTS_SRC:-<UNRESOLVED>}"
+    echo "  Install continues (the intake poll above IS scheduled); re-run update-skills.sh to retry the watchdog."
+fi
+export _FIX12_RC
 
 # ----------------------------------------------------------
 # v6.6.0 / Step 6.7: Install Skill 22 persona-inbox-watcher cron (Mac)

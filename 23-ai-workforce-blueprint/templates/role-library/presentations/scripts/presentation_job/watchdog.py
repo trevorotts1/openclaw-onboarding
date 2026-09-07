@@ -34,10 +34,26 @@ from .scan_roots import (
 
 
 def _find_state_files(scan_root: Path, depth: int):
-    """Bounded walk -- NOT rglob, which can stall for minutes on a large tree."""
+    """Bounded walk -- NOT rglob, which can stall for minutes on a large tree.
+
+    F4: a directory whose NAME starts with "_" is a shelf, not a run --
+    _parked/, _archive/, _retired/. Path.glob("*") matches those names, so the
+    watchdog was walking straight into the park shelf and reporting the runs a
+    human had deliberately shelved as stalled, every single pass, forever.
+    (The supervisor reaches its own run set through this generator, so it
+    inherits the same blindness and the same cure.) Nothing about a shelved
+    run is news; a permanent finding is a finding an operator learns to
+    ignore, which is how a real stall gets missed.
+    """
     seen: Set[Path] = set()
     for d in range(1, depth + 1):
         for state_path in scan_root.glob("/".join(["*"] * d) + "/state.json"):
+            try:
+                parts = state_path.relative_to(scan_root).parts[:-1]
+            except ValueError:  # not under scan_root after all -- do not guess
+                parts = ()
+            if any(part.startswith("_") for part in parts):
+                continue
             resolved = state_path.resolve()
             if resolved not in seen:
                 seen.add(resolved)

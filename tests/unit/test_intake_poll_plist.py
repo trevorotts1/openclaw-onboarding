@@ -11,9 +11,15 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO / '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template'
-SOURCE = (REPO / 'install.sh').read_text().split('install_intake_poll_schedule() {', 1)[1].split('\n    return "$_rc"\n}', 1)[0] + '\n    return "$_rc"\n}'
+# F12 moved install_intake_poll_schedule() and _fix61_selected_workspace() out
+# of install.sh and into lib-presentation-schedules.sh VERBATIM, so
+# update-skills.sh can reach them and a fleet roll can repair the schedule.
+# The function text is byte-identical -- only its address changed -- so this
+# test still executes the real installer.
+INSTALLER_SRC = (REPO / 'lib-presentation-schedules.sh').read_text()
+SOURCE = INSTALLER_SRC.split('install_intake_poll_schedule() {', 1)[1].split('\n    return "$_rc"\n}', 1)[0] + '\n    return "$_rc"\n}'
 FUNCTION = 'install_intake_poll_schedule() {' + SOURCE
-FUNCTION += '\n_fix61_selected_workspace() {' + (REPO / 'install.sh').read_text().split('_fix61_selected_workspace() {', 1)[1].split('\n}', 1)[0] + '\n}'
+FUNCTION += '\n_fix61_selected_workspace() {' + INSTALLER_SRC.split('_fix61_selected_workspace() {', 1)[1].split('\n}', 1)[0] + '\n}'
 
 class IntakePollPlistTests(unittest.TestCase):
     def setUp(self):

@@ -36,7 +36,15 @@ def _parse_minutes(ts: str) -> float:
 #: a raw "watchdog" chat id is not a chat, and a transport that does not
 #: resolve it either drops the alert silently (the exact silence FIX 22
 #: exists to kill) or, worse, resolves it to garbage on the far side.
-KNOWN_SUBSYSTEM_IDS = ("watchdog", "supervisor", "capacity")
+#:
+#: F1 adds "auto-resume" -- presentation_job.auto_resume raises exactly one
+#: alert, when a parked run has spent its automatic-resume cap and now needs a
+#: person. It is registered HERE, in the one choke point, for the reason this
+#: list exists at all: an unregistered label reaches the transport unresolved,
+#: presentation-notify.py exits 4, and the alert that says "stop waiting, this
+#: run needs you" is the one message that must not be the one that lands
+#: nowhere.
+KNOWN_SUBSYSTEM_IDS = ("watchdog", "supervisor", "capacity", "auto-resume")
 
 #: The operator chat env var the transports already read as their fallback
 #: (presentation-notify.py's exit-4 contract; the retired

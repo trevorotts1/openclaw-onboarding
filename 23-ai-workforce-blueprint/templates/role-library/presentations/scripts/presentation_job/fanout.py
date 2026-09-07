@@ -314,6 +314,26 @@ def run_units(
     return [results[u.key] for u in units]
 
 
+def phase_worker_env_var(phase_id: str) -> str:
+    """The shell-legal env-var name that overrides ONE phase's fan-out width.
+
+    F6 (2026-09-06): this used to be an inline `re.sub` in dispatcher.py's
+    P4-PROMPT pool path and nothing at all on the manifest fan-out path. A raw
+    f-string `PRESENTATION_PHASE_WORKERS_{phase_id}` is NOT settable from a
+    shell for any real phase id -- every fan-out phase in the shipped manifest
+    has a hyphen in it ("P-PROMPT-QC", "P-U-DESIGN-SALES") and one has a dot
+    ("P8.3-INFOGRAPHIC"), and `PRESENTATION_PHASE_WORKERS_P-PROMPT-QC=8` is not
+    a valid assignment in sh/bash/zsh. Every non-alphanumeric run collapses to
+    a single underscore so the override an operator can actually type is the
+    one this reads:
+
+        P-PROMPT-QC     -> PRESENTATION_PHASE_WORKERS_P_PROMPT_QC
+        P8.3-INFOGRAPHIC-> PRESENTATION_PHASE_WORKERS_P8_3_INFOGRAPHIC
+    """
+    return "PRESENTATION_PHASE_WORKERS_" + \
+        re.sub(r"[^A-Za-z0-9]+", "_", str(phase_id)).strip("_")
+
+
 def resolve_effective_workers(
     phase_workers: int,
     unit_count: int,
@@ -324,11 +344,23 @@ def resolve_effective_workers(
     """Spec S3.3's resolution order:
 
         effective = min(
-            phase.workers,          # manifest, default 1
-            env override if set,    # PRESENTATION_PHASE_WORKERS_<PHASE_ID>
+            declared_width,         # see below -- NOT always phase.workers
+            env override if set,    # phase_worker_env_var(phase_id)
             unit_count,             # never more workers than units
             capacity_ceiling,       # capacity.probe(); UNBOUNDED drops out
         )
+
+    The first term is whatever width the CALLER's own authority resolved:
+
+      * `_dispatch_prompt_phase_fanout` (P4-PROMPT pool path) passes the
+        manifest's `phase.workers` (12 on that phase).
+      * `_dispatch_phase_fanout_units` (every manifest-declared `fanout`
+        phase) passes the routing stamp's `measured_capacity` -- the same
+        probe/mode-ceiling number P4-PROMPT's wave runs at. It must NOT pass
+        `phase.workers` there: `Phase.workers` defaults to 1 (manifest.py:233)
+        and 8 of the 9 fan-out phases declare none, so `phase.workers` as the
+        first term is a hard cap of ONE and the whole phase runs serially
+        (F6 / review 3.8).
 
     `capacity_available` is expected to be `capacity.probe()['available']` --
     a positive int or the UNBOUNDED sentinel. Reuses capacity.is_unbounded()'s

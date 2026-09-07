@@ -287,15 +287,34 @@ def measure_workingset(run_dir: Path, phase_id: str,
             # anyway; this decode exists for the legacy `chars` field and the
             # conservative token count. A byte read here is required because
             # the completion path is attestation, not a hot loop.
-            data = _read_bytes(path)
-            if len(data) != n_bytes:
-                # stat hinted a different size than a re-read sees (file was
-                # being written mid-measurement); trust the bytes actually read.
-                total_bytes += len(data) - n_bytes
-                entry["bytes"] = n_bytes = len(data)
-            text = data.decode("utf-8", errors="replace")
-            entry["chars"] = len(text)
-            total_chars += len(text)
+            # F20: this read used to call `_read_bytes(path)` -- a helper that
+            # exists nowhere in this module (or any import of it). FIX 26 split
+            # the hot loop to stat-only and left the completion branch calling
+            # a name it never wrote, so EVERY phase-completion checkpoint
+            # raised NameError. Engine._checkpoint swallows it in a bare
+            # `except Exception: pass`, so the failure was silent and the FIX-20
+            # compaction guarantee was dead: a finished phase reloaded as
+            # "running". `_expand_globs` yields pathlib.Path, so read it here.
+            try:
+                data = path.read_bytes()
+            except OSError:
+                # Vanished/unreadable between the stat above and this read.
+                # Fall back to the stat-only estimate for this one file rather
+                # than losing the whole completion checkpoint -- the silent
+                # loss described above is exactly what this repair removes.
+                data = None
+            if data is None:
+                total_chars += n_bytes
+            else:
+                if len(data) != n_bytes:
+                    # stat hinted a different size than a re-read sees (file
+                    # was being written mid-measurement); trust the bytes
+                    # actually read.
+                    total_bytes += len(data) - n_bytes
+                    entry["bytes"] = n_bytes = len(data)
+                text = data.decode("utf-8", errors="replace")
+                entry["chars"] = len(text)
+                total_chars += len(text)
         else:
             # Stat-only token estimate: bytes -> tokens under the conservative
             # 4:1 rule. For binary artifacts the old decode produced ~1 char
@@ -303,6 +322,10 @@ def measure_workingset(run_dir: Path, phase_id: str,
             # fact slightly less than the old replacement-char count), and it
             # never reads the file.
             total_chars += n_bytes
+        # F20: `entry` was built every iteration and appended NONE of them, so
+        # the record's documented "files" list (see this function's docstring)
+        # shipped permanently empty -- a second casualty of the FIX 26 rewrite.
+        files.append(entry)
 
     estimated = estimate_tokens("x" * total_chars) if total_chars else 0
     fits = estimated <= CONTEXT_WINDOW_CAP

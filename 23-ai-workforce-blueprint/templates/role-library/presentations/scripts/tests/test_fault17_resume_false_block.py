@@ -145,6 +145,19 @@ def _write_slide(rd: Path, n: int, mtime: float) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("x" * 9500)
     os.utime(p, (mtime, mtime))
+    # F20 FIXTURE REPAIR: P4-PROMPT declares TWO produces_artifact entries --
+    # 'working/prompts/slide-*.txt' AND 'working/prompts/infographic-prompt.txt'
+    # (the second arrived with the infographic pipeline, after this test was
+    # written). _artifacts_present() requires EVERY declared pattern, so a
+    # slide-only fixture reports "not present", the FAULT-17 verifier
+    # tiebreaker is never reached, and both tests below failed for a fixture
+    # reason that had nothing to do with the behaviour they pin. Seeding the
+    # second declared artifact at the same stale mtime keeps the scenario
+    # exactly as written (pre-existing, non-growing, baseline-predating output)
+    # and lets the tiebreaker actually be exercised.
+    ip = rd / "working" / "prompts" / "infographic-prompt.txt"
+    ip.write_text("y" * 9500)
+    os.utime(ip, (mtime, mtime))
 
 
 def _seed_live_work_order(rd: Path, phase) -> Path:

@@ -18,6 +18,10 @@ on:
       - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_credential_reader_isolation.py'
       - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_oc_paths_isolation.py'
       - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_poller_env_store.py'
+      - 'shared-utils/llm_score.py'
+      - 'shared-utils/secret_helper.py'
+      - 'shared-utils/secret_names.json'
+      - 'shared-utils/test_f25_llm_score_secrets.py'
       - 'tests/unit/test_intake_poll_plist.py'
       - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py'
       - 'tests/unit/test_shared_client_paths.py'
@@ -87,6 +91,14 @@ jobs:
         run: python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py
       - name: Presentation worker client path and credential isolation
         run: python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_credential_reader_isolation.py 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_oc_paths_isolation.py 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_poller_env_store.py
+      # F25 -- the residual half of the env-loading class the step above
+      # pins. shared-utils/llm_score.py read os.environ and openclaw.json
+      # only, so a persona-scoring pass spawned by launchd or the openclaw
+      # cron resolved no key at all while the key sat, present and non-blank,
+      # in the box's secrets store. Same store, same precedence contract, one
+      # directory away -- so it is gated here, next to its sibling.
+      - name: Scoring helper resolves credentials from the box secrets store
+        run: python3 -m pytest -q shared-utils/test_f25_llm_score_secrets.py
       - name: Shared client paths and credential isolation
         run: python3 tests/unit/test_shared_client_paths.py
       - name: GHL credential aliases through the delivered shared library

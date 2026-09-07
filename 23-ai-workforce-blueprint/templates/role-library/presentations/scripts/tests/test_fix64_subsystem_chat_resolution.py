@@ -47,12 +47,14 @@ from presentation_job.report import (  # noqa: E402
 # --------------------------------------------------------------------------
 
 class TestResolveSubsystemChat:
-    @pytest.mark.parametrize("label", ["watchdog", "supervisor", "capacity"])
+    @pytest.mark.parametrize("label", ["watchdog", "supervisor", "capacity",
+                                       "auto-resume"])
     def test_label_resolves_to_owner_chat_id(self, monkeypatch, label):
         monkeypatch.setenv("OWNER_CHAT_ID", "8505558285")
         assert resolve_subsystem_chat(label) == "8505558285"
 
-    @pytest.mark.parametrize("label", ["watchdog", "supervisor", "capacity"])
+    @pytest.mark.parametrize("label", ["watchdog", "supervisor", "capacity",
+                                       "auto-resume"])
     def test_label_kept_verbatim_when_owner_unset(self, monkeypatch, label):
         monkeypatch.delenv("OWNER_CHAT_ID", raising=False)
         assert resolve_subsystem_chat(label) == label
@@ -62,8 +64,14 @@ class TestResolveSubsystemChat:
         assert resolve_subsystem_chat("8505558285") == "8505558285"
         assert resolve_subsystem_chat("-1001234567890") == "-1001234567890"
 
-    def test_known_subsystem_ids_are_exactly_the_three(self):
-        assert KNOWN_SUBSYSTEM_IDS == ("watchdog", "supervisor", "capacity")
+    def test_known_subsystem_ids_are_exactly_the_registered_set(self):
+        """F1: "auto-resume" joined the set when presentation_job.auto_resume
+        gained one alert of its own (a parked run whose automatic-resume cap
+        is spent). The assertion stays EXACT -- a label that is not in this
+        tuple is not resolved to OWNER_CHAT_ID, so a caller inventing one
+        silently ships an alert to nowhere."""
+        assert KNOWN_SUBSYSTEM_IDS == ("watchdog", "supervisor", "capacity",
+                                       "auto-resume")
 
     def test_dispatch3_numeric_chat_id_passes_through(self, tmp_path, monkeypatch):
         stub = tmp_path / "stub-notify.py"
