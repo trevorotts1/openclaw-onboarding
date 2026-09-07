@@ -195,9 +195,14 @@ def test_no_gate_is_warn_only_anymore():
     assert len(f) == 0, f"all hard gates should pass, got {f}"
 
 def test_qc_gate_missing_report_is_hard_failure_not_warn_only():
-    """The exact scenario the fail-open bug describes: no phase ever writes
-    working/qc/final_qc_report.json. This must BLOCK (D10), never defer to a
-    non-blocking warning."""
+    """The exact scenario the fail-open bug describes: working/qc/final_qc_report.json
+    is absent. This must BLOCK (D10), never defer to a non-blocking warning.
+
+    F21: this docstring used to say "no phase ever writes" that file. That stopped
+    being true at manifest_version 35, when P-QC-AGGREGATE (order 8.65) landed as its
+    producer. The gate's behaviour here is unchanged -- a missing report still blocks --
+    but the file is missing because that phase did not run or did not finish, not
+    because nothing can produce it. See tests/test_f21_text_truth.py."""
     rd = _rd()
     g = Gates(rd, {})._qc_gate()
     assert g["state"] == "fail", g
