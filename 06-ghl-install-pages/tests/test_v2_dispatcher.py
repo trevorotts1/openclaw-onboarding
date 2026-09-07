@@ -1050,3 +1050,5 @@ class TestPersonaBundleAcquisition:
         assert receipt["confirm_state"] == "pending"
         assert receipt["hold"] is False
         assert receipt["degradation"], "the degradation must be NAMED in the receipt, never silent"
+
+

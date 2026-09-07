@@ -640,6 +640,8 @@ DEFAULT_POLL_BACKOFF_S = 30
 # A re-probe (`browser_manager.sh probe`, or task['reprobe'] / CLI --reprobe)
 # resolves the hold.
 DEFAULT_CAPABILITY_MAX_AGE_H = 24.0
+DEFAULT_CAPABILITY_PATH = os.path.join(
+    os.path.dirname(_TOOLS_DIR), "working", "skill6-capability.json")
 
 # ── P2-4: rate-limit governor + session keepalive ────────────────────────────
 # GHL throttles rapid autosaves/publishes; bursting trips 429s and (worse) silent
@@ -999,8 +1001,7 @@ def dispatch_one(
     _cap_task_flag = task.get("reprobe")
     if not _cap_task_flag:
         if not capability_path:
-            capability_path = os.path.join(
-                os.path.dirname(_TOOLS_DIR), "working", "skill6-capability.json")
+            capability_path = DEFAULT_CAPABILITY_PATH
         _cap_age_h: float | None = None
         try:
             _cap_mtime = os.stat(capability_path).st_mtime
