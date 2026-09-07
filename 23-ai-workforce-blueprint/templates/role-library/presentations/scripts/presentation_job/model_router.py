@@ -750,20 +750,78 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # client/provider ceiling. Nothing here touches the network: ceilings come
 # from the client's resource profile (FIX 8 ceiling fields), the
 # conservative floor, and the human-ratified constant below.
+#
+# FIX 15 + FIX 16 (one PR, F15 first -- F16's width axis is only honest once
+# F15 makes the plan report the number that will be applied):
+#
+#   F15  mode_concurrency() reported a width NOTHING downstream applied. On
+#        the operator box the launcher banner and .mode-plan.json said
+#        "concurrency plan 8" for standard while capped_width() ran the
+#        P4-PROMPT wave at 100 (review K3). It now answers exactly what
+#        capped_width() will apply, or UNDETERMINED.
+#   F16  ultra and standard were BYTE-IDENTICAL end to end (review section 6)
+#        because mode_ceiling() handed both the same 100. The 100 is
+#        human-ratified and was NOT raised; STANDARD_MODE_CEILING (25) is
+#        standard's smaller share, applied only where the client ceiling is a
+#        determined fact. Where nothing was measured the axis is inert and
+#        SAYS SO -- see mode_operator_ceiling() and _unmeasured_notice().
+#        The mode is not deleted: that call is Trevor's and has not been made.
 
 MODE_FLAG_ENV = "PRESENTATION_MODES"
 MODE_FLAG_DEFAULT = "1"
 
 #: The operator ceiling -- a HUMAN-ratified constant, never provider-advertised.
+#: This is ULTRA's share, and the absolute maximum ANY mode may reach.
 ULTRA_OPERATOR_CEILING = 100
 
-#: capacity.DEFAULT_CONSERVATIVE -- the floor a run proceeds AT when nothing
-#: was measured. A mode never claims a higher width than the box was proven
-#: to (or did) carry.
+#: FIX 16 -- STANDARD's share of the operator ceiling, and the ONE number that
+#: makes "ultra" a WIDTH instead of a label.
+#:
+#: Before it, mode_ceiling() answered ULTRA_OPERATOR_CEILING for ultra AND for
+#: standard, so capped_width() -- a min(), and the only function that cuts the
+#: width the P4-PROMPT wave actually runs at (dispatcher._prompt_routing_stamp
+#: -> routing["measured_capacity"] -> parallel_prompt_worker._workers_for) --
+#: could not tell the two modes apart. Measured on the operator box: ultra
+#: ceiling 100 / concurrency 3 / width 100; standard ceiling 100 /
+#: concurrency 3 / width 100. BYTE-IDENTICAL. Declaring ultra changed no
+#: number anywhere in the engine.
+#:
+#: ULTRA_OPERATOR_CEILING is human-ratified and may NOT be raised, so the only
+#: truthful way for ultra to be wider than standard is for standard to reach
+#: less far. 25 is the review's own recommendation, and it is still THREE
+#: TIMES the number the mode plan had been PROMISING standard on every launch
+#: since FIX 11 shipped (STANDARD_WORKER_DEFAULT, 8): this narrows nobody
+#: below what their own run record told them they were getting.
+#:
+#: It applies ONLY where the client's concurrency ceiling was actually
+#: MEASURED -- see mode_operator_ceiling().
+STANDARD_MODE_CEILING = 25
+
+#: FIX 16 -- the per-mode share of the operator ceiling, one table, read by
+#: mode_operator_ceiling() and through it by mode_ceiling() -> capped_width().
+#: Economy keeps the full ceiling on purpose: Economy narrows by COST POLICY
+#: (mode_concurrency's economy branch), not by a capacity allowance, and the
+#: review's instruction was "Economy stays as is".
+MODE_OPERATOR_CEILING: Dict[str, int] = {
+    "ultra": ULTRA_OPERATOR_CEILING,
+    "standard": STANDARD_MODE_CEILING,
+    "economy": ULTRA_OPERATOR_CEILING,
+}
+
+#: capacity.DEFAULT_CONSERVATIVE -- the floor CAPACITY (not this module) drops
+#: to when a probe comes back UNDETERMINED. Kept here so the two files can be
+#: compared, and named in the unmeasured notice so an operator knows whose
+#: floor it is. FIX 15 stopped mode_concurrency() REPORTING it as a mode
+#: width: no width step ever applied it, so printing "concurrency plan 3" next
+#: to a wave that ran at whatever the probe found was a record lying in the
+#: reassuring direction (review K3).
 DEFAULT_CONSERVATIVE_FLOOR = 3
 
-#: parallel_prompt_worker.DEFAULT_MAX_WORKERS; Standard on an
-#: unmeasured-but-UNBOUNDED client stays the 8-wide worker default.
+#: parallel_prompt_worker.DEFAULT_MAX_WORKERS -- the WORKER fallback for a
+#: missing/invalid measured_capacity, and nothing else. FIX 15 removed it from
+#: the standard branch of mode_concurrency(): on the operator box the banner
+#: printed "concurrency plan 8" while capped_width() ran the P4-PROMPT wave at
+#: 100. The constant survives as the worker fallback it actually is.
 STANDARD_WORKER_DEFAULT = 8
 
 MODES: Tuple[str, ...] = ("ultra", "standard", "economy")
@@ -881,49 +939,125 @@ def measured_client_ceiling(profile: Optional[Dict[str, Any]]) -> Any:
     return None
 
 
+def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
+    """FIX 16: the per-mode share of the operator ceiling, and whether the
+    mode axis is IN FORCE at all. Returns (ceiling, in_force).
+
+    A mode's own ceiling exists only once the client's concurrency ceiling is
+    a DETERMINED fact -- a measured integer, or the client's own UNBOUNDED
+    declaration (a bring-your-own client stating its capacity is a reading,
+    not an absence). On an UNMEASURED client every mode gets the full
+    ULTRA_OPERATOR_CEILING, for two reasons that point the same way:
+
+      1. narrowing standard there would cut a real width on the strength of
+         an ABSENCE -- and an absence of a reading is not evidence, any more
+         than it is a capability; and
+      2. it is the operator's 2026-09-04 ruling verbatim ("never re-clamp a
+         measured width down to a default", parallel_prompt_worker
+         ._workers_for's own comment): the wave on an unmeasured client runs
+         at whatever capacity.probe() reported, and no mode may shrink it.
+
+    So on an unmeasured client the mode axis is INERT -- ultra and standard
+    are the same run -- and every record this module writes says so out loud
+    rather than implying a mode was bought. See _unmeasured_notice()."""
+    m = normalize_mode(mode)
+    if measured is None:
+        return ULTRA_OPERATOR_CEILING, False
+    return MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING), True
+
+
+def _unmeasured_notice(mode: str) -> str:
+    """The LOUD sentence an unmeasured client gets, in the launcher banner and
+    in `.mode-plan.json`, in place of a comforting number nothing applies.
+
+    FIX 16's second half. Before it, an unmeasured ultra run reported
+    "concurrency 3" -- the conservative floor -- and then ran at whatever the
+    probe found (8 when the routed provider was unresolved, else the probe's
+    own number). Two wrongs at once: a mode that bought nothing, described by
+    a number nothing used."""
+    m = normalize_mode(mode)
+    head = (f"UNMEASURED CLIENT CEILING -- the mode axis is INERT on this "
+            f"run. No concurrency_ceiling was measured for any provider in "
+            f"the client's resource profile, so every mode is held to the "
+            f"same operator ceiling {ULTRA_OPERATOR_CEILING} and the wave "
+            f"runs at whatever capacity.probe() reports at dispatch "
+            f"(capacity's own DEFAULT_CONSERVATIVE {DEFAULT_CONSERVATIVE_FLOOR} "
+            f"when that probe is UNDETERMINED -- capacity's floor, not this "
+            f"mode's width). This module states UNDETERMINED rather than "
+            f"printing a width nothing will apply")
+    if m == "ultra":
+        return (head + ". ULTRA BUYS NOTHING HERE: it cannot widen a width "
+                "nobody measured, so this run is identical to standard. "
+                "Measure the client's ceiling (resource_profile providers[]"
+                ".concurrency_ceiling, or a capacity probe that lands) and "
+                f"ultra becomes a real {ULTRA_OPERATOR_CEILING}-wide run "
+                f"against standard's {STANDARD_MODE_CEILING}.")
+    if m == "standard":
+        return (head + f". Standard's own ceiling ({STANDARD_MODE_CEILING}) "
+                "is NOT applied here: it would narrow a real width on the "
+                "strength of an absence.")
+    return (head + ". Economy's width below is a COST decision and stands "
+            "regardless -- it was never a capacity reading.")
+
+
 def mode_concurrency(mode: str, *,
                      profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """FIX 11 concurrency selection for one mode against one client profile.
 
-    Hard ceilings: Ultra NEVER exceeds ULTRA_OPERATOR_CEILING (100) or a
-    lower measured client ceiling, whichever is smaller -- DeepSeek
-    advertising 500/2,500 changes nothing. An unmeasured client proceeds at
-    the conservative floor (3), never at the full operator ceiling. Standard
-    and Economy derive from the measured capacity and never exceed the same
-    ceiling. Unknown mode -> ValueError."""
+    FIX 15 -- THIS NUMBER IS NOW THE NUMBER THAT WILL BE APPLIED. It is what
+    `.mode-plan.json` records and what the launcher banner prints, and before
+    this fix it was read by NOTHING that sets a width: the P4-PROMPT wave is
+    cut by capped_width() -> mode_ceiling(), which never consulted this
+    function. On the operator box (client ceiling 100, probe available 2500)
+    the banner said "concurrency plan 8" and the wave ran 100 -- the audit
+    record built to prove a mode was itself wrong, in the reassuring
+    direction (review K3). For ultra and standard the answer is now exactly
+    mode_ceiling()'s: the cap capped_width() will apply. The wave then runs
+    min(what the probe measures, this) -- an upper bound, stated as one.
+
+    Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (100) or
+    a lower measured client ceiling -- DeepSeek advertising 500/2,500 changes
+    nothing. FIX 16 adds the per-mode share (ultra 100 / standard
+    STANDARD_MODE_CEILING), which applies only where the client ceiling is a
+    determined fact; an UNMEASURED client answers None (UNDETERMINED) and
+    carries the loud `warning`, never the conservative floor dressed up as a
+    mode decision. Economy is unchanged: its width is a COST policy.
+    Unknown mode -> ValueError."""
     m = normalize_mode(mode)
     measured = measured_client_ceiling(profile)
     operator = ULTRA_OPERATOR_CEILING
+    mode_op, axis_in_force = mode_operator_ceiling(m, measured)
+    warning: Optional[str] = None
+    if measured is None:
+        warning = _unmeasured_notice(m)
 
-    if m == "ultra":
+    if m in ("ultra", "standard"):
         if measured is None:
-            choose, reason = DEFAULT_CONSERVATIVE_FLOOR, (
-                "client ceiling unmeasured: proceed at the conservative "
-                f"floor, never the operator ceiling {operator} -- measure "
-                "first, then scale")
+            choose, reason = None, warning
         elif measured == "UNBOUNDED":
-            choose, reason = operator, (
-                f"client is UNBOUNDED: the operator ceiling {operator} "
-                "applies exactly (provider-advertised 500/2500 never "
-                "raises it)")
+            choose, reason = mode_op, (
+                f"client is UNBOUNDED: {m} runs at its share of the operator "
+                f"ceiling -- {mode_op} (ultra {ULTRA_OPERATOR_CEILING} / "
+                f"standard {STANDARD_MODE_CEILING}); provider-advertised "
+                "500/2500 never raises it")
         else:
-            choose, reason = min(operator, int(measured)), (
-                f"min(operator ceiling {operator}, measured client ceiling "
-                f"{measured}) -- Ultra never exceeds either")
-    elif m == "standard":
-        if measured is None:
-            choose, reason = DEFAULT_CONSERVATIVE_FLOOR, (
-                "client ceiling unmeasured: standard at the conservative "
-                "floor 3")
-        elif measured == "UNBOUNDED":
-            choose, reason = STANDARD_WORKER_DEFAULT, (
-                "client is UNBOUNDED: standard stays the worker default "
-                f"{STANDARD_WORKER_DEFAULT}")
-        else:
-            choose, reason = min(STANDARD_WORKER_DEFAULT, int(measured)), (
-                f"derived from the measured client ceiling {measured}, "
-                f"capped at the worker default {STANDARD_WORKER_DEFAULT}")
+            choose = min(mode_op, int(measured))
+            reason = (
+                f"min({m} ceiling {mode_op}, measured client ceiling "
+                f"{measured}) = {choose} -- the SAME number capped_width() "
+                f"applies to the wave, which then runs min(what the probe "
+                f"measures, {choose})")
     else:  # economy; normalize_mode already rejected anything unknown
+        # Economy's WIDTH is unchanged by FIX 15/16 on purpose: it is a COST
+        # policy, not a capacity reading, so it is a decision rather than a
+        # report, and the review's instruction was "Economy stays as is".
+        # What FIX 15 changes here is only the REPORT: the cost width is
+        # clamped to economy's own ceiling before it is printed, because
+        # capped_width() has always clamped it there before applying it. On a
+        # client measured at 2,500 this branch planned 833 while the wave ran
+        # 100 -- the same lie K3 names, in the same reassuring direction.
+        # min() of a number that was already being min()'d: the width applied
+        # to any wave is byte-for-byte what it was.
         if measured is None:
             choose, reason = 1, (
                 "client ceiling unmeasured: economy runs single-file")
@@ -932,17 +1066,31 @@ def mode_concurrency(mode: str, *,
                 "client is UNBOUNDED: economy stays a modest width "
                 "(cost policy, not capacity)")
         else:
-            choose, reason = max(1, int(measured) // 3), (
+            cost_width = max(1, int(measured) // 3)
+            choose = min(cost_width, min(mode_op, int(measured)))
+            reason = (
                 f"derived from the measured client ceiling {measured} "
-                "(a third of it, >= 1) -- never above the same ceiling")
+                f"(a third of it, >= 1 = {cost_width})"
+                + (f", then held to economy's ceiling {min(mode_op, int(measured))}"
+                   if choose != cost_width else "")
+                + " -- never above the same ceiling")
 
-    return {
+    block: Dict[str, Any] = {
         "mode": m,
-        "concurrency": int(choose),
+        "concurrency": int(choose) if choose is not None else None,
+        "measured": measured is not None,
         "measured_ceiling": measured,
+        # the GLOBAL human-ratified maximum; unchanged meaning, every mode
         "operator_ceiling": operator,
+        # this mode's share of it (FIX 16); == operator_ceiling when the mode
+        # axis is inert
+        "mode_operator_ceiling": int(mode_op),
+        "mode_axis_in_force": bool(axis_in_force),
         "reason": reason,
     }
+    if warning:
+        block["warning"] = warning
+    return block
 
 
 def mode_ceiling(mode: str, *,
@@ -953,33 +1101,46 @@ def mode_ceiling(mode: str, *,
     The binding text, unchanged: "Ultra's operator ceiling is 100 concurrent
     tasks -- even when DeepSeek advertises 500 / 2,500 ... Standard and Economy
     derive from the MEASURED client capacity/cost policy and may never exceed
-    the same client/provider ceiling." One ceiling, shared by all three modes:
-    min(ULTRA_OPERATOR_CEILING, the client's MEASURED ceiling when one exists).
-    An unmeasured client contributes no ceiling of its own -- the absence of a
-    reading is not a ceiling any more than it is a capability -- so only the
-    operator's 100 applies and the width still comes from what was measured.
+    the same client/provider ceiling."
+    min(the mode's share of ULTRA_OPERATOR_CEILING, the client's MEASURED
+    ceiling when one exists). An unmeasured client contributes no ceiling of
+    its own -- the absence of a reading is not a ceiling any more than it is a
+    capability -- so only the operator's 100 applies, to every mode alike, and
+    the width still comes from what was measured.
 
-    WHY THIS IS NOT mode_concurrency(): that function answers "how wide would
-    this mode PLAN to run", and its answers include FLOORS (the conservative 3
-    for an unmeasured client) and the 8-wide Standard worker default. Using
-    those as caps would (a) install a floor as a ceiling and (b) re-clamp a
-    measured 2,500 down to 8 -- the precise behaviour the operator ruled out on
-    2026-09-04 (parallel_prompt_worker._workers_for's own comment). The plan is
-    a plan; THIS is the only number allowed to cut a measured width."""
+    FIX 16 -- THE MODE'S SHARE. This used to hand ULTRA_OPERATOR_CEILING to
+    every mode, which made capped_width() (a min()) produce byte-identical
+    widths for ultra and standard: declaring ultra changed no number in the
+    engine (review section 6). mode_operator_ceiling() now supplies ultra 100
+    and standard STANDARD_MODE_CEILING -- but ONLY where the client ceiling is
+    a determined fact. 100 is human-ratified and was not raised; standard
+    reaches less far, which is the only honest lever available.
+
+    WHY THIS IS NOT mode_concurrency(): that function answers "how wide will
+    this mode PLAN to run" and includes Economy's COST width, which is a
+    spending decision rather than a capacity cap. Since FIX 15 the two agree
+    for ultra and standard by construction -- that is the point of FIX 15 --
+    but THIS is still the only number allowed to cut a measured width, and it
+    never installs Economy's cost policy as a capacity ceiling."""
     m = normalize_mode(mode)
     measured = measured_client_ceiling(profile)
     operator = ULTRA_OPERATOR_CEILING
+    mode_op, axis_in_force = mode_operator_ceiling(m, measured)
     if isinstance(measured, int) and not isinstance(measured, bool) and measured > 0:
-        ceiling = min(operator, int(measured))
-        reason = (f"min(operator ceiling {operator}, measured client ceiling "
+        ceiling = min(mode_op, int(measured))
+        reason = (f"min({m} ceiling {mode_op}, measured client ceiling "
                   f"{measured}) -- no mode may exceed either")
+    elif measured == "UNBOUNDED":
+        ceiling = mode_op
+        reason = (f"{m} ceiling {mode_op} -- client ceiling UNBOUNDED, which "
+                  "is never a raise and never provider-advertised")
     else:
         ceiling = operator
-        reason = (f"operator ceiling {operator} -- client ceiling "
-                  + ("UNBOUNDED" if measured == "UNBOUNDED" else "unmeasured")
-                  + ", which is never a raise and never provider-advertised")
+        reason = _unmeasured_notice(m)
     return {"mode": m, "ceiling": int(ceiling), "measured_ceiling": measured,
-            "operator_ceiling": operator, "reason": reason}
+            "operator_ceiling": operator,
+            "mode_operator_ceiling": int(mode_op),
+            "mode_axis_in_force": bool(axis_in_force), "reason": reason}
 
 
 def capped_width(width: Any, mode: str, *,
@@ -1128,13 +1289,27 @@ def mode_plan(mode: str, *,
                   if estimate_usd is not None else
                   "unpriced: no FIX 12 verdict was supplied"),
     }
-    return {
+    plan: Dict[str, Any] = {
         "mode": m,
         "concurrency": conc,
         "eta": eta,
         "cost": cost,
         "flag": {"env": MODE_FLAG_ENV, "rollback": f"{MODE_FLAG_ENV}=0"},
+        # FIX 16: was this run's mode axis actually load-bearing, and what the
+        # two ends of it are. An operator reading the record AFTER the fact
+        # must be able to answer "did declaring ultra buy anything?" without
+        # re-deriving it from the client profile.
+        "mode_axis": {
+            "in_force": bool(conc.get("mode_axis_in_force")),
+            "ultra_ceiling": ULTRA_OPERATOR_CEILING,
+            "standard_ceiling": STANDARD_MODE_CEILING,
+            "this_mode_ceiling": conc.get("mode_operator_ceiling"),
+        },
     }
+    warnings = [w for w in (conc.get("warning"),) if w]
+    if warnings:
+        plan["warnings"] = warnings
+    return plan
 
 
 def _parse_window_ts(row: Dict[str, Any]) -> Optional[datetime]:
