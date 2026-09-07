@@ -158,8 +158,9 @@ STATUSES
                           structural cap table (ollama-cloud): `available` is
                           the cap-table number, and a declared max_concurrent
                           may lower it, never raise it; or (b) the provider is
-                          a NO_CAP_PROVIDERS BYOK provider (deepseek-direct,
-                          openrouter, ...): `available` is UNBOUNDED, or the
+                          a NO_CAP_PROVIDERS BYOK provider (openrouter, or
+                          a client-declared provider with no CAP_TABLE row --
+                          F17): `available` is UNBOUNDED, or the
                           declared max_concurrent verbatim when the
                           operator/client chose to self-throttle this run --
                           there is no table ceiling to reconcile it against.
@@ -396,8 +397,10 @@ class CapacityUnmeasured(RuntimeError):
 # The UNBOUNDED sentinel -- "no cap", genuinely, never a large magic number
 # ---------------------------------------------------------------------------
 class _Unbounded:
-    """`available`'s value for a NO_CAP_PROVIDERS hit (deepseek-direct,
-    openrouter, ...): a real measurement ("this account has no structural
+    """`available`'s value for a NO_CAP_PROVIDERS hit (openrouter, or a
+    client-declared provider with no CAP_TABLE row -- F17; NOT
+    deepseek-direct, which became a cap-table provider on 2026-09-04):
+    a real measurement ("this account has no structural
     ceiling"), not an absence of one and not a stand-in integer like 999999
     that would eventually be wrong. A single module-level instance (UNBOUNDED,
     below) is the only one ever constructed; compare with `is`, not `==`,
@@ -1428,8 +1431,9 @@ def _resolve_override(record: dict, path: Path,
     reconcile against in the first place. The cases below are checked in THIS
     order on purpose:
 
-      0. provider resolves to a NO_CAP_PROVIDERS entry (deepseek-direct,
-         openrouter, ...) -> MEASURED, no matter what the plan says. "Do not
+      0. provider resolves to a NO_CAP_PROVIDERS entry (openrouter, or a
+         client-declared provider with no CAP_TABLE row -- F17)
+         -> MEASURED, no matter what the plan says. "Do not
          limit someone who brought their own capacity": `available` is the
          declared max_concurrent verbatim when given (a self-throttle is
          always honoured, and never clamped -- there is no table row to clamp
