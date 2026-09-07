@@ -263,6 +263,40 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.5b -- Owner Style Pick: recording the client's A/B/C reply (P-STYLE-PICK)
+
+**When to run:** The moment the client answers the style-preview request. `P-STYLE-PICK` (manifest id `P-STYLE-PICK`, order 4.86, executor kind `human`, owned by the Brand Steward) is the ONE guaranteed human gate in every deck: after `P-STYLE-PREVIEW` renders the 9 samples, the engine sends the client "pick ONE by replying A, B or C" and then waits **45 minutes** (`PHASE_BUDGET_MINUTES["P-STYLE-PICK"]`, overridable with `PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES`). If nothing verifiable lands in that window the run **parks BLOCKED** and the deck stops. A pick sitting in the chat that nobody recorded is the same as no pick at all.
+
+**Inputs:**
+- `working/style-preview/style_samples_manifest.json` (the offered `variants`, in manifest order -- this is the authoritative list)
+- the client's own reply message, and **its message id**
+
+**Steps:**
+1. Read the offered variant ids from `working/style-preview/style_samples_manifest.json`.
+2. Record the pick with the driver. This is the ONLY sanctioned writer of the choice file -- never hand-author `style_preview_choice.json`:
+
+   ```bash
+   python3 scripts/deck-intake-driver.py \
+     --run-dir "<RUN_DIR>" \
+     --style-pick B \
+     --owner-msg-id "<the id of the CLIENT's own A/B/C reply>"
+   ```
+
+   `A`/`B`/`C`, `a`/`b`/`c`, `variant b` and `1`/`2`/`3` all resolve against the offered list. The command writes `working/copy/style_preview_choice.json` in the exact shape the engine verifies: `owner_approved: true`, a `chosen_variant` from the offered set, and the `owner_msg_id`.
+3. **`--owner-msg-id` is mandatory and it must be the client's real message id.** The engine re-verifies it through the Fix 32 approvals oracle at the gate; an id that does not resolve to a real owner-authored message is DENIED (`AF-FORGED-APPROVAL`) and the phase keeps waiting. The command prints a pre-check result so a wrong id is caught while the client is still in the conversation -- never invent one, never reuse another gate's id, never substitute your own message id for the client's.
+4. The run continues on its own the moment the file verifies. Nothing else has to be dispatched.
+
+**The hands-off alternative (`style_pick_auto`):** if the client would rather not be a blocker, the intake's style turn (`style_and_brand`) carries a `style_pick_auto` subfield. Recorded `yes` -> `intake.style_pick_auto: true` -> when the 45-minute wait expires the engine writes the choice file itself for variant 1, stamped `auto_pick: true` with **no** `owner_msg_id` (it never forges one). Absent or `no` -> the phase parks and waits, as an owner decision should. A real pick that arrives in time always wins over the timeout. The opt-in is the client's to give: never record it on their behalf, and never write `auto_pick` from the recorder above.
+
+**Outputs:**
+- `working/copy/style_preview_choice.json` (`owner_approved`, `chosen_variant`, `owner_msg_id`)
+
+**Hand to:** the run continues to `P4-RENDER` on its own once the pick verifies.
+
+**Failure mode:** If the client replies with something that is not one of the offered variants, the command refuses and names the offered list -- ask them again with the variant ids in front of them. If the run has already parked BLOCKED on the timeout, record the pick with this same command and then resume the run; the choice is proven on re-entry and the phase completes without re-spamming the client.
+
+---
+
 ### SOP 9.6B -- Final-Hop Dispatch to the Delivery Concierge (the last mile)
 
 **When to run:** ONCE, after final Phase-6 QC PASS and after ALL speaker-facing deliverables exist. This is the step that connects the assembled deck to the client. R9-F7: without it the orchestration graph completes at the speaker-facing deliverables and the delivery hop never fires.
