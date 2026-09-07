@@ -80,23 +80,64 @@ always honoured; inventing an upward ceiling never is). UNBOUNDED is never
 a large magic integer -- see execution_plan.cap_wave_width(), which is what
 actually keeps a wave's width bounded by the number of items ready to run.
 
-DETECTION ORDER (first hit wins; every step is read-only)
----------------------------------------------------------
-    a. capacity_override.json in the department config dir -- an explicitly
-       declared {provider, plan, max_concurrent}.
-    b. the 9Router configuration -- which provider the primary model routes to
-       (~/.9router/db/data.sqlite, opened read-only; ONLY the non-secret
-       `combos.name` / `combos.models` columns are read).
-    c. the OpenClaw agent model configuration -- the provider namespace prefix
-       on the primary model (~/.openclaw/openclaw.json, `agents.*.model.primary`).
-    d. provider is on the cap table (ollama-cloud) but plan unknown -> emit the
-       interview question and PARK. The answer is persisted to
-       capacity_override.json so the question is asked ONCE, never every run.
-       A NO_CAP_PROVIDERS hit (deepseek-direct, openrouter, ...) never reaches
-       this step -- it resolves MEASURED/UNBOUNDED at step b or c regardless
-       of whether a plan could be determined, because no plan of theirs
-       changes the ceiling: there isn't one.
-    e. nothing found -> DEFAULT_CONSERVATIVE plus a loud UNDETERMINED line.
+DETECTION ORDER -- PER PROVIDER (F1, defect "one plan answer capped the run")
+-----------------------------------------------------------------------------
+THE DEFECT THIS ORDER REPLACES. The old order made `capacity_override.json`
+step (a): a file that names ONE provider pre-empted detection for the WHOLE
+box. A client who answered "ollama-cloud, $100/month" therefore ran their
+DeepSeek routes at 8 as well -- one account's plan answer wearing the whole
+client's clothes. `detect()` answered exactly one question ("what is this
+box's capacity") when the dispatch path asks a different one per route
+("what is THIS provider's capacity"), so no answer could be right for a
+two-provider client: whichever provider the single answer named, the other
+one was wrong (pinned by the override, or dropped to the conservative floor
+by the routing stamp's provider-identity check).
+
+THE ORDER NOW. detect()/probe() take `provider=` and `model=`; every answer
+is ABOUT ONE PROVIDER and says which one (`provider_requested` on the probe
+result). A no-arg call keeps its historical meaning -- "the PRIMARY route's
+account" -- for the launch gate, the wave scheduler and the work-order pool.
+
+  STAGE 1 -- which provider is this answer about?
+    1. the `provider=` argument, canonicalised through normalize_provider();
+    2. else the 9Router configuration -- which provider the primary model
+       routes to (~/.9router/db/data.sqlite, opened read-only; ONLY the
+       non-secret `combos.name` / `combos.models` columns are read);
+    3. else the OpenClaw agent model configuration -- the provider namespace
+       prefix on the primary model (~/.openclaw/openclaw.json,
+       `agents.*.model.primary`);
+    4. else the provider a declared capacity_override.json names (an
+       unconfigured box carrying a hand-written declaration is still telling
+       us which account it means).
+
+  STAGE 2 -- which plan is THAT provider on? First hit wins:
+    1. the model id, when the model IMPLIES the plan (DeepSeek Direct's
+       v4-pro / v4-flash slugs; Ollama Cloud's tiers run the same models, so
+       no slug can ever reveal them);
+    2. the resource profile's LOCKED entry for that provider -- the one
+       per-provider store of interview answers, and the ask-once gate;
+    3. the capacity_override.json sub-record FOR THAT PROVIDER (v2
+       `providers.<id>`, or a legacy v1 flat record when it names that
+       provider). A declaration about ollama-cloud is never consulted as an
+       answer about deepseek-direct;
+    4. no plan, provider is a NO_CAP_PROVIDERS / client-declared BYOK entry
+       -> MEASURED / UNBOUNDED (no plan of theirs changes a ceiling that
+       does not exist);
+    5. no plan, provider is on the STRUCTURAL cap table -> PARK behind the
+       one-time interview question for THAT provider;
+    6. no provider at all -> DEFAULT_CONSERVATIVE plus a loud UNDETERMINED.
+
+  STAGE 3 -- a declared `max_concurrent` for that provider may only LOWER the
+    resolved number, never raise it (the u07 hardening, unchanged).
+
+capacity_override.json survives ONLY as a per-provider operator self-throttle,
+honoured for the provider it names and no other. Its v2 shape is
+`{"schema": 2, "providers": {<canonical>: {plan?, max_concurrent?, note?}}}`;
+a legacy v1 flat `{provider, plan, max_concurrent}` record is READ as
+`providers: {record.provider: record}` in memory and is NEVER rewritten on
+read. The one-time interview answer's store is the RESOURCE PROFILE
+(resource_profile.record_plan_answer) -- one store, one lock, per provider.
+Two stores encoding one fact is the drift class this fix removes.
 
 CREDENTIAL SAFETY (binding)
 ---------------------------
@@ -285,6 +326,20 @@ SOURCE_OVERRIDE = "capacity_override.json"
 SOURCE_9ROUTER = "9router"
 SOURCE_OPENCLAW = "openclaw"
 SOURCE_NONE = "none"
+#: F1: the resource profile is the STORE of the one-time plan answer, so it
+#: is a first-class detection source -- not a mirror of the override file.
+SOURCE_PROFILE = "resource_profile.json"
+#: F1: the caller handed us the model it is about to route to, and the model
+#: id IMPLIED the plan (DeepSeek Direct's v4-pro/v4-flash).
+SOURCE_MODEL = "model-slug"
+#: F1: the caller named the provider and nothing else could corroborate it.
+SOURCE_REQUESTED = "provider-requested"
+
+#: The per-provider shape capacity_override.json is WRITTEN in today:
+#: {"schema": 2, "providers": {<canonical>: {plan?, max_concurrent?, note?}}}.
+#: A v1 flat {provider, plan, max_concurrent} record is still READ (scoped to
+#: the one provider it names) and is never rewritten on read.
+OVERRIDE_SCHEMA = 2
 
 OVERRIDE_FILENAME = "capacity_override.json"
 CONFIG_DIR_ENV = "PRESENTATION_CAPACITY_CONFIG_DIR"
@@ -1239,10 +1294,24 @@ def override_path(config_dir: Optional[Path] = None) -> Path:
 def read_override(config_dir: Optional[Path] = None) -> Tuple[Optional[dict], Optional[str]]:
     """Read the declared override. Returns (record, error).
 
-    Absent file -> (None, None): not an error, detection moves to step (b).
+    Absent file -> (None, None): not an error, detection moves on.
     Present but unreadable/not-JSON/not-an-object -> (None, reason): a HARD error.
     A declaration the operator wrote and we cannot parse is never downgraded to a
-    silent default -- that would hide their mistake behind a plausible number."""
+    silent default -- that would hide their mistake behind a plausible number.
+
+    TWO SHAPES ARE ACCEPTED (F1). The record is returned VERBATIM here;
+    _override_entries() below is what splits it into per-provider sub-records:
+
+      v2 (written today):  {"schema": 2,
+                            "providers": {"<canonical>": {"plan": ...,
+                                                          "max_concurrent": ...,
+                                                          "note": ...}, ...}}
+      v1 (legacy, READ-ONLY): {"provider": ..., "plan": ...,
+                               "max_concurrent": ...}
+
+    A v1 record is understood IN MEMORY as `providers: {record.provider:
+    record}` and is NEVER rewritten on read -- a client box keeps working
+    untouched, scoped to the one provider its file actually names."""
     path = override_path(config_dir)
     if not path.is_file():
         return None, None
@@ -1253,6 +1322,97 @@ def read_override(config_dir: Optional[Path] = None) -> Tuple[Optional[dict], Op
     if not isinstance(raw, dict):
         return None, f"{path} must contain a JSON object, found {type(raw).__name__}"
     return raw, None
+
+
+def _override_entries(record: Optional[dict],
+                      config_dir: Optional[Path] = None):
+    """Split a declared override into PER-PROVIDER sub-records.
+
+    Returns ``(entries, schema)``. Each entry is
+    ``{"canonical": <provider id or None>, "declared": <raw provider string>,
+    "record": <flat {provider, plan, max_concurrent, ...} dict>}`` -- the flat
+    dict is exactly what `_resolve_override()` already knows how to read, so
+    the three declaration cases (BYOK self-throttle / cap-table clamp /
+    unrecognised-and-bounded) are reused verbatim, one provider at a time.
+
+    A v2 record carries one sub-record per provider. A v1 flat record is
+    treated as ``{record["provider"]: record}`` and is never rewritten on
+    read. The point of the split is scope: a declaration about ollama-cloud
+    must never be readable as a statement about deepseek-direct, and before
+    F1 it was -- it pre-empted detection for the whole box."""
+    if not isinstance(record, dict):
+        return [], OVERRIDE_SCHEMA
+    providers_blob = record.get("providers")
+    looks_v2 = (record.get("schema") == OVERRIDE_SCHEMA
+                or (isinstance(providers_blob, dict) and "provider" not in record))
+    entries = []
+    if looks_v2:
+        if isinstance(providers_blob, dict):
+            for raw_key, sub_record in providers_blob.items():
+                if not isinstance(sub_record, dict):
+                    continue
+                flat = dict(sub_record)
+                flat.setdefault("provider", raw_key)
+                declared = _safe_value("provider", flat.get("provider"))
+                entries.append({
+                    "canonical": normalize_provider(declared, config_dir),
+                    "declared": declared,
+                    "record": flat,
+                })
+        return entries, OVERRIDE_SCHEMA
+    flat = dict(record)
+    declared = _safe_value("provider", flat.get("provider"))
+    entries.append({
+        "canonical": normalize_provider(declared, config_dir),
+        "declared": declared,
+        "record": flat,
+    })
+    return entries, 1
+
+
+def _override_entry_for(entries, provider: Optional[str]) -> Optional[dict]:
+    """The declared sub-record that names THIS provider, or None.
+
+    Returning None for every other provider IS the fix: a self-throttle the
+    operator typed about one account is not evidence about another one."""
+    if not provider:
+        return None
+    for entry in entries:
+        if entry.get("canonical") == provider:
+            return entry
+    return None
+
+
+def _plan_from_profile(provider: str,
+                       config_dir: Optional[Path] = None) -> Optional[str]:
+    """The plan tier the CLIENT ANSWERED for THIS provider, from the resource
+    profile -- the one per-provider store of interview answers.
+
+    Only a LOCKED / plan_known entry counts: an entry a probe merely created
+    is not an answer. Read-only, lazily imported (resource_profile imports
+    this module, so a module-level import would be circular), and it never
+    raises -- a box with no profile, a flag-disabled profile or a corrupt one
+    yields None and detection moves on."""
+    if not provider:
+        return None
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            import resource_profile as _rp  # type: ignore[no-redef]
+    except ImportError:
+        return None
+    try:
+        if not _rp.flag_enabled():
+            return None
+        entry = _rp.get_provider(_rp.load_profile(config_dir), provider)
+        if not entry:
+            return None
+        if not (entry.get("locked") or entry.get("plan_known")):
+            return None
+        return normalize_plan(entry.get("plan_tier"), provider)
+    except Exception:  # noqa: BLE001 -- a broken profile never breaks detection
+        return None
 
 
 def _resolve_override(record: dict, path: Path,
@@ -1384,35 +1544,110 @@ def _resolve_override(record: dict, path: Path,
                       f"NO_CAP_PROVIDERS entry, nor a positive integer max_concurrent"]}
 
 
-def persist_plan_answer(provider: str, plan: str,
-                        config_dir: Optional[Path] = None) -> Path:
-    """Write the interview answer to capacity_override.json -- asked ONCE.
+def declare_capacity(provider: str, *, plan: Optional[str] = None,
+                     max_concurrent: Optional[int] = None,
+                     config_dir: Optional[Path] = None) -> Path:
+    """Declare capacity for ONE provider in capacity_override.json (schema 2).
 
-    After this file exists, step (a) hits on every subsequent run and the
-    interview question is never emitted again. Returns the written path.
-    Raises ValueError on a provider/plan pair the cap table does not know."""
-    norm_provider = normalize_provider(provider)
-    norm_plan = normalize_plan(plan, norm_provider)
-    if not norm_provider or not norm_plan or (norm_provider, norm_plan) not in CAP_TABLE:
+    This is the operator/client SELF-THROTTLE writer, and after F1 it is the
+    only thing capacity_override.json is for. It MERGES: every other
+    provider's sub-record in the file survives the write, because a statement
+    about one account was never a statement about another and writing the
+    file as if it were is the defect F1 removes.
+
+    `plan` is validated against CAP_TABLE (an unknown tier is never persisted
+    as though it had been measured); `max_concurrent` is a positive int that
+    can only LOWER what the tables resolve, never raise it -- the clamp lives
+    in `_resolve_override()` and is unchanged.
+
+    Atomic (tmp + os.replace), same as the function it replaces. Returns the
+    written path. Raises ValueError on an unknown provider, an unknown
+    (provider, plan) pair, a non-positive max_concurrent, or a call that
+    declares nothing at all."""
+    norm_provider = normalize_provider(provider, config_dir)
+    norm_plan = None
+    if plan is not None:
+        norm_plan = normalize_plan(plan, norm_provider)
+        if (not norm_provider or not norm_plan
+                or (norm_provider, norm_plan) not in CAP_TABLE):
+            raise ValueError(
+                f"refusing to persist an unknown pair (provider={provider!r}, "
+                f"plan={plan!r}); known pairs: {sorted(CAP_TABLE)}"
+            )
+    if not norm_provider:
         raise ValueError(
-            f"refusing to persist an unknown pair (provider={provider!r}, plan={plan!r}); "
-            f"known pairs: {sorted(CAP_TABLE)}"
+            f"refusing to declare capacity for an unidentified provider "
+            f"(provider={provider!r}); a declaration has to say WHICH account "
+            f"it is about"
         )
+    if max_concurrent is not None:
+        if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int) \
+                or max_concurrent < 1:
+            raise ValueError(
+                f"refusing to declare max_concurrent={max_concurrent!r} for "
+                f"{norm_provider}: it must be a positive integer"
+            )
+    if norm_plan is None and max_concurrent is None:
+        raise ValueError(
+            f"refusing to write an empty declaration for {norm_provider}: pass a "
+            f"plan, a max_concurrent, or both"
+        )
+
     path = override_path(config_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # MERGE, never clobber: read whatever is there (v1 or v2) and keep every
+    # OTHER provider's sub-record.
+    existing, error = read_override(config_dir)
+    if error:
+        raise ValueError(
+            f"refusing to merge a declaration into an unreadable file: {error}")
+    entries, _schema = _override_entries(existing, config_dir)
+    providers = {}
+    for entry in entries:
+        key = entry.get("canonical") or entry.get("declared")
+        if not key:
+            continue
+        keep = {k: v for k, v in entry["record"].items() if k != "provider"}
+        providers[str(key)] = keep
+    sub_record = dict(providers.get(norm_provider) or {})
+    if norm_plan is not None:
+        sub_record["plan"] = norm_plan
+        # Deliberately NOT the cap-table number: CAP_TABLE is the single
+        # source of truth for what a tier allows, and copying it here would
+        # re-create the two-stores-one-fact drift F1 exists to remove.
+        sub_record.pop("max_concurrent", None)
+        sub_record["source"] = "interview"
+    if max_concurrent is not None:
+        sub_record["max_concurrent"] = max_concurrent
+        sub_record.setdefault("source", "declaration")
+    sub_record["declared_at"] = (
+        datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
+    providers[norm_provider] = sub_record
+
     payload = {
-        "provider": norm_provider,
-        "plan": norm_plan,
-        "max_concurrent": CAP_TABLE[(norm_provider, norm_plan)],
-        "source": "interview",
-        "answered_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "_note": "Written by capacity.py after the one-time capacity interview. "
-                 "Delete this file to be asked again.",
+        "schema": OVERRIDE_SCHEMA,
+        "providers": providers,
+        "_note": "Per-provider capacity declaration written by capacity.py. Each "
+                 "entry is honoured ONLY for the provider it names. The one-time "
+                 "plan interview's store is the resource profile, not this file; "
+                 "this file is the operator/client self-throttle.",
     }
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
     return path
+
+
+def persist_plan_answer(provider: str, plan: str,
+                        config_dir: Optional[Path] = None) -> Path:
+    """Deprecated alias for declare_capacity(provider, plan=plan).
+
+    Kept callable, with its exact positional signature, so existing callers
+    and tests keep working. The NAME is what was wrong: this never persisted
+    an "answer" in the ask-once sense -- the answer's store is the resource
+    profile (resource_profile.record_plan_answer). What it writes is a
+    per-provider DECLARATION."""
+    return declare_capacity(provider, plan=plan, config_dir=config_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -1665,33 +1900,53 @@ def measure_working_concurrent() -> tuple:
 # ---------------------------------------------------------------------------
 # The probe
 # ---------------------------------------------------------------------------
-def detect(config_dir: Optional[Path] = None) -> dict:
-    """Run the detection chain. Returns the resolution plus the audit trail.
+def detect(config_dir: Optional[Path] = None, *,
+           provider: Optional[str] = None,
+           model: Optional[str] = None) -> dict:
+    """Run the detection chain FOR ONE PROVIDER. Resolution + audit trail.
+
+    `provider` names the account the caller is asking about -- the ROUTED
+    provider, for a per-route width. Omitted (the historical no-arg call),
+    the question stays "what is the PRIMARY route's account?", answered by
+    the 9Router/OpenClaw detectors exactly as before. `model` is the model id
+    the caller is about to route to, for the providers whose model id implies
+    the plan (DeepSeek Direct).
+
+    See the module docstring's DETECTION ORDER for the two stages and why
+    they are two: before F1 a `capacity_override.json` naming ONE provider
+    pre-empted detection for the whole box, so one account's plan answer
+    capped every other account's routes.
 
     Never raises, never exits, never reads a credential value."""
     trail = []
     path = override_path(config_dir)
+    requested = provider
 
-    # (a) the declared override
+    # (a) the declared override. Read FIRST because a declaration we cannot
+    # PARSE is a hard fact about the box, whichever provider is in question --
+    # never silently downgraded to a plausible default.
     record, error = read_override(config_dir)
     if error:
         trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "ERROR",
                       "detail": error})
         return {"status": STATUS_FAILED, "provider": None, "plan": None,
                 "available": None, "source": SOURCE_OVERRIDE,
+                "provider_requested": requested,
                 "override_path": str(path), "trail": trail, "notes": [error]}
-    if record is not None:
-        resolved = _resolve_override(record, path, config_dir)
-        trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": resolved["status"],
-                      "detail": f"declared override at {path}: provider="
-                                f"{resolved['provider']}, plan={resolved['plan']}"})
-        resolved.update({"source": SOURCE_OVERRIDE, "override_path": str(path),
-                         "trail": trail})
-        return resolved
-    trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "MISS",
-                  "detail": f"no declared override at {path}"})
+    entries, schema = _override_entries(record, config_dir)
+    if record is None:
+        trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "MISS",
+                      "detail": f"no declared override at {path}"})
+    else:
+        named = ", ".join(str(e.get("canonical") or e.get("declared"))
+                          for e in entries) or "no provider"
+        trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "READ",
+                      "detail": f"declared override at {path} (schema {schema}) "
+                                f"names: {named} -- honoured ONLY for the "
+                                f"provider(s) it names"})
 
-    # (b) 9Router, then (c) OpenClaw
+    # (b) 9Router, then (c) OpenClaw: WHICH provider does this box route to?
+    detected = None
     for step, source, detector in (("b", SOURCE_9ROUTER, detect_from_9router),
                                    ("c", SOURCE_OPENCLAW, detect_from_openclaw)):
         found = detector()
@@ -1699,43 +1954,127 @@ def detect(config_dir: Optional[Path] = None) -> dict:
             trail.append({"step": step, "source": source, "result": "MISS",
                           "detail": found.get("detail", "")})
             continue
-        provider = found["provider"]
-        plan = found.get("plan")
         trail.append({"step": step, "source": source,
-                      "result": "HIT" if plan else "HIT (plan unknown)",
+                      "result": "HIT" if found.get("plan") else "HIT (plan unknown)",
                       "detail": found.get("detail", "")})
-        # NO_CAP_PROVIDERS (deepseek-direct, openrouter, ...): MEASURED and
-        # UNBOUNDED regardless of whether a plan was found -- no plan of
-        # theirs changes the ceiling, because there isn't one. Checked BEFORE
-        # the structural cap-table lookup so a BYOK provider never falls
-        # through to PARK.
-        if is_no_cap_provider(provider, config_dir):
-            return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
-                    "available": UNBOUNDED, "source": source,
-                    "override_path": str(path), "trail": trail,
-                    "notes": [f"{provider} is {_no_cap_kind(provider)} -- "
-                              f"available is UNBOUNDED"]}
-        if plan and (provider, plan) in CAP_TABLE:
-            return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
-                    "available": CAP_TABLE[(provider, plan)], "source": source,
-                    "override_path": str(path), "trail": trail, "notes": []}
-        # (d) provider is on the structural cap table (ollama-cloud), plan
-        # unknown -> PARK behind the interview question.
-        trail.append({"step": "d", "source": source, "result": "PARK",
-                      "detail": f"provider {provider} detected but its plan cannot be "
-                                f"read from any configuration -- asking once"})
-        return {"status": STATUS_PARKED, "provider": provider, "plan": None,
-                "available": None, "source": source, "override_path": str(path),
-                "trail": trail,
-                "notes": [f"answer persists to {path}; the question is asked ONCE"]}
+        detected = {"provider": found.get("provider"), "plan": found.get("plan"),
+                    "source": source}
+        break
 
-    # (e) nothing found
-    trail.append({"step": "e", "source": SOURCE_NONE, "result": "UNDETERMINED",
-                  "detail": f"no provider could be determined from any source; falling "
-                            f"back to DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE}"})
-    return {"status": STATUS_UNDETERMINED, "provider": None, "plan": None,
-            "available": DEFAULT_CONSERVATIVE, "source": SOURCE_NONE,
-            "override_path": str(path), "trail": trail, "notes": []}
+    # --- STAGE 1: which provider is this answer ABOUT?
+    if requested is not None:
+        target = normalize_provider(requested, config_dir)
+        trail.append({"step": "1", "source": SOURCE_REQUESTED,
+                      "result": "HIT" if target else "UNRESOLVED",
+                      "detail": f"caller asked about provider {requested!r} -> "
+                                f"{target!r}"})
+    elif detected is not None:
+        target = detected["provider"]
+    elif entries:
+        # An unconfigured box carrying a hand-written declaration: the file is
+        # the only thing that says which account this is. When it names
+        # SEVERAL, the FIRST one in the file wins and the trail says so -- it
+        # is the operator's own ordering, it is deterministic, and a caller
+        # that needs a specific account passes provider= rather than relying
+        # on it. Silently min()-ing across the declared providers here is the
+        # exact "one provider's number stands in for the box" shape this fix
+        # removes.
+        identified = [e["canonical"] for e in entries if e["canonical"]]
+        target = identified[0] if identified else None
+        if len(identified) > 1:
+            trail.append({"step": "1", "source": SOURCE_OVERRIDE,
+                          "result": "AMBIGUOUS",
+                          "detail": f"no primary route detected and the declaration "
+                                    f"names {identified}; answering about the first, "
+                                    f"{target!r} -- pass provider= to ask about "
+                                    f"another"})
+    else:
+        target = None
+
+    entry = _override_entry_for(entries, target)
+    if entry is None and target is None and requested is None and entries:
+        # A declaration about a provider nothing can identify is still the only
+        # evidence on this box; case 3 of _resolve_override is the honest
+        # answer to it (DECLARED_UNVERIFIED, bounded, never MEASURED).
+        entry = entries[0]
+
+    if target is None and entry is None:
+        detail = (f"provider {requested!r} does not resolve to any cap-table row, "
+                  f"NO_CAP_PROVIDERS entry or client-declared provider"
+                  if requested is not None else
+                  "no provider could be determined from any source")
+        trail.append({"step": "e", "source": SOURCE_NONE, "result": "UNDETERMINED",
+                      "detail": f"{detail}; falling back to "
+                                f"DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE}"})
+        return {"status": STATUS_UNDETERMINED, "provider": None, "plan": None,
+                "available": DEFAULT_CONSERVATIVE, "source": SOURCE_NONE,
+                "provider_requested": requested,
+                "override_path": str(path), "trail": trail, "notes": []}
+
+    # --- STAGE 2: which plan is THAT provider on? First hit wins.
+    plan = None
+    plan_source = None
+    if target:
+        if model:
+            candidate = _plan_from_model_slug(target, str(model))
+            if candidate:
+                plan, plan_source = candidate, SOURCE_MODEL
+        if plan is None and detected is not None \
+                and detected["provider"] == target and detected.get("plan"):
+            plan, plan_source = detected["plan"], detected["source"]
+        if plan is None:
+            candidate = _plan_from_profile(target, config_dir)
+            if candidate:
+                plan, plan_source = candidate, SOURCE_PROFILE
+                trail.append({"step": "2", "source": SOURCE_PROFILE, "result": "HIT",
+                              "detail": f"the resource profile carries a locked plan "
+                                        f"for {target}: {candidate}"})
+        if plan is None and entry is not None:
+            candidate = normalize_plan(
+                _safe_value("plan", entry["record"].get("plan")), target)
+            if candidate:
+                plan, plan_source = candidate, SOURCE_OVERRIDE
+
+    # --- STAGE 3: resolve it. A declared max_concurrent may only LOWER.
+    declared_record = dict(entry["record"]) if entry is not None else {}
+    synthetic = {
+        "provider": target if target is not None else (
+            requested if requested is not None else declared_record.get("provider")),
+        "plan": plan,
+        "max_concurrent": declared_record.get("max_concurrent"),
+    }
+    resolved = _resolve_override(synthetic, path, config_dir)
+
+    if resolved["status"] == STATUS_PARKED and entry is None:
+        # PARK reached without any declaration to blame: say so accurately
+        # rather than pointing at a file that does not mention this provider.
+        resolved["notes"] = [
+            f"{target} is on the structural cap table but no plan is known for it "
+            f"-- not from the routed model id, not from the resource profile, and "
+            f"not from any declaration at {path}. The answer's store is the "
+            f"resource profile (asked ONCE, then locked)."]
+
+    if plan_source:
+        source = plan_source
+    elif detected is not None and target is not None \
+            and detected["provider"] == target:
+        source = detected["source"]
+    elif entry is not None:
+        source = SOURCE_OVERRIDE
+    elif requested is not None:
+        source = SOURCE_REQUESTED
+    else:
+        source = SOURCE_NONE
+
+    if resolved["status"] == STATUS_PARKED:
+        trail.append({"step": "d", "source": source, "result": "PARK",
+                      "detail": f"provider {resolved['provider']} is on the "
+                                f"structural cap table but its plan is unknown "
+                                f"-- asking once"})
+
+    resolved.update({"source": source, "override_path": str(path),
+                     "provider_requested": requested, "trail": trail})
+    return resolved
 
 
 def resource_profile_surface(config_dir: Optional[Path] = None,
@@ -1829,17 +2168,26 @@ def provider_probes_surface(transport: Optional[callable] = None) -> dict:
         surface["error"] = f"{exc.__class__.__name__}: {exc}"
     return surface
 
-def probe(config_dir: Optional[Path] = None) -> dict:
+def probe(config_dir: Optional[Path] = None, *,
+          provider: Optional[str] = None,
+          model: Optional[str] = None) -> dict:
     """The main entry point. Read-only; never mutates anything, never exits.
 
-    Signature-compatible with the previous version (`probe()` with no arguments
-    is the call every existing caller makes). Returns the measured budget:
+    Signature-compatible with every existing caller: `probe()` with no
+    arguments still asks "what is the PRIMARY route's account?" (the launch
+    gate, the wave scheduler and the work-order pool all legitimately want a
+    client-level answer), and `probe(config_dir)` positionally still works.
+
+    F1 adds the per-ROUTE form: `probe(provider=..., model=...)` answers about
+    THAT account and nothing else. The result carries `provider_requested` so
+    a caller (the routing stamp) can assert the answer is about the provider
+    it asked about, rather than inferring it.
 
         available     int  -> the number of agents this account may run at once
         available     None -> the probe COULD NOT produce a number; the dispatch
                               path must refuse with AF-CAPACITY-UNMEASURED
     """
-    resolution = detect(config_dir)
+    resolution = detect(config_dir, provider=provider, model=model)
     working, method, ok = measure_working_concurrent()
     available = resolution["available"]
     result = {
@@ -1848,6 +2196,7 @@ def probe(config_dir: Optional[Path] = None) -> dict:
         "status": resolution["status"],
         "undetermined": resolution["status"] == STATUS_UNDETERMINED,
         "provider": resolution["provider"],
+        "provider_requested": resolution.get("provider_requested"),
         "plan": resolution["plan"],
         "detection_source": resolution["source"],
         "detection_trail": resolution["trail"],
@@ -1935,6 +2284,48 @@ def refusal_message(result: dict) -> str:
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
+def report_provider_rows(result: dict) -> list:
+    """One row PER PROVIDER for the operator report: provider, plan, ceiling,
+    whether the ask-once question was answered, and where that came from.
+
+    Sourced from the resource profile surface (the per-provider store), plus
+    the provider THIS probe answered about when the profile has never heard
+    of it. A single-provider report is how a plan answer about ONE account
+    came to be read as a statement about the whole box: an operator looking
+    at "Provider: ollama-cloud / Dispatchable: 8" had no way to see that
+    their DeepSeek routes were being capped by it."""
+    rows = {}
+    surface = result.get("resource_profile") or {}
+    for entry in surface.get("providers") or []:
+        if not isinstance(entry, dict):
+            continue
+        pid = entry.get("provider")
+        if not pid:
+            continue
+        rows[pid] = {
+            "provider": pid,
+            "plan": entry.get("plan_tier"),
+            "ceiling": entry.get("concurrency_ceiling"),
+            "answered": bool(entry.get("plan_known")),
+            "source": SOURCE_PROFILE,
+            "probed": False,
+        }
+    probed = result.get("provider")
+    if probed:
+        row = rows.get(probed)
+        if row is None:
+            row = {"provider": probed, "plan": None, "ceiling": None,
+                   "answered": False, "source": None, "probed": False}
+            rows[probed] = row
+        if row.get("plan") is None:
+            row["plan"] = result.get("plan")
+        if row.get("ceiling") is None:
+            row["ceiling"] = result.get("available")
+        row["source"] = result.get("detection_source") or row.get("source")
+        row["probed"] = True
+    return [rows[key] for key in sorted(rows)]
+
+
 def format_report(result: dict) -> str:
     """Human-readable report + machine-greppable JSON block.
 
@@ -1942,7 +2333,10 @@ def format_report(result: dict) -> str:
     acceptance greps succeed:
       grep '"probe_mode"'  -> "probe_mode": "live"
       grep '"available"'   -> the cap for THIS account (or null when unmeasured)
-    """
+
+    F1: the report prints a PER-PROVIDER table, because capacity is a
+    per-provider fact and printing one number for a multi-provider client is
+    how the defect stayed invisible."""
     lines = [
         "CAPACITY PROBE -- Presentations department (client-capacity detection)",
         f"Probe mode: {result.get('probe_mode')} (never SIMULATED)",
@@ -1989,6 +2383,25 @@ def format_report(result: dict) -> str:
     ]
     for note in result.get("notes") or []:
         lines.append(f"Note: {note}")
+    rows = report_provider_rows(result)
+    if rows:
+        lines.append(
+            "Providers on this box -- each provider's OWN ceiling (a plan answer "
+            "about one account is never a statement about another):")
+        for row in rows:
+            ceiling = row.get("ceiling")
+            if is_unbounded(ceiling):
+                ceiling_txt = "UNBOUNDED"
+            elif ceiling is None:
+                ceiling_txt = "UNMEASURED"
+            else:
+                ceiling_txt = str(ceiling)
+            lines.append(
+                f"  {row['provider']}: plan {row.get('plan') or 'UNKNOWN'}, "
+                f"ceiling {ceiling_txt}, "
+                f"plan answered: {'yes' if row.get('answered') else 'no'}, "
+                f"source {row.get('source') or 'none'}"
+                + ("   <- this probe" if row.get("probed") else ""))
     probes = result.get("provider_probes") or {}
     if probes.get("providers"):
         lines.append("Provider inventory (FIX 9 -- key presence, never a value):")
@@ -2016,6 +2429,35 @@ def format_report(result: dict) -> str:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def record_plan_answer(provider: str, plan: str,
+                       config_dir: Optional[Path] = None) -> Path:
+    """The `--answer-plan` writer. THE STORE IS THE RESOURCE PROFILE.
+
+    F1/F2: the profile is the one per-provider home for an interview answer,
+    and it is what the governor's reserve (governor._plan_tier_inflight) and
+    every ask-once gate (resource_profile.pending_questions) already read.
+    Writing the answer into capacity_override.json as well was the projection
+    that let one provider's tier cap the whole box.
+
+    A v2 declaration IS written when the profile is switched off
+    (PRESENTATION_RESOURCE_PROFILE=0), because that documented rollback still
+    needs a durable home for the answer -- never a silent no-op.
+
+    Returns the path actually written."""
+    rp = None
+    try:
+        try:
+            from . import resource_profile as rp  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            import resource_profile as rp  # type: ignore[no-redef]
+    except ImportError:
+        rp = None
+    if rp is not None and rp.flag_enabled():
+        rp.record_plan_answer(provider, plan, config_dir)
+        return rp.profile_path(config_dir)
+    return declare_capacity(provider, plan=plan, config_dir=config_dir)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="capacity.py",
@@ -2027,8 +2469,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--answer-plan", metavar="PLAN",
-        help="Persist the capacity-interview answer (e.g. '$20', '$100', 'v4 Pro', "
-             "'v4 Flash') to capacity_override.json so it is asked ONCE.",
+        help="Record the capacity-interview answer (e.g. '$20', '$100', 'v4 Pro', "
+             "'v4 Flash') for ONE provider so it is asked ONCE. The store is the "
+             "resource profile; a capacity_override.json declaration is written "
+             "only when the profile is switched off "
+             "(PRESENTATION_RESOURCE_PROFILE=0).",
     )
     parser.add_argument(
         "--provider", metavar="PROVIDER",
@@ -2055,7 +2500,7 @@ def main(argv: Optional[list] = None) -> int:
                   f"(one of {sorted(PLANS_BY_PROVIDER)})", file=sys.stderr)
             return 2
         try:
-            written = persist_plan_answer(provider, args.answer_plan, config_dir)
+            written = record_plan_answer(provider, args.answer_plan, config_dir)
         except (ValueError, OSError) as exc:
             print(f"capacity: {exc}", file=sys.stderr)
             return 2
