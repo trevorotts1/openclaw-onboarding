@@ -2664,8 +2664,21 @@ def _prompt_parallel_enabled() -> bool:
     return raw.strip().strip("'\"") != "0"
 
 
-def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
-    """FIX 7 profile-driven routing stamp for the P4-PROMPT wave input.
+def _routing_stamp(run_dir: Optional[Path] = None,
+                   phase_id: str = "P4-PROMPT") -> Dict[str, Any]:
+    """FIX 7 profile-driven routing stamp for a phase that decides a WIDTH.
+
+    F6 (2026-09-06): renamed from `_prompt_routing_stamp` -- this stamp is not
+    P4-PROMPT-specific. It is the ONE authority that turns (client resource
+    profile -> route -> capacity probe -> mode ceiling) into a worker-slot
+    count, and `_dispatch_phase_fanout_units` now reads the SAME number for
+    every manifest-declared fan-out phase instead of the manifest's
+    `phase.workers` (absent => 1). `phase_id` selects the route (its
+    capability lookup) and names the sidecar rows; it defaults to "P4-PROMPT"
+    so the pre-F6 call shape -- and the `_prompt_routing_stamp` alias kept
+    below for existing callers/tests -- behaves byte-identically.
+
+    Original contract, unchanged: the P4-PROMPT wave input.
     Resolves the route through model_router.resolve_route (the client resource
     profile decides), falling back to the pre-FIX-7 DeepSeek-direct stamp when
     the router is absent/flagged off/profile not yet captured. The wave input
@@ -2710,7 +2723,7 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
         return stamp
     decision: Optional[Dict[str, Any]] = None
     try:
-        decision = _model_router.resolve_route("P4-PROMPT", mode=_mode)
+        decision = _model_router.resolve_route(phase_id, mode=_mode)
         route = (decision or {}).get("route")
         if decision.get("profile_state") == "has_providers" and route:
             stamp.update({
@@ -2759,7 +2772,7 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 # recorded, not a dead wave.)
                 provider_unresolved = (probe_canon is None or routed_canon is None)
                 if provider_unresolved:
-                    _msg = (f"P4-PROMPT routing stamp: provider identity is "
+                    _msg = (f"{phase_id} routing stamp: provider identity is "
                             f"UNRESOLVABLE against the capacity cap table -- "
                             f"routed={routed_provider!r}->{routed_canon!r}, "
                             f"probed={probe_provider!r}->{probe_canon!r}. The "
@@ -2769,7 +2782,7 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                             f"capacity_status=provider-unresolved.")
                     print(f"WARNING: {_msg}", file=sys.stderr, flush=True)
                     try:
-                        _append_sidecar(run_dir, "P4-PROMPT", {
+                        _append_sidecar(run_dir, phase_id, {
                             "status": "routing_provider_unresolved",
                             "reason": _msg,
                             "routed_provider": routed_provider,
@@ -2810,7 +2823,7 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
                 stamp["capacity_source"] = type(cap_exc).__name__
     except Exception as exc:  # noqa: BLE001 -- stamp failure never breaks P4
         try:
-            _append_sidecar(run_dir, "P4-PROMPT", {
+            _append_sidecar(run_dir, phase_id, {
                 "status": "routing_stamp_error", "reason": f"{type(exc).__name__}: {exc}"})
         except Exception:  # noqa: BLE001
             pass
@@ -2836,6 +2849,13 @@ def _prompt_routing_stamp(run_dir: Optional[Path] = None) -> Dict[str, Any]:
         # computed never widens the wave: the measured width stands, labelled.
         stamp["mode_cap_error"] = f"{type(cap_exc).__name__}: {cap_exc}"
     return stamp
+
+
+# F6 back-compat: `_prompt_routing_stamp` was the pre-rename name and is what
+# tests/test_defect5_routing_stamp_provider_identity.py,
+# tests/test_fix11_mode_axis.py and wave_contract.py's docstring name. Keeping
+# the alias means the rename is a rename, not a break.
+_prompt_routing_stamp = _routing_stamp
 
 
 def _emit_slide_author_telemetry(run_dir: Path, rows: List[Dict[str, Any]]) -> None:
@@ -2933,7 +2953,7 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # validate), no longer a hand-built dict that could drift from the
     # worker's validate_input. The contract validates BEFORE the file is
     # written or the worker is invoked -- a bad contract fails here, named.
-    routing = _prompt_routing_stamp(run_dir=run_dir)
+    routing = _routing_stamp(run_dir=run_dir, phase_id=phase_id)
     if _wave_contract is not None:
         contract = _wave_contract.WaveContract(
             run_id=run_dir.name,
@@ -3543,7 +3563,10 @@ def _dispatch_prompt_phase_fanout(run_dir: Path, order: Dict[str, Any], *, dept_
             run_dir=run_dir, order=order, dept_root=dept_root, worker_id=worker_id,
             n=n, owning_role=owning_role, phase_id=phase_id)
 
-        env_key = "PRESENTATION_PHASE_WORKERS_" + re.sub(r"[^A-Za-z0-9]+", "_", phase_id).strip("_")
+        # F6: the sanitised name lives in ONE place now (fanout.py) so the
+        # manifest fan-out path below reads the same override an operator can
+        # actually export from a shell.
+        env_key = fanout.phase_worker_env_var(phase_id)
         effective_workers = fanout.resolve_effective_workers(
             phase_workers, len(units), env_var=env_key)
 
@@ -3937,9 +3960,36 @@ def _dispatch_phase_fanout_units(
         })
         return DispatchResult(phase_id, "error", 0, [reason])
 
+    # F6 (review 3.8, 2026-09-06) -- THE WIDTH.
+    #
+    # This used to pass `phase_obj.workers` as the first term of
+    # resolve_effective_workers' min(). `Phase.workers` defaults to 1 when the
+    # manifest omits it (manifest.py:233) and EIGHT of the nine fan-out phases
+    # in the shipped manifest omit it (P4-COPY, P-U-DESIGN-SALES/CHECKOUT/VSL,
+    # P-PROMPT-QC, P-STYLE-SPEC, P-IMAGE-QC, P9-SPEECH -- only P4-PROMPT, which
+    # never reaches this function, declares workers:12). A cap of 1 is a
+    # SERIAL phase: 20-25 language-model calls one after another, twice per
+    # deck, in every QC phase. `capacity_available` was never passed either,
+    # so the measured ceiling had no say at all.
+    #
+    # The manifest's `fanout` field IS the opt-in flag -- this function is only
+    # reached when _phase_fanout_spec() returned one -- so `workers` is not a
+    # cap here. The width now comes from the SAME authority P4-PROMPT's wave
+    # uses: _routing_stamp -> (client resource profile -> route -> capacity
+    # probe -> mode ceiling) -> measured_capacity, then min'd against the unit
+    # count and the per-phase env override. A stamp that cannot resolve a route
+    # already falls back to DEFAULT_MAX_WORKERS (8), labelled -- never to 1.
     from presentation_job.fanout import resolve_effective_workers
+    routing = _routing_stamp(run_dir=run_dir, phase_id=phase_id)
+    try:
+        routed_width = int(routing.get("measured_capacity") or DEFAULT_MAX_WORKERS)
+    except (TypeError, ValueError):  # a stamp that lied about its own shape
+        routed_width = DEFAULT_MAX_WORKERS
+    if routed_width < 1:
+        routed_width = DEFAULT_MAX_WORKERS
     effective_workers = resolve_effective_workers(
-        phase_obj.workers if phase_obj is not None else 1, unit_count=len(items))
+        routed_width, unit_count=len(items),
+        env_var=fanout.phase_worker_env_var(phase_id))
 
     def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
         try:
@@ -3989,6 +4039,8 @@ def _dispatch_phase_fanout_units(
             "worker": worker_id, "attempt": sum(r.attempts for r in results),
             "status": "exhausted", "failed_units": [r.key for r in failed],
             "reasons": reasons,
+            "workers": effective_workers, "routed_width": routed_width,
+            "capacity_status": routing.get("capacity_status"),
         })
         return DispatchResult(phase_id, "exhausted",
                               sum(r.attempts for r in results), reasons)
@@ -4025,6 +4077,8 @@ def _dispatch_phase_fanout_units(
         "worker": worker_id, "attempt": len(results),
         "status": "verified" if ok else "failed", "verifier_ok": ok,
         "verifier_reasons": reasons, "units": len(results),
+        "workers": effective_workers, "routed_width": routed_width,
+        "capacity_status": routing.get("capacity_status"),
     })
     if ok:
         return DispatchResult(phase_id, "ok", len(results), [],
