@@ -74,6 +74,17 @@ _WALK_RE = re.compile(
     re.S,
 )
 
+# F3 added helper functions the walk-loop body CALLS (file_mtime,
+# verify_engine_running, engine_stderr_tail, ledger_sha256) plus the variables
+# they read. The harness below extracts that block VERBATIM from the shipped
+# script rather than re-stubbing it, for the same reason the body itself is
+# extracted: a hand-written stand-in is a second implementation, and the one
+# that ships is then never the one under test.
+_HELPERS_RE = re.compile(
+    r"# >>> POLLER-LAUNCH-VERIFY-BEGIN\n(?P<block>.*?)# <<< POLLER-LAUNCH-VERIFY-END",
+    re.S,
+)
+
 # The exact refusal the real launcher emits when notify_gate fails closed
 # (presentation_job/notify_preflight.py: AF_NOTIFY_UNCONFIGURED, and
 # launcher.py's `REFUSING to dispatch` line). EXIT_NOTIFY_UNCONFIGURED = 8.
@@ -95,7 +106,48 @@ exit 0
 """
 
 _REFUSING_LAUNCHER = f'echo "{_AF_LINE}"\n    exit 8'
-_SUCCEEDING_LAUNCHER = 'echo "launcher: dispatched (stub)"\n    exit 0'
+
+#: A launcher stub that SUCCEEDS -- and, since F3, a stub that exits 0 while
+#: leaving nothing running is no longer a successful launch, it is precisely
+#: the historical lie (two one-second engine deaths reported as "2 launched").
+#: So this stub leaves exactly the evidence a real success leaves: a live
+#: process, its pid recorded where launcher._record_engine_pid records one,
+#: and a .job.lock naming that pid the way state.RunLock.__enter__ writes it.
+#: The background process detaches its fds so it cannot hold the harness's
+#: stdout pipe open (a stub that does would hang subprocess.run for its whole
+#: lifetime and turn every leg into a timeout).
+_SUCCEEDING_LAUNCHER = """_dir=""
+    _prev=""
+    for _a in "$@"; do
+      if [ "$_prev" = "--run-dir" ]; then _dir="$_a"; fi
+      _prev="$_a"
+    done
+    _epid=""
+    if [ -n "$_dir" ]; then
+      sleep 20 >/dev/null 2>&1 </dev/null &
+      _epid=$!
+      printf '%s\\n' "$_epid" > "$_dir/.engine.pid"
+      printf '%s stub-engine\\n' "$_epid" > "$_dir/.job.lock"
+    fi
+    echo "launcher: dispatched (stub) pid ${_epid:-none}"
+    exit 0"""
+
+#: A launcher stub that exits 0 and leaves NOTHING running -- the exact shape
+#: of the 2026-09-06 defect (launcher.dispatch returns 0 on a successful
+#: Popen; the forked engine died on EXIT_MANIFEST_MISMATCH about a second
+#: later). Pre-F3 this counted as a launch.
+_DEAD_ENGINE_LAUNCHER = 'echo "launcher: dispatched (stub, engine dies immediately)"\n    exit 0'
+
+
+def _extract_launch_verify_helpers(src: str) -> str:
+    m = _HELPERS_RE.search(src)
+    assert m, (
+        "could not find the POLLER-LAUNCH-VERIFY block in the poll script -- "
+        "the walk-loop body calls file_mtime/verify_engine_running/"
+        "engine_stderr_tail/ledger_sha256 and this harness must run the "
+        "SHIPPED definitions, never a stand-in."
+    )
+    return m.group("block").rstrip("\n")
 
 
 def _extract_walk_body(src: str) -> str:
@@ -169,6 +221,13 @@ def _run_harness(body: str, tmp_path: Path, launcher_body: str,
         "log() {",
         '    echo "$(date \'+%Y-%m-%dT%H:%M:%S%z\') [$PROG] $*" >> "$LOG_FILE"',
         "}",
+        # F3 settle window. The real default is 8 s and is asserted
+        # statically below; the check short-circuits the instant an engine is
+        # proven running, so only a FAILING dispatch pays the window and 1 s
+        # is enough to exercise the same code path without 8 s per leg.
+        "export PRESENTATION_LAUNCH_VERIFY_S=1",
+        # The SHIPPED helper block, extracted verbatim -- not a stand-in.
+        _extract_launch_verify_helpers(POLL_SCRIPT.read_text(encoding="utf-8")),
         # read_run_mode is stubbed to "undeclared" (the launcher default
         # applies) so this test exercises accounting, not mode routing.
         "read_run_mode() { :; }",
@@ -185,6 +244,7 @@ def _run_harness(body: str, tmp_path: Path, launcher_body: str,
         "SKIPPED_NO_INTAKE=0",
         "SKIPPED_TERMINAL=0",
         "SKIPPED_LEASE_HELD=0",
+        "SKIPPED_REFUSED_STICKY=0",
         "LEASE_TAKEOVERS=0",
         "RUN_DIRS_SEEN=0",
         'RUN_MODE=""',
@@ -250,8 +310,14 @@ def test_no_continue_in_the_walk_loop_is_silent():
     src = POLL_SCRIPT.read_text(encoding="utf-8")
     body = _extract_walk_body(src)
     lines = body.splitlines()
+    # SKIPPED_REFUSED_STICKY (F4) joined the set when the poller learned to
+    # remember an unresolvable intake ledger instead of re-refusing it every
+    # five minutes. The RULE is unchanged -- every `continue` must increment
+    # SOME counter -- and a new exit from the walk needs a counter of its own
+    # precisely so it stays visible in the summary and the telemetry event.
     counters = ("SKIPPED_NO_INTAKE", "SKIPPED_TERMINAL", "SKIPPED_RUNNING",
-                "SKIPPED_LEASE_HELD", "REFUSED_DISPATCH", "NEW_LAUNCHES")
+                "SKIPPED_LEASE_HELD", "SKIPPED_REFUSED_STICKY",
+                "REFUSED_DISPATCH", "NEW_LAUNCHES")
     silent = []
     for i, line in enumerate(lines):
         if line.strip() != "continue":
@@ -347,14 +413,54 @@ def test_prefix_unconditional_increment_would_have_lied(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_successful_dispatch_is_counted_as_a_launch(tmp_path):
-    """A launcher that EXITS 0 must be counted. Without this leg, "0
-    launched" above would also be satisfied by a counter that can never
-    increment -- the class of broken check the negative-result contract
-    warns about."""
+    """A launcher that exits 0 AND leaves an engine RUNNING must be counted.
+    Without this leg, "0 launched" above would also be satisfied by a counter
+    that can never increment -- the class of broken check the negative-result
+    contract warns about.
+
+    F3 changed what this leg has to stand up: "the launcher exited 0" is no
+    longer the definition of a launch, because that is exactly what the
+    2026-09-06 defect satisfied twice every five minutes while nothing ran.
+    The stub therefore leaves what a real success leaves -- a live process, a
+    recorded pid, a .job.lock naming it. That makes this control STRICTLY
+    stronger than it was: it now fails both if the counter is nailed to zero
+    AND if the running-engine proof is nailed to true."""
     body = _extract_walk_body(POLL_SCRIPT.read_text(encoding="utf-8"))
     log_text = _run_harness(body, tmp_path, _SUCCEEDING_LAUNCHER)
 
     assert "scan complete: 1 launched, 0 refused" in log_text, (
-        "a SUCCESSFUL dispatch was not counted as a launch -- the counter may "
-        "be nailed to zero. Log:\n" + log_text
+        "a SUCCESSFUL dispatch (rc 0, engine alive, .job.lock taken) was not "
+        "counted as a launch -- the counter may be nailed to zero. Log:\n"
+        + log_text
+    )
+    assert "LAUNCHED: engine pid" in log_text, (
+        "the poller counted a launch without naming the evidence it counted "
+        "-- verify_engine_running's finding must reach the log. Log:\n"
+        + log_text
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5. F3 -- rc 0 with a DEAD engine is a refusal, not a launch.
+# ---------------------------------------------------------------------------
+
+def test_rc_zero_with_no_running_engine_is_refused(tmp_path):
+    """The measured 2026-09-06 defect, pinned. launcher.dispatch() returns 0
+    the instant subprocess.Popen() succeeds; the two engines it forked at
+    13:40, 13:45 and 13:50 each died about a second later on
+    EXIT_MANIFEST_MISMATCH. The summary line said "2 launched" every time.
+
+    Here the launcher stub exits 0 and leaves NOTHING running -- no pid, no
+    .job.lock. That must read as 0 launched / 1 refused. This is the leg that
+    fails on pristine main, where rc 0 alone was the whole verdict."""
+    body = _extract_walk_body(POLL_SCRIPT.read_text(encoding="utf-8"))
+    log_text = _run_harness(body, tmp_path, _DEAD_ENGINE_LAUNCHER)
+
+    assert "scan complete: 0 launched, 1 refused" in log_text, (
+        "a dispatch that exited 0 while leaving NO running engine was counted "
+        "as a launch -- that is the exact historical lie. Log:\n" + log_text
+    )
+    assert "no engine is RUNNING" in log_text, (
+        "the poller did not say why it refused to count the launch:\n"
+        + log_text
     )

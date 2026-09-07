@@ -101,7 +101,14 @@ def _walk_candidates(root: Path, scan_depth: int):
 
     Bounded and iterative -- NOT rglob, which can stall for minutes on a large
     tree (same reasoning as watchdog._find_state_files). A run dir is not
-    descended into: a deck's own working/ subtree never holds another run."""
+    descended into: a deck's own working/ subtree never holds another run.
+
+    F4: a directory whose NAME starts with "_" is a shelf, not a run --
+    _parked/, _archive/, _retired/ -- and is neither yielded nor descended
+    into. Discovery exists to find runs nobody registered; a run a human
+    deliberately shelved is not one of those, and --ingest would otherwise
+    retroactively mint a state.json for it and hand it back to the watchdog
+    and the poller as live work."""
     frontier = [root]
     for _ in range(scan_depth):
         next_frontier: List[Path] = []
@@ -111,6 +118,8 @@ def _walk_candidates(root: Path, scan_depth: int):
             except OSError:
                 continue
             for entry in entries:
+                if entry.name.startswith("_"):
+                    continue
                 yield entry
                 if not _is_run_dir(entry):
                     next_frontier.append(entry)

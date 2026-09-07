@@ -183,9 +183,17 @@ def _dispatch_engine_if_idle(run_dir) -> None:
         terminal = st.get("terminal")
     except (json.JSONDecodeError, OSError):
         return
-    # Do not re-launch a job that is already done/blocked, or one whose engine
-    # PID is already alive.
-    if terminal in ("DONE", "BLOCKED"):
+    # Do not re-launch a job that is already done/blocked/retired, or one whose
+    # engine PID is already alive.
+    #
+    # F4: ABANDONED is the third of the department's terminal values -- the
+    # sanctioned retirement marker (FAULT #11). supervisor.py has skipped
+    # ("DONE", "BLOCKED", "ABANDONED") since it was written; this dispatcher
+    # and presentation-intake-poll.sh knew only two of the three, so a board
+    # tick could re-launch an engine for a run a human had explicitly retired.
+    # Retiring a run must actually retire it, in every actor that can start an
+    # engine.
+    if terminal in ("DONE", "BLOCKED", "ABANDONED"):
         return
     pid = st.get("engine_pid")
     if isinstance(pid, int) and pid > 0:
