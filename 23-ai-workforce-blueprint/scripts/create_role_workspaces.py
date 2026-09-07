@@ -2470,6 +2470,123 @@ _CANONICAL_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf", ".
 # with this one — the exact bug class that let .js fall through every path.
 _ADDITIVE_SCRIPT_SUFFIXES = (".json",)
 
+# ── F18 (GAP-DELIVERY-JSON): .json is NOT box-owned when it is engine data ──
+# `.json` being a whole SUFFIX bucket was the same allowlist mistake as .js /
+# .tpl / .md / .template / .yaml, only inverted: instead of a suffix nobody
+# classified, this is a suffix classified TOO BROADLY. Every `.json` under a
+# role-library scripts/ tree was treated as a client-local override, so it was
+# copied missing-only, NEVER refreshed, and — because
+# verify_scripts_materialization() skips anything outside
+# _CANONICAL_SCRIPT_SUFFIXES — never checked either. A box that already had a
+# copy kept it forever while every roll reported
+# "DEPT_SCRIPTS_STATUS ok=1 failed_inscope=0".
+#
+# What actually ships under scripts/ today (walked with the copier's own
+# _iter_scripts_tree_files over the real role-library, 12 files, 0 of them a
+# client override):
+#   presentation_job/model_catalog.json   — the router's alias/pricing catalog,
+#                                           read by model_catalog.SHIPPED_CATALOG
+#   presentation_job/ocr-deps.json        — read by ocr_verify._SHIPPED_DEPS
+#   presentation-deps.json, slides.schema.json, vsl-gate-form-spec.json,
+#   structure/checkout_structure.json, structure/vsl_structure.json,
+#   FIX{5,9,18,19,22}-*EVIDENCE.json
+# All of it is fleet-owned engine data. A stale model_catalog.json is exactly
+# the providers.yaml defect again: the engine runs on last year's aliases and
+# prices and nothing anywhere says so.
+#
+# The REAL box-owned json is not under scripts/ at all — capacity.py's
+# `capacity_override.json` and resource_profile.py's `resource_profile.json`
+# resolve to `<department>/config/` (capacity.department_config_dir(), or
+# $PRESENTATION_CAPACITY_CONFIG_DIR / ~/.openclaw/state/presentation/), and the
+# scan-roots config is `<department>/config/scan-roots.conf`. None of those
+# paths is walked by any writer here, so narrowing the scripts/ policy cannot
+# clobber a client override that exists today.
+#
+# This allowlist is therefore a FORWARD-COMPAT carve-out, not a description of
+# the current tree: if one of those per-box files ever does land beside the
+# scripts, it stays additive/missing-only instead of being clobbered by a roll.
+# Verified at the time of writing: zero role-library scripts/ tree contains any
+# of these basenames (control on the same walk: `model_catalog.json` and
+# `providers.yaml` both found, so the walk is not returning an empty set).
+#
+# Adding a basename HERE is a deliberate "a client may edit this and a roll must
+# not clobber it" claim. Everything else with a .json suffix mirrors like .py.
+_BOX_OWNED_JSON_BASENAMES = frozenset({
+    "capacity_override.json",   # capacity.OVERRIDE_FILENAME — declared ceiling
+    "resource_profile.json",    # resource_profile.PROFILE_FILENAME — locked plan
+    "scan-roots.json",          # json-shaped sibling of config/scan-roots.conf
+})
+
+
+def script_json_is_box_owned(rel_path):
+    """True when this file, relative to a department `scripts/` tree, is a
+    client-local override that a roll must never clobber (F18).
+
+    Only `.json` is eligible (`_ADDITIVE_SCRIPT_SUFFIXES`) and, within it, only
+    the basenames in `_BOX_OWNED_JSON_BASENAMES`. Every other `.json` under
+    `scripts/` is fleet-owned engine data and mirrors like `.py`.
+    """
+    p = Path(rel_path)
+    if p.suffix not in _ADDITIVE_SCRIPT_SUFFIXES:
+        return False
+    return p.name in _BOX_OWNED_JSON_BASENAMES
+
+
+# The three delivery outcomes for one file in a role-library scripts/ tree.
+POLICY_BOX_OWNED = "box-owned"   # copy only when absent; never overwrite, never verify
+POLICY_MIRROR = "mirror"         # always overwrite when divergent; verified byte-for-byte
+POLICY_SKIP = "skip"             # not this mirror's concern (unclassified/not-delivered)
+
+
+# Directory names under a role-library scripts/ tree whose contents are TEST-TIME
+# ARTIFACTS, never deliverables — the directory-shaped sibling of
+# _NON_DELIVERED_SCRIPT_SUFFIXES, and reviewable for the same reason.
+#
+#   working/  — `.gitignore` line 24 says it outright: "Guard A af-coverage
+#               artifact — emitted at test time by test_preflight.py, consumed
+#               by gate_integrity_check.py; regenerated in CI, never committed."
+#               Today its only occupant is
+#               presentations/scripts/working/checkpoints/read_slice_truncations.json,
+#               a counter read_slice.py writes RELATIVE TO CWD
+#               (_DEFAULT_COUNTER = Path("working/checkpoints/...")), so it
+#               materialises in the library tree on any machine that runs the
+#               presentations suite from that directory. Being gitignored it is
+#               absent from every clean clone and therefore from every client
+#               box; it exists only on a developer/operator machine.
+#
+# Why F18 must name it: with `.json` moved from box-owned to mirrored, this
+# test artifact would have gone from "copied once, never looked at again" to
+# "overwritten on every roll AND required byte-identical by
+# verify_scripts_materialization()" — i.e. a roll on the operator Mac could
+# start reporting failed_inscope because a counter file changed. It was already
+# wrong to ship it; F18 is simply the change that makes shipping it harmful.
+# Verified: `working` is the ONLY such directory in any role-library
+# scripts/ or intake/ tree (walked all of them; control on the same walk:
+# presentation_job/ and structure/ ARE found, so the walk is not empty).
+_NON_DELIVERED_SCRIPT_DIRS = ("working",)
+
+
+def script_asset_policy(rel_path, canonical_suffixes=_CANONICAL_SCRIPT_SUFFIXES):
+    """The ONE delivery-policy authority for a file in a dept `scripts/` tree.
+
+    Returns POLICY_BOX_OWNED / POLICY_MIRROR / POLICY_SKIP. Every writer
+    (scaffold_department's copy loop, refresh-dept-scripts.mirror_dept_scripts)
+    and the post-write verifier (verify_scripts_materialization) route through
+    this function, so copier and verifier can never disagree about ownership —
+    the disagreement that made each of the previous drops invisible.
+    """
+    parts = Path(rel_path).parts
+    if any(part in _NON_DELIVERED_SCRIPT_DIRS for part in parts[:-1]):
+        return POLICY_SKIP
+    suffix = Path(rel_path).suffix
+    if script_json_is_box_owned(rel_path):
+        return POLICY_BOX_OWNED
+    if suffix in canonical_suffixes:
+        return POLICY_MIRROR
+    if suffix in _ADDITIVE_SCRIPT_SUFFIXES:
+        return POLICY_MIRROR  # F18: engine-data .json mirrors exactly like .py
+    return POLICY_SKIP
+
 # Third bucket (FIX-DELIVERY-04): suffixes that are present in a role-library
 # scripts/ tree and are DELIBERATELY not delivered to a materialized
 # department. This list exists so the delivery policy is TOTAL — every suffix
@@ -2558,8 +2675,35 @@ _DEPT_STAMP_BOX_OWNED_BANKS = frozenset({
 })
 
 
-def _dept_stamp_is_box_owned(rel_str, suffix):
-    """True when the gate must NOT enforce this entry against the library."""
+def _dept_stamp_is_box_owned(rel_str, suffix, in_library=True):
+    """True when the gate must NOT enforce this entry against the library.
+
+    `rel_str` is tree-prefixed ("scripts/..." or "intake/..."); `in_library` is
+    whether the role library ships a counterpart at that same relative path.
+
+    F18: under `scripts/` a `.json` THE LIBRARY SHIPS is answered by
+    script_asset_policy() — the SAME authority the copier and the
+    materialization verifier use — so engine data that mirrors like `.py` is
+    also hash-enforced like `.py`. Delivering it while leaving the stamp gate
+    blind would be half a fix: the roll would refresh model_catalog.json, but a
+    hand-edited one would still never be named.
+
+    A `scripts/` `.json` the library does NOT ship keeps its old box-owned
+    tolerance, deliberately. The gate's other verdict is "stray-not-in-library",
+    and a materialized department accumulates real per-box json at runtime
+    (read_slice.py's working/checkpoints/ counter is the one in this tree
+    today). Turning every one of those into a named failure is not F18's claim
+    — F18 is about REFRESHING what the library ships, and there is nothing to
+    compare a file the library never shipped against.
+
+    The `intake/` tree keeps its own policy entirely (refresh-dept-intake.py
+    owns it): any `.json` there stays box-owned, plus the two provenance-gated
+    question banks.
+    """
+    if rel_str.startswith("scripts/"):
+        if not in_library and suffix in _ADDITIVE_SCRIPT_SUFFIXES:
+            return True  # per-box runtime json: nothing in the library to enforce against
+        return script_asset_policy(rel_str[len("scripts/"):]) == POLICY_BOX_OWNED
     if suffix in _ADDITIVE_SCRIPT_SUFFIXES:  # client-local .json override policy
         return True
     if rel_str in _DEPT_STAMP_BOX_OWNED_BANKS:  # provenance-gated intake banks
@@ -2607,10 +2751,15 @@ def build_dept_scripts_stamp(dept_dir, library_dept_dir):
         for rel_path, box_file in _iter_scripts_tree_files(tree_root):
             rel_str = f"{tree}/{rel_path.as_posix()}"
             suffix = box_file.suffix
+            lib_file = library_dept_dir / tree / rel_path
             entry = {
                 "path": rel_str,
                 "suffix": suffix,
-                "box_owned": _dept_stamp_is_box_owned(rel_str, suffix),
+                # F18: ownership can depend on whether the library ships a
+                # counterpart, so resolve that BEFORE stamping the verdict —
+                # the gate re-derives the identical answer below.
+                "box_owned": _dept_stamp_is_box_owned(
+                    rel_str, suffix, in_library=lib_file.is_file()),
             }
             try:
                 entry["sha256"] = _sha(box_file)
@@ -2618,7 +2767,6 @@ def build_dept_scripts_stamp(dept_dir, library_dept_dir):
                 entry["sha256"] = None
                 problems.append({"path": rel_str, "issue": "unreadable",
                                  "reason": f"{type(e).__name__}: {e}"})
-            lib_file = library_dept_dir / tree / rel_path
             if lib_file.is_file():
                 entry["in_library"] = True
                 try:
@@ -2640,6 +2788,10 @@ def build_dept_scripts_stamp(dept_dir, library_dept_dir):
         "trees": list(_DEPT_STAMP_TREES),
         "box_owned_policy": {
             "json_suffixes": list(_ADDITIVE_SCRIPT_SUFFIXES),
+            # F18: under scripts/ the .json suffix alone no longer confers box
+            # ownership — only these basenames do. Recorded in the stamp so an
+            # operator reading a box's manifest sees the policy that produced it.
+            "scripts_box_owned_json_basenames": sorted(_BOX_OWNED_JSON_BASENAMES),
             "intake_banks": sorted(_DEPT_STAMP_BOX_OWNED_BANKS),
         },
         "file_count": len(files),
@@ -2689,9 +2841,10 @@ def verify_dept_scripts_stamp(dept_dir, library_dept_dir):
             rel_str = f"{tree}/{rel_path.as_posix()}"
             suffix = box_file.suffix
             file_count += 1
-            if _dept_stamp_is_box_owned(rel_str, suffix):
-                continue  # allowlisted: stamped, never enforced
             lib_file = library_dept_dir / tree / rel_path
+            if _dept_stamp_is_box_owned(rel_str, suffix,
+                                        in_library=lib_file.is_file()):
+                continue  # allowlisted: stamped, never enforced
             if not lib_file.is_file():
                 problems.append({"path": rel_str, "issue": "stray-not-in-library",
                                  "reason": "file exists on the box under the "
@@ -2717,11 +2870,20 @@ def verify_scripts_materialization(lib_scripts_root, scripts_target,
     """
     Post-materialization proof (generalizes the single-file U024 assertion
     below to every canonical file in the tree, at any depth). For every file
-    under `lib_scripts_root` whose suffix is in `canonical_suffixes` (the
-    always-overwrite / mirrored set — .json is NOT in this set and is never
-    checked here, because it is deliberately allowed to diverge from the
-    library as a client-local override), require that the same relative
-    path exists under `scripts_target` AND is byte-identical (sha256).
+    under `lib_scripts_root` that script_asset_policy() classifies as MIRROR —
+    any suffix in `canonical_suffixes`, PLUS (F18) every `.json` whose basename
+    is not in `_BOX_OWNED_JSON_BASENAMES` — require that the same relative path
+    exists under `scripts_target` AND is byte-identical (sha256).
+
+    F18: `.json` used to be skipped here wholesale, on the assumption that every
+    one of them was a client-local override. None of the 12 the role library
+    actually ships is (they are model_catalog.json, ocr-deps.json,
+    slides.schema.json, structure/*.json, ...), so a stale or hand-edited engine
+    config was invisible to this verifier AND to the copier at the same time —
+    the precise reason the same class of bug kept providers.yaml off every
+    client box for months. The genuinely box-owned files
+    (capacity_override.json, resource_profile.json) live under
+    `<department>/config/`, which this walk never reaches.
 
     Returns a list of problem dicts, each either
       {"path": "<relative path>", "issue": "missing"}
@@ -2738,7 +2900,7 @@ def verify_scripts_materialization(lib_scripts_root, scripts_target,
     scripts_target = Path(scripts_target)
     problems = []
     for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root):
-        if src_file.suffix not in canonical_suffixes:
+        if script_asset_policy(rel_path, canonical_suffixes) != POLICY_MIRROR:
             continue
         dest_file = scripts_target / rel_path
         if not dest_file.is_file():
@@ -2845,16 +3007,18 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
             scripts_target.mkdir(exist_ok=True)
         scripts_copied = 0
         for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root):
-            if (src_file.suffix not in _CANONICAL_SCRIPT_SUFFIXES
-                    and src_file.suffix not in _ADDITIVE_SCRIPT_SUFFIXES):
+            policy = script_asset_policy(rel_path)
+            if policy == POLICY_SKIP:
                 continue
             dest_file = scripts_target / rel_path
-            # .json config files: additive (never clobber client-local overrides).
-            # .py / .sh / .js / .sha256 / .pdf canonical assets: always overwrite so a
-            # stale build_deck.py (or any other generator), a stale hash-pin file,
-            # or a stale layout PDF is replaced with the canonical library version
-            # on every scaffold/floor-fill pass.
-            if src_file.suffix in _ADDITIVE_SCRIPT_SUFFIXES and dest_file.exists():
+            # Box-owned files (the _BOX_OWNED_JSON_BASENAMES allowlist):
+            # additive — never clobber a client-local override.
+            # Everything else — .py / .sh / .js / .sha256 / .pdf / .yaml and
+            # (F18) every engine-data .json: always overwrite, so a stale
+            # build_deck.py, a stale hash-pin file, a stale layout PDF or a
+            # stale model_catalog.json is replaced with the canonical library
+            # version on every scaffold/floor-fill pass.
+            if policy == POLICY_BOX_OWNED and dest_file.exists():
                 continue
             if not dry_run:
                 import shutil as _shutil
@@ -2891,7 +3055,7 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
                 )
             written["scripts_verified"] = sum(
                 1 for rel_path, src_file in _iter_scripts_tree_files(lib_scripts_root)
-                if src_file.suffix in _CANONICAL_SCRIPT_SUFFIXES
+                if script_asset_policy(rel_path) == POLICY_MIRROR
             )
 
         # U024 — post-materialization assertion for blend_voice_governance.py.
