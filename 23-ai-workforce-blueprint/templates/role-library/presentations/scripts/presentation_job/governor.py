@@ -101,6 +101,12 @@ _config_lock = threading.Lock()
 _config_cache: Dict[str, dict] = {}
 _config_mtime: float = -1.0
 
+#: [F17] Providers already announced this process as "no providers.yaml row".
+#: Its own lock: `_config_lock` is held inside `_load_config`, and `_lock`
+#: (the state lock) is held across the whole admission decision in acquire().
+_defaults_announced: set = set()
+_defaults_announce_lock = threading.Lock()
+
 # --------------------------------------------------------------------------
 # tiny YAML subset loader (no PyYAML dependency)
 # --------------------------------------------------------------------------
@@ -364,7 +370,43 @@ def _config_for(provider: str) -> dict:
             body = table.get(norm)
             if isinstance(body, dict):
                 return body
+    _announce_defaults_once(provider)
     return {}
+
+
+def _announce_defaults_once(provider: str) -> None:
+    """[F17] Say, ONCE per process, that this provider has no yaml row.
+
+    A provider with no row is governed at `defaults` -- rps 1.0, burst 10,
+    max_inflight 50. That is a real throttle on every outbound call, and
+    before F17 it happened in complete silence: adopting a model on a new
+    provider serialised the whole pipeline at roughly one call per second
+    with nothing in any log saying why, and the operator's only clue was the
+    wall-clock. The rate itself is NOT invented upward here -- guessing a
+    stranger's limit trades a stall for a 429 storm -- so the fix is to make
+    the throttle audible and name the row that removes it.
+
+    Announced on the governor's own proof surface (the acquisition log, the
+    same file the FIX 14/23 window proof reads) AND on stderr, because the
+    log is only read after the fact. Once per provider per process:
+    `provider_config` runs on every single acquire."""
+    key = str(provider or "")
+    with _defaults_announce_lock:
+        if key in _defaults_announced:
+            return
+        _defaults_announced.add(key)
+    try:
+        rps = (_load_config().get("defaults") or {}).get("rps", _DEFAULTS["rps"])
+    except Exception:  # noqa: BLE001 -- an unreadable yaml still gets announced
+        rps = _DEFAULTS["rps"]
+    msg = (f"provider {key} has no providers.yaml row -- governing at "
+           f"defaults rps {rps}; add a row to presentation_job/providers.yaml "
+           f"to govern it at its real limits")
+    _append_log(key, "config-defaults", 0, 0, ok=True, note=msg)
+    try:
+        print(f"WARNING: governor: {msg}", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- announcing never breaks the call path
+        pass
 
 
 def _load_config() -> Dict[str, dict]:
@@ -423,6 +465,11 @@ def reload_config() -> None:
     global _config_mtime
     with _config_lock:
         _config_mtime = -1.0
+    # [F17] a hot config reload may have ADDED the missing row, so the
+    # once-per-process announcement is re-armed with it: the next fallback to
+    # `defaults` is a fact about the NEW file and has to be said again.
+    with _defaults_announce_lock:
+        _defaults_announced.clear()
     _load_config()
 
 
@@ -542,7 +589,7 @@ def _utc_day() -> str:
 
 
 def _append_log(provider: str, kind: str, n: int, inflight: int,
-                ok: bool = True) -> None:
+                ok: bool = True, note: Optional[str] = None) -> None:
     rec = {
         "ts": time.time(),
         "iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z",
@@ -552,6 +599,11 @@ def _append_log(provider: str, kind: str, n: int, inflight: int,
         "inflight": inflight,
         "ok": ok,
     }
+    if note:
+        # [F17] a human-readable line for events that carry a reason, not a
+        # count (config-defaults). Absent on every acquire/release record, so
+        # the window-count readers are byte-for-byte unaffected.
+        rec["note"] = note
     try:
         path = Path(log_path())
         path.parent.mkdir(parents=True, exist_ok=True)
