@@ -248,15 +248,26 @@ def _profile_provider_entry(data: dict, provider: str) -> Optional[dict]:
 
 
 #: (plan_tier value from the profile) -> rps override.  [FIX 14] "the
-#: governor reads the resource profile for plan tier (ollama 3/10)" -- the
-#: same numbers as capacity.CAP_TABLE rows for ollama-cloud.
+#: governor reads the resource profile for plan tier".
+#:
+#: These are the SAME numbers as capacity.CAP_TABLE's ollama-cloud rows, and
+#: they must stay that way -- capacity.CAP_TABLE is the single source of
+#: truth, this map only mirrors it for the two tier spellings the profile
+#: can carry.  [U5] The $100 tier is **8, not the raw account maximum of
+#: 10**: operator ruling 2026-09-04, restated 2026-09-07 -- "i said 8 so
+#: that 2 are left over for other work".  The presentation job takes 8 of
+#: the seat's 10 slots on BOTH axes (width and rate), leaving the client 2
+#: for whatever else runs on the same Ollama account.  Raising this back to
+#: 10 silently spends the operator's reserve.
 PLAN_TIER_RPS: Dict[str, float] = {
     "$20/month": 3.0,
-    "$100/month": 10.0,
+    "$100/month": 8.0,
     "20": 3.0,
-    "100": 10.0,
+    "100": 8.0,
+    # a profile that records the resolved ceiling itself as the tier
     "3": 3.0,
-    "10": 10.0,
+    "8": 8.0,
+    "10": 8.0,   # the 10-slot plan, minus the operator's 2-slot reserve
 }
 
 
@@ -267,7 +278,7 @@ def _plan_tier_rps(provider: str) -> Optional[float]:
     must never fail a call because the profile is absent or broken), and
     maps the plan tier onto the Part 7 rate via PLAN_TIER_RPS.  A provider
     whose entry carries an explicit concurrency ceiling uses that number as
-    rps ceiling too when it looks like a tier rate (3 or 10)."""
+    rps ceiling too when it IS a tier rate (3 or the reserved 8)."""
     try:
         path = _resource_profile_path()
         if path is None:
@@ -285,19 +296,32 @@ def _plan_tier_rps(provider: str) -> Optional[float]:
             digits = "".join(ch for ch in tier if ch.isdigit())
             if digits in PLAN_TIER_RPS:
                 return PLAN_TIER_RPS[digits]
-        # explicit ceiling recorded by the profile (cap-table projection)
+        # Explicit ceiling recorded by the profile, projected onto a RATE.
+        # [U5] This is deliberately narrow: a concurrency ceiling is not an
+        # rps, and the two only coincide for the ollama-cloud tiers, where
+        # the operator ruling sets both.  So admit a recorded ceiling here
+        # only when it IS one of the tier rates -- which now includes the
+        # reserved 8 that the old `in (3.0, 10.0)` whitelist discarded (see
+        # PLAN_TIER_RPS).  Anything else (DeepSeek's 2500, a measured 47)
+        # falls through to providers.yaml rather than becoming an rps.
         ceiling = entry.get("concurrency_ceiling")
-        if isinstance(ceiling, (int, float)) and float(ceiling) in (3.0, 10.0):
-            return float(ceiling)
+        if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool):
+            if float(ceiling) in set(PLAN_TIER_RPS.values()):
+                return float(ceiling)
     except Exception:
         return None
     return None
 
 
 def _plan_tier_inflight(provider: str) -> Optional[int]:
-    """Return the plan tier's concurrency ceiling (3 or 10) from the resource
-    profile, or None.  [FIX 14] the profile -- not a hand constant -- decides
-    the ollama-cloud in-flight ceiling, matching capacity.CAP_TABLE."""
+    """Return the plan tier's concurrency ceiling from the resource profile,
+    or None.  [FIX 14] the profile -- not a hand constant -- decides the
+    ollama-cloud in-flight ceiling, matching capacity.CAP_TABLE.
+
+    [U5] Any positive recorded ceiling is honored, not just the two the
+    cap table happened to hold when FIX 14 was written.  A profile that
+    records the operator's reserved 8 gets 8; a profile that records a
+    measured 47 gets 47.  Previously both fell through to the tier map."""
     try:
         path = _resource_profile_path()
         if path is None:
@@ -308,8 +332,9 @@ def _plan_tier_inflight(provider: str) -> Optional[int]:
         if not entry:
             return None
         ceiling = entry.get("concurrency_ceiling")
-        if isinstance(ceiling, (int, float)) and float(ceiling) in (3.0, 10.0):
-            return int(ceiling)
+        if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool):
+            if 0 < float(ceiling) < float("inf"):
+                return int(ceiling)
         tier = entry.get("plan_tier") or entry.get("plan")
         if isinstance(tier, str):
             hit = PLAN_TIER_RPS.get(tier.strip())
@@ -438,8 +463,8 @@ def provider_config(provider: str) -> dict:
 
     [FIX 14 / W09-B2] The plan-tier read comes from THE resource profile
     (resource_profile.py's store, providers.<id>.plan_tier): an ollama-cloud
-    $20/month account gets rps 3, $100/month gets rps 10 -- the Part 7
-    ceilings, via PLAN_TIER_RPS.  The tier also sets max_inflight to the
+    $20/month account gets rps 3, $100/month gets rps 8 -- the Part 7
+    ceilings minus the operator's 2-slot reserve [U5], via PLAN_TIER_RPS.  The tier also sets max_inflight to the
     same number when the profile records a concurrency_ceiling, so the
     concurrent-agent ceiling and the governor's in-flight cap never disagree.
     A profile that is absent, flag-disabled, unreadable or silent about the
