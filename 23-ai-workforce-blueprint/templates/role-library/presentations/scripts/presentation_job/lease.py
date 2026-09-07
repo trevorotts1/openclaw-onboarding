@@ -40,10 +40,26 @@ live pid is never stolen, and a foreign host's pid is meaningless here so only
 the expiry rules it). Same-session re-acquisition (the engine re-entering with
 --resume inside one process, or a heartbeat renewing) refreshes in place.
 
-The expiry answer to "can I take over a dead holder's lease?" is ttl_s: the
-proof for FIX 18 kills the first engine and requires the second to acquire
-within ttl_s of the kill. acquire() with wait=True (default wait_s=0) blocks
-polling for takeover so callers like the door can ask for a bounded wait.
+F19 (Fable review, H6) made the "provably dead on this host" half of that rule
+REAL. The paragraph above documented it from the first commit, but the code
+refused it anyway ("Dead pid on our own host whose lease has not lapsed: refuse
+anyway"), so a crashed engine parked its own run for the whole ttl_s while the
+one machine that could see the corpse stood there holding the death
+certificate -- and the intake poller counted every refused dispatch as a
+launch, so the operator's summary line read "launched" over a run that was not
+running. "Provably dead" means exactly ProcessLookupError from
+os.kill(pid, 0) (see _pid_provably_dead): a PermissionError says the process
+EXISTS behind a privilege boundary, an unreadable pid says nothing at all, and
+a foreign host's pid is not ours to interpret -- all three keep ttl_s as the
+only takeover clock. Every same-host seizure appends one
+`lease.takeover_dead_local_pid` row to working/logs/lease-events.jsonl so the
+takeover is auditable after the fact.
+
+ttl_s therefore remains the takeover clock for everything the pid check cannot
+prove: the proof for FIX 18 kills the first engine and requires the second to
+acquire within ttl_s of the kill (post-F19 it acquires at once when both
+engines are on this box). acquire() with wait_s > 0 (default 0) blocks polling
+for takeover so callers like the door can ask for a bounded wait.
 
 HEARTBEAT
 ---------
@@ -86,9 +102,20 @@ LEASE_FILENAME = ".lease.json"
 DEFAULT_TTL_S = 600
 HEARTBEAT_INTERVAL_S = 60
 
+#: F19: lease lifecycle events (JSON Lines), run-scoped like every other
+#: working/logs ledger. Today it carries only the dead-local-pid takeover --
+#: the one lease decision that overrides another actor's unexpired claim, and
+#: therefore the one an operator must be able to reconstruct afterwards.
+LEASE_EVENTS_RELATIVE = ("working", "logs", "lease-events.jsonl")
+
 
 def lease_path(run_dir: Path) -> Path:
     return Path(run_dir) / "working" / LEASE_FILENAME
+
+
+def events_path(run_dir: Path) -> Path:
+    """Where lease lifecycle events are appended for this run."""
+    return Path(run_dir).joinpath(*LEASE_EVENTS_RELATIVE)
 
 
 def _now() -> datetime:
@@ -151,6 +178,50 @@ def _holder_is_live(doc: Dict[str, Any]) -> bool:
     return pid_is_alive(pid)
 
 
+def _pid_provably_dead(pid: Any) -> bool:
+    """True ONLY when os.kill(pid, 0) raises ProcessLookupError.
+
+    F19 seizes another actor's unexpired lease, so it needs PROOF OF DEATH --
+    not the absence of proof of life. pid_is_alive() answers the wider
+    question (PermissionError -> alive, every other error -> dead), which is
+    the right default for a liveness check and the wrong one for a takeover: a
+    non-integer pid, a pid whose lookup errors in some other way, and an EPERM
+    answer must all leave ttl_s in charge. Only ProcessLookupError says the
+    kernel has no such process.
+
+    ``isinstance(True, int)`` is True in Python, so booleans are rejected
+    explicitly rather than sliding through as pid 1 / pid 0.
+    """
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        # PermissionError (the process exists, someone else owns it) and any
+        # other errno are non-answers, never a corpse.
+        return False
+    return False
+
+
+def _log_event(run_dir: Path, event: str, **fields: Any) -> None:
+    """Append one JSON line to the run's lease event log.
+
+    Logging must never break the lease call path: a run dir we cannot write to
+    still gets its lease decision, it just goes unrecorded.
+    """
+    record: Dict[str, Any] = {"event": event, "at": _iso(_now())}
+    record.update(fields)
+    try:
+        path = events_path(run_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+    except OSError:
+        pass
+
+
 def _session_now() -> str:
     return os.environ.get("PRESENTATION_SESSION") or os.environ.get("OPENCLAW_SESSION") \
         or f"pid:{os.getpid()}"
@@ -196,15 +267,26 @@ def acquire(run_dir: Path, holder: Optional[Dict[str, Any]] = None,
         now = _now()
         current = read(run_dir)
         takeover = False
+        dead_local: Optional[Dict[str, Any]] = None  # the corpse we stepped over
         if current is None:
             takeover = True
         elif current.get("host") == hostname and current.get("pid") == os.getpid():
             takeover = True  # re-acquire in place (same process re-entry)
         elif _expired(current, now):
             takeover = True  # heartbeat stopped: the holder is gone or stale
-        elif not _holder_is_live(current) and not _expired(current, now):
-            # Dead pid on our own host whose lease has not lapsed: refuse anyway.
-            # The expiry is the takeover clock -- a documented ttl, not a guess.
+        elif current.get("host") == hostname and _pid_provably_dead(current.get("pid")):
+            # F19: the holder crashed on THIS box and the kernel says its pid is
+            # free. Waiting out ttl_s here parks the run behind a process that
+            # cannot come back, so take over now -- and log the seizure, because
+            # this is the one path that overrides an unexpired claim.
+            takeover = True
+            dead_local = current
+        elif not _holder_is_live(current):
+            # Same host, but death is not PROVEN: an unreadable pid, or a
+            # lookup that errored some other way. (A foreign host never reaches
+            # here -- _holder_is_live calls it live by definition, and a live
+            # local pid returns True.) The expiry stays the takeover clock --
+            # a documented ttl, not a guess.
             takeover = False
         if not takeover:
             if time.monotonic() >= deadline:
@@ -234,6 +316,15 @@ def acquire(run_dir: Path, holder: Optional[Dict[str, Any]] = None,
             except OSError:
                 pass
             raise
+        if dead_local is not None:
+            _log_event(run_dir, "lease.takeover_dead_local_pid",
+                       pid=doc["pid"], host=hostname,
+                       session=doc["session"],
+                       previous_pid=dead_local.get("pid"),
+                       previous_host=dead_local.get("host"),
+                       previous_session=dead_local.get("session"),
+                       previous_acquired_at=dead_local.get("acquired_at"),
+                       previous_expires_at=dead_local.get("expires_at"))
         return Lease(run_dir, doc, ttl_s)
 
 
