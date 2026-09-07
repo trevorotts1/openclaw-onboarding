@@ -7252,6 +7252,73 @@ else:
   fi
 
   # ----------------------------------------------------------
+  # F12b: RE-ASSERT THE PRESENTATIONS SCHEDULES, EVERY ROLL.
+  # ----------------------------------------------------------
+  # The two mirrors above refresh the department's scripts/ and intake/ trees.
+  # NOTHING in this file has ever made sure those scripts are actually RUN.
+  # Measured on this repo at v25.0.11 with python3 str.count over the full file
+  # text (not grep): this file contained 'presentation-intake-poll' 0 times and
+  # 'presentation-watchdog' 0 times, against a same-instrument control of 25 and
+  # 0 respectively in install.sh -- so a fleet roll could repair NEITHER
+  # scheduler, and install.sh had never scheduled the watchdog on any box in the
+  # first place. The consequence is the measured one: a stalled deck run is
+  # detected by nobody and restarted by nobody, and every park needs a human.
+  #
+  # WHY HERE, AND WHY PINNED. install_presentation_schedules() would otherwise
+  # resolve its scripts directory from ${_SCRIPT_DIR}, which on this path can be
+  # a TEMP CLONE that is deleted later in this same run -- scheduling launchd or
+  # a cron against a path that is about to vanish is worse than not scheduling.
+  # The MATERIALIZED department is the poller's and watchdog's real runtime home,
+  # it is persistent, and refresh-dept-scripts.py has just re-mirrored it three
+  # blocks above. So it is pinned explicitly; the lib VALIDATES the pin (it
+  # refuses any directory that does not actually hold presentation-intake-poll.sh)
+  # rather than trusting it.
+  #
+  # Both installers are idempotent: the cron branch skips a job that is already
+  # present or tombstoned, and the launchd branch re-renders and reloads the SAME
+  # label. Advisory only -- a scheduler that cannot be installed is announced,
+  # never fatal to a roll that has already delivered content.
+  # Both roots are read with `${...:-}`: this file runs under `set -u` (line 50)
+  # and an unset ONBOARDING_DIR would abort the whole roll over a lookup that is
+  # allowed to come up empty. An EMPTY root is then skipped BEFORE it is
+  # concatenated -- FIX 61's own lesson: an empty prefix is never a usable path,
+  # it silently becomes the root-anchored literal "/lib-presentation-schedules.sh"
+  # and turns an unresolved DIRECTORY into a missing-FILE report.
+  _PRES_SCHED_LIB=""
+  for _ps_root in "${ONBOARDING_DIR:-}" "${_SCRIPT_DIR:-}"; do
+    [ -n "$_ps_root" ] || continue
+    if [ -f "$_ps_root/lib-presentation-schedules.sh" ]; then
+      _PRES_SCHED_LIB="$_ps_root/lib-presentation-schedules.sh"; break
+    fi
+  done
+  if [ -n "$_PRES_SCHED_LIB" ]; then
+    # shellcheck disable=SC1090
+    source "$_PRES_SCHED_LIB"
+  fi
+  if ! command -v install_presentation_schedules >/dev/null 2>&1; then
+    echo "  ⚠ lib-presentation-schedules.sh not found (looked in \$ONBOARDING_DIR and \${_SCRIPT_DIR}) -- the Presentations intake poll and the watchdog/supervisor were NOT scheduled or repaired by this roll."
+  else
+    _PRES_DEPT_SCRIPTS=""
+    if [ -n "${OC_WORKSPACE:-}" ] && [ -f "$OC_WORKSPACE/departments/Presentations/scripts/presentation-intake-poll.sh" ]; then
+      _PRES_DEPT_SCRIPTS="$OC_WORKSPACE/departments/Presentations/scripts"
+    fi
+    if [ -z "$_PRES_DEPT_SCRIPTS" ]; then
+      echo "  (Presentations department not materialized at \${OC_WORKSPACE}/departments/Presentations/scripts -- schedule re-assert SKIPPED; nothing to schedule)"
+    else
+      echo ""
+      echo "  Re-asserting Presentations schedules (intake poll + watchdog/supervisor)..."
+      # Same pipefail-correct `if PIPE; then` capture as the two mirrors above:
+      # `cmd | tee` would otherwise report tee's exit status, not the
+      # installer's, and a failed schedule would read as a clean roll.
+      if PRESENTATIONS_SCRIPTS_SRC="$_PRES_DEPT_SCRIPTS" install_presentation_schedules 2>&1 | tee -a "$LOG_FILE"; then
+        :
+      else
+        echo "  ⚠ Presentations schedule re-assert reported a failure -- see the lines above for WHICH scheduler failed and why (this roll's content delivery is unaffected)."
+      fi
+    fi
+  fi
+
+  # ----------------------------------------------------------
   # U007: MISSING-DEPARTMENTS ANOMALY WARNING. The role-staleness drain above
   # checks role docs against the departments/ tree. If that directory is absent
   # while .workforce-build-state.json says interviewComplete=true, the drain has

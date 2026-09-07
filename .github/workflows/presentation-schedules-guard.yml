@@ -1,0 +1,68 @@
+name: presentation-schedules-guard
+
+# Fails the build if the Presentations self-healing layer stops being INSTALLED.
+#
+# THE DEFECT THIS LOCKS (F12a/F12b). presentation-watchdog.sh carries the only
+# automated recovery this department has -- stall watchdog, board reconcile,
+# SUPERVISOR (engine-liveness restart) and run-discovery -- and no installer in
+# this repository ever scheduled it. Measured at v25.0.11 (ea331f82a) with
+# python3 str.count over the full file text, not grep:
+#   install.sh       'presentation-watchdog' 0, 'supervisor' 0
+#                    CONTROL 'presentation-intake-poll' 25 (same instrument,
+#                    same file, non-empty -- the measurement is sound)
+#   update-skills.sh 'presentation-watchdog' 0, 'presentation-intake-poll' 0
+# So no client box had stall detection or restart, and a fleet roll could repair
+# neither scheduler. Every parked deck needed a human.
+#
+# The guard is functional, not textual: it renders a real LaunchAgent into a
+# sandboxed HOME with a stub launchctl, drives the VPS cron branch against a
+# mock openclaw, and carries its own negative control (a department with no
+# watchdog script must make the installer REFUSE and write nothing) so it cannot
+# degrade into a check that passes on everything.
+#
+# It also pins F12c: PRESENTATION_SUPERVISE_APPLY must stay ABSENT by default.
+# Arming the supervisor's restart before F2 (auto-repin on manifest change) is
+# deployed makes each restart a --resume that dies on the manifest pin, burning
+# the 3-restart budget in ~30 minutes and alarming.
+
+on:
+  push:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - lib-presentation-schedules.sh
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template
+      - tests/unit/presentation-schedules-installed.test.sh
+      - .github/workflows/presentation-schedules-guard.yml
+  pull_request:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - lib-presentation-schedules.sh
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template
+      - tests/unit/presentation-schedules-installed.test.sh
+      - .github/workflows/presentation-schedules-guard.yml
+
+jobs:
+  presentation-schedules-guard:
+    name: Presentations scheduler install guard (F12a/F12b)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax (the three files the schedules live in)
+        run: |
+          bash -n install.sh
+          bash -n update-skills.sh
+          bash -n lib-presentation-schedules.sh
+          bash -n tests/unit/presentation-schedules-installed.test.sh
+
+      - name: Run presentation-schedules install tests
+        run: |
+          chmod +x tests/unit/presentation-schedules-installed.test.sh
+          bash tests/unit/presentation-schedules-installed.test.sh
