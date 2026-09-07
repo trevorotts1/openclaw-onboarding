@@ -2,7 +2,7 @@
 
 First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
-Paired releases: onboarding v25.0.9 / Command Center v7.1.4. Skill 32 v13.1.5, Skill 37 v13.1.2 and Skill 05 v7.0.1.
+Paired releases: onboarding v25.0.16 / Command Center v7.1.5. Skill 32 v13.1.6, Skill 37 v13.1.2 and Skill 05 v7.0.1.
 
 ## Expected order
 
@@ -105,9 +105,10 @@ Ordinary installer and cron replays do not repeatedly renew acknowledged invitat
 ## Noninteractive invitations and browser verification
 
 The invitation sender resolves OpenClaw before minting a ticket: an explicit
-absolute executable `OPENCLAW_BIN` pin takes precedence, followed by the selected
-runtime's PATH, that user's npm/local bins, and standard native installation
-bins. An invalid explicit pin is a precise pending result; it never switches to
+absolute executable `OPENCLAW_BIN` pin takes precedence. With configuration version
+metadata, selected-root and user npm bins are checked before PATH; every candidate
+must meet that version floor. Without metadata, discovery starts with PATH, then
+that user's npm/local bins and standard native installation bins. An invalid explicit pin is a precise pending result; it never switches to
 another executable. The sender invokes the resolved absolute path and retains
 this client's gateway/configuration environment. It does not source login
 profiles or scan other users' installations.

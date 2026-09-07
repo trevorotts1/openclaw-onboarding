@@ -184,7 +184,15 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(code,9);self.assertNotIn('fixture-secret',json.dumps(receipt))
         with self.assertRaises(m.Pending):self.send(force=True)
     def test_timeout_after_possible_acceptance_remains_uncertain(self):
-        with patch.dict(os.environ,CLI_BEHAVIOR='timeout'):code,receipt=self.send(timeout=.3)
+        real_run=m.subprocess.run
+        def lose_response_after_acceptance(argv,**kwargs):
+            # First prove the isolated provider accepted; then simulate its reply
+            # being lost at the timeout boundary. No startup-timing race.
+            accepted=real_run(argv,**dict(kwargs,timeout=5))
+            self.assertEqual(accepted.returncode,0,accepted.stderr)
+            raise subprocess.TimeoutExpired(argv,kwargs['timeout'])
+        with patch.object(m.subprocess,'run',side_effect=lose_response_after_acceptance):
+            code,receipt=self.send(timeout=.05)
         self.assertEqual(code,9);self.assertTrue(self.capture.exists());self.assertFalse(self.ledger.exists())
         with self.assertRaises(m.Pending):self.send(force=True)
     def test_exit_zero_without_message_id_is_not_acceptance(self):
