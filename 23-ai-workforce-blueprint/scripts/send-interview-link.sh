@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verified public interview invitation through the OpenClaw gateway.
-# Usage: send-interview-link.sh [--dry-run]; FORCE=1 bypasses accepted-send cooldown
-# only. Unknown delivery must be reconciled and is never retried automatically.
+# Usage: send-interview-link.sh [--dry-run] [--resume] [--renew]
+# --renew (or FORCE=1) bypasses only accepted-send cooldown. Unknown delivery must be reconciled and is never retried automatically.
 # Identity/origin: canonical workforce state plus matching MC_* compatibility env.
 # OPENCLAW_DASHBOARD_URL is accepted only after exact authenticated readiness.
 # Exit: 0 accepted/dry-run; 2 usage; 3 complete; 4 owner unresolved; 5 missing CLI;
@@ -14,22 +14,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DRY_RUN=0
+RESUME_REQUESTED=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --resume) RESUME_REQUESTED=1; shift ;;
+    --renew) export FORCE=1; RESUME_REQUESTED=1; shift ;;
     -h|--help) sed -n '1,10p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
-# ── Workspace resolution (same probe order as update-interview-state.sh) ──────
-if [ -n "${OPENCLAW_WORKSPACE_ROOT:-}" ]; then
-  WS="$OPENCLAW_WORKSPACE_ROOT"
-elif [ -d /data/.openclaw/workspace ]; then
-  WS=/data/.openclaw/workspace
-else
-  WS="$HOME/.openclaw/workspace"
+# Resolve the selected client using the installer platform contract, including
+# custom workspace pins. An unrelated /data directory never overrides them.
+PLATFORM_HELPER="$SCRIPT_DIR/../../platform/common.sh"
+if [ ! -f "$PLATFORM_HELPER" ]; then PLATFORM_HELPER="$SCRIPT_DIR/../../../platform/common.sh"; fi
+if [ ! -f "$PLATFORM_HELPER" ]; then
+  echo "[send-interview-link] PENDING: selected-client platform helper missing." >&2
+  exit 8
 fi
+source "$PLATFORM_HELPER"
+oc_set_platform_paths || exit 8
+WS="$OC_WORKSPACE_DEFAULT"
 STATE_FILE="$WS/.workforce-build-state.json"
 HANDOFF_FILE="$WS/company-discovery/interview-handoff.md"
 LEDGER_FILE="$WS/company-discovery/.interview-link-sends.log"
@@ -68,7 +74,7 @@ fi
 
 # Started = a handoff exists AND we have a slug to build the resume link with.
 MODE="start"
-if [ -f "$HANDOFF_FILE" ] && [ -n "$SLUG" ]; then
+if [ "$RESUME_REQUESTED" = "1" ] || { [ -f "$HANDOFF_FILE" ] && [ -n "$SLUG" ]; }; then
   MODE="resume"
 fi
 
@@ -100,21 +106,33 @@ LINK="$DASH/interview"
 TMP_MSG="$(mktemp)"
 if [ -n "$LINK" ] && [ "$MODE" = "resume" ]; then
   cat > "$TMP_MSG" <<EOF
-Welcome back, $FIRST_NAME — your interview is saved exactly where you left off. Continue here: $LINK
+Welcome back, $FIRST_NAME — continue your AI Workforce Interview here: $LINK
 
-Open this private link within 15 minutes. Your saved answers will resume after sign-in.
+{{INVITATION_VALIDITY}}
+You can stop and return later. Any saved answers will resume after sign-in.
+
+Bookmark your private interview page after signing in: $DASH/interview
+If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
   cat > "$TMP_MSG" <<EOF
 Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. When you're ready, start here: $LINK
 
-Open this private link within 15 minutes. Answers are saved as you go; if your session expires, request a fresh invitation to resume.
+{{INVITATION_VALIDITY}}
+Answers are saved as you go. You can stop and return later.
+
+Bookmark your private interview page after signing in: $DASH/interview
+If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
 Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversation in your own words, and we build your company from what you tell us. When you're ready, start here: $LINK
 
-Open this private link within 15 minutes. Answers are saved as you go; if your session expires, request a fresh invitation to resume.
+{{INVITATION_VALIDITY}}
+Answers are saved as you go. You can stop and return later.
+
+Bookmark your private interview page after signing in: $DASH/interview
+If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 
 fi
@@ -144,7 +162,7 @@ MASKED="…${CHAT_ID: -4}"
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
   echo "----- preview only: enrollment is issued at send time -----"
-  cat "$TMP_MSG"
+  sed 's/{{INVITATION_VALIDITY}}/The exact expiry is included when the private sign-in link is issued./g' "$TMP_MSG"
   echo "-------------------"
   exit 0
 fi

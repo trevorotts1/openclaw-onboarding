@@ -151,6 +151,20 @@ No interview. The AI reads what it already knows from your workspace files plus 
 **Option C - Audit / Resume Mode**
 For people who already have a workforce set up. Scans what exists, finds gaps, fills them without overwriting anything. Also resumes an interrupted interview.
 
+## Resuming the client's saved web interview
+
+When the client says **“resume my interview”**, “Resume my AI workforce setup,” or says their private sign-in link expired, use their existing installation and saved company identity. On that client's box, from this skill directory, run:
+
+```bash
+bash scripts/send-interview-link.sh --renew
+```
+
+This is an explicit client-requested invitation renewal. It sends a fresh private sign-in link through the client's acknowledged Telegram gateway and uses resume wording. It does not reset answers, change company/tenant/installation IDs, rerun initial onboarding, or choose a new interview option. A used or expired invitation does not mean the saved interview was deleted.
+
+The private enrollment link lasts up to **24 hours**, with its exact expiry stated in the message. After sign-in, the stable **`/interview`** page reopens the saved interview while the browser login remains valid. New Command Center browser sessions last up to **30 days** in the paired resume release; an existing earlier session or Cloudflare Access may require sign-in sooner. Saved questions and answers have no deletion deadline tied to either login timer. If sign-in has expired, renew through the same client's Telegram assistant; the stable URL alone does not authenticate anyone.
+
+`--resume` selects resume wording and keeps the normal accepted-send cooldown; `--renew` deliberately bypasses that cooldown. Neither can bypass unresolved/uncertain delivery, a foreign identity/recipient, incomplete readiness, or an already completed interview. Normal installer/cron replays do not renew previously acknowledged invitations. An interview-access request is not a request to run the workforce-build or Skill 37 closeout resume worker. See [the detailed operator flow](INSTRUCTIONS.md#interview-start-and-resume-links--client-requested-renewal).
+
 ## The Act As If Protocol
 
 When a persona is selected for a task, the instruction is:
