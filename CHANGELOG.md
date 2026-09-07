@@ -1,3 +1,27 @@
+## [v25.0.15]  -  2026-09-07  -  The interview link died before the client ever opened it
+
+The AI Workforce Interview link is minted as a single-use enrollment ticket and handed to the client over Telegram. It expired **900 seconds — fifteen minutes — after minting**. A client reads a message when they read it, not within a quarter of an hour of an operator pressing send.
+
+### What this was costing
+
+**Two live onboardings on 2026-09-06 both received a valid link, and both links expired unopened.** Neither client ever reached the interview. Measured on one of the two boxes after the fact: `interview_enrollment_uses` held exactly two redemption nonces, both from operator verification runs, and `interview_answers` was `0`. The link sent at 12:59Z was dead by 13:14Z. Nothing was broken — the mint succeeded, delivery succeeded (`ok: true`, message id recorded), the page rendered — and the client still could not get in. The failure was the clock, and it was invisible from every log line that said "sent".
+
+The operator remedy was to hand-mint a replacement, which restarts the same fifteen minutes against the same human availability. That is not a workflow; it is a coin flip repeated until someone happens to be at their computer.
+
+**Both bounds had to move, and only one of them lives here.** The Command Center mints the ticket (`interview-invitation/route.ts`, `expiresAt = now + 900`), but `shared-utils/interview_invitation.py:146` independently rejects any receipt whose `expiresAt` exceeds `now + 910` — a sanity ceiling on what the server may hand back. Raising the Command Center alone makes **every** mint fail here with `invitation expiry invalid`; raising this alone changes nothing, because the server still stamps fifteen minutes. The paired change is blackceo-command-center **#303** (`900` -> `86400`), merged as `f699ef57`. This release moves the ceiling to `86410` — twenty-four hours, preserving the original ten-second clock-skew slack.
+
+### What did not change
+
+The ticket is still `oneUse`; the nonce is still burned in `interview_enrollment_uses` on redemption, so a link that has been used is dead regardless of its remaining life. The grant is still bound field-by-field to `tenantId`, `installationId`, `host` and to `invited-owner:<recipientHash>`, and this validator still pins `protocol` to `interview-invitation.v1` and still requires the URL to be exactly `<origin>/interview` with an `enroll=` fragment and no query string. The post-enrollment session cookie is unchanged at 3600s.
+
+The single delta is the window in which an **unredeemed** link remains usable: one day instead of fifteen minutes. That is a deliberate trade, not an oversight — a link a human can actually open, in exchange for a forwarded Telegram message staying live for a day.
+
+**The stronger fix needs no ticket at all.** A client whose Command Center sits behind a Cloudflare Access app with their own email on the allow policy is identified by Access, so a plain non-expiring `/interview` link works and the enrollment ticket is never involved. Where that shape exists it should be preferred; this change is what makes the ticket path survivable everywhere else.
+
+### Verification
+
+`tests/unit/test_interview_invitation.py` — **31 passed, 37 subtests passed**. The paired Command Center change was verified separately against a `7cc4bf499` checkout with the patch applied: `tests/unit/interview-launch-readiness.test.ts` **8 pass, 0 fail**, including `sender-issued one-use invitation redeems to authenticated state and preserves answers`, which exercises redemption end-to-end rather than asserting the constant.
+
 ## [v25.0.14]  -  2026-09-07  -  Self-healing that would have healed itself into an alarm
 
 Two fixes, and they close the 27-fix program. This release exists because v25.0.13 installed the supervisor on every box for the first time — and the supervisor could not survive the very next thing this release does.
