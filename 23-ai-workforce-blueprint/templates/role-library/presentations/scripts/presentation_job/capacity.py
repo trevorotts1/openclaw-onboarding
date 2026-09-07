@@ -47,7 +47,27 @@ module is not the place to invent a ceiling on it.
     openrouter                      ->  NO CAP (UNBOUNDED)
     any other declared BYOK-direct
       provider added to NO_CAP_PROVIDERS -> NO CAP (UNBOUNDED)
+    a provider this build has never heard of that the CLIENT DECLARED in
+      their model plan (F17)                -> NO CAP (UNBOUNDED)
     unknown provider (cannot even be identified) -> 3 (DEFAULT_CONSERVATIVE)
+
+F17 -- A NEW PROVIDER MUST NOT SILENTLY THROTTLE THE PIPELINE
+--------------------------------------------------------------------
+Before F17 the last row above swallowed the second-to-last one: an id no
+CAP_TABLE row and no alias covered resolved to None in normalize_provider(),
+and every consumer read that None as "no capacity information at all" --
+detect() fell to DEFAULT_CONSERVATIVE = 3, dispatcher._prompt_routing_stamp
+stamped capacity_status=provider-unresolved at DEFAULT_MAX_WORKERS = 8, and
+governor.provider_config fell to `defaults` rps 1.0, none of it announced.
+Adopting a model on a provider nobody had written code for therefore
+throttled the whole deck, and the only cure WAS that code change -- the exact
+thing the operator ruling forbids ("not forced onto any model; a new one must
+work without a code change"). A client who NAMES {provider, model} in their
+model plan is telling us they own that account: that declaration is the same
+brought-their-own-capacity evidence NO_CAP_PROVIDERS rests on, and it is the
+one signal separating a new provider from a typo. See
+declared_plan_providers() / is_no_cap_provider(); rollback env
+PRESENTATION_DECLARED_PROVIDER_UNCAP=0.
 
 ollama-cloud and deepseek-direct both have real, plan-dependent ceilings the
 account itself enforces (ollama $20 -> 3, $100 -> 8; deepseek Flash -> 25,
@@ -237,6 +257,20 @@ PLANS_BY_PROVIDER = {
 #: Extend this set (never CAP_TABLE) for any other BYOK-direct provider --
 #: adding a real per-account ceiling belongs in CAP_TABLE instead, never here.
 NO_CAP_PROVIDERS = frozenset({PROVIDER_OPENROUTER})
+
+#: Tokens the cap table deliberately REFUSES -- "not a cap-table row" here
+#: means a decision, not ignorance: a local Ollama buys no plan, so it can
+#: never be a client's purchased capacity either. F17's client-declaration
+#: path below skips these, so declaring `ollama-local` in a model plan can
+#: never hand a laptop an unbounded ceiling.
+_REFUSED_PROVIDER_TOKENS = frozenset({
+    "ollama-local", "ollama-localhost", "local-ollama",
+})
+
+#: F17 rollback switch. Default ON; `=0` restores the pre-F17 behaviour
+#: exactly -- an unknown provider stays unknown and collapses to
+#: DEFAULT_CONSERVATIVE, whatever the client declared.
+DECLARED_UNCAP_ENV = "PRESENTATION_DECLARED_PROVIDER_UNCAP"
 
 STATUS_MEASURED = "MEASURED"
 STATUS_DECLARED_UNVERIFIED = "DECLARED_UNVERIFIED"
@@ -940,17 +974,27 @@ def _get_safe(node, *path):
 # ---------------------------------------------------------------------------
 # Normalisation
 # ---------------------------------------------------------------------------
-def normalize_provider(raw) -> Optional[str]:
-    """Map a declared/detected provider string onto a cap-table provider id.
+def canonical_provider_token(raw) -> Optional[str]:
+    """Fold a provider spelling onto ONE canonical token: lowercase, dashes.
 
-    Returns None for anything the cap table does not cover -- an unknown
-    provider is an unknown provider, never the nearest-looking one."""
+    Spelling only. It makes no claim that the provider is KNOWN -- that is
+    `normalize_provider`'s job. This is the form the cap table, the resource
+    profile and the governor all compare on, so `Acme_LLM`, `acme llm` and
+    `acme-llm` can never be three providers."""
     if not isinstance(raw, str):
         return None
     token = raw.strip().lower().replace("_", "-").replace(" ", "-")
-    if not token:
-        return None
-    if token in ("ollama-local", "ollama-localhost", "local-ollama"):
+    return token or None
+
+
+def _table_provider(token: str) -> Optional[str]:
+    """The cap-table id for a canonical token, or None when this build has
+    never heard of it.
+
+    The STATIC half of `normalize_provider`: no I/O, no profile, no client
+    declaration -- exactly the pre-F17 mapping, split out so the declaration
+    path below can never be mistaken for cap-table membership."""
+    if token in _REFUSED_PROVIDER_TOKENS:
         return None  # a local Ollama has no purchased plan; not a cap-table row
     if token in ("ollama-cloud", "ollamacloud", "ollama", "ollman"):
         return PROVIDER_OLLAMA_CLOUD
@@ -966,6 +1010,150 @@ def normalize_provider(raw) -> Optional[str]:
     if token.startswith("openrouter"):
         return PROVIDER_OPENROUTER
     return None
+
+
+def is_known_provider(raw) -> bool:
+    """True when THIS BUILD already has an opinion about `raw`: a cap-table
+    id, or one of the tokens the table deliberately REFUSES. False means
+    "never heard of it" -- the only case F17's client-declaration path is
+    allowed to speak for."""
+    token = canonical_provider_token(raw)
+    if token is None:
+        return False
+    return token in _REFUSED_PROVIDER_TOKENS or _table_provider(token) is not None
+
+
+#: F17 cache for the declared-provider read, keyed by profile path and
+#: invalidated on (mtime_ns, size). The declaration set changes only when the
+#: client re-answers the interview, so a per-call file read would be pure
+#: waste on a path that runs inside the dispatch loop.
+_DECLARED_CACHE: dict = {}
+
+#: The model-plan keys that are NOT slots (resource_profile.record_model_plan
+#: writes these alongside the slots).
+_PLAN_NON_SLOT_KEYS = frozenset({"thinking", "floor_waivers", "source",
+                                 "declared_at"})
+
+
+def declared_plan_providers(config_dir: Optional[Path] = None) -> frozenset:
+    """F17: the canonical provider tokens the CLIENT DECLARED in their model
+    plan that this build has no opinion about.
+
+    WHY THIS EXISTS. Before F17 an unknown provider id resolved to None in
+    `normalize_provider`, and every consumer read that None as "no capacity
+    information at all": `detect()` fell through to DEFAULT_CONSERVATIVE = 3,
+    `dispatcher._prompt_routing_stamp` stamped
+    capacity_status=provider-unresolved with DEFAULT_MAX_WORKERS = 8, and
+    `governor.provider_config` fell to `defaults` rps 1.0 -- all of it
+    silent. Adopting a model on a provider this build had never been told
+    about therefore throttled the whole pipeline with nothing anywhere saying
+    why, and the only cure was a code change. The operator ruling is the
+    opposite: nobody is forced onto a model, and a new one must work WITHOUT
+    a code change.
+
+    A client who NAMES {provider, model} in their model plan is telling us
+    they own that account -- the same "brought their own capacity" evidence
+    that puts a provider in NO_CAP_PROVIDERS, and the one signal that
+    separates a new provider from a typo. Nothing else in this module treats
+    a bare string as a provider, and a declaration NEVER uncaps a provider
+    that has a real CAP_TABLE row (see `is_no_cap_provider`).
+
+    Read-only, never raises, and never consulted for a token the cap table
+    already resolves -- so the hot path does no I/O at all. Rollback:
+    PRESENTATION_DECLARED_PROVIDER_UNCAP=0 restores the pre-F17 behaviour
+    exactly (an unknown provider stays unknown)."""
+    if os.environ.get(DECLARED_UNCAP_ENV, "1") == "0":
+        return frozenset()
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            import resource_profile as _rp  # type: ignore[no-redef]
+        if not _rp.flag_enabled():
+            return frozenset()
+        path = Path(_rp.profile_path(config_dir))
+        try:
+            stat = path.stat()
+            key = (str(path), stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            key = (str(path), None, None)
+        cached = _DECLARED_CACHE.get(key[0])
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        found: frozenset = frozenset()
+        if key[1] is not None:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            plan = raw.get("model_plan") if isinstance(raw, dict) else None
+            tokens = set()
+            if isinstance(plan, dict):
+                for slot, spec in plan.items():
+                    if slot in _PLAN_NON_SLOT_KEYS:
+                        continue
+                    provider = None
+                    if isinstance(spec, dict):
+                        provider = spec.get("provider")
+                    elif isinstance(spec, str) and spec.count("@") == 1:
+                        provider = spec.rsplit("@", 1)[1]
+                    token = canonical_provider_token(provider)
+                    if token and not is_known_provider(token):
+                        tokens.add(token)
+            found = frozenset(tokens)
+        _DECLARED_CACHE[key[0]] = (key, found)
+        return found
+    except Exception:  # noqa: BLE001 -- a broken profile never breaks detection
+        return frozenset()
+
+
+def normalize_provider(raw, config_dir: Optional[Path] = None) -> Optional[str]:
+    """Map a declared/detected provider string onto a provider id.
+
+    Returns the CAP-TABLE id for a provider the table covers. Returns the
+    CANONICAL TOKEN ITSELF (F17) for a provider this build has never heard of
+    when the CLIENT DECLARED it in their model plan -- a new provider is a
+    provider, not a blank, and the declaration is the client bringing their
+    own capacity. Returns None for everything else: an unknown, undeclared
+    provider is an unknown provider, never the nearest-looking one."""
+    token = canonical_provider_token(raw)
+    if token is None:
+        return None
+    hit = _table_provider(token)
+    if hit is not None:
+        return hit
+    if token in _REFUSED_PROVIDER_TOKENS:
+        return None
+    if token in declared_plan_providers(config_dir):
+        return token
+    return None
+
+
+def is_no_cap_provider(provider: Optional[str],
+                       config_dir: Optional[Path] = None) -> bool:
+    """True when `provider` (an id already through `normalize_provider`) has
+    NO structural ceiling this module could observe: a NO_CAP_PROVIDERS entry,
+    or (F17) a client-declared provider with no CAP_TABLE row.
+
+    A CAP_TABLE provider is never uncapped by a declaration: an account
+    ceiling is a physical fact the client cannot opt out of by naming the
+    provider."""
+    if not provider:
+        return False
+    if provider in NO_CAP_PROVIDERS:
+        return True
+    if provider in CAP_TABLE_PROVIDERS:
+        return False
+    return provider in declared_plan_providers(config_dir)
+
+
+def _no_cap_kind(provider: str) -> str:
+    """The phrase the notes use for WHY this provider has no ceiling. Both
+    branches keep 'bring-your-own-key, no structural ceiling' -- the doctrine
+    is identical; only the evidence for it differs."""
+    if provider in NO_CAP_PROVIDERS:
+        return ("a NO_CAP_PROVIDERS entry (bring-your-own-key, no structural "
+                "ceiling)")
+    return ("a CLIENT-DECLARED provider with no CAP_TABLE row "
+            "(bring-your-own-key, no structural ceiling -- naming it in the "
+            "model plan IS the client bringing their own capacity)")
 
 
 def normalize_plan(raw, provider: Optional[str]) -> Optional[str]:
@@ -1067,7 +1255,8 @@ def read_override(config_dir: Optional[Path] = None) -> Tuple[Optional[dict], Op
     return raw, None
 
 
-def _resolve_override(record: dict, path: Path) -> dict:
+def _resolve_override(record: dict, path: Path,
+                      config_dir: Optional[Path] = None) -> dict:
     """Turn a declared {provider, plan, max_concurrent} into a resolution dict.
 
     A declaration is not a measurement -- except for a NO_CAP_PROVIDERS entry,
@@ -1109,7 +1298,8 @@ def _resolve_override(record: dict, path: Path) -> dict:
          four-digit fan-out, and the result is labelled DECLARED_UNVERIFIED,
          never MEASURED.
     """
-    provider = normalize_provider(_safe_value("provider", record.get("provider")))
+    provider = normalize_provider(_safe_value("provider", record.get("provider")),
+                                  config_dir)
     plan = normalize_plan(_safe_value("plan", record.get("plan")), provider)
     declared = record.get("max_concurrent")
     declared_int = declared if isinstance(declared, int) and not isinstance(declared, bool) else None
@@ -1121,19 +1311,19 @@ def _resolve_override(record: dict, path: Path) -> dict:
     # Case 0: a bring-your-own-key direct provider -- NO CAP, by operator
     # ruling. Never reaches PARK; a declared number self-throttles, verbatim,
     # never clamped (there is nothing to clamp it against).
-    if provider in NO_CAP_PROVIDERS:
+    if is_no_cap_provider(provider, config_dir):
         if declared_int is not None:
             available = declared_int
             notes.append(
-                f"{provider} is a NO_CAP_PROVIDERS entry (bring-your-own-key, no "
-                f"structural ceiling) -- declared max_concurrent={declared_int} is honoured "
+                f"{provider} is {_no_cap_kind(provider)} -- declared "
+                f"max_concurrent={declared_int} is honoured "
                 f"verbatim as a self-throttle for this run, never clamped upward or downward"
             )
         else:
             available = UNBOUNDED
             notes.append(
-                f"{provider} is a NO_CAP_PROVIDERS entry (bring-your-own-key, no "
-                f"structural ceiling) -- no max_concurrent declared, so capacity is "
+                f"{provider} is {_no_cap_kind(provider)} -- no max_concurrent "
+                f"declared, so capacity is "
                 f"UNBOUNDED: dispatch as wide as the ready work allows"
             )
         return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
@@ -1491,7 +1681,7 @@ def detect(config_dir: Optional[Path] = None) -> dict:
                 "available": None, "source": SOURCE_OVERRIDE,
                 "override_path": str(path), "trail": trail, "notes": [error]}
     if record is not None:
-        resolved = _resolve_override(record, path)
+        resolved = _resolve_override(record, path, config_dir)
         trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": resolved["status"],
                       "detail": f"declared override at {path}: provider="
                                 f"{resolved['provider']}, plan={resolved['plan']}"})
@@ -1519,12 +1709,12 @@ def detect(config_dir: Optional[Path] = None) -> dict:
         # theirs changes the ceiling, because there isn't one. Checked BEFORE
         # the structural cap-table lookup so a BYOK provider never falls
         # through to PARK.
-        if provider in NO_CAP_PROVIDERS:
+        if is_no_cap_provider(provider, config_dir):
             return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
                     "available": UNBOUNDED, "source": source,
                     "override_path": str(path), "trail": trail,
-                    "notes": [f"{provider} is a NO_CAP_PROVIDERS entry (bring-your-own-key, "
-                              f"no structural ceiling) -- available is UNBOUNDED"]}
+                    "notes": [f"{provider} is {_no_cap_kind(provider)} -- "
+                              f"available is UNBOUNDED"]}
         if plan and (provider, plan) in CAP_TABLE:
             return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
                     "available": CAP_TABLE[(provider, plan)], "source": source,

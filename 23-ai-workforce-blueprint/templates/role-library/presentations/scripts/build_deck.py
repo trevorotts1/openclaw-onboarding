@@ -414,15 +414,60 @@ SLIDE_BACKOFF_BASE = _slide_backoff_base()
 SLIDE_BACKOFF_CAP_S = 90.0
 
 # Parallel render fan-out. Each slide is an independent KIE generation (submit +
-# poll + download + verify), so they run concurrently in a ThreadPoolExecutor.
-# Bounded so the per-task 429 backoff still holds and a client box is not swamped.
-# Overridable via BUILD_DECK_RENDER_WORKERS (clamped to [1, 12]).
-def _render_workers() -> int:
-    try:
-        n = int(os.environ.get("BUILD_DECK_RENDER_WORKERS", "6"))
-    except ValueError:
-        n = 6
-    return max(1, min(12, n))
+# poll + download + verify), so they run concurrently.
+#
+# F7 — THE WIDTH COMES FROM THE GOVERNOR, NEVER FROM A CONSTANT.
+# The old body defaulted to the literal 6 and clamped to [1, 12]: a box whose
+# account is entitled to 100 concurrent KIE tasks still rendered six wide, and
+# not even an operator who KNEW the entitlement could open it past 12. A
+# 100-slide signature deck is 17 rounds at 6 and still 9 rounds at 12.
+#
+# The width is now, in order:
+#   * the governor's kie ceiling — providers.yaml.kie.max_inflight, read via
+#     _gov_max_inflight() (the SAME source the batch-submit in-flight gate uses,
+#     see the _kie_max_inflight gate in render_slides_batch), so render width and
+#     submit width can never disagree about what this account is allowed;
+#   * RENDER_WORKERS_NO_GOVERNOR_DEFAULT (12) when the governor module is absent
+#     — a legacy checkout predating the FIX 14 merge self-throttles rather than
+#     assuming an entitlement it cannot read;
+#   * clamped down by slide_count when the caller knows it: a deck can never need
+#     more workers than it has slides, and idle workers still cost a thread;
+#   * clamped down — NEVER up — by BUILD_DECK_RENDER_WORKERS. The env var is a
+#     SELF-THROTTLE ONLY (min(env, governed)). Widening past the governor is the
+#     exact knob that gets a client's KIE account rate-limited, so it is gone;
+#     a box that needs to go gentler can still say so.
+# Final clamp [1, RENDER_WORKERS_CEILING]. The floor of 1 is load-bearing: a
+# governor config reading 0, a zero-slide deck, or BUILD_DECK_RENDER_WORKERS=0
+# must never produce a pool that can run nothing.
+RENDER_WORKERS_CEILING = 100
+RENDER_WORKERS_NO_GOVERNOR_DEFAULT = 12
+
+
+def _render_workers(slide_count=None) -> int:
+    """Render fan-out width for a deck of ``slide_count`` slides (None = unknown).
+
+    ``_gov_max_inflight()`` is defined further down this module; Python resolves
+    it at call time, so the forward reference is fine and deliberate — this
+    constant block belongs with the other cadence defaults."""
+    if _governor is None:
+        workers = RENDER_WORKERS_NO_GOVERNOR_DEFAULT
+    else:
+        workers = _gov_max_inflight()
+
+    if slide_count is not None:
+        try:
+            workers = min(workers, int(slide_count))
+        except (TypeError, ValueError):
+            pass  # an unreadable slide count must not narrow OR widen the fan-out
+
+    env_raw = os.environ.get("BUILD_DECK_RENDER_WORKERS")
+    if env_raw is not None:
+        try:
+            workers = min(workers, int(env_raw))  # self-throttle only, never a widener
+        except ValueError:
+            pass  # garbage in the env is ignored, not fatal — the governor still rules
+
+    return max(1, min(RENDER_WORKERS_CEILING, workers))
 
 # The MANDATORY trailing pin appended to EVERY prompt.
 ENGLISH_PIN = (
