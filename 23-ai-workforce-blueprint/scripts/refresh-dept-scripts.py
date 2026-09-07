@@ -32,10 +32,16 @@ the SAME ownership policy scaffold_department already enforces
 
   _CANONICAL_SCRIPT_SUFFIXES   FLEET-OWNED  — always mirrored (overwritten
                                                whenever the sha256 diverges)
-  _ADDITIVE_SCRIPT_SUFFIXES    BOX-OWNED    — additive / missing-only,
+  engine-data .json            FLEET-OWNED  — F18: mirrored exactly like .py
+  _BOX_OWNED_JSON_BASENAMES    BOX-OWNED    — additive / missing-only,
                                                NEVER overwritten if it exists
   anything else                             — not this mirror's concern,
                                                not copied
+
+  The single authority is crw.script_asset_policy(rel_path), which answers
+  MIRROR / BOX-OWNED / SKIP for one file. This mirror, scaffold_department's
+  copy loop and verify_scripts_materialization() all call it — no writer
+  re-derives ownership from a suffix test of its own.
 
   The suffix values themselves live in ONE place (create_role_workspaces.py)
   and are deliberately NOT restated here: an inline copy of the tuple is
@@ -86,9 +92,11 @@ For every role-library department directory with a scripts/ subdir:
      (create_role_workspaces._iter_scripts_tree_files — the SAME walk
      scaffold_department's verifier uses, so this mirror and the
      verification below can never disagree about what the tree contains).
-     For each file: .json is copied only if the destination does not yet
-     exist (never clobbers a client-local override); every other canonical
-     suffix (crw._CANONICAL_SCRIPT_SUFFIXES) is copied only when its sha256 differs
+     For each file: crw.script_asset_policy() decides. A BOX-OWNED file
+     (the crw._BOX_OWNED_JSON_BASENAMES allowlist) is copied only if the
+     destination does not yet exist (never clobbers a client-local
+     override); every MIRROR file — crw._CANONICAL_SCRIPT_SUFFIXES plus
+     (F18) every engine-data .json — is copied only when its sha256 differs
      from the current destination (idempotent no-op on an already-current
      box; a genuinely stale/corrupted file gets overwritten with the
      canonical library bytes). A per-file write failure here (an unwritable/
@@ -206,8 +214,14 @@ HOME = os.path.expanduser("~")
 # (.md/.template were added to the constant while this comment still advertised
 # the older six-suffix tuple). Read create_role_workspaces.py for the values
 # and the per-suffix rationale.
-_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # fleet-owned: always mirrored when divergent
-_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # box-owned: additive / missing-only
+# F18: these two names are the raw SUFFIX buckets only. They are no longer the
+# ownership decision — crw.script_asset_policy(rel_path) is, because ownership
+# now depends on the basename as well as the suffix (an engine-data .json
+# mirrors like .py; only crw._BOX_OWNED_JSON_BASENAMES is box-owned). Kept as
+# re-exports so anything that read them for reporting still resolves, and so
+# they can never be re-declared as a second literal here.
+_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # fleet-owned suffixes
+_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # suffixes ELIGIBLE to be box-owned
 
 
 def resolve_workspace(explicit):
@@ -279,11 +293,13 @@ def _try_copy(src_file, dest_file, rel_path, copy_failed):
 
 
 def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
-    """Copy every _CANONICAL_SCRIPT_SUFFIXES file from lib_scripts_root into
-    scripts_target whenever the destination is missing or its sha256
+    """Copy every MIRROR file (crw.script_asset_policy) from lib_scripts_root
+    into scripts_target whenever the destination is missing or its sha256
     diverges from the source (idempotent no-op on an already-current box);
-    .json files are copied ONLY when absent at the destination (additive —
-    a client-local override that already exists is NEVER touched). Returns
+    BOX-OWNED files — the crw._BOX_OWNED_JSON_BASENAMES allowlist — are copied
+    ONLY when absent at the destination (additive — a client-local override
+    that already exists is NEVER touched). F18: a .json whose basename is not
+    on that allowlist is fleet-owned engine data and mirrors like .py. Returns
     {"copied": [rel_path, ...], "skipped_owned": [rel_path, ...],
      "copy_failed": [{"path", "issue": "copy-failed", "reason"}, ...]}.
 
@@ -296,10 +312,15 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
     skipped_owned = []
     copy_failed = []
     for rel_path, src_file in crw._iter_scripts_tree_files(lib_scripts_root):
-        suffix = src_file.suffix
         dest_file = scripts_target / rel_path
+        # F18: ownership is decided by crw.script_asset_policy(), the SAME
+        # authority scaffold_department's copy loop and
+        # verify_scripts_materialization() use -- never re-derived here from a
+        # suffix test, because a copier/verifier disagreement is precisely what
+        # made every previous delivery gap invisible.
+        policy = crw.script_asset_policy(rel_path)
 
-        if suffix in _ADDITIVE_SUFFIXES:
+        if policy == crw.POLICY_BOX_OWNED:
             if dest_file.exists():
                 skipped_owned.append(str(rel_path))
                 continue
@@ -309,7 +330,7 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
             copied.append(str(rel_path))
             continue
 
-        if suffix not in _MIRROR_SUFFIXES:
+        if policy != crw.POLICY_MIRROR:
             continue  # not a canonical script asset -- not this mirror's concern
 
         if dest_file.is_file():
