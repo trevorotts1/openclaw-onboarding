@@ -113,3 +113,51 @@ the owner token reads fine).
 Builder output on a TEMPLATE location is fleet-distributed via **snapshots**
 (surveys/forms are snapshot asset categories) — build once, snapshot-push; never
 re-drive the canvas per client box.
+
+---
+
+## 6. OpenClaw managed browser `--frame` path (Lane 2, experimental)
+
+OpenClaw 2.0+ ships a managed browser with native frame scoping. This is the
+**experimental upgrade lane** — selected ONLY when the capability probe picks the
+`openclaw_managed_browser` lane. It **NEVER silently substitutes** for the
+agent-browser PRIMARY path (§2) — the 5-rung ladder above stays the Skill 6
+doctrine until the managed lane is proven per client.
+
+```bash
+openclaw browser snapshot --frame "iframe#EDITOR_ID" --interactive
+openclaw browser click e12   # refs scoped to that frame until next role snapshot
+```
+
+- Snapshots can return **frame-qualified refs** (`f1e12` = frame 1, element 12).
+- Refs stay scoped to the selected frame **until the next role snapshot** — never
+  reuse a ref across frames.
+- **Cross-origin iframes often will NOT expose DOM to parent `evaluate`** — you
+  must snapshot and act INSIDE the frame (`--frame`). Same boundary §2 rung 3 hits:
+  top-frame eval cannot reach a cross-origin store.
+- **Re-snapshot after any navigation / DOM change** — a stale ref is invalid, not
+  merely stale.
+
+---
+
+## 7. CUA last resort (future, not wired)
+
+Screenshot → click at pixel coordinates. **NOT a Skill 6 lane today — no adapter
+exists yet.** Reached only when ALL CDP lanes fail (§2 rungs 3–5 exhausted and the
+§6 managed lane unavailable).
+
+- Requires a **vision model** and a written **capability receipt** — the waiver is
+  logged per fallback (`AF-IFRAME-CROSS-ORIGIN` style receipt), never silent.
+- Contract: `tools/cua_last_resort_adapter.sh` (plan P1-13 — doc/wrapper contract
+  only; the wrapper itself is built by the wf5 wave). Do not hand-roll OS-level
+  clicking before it lands.
+
+---
+
+## 8. Router — do not hand-roll ladder selection
+
+`tools/iframe_router.py` is the **single entrypoint** builders call for iframe
+work (detect → map → select lane → act). It owns capability probing, iframe
+classification, and lane selection so behavior stays identical across builders.
+Never pick ladder rungs (§2) or lanes (§6/§7) ad hoc inside a builder — call the
+router.

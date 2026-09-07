@@ -24,6 +24,25 @@ Source of truth for every row below: `SKILL-6-BROWSER-CONTROL-BULLETPROOF-SPEC-v
 | Session persistence | `~/.agent-browser/` profile + `state save` files persist across runs | Same paths inside the container; persist only if the workdir is on a **mounted volume** | `AB_REAPER_PLAYWRIGHT_DIR` scopes the reaper's cleanup; a VPS build MUST confirm `~/.agent-browser` is on a persistent (not ephemeral-overlay) mount before relying on `state save/load` across container restarts. **B-U15 item 1 — mechanism shipped, LIVE round trip owed**: `tools/ghl_vps_mount_proof.py` (classify the mount table, plant a run-id marker, verify it survived, write `routing/vps-mount-receipt.json` recording the mount type) + `scripts/vps-mount-proof.sh --live` (the real `state save` → `docker compose up -d --force-recreate` → `state load` orchestration, refuses cleanly — never fabricates a PASS — when no real Docker/VPS is reachable). The row's **[ASSUMED, spec-carried]** status is now "offline mechanism VERIFIED (hermetic classify/marker/receipt tests); the real per-box confirmation on an actual VPS is OPERATOR-RUN, not yet executed" — not silently closed. |
 | TMPDIR | `/var/folders/*`, wiped on boot | tmpfs `/tmp`, wiped on boot | This is exactly why `PARK_DIR`/receipts/durable state live under `durable_root()`, never under `$TMPDIR`/`$LOCKDIR` — both sides wipe TMPDIR on reboot, and a PARK marker that silently vanished on reboot would un-park a qc-failed build with no operator action. |
 
+## Capability classes (host capability → build method)
+
+`tools/capability_probe.py` probes the host and emits JSON to
+`working/skill6-capability.json` — that probe JSON is the RUNTIME source of
+truth for which lane a build takes; this matrix remains the binding ENV
+contract (the `durable_root()`, bash-3.2, and headless-only rows above are
+unchanged by the lane model). Lane table: SKILL.md "Adaptive browser lanes".
+
+| Capability class | Host has | Build method |
+|---|---|---|
+| standard | agent-browser only (no Playwright) | agent-browser only (Lane 1); cross-origin drag features GATED — they need the hybrid |
+| full | agent-browser + Playwright | agent-browser PRIMARY + Playwright CDP hybrid for iframe drag/drop (Lane 1b) |
+| experimental | OpenClaw ≥ 2026.8.1 + browser plugin | OpenClaw managed browser `openclaw browser` + `--frame` — proposed upgrade, not wired as Skill 6 PRIMARY |
+| future | CUA plugin present | CUA — NOT in Skill 6 yet; future last resort only |
+
+The VPS mount row and the first-hour ground-truth pair above stay
+**OPERATOR-OWED** (offline mechanism verified; the live runs are owed) — the
+capability-class model does not close them.
+
 ## Adaptation contract (binding for every future Skill-6 change)
 
 1. **Detect environment ONLY via `durable_root()`** (`browser_manager.py`) or

@@ -406,8 +406,32 @@ def _selftest() -> int:  # noqa: C901
             print(f"  FAIL: {e}", file=sys.stderr)
         print(f"\n[selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
         return 1
+    # 9. P0-6 / plan 9.5 item 4: reconcile the PINNED_AGENT_BROWSER constant
+    # with the AUTHORTATIVE pin resolved from gates.json via
+    # browser_manager._read_pinned_agent_browser_version. Soft import: the
+    # check is silently SKIPPED when browser_manager.py is unavailable (the
+    # executor ships standalone). Never echoes gates.json (it contains a
+    # Firebase Web API key) — only the resolved pin string is compared.
+    try:
+        import browser_manager as _bm  # noqa: PLC0415 — tools/ sibling, optional
+        _gates_pin = _bm._read_pinned_agent_browser_version()
+        if _gates_pin is not None and _gates_pin != PINNED_AGENT_BROWSER:
+            errors.append(
+                f"pin drift: PINNED_AGENT_BROWSER={PINNED_AGENT_BROWSER} != "
+                f"gates.json resolved={_gates_pin} (reconcile this constant "
+                "with agent_browser_version_pin.pinned_version)")
+    except ImportError:
+        pass  # standalone box without browser_manager.py — skip, never fail
+    except Exception as exc:  # noqa: BLE001 — read failure must not hide drift
+        errors.append(f"pin reconcile failed: {exc}")
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"\n[selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
     print("[selftest] PASS — anchor parse + find-arg build + quoting round-trip + native "
-          "click/fill + executor modes (no network / no browser)")
+          "click/fill + executor modes + pin reconcile (no network / no browser)")
     return 0
 
 

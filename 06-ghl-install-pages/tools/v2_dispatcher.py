@@ -630,6 +630,17 @@ DEFAULT_MAX_INFLIGHT = 1
 DEFAULT_WALLCLOCK_CAP_S = 1800
 DEFAULT_POLL_BACKOFF_S = 30
 
+# P0-6 / plan 9.7 items 4-5: capability-freshness gate. A build must not start
+# on a stale (or absent) browser-capability classification: the probe receipt
+# (working/skill6-capability.json, written by capability_probe.run_probe via
+# `browser_manager.sh probe` / `bm_capability_preflight`) is the evidence that
+# the selected browser lane was actually verified on THIS box. Older than
+# DEFAULT_CAPABILITY_MAX_AGE_H (mtime-based) or missing -> HOLD the task in
+# STATE_WAITING ("waiting_on_dependency"), mirroring the FIX-COPY-01 precedent.
+# A re-probe (`browser_manager.sh probe`, or task['reprobe'] / CLI --reprobe)
+# resolves the hold.
+DEFAULT_CAPABILITY_MAX_AGE_H = 24.0
+
 # ── P2-4: rate-limit governor + session keepalive ────────────────────────────
 # GHL throttles rapid autosaves/publishes; bursting trips 429s and (worse) silent
 # dropped writes. These two utilities are REUSABLE by the INJECTED builder (the
@@ -901,6 +912,8 @@ def dispatch_one(
     clock: Callable[[], float] | None = None,
     live: bool = True,
     step0_matcher: "Callable[[dict, str], dict] | None" = None,
+    capability_path: str | None = None,
+    capability_max_age_h: float = DEFAULT_CAPABILITY_MAX_AGE_H,
 ) -> DispatchResult:
     """Dispatch and run ONE department build task, bounded.
 
@@ -943,6 +956,16 @@ def dispatch_one(
             Defaults to None; auto-configured from env vars GHL_FUNNEL_CATALOG /
             GHL_FUNNEL_INDEX when funnel_matcher is importable (see _resolve_step0).
 
+        capability_path: OPTIONAL INJECTED path to the capability receipt
+            (working/skill6-capability.json). Defaults to
+            ``<skill dir>/working/skill6-capability.json``. Missing or older
+            than ``capability_max_age_h`` (mtime-based) holds the task in
+            ``STATE_WAITING`` BEFORE any intake/builder runs (never a build on
+            a stale lane classification). ``task['reprobe']`` truthy skips the
+            freshness refusal (the caller has just re-run the probe).
+        capability_max_age_h: max receipt age in hours (default
+            ``DEFAULT_CAPABILITY_MAX_AGE_H`` = 24; mtime-based, wall-clock).
+
     Returns:
         ``DispatchResult`` (truthy only on verified + overall_pass True).
     """
@@ -966,6 +989,42 @@ def dispatch_one(
         rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_BACKLOG, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
+
+    # ── CAPABILITY-FRESHNESS GATE (P0-6 / plan 9.7 items 4-5) ────────────────
+    # Mirror of the FIX-COPY-01 halt-gate shape: missing/stale probe receipt ->
+    # STATE_WAITING receipt + hold. Advisory upstream (bm_capability_preflight
+    # never blocks ensure); THIS is the single planned blocking point, placed
+    # BEFORE intake/builder so a build never starts on a stale lane
+    # classification. A fresh receipt (or task['reprobe']) passes through.
+    _cap_task_flag = task.get("reprobe")
+    if not _cap_task_flag:
+        if not capability_path:
+            capability_path = os.path.join(
+                os.path.dirname(_TOOLS_DIR), "working", "skill6-capability.json")
+        _cap_age_h: float | None = None
+        try:
+            _cap_mtime = os.stat(capability_path).st_mtime
+            _cap_age_h = max(0.0, (time.time() - _cap_mtime) / 3600.0)
+        except OSError:
+            _cap_age_h = None  # missing receipt -> hold
+        if _cap_age_h is None or _cap_age_h > capability_max_age_h:
+            _cap_state = "stale" if _cap_age_h is not None else "missing"
+            rec = {
+                "task_id": task_id, "state": STATE_WAITING,
+                "reason": ("capability receipt %s (age %s > %sh) — held on "
+                           "browser-capability dependency. Re-run the probe "
+                           "(``browser_manager.sh probe`` or --reprobe) to "
+                           "resolve the hold."
+                           % (_cap_state,
+                              ("%.1f" % _cap_age_h) if _cap_age_h is not None else "unknown",
+                              capability_max_age_h)),
+                "capability": {"path": capability_path,
+                               "age_hours": _cap_age_h,
+                               "max_age_hours": capability_max_age_h},
+            }
+            rp = _rec_write(rec)
+            return DispatchResult(task_id, STATE_WAITING, rec["reason"],
+                                  evidence_root=evidence_root, record_path=rp)
 
     # ── DISPATCH ENTRY — Wiring-Map Steps 1 & 3 ──────────────────────────────
     #
@@ -1355,10 +1414,21 @@ def _selftest() -> int:
 
     task = {"id": "selftest", "brand": "Fixture", "location_id": "FIXTURE0LOCATION0000"}
 
+    def _fresh_capability(d):
+        # P0-6: the capability gate must not flip this hermetic selftest on a
+        # bare box (no working/skill6-capability.json) — write a fresh receipt
+        # into the tempdir and inject its path on every dispatch_one call.
+        cap = os.path.join(d, "skill6-capability.json")
+        with open(cap, "w", encoding="utf-8") as fh:
+            json.dump({"probedAt": _ts(), "selectedLane": "agent_browser",
+                       "blockers": []}, fh)
+        return cap
+
     with tempfile.TemporaryDirectory() as d:
         # 1) HARD max_inflight gate — a second concurrent build is refused.
         r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier,
-                         max_inflight=1, inflight_now=1, live=False)
+                         max_inflight=1, inflight_now=1, live=False,
+                         capability_path=_fresh_capability(d))
         ok &= (r.state == STATE_BACKLOG)
         print("  [%s] max_inflight=1 gate -> %s" % ("ok" if r.state == STATE_BACKLOG else "FAIL", r.state))
 
@@ -1367,14 +1437,16 @@ def _selftest() -> int:
         r = dispatch_one(
             task, d,
             builder=lambda t, root: _stub_builder(t, root, duration=DEFAULT_WALLCLOCK_CAP_S + 1),
-            verifier=_stub_verifier, wallclock_cap_s=DEFAULT_WALLCLOCK_CAP_S, live=False)
+            verifier=_stub_verifier, wallclock_cap_s=DEFAULT_WALLCLOCK_CAP_S, live=False,
+            capability_path=_fresh_capability(d))
         passed = (r.state == STATE_FAILED and "timeout" in r.reason)
         ok &= passed
         print("  [%s] wallclock_cap=%ds -> %s" % ("ok" if passed else "FAIL", DEFAULT_WALLCLOCK_CAP_S, r.state))
 
     with tempfile.TemporaryDirectory() as d:
         # 3) happy path — verified + overall_pass True (truthy result).
-        r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier, live=False)
+        r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier, live=False,
+                         capability_path=_fresh_capability(d))
         passed = (r.state == STATE_VERIFIED and bool(r))
         ok &= passed
         print("  [%s] happy path -> %s (truthy=%s)" % ("ok" if passed else "FAIL", r.state, bool(r)))
@@ -1438,11 +1510,33 @@ def main(argv: list[str] | None = None) -> int:
                     "DEFAULT). GLUE only: the real per-task build is an INJECTED builder "
                     "supplied by the dept agent via dispatch_one(); this CLI exposes the "
                     "bounded config and a hermetic selftest.")
+    ap.add_argument("--reprobe", action="store_true",
+                    help="P0-6 / plan 9.7 item 5: re-run the browser capability "
+                         "probe NOW (writes working/skill6-capability.json) to "
+                         "resolve a capability-freshness STATE_WAITING hold "
+                         "(and print the result). ADVISORY: probe failure never "
+                         "raises — a failed probe leaves the hold in place.")
     ap.add_argument("--print-config", action="store_true",
                     help="print the bounded caps (max_inflight/wallclock_cap_s/poll_backoff_s) as JSON")
     ap.add_argument("--selftest", action="store_true",
                     help="prove the bounded gates fire (inflight=1 refuse, wallclock->FAILED, happy->verified)")
     args = ap.parse_args(argv)
+    if args.reprobe:
+        # P0-6 / plan 9.7 item 5: refresh the capability receipt so a
+        # STATE_WAITING freshness hold resolves on the next dispatch. Soft
+        # import (capability_probe may be absent on a bare box); the probe is
+        # ADVISORY — failure prints and returns 0, the hold simply stays.
+        try:
+            import capability_probe  # type: ignore[import-untyped]
+        except Exception as exc:  # noqa: BLE001 — advisory, never raise
+            print("WARN reprobe: capability_probe unavailable (%s) — hold stays" % exc)
+            return 0
+        result = capability_probe.run_probe()
+        print(json.dumps(result, indent=2, sort_keys=False))
+        if result.get("blockers"):
+            print("WARN reprobe: %d blocker(s) remain — hold will NOT clear until "
+                  "blockers resolve" % len(result["blockers"]))
+        return 0
     if args.print_config:
         print(json.dumps({"max_inflight": DEFAULT_MAX_INFLIGHT,
                           "wallclock_cap_s": DEFAULT_WALLCLOCK_CAP_S,

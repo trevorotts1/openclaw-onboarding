@@ -1,7 +1,10 @@
 # Skill 6 — FORM Builder (Convert and Flow / GHL) — DESIGN / SPEC
 
 **Status:** DESIGN + REVIEWABLE DRAFT. **PENDING-LIVE-RUN.** Dry-run is the default
-and the only path exercised in this review. In-app selectors are **runtime
+and the only path exercised in this review — the live (in-app, `--no-dry-run`)
+path is a spec skeleton, NOT exercised and NOT claimed; the form live-path E2E
+is OWED and clears only on a dated receipt under the durable skill6-fix
+evidence root (see `../OPERATOR-LIVE-CHECKLIST.md`). In-app selectors are **runtime
 snapshot-gates** (snapshot the live DOM, pick the ref at runtime) — no invented
 CSS is shipped as fact, matching the rest of Skill 6.
 
@@ -197,7 +200,7 @@ skill dir.
 
 | File | Role |
 |---|---|
-| `../tools/ghl_form_builder.py` | Tool — mirrors `ghl_survey_builder.py`. `build_form(task, evidence_root, dry_run=True)`; `--dry-run` default, `--selftest`, CLI. THINK-only in dry-run; live path is a spec skeleton (PENDING-LIVE-RUN). Standalone-runnable (soft imports). |
+| `../tools/ghl_form_builder.py` | Tool — mirrors `ghl_survey_builder.py`. `build_form(task, evidence_root, dry_run=True)`; `--dry-run` default, `--selftest`, CLI. THINK-only in dry-run; live path is a spec skeleton, NOT exercised and NOT claimed (PENDING-LIVE-RUN). Standalone-runnable (soft imports). |
 | `../tools/examples/form-click-list.example.json` | Example dumb-browser click script (F1–F13, 54 steps) for a "Podcast Signup" form. |
 | `../tools/examples/form-dependency-plan.example.json` | Example Skill-44 handoff: custom fields + tags with `zhc_` keys + create/reuse actions. |
 | `../tools/examples/example-run/routing/*` | Full example dry-run output (plan, dependency plan, click list, preflight). |
@@ -228,4 +231,4 @@ tag handoffs present, no banned/purged model slugs, no non-GHL tool-name leak).
 5. **QC gate:** forms should ride the same `qc-built-*.sh` / render_check evidence
    discipline; define a `qc-built-form.sh` (analogous to `qc-built-funnel.sh`)
    before flipping `--no-dry-run`.
-6. **No live run claimed.** Consistent with SKILL.md's PENDING-LIVE-RUN posture.
+6. **No live run claimed.** Consistent with SKILL.md's PENDING-LIVE-RUN posture: dry-run-only is exercised here; the live form build E2E stays OWED until a dated receipt exists — no receipt clears it, and nothing in this spec upgrades the captured work either.

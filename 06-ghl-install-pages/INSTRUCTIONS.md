@@ -101,7 +101,7 @@ Repeat this block for EACH page in the funnel (for example: Landing Page, Sales 
    - A canvas/editor area in the middle of the screen
    - A toolbar at the top
    - Possibly an "Ask AI" popup on the left side
-6. The builder loads inside an iframe (a page within a page). Your automation needs to switch to the iframe context to interact with builder elements. Use the get_builder_frame() function from the setup.
+6. The builder loads inside an iframe (a page within a page). Your automation needs to switch to the iframe context to interact with builder elements. Use agent-browser's frame-scoped snapshot (`frame @ref` / `frame main` — gate #12, after auto-inlining) for reading the builder; for cross-origin in-frame drag, click, or edit actions call the frame-scoped entrypoints in `tools/ghl_iframe_drag.py` (Playwright over the agent-browser CDP), always behind the `tools/browser_manager.sh` gateway.
 
 
 ### Phase 5: Dismiss the AI Assistant
@@ -259,6 +259,39 @@ NEVER publish without explicit user approval. The publishing workflow is:
 5. WAIT for the user to say "go ahead" or "publish" or give explicit approval
 6. ONLY THEN click "Publish" on each page
 7. Verify the live URLs are working after publishing
+
+
+## Gate cross-reference (automation view)
+
+> Canonical source: **`tools/gates.json`** (30 gates: 2 captured, 28 runtime).
+> Legend: **runtime** snapshot-gates resolve against the live DOM at build time
+> (snapshot → pick the @ref → act; never hardcode invented CSS); **captured**
+> gates are live-captured selectors — gates **1** `login_form` and **27**
+> `auth_storage_keys` only (verify they still match; do not re-snapshot blindly).
+
+| Section (this document) | Governing gates (`tools/gates.json` ID · name) |
+| --- | --- |
+| Phase 1: Navigate to Funnels | 2 · account_switcher (sub-account context, resolved before Sites navigation), 3 · sidebar_sites, 4 · tab_funnels |
+| Phase 2: Create a New Funnel | 5 · new_funnel_button, 6 · funnel_name_input, 7 · create_button |
+| Phase 3: Add Funnel Steps | 8 · add_new_step, 9 · step_name_and_path_inputs, 10 · blank_template |
+| Phase 4: Open the Page Builder | 11 · edit_page, 12 · editor_iframe_boundary |
+| Phase 5: Dismiss the AI Assistant | 18 · dismiss_ai_popup |
+| Phase 6: Add a Blank Section and Code Element | 13 · add_section_blank |
+| Phase 7: Set Full Width (CRITICAL STEP) | 14 · full_width_toggle |
+| Phase 8: Paste Your Code | 15 · code_element, 16 · code_editor_instance, 17 · code_element_save; when frames are involved, also 29 · correct_frame_before_edit and 30 · refreshed_snapshot_after_panel_open (the multi-iframe protocol) |
+| Phase 9: Save the Page | 19 · page_save |
+| Phase 10: Preview and Verify | 20 · preview (plus 28 · ghl_published_domain_for_frame_ancestors, the published-domain gate used for preview verification) |
+| The Iframe Deployment Method (For Complex Code) | 12 · editor_iframe_boundary, 15 · code_element, 16 · code_editor_instance, 17 · code_element_save, 29 · correct_frame_before_edit, 30 · refreshed_snapshot_after_panel_open |
+| Publishing (ONLY When User Approves) | 21 · publish — human-approved ONLY; the publish gate never fires without explicit user approval |
+
+Two surfaces the phases above do not walk through: gates **22-26**
+(`funnel_list_row_open`, `tab_websites`, `new_website_button_and_name`,
+`website_editor_selectors`, `code_element_iframe_embed`) govern the **Websites
+(Mode 2)** surface — the "Websites" tab path from Phase 1's note, used only
+when the user specifically asked for a standalone website — and gate **27**
+(`auth_storage_keys`, captured) governs the refresh-token seed that must
+already be in place before Phase 1 (D7; the agent never logs in). Multi-page
+funnels repeat Phases 4-10 per page, so they re-run the same gate set each time.
 
 
 ## Client Message Rules — Read Before Sending Anything to a Client

@@ -1,7 +1,7 @@
 {
   "schema": "funnel-engine-registry/v1",
   "description": "Shared STEP-0 funnel-BUILD engine selector registry for Skill 6 (06-ghl-install-pages). This is the ONE place a 'build me a funnel' request is routed to the specialist AUTHORING engine that owns that funnel's copy + image IP. Skill 6 remains the ONE GHL delivery rail: every engine below AUTHORS copy/images inside its own fail-closed pipeline, then DELEGATES the GHL media folder + upload + funnel/page build BACK to Skill 6 (ghl_media.py + ghl_rest_canvas.py / ghl_builder.py). The selector never builds anything itself and never blocks a build.",
-  "how_to_register_a_second_entry": "Append one object to engines[] with a unique id, the skill dir, the canonical fail-closed entry shell, a priority, and a match block (names/keywords/signals/anti_signals). No selector code change is required. See funnel-engines/README.md. Skill 56 (Sales-Page-Assets) is now REGISTERED as the second entry (direct-response sales page / VSL family) — the pattern below is the template for any third engine.",
+  "how_to_register_a_second_entry": "Append one object to engines[] with a unique id, the skill dir, the canonical fail-closed entry shell, a priority, and a match block (names/keywords/signals/anti_signals). No selector code change is required. See funnel-engines/README.md. Skill 56 (Sales-Page-Assets) is now REGISTERED as the second entry (direct-response sales page / VSL family) — the pattern below is the template for any further entry. Skill 62 (cinematic-web-funnel-engine) is registered as that third entry and currently carries an optional readiness block (status \"skeleton\", certify_capable false) — offline build complete, live E2E deliberately HELD pending an operator-approved live run; the selector surfaces readiness in match-decision receipts and --list output, and STEP-0 refuses to route into a skeleton engine without --force-skeleton.",
   "default_engine": null,
   "default_behavior": "When NO engine clears its confidence threshold, the selector returns decision=NO_ENGINE_MATCH and the caller FALLS THROUGH to the existing template-first funnel matcher (tools/funnel_matcher.py step0_match) and the generic Skill-6 build path. A below-threshold score never prevents a build.",
   "engines": [
@@ -188,7 +188,8 @@
           "webinar registration only"
         ]
       },
-      "notes": "Third registered engine (registered on branch skill62/cinematic-engine, not yet merged to main). Client runtime uses the CLIENT's own configured providers (Kie.ai on the client's own KIE_API_KEY; never Anthropic, never operator keys); the deterministic phase provers are model-free. No paid generation without an approved budget cap. Publish is human-approved (preview + production URLs only after explicit approval)."
+      "notes": "Third registered engine (registered on branch skill62/cinematic-engine, not yet merged to main). Client runtime uses the CLIENT's own configured providers (Kie.ai on the client's own KIE_API_KEY; never Anthropic, never operator keys); the deterministic phase provers are model-free. No paid generation without an approved budget cap. Publish is human-approved (preview + production URLs only after explicit approval).",
+      "readiness": {"status": "skeleton", "certify_capable": false, "note": "offline build complete (CWFE-MANIFEST.json build_status COMPLETE offline); live E2E deliberately HELD pending operator-approved live run"}
     }
   ]
 }
