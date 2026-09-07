@@ -23,7 +23,10 @@ HARDENING (fix/capacity-override-clamp)
 declared value verbatim and unbounded, and that branch sat AHEAD of the
 provider-known/plan-unknown PARK branch -- so a `capacity_override.json` of
 `{"provider":"ollama-cloud","max_concurrent":9999}` (a known cap-table
-provider whose highest row anywhere is 10) yielded MEASURED / available=9999,
+provider whose highest row anywhere is 8 -- it was 10 when that bug was found;
+the 2026-09-04 operator ruling lowered the $100/month row to 8 to leave the
+client 2 free slots, and the point of the sentence is unchanged: 9999 was
+never a reading off the account) yielded MEASURED / available=9999,
 never PARKED, never AF-CAPACITY-UNMEASURED. The declared number was trusted as
 if it were a reading off the account, when it was only ever a claim about it.
 Fixed by re-ordering `_resolve_override()`'s three cases so the PARK check for
@@ -80,23 +83,54 @@ always honoured; inventing an upward ceiling never is). UNBOUNDED is never
 a large magic integer -- see execution_plan.cap_wave_width(), which is what
 actually keeps a wave's width bounded by the number of items ready to run.
 
-DETECTION ORDER (first hit wins; every step is read-only)
----------------------------------------------------------
-    a. capacity_override.json in the department config dir -- an explicitly
-       declared {provider, plan, max_concurrent}.
+DETECTION ORDER (every step is read-only) -- RESOLVED PER PROVIDER
+-------------------------------------------------------------------
+Detection answers about ONE provider at a time. `detect()`/`probe()` take an
+optional `provider=` (and `model=`); a caller that has a route asks about THAT
+route's provider, and the no-arg call keeps its historical meaning -- "the
+PRIMARY route's provider" -- for the launch gate, the wave scheduler and the
+work-order pool, which legitimately have no single route to ask about.
+
+STEP 1 -- establish WHICH provider is in question (first hit wins):
+    a. the `provider=` argument, canonicalised through normalize_provider().
     b. the 9Router configuration -- which provider the primary model routes to
        (~/.9router/db/data.sqlite, opened read-only; ONLY the non-secret
        `combos.name` / `combos.models` columns are read).
     c. the OpenClaw agent model configuration -- the provider namespace prefix
        on the primary model (~/.openclaw/openclaw.json, `agents.*.model.primary`).
-    d. provider is on the cap table (ollama-cloud) but plan unknown -> emit the
-       interview question and PARK. The answer is persisted to
-       capacity_override.json so the question is asked ONCE, never every run.
-       A NO_CAP_PROVIDERS hit (deepseek-direct, openrouter, ...) never reaches
-       this step -- it resolves MEASURED/UNBOUNDED at step b or c regardless
-       of whether a plan could be determined, because no plan of theirs
+    d. the provider a declared capacity_override.json names -- ONLY when
+       nothing above identified one (an unconfigured box carrying a
+       hand-written declaration).
+
+STEP 2 -- resolve THAT provider's plan (first hit wins):
+    a. the model slug, when the caller passed one (_plan_from_model_slug).
+    b. that provider's OWN locked entry in resource_profile.json. The profile
+       is THE store of interview answers -- one record per provider, each
+       locked independently.
+    c. that provider's OWN sub-record in capacity_override.json (schema 2
+       `providers[<canonical>]`; a legacy flat v1 record counts only for the
+       provider IT names). A declared `max_concurrent` may LOWER the resolved
+       ceiling, never raise it -- self-throttling is always honoured,
+       inventing an upward ceiling never is.
+    d. a NO_CAP_PROVIDERS hit (deepseek-direct BYOK, openrouter, ...) ->
+       MEASURED/UNBOUNDED without any plan at all, because no plan of theirs
        changes the ceiling: there isn't one.
-    e. nothing found -> DEFAULT_CONSERVATIVE plus a loud UNDETERMINED line.
+    e. a cap-table provider (ollama-cloud) with no plan OF ITS OWN -> emit the
+       interview question and PARK. The answer is recorded in
+       resource_profile.json and the PROFILE LOCK for that provider is the
+       ask-once gate -- not the existence of an override file.
+    f. nothing found at all -> DEFAULT_CONSERVATIVE plus a loud UNDETERMINED
+       line.
+
+WHY PER PROVIDER (binding -- do not "simplify" this back)
+----------------------------------------------------------
+An interview answer is a fact about ONE account. Projecting it into a
+client-wide capacity_override.json made a single provider's plan the whole
+run's ceiling: on a two-provider client every global answer is wrong for one
+of them (the Ollama-answered box capped its DeepSeek routes at that Ollama
+number, and a DeepSeek-primary box dropped its Ollama-routed phases to the
+conservative floor 3 on the provider-identity mismatch). There is no single
+correct global answer, so this module stopped producing one.
 
 CREDENTIAL SAFETY (binding)
 ---------------------------

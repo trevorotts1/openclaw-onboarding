@@ -41,7 +41,7 @@ SCHEMA (version 1)
     "<provider-id>": {
       "provider":       "ollama-cloud",
       "plan_tier":      "$100/month" | null,     # non-detectable -> asked ONCE
-      "concurrency_ceiling": 10 | "UNBOUNDED" | null,
+      "concurrency_ceiling": 8 | "UNBOUNDED" | null,   # 8, not 10: see below
       "ceiling_source": "cap-table" | "declared" | "interview" | "probe",
       "consented":      true/false,
       "wired_models":   ["deepseek-v4-flash", ...],   # probed (FIX 9)
@@ -91,12 +91,38 @@ providers and "plan detected/unknown" ONLY. Redaction is per-section and
 runs on every write and every read-export; the raw store on disk is
 written already-redacted, so a leak of the FILE is not a leak of secrets.
 
-CAPACITY INTEROPERATION
------------------------
+CAPACITY INTEROPERATION (per provider -- do not "simplify" this back)
+----------------------------------------------------------------------
 The profile NEVER bypasses capacity.py's doctrine. is_plan_locked() and
 intake questions consult capacity.CAP_TABLE; capacity.probe() remains the
 dispatch-path authority. FIX 8 adds persistence and the ask-once lock --
 it does not move the gate.
+
+THIS store is where a plan answer lives, and it holds ONE record per
+provider, each locked independently. That per-provider shape is the whole
+point:
+
+  * The ask-once gate is the PROFILE LOCK for a provider
+    (is_plan_locked()/pending_questions()), not the existence of any file.
+  * A plan answer is NEVER projected into a client-wide
+    capacity_override.json. One provider's answer sitting in a client-wide
+    file is what capped every OTHER provider's routes: an Ollama Cloud
+    $100/month answer pinned the whole run to that number even on routes
+    that never touched Ollama, while on a DeepSeek-primary box the
+    Ollama-routed phases dropped to the conservative floor 3 on the
+    provider-identity mismatch. A two-provider client has no single correct
+    global answer, so nothing writes one.
+  * capacity_override.json survives only as an operator self-throttle,
+    honoured for the provider its record names and for no other. It can
+    LOWER that provider's ceiling; it can never raise one, and it is not
+    where the interview answer goes.
+  * concurrency_ceiling is copied straight out of capacity.CAP_TABLE, which
+    is the single source of truth. For (ollama-cloud, "$100/month") that is
+    8, NOT the raw seat maximum of 10: operator ruling 2026-09-04, restated
+    verbatim 2026-09-07 -- "i said 8 so that 2 are left over for other
+    work". The seat allows ten; the presentation job spends eight and leaves
+    the client two for whatever else runs on the same account. Raising it
+    back to 10 here or anywhere else silently spends that reserve.
 
 Rollout flag
 ------------

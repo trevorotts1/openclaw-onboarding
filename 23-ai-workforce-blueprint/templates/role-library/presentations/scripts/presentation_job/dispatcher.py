@@ -4621,12 +4621,32 @@ def resolve_dept_root(scripts_dir: Path) -> Path:
 # capacity_override.json = {provider: deepseek-direct, max_concurrent: 100}
 # before every dispatch was DELETED. That fabricated declaration resolved
 # capacity.probe() to MEASURED=100 and masked the real detected tier (and the
-# PARK/interview path) on every box. The override file is now written ONLY by
-# the detection/interview flow (resource_profile.record_plan_answer ->
-# capacity.persist_plan_answer) or an explicit operator action
-# (--declare-capacity); with no override present, resolve_max_workers()
-# reports the DETECTED tier (e.g. ollama-cloud / $20/month -> 3), never a
-# fabricated 100.
+# PARK/interview path) on every box. With no override present,
+# resolve_max_workers() reports the DETECTED tier (e.g. ollama-cloud /
+# $20/month -> 3), never a fabricated 100.
+#
+# WHO WRITES THIS FILE NOW (and who does NOT):
+#   * An explicit operator action -- `--declare-capacity N` with the provider
+#     it is declaring for. That is the file's ONLY remaining job: a
+#     PER-PROVIDER self-throttle. A declared max_concurrent may LOWER that
+#     provider's ceiling; it can never raise one, and it says nothing about
+#     any OTHER provider the client is on.
+#   * NOT the interview. The plan answer is a fact about ONE account, and it
+#     lives in resource_profile.json -- one locked record per provider, which
+#     is also the ask-once gate. It is no longer projected into a client-wide
+#     capacity_override.json, because a client-wide file carrying one
+#     provider's plan is exactly what capped every other provider's routes:
+#     an Ollama $100/month answer pinned the whole run to that number even on
+#     routes that never touched Ollama, and on a DeepSeek-primary box the
+#     Ollama-routed phases fell to the conservative floor 3 on the
+#     provider-identity mismatch. A two-provider client has no single correct
+#     global answer, so nothing writes one any more.
+#
+# Consequence for this function: the provider it declares for MUST come from
+# the caller (the routed/detected provider), never a hard-coded literal.
+# "deepseek-direct" became a cap-table provider on 2026-09-04, so a
+# provider-only record naming it now resolves to "cap-table provider, plan
+# unknown" -- it PARKs the very run the declaration was meant to unblock.
 def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100) -> None:
     try:
         sys.path.insert(0, str(dept_root / "scripts"))
