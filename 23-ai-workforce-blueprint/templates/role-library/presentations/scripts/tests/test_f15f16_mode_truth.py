@@ -32,6 +32,21 @@ F16 -- ULTRA WAS COSMETIC (review section 6).
           ultra to be wider is for standard to reach less far:
           STANDARD_MODE_CEILING = 25 (the review's own recommendation), which
           is still 3x the 8 the plan had been PROMISING standard all along.
+
+          *** U3 (2026-09-07) REVERSED (a). *** The 25 was a review
+          SUGGESTION whose own text read "Trevor's call"; that call was never
+          made, and it was applied more broadly than the suggestion proposed.
+          STANDARD_MODE_CEILING is back at the operator's 100. Consequence,
+          stated rather than engineered around: ultra and standard are
+          byte-identical in width again. That is NOT re-fixed by re-narrowing
+          standard -- the two honest fixes (raise ultra, or let the operator
+          set both numbers) are the operator's call and remain OPEN. What the
+          engine does instead is say the axis is COSMETIC in every record.
+          The four assertions below that asserted (a)'s width split are
+          marked U3 and now assert the restored state; F15 (everything else
+          in this file) is untouched, and tests/
+          test_u3_standard_ceiling_restored.py is the undo's own regression
+          test, proven in both directions.
       (b) WHEN CAPACITY IS NOT MEASURED, the mode axis is INERT and every
           record says so OUT LOUD -- instead of silently reporting the
           conservative floor 3 while the wave ran at whatever the probe found.
@@ -218,7 +233,10 @@ def test_the_recorded_plan_carries_the_mode_ceiling_that_produced_it():
     plan = model_router.mode_concurrency("standard", profile=prof)
     assert plan["mode_operator_ceiling"] == model_router.STANDARD_MODE_CEILING
     assert plan["operator_ceiling"] == model_router.ULTRA_OPERATOR_CEILING
-    assert plan["mode_axis_in_force"] is True
+    # U3: the ceiling that produced the plan is still recorded -- but the axis
+    # flag now tells the truth about whether it BOUGHT anything, and with
+    # standard restored to 100 the table differentiates nothing.
+    assert plan["mode_axis_in_force"] is False
     ultra = model_router.mode_concurrency("ultra", profile=prof)
     assert ultra["mode_operator_ceiling"] == model_router.ULTRA_OPERATOR_CEILING
 
@@ -226,39 +244,47 @@ def test_the_recorded_plan_carries_the_mode_ceiling_that_produced_it():
 # ===========================================================================
 # 2. F16 -- ULTRA IS GENUINELY WIDER WHEN CAPACITY IS MEASURED
 # ===========================================================================
-def test_ultra_is_wider_than_standard_on_a_measured_client():
-    """PRISTINE origin/main: 100 and 100. Byte-identical. That was the whole
-    of "ultra"."""
+def test_ultra_and_standard_widths_track_the_ratified_ceilings():
+    """U3 REWROTE THIS TEST. It used to assert `ultra > standard`, which was
+    only ever true because F16 narrowed standard to 25 without approval. What
+    is actually invariant is that each mode's applied width IS its own
+    ratified ceiling -- so the day an operator sets two different numbers this
+    test proves the split, and today it proves there is none."""
     prof = _profile(ceiling=2500)
     ultra = model_router.capped_width(2500, "ultra", profile=prof)["width"]
     standard = model_router.capped_width(2500, "standard", profile=prof)["width"]
-    assert ultra > standard, (ultra, standard)
     assert ultra == model_router.ULTRA_OPERATOR_CEILING
     assert standard == model_router.STANDARD_MODE_CEILING
+    assert (ultra > standard) is (model_router.STANDARD_MODE_CEILING <
+                                  model_router.ULTRA_OPERATOR_CEILING)
 
 
-def test_the_prompt_wave_itself_runs_wider_under_ultra(monkeypatch, tmp_path):
-    """Not the plan -- the number parallel_prompt_worker._workers_for is
-    handed. This is where "ultra" either exists or does not."""
+def test_the_prompt_wave_itself_runs_at_each_modes_ratified_ceiling(
+        monkeypatch, tmp_path):
+    """U3 REWROTE THIS TEST -- same reason as the one above. Not the plan: the
+    number parallel_prompt_worker._workers_for is handed. It must equal the
+    mode's own ceiling, whatever the operator has ratified that to be; with
+    standard back at 100 both modes run the same 100-wide wave."""
     ultra = _stamp(monkeypatch, tmp_path, mode="ultra",
                    probe_available=2500, ceiling=2500)["measured_capacity"]
     standard = _stamp(monkeypatch, tmp_path, mode="standard",
                       probe_available=2500, ceiling=2500)["measured_capacity"]
-    assert ultra > standard, (ultra, standard)
     assert (ultra, standard) == (model_router.ULTRA_OPERATOR_CEILING,
                                  model_router.STANDARD_MODE_CEILING)
 
 
-def test_an_unbounded_client_also_gets_a_real_ultra_standard_split():
-    """A bring-your-own-capacity client DECLARED its capacity; that is a
-    determined state, not an absence. The mode axis applies -- and provider
-    advertising still never raises the operator ceiling."""
+def test_an_unbounded_client_gets_each_modes_ratified_ceiling():
+    """U3 REWROTE THE LAST ASSERTION (it demanded ultra > standard, which only
+    held because of the unapproved 25). A bring-your-own-capacity client
+    DECLARED its capacity; that is a determined state, not an absence, so the
+    per-mode ceiling applies there -- and provider advertising still never
+    raises the operator ceiling."""
     prof = _profile(ceiling="UNBOUNDED")
     assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 100
     assert model_router.mode_ceiling("standard", profile=prof)["ceiling"] == \
         model_router.STANDARD_MODE_CEILING
-    assert model_router.capped_width(2500, "ultra", profile=prof)["width"] > \
-        model_router.capped_width(2500, "standard", profile=prof)["width"]
+    assert model_router.capped_width(2500, "standard", profile=prof)["width"] \
+        == model_router.STANDARD_MODE_CEILING
 
 
 # ===========================================================================
@@ -295,8 +321,13 @@ def test_the_unmeasured_notice_reaches_the_mode_plan_record():
     assert any("UNMEASURED CLIENT CEILING" in w for w in plan["warnings"]), plan
     assert plan["mode_axis"]["in_force"] is False, plan
     measured = model_router.mode_plan("ultra", profile=_profile(ceiling=100))
+    # U3: still no `warnings` -- capacity WAS determined here, and warnings[]
+    # means "no width could be determined", which is F15's meaning and stays.
     assert not measured.get("warnings"), measured
-    assert measured["mode_axis"]["in_force"] is True, measured
+    # U3: but the axis is out of force, because standard is 100 again and the
+    # ceiling table differentiates nothing. See test_u3_standard_ceiling_
+    # restored.py section 3.
+    assert measured["mode_axis"]["in_force"] is False, measured
 
 
 def test_the_launcher_banner_and_sidecar_carry_the_notice(monkeypatch,
@@ -386,10 +417,16 @@ def test_economys_applied_width_is_untouched_by_f15_and_f16():
 
 
 def test_the_operator_ceiling_constant_is_untouched():
-    """100 is human-ratified. F16 did not raise it -- it lowered STANDARD's
-    reach, which is the only honest lever available."""
+    """100 is human-ratified and neither F16 nor U3 moved it: F16 lowered
+    STANDARD's reach to 25, U3 put it back at 100. Nothing may exceed the
+    ratified 100, and standard may never again be quietly cut below the
+    number the operator actually has -- the two bounds that survive whatever
+    he decides next."""
     assert model_router.ULTRA_OPERATOR_CEILING == 100
-    assert model_router.STANDARD_MODE_CEILING < model_router.ULTRA_OPERATOR_CEILING
+    assert model_router.STANDARD_MODE_CEILING <= model_router.ULTRA_OPERATOR_CEILING
+    assert model_router.STANDARD_MODE_CEILING == 100, (
+        "U3: standard is the operator's 100 -- see tests/"
+        "test_u3_standard_ceiling_restored.py")
     assert model_router.STANDARD_MODE_CEILING > model_router.STANDARD_WORKER_DEFAULT
     assert model_router.MODE_OPERATOR_CEILING["ultra"] == \
         model_router.ULTRA_OPERATOR_CEILING
