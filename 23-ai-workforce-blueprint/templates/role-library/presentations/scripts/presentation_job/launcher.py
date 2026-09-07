@@ -395,6 +395,68 @@ EXIT_MODEL_PLAN_UNSATISFIED = 11
 MODEL_PLAN_AUTOFAIL_CODE = "AF-MODEL-PLAN-UNSATISFIED"
 
 
+# ---------------------------------------------------------------------------
+# F2 -- AUTO-REPIN ON MANIFEST CHANGE, BEFORE THE RESUME SPAWNS
+# ---------------------------------------------------------------------------
+#: THE DEFECT THIS CLOSES. A run pins the manifest it was planned against
+#: (`state.manifest_sha256`). Every fleet roll that edits PIPELINE-MANIFEST.json
+#: moves that file's sha. `__main__.main` then refuses the resume with
+#: EXIT_MANIFEST_MISMATCH (7):
+#:
+#:     FATAL: manifest changed under a running job.
+#:       pinned : 991516d8... (v51)     on disk: 8b8b03d7... (v67)
+#:       ... re-pin it first: presentation_job.py --repin --run-dir ...
+#:
+#: `__main__.cmd_repin` (FIX 20) is the documented cure and it works -- but
+#: NOTHING calls it. No scheduler, no poller, no supervisor. So the launcher
+#: spawns, the engine dies in about a second, and the poller counts the spawn
+#: as a launch ("2 launched") because `Popen` succeeded. Measured live on the
+#: operator box at 13:40, 13:45 and 13:50 on 2026-09-06: two runs re-spawned
+#: every 5 minutes for days, each tick re-running OCR Step 0, the capacity
+#: probe, the model-plan gate and the mode sidecar for a process that cannot
+#: survive its own first second. `origin/main` moved five times that day; every
+#: bump that touches the manifest does this to every in-flight run, fleet-wide.
+#:
+#: So the resume path repins ITSELF, synchronously, before argv is built:
+#: compare the pinned sha to the sha of the manifest on disk, and on a
+#: difference run `presentation_job.py --repin --run-dir <run>` as a child and
+#: require rc 0 before continuing. The repin is exactly the operator's command
+#: -- one implementation of the phase diff (obsolete/added), one place where a
+#: pin moves -- never a second, launcher-local reimplementation of it.
+#:
+#: WHAT THIS IS NOT. It is not a licence to run a job against a manifest whose
+#: repin FAILED. A failed repin refuses the dispatch (DISPATCH_REPIN_FAILED,
+#: nothing spawned) instead of spawning an engine that is already dead, so the
+#: poller's own accounting records a refusal rather than a phantom launch.
+#:
+#: FAIL-OPEN ONLY WHERE THE ANSWER IS UNDETERMINED. No state.json, no pinned
+#: sha, an unreadable state file, or a pinned manifest path that no longer
+#: exists: this gate cannot prove a mismatch, so it does nothing at all and
+#: leaves the pre-fix behaviour (the engine's own exit 7, with its own message)
+#: exactly as it was. Only a PROVEN sha difference triggers a repin.
+DISPATCH_REPIN_FAILED = -11
+
+#: CLI exit code for DISPATCH_REPIN_FAILED.
+EXIT_REPIN_FAILED = 12
+
+REPIN_AUTOFAIL_CODE = "AF-MANIFEST-REPIN-FAILED"
+
+#: Documented rollback: PRESENTATION_AUTO_REPIN=0 leaves the surface inert --
+#: no comparison, no child process, no refusal. The pre-F2 behaviour (resume
+#: dies exit 7, operator repins by hand) returns exactly.
+AUTO_REPIN_ENV = "PRESENTATION_AUTO_REPIN"
+
+#: Where the child repin's stdout+stderr is appended, under the run dir so it
+#: travels with the run it explains.
+REPIN_LOG_RELATIVE = ("working", "logs", "repin.log")
+
+#: A repin is a state read, a phase diff and one atomic state write on a local
+#: file. It has no network and no provider call. A minute is already two orders
+#: of magnitude more than it needs; the timeout exists so a wedged child can
+#: never hold the 5-minute poller tick open forever.
+REPIN_TIMEOUT_S = 120.0
+
+
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
 #: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
 #: to proceed AT, not a ceiling this account was proven to support. Checking
@@ -1190,6 +1252,163 @@ def model_plan_gate(run_path: Path, mode: Optional[str] = None) -> Optional[int]
     return None
 
 
+def _as_text(chunk) -> str:
+    """subprocess captures come back as str, bytes or None depending on where
+    the exception was raised. All three have to land in the log readably."""
+    if chunk is None:
+        return ""
+    if isinstance(chunk, bytes):
+        return chunk.decode("utf-8", "replace")
+    return str(chunk)
+
+
+def _repin_log_path(run_path: Path) -> Path:
+    return run_path.joinpath(*REPIN_LOG_RELATIVE)
+
+
+def _pinned_manifest(run_path: Path,
+                     scripts_dir: Path) -> Tuple[Optional[str], Optional[Path], str]:
+    """(pinned_sha, manifest_path_on_disk, why) for a run -- or a stated UNDETERMINED.
+
+    Never raises and never exits. `manifest.resolve_manifest` and `Manifest()`
+    both `die()` (SystemExit) on a stale or unparseable file; this helper is a
+    read, so every one of those outcomes comes back as "cannot tell", with the
+    reason named, and the caller does nothing.
+    """
+    state_path = run_path / "state.json"
+    if not state_path.is_file():
+        return None, None, f"no state.json at {run_path}"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        return None, None, f"state.json unreadable ({exc})"
+    if not isinstance(state, dict):
+        return None, None, "state.json is not an object"
+    pinned = state.get("manifest_sha256")
+    if not isinstance(pinned, str) or not pinned:
+        return None, None, "state.json carries no manifest_sha256 pin"
+
+    declared = state.get("manifest_path")
+    if isinstance(declared, str) and declared:
+        cand = Path(declared).expanduser()
+        if cand.is_file():
+            return pinned, cand, "pinned manifest_path"
+        # cmd_repin refuses this case too ("pinned manifest is gone; pass
+        # --manifest to repin against a copy"). Guessing a replacement is not
+        # this gate's call.
+        return None, None, f"pinned manifest_path {cand} is gone"
+
+    try:
+        try:
+            from .manifest import resolve_manifest as _resolve_manifest
+        except ImportError:
+            from manifest import resolve_manifest as _resolve_manifest  # type: ignore[no-redef]
+        resolved = Path(_resolve_manifest(None, run_path, scripts_dir))
+    except (ImportError, SystemExit, OSError) as exc:
+        return None, None, f"manifest could not be resolved ({exc})"
+    if not resolved.is_file():
+        return None, None, f"resolved manifest {resolved} is gone"
+    return pinned, resolved, "resolved from the scripts dir"
+
+
+def auto_repin_gate(run_path: Path, engine_entry: Path,
+                    scripts_dir: Path) -> Optional[int]:
+    """F2. Re-pin a resumed run to the manifest on disk, before anything spawns.
+
+    Returns None to continue the dispatch (nothing to repin, or the repin
+    succeeded), or DISPATCH_REPIN_FAILED when a PROVEN mismatch could not be
+    cured -- in which case nothing is spawned and the caller's exit status
+    tells the poller this was a refusal, never a launch.
+    """
+    if os.environ.get(AUTO_REPIN_ENV, "").strip() == "0":
+        return None
+
+    try:
+        try:
+            from .state import sha256_file as _sha256_file, utcnow as _utcnow
+        except ImportError:
+            from state import sha256_file as _sha256_file, utcnow as _utcnow  # type: ignore[no-redef]
+    except ImportError as exc:
+        print(f"launcher: auto-repin unavailable ({exc}) -- resuming on the "
+              f"existing pin", file=sys.stderr)
+        return None
+
+    pinned, manifest_path, why = _pinned_manifest(run_path, scripts_dir)
+    if pinned is None or manifest_path is None:
+        # UNDETERMINED, not "no mismatch". Say which, and change nothing.
+        print(f"launcher: auto-repin skipped -- {why}", flush=True)
+        return None
+
+    try:
+        on_disk = _sha256_file(manifest_path)
+    except OSError as exc:
+        print(f"launcher: auto-repin skipped -- cannot hash {manifest_path} "
+              f"({exc})", flush=True)
+        return None
+
+    if on_disk == pinned:
+        return None
+
+    print(f"launcher: manifest changed under this run -- pinned "
+          f"{pinned[:12]}, on disk {on_disk[:12]} ({manifest_path}). "
+          f"Re-pinning before resume (FIX 20 --repin).", flush=True)
+
+    repin_argv = [sys.executable or "python3", str(engine_entry),
+                  "--repin", "--run-dir", str(run_path)]
+    try:
+        proc = subprocess.run(repin_argv, shell=False, cwd=str(scripts_dir),
+                              check=False, capture_output=True, text=True,
+                              timeout=REPIN_TIMEOUT_S)
+        rc = proc.returncode
+        output = (proc.stdout or "") + (proc.stderr or "")
+    except subprocess.TimeoutExpired as exc:
+        rc = -1
+        output = (f"repin TIMED OUT after {REPIN_TIMEOUT_S}s\n"
+                  f"{_as_text(exc.stdout)}{_as_text(exc.stderr)}")
+    except OSError as exc:
+        rc = -1
+        output = f"repin could not start: {exc}\n"
+
+    log_path = _repin_log_path(run_path)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(f"=== {_utcnow()} auto-repin rc={rc} "
+                     f"pinned={pinned} on_disk={on_disk} "
+                     f"manifest={manifest_path}\n")
+            fh.write(output if output.endswith("\n") else output + "\n")
+    except OSError as exc:
+        # A record that cannot be written must never be the reason a deck does
+        # not get built -- the same contract as the mode-plan sidecar.
+        print(f"launcher: could not write {log_path}: {exc}", file=sys.stderr)
+
+    if rc != 0:
+        detail = (output.strip().splitlines() or ["no output"])[-1]
+        print(f"launcher: REFUSING to dispatch {run_path} -- "
+              f"{REPIN_AUTOFAIL_CODE}: --repin exited {rc}. "
+              f"pinned {pinned[:12]} != on disk {on_disk[:12]} "
+              f"({manifest_path}). Last line: {detail}. "
+              f"Full output: {log_path}. Nothing was spawned -- a resume on a "
+              f"stale pin dies EXIT_MANIFEST_MISMATCH in about one second and "
+              f"would be miscounted as a launch.", file=sys.stderr)
+        return DISPATCH_REPIN_FAILED
+
+    # Best-effort provenance: cmd_repin already recorded manifest_repin_history
+    # with both shas; this row is what distinguishes an AUTOMATIC repin from the
+    # operator running the same command by hand.
+    def _stamp(state):
+        rows = state.setdefault("auto_repin_history", [])
+        if isinstance(rows, list):
+            rows.append({"at": _utcnow(), "by": "launcher.auto_repin_gate",
+                         "old_sha256": pinned, "new_sha256": on_disk,
+                         "manifest_path": str(manifest_path)})
+    _merge_run_state_field(run_path, _stamp)
+
+    print(f"launcher: auto-repin OK -- run re-pinned to {on_disk[:12]}; "
+          f"resuming. (log: {log_path})", flush=True)
+    return None
+
+
 def dispatch(
     run_dir: str,
     client: Optional[str] = None,
@@ -1252,7 +1471,8 @@ def dispatch(
         the FIX 12 credit preflight blocked a declared mode
         (AF-CREDIT-PREFLIGHT, nothing spawned), -7 when the notify transport
         is unconfigured (AF-NOTIFY-UNCONFIGURED, FIX 22 fail-closed,
-        nothing spawned).
+        nothing spawned), -11 when a resume needed an auto-repin and the
+        repin failed (AF-MANIFEST-REPIN-FAILED, F2, nothing spawned).
         The function returns immediately when background=True.
     """
     # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
@@ -1482,6 +1702,18 @@ def dispatch(
               f"{_conc.get('concurrency')} ({_conc.get('reason')}); ceiling "
               f"{_ceil.get('ceiling')} ({_ceil.get('reason')}); recorded in "
               f"{sidecar.name}", flush=True)
+
+    # F2 AUTO-REPIN GATE -- resume only, after every refusal gate (a launch
+    # that is going to be refused has nothing to re-pin), and BEFORE argv is
+    # built. A run whose pinned manifest sha no longer matches the file on disk
+    # is re-pinned with the engine's own `--repin` before the resume spawns;
+    # a repin that fails refuses the dispatch instead of spawning an engine
+    # that dies EXIT_MANIFEST_MISMATCH in one second and is then counted as a
+    # launch. PRESENTATION_AUTO_REPIN=0 is the documented rollback.
+    if resume:
+        _repin_refusal = auto_repin_gate(run_path, engine_entry, scripts)
+        if _repin_refusal is not None:
+            return _repin_refusal
 
     argv = [
         sys.executable or "python3",
@@ -1788,6 +2020,8 @@ def main(argv: Optional[list] = None) -> int:
             return EXIT_OCR_ENGINE_MISSING
         if rc == DISPATCH_MODEL_PLAN_REFUSED:
             return EXIT_MODEL_PLAN_UNSATISFIED
+        if rc == DISPATCH_REPIN_FAILED:
+            return EXIT_REPIN_FAILED
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel,
@@ -1812,6 +2046,8 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_OCR_ENGINE_MISSING
     if pid == DISPATCH_MODEL_PLAN_REFUSED:
         return EXIT_MODEL_PLAN_UNSATISFIED
+    if pid == DISPATCH_REPIN_FAILED:
+        return EXIT_REPIN_FAILED
     return 0 if pid > 0 else 1
 
 
