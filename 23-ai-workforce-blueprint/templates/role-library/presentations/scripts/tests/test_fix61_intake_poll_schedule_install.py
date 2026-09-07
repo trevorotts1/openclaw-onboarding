@@ -52,6 +52,14 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent.parent  # .../presentations/scrip
 # scripts -> presentations -> role-library -> templates -> 23-ai-workforce-blueprint -> repo root
 _REPO_ROOT = _SCRIPTS_DIR.parents[4]
 INSTALL_SH = _REPO_ROOT / "install.sh"
+# F12 moved install_intake_poll_schedule() and its two resolvers out of
+# install.sh and into this shared lib VERBATIM, so update-skills.sh can reach
+# them and a fleet roll can repair the schedule it installs. The functions are
+# byte-identical; only their address changed, so every leg below still executes
+# the real installer -- it is just extracted from its new home. install.sh
+# still owns the RESOLVER LINE and the _FIX61_RC latch, and those are still
+# extracted from install.sh.
+SCHEDULES_LIB = _REPO_ROOT / "lib-presentation-schedules.sh"
 
 # The two placeholders the shipped template carries, in BOTH spellings. The
 # escaped pair is the one that actually appears in the XML body.
@@ -68,10 +76,11 @@ PLACEHOLDER_TOKENS = (
 TEMPLATE_HEADER_MARKER = "presentation-intake-poll.plist.template"
 
 pytestmark = pytest.mark.skipif(
-    not INSTALL_SH.is_file(),
+    not (INSTALL_SH.is_file() and SCHEDULES_LIB.is_file()),
     reason=(
-        "install.sh is not present; this tests dir is also deployed into the "
-        "materialized department, where the installer does not ship"
+        "install.sh / lib-presentation-schedules.sh are not present; this tests "
+        "dir is also deployed into the materialized department, where the "
+        "installer does not ship"
     ),
 )
 
@@ -80,7 +89,7 @@ def _extract_bash_function(src: str, name: str) -> str:
     """Return `name() { ... }` from `src`, matched to its column-0 closing brace."""
     start = re.search(rf"^{re.escape(name)}\(\) \{{$", src, re.MULTILINE)
     if start is None:
-        raise AssertionError(f"install.sh no longer defines {name}()")
+        raise AssertionError(f"the extracted source no longer defines {name}()")
     lines = src[start.start():].split("\n")
     for i, line in enumerate(lines):
         if i and line == "}":
@@ -89,20 +98,46 @@ def _extract_bash_function(src: str, name: str) -> str:
 
 
 def _build_harness(tmp_path: Path, resolver: str = "") -> Path:
-    """Extract install.sh's real scheduling block into a runnable script.
+    """Extract the real scheduling block into a runnable script.
 
     The block runs verbatim under the same `set -euo pipefail` the installer
     uses, so errexit behaviour (which is what made the old failure silent) is
     reproduced rather than approximated.
+
+    Since F12 the block lives in TWO files and is reassembled here in the order
+    the installer itself runs it: the three functions from
+    lib-presentation-schedules.sh (moved there verbatim so update-skills.sh can
+    reach them), then install.sh's own resolver line and _FIX61_RC latch, which
+    never moved. Reassembling beats a single slice because the lib now also
+    holds the F12a watchdog installer, which is not part of this leg.
     """
     src = INSTALL_SH.read_text(encoding="utf-8")
+    lib_src = SCHEDULES_LIB.read_text(encoding="utf-8")
     lines = src.split("\n")
 
+    # Sliced by LINE RANGE, never by _extract_bash_function: this installer
+    # embeds a python heredoc whose dict literal closes with a column-0 "}",
+    # and a brace-matched extractor truncates the function there, producing a
+    # harness that dies with "unexpected end of file". The moved block is
+    # contiguous in the lib and runs from the poll installer to the closing
+    # brace of the last resolver.
+    lib_lines = lib_src.split("\n")
+    lib_begin = next(
+        i for i, line in enumerate(lib_lines)
+        if line.startswith("install_intake_poll_schedule() {")
+    )
+    last_fn = next(
+        i for i, line in enumerate(lib_lines)
+        if line.startswith("_fix61_resolve_scripts_src() {")
+    )
+    lib_end = next(i for i, line in enumerate(lib_lines) if i > last_fn and line == "}")
+    functions = "\n".join(lib_lines[lib_begin : lib_end + 1])
     begin = next(
-        i for i, line in enumerate(lines) if line.startswith("install_intake_poll_schedule() {")
+        i for i, line in enumerate(lines)
+        if line.startswith('PRESENTATIONS_SCRIPTS_SRC="$(_fix61_resolve_scripts_src')
     )
     end = next(i for i, line in enumerate(lines) if line.strip() == "export _FIX61_RC")
-    block = "\n".join(lines[begin : end + 1])
+    block = functions + "\n" + "\n".join(lines[begin : end + 1])
 
     preamble = [
         "#!/bin/bash",
@@ -408,7 +443,9 @@ def test_colocate_writes_only_selected_workspace_or_refuses(tmp_path, resolver_f
         (foreign / name).write_text("# foreign original")
     src = INSTALL_SH.read_text()
     functions = '\n'.join([
-        _extract_bash_function(src, "_fix61_selected_workspace"),
+        # _fix61_selected_workspace moved to the shared lib (F12); the
+        # co-location step it feeds is still install.sh's own.
+        _extract_bash_function(SCHEDULES_LIB.read_text(), "_fix61_selected_workspace"),
         _extract_bash_function(src, "colocate_presentation_entry"),
     ])
     env = {"HOME": str(home), "SKILLS_DIR": str(skills), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
