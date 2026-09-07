@@ -703,6 +703,39 @@ ledger_sha256() {
     case "$out" in ''|*[!0-9a-f]*) out="" ;; esac
     printf '%s' "$out"
 }
+# auto_resume_refund <run_dir> <was_auto> <why> -- F1. Give back the attempt
+# just charged, because no engine started.
+#
+# presentation_job.auto_resume allows at most three automatic resumes per run
+# per rolling day and records the attempt BEFORE the dispatch (the engine
+# clears state["blocked"] the moment it starts, so a row written afterwards
+# could not name the park it was answering). That ordering is right, and it
+# means an attempt can be charged for a dispatch that then produced nothing:
+# the launcher refuses (AF-NOTIFY-UNCONFIGURED, a capacity autofail, the
+# credit preflight), or it exits 0 and verify_engine_running above comes back
+# negative. Charging those lets ONE curable environment fault burn the whole
+# budget in forty minutes and leave a healthy deck parked with no retries --
+# for a reason that has nothing to do with the deck.
+#
+# So both NOT-LAUNCHED arms of the resume branch call this. It is bookkeeping,
+# not a decision: it can only ever REMOVE a charge, it marks at most one row,
+# and it always returns 0 -- a failed refund must never become a second
+# failure in a log that is already reporting the first.
+#
+# $2 is the "did WE auto-resume this tick?" flag. A human-initiated resume, or
+# a run that was never BLOCKED, has no attempt to give back and this is a
+# no-op for it. Reads $SCRIPTS_DIR and calls log(), both of which every
+# harness that executes the walk body already declares.
+auto_resume_refund() {
+    local run_dir="$1" was_auto="$2" why="$3"
+    if [ "$was_auto" != "1" ]; then
+        return 0
+    fi
+    ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --run-dir "$run_dir" --refund "$why" 2>&1 ) | while IFS= read -r refund_line; do
+        if [ -n "$refund_line" ]; then log "  $refund_line"; fi
+    done
+    return 0
+}
 # <<< POLLER-LAUNCH-VERIFY-END
 
 # ---------------------------------------------------------------------------
@@ -824,8 +857,28 @@ except Exception:
         # three, so a run a human had explicitly retired was still a resume
         # candidate here every five minutes. Retiring a run must actually
         # retire it, in every actor that can start an engine.
-        if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "BLOCKED" ] || [ "$TERMINAL" = "ABANDONED" ]; then
-            # Already finished, parked or retired -- skip
+        #
+        # F1 SPLITS THE THREE. DONE and ABANDONED are ENDINGS -- one finished,
+        # one a human deliberately retired -- and neither is ever restarted by
+        # anything. BLOCKED is NOT an ending: it is a PARK, and the whole point
+        # of a park is that the run is resumable. It used to be skipped here
+        # with the other two, which is why nothing in this system could resume
+        # a parked run: not this poller, not supervisor.supervise() (skips
+        # DONE|BLOCKED|ABANDONED), not cc_board._dispatch_engine_if_idle, not
+        # the watchdog (report-only). One measured run cost 22 h 14 min and 21
+        # HUMAN --resume commands to reach 37 of 38 phases; nine of those 21
+        # passed on the very next try, transient failures nothing retried.
+        #
+        # So BLOCKED now falls THROUGH this test and is decided further down,
+        # by presentation_job.auto_resume, after the already-running check and
+        # after the dispatch lease -- see the F1 block below. It is decided
+        # there and not here on purpose: a run that parked seconds ago may
+        # still have a live engine winding down (`_block` sets terminal=BLOCKED
+        # from inside the engine), and spending one of three daily attempts on
+        # a dir this tick was going to skip anyway is exactly the kind of
+        # quiet leak that makes a bound not a bound.
+        if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "ABANDONED" ]; then
+            # Finished, or retired by a human. Neither is ever restarted.
             SKIPPED_TERMINAL=$((SKIPPED_TERMINAL + 1))
             continue
         fi
@@ -863,6 +916,55 @@ except Exception:
                 SKIPPED_LEASE_HELD=$((SKIPPED_LEASE_HELD + 1))
                 continue
             fi
+        fi
+        #
+        # -------------------------------------------------------------------
+        # F1 -- BOUNDED AUTO-RESUME OF A PARKED RUN.
+        #
+        # This is the branch that used to read `TERMINAL = BLOCKED -> continue`
+        # ("Already finished or parked -- skip"). A BLOCKED run now gets a
+        # DECISION instead of a shrug, and the decision is made by
+        # presentation_job.auto_resume, never here: the bounds (class, phase,
+        # cap, backoff) are code with tests, not shell.
+        #
+        #   exit 0 -> RESUME. An attempt has been RECORDED in state.json
+        #             (state["auto_resume"]) BEFORE we get here, so the count
+        #             cannot be lost by the dispatch that follows. The resume
+        #             then goes through the EXISTING launcher line below --
+        #             this file still has exactly one engine dispatcher.
+        #   exit 3 -> decided NOT to resume (owner decision, a close-time gate,
+        #             the cap, or backoff). Counted as SKIPPED_TERMINAL, which
+        #             is what it is: a parked run this tick left parked.
+        #   exit 4 -> UNDETERMINED (state.json unreadable, or the manifest pin
+        #             moved and this tree has no auto-repin to cure it, so the
+        #             resume would die EXIT_MANIFEST_MISMATCH in one second and
+        #             burn an attempt for nothing). Also SKIPPED_TERMINAL.
+        #   any other non-zero (module missing on a box that has not taken the
+        #             scripts refresh, a traceback) -> skip. FAIL-CLOSED: the
+        #             pre-F1 behaviour is the failure mode, never a resume.
+        #
+        # Every line the decider prints goes into this log, because a bare
+        # "skipped" tells an operator nothing and the reason IS the evidence.
+        # -------------------------------------------------------------------
+        # Declared on every iteration, BEFORE the branch that may set it, so
+        # `set -u` has it on every path where no auto-resume happened.
+        AUTO_RESUMED=0
+        if [ "$TERMINAL" = "BLOCKED" ]; then
+            AUTO_RESUME_OUT="$( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --run-dir "$run_dir" 2>&1 )"
+            AUTO_RESUME_RC=$?
+            printf '%s\n' "$AUTO_RESUME_OUT" | while IFS= read -r auto_resume_line; do
+                if [ -n "$auto_resume_line" ]; then log "  $auto_resume_line"; fi
+            done
+            if [ "$AUTO_RESUME_RC" -ne 0 ]; then
+                log "  parked run LEFT PARKED (auto-resume exit $AUTO_RESUME_RC) -- see the reason above. Counted as terminal, never as a refusal: nothing went wrong this tick."
+                SKIPPED_TERMINAL=$((SKIPPED_TERMINAL + 1))
+                if [ "$LEASE_ENABLED" = "1" ]; then
+                    lease_release "$run_dir"
+                fi
+                continue
+            fi
+            AUTO_RESUMED=1
+            log "  parked run AUTHORISED for automatic resume -- dispatching through the same launcher line every resume uses"
         fi
         #
         # F03: launcher.py is a member of the presentation_job PACKAGE and
@@ -916,10 +1018,12 @@ except Exception:
                 log "  NOT LAUNCHED: the launcher exited 0 but no engine is RUNNING for $run_dir after ${LAUNCH_VERIFY_S}s -- $VERIFY_WHY. A spawn that dies is not a launch. Counted as REFUSED, never as a launch."
                 engine_stderr_tail "$run_dir"
                 REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+                auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher exited 0 but no engine was running: $VERIFY_WHY"
             fi
         else
             REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
             log "  NOT LAUNCHED: the launcher refused this resume dispatch (exit $DISPATCH_RC) -- see the launcher lines above for the reason. Counted as REFUSED, never as a launch."
+            auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher refused the dispatch (exit $DISPATCH_RC)"
         fi
         # FIX 61: the dispatch window is over -- the engine now holds .job.lock.
         if [ "$LEASE_ENABLED" = "1" ]; then

@@ -165,6 +165,17 @@ case " $* " in
     _run_dir_from_argv "$@"
     {LAUNCHER_BODY}
     ;;
+  *" -m presentation_job.auto_resume "*)
+    # F1's decider. Its own bounds -- class, phase, cap, backoff -- are proven
+    # in tests/test_auto_resume.py; here it is only a seam, because these
+    # legs are about the WALK -- which run dirs the poller reaches and how it
+    # accounts for them. Default {AUTO_RESUME_RC} is 3 (decided: leave it
+    # parked), which is the pre-F1 behaviour and therefore what every leg
+    # below that predates F1 still expects.
+    _run_dir_from_argv "$@"
+    echo "auto-resume [STUB] decision rc {AUTO_RESUME_RC} for $_dir"
+    exit {AUTO_RESUME_RC}
+    ;;
   *" --new "*)
     # What the real cmd_new leaves behind, and nothing else: a state.json,
     # which is the only thing the poller's next `if [ -f ... ]` reads.
@@ -207,7 +218,8 @@ _DEAD_LAUNCHER = 'echo "launcher: dispatched (stub); engine died"\n    exit 0'
 
 
 def _write_shim(tmp_path: Path, *, launcher_body: str,
-                spawner_body: str, spawner_rc: int = 0) -> Path:
+                spawner_body: str, spawner_rc: int = 0,
+                auto_resume_rc: int = 3) -> Path:
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     stub = bindir / "python3"
@@ -216,6 +228,7 @@ def _write_shim(tmp_path: Path, *, launcher_body: str,
             .replace("{SPAWNER_NOTE}", "stubbed: never starts a real engine.")
             .replace("{SPAWNER_BODY}", spawner_body)
             .replace("{SPAWNER_RC}", str(spawner_rc))
+            .replace("{AUTO_RESUME_RC}", str(auto_resume_rc))
             .replace("{LAUNCHER_BODY}", launcher_body))
     stub.write_text(text, encoding="utf-8")
     stub.chmod(0o755)
@@ -687,9 +700,14 @@ def test_prefix_two_value_terminal_test_would_have_resumed_abandoned(tmp_path):
               state={"schema_version": 1, "job_id": "pj_gone",
                      "terminal": "ABANDONED"})
     body = _walk_body()
+    # F1 split the three values: DONE and ABANDONED are ENDINGS and skip here,
+    # BLOCKED is a PARK and falls through to the auto-resume decider further
+    # down. The pre-F4 shape this control reverts to is therefore the two-value
+    # test as it stood BEFORE either change -- DONE and BLOCKED skip, ABANDONED
+    # does not -- which is exactly the historical bug: a retired run resumed
+    # every five minutes.
     reverted = body.replace(
-        'if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "BLOCKED" ] '
-        '|| [ "$TERMINAL" = "ABANDONED" ]; then',
+        'if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "ABANDONED" ]; then',
         'if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "BLOCKED" ]; then',
     )
     assert reverted != body, (
@@ -751,12 +769,27 @@ def test_running_engine_verification_has_a_documented_rollback():
 
 
 def test_terminal_test_names_all_three_terminal_values():
+    """All three of the department's terminal values must be HANDLED -- but
+    since F1 they are not handled identically. DONE and ABANDONED are endings
+    and are skipped on the terminal test itself; BLOCKED is a park and is
+    routed to presentation_job.auto_resume. What must never happen again is a
+    value falling through unmentioned, which is how ABANDONED runs were
+    re-dispatched every five minutes."""
     src = _src()
     m = re.search(r'if \[ "\$TERMINAL" = "DONE" \][^\n]*', src)
     assert m, "the terminal test is not where it was"
     assert '"ABANDONED"' in m.group(0), (
-        "the poller's terminal test still knows only two of the department's "
-        f"three terminal values: {m.group(0)!r}"
+        "the poller's terminal test no longer names ABANDONED, so a run a "
+        f"human retired is a resume candidate again: {m.group(0)!r}"
+    )
+    assert 'if [ "$TERMINAL" = "BLOCKED" ]; then' in src, (
+        "BLOCKED is neither skipped on the terminal test nor routed anywhere "
+        "-- a parked run would fall straight through into an unconditional "
+        "dispatch, which is an unbounded auto-resume"
+    )
+    assert "-m presentation_job.auto_resume --run-dir" in src, (
+        "the BLOCKED branch does not consult the bounded auto-resume decider; "
+        "the bounds (class, phase, cap, backoff) would then exist nowhere"
     )
 
 

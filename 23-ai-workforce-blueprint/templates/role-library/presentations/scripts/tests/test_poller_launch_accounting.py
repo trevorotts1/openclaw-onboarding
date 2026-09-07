@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -91,15 +92,36 @@ _HELPERS_RE = re.compile(
 _AF_LINE = ("launcher: REFUSING to dispatch RUNDIR -- AF-NOTIFY-UNCONFIGURED: "
             "PRESENTATION_NOTIFY_CMD is unset or blank")
 
-#: A `python3` stand-in. `-c` (the poller's ledger/terminal/pid probes) must
-#: print NOTHING and exit 0, which the poller reads as "intake complete, not
-#: terminal, no live pid" -- the resume-branch condition. The launcher module
-#: invocation is what each leg varies.
+#: A `python3` stand-in. The poller's `-c` probes (intake complete, terminal,
+#: engine pid) run on the REAL interpreter against the fixture's own files, so
+#: a leg that sets `terminal="BLOCKED"` actually reaches the F1 branch instead
+#: of being told "not terminal" by a stub that answers every question with
+#: silence. The `--new` spawner (`-c` containing `subprocess`) stays stubbed:
+#: that one would start an engine.
+#:
+#: This used to be a blanket `if [ "$1" = "-c" ]; then exit 0; fi`, which read
+#: as "intake complete, not terminal, no live pid" for every fixture. That is
+#: the same answer the real probes give for the non-terminal fixtures these
+#: legs already used -- so nothing below changes shape -- but it made a
+#: terminal fixture UNREPRESENTABLE, and a harness that cannot express the
+#: state under test is a harness that passes for the wrong reason.
 _STUB = """#!/usr/bin/env bash
-if [ "$1" = "-c" ]; then exit 0; fi
+REAL_PY={real_py}
+if [ "$1" = "-c" ]; then
+  case "$2" in
+    *subprocess*) exit 0 ;;
+    *) exec "$REAL_PY" "$@" ;;
+  esac
+fi
 case " $* " in
   *" -m presentation_job.launcher "*)
     {LAUNCHER_BODY}
+    ;;
+  *" -m presentation_job.auto_resume "*)
+    # F1's decider. Defaulted to 3 = "leave it parked", so a stub that returns
+    # 0 for everything it does not recognise can never silently authorise a
+    # resume; the one leg that needs a "yes" asks for it explicitly.
+    exit {AUTO_RESUME_RC}
     ;;
 esac
 exit 0
@@ -159,9 +181,14 @@ def _extract_walk_body(src: str) -> str:
     return m.group("body").rstrip("\n")
 
 
-def _make_parked_run(runs_root: Path, name: str) -> Path:
+def _make_parked_run(runs_root: Path, name: str, terminal: str = "") -> Path:
     """A run dir in the poller's RESUME condition: completed intake ledger,
-    a state.json that is NOT terminal and names no live pid."""
+    a state.json that is NOT terminal and names no live pid.
+
+    `terminal="BLOCKED"` makes it an F1 case instead -- a PARKED run, which
+    since F1 reaches the same dispatch through the auto-resume decider. The
+    accounting must be identical on both paths, which is what the F1 legs at
+    the bottom of this file prove."""
     run_dir = runs_root / f"pres-{name}"
     (run_dir / "working" / "interview").mkdir(parents=True)
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
@@ -172,15 +199,18 @@ def _make_parked_run(runs_root: Path, name: str) -> Path:
         }),
         encoding="utf-8",
     )
-    (run_dir / "state.json").write_text(
-        json.dumps({"schema_version": 1, "job_id": "pj_test", "terminal": ""}),
-        encoding="utf-8",
-    )
+    state = {"schema_version": 1, "job_id": "pj_test", "terminal": terminal}
+    if terminal == "BLOCKED":
+        state["blocked"] = {"phase": "P4-COPY",
+                            "reason": "script executor failed after 3 attempts",
+                            "at": "2026-09-06T10:00:00+00:00"}
+    (run_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
     return run_dir
 
 
 def _run_harness(body: str, tmp_path: Path, launcher_body: str,
-                 pre_fix: bool = False) -> str:
+                 pre_fix: bool = False, terminal: str = "",
+                 auto_resume_rc: int = 3) -> str:
     """Execute the poller's OWN walk-loop body against one parked run dir.
 
     `pre_fix=True` rewrites the guarded increment back to the historical
@@ -205,12 +235,14 @@ def _run_harness(body: str, tmp_path: Path, launcher_body: str,
     bindir = tmp_path / "bin"
     bindir.mkdir()
     stub = bindir / "python3"
-    stub.write_text(_STUB.replace("{LAUNCHER_BODY}", launcher_body),
+    stub.write_text(_STUB.replace("{real_py}", f'"{sys.executable}"')
+                         .replace("{LAUNCHER_BODY}", launcher_body)
+                         .replace("{AUTO_RESUME_RC}", str(auto_resume_rc)),
                     encoding="utf-8")
     stub.chmod(0o755)
 
     runs_root = tmp_path / "runs"
-    _make_parked_run(runs_root, "alpha")
+    _make_parked_run(runs_root, "alpha", terminal=terminal)
     log_file = tmp_path / "poll.log"
 
     harness = "\n".join([
@@ -251,7 +283,8 @@ def _run_harness(body: str, tmp_path: Path, launcher_body: str,
         "while IFS= read -r run_dir; do",
         body,
         'done < <(find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" 2>/dev/null)',
-        'log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH refused"',
+        'log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH '
+        'refused, $SKIPPED_TERMINAL terminal"',
         "",
     ])
     result = subprocess.run(["bash", "-c", harness], capture_output=True,
@@ -464,3 +497,63 @@ def test_rc_zero_with_no_running_engine_is_refused(tmp_path):
         "the poller did not say why it refused to count the launch:\n"
         + log_text
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. F1 -- a run resumed AUTOMATICALLY is accounted exactly like one resumed
+#    by a human. The bounded auto-resume added a new way to REACH the
+#    dispatch; it must not add a new way to LIE about the result.
+# ---------------------------------------------------------------------------
+
+def test_auto_resumed_dispatch_that_dies_is_refused_not_launched(tmp_path):
+    """The two defects meeting. F1 lets a BLOCKED run be dispatched without a
+    human; F3 says a dispatch only counts when an engine is provably RUNNING.
+    An auto-resumed run whose engine dies on arrival -- the manifest-pin shape
+    that made this whole thing dangerous -- must be REFUSED, exactly as a
+    human-triggered resume would be. If F1 had been wired ahead of the
+    accounting instead of through it, the summary line would have gone back to
+    counting one-second deaths as launches, only now three times a day
+    without anyone typing anything."""
+    body = _extract_walk_body(POLL_SCRIPT.read_text(encoding="utf-8"))
+    log_text = _run_harness(body, tmp_path, _DEAD_ENGINE_LAUNCHER,
+                            terminal="BLOCKED", auto_resume_rc=0)
+
+    assert "scan complete: 0 launched, 1 refused" in log_text, (
+        "an AUTO-resumed dispatch that left nothing running was counted as a "
+        "launch. Log:\n" + log_text
+    )
+    assert "no engine is RUNNING" in log_text, log_text
+
+
+def test_auto_resumed_dispatch_that_lives_is_a_launch(tmp_path):
+    """POSITIVE CONTROL: the same parked run with a launcher stub that leaves
+    a real running engine must count as 1 launched. Without this, the leg
+    above could be passing because a BLOCKED run is never dispatched at all
+    -- which is the pre-F1 behaviour, not the fix."""
+    body = _extract_walk_body(POLL_SCRIPT.read_text(encoding="utf-8"))
+    log_text = _run_harness(body, tmp_path, _SUCCEEDING_LAUNCHER,
+                            terminal="BLOCKED", auto_resume_rc=0)
+
+    assert "scan complete: 1 launched, 0 refused" in log_text, (
+        "an authorised auto-resume that produced a live engine was not "
+        "counted as a launch. Log:\n" + log_text
+    )
+    assert "resuming parked job" in log_text, log_text
+
+
+def test_a_declined_auto_resume_is_counted_terminal_not_refused(tmp_path):
+    """The accounting rule this file exists for, applied to F1's new exit: a
+    run dir must never leave the walk unreported, AND a parked run left parked
+    is not a REFUSAL. A refusal reads as "something went wrong this tick";
+    "we decided not to resume it yet" is the ordinary, correct outcome of a
+    bounded retry policy and belongs in the terminal column."""
+    body = _extract_walk_body(POLL_SCRIPT.read_text(encoding="utf-8"))
+    log_text = _run_harness(body, tmp_path, _SUCCEEDING_LAUNCHER,
+                            terminal="BLOCKED", auto_resume_rc=3)
+
+    assert "scan complete: 0 launched, 0 refused, 1 terminal" in log_text, (
+        "a declined auto-resume was miscounted (or lost entirely) -- the "
+        "tally seen == launched + refused + skips no longer closes. Log:\n"
+        + log_text
+    )
+    assert "resuming parked job" not in log_text, log_text
