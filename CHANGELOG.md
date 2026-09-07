@@ -1,3 +1,5 @@
+## [v25.0.19]  -  2026-09-07  -  skill6 adaptive capability probe, lane policy, multi-iframe router, fail-closed QC
+
 ## [v25.0.17]  -  2026-09-07  -  Ultra said 100, the governor admitted 20
 
 Ultra mode resolved a width of 100. The dispatcher authored 100 work orders. Then the rate governor released them **twenty at a time, per rolling ten seconds** — and every argument this build has had about ceilings, modes and caps was happening downstream of that gate.
