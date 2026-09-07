@@ -77,19 +77,24 @@ on:
     paths:
       # Gate script itself
       - "scripts/ci/presentations-drift-gates.sh"
-      # GATE 1 targets -- the import-smoke surface (presentation_job package + its
-      # sibling fix_bundle_complete.py / phase_verifiers.py, imported transitively
-      # via presentation_job/curate.py)
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/**"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/fix_bundle_complete.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py"
-      # GATE 3 targets -- the fourth canon consumer (deliverables.py and curate.py
-      # are already covered by the presentation_job/** glob above)
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/self_audit.py"
-      # GATE 5 targets -- the FIX-32 manifest-copy drift detector + its resolver
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/manifest_source.py"
-      # GATE 2 targets -- all three manifest hash registries
+      # GATE 1 + GATE 3 + verify.sh targets -- the WHOLE engine scripts dir, not a
+      # hand-kept file list. Both gates `cp -R "$SCRIPTS_DIR/."` into a temp tree and
+      # import presentation_job.phases out of THAT COPY, so every file in the
+      # directory is part of the import surface (GATE 1's own targets used to be
+      # listed as presentation_job/**, fix_bundle_complete.py, phase_verifiers.py;
+      # GATE 3's as self_audit.py; GATE 5's as sync_check.py + manifest_source.py --
+      # all six are inside this glob). The verify.sh step below resolves its ENGINE
+      # (build_deck.py), its sync_check.py lockstep leg and the FIX-14 / FIX-18 /
+      # FIX-19 self-test scripts (check_agent_env.py, tool_schema_validator.py,
+      # read_slice.py) out of this same directory whenever no materialized
+      # department exists -- which is always true on a CI runner.
+      # Measured 2026-09-06 on ea331f82a: 301 files live under this directory and
+      # the old per-file list matched 63 of them. build_deck.py and all three FIX
+      # self-test scripts were among the 238 misses, so a PR that broke the very
+      # engine verify.sh grades did not fire the job that grades it.
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/**"
+      # GATE 2 targets -- all three manifest hash registries (kept named for the
+      # record; also inside the universal-sops/** entry added for GATE 6 below)
       - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
       - "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt"
       - "universal-sops/_content-manifest.json"
@@ -97,10 +102,23 @@ on:
       # whose phase-id lists must stay a superset of PIPELINE-MANIFEST.json phases[]
       - "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md"
       - "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md"
-      # GATE 6 target -- the duplicate-SOP checker the gate delegates to. Measured
+      # GATE 6 targets -- the duplicate-SOP checker the gate delegates to. Measured
       # 2026-09-06: a PR touching ONLY this file did not fire this job, so the gate
       # that grades it could not block the change that broke it.
       - "scripts/check-duplicate-sop-drift.py"
+      # ...and the DATA that checker grades, which is the part the filter missed
+      # entirely. check-duplicate-sop-drift.py rglobs BOTH trees -- every
+      # role-library/<dept>/sops/*.md against every universal-sops/**/*.md sharing a
+      # basename (7 departments ship a sops/ dir today) -- and scores each pair
+      # against scripts/duplicate-sop-authority.json. Measured 2026-09-06 on
+      # ea331f82a: 16 paired SOP files plus the waiver registry were outside this
+      # filter, so editing either half of a graded pair, or deleting the waiver that
+      # excuses it, flipped GATE 6 without ever running GATE 6. The scan ROOTS are
+      # listed (not today's 16 files) because a NEW file on either side creates a
+      # new pair the gate will grade.
+      - "23-ai-workforce-blueprint/templates/role-library/*/sops/**"
+      - "universal-sops/**"
+      - "scripts/duplicate-sop-authority.json"
       # GATE 7 targets -- the phase-doc VALUE lockstep: the generator/checker plus
       # every doc that restates the manifest's version, phase count or phase order.
       # Measured 2026-09-06 on d85607d50: NONE of these five docs fired this job on
@@ -111,10 +129,19 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/slide-image-creator.md"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-prompt-presentations.md"
-      # Skill 51 self-verification (verify.sh) — FIX 74 now gates it on both legs
+      # Skill 51 self-verification (verify.sh) — FIX 74 now gates it on both legs.
+      # verify.sh's FIX-19 leg additionally does a LIVE sliced read of
+      # presentations/sops/qc-specialist-presentations-sops.md and asserts
+      # total_bytes > 100_000 on it; that file is covered by the
+      # role-library/*/sops/** entry above.
       - "51-signature-presentation/**"
       # Skill-23 engine script verify.sh resolves against (register --check leg)
       - "23-ai-workforce-blueprint/scripts/register-library-additions.py"
+      # ...and the file that leg actually grades: _index.json is the ONE machine
+      # source of truth for the role library, and `register-library-additions.py
+      # --check` fails when a role/SOP/persona on disk is absent from it. Editing
+      # _index.json did not fire this job before 2026-09-06.
+      - "23-ai-workforce-blueprint/templates/role-library/_index.json"
       # This workflow file
       - ".github/workflows/presentations-drift-gates.yml"
 
