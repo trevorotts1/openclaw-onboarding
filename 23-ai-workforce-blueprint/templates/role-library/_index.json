@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "25.0.13",
+  "version": "25.0.14",
   "total_roles": 438,
   "total_departments": 36,
   "departments": {
@@ -504,8 +504,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:3de0f9b1785b7cfec2f17462b3a377b6adcc3222902ec7a6a51e01e3d0a42c89",
-      "content_hashed_at": "2026-09-07T00:22:28.389267+00:00"
+      "content_sha": "sha256:1e88ef7c0e99cef3d4c7e751eb92943fe1cbd853f465955cf4eb6887bc9481a7",
+      "content_hashed_at": "2026-09-07T05:25:18.993342+00:00"
     },
     "product-production": {
       "count": 4,
@@ -5267,10 +5267,10 @@
       "path": "templates/role-library/presentations/director-of-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:c1135bd6027a5a65d73d36e90d5d00a6aa3dc8e10854f1ec72d389b171404e52",
-      "render_sha": "sha256:c1135bd6027a5a65d73d36e90d5d00a6aa3dc8e10854f1ec72d389b171404e52",
-      "content_version": "1.0.25",
-      "content_hashed_at": "2026-09-07T00:22:28.389267+00:00"
+      "content_sha": "sha256:ca5f6163967dd357582317d98ac1f53ed8bba0a9d6134ed28eea63a67a6af755",
+      "render_sha": "sha256:ca5f6163967dd357582317d98ac1f53ed8bba0a9d6134ed28eea63a67a6af755",
+      "content_version": "1.0.26",
+      "content_hashed_at": "2026-09-07T05:25:18.993342+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations",
@@ -5379,10 +5379,10 @@
       "path": "templates/role-library/presentations/pptx-assembly-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:951579f111e8c5cade06b6433fd9b3b1b3de9ff700465082eb504e943a3ebe4a",
-      "render_sha": "sha256:951579f111e8c5cade06b6433fd9b3b1b3de9ff700465082eb504e943a3ebe4a",
-      "content_version": "1.0.11",
-      "content_hashed_at": "2026-09-06T18:33:30.223146+00:00"
+      "content_sha": "sha256:adcae520f06661d65dd065636d721b464313831e59566e681a87869ccac353ac",
+      "render_sha": "sha256:adcae520f06661d65dd065636d721b464313831e59566e681a87869ccac353ac",
+      "content_version": "1.0.12",
+      "content_hashed_at": "2026-09-07T05:25:18.993342+00:00"
     },
     {
       "slug": "presenter-coach",
@@ -5475,10 +5475,10 @@
       "path": "templates/role-library/presentations/slide-image-creator.md",
       "capability_class": "GENERATION",
       "vision_flag": false,
-      "content_sha": "sha256:834c5d2760d6a26368b2db181f148d25aef9e83e12e43a17b26fc74cb953670b",
-      "render_sha": "sha256:834c5d2760d6a26368b2db181f148d25aef9e83e12e43a17b26fc74cb953670b",
-      "content_version": "1.0.18",
-      "content_hashed_at": "2026-09-06T18:33:30.223146+00:00"
+      "content_sha": "sha256:f6d94a38dddb764691024173084421880905e662cdd3f5fbadfee3297bfc324a",
+      "render_sha": "sha256:f6d94a38dddb764691024173084421880905e662cdd3f5fbadfee3297bfc324a",
+      "content_version": "1.0.19",
+      "content_hashed_at": "2026-09-07T05:25:18.993342+00:00"
     },
     {
       "slug": "slide-submitter",
@@ -7283,10 +7283,10 @@
       "path": "templates/role-library/presentations/qc-specialist-prompt-presentations.md",
       "capability_class": "JUDGMENT",
       "vision_flag": false,
-      "content_sha": "sha256:5f035c66a4fadf9cc0d0222c88b45dba9806dd94277fcddabd769a6fdff6f9e0",
-      "render_sha": "sha256:3b37a69d9119ab3ca8ecc2a68647d3ca42437fb003e2efcc6ae658d293c7ff65",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-09-06T18:33:30.223146+00:00"
+      "content_sha": "sha256:30580acaadf1bf7b23735f6d75e48d618016fb52787e6ecc4c1ce378f899a24a",
+      "render_sha": "sha256:d5fac02e17ba1ae66fc9349af958398ca590c67bd7b1f9a6ab32f038542e4587",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-09-07T05:25:18.993342+00:00"
     },
     {
       "slug": "qc-specialist-image-presentations",
@@ -8870,7 +8870,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-09-07T00:22:28.389267+00:00",
+    "generated_at": "2026-09-07T05:25:18.993342+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [

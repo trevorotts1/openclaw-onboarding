@@ -1,3 +1,25 @@
+## [v25.0.14]  -  2026-09-07  -  Self-healing that would have healed itself into an alarm
+
+Two fixes, and they close the 27-fix program. This release exists because v25.0.13 installed the supervisor on every box for the first time — and the supervisor could not survive the very next thing this release does.
+
+### The gap the review did not find
+
+v25.0.12 put auto-repin in `launcher.dispatch()`: before a resume, hash the run's pinned manifest against the file on disk and, on a proven difference, run `--repin` synchronously — refusing the dispatch outright if the repin fails, rather than spawning an engine that dies instantly and gets miscounted as a launch. That covers the poller, because the poller goes through the launcher.
+
+It does not cover the other two. `supervisor.py::_restart` (line 327) and `cc_board.py::_dispatch_engine_if_idle` (line 242) both `Popen` the engine **directly**, bypassing the launcher entirely. The review's own F12c note assumed F2 covered the supervisor. It did not, and nobody would have noticed while the supervisor was report-only on one machine and installed on none.
+
+v25.0.13 changed that: it installed and scheduled the supervisor everywhere. This release bumps the manifest to v68. A manifest change is precisely the event that strands every in-flight run with `EXIT_MANIFEST_MISMATCH` (7). Shipped in the other order, a newly-installed supervisor on every client box would have met a manifest bump, spent its entire bounded restart budget respawning engines that died in milliseconds, and then alarmed — self-healing converted into a fleet-wide pager. All three spawners now route through the one `auto_repin_gate()` the earlier fix deliberately exposed as a public function for exactly this follow-up. Each caller keeps its own semantics: the supervisor does not spend a restart-budget slot on a refusal, and `cc_board` stays fail-soft, because the board mirrors and must never gate a build. A fourth direct spawn in the poller's fresh-intake branch was found and deliberately left alone — it fires seconds after `--new`, so there is nothing stale to repin. (F2b)
+
+### Manifest v68
+
+`P-STYLE-PICK` now declares the intake record it already reads. One delta, not three: the fan-out and mode-truth fixes were each asked what manifest change they needed and both answered "none required" — nothing was invented to fill them. Waves stay at 14, edges 123 to 124 (the intended `P0A-INTAKE -> P-STYLE-PICK`), no cycle, and zero artifacts with two declared producers before or after. Both integrity records were restamped by computation and never hand-typed; a one-field mutation flips `assert_hash_match` to MISMATCH, which is the control that proves the check is live.
+
+`MIN_MANIFEST_VERSION` moves 56 to 68. It had been sitting **eleven versions behind** the shipped manifest, which is what had been failing `test_client_package`; two tests assert equality rather than a floor, so it is raised in both `manifest.py` and `manifest_assert.py`. One consequence is recorded rather than buried: `consumes` also feeds `runfacts.invalidate_intake_consumers`, so `P-STYLE-PICK` — the manifest's only human phase — now joins the invalidation set, and a late intake rewrite can re-park the owner pick. That is judged correct, since the pick's basis *is* the intake, and the cost is bounded by the auto-pick opt-in shipped in v25.0.13.
+
+### A correction to v25.0.13's notes
+
+That entry repeated a claim carried into four executor briefs and into its own text: that `presentations-drift-gates.yml` was "already red on main." **It was not.** Its last five runs were all success, and the workflow contains no step matching `intake` or `self-test`. The claim originated in an agent report that was relayed without being checked. It is corrected here rather than by amending a published tag. Telling an executor that a gate is expected-red is exactly how a real failure gets waved through, and this one was told to four of them.
+
 ## [v25.0.13]  -  2026-09-07  -  Decks took days because nothing ever resumed a parked run
 
 Fourteen fixes, one release — the second half of a 27-fix program from a full review of the Presentations department. Wave 1 was about components that failed quietly and reported success. This half is about what happened next: **the run stopped, and nothing on the box was capable of starting it again.**
