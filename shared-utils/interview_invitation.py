@@ -143,7 +143,7 @@ def issue_invitation(resolved, env, target, metadata=None):
             if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
         if receipt.get('protocol')!='interview-invitation.v1' or receipt.get('oneUse') is not True: raise Pending('invitation protocol mismatch')
         expiry=receipt.get('expiresAt')
-        if type(expiry) is not int or not time.time()<expiry<=time.time()+910: raise Pending('invitation expiry invalid')
+        if type(expiry) is not int or not time.time()<expiry<=time.time()+86410: raise Pending('invitation expiry invalid')
         url=receipt.get('url','');parsed=urlsplit(url)
         if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview' or parsed.query or not parsed.fragment.startswith('enroll='):
             raise Pending('invitation URL binding invalid')
