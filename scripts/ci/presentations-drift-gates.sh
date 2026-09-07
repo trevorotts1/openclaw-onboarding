@@ -70,6 +70,21 @@
 #                                       newly duplicated filename -- fails the gate.
 #                                       Delegates to scripts/check-duplicate-sop-drift.py.
 #
+# GATE 8 (shared-script hash-lock)  -- F24: the GATE 6 disease one tree over.
+#                                       kie_generate.py (694 vs 613 lines) and
+#                                       slides.schema.json each ship from BOTH
+#                                       role-library/presentations/scripts/ and
+#                                       templates/presentation-render/, and both
+#                                       kie_generate.py copies carry a prose
+#                                       "LOCKSTEP NOTE" demanding identical logic
+#                                       that nothing graded. The mirror copy is a
+#                                       LIVE Skill-06 dependency (ghl_media.py
+#                                       _KIE_GENERATE_RELPATH), so it is hash-LOCKED,
+#                                       never quarantined: waivers pin the sha256 of
+#                                       BOTH copies and CHECK A proves the Skill-06
+#                                       path still resolves. Delegates to
+#                                       scripts/check-shared-script-drift.py.
+#
 # Exit code: 0 only if every gate that CAN fail today did not fail.
 # Prints which gate failed (and why) on any non-zero exit.
 
@@ -578,11 +593,52 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# GATE 8 (F24) -- shared-script hash-lock. The SAME defect class as GATE 6, one
+# tree over: kie_generate.py and slides.schema.json each ship from BOTH
+# 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/ and
+# 23-ai-workforce-blueprint/templates/presentation-render/, and both copies of
+# kie_generate.py carry a prose "LOCKSTEP NOTE" telling the next editor to keep
+# their logic identical -- graded by nobody. They are 694 vs 613 lines, and the
+# role-library copy's own docstring records the drift ("the presentation-render
+# twin has NOT yet received that port").
+#
+# The mirror copy is NOT a retired path and must never be deleted or quarantined:
+# 06-ghl-install-pages/tools/ghl_media.py resolves _KIE_GENERATE_RELPATH straight
+# at it and shells it from generate_images(); remove it and GHL media upload dies
+# with "reused KIE generator not found". So the gate hash-LOCKS instead: waivers
+# pin the sha256 of BOTH copies, tolerating the known divergence at exactly its
+# current bytes while any edit to either side fails until it is reviewed and
+# re-recorded. CHECK A additionally proves the Skill-06 dependency still resolves
+# inside the mirror tree, and is not waivable.
+#
+# --self-test runs FIRST (same discipline as GATE 7): identical passes, unwaived
+# divergence fails, a correctly pinned waiver passes, a stale pin fails, a deleted
+# live dependency fails, an unparseable path constant is a hard error. A green
+# --check means nothing if the checker no longer discriminates.
+echo
+echo "== GATE 8: shared-script hash-lock (presentation-render <-> role-library/presentations/scripts) =="
+GATE8_SCRIPT="scripts/check-shared-script-drift.py"
+if [ ! -f "$GATE8_SCRIPT" ]; then
+  echo "GATE 8 FAILED: $GATE8_SCRIPT not found" >&2
+  FAILED=1
+elif ! python3 "$GATE8_SCRIPT" --self-test; then
+  echo "GATE 8 FAILED: the checker itself no longer discriminates -- a green --check would mean nothing." >&2
+  FAILED=1
+elif python3 "$GATE8_SCRIPT" --check --repo-root "$REPO_ROOT"; then
+  echo "GATE 8 PASSED: checker self-test holds; every shared basename is identical or pinned at its recorded bytes, and the Skill-06 live dependency resolves."
+else
+  echo "GATE 8 FAILED: a shared render script drifted from its hash-lock, or the Skill-06 live dependency no longer resolves -- see above." >&2
+  echo "               Fix: port the change to the other copy, or re-record deliberately with" >&2
+  echo "               python3 scripts/check-shared-script-drift.py --record" >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
 echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep, GATE 8 shared-script hash-lock)."
 exit 0

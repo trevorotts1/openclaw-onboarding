@@ -111,6 +111,17 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/slide-image-creator.md"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-prompt-presentations.md"
+      # GATE 8 targets (F24) -- the shared-script hash-lock: the checker, its pin
+      # registry, BOTH trees that ship the duplicated filenames, and the Skill-06
+      # consumer whose _KIE_GENERATE_RELPATH constant CHECK A reads. Without these
+      # entries the gate would exist but never fire on the very edit it grades --
+      # the same blind spot measured for GATE 6 and GATE 7 above.
+      - "scripts/check-shared-script-drift.py"
+      - "scripts/shared-script-authority.json"
+      - "23-ai-workforce-blueprint/templates/presentation-render/**"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json"
+      - "06-ghl-install-pages/tools/ghl_media.py"
       # Skill 51 self-verification (verify.sh) — FIX 74 now gates it on both legs
       - "51-signature-presentation/**"
       # Skill-23 engine script verify.sh resolves against (register --check leg)

@@ -1,0 +1,54 @@
+{
+  "_README": "F24 hash-lock registry for filenames that ship from BOTH 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/ AND 23-ai-workforce-blueprint/templates/presentation-render/. Enforced by scripts/check-shared-script-drift.py (GATE 8 of scripts/ci/presentations-drift-gates.sh). Waivers pin the sha256 of BOTH copies: editing either side invalidates the waiver and fails the gate. Regenerate deliberately with --record; never edit shas by hand.",
+  "_why_the_mirror_copy_is_never_deleted": {
+    "claim": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py is a LIVE dependency, not a retired path. Deleting or quarantining it breaks GHL media upload.",
+    "evidence": [
+      "06-ghl-install-pages/tools/ghl_media.py defines _KIE_GENERATE_RELPATH = os.path.join('..','..','23-ai-workforce-blueprint','templates','presentation-render','kie_generate.py')",
+      "06-ghl-install-pages/tools/ghl_media.py kie_generate_path() raises FileNotFoundError('reused KIE generator not found at ...') when that exact path is absent",
+      "06-ghl-install-pages/tools/ghl_media.py generate_images() shells `python3 <that path> <prompts> <out_dir>`; 06-ghl-install-pages/tests/test_ghl_media.py::test_runner_receives_reused_kie_generate asserts argv[1].endswith('kie_generate.py')",
+      "06-ghl-install-pages/tools/ghl_image_stage.py step 4 calls ghl_media.generate_images, so the whole install-pages image stage rides on it"
+    ],
+    "enforced_by": "check-shared-script-drift.py CHECK A (live-dependency liveness) reads that constant with ast and FAILS if it no longer resolves to a file inside the mirror tree. It is not waivable."
+  },
+  "canonical_source": {
+    "kie_generate.py": {
+      "canonical": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
+      "evidence": [
+        "Both copies carry the same prose LOCKSTEP NOTE naming the two paths and instructing 'Keep their LOGIC identical when editing either' — a requirement graded by nobody until this gate.",
+        "The role-library copy's own docstring records which way the port owes: 'FIX 68/67 STATUS (W21b): the role-library copy carries the platform-aware secrets order (presentation_job.oc_paths) AND the FIX 67 secret-name canon ... The presentation-render twin has NOT yet received that port — port the same four functions ... before claiming the two are logic-identical again.'",
+        "The presentations engine runs the role-library copy: presentation-canonical-entry.sh resolves --scripts-dir to that tree, and sales_checkout_builder.py / vsl_builder.py both shell `_here() / 'kie_generate.py'` from inside it.",
+        "The mirror copy is reached only by Skill 06 (ghl_media.py) — see _why_the_mirror_copy_is_never_deleted."
+      ]
+    },
+    "slides.schema.json": {
+      "canonical": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json",
+      "evidence": [
+        "build_deck.py, the deterministic renderer the department actually runs, validates slides.json against the copy beside it in the role-library scripts tree.",
+        "The presentation-render copy sits beside render_deck.py, the older standalone renderer, and is not read by the engine."
+      ]
+    }
+  },
+  "_waiver_policy": "The 2 divergences below predate this gate. Reconciling two implementations is a code decision that belongs to the operator (the role-library kie_generate.py docstring already names the four functions the mirror twin owes), so this gate records the divergence at its exact current bytes rather than rewriting either copy. Any edit to either side invalidates the pinned pair and FAILS the gate until a human reviews it. A newly duplicated filename that disagrees has no waiver and fails immediately.",
+  "waivers": [
+    {
+      "file": "kie_generate.py",
+      "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
+      "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
+      "canonical_sha256": "d0c79a8b560f76582fbda79c194757ea33bf663726829d3be4e97cbd74666eac",
+      "mirror_sha256": "6c6eaa298c11cf35b39e459b9dc0b80673225737ba371a21983f28cb684dec08",
+      "canonical_side": "role-library-scripts",
+      "reason": "Pre-existing divergence recorded, not reconciled (694 vs 613 lines). The mirror twin still owes the FIX 68/67 port the role-library docstring names: the oc_paths _secrets_candidates seam, _import_secret_helper, _kie_alias_names, _is_placeholder_value and the _load_api_key canon loop. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-09-07"
+    },
+    {
+      "file": "slides.schema.json",
+      "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json",
+      "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/slides.schema.json",
+      "canonical_sha256": "e27dea6d79a640dd023d69cf8c1a62d25542da0a0eec6d744ba702b84a4ab668",
+      "mirror_sha256": "d5cae6865069537fb08e522a3f75069fe2d32142dca3520855a178f9ba4f2d8f",
+      "canonical_side": "role-library-scripts",
+      "reason": "Pre-existing divergence recorded, not reconciled. Same duplicated-basename class as kie_generate.py, found by the same scan. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-09-07"
+    }
+  ]
+}
