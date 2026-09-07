@@ -182,6 +182,25 @@ _BOTH = {capacity.PROVIDER_DEEPSEEK_DIRECT: _DEEPSEEK_2500,
 # ===========================================================================
 # 0. THE PREMISE, measured rather than asserted from memory.
 # ===========================================================================
+
+def _declared(record, provider):
+    """The sub-record a v2 declaration holds for *provider*.
+
+    L3 wrote these assertions against the v1 FLAT shape
+    ({"provider": ..., "plan": ...}) because L1 had not merged yet. L1's F1
+    made the file per-provider -- {"schema": 2, "providers": {<canonical>:
+    {...}}} -- which is the entire point of the fix: a declaration about one
+    provider must not speak for the box. The old assertion was
+    `record["provider"] == <p>`; it is replaced rather than deleted because
+    the thing it pinned still matters, and now reads: the record names THIS
+    provider and nobody else's entry was disturbed.
+    """
+    assert record.get("schema") == 2, f"expected a v2 per-provider record: {record}"
+    providers = record.get("providers") or {}
+    assert provider in providers, (
+        f"the declaration does not name {provider}: {record}")
+    return providers[provider]
+
 def test_the_fixture_really_does_split_the_two_routes(monkeypatch, tmp_path):
     """If a catalog change ever routes both phases to the same provider, this
     file stops reproducing the defect -- say so, loudly, instead of quietly
@@ -446,8 +465,8 @@ def test_declare_capacity_for_a_named_provider_never_parks(monkeypatch,
 
     assert path is not None and path.is_file(), path
     record = json.loads(path.read_text(encoding="utf-8"))
-    assert record.get("provider") == capacity.PROVIDER_DEEPSEEK_DIRECT, record
-    assert record.get("plan") == "v4-flash", (
+    entry = _declared(record, capacity.PROVIDER_DEEPSEEK_DIRECT)
+    assert entry.get("plan") == "v4-flash", (
         "without a plan the record PARKs the run it was meant to widen: "
         f"{record}")
 
@@ -503,8 +522,8 @@ def test_declare_capacity_takes_the_plan_from_the_profile_lock(monkeypatch,
         _dept(tmp_path), max_concurrent=5, provider="ollama-cloud")
 
     record = json.loads(path.read_text(encoding="utf-8"))
-    assert record["provider"] == capacity.PROVIDER_OLLAMA_CLOUD, record
-    assert record["plan"] == "$100/month", record
+    entry = _declared(record, capacity.PROVIDER_OLLAMA_CLOUD)
+    assert entry["plan"] == "$100/month", record
     result = capacity.probe(cfg)
     assert result["status"] == capacity.STATUS_MEASURED, result
     # a declared number may only LOWER a cap-table row, never raise it
@@ -528,9 +547,10 @@ def test_declare_capacity_never_hardcodes_deepseek_direct(monkeypatch,
     written = cfg / capacity.OVERRIDE_FILENAME
     assert written.is_file(), "nothing was declared"
     record = json.loads(written.read_text(encoding="utf-8"))
-    assert record["provider"] == capacity.PROVIDER_OLLAMA_CLOUD, (
+    _declared(record, capacity.PROVIDER_OLLAMA_CLOUD)  # names the DETECTED
+    assert capacity.PROVIDER_DEEPSEEK_DIRECT not in (record.get("providers") or {}), (
         "the declaration must be about the provider this box actually "
-        f"detected, never a hard-coded one: {record}")
+        f"detected, never a hard-coded deepseek-direct: {record}")
     assert capacity.probe(cfg)["status"] == capacity.STATUS_MEASURED
 
 
