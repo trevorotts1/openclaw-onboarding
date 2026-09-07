@@ -223,3 +223,41 @@ python3 "${SCRIPT_DIR}/run_discovery.py" \
     ${ROOTS_FLAGS} \
     --scan-depth "${SCAN_DEPTH:-3}" \
     >> "${LOG}" 2>&1 || true
+
+# ---------------------------------------------------------------------------
+# F13 -- UNDELIVERABLE-MESSAGE SWEEP PASS.
+#
+# report.py queues every message it could not deliver into
+# state["undeliverable"] (FAULT-14) so it can be retried later. "Later" had no
+# driver: cmd_sweep_undeliverable_roots -- the only sweep that works from a
+# scan root instead of a --run-dir a human must already know -- was scheduled
+# by nothing, in no plist, no cron and no installer. A client notice that
+# missed its window (the measured run's "your presentation is paused") sat in
+# the queue forever, and the operator was never told the run had stalled.
+# This is the schedule.
+#
+# Runs LAST, after run-discovery, on purpose: the four passes above can each
+# queue a fresh notice during THIS tick, and sweeping after them retries it in
+# the same tick instead of five minutes later.
+#
+# Bounded by construction, so an unattended tick cannot spin:
+#   - MAX_DELIVERY_ATTEMPTS = 5 (presentation_job/__main__.py) dead-letters a
+#     message that fails five sweeps into state["dead_letter"] -- quarantined
+#     with its reason, never retried again and never silently dropped.
+#   - a run dir whose lock a live engine holds is SKIPPED, not contended; it
+#     is swept on a later tick.
+#
+# Exit status CAPTURED, never left to `set -e` -- same treatment and the same
+# reason as the watchdog/reconcile/supervise blocks above: 0 = pass,
+# 11 = at least one run dir raised an unexpected error.
+# ---------------------------------------------------------------------------
+SWEEP_RC=0
+python3 "${SCRIPT_DIR}/presentation_job.py" \
+    --sweep-undeliverable-roots \
+    --scan-root "${SCAN_ROOT}" \
+    ${ROOTS_FLAGS} \
+    --scan-depth "${SCAN_DEPTH:-3}" \
+    >> "${LOG}" 2>&1 || SWEEP_RC=$?
+if [ "${SWEEP_RC}" -ne 0 ]; then
+    echo "WARNING: undeliverable sweep exited ${SWEEP_RC} (0=pass; 11=>=1 run dir raised an unexpected error) -- see the sweep lines above" >> "${LOG}" 2>&1
+fi
