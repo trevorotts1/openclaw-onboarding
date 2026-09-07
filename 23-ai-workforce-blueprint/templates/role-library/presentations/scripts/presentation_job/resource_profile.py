@@ -905,6 +905,63 @@ def model_plan(profile: Optional[Dict[str, Any]] = None,
     return plan if isinstance(plan, dict) else {}
 
 
+def _adopt_declared_providers(profile: Dict[str, Any],
+                              declared: Dict[str, Dict[str, str]]) -> List[str]:
+    """F17: adopt a provider THIS BUILD has never heard of onto the profile
+    when the client NAMED it in their model plan. Returns the ids adopted.
+
+    WHY. `model_router._eligible` routes only to a provider the profile
+    CARRIES, and nothing but the capacity/provider probe ever put one there
+    -- and that probe only knows the handful of providers it was written for
+    (openrouter, ollama-cloud, agnes, deepseek, kie). So adopting a model on
+    any other provider required a code change, which is exactly what the
+    standing operator ruling forbids: nobody is forced onto a model, and a
+    new one must work WITHOUT one. For a provider no probe can discover, the
+    client naming {provider, model} IS the ownership evidence.
+
+    NOT a relaxation of the gates that matter -- all three still stand:
+      * a provider this build DOES know (a cap-table id, or a token the table
+        deliberately refuses such as a local Ollama) is never adopted here.
+        The probe can find those, so the profile's silence about one is
+        evidence, and the existing "does not carry provider X" refusal below
+        still fires -- a typo can never mint a provider;
+      * a plan on a profile with NO providers at all is still refused (the
+        empty-profile check runs after this, on the adopted result);
+      * `_eligible` still requires a RESOLVABLE, plausible key (FIX 114)
+        before anything routes to an adopted provider, so one with no
+        credential parks with the key gate named, exactly as before.
+
+    The entry records WHERE the evidence came from (`client_declared`,
+    `detection_source: client-declaration`) so nothing downstream can mistake
+    a declaration for a probe reading."""
+    adopted: List[str] = []
+    for slot, spec in sorted(declared.items()):
+        raw = str(spec.get("provider") or "")
+        if not raw:
+            continue
+        if _capacity is not None and _capacity.is_known_provider(raw):
+            continue  # the probe owns this one -- its absence is evidence
+        token = raw
+        if _capacity is not None:
+            token = _capacity.canonical_provider_token(raw) or raw
+        spec["provider"] = token  # plan and profile key can never disagree
+        existing = profile.get("providers")
+        if isinstance(existing, dict) and token in existing:
+            continue
+        entry = upsert_provider(
+            profile, token,
+            presence=True,
+            client_declared=True,
+            declared_in="model_plan",
+            declared_slot=slot,
+            declared_at=_now(),
+            detection_source="client-declaration",
+        )
+        entry.setdefault("provider", token)
+        adopted.append(token)
+    return adopted
+
+
 def record_model_plan(plan: Dict[str, Any], *,
                       source: str = "interview",
                       config_dir: Optional[Path] = None) -> Dict[str, Any]:
@@ -921,8 +978,13 @@ def record_model_plan(plan: Dict[str, Any], *,
         falls back to its pre-router DeepSeek default, so the client would be
         told "recorded" and then silently overridden on every call. The
         message names the capacity probe that fixes it;
-      * the declared provider is not one the profile carries (the message
-        names the providers that DO exist);
+      * the declared provider is one this build KNOWS (a cap-table id) and
+        the profile does not carry it -- the probe can find those, so its
+        silence is evidence (the message names the providers that DO exist).
+        F17: a provider this build has NEVER heard of is ADOPTED instead of
+        refused (see _adopt_declared_providers) -- no probe could ever have
+        found it, so refusing would mean no new provider without a code
+        change. The FIX 114 key gate in _eligible still stands over it;
       * the provider HAS a wired inventory and the declared model is not in it
         (the message names the inventory it was checked against);
       * the declared model's MODALITY cannot do the slot's job (a vision or
@@ -943,16 +1005,6 @@ def record_model_plan(plan: Dict[str, Any], *,
         return load_profile(config_dir)
 
     profile = load_profile(config_dir)
-    providers = profile.get("providers")
-    providers = providers if isinstance(providers, dict) else {}
-    if not providers:
-        raise ValueError(
-            "refusing to record a model plan: this profile carries NO "
-            "providers, and a plan on a provider-less profile is invisible -- "
-            "model_router.resolve_route reports profile_state 'absent' and the "
-            "dispatcher falls back to its default model on every call. Run the "
-            "capacity/provider probe first "
-            "('python3 -m presentation_job --capacity'), then record the plan.")
 
     mr = _model_router_module()
     slot_classes = getattr(mr, "SLOT_CLASSES", None) if mr is not None else None
@@ -986,6 +1038,22 @@ def record_model_plan(plan: Dict[str, Any], *,
             f"refusing to record a model plan: unknown slot(s) "
             f"{sorted(unknown_slots)}; the client-choosable slots are "
             f"{sorted(slot_classes)}")
+
+    # F17: adopt any provider this build has never heard of that the client
+    # NAMED here, BEFORE the provider checks below -- otherwise the only way
+    # to reach a new provider is a code change (see the helper's docstring).
+    adopted = _adopt_declared_providers(profile, declared)
+
+    providers = profile.get("providers")
+    providers = providers if isinstance(providers, dict) else {}
+    if not providers:
+        raise ValueError(
+            "refusing to record a model plan: this profile carries NO "
+            "providers, and a plan on a provider-less profile is invisible -- "
+            "model_router.resolve_route reports profile_state 'absent' and the "
+            "dispatcher falls back to its default model on every call. Run the "
+            "capacity/provider probe first "
+            "('python3 -m presentation_job --capacity'), then record the plan.")
 
     thinking = (plan or {}).get("thinking")
     thinking = str(thinking).strip().lower() if thinking not in (None, "") else None
@@ -1073,6 +1141,10 @@ def record_model_plan(plan: Dict[str, Any], *,
         "thinking": thinking,
         "floor_waivers": sorted(waivers),
         "waiver_reasons": waiver_reasons,
+        # F17: providers this build had never heard of, adopted from THIS
+        # declaration. Named in the audit row so an adopted provider is never
+        # indistinguishable from one a probe actually found.
+        "adopted_providers": adopted,
         "source": str(source or "interview"),
         "answered_at": _now(),
     })
