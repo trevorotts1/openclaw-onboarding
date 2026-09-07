@@ -207,12 +207,16 @@ def test_the_p4_prompt_stamp_attributes_the_route_instead_of_giving_up(
     capacity_status=provider-unresolved -- a route the client chose, recorded
     as a provider the build could not identify.
 
-    NOTE what this does NOT claim. measured_capacity stays at
-    DEFAULT_MAX_WORKERS here, exactly as it does for openrouter today: the
-    F41 contract requires the stamp to carry a positive int and no unit count
-    exists at stamp time, so UNBOUNDED maps to the same conservative 8 for
-    every no-cap provider. F17 fixes the ATTRIBUTION and the probe; that
-    mapping is deliberate and untouched."""
+    NOTE what this does NOT claim. F17 fixes the ATTRIBUTION and the probe; it
+    asserts nothing about the WIDTH. When this test was written it recorded
+    that "measured_capacity stays at DEFAULT_MAX_WORKERS here, exactly as it
+    does for openrouter today ... that mapping is deliberate and untouched" --
+    F17's own commit message said the same. U1 (2026-09-07) removed that
+    mapping: an UNBOUNDED reading now resolves to the MODE CEILING, for this
+    declared provider exactly as for openrouter. The assertions below were
+    always about capacity_status and never about the number, so they hold
+    unchanged either way -- which is why the width belongs in
+    tests/test_u1_unbounded_is_not_eight.py and not here."""
     _isolate(monkeypatch, tmp_path)
     monkeypatch.delenv(model_router.MODE_ENV, raising=False)
     monkeypatch.setattr(model_router, "provider_key_resolves", lambda p: True)

@@ -866,13 +866,25 @@ def test_resolve_max_workers_unbounded_does_not_collapse_to_default_eight(
     assert result != dispatcher.DEFAULT_MAX_WORKERS
 
 
-def test_resolve_max_workers_unbounded_without_unit_count_falls_back_to_default(
+def test_resolve_max_workers_unbounded_without_unit_count_is_the_mode_ceiling(
         monkeypatch, tmp_path):
     """When the caller has no unit count to bound against (unit_count=None),
-    the fallback is still the pre-existing conservative DEFAULT_MAX_WORKERS
-    (=8) -- an honest "I don't know how wide to go", not a crash, and not a
-    silently-wrong number either since it is the SAME constant the pre-fix
-    code already used as its floor.
+    an UNBOUNDED account resolves to THE MODE CEILING.
+
+    U1 (2026-09-07) REPLACED THIS TEST'S ASSERTION, and the assertion is the
+    reason it is being said out loud rather than quietly edited. It used to
+    read `result == dispatcher.DEFAULT_MAX_WORKERS` and called that "an honest
+    'I don't know how wide to go'". It was not honest and it was not an
+    unknown: capacity.probe() had ANSWERED -- UNBOUNDED, MEASURED, for a
+    NO_CAP_PROVIDERS account -- and this accessor discarded that answer for a
+    worker-pool default with no lineage to any capacity ruling. Operator
+    requirement, verbatim: "if I am using OpenRouter I should not be capped at
+    8. I should be able to use at least 100 agents in parallel if I'm using
+    OpenRouter." The two genuine unknowns are still conservative and are
+    covered elsewhere: an undeclared unknown provider still collapses to
+    DEFAULT_CONSERVATIVE (test_f17_new_provider_floor
+    ::test_an_undeclared_unknown_provider_is_still_unknown), and a caller that
+    DOES know its unit count still gets the unit count (the test above).
 
     Repurposed from deepseek-direct to openrouter for the same reason as
     the test above: only openrouter still measures UNBOUNDED after the
@@ -884,10 +896,12 @@ def test_resolve_max_workers_unbounded_without_unit_count_falls_back_to_default(
         json.dumps({"provider": "openrouter"}), encoding="utf-8")
     monkeypatch.setenv(capacity.CONFIG_DIR_ENV, str(cfg))
 
-    from presentation_job import dispatcher
+    from presentation_job import dispatcher, model_router
 
+    monkeypatch.setenv(model_router.MODE_ENV, "ultra")
     result = dispatcher.resolve_max_workers(tmp_path, None)
-    assert result == dispatcher.DEFAULT_MAX_WORKERS
+    assert result == model_router.ULTRA_OPERATOR_CEILING
+    assert result != dispatcher.DEFAULT_MAX_WORKERS
 
 
 def test_resolve_max_workers_measured_ceiling_still_honored(monkeypatch, tmp_path):
