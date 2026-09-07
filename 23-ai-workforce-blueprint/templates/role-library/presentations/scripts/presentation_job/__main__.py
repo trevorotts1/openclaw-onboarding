@@ -14,18 +14,27 @@ from .state import (
     StateStore, RunLock, utcnow, sha256_text, _read_json,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
     EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
-    EXIT_GATE_BLOCKED,
+    EXIT_GATE_BLOCKED, EXIT_SWEEP_HAD_FAILURES,
 )
 from . import lease as lease_mod
 from .lease import DEFAULT_TTL_S as LEASE_TTL_S, HEARTBEAT_INTERVAL_S as LEASE_HEARTBEAT_S
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
 from .report import dispatch
-from .scan_roots import split_primary
+# F13: cmd_sweep_undeliverable_roots below resolves its root list exactly the
+# way watchdog() and reconcile_sweep() do, and reports it with the same audit
+# line -- but it referenced resolve_scan_roots, format_roots_report,
+# _find_run_dirs_multi and EXIT_SWEEP_HAD_FAILURES without any of them ever
+# being imported here. Nothing caught it because nothing ever CALLED the
+# command (see main()); the first real invocation would have died
+# `NameError: name 'resolve_scan_roots' is not defined`.
+from .scan_roots import (
+    split_primary, resolve_scan_roots, format_roots_report, default_config_path,
+)
 from .watchdog import watchdog as _run_watchdog
 from .supervisor import supervise as _run_supervise, DEFAULT_MAX_RESTARTS, DEFAULT_BACKOFF_SECONDS
 from .board import BoardMirror
-from .sweep import reconcile_sweep
+from .sweep import reconcile_sweep, _find_run_dirs_multi
 from . import diagnose
 from . import persona
 from .vocab import CANONICAL_PRESENTATION_TYPES
@@ -536,10 +545,19 @@ def cmd_sweep_undeliverable_roots(args) -> int:
     primary_roots = split_primary(root) if root is not None else [Path(".")]
     if root is not None and not primary_roots:
         die(EXIT_USAGE, "--sweep-undeliverable-roots needs --scan-root")
+    # F13: resolve_scan_roots' keyword is `config_path`, not `roots_config` --
+    # this call named a parameter that does not exist and would have raised
+    # TypeError even with the imports fixed. Default it the way watchdog() and
+    # reconcile_sweep() do (<department>/config/scan-roots.conf beside the
+    # scripts dir) so a box that adds roots by writing that file gets them
+    # swept too, instead of this pass alone being blind to them.
+    roots_config = getattr(args, "roots_config", None)
+    if roots_config is None:
+        roots_config = default_config_path(Path(__file__).resolve().parent.parent)
     roots = resolve_scan_roots(
         primary=primary_roots[0] if primary_roots else None,
         extra=tuple(primary_roots[1:]) + tuple(getattr(args, "scan_root_extras", None) or ()),
-        roots_config=getattr(args, "roots_config", None),
+        config_path=roots_config,
     )
     print(format_roots_report(roots, "sweep-undeliverable-roots"), flush=True)
 
@@ -973,6 +991,26 @@ def main(argv: Optional[List[str]] = None) -> int:
                              else args.supervisor_backoff),
             max_idle_hours=args.max_idle_hours,
         )
+
+    # F13 -- the undeliverable-message sweep. Belongs with the three scanning
+    # modes above, not below: like them it works from --scan-root and knows no
+    # --run-dir (that is the entire reason cmd_sweep_undeliverable_roots exists
+    # beside the per-run cmd_sweep_undeliverable).
+    #
+    # build_parser() has declared --sweep-undeliverable-roots since FIX 64, but
+    # main() never dispatched it, so the flag fell through every branch to the
+    # `--run-dir is required` refusal below:
+    #
+    #     $ presentation_job.py --sweep-undeliverable-roots --scan-root <root>
+    #     FATAL: --run-dir is required                        # exit 2
+    #
+    # i.e. the only driver capable of retrying state["undeliverable"] without
+    # already knowing a run dir could not be reached from the command line at
+    # all -- which is why nothing scheduled it, and why a client notice that
+    # missed its delivery window stayed queued forever. presentation-watchdog.sh
+    # now runs this every tick.
+    if args.sweep_undeliverable_roots:
+        return cmd_sweep_undeliverable_roots(args)
 
     if args.apply and not args.reconcile_board:
         die(EXIT_USAGE, "--apply is only meaningful with --reconcile-board")
