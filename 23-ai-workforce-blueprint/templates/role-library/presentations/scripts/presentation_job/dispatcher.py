@@ -47,6 +47,7 @@ Runnable two ways (both exercise the exact same code):
 
 import argparse
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -2876,9 +2877,74 @@ def _conservative_floor() -> Optional[int]:
         return None                        # DEFAULT_MAX_WORKERS is still honest
 
 
+def _probe_accepts(fn: Any, name: str) -> bool:
+    """Does this `capacity.probe`/`detect` accept the keyword `name`?
+
+    F4 FORWARD GUARD (2026-09-07). The agreed signature is
+    `capacity.probe(config_dir=None, *, provider=None, model=None)`, but this
+    module must not explode on a build of capacity.py that predates it (nor on
+    a test double that takes no arguments at all -- e.g.
+    tests/test_capacity_detection.py's `def boom()`). Asking the callee what
+    it accepts is the only honest way to tell "this build has no per-provider
+    probe" apart from "the probe raised a TypeError of its own", which a
+    try/except TypeError would silently conflate and mislabel as a capacity
+    failure. A `**kwargs` double accepts everything, which is exactly what the
+    existing `lambda *a, **k` probe stubs are."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):  # unintrospectable callable
+        return False
+    param = params.get(name)
+    if param is not None and param.kind in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY):
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD
+               for p in params.values())
+
+
+def _probe_routed_capacity(cap_mod: Any, *, provider: str,
+                           model: str) -> Tuple[Any, Dict[str, str]]:
+    """F4 (2026-09-07): PROBE THE PROVIDER THIS STAMP WILL ACTUALLY DISPATCH TO.
+
+    THE DEFECT this replaces: `_routing_stamp` called `capacity.probe()` with
+    no arguments, and `probe()` answers about exactly ONE provider -- the one
+    detection resolved (or, before F1/F2, whichever single provider
+    capacity_override.json happened to name). On a two-provider client that
+    global answer is right for at most one route, and the identity guard below
+    then correctly refused the OTHER route down to capacity.DEFAULT_CONSERVATIVE
+    (3). MEASURED by Fable on this box 2026-09-07: an ollama-cloud plan answer
+    made `probe()` answer `ollama-cloud/8` while P4-PROMPT routed to
+    deepseek-direct -- providers_match False -> refusal -> width 3, with a real
+    2,500 measurement sitting one keyword argument away. There is no single
+    global answer that satisfies a two-provider client; the question itself was
+    wrong.
+
+    So the question now names the route: `probe(provider=<routed>,
+    model=<route model>)`. The identity guard STAYS -- it becomes a tautology
+    on a capacity build that honours the kwarg, which is the point: the only
+    way it can fire afterwards is a provider id this build cannot canonicalise,
+    and that is still the right loud failure, never a quiet width.
+
+    Returns (probe_result, kwargs_actually_passed). An empty kwargs dict means
+    this capacity build has no per-provider probe and the caller got today's
+    global answer -- recorded on the stamp as `probe_scope`, never hidden."""
+    kwargs: Dict[str, str] = {}
+    probe_fn = getattr(cap_mod, "probe")
+    if provider and _probe_accepts(probe_fn, "provider"):
+        kwargs["provider"] = provider
+    if model and kwargs.get("provider") and _probe_accepts(probe_fn, "model"):
+        # `model` is only ever a REFINEMENT of `provider` (it resolves the plan
+        # tier for that provider -- capacity._plan_from_model_slug). Sending it
+        # without a provider would ask a question nobody asked.
+        kwargs["model"] = model
+    return probe_fn(**kwargs), kwargs
+
+
 def _refuse_unmeasured_width(stamp: Dict[str, Any], *,
                              run_dir: Optional[Path], phase_id: str,
-                             missing: str, detail: str) -> None:
+                             missing: str, detail: str,
+                             provider: Optional[str] = None) -> None:
     """REFUSE LOUDLY, naming the missing value -- never a silent 8.
 
     Operator ruling (2026-09-07): "system need to ask if unclear ... never
@@ -2922,13 +2988,27 @@ def _refuse_unmeasured_width(stamp: Dict[str, Any], *,
         "width_applied": int(floor),
         "width_basis": basis,
     }
+    # F4 (2026-09-07): the old instruction was "Declare capacity_override.json
+    # for this provider". THAT ADVICE IS THE OTHER HALF OF THE DEFECT. Before
+    # F1/F2 the override file is a SINGLE-PROVIDER, whole-client answer that
+    # pre-empts detection (capacity.detect step (a)), so an operator following
+    # it to widen route A silently pinned every OTHER route to A's plan --
+    # MEASURED on this box 2026-09-07: writing an ollama-cloud $100/month
+    # record to widen the QC phases made capacity.probe() answer
+    # `ollama-cloud/8` for the DeepSeek-primary wave that had measured 2,500.
+    # Name the provider whose plan is missing, and point at the two doors that
+    # are per-provider: the capacity interview, and --declare-provider.
+    who = str(provider or "").strip() or "the routed provider"
     msg = (f"{phase_id} routing stamp: REFUSING to fabricate a fan-out width -- "
            f"{CAPACITY_REFUSAL_CODE}: {detail} MISSING: {missing}. Proceeding at "
            f"the conservative floor {floor} ({basis}), NOT at "
            f"{DEFAULT_MAX_WORKERS} -- a fabricated 8 here is indistinguishable "
-           f"from the operator's deliberate Ollama reserve. Declare "
-           f"capacity_override.json for this provider or answer the capacity "
-           f"interview (python3 -m presentation_job --capacity) to widen it.")
+           f"from the operator's deliberate Ollama reserve. To widen it, answer "
+           f"the capacity interview FOR {who} (python3 -m presentation_job "
+           f"--capacity), or declare that one provider explicitly: "
+           f"--declare-capacity N --declare-provider {who}. Do NOT hand-write a "
+           f"whole-client capacity_override.json to fix this route: one "
+           f"provider's declaration must never answer for another.")
     print(f"WARNING: {msg}", file=sys.stderr, flush=True)
     try:
         _append_sidecar(run_dir, phase_id, {
@@ -3023,6 +3103,7 @@ def _routing_stamp(run_dir: Optional[Path] = None,
         route = (decision or {}).get("route")
         profile_state = (decision or {}).get("profile_state")
         routed_provider = ""
+        routed_model = ""
         if profile_state == "has_providers" and route:
             stamp.update({
                 "provider": str(route.get("provider")),
@@ -3032,6 +3113,12 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                 "requested_alias": decision.get("requested_alias"),
             })
             routed_provider = str(route.get("provider") or "")
+            # F4: the route's MODEL, not just its provider. capacity resolves a
+            # plan tier from the model slug (_plan_from_model_slug), so handing
+            # it over is what lets a deepseek-v4-flash route be answered
+            # `v4-flash / 2500` instead of PARKing on "provider known, plan
+            # unknown".
+            routed_model = str(route.get("model") or "")
         elif profile_state == "absent":
             # U1 SECOND CASE (2026-09-07) -- A CLIENT WITH NO PROFILE DROPPED TO
             # 8 EVEN WHEN THE PROBE HAD MEASURED 2,500.
@@ -3058,6 +3145,7 @@ def _routing_stamp(run_dir: Optional[Path] = None,
             # meaning "throw away what we measured about the provider we are
             # about to use".
             routed_provider = str(stamp.get("provider") or "")
+            routed_model = str(stamp.get("model") or "")
             stamp["route_reason"] = (decision or {}).get("reason")
         # Any other profile_state -- "mechanical" (no LLM route exists) or a
         # router-disabled decision carrying no profile_state at all
@@ -3067,7 +3155,29 @@ def _routing_stamp(run_dir: Optional[Path] = None,
         if routed_provider:
             try:
                 from presentation_job import capacity as _cap_mod
-                probe_res = _cap_mod.probe()
+                # F4 (2026-09-07) -- THE STAMP ASKS ABOUT ITS OWN ROUTE.
+                # `probe()` with no arguments answers about ONE provider (the
+                # detected primary, or whichever single provider a legacy
+                # capacity_override.json names). That answer is right for at
+                # most one route on a two-provider client, and the identity
+                # guard below then refuses every other route down to
+                # DEFAULT_CONSERVATIVE=3 -- correctly, given the question it
+                # was asked. The question was the bug. See
+                # _probe_routed_capacity for the measurement and the
+                # forward-guard on capacity builds that predate the kwarg.
+                probe_res, probe_kwargs = _probe_routed_capacity(
+                    _cap_mod, provider=routed_provider, model=routed_model)
+                stamp["probe_scope"] = ("routed-provider"
+                                        if probe_kwargs.get("provider")
+                                        else "global-no-arg")
+                if probe_kwargs:
+                    stamp["probe_requested"] = dict(probe_kwargs)
+                # The agreed contract adds `provider_requested` to the result,
+                # so the stamp can record what capacity BELIEVES it was asked
+                # -- attribution evidence that survives into the sidecar.
+                _asked = probe_res.get("provider_requested")
+                if _asked is not None:
+                    stamp["probe_provider_requested"] = _asked
                 available = probe_res.get("available")
                 probe_provider = str(probe_res.get("provider") or "")
                 # DEFECT-5 REPAIR (2026-09-05): compare provider IDENTITY, not
@@ -3166,6 +3276,7 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                         f" vs {routed_canon or 'unresolved'}")
                     _refuse_unmeasured_width(
                         stamp, run_dir=run_dir, phase_id=phase_id,
+                        provider=(routed_canon or routed_provider),
                         missing=(f"a capacity reading attributable to "
                                  f"{routed_provider or 'the routed provider'}"),
                         detail=(f"capacity.probe() answered "
@@ -3180,6 +3291,7 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                 stamp["capacity_source"] = type(cap_exc).__name__
                 _refuse_unmeasured_width(
                     stamp, run_dir=run_dir, phase_id=phase_id,
+                    provider=routed_provider,
                     missing=(f"any capacity reading at all for "
                              f"{routed_provider or 'the routed provider'}"),
                     detail=(f"the capacity probe raised "
@@ -4623,25 +4735,172 @@ def resolve_dept_root(scripts_dir: Path) -> Path:
 # capacity.probe() to MEASURED=100 and masked the real detected tier (and the
 # PARK/interview path) on every box. The override file is now written ONLY by
 # the detection/interview flow (resource_profile.record_plan_answer ->
-# capacity.persist_plan_answer) or an explicit operator action
-# (--declare-capacity); with no override present, resolve_max_workers()
-# reports the DETECTED tier (e.g. ollama-cloud / $20/month -> 3), never a
-# fabricated 100.
-def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100) -> None:
+# capacity.declare_capacity) or an explicit operator action
+# (--declare-capacity --declare-provider); with no override present,
+# resolve_max_workers() reports the DETECTED tier (e.g. ollama-cloud /
+# $20/month -> 3), never a fabricated 100.
+
+
+class CapacityDeclarationRefused(RuntimeError):
+    """--declare-capacity could not establish WHICH provider it declares.
+
+    Raised INSTEAD of writing a record that would PARK the run. main() turns
+    it into exit 2 with the message intact."""
+
+
+def ensure_capacity_override(dept_root: Path, *, max_concurrent: int = 100,
+                             provider: Optional[str] = None,
+                             model: Optional[str] = None,
+                             plan: Optional[str] = None) -> Optional[Path]:
+    """Declare a capacity ceiling for ONE NAMED PROVIDER. Never a hard-coded one.
+
+    THE DEFECT (F4, MEASURED by Fable on this box 2026-09-07, scratch config
+    dir, live profile md5 unchanged): this function hard-coded
+    `{"provider": "deepseek-direct", "max_concurrent": N}`. deepseek-direct
+    JOINED THE STRUCTURAL CAP TABLE on 2026-09-04 (capacity.CAP_TABLE carries
+    ('deepseek-direct','v4-flash')=2500 and ('deepseek-direct','v4-pro')=500,
+    and capacity.NO_CAP_PROVIDERS shrank to {'openrouter'}). A cap-table
+    provider declared WITHOUT a plan hits capacity._resolve_override case 2 --
+    "the provider's real ceiling is a physical fact the operator cannot opt out
+    of by typing a bigger number" -- and PARKS. So `--declare-capacity 100`,
+    the flag whose entire job is to WIDEN a run, measured:
+
+        capacity.probe() -> status=PARKED provider=deepseek-direct
+                            plan=None available=None
+                            autofail=AF-CAPACITY-UNMEASURED
+        dispatcher.resolve_max_workers(...) -> 3
+
+    Three changes:
+      1. THE PROVIDER IS AN ARGUMENT. Explicit `provider` wins; otherwise the
+         canonical provider capacity.detect() actually found on this box. The
+         literal "deepseek-direct" is gone -- a declaration about a provider
+         this box does not use is not a widening, it is a lie about a route.
+      2. A PLAN IS RESOLVED FOR THAT PROVIDER before writing, so the record
+         lands on _resolve_override case 1 (cap table authoritative; a declared
+         number may only LOWER it) instead of case 2 (PARK): explicit `plan` >
+         the route/model slug > the profile's locked tier > this box's own
+         detection when it is about the SAME provider.
+      3. IT REFUSES rather than writing a PARK-inducing record -- no provider
+         establishable, or a cap-table provider whose plan nobody knows. A
+         refusal the operator can act on beats a file that silently drops the
+         whole run to capacity.DEFAULT_CONSERVATIVE.
+
+    NO_CAP providers (openrouter) need no plan: _resolve_override case 0
+    honours a declared self-throttle verbatim, so they are never refused here.
+
+    Idempotent, as before: an existing capacity_override.json is NEVER
+    overwritten -- it may be the client's own declaration, and this function is
+    not the owner of somebody else's answer. Returns the path (written or
+    pre-existing), or None when capacity.py cannot be imported."""
     try:
         sys.path.insert(0, str(dept_root / "scripts"))
         from presentation_job import capacity as _capacity
     except ImportError:
-        return
+        return None
     path = _capacity.override_path()
     if path.is_file():
-        return
+        return path
+
+    detected: Optional[Dict[str, Any]] = None
+
+    def _detect_once() -> Dict[str, Any]:
+        nonlocal detected
+        if detected is None:
+            try:
+                detected = _capacity.detect() or {}
+            except Exception:  # noqa: BLE001 -- detection is evidence, not a gate
+                detected = {}
+        return detected
+
+    canon = _capacity.normalize_provider(provider) if provider else None
+    if provider and not canon:
+        raise CapacityDeclarationRefused(
+            f"--declare-capacity refused: provider {provider!r} does not "
+            f"resolve to any provider this build knows (cap table "
+            f"{sorted(_capacity.CAP_TABLE_PROVIDERS)}, no-cap "
+            f"{sorted(_capacity.NO_CAP_PROVIDERS)}). A declaration about an "
+            f"unidentified provider is a self-report, not a measurement: "
+            f"capacity bounds it to DEFAULT_CONSERVATIVE="
+            f"{_capacity.DEFAULT_CONSERVATIVE}, so the run would end up "
+            f"NARROWER than with no file at all. Name a provider this build "
+            f"knows, or answer the capacity interview "
+            f"(python3 -m presentation_job --capacity).")
+    if not canon:
+        canon = _capacity.normalize_provider(
+            str(_detect_once().get("provider") or "")) or None
+    if not canon:
+        raise CapacityDeclarationRefused(
+            "--declare-capacity refused: no provider could be established for "
+            "this box (none passed via --declare-provider, and capacity."
+            "detect() resolved none from 9Router or OpenClaw). Writing a "
+            "declaration anyway would have to GUESS a provider -- and a guess "
+            "that lands on a structural cap-table provider with no plan PARKS "
+            "the run at AF-CAPACITY-UNMEASURED (width "
+            f"{_capacity.DEFAULT_CONSERVATIVE}), which is the opposite of what "
+            "this flag is for. Pass --declare-provider <provider>, or answer "
+            "the capacity interview (python3 -m presentation_job --capacity).")
+
+    norm_plan = None
+    if plan:
+        norm_plan = _capacity.normalize_plan(plan, canon)
+        if not norm_plan:
+            raise CapacityDeclarationRefused(
+                f"--declare-capacity refused: plan {plan!r} is not a known "
+                f"tier for {canon}. Known tiers: "
+                f"{list(_capacity.PLANS_BY_PROVIDER.get(canon, ()))}.")
+    if not norm_plan and model:
+        norm_plan = _capacity._plan_from_model_slug(canon, str(model))
+    if not norm_plan:
+        # the resource profile is the per-provider store of plan answers
+        try:
+            from presentation_job import resource_profile as _rp
+            entry = _rp.get_provider(_rp.load_profile(), canon) or {}
+            if entry.get("locked") or entry.get("plan_known"):
+                norm_plan = _capacity.normalize_plan(entry.get("plan_tier"), canon)
+        except Exception:  # noqa: BLE001 -- the profile is evidence, not a gate
+            pass
+    if not norm_plan:
+        det = _detect_once()
+        if _capacity.normalize_provider(str(det.get("provider") or "")) == canon:
+            norm_plan = _capacity.normalize_plan(det.get("plan"), canon)
+
+    if not norm_plan and canon in _capacity.CAP_TABLE_PROVIDERS:
+        raise CapacityDeclarationRefused(
+            f"--declare-capacity refused: {canon} is on the structural cap "
+            f"table {sorted(_capacity.CAP_TABLE_PROVIDERS)} and no plan tier "
+            f"could be established for it (none passed via --declare-plan, no "
+            f"route model to read one from, nothing locked in the resource "
+            f"profile, and this box's own detection did not answer about "
+            f"{canon}). A cap-table provider declared without a plan PARKS the "
+            f"run -- capacity._resolve_override case 2, MEASURED "
+            f"status=PARKED available=None, resolve_max_workers -> "
+            f"{_capacity.DEFAULT_CONSERVATIVE} -- so this refuses instead of "
+            f"writing that record. Pass --declare-plan from "
+            f"{list(_capacity.PLANS_BY_PROVIDER.get(canon, ()))}, or answer "
+            f"the capacity interview for {canon} "
+            f"(python3 -m presentation_job --capacity).")
+
+    declare = getattr(_capacity, "declare_capacity", None)
+    if callable(declare):
+        # F1's per-provider writer (schema 2): merges ONE sub-record and
+        # preserves every other provider's declaration.
+        return declare(canon, plan=norm_plan, max_concurrent=int(max_concurrent))
+
+    # Pre-F1 capacity build: the same file, in the v1 shape
+    # capacity.read_override already understands -- but about the provider that
+    # was ESTABLISHED, and carrying the plan that keeps it out of the PARK
+    # branch. F1 reads a v1 record as a declaration about ITS OWN provider
+    # only, so this record never answers for anybody else.
+    record: Dict[str, Any] = {"provider": canon,
+                              "max_concurrent": int(max_concurrent)}
+    if norm_plan:
+        record["plan"] = norm_plan
+    record["source"] = "operator-declared"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(
-        {"provider": "deepseek-direct", "max_concurrent": max_concurrent}, indent=2
-    ), encoding="utf-8")
+    tmp.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
+    return path
 
 
 def resolve_max_workers(dept_root: Path, requested: Optional[int],
@@ -4680,6 +4939,22 @@ def resolve_max_workers(dept_root: Path, requested: Optional[int],
     unknown collapses to. NEVER guess upward" -- and only degrades to
     DEFAULT_MAX_WORKERS when capacity.py itself cannot be imported, which is the
     one situation that constant was actually written for.
+
+    F4 (2026-09-07) -- THE NO-ARG PROBE HERE IS DELIBERATE. DO NOT "FIX" IT.
+    F4 made `_routing_stamp` ask `capacity.probe(provider=<the routed
+    provider>, model=<the route model>)`, because that stamp decides ONE
+    ROUTE's fan-out width and a single global answer is right for at most one
+    route on a two-provider client. THIS function decides something different:
+    the size of the dispatcher's WORK-ORDER POOL, which serves every route in
+    the run at once. There is no single provider to name here -- the pool is
+    not per-provider -- and naming one would cap the whole pool at one
+    provider's ceiling, which is Defect 1 rebuilt in a second place.
+
+    What bounds any ONE provider inside that pool is the governor's per-provider
+    `max_inflight` (governor.py provider_config -> the profile's
+    concurrency_ceiling / plan tier), applied per lease at call time. Pool size
+    and per-provider ceiling are two different numbers and both are enforced;
+    collapsing them into one is the mistake, not the fix.
     """
     if requested is not None:
         return max(1, requested)
@@ -5412,9 +5687,22 @@ def build_parser() -> argparse.ArgumentParser:
                         f"(default {RUN_DIR_MAX_LIFETIME_MINUTES:.0f} = 24h for --run-dir, "
                         f"{SCAN_ROOT_MAX_LIFETIME_MINUTES:.0f} = 6h for --scan-root)")
     p.add_argument("--declare-capacity", type=int, default=None,
-                   help="idempotently write capacity_override.json declaring "
-                        "{provider: deepseek-direct, max_concurrent: N} if the file does "
-                        "not already exist (never overwrites an existing declaration)")
+                   help="idempotently declare max_concurrent=N FOR ONE PROVIDER in "
+                        "capacity_override.json if the file does not already exist "
+                        "(never overwrites an existing declaration). The provider comes "
+                        "from --declare-provider, else from capacity.detect(); if none "
+                        "can be established this REFUSES with exit 2 rather than writing "
+                        "a record that PARKs the run")
+    p.add_argument("--declare-provider", default=None,
+                   help="the provider --declare-capacity is about (e.g. ollama-cloud, "
+                        "deepseek-direct, openrouter). F4: this used to be hard-coded to "
+                        "deepseek-direct, which PARKS every run since deepseek-direct "
+                        "joined the structural cap table on 2026-09-04")
+    p.add_argument("--declare-plan", default=None,
+                   help="the plan tier of --declare-provider (e.g. v4-flash, $100/month) "
+                        "when this box's detection and resource profile do not already "
+                        "know it. A structural cap-table provider declared with no plan "
+                        "PARKS the run, so --declare-capacity refuses instead")
     return p
 
 
@@ -5431,7 +5719,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         # unconditional auto-stamp is gone so capacity.probe() reports the
         # DETECTED tier instead of a fabricated deepseek-direct/100.
         if args.declare_capacity is not None:
-            ensure_capacity_override(dept_root, max_concurrent=args.declare_capacity)
+            try:
+                ensure_capacity_override(dept_root,
+                                         max_concurrent=args.declare_capacity,
+                                         provider=args.declare_provider,
+                                         plan=args.declare_plan)
+            except CapacityDeclarationRefused as exc:
+                # Exit 2, nothing written. A capacity declaration nobody can
+                # attribute to a provider is not a narrower answer -- it is a
+                # WRONG one, and it would PARK the run it was meant to widen.
+                print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+                return 2
         workers = resolve_max_workers(dept_root, args.max_workers)
         if not watch:
             worker_id = f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"
