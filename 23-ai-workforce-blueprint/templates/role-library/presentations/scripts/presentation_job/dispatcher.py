@@ -161,8 +161,56 @@ _GOVERN_DEPTH_LOCK = threading.Lock()
 _GOVERN_DEPTH: Dict[str, int] = {}   # f"{thread_ident}:{provider}" -> nested depth
 _GOVERN_ACTIVE: Dict[str, Any] = {}  # same key -> live lease to release once
 
+
+# U4 (2026-09-07) -- PROVIDER IDENTITY IS FOLDED ONCE, HERE, FOR EVERY GATE.
+#
+# THE DEFECT. Provider identity has two live spellings in this tree, MEASURED
+# on this box today:
+#     model_router.resolve_alias("deepseek-v4-pro")["provider"] -> 'deepseek'
+#     capacity.probe()["provider"]                              -> 'deepseek-direct'
+# and providers.yaml keys the SHORT form ('deepseek', 'ollama') while
+# capacity.CAP_TABLE keys the LONG one ('deepseek-direct', 'ollama-cloud').
+# `governor.provider_config` already folds (PROVIDER_ALIASES), so BOTH
+# spellings read the same rps/burst/max_inflight row -- but `governor._state`
+# and `_GOVERN_DEPTH` are keyed by the RAW string, so the two spellings open
+# TWO INDEPENDENT token buckets over ONE account. Measured before this fix:
+#     governor._state_for('deepseek') is _state_for('deepseek-direct') -> False
+#     provider_config(both) -> max_inflight 400   ==> 800 effective in flight
+# and the re-entrancy depth counter could not dedupe the worker's outer lease
+# against the transport's inner one, so one logical call took two real
+# acquires. This is the DEFECT-5 class (spelling compared instead of identity)
+# on the governor's own bucket.
+#
+# THE FOLD. Same authority DEFECT 5 used: capacity.normalize_provider, the ONE
+# cap table. Unlike the stamp we can never return None here -- a gate must
+# still gate -- so an id the cap table cannot resolve keeps its canonical
+# TOKEN (lowercase, underscores/spaces -> dashes). That is deliberate and it
+# is not a fabrication: 'anthropic' has no CAP_TABLE row but DOES have a real
+# providers.yaml row, and folding it to some nearest-looking provider would be
+# exactly the silent substitution this program is removing. A token with no
+# yaml row is governed at `defaults` and `governor._announce_defaults_once`
+# already says so, once, on stderr and in the acquisition log -- so the quiet
+# case is already loud and this helper must not double-announce it.
+def _govern_provider(provider: Any) -> str:
+    """The canonical governor key for `provider`: one bucket per ACCOUNT, never
+    one per spelling. Never returns None or "" -- a gate that cannot name its
+    provider still has to gate."""
+    raw = str(provider or "").strip()
+    token = raw.lower().replace("_", "-").replace(" ", "-")
+    if not token:
+        # No identity at all. Callers must not reach here (the worker refuses
+        # loudly instead), but a gate is never allowed to crash a run.
+        return "unknown-provider"
+    try:
+        from presentation_job import capacity as _cap_mod
+        canon = _cap_mod.normalize_provider(token)
+    except Exception:  # noqa: BLE001 -- a fold failure never changes gating
+        canon = None
+    return str(canon) if canon else token
+
+
 def _govern_key(provider: str) -> str:
-    return f"{threading.get_ident()}:{provider}"
+    return f"{threading.get_ident()}:{_govern_provider(provider)}"
 
 def _govern_acquire(provider: str):
     """Acquire one lease for `provider` on this thread, re-entrant per depth.
@@ -170,7 +218,11 @@ def _govern_acquire(provider: str):
     or acquire itself fails -- gating is best-effort, never fatal)."""
     if _governor is None:
         return None
-    key = _govern_key(provider)
+    # U4: fold ONCE, then use the SAME canonical id for the depth key and for
+    # the governor call, so `deepseek` and `deepseek-direct` share one bucket
+    # and one depth counter instead of opening two of each.
+    canon = _govern_provider(provider)
+    key = f"{threading.get_ident()}:{canon}"
     with _GOVERN_DEPTH_LOCK:
         depth = _GOVERN_DEPTH.get(key, 0)
         _GOVERN_DEPTH[key] = depth + 1
@@ -180,7 +232,7 @@ def _govern_acquire(provider: str):
         with _GOVERN_DEPTH_LOCK:
             return _GOVERN_ACTIVE.get(key)
     try:
-        lease = _governor.acquire(provider)
+        lease = _governor.acquire(canon)
     except Exception:  # noqa: BLE001 -- a broken governor never kills a run
         lease = None
     with _GOVERN_DEPTH_LOCK:
@@ -197,7 +249,7 @@ def _govern_release(provider: str, lease: Any) -> None:
     thread (only when this frame is the outermost one). Best-effort."""
     if _governor is None:
         return
-    key = _govern_key(provider)
+    key = _govern_key(provider)  # U4: same fold as _govern_acquire
     with _GOVERN_DEPTH_LOCK:
         depth = _GOVERN_DEPTH.get(key, 0)
         _GOVERN_DEPTH[key] = max(0, depth - 1)
@@ -215,7 +267,9 @@ def _govern_429(provider: str) -> None:
     if _governor is None:
         return
     try:
-        _governor.report_429(provider)
+        # U4: the penalty must land on the bucket the calls were admitted
+        # from, so it folds exactly like _govern_acquire.
+        _governor.report_429(_govern_provider(provider))
     except Exception:  # noqa: BLE001
         pass
 
@@ -224,7 +278,7 @@ def _govern_ok(provider: str) -> None:
     if _governor is None:
         return
     try:
-        _governor.report_ok(provider)
+        _governor.report_ok(_govern_provider(provider))  # U4: same fold
     except Exception:  # noqa: BLE001
         pass
 
