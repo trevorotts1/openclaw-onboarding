@@ -165,6 +165,52 @@ _PERSONA = "Director of Presentations"
 # dispatch callback (same discipline as supervisor._acquire_restart_lease).
 _DISPATCH_LEASE_TTL_SECONDS = 300  # headroom over the engine's own acquire; matches supervisor's restart TTL
 
+
+# F2b (auto-repin, third spawn path). This callback is the THIRD place that
+# Popens the engine directly. F2 put the auto-repin gate in launcher.dispatch,
+# which covers the poller because the poller goes through the launcher; this
+# path and supervisor._restart do not, so both were uncovered. A run whose
+# pinned manifest sha no longer matches the file on disk dies
+# EXIT_MANIFEST_MISMATCH (7) about a second after the spawn -- measured: a
+# stale-pin `presentation_job.py --run --run-dir <run>` exits 7 before the run
+# loop, because `--run` reaches the same pin check in __main__.main as
+# `--resume` does (FIX 22 made the two entry modes share it).
+#
+# THE BOARD MIRRORS, IT NEVER GATES. That invariant is untouched here. This
+# helper cannot raise, cannot block a deck build, and returns "spawn anyway"
+# for every outcome except one: a PROVEN sha mismatch that the engine's own
+# `--repin` could not cure. Refusing to spawn in that single case is not
+# gating a build -- the spawn would produce a corpse, and a corpse builds
+# nothing. Everything else (no launcher import, no state.json, no pin, an
+# unreadable state file, the gate raising where it is documented not to) is
+# UNDETERMINED and dispatches exactly as it did before this fix.
+# PRESENTATION_AUTO_REPIN=0 disables the gate inside the gate itself.
+def _repin_gate_or_none(run_path, engine, scripts_dir) -> Optional[str]:
+    """None to spawn; a reason string when the spawn is refused. Never raises."""
+    try:
+        from presentation_job.launcher import auto_repin_gate, REPIN_AUTOFAIL_CODE
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- an absent launcher must not break dispatch
+        _log(f"auto-repin unavailable ({type(exc).__name__}: {exc}) -- "
+             f"dispatching {run_path} on the existing pin")
+        return None
+    try:
+        verdict = auto_repin_gate(Path(run_path), Path(engine), Path(scripts_dir))
+    # SystemExit is in the net on purpose: `die()` is how every manifest helper
+    # reports trouble, and one escaping here would abort the CC ingest callback
+    # -- the board would then be gating a build, which it may never do.
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- fail-soft
+        _log(f"auto-repin raised {type(exc).__name__}: {exc} -- dispatching "
+             f"{run_path} on the existing pin")
+        return None
+    if verdict is None:
+        return None
+    return (f"{REPIN_AUTOFAIL_CODE}: the manifest moved under this run and "
+            f"`presentation_job.py --repin --run-dir {run_path}` could not "
+            f"cure it. NOT spawning: the engine would die "
+            f"EXIT_MANIFEST_MISMATCH in about a second. See "
+            f"{Path(run_path) / 'working' / 'logs' / 'repin.log'}")
+
+
 def _dispatch_engine_if_idle(run_dir) -> None:
     """If the engine is not running for this run_dir, launch it as a background
     subprocess via presentation_job --run. Fail-soft: never raises.
@@ -172,7 +218,13 @@ def _dispatch_engine_if_idle(run_dir) -> None:
     FIX 18: acquires the run lease first (guarded import; unleased launch with
     a logged reason when the module is absent), refuses when a live holder owns
     the run, and releases the lease right before the spawn so the child engine
-    acquires it as its own hand-off."""
+    acquires it as its own hand-off.
+
+    F2b: runs the launcher's own auto_repin_gate before the Popen, so a run
+    whose manifest moved is re-pinned instead of spawning an engine that dies
+    EXIT_MANIFEST_MISMATCH. Fail-soft in both directions -- see
+    _repin_gate_or_none: only a proven, uncurable mismatch withholds the
+    spawn, and nothing here ever raises or blocks a build."""
     import subprocess as _subprocess
     run_path = Path(run_dir) if not isinstance(run_dir, Path) else run_dir
     state_json = run_path / "state.json"
@@ -247,6 +299,14 @@ def _dispatch_engine_if_idle(run_dir) -> None:
         lease_note = f"; UNLEASED: lease acquire raised {type(exc).__name__}: {exc}"
 
     try:
+        # F2b -- repin gate, INSIDE the try so the finally below still hands the
+        # lease back on a refusal, and while the lease is held so the repin's
+        # state write cannot race a second owner. Fail-soft: only a proven,
+        # uncurable mismatch refuses; everything else returns None and spawns.
+        repin_refusal = _repin_gate_or_none(run_path, engine, here)
+        if repin_refusal is not None:
+            _log(f"engine dispatch refused for {run_path}: {repin_refusal}{lease_note}")
+            return
         _subprocess.Popen(
             [sys.executable or "python3", str(engine), "--run", "--run-dir", str(run_path)],
             shell=False, cwd=str(here),

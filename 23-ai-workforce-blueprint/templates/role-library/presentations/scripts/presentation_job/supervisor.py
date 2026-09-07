@@ -84,6 +84,22 @@ EVENTS_FILENAME = "supervisor-events.jsonl"
 ALARM_FILENAME = "SUPERVISOR-ALARM.json"
 RESTART_LOG_DIRNAME = "supervisor-restart-logs"
 
+# F2b: the supervisor is the SECOND of the three engine-spawn paths, and it
+# Popens `presentation_job.py --resume` DIRECTLY -- it never goes through
+# launcher.dispatch, so F2's auto-repin gate did not cover it. A run whose
+# pinned manifest sha no longer matches the file on disk dies
+# EXIT_MANIFEST_MISMATCH (7) about a second after the spawn, so an uncovered
+# supervisor would spend its whole bounded restart budget on corpses after any
+# manifest-changing roll and then raise an alarm that is not about the run at
+# all. _restart therefore calls the launcher's own auto_repin_gate -- the same
+# function, not a copy -- before it spawns.
+#
+# BUDGET CONTRACT. A repin refusal is NOT a restart attempt: nothing was
+# spawned, and the cure is one operator `--repin`, not three more restarts. So
+# _restart returns None (not False) for it, and supervise() `continue`s WITHOUT
+# charging the attempt -- the same shape the FIX 18 lease refusal uses.
+RESTART_REFUSED = None  # documentation alias for _restart's tri-state
+
 # Liveness verdicts.
 ALIVE = "alive"
 DEAD = "dead"
@@ -277,14 +293,91 @@ def _acquire_restart_lease(run_dir: Path) -> Tuple[Optional[object], Optional[st
     return acquired, None
 
 
-def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, str]:
+def _release_restart_lease(lease) -> str:
+    """Give the run's lease back and say what happened, in one place.
+
+    Split out of _restart only so the F2b refusal path below can release the
+    lease it took without duplicating the release. Behaviour is unchanged: a
+    failed release must never abort or refuse anything -- it is a note, not a
+    verdict.
+    """
+    if lease is None:
+        return ""
+    try:
+        from . import lease as lease_mod
+        lease_mod.release(lease)
+        return "; lease acquired, verified unowned, released for the engine"
+    except Exception as exc:  # noqa: BLE001 -- a failed release must not abort the spawn
+        return f"; lease release failed ({type(exc).__name__}: {exc})"
+
+
+def _repin_gate(run_dir: Path, entry_script: Path,
+                scripts_dir: Path) -> Optional[str]:
+    """F2b. Re-pin this run to the manifest on disk before the restart spawns.
+
+    Returns None to continue the restart (nothing to repin, the answer is
+    UNDETERMINED, or the repin succeeded), or a REASON STRING when the restart
+    is refused because a PROVEN mismatch could not be cured.
+
+    This is launcher.auto_repin_gate -- the identical function the poller's
+    dispatch path calls, deliberately exposed as a public standalone by F2 so
+    the other two spawn paths could share it. It is never reimplemented here:
+    one phase diff, one place where a pin moves.
+
+    FAIL-OPEN ON UNDETERMINED, exactly like the gate itself and like
+    _acquire_restart_lease's guarded import. If launcher cannot be imported, or
+    the gate raises where it is documented not to, this pass says so and lets
+    the restart proceed on the existing pin -- the pre-F2b behaviour, including
+    the engine's own exit 7. A supervisor that crashed on its own repin helper
+    would be strictly worse than one that never had it.
+    PRESENTATION_AUTO_REPIN=0 disables it inside the gate itself.
+    """
+    try:
+        from .launcher import auto_repin_gate, REPIN_AUTOFAIL_CODE
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- see below
+        print(f"supervisor: auto-repin unavailable ({type(exc).__name__}: "
+              f"{exc}) -- restarting on the existing pin",
+              file=sys.stderr, flush=True)
+        return None
+    try:
+        verdict = auto_repin_gate(run_dir, entry_script, scripts_dir)
+    # SystemExit is in the net on purpose: `die()` is how every manifest helper
+    # reports trouble, and one escaping here would take down the whole launchd
+    # supervise pass -- strictly worse than not having this gate at all.
+    except (Exception, SystemExit) as exc:  # noqa: BLE001
+        print(f"supervisor: auto-repin raised {type(exc).__name__}: {exc} -- "
+              f"restarting on the existing pin", file=sys.stderr, flush=True)
+        return None
+    if verdict is None:
+        return None
+    return (f"restart refused: {REPIN_AUTOFAIL_CODE} -- the manifest moved "
+            f"under this run and `presentation_job.py --repin --run-dir "
+            f"{run_dir}` could not cure it. NOTHING was spawned and NO restart "
+            f"attempt was charged: a resume on a stale pin dies "
+            f"EXIT_MANIFEST_MISMATCH in about a second, so restarting here "
+            f"would burn the budget on corpses. See "
+            f"{run_dir / 'working' / 'logs' / 'repin.log'}.")
+
+
+def _restart(scan_root: Path, run_dir: Path,
+             scripts_dir: Path) -> Tuple[Optional[bool], str]:
     """Spawn `presentation_job.py --resume --run-dir <run_dir>`, detached.
+
+    Returns (True, detail) on a spawn, (False, detail) on a spawn FAILURE that
+    the caller charges to the restart budget, or (None, detail) -- RESTART_REFUSED
+    -- for the F2b repin refusal, which is not an attempt and is not charged.
 
     FIX 18: acquires the run lease FIRST (see _acquire_restart_lease) and
     releases it after the spawn returns. If another holder owns the lease, no
     engine is spawned -- the restart is refused without charging the budget, so
     a single dead-worker flap cannot burn the whole restart budget against a
     healthy holder.
+
+    F2b: with the lease held, `_repin_gate` re-pins a run whose manifest moved
+    under it, using the launcher's own auto_repin_gate. A repin that FAILS
+    refuses the restart (RESTART_REFUSED) rather than spawning an engine that
+    dies EXIT_MANIFEST_MISMATCH in about a second and is then counted, logged
+    and budgeted as a restart.
 
     start_new_session=True is load-bearing: this runs under a launchd
     StartInterval job that exits as soon as the shell script returns, and a child
@@ -301,6 +394,16 @@ def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, s
         # has an owner, which is the lease doing its job. A later pass retries
         # if the holder's lease expires or the holder dies.
         return False, refuse_why
+
+    # F2b AUTO-REPIN GATE -- UNDER the lease we just proved is ours, and before
+    # the release below, so the repin's state write cannot race a second owner
+    # and the release -> spawn window stays exactly as wide as it was. On a
+    # proven, uncurable mismatch this refuses the restart and returns None, and
+    # supervise() does not charge the attempt.
+    repin_refusal = _repin_gate(run_dir, entry_script, scripts_dir)
+    if repin_refusal is not None:
+        return RESTART_REFUSED, repin_refusal + _release_restart_lease(lease)
+
     # Release BEFORE spawning, deliberately: the resumed engine's own __main__
     # acquire is the hand-off, and a lease still held by THIS pid at the moment
     # the child starts would refuse the child (same-host live pid, unexpired
@@ -308,14 +411,7 @@ def _restart(scan_root: Path, run_dir: Path, scripts_dir: Path) -> Tuple[bool, s
     # pid dies, and the child's takeover would have to wait out the whole TTL.
     # Releasing first makes the hand-over immediate and race-free in the
     # direction that matters: the acquire above already proved no other holder.
-    handed_off = ""
-    if lease is not None:
-        try:
-            from . import lease as lease_mod
-            lease_mod.release(lease)
-            handed_off = "; lease acquired, verified unowned, released for the engine"
-        except Exception as exc:  # noqa: BLE001 -- a failed release must not abort the spawn
-            handed_off = f"; lease release failed ({type(exc).__name__}: {exc})"
+    handed_off = _release_restart_lease(lease)
     log_dir = scan_root / RESTART_LOG_DIRNAME
     argv = [sys.executable, str(entry_script), "--resume", "--run-dir", str(run_dir)]
     try:
@@ -565,6 +661,18 @@ def supervise(
             continue
 
         ok, detail = _restart(scan_root, run_dir, scripts_dir)
+        if ok is RESTART_REFUSED:
+            # F2b: the manifest moved under this run and the repin could not
+            # cure it. NOTHING was spawned, so this is not an attempt and the
+            # budget is untouched -- same accounting as the FIX 18 lease
+            # refusal above. Charging it would spend all three restarts on a
+            # fault no restart can fix and then alarm about the wrong thing;
+            # the cure is one operator `--repin`, and the next pass retries.
+            refused += 1
+            _emit(scan_root, "restart_refused_by_repin", run_dir,
+                  f"{detail} (budget untouched at {attempts}/{max_restarts})",
+                  extra={"attempts": attempts}, notify=True, to_disk=apply)
+            continue
         entry["attempts"] = attempts + 1
         entry["last_attempt_at"] = now.isoformat(timespec="seconds")
         if ok:
@@ -603,7 +711,7 @@ def supervise(
           f"{alive} alive, {undetermined} undetermined, {dead} dead "
           f"({stale_abandoned} too old to restart, cap {max_idle_hours}h) "
           f"-- {restarted} restarted, {deferred} deferred by backoff, "
-          f"{refused} refused by a live lease, "
+          f"{refused} refused by a live lease or an uncurable manifest pin, "
           f"{reported_only} withheld (report-only), {alarmed} alarming", flush=True)
 
     return EXIT_SUPERVISOR_ALARM if alarmed else EXIT_OK
