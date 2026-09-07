@@ -74,6 +74,27 @@ _WALK_GOOD_RE = re.compile(
 
 _LOG_LINE = "scan complete: $NEW_LAUNCHES launched"
 
+# F3 added helper functions the walk-loop body CALLS (file_mtime,
+# verify_engine_running, engine_stderr_tail, ledger_sha256) plus the variables
+# they read. The harness extracts that block VERBATIM from the shipped script
+# for the same reason it extracts the body: a hand-written stand-in is a
+# second implementation, and the shipped one is then never the one under test.
+_HELPERS_RE = re.compile(
+    r"# >>> POLLER-LAUNCH-VERIFY-BEGIN\n(?P<block>.*?)# <<< POLLER-LAUNCH-VERIFY-END",
+    re.S,
+)
+
+
+def _extract_launch_verify_helpers(src: str) -> str:
+    m = _HELPERS_RE.search(src)
+    assert m, (
+        "could not find the POLLER-LAUNCH-VERIFY block in the poll script -- "
+        "the walk-loop body calls file_mtime/verify_engine_running/"
+        "engine_stderr_tail/ledger_sha256 and this harness must run the "
+        "SHIPPED definitions, never a stand-in."
+    )
+    return m.group("block").rstrip("\n")
+
 STUB_PYTHON = """#!/usr/bin/env bash
 # FIX 37 sandbox stub -- never dispatches a real engine, never touches network.
 #   --ledger/--out (resolve_intake.py call): exit 0, no side effects.
@@ -81,8 +102,28 @@ STUB_PYTHON = """#!/usr/bin/env bash
 #       poller's `if [ -f "$run_dir/state.json" ]` guard passes and the
 #       counter increments -- MIMICS what presentation_job.py --new really
 #       does, while never spawning the engine.
-#   -c ... (the engine --run spawner): exit 0.
+#   -c ... (the engine --run spawner): leave what a real spawn leaves.
+#
+# F3 FIDELITY (2026-09-06). The real `-c` spawner Popen()s the engine, records
+# its pid, and the engine then takes .job.lock -- and since F3 the poller
+# counts a launch only when an engine is provably RUNNING. A stub that merely
+# `exit 0`s is therefore simulating a FAILED launch, not a successful one, and
+# leg 2 below would be asserting "2 launched" against a poller correctly
+# reporting 0. So the stub leaves the same three pieces of evidence a real
+# launch leaves: a live process, its pid, and a .job.lock naming it. The
+# background process detaches its fds -- one that inherited the harness's
+# stdout pipe would hold it open and hang subprocess.run for its lifetime.
 if [ "$1" = "-c" ]; then
+  # The run dir is inside the -c program text the poller composes
+  # (... '--run-dir', '<run_dir>' ...); pull it back out.
+  _dir="$(printf '%s\\n' "$2" | sed -n "s/.*'--run-dir', *'\\([^']*\\)'.*/\\1/p" | head -n 1)"
+  if [ -n "$_dir" ]; then
+    mkdir -p "$_dir/working/logs"
+    sleep 20 >/dev/null 2>&1 </dev/null &
+    _epid=$!
+    printf '%s\\n' "$_epid" > "$_dir/.engine.pid"
+    printf '%s stub-engine\\n' "$_epid" > "$_dir/.job.lock"
+  fi
   exit 0
 fi
 case " $* " in
@@ -204,8 +245,16 @@ def _run_counting_harness(walk_line: str, body: str, tmp_path: Path,
         # no stub for them is needed.
         + 'LEASE_ENABLED="0"\n'
         + "SKIPPED_LEASE_HELD=0\n"
+        + "SKIPPED_REFUSED_STICKY=0\n"
         + "LEASE_TAKEOVERS=0\n"
         + 'RUN_MODE=""\n'
+        # F3 settle window: the running-engine check short-circuits the moment
+        # both legs hold, so a healthy launch costs nothing and only a FAILING
+        # dispatch pays the window. 1 s keeps a failing leg quick without
+        # changing which code path runs. Then the SHIPPED helper block itself.
+        + "export PRESENTATION_LAUNCH_VERIFY_S=1\n"
+        + _extract_launch_verify_helpers(
+            POLL_SCRIPT.read_text(encoding="utf-8")) + "\n"
         # read_run_mode is a real function in the script; in this harness it
         # is stubbed to "undeclared", so the launcher default applies and this
         # test stays about COUNTING, not about mode routing.

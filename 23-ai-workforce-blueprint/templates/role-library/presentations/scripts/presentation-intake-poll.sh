@@ -61,8 +61,32 @@ _resolve_scripts_dir() {
 SCRIPTS_DIR="$(_resolve_scripts_dir)" || { log "cannot resolve scripts dir"; exit 2; }
 LOG_FILE="${HOME}/Library/Logs/openclaw/presentation-intake-poll.log"
 
+# F3 -- ONE LINE PER LINE. This used to be `| tee -a "$LOG_FILE"`, which
+# writes the line to $LOG_FILE *and* to stdout. Under launchd that is a
+# DOUBLE WRITE, because presentation-intake-poll.plist.template sets BOTH
+#   <key>StandardOutPath</key><string><LOG_PATH></string>
+#   <key>StandardErrorPath</key><string><LOG_PATH></string>
+# and install.sh renders <LOG_PATH> as
+#   $HOME/Library/Logs/openclaw/presentation-intake-poll.log
+# -- byte-for-byte the same path as $LOG_FILE above. So every logged line
+# landed in that file twice: once from tee's own append, once from launchd
+# copying our stdout into the same file.
+#
+# WHY IT MATTERS BEYOND TIDINESS: the log is EVIDENCE, and a doubled log
+# doubles every measurement taken from it. The 2026-09-06 outage was counted
+# from this file as 5,948 consecutive AF-NOTIFY-UNCONFIGURED refusals; the
+# true figure was ~2,978 -- the same outage, inflated 2x by this line. A
+# count read off a doubled log is not a small error, it is a wrong number
+# reported with full confidence.
+#
+# `>>` (append) is the fix: the line reaches $LOG_FILE exactly once, from
+# exactly one writer, and launchd's StandardOutPath copy is empty rather
+# than a duplicate. Nothing else in this script writes to stdout on the
+# happy path, so the plist needs no change and no existing log is rotated
+# or rewritten. An interactive run reads the log the same way launchd does:
+#   tail -f ~/Library/Logs/openclaw/presentation-intake-poll.log
 log() {
-    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [$PROG] $*" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [$PROG] $*" >> "$LOG_FILE"
 }
 
 # ---------------------------------------------------------------------------
@@ -177,6 +201,13 @@ SKIPPED_RUNNING=0
 SKIPPED_NO_INTAKE=0
 SKIPPED_TERMINAL=0
 SKIPPED_LEASE_HELD=0
+# F4: a run dir whose intake ledger ALREADY refused to resolve, with that
+# ledger byte-for-byte unchanged since the refusal. Its own counter, because
+# it is neither a refusal this tick (nothing was attempted) nor a terminal
+# run (nothing ever started) -- and because folding it into REFUSED_DISPATCH
+# is exactly how three dirs that have been unresolvable since 2026-08-07
+# manufactured a fresh "refusal" every five minutes forever.
+SKIPPED_REFUSED_STICKY=0
 LEASE_TAKEOVERS=0
 RUN_DIRS_SEEN=0
 # The run mode declared by the CLIENT for the run dir currently being
@@ -492,6 +523,244 @@ if d.get("holder") == holder:
 PYREL
 }
 
+# ---------------------------------------------------------------------------
+# F3 -- A LAUNCH IS A RUNNING ENGINE, NOT A SUCCESSFUL SPAWN.
+#
+# THE DEFECT THIS CLOSES (measured on the operator Mac, 2026-09-06, ticks at
+# 13:40, 13:45 and 13:50): the resume branch counted NEW_LAUNCHES whenever
+# the dispatching command EXITED 0. launcher.dispatch() returns 0 the instant
+# subprocess.Popen() succeeds -- it has proven that the OS accepted a fork,
+# nothing more. The two engines it forked each died about one second later on
+# EXIT_MANIFEST_MISMATCH (state's pinned manifest sha vs the shipped v67), so
+# the very same two run dirs were re-spawned every five minutes for days
+# while the only line an operator reads said, every time:
+#
+#     scan complete: 2 launched, 0 refused
+#
+# Two one-second deaths, reported as two launches. The previous accounting
+# fix made a REFUSAL countable; this one makes a LAUNCH provable. They are
+# different lies: one about what the launcher said, one about what the
+# machine did.
+#
+# WHAT COUNTS AS PROOF. After a rc-0 dispatch, an engine is counted only when
+# BOTH hold, re-checked once a second until they do or the settle window
+# expires:
+#
+#   (A) a recorded engine pid is ALIVE -- state.json engine_pid first (where
+#       launcher._record_engine_pid puts it), then the run_dir/.engine.pid
+#       sidecar it uses before state.json exists (launcher._engine_pid_sidecar
+#       -- NOTE: at the RUN DIR ROOT, not under working/), then .job.lock's
+#       own first field. This is the leg that bites: a manifest-pin death
+#       leaves a dead pid within a second.
+#
+#   (B) the run's .job.lock shows an engine actually TOOK the run -- either
+#       its mtime advanced past the baseline captured immediately before the
+#       dispatch, or it names the very pid proven alive in (A).
+#       state.RunLock.__enter__ truncates and rewrites "<pid> <timestamp>"
+#       into that file the moment a run starts, so both readings are the same
+#       claim. The "or names the pid" arm exists because the launcher itself
+#       takes .job.lock (FIX 27's _merge_run_state_field) while recording the
+#       engine pid, so a bare mtime comparison is not by itself decisive --
+#       and because a 1-second stat granularity can otherwise lose the bump.
+#       A lock naming a live engine is STRONGER evidence than a bumped mtime,
+#       never weaker, so this widening cannot manufacture a false launch.
+#
+# Anything else is REFUSED_DISPATCH, said out loud, with the last 3 lines of
+# working/logs/engine-stderr.log -- which is where the manifest-mismatch
+# FATAL actually landed while the summary line claimed success.
+#
+# WHY BOTH, AND WHY NOT MORE. RunLock is entered BEFORE the manifest sha
+# check in __main__.main, so a pin death advances the lock but kills the pid:
+# (B) alone would have counted those two deaths as launches all over again.
+# (A) alone is nearly enough -- (B) is what distinguishes "a process is
+# alive" from "an engine owns this run".
+#
+# ROLLBACK: PRESENTATION_LAUNCH_VERIFY=0 restores the pre-F3 accounting
+# (rc 0 == launched). PRESENTATION_LAUNCH_VERIFY_S sets the settle window in
+# whole seconds (default 8); the check short-circuits the moment both legs
+# hold, so a healthy launch costs no wall clock at all and only a FAILED
+# dispatch pays the full window.
+#
+# The helpers between the two markers below are extracted VERBATIM by
+# tests/test_f3f4_poller_truth.py, tests/test_poller_launch_accounting.py and
+# tests/test_fix37_poller_counter.py, whose harnesses execute this script's
+# real walk-loop body. Keep them self-contained -- they may read no variable
+# this block does not itself declare.
+# >>> POLLER-LAUNCH-VERIFY-BEGIN
+LAUNCH_VERIFY_ENABLED="${PRESENTATION_LAUNCH_VERIFY:-1}"
+LAUNCH_VERIFY_S="${PRESENTATION_LAUNCH_VERIFY_S:-8}"
+case "$LAUNCH_VERIFY_S" in ''|*[!0-9]*) LAUNCH_VERIFY_S=8 ;; esac
+# Baseline .job.lock mtime, taken immediately BEFORE each dispatch. Declared
+# here so `set -u` has it on every path.
+LOCK_MTIME_BEFORE=0
+# verify_engine_running's finding, read by the caller on the line right
+# after the call. Always a full sentence naming what was and was not checked,
+# so a refusal in the log carries its own evidence instead of a bare verdict.
+VERIFY_WHY=""
+
+# file_mtime <path> -- epoch seconds, or 0 when absent/unreadable. BSD stat
+# (`-f %m`, macOS) first, GNU stat (`-c %Y`, Linux/VPS) second; each result is
+# validated as digits so the wrong stat's output can never be mistaken for a
+# timestamp (GNU `stat -f %m file` prints a MOUNT POINT, not a number).
+file_mtime() {
+    local out=""
+    if [ ! -e "$1" ]; then printf '0'; return 0; fi
+    out="$(stat -f '%m' "$1" 2>/dev/null)" || out=""
+    case "$out" in ''|*[!0-9]*) out="$(stat -c '%Y' "$1" 2>/dev/null)" || out="" ;; esac
+    case "$out" in ''|*[!0-9]*) out=0 ;; esac
+    printf '%s' "$out"
+}
+
+# read_engine_pid <run_dir> -- the pid an engine was recorded under, or "".
+# Same three sources launcher._read_engine_pid consults, in the same order,
+# plus .job.lock last (state.RunLock writes "<pid> <timestamp>" there). The
+# sidecar and lock legs are pure shell on purpose: they must still work when
+# the interpreter is the very thing that failed to start.
+read_engine_pid() {
+    local run_dir="$1" pid=""
+    pid="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1] + "/state.json")).get("engine_pid", "") or "")
+except Exception:
+    print("")' "$run_dir" 2>/dev/null)"
+    case "$pid" in ''|*[!0-9]*) pid="" ;; esac
+    if [ -z "$pid" ] && [ -f "$run_dir/.engine.pid" ]; then
+        pid="$(head -n 1 "$run_dir/.engine.pid" 2>/dev/null | tr -d '[:space:]')"
+        case "$pid" in ''|*[!0-9]*) pid="" ;; esac
+    fi
+    if [ -z "$pid" ] && [ -f "$run_dir/.job.lock" ]; then
+        pid="$(awk 'NR==1{print $1}' "$run_dir/.job.lock" 2>/dev/null)"
+        case "$pid" in ''|*[!0-9]*) pid="" ;; esac
+    fi
+    printf '%s' "$pid"
+}
+
+# engine_stderr_tail <run_dir> -- the last 3 lines of the engine's own stderr,
+# into this log, at the moment a dispatch is declared NOT LAUNCHED. Says so
+# explicitly when there is no such file: an absent log is a fact about the
+# evidence, never evidence that nothing went wrong.
+engine_stderr_tail() {
+    local err="$1/working/logs/engine-stderr.log"
+    if [ -f "$err" ]; then
+        tail -n 3 "$err" 2>/dev/null | while IFS= read -r _err_line; do
+            log "    [engine-stderr] $_err_line"
+        done
+    else
+        log "    [engine-stderr] no $err on disk -- the engine either wrote no stderr or never got far enough to open it"
+    fi
+}
+
+# verify_engine_running <run_dir> <lock_mtime_before> -- 0 when an engine is
+# provably RUNNING for this run dir, 1 otherwise. Sets VERIFY_WHY either way.
+verify_engine_running() {
+    local run_dir="$1" baseline="$2" waited=0 pid="" now="" lockpid=""
+    VERIFY_WHY=""
+    if [ "$LAUNCH_VERIFY_ENABLED" != "1" ]; then
+        VERIFY_WHY="running-engine verification is DISABLED (PRESENTATION_LAUNCH_VERIFY=0) -- this is the pre-F3 accounting: a rc-0 dispatch is counted as a launch WITHOUT proof that anything is running"
+        return 0
+    fi
+    while : ; do
+        pid="$(read_engine_pid "$run_dir")"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            if [ -f "$run_dir/.job.lock" ]; then
+                now="$(file_mtime "$run_dir/.job.lock")"
+                if [ "$now" -gt "$baseline" ]; then
+                    VERIFY_WHY="engine pid $pid is alive and .job.lock advanced ($baseline -> $now)"
+                    return 0
+                fi
+                lockpid="$(awk 'NR==1{print $1}' "$run_dir/.job.lock" 2>/dev/null)"
+                if [ -n "$lockpid" ] && [ "$lockpid" = "$pid" ]; then
+                    VERIFY_WHY="engine pid $pid is alive and holds .job.lock"
+                    return 0
+                fi
+                VERIFY_WHY="pid $pid is alive but .job.lock neither advanced past $baseline nor names it (lock pid: ${lockpid:-none}) -- no engine has taken this run"
+            else
+                VERIFY_WHY="pid $pid is alive but $run_dir/.job.lock does not exist -- no engine has taken this run"
+            fi
+        elif [ -n "$pid" ]; then
+            VERIFY_WHY="the recorded engine pid $pid is NOT alive"
+        else
+            VERIFY_WHY="no engine pid was recorded at all (state.json engine_pid, $run_dir/.engine.pid and $run_dir/.job.lock are all empty or absent)"
+        fi
+        if [ "$waited" -ge "$LAUNCH_VERIFY_S" ]; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    return 1
+}
+
+# ledger_sha256 <path> -- the intake ledger's content hash, or "". shasum
+# (macOS) then sha256sum (Linux/VPS); each answer validated as HEXADECIMAL,
+# so a missing tool or an error message yields "" (UNDETERMINED) rather than a
+# bogus digest -- and the caller treats "" as "cannot compare", never as a
+# match, so an unhashable ledger is retried rather than silently stickied.
+ledger_sha256() {
+    local out=""
+    out="$(shasum -a 256 "$1" 2>/dev/null | awk 'NR==1{print $1}')" || out=""
+    case "$out" in ''|*[!0-9a-f]*) out="$(sha256sum "$1" 2>/dev/null | awk 'NR==1{print $1}')" || out="" ;; esac
+    case "$out" in ''|*[!0-9a-f]*) out="" ;; esac
+    printf '%s' "$out"
+}
+# auto_resume_refund <run_dir> <was_auto> <why> -- F1. Give back the attempt
+# just charged, because no engine started.
+#
+# presentation_job.auto_resume allows at most three automatic resumes per run
+# per rolling day and records the attempt BEFORE the dispatch (the engine
+# clears state["blocked"] the moment it starts, so a row written afterwards
+# could not name the park it was answering). That ordering is right, and it
+# means an attempt can be charged for a dispatch that then produced nothing:
+# the launcher refuses (AF-NOTIFY-UNCONFIGURED, a capacity autofail, the
+# credit preflight), or it exits 0 and verify_engine_running above comes back
+# negative. Charging those lets ONE curable environment fault burn the whole
+# budget in forty minutes and leave a healthy deck parked with no retries --
+# for a reason that has nothing to do with the deck.
+#
+# So both NOT-LAUNCHED arms of the resume branch call this. It is bookkeeping,
+# not a decision: it can only ever REMOVE a charge, it marks at most one row,
+# and it always returns 0 -- a failed refund must never become a second
+# failure in a log that is already reporting the first.
+#
+# $2 is the "did WE auto-resume this tick?" flag. A human-initiated resume, or
+# a run that was never BLOCKED, has no attempt to give back and this is a
+# no-op for it. Reads $SCRIPTS_DIR and calls log(), both of which every
+# harness that executes the walk body already declares.
+auto_resume_refund() {
+    local run_dir="$1" was_auto="$2" why="$3"
+    if [ "$was_auto" != "1" ]; then
+        return 0
+    fi
+    ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --run-dir "$run_dir" --refund "$why" 2>&1 ) | while IFS= read -r refund_line; do
+        if [ -n "$refund_line" ]; then log "  $refund_line"; fi
+    done
+    return 0
+}
+# <<< POLLER-LAUNCH-VERIFY-END
+
+# ---------------------------------------------------------------------------
+# F4 -- the walk must not descend into the PARK SHELF.
+#
+# `find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*"` walks TWO levels, so
+# it finds $RUNS_ROOT/pres-<slug> (a real run) AND $RUNS_ROOT/_parked/pres-<slug>
+# (a run a human deliberately shelved). The shelf is exactly the place whose
+# contents must never be dispatched again, and the poller was reading it as
+# just another run dir.
+#
+# `-not -path "$RUNS_ROOT/_*"` prunes every entry under any underscore-prefixed
+# child of the runs root -- _parked/, _archive/, _retired/ -- at both depths.
+#
+# NOTE, deliberate deviation from the fix spec, which proposed the pattern
+# `*/_*/*`: that one is anchored to NOTHING, so it also matches a legitimate
+# run whose RUNS_ROOT happens to contain an underscore component (a scratch
+# root under /tmp/pytest-of-.../test_x_0/, say). Anchoring the pattern to
+# $RUNS_ROOT makes it mean what it says -- "an underscore directory INSIDE the
+# runs root" -- and cannot silently swallow the real runs of a box whose paths
+# are shaped differently. If $RUNS_ROOT itself contains a find glob character
+# ([ ? *) the pattern simply stops matching and the walk is as wide as it was
+# before: this filter can lose a park, never a live deck.
+# ---------------------------------------------------------------------------
+
 # Walk every run directory under $RUNS_ROOT.
 while IFS= read -r run_dir; do
     RUN_DIRS_SEEN=$((RUN_DIRS_SEEN + 1))
@@ -525,6 +794,42 @@ except Exception:
         continue
     fi
 
+    # -----------------------------------------------------------------------
+    # F4 -- REMEMBER A REFUSAL. The --new branch below refuses a run dir whose
+    # intake ledger does not resolve to a legal presentation_type
+    # (AF-DECK-TYPE-UNKNOWN). Nothing remembered that, so the identical
+    # resolve was re-attempted every five minutes forever: three run dirs on
+    # the operator Mac have been failing that way since 2026-08-07, and every
+    # tick they contribute a fresh "refused" to a summary line an operator is
+    # supposed to be able to read as news.
+    #
+    # A refusal is now written to working/.poller-refused.json together with
+    # the sha256 of the ledger that caused it. While that ledger is
+    # byte-for-byte unchanged, the answer is known and this dir is skipped
+    # (counted, never silent). The MOMENT the ledger changes -- a human fixed
+    # the deck type -- the sha differs, the memo is deleted, and the run dir
+    # is retried on that very tick. The memory is therefore self-clearing: it
+    # can delay nothing except a repetition of an answer already obtained.
+    #
+    # Guarded on `[ ! -f "$STATE_JSON" ]` because the memo is about the --new
+    # path only. If a state.json appears later (a human ran the canonical
+    # entry door by hand), that run has a job and belongs on the RESUME path;
+    # a stale memo must never suppress a real resume.
+    # -----------------------------------------------------------------------
+    POLLER_REFUSED_JSON="$run_dir/working/.poller-refused.json"
+    if [ ! -f "$STATE_JSON" ] && [ -f "$POLLER_REFUSED_JSON" ]; then
+        REFUSED_LEDGER_SHA="$(sed -n 's/.*"ledger_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' "$POLLER_REFUSED_JSON" 2>/dev/null | head -n 1)"
+        CURRENT_LEDGER_SHA="$(ledger_sha256 "$INTAKE_LEDGER")"
+        if [ -n "$REFUSED_LEDGER_SHA" ] && [ -n "$CURRENT_LEDGER_SHA" ] && \
+           [ "$REFUSED_LEDGER_SHA" = "$CURRENT_LEDGER_SHA" ]; then
+            log "  skipping $run_dir: its intake ledger already failed to resolve and is UNCHANGED since (sha256 $CURRENT_LEDGER_SHA). See $POLLER_REFUSED_JSON for the reason. This dir is retried the moment the ledger changes -- re-running the same failing resolve every 5 minutes proves nothing."
+            SKIPPED_REFUSED_STICKY=$((SKIPPED_REFUSED_STICKY + 1))
+            continue
+        fi
+        log "  $run_dir was refused before, but its intake ledger has CHANGED since (was ${REFUSED_LEDGER_SHA:-UNDETERMINED}, now ${CURRENT_LEDGER_SHA:-UNDETERMINED}) -- clearing the refusal memo and retrying"
+        rm -f "$POLLER_REFUSED_JSON"
+    fi
+
     # FIX 11 client path: what run mode did the CLIENT declare in this intake?
     # Read once here so both dispatch branches below carry the same answer.
     # Empty = undeclared = the launcher's own default (standard) stands.
@@ -545,8 +850,35 @@ try:
 except Exception:
     print('')
 " 2>/dev/null)
-        if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "BLOCKED" ]; then
-            # Already finished or parked -- skip
+        # F4: ABANDONED is the third of the department's terminal values --
+        # the sanctioned retirement marker (FAULT #11). supervisor.py has
+        # skipped ("DONE", "BLOCKED", "ABANDONED") since it was written; this
+        # poller and cc_board._dispatch_engine_if_idle knew only two of the
+        # three, so a run a human had explicitly retired was still a resume
+        # candidate here every five minutes. Retiring a run must actually
+        # retire it, in every actor that can start an engine.
+        #
+        # F1 SPLITS THE THREE. DONE and ABANDONED are ENDINGS -- one finished,
+        # one a human deliberately retired -- and neither is ever restarted by
+        # anything. BLOCKED is NOT an ending: it is a PARK, and the whole point
+        # of a park is that the run is resumable. It used to be skipped here
+        # with the other two, which is why nothing in this system could resume
+        # a parked run: not this poller, not supervisor.supervise() (skips
+        # DONE|BLOCKED|ABANDONED), not cc_board._dispatch_engine_if_idle, not
+        # the watchdog (report-only). One measured run cost 22 h 14 min and 21
+        # HUMAN --resume commands to reach 37 of 38 phases; nine of those 21
+        # passed on the very next try, transient failures nothing retried.
+        #
+        # So BLOCKED now falls THROUGH this test and is decided further down,
+        # by presentation_job.auto_resume, after the already-running check and
+        # after the dispatch lease -- see the F1 block below. It is decided
+        # there and not here on purpose: a run that parked seconds ago may
+        # still have a live engine winding down (`_block` sets terminal=BLOCKED
+        # from inside the engine), and spending one of three daily attempts on
+        # a dir this tick was going to skip anyway is exactly the kind of
+        # quiet leak that makes a bound not a bound.
+        if [ "$TERMINAL" = "DONE" ] || [ "$TERMINAL" = "ABANDONED" ]; then
+            # Finished, or retired by a human. Neither is ever restarted.
             SKIPPED_TERMINAL=$((SKIPPED_TERMINAL + 1))
             continue
         fi
@@ -586,6 +918,55 @@ except Exception:
             fi
         fi
         #
+        # -------------------------------------------------------------------
+        # F1 -- BOUNDED AUTO-RESUME OF A PARKED RUN.
+        #
+        # This is the branch that used to read `TERMINAL = BLOCKED -> continue`
+        # ("Already finished or parked -- skip"). A BLOCKED run now gets a
+        # DECISION instead of a shrug, and the decision is made by
+        # presentation_job.auto_resume, never here: the bounds (class, phase,
+        # cap, backoff) are code with tests, not shell.
+        #
+        #   exit 0 -> RESUME. An attempt has been RECORDED in state.json
+        #             (state["auto_resume"]) BEFORE we get here, so the count
+        #             cannot be lost by the dispatch that follows. The resume
+        #             then goes through the EXISTING launcher line below --
+        #             this file still has exactly one engine dispatcher.
+        #   exit 3 -> decided NOT to resume (owner decision, a close-time gate,
+        #             the cap, or backoff). Counted as SKIPPED_TERMINAL, which
+        #             is what it is: a parked run this tick left parked.
+        #   exit 4 -> UNDETERMINED (state.json unreadable, or the manifest pin
+        #             moved and this tree has no auto-repin to cure it, so the
+        #             resume would die EXIT_MANIFEST_MISMATCH in one second and
+        #             burn an attempt for nothing). Also SKIPPED_TERMINAL.
+        #   any other non-zero (module missing on a box that has not taken the
+        #             scripts refresh, a traceback) -> skip. FAIL-CLOSED: the
+        #             pre-F1 behaviour is the failure mode, never a resume.
+        #
+        # Every line the decider prints goes into this log, because a bare
+        # "skipped" tells an operator nothing and the reason IS the evidence.
+        # -------------------------------------------------------------------
+        # Declared on every iteration, BEFORE the branch that may set it, so
+        # `set -u` has it on every path where no auto-resume happened.
+        AUTO_RESUMED=0
+        if [ "$TERMINAL" = "BLOCKED" ]; then
+            AUTO_RESUME_OUT="$( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --run-dir "$run_dir" 2>&1 )"
+            AUTO_RESUME_RC=$?
+            printf '%s\n' "$AUTO_RESUME_OUT" | while IFS= read -r auto_resume_line; do
+                if [ -n "$auto_resume_line" ]; then log "  $auto_resume_line"; fi
+            done
+            if [ "$AUTO_RESUME_RC" -ne 0 ]; then
+                log "  parked run LEFT PARKED (auto-resume exit $AUTO_RESUME_RC) -- see the reason above. Counted as terminal, never as a refusal: nothing went wrong this tick."
+                SKIPPED_TERMINAL=$((SKIPPED_TERMINAL + 1))
+                if [ "$LEASE_ENABLED" = "1" ]; then
+                    lease_release "$run_dir"
+                fi
+                continue
+            fi
+            AUTO_RESUMED=1
+            log "  parked run AUTHORISED for automatic resume -- dispatching through the same launcher line every resume uses"
+        fi
+        #
         # F03: launcher.py is a member of the presentation_job PACKAGE and
         # imports its siblings with a relative import (`from .vocab import
         # ...`). Invoking it BY FILE PATH (`python3 "$LAUNCHER"`) makes
@@ -607,6 +988,12 @@ except Exception:
         # (standard). Never guess ultra. NOTE: this command is extracted
         # VERBATIM and executed by tests/test_f03_poll_resume_invocation.py --
         # keep it one inline line, directly under the log line below.
+        #
+        # F3: the baseline for leg (B) of the running-engine proof, taken
+        # immediately BEFORE the dispatch so "advanced" means "advanced
+        # because of THIS dispatch". A resume nearly always finds an old
+        # .job.lock already on disk from the run's previous life.
+        LOCK_MTIME_BEFORE="$(file_mtime "$run_dir/.job.lock")"
         log "resuming parked job: $run_dir"
         ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.launcher --resume --run-dir "$run_dir" ${RUN_MODE:+--mode "$RUN_MODE"} ) 2>&1 | while IFS= read -r line; do
             log "  $line"
@@ -617,12 +1004,26 @@ except Exception:
         # launcher exits non-zero when it REFUSES to dispatch (notify_gate's
         # EXIT_NOTIFY_UNCONFIGURED=8 / AF-NOTIFY-UNCONFIGURED, the capacity
         # autofails, a missing state.json). No engine started; do not claim one.
+        # F3: rc 0 is now the ENTRY condition, not the verdict. The launcher
+        # returns 0 the moment Popen() succeeds; the engine it forked may
+        # already be dead (EXIT_MANIFEST_MISMATCH takes about one second).
+        # verify_engine_running is what turns "a fork was accepted" into "an
+        # engine owns this run".
         DISPATCH_RC=${PIPESTATUS[0]}
         if [ "$DISPATCH_RC" -eq 0 ]; then
-            NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+            if verify_engine_running "$run_dir" "$LOCK_MTIME_BEFORE"; then
+                log "  LAUNCHED: $VERIFY_WHY"
+                NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+            else
+                log "  NOT LAUNCHED: the launcher exited 0 but no engine is RUNNING for $run_dir after ${LAUNCH_VERIFY_S}s -- $VERIFY_WHY. A spawn that dies is not a launch. Counted as REFUSED, never as a launch."
+                engine_stderr_tail "$run_dir"
+                REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+                auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher exited 0 but no engine was running: $VERIFY_WHY"
+            fi
         else
             REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
             log "  NOT LAUNCHED: the launcher refused this resume dispatch (exit $DISPATCH_RC) -- see the launcher lines above for the reason. Counted as REFUSED, never as a launch."
+            auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher refused the dispatch (exit $DISPATCH_RC)"
         fi
         # FIX 61: the dispatch window is over -- the engine now holds .job.lock.
         if [ "$LEASE_ENABLED" = "1" ]; then
@@ -676,6 +1077,32 @@ except Exception:
             # precisely the case the comment above describes ("retried the
             # identical failure every 5 minutes, forever"), so it is exactly
             # the case that must be countable.
+            # F4: REMEMBER this refusal, keyed to the exact ledger that caused
+            # it, so the next tick does not re-run an identical resolve and
+            # manufacture an identical refusal. Read back at the top of the
+            # walk (see the refusal-memo block there). Best-effort: if the
+            # memo cannot be written the poller simply behaves as it did
+            # before -- a memo is an optimisation over a known answer, never
+            # a gate on a client's deck.
+            #
+            # Written BEFORE the counter below on purpose: the accounting
+            # guard (tests/test_poller_launch_accounting.py) requires every
+            # `continue` in this walk to have its counter within a few lines,
+            # so that a run dir can never leave the loop unreported. Inserting
+            # this block between the increment and the `continue` pushed the
+            # counter out of that window -- the gate caught it, and the fix is
+            # to keep the increment adjacent to the exit, not to widen the gate.
+            POLLER_REFUSAL_SHA="$(ledger_sha256 "$INTAKE_LEDGER")"
+            POLLER_REFUSAL_REASON="$(printf '%s' "$RESOLVE_OUT" | tr '\n\r\t' '   ' | tr -d '"\\' | cut -c1-400)"
+            mkdir -p "$run_dir/working" 2>/dev/null
+            if printf '{\n  "reason": "%s",\n  "ledger_sha256": "%s",\n  "ledger_path": "%s",\n  "recorded_at": "%s",\n  "recorded_by": "presentation-intake-poll.sh"\n}\n' \
+                "$POLLER_REFUSAL_REASON" "$POLLER_REFUSAL_SHA" "$INTAKE_LEDGER" \
+                "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+                > "$run_dir/working/.poller-refused.json" 2>/dev/null; then
+                log "  recorded the refusal in $run_dir/working/.poller-refused.json (ledger sha256 ${POLLER_REFUSAL_SHA:-UNDETERMINED}) -- this dir is skipped until that ledger changes"
+            else
+                log "  WARNING: could not record the refusal memo at $run_dir/working/.poller-refused.json -- this dir will be retried (and refused) again next tick"
+            fi
             REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
             # FIX 61: the lease covered a window that produced no engine --
             # release it so the next tick (after the ledger is corrected)
@@ -723,6 +1150,11 @@ except Exception:
         elif [ -f "$run_dir/state.json" ]; then
             # Engine job created -- now launch the run (background).
             # We use Python subprocess here because poll.sh itself must return quickly.
+            #
+            # F3: baseline for leg (B) of the running-engine proof, taken
+            # BEFORE the spawner. A brand-new run dir normally has no
+            # .job.lock at all, so this is 0 and any lock at all is an advance.
+            LOCK_MTIME_BEFORE="$(file_mtime "$run_dir/.job.lock")"
             env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 -c "
 import subprocess, sys, os
 argv = [sys.executable or 'python3', '$ENGINE_ENTRY', '--run', '--run-dir', '$run_dir']
@@ -747,9 +1179,19 @@ if os.path.isfile(sp):
             # LAUNCH ACCOUNTING: the spawner's own exit status. It exits
             # non-zero when Popen could not start the engine at all -- in that
             # case nothing is running and nothing may be counted as running.
+            # F3: same treatment as the resume branch. Popen() succeeding is
+            # not an engine running -- the fresh run's first act is to load
+            # the manifest and take .job.lock, and it can die doing either.
             RUN_RC=${PIPESTATUS[0]}
             if [ "$RUN_RC" -eq 0 ]; then
-                NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+                if verify_engine_running "$run_dir" "$LOCK_MTIME_BEFORE"; then
+                    log "  LAUNCHED: $VERIFY_WHY"
+                    NEW_LAUNCHES=$((NEW_LAUNCHES + 1))
+                else
+                    log "  NOT LAUNCHED: the engine spawner exited 0 but no engine is RUNNING for $run_dir after ${LAUNCH_VERIFY_S}s -- $VERIFY_WHY. A spawn that dies is not a launch. Counted as REFUSED, never as a launch."
+                    engine_stderr_tail "$run_dir"
+                    REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+                fi
             else
                 log "  NOT LAUNCHED: the engine spawner exited $RUN_RC for $run_dir -- no engine process was started. Counted as REFUSED, never as a launch."
                 REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
@@ -766,7 +1208,7 @@ if os.path.isfile(sp):
             lease_release "$run_dir"
         fi
     fi
-done < <(find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" 2>/dev/null)
+done < <(find "$RUNS_ROOT" -maxdepth 2 -type d -name "pres-*" -not -path "$RUNS_ROOT/_*" 2>/dev/null)
 
 # FIX 37: emit poller-telemetry event (consuming FIX 5 telemetry infra)
 # FIX 61: the event now also carries the lease counters (skipped_lease_held,
@@ -780,7 +1222,12 @@ mkdir -p "$TELEMETRY_DIR"
 # new_launches + refused + every skipped_* count, so a missing increment is
 # arithmetically visible instead of silently under-reported. The keys that
 # already existed keep their names and meanings; nothing was removed.
-printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"refused":%d,"skipped_running":%d,"skipped_no_intake":%d,"skipped_terminal":%d,"skipped_lease_held":%d,"lease_takeovers":%d,"run_dirs_seen":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$REFUSED_DISPATCH" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE" "$SKIPPED_TERMINAL" "$SKIPPED_LEASE_HELD" "$LEASE_TAKEOVERS" "$RUN_DIRS_SEEN"     >> "$TELEMETRY_DIR/events.jsonl"
+# F3: `new_launches` now means "an engine was proven RUNNING", not "a spawn
+# was accepted", so this stream changes meaning without changing shape -- a
+# consumer comparing today's numbers with last week's is comparing a proof
+# with a claim. F4 adds `skipped_refused_sticky`, which keeps the tally
+# closed: seen == launched + refused + every skipped_* count.
+printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"refused":%d,"skipped_running":%d,"skipped_no_intake":%d,"skipped_terminal":%d,"skipped_lease_held":%d,"skipped_refused_sticky":%d,"lease_takeovers":%d,"run_dirs_seen":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$REFUSED_DISPATCH" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE" "$SKIPPED_TERMINAL" "$SKIPPED_LEASE_HELD" "$SKIPPED_REFUSED_STICKY" "$LEASE_TAKEOVERS" "$RUN_DIRS_SEEN"     >> "$TELEMETRY_DIR/events.jsonl"
 
-log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH refused ($SKIPPED_RUNNING skipped already-running, $SKIPPED_NO_INTAKE skipped no-completed-intake, $SKIPPED_TERMINAL skipped terminal, $SKIPPED_LEASE_HELD skipped on lease, $LEASE_TAKEOVERS lease takeovers, $RUN_DIRS_SEEN run dirs seen)"
+log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH refused ($SKIPPED_RUNNING skipped already-running, $SKIPPED_NO_INTAKE skipped no-completed-intake, $SKIPPED_TERMINAL skipped terminal, $SKIPPED_LEASE_HELD skipped on lease, $SKIPPED_REFUSED_STICKY skipped on an unchanged refused ledger, $LEASE_TAKEOVERS lease takeovers, $RUN_DIRS_SEEN run dirs seen)"
 exit 0
