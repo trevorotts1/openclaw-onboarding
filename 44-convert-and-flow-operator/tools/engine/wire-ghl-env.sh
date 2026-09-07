@@ -106,13 +106,34 @@ read_secret() {
   return 0
 }
 
-# ─── Full 11-alias PIT resolver (first match wins; covers all legacy alias names) ─
-_resolve_any_pit() { for _v in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT; do local _val="${!_v:-}"; [ -z "$_val" ] && _val="$(read_secret "$_v")"; [ -n "$_val" ] && printf '%s' "$_val" && return; done; return 0; }
+# ─── ENGINE PARITY (2026-09-07) ──────────────────────────────────────────────
+# The CANONICAL SECRETS FILE WINS over the inherited process env for credentials.
+#
+# WHY: this script writes what it resolves into openclaw.json `env.vars`, and the
+# gateway re-inherits env.vars at its next start. With process-env-first, a box
+# whose gateway was started carrying a STALE/PLACEHOLDER credential would resolve
+# that stale value and write it straight back into env.vars — re-planting it on
+# every re-wire, forever, while the correct token sat untouched in secrets/.env.
+# That is a documented production failure: a client was messaged daily for 47+
+# days to "re-grab your token" because a 63-character placeholder in env.vars
+# masked a valid 503-character token in secrets/.env.
+#
+# It also matches the engine: tools/engine/caf does `set -a; source secrets/.env`,
+# so for caf the FILE already overrides the process env. Resolving any other way
+# here means wiring a value the engine will never use.
+_file_first() {                      # file value if the secrets file defines it, else process env
+  local _var="$1" _fromfile
+  _fromfile="$(read_secret "$_var")"
+  if [ -n "$_fromfile" ]; then printf '%s' "$_fromfile"; else printf '%s' "${!_var:-}"; fi
+}
 
-API_KEY="${GOHIGHLEVEL_API_KEY:-$(read_secret GOHIGHLEVEL_API_KEY)}"
+# ─── Full 11-alias PIT resolver (first match wins; covers all legacy alias names) ─
+_resolve_any_pit() { for _v in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT; do local _val; _val="$(read_secret "$_v")"; [ -z "$_val" ] && _val="${!_v:-}"; [ -n "$_val" ] && printf '%s' "$_val" && return; done; return 0; }
+
+API_KEY="$(_file_first GOHIGHLEVEL_API_KEY)"
 [ -z "$API_KEY" ] && API_KEY="$(_resolve_any_pit)"
-LOCATION_ID="${GOHIGHLEVEL_LOCATION_ID:-$(read_secret GOHIGHLEVEL_LOCATION_ID)}"
-FIREBASE="${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-$(read_secret GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN)}"
+LOCATION_ID="$(_file_first GOHIGHLEVEL_LOCATION_ID)"
+FIREBASE="$(_file_first GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN)"
 ALLOWED="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-$(read_secret GOHIGHLEVEL_ALLOWED_LOCATION_IDS)}"
 DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-$(read_secret GOHIGHLEVEL_DRAFT_ONLY)}"
 
