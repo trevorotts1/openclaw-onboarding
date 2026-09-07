@@ -16,12 +16,16 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _fresh_capability_receipt(tmp_path, monkeypatch):
+def _fresh_capability_receipt(tmp_path_factory, monkeypatch):
     try:
         import v2_dispatcher as _disp
     except ImportError:
         return  # suite does not touch the dispatcher
-    cap = tmp_path / "skill6-capability.json"
+    # OUTSIDE any test's tmp_path: clean-dir / byte-identical tests assert
+    # ``list(tmp_path.iterdir()) == []`` — nothing may land there, fixture
+    # included. tmp_path_factory gives a per-test dir in pytest's own base.
+    capdir = tmp_path_factory.mktemp("capfix")
+    cap = capdir / "skill6-capability.json"
     cap.write_text(json.dumps({"selectedLane": "agent_browser",
                                "probedAt": "mock-fixture"}), encoding="utf-8")
     import os as _os
