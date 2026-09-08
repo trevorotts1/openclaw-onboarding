@@ -22,6 +22,7 @@ Run: python3 -m unittest tests.social_planner.test_f12_board_outbox -v
 """
 
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -242,6 +243,37 @@ class TestF12BoardOutbox(unittest.TestCase):
         self.assertIn('"idempotency_key"', src)
         self.assertIn('SKILL35_COMPANY_ID', src, "verified company binding from env")
         self.assertIn('"company_id"', src)
+
+    # ------------------------------------------------------------------
+    # 6. D-F12-01: signed-ingest HMAC parity — fast path must equal
+    # HMAC(secret, rawBody), the construction CC verifyWebhookSignature
+    # (and mc_board._sign) uses. Regression: the old fast path signed
+    # HMAC(body-as-key, empty-message) and CC 401d every signed ingest.
+    # ------------------------------------------------------------------
+    def test_ingest_hmac_fast_path_matches_secret_keyed_signature(self):
+        self.assertTrue(_RUNNER.exists(), "runner script must exist")
+        src = _RUNNER.read_text()
+        secret = "qc-parity-secret"
+        body = '{"title":"qc-parity-body"}'
+        fast = subprocess.run(
+            ["bash", "-c",
+             "printf '%s' \"$0\" | CC_WEBHOOK_SECRET=\"$1\" python3 -c "
+             "\"import hashlib,hmac,os,sys; print(hmac.new("
+             "os.environ['CC_WEBHOOK_SECRET'].encode('utf-8'), "
+             "sys.stdin.buffer.read(), hashlib.sha256).hexdigest())\"",
+             body, secret],
+            capture_output=True, text=True)
+        self.assertEqual(fast.returncode, 0, fast.stderr)
+        expected = hmac.new(secret.encode("utf-8"), body.encode("utf-8"),
+                            hashlib.sha256).hexdigest()
+        self.assertEqual(fast.stdout.strip(), expected,
+                         "shell fast path must be HMAC(secret, body)")
+        # The runner's embedded fast path must use the secret as the key
+        # (not the body) over the body bytes (not an empty message).
+        self.assertIn("os.environ['CC_WEBHOOK_SECRET']", src)
+        self.assertIn("sys.stdin.buffer.read(), hashlib.sha256", src)
+        self.assertNotIn("hmac.new(sys.stdin.buffer.read(), b''", src,
+                         "old body-as-key construction must be gone")
 
 
 if __name__ == "__main__":
