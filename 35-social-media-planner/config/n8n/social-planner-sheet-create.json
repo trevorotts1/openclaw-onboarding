@@ -15,6 +15,18 @@
     "schema_version": "1.1.0",
     "sharing_contract": "anyone-with-the-link EDIT (Drive permission type=anyone, role=writer) is intentional and must be preserved; never migrate to named-user-only (F02).",
     "idempotency_contract": "provisioning_key = company_id::planner_kind; Drive readback on appProperties skill35_provisioning_key before copy; replay returns the existing file with deduped=true (F15). Durable claim/ledger lives in the ONB/CC caller.",
+    "repair_contract": {
+      "verification": "F14 — BEFORE provisioning completes, the template sheet's metadata is read with the SAME credential class the copy uses (googleDriveOAuth2Api), verifying the template is reachable and expected to exist. The provisioned sheet's metadata is then read back with the Sheets credential the appends use (Verify Provisioned Sheet + Registry Verification step in INSTALL.md) before the receipt is returned.",
+      "transient": "5xx/429/network failures on the copy are transient: bounded retries (retryOnFail, maxTries 3, 2s backoff) before the error receipt.",
+      "classification": "404 on the template => 'template_not_found' (identity repair: fix templateSheetId). 403 => 'template_access_denied' (access repair: re-grant operator access to the EXISTING template). Neither ever silently creates a replacement sheet.",
+      "error_schema": {
+        "status": "error",
+        "repair_required": true,
+        "repair_state": "template_not_found|template_access_denied|transient",
+        "repair_action": "specific actionable repair instruction (identity vs access)",
+        "provisioning_key": "string"
+      }
+    },
     "input_schema": {
       "brandName": "string (required)",
       "clientEmail": "string (required)",
@@ -82,6 +94,57 @@
       "position": [
         440,
         0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.templateSheetId }}?fields=id,name,trashed,mimeType&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {},
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      "id": "http-verify-template",
+      "name": "Verify Template Access (F14)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        330,
+        -220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// F14 — classify the template verification result BEFORE provisioning.\n// Same credential class (googleDriveOAuth2Api) the copy uses, so the status is\n// authoritative for the copy path:\n//   404 => 'template_not_found'    — the templateSheetId is wrong or deleted\n//          (identity repair: correct the registered template ID; NEVER make a\n//          replacement template or an ad-hoc sheet as a side effect).\n//   403 => 'template_access_denied' — the operator credential lost access to\n//          the template (access repair: re-grant access to the EXISTING file).\n//   other => 'transient' — bounded retries (3x/2s) already applied; surfaced so\n//          the caller retries provisioning without losing the pending marker.\nconst src = $('Validate + Build Provisioning Key').first().json;\nconst err = $input.first().json;\nconst status = err.status || err.statusCode || (err.response && (err.response.status || err.response.statusCode));\nlet repair_state = 'transient';\nlet repair_action = 'Transient Google Drive error after 3 bounded retries — provisioning stays pending; retry the create with the SAME provisioning key (the readback dedupes).';\nif (status === 404) {\n  repair_state = 'template_not_found';\n  repair_action = 'The template sheet ID ' + src.templateSheetId + ' does not exist or was deleted. Identity repair: correct the registered templateSheetId — do NOT provision a replacement sheet from another source silently; the pending marker reconciles once the ID is verified.';\n} else if (status === 403) {\n  repair_state = 'template_access_denied';\n  repair_action = 'The operator Drive credential is denied access to the template ' + src.templateSheetId + '. Access repair: re-grant the operator credential access to the EXISTING template, then retry provisioning with the SAME provisioning key.';\n}\nreturn [{ json: {\n  status: 'error',\n  repair_required: true,\n  repair_state: repair_state,\n  repair_action: repair_action,\n  provisioning_key: src.provisioningKey\n} }];"
+      },
+      "id": "code-classify-repair",
+      "name": "Classify Repair (F14)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Classify Repair (F14)').first().json) }}",
+        "options": {
+          "responseCode": 424
+        }
+      },
+      "id": "respond-repair",
+      "name": "Respond: Repair (F14)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        770,
+        -380
       ]
     },
     {
@@ -200,6 +263,76 @@
     },
     {
       "parameters": {
+        "jsCode": "// F25 — build the readability/formatting provisioning requests for the NEW\n// sheet from the sheet-template.schema.json contract:\n//   - TEXT_EQ conditional format rules for every status (color + written\n//     label — NUMBER_EQ against text is the defect this replaces and is never\n//     emitted),\n//   - setDataValidation dropdowns over the same status list,\n//   - frozen header rows (Posts also freezes its first two columns),\n//   - wrapped copy (repeatCell wrapStrategy WRAP),\n//   - protected formula ranges (Images preview column P),\n//   - the compact This Week view tab with its ~8 client-facing columns.\n// All requests run in ONE spreadsheet.batchUpdate after the share step.\nconst sheets = ($input.first().json.sheets || []);\nconst numeric = {};\nfor (const s of sheets) {\n  if (s.properties) numeric[s.properties.title] = s.properties.sheetId;\n}\nconst STATUSES = [\n  { label: 'Complete', color: { red: 0.718, green: 0.882, blue: 0.804 } },\n  { label: 'Failed', color: { red: 0.957, green: 0.780, blue: 0.765 } },\n  { label: 'QC Review', color: { red: 0.988, green: 0.910, blue: 0.698 } },\n  { label: 'Scheduled', color: { red: 0.827, green: 0.890, blue: 0.992 } },\n  { label: 'Published', color: { red: 0.788, green: 0.855, blue: 0.973 } },\n  { label: 'Needs Attention', color: { red: 0.965, green: 0.678, blue: 0.663 } }\n];\nconst requests = [];\nconst statusTabs = [];\nif (numeric['Weekly Overview'] !== undefined) statusTabs.push(numeric['Weekly Overview']);\nif (numeric['Posts'] !== undefined) statusTabs.push(numeric['Posts']);\nfor (const tabId of statusTabs) {\n  for (const st of STATUSES) {\n    requests.push({ addConditionalFormatRule: {\n      rule: {\n        ranges: [{ sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 21 }],\n        booleanRule: {\n          condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: st.label }] },\n          format: { backgroundColor: st.color }\n        }\n      },\n      index: 0\n    } });\n  }\n  requests.push({ setDataValidation: {\n    range: { sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 21 },\n    rule: {\n      condition: { type: 'ONE_OF_LIST', values: STATUSES.map(s => ({ userEnteredValue: s.label })) },\n      showCustomUi: true,\n      strict: true\n    }\n  } });\n  requests.push({ repeatCell: {\n    range: { sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 21 },\n    cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'TOP' } }\n  } });\n  requests.push({ updateSheetProperties: {\n    properties: { sheetId: tabId, gridProperties: { frozenRowCount: 1 } },\n    fields: 'gridProperties.frozenRowCount'\n  } });\n}\nif (numeric['Posts'] !== undefined) {\n  requests.push({ updateSheetProperties: {\n    properties: { sheetId: numeric['Posts'], gridProperties: { frozenColumnCount: 2 } },\n    fields: 'gridProperties.frozenColumnCount'\n  } });\n}\nif (numeric['Images'] !== undefined) {\n  // F25 — protect the trusted IMAGE formula column (P) from client edits.\n  requests.push({ addProtectedRange: {\n    protectedRange: {\n      range: { sheetId: numeric['Images'], startColumnIndex: 15, endColumnIndex: 16 },\n      description: 'Trusted =IMAGE formula column (F24/F25) — protected',\n      warningOnly: false\n    }\n  } });\n}\n// This Week view — created only when the copy did not already carry it.\nconst addRequests = [];\nif (numeric['This Week'] === undefined) {\n  addRequests.push({ addSheet: { properties: { title: 'This Week', gridProperties: { frozenRowCount: 1, columnCount: 8, rowCount: 40 }, rightToLeft: false } } });\n}\nreturn [{ json: {\n  newSheetRequests: addRequests,\n  formatRequests: requests,\n  statuses: STATUSES.map(s => s.label)\n} }];"
+      },
+      "id": "code-build-formatting",
+      "name": "Build Formatting Requests (F25)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Tag Provisioning Key').first().json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.newSheetRequests.concat($json.formatRequests) }) }}",
+        "options": {}
+      },
+      "id": "http-provision-formatting",
+      "name": "Provision Formatting (F25 batchUpdate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        60
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// F25 — resolve the freshly created 'This Week' tab (if any) and size its\n// eight client-facing columns, then hand the identity fields to the response.\nconst created = $input.first().json;\nconst added = ((created || {}).replies || []).filter(r => r.addSheet).map(r => r.addSheet.properties);\nconst thisWeek = added.find(p => p.title === 'This Week') || null;\nconst requests = [];\nif (thisWeek) {\n  const widths = [110, 170, 220, 130, 130, 130, 130, 150];\n  widths.forEach((px, i) => requests.push({ updateDimensionProperties: {\n    range: { sheetId: thisWeek.sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 },\n    properties: { pixelSize: px }\n  } }));\n  // Header labels (RAW): week, client, next action, counts, attention + links row.\n  const header = ['Week', 'Client', 'Next Action', 'Drafting', 'QC', 'Scheduled', 'Published', 'Needs Attention'];\n  requests.push({ updateCells: {\n    rows: [{ values: header.map(v => ({ userEnteredValue: { stringValue: v } })) }],\n    fields: 'userEnteredValue',\n    start: { sheetId: thisWeek.sheetId, rowIndex: 0, columnIndex: 0 }\n  } });\n}\nreturn [{ json: { identityStamps: requests, thisWeekCreated: thisWeek !== null } }];"
+      },
+      "id": "code-this-week-view",
+      "name": "Provision This Week View (F25)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Tag Provisioning Key').first().json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.identityStamps }) }}",
+        "options": {}
+      },
+      "id": "http-this-week-sizing",
+      "name": "This Week Sizing (batchUpdate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        60
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ status: 'success', deduped: false, sheetId: $('Tag Provisioning Key').first().json.id, sheetUrl: 'https://docs.google.com/spreadsheets/d/' + $('Tag Provisioning Key').first().json.id + '/edit', sheetName: $('Tag Provisioning Key').first().json.name, sharedWith: 'anyone with the link can edit', provisioning_key: $('Interpret Readback').first().json.provisioningKey, company_id: $('Validate + Build Provisioning Key').first().json.body.company_id, planner_kind: $('Validate + Build Provisioning Key').first().json.body.planner_kind, schema_version: '1.1.0' }) }}",
         "options": {}
@@ -262,13 +395,40 @@
       "main": [
         [
           {
-            "node": "Drive Readback (find existing)",
+            "node": "Verify Template Access (F14)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
+    "Verify Template Access (F14)": {
+      "main": [
+        [
+          {
+            "node": "Drive Readback (find existing)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Repair (F14)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Repair (F14)": [
+      [
+        {
+          "node": "Respond: Repair (F14)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
     "Drive Readback (find existing)": {
       "main": [
         [
@@ -342,12 +502,48 @@
       "main": [
         [
           {
-            "node": "Respond: Created",
+            "node": "Build Formatting Requests (F25)",
             "type": "main",
             "index": 0
           }
         ]
       ]
-    }
+    },
+    "Build Formatting Requests (F25)": [
+      [
+        {
+          "node": "Provision Formatting (F25 batchUpdate)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Provision Formatting (F25 batchUpdate)": [
+      [
+        {
+          "node": "Provision This Week View (F25)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Provision This Week View (F25)": [
+      [
+        {
+          "node": "This Week Sizing (batchUpdate)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "This Week Sizing (batchUpdate)": [
+      [
+        {
+          "node": "Respond: Created",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ]
   }
 }
