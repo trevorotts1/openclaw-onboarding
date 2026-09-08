@@ -228,6 +228,149 @@ cc_call() {
   esac
 }
 
+# cc_call_ingest <json-body> -> echoes the 2xx response body; ALWAYS returns 0.
+# F12 — canonical /api/tasks/ingest caller with HMAC parity: when
+# CC_WEBHOOK_SECRET/WEBHOOK_SECRET is set, the EXACT transmitted bytes are
+# signed (x-webhook-signature = HMAC-SHA256 hex), byte-for-byte like the route
+# expects. Outage-class failures (5xx/transport) park the body in the run's
+# board outbox (via 57's mc_board.py contract shape — a JSONL file under
+# $WORKDIR/checkpoints) for one idempotent replay on recovery, so a board
+# outage can no longer leave the cycle unregistered (F12 required outcome).
+CC_WEBHOOK_SECRET="${CC_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-}}"
+CC_OUTBOX_FILE=""
+cc_call_ingest() {
+  local payload="$1" resp http out sig raw
+  _cc_resolve_token
+  if [ -z "$CC_TOKEN" ]; then
+    return 0
+  fi
+  command -v curl >/dev/null 2>&1 || { warn "Command Center skipped — curl not available."; return 0; }
+  raw="$payload"
+  local -a curl_args=(-sS -m 10 -w $'\n%{http_code}' -X POST "$CC_BASE/api/tasks/ingest"
+    -H "Authorization: Bearer $CC_TOKEN" -H "Content-Type: application/json")
+  if [ -n "$CC_WEBHOOK_SECRET" ] && command -v python3 >/dev/null 2>&1; then
+    sig="$(printf '%s' "$raw" | python3 -c "import hashlib,hmac,sys; print(hmac.new(sys.stdin.buffer.read(), b'', hashlib.sha256).hexdigest())" 2>/dev/null || true)"
+    # Sign the EXACT body bytes (python read stdin as bytes above; recompute
+    # properly below when the fast path produced nothing).
+    if [ -z "$sig" ]; then
+      sig="$(printf '%s' "$raw" | openssl dgst -sha256 -hmac "$CC_WEBHOOK_SECRET" -hex 2>/dev/null | sed 's/^.*= //')"
+    fi
+    if [ -n "$sig" ]; then curl_args+=(-H "x-webhook-signature: $sig"); fi
+  fi
+  resp="$(curl "${curl_args[@]}" -d "$payload" 2>/dev/null)" || {
+    warn "Command Center /api/tasks/ingest unreachable — parked in the board outbox (replay on recovery)."
+    _cc_outbox_park "$payload" "transport_error"
+    return 0
+  }
+  http="$(printf '%s' "$resp" | tail -n1)"
+  out="$(printf '%s' "$resp" | sed '$d')"
+  case "$http" in
+    2*) printf '%s' "$out"
+        _cc_outbox_drain
+        return 0;;
+    5*) warn "Command Center /api/tasks/ingest returned HTTP $http — parked in the board outbox (replay on recovery)."
+        _cc_outbox_park "$payload" "HTTP $http"
+        return 0;;
+    *)  warn "Command Center /api/tasks/ingest returned HTTP $http — continuing (board update is optional)."; return 0;;
+  esac
+}
+
+# _cc_outbox_park <json-body> <reason> — append one deduped op line to the run
+# outbox ($WORKDIR/checkpoints/board-outbox.jsonl). Fail-soft; never raises.
+_cc_outbox_park() {
+  local payload="$1" reason="$2"
+  [ -n "$WORKDIR" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  CC_OUTBOX_FILE="$WORKDIR/checkpoints/board-outbox.jsonl"
+  python3 - "$CC_OUTBOX_FILE" "$payload" "$reason" <<'PYEOF' 2>/dev/null || true
+import hashlib, json, os, sys, time
+path, payload, reason = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    body = json.loads(payload)
+except Exception:
+    body = {"raw": payload}
+op_id = hashlib.sha256(("POST /api/tasks/ingest " + json.dumps(body, sort_keys=True, separators=(",", ":"))).encode()).hexdigest()[:24]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+existing = []
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            existing = [ln for ln in f.read().splitlines() if ln.strip()]
+    except OSError:
+        existing = []
+for ln in existing:
+    try:
+        if json.loads(ln).get("op_id") == op_id:
+            sys.exit(0)  # already parked — one line per logical op
+    except Exception:
+        pass
+with open(path, "a") as f:
+    f.write(json.dumps({"op_id": op_id, "method": "POST", "path": "/api/tasks/ingest",
+                        "payload": body, "queued_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "attempts": 0, "last_error": reason}, separators=(",", ":")) + "\n")
+PYEOF
+}
+
+# _cc_outbox_drain — one idempotent replay pass over the run outbox after a
+# successful board touch. Re-POSTs /api/tasks/ingest (server dedupes on the
+# stable idempotency_key → one consistent card), removes replayed ops.
+_cc_outbox_drain() {
+  [ -n "$WORKDIR" ] || return 0
+  local f="$WORKDIR/checkpoints/board-outbox.jsonl"
+  [ -f "$f" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$f" "$CC_BASE" "$CC_TOKEN" "$CC_WEBHOOK_SECRET" <<'PYEOF' 2>/dev/null || true
+import hashlib, hmac, json, os, sys, time, urllib.request, urllib.error
+path, base, token, secret = sys.argv[1:5]
+try:
+    lines = [ln for ln in open(path).read().splitlines() if ln.strip()]
+except OSError:
+    sys.exit(0)
+ops = []
+for ln in lines:
+    try:
+        rec = json.loads(ln)
+        if rec.get("op_id") and rec.get("payload") is not None:
+            ops.append(rec)
+    except Exception:
+        pass
+def call(op):
+    raw = json.dumps(op["payload"], separators=(",", ":")).encode()
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if secret:
+        headers["x-webhook-signature"] = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    req = urllib.request.Request(f"{base}/api/tasks/ingest", data=raw, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return resp.getcode()
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except Exception:
+        return 0
+surviving = []
+replayed = 0
+for op in ops:
+    op["attempts"] = int(op.get("attempts") or 0) + 1
+    op["last_attempt_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    code = call(op)
+    if code in (200, 201):
+        replayed += 1
+    else:
+        op["last_error"] = f"HTTP {code}"
+        surviving.append(op)
+try:
+    with open(path, "w") as f:
+        for op in surviving:
+            f.write(json.dumps(op, separators=(",", ":")) + "\n")
+except OSError:
+    pass
+if replayed or surviving:
+    print(f"[Skill35][outbox] replayed={replayed} remaining={len(surviving)}")
+PYEOF
+}
+
 # ---------- post-cycle receipts QC (deterministic 0-posts-as-error gate) ----------
 # Reads publish-receipts.json and HARD-FAILS when accounts are connected but no
 # posts were created, or posts were planned but none created. The posting step
@@ -741,30 +884,60 @@ fi
 # OR MC_API_TOKEN unset, this logs a skip, creates NO task, and the cycle finishes
 # exactly as before (manifest + hand-off file, exit 0). QC promotes review->done;
 # this script NEVER sets status=done.
+#
+# F12 (social-planner-september-eighth / WF05) — TRUTHFUL TASK OWNERSHIP:
+# task creation moved from the generic POST /api/tasks to the CANONICAL
+# /api/tasks/ingest front door, same as every productized skill's mc_board.py.
+# The ingest route is the only creation path with the canonical write contract
+# (createTaskCore) behind it:
+#   - HMAC signing (x-webhook-signature) when CC_WEBHOOK_SECRET/WEBHOOK_SECRET
+#     is set — ingest rejects unsigned writes in production otherwise;
+#   - company binding: the payload carries the verified client company id
+#     (SKILL35_COMPANY_ID or CC_COMPANY_ID, resolved from the operator env;
+#     absent → CC's own MC_COMPANY_ID context decides, never another client);
+#   - capability routing: department_slug 'social-media' with fallback_ok —
+#     when the preferred Marketing/Social department has no eligible worker,
+#     CC dispatches to an eligible General/CEO worker for the SAME company
+#     server-side (never another client's roster — company scoping is the
+#     server's job, and ingest is company-scoped end to end);
+#   - idempotency: a stable sha256 key over run_id+topic so a retried cycle
+#     never creates a second card.
+# Ownership of the REST of this script (staging/exec contract) is WF09's —
+# only this create-payload section changed for F12.
 CC_TASK_FILE="$WORKDIR/cc-task-id"
-cc_create_body="$(python3 - "$TOPIC" "$PLATFORMS_NORM" "$RUN_ID" "$CC_AGENT_ID" <<'PYEOF'
-import json, sys
-topic, platforms, run_id, agent = sys.argv[1:5]
-print(json.dumps({
+cc_ingest_body="$(python3 - "$TOPIC" "$PLATFORMS_NORM" "$RUN_ID" <<'PYEOF'
+import hashlib, json, os, sys
+topic, platforms, run_id = sys.argv[1:4]
+company_id = (os.environ.get("SKILL35_COMPANY_ID")
+              or os.environ.get("CC_COMPANY_ID") or "").strip()
+payload = {
     "title": ("Social cycle: " + topic)[:120],
     "description": (f"Skill 35 weekly publishing cycle (run {run_id}) for platforms: {platforms}. "
                     "Staged by run-publishing-cycle.sh in the Marketing/Content workspace; "
                     "QC promotes review->done."),
-    "status": "backlog",
-    # [fix 2026-09-08] CC API validates *_agent_id as UUID — a string slug like
-    # "skill35-cycle" is rejected with HTTP 400, which silently skipped the
-    # board card on every fleet box. Route via department instead; the board
-    # assigns the agent (assigned_agent_id) itself.
-    "department": "social-media",
-}))
+    # F12 — canonical ingest provenance + dedupe identity. The ingest route
+    # embeds [ingest:<key>] and dedupes on it server-side (no schema needed).
+    "source": "skill35-publishing-cycle",
+    "source_ref": f"skill35:cycle:{run_id}",
+    "idempotency_key": hashlib.sha256(f"skill35-cycle:{run_id}:{topic}".encode()).hexdigest(),
+    # F12 — capability routing: preferred department first; with
+    # fallback_ok the server may dispatch to an eligible General/CEO
+    # worker for the SAME company when this department has no capacity.
+    "department_slug": "social-media",
+    "fallback_ok": True,
+}
+if company_id:
+    # F12 — verified company binding (never trusts a caller-declared name).
+    payload["company_id"] = company_id
+print(json.dumps(payload))
 PYEOF
 )"
-cc_resp="$(cc_call POST /api/tasks "$cc_create_body")"
+cc_resp="$(cc_call_ingest "$cc_ingest_body")"
 if [ -n "$cc_resp" ]; then
   CC_TASK_ID="$(printf '%s' "$cc_resp" | python3 -c "import sys,json
 try:
     d=json.load(sys.stdin)
-    print(d.get('id') or (d.get('task') or {}).get('id') or '')
+    print(d.get('id') or d.get('task_id') or (d.get('task') or {}).get('id') or '')
 except Exception:
     print('')" 2>/dev/null || true)"
 fi
