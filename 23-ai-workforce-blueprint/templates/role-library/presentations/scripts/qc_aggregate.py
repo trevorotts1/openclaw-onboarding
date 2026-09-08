@@ -345,13 +345,55 @@ def _independence_reason(obj: dict) -> str:
         return f"AF-QC-INDEPENDENCE: independence check raised {exc!r} -- treating as unproven."
 
 
+def _resolve_consumes(phase_id: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """Manifest consumes patterns for one phase, via the same resolution the
+    domain paths use (explicit --manifest is NOT visible here; walk-up +
+    deployed layout, mirroring _resolve_domain_paths candidates 2-3).
+    Returns (patterns, manifest_path) or (None, None) when no manifest
+    resolves — the caller then enforces the report-level surface only."""
+    candidates: List[Path] = []
+    try:
+        from manifest_source import find_repo_root
+        root = find_repo_root(HERE)
+        if root is not None:
+            candidates.append(root / "universal-sops" / "presentation-slide-craft"
+                               / "PIPELINE-MANIFEST.json")
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.append(HERE.parent / "sops" / "PIPELINE-MANIFEST.json")
+    for cand in candidates:
+        if not cand.is_file():
+            continue
+        try:
+            obj = json.loads(cand.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for p in obj.get("phases", []):
+            if p.get("id") == phase_id:
+                consumes = p.get("consumes") or []
+                return (list(consumes), str(cand))
+        return ([], str(cand))  # manifest resolves but names no such phase
+    return (None, None)
+
+
 def _execution_stamp_reasons(run_dir: Path, phase_id: str, report_rel: str) -> List[str]:
     """PRES-042 — trusted-execution independence over the report's own
     AUTHOR/REVIEWER stamps. Fail-closed: when stamps are enabled and the
     report artifact carries no active author+reviewer stamp pair covering its
     CURRENT bytes, the domain is BLOCKED (a report that cannot prove WHO
     executed it proves nothing). Rollback: PRESENTATION_EXECUTION_STAMPS=0
-    disables this surface entirely (pre-PRES-042 contract)."""
+    disables this surface entirely (pre-PRES-042 contract).
+
+    QC-SONNET-R5 (PRES-042 repair): the report-level pair is dispatch
+    integrity, not independence. When the manifest resolves, EACH consumed
+    upstream artifact must ALSO carry (a) an ACTIVE author stamp at its
+    CURRENT sha (some producer revision minted it — orphaned pre-repair rows
+    never count) and (b) a reviewer stamp FROM THIS QC PHASE covering that
+    same current sha (this review actually graded these bytes). A mutated
+    upstream input with no fresh review blocks the domain even when the
+    report bytes themselves are untouched — that is QC-PRES-042 row 2's
+    production meaning. Manifest unresolvable → report-level only (no new
+    failure mode for manifest-less runs)."""
     try:
         from presentation_job import execution_stamp as _es
     except Exception:  # noqa: BLE001 — a missing module is unproven, not a crash
@@ -359,9 +401,35 @@ def _execution_stamp_reasons(run_dir: Path, phase_id: str, report_rel: str) -> L
                 "-- execution identity cannot be verified (fail-closed)."]
     if not _es.stamps_enabled():
         return []
+    out: List[str] = []
     report = run_dir / report_rel
     reason = _es.qc_independence_reason(run_dir, phase_id, None, report)
-    return [reason] if reason else []
+    if reason:
+        return [reason]
+    consumes, _manifest_path = _resolve_consumes(phase_id)
+    if consumes is None:
+        return []
+    import glob as _glob
+    seen: List[str] = []
+    for pat in consumes:
+        try:
+            hits = _glob.glob(str(run_dir / pat))
+        except Exception:  # noqa: BLE001 — a bad pattern is unproven, not a crash
+            hits = []
+        for hit in hits:
+            hp = Path(hit)
+            if not hp.is_file():
+                continue
+            try:
+                rel = str(hp.relative_to(run_dir))
+            except ValueError:
+                continue
+            if rel in seen:
+                continue
+            seen.append(rel)
+            for ureason in _es.consumed_coverage_reasons(run_dir, phase_id, hp):
+                out.append(ureason)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +624,24 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
             reason = f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): report is not a JSON object"
             ps_entry["reasons"].append(reason)
             blocking_reasons.append(reason)
+        # QC-SONNET-R6 (PRES-042 repair): the ship gate is a QC domain too —
+        # its report carries the same trusted-execution surface (report-level
+        # stamps + consumed-upstream coverage) as the five averaged domains.
+        # (Legacy text provenance for this checklist is its pass/items shape
+        # above; the stamp surface is additive, same as everywhere else.)
+        if ps_p.is_file():
+            try:
+                for stamp_reason in _execution_stamp_reasons(run_dir, PRIORITY_SHIFT_PHASE_ID, ps_rel):
+                    ps_entry["reasons"].append(
+                        f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): {stamp_reason}")
+                    blocking_reasons.append(
+                        f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): {stamp_reason}")
+            except Exception as exc:  # noqa: BLE001 — unproven beats a crash
+                reason = (f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): "
+                          f"AF-EXEC-STAMP: execution-stamp check raised {exc!r} "
+                          f"-- treating provenance as unproven.")
+                ps_entry["reasons"].append(reason)
+                blocking_reasons.append(reason)
     domains["priority_shift"] = ps_entry
 
     # Whole-run-dir provenance guard -- the EXISTING mechanism (AF-QC-GENERATOR-UNGOVERNED /

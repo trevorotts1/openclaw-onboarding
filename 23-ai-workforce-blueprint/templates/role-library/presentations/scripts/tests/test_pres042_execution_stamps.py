@@ -263,3 +263,122 @@ def test_aggregate_consumes_stamps_end_to_end(tmp_path):
     report = qc_aggregate.aggregate(rd)
     assert not any("AF-EXEC-STAMP" in r for r in report["blocking_reasons"]), \
         report["blocking_reasons"]
+# ── QC-SONNET repairs: production topology + upstream mutation ───────────────
+
+def test_production_topology_report_plus_consumed_passes_aggregate(tmp_path):
+    """QC-SONNET-R4/R5: the stamp layout a PRODUCTION dispatch leaves (author
+    on report + reviewer on report AND on consumed inputs, producer author on
+    inputs) passes the REAL aggregate — no always-block."""
+    sys.path.insert(0, str(SCRIPTS))
+    import qc_aggregate
+    from presentation_job import execution_stamp as _es
+    rd = tmp_path / "run"
+    (rd / "working" / "qc").mkdir(parents=True)
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "research").mkdir(parents=True)
+    (rd / "working" / "prompts").mkdir(parents=True)
+    (rd / "working" / "deliverables").mkdir(parents=True)
+    (rd / "renders").mkdir(parents=True)
+    # Five averaged domains with genuine reports + staged consumed inputs.
+    domains = {
+        "P1Q-COPY-QC": ("working/qc/copy_qc_report.json", ["working/copy/slides_copy.md"]),
+        "P-TYPO-QC": ("working/qc/typography_qc_report.json", ["working/research/design-brief-a.md"]),
+        "P-PROMPT-QC": ("working/qc/prompt_qc_report.json", ["working/prompts/slide-01.txt"]),
+        "P-IMAGE-QC": ("working/qc/image_qc_report.json", ["renders/slide-01.png"]),
+        "P-SPEECH-QC": ("working/qc/speech_qc_report.json",
+                        ["working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"]),
+    }
+    for phase_id, (report_rel, inputs) in domains.items():
+        rp = rd / report_rel
+        rp.write_text(json.dumps({
+            "gate": phase_id, "average": 9.2, "pass": True,
+            "triggered_autofails": [],
+            "qc_independence": {"graded_by": "qc-specialist-x",
+                                "independent": True},
+        }), encoding="utf-8")
+        for crel in inputs:
+            cp = rd / crel
+            cp.write_bytes(b"\x89PNG" + b"\x00" * 32 if cp.suffix == ".png"
+                           else f"# input for {phase_id}\n".encode())
+    # Priority-shift report (checklist shape).
+    (rd / "working" / "qc" / "priority_shift_report.json").write_text(json.dumps({
+        "schema": "priority_shift_report/v1", "pass": True,
+        "items": [{"item": "i", "pass": True, "evidence": "ok"}]}))
+    for crel in ["working/copy/priority_shift_spec.json", "working/copy/slides_copy.md"]:
+        cp = rd / crel
+        if not cp.is_file():
+            cp.write_text("# shift input\n", encoding="utf-8")
+    # Stamp EXACTLY like the production dispatcher: author on every produced
+    # artifact; the QC execution's reviewer id on consumed inputs AND on the
+    # report itself (R4); producer author + QC reviewer on inputs.
+    for phase_id, (report_rel, inputs) in {
+            **domains,
+            "P-SHIFT-QC": ("working/qc/priority_shift_report.json",
+                           ["working/copy/priority_shift_spec.json",
+                            "working/copy/slides_copy.md"])}.items():
+        rp = rd / report_rel
+        rev_id = f"qc-{phase_id}-prod-1"
+        _es.author_stamp(rd, phase_id, rp, model="deepseek-v4-pro",
+                         provider="deepseek-direct")
+        _es.qc_stamp(rd, phase_id, rp, reviewer_execution_id=rev_id,
+                     model="kimi-v4-a", provider="moonshot",
+                     rubric_version="manifest-prod")
+        for crel in inputs:
+            cp = rd / crel
+            if not any(r.get("artifact") == crel
+                       for r in _es._load_stamps(rd, "P-PROD").get("rows", [])):
+                _es.author_stamp(rd, "P-PROD", cp, model="deepseek-v4-pro",
+                                 provider="deepseek-direct")
+            _es.qc_stamp(rd, phase_id, cp, reviewer_execution_id=rev_id,
+                         model="kimi-v4-a", provider="moonshot",
+                         rubric_version="manifest-prod")
+    report = qc_aggregate.aggregate(rd)
+    stamp_blocks = [b for b in report["blocking_reasons"] if "AF-EXEC-STAMP" in b]
+    assert stamp_blocks == [], f"production topology must not block: {stamp_blocks}"
+
+
+def test_upstream_mutation_after_pass_blocks_until_fresh_review(tmp_path):
+    """QC-PRES-042 row 2 (production meaning): mutate a CONSUMED upstream
+    input after the QC pass — the domain blocks even though the report bytes
+    are untouched; a fresh reviewer stamp on the new bytes unblocks."""
+    sys.path.insert(0, str(SCRIPTS))
+    from presentation_job import execution_stamp as _es
+    rd = _rd(tmp_path)
+    p = _report(rd)
+    _stamp(rd, author_exec="exec-A", reviewer_exec="exec-B")
+    upstream = rd / "working" / "copy" / "slides_copy.md"
+    upstream.parent.mkdir(parents=True, exist_ok=True)
+    upstream.write_text("# deck copy v1\n", encoding="utf-8")
+    # Production mints a producer author stamp at the artifact write sites.
+    _es.author_stamp(rd, "P-PROD", upstream, model="deepseek-v4-pro",
+                     provider="deepseek-direct")
+    up_sha = _es.sha256_file(upstream)
+    store = rd / "working" / "execution-stamps" / f"{PHASE}.stamp.json"
+    obj = json.loads(store.read_text(encoding="utf-8"))
+    obj["rows"].append(
+        {"kind": "reviewer", "execution_id": "exec-B", "phase_id": PHASE,
+         "reviewed_artifact": "working/copy/slides_copy.md",
+         "reviewed_artifact_sha256": up_sha,
+         "model": "kimi-v4-a", "provider": "moonshot",
+         "model_class": "kimi", "rubric_version": "manifest-test",
+         "stamped_at": _es.utcnow()})
+    store.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    assert _es.consumed_coverage_reasons(rd, PHASE, upstream) == []
+    # Mutate the upstream AFTER the pass: coverage breaks.
+    upstream.write_text("# deck copy v2 -- repaired slide\n", encoding="utf-8")
+    reasons = _es.consumed_coverage_reasons(rd, PHASE, upstream)
+    assert reasons and "CURRENT content" in reasons[0]
+    # Fresh review of the NEW bytes restores coverage (production re-stamps
+    # the producer author row at the repair write site, then QC re-stamps).
+    _es.author_stamp(rd, "P-PROD", upstream, model="deepseek-v4-pro",
+                     provider="deepseek-direct")
+    obj = json.loads(store.read_text(encoding="utf-8"))
+    obj["rows"].append(
+        {"kind": "reviewer", "execution_id": "exec-B2", "phase_id": PHASE,
+         "reviewed_artifact": "working/copy/slides_copy.md",
+         "reviewed_artifact_sha256": _es.sha256_file(upstream),
+         "model": "kimi-v4-a", "provider": "moonshot",
+         "model_class": "kimi", "rubric_version": "manifest-test",
+         "stamped_at": _es.utcnow()})
+    store.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    assert _es.consumed_coverage_reasons(rd, PHASE, upstream) == []

@@ -275,6 +275,82 @@ def qc_independence_reason(run_dir: Path, phase_id: str, report_obj: Optional[di
     return ""
 
 
+def _all_stamp_rows(run_dir: Path) -> List[Dict[str, Any]]:
+    """Every stamp row in the run's stamp store, across ALL phase files.
+    Author stamps live under the PRODUCER phase's file; reviewer stamps under
+    the QC phase's file — a consumed-coverage check must see both, so it
+    scans the whole store (a handful of small JSON files). Corrupt files read
+    as empty (fail-closed downstream: missing coverage blocks)."""
+    store = run_dir / STAMPS_DIR_REL
+    rows: List[Dict[str, Any]] = []
+    try:
+        files = sorted(store.glob("*.stamp.json"))
+    except OSError:
+        return []
+    for p in files:
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("rows"), list):
+            rows.extend(r for r in obj["rows"] if isinstance(r, dict))
+    return rows
+
+
+def consumed_coverage_reasons(run_dir: Path, qc_phase_id: str,
+                              artifact: Path) -> List[str]:
+    """QC-SONNET-R5 (PRES-042 repair): the consumed-upstream half of the
+    aggregate surface. For one consumed input artifact, require (a) an ACTIVE
+    author stamp (some producer revision minted for its CURRENT bytes) and
+    (b) a reviewer stamp FROM THIS QC PHASE covering the same current sha.
+    Returns [] when covered, else blocking AF-EXEC-STAMP reasons. Disabled
+    stamps short-circuit to [] (the caller then applies its own pre-PRES-042
+    text check)."""
+    if not stamps_enabled():
+        return []
+    try:
+        current_sha = sha256_file(artifact)
+    except OSError as exc:
+        return [f"AF-EXEC-STAMP: consumed input {artifact.name} is unreadable "
+                f"({exc!r}) -- nothing is proven about it."]
+    try:
+        rel = str(artifact.relative_to(run_dir))
+    except ValueError:
+        return [f"AF-EXEC-STAMP: consumed input {artifact} escapes the run dir "
+                f"-- refusing to trust it."]
+    rows = _all_stamp_rows(run_dir)
+    author = None
+    for row in reversed(rows):
+        if (row.get("kind") == "author" and row.get("artifact") == rel
+                and row.get("artifact_sha256") == current_sha):
+            author = row
+            break
+    if author is None:
+        return [f"AF-EXEC-STAMP: consumed input {rel} has no ACTIVE author stamp "
+                f"for its CURRENT content (sha {current_sha[:12]}) -- the input "
+                f"was produced outside the stamped dispatch or repaired without "
+                f"a fresh stamp; its QC coverage is unproven (PRES-042)."]
+    reviewer = None
+    for row in reversed(rows):
+        if (row.get("kind") == "reviewer"
+                and row.get("phase_id") == qc_phase_id
+                and row.get("reviewed_artifact") == rel
+                and row.get("reviewed_artifact_sha256") == current_sha):
+            reviewer = row
+            break
+    if reviewer is None:
+        return [f"AF-EXEC-STAMP: no reviewer stamp from {qc_phase_id} covers "
+                f"consumed input {rel} at its current sha {current_sha[:12]} -- "
+                f"the input changed after the review (or was never reviewed by "
+                f"this phase); re-run {qc_phase_id} so a fresh independent "
+                f"review covers the current bytes (PRES-042 row 2)."]
+    if reviewer.get("execution_id") == author.get("execution_id"):
+        return [f"AF-EXEC-STAMP: consumed input {rel} was reviewed by the SAME "
+                f"execution that authored it ({reviewer.get('execution_id')}) -- "
+                f"a same-execution self-review cannot pass (PRES-042)."]
+    return []
+
+
 def stale_units(run_dir: Path, phase_id: str,
                 artifacts: List[Path]) -> List[str]:
     """Which of the given artifacts' QC is STALE under PRES-042 (fix step 4's

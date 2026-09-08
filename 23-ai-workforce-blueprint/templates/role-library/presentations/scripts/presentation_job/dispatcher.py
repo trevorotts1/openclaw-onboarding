@@ -2428,7 +2428,23 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
     report, binding the review to the artifacts the phase CONSUMED (the
     manifest's consumes list / the report's own grading targets) at their
     CURRENT sha. The reviewed-artifact binding is what makes 'mutate a
-    reviewed file after pass => its QC is stale' mechanical."""
+    reviewed file after pass => its QC is stale' mechanical.
+
+    QC-SONNET-R4 (PRES-042 repair): the SAME reviewer execution ALSO stamps
+    the produced REPORT itself. Without this, the aggregate's report-level
+    gate (author+reviewer stamps covering the report's CURRENT bytes) could
+    never pass on a production-dispatched run — every domain would block, and
+    the stamp surface would be undeployable with its default-ON flag. One
+    reviewer id binds both levels: 'this QC execution reviewed these inputs
+    (at these shas) and attests these report bytes under this rubric'.
+    Honest limits (documented, not hidden): the report-level pair proves
+    dispatch integrity + sha currency, NOT cross-execution independence on its
+    own — the author/review execution ids are dispatch-minted, so the
+    exec-inequality leg passes trivially in production. The teeth against a
+    same-worker forgery are the consumed-upstream coverage the aggregate ALSO
+    verifies (reviewer stamp from THIS phase on each consumed input at its
+    current sha, with the producer's author stamp and model classes on record)
+    plus the legacy graded_by text provenance that still runs alongside."""
     consumed: List[Path] = []
     try:
         from presentation_job.manifest import Manifest
@@ -2448,15 +2464,33 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
                         consumed.append(hp)
     except Exception:
         consumed = []
-    if not consumed:
-        return  # nothing consumed -> nothing reviewed; gate sees UNPROVEN
+    reviewer_execution_id = f"qc-{phase_id}-{os.getpid()}-{utcnow()}"
+    rubric_version = _qc_rubric_version()
     for artifact in consumed:
         _estamp.qc_stamp(
             run_dir, phase_id, artifact,
-            reviewer_execution_id=f"qc-{phase_id}-{os.getpid()}-{utcnow()}",
+            reviewer_execution_id=reviewer_execution_id,
             model=model, provider=provider,
-            rubric_version=_qc_rubric_version(),
+            rubric_version=rubric_version,
         )
+    # The report attestation itself (QC-SONNET-R4): best-effort like the rest —
+    # a failure here must never block the dispatch that just succeeded.
+    try:
+        if report_artifact.is_file():
+            _estamp.qc_stamp(
+                run_dir, phase_id, report_artifact,
+                reviewer_execution_id=reviewer_execution_id,
+                model=model, provider=provider,
+                rubric_version=rubric_version,
+            )
+    except Exception as exc:  # noqa: BLE001 — best-effort, never blocks
+        try:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": "stamp", "attempt": 0, "status": "qc_stamp_failed",
+                "reason": f"report reviewer stamp failed: {exc!r}",
+            })
+        except Exception:
+            pass
 
 
 def _qc_rubric_version() -> str:

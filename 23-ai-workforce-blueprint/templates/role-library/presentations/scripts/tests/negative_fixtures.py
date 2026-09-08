@@ -292,9 +292,9 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
         for n in range(1, 5):
             (renders / f"slide-{n:02d}.png").write_bytes(PNG_MAGIC + PNG_PAYLOAD)
     if full_set:
-        _write_json(qc / "priority_shift_report.json", {
+        report_paths.append(_write_json(qc / "priority_shift_report.json", {
             "schema": "priority_shift_report/v1",
-            "gate": "AF-PRIORITY-SHIFT", "pass": True, "items": []})
+            "gate": "AF-PRIORITY-SHIFT", "pass": True, "items": []}))
     # PRES-042 — trusted execution stamps behind every report. The trusted
     # dispatcher stamps the AUTHOR (the qc phase's own report author) and the
     # REVIEWER (the grading route) per domain:
@@ -310,10 +310,28 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
             reviewer_model = author_model if same_model_judge else QC_SPECIALIST_STAMP
             author_exec = "exec-fixture-author"
             reviewer_exec = author_exec if same_model_judge else "exec-fixture-reviewer"
+            # QC-SONNET-R5: the aggregate ALSO verifies consumed-upstream
+            # coverage (producer author stamp + this phase's reviewer stamp at
+            # the input's current sha). Stage each domain's manifest consumes
+            # the way a production dispatch leaves them: producer-authored
+            # (a DIFFERENT execution from the reviewer) + reviewed by this
+            # QC phase's execution.
+            _CONSUMED_STAGING = {
+                "P1Q-COPY-QC": ["working/copy/slides_copy.md"],
+                "P-TYPO-QC": ["working/research/design-brief-fixture.md"],
+                "P-PROMPT-QC": ["working/prompts/slide-01.txt"],
+                # The manifest glob is renders/slide-*.png and this fixture
+                # stages slide-01..04 above — stamp ALL of them, or the
+                # unstamped siblings read as unproven consumed inputs.
+                "P-IMAGE-QC": [f"renders/slide-{n:02d}.png" for n in range(1, 5)],
+                "P-SPEECH-QC": ["working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"],
+                "P-SHIFT-QC": ["working/copy/priority_shift_spec.json",
+                               "working/copy/slides_copy.md"],
+            }
             for p in report_paths:
                 rel = str(p.relative_to(rd))
                 ph_id = _DOMAIN_PHASE.get(p.name, "P-QC-FIXTURE")
-                rows_obj = {"schema_version": 1, "phase_id": ph_id, "rows": [
+                rows = [
                     {"kind": "author", "execution_id": author_exec,
                      "phase_id": ph_id, "artifact": rel,
                      "artifact_sha256": _es.sha256_file(p),
@@ -328,7 +346,31 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
                      "model_class": _es.model_class_of(reviewer_model),
                      "rubric_version": "manifest-fixture",
                      "stamped_at": _es.utcnow()},
-                ]}
+                ]
+                for crel in _CONSUMED_STAGING.get(ph_id, []):
+                    cp = rd / crel
+                    cp.parent.mkdir(parents=True, exist_ok=True)
+                    if not cp.is_file():
+                        cp.write_bytes((PNG_MAGIC + PNG_PAYLOAD) if cp.suffix == ".png"
+                                       else f"# fixture input for {ph_id}\n".encode())
+                    csha = _es.sha256_file(cp)
+                    rows.append(
+                        {"kind": "author", "execution_id": "exec-fixture-producer",
+                         "phase_id": "P-PRODUCER-FIXTURE", "artifact": crel,
+                         "artifact_sha256": csha,
+                         "model": author_model, "provider": "fixture",
+                         "model_class": _es.model_class_of(author_model),
+                         "stamped_at": _es.utcnow()})
+                    rows.append(
+                        {"kind": "reviewer", "execution_id": reviewer_exec,
+                         "phase_id": ph_id,
+                         "reviewed_artifact": crel,
+                         "reviewed_artifact_sha256": csha,
+                         "model": reviewer_model, "provider": "fixture",
+                         "model_class": _es.model_class_of(reviewer_model),
+                         "rubric_version": "manifest-fixture",
+                         "stamped_at": _es.utcnow()})
+                rows_obj = {"schema_version": 1, "phase_id": ph_id, "rows": rows}
                 stamps_dir = rd / "working" / "execution-stamps"
                 stamps_dir.mkdir(parents=True, exist_ok=True)
                 (stamps_dir / f"{ph_id}.stamp.json").write_text(
