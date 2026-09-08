@@ -1,3 +1,52 @@
+## [v25.0.23]  -  2026-09-08  -  Social media planner W2 batch: repair states, dry-run migration, asset manifests, prompt policy, versioned platform strategy
+
+Batch ONB-20260908T204954 (PR #1064, merged at b1c989e444). Tasks:
+F14, F22, F24, F25, F28, F29, F32, F39.
+
+Behavior changes:
+
+- Row-append repair states (F14): the n8n row-append path now distinguishes
+  its failure modes instead of collapsing them into one generic error — a
+  row that never landed, a row that landed twice, and a row that landed in
+  the wrong table are detected and reported as separate, named repair
+  states, so a bad append is diagnosed and repaired rather than guessed at.
+- Clean template contract + dry-run migration (F22): the sheet template
+  contract is written down as a machine-readable schema with a validator,
+  and the template migration tool grew a dry-run mode that reports what it
+  would change before touching anything.
+- Asset manifest + trusted IMAGE formulas (F24): image assets are recorded
+  in a per-row manifest the sheet reads from, and the IMAGE formulas the
+  player renders come from that manifest instead of free-typed URLs —
+  trust lives in the manifest, not in whatever URL was pasted into a cell.
+- TEXT_EQ colors + This Week view (F25): week-of coloring is computed by
+  TEXT_EQ conditions against the documented color tokens, and the This Week
+  player view reads the same tokens, so the calendar's visual state and the
+  player agree from one source.
+- Content quality rubric (F28): a scored content-quality rubric runs on
+  generated posts with per-dimension results, so weak copy is caught and
+  scored before it reaches a plan instead of after.
+- Unified image brief + post-generation QC (F29): a single image brief
+  schema feeds every image prompt, and generated images are QC'd against
+  that brief after generation, closing the loop between what was asked for
+  and what came back.
+- Prompt policy 9,000–19,000 (F32): the image prompt compiler enforces the
+  documented 9,000–19,000 character prompt policy with band metadata and a
+  pre-generation gate that rejects prompts outside the policy before they
+  are sent for image generation.
+- Versioned platform strategy profiles (F39): per-platform strategy
+  guidance is versioned and named in the brief chain, so a post can say
+  which platform profile version produced it.
+
+Skill versions: 35-social-media-planner v3.2.0, 57-social-media-in-a-box
+v1.2.0, 45-design-intelligence-library v2.1.0, 63-agnes-image v2.1.0.
+
+Compatibility: no breaking changes; existing workflows and sheets keep
+working. Validation is the batch's offline regression suites (append
+repair, template migration, image manifest, sheet format, content
+quality, image brief, prompt policy, platform profiles). No live posting,
+no real accounts, and no live n8n execution were exercised for this
+release; unrun live checks are not claimed.
+
 ## [v25.0.22]  -  2026-09-08  -  Social media planner W1 batch: per-account delivery, documented GHL contracts, idempotent n8n exports
 
 Batch ONB-20260908T181012 (PR #1062, merged at 784129308). Tasks:
