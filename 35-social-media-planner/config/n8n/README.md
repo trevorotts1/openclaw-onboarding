@@ -105,3 +105,68 @@ legacy overview rows are retained untouched.
 Platforms with no Weekly Overview column (X, Google Business Profile,
 unfamiliar labels) appear only in the Posts table — the mapping contains no
 generic-platform fallback into any named column.
+
+## Append-failure repair states (F14)
+
+Before ANY write, the append verifies the sheet's metadata with the SAME
+`googleSheetsOAuth2Api` credential the write uses (and sheet-create verifies the
+template with the same Drive credential the copy uses). Failures classify into
+DISTINCT actionable repair states, never a silent replacement sheet:
+
+| HTTP | `repair_state` | Repair semantics |
+|------|----------------|------------------|
+| 404 | `sheet_not_found` / `template_not_found` | Identity repair: correct the registered sheet/template ID in the company registry. A replacement sheet is NEVER created silently. |
+| 403 | `sheet_access_denied` / `template_access_denied` | Access repair: re-grant the operator credential access to the EXISTING sheet. |
+| other | `transient` | Bounded retries (3x, 2s backoff) already applied; the caller keeps the row pending and replays on the next cycle. |
+
+Repair receipts answer HTTP 424 with `{success:false, repair_required:true,
+repair_state, repair_action, sheetId}` — the caller surfaces this as a visible
+repair task (INSTALL.md Step 7 4d-ter). Once verified access is restored, the
+F15 idempotency ledger replays each pending keyed row exactly once: the
+readback upsert updates the existing keyed row in place and never duplicates
+it, so history is retained.
+
+## Asset manifest + trusted IMAGE formulas (F24)
+
+The row-append persists an asset manifest row per asset (upsert on `asset_key`
+in the Images tab): content id, asset id, company, cycle, revision, kind,
+stable HTTPS preview URL, full-resolution URL, ratio, dimensions and alt text
+— all RAW values. The trusted `=IMAGE("https://…",1)` formula is generated
+ONLY for URLs that pass validation (https, no quotes/control chars,
+Sheets-fetchable permanent CDN — not private Drive page links, not
+soon-expiring URLs) and written ONLY into the Images tab's designated preview
+column (P). Posts keeps `preview_url` RAW (F26). Invalid URLs refuse into a
+visible repair state (`asset_url_not_https` / `asset_url_unsafe_chars` /
+`asset_url_not_fetchable` / `asset_missing_url`) with nothing written. The
+batchUpdate resizes the Images preview column to 220px and the asset row to
+275px (SPEC gallery contract).
+
+## Readability + status colors (F25)
+
+Provisioning (sheet-create) applies the `sheet-template.schema.json`
+contract as one `spreadsheet.batchUpdate`: TEXT_EQ conditional format rules
+(NEVER NUMBER_EQ for text statuses), `setDataValidation` ONE_OF_LIST dropdowns
+over the same status list, frozen header rows (Posts also freezes its first
+two columns), wrapped copy, a protected Images formula column, and the compact
+**This Week** view (~8 client-facing columns: Week, Client, Next Action,
+Drafting, QC, Scheduled, Published, Needs Attention). Every status value
+(`Complete`, `Failed`, `QC Review`, `Scheduled`, `Published`,
+`Needs Attention`) carries BOTH a color and a written label. Re-running the
+provisioner/upsert never resets client-changed row sizes or notes.
+`config/validate-sheet-format.py` validates the contract + export wiring;
+`config/sheet-template.schema.json` is the versioned template contract;
+`scripts/migrate-template.py` migrates existing sheets (dry-run default,
+backup before `--apply`).
+
+## Video evidence + Watch video links (F38)
+
+Video assets write a Videos-tab row: trusted poster `=IMAGE`, duration, ratio,
+version, QC state, captions flag, and a clearly labeled **Watch video**
+HYPERLINK to the client-bound Command Center player route
+(`/social/media/{assetId}`) — a visible poster plus a real playback
+destination, never a promised native in-sheet MP4 player. The PUBLISHED
+destination URL is written separately only after posting; a YouTube smart-chip
+note appears only when the published link actually is YouTube. Client drafts
+are NEVER uploaded to public YouTube to manufacture a preview. Preview access
+is a short-lived signed token bound to company + asset (CC route); expired
+access renews by re-fetching while authenticated.
