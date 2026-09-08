@@ -182,10 +182,25 @@ def check_connected_accounts(cfg, live=False):
 
 # ---- live probes (urllib; secret values used to auth, NEVER printed) --------
 def _get_secret(cfg, field, env_name):
-    v = cfg.get(field)
-    if _nonempty(v):
-        return v
-    return os.environ.get(env_name, "")
+    """F18: ONE documented credential resolver.
+
+    Delegates to shared-utils/social_planner_credentials.py (explicit
+    precedence config field > canonical env name > Skill 44 canonical
+    resolver, conflicting config/env values FAIL CLOSED) when importable, and
+    falls back to the historical config-then-env behavior when it is not —
+    so a deployment without shared-utils keeps working exactly as before.
+    Secret values are used to authenticate and are NEVER printed.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared-utils"))
+        from social_planner_credentials import resolve_planner_credentials  # noqa: PLC0415
+        creds, _report = resolve_planner_credentials(cfg)
+        return creds.get(field) or ""
+    except Exception:  # noqa: BLE001 — resolver unavailable/conflict: historical behavior
+        v = cfg.get(field)
+        if _nonempty(v):
+            return v
+        return os.environ.get(env_name, "")
 
 
 def _http_get_json(url, headers, timeout=15):
