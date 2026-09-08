@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,7 +28,9 @@ _HERE = Path(__file__).resolve().parent
 _REPO_ROOT = _HERE.parent.parent
 _SKILL_DIR = _REPO_ROOT / "57-social-media-in-a-box"
 _RUNNER_PATH = _SKILL_DIR / "run_social_media.py"
+_ENTRY_PATH = _SKILL_DIR / "social-media-entry.sh"
 assert _RUNNER_PATH.is_file(), "run_social_media.py not found"
+assert _ENTRY_PATH.is_file(), "social-media-entry.sh not found"
 
 
 def _load(name, path):
@@ -238,6 +241,66 @@ class TestSimulatedEvidenceNeverSatisfiesLive(unittest.TestCase):
             ok, msg = rsm._chk_preflight(rd)
             self.assertFalse(ok)
             self.assertIn("AF-SM-EXEC-MODE", msg)
+
+
+class TestEntryOfflineFlagStrictParse(unittest.TestCase):
+    """D-F08-01: production entry strict-parses SMIB_PREFLIGHT_OFFLINE.
+
+    Regression: the entry used `[ -n ... ]` and DIED on OFFLINE=0/false.
+    Now 0/false/empty pass the stamp block (production stamp), 1/true dies
+    pointing at the trusted test entry, and garbage dies as non-boolean.
+    Exercises the live shell entry end to end. --plan exits BEFORE the stamp
+    block, so the negative halves run WITHOUT --plan (they must reach the
+    stamp block and die there); the positive halves assert the stamp file."""
+
+    def _entry(self, value, plan=False):
+        env = dict(os.environ)
+        if value is None:
+            env.pop("SMIB_PREFLIGHT_OFFLINE", None)
+        else:
+            env["SMIB_PREFLIGHT_OFFLINE"] = value
+        env.pop("SMIB_TEST_ENTRY", None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        rd = Path(tmp.name) / "run"
+        (rd / "working" / "checkpoints").mkdir(parents=True)
+        argv = ["bash", str(_ENTRY_PATH), "--run-dir", str(rd),
+                "--mode", "week"]
+        if plan:
+            argv.append("--plan")
+        proc = subprocess.run(argv, capture_output=True, text=True, env=env)
+        return proc, rd
+
+    def test_entry_offline_zero_false_empty_pass_gates(self):
+        for value in ("", "0", "false"):
+            proc, _ = self._entry(value, plan=True)
+            self.assertEqual(proc.returncode, 0,
+                             "OFFLINE=%r must stay live (rc=0): %s"
+                             % (value, proc.stderr[-2000:]))
+            self.assertIn("OK: enforcement hash matches the pinned head",
+                          proc.stdout + proc.stderr)
+
+    def test_entry_offline_zero_stamps_production(self):
+        # OFFLINE=0 without --plan reaches the stamp block and stamps
+        # production (the run then fails closed on the empty fixture config,
+        # which is the runner's business, not the flag's).
+        proc, rd = self._entry("0", plan=False)
+        stamp = rd / "working" / "execution_mode.json"
+        self.assertTrue(stamp.is_file(),
+                        "OFFLINE=0 must reach the stamp block, not die on the flag")
+        self.assertEqual(json.loads(stamp.read_text())["mode"], "production")
+
+    def test_entry_offline_true_dies_to_test_entry(self):
+        proc, rd = self._entry("1", plan=False)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("PRODUCTION entry", proc.stderr)
+        self.assertFalse((rd / "working" / "execution_mode.json").exists(),
+                         "a refused offline posture must not stamp anything")
+
+    def test_entry_offline_garbage_dies_strict_boolean(self):
+        proc, _ = self._entry("please-be-offline", plan=False)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("not a strict boolean", proc.stderr)
 
 
 class TestOfflineExceptionSeparate(unittest.TestCase):
