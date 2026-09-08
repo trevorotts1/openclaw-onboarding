@@ -326,7 +326,14 @@ def _independence_reason(obj: dict) -> str:
     """Delegates to build_deck._qc_independence_reason -- the existing
     independent-reviewer-provenance check every legacy per-domain gate already
     uses. If build_deck.py cannot be imported at all, this FAILS CLOSED (a
-    blocking reason saying so) rather than inventing a substitute check."""
+    blocking reason saying so) rather than inventing a substitute check.
+
+    PRES-042: when execution stamps are enabled, the aggregate ALSO binds each
+    domain to the trusted dispatcher's execution stamps (author != reviewer
+    execution identity, the reviewed artifact's CURRENT sha, rubric version) —
+    see _execution_stamp_reasons below. The model-reported graded_by text stays
+    display-only; both checks run so a rollback of either surface still keeps
+    the other's teeth."""
     if _bd is None or not hasattr(_bd, "_qc_independence_reason"):
         return ("AF-QC-INDEPENDENCE: cannot verify independent-reviewer provenance "
                 "-- build_deck.py (the module that owns this check) is not "
@@ -336,6 +343,25 @@ def _independence_reason(obj: dict) -> str:
         return _bd._qc_independence_reason(obj) or ""
     except Exception as exc:  # noqa: BLE001
         return f"AF-QC-INDEPENDENCE: independence check raised {exc!r} -- treating as unproven."
+
+
+def _execution_stamp_reasons(run_dir: Path, phase_id: str, report_rel: str) -> List[str]:
+    """PRES-042 — trusted-execution independence over the report's own
+    AUTHOR/REVIEWER stamps. Fail-closed: when stamps are enabled and the
+    report artifact carries no active author+reviewer stamp pair covering its
+    CURRENT bytes, the domain is BLOCKED (a report that cannot prove WHO
+    executed it proves nothing). Rollback: PRESENTATION_EXECUTION_STAMPS=0
+    disables this surface entirely (pre-PRES-042 contract)."""
+    try:
+        from presentation_job import execution_stamp as _es
+    except Exception:  # noqa: BLE001 — a missing module is unproven, not a crash
+        return ["AF-EXEC-STAMP: presentation_job.execution_stamp is not importable "
+                "-- execution identity cannot be verified (fail-closed)."]
+    if not _es.stamps_enabled():
+        return []
+    report = run_dir / report_rel
+    reason = _es.qc_independence_reason(run_dir, phase_id, None, report)
+    return [reason] if reason else []
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +493,19 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
         indep = _independence_reason(obj)
         if indep:
             reason = f"{label} ({phase_id}): {indep}"
+            entry["reasons"].append(reason)
+            blocking_reasons.append(reason)
+
+        # PRES-042 — trusted-execution independence (author != reviewer by
+        # dispatcher stamps, reviewed sha currency, rubric version), in
+        # ADDITION to the report-text provenance above.
+        try:
+            for stamp_reason in _execution_stamp_reasons(run_dir, phase_id, rel):
+                entry["reasons"].append(f"{label} ({phase_id}): {stamp_reason}")
+                blocking_reasons.append(f"{label} ({phase_id}): {stamp_reason}")
+        except Exception as exc:  # noqa: BLE001 — unproven beats a crash
+            reason = (f"{label} ({phase_id}): AF-EXEC-STAMP: execution-stamp check "
+                      f"raised {exc!r} -- treating provenance as unproven.")
             entry["reasons"].append(reason)
             blocking_reasons.append(reason)
 

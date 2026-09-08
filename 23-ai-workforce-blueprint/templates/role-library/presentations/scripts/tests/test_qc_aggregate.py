@@ -23,6 +23,10 @@ sys.path.insert(0, str(SCRIPTS))
 
 import qc_aggregate  # noqa: E402
 
+_presentation_job = SCRIPTS / "presentation_job"
+if str(_presentation_job) not in sys.path:
+    sys.path.insert(0, str(_presentation_job))
+
 
 def _rd() -> pathlib.Path:
     return pathlib.Path(tempfile.mkdtemp())
@@ -76,6 +80,56 @@ def _seed_six_genuine_reports(rd: pathlib.Path, average: float = 9.4) -> None:
     _wj(rd, "working/qc/speech_qc_report.json",
         _genuine_domain_report("Phase Speech-QC", average))
     _wj(rd, "working/qc/priority_shift_report.json", _genuine_priority_shift_report(True))
+    _seed_execution_stamps(rd)
+
+
+# ---------------------------------------------------------------------------
+# PRES-042 — trusted execution stamps behind each seeded report. The
+# dispatcher is the TRUSTED writer: an AUTHOR stamp (separate execution from
+# the reviewer) + a REVIEWER stamp (opposite model class, rubric version)
+# covering the report's exact bytes. Without these the aggregate's
+# AF-EXEC-STAMP surface fails-closed — which is the point.
+# ---------------------------------------------------------------------------
+_STAMPED_DOMAINS = (
+    ("copy_qc_report.json", "P1Q-COPY-QC"),
+    ("typography_qc_report.json", "P-TYPO-QC"),
+    ("prompt_qc_report.json", "P-PROMPT-QC"),
+    ("image_qc_report.json", "P-IMAGE-QC"),
+    ("speech_qc_report.json", "P-SPEECH-QC"),
+)
+
+def _seed_execution_stamps(rd: pathlib.Path) -> None:
+    try:
+        import sys as _sys
+        _scripts = str(rd.parent)  # unused; import via the repo path below
+        from presentation_job import execution_stamp as _es  # noqa: F401
+    except ImportError:
+        return  # pre-PRES-042 tree: text-only contract governs alone
+    import hashlib, json as _json, uuid as _uuid
+    author_exec = f"exec-author-{_uuid.uuid4().hex[:8]}"
+    reviewer_exec = f"exec-reviewer-{_uuid.uuid4().hex[:8]}"
+    stamps_dir = rd / "working" / "execution-stamps"
+    stamps_dir.mkdir(parents=True, exist_ok=True)
+    for name, phase_id in _STAMPED_DOMAINS:
+        p = rd / "working" / "qc" / name
+        if not p.is_file():
+            continue
+        sha = hashlib.sha256(p.read_bytes()).hexdigest()
+        rows = {
+            "schema_version": 1, "phase_id": phase_id, "rows": [
+                {"kind": "author", "execution_id": author_exec,
+                 "phase_id": phase_id, "artifact": f"working/qc/{name}",
+                 "artifact_sha256": sha, "model": "deepseek-v4-pro",
+                 "provider": "deepseek-direct", "model_class": "deepseek",
+                 "stamped_at": "2026-09-08T12:00:00+01:00"},
+                {"kind": "reviewer", "execution_id": reviewer_exec,
+                 "phase_id": phase_id, "reviewed_artifact": f"working/qc/{name}",
+                 "reviewed_artifact_sha256": sha, "model": "kimi-v4-a",
+                 "provider": "moonshot", "model_class": "kimi",
+                 "rubric_version": "manifest-test", "stamped_at": "2026-09-08T12:01:00+01:00"},
+            ],
+        }
+        (stamps_dir / f"{phase_id}.stamp.json").write_text(_json.dumps(rows, indent=2))
 
 
 # ---------------------------------------------------------------------------
