@@ -389,23 +389,75 @@ for f in "$IMAGE_MODEL_JSON" "$VIDEO_SPECS_JSON" "$SOCIAL_CADENCE_JSON"; do
 done
 
 # ---------- GHL credential preflight (runtime HARD-STOP) ----------
-# A publishing cycle cannot post without the GoHighLevel Private Integration
-# Token (GOHIGHLEVEL_API_KEY) and the Location ID. Missing creds => STOP with a
-# plain-English, operator-facing reason (never a silent no-op). Canonical names
-# match Skill 36 / Skill 44 (caf). These are also exported for downstream phases.
+# F18: one documented credential resolver (shared-utils/social_planner_credentials.py)
+# resolves the GHL Private Integration Token and Location ID with the explicit
+# precedence config field > canonical env name > Skill 44 canonical resolver,
+# failing closed on a config/env value conflict (a stale config key must never
+# quietly aim the cycle at another client). Missing creds => STOP with a
+# plain-English, operator-facing reason (never a silent no-op). Diagnostics are
+# REDACTED — presence and source only, never a value.
+# These are also exported for downstream phases.
 if [ -f "$SECRETS_ENV" ]; then
   set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u
+fi
+
+_SPRC=""
+for _sprc_dir in "$SKILL_DIR/../shared-utils" \
+                 "$OPENCLAW_DIR/skills/shared-utils" \
+                 "/data/.openclaw/skills/shared-utils" \
+                 "$HOME_DIR/.openclaw/skills/shared-utils"; do
+  if [ -f "$_sprc_dir/social_planner_credentials.py" ]; then _SPRC="$_sprc_dir"; break; fi
+done
+
+_cred_json=""
+if [ -n "$_SPRC" ] && command -v python3 >/dev/null 2>&1; then
+  _cred_json="$(cd "$_SPRC" && python3 - <<'PYEOF' 2>&1
+import json, sys
+try:
+    from social_planner_credentials import resolve_planner_credentials, diagnose
+except Exception as e:  # resolver itself broken: say so, never a silent pass
+    print(json.dumps({"error": "resolver import failed: %s" % type(e).__name__}))
+    sys.exit(0)
+try:
+    creds, report = resolve_planner_credentials()
+    print(json.dumps({"creds": {k: (v or "") for k, v in creds.items()},
+                      "report": report, "diagnostics": diagnose(report)}))
+except Exception as e:  # CredentialConflictError and friends: FAIL CLOSED
+    print(json.dumps({"error": str(e)}))
+PYEOF
+)"
+  # The env file was sourced above; the resolver only CONFLICT-CHECKS it —
+  # its resolved values are re-applied to this shell so downstream phases see
+  # exactly what the resolver validated.
+  if printf '%s' "$_cred_json" | grep -q '"error"'; then
+    err "credential resolver failed closed: $(printf '%s' "$_cred_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unknown"))' 2>/dev/null || echo 'unresolvable credential state')"
+    MISSING_REQ=$((MISSING_REQ+1))
+    note_missing "GHL credentials (PIT + Location ID) — resolve the conflict above, then re-run"
+  else
+    _pit="$(printf '%s' "$_cred_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("creds",{}).get("pit",""))' 2>/dev/null || true)"
+    _loc="$(printf '%s' "$_cred_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("creds",{}).get("location_id",""))' 2>/dev/null || true)"
+    [ -n "$_pit" ] && GOHIGHLEVEL_API_KEY="$_pit"
+    [ -n "$_loc" ] && GOHIGHLEVEL_LOCATION_ID="$_loc"
+    # Redacted diagnostics: which credentials resolved, from where. No values.
+    printf '%s' "$_cred_json" | python3 -c 'import sys,json
+d=json.load(sys.stdin)
+for k, e in d.get("report", {}).items():
+    print("[Skill35] credential %s: %s (source: %s)" % (k, e.get("status","?"), e.get("source") or "none"))' 2>/dev/null || true
+  fi
 fi
 : "${GOHIGHLEVEL_API_KEY:=}"
 : "${GOHIGHLEVEL_LOCATION_ID:=}"
 [ -n "$GOHIGHLEVEL_API_KEY" ]     || note_missing "GOHIGHLEVEL_API_KEY (GHL Private Integration Token) — required to publish; add it to $SECRETS_ENV"
 [ -n "$GOHIGHLEVEL_LOCATION_ID" ] || note_missing "GOHIGHLEVEL_LOCATION_ID — required to publish (prevents cross-location posting); add it to $SECRETS_ENV"
 
-# Optional live connection probe (OPT-IN: set SKILL35_LIVE_PREFLIGHT=1). When
-# enabled it HARD-STOPS the batch if the PIT is rejected (401/403) or zero social
-# accounts are connected — no rung can fix an un-connected OAuth account. A
-# transient network error only WARNS (never false-blocks the cycle).
-if [ "${SKILL35_LIVE_PREFLIGHT:-0}" = "1" ] && [ -n "$GOHIGHLEVEL_API_KEY" ] && [ -n "$GOHIGHLEVEL_LOCATION_ID" ] && command -v curl >/dev/null 2>&1; then
+# F18: read-only live account discovery is a PRODUCTION READINESS CHECK
+# (no longer opt-in when credentials are present). A transient network error
+# only WARNS (never false-blocks the cycle). Distinct failure codes:
+#   exit 3  — token rejected (expired/revoked/insufficient scope)
+#   exit 3  — LOCATION MISMATCH: the token authenticates but resolves to a
+#             different location than the configured one (wrong-tenant token)
+#   exit 3  — zero connected social accounts
+if [ -n "$GOHIGHLEVEL_API_KEY" ] && [ -n "$GOHIGHLEVEL_LOCATION_ID" ] && command -v curl >/dev/null 2>&1; then
   log "live preflight: querying connected GHL social accounts (GET /social-media-posting/{loc}/accounts)"
   _probe="$(curl -sS -m 15 -w $'\n%{http_code}' \
     -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
@@ -420,6 +472,17 @@ if [ "${SKILL35_LIVE_PREFLIGHT:-0}" = "1" ] && [ -n "$GOHIGHLEVEL_API_KEY" ] && 
       exit 3
       ;;
     2*)
+      # F18: wrong-LOCATION check — the token works, but does it work for THIS
+      # location? A token minted in another sub-account must never publish.
+      _loc_probe="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' \
+        -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+        -H "Version: 2021-07-28" \
+        "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" 2>/dev/null || true)"
+      if [ "$_loc_probe" = "401" ] || [ "$_loc_probe" = "403" ]; then
+        err "GHL token authenticated for social posting but is NOT authorized for the configured location (HTTP $_loc_probe on GET /locations/{loc}) — the PIT belongs to a different sub-account/location."
+        err "CLIENT MESSAGE: \"Your GoHighLevel token works but belongs to a different location than the one configured. Send me the Private Integration Token created inside THIS location's Settings > Integrations > Private Integrations. I will not post until this is fixed.\""
+        exit 3
+      fi
       _acct_count="$(printf '%s' "$_pbody" | python3 -c "import sys,json
 try:
     d=json.load(sys.stdin)
