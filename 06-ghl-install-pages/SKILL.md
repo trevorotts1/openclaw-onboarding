@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v25.0.20"
+  version: "v25.0.21"
   priority: HIGH
 ---
 
@@ -90,6 +90,17 @@ entry `49-signature-funnel/signature-funnel-entry.sh`). A second entry (Skill 56
 added by appending one object to `engines[]` — no selector code change. CLI:
 `python3 tools/funnel_engine_selector.py --match "<request>"` / `--list` / `--self-test`. See
 `funnel-engines/README.md`.
+
+## Timing-aware automation handoff
+
+For funnels with timed follow-up, read Skill 44's
+`references/workflow-timing.md`. Preserve the original brief and verified registration
+form/date source in the task's `timing` contract. The dispatcher passes `timing`,
+`timing_brief`, and `location_id` to Skill 44. A missing contract means Skill 44 must
+review/derive timing, not assume ordinary delays. Handoff `ts` is build time, never
+registration time. Skill 44 automatically chooses and configures Set event start time
+when relevant. Its event sequence needs the managed browser's full UI workflow, not
+this skill's single-action `ghl_workflow_builder.py` helper.
 
 ## Full-Funnel Pipeline Integration (Skill 44 seam)
 

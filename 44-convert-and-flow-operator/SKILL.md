@@ -29,6 +29,15 @@ DEPENDENCY PRE-CHECK → OUTLINE → CHECKLIST (instantiate references/workflow-
 IMPROVEMENTS → PRESENT + GATING QUESTIONS (publish: DRAFT vs LIVE? / re-entry: once vs
 allow-multiple?). Rushing to a default build is NOT the best outcome and is a VIOLATION.
 
+**Step 0.6 — TIMING INTELLIGENCE:** When a brief contains scheduled actions, read
+[references/workflow-timing.md](references/workflow-timing.md). Infer what each clock
+is measured from. Event/registration-based waits automatically need a correctly
+configured **Set event start time** before dependent Waits; previous-step delays do
+not. Record the timing contract, verify its source in this location, generate the
+outline, and QC actual saved settings. Never turn day 4 + day 7 after registration
+into sequential waits totaling day 11. Use the managed browser for event timing
+until an API payload is verified; never drop timing metadata to bypass validation.
+
 **Step 0.7 — PRE-BUILD EXISTENCE CHECK (before any `caf workflows build`):** BINDING GATE —
 run `caf workflows list` and confirm the target folder/workflow names are not already present
 before building. The engine now checks workflows too (an existing workflow name is refused into

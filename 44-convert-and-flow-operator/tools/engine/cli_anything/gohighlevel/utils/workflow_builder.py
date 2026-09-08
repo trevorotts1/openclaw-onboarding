@@ -17,6 +17,7 @@ from typing import Any, Optional, Union
 from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
 from cli_anything.gohighlevel.utils.write_lock import WriteLock
+from cli_anything.gohighlevel.utils.workflow_timing import plan_timing
 
 # ── Parallel-build worker cap ────────────────────────────────────────────────
 # Lowered from the original hard-coded 10 to reduce burst pressure on the shared
@@ -220,6 +221,36 @@ def validate_campaign(campaign: dict) -> list[str]:
     """Pre-flight validation. Returns list of errors (empty = valid)."""
     errors = []
     for key, wf in campaign.items():
+        if not isinstance(wf, dict):
+            errors.append(f"Workflow {key}: expected an object")
+            continue
+        if "timing" in wf:
+            try:
+                timing = wf["timing"]
+                if not isinstance(timing, dict):
+                    raise ValueError("timing must be an object")
+                outline = plan_timing(timing.get("requirements"), timing.get("anchors", {}))
+                if outline["requires_event_start"]:
+                    raise ValueError(
+                        "event timing requires Set event start time plus event-relative Waits; "
+                        "this API adapter has no verified event-start payload. Execute the "
+                        "timing outline through the managed browser per references/workflow-timing.md; "
+                        "do not strip timing metadata or substitute duration waits")
+                for node in outline["nodes"]:
+                    matches = [s for s in wf.get("templates", [])
+                               if isinstance(s, dict) and s.get("id") == node["step_id"]]
+                    if len(matches) != 1:
+                        raise ValueError(f"timing step {node['step_id']} must match exactly one template")
+                    step = matches[0]
+                    attrs = step.get("attributes", {})
+                    start = attrs.get("startAfter", {})
+                    unit = {"hour": "hours"}.get(start.get("type"), start.get("type"))
+                    if (step.get("type") != "wait" or attrs.get("type") != "time"
+                            or start.get("when") != "after" or unit != node["unit"]
+                            or start.get("value") != node["offset"]):
+                        raise ValueError(f"timing step {node['step_id']} does not match the requested delay")
+            except (ValueError, TypeError, AttributeError) as exc:
+                errors.append(f"Workflow {key}: {exc}")
         if "name" not in wf:
             errors.append(f"Workflow {key}: missing 'name'")
         if "templates" not in wf:
@@ -376,6 +407,8 @@ class CampaignBuilder:
         errors = validate_campaign(campaign)
         if errors:
             self.stats["errors"].extend(errors)
+            self.stats["end_time"] = time.time()
+            return self.stats  # Invalid timing/steps must never reach GET/POST.
 
         # Idempotency pre-check — fetch the location's existing workflow/folder
         # listing ONCE per build() call (not once per workflow, to avoid N extra

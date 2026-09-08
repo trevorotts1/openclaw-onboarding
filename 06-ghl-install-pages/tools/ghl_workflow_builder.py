@@ -182,6 +182,7 @@ class WorkflowSpec:
     name: str
     trigger_type: str
     action_type: str
+    timing: Optional[dict] = None
 
 
 @dataclass
@@ -240,6 +241,11 @@ class WorkflowBuilder:
         return tmpl.replace("{location_id}", self.location_id)
 
     def build(self, spec: WorkflowSpec, dry_run: bool = False) -> BuildResult:
+        if spec.timing is not None:
+            raise WorkflowBuildError(
+                "This single-action helper cannot execute a timing plan. Use Skill 44 "
+                "references/workflow-timing.md through the managed browser to configure "
+                "and read back the entire event-start/Wait sequence; do not discard timing.")
         self._assert_gates_present()
         result = BuildResult(
             workflow_id=None, workflow_url=None, location_id=self.location_id,
@@ -358,6 +364,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--name", default=None)
     ap.add_argument("--trigger", default=None, help="trigger type (e.g. 'Contact Created')")
     ap.add_argument("--action", default=None, help="action type (e.g. 'Send Email')")
+    ap.add_argument("--timing-plan", help="timing JSON; rejects unsupported multi-node plans before browser access")
     ap.add_argument("--dry-run", action="store_true", help="resolve+order gates, open no browser")
     args = ap.parse_args(argv)
 
@@ -370,7 +377,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     gates = load_automations_gates(args.gates_path)
     gateway = Skill6ManagedGateway()
     builder = WorkflowBuilder(gateway, gates, location_id=args.location_id)
-    spec = WorkflowSpec(name=args.name, trigger_type=args.trigger, action_type=args.action)
+    timing = None
+    if args.timing_plan:
+        with open(args.timing_plan) as stream:
+            timing = json.load(stream)
+        if not isinstance(timing, dict):
+            ap.error("--timing-plan must contain an object")
+    spec = WorkflowSpec(name=args.name, trigger_type=args.trigger, action_type=args.action, timing=timing)
     result = builder.build(spec, dry_run=args.dry_run)
     print(json.dumps(result.as_dict(), indent=2))
     return 0 if (args.dry_run or result.workflow_id) else 1

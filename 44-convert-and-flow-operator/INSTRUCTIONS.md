@@ -179,6 +179,14 @@ the agent does NOT silently "improve" a value the client pinned.
 (e.g. Contact Created vs Form Submitted vs Tag Added; SMS vs email vs both; If/Else branches;
 Wait durations; Stop-on-Response). This is a reasoning step, not a template fill.
 
+**A4. TIMING BASIS** — for every scheduled action, determine whether it is relative
+to registration, an event/appointment/transaction, or the previous step. Read
+`references/workflow-timing.md` and generate the timing outline before selecting
+Wait nodes. Automatically include/configure **Set event start time** where relevant;
+resolve genuinely missing dates, not technical-node choices, with the owner. Include
+the `timing` contract in API plans and Skill 6 handoffs. Review timing even when a
+matched template or older handoff omitted that field.
+
 ### Step B — DEPENDENCY PRE-CHECK (skill 41 dependency-first contract)
 
 For every tag, custom field, and custom value the approach references, GET-verify it exists in

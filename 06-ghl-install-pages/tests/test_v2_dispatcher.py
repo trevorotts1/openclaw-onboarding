@@ -348,6 +348,9 @@ class TestStep0AndFunnelHandoff:
         # build, write routing/skill44-handoff.json with the build_now automations.
         task = dict(FAKE_TASK)
         task["funnel_template_id"] = "follow-up-funnel"
+        task["timing"] = {"requirements": [{"id": "day4", "kind": "event",
+                           "anchor": "registration", "offset": 4, "unit": "days"}],
+                          "anchors": {"registration": {"source": "fixture.registration_timestamp"}}}
         task["linked_automations"] = {
             "found": True,
             "automations": [
@@ -364,6 +367,10 @@ class TestStep0AndFunnelHandoff:
         assert os.path.isfile(handoff_path)
         handoff = json.load(open(handoff_path))
         assert handoff["funnel_template_id"] == "follow-up-funnel"
+        assert handoff["timing"] == task["timing"]
+        assert handoff["timing_brief"] == task["brief"]
+        assert handoff["location_id"] == task["location_id"]
+        assert handoff["timing_review_required"] is True
         ids = [a["automation_id"] for a in handoff["to_build"]]
         assert ids == ["soap-opera-sequence"]            # only build_now=True
         # T0-18: this assertion used to read `is False`, encoding the defect as
