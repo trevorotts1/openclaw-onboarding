@@ -456,8 +456,8 @@ def _upsert_delivery_row(run_dir, company_id, cycle_id, content_revision, accoun
     if state not in DELIVERY_STATES:
         state = "unknown"
     rec = {
-        "delivery_id": fields.get("delivery_id") or ("dlv-%s" % abs(hash(_delivery_row_key(
-            company_id, cycle_id, content_revision, account_id))) [:16]),
+        "delivery_id": fields.get("delivery_id") or ("dlv-%s" % str(abs(hash(_delivery_row_key(
+            company_id, cycle_id, content_revision, account_id))))[:16]),
         "company_id": str(company_id), "cycle_id": str(cycle_id),
         "content_revision": int(content_revision), "account_id": str(account_id),
         "remote_post_id": fields.get("remote_post_id"),
@@ -661,7 +661,8 @@ def _verify_qc_matrix(run_dir):
     planned = _planned_artifacts(run_dir)
     if not planned:
         return False, ("AF-SM-QC-MATRIX: plan.json declares NO planned artifacts — an empty "
-                       "contract set FAILS (nothing to certify)", [])
+                       "contract set FAILS (nothing to certify)"), \
+            ["AF-SM-QC-MATRIX: plan.json declares NO planned artifacts"]
     cdir = run_dir / "working" / "content" / "contracts"
     contract_files = {f.stem: f for f in cdir.glob("*.json")} if cdir.is_dir() else {}
     receipts = _json(run_dir, QC_RECEIPTS, [])
@@ -1145,7 +1146,7 @@ def _sheets_outage_recovery(run_dir):
         return True, None
     rec = _json(run_dir, "working/plan/planner_sync_task.json")
     if not isinstance(rec, dict) or not rec.get("task_id"):
-        rec = {"task_id": "planner-sync-%s" % abs(hash(run_dir.name))[:12],
+        rec = {"task_id": "planner-sync-%s" % str(abs(hash(run_dir.name)))[:12],
                "kind": "planner-sync", "state": "open",
                "reason": "Sheets outage: planner row not written; published posts are "
                          "independent (delivery rows unchanged) — sync the row later",
@@ -1164,13 +1165,20 @@ def _chk_writeback(run_dir):
     if not ok:
         return False, msg
     # The stable row must be READ BACK (working/plan/row_readback.json) before
-    # writeback is complete: {found: true, row_key, values: [...]}.
+    # writeback is complete: {found: true, row_key, values: [...]}. A receipt
+    # already marked reconciled (a previous reconcile pass adopted the row)
+    # completes idempotently — a retried run never appends a second row.
+    rec = _json(run_dir, "working/plan/row_appended.json") or {}
     readback = _json(run_dir, "working/plan/row_readback.json")
-    if not isinstance(readback, dict) or readback.get("reconciled_proof") is not True:
+    if isinstance(readback, dict) and readback.get("found") is True:
         ok2, msg2 = _reconcile_writeback_readback(run_dir, readback)
         if not ok2:
             return False, msg2
-    return True, "writeback PROVEN: receipt complete + stable row read back (%s)" % msg
+    elif rec.get("reconciled") is not True:
+        return False, ("AF-SM-WRITEBACK-PROOF: the stable row was not found by readback — the "
+                       "write is NOT complete (reconcile before any retry creates a second row)")
+    return True, "writeback PROVEN: receipt complete + stable row read back (row_key %s)" % (
+        rec.get("row_key"))
 
 
 def _deliver_slug(text):
