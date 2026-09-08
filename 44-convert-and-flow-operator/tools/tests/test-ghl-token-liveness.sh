@@ -32,7 +32,10 @@ mkdir -p "$SB/home/.openclaw/secrets" "$SB/home/.openclaw/workspace" "$SB/state"
 printf '{"channels":{"telegram":{"allowFrom":["123456789"]}}}\n' > "$SB/home/.openclaw/openclaw.json"
 SEC="$SB/home/.openclaw/secrets/.env"
 [ -d /data/.openclaw ] && { echo "ABORT: /data/.openclaw exists locally"; exit 9; }
-sed -e 's|^if openclaw message send|if echo STUB \&\& false; then :; elif false|' \
+# Use a synthetic operator ID in the sandbox copy and the rejection probe.
+# Production exclusion rules are unchanged; no real recipient is a fixture target.
+sed -e 's/5252140759/990000001/g' \
+    -e 's|^if openclaw message send|if echo STUB \&\& false; then :; elif false|' \
     -e "s|^STATE_DIR=.*|STATE_DIR=\"$SB/state\"|" "$TARGET" > "$SB/prop.sh"
 echo "neutered: live-send-lines=$(/usr/bin/grep -c '^if openclaw message send' "$SB/prop.sh") stub=$(/usr/bin/grep -c '^if echo STUB' "$SB/prop.sh") state=$(/usr/bin/grep -c "^STATE_DIR=\"$SB/state\"" "$SB/prop.sh")"
 # fake python3: canned exchange result / canned chat id; never touches the network
@@ -81,6 +84,6 @@ hdr "S4 NETWORK_ERROR (expect CONFIG PROBLEM rc2, no notify)"; run S4 FAKE_EXCHA
 hdr "S5 HTTP 429/500 shaped INVALID (expect CONFIG PROBLEM rc2)"; run S5 "FAKE_EXCHANGE=INVALID:Too Many Requests" GHL_LIVENESS_NO_SEND=1
 hdr "S6 USER_DISABLED (expect credential path rc1)"; run S6 FAKE_EXCHANGE=INVALID:USER_DISABLED GHL_LIVENESS_NO_SEND=1
 hdr "S7 .notified guard (expect rc1 already-notified, nothing else)"; touch "$SB/state/ghl-token-liveness-$(date -u +%Y-%m-%d).notified"; for b in $BASHES; do out=$(cd "$SB" && env -i HOME="$SB/home" PATH="$SB/fakebin:/usr/bin:/bin" FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED "$b" "$SB/prop.sh" 2>&1); echo "  [S7 $(basename $b)] rc=$? :: $(printf '%s' "$out" | /usr/bin/grep -E 'already|FAIL|NO_SEND' | cut -c1-120)"; done; rm -f "$SB/state"/*
-hdr "S8 operator chat id resolved (expect refusing, rc1, no send)"; run S8 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED FAKE_CHAT=5252140759
+hdr "S8 operator chat id resolved (expect refusing, rc1, no send)"; run S8 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED FAKE_CHAT=990000001
 hdr "S9 send path WITHOUT NO_SEND hook: stub must be hit (expect STUB + WARN not notified, rc1, no .notified stamp)"; run S9 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED
 echo; echo "leftover state files: $(ls "$SB/state" | wc -l | tr -d ' ')"
