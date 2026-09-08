@@ -603,6 +603,7 @@ class _ProviderState:
     ok_samples: list = field(default_factory=list)  # healthy-sample epochs
     day: str = ""
     day_count: int = 0
+    day_count_imported: bool = False  # a restart merged the shared count in
     events: list = field(default_factory=list)  # (ts, kind, n) acquisitions
 
 
@@ -855,6 +856,27 @@ def _sync_circuit_locked(st: _ProviderState, provider: str, now: float) -> None:
     entry = (doc.get("providers") or {}).get(provider)
     if not isinstance(entry, dict):
         return
+    # [PRES-003] RESTART RETAINS THE DAILY BUDGET: the shared document carries
+    # the UTC day and its acquisition count.  A process that has counted
+    # nothing today (a restart, a respawned dispatcher) imports the stored
+    # count so a denial cannot be reset by starting a new process; a process
+    # whose OWN count for the same day is already higher keeps its larger
+    # number (monotonic, never regresses).  A stored count for a PREVIOUS day
+    # is a stale row -- today's count starts at zero as before.
+    stored_day = str(entry.get("day") or "")
+    stored_count = entry.get("day_count")
+    if stored_day == _utc_day() and isinstance(stored_count, (int, float)) \
+            and not isinstance(stored_count, bool):
+        stored_count = int(stored_count)
+        if stored_count > st.day_count and not st.day_count_imported:
+            st.day = stored_day
+            st.day_count = stored_count
+            st.day_count_imported = True
+        elif st.day_count > 0 and not st.day_count_imported:
+            # this process already counted today; merge upward only
+            st.day_count_imported = True
+            if stored_count > st.day_count:
+                st.day_count = stored_count
     entry_ts = float(entry.get("last_429_ts") or 0)
     if entry_ts > st.last_429_ts:
         st.last_429_ts = entry_ts
@@ -1092,6 +1114,18 @@ def acquire(
                     _state=st,
                 )
                 _append_log(provider, "acquire_poll" if poll_ok else "acquire", n, st.inflight)
+                # [PRES-003] the daily budget is consumed HERE, so the shared
+                # document must carry the count HERE: a restart (new process,
+                # zero local count) imports the stored total and a denial
+                # cannot be reset by starting a fresh process.  Best-effort:
+                # a persist failure degrades to in-process-only accounting
+                # (the same degradation the penalty persistence already has).
+                _persist_circuit({provider: {
+                    "day": st.day,
+                    "day_count": st.day_count,
+                    "updated_at": now,
+                    "base_revision": _circuit_revision_hint(provider),
+                }})
                 return lease
         # not admitted -- sleep a tick proportional to the deficit
         if deadline is not None and time.monotonic() >= deadline:
@@ -1190,6 +1224,10 @@ def report_429(provider: str, retry_after_s: Optional[float] = None) -> float:
             "penalty_started": st.penalty_started,
             "last_429_ts": st.last_429_ts,
             "retry_after_s": st.retry_after_s,
+            # [PRES-003] the daily budget travels with the penalty so a
+            # restart cannot reset the cap by starting a fresh process.
+            "day": st.day,
+            "day_count": st.day_count,
             "updated_at": now,
             "base_revision": _circuit_revision_hint(provider),
         }
@@ -1249,6 +1287,10 @@ def report_ok(provider: str) -> None:
             "penalty_started": st.penalty_started,
             "last_429_ts": st.last_429_ts,
             "retry_after_s": st.retry_after_s,
+            # [PRES-003] keep the daily-budget row current on every persisted
+            # write so the newest process's count is what a restart imports.
+            "day": st.day,
+            "day_count": st.day_count,
             "updated_at": now,
             "base_revision": _circuit_revision_hint(provider),
         }
