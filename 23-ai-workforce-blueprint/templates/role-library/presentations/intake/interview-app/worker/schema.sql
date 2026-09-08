@@ -42,3 +42,24 @@ CREATE TABLE IF NOT EXISTS intakes (
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER
 );
+
+-- PRES-007 (W1 WF03) — durable dept-start handoff outbox. One row per intake
+-- session; the single idempotency anchor for worker→CC delivery. States:
+--   firing             POST /api/tasks/ingest in flight
+--   fired              CC ack received and scope-bound (dept_task_id recorded)
+--   failed_retryable   5xx / transport — retried on a later dept-start call
+--   failed_nonretryable 4xx / missing credential / ack binding mismatch —
+--                      human action required, never auto-retried
+-- A 'fired' row makes every later /api/dept-start for the session an idempotent
+-- ack replay (no second card). The interrupted-ack case (crash between POST and
+-- ack write) leaves 'firing'; the retry is deduped by the REMOTE ingest
+-- idempotency key derived from dest|company|source_ref|title.
+CREATE TABLE IF NOT EXISTS handoff_outbox (
+  session_id   TEXT PRIMARY KEY,
+  status       TEXT NOT NULL,             -- 'firing' | 'fired' | 'failed_retryable' | 'failed_nonretryable'
+  dept_task_id TEXT,                      -- bound CC task id once acked
+  dest_box     TEXT,                      -- destination box binding (dest_box in signed payload)
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  updated_at   INTEGER
+);
