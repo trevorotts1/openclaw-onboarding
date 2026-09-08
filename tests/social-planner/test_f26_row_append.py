@@ -129,13 +129,6 @@ class TestRawTextPreserved(unittest.TestCase):
         self.assertIn("valueInputOption=RAW", append["parameters"]["url"])
         self.assertNotIn("valueInputOption=USER_ENTERED", append["parameters"]["url"])
 
-    def test_raw_write_uses_raw_value_input_option(self):
-        """The whole-row append write must be valueInputOption=RAW."""
-        wf = load_export()
-        append = next(n for n in wf["nodes"] if n["name"].startswith("Sheets: append"))
-        self.assertIn("valueInputOption=RAW", append["parameters"]["url"])
-        self.assertNotIn("valueInputOption=USER_ENTERED", append["parameters"]["url"])
-
     def test_unicode_multiline_and_punctuation_preserved(self):
         row = {
             "Theme of the Week": "Café ☕ week — emoji 🎉 test",

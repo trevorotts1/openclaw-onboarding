@@ -57,10 +57,19 @@ AF_TOKEN = "AF-SM-PREFLIGHT-TOKEN"
 AF_CONFIG = "AF-SM-PREFLIGHT-CONFIG"
 AF_STATUS = "AF-SM-PREFLIGHT-STATUS"
 AF_DISCOVERY = "AF-SM-DISCOVERY-DRIFT"
+AF_CRED_CONFLICT = "AF-SM-CRED-CONFLICT"
 
 KIE_MIN_CREDITS = 200
 OPENROUTER_MIN_BALANCE = 5.0
 PAID_STATUS = "Paid"
+
+
+class _CredentialConflict(Exception):
+    """Internal carrier for a resolver-reported config/env credential conflict.
+
+    Raised by _get_secret so every live probe surfaces the SAME blocking
+    AF-SM-CRED-CONFLICT failure. Never carries a credential value — the
+    message names the conflicting SOURCES only."""
 
 # Fields that must be present (non-empty) on the client config. Secret fields
 # are confirmed SET (non-empty) but their values are never printed.
@@ -181,22 +190,45 @@ def check_connected_accounts(cfg, live=False):
 
 
 # ---- live probes (urllib; secret values used to auth, NEVER printed) --------
+_CRED_CONFLICT_MSG = (
+    "credential conflict: the client config and the environment set DIFFERENT "
+    "values for the same credential (%s: config field %r vs env %s) — resolve "
+    "the mismatch before running (values never printed). "
+    "Sources: client config file + process environment (plus fleet env files "
+    "via the Skill 44 secret canon)."
+)
+
+
 def _get_secret(cfg, field, env_name):
     """F18: ONE documented credential resolver.
 
     Delegates to shared-utils/social_planner_credentials.py (explicit
     precedence config field > canonical env name > Skill 44 canonical
-    resolver, conflicting config/env values FAIL CLOSED) when importable, and
-    falls back to the historical config-then-env behavior when it is not —
-    so a deployment without shared-utils keeps working exactly as before.
+    resolver, conflicting config/env values FAIL CLOSED: raises
+    CredentialConflictError) when importable. The conflict surfaces here as a
+    blocking AF-SM-CRED-CONFLICT failure (named sources, values never
+    printed); only an ImportError/AttributeError (resolver absent) falls back
+    to the historical config-then-env behavior — so a deployment without
+    shared-utils keeps working exactly as before.
     Secret values are used to authenticate and are NEVER printed.
     """
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared-utils"))
-        from social_planner_credentials import resolve_planner_credentials  # noqa: PLC0415
-        creds, _report = resolve_planner_credentials(cfg)
+        from social_planner_credentials import (  # noqa: PLC0415
+            CREDENTIALS,
+            CredentialConflictError,
+            resolve_planner_credentials,
+        )
+        try:
+            creds, _report = resolve_planner_credentials(cfg)
+        except CredentialConflictError as exc:
+            try:
+                _cfg_field, _canon_env, _svc = CREDENTIALS.get(field, (field, env_name, ""))
+            except Exception:  # noqa: BLE001 — table unreadable: name the fallback
+                _cfg_field, _canon_env = field, env_name
+            raise _CredentialConflict(_CRED_CONFLICT_MSG % (_cfg_field, _cfg_field, _canon_env)) from exc
         return creds.get(field) or ""
-    except Exception:  # noqa: BLE001 — resolver unavailable/conflict: historical behavior
+    except (ImportError, AttributeError):  # noqa: BLE001 — resolver unavailable: historical behavior
         v = cfg.get(field)
         if _nonempty(v):
             return v
@@ -213,6 +245,9 @@ def _http_get_json(url, headers, timeout=15):
 def _live_kie_credits(cfg):
     try:
         key = _get_secret(cfg, "kieKey", "KIE_API_KEY")
+    except _CredentialConflict:
+        raise
+    try:
         data = _http_get_json("https://api.kie.ai/api/v1/chat/credit",
                               {"Authorization": "Bearer %s" % key})
         for k in ("credits", "data", "balance", "credit"):
@@ -229,6 +264,9 @@ def _live_kie_credits(cfg):
 def _live_openrouter_balance(cfg):
     try:
         key = _get_secret(cfg, "openrouterKey", "OPENROUTER_API_KEY")
+    except _CredentialConflict:
+        raise
+    try:
         data = _http_get_json("https://openrouter.ai/api/v1/credits",
                               {"Authorization": "Bearer %s" % key})
         d = data.get("data", data) if isinstance(data, dict) else {}
@@ -246,6 +284,9 @@ def _live_openrouter_balance(cfg):
 def _live_ghl_token(cfg):
     try:
         pit = _get_secret(cfg, "pit", "GHL_API_KEY")
+    except _CredentialConflict:
+        raise
+    try:
         loc = cfg.get("locationId", "")
         data = _http_get_json("https://services.leadconnectorhq.com/locations/%s" % loc,
                               {"Authorization": "Bearer %s" % pit, "Version": "2021-07-28"})
@@ -259,6 +300,9 @@ def _live_connected_accounts(cfg):
     Returns a platform-name list, or None when unconfirmable (fail-closed upstream)."""
     try:
         pit = _get_secret(cfg, "pit", "GHL_API_KEY")
+    except _CredentialConflict:
+        raise
+    try:
         loc = cfg.get("locationId", "")
         data = _http_get_json(
             "https://services.leadconnectorhq.com/social-media-posting/oauth/%s/accounts" % loc,
@@ -285,10 +329,13 @@ def evaluate(cfg, live=False):
     fails = []
     fails += check_required_fields(cfg)
     fails += check_status(cfg)
-    fails += check_kie_credits(cfg, live)
-    fails += check_openrouter_balance(cfg, live)
-    fails += check_ghl_token(cfg, live)
-    fails += check_connected_accounts(cfg, live)
+    try:
+        fails += check_kie_credits(cfg, live)
+        fails += check_openrouter_balance(cfg, live)
+        fails += check_ghl_token(cfg, live)
+        fails += check_connected_accounts(cfg, live)
+    except _CredentialConflict as exc:
+        fails.append((AF_CRED_CONFLICT, str(exc)))
     return fails
 
 
@@ -303,8 +350,15 @@ def _write_report(report_path, cfg, failures, live=False):
                "failures": [{"code": c, "message": m} for c, m in failures]}
         # C2: persist the discovery reconcile so Owner Q&A answers publish scope
         # from the LIVE result on record, never a memorized list.
-        accounts = _live_connected_accounts(cfg) if live \
-            else (cfg.get("probes") or {}).get("connectedAccounts")
+        # A credential conflict is already recorded in `failures` by evaluate;
+        # the report must still write, so the conflict is not re-raised here.
+        if live:
+            try:
+                accounts = _live_connected_accounts(cfg)
+            except _CredentialConflict:
+                accounts = None
+        else:
+            accounts = (cfg.get("probes") or {}).get("connectedAccounts")
         if isinstance(accounts, list):
             _f, summary = reconcile_connected_accounts(cfg, accounts)
             rec["connected_accounts"] = summary
