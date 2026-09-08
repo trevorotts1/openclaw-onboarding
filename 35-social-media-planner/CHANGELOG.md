@@ -1,5 +1,16 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.0.1] - 2026-09-08 - Fix: publishing engine rc=3 on every run + silent Command Center board skip (found live on the Talaya box)
+
+Two defects in `run-publishing-cycle.sh` that made the entire weekly engine inert on every fleet box running Skill 35, found while diagnosing why a client's weekly theme question had gone unanswered for three weeks (the cron fired; the engine it queued never produced anything).
+
+### Fixed
+- **CRITICAL — cycle stopped at the prerequisite gate (rc=3) on every run.** The script resolved `SOUL.md` / `IDENTITY.md` / `USER.md` at the OpenClaw config root (`$OPENCLAW_DIR/SOUL.md`), but OpenClaw keeps them in the workspace dir (`$OPENCLAW_DIR/workspace/SOUL.md`) on all current boxes. The gate correctly refused to invent defaults and exited 3 before queueing anything — every weekly batch since install reported "ok=0 fail=1" and no content was ever produced. Fixed with a workspace-first path resolution that falls back to the config root for older/container layouts.
+- **HIGH — Command Center board card silently skipped (HTTP 400).** The `POST /api/tasks` body sent `"created_by_agent_id": "skill35-cycle"` (a string slug), but the CC API validates `*_agent_id` fields as UUIDs, so every card creation was rejected and the script continued without a card — the Kanban board showed no Skill-35 activity at any point. The two `PATCH` status bodies (`in_progress`, `review`) had the same slug in `updated_by_agent_id` and failed identically. Fixed: the create body now routes via `"department": "social-media"` (the board assigns the agent itself, `assigned_agent_id`), and the PATCH bodies send status only.
+
+### Verified
+- Live box test after patch: weekly-batch went from `ok=0 fail=1 (rc=3)` to `ok=1 fail=0` — cycle queued end-to-end, CC card created, auto-dispatched by `intake-advance`, QC-scored and promoted through review→done by the board's own sweeps with zero manual intervention.
+
 ## v2.9.18 - 2026-07-23 — Fix: review findings — GHL upload 400, tmpfiles.org QC gate, QC completeness, n8n workflow JSON, image production path, sheet docs, wire.sh clarity
 
 Builds on v2.9.17 (=IMAGE() rendering). Addresses the seven findings from the Skill 35 review.
