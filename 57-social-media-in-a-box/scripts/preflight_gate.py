@@ -607,6 +607,8 @@ def _emit(source, failures, as_json):
             print("  [%s] %s" % (c, m))
 
 
+AF_PROBES_IN_PRODUCTION = "AF-SM-EXEC-MODE"
+
 def run(path, live=False, as_json=False, report=None):
     p = Path(path)
     if not p.is_file():
@@ -617,6 +619,17 @@ def run(path, live=False, as_json=False, report=None):
     except (ValueError, OSError) as exc:
         _emit(str(p), [(AF_CONFIG, "cannot read/parse config JSON: %s" % exc)], as_json)
         return EXIT_USAGE
+    # F08: a LIVE (production) run REJECTS any nonempty probes object —
+    # leftover test/probe configuration can never coexist with live endpoints
+    # (a configuration error, fail-closed). Offline (dry-run) keeps reading
+    # probes as its authored fixture data.
+    probes = cfg.get("probes") if isinstance(cfg, dict) else None
+    if live and isinstance(probes, dict) and probes:
+        _emit(str(p), [(AF_PROBES_IN_PRODUCTION,
+                        "probes present in a live/production configuration (%d key(s)) — offline "
+                        "fixture data must be removed from the installed client config; run the "
+                        "trusted test entry for a dry-run posture" % len(probes))], as_json)
+        return EXIT_AUTOFAIL
     failures = evaluate(cfg, live=live)
     if report:
         _write_report(report, cfg, failures, live=live)
