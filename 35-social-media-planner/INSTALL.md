@@ -293,22 +293,26 @@ Read brand info from core files, then ask only what's missing:
 
    **4b. Check if an existing sheet ID was provided during onboarding** (the client may have shared one during their interview). If yes, adopt it — skip to 4d.
 
-   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account). **Write the pending marker BEFORE the POST so a crash mid-create is recoverable, and pass a stable `idempotencyKey` so the webhook never makes a second sheet for the same client:**
+   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account). **Write the pending marker BEFORE the POST so a crash mid-create is recoverable, and pass the stable provisioning key `company_id::planner_kind` so the webhook never makes a second sheet for the same client and planner kind:**
    ```bash
-   # Stable per-client key: same client slug => same key => at most one sheet, ever.
-   IDEMPOTENCY_KEY="skill35-sheet-${COMPANY_SLUG}"
+   # Stable per-company key (run/contracts/sheet_registry.json: unique(company_id, planner_kind)).
+   PROVISIONING_KEY="${COMPANY_ID}::${PLANNER_KIND}"   # PLANNER_KIND is e.g. "social-planner"
    # 1) Record intent FIRST (atomic write), so a crash before 4d is detectable in 4a-bis.
+   #    This local marker is the DURABLE CLAIM — the caller owns the ledger; the
+   #    webhook itself stays stateless-safe via its Google Drive readback (F15).
    mkdir -p ~/.openclaw/data/skill35
-   printf 'content_sheet_pending: %s\n' "$IDEMPOTENCY_KEY" > ~/.openclaw/data/skill35/.sheet-create.pending.tmp
+   printf 'content_sheet_pending: %s\n' "$PROVISIONING_KEY" > ~/.openclaw/data/skill35/.sheet-create.pending.tmp
    mv ~/.openclaw/data/skill35/.sheet-create.pending.tmp ~/.openclaw/data/skill35/.sheet-create.pending
-   # 2) Create (idempotent on the server by idempotencyKey).
+   # 2) Create (idempotent on the server: the webhook reads back Drive files by the
+   #    skill35_provisioning_key app property BEFORE copying; a replay returns the
+   #    EXISTING sheet with "deduped": true instead of making a second one).
    RESPONSE=$(curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
      -H "Content-Type: application/json" \
-     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\",\"idempotencyKey\":\"$IDEMPOTENCY_KEY\"}")
+     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\",\"company_id\":\"$COMPANY_ID\",\"planner_kind\":\"$PLANNER_KIND\",\"templateSheetId\":\"$TEMPLATE_SHEET_ID\",\"timezone\":\"$TZ\"}")
    SHEET_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetId'])")
    SHEET_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetUrl'])")
    ```
-   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back. (Leave the `content_sheet_pending` marker in place so the next run reconciles via the idempotency key rather than creating another sheet.)
+   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back. (Leave the `content_sheet_pending` marker in place so the next run reconciles via the provisioning key rather than creating another sheet.)
 
    **4d. Record `content_sheet_id` and `content_sheet_url` in MEMORY.md and skill config:**
    ```bash
@@ -325,12 +329,16 @@ Read brand info from core files, then ask only what's missing:
    rm -f ~/.openclaw/data/skill35/.sheet-create.pending
    ```
 
+   **4d-bis. Verify the planner sharing contract (F02).** The provisioned sheet MUST have Drive permission `type=anyone`, `role=writer` — anyone with the link can edit without an individual invitation. This is INTENTIONAL, not a defect: verify it during provisioning (Drive permissions readback on the new sheetId) and never migrate the planner to named-user-only sharing. This sharing setting does not change GHL account ownership or mini-app identity, and it does not authorize API access to another company's data.
+
    **4e. Verify the agent knows the link:**
    After writing config, the agent MUST be able to answer "what is my social media planner link?" by reading `content_sheet_url` from MEMORY.md. Test this before proceeding.
 
    **4f. Google Sheets write auth — TWO webhooks, TWO purposes (do NOT confuse them):**
-   - **`social-planner-sheet-create`** (`POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`): used ONCE at install time to create a new Google Sheet for the client (copies the template, sets permissions). Payload: `{brandName, clientEmail}`. Never call this for row logging.
-   - **`social-planner-row-append`** (`POST https://main.blackceoautomations.com/webhook/social-planner-row-append`): used on EVERY publish cycle to append a content row to the client's existing sheet. Payload: `{sheetId, row: {Week Of, Theme of the Week, Core Content, ..., Notes}}`. This is the row-log step in the Media Delivery Contract. **Image cells MUST be sent as `=IMAGE("https://...", 1)` formula strings, not raw URLs** — raw URLs render as unclickable text. The webhook writes the value verbatim with `valueInputOption: USER_ENTERED`, so a formula string is evaluated by Sheets into an inline image. The webhook also resizes the target image column to 108px wide and the data row to 133px tall so the thumbnail displays at full size.
+   - **`social-planner-sheet-create`** (`POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`): used ONCE at install time to create a new Google Sheet for the client (copies the template, sets the anyone/writer link permission). Payload: `{brandName, clientEmail, company_id, planner_kind, templateSheetId, timezone?}`; receipt: `{status, deduped, sheetId, sheetUrl, sheetName, sharedWith, provisioning_key, schema_version}`. Never call this for row logging.
+   - **`social-planner-row-append`** (`POST https://main.blackceoautomations.com/webhook/social-planner-row-append`): used on EVERY publish cycle to **upsert** one keyed row per content revision and destination account into the client sheet's **Posts** tab, then update the Weekly Overview summary. Payload (schema_version 1.1.0): `{sheetId, company_id, cycle_id, content_revision, account_id, platform, account_name, format, scheduled_local, scheduled_utc, state, qc_state, preview_url?, remote_url?, theme?, week_of?, title?, notes?}`; receipt: `{success, sheetId, posts_updatedRange, overview_updatedRange, row_key, overview_key, mode, schema_version}`. The webhook is idempotent: it reads Posts back first — an existing `row_key` (`cycle_id::content_revision::account_id`) is UPDATED in place (upsert), never duplicated. A new content revision updates only its own keyed row. **platform is written verbatim** — no generic-platform fallback into TikTok or any named column; unfamiliar platform labels get their own Posts rows.
+
+   **4f-bis. Posts table + Weekly Overview summary (F23).** The Posts tab is the normalized source of truth — one row per content revision and destination account, keyed by `row_key`. Multiple accounts on the same platform and unfamiliar platform labels all get distinct keyed rows. Weekly Overview stays a summary derived from the Posts rows (new summary rows carry the technical key `OV::<cycle_id>::<content_revision>` in column U; legacy overview rows are retained untouched). The webhook also resizes the preview columns and appended data row (real `spreadsheet.batchUpdate` `updateDimensionProperties` calls) so `=IMAGE()` thumbnails display at full size.
 
    The agent does NOT use Google Workspace OAuth or a `client_secret.json`. Both webhooks run on the BlackCEO Automations operator n8n and use the operator's Google service account — clients need no Google credentials. **The agent itself never calls the Google Sheets API directly.** If either webhook is unavailable, log to `~/.openclaw/data/skill35/content-log.jsonl` and queue for retry. The agent NEVER responds "gws is not authenticated" or "I don't have a client_secret.json".
 
