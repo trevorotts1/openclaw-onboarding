@@ -43,7 +43,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/CHANGELOG.md",
-          "line": 59,
+          "line": 118,
           "must_contain": "funnel_matcher.py --match"
         }
       ]
@@ -82,7 +82,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/SKILL.md",
-          "line": 131,
+          "line": 132,
           "must_contain": "Skill 38 owns the conversations these CTAs generate"
         }
       ]
@@ -170,7 +170,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/INSTRUCTIONS.md",
-          "line": 105,
+          "line": 110,
           "must_contain": "Graphics department"
         }
       ]

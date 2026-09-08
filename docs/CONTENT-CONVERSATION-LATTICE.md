@@ -28,7 +28,7 @@ The edges described here were NOT green-field when this document was authored --
 Skill 35's campaign CTAs feed conversations into Skill 38 two ways: (1) the PRIMARY DM call-to-action drives FB/IG DMs into GHL Conversations, which land in Skill 38's existing inbound pipeline end to end; (2) the comment-reader surfaces each prospect comment reply as a synthetic handoff into Skill 38's `conversational-logs/` + playbook pipeline (public post comments are not a GHL Conversations event, so the comment-reader is what makes them reach the brain at all).
 
 > **Ground truth:** `38-conversational-ai-system/SKILL.md:35` -- "Skill 38 OWNS every inbound conversation those CTAs generate; Skill 35 never answers a conversation itself."
-> **Reciprocal cross-reference:** `35-social-media-planner/SKILL.md:131` -- "Cross-reference -- Skill 38 owns the conversations these CTAs generate."
+> **Reciprocal cross-reference:** `35-social-media-planner/SKILL.md:132` -- "Cross-reference -- Skill 38 owns the conversations these CTAs generate."
 
 ### 2. Posting tier ladder -- Skill 35 -> Skill 44
 
@@ -62,7 +62,7 @@ These two edges are part of the same G+K.1 relationship map and are documented h
 
 | Edge | Ground truth | Tag |
 |---|---|---|
-| Graphics dept <-> Skill 45 <-> Skill 35 (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:104-106` -- if the week's image asset comes from the Graphics department instead of the Image Generator step, it is gated by the Section 19a input-quality check: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5. Skill 45 owns the SOPs + `diu_validator.py`. | VERIFIED |
+| Graphics dept <-> Skill 45 <-> Skill 35 (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:108-112` -- if the week's image asset comes from the Graphics department instead of the Image Generator step, it is gated by the Section 19a input-quality check: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5. Skill 45 owns the SOPs + `diu_validator.py`. | VERIFIED |
 | Skill 54 vs Skill 59 (two anthologies, different scopes) | `54-anthology-writer/SKILL.md` header -- Skill 54 is the LOCAL-ONLY methodology/gates skill: it touches no n8n, no Airtable, no Google Docs/Drive, no Slack, no Gmail, no Go High Level at runtime. Skill 59 (`59-anthology-engine/`) is the n8n/GHL/board-integrated engine. The GHL/n8n audit scopes to 59 (and 58); 54 is exempt **by design**, not by omission. | VERIFIED |
 
 ---
@@ -73,12 +73,12 @@ These two edges are part of the same G+K.1 relationship map and are documented h
 |---|---|---|
 | **Skill 35 -> Skill 44** (posting rail) | `35-social-media-planner/INSTALL.md:240` | VERIFIED |
 | **Skill 35 -> Skill 6** (weekly landing page) | Skill 35 `CHANGELOG.md:59` (Gap C) -- the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty); matcher exists at `06-ghl-install-pages/tools/funnel_matcher.py` + `funnel_matcher_cli.py` | VERIFIED |
-| **Skill 35 -> Skill 38** (inbound conversations) | `38-conversational-ai-system/SKILL.md:35`; reciprocal `35-social-media-planner/SKILL.md:131` | VERIFIED |
+| **Skill 35 -> Skill 38** (inbound conversations) | `38-conversational-ai-system/SKILL.md:35`; reciprocal `35-social-media-planner/SKILL.md:132` | VERIFIED |
 | **Skill 38 -> Skill 44** (workflow builds + runtime) | `38-conversational-ai-system/SKILL.md:33` and `:55` | VERIFIED |
 | **Skill 6 -> Skill 44** (full-funnel seam) | `06-ghl-install-pages/SKILL.md:81-99` | VERIFIED |
 | **Skill 44 -> Skill 3** (browser backstop) | `44-convert-and-flow-operator/SKILL.md:3` | VERIFIED |
 | **Skill 6 -> Skill 3** (build rail) | `06-ghl-install-pages` browser-rail file set (see above) | VERIFIED |
-| **Graphics dept <-> Skill 45 <-> Skill 35** (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:104-106` | VERIFIED |
+| **Graphics dept <-> Skill 45 <-> Skill 35** (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:108-112` | VERIFIED |
 | **Skill 54 vs Skill 59** (two anthologies, different scopes) | `54-anthology-writer/SKILL.md` header | VERIFIED |
 
 ---

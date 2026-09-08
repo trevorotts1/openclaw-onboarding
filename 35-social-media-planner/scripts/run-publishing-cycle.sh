@@ -356,9 +356,14 @@ if [ ! -d "$OPENCLAW_DIR" ]; then
 fi
 
 SECRETS_ENV="$OPENCLAW_DIR/secrets/.env"
-SOUL_MD="$OPENCLAW_DIR/SOUL.md"
-IDENTITY_MD="$OPENCLAW_DIR/IDENTITY.md"
-USER_MD="$OPENCLAW_DIR/USER.md"
+# Brand/source files live in the workspace dir on OpenClaw >= 2026.x
+# ($OPENCLAW_DIR/workspace/SOUL.md), not the config root. Prefer workspace/,
+# fall back to config root (older layouts / container paths).
+# [fix 2026-09-08: Talaya box rc=3 — every cycle stopped, brand files unread]
+_ws="$OPENCLAW_DIR/workspace"
+SOUL_MD="$OPENCLAW_DIR/SOUL.md";      [ -f "$_ws/SOUL.md" ]      && SOUL_MD="$_ws/SOUL.md"
+IDENTITY_MD="$OPENCLAW_DIR/IDENTITY.md"; [ -f "$_ws/IDENTITY.md" ] && IDENTITY_MD="$_ws/IDENTITY.md"
+USER_MD="$OPENCLAW_DIR/USER.md";      [ -f "$_ws/USER.md" ]      && USER_MD="$_ws/USER.md"
 OPENCLAW_JSON="$OPENCLAW_DIR/openclaw.json"
 IMAGE_MODEL_JSON="$OPENCLAW_DIR/config/image-model.json"
 VIDEO_SPECS_JSON="$OPENCLAW_DIR/config/video-specs.json"
@@ -679,8 +684,11 @@ print(json.dumps({
                     "Staged by run-publishing-cycle.sh in the Marketing/Content workspace; "
                     "QC promotes review->done."),
     "status": "backlog",
-    "created_by_agent_id": agent,
-    "updated_by_agent_id": agent,
+    # [fix 2026-09-08] CC API validates *_agent_id as UUID — a string slug like
+    # "skill35-cycle" is rejected with HTTP 400, which silently skipped the
+    # board card on every fleet box. Route via department instead; the board
+    # assigns the agent (assigned_agent_id) itself.
+    "department": "social-media",
 }))
 PYEOF
 )"
@@ -724,7 +732,7 @@ except Exception:
 PYEOF
 if [ -n "$CC_TASK_ID" ]; then
   cc_call PATCH "/api/tasks/$CC_TASK_ID" \
-    "{\"status\":\"in_progress\",\"updated_by_agent_id\":\"$CC_AGENT_ID\"}" >/dev/null
+    "{\"status\":\"in_progress\"}" >/dev/null
   log "Command Center: task $CC_TASK_ID created and moved to in_progress."
 else
   log "Command Center: no task id captured (board optional) — continuing without a card."
@@ -799,7 +807,7 @@ log "Cycle $RUN_ID prepared. Hand-off file: $HANDOFF"
 # and STOPS. The independent QC auto-scorer / dept QC agent promotes review->done.
 if [ -n "$CC_TASK_ID" ]; then
   cc_call PATCH "/api/tasks/$CC_TASK_ID" \
-    "{\"status\":\"review\",\"updated_by_agent_id\":\"$CC_AGENT_ID\"}" >/dev/null
+    "{\"status\":\"review\"}" >/dev/null
   log "Command Center: task $CC_TASK_ID moved to review (QC promotes review->done; this script never sets done)."
 fi
 
