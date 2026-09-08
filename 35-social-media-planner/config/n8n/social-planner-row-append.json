@@ -1,5 +1,6 @@
 {
   "_PLACEHOLDER_NOTE": "RECONSTRUCTED-FROM-CONTRACT placeholder, not a live export. The production workflow (ID myXde6jbIIkaG5zW) lives on the n8n instance at main.blackceoautomations.com and could not be exported from this repo (it is not checked in anywhere, and the operator/Maria boxes were not reachable during the v21.0 fix pass). This file documents the EXPECTED node structure and payload contract so the workflow can be rebuilt or verified. Replace with a real `n8n export` when the instance is reachable. The webhook path, payload shape, Google Sheets target, valueInputOption, and column/row sizing below are the documented ground truth (CHANGELOG v2.6.0 + INSTALL.md Step 7 section 4f).",
+  "_F26_INPUT_CONTRACT": "Client text columns are written RAW (literal text — a caption beginning with =, +, -, @ or a formula-like string can NEVER execute). Only the designated preview column 'Image URL' (column D) accepts a server-generated =IMAGE(...) formula, and only when its URL validates (https://, no unescaped quotes). Any caller-supplied external-function expression (IMPORTXML, HYPERLINK, IMPORTDATA, IMPORTFEED, IMPORTHTML, GOOGLEFINANCE, SCRIPT, SERVER side effects) in ANY field is rejected with HTTP 400 before any Sheets call.",
   "name": "social-planner-row-append",
   "id": "myXde6jbIIkaG5zW",
   "active": true,
@@ -20,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Map body.row.* to the 20-column order of the 'Weekly Overview' tab (A:T).\n// Image cells arrive already wrapped as =IMAGE(\"url\", 1) formula strings from\n// the caller (SKILL.md Media Delivery Contract step 4) and are passed through\n// verbatim so Sheets evaluates them into inline images.\nconst body = $input.first().json.body || {};\nconst row = body.row || {};\nconst sheetId = body.sheetId;\nif (!sheetId) throw new Error('missing sheetId');\n\n// Documented column order (Weekly Overview!A:T). Fill unknown columns with ''.\nconst columns = [\n  'Week Of',            // A\n  'Theme of the Week',  // B\n  'Core Content',       // C\n  'Image URL',          // D  (=IMAGE() formula)\n  'Facebook',           // E\n  'Instagram',          // F\n  'LinkedIn',           // G\n  'X',                  // H\n  'TikTok',             // I\n  'Pinterest',          // J\n  'Google Business',    // K\n  'Blog',               // L\n  'Email',              // M\n  'Podcast',            // N\n  'Video',              // O\n  'Carousel',           // P\n  'Comments',           // Q\n  'Scheduled',          // R\n  'Overall',            // S\n  'Notes'               // T\n];\nconst values = columns.map((c) => (row[c] !== undefined && row[c] !== null ? row[c] : ''));\nreturn [{ json: { sheetId, values } }];"
+        "jsCode": "// F26 — Map body.row.* to the 20-column order of the 'Weekly Overview' tab (A:T)\n// with a RAW / formula-column split:\n//   * CLIENT TEXT columns (everything except 'Image URL') are coerced to RAW\n//     literal text: values are JSON.stringify()-prefixed strings the Sheets API\n//     writes with valueInputOption=RAW, so a caption starting with = or +\n//     becomes literal text, never a formula.\n//   * The DESIGNATED PREVIEW column 'Image URL' (D) is the ONLY column that may\n//     carry a formula, and only the server-generated =IMAGE(\"url\", 1) form with\n//     a validated https URL (no quotes, no escapes).\n//   * ANY caller-supplied external-function expression in ANY field is rejected\n//     with an Error -> the Respond: reject node answers HTTP 400 BEFORE any\n//     Sheets call. Tenant binding / sheet registration happens upstream.\nconst body = $input.first().json.body || {};\nconst row = body.row || {};\nconst sheetId = body.sheetId;\nif (!sheetId) throw new Error('missing sheetId');\n\n// External-function / formula-execution blocklist (case-insensitive). Matches\n// any '='-led expression invoking a data-fetching or script function.\nconst BANNED = /(^|[^A-Z0-9_])(IMPORTXML|IMPORTDATA|IMPORTFEED|IMPORTHTML|IMPORTRange|HYPERLINK|GOOGLEFINANCE|GOOGLETOURNAMENT|SCRIPT|EXEC|EVAL|IMAGE)\\s*\\(/i;\nconst FORMULA_LED = /^\\s*[=+@]/;\nconst HTTPS_IMG = /^=IMAGE\\(\\s*\"https:\\/\\/[^\"'\\\\()\\s]+\"(\\s*,\\s*\\d+)?\\s*\\)\\s*$/i;\n\n// Documented column order (Weekly Overview!A:T). Fill unknown columns with ''.\nconst columns = [\n  'Week Of',            // A\n  'Theme of the Week',  // B\n  'Core Content',       // C\n  'Image URL',          // D  (ONLY formula-eligible column: =IMAGE(...))\n  'Facebook',           // E\n  'Instagram',          // F\n  'LinkedIn',           // G\n  'X',                  // H\n  'TikTok',             // I\n  'Pinterest',          // J\n  'Google Business',    // K\n  'Blog',               // L\n  'Email',              // M\n  'Podcast',            // N\n  'Video',              // O\n  'Carousel',           // P\n  'Comments',           // Q\n  'Scheduled',          // R\n  'Overall',            // S\n  'Notes'               // T\n];\nconst FORMULA_COLUMNS = new Set(['Image URL']);\n\nfunction cellRaw(name, value) {\n  // Any formula-led caller text in a client-text column is LITERAL content:\n  // written via RAW it can never execute. Defense in depth: an EXPLICIT\n  // external-function expression is still refused outright in ANY column\n  // (F26: reject external-function expressions in caller-supplied fields).\n  if (value === undefined || value === null) return '';\n  const s = typeof value === 'string' ? value : String(value);\n  if (BANNED.test(s)) {\n    throw new Error('F26_REJECTED: external-function expression is not allowed in field \"' + name + '\" (rejected before any Sheets call)');\n  }\n  return s;\n}\n\nfunction cellPreview(name, value) {\n  const empty = { v: '', formula: false };\n  if (value === undefined || value === null || value === '') return empty;\n  const s = String(value).trim();\n  if (!s) return empty;\n  // BANNED external-function expressions are refused outright in ANY column.\n  if (BANNED.test(s) && !HTTPS_IMG.test(s)) {\n    throw new Error('F26_REJECTED: external-function expression is not allowed in field \"' + name + '\" (rejected before any Sheets call)');\n  }\n  if (FORMULA_LED.test(s)) {\n    // The ONLY formula accepted is the trusted server-generated =IMAGE(...) with\n    // a validated https URL and no unescaped quotes / whitespace tricks.\n    if (HTTPS_IMG.test(s)) return { v: s, formula: true };\n    throw new Error('F26_REJECTED: only the server-generated =IMAGE(\"https://...\", 1) formula is accepted in \"' + name + '\"; caller formulas are refused (rejected before any Sheets call)');\n  }\n  // Plain URL / text in the preview column stays RAW literal text.\n  return { v: s, formula: false };\n}\n\nconst values = [];\nconst rawValues = [];   // parallel: RAW write (client text, whole row literal)\nlet previewFormula = null;\nfor (const c of columns) {\n  if (FORMULA_COLUMNS.has(c)) {\n    const cell = cellPreview(c, row[c]);\n    rawValues.push(cell.formula ? '' : cell.v); // formulas do NOT go into the RAW write\n    if (cell.formula) previewFormula = cell.v;\n    values.push(cell.v);\n  } else {\n    const v = cellRaw(c, row[c]);\n    values.push(v);\n    rawValues.push(v);\n  }\n}\nreturn [{ json: { sheetId, values, rawValues, previewFormula, hasPreviewFormula: previewFormula !== null } }];"
       },
       "id": "code-map-columns",
       "name": "Map row to 20-column order",
@@ -31,19 +32,58 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A:T:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A:T:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"values\": [{{ JSON.stringify($json.values) }}]}",
+        "jsonBody": "={\"values\": [{{ JSON.stringify($json.rawValues) }}]}",
         "options": {}
       },
       "id": "http-append-row",
-      "name": "Sheets: append row (USER_ENTERED)",
+      "name": "Sheets: append row (RAW)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [440, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "4IoTZHAybRblm172",
+          "name": "BlackCEO Management Google Sheets (operator service account)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// F26: when the mapped row carried a trusted preview formula, patch ONLY the\n// 'Image URL' cell (column D) of the appended row with USER_ENTERED so Sheets\n// evaluates the server-generated =IMAGE(...) into an inline preview. The RAW\n// append above already wrote every client-text column literally. Non-formula\n// rows pass straight through (single write, no second call).\nconst mapped = $('Map row to 20-column order').first().json;\nconst appendRange = $json.updatedRange || '';\nif (!mapped.hasPreviewFormula) {\n  return [{ json: { skipPreviewPatch: true, updatedRange: appendRange } }];\n}\n// updatedRange looks like 'Weekly Overview'!A12:T12 — derive the D-cell of the\n// appended row from it; fall back to a relative last-row lookup.\nconst m = appendRange.match(/([A-Z]+)(\\d+):([A-Z]+)(\\d+)/);\nlet cellA1 = null;\nif (m) {\n  const rowIndex = Number(m[4]);\n  cellA1 = 'D' + rowIndex;\n}\nif (!cellA1) {\n  return [{ json: { skipPreviewPatch: true, updatedRange: appendRange, note: 'could not derive appended row index from updatedRange — preview formula NOT patched' } }];\n}\nreturn [{ json: { skipPreviewPatch: false, cellA1, previewFormula: mapped.previewFormula } }];"
+      },
+      "id": "code-preview-patch",
+      "name": "Derive preview formula patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 120]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Map row to 20-column order').first().json.sheetId }}/values/Weekly%20Overview!{{ $json.cellA1 }}?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"values\": [[{{ JSON.stringify($json.previewFormula) }}]]}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-preview-patch",
+      "name": "Sheets: write preview formula (USER_ENTERED, D only)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 120],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "4IoTZHAybRblm172",
@@ -59,19 +99,32 @@
       "name": "Resize image column + row",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 0]
+      "position": [960, 0]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\"success\": true, \"sheetId\": \"{{ $('Map row to 20-column order').item.json.sheetId }}\", \"updatedRange\": \"{{ $json.updatedRange || 'Weekly Overview' }}\"}",
+        "responseBody": "={\"success\": true, \"sheetId\": \"{{ $('Map row to 20-column order').item.json.sheetId }}\", \"updatedRange\": \"{{ $json.updatedRange || $('Derive preview formula patch').first().json.updatedRange || 'Weekly Overview' }}\"}",
         "options": {}
       },
       "id": "respond-success",
       "name": "Respond: success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [880, 0]
+      "position": [1160, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={\"success\": false, \"error\": \"{{ $json.error || 'F26_REJECTED: payload refused before any Sheets call' }}\"}",
+        "options": {}
+      },
+      "id": "respond-reject",
+      "name": "Respond: reject (400)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 220]
     }
   ],
   "connections": {
@@ -79,9 +132,21 @@
       "main": [[{ "node": "Map row to 20-column order", "type": "main", "index": 0 }]]
     },
     "Map row to 20-column order": {
-      "main": [[{ "node": "Sheets: append row (USER_ENTERED)", "type": "main", "index": 0 }]]
+      "main": [
+        [{ "node": "Sheets: append row (RAW)", "type": "main", "index": 0 }],
+        [{ "node": "Respond: reject (400)", "type": "main", "index": 0 }]
+      ]
     },
-    "Sheets: append row (USER_ENTERED)": {
+    "Sheets: append row (RAW)": {
+      "main": [[{ "node": "Derive preview formula patch", "type": "main", "index": 0 }]]
+    },
+    "Derive preview formula patch": {
+      "main": [
+        [{ "node": "Sheets: write preview formula (USER_ENTERED, D only)", "type": "main", "index": 0 }],
+        [{ "node": "Resize image column + row", "type": "main", "index": 0 }]
+      ]
+    },
+    "Sheets: write preview formula (USER_ENTERED, D only)": {
       "main": [[{ "node": "Resize image column + row", "type": "main", "index": 0 }]]
     },
     "Resize image column + row": {
