@@ -81,8 +81,15 @@ async function ensureSchema(env) {
 export async function runLegacyMigration(env) {
   if (!env.DB) return { session_backfills: [], session_quarantined: [], intake_backfills: [], intake_quarantined: [] };
   await ensureSchema(env);
+  // PRES-009 repair (QC): legacy rows are detected by MISSING tenant identity
+  // (company_id IS NULL AND installation_id IS NULL), not by tenant_state.
+  // ADD COLUMN ... DEFAULT 'active' backfills pre-existing rows with 'active',
+  // so the old `tenant_state IS NULL` predicate matched zero rows on a real
+  // legacy DB and the migration never ran. New rows always carry company_id,
+  // backfilled rows carry installation_id, so the double-NULL marks exactly
+  // the un-migrated legacy set; already-quarantined rows are never touched.
   const sessionRes = await env.DB.prepare(
-    "SELECT token, run_id, box_id FROM sessions WHERE tenant_state IS NULL OR tenant_state = ''",
+    "SELECT token, run_id, box_id, company_id, tenant_state FROM sessions WHERE company_id IS NULL AND installation_id IS NULL AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
   ).all();
   const sessionRows = (sessionRes && sessionRes.results) || [];
   const byRun = new Map();
@@ -100,20 +107,20 @@ export async function runLegacyMigration(env) {
       const err = opaqueIdError("installation_id", box);
       if (!err) {
         await env.DB.prepare(
-          "UPDATE sessions SET installation_id = ?, tenant_state = 'active' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '')",
+          "UPDATE sessions SET installation_id = ?, tenant_state = 'active' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
         ).bind(box, r.token).run();
         sessionBackfills.push({ token: r.token, installation_id: box });
         continue;
       }
     }
     await env.DB.prepare(
-      "UPDATE sessions SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_run_reused_across_boxes' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '')",
+      "UPDATE sessions SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_run_reused_across_boxes' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
     ).bind(r.token).run();
     sessionQuarantined += 1;
   }
 
   const intakeRes = await env.DB.prepare(
-    "SELECT session_id, intake_json FROM intakes WHERE tenant_state IS NULL OR tenant_state = ''",
+    "SELECT session_id, intake_json FROM intakes WHERE company_id IS NULL AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
   ).all();
   const intakeRows = (intakeRes && intakeRes.results) || [];
   const intakeBackfills = [];
@@ -126,12 +133,12 @@ export async function runLegacyMigration(env) {
     if (!opaqueIdError("company_id", c) && !opaqueIdError("installation_id", i)
       && !opaqueIdError("presentation_id", p) && !opaqueIdError("run_id", run)) {
       await env.DB.prepare(
-        "UPDATE intakes SET company_id = ?, installation_id = ?, presentation_id = ?, run_id = ?, tenant_state = 'active' WHERE session_id = ? AND (tenant_state IS NULL OR tenant_state = '')",
+        "UPDATE intakes SET company_id = ?, installation_id = ?, presentation_id = ?, run_id = ?, tenant_state = 'active' WHERE session_id = ? AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
       ).bind(c, i, p, run, r.session_id).run();
       intakeBackfills.push({ session_id: r.session_id, company_id: c });
     } else {
       await env.DB.prepare(
-        "UPDATE intakes SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_owner_unknown', quarantine_remediation = ? WHERE session_id = ? AND (tenant_state IS NULL OR tenant_state = '')",
+        "UPDATE intakes SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_owner_unknown', quarantine_remediation = ? WHERE session_id = ? AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
       ).bind(
         "Re-store the intake with company_id/installation_id/presentation_id/run_id (mint a session first), or delete the row explicitly if it is junk. The worker never guesses an owner.",
         r.session_id,

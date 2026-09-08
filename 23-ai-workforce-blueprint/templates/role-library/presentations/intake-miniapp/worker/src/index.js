@@ -74,8 +74,15 @@ async function ensureSchema(env) {
 export async function runLegacyMigration(env) {
   if (!env.DB) return { backfills: [], quarantined: [] };
   await ensureSchema(env);
+  // PRES-009 repair (QC): legacy rows are detected by MISSING tenant identity
+  // (company_id IS NULL AND installation_id IS NULL), not by tenant_state.
+  // ADD COLUMN ... DEFAULT 'active' backfills pre-existing rows with 'active',
+  // so the old `tenant_state IS NULL` predicate matched zero rows on a real
+  // legacy DB and the migration never ran. New rows always carry company_id,
+  // backfilled rows carry installation_id, so the double-NULL marks exactly
+  // the un-migrated legacy set; already-quarantined rows are never touched.
   const res = await env.DB.prepare(
-    "SELECT token, run_id, box_id, tenant_state FROM sessions WHERE tenant_state IS NULL OR tenant_state = ''",
+    "SELECT token, run_id, box_id, company_id, tenant_state FROM sessions WHERE company_id IS NULL AND installation_id IS NULL AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
   ).all();
   const rows = (res && res.results) || [];
   const counts = new Map();
@@ -88,14 +95,17 @@ export async function runLegacyMigration(env) {
   let quarantined = 0;
   for (const r of rows) {
     const boxes = counts.get(String(r.run_id));
-    if (boxes && boxes.size === 1) {
+    const box = boxes && boxes.size === 1 ? [...boxes][0] : null;
+    // An invalid opaque box id is never backfilled as an installation id —
+    // quarantine with a reason instead of guessing (matches tenant.js plan).
+    if (box && !opaqueIdError("installation_id", box)) {
       await env.DB.prepare(
-        "UPDATE sessions SET installation_id = ?, tenant_state = 'active' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '')",
-      ).bind([...boxes][0], r.token).run();
-      backfills.push({ token: r.token, installation_id: [...boxes][0] });
+        "UPDATE sessions SET installation_id = ?, tenant_state = 'active' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
+      ).bind(box, r.token).run();
+      backfills.push({ token: r.token, installation_id: box });
     } else {
       await env.DB.prepare(
-        "UPDATE sessions SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_run_reused_across_boxes' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '')",
+        "UPDATE sessions SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_run_reused_across_boxes' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '' OR tenant_state = 'active')",
       ).bind(r.token).run();
       quarantined += 1;
     }

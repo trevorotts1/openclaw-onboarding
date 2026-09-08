@@ -236,11 +236,20 @@ for (const [label, makeTestEnv, worker] of [
   test(`[${label}] quarantined legacy session is withheld (423), other sessions unaffected`, async () => {
     const env = makeTestEnv();
     if (env.DB) {
-      // Seed an ambiguous legacy row the way the pre-PRES-009 worker left it.
+      // Seed an ambiguous legacy row the way the pre-PRES-009 worker left it:
+      // no tenant tuple, tenant_state DEFAULT-prefilled to 'active' by the
+      // ADD COLUMN migration. runLegacyMigration must quarantine it because
+      // the same run name exists under a second box (the PRES-009 collision).
       env.DB.db.prepare(
-        "INSERT INTO sessions (token, run_id, box_id, question_set, questions_json, tenant_state, quarantine_reason, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 'quarantined', 'ambiguous_legacy_run_reused_across_boxes', 'open', 1, 99999999999)",
-      ).run("f".repeat(32), "legacy-run", "box-a", "standard", JSON.stringify(PAYLOAD));
-      const res = await worker.default.fetch(req(`https://w.test/api/sessions/${"f".repeat(32)}`), env);
+        "INSERT INTO sessions (token, run_id, box_id, question_set, questions_json, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 'complete', 1, 99999999999)",
+      ).run("e".repeat(32), "legacy-run", "box-a", "standard", JSON.stringify(PAYLOAD));
+      env.DB.db.prepare(
+        "INSERT INTO sessions (token, run_id, box_id, question_set, questions_json, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 'open', 2, 99999999999)",
+      ).run("d".repeat(32), "legacy-run", "box-b", "standard", JSON.stringify(PAYLOAD));
+      const D1ish = { prepare: (sql) => env.DB.prepare(sql), exec: (sql) => env.DB.exec(sql) };
+      const mig = await worker.runLegacyMigration({ DB: D1ish });
+      assert.ok((mig.quarantined ?? mig.session_quarantined ?? 0) >= 1, "ambiguous legacy reuse must quarantine, not backfill");
+      const res = await worker.default.fetch(req(`https://w.test/api/sessions/${"d".repeat(32)}`), env);
       assert.equal(res.status, 423, "quarantined session must be withheld, not served to any company");
     } else {
       // R2 shape: no flat-file legacy path in this test; assert the API still
