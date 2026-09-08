@@ -2448,12 +2448,13 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
     consumed: List[Path] = []
     try:
         from presentation_job.manifest import Manifest
-        scripts_dir = Path(__file__).resolve().parent
-        cand = (scripts_dir.parent / "sops" / "PIPELINE-MANIFEST.json").resolve()
-        if not cand.is_file():
-            cand = scripts_dir.parent.parent.parent.parent.parent / \
-                "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
-        if cand.is_file():
+        # QC-OPUS seam repair: resolve via the run's pinned manifest / dept
+        # sops / walk-up — the SAME resolution the aggregate's consumed-
+        # coverage check uses, so stamps minted here always match what the
+        # aggregate verifies (the old hand-rolled candidates missed in BOTH
+        # layouts and silently downgraded to report-stamp-only).
+        cand = _qc_manifest_for_run(run_dir)
+        if cand is not None:
             man = Manifest(cand)
             ph = man.phase_or_none(phase_id)
             import glob as _glob
@@ -2493,18 +2494,54 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
             pass
 
 
+def _qc_manifest_for_run(run_dir: Optional[Path] = None) -> Optional[Path]:
+    """PRES-042 (QC-OPUS seam repair): resolve the PIPELINE-MANIFEST.json the
+    SAME way the rest of the engine and the aggregate do, so the reviewer
+    stamps the dispatcher mints and the consumed-coverage the aggregate
+    verifies always agree. Resolution order (never guesses past this list):
+      1. the run's own pinned state.json manifest_path (authoritative per-run
+         — the exact file the engine was launched with);
+      2. <scripts_dir's parent>/sops/PIPELINE-MANIFEST.json (deployed
+         department layout: manifest lives at <dept_root>/sops/, NOT
+         scripts/sops/);
+      3. manifest_source.find_repo_root() walk-up to the repo cluster copy
+         (the canonical resolver qc_aggregate/_resolve_domain_paths uses).
+    Returns None only when nothing resolves — the callers then degrade to the
+    documented best-effort behavior (report-level stamp only / renderer-pin
+    rubric), which the aggregate's own manifest-unresolvable branch mirrors."""
+    if run_dir is not None:
+        try:
+            state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+            mp = state.get("manifest_path")
+            if mp and Path(mp).is_file():
+                return Path(mp).resolve()
+        except (OSError, json.JSONDecodeError):
+            pass
+    scripts_dir = Path(__file__).resolve().parent  # .../scripts/presentation_job
+    cand = (scripts_dir.parent.parent / "sops" / "PIPELINE-MANIFEST.json").resolve()
+    if cand.is_file():
+        return cand
+    try:
+        from manifest_source import find_repo_root
+        root = find_repo_root(scripts_dir)
+        if root is not None:
+            cand = (root / "universal-sops" / "presentation-slide-craft"
+                    / "PIPELINE-MANIFEST.json")
+            if cand.is_file():
+                return cand
+    except Exception:  # noqa: BLE001 — resolver unavailability is not a stamp crash
+        pass
+    return None
+
+
 def _qc_rubric_version() -> str:
     """The rubric version a QC phase graded against: the manifest revision
     when resolvable, else the scripts dir's CANONICAL-RENDERER-PIN hash
     (deterministic, reproducible)."""
     try:
         from presentation_job.manifest import Manifest
-        scripts_dir = Path(__file__).resolve().parent
-        cand = (scripts_dir.parent / "sops" / "PIPELINE-MANIFEST.json").resolve()
-        if not cand.is_file():
-            cand = scripts_dir.parent.parent.parent.parent.parent / \
-                "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
-        if cand.is_file():
+        cand = _qc_manifest_for_run()
+        if cand is not None:
             man = Manifest(cand)
             version = getattr(man, "version", None)
             if version:

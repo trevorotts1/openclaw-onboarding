@@ -366,7 +366,7 @@ def test_upstream_mutation_after_pass_blocks_until_fresh_review(tmp_path):
     assert _es.consumed_coverage_reasons(rd, PHASE, upstream) == []
     # Mutate the upstream AFTER the pass: coverage breaks.
     upstream.write_text("# deck copy v2 -- repaired slide\n", encoding="utf-8")
-    reasons = _es.consumed_coverage_reasons(rd, PHASE, upstream)
+    reasons = es.consumed_coverage_reasons(rd, PHASE, upstream)
     assert reasons and "CURRENT content" in reasons[0]
     # Fresh review of the NEW bytes restores coverage (production re-stamps
     # the producer author row at the repair write site, then QC re-stamps).
@@ -382,3 +382,58 @@ def test_upstream_mutation_after_pass_blocks_until_fresh_review(tmp_path):
          "stamped_at": _es.utcnow()})
     store.write_text(json.dumps(obj, indent=2), encoding="utf-8")
     assert _es.consumed_coverage_reasons(rd, PHASE, upstream) == []
+
+
+def test_dispatcher_reviewer_stamp_covers_manifest_consumes_in_repo_layout(tmp_path):
+    """QC-OPUS seam repair (PRES-042): the dispatcher's _stamp_qc_reviewer must
+    resolve the manifest the SAME way qc_aggregate's _resolve_consumes does
+    (run-pinned state.json > dept sops/ > find_repo_root walk-up). The previous
+    hand-rolled candidates pointed at scripts/sops/ (wrong parent) and a fixed
+    depth fallback, so in the REPO layout the dispatcher minted report-only
+    stamps while the aggregate's walk-up resolver still demanded consumed
+    coverage — an undeployable always-block. This test pins the repaired seam:
+    from THIS scripts dir (repo layout, no sops/ sibling), the dispatcher's
+    reviewer stamp must cover the phase's manifest consumes at their current
+    sha, and the aggregate's consumed-coverage check must agree."""
+    sys.path.insert(0, str(SCRIPTS))
+    from presentation_job import dispatcher as _disp
+    rd = _rd(tmp_path)
+    # Stage exactly what a production P1Q-COPY-QC dispatch sees: the consumed
+    # upstream artifact (produced by its own author execution) + the report.
+    upstream = rd / "working" / "copy" / "slides_copy.md"
+    upstream.parent.mkdir(parents=True, exist_ok=True)
+    upstream.write_text("# deck copy (production topology)\n", encoding="utf-8")
+    es.author_stamp(rd, "P4-COPY", upstream, model="deepseek-v4-pro",
+                    provider="deepseek-direct")
+    report = _report(rd)
+    # No state.json manifest pin: exercise the dept-sops / walk-up legs.
+    _disp._stamp_qc_reviewer(rd, PHASE, report, model="kimi-v4-a",
+                             provider="moonshot")
+    rows = es._load_stamps(rd, PHASE).get("rows") or []
+    reviewed = {r.get("reviewed_artifact") for r in rows
+                if r.get("kind") == "reviewer"}
+    assert "working/copy/slides_copy.md" in reviewed, (
+        f"dispatcher reviewer stamp must cover the manifest consumes "
+        f"(got {reviewed!r}) — the repo-layout seam is open")
+    assert "working/qc/copy_qc_report.json" in reviewed, (
+        "dispatcher reviewer stamp must still attest the report itself")
+    # The aggregate's own coverage check now agrees: zero blocks.
+    reasons = es.consumed_coverage_reasons(rd, PHASE, upstream)
+    assert reasons == [], reasons
+
+
+def test_qc_manifest_for_run_prefers_state_pin(tmp_path):
+    """The run's pinned state.json manifest_path is authoritative: when present
+    it wins over every layout heuristic, so stamps and the engine always grade
+    against the file this run was launched with."""
+    sys.path.insert(0, str(SCRIPTS))
+    from presentation_job import dispatcher as _disp
+    rd = _rd(tmp_path)
+    fake = rd / "elsewhere" / "PIPELINE-MANIFEST.json"
+    fake.parent.mkdir(parents=True)
+    fake.write_text(json.dumps({"manifest_version": "test-pin", "phases": []}),
+                    encoding="utf-8")
+    (rd / "state.json").write_text(
+        json.dumps({"manifest_path": str(fake)}), encoding="utf-8")
+    got = _disp._qc_manifest_for_run(rd)
+    assert got == fake.resolve(), got
