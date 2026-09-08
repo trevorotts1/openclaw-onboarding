@@ -19,7 +19,8 @@
 #   wrangler r2 bucket create presentation-intake   (idempotent if it exists)
 #   wrangler secret put INTAKE_ADMIN_TOKEN           (box->worker auth)
 #   wrangler secret put COMMAND_CENTER_URL           (optional, CC board base URL)
-#   wrangler secret put CC_DEPT_START_TOKEN          (optional, falls back to INTAKE_ADMIN_TOKEN)
+#   wrangler secret put CC_HANDOFF_SECRET            (PRES-007: REQUIRED — raw-body HMAC for /api/dept-start, matches the destination box's WEBHOOK_SECRET; see the secrets block below)
+#   wrangler secret put CC_DEPT_START_TOKEN          (optional bearer alongside the HMAC; NO INTAKE_ADMIN_TOKEN fallback)
 #   add route: <PLACEHOLDER_FLEET_DOMAIN's presentation-interview subdomain>/* -> presentation-intake
 
 name               = "presentation-intake"
