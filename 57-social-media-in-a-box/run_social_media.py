@@ -213,36 +213,83 @@ def _live_mode(run_dir):
 
 
 def _live_ghl_post_listing(cfg):
-    """FIX-S36-60: GET the live GHL social post listing for the location with the
-    CLIENT's own PIT (never printed). Returns a list of GHL post-id strings present
-    in the account, or None when the listing is unconfirmable (fail-closed upstream)."""
-    import urllib.request
-    pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
-    loc = str(cfg.get("locationId", ""))
-    if not pit or not loc:
-        return None
-    url = "https://services.leadconnectorhq.com/social-media-posting/%s/posts" % loc
+    """FIX-S36-60 + F09: the live GHL social post listing for the location with
+    the CLIENT's own PIT (never printed), via the DOCUMENTED S2 contract
+    (POST /social-media-posting/{locationId}/posts/list with number-string
+    skip/limit, results wrapper, skip/offset pagination — scripts/
+    ghl_contracts.py is the one shared implementation). Returns a list of GHL
+    post-id strings present in the account, or None when the listing is
+    unconfirmable (fail-closed upstream). A CONTRACT-shape failure is NEVER
+    misreported as zero posts."""
     try:
-        req = urllib.request.Request(url, headers={"Authorization": "Bearer %s" % pit,
-                                                   "Version": "2021-07-28"})
-        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec - client's own endpoint
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception:
+        sys.path.insert(0, str(SCRIPTS))
+        import ghl_contracts  # noqa: E402
+        pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
+        loc = str(cfg.get("locationId", ""))
+        if not pit or not loc:
+            return None
+        posts = ghl_contracts.fetch_posts(pit, loc)
+        return [p["post_id"] for p in posts if p.get("post_id")]
+    except Exception:  # noqa: BLE001 — unconfirmable stays fail-closed upstream
         return None
-    if not isinstance(data, dict):
-        return None
-    posts = data.get("posts") or data.get("results") or data.get("data")
-    if isinstance(posts, dict):
-        posts = posts.get("posts") or posts.get("results")
-    if not isinstance(posts, list):
-        return None
-    ids = []
-    for p in posts:
-        if isinstance(p, dict):
-            pid = p.get("id") or p.get("_id") or p.get("postId")
-            if pid is not None:
-                ids.append(str(pid))
-    return ids
+
+
+def _live_ghl_account_plan(cfg):
+    """F06/F09: the live per-account plan for this location (S1 documented
+    contract, IDs preserved). Returns (accounts, error_dict|None): accounts is
+    [] with an error dict when the discovery fails classified; error carries
+    {error_class, retry_after} so callers can distinguish authentication /
+    scope / disconnected_account / rate_limited / transient / contract."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import ghl_contracts  # noqa: E402
+        pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
+        loc = str(cfg.get("locationId", ""))
+        accounts = ghl_contracts.fetch_accounts(pit, loc)
+        return accounts, None
+    except Exception as exc:  # noqa: BLE001 — classified below
+        err = getattr(exc, "error_class", "transient")
+        return [], {"error_class": err, "retry_after": getattr(exc, "retry_after", None)}
+
+
+def _per_account_publish_results(run_dir, cfg):
+    """F06: derive the per-account publish results from the P0 per-account plan
+    (working/preflight/preflight_report.json -> account_plan.accounts). Each
+    account gets its OWN result row {account_id, platform, health,
+    publish_state, note} — two Facebook accounts stay two rows (no
+    platform-level collapse). needs_reconnect/failed accounts are EXPLICIT
+    skipped/failed rows (never silent, never a run-wide block); healthy
+    accounts proceed. Writes working/publish/account_results.json. Returns the
+    list (empty when no plan was staged — back-compat with pre-F06 runs)."""
+    report = _json(run_dir, "working/preflight/preflight_report.json", {}) or {}
+    acct_plan = report.get("account_plan") or {}
+    rows = acct_plan.get("accounts") if isinstance(acct_plan, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return []
+    staged = _json(run_dir, "working/publish/posted_ids.json")
+    staged_ids = {str(x) for x in staged} if isinstance(staged, list) else set()
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("account_id"):
+            continue
+        health = str(r.get("health") or "ready")
+        if health in ("needs_reconnect", "failed", "retrying"):
+            state, note = ("failed" if health != "retrying" else "skipped"), \
+                ("needs attention: %s (%s)" % (health, r.get("exclusion_reason") or "reconnect the channel"))
+        else:
+            state = "ready"
+            note = "publish proceeds on this account" if health == "ready" \
+                else str(r.get("exclusion_reason") or "skipped")
+        out.append({"account_id": r["account_id"], "platform": r.get("platform", ""),
+                    "account_name": r.get("account_name", ""), "health": health,
+                    "publish_state": state, "note": note})
+    try:
+        p = run_dir / "working" / "publish" / "account_results.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return out
 
 
 def _chk_publish(run_dir):
@@ -297,6 +344,9 @@ def _chk_publish(run_dir):
             return False, "de-dup BLOCK (AF-SM-DOUBLE-POST): a duplicate content-fingerprint or " \
                           "occupied slot was detected. Clear with `clean`/reschedule or a logged " \
                           "owner re-post token."
+
+    # -- F06 PER-ACCOUNT RESULTS (recorded for the owner Q&A / partial delivery) --
+    _per_account_publish_results(run_dir, cfg)
 
     # -- POST-PUBLISH LIVE VERIFY (FIX-S36-60) --------------------------------
     # `done` is claimed ONLY from an INDEPENDENT live GHL post-listing verify, not
