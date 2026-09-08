@@ -87,19 +87,23 @@ GOOGLE SHEET CONTENT CALENDAR (manual webhook sequence)
     1) ONCE, at install (first run only) — create the sheet:
          curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \\
            -H "Content-Type: application/json" \\
-           -d '{"brandName":"<brand>","clientEmail":"<email>","idempotencyKey":"<key>"}'
-       -> returns {sheetUrl, sheetId, sheetName}; store sheetId in MEMORY.md.
-       Never call this again for an existing client (idempotencyKey reconciles
-       a create-then-crash rerun).
+           -d '{"brandName":"<brand>","clientEmail":"<email>","company_id":"<company_id>","planner_kind":"social-planner","templateSheetId":"<template_sheet_id>"}'
+       -> returns {status, deduped, sheetUrl, sheetId, sheetName, provisioning_key, schema_version};
+       store sheetId in MEMORY.md. Never call this again for an existing client
+       (the provisioning key company_id::planner_kind reconciles a
+       create-then-crash rerun: the webhook returns the existing sheet, deduped=true).
 
-    2) EVERY publish cycle — log each content row (after media is uploaded to
-       the GHL CDN and you have the CDN url):
+    2) EVERY publish cycle — upsert each keyed content row (after media is
+       uploaded to the GHL CDN and you have the CDN url):
          curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-row-append" \\
            -H "Content-Type: application/json" \\
-           -d '{"sheetId":"<content_sheet_id>","row":{"Week Of":"...","Theme of the Week":"...","Core Content":"...","Image URL":"=IMAGE(\\"https://assets.cdn.filesafe.space/...\\", 1)","Notes":"<CDN url>"}}'
-       Image cells MUST be =IMAGE("url", 1) formula strings (not raw URLs); the
-       webhook writes them with valueInputOption=USER_ENTERED and sizes the
-       image column (~108px) and row (~133px). If a webhook call fails, log to
+           -d '{"sheetId":"<content_sheet_id>","schema_version":"1.1.0","company_id":"<company_id>","cycle_id":"<cycle>","content_revision":"<rev>","account_id":"<account_id>","platform":"<platform>","account_name":"<name>","format":"<format>","scheduled_local":"<local>","scheduled_utc":"<utc>","state":"<state>","qc_state":"<qc>","preview_url":"=IMAGE(\\"https://assets.cdn.filesafe.space/...\\", 1)","remote_url":"<cdn url>"}'
+       One row per content revision and destination account, upserted by
+       row_key cycle_id::content_revision::account_id (replay updates in
+       place, never duplicates). platform is written verbatim — no fallback.
+       Image previews MUST be =IMAGE("url", 1) formula strings in
+       preview_url; the webhook sizes the preview columns/row via batchUpdate.
+       If a webhook call fails, log to
        ~/.openclaw/data/skill35/content-log.jsonl and retry next cycle.
 
   These calls are issued by the publishing agent at runtime, not by this script.
