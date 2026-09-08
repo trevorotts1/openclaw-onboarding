@@ -51,6 +51,7 @@ import inspect
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -4272,6 +4273,33 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = target.with_suffix(target.suffix + f".partial-{os.getpid()}-{attempt}")
         tmp_path.write_text(payload, encoding="utf-8")
+        # PRES-018 fencing at publication (same contract as the fanout
+        # aggregate above): a single-target artifact is published only while
+        # the claim file still names THIS worker. A worker whose claim was
+        # stolen mid-call must not overwrite the new owner's output -- the
+        # stale write is quarantined and the attempt reports lost, never a
+        # pretended win. No claim file at all = no fencing context (operator
+        # --once dispatches and tests): publication proceeds.
+        _pub_claim_file = _claim_path(run_dir, phase_id)
+        if _pub_claim_file.exists():
+            _pub_rec = _read_claim_record(_pub_claim_file) or {}
+            if _pub_rec.get("worker") != worker_id or \
+                    _pub_rec.get("owner_token") != _current_claim_token(run_dir, phase_id, worker_id):
+                quarantine = target.with_name(
+                    target.name + f".stale-quarantine-{worker_id}")
+                try:
+                    tmp_path.replace(quarantine)
+                except OSError:
+                    tmp_path.unlink(missing_ok=True)
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt,
+                    "status": "stale_quarantined",
+                    "reason": ("claim lost before publication -- single-target "
+                               f"output quarantined to {quarantine.name}, not published"),
+                })
+                return DispatchResult(
+                    phase_id, "exhausted", attempt,
+                    ["claim lost before publication; output quarantined"])
         os.replace(tmp_path, target)  # atomic on POSIX, same filesystem -- no torn read
 
         verifier_ok, verifier_reasons = _verify(phase_id, run_dir)
@@ -4558,6 +4586,34 @@ def _dispatch_phase_fanout_units(
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".partial")
     tmp.write_text(merged_text + "\n", encoding="utf-8")
+    # PRES-018 fencing at publication: the aggregated artifact is published
+    # only while THIS worker's claim still owns the phase. A worker whose
+    # claim was stolen (dead holder reclaimed) must not overwrite the NEW
+    # owner's output with its own stale result -- the stale aggregate is
+    # quarantined (kept, renamed, never published) and the dispatch result
+    # says so instead of pretending a win. NO claim file at all means no
+    # fencing context (direct dispatch_one callers -- an operator --once,
+    # tests): publication proceeds.
+    _claim_file = _claim_path(run_dir, phase_id)
+    if _claim_file.exists():
+        claim_rec = _read_claim_record(_claim_file) or {}
+        if claim_rec.get("worker") != worker_id \
+                or claim_rec.get("owner_token") != _current_claim_token(run_dir, phase_id, worker_id):
+            quarantine = target.with_name(
+                target.name + f".stale-quarantine-{worker_id}")
+            try:
+                tmp.replace(quarantine)
+            except OSError:
+                tmp.unlink(missing_ok=True)
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": len(results),
+                "status": "stale_quarantined",
+                "reason": ("claim lost before publication -- aggregated output "
+                           f"quarantined to {quarantine.name}, not published"),
+            })
+            return DispatchResult(
+                phase_id, "exhausted", len(results),
+                ["claim lost before publication; output quarantined"])
     tmp.replace(target)
 
     ok, reasons = _verify(phase_id, run_dir)
@@ -4594,93 +4650,328 @@ def _dispatch_phase_fanout_units(
 #                                      claim from a process this user cannot
 #                                      signal-probe (PermissionError edge).
 #   pid missing/unreadable (legacy) -> fall back to the age heuristic exactly.
+#
+# PRES-018 (2026-09-08): claim OWNERSHIP, not just claim liveness. FIX 105
+# fixed the crash case but left two holes the reproduction caught live:
+#
+#   1. AGE STEAL: a claim owned by a LIVE process became stealable solely
+#      because file age exceeded SINGLE_ATTEMPT_BUDGET_S *
+#      CLAIM_STALE_MULTIPLIER. A legitimately long model round-trip
+#      (thinking MAX at large max_tokens) got reaped mid-flight and a
+#      second dispatcher re-ran PAID work concurrently.
+#   2. UNCONDITIONAL RELEASE: release_claim() unlinked whichever claim file
+#      was there NOW -- an old owner's slow finally could delete a NEW
+#      owner's claim; overlapping dispatchers deleted each other's claims.
+#
+# The claim is now an OWNED LEASE with: owner_token (random -- the only
+# release/steal credential), revision + fencing (monotonic per phase, the
+# fencing token publication checks before writing artifacts), pid + boot
+# identity (pid REUSE never matches the recorded holder), and expiry_at
+# (recorded for operators/tooling; the staleness oracle below never
+# consults it -- a foreign pid this user cannot signal is treated as
+# LIVE, never stolen here).
+#
+#   live identity-matched holder   -> NEVER stale, not by age, not by expiry
+#   dead / pid-reused holder       -> stale NOW (FIX 105 liveness kept)
+#   legacy record (no owner token) -> FIX 105 age behaviour exactly
+#   release                        -> owner token (or own-pid legacy) match
+#                                     required, else the file is NOT ours
 # ---------------------------------------------------------------------------
 def _claim_path(run_dir: Path, phase_id: str) -> Path:
     return run_dir / "working" / "work-orders" / f"{phase_id}.claim"
 
 
-def _claim_is_stale(path: Path, age: float) -> Tuple[bool, str]:
-    """FIX 105 claim-liveness oracle. Returns (stale, why).
-
-    A claim whose recorded pid is dead is stale regardless of age -- a dead
-    process can never finish its wave, so honoring its claim only stalls the
-    next resume. Age stays the fallback for a legacy claim (no pid field) and
-    for the pid-probe PermissionError edge (we cannot see it either way)."""
+def _boot_uptime_s() -> float:
+    """Boot-relative uptime seconds (CLOCK_BOOTTIME on Linux; sysctl
+    kern.boottime fallback on macOS). Binds a recorded pid to the process
+    START that created the claim: a reused pid never matches the recorded
+    holder, because its boot-relative start reference differs."""
     try:
-        rec = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(rec, dict):
-            return False, ""   # unreadable shape: age heuristic decides
-    except (OSError, json.JSONDecodeError):
-        return False, ""       # legacy/empty claim: age heuristic decides
+        return float(time.clock_gettime(time.CLOCK_BOOTTIME))  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+    try:
+        out = subprocess.run(["sysctl", "-n", "kern.boottime"],
+                             capture_output=True, text=True, timeout=5)
+        m = re.search(r"sec\s*=\s*(\d+)", out.stdout or "")
+        if out.returncode == 0 and m:
+            return max(0.0, time.time() - int(m.group(1)))
+    except Exception:  # noqa: BLE001 -- identity stamp is best-effort
+        pass
+    return 0.0
+
+
+def _claim_owner_identity() -> Dict[str, Any]:
+    """THIS process's claim-owner identity: pid + boot-relative start
+    reference. Written at claim creation; verified before any steal or
+    legacy self-release."""
+    return {"pid": os.getpid(), "boot_uptime": _boot_uptime_s()}
+
+
+def _owner_matches_identity(rec: Dict[str, Any]) -> bool:
+    """True iff `rec`'s recorded owner identity is still THE SAME PROCESS:
+    alive, same pid, and -- when the record carries it -- a boot-relative
+    start reference the current clock has not reset (a reused pid restarts
+    near uptime 0; a recorded uptime far above the present one for the same
+    pid means the recorded process is gone and a NEW one recycled the
+    number)."""
     pid = rec.get("pid")
     if not isinstance(pid, int) or pid <= 0:
-        return False, ""       # legacy claim without a pid: age heuristic
-    if pid == os.getpid():
-        # Our own (thread-pool sibling's) claim: never stale by liveness;
-        # the in-process sweep serializes claims, so an O_EXCL loss here can
-        # only be a race against ourselves -- fall back to the age rule.
-        return False, ""
-    if _pid_is_alive(pid):
-        return False, ""
-    return True, (f"claim pid {pid} is dead (claimed_at "
+        return False
+    if not _pid_is_alive(pid):
+        return False
+    rec_boot = rec.get("boot_uptime")
+    if isinstance(rec_boot, (int, float)) and rec_boot > 0:
+        now_boot = _boot_uptime_s()
+        # Tolerance 1s covers read granularity between write and check.
+        if now_boot > 0 and now_boot + 1.0 < float(rec_boot):
+            return False
+    return True
+
+
+def _read_claim_record(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        return rec if isinstance(rec, dict) else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _next_claim_revision(path: Path) -> int:
+    """Claim revision: one more than the file's current fencing value (1
+    when absent/legacy). Monotonic across steal cycles of one phase -- the
+    fencing token artifact publication checks before accepting output."""
+    rec = _read_claim_record(path)
+    if not rec:
+        return 1
+    try:
+        return int(rec.get("fencing") or 0) + 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def _claim_is_stale(path: Path, age: float) -> Tuple[bool, str]:
+    """Claim-staleness oracle. Returns (stale, why).
+
+    PRES-018 precedence, in order:
+
+      1. an OWNERSHIP record (owner_token present) whose process is ALIVE
+         and identity-matched is NEVER stale -- not by age, not by expiry.
+         A hung live owner requires explicit supervised termination
+         (PRES-019's reconciliation), never a silent age steal.
+      2. an ownership record whose holder is DEAD or pid-REUSED is stale
+         RIGHT NOW (FIX 105's liveness win, now identity-safe).
+      3. a legacy record (no owner token) keeps FIX 105 exactly: dead pid
+         => stale; else the age heuristic (the caller applies it).
+
+    NOTE: expiry_at is a RECORD, not a reap rule -- this oracle never
+    consults it. A FOREIGN pid this user cannot signal (the
+    PermissionError edge: _pid_is_alive True) is treated as LIVE and
+    never stolen here.
+    """
+    rec = _read_claim_record(path)
+    if rec is None:
+        return False, ""       # unreadable shape: age heuristic decides
+    owner = rec.get("owner_token")
+    if not owner:
+        # Legacy FIX 105 record: pid liveness, age fallback.
+        pid = rec.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return False, ""   # legacy claim without a pid: age heuristic
+        if pid == os.getpid():
+            # Our own (thread-pool sibling's) claim: never stale by
+            # liveness; an O_EXCL loss here can only be a race against
+            # ourselves -- the age rule decides.
+            return False, ""
+        if _pid_is_alive(pid):
+            return False, ""
+        return True, (f"legacy claim pid {pid} is dead (claimed_at "
+                      f"{rec.get('claimed_at')!r})")
+
+    # PRES-018 ownership record:
+    if _owner_matches_identity(rec):
+        return False, ""       # confirmed live holder: NEVER reaped here
+    return True, (f"claim owner {str(owner)[:8]}.. pid {rec.get('pid')} is "
+                  f"dead or its pid was recycled (claimed_at "
                   f"{rec.get('claimed_at')!r})")
 
 
+def _unlink_claim_if_token(path: Path, owner_token: str) -> bool:
+    """CAS-delete: unlink the claim ONLY if the record on disk still holds
+    exactly `owner_token`. The atomic steal primitive: two reapers that both
+    judged the same dead claim stale unlink-race safely -- exactly one sees
+    its token still present; the loser's unlink is a no-op against the
+    winner's freshly created record.
+
+    A record WITHOUT an owner_token is a LEGACY claim (FIX 105 shape): it is
+    CAS-matched against the empty token, so a stale legacy claim is still
+    stealable -- its liveness is already settled by the oracle above."""
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(rec, dict):
+        return False
+    rec_token = rec.get("owner_token") or ""
+    if rec_token != owner_token:
+        return False          # a new owner got there first: NOT ours to delete
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _steal_lock_path(run_dir: Path, phase_id: str) -> Path:
+    """The steal window's flock anchor. flock on this file serializes the
+    read-stale -> CAS-unlink -> O_EXCL-create sequence so two simultaneous
+    reapers produce exactly ONE winner: the unlink->create gap that O_EXCL
+    alone cannot close is closed by the advisory lock, held only for the
+    microseconds of the steal, never while work runs."""
+    return _claim_path(run_dir, phase_id).with_suffix(".claim.steal-lock")
+
+
 def try_claim(run_dir: Path, phase_id: str, worker_id: str) -> bool:
+    """Atomically claim `phase_id` for THIS worker (PRES-018 owned lease).
+
+    Returns True iff THIS call now owns the claim. The file records the
+    owner token (the release credential), worker id, pid + boot identity,
+    monotonic revision/fencing, claimed_at and expiry_at. A steal happens
+    ONLY through the staleness oracle above -- never by age alone -- and
+    the whole stale-claim replacement runs inside a per-phase flock window,
+    so two simultaneous reapers racing one dead claim produce exactly one
+    winner (the O_EXCL create alone cannot close the unlink->create gap)."""
     path = _claim_path(run_dir, phase_id)
     path.parent.mkdir(parents=True, exist_ok=True)
+    owner_token = uuid.uuid4().hex
+    # The fencing revision is read from the PREDECESSOR record (inside the
+    # steal window when stealing) so it advances monotonically through
+    # steal cycles of one phase.
+    revision = _next_claim_revision(path)
+    fd = None
+
+    # Fresh-claim fast path: O_EXCL create when NO claim file exists yet.
     try:
         fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     except FileExistsError:
-        # FIX 105: liveness first. A claim from a DEAD pid is abandoned
-        # RIGHT NOW -- no waiting out the wall-clock heuristic.
+        # PRES-018: steal ONLY through the staleness oracle, serialized.
+        lock_path = _steal_lock_path(run_dir, phase_id)
         try:
-            age = time.time() - path.stat().st_mtime
-        except OSError:
-            return False
-        stale, _why = _claim_is_stale(path, age)
-        if not stale:
-            # Live holder, or an unreadable claim: the generous age
-            # multiple remains the only cure (crashed worker whose pid the
-            # probe cannot judge, legacy claim files, our own pid race).
-            if age <= SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER:
-                return False
-        try:
-            path.unlink()
+            lock_fd = os.open(str(lock_path),
+                              os.O_CREAT | os.O_RDWR, 0o644)
         except OSError:
             return False
         try:
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        except FileExistsError:
-            return False
+            try:
+                import fcntl
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                pass  # degraded platform: fall through to best-effort CAS
+            try:
+                # Re-check staleness INSIDE the window: the file may have
+                # changed (or vanished) while we waited for the lock.
+                if not path.exists():
+                    fd = os.open(str(path), os.O_CREAT | os.O_EXCL
+                                 | os.O_WRONLY, 0o644)
+                else:
+                    stale, _why = _claim_is_stale(path, 0.0)
+                    if not stale:
+                        return False
+                    # CAS: the token judged stale must still be on disk at
+                    # unlink time, or a racer already re-claimed. The
+                    # predecessor's fencing value is read from the SAME
+                    # record, BEFORE the unlink -- after unlink the file is
+                    # gone and the revision would reset to 1 instead of
+                    # advancing monotonically (PRES-018 fencing contract).
+                    victim = _read_claim_record(path) or {}
+                    victim_token = str(victim.get("owner_token") or "")
+                    try:
+                        revision = int(victim.get("fencing") or 0) + 1
+                    except (TypeError, ValueError):
+                        revision = 1
+                    if not _unlink_claim_if_token(path, victim_token):
+                        return False
+                    try:
+                        fd = os.open(str(path), os.O_CREAT | os.O_EXCL
+                                     | os.O_WRONLY, 0o644)
+                    except FileExistsError:
+                        return False
+            finally:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+        finally:
+            os.close(lock_fd)
     try:
-        # FIX 105: the claim now names WHO holds it (pid) and WHEN its
-        # process started, so a reaper/resume can judge liveness instead of
-        # guessing from mtime alone. started_at uses time.CLOCK_BOOTTIME when
-        # the platform exposes it (Linux containers) and falls back to
-        # time.time() elsewhere (macOS) -- both monotonic enough to detect a
-        # pid-reuse restart of the same numeric pid.
+        identity = _claim_owner_identity()
+        # FIX 105 start reference (liveness tooling keeps reading it) plus
+        # the PRES-018 ownership record.
         try:
             started_at = time.clock_gettime(time.CLOCK_BOOTTIME)  # type: ignore[attr-defined]
         except (AttributeError, OSError):
             started_at = time.time()
         os.write(fd, json.dumps({
+            "owner_token": owner_token,
             "worker": worker_id,
-            "pid": os.getpid(),
+            "revision": revision,
+            "fencing": revision,
+            "pid": identity["pid"],
+            "boot_uptime": identity["boot_uptime"],
             "started_at": started_at,
             "claimed_at": utcnow(),
+            "expiry_at": time.time() + (SINGLE_ATTEMPT_BUDGET_S *
+                                        CLAIM_STALE_MULTIPLIER),
         }).encode())
     finally:
         os.close(fd)
     return True
 
 
-def release_claim(run_dir: Path, phase_id: str) -> None:
+def release_claim(run_dir: Path, phase_id: str,
+                  owner_token: Optional[str] = None) -> None:
+    """Release THIS worker's claim -- ONLY while it still owns it.
+
+    PRES-018: the unlink happens only when the file on disk still records
+    an owner token matching `owner_token` (the token THIS worker's
+    try_claim generated). A mismatch -- a NEW owner has claimed since --
+    leaves the file alone: an old owner can never delete a new owner's
+    claim, and PID reuse proves nothing. Back-compat: the two-argument form
+    releases only a claim whose recorded holder is still THIS process
+    (pid + boot identity), matching FIX 105's self-release contract."""
     path = _claim_path(run_dir, phase_id)
+    rec = _read_claim_record(path)
+    if rec is None:
+        return
+    if owner_token is not None:
+        if rec.get("owner_token") != owner_token:
+            return            # a new owner holds it now: NOT ours to delete
+    else:
+        if rec.get("pid") != os.getpid():
+            return
+        if not _owner_matches_identity(rec):
+            return
     try:
         path.unlink()
     except OSError:
         pass
+
+
+def _current_claim_token(run_dir: Path, phase_id: str,
+                         worker_id: str) -> Optional[str]:
+    """The owner token in the claim file IF the file still names `worker_id`
+    as its holder, else None (the caller's fencing check then fails). This
+    is the publication-side half of the fencing contract: the token a
+    worker captured at claim time must still be the file's token at
+    publish time."""
+    rec = _read_claim_record(_claim_path(run_dir, phase_id))
+    if not rec:
+        return None
+    if rec.get("worker") != worker_id:
+        return None
+    token = rec.get("owner_token")
+    return str(token) if token else None
 
 
 # ---------------------------------------------------------------------------
@@ -5245,6 +5536,10 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
     dept_root = resolve_dept_root(scripts_dir)
 
     claimed_here: List[str] = []
+    # PRES-018: phase_id -> the owner token THIS sweep captured at claim
+    # time. release uses it (owner-matched delete); dispatch_one's
+    # publication fence re-reads the file and compares against the holder.
+    owner_tokens: Dict[str, Optional[str]] = {}
     jobs: List[Tuple[str, Dict[str, Any], Optional[Phase]]] = []
     for of in order_files:
         phase_id = of.stem
@@ -5279,6 +5574,12 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
         if not try_claim(run_dir, phase_id, worker_id):
             continue
         claimed_here.append(phase_id)
+        # PRES-018: capture THIS claim's owner token right after the
+        # successful O_EXCL create -- it is both the release credential
+        # (release only deletes while the file still records it) and the
+        # fencing token checked at artifact publication.
+        claim_rec = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
+        owner_tokens[phase_id] = str(claim_rec.get("owner_token") or "") or None
         phase_obj = None
         if manifest is not None:
             try:
@@ -5359,7 +5660,11 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
                 record_outcome(run_dir, phase_id, res.status, list(res.reasons),
                                worker_id=worker_id)
             finally:
-                release_claim(run_dir, phase_id)
+                # PRES-018: owner-matched release -- the token captured at
+                # claim time must still be the file's token, or the file
+                # belongs to a NEW owner and is left untouched. Never the
+                # old unconditional unlink.
+                release_claim(run_dir, phase_id, owner_tokens.get(phase_id))
     return results
 
 
@@ -5518,6 +5823,18 @@ def _release_own_autospawn_lock(run_dir: Path) -> None:
         pass
 
 
+def _dispatcher_revision() -> str:
+    """PRES-017: this module's installed revision stamp -- the source file's
+    size+mtime identity. Cheap, dependency-free, and enough to prove the
+    consumer that answered readiness is the tree the operator deployed
+    (a full git sha is not available inside an installed template)."""
+    try:
+        st = os.stat(__file__)
+        return f"dispatcher-{st.st_size}-{int(st.st_mtime)}"
+    except OSError:
+        return "dispatcher-unknown"
+
+
 def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
                   max_lifetime_s: float = 6 * 3600, max_workers: Optional[int] = None,
                   worker_id: Optional[str] = None) -> None:
@@ -5542,6 +5859,49 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     # anything (which would mean touching phases.py/state.json, forbidden here).
     spawning_ppid = os.getppid()
     started = time.time()
+    # PRES-017: STARTUP READINESS HANDSHAKE -- the watch loop's FIRST act,
+    # before the first sweep, is to prove to its spawner (and any operator)
+    # that this process resolved its imports, its run binding and its
+    # worker capacity and is actually about to consume orders. The spawner
+    # (_spawn_dispatcher_if_available) waits for THIS file within 10 s;
+    # without it, "spawned" never happened and the failure is surfaced.
+    # Heartbeats (below) keep the same file current: last claim, last work
+    # progress, outstanding orders, active units -- "alive" is a claim about
+    # consumption, not about a pid.
+    def _write_heartbeat(open_orders: Optional[List[str]] = None,
+                         last_claim: Optional[str] = None,
+                         last_progress: Optional[str] = None,
+                         active_units: int = 0) -> None:
+        try:
+            ready_path = run_dir / "working" / "dispatcher-ready.json"
+            ready_path.parent.mkdir(parents=True, exist_ok=True)
+            obj = {
+                "pid": os.getpid(),
+                "worker_id": worker_id,
+                "run_dir": str(run_dir),
+                "started_at": utcnow(),
+                "ready_at": utcnow(),
+                "heartbeat_at": utcnow(),
+                # Installed revision: this module's own source stamp -- a
+                # consumer that cannot say which revision it runs is not
+                # verifiably the revision the operator thinks it deployed.
+                "revision": _dispatcher_revision(),
+                "max_lifetime_s": max_lifetime_s,
+                "last_claim_phase": last_claim,
+                "last_work_progress": last_progress,
+                "outstanding_orders": len(open_orders or []),
+                "active_units": int(active_units),
+            }
+            tmp = ready_path.with_suffix(
+                ready_path.suffix + f".partial-{os.getpid()}")
+            tmp.write_text(json.dumps(obj, indent=2, sort_keys=True),
+                           encoding="utf-8")
+            tmp.replace(ready_path)
+        except Exception:  # noqa: BLE001 -- the handshake is best-effort
+            pass
+
+    _write_heartbeat(open_orders=[])
+
     # FIX 9: the exit condition is "no open work orders AND engine pid dead",
     # never either half alone. _idle_ticks counts consecutive ticks with zero
     # open orders while the engine is believed dead; the grace window covers
@@ -5550,6 +5910,8 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     # engine dead during startup, and never exit while an order is still open.
     idle_ticks = 0
     first_tick = True
+    last_claim_phase: Optional[str] = None
+    last_progress_note: Optional[str] = None
     try:
         while True:
             if _run_terminal(run_dir) is not None:
@@ -5597,6 +5959,19 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
                       f"(attempts={r.attempts})" + (f" target={r.target}" if r.target else "")
                       + (f" reasons={r.reasons}" if r.status in ("exhausted", "error", "declined")
                          else ""), flush=True)
+            # PRES-017: heartbeat refresh every tick -- last claim, last work
+            # progress, outstanding orders, active units. An ALIVE process
+            # that never claims/progresses is distinguishable from a healthy
+            # one by comparing heartbeat fields, not by pid presence.
+            _write_heartbeat(
+                open_orders=open_orders,
+                last_claim=(results[0].phase_id if results else last_claim_phase),
+                last_progress=(f"{results[0].phase_id}:{results[0].status}"
+                               if results else last_progress_note),
+                active_units=len(results))
+            last_claim_phase = results[0].phase_id if results else last_claim_phase
+            last_progress_note = (f"{results[0].phase_id}:{results[0].status}"
+                                  if results else last_progress_note)
             time.sleep(interval)
     finally:
         _release_own_autospawn_lock(run_dir)
