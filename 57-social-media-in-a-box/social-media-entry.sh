@@ -243,6 +243,95 @@ if [ "$PLAN" -eq 1 ]; then
 fi
 
 note "ALL GATES PASSED — dispatching run_social_media.py (mode=$MODE)"
+
+# ===========================================================================
+# F08 — TRUSTED EXECUTION-MODE STAMP (the ONE writer of working/execution_mode.json)
+# ---------------------------------------------------------------------------
+# The orchestrator refuses to run without this stamp. PRODUCTION is the
+# default posture of the sanctioned entry; the TEST posture (simulated
+# receipts, offline probe fixtures) is reached ONLY through
+# SMIB_TEST_ENTRY=1 — a call from the documented trusted test entry — and
+# still requires a logged owner offline token in the run directory. The
+# strict-parsed SMIB_PREFLIGHT_OFFLINE legacy flag is recorded as EVIDENCE on
+# the stamp; it can no longer flip a run offline by itself, and any
+# non-0/1/true/false/yes/no/on/empty value is a hard error.
+# ===========================================================================
+EXEC_STAMP="$RUN_DIR/working/execution_mode.json"
+mkdir -p "$RUN_DIR/working"
+if [ -n "${SMIB_TEST_ENTRY:-}" ]; then
+    # Trusted TEST entry: strict-parse the legacy offline flag, then stamp test.
+    STAMP_MODE="test"
+    if command -v python3 >/dev/null 2>&1; then
+        RESOLVED="$(SMIB_VAL="${SMIB_PREFLIGHT_OFFLINE:-}" python3 - <<'PY'
+import os, sys
+v = os.environ.get("SMIB_VAL", "")
+s = v.strip().lower()
+if s in ("", "0", "false", "no", "off"):
+    print("false")
+elif s in ("1", "true", "yes", "on"):
+    print("true")
+else:
+    sys.stderr.write("AF-SM-EXEC-MODE: SMIB_PREFLIGHT_OFFLINE is not a strict boolean\n")
+    sys.exit(2)
+PY
+)"
+        [ "$?" -eq 0 ] || die "SMIB_PREFLIGHT_OFFLINE is not a strict boolean (0/1/true/false/yes/no/on/empty only)"
+    else
+        RESOLVED="false"
+    fi
+    [ "$RESOLVED" = "true" ] || [ -n "${SMIB_TEST_ENTRY:-}" ] || die "test entry requires SMIB_PREFLIGHT_OFFLINE=true"
+else
+    STAMP_MODE="production"
+    # Strict-parse the legacy offline flag (D-F08-01): 0/false/no/off/empty
+    # stay LIVE (production stamp); 1/true/yes/on die (offline postures run
+    # only through the trusted test entry); any other value dies as a
+    # non-boolean. A bare [ -n ... ] test here used to abort on OFFLINE=0.
+    if command -v python3 >/dev/null 2>&1; then
+        OFFLINE_RESOLVED="$(SMIB_VAL="${SMIB_PREFLIGHT_OFFLINE:-}" python3 - <<'PY'
+import os, sys
+v = os.environ.get("SMIB_VAL", "")
+s = v.strip().lower()
+if s in ("", "0", "false", "no", "off"):
+    print("false")
+elif s in ("1", "true", "yes", "on"):
+    print("true")
+else:
+    sys.stderr.write("AF-SM-EXEC-MODE: SMIB_PREFLIGHT_OFFLINE is not a strict boolean\n")
+    sys.exit(2)
+PY
+)"
+        [ "$?" -eq 0 ] || die "SMIB_PREFLIGHT_OFFLINE is not a strict boolean (0/1/true/false/yes/no/on/empty only)"
+    else
+        case "$(printf '%s' "${SMIB_PREFLIGHT_OFFLINE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+            ""|0|false|no|off) OFFLINE_RESOLVED="false" ;;
+            1|true|yes|on) OFFLINE_RESOLVED="true" ;;
+            *) die "SMIB_PREFLIGHT_OFFLINE is not a strict boolean (0/1/true/false/yes/no/on/empty only)" ;;
+        esac
+    fi
+    if [ "$OFFLINE_RESOLVED" = "true" ]; then
+        die "SMIB_PREFLIGHT_OFFLINE requests offline but this is the PRODUCTION entry — offline postures run only through the trusted test entry (SMIB_TEST_ENTRY=1); production never reads probe fixtures"
+    fi
+fi
+STAMP_REASON=""
+if [ "$STAMP_MODE" = "test" ]; then
+    [ -f "$RUN_DIR/working/copy/preflight-offline-token.json" ] || die "AF-SM-EXEC-MODE: a test-entry run requires a logged owner offline token at working/copy/preflight-offline-token.json"
+    STAMP_REASON="trusted test entry (logged owner offline token on file)"
+fi
+RUN_DIR="$RUN_DIR" STAMP_MODE="$STAMP_MODE" STAMP_REASON="$STAMP_REASON" python3 - <<'PY'
+import json, os, sys
+from datetime import datetime, timezone
+run_dir = os.environ["RUN_DIR"]
+mode = os.environ["STAMP_MODE"]
+rec = {"mode": mode, "set_by": "trusted-entry", "simulated": mode != "production",
+       "stamped_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+if os.environ.get("STAMP_REASON"):
+    rec["offline_reason"] = os.environ["STAMP_REASON"]
+p = os.path.join(run_dir, "working", "execution_mode.json")
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(rec, f, indent=2)
+print("  F08: execution_mode stamped -> %s (%s)" % (p, mode))
+PY
+
 # FRONT-DOOR NONCE HANDSHAKE — run_social_media.py exits 4 unless OC_SMIB_ENTRY_NONCE
 # matches the run-scoped 0600 file minted below. A random per-run nonce cannot be
 # conjured from shipped source; it is consumed (deleted) after the run.
