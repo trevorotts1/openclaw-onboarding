@@ -1,0 +1,16 @@
+{
+  "$comment": "F32 Python/TS parity fixture for the social-planner prompt counting rule. Python: len(unicodedata.normalize('NFC', final).strip()). TypeScript: Array.from(normalized.trim()).length (code points, NOT UTF-16 .length). Both implementations must agree on every fixture below.",
+  "policy_version": "1.0.0",
+  "fixtures": [
+    { "name": "ascii_basic", "input": "Hello world  ", "expected": 11 },
+    { "name": "nfc_composed", "input": "café crème ", "expected": 10 },
+    { "name": "nfd_decomposed", "input": "café  ", "expected": 4, "note": "The two-char 'e'+U+0301 sequence normalizes to composed 'é' under NFC before trimming; the result is 4 code points." },
+    { "name": "astral_emoji", "input": "🦄🦄🦄", "expected": 3, "note": "Three unicorn emoji = 3 code points but 6 UTF-16 units — .length would wrongly say 6; Array.from says 3." },
+    { "name": "mixed_astral_ascii", "input": "  A😀B ", "expected": 3 },
+    { "name": "whitespace_only_trims_to_zero", "input": "   \n\t  ", "expected": 0 },
+    { "name": "boundary_9000", "input_kind": "repeat_x", "count": 9000, "expected": 9000 },
+    { "name": "boundary_8999", "input_kind": "repeat_x", "count": 8999, "expected": 8999 },
+    { "name": "boundary_19000", "input_kind": "repeat_x", "count": 19000, "expected": 19000 },
+    { "name": "boundary_19001", "input_kind": "repeat_x", "count": 19001, "expected": 19001 }
+  ]
+}
