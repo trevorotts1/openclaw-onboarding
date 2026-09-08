@@ -1,3 +1,45 @@
+## [v25.0.22]  -  2026-09-08  -  Social media planner W1 batch: per-account delivery, documented GHL contracts, idempotent n8n exports
+
+Batch ONB-20260908T181012 (PR #1062, merged at 784129308). Tasks:
+F02, F06, F09, F15, F16, F18, F19, F23, F31.
+
+Behavior changes:
+
+- Per-account delivery (F06): multi-account posting plans are now planned
+  and executed per account instead of per campaign, so one account's failure
+  or pause does not gate the others' posts.
+- Documented GHL contracts (F09): the GoHighLevel request/response shapes
+  the social planner relies on are written down as machine-readable contracts
+  with tests, instead of living only in workflow JSON.
+- Idempotent n8n exports (F15): re-running the export/verify path no longer
+  produces changed workflow JSON for unchanged inputs; export verification
+  grew a dedicated verifier (F16) covering 154/154 checks on the tested head.
+- Posts-table schema (F23): the Posts sheet/table contract is an all-RAW
+  formula rewrite — every write path targets the documented schema, replacing
+  preview IMAGE formulas (those land with F24, wave 2). This supersedes the
+  F26 approach; F26's obligation is preserved by the rewrite.
+- Provider-first model policy (F31): model selection resolves the provider
+  first from a capability registry with verified full model slugs and an
+  adapter layer, instead of assuming one provider's plan answer applies to
+  every phase.
+- Credential conflict fail-closed (F18): one documented credential resolver
+  with readiness-grade live discovery in Skill 57's preflight; a credential
+  conflict now blocks the run with an explicit failure code instead of
+  continuing on ambiguous credentials. Applied to the preflight path only.
+- Dependency graph (F19): task-to-artifact dependency graph for the social
+  planner so downstream work can name its upstream inputs.
+
+Migration and compatibility notes: no breaking contract change. Skill 35
+social-media-planner bumped v3.0.1 to v3.1.0 and Skill 57 social-media-
+in-a-box bumped v1.0.0 to v1.1.0 in-batch (marker commits independently
+reviewed; see run/releases/onb-marker-review.json in the program run root).
+Existing n8n workflows are not modified by this release; merged versioned
+exports still require the separate deploy step to reach live n8n.
+
+Validation: 87 social unittests plus 61 shared-utils tests green at the
+tested head; verify-exports 154/154; Skill 57 preflight self-test PASS.
+No live GHL executions, real contacts, or client workloads were used.
+
 ## [v25.0.21]  -  2026-09-08  -  Add event-aware workflow timing intelligence to Skills 44 and 6
 
 Skill 44 now distinguishes event-relative schedules from ordinary delays during
