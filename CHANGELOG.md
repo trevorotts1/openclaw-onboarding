@@ -1,3 +1,22 @@
+## [v25.0.21]  -  2026-09-08  -  Add event-aware workflow timing intelligence to Skills 44 and 6
+
+Skill 44 now distinguishes event-relative schedules from ordinary delays during
+planning and automatically inserts Set event start time into the timing outline
+when needed. Day 4 and day 7 share the same registration reference. The new offline
+planner checks source, timezone, late-entry policy, re-entry policy and ordering.
+Skill 6 preserves the timing contract, original brief and location in its handoff.
+QC now checks the actual event-start and Wait configuration, not just duration.
+
+Invalid campaign validation now stops before CRM access. Event timing uses the
+managed browser workflow: the internal API has no verified event-start payload and
+the single-action fallback is not a multi-node builder. Both refuse to silently
+drop an explicit timing plan. This release adds skill reasoning, a semantic outline
+helper and guards; it does not claim a new event-capable API serializer or a live
+GHL execution test. Existing workflows are not automatically modified.
+
+Validation: offline timing, campaign, funnel handoff, browser-helper and QC regression
+suites. No real contacts, messages or client workflows used for this update.
+
 ## [v25.0.20]  -  2026-09-07  -  One provider's plan answer was capping the whole run
 
 A client on two providers answered one question — "Ollama, the $100 plan" — and every phase of their deck, including the ones routed to DeepSeek at 2,500 concurrent, ran eight wide. Not the Ollama phases. All of them.

@@ -1014,3 +1014,13 @@ A V2 build is DONE when, on the operator fixture only (a later live phase):
 Going live (a real public domain) remains a CLIENT Connect-Domain step and is
 NOT automated; preview URLs + draft saves are the bar.
 ```
+
+### Timing context at the P4 → P5 seam
+
+When the funnel promises timed follow-up, carry the user's original timing brief and
+verified registration/event source in `task.timing` using Skill 44's
+`references/workflow-timing.md` contract. `v2_dispatcher` preserves it and the location
+binding in `routing/skill44-handoff.json`. Skill 44 reviews timing even if no contract
+was supplied. Build timestamp is never the contact's registration timestamp. Event
+relative schedules require the native event-start/Wait sequence and saved-config QC;
+a single-action helper result is not proof of a complete automation.

@@ -1329,6 +1329,12 @@ def dispatch_one(
             "from": "06-ghl-install-pages (P4 funnel build)",
             "to": "44-convert-and-flow-operator (P5 automation build)",
             "funnel_template_id": task.get("funnel_template_id"),
+            # Preserve timing intent and its client binding, not the handoff's ts
+            # (which is build time, NEVER a contact's registration time).
+            "location_id": task.get("location_id"),
+            "timing": task.get("timing"),
+            "timing_brief": task.get("brief", ""),
+            "timing_review_required": True,
             "recommended": True, "mandatory": _mandatory,
             "to_build": _to_build,
             "reference_only": [a for a in _la["automations"] if not a.get("build_now")],

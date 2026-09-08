@@ -449,7 +449,7 @@ fi
 record_human "WF-1"  "Workflow name must be verified against plan/outline by QC agent reading export output"
 record_human "WF-2"  "Tags must be verified by QC agent: check each tag in export against plan, GET-verify in GHL"
 record_human "WF-8"  "If/Else conditions (fields, operators, AND/OR logic) require QC agent review of export output"
-record_human "WF-9"  "Wait step durations require QC agent review of export output"
+record_human "WF-9"  "Wait timing requires QC review: duration/event mode, source, Set event start time before dependent waits, offsets, timezone, past-due and re-entry; see references/workflow-timing.md"
 record_human "WF-10" "Custom fields (data type + exact name) require QC agent review of export output"
 record_human "WF-11" "Custom values (non-empty + exact name) require QC agent review of export output"
 record_human "WF-13" "Email From Name/From Email require QC agent review of export output"
