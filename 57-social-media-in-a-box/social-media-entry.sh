@@ -282,8 +282,34 @@ PY
     [ "$RESOLVED" = "true" ] || [ -n "${SMIB_TEST_ENTRY:-}" ] || die "test entry requires SMIB_PREFLIGHT_OFFLINE=true"
 else
     STAMP_MODE="production"
-    if [ -n "${SMIB_PREFLIGHT_OFFLINE:-}" ]; then
-        die "SMIB_PREFLIGHT_OFFLINE is set but this is the PRODUCTION entry — offline postures run only through the trusted test entry (SMIB_TEST_ENTRY=1); production never reads probe fixtures"
+    # Strict-parse the legacy offline flag (D-F08-01): 0/false/no/off/empty
+    # stay LIVE (production stamp); 1/true/yes/on die (offline postures run
+    # only through the trusted test entry); any other value dies as a
+    # non-boolean. A bare [ -n ... ] test here used to abort on OFFLINE=0.
+    if command -v python3 >/dev/null 2>&1; then
+        OFFLINE_RESOLVED="$(SMIB_VAL="${SMIB_PREFLIGHT_OFFLINE:-}" python3 - <<'PY'
+import os, sys
+v = os.environ.get("SMIB_VAL", "")
+s = v.strip().lower()
+if s in ("", "0", "false", "no", "off"):
+    print("false")
+elif s in ("1", "true", "yes", "on"):
+    print("true")
+else:
+    sys.stderr.write("AF-SM-EXEC-MODE: SMIB_PREFLIGHT_OFFLINE is not a strict boolean\n")
+    sys.exit(2)
+PY
+)"
+        [ "$?" -eq 0 ] || die "SMIB_PREFLIGHT_OFFLINE is not a strict boolean (0/1/true/false/yes/no/on/empty only)"
+    else
+        case "$(printf '%s' "${SMIB_PREFLIGHT_OFFLINE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+            ""|0|false|no|off) OFFLINE_RESOLVED="false" ;;
+            1|true|yes|on) OFFLINE_RESOLVED="true" ;;
+            *) die "SMIB_PREFLIGHT_OFFLINE is not a strict boolean (0/1/true/false/yes/no/on/empty only)" ;;
+        esac
+    fi
+    if [ "$OFFLINE_RESOLVED" = "true" ]; then
+        die "SMIB_PREFLIGHT_OFFLINE requests offline but this is the PRODUCTION entry — offline postures run only through the trusted test entry (SMIB_TEST_ENTRY=1); production never reads probe fixtures"
     fi
 fi
 STAMP_REASON=""
