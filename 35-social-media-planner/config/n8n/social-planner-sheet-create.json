@@ -1,7 +1,42 @@
 {
-  "_PLACEHOLDER_NOTE": "RECONSTRUCTED-FROM-CONTRACT placeholder, not a live export. The production workflow lives on the n8n instance at main.blackceoautomations.com and could not be exported from this repo (it is not checked in anywhere, and the operator/Maria boxes were not reachable during the v21.0 fix pass). This file documents the EXPECTED node structure and payload contract so the workflow can be rebuilt or verified. Replace with a real `n8n export` when the instance is reachable. The webhook path, payload shape, template-copy behavior, idempotency handling, and response contract below are the documented ground truth (INSTALL.md Step 7 sections 4a-4f, CORE_UPDATES.md 'Google Sheet Creation Webhook').",
   "name": "social-planner-sheet-create",
-  "active": true,
+  "schema_version": "1.1.0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "schema_version": "1.1.0"
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "contract": {
+    "source_workflow_id_live": "INyGjT8jQ6JjrZSh",
+    "sanitized_from": "run/sandbox/n8n/INyGjT8jQ6JjrZSh.json",
+    "webhook_path": "social-planner-sheet-create",
+    "schema_version": "1.1.0",
+    "sharing_contract": "anyone-with-the-link EDIT (Drive permission type=anyone, role=writer) is intentional and must be preserved; never migrate to named-user-only (F02).",
+    "idempotency_contract": "provisioning_key = company_id::planner_kind; Drive readback on appProperties skill35_provisioning_key before copy; replay returns the existing file with deduped=true (F15). Durable claim/ledger lives in the ONB/CC caller.",
+    "input_schema": {
+      "brandName": "string (required)",
+      "clientEmail": "string (required)",
+      "company_id": "string (required)",
+      "planner_kind": "string (required)",
+      "templateSheetId": "string (required, Google Sheet ID of the fleet template)",
+      "timezone": "string (optional, IANA)"
+    },
+    "output_schema": {
+      "status": "success|error",
+      "deduped": "boolean",
+      "sheetId": "string",
+      "sheetUrl": "string",
+      "sheetName": "string",
+      "sharedWith": "literal(anyone with the link can edit)",
+      "provisioning_key": "string",
+      "schema_version": "1.1.0"
+    },
+    "credential_references": [
+      "googleDriveOAuth2Api — select the operator Google Drive credential on: Copy Template Sheet, Set Anyone Can Edit, Drive Readback, Tag Provisioning Key (re-wire after import; never committed)."
+    ]
+  },
   "nodes": [
     {
       "parameters": {
@@ -11,82 +46,308 @@
         "options": {}
       },
       "id": "webhook-sheet-create",
-      "name": "Webhook: Sheet Create",
+      "name": "Webhook: Create Sheet",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
-      "webhookId": "social-planner-sheet-create"
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Validate + normalize the create request.\n// Contract (INSTALL.md Step 7): { brandName, clientEmail, idempotencyKey? }\n// idempotencyKey closes the create-then-crash-then-rerun duplicate window: a\n// repeat POST with the same key returns the already-created sheet instead of\n// making a second one.\nconst body = $input.first().json.body || {};\nconst brandName = body.brandName;\nconst clientEmail = body.clientEmail;\nconst idempotencyKey = body.idempotencyKey || '';\nif (!brandName) throw new Error('missing brandName');\nif (!clientEmail) throw new Error('missing clientEmail');\n// Fleet template sheet the new client sheet is copied from.\nconst templateSheetId = '1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c';\nreturn [{ json: { brandName, clientEmail, idempotencyKey, templateSheetId } }];"
+        "jsCode": "// WF04 F15 — validate the create request and build the provisioning key.\n// Payload contract (schema_version 1.1.0):\n// { brandName, clientEmail, company_id, planner_kind, templateSheetId, timezone? }\n// provisioning_key = company_id + '::' + planner_kind — unique per company and\n// planner kind (run/contracts/sheet_registry.json rule). The caller persists the\n// operation in its own ledger BEFORE this call and reconciles AFTER; this\n// webhook stays stateless-safe via the Drive readback that follows.\nconst body = $input.first().json.body || {};\nconst required = ['brandName', 'clientEmail', 'company_id', 'planner_kind', 'templateSheetId'];\nfor (const field of required) {\n  if (body[field] === undefined || body[field] === null || body[field] === '') {\n    throw new Error('missing required field: ' + field);\n  }\n}\nconst provisioningKey = [body.company_id, body.planner_kind].join('::');\nreturn [{ json: {\n  brandName: body.brandName,\n  clientEmail: body.clientEmail,\n  provisioningKey: provisioningKey,\n  readbackQuery: \"appProperties has { key='skill35_provisioning_key' and value='\" + provisioningKey + \"' } and trashed = false\",\n  templateSheetId: body.templateSheetId,\n  body: body\n} }];"
       },
-      "id": "code-validate",
-      "name": "Validate request",
+      "id": "code-validate-create",
+      "name": "Validate + Build Provisioning Key",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.templateSheetId }}:copy",
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent($json.readbackQuery) }}&fields=files(id,name,webViewLink)&pageSize=10",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleSheetsOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\"name\": \"{{ $json.brandName }} — Content Calendar\"}",
+        "nodeCredentialType": "googleDriveOAuth2Api",
         "options": {}
       },
-      "id": "http-copy-template",
-      "name": "Sheets: copy template",
+      "id": "http-drive-readback",
+      "name": "Drive Readback (find existing)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "4IoTZHAybRblm172",
-          "name": "BlackCEO Management Google Sheets (operator service account)"
-        }
-      }
+      "position": [
+        440,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Grant the client edit access, then return the create contract.\n// Response contract (QC.md 'Google Sheet Verification'): { sheetUrl, sheetId, sheetName }\nconst created = $input.first().json;\nconst sheetId = created.spreadsheetId;\nconst sheetName = created.properties ? created.properties.title : '';\nconst sheetUrl = created.spreadsheetUrl || ('https://docs.google.com/spreadsheets/d/' + sheetId + '/edit');\nreturn [{ json: { success: true, sheetId, sheetName, sheetUrl } }];"
+        "jsCode": "// F15 — Drive readback. If a Drive file already carries this provisioning key\n// in its appProperties, the sheet was created in a previous run (crash after\n// Google succeeded, receipt lost). Return the EXISTING artifact instead of\n// copying again: replay must return the existing sheet, never a duplicate.\nconst files = ($input.first().json.files || []);\nconst src = $('Validate + Build Provisioning Key').first().json;\nconst existing = files.length > 0 ? files[0] : null;\nreturn [{ json: {\n  existing: existing !== null,\n  existingFile: existing,\n  provisioningKey: src.provisioningKey,\n  brandName: src.brandName,\n  clientEmail: src.clientEmail,\n  templateSheetId: src.templateSheetId,\n  body: src.body\n} }];"
       },
-      "id": "code-share-and-respond",
-      "name": "Share with client + build response",
+      "id": "code-interpret-readback",
+      "name": "Interpret Readback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 0]
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-existing",
+              "leftValue": "={{ $json.existing }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-already-provisioned",
+      "name": "Already provisioned?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.templateSheetId }}",
+          "mode": "id"
+        },
+        "name": "={{ $json.brandName }} Social Media Planner",
+        "options": {}
+      },
+      "id": "drive-copy-template",
+      "name": "Copy Template Sheet",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        160
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.id }}?fields=id,name,webViewLink,appProperties",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ appProperties: { skill35_provisioning_key: $('Interpret Readback').first().json.provisioningKey, schema_version: '1.1.0' } }) }}",
+        "options": {}
+      },
+      "id": "http-tag-key",
+      "name": "Tag Provisioning Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "share",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "permissionsUi": {
+          "permissionsValues": {
+            "role": "writer",
+            "type": "anyone"
+          }
+        },
+        "options": {}
+      },
+      "id": "drive-share-anyone",
+      "name": "Set Anyone Can Edit",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1540,
+        160
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
+        "responseBody": "={{ JSON.stringify({ status: 'success', deduped: false, sheetId: $('Tag Provisioning Key').first().json.id, sheetUrl: 'https://docs.google.com/spreadsheets/d/' + $('Tag Provisioning Key').first().json.id + '/edit', sheetName: $('Tag Provisioning Key').first().json.name, sharedWith: 'anyone with the link can edit', provisioning_key: $('Interpret Readback').first().json.provisioningKey, company_id: $('Validate + Build Provisioning Key').first().json.body.company_id, planner_kind: $('Validate + Build Provisioning Key').first().json.body.planner_kind, schema_version: '1.1.0' }) }}",
         "options": {}
       },
       "id": "respond-created",
-      "name": "Respond: created",
+      "name": "Respond: Created",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [880, 0]
+      "position": [
+        1760,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'success', deduped: true, sheetId: $json.existingFile.id, sheetUrl: 'https://docs.google.com/spreadsheets/d/' + $json.existingFile.id + '/edit', sheetName: $json.existingFile.name, sharedWith: 'anyone with the link can edit', provisioning_key: $json.provisioningKey, company_id: $('Validate + Build Provisioning Key').first().json.body.company_id, planner_kind: $('Validate + Build Provisioning Key').first().json.body.planner_kind, schema_version: '1.1.0' }) }}",
+        "options": {}
+      },
+      "id": "respond-existing",
+      "name": "Respond: Existing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Failed to create sheet. Check Google Drive credentials and template access.', error: $json.message || 'Unknown error' }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond: Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        400
+      ]
     }
   ],
   "connections": {
-    "Webhook: Sheet Create": {
-      "main": [[{ "node": "Validate request", "type": "main", "index": 0 }]]
+    "Webhook: Create Sheet": {
+      "main": [
+        [
+          {
+            "node": "Validate + Build Provisioning Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Validate request": {
-      "main": [[{ "node": "Sheets: copy template", "type": "main", "index": 0 }]]
+    "Validate + Build Provisioning Key": {
+      "main": [
+        [
+          {
+            "node": "Drive Readback (find existing)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Sheets: copy template": {
-      "main": [[{ "node": "Share with client + build response", "type": "main", "index": 0 }]]
+    "Drive Readback (find existing)": {
+      "main": [
+        [
+          {
+            "node": "Interpret Readback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Share with client + build response": {
-      "main": [[{ "node": "Respond: created", "type": "main", "index": 0 }]]
+    "Interpret Readback": {
+      "main": [
+        [
+          {
+            "node": "Already provisioned?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already provisioned?": {
+      "main": [
+        [
+          {
+            "node": "Respond: Existing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Copy Template Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copy Template Sheet": {
+      "main": [
+        [
+          {
+            "node": "Tag Provisioning Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag Provisioning Key": {
+      "main": [
+        [
+          {
+            "node": "Set Anyone Can Edit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Anyone Can Edit": {
+      "main": [
+        [
+          {
+            "node": "Respond: Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
-  },
-  "settings": { "executionOrder": "v1" },
-  "tags": [{ "name": "skill-35" }, { "name": "placeholder-reconstructed" }]
+  }
 }

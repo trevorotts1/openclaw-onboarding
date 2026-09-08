@@ -1,8 +1,72 @@
 {
-  "_PLACEHOLDER_NOTE": "RECONSTRUCTED-FROM-CONTRACT placeholder, not a live export. The production workflow (ID myXde6jbIIkaG5zW) lives on the n8n instance at main.blackceoautomations.com and could not be exported from this repo (it is not checked in anywhere, and the operator/Maria boxes were not reachable during the v21.0 fix pass). This file documents the EXPECTED node structure and payload contract so the workflow can be rebuilt or verified. Replace with a real `n8n export` when the instance is reachable. The webhook path, payload shape, Google Sheets target, valueInputOption, and column/row sizing below are the documented ground truth (CHANGELOG v2.6.0 + INSTALL.md Step 7 section 4f).",
   "name": "social-planner-row-append",
-  "id": "myXde6jbIIkaG5zW",
-  "active": true,
+  "schema_version": "1.1.0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "schema_version": "1.1.0"
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "contract": {
+    "source_workflow_id_live": "myXde6jbIIkaG5zW",
+    "sanitized_from": "run/sandbox/n8n/myXde6jbIIkaG5zW.json",
+    "webhook_path": "social-planner-row-append",
+    "schema_version": "1.1.0",
+    "posts_schema": [
+      "row_key",
+      "company_id",
+      "cycle_id",
+      "content_revision",
+      "account_id",
+      "platform",
+      "account_name",
+      "format",
+      "scheduled_local",
+      "scheduled_utc",
+      "state",
+      "qc_state",
+      "preview_url",
+      "remote_url"
+    ],
+    "posts_row_key": "cycle_id::content_revision::account_id (upsert, never duplicate-append)",
+    "overview_summary": "Weekly Overview stays a summary; new summary rows derived from Posts rows carry the technical key in column U (_row_key). Legacy overview rows are retained untouched. Platforms without an overview column (X, Google Business Profile, unfamiliar labels) appear only in the Posts table — no generic-platform fallback into TikTok or any named column.",
+    "idempotency_contract": "Readback of Posts!A2:N (and Weekly Overview!A2:U) before any write; existing row_key => values.update on exactly that row; missing => one append. Durable claim/ledger lives in the ONB/CC caller; the webhook stays stateless-safe via readback (F15).",
+    "input_schema": {
+      "sheetId": "string (required)",
+      "schema_version": "string (optional, must be 1.1.0 if present)",
+      "company_id": "string (required)",
+      "cycle_id": "string (required)",
+      "content_revision": "string (required)",
+      "account_id": "string (required)",
+      "platform": "string (required, VERBATIM — no fallback)",
+      "account_name": "string (required)",
+      "format": "string (required)",
+      "scheduled_local": "string (required)",
+      "scheduled_utc": "string (required)",
+      "state": "string (required)",
+      "qc_state": "string (required)",
+      "preview_url": "string (optional)",
+      "remote_url": "string (optional)",
+      "theme": "string (optional, feeds the overview summary)",
+      "week_of": "string (optional, feeds the overview summary)",
+      "title": "string (optional, feeds the overview summary)",
+      "notes": "string (optional, feeds the overview summary)"
+    },
+    "output_schema": {
+      "success": "boolean",
+      "sheetId": "string",
+      "posts_updatedRange": "string",
+      "overview_updatedRange": "string",
+      "row_key": "string",
+      "overview_key": "string",
+      "mode": "literal(appended, upserted)",
+      "schema_version": "1.1.0"
+    },
+    "credential_references": [
+      "googleSheetsOAuth2Api — select the operator Google Sheets credential on every Google Sheets API node (re-wire after import; never committed)."
+    ]
+  },
   "nodes": [
     {
       "parameters": {
@@ -12,82 +76,530 @@
         "options": {}
       },
       "id": "webhook-row-append",
-      "name": "Webhook: Row Append",
+      "name": "Webhook: Append Row",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
-      "webhookId": "social-planner-row-append"
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Map body.row.* to the 20-column order of the 'Weekly Overview' tab (A:T).\n// Image cells arrive already wrapped as =IMAGE(\"url\", 1) formula strings from\n// the caller (SKILL.md Media Delivery Contract step 4) and are passed through\n// verbatim so Sheets evaluates them into inline images.\nconst body = $input.first().json.body || {};\nconst row = body.row || {};\nconst sheetId = body.sheetId;\nif (!sheetId) throw new Error('missing sheetId');\n\n// Documented column order (Weekly Overview!A:T). Fill unknown columns with ''.\nconst columns = [\n  'Week Of',            // A\n  'Theme of the Week',  // B\n  'Core Content',       // C\n  'Image URL',          // D  (=IMAGE() formula)\n  'Facebook',           // E\n  'Instagram',          // F\n  'LinkedIn',           // G\n  'X',                  // H\n  'TikTok',             // I\n  'Pinterest',          // J\n  'Google Business',    // K\n  'Blog',               // L\n  'Email',              // M\n  'Podcast',            // N\n  'Video',              // O\n  'Carousel',           // P\n  'Comments',           // Q\n  'Scheduled',          // R\n  'Overall',            // S\n  'Notes'               // T\n];\nconst values = columns.map((c) => (row[c] !== undefined && row[c] !== null ? row[c] : ''));\nreturn [{ json: { sheetId, values } }];"
+        "jsCode": "// WF04 F15/F23 — validate the append request and build stable row keys.\n// Payload contract (schema_version 1.1.0):\n// { sheetId, schema_version, company_id, cycle_id, content_revision, account_id,\n//   platform, account_name, format, scheduled_local, scheduled_utc, state,\n//   qc_state, preview_url?, remote_url?, theme?, week_of?, title?, notes? }\n// The Posts table is the normalized, keyed record: one row per content\n// revision and destination account, upserted on row_key =\n// cycle_id::content_revision::account_id (F15/F23).\n// platform is passed through VERBATIM — there is NO generic-platform fallback\n// into any named platform column. Unfamiliar platform labels get their own\n// keyed Posts row like any other destination.\nconst body = $input.first().json.body || {};\nconst SCHEMA_VERSION = '1.1.0';\nconst required = ['sheetId', 'company_id', 'cycle_id', 'content_revision', 'account_id',\n  'platform', 'account_name', 'format', 'scheduled_local', 'scheduled_utc', 'state', 'qc_state'];\nfor (const field of required) {\n  if (body[field] === undefined || body[field] === null || body[field] === '') {\n    throw new Error('missing required field: ' + field);\n  }\n}\nif ((body.schema_version || SCHEMA_VERSION) !== SCHEMA_VERSION) {\n  throw new Error('unsupported schema_version: ' + body.schema_version);\n}\nconst rowKey = [body.cycle_id, body.content_revision, body.account_id].join('::');\nconst postsValues = [\n  rowKey,                  // A row_key (technical)\n  body.company_id,         // B\n  body.cycle_id,           // C\n  body.content_revision,   // D\n  body.account_id,         // E\n  body.platform,           // F platform — verbatim, no fallback\n  body.account_name,       // G\n  body.format,             // H\n  body.scheduled_local,    // I\n  body.scheduled_utc,      // J\n  body.state,              // K\n  body.qc_state,           // L\n  body.preview_url || '',  // M\n  body.remote_url || ''    // N\n];\nreturn [{ json: {\n  sheetId: body.sheetId,\n  rowKey: rowKey,\n  postsValues: postsValues,\n  postsHeader: [\"row_key\", \"company_id\", \"cycle_id\", \"content_revision\", \"account_id\", \"platform\", \"account_name\", \"format\", \"scheduled_local\", \"scheduled_utc\", \"state\", \"qc_state\", \"preview_url\", \"remote_url\"],\n  body: body\n} }];"
       },
-      "id": "code-map-columns",
-      "name": "Map row to 20-column order",
+      "id": "code-validate-append",
+      "name": "Validate + Build Keys",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Posts!A2:N",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "id": "http-read-posts",
+      "name": "Read Posts (readback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F15 — Sheets readback. Scan the Posts tab (already read by the Readback\n// node) for this row_key in column A. Existing row => upsert via values.update\n// on exactly that row; missing row => one append. A replay after a crash-right-\n// after-Google-succeeded finds the committed row and returns its range instead\n// of writing a duplicate. The durable claim/ledger for concurrent callers\n// lives in the ONB/CC side; this readback keeps the webhook stateless-safe.\nconst found = ($input.first().json.values || []);\nconst src = $('Validate + Build Keys').first().json;\nlet rowNumber = null;\nfor (let i = 0; i < found.length; i++) {\n  if ((found[i][0] || '') === src.rowKey) { rowNumber = i + 2; break; }\n}\nreturn [{ json: {\n  existing: rowNumber !== null,\n  rowNumber: rowNumber,\n  sheetId: src.sheetId,\n  postsValues: src.postsValues,\n  allRows: found,\n  body: src.body\n} }];"
+      },
+      "id": "code-find-posts",
+      "name": "Find Posts Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-posts",
+              "leftValue": "={{ $json.existing }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-posts-exists",
+      "name": "Posts row exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Posts!A{{ $json.rowNumber }}:N{{ $json.rowNumber }}?valueInputOption=RAW",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.postsValues] }) }}",
+        "options": {}
+      },
+      "id": "http-update-posts",
+      "name": "Update Posts Row (upsert)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -160
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A:T:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Posts!A:N:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
+        "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={\"values\": [{{ JSON.stringify($json.values) }}]}",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.postsValues] }) }}",
         "options": {}
       },
-      "id": "http-append-row",
-      "name": "Sheets: append row (USER_ENTERED)",
+      "id": "http-append-posts",
+      "name": "Append Posts Row",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "4IoTZHAybRblm172",
-          "name": "BlackCEO Management Google Sheets (operator service account)"
-        }
-      }
+      "position": [
+        1100,
+        160
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Resize the image column (D) to 108px wide and the appended data row to 133px\n// tall so the =IMAGE() thumbnail displays at full size (INSTALL.md 4f). Two\n// batchUpdate calls against the Sheets API; sizing is best-effort and must not\n// fail the append.\nreturn [{ json: { note: 'resize image column to 108px and data row to 133px' } }];"
+        "jsCode": "// F16 — normalize the Posts write response into receipt fields.\nconst resp = $input.first().json;\nconst src = $('Find Posts Row').first().json;\nreturn [{ json: {\n  postsUpdatedRange: resp.updates ? resp.updates.updatedRange : resp.updatedRange,\n  postsMode: resp.updates ? 'appended' : 'updated',\n  sheetId: src.sheetId,\n  rowKey: src.rowKey,\n  allRows: src.allRows,\n  body: src.body\n} }];"
       },
-      "id": "code-resize",
-      "name": "Resize image column + row",
+      "id": "code-normalize-posts",
+      "name": "Normalize Posts Write",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 0]
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A2:U",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "id": "http-read-overview",
+      "name": "Read Weekly Overview (readback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F23 — derive the Weekly Overview summary row FROM the Posts rows of this\n// cycle/content revision. Weekly Overview stays a summary view; the Posts\n// table remains the per-account source of truth.\n// - Known platform columns (live 20-column order) aggregate per-account\n//   states for that cycle/revision.\n// - Platforms with no overview column (X, Google Business Profile, unfamiliar\n//   labels) appear ONLY in the Posts table. Nothing is funneled into the\n//   TikTok column or any other named column.\n// - New summary rows carry a technical key in column U (_row_key) so they are\n//   upserted, never duplicated. Legacy overview rows without the key are\n//   retained untouched.\nconst ovRows = ($input.first().json.values || []);\nconst src = $('Find Posts Row').first().json;\nconst body = src.body;\nconst ovKey = ['OV', body.cycle_id, body.content_revision].join('::');\nconst PLATFORM_COLUMNS = { 'Facebook': 6, 'Instagram': 7, 'LinkedIn': 8, 'YouTube': 9, 'TikTok': 10, 'Pinterest': 11 };\nconst rows = src.allRows.length ? src.allRows : [src.postsValues];\nconst byPlatform = {};\nfor (const r of rows) {\n  if ((r[2] || '') !== body.cycle_id || (r[3] || '') !== body.content_revision) continue;\n  const platform = r[5] || '';\n  const label = body.account_name || platform;\n  if (!byPlatform[platform]) byPlatform[platform] = [];\n  byPlatform[platform].push(label + ': ' + (r[10] || body.state || ''));\n}\n// Live 20-column order: Week Of, Theme of the Week, Research, Core Content,\n// Images, Videos, Facebook, Instagram, LinkedIn, YouTube, TikTok, Pinterest,\n// Carousels, Blog, Podcast, Email, QC, Scheduled, Overall, Notes (+ U key).\nconst values = new Array(21).fill('');\nvalues[0] = body.week_of || body.cycle_id;\nvalues[1] = body.theme || '';\nvalues[3] = body.title || body.core_content || '';\nvalues[16] = Object.values(byPlatform).map(function (list) {\n  return list.map(function (e) { return e.split(': ').pop(); }).join(' / ');\n}).join(' / ');\nvalues[17] = body.scheduled_local || '';\nvalues[18] = body.state;\nvalues[19] = body.notes || '';\nfor (const platform of Object.keys(PLATFORM_COLUMNS)) {\n  if (byPlatform[platform]) values[PLATFORM_COLUMNS[platform]] = byPlatform[platform].join('; ');\n}\nvalues[20] = ovKey;\nlet ovRowNumber = null;\nfor (let i = 0; i < ovRows.length; i++) {\n  if ((ovRows[i][20] || '') === ovKey) { ovRowNumber = i + 2; break; }\n}\nreturn [{ json: {\n  ovExisting: ovRowNumber !== null,\n  ovRowNumber: ovRowNumber,\n  ovValues: values,\n  sheetId: src.sheetId,\n  rowKey: src.rowKey,\n  postsUpdatedRange: $('Normalize Posts Write').first().json.postsUpdatedRange,\n  postsMode: $('Normalize Posts Write').first().json.postsMode\n} }];"
+      },
+      "id": "code-build-overview",
+      "name": "Build Overview Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-ov",
+              "leftValue": "={{ $json.ovExisting }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-ov-exists",
+      "name": "Overview row exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A{{ $json.ovRowNumber }}:U{{ $json.ovRowNumber }}?valueInputOption=RAW",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.ovValues] }) }}",
+        "options": {}
+      },
+      "id": "http-update-ov",
+      "name": "Update Overview Row (upsert)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A:U:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.ovValues] }) }}",
+        "options": {}
+      },
+      "id": "http-append-ov",
+      "name": "Append Overview Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F16 — response receipt: sheetId, updatedRange(s), row keys, schema version.\nconst ovResp = $input.first().json;\nconst posts = $('Normalize Posts Write').first().json;\nconst src = $('Find Posts Row').first().json;\nreturn [{ json: { receipt: {\n  success: true,\n  sheetId: posts.sheetId,\n  posts_updatedRange: posts.postsUpdatedRange,\n  overview_updatedRange: ovResp.updates ? ovResp.updates.updatedRange : ovResp.updatedRange,\n  row_key: posts.rowKey,\n  overview_key: ['OV', src.body.cycle_id, src.body.content_revision].join('::'),\n  mode: posts.postsMode === 'appended' ? 'appended' : 'upserted',\n  schema_version: '1.1.0'\n} } }];"
+      },
+      "id": "code-build-receipt",
+      "name": "Build Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.receipt.sheetId }}?fields=sheets.properties.title,sheets.properties.sheetId",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "id": "http-get-metadata",
+      "name": "Get Spreadsheet Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F16 — REAL resize: resolve the numeric sheetId of the Posts tab, then build\n// spreadsheet.batchUpdate updateDimensionProperties requests (SPEC build\n// contract widths: platform/account 170, date 110, preview 220, status 140,\n// QC 130; data rows 133px so previews display). Best-effort: a resize failure\n// must never fail the write receipt.\nconst sheets = ($input.first().json.sheets || []);\nlet numeric = null;\nfor (const s of sheets) {\n  if (s.properties && s.properties.title === 'Posts') { numeric = s.properties.sheetId; break; }\n}\nconst posts = $('Normalize Posts Write').first().json;\nconst src = $('Find Posts Row').first().json;\nconst requests = [];\nif (numeric !== null) {\n  const col = function (i) { return { sheetId: numeric, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }; };\n  requests.push({ updateDimensionProperties: { range: col(5), properties: { pixelSize: 170 } } });  // F platform\n  requests.push({ updateDimensionProperties: { range: col(6), properties: { pixelSize: 170 } } });  // G account_name\n  requests.push({ updateDimensionProperties: { range: col(8), properties: { pixelSize: 110 } } });  // I scheduled_local\n  requests.push({ updateDimensionProperties: { range: col(9), properties: { pixelSize: 130 } } });  // J qc_state\n  requests.push({ updateDimensionProperties: { range: col(10), properties: { pixelSize: 140 } } }); // K state\n  requests.push({ updateDimensionProperties: { range: col(11), properties: { pixelSize: 220 } } }); // L preview_url\n  if (posts.postsMode === 'updated' && src.rowNumber) {\n    requests.push({ updateDimensionProperties: { range: { sheetId: numeric, dimension: 'ROWS', startIndex: src.rowNumber - 2, endIndex: src.rowNumber - 1 }, properties: { pixelSize: 133 } } });\n  }\n}\nreturn [{ json: {\n  receipt: $('Build Receipt').first().json.receipt,\n  resizeRequests: requests,\n  resizeApplied: numeric !== null\n} }];"
+      },
+      "id": "code-resolve-sheet",
+      "name": "Resolve Posts Sheet ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.receipt.sheetId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.resizeRequests }) }}",
+        "options": {}
+      },
+      "id": "http-resize",
+      "name": "Resize Columns + Row (batchUpdate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        0
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\"success\": true, \"sheetId\": \"{{ $('Map row to 20-column order').item.json.sheetId }}\", \"updatedRange\": \"{{ $json.updatedRange || 'Weekly Overview' }}\"}",
+        "responseBody": "={{ JSON.stringify($('Resolve Posts Sheet ID').first().json.receipt) }}",
         "options": {}
       },
       "id": "respond-success",
-      "name": "Respond: success",
+      "name": "Respond: Success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [880, 0]
+      "position": [
+        3300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || JSON.stringify($json) }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond: Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3300,
+        300
+      ]
     }
   ],
   "connections": {
-    "Webhook: Row Append": {
-      "main": [[{ "node": "Map row to 20-column order", "type": "main", "index": 0 }]]
+    "Webhook: Append Row": [
+      [
+        {
+          "node": "Validate + Build Keys",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Validate + Build Keys": [
+      [
+        {
+          "node": "Read Posts (readback)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Read Posts (readback)": [
+      [
+        {
+          "node": "Find Posts Row",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Find Posts Row": [
+      [
+        {
+          "node": "Posts row exists?",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Posts row exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Posts Row (upsert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Posts Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Map row to 20-column order": {
-      "main": [[{ "node": "Sheets: append row (USER_ENTERED)", "type": "main", "index": 0 }]]
+    "Update Posts Row (upsert)": [
+      [
+        {
+          "node": "Normalize Posts Write",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Append Posts Row": [
+      [
+        {
+          "node": "Normalize Posts Write",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Normalize Posts Write": [
+      [
+        {
+          "node": "Read Weekly Overview (readback)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Read Weekly Overview (readback)": [
+      [
+        {
+          "node": "Build Overview Summary",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Build Overview Summary": [
+      [
+        {
+          "node": "Overview row exists?",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Overview row exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Overview Row (upsert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Overview Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Sheets: append row (USER_ENTERED)": {
-      "main": [[{ "node": "Resize image column + row", "type": "main", "index": 0 }]]
-    },
-    "Resize image column + row": {
-      "main": [[{ "node": "Respond: success", "type": "main", "index": 0 }]]
+    "Update Overview Row (upsert)": [
+      [
+        {
+          "node": "Build Receipt",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Append Overview Row": [
+      [
+        {
+          "node": "Build Receipt",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Build Receipt": [
+      [
+        {
+          "node": "Get Spreadsheet Metadata",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Get Spreadsheet Metadata": [
+      [
+        {
+          "node": "Resolve Posts Sheet ID",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Resolve Posts Sheet ID": [
+      [
+        {
+          "node": "Resize Columns + Row (batchUpdate)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Resize Columns + Row (batchUpdate)": {
+      "main": [
+        [
+          {
+            "node": "Respond: Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
-  },
-  "settings": { "executionOrder": "v1" },
-  "tags": [{ "name": "skill-35" }, { "name": "placeholder-reconstructed" }]
+  }
 }
