@@ -249,7 +249,7 @@ cc_call_ingest() {
   local -a curl_args=(-sS -m 10 -w $'\n%{http_code}' -X POST "$CC_BASE/api/tasks/ingest"
     -H "Authorization: Bearer $CC_TOKEN" -H "Content-Type: application/json")
   if [ -n "$CC_WEBHOOK_SECRET" ] && command -v python3 >/dev/null 2>&1; then
-    sig="$(printf '%s' "$raw" | python3 -c "import hashlib,hmac,sys; print(hmac.new(sys.stdin.buffer.read(), b'', hashlib.sha256).hexdigest())" 2>/dev/null || true)"
+    sig="$(printf '%s' "$raw" | CC_WEBHOOK_SECRET="$CC_WEBHOOK_SECRET" python3 -c "import hashlib,hmac,os,sys; print(hmac.new(os.environ['CC_WEBHOOK_SECRET'].encode('utf-8'), sys.stdin.buffer.read(), hashlib.sha256).hexdigest())" 2>/dev/null || true)"
     # Sign the EXACT body bytes (python read stdin as bytes above; recompute
     # properly below when the fast path produced nothing).
     if [ -z "$sig" ]; then
