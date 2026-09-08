@@ -18,6 +18,19 @@
 //   POST /api/sessions/:token/complete       -> mark the run complete (capability)
 //
 // Bindings (see wrangler.toml): DB (D1). Secret: INTAKE_ADMIN_TOKEN (box auth).
+//
+// PRES-009 TENANT ISOLATION: session identity is the composite
+//   (company_id, installation_id, presentation_id, run_id)
+// minted server-side and carried immutably on the session row. The old
+// run_id-alone reuse let two companies (or two decks of one company) reuse a
+// human run name and collapse onto ONE capability token / ONE answer stream —
+// a cross-tenant data handoff. Reuse now requires the exact same tenant
+// tuple AND a compatible question schema; anything else mints a fresh
+// session. Names/slugs remain display-only.
+//
+// Legacy migrations: SCHEMA_MIGRATIONS below apply the composite columns +
+// indexes additively; runLegacyMigration() quarantines ambiguous pre-tenant
+// rows (run_id seen under more than one box) instead of guessing an owner.
 
 import {
   randomToken, sixDigitCode, nowSeconds, expiryFrom, isValidTokenShape,
@@ -25,6 +38,9 @@ import {
   answersSince, progress, jsonResponse, errorResponse, isQuestionActive,
   DEFAULT_TTL_DAYS,
 } from "./lib.js";
+import {
+  opaqueIdError, mintRunId, mintIntakeSessionId, questionSchemaFingerprint,
+} from "./tenant.js";
 
 export default {
   async fetch(request, env) {
@@ -32,12 +48,68 @@ export default {
   },
 };
 
+// Idempotent additive D1 migration (safe to run on every cold start; D1
+// batches may execute sequentially, so a failed exec is retried next request).
+export const SCHEMA_MIGRATIONS = [
+  "ALTER TABLE sessions ADD COLUMN display_name TEXT",
+  "ALTER TABLE sessions ADD COLUMN company_id TEXT",
+  "ALTER TABLE sessions ADD COLUMN installation_id TEXT",
+  "ALTER TABLE sessions ADD COLUMN presentation_id TEXT",
+  "ALTER TABLE sessions ADD COLUMN intake_session_id TEXT",
+  "ALTER TABLE sessions ADD COLUMN schema_fp TEXT",
+  "ALTER TABLE sessions ADD COLUMN tenant_state TEXT DEFAULT 'active'",
+  "ALTER TABLE sessions ADD COLUMN quarantine_reason TEXT",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_open_tenant_run ON sessions (company_id, installation_id, presentation_id, run_id) WHERE status = 'open' AND tenant_state = 'active'",
+];
+
+let migrated = false;
+async function ensureSchema(env) {
+  if (migrated || !env.DB) return;
+  for (const stmt of SCHEMA_MIGRATIONS) {
+    try { await env.DB.exec(stmt); } catch { /* already applied */ }
+  }
+  migrated = true;
+}
+
+export async function runLegacyMigration(env) {
+  if (!env.DB) return { backfills: [], quarantined: [] };
+  await ensureSchema(env);
+  const res = await env.DB.prepare(
+    "SELECT token, run_id, box_id, tenant_state FROM sessions WHERE tenant_state IS NULL OR tenant_state = ''",
+  ).all();
+  const rows = (res && res.results) || [];
+  const counts = new Map();
+  for (const r of rows) {
+    const k = String(r.run_id);
+    counts.set(k, (counts.get(k) || new Set()));
+    counts.get(k).add(String(r.box_id));
+  }
+  const backfills = [];
+  let quarantined = 0;
+  for (const r of rows) {
+    const boxes = counts.get(String(r.run_id));
+    if (boxes && boxes.size === 1) {
+      await env.DB.prepare(
+        "UPDATE sessions SET installation_id = ?, tenant_state = 'active' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '')",
+      ).bind([...boxes][0], r.token).run();
+      backfills.push({ token: r.token, installation_id: [...boxes][0] });
+    } else {
+      await env.DB.prepare(
+        "UPDATE sessions SET tenant_state = 'quarantined', quarantine_reason = 'ambiguous_legacy_run_reused_across_boxes' WHERE token = ? AND (tenant_state IS NULL OR tenant_state = '')",
+      ).bind(r.token).run();
+      quarantined += 1;
+    }
+  }
+  return { backfills, quarantined };
+}
+
 async function route(request, env) {
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
   const method = request.method.toUpperCase();
   if (method === "GET" && url.pathname === "/healthz") return jsonResponse({ status: "ok", service: "presentation-intake", ttl_days: DEFAULT_TTL_DAYS });
   if (parts[0] !== "api" || parts[1] !== "sessions") return errorResponse("not found", 404);
+  await ensureSchema(env);
   if (parts.length === 2 && method === "POST") return mintSession(request, env);
   const token = parts[2];
   if (!token || !isValidTokenShape(token)) return errorResponse("bad token", 400);
@@ -48,6 +120,10 @@ async function route(request, env) {
   return errorResponse("not found", 404);
 }
 
+function tenantErrorResponse(errors) {
+  return jsonResponse({ status: "error", error: "tenant identity invalid", details: errors }, 400);
+}
+
 async function mintSession(request, env) {
   const admin = env.INTAKE_ADMIN_TOKEN;
   if (!admin) return errorResponse("server not configured", 503);
@@ -55,21 +131,77 @@ async function mintSession(request, env) {
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!timingSafeEqual(bearer, admin)) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
-  const runId = body.run_id, boxId = body.box_id, payload = body.questions_payload;
-  if (typeof runId !== "string" || !runId) return errorResponse("run_id required", 400);
-  if (typeof boxId !== "string" || !boxId) return errorResponse("box_id required", 400);
+
+  // PRES-009: durable tenant identity is REQUIRED. The caller's run_id is
+  // display-only; the storage key run_id is minted here.
+  const companyErr = opaqueIdError("company_id", body.company_id);
+  if (companyErr) return tenantErrorResponse([companyErr]);
+  const installErr = opaqueIdError("installation_id", body.installation_id);
+  if (installErr) return tenantErrorResponse([installErr]);
+  const presErr = opaqueIdError("presentation_id", body.presentation_id);
+  if (presErr) return tenantErrorResponse([presErr]);
+
+  const payload = body.questions_payload;
   const check = validateQuestionsPayload(payload);
   if (!check.ok) return errorResponse("questions_payload invalid: " + check.error, 400);
+
   const created = nowSeconds();
-  const existing = await env.DB.prepare("SELECT token, expires_at FROM sessions WHERE run_id = ? AND status = 'open'").bind(runId).first();
-  if (existing && Number(existing.expires_at) > created) return jsonResponse({ status: "exists", token: existing.token, capability_url: capabilityUrl(request, existing.token), reused: true });
-  if (existing) await env.DB.prepare("UPDATE sessions SET status = 'expired' WHERE token = ?").bind(existing.token).run();
+  const companyId = body.company_id;
+  const installationId = body.installation_id;
+  const presentationId = body.presentation_id;
+
+  // Composite reuse: exact tenant tuple + display run name + compatible
+  // schema + still open. The caller's human run_id identifies the run WITHIN
+  // the tuple (display_name column); the minted run id differs per mint and
+  // must never be the reuse key.
+  const displayName = String(body.display_run_id || body.run_id || "").slice(0, 200) || null;
+  const schemaFp = questionSchemaFingerprint(payload);
+  const existing = await env.DB.prepare(
+    "SELECT token, expires_at, schema_fp FROM sessions WHERE company_id = ? AND installation_id = ? AND presentation_id = ? AND display_name = ? AND status = 'open' AND (tenant_state IS NULL OR tenant_state = 'active') ORDER BY created_at DESC LIMIT 1",
+  ).bind(companyId, installationId, presentationId, displayName).first();
+  if (existing && Number(existing.expires_at) > created && existing.schema_fp === schemaFp) {
+    return jsonResponse({ status: "exists", token: existing.token, capability_url: capabilityUrl(request, existing.token), reused: true });
+  }
+  if (existing && Number(existing.expires_at) <= created) {
+    await env.DB.prepare("UPDATE sessions SET status = 'expired' WHERE token = ? AND status = 'open'").bind(existing.token).run();
+  }
+
   const newToken = randomToken();
   const ttlDays = Number.isFinite(body.ttl_days) ? body.ttl_days : DEFAULT_TTL_DAYS;
   const expires = expiryFrom(created, ttlDays);
   const confirmCode = body.want_confirm_code ? sixDigitCode() : null;
-  await env.DB.prepare("INSERT INTO sessions (token, run_id, box_id, question_set, questions_json, confirm_code, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)").bind(newToken, runId, boxId, payload.question_set, JSON.stringify(payload), confirmCode, created, expires).run();
-  return jsonResponse({ status: "created", token: newToken, capability_url: capabilityUrl(request, newToken), confirm_code: confirmCode, expires_at: expires }, 201);
+  const storageRunId = mintRunId();
+  const intakeSessionId = mintIntakeSessionId();
+  await env.DB.prepare(
+    "INSERT INTO sessions (token, run_id, display_name, box_id, question_set, questions_json, confirm_code, company_id, installation_id, presentation_id, intake_session_id, schema_fp, tenant_state, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'open', ?, ?)",
+  ).bind(
+    newToken, storageRunId, displayName || storageRunId, displayName || storageRunId,
+    payload.question_set, JSON.stringify(payload), confirmCode,
+    companyId, installationId, presentationId, intakeSessionId, schemaFp, created, expires,
+  ).run();
+  return jsonResponse({
+    status: "created", token: newToken, capability_url: capabilityUrl(request, newToken),
+    confirm_code: confirmCode, run_id: storageRunId, intake_session_id: intakeSessionId,
+    company_id: companyId, installation_id: installationId, presentation_id: presentationId,
+    expires_at: expires,
+  }, 201);
+}
+
+function loadOpenSession(env, token, allowComplete = false) {
+  return (async () => {
+    const session = await env.DB.prepare(
+      "SELECT token, run_id, box_id, company_id, installation_id, presentation_id, intake_session_id, question_set, questions_json, confirm_code, tenant_state, quarantine_reason, status, created_at, expires_at FROM sessions WHERE token = ?",
+    ).bind(token).first();
+    if (!session) return { error: errorResponse("session not found", 404) };
+    if (session.tenant_state === "quarantined") {
+      return { error: errorResponse("session unavailable: " + (session.quarantine_reason || "quarantined") + " — requires operator remediation", 423) };
+    }
+    if (Number(session.expires_at) <= nowSeconds() && session.status !== "complete") return { error: errorResponse("session expired", 410) };
+    if (session.status === "expired") return { error: errorResponse("session expired", 410) };
+    if (session.status === "complete" && !allowComplete) return { error: errorResponse("session already complete", 409) };
+    let payload; try { payload = JSON.parse(session.questions_json); } catch { return { error: errorResponse("corrupt session payload", 500) }; }
+    return { session, payload };
+  })();
 }
 
 async function getSession(env, token) {
@@ -77,7 +209,14 @@ async function getSession(env, token) {
   const { session, payload } = row;
   const answeredIds = await answeredIdList(env, token);
   const answeredValues = await answeredValueMap(env, token);
-  return jsonResponse({ status: session.status, run_id: session.run_id, question_set: session.question_set, questions: payload.questions, progress: progress(payload, answeredIds, answeredValues), answered: answeredIds, requires_confirm_code: !!session.confirm_code, expires_at: session.expires_at });
+  return jsonResponse({
+    status: session.status, run_id: session.run_id, company_id: session.company_id,
+    installation_id: session.installation_id, presentation_id: session.presentation_id,
+    intake_session_id: session.intake_session_id,
+    question_set: session.question_set, questions: payload.questions,
+    progress: progress(payload, answeredIds, answeredValues), answered: answeredIds,
+    requires_confirm_code: !!session.confirm_code, expires_at: session.expires_at,
+  });
 }
 
 async function postAnswer(request, env, token) {
@@ -104,7 +243,7 @@ async function pollAnswers(request, env, token) {
   const { session, payload } = row;
   const since = Number(new URL(request.url).searchParams.get("since") || 0);
   const res = await env.DB.prepare("SELECT id, question_id, value, created_at FROM answers WHERE token = ? ORDER BY id ASC").bind(token).all();
-  const rows = res.results || [];
+  const rows = (res && res.results) || [];
   const fresh = answersSince(rows, since);
   const answeredIds = rows.map((r) => r.question_id);
   const answeredValues = {}; for (const r of rows) answeredValues[r.question_id] = r.value;
@@ -118,7 +257,6 @@ async function completeSession(env, token) {
   const answeredValues = await answeredValueMap(env, token);
   const prog = progress(payload, answeredIds, answeredValues);
   // U058: conditionally-inactive questions not required. Gate matches driver:830 (required && block_gate).
-  // Before: 23 blocking. After: 11 blocking.
   const requiredUnanswered = payload.questions.filter((q) => {
     if (q.required === false) return false;
     if (answeredIds.includes(q.id)) return false;
@@ -131,24 +269,14 @@ async function completeSession(env, token) {
   return jsonResponse({ status: "complete", run_id: session.run_id, progress: prog });
 }
 
-async function loadOpenSession(env, token, allowComplete = false) {
-  const session = await env.DB.prepare("SELECT token, run_id, box_id, question_set, questions_json, confirm_code, status, created_at, expires_at FROM sessions WHERE token = ?").bind(token).first();
-  if (!session) return { error: errorResponse("session not found", 404) };
-  if (Number(session.expires_at) <= nowSeconds() && session.status !== "complete") return { error: errorResponse("session expired", 410) };
-  if (session.status === "expired") return { error: errorResponse("session expired", 410) };
-  if (session.status === "complete" && !allowComplete) return { error: errorResponse("session already complete", 409) };
-  let payload; try { payload = JSON.parse(session.questions_json); } catch { return { error: errorResponse("corrupt session payload", 500) }; }
-  return { session, payload };
-}
-
 async function answeredIdList(env, token) {
   const res = await env.DB.prepare("SELECT question_id FROM answers WHERE token = ? ORDER BY id ASC").bind(token).all();
-  return (res.results || []).map((r) => r.question_id);
+  return ((res && res.results) || []).map((r) => r.question_id);
 }
 
 async function answeredValueMap(env, token) {
   const res = await env.DB.prepare("SELECT question_id, value FROM answers WHERE token = ? ORDER BY id ASC").bind(token).all();
-  const map = {}; for (const r of (res.results || [])) map[r.question_id] = r.value;
+  const map = {}; for (const r of ((res && res.results) || [])) map[r.question_id] = r.value;
   return map;
 }
 

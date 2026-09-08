@@ -24,10 +24,14 @@ import {
   answersSince, progress, jsonResponse, errorResponse, isQuestionActive,
   DEFAULT_TTL_DAYS,
 } from "./lib.js";
+import {
+  opaqueIdError, mintRunId, mintIntakeSessionId, questionSchemaFingerprint,
+} from "./tenant.js";
 
 const SESSION_PREFIX = "sessions/";
 const ANSWER_PREFIX = "answers/";
 const INTAKE_PREFIX = "intakes/";
+const RUN_PREFIX = "runs/";
 
 export default {
   async fetch(request, env, ctx) {
@@ -68,39 +72,77 @@ async function routeSessions(request, env, parts, method, url) {
   return errorResponse("not found", 404);
 }
 
+function tenantErrorResponse(errors) {
+  return jsonResponse({ status: "error", error: "tenant identity invalid", details: errors }, 400);
+}
+
 async function mintSession(request, env) {
   const admin = env.INTAKE_ADMIN_TOKEN;
   if (!admin) return errorResponse("server not configured", 503);
   if (!authorized(request, admin)) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
-  const runId = body.run_id, boxId = body.box_id, payload = body.questions_payload;
-  if (typeof runId !== "string" || !runId) return errorResponse("run_id required", 400);
-  if (typeof boxId !== "string" || !boxId) return errorResponse("box_id required", 400);
+
+  // PRES-009: durable tenant identity REQUIRED. The caller's run_id is
+  // display-only; the storage run key is the minted opaque id. R2 run indexes
+  // are keyed by the composite tenant tuple, never the human name.
+  const companyErr = opaqueIdError("company_id", body.company_id);
+  if (companyErr) return tenantErrorResponse([companyErr]);
+  const installErr = opaqueIdError("installation_id", body.installation_id);
+  if (installErr) return tenantErrorResponse([installErr]);
+  const presErr = opaqueIdError("presentation_id", body.presentation_id);
+  if (presErr) return tenantErrorResponse([presErr]);
+
+  const payload = body.questions_payload;
   const check = validateQuestionsPayload(payload);
   if (!check.ok) return errorResponse("questions_payload invalid: " + check.error, 400);
-  const created = nowSeconds();
 
-  const runRows = await loadRunIndex(env, runId);
+  const created = nowSeconds();
+  const companyId = body.company_id;
+  const installationId = body.installation_id;
+  const presentationId = body.presentation_id;
+
+  // PRES-009: run indexes live under the tenant tuple; the DISPLAY run name
+  // is the last segment (validated opaque-safe) so reuse resolves within the
+  // tuple and two companies never share an index file. The minted run id is
+  // per-mint and never the reuse key.
+  const displayName = String(body.run_id || "").slice(0, 200) || "run";
+  const runRows = await loadRunIndex(env, companyId, installationId, presentationId, displayName);
+  const schemaFp = questionSchemaFingerprint(payload);
   const existing = runRows.find((r) => r.status === "open" && Number(r.expires_at) > created);
   if (existing) {
     const ex = await loadSession(env, existing.token);
-    if (ex) return jsonResponse({ status: "exists", token: existing.token, capability_url: capabilityUrl(request, existing.token), reused: true });
+    if (ex && ex.schema_fp === schemaFp) {
+      return jsonResponse({ status: "exists", token: existing.token, capability_url: capabilityUrl(request, existing.token), reused: true });
+    }
+    // Incompatible question schema on the open session: mint a distinct
+    // session (never reuse across schemas).
   }
 
   const newToken = randomToken();
   const ttlDays = Number.isFinite(body.ttl_days) ? body.ttl_days : DEFAULT_TTL_DAYS;
   const expires = expiryFrom(created, ttlDays);
   const confirmCode = body.want_confirm_code ? sixDigitCode() : null;
+  const storageRunId = mintRunId();
+  const intakeSessionId = mintIntakeSessionId();
   const session = {
-    token: newToken, run_id: runId, box_id: boxId, question_set: payload.question_set,
+    token: newToken, run_id: storageRunId, display_run_id: displayName,
+    box_id: String(body.box_id || "").slice(0, 200),
+    company_id: companyId, installation_id: installationId, presentation_id: presentationId,
+    intake_session_id: intakeSessionId, schema_fp: schemaFp,
+    question_set: payload.question_set,
     questions_json: JSON.stringify(payload), confirm_code: confirmCode, status: "open",
     created_at: created, expires_at: expires, completed_at: null,
   };
   await saveSession(env, session);
   const updatedRun = runRows.filter((r) => !(r.status === "open" && Number(r.expires_at) <= created));
-  updatedRun.push({ token: newToken, status: "open", expires_at: expires });
-  await saveRunIndex(env, runId, updatedRun);
-  return jsonResponse({ status: "created", token: newToken, capability_url: capabilityUrl(request, newToken), confirm_code: confirmCode, expires_at: expires }, 201);
+  updatedRun.push({ token: newToken, status: "open", expires_at: expires, run_id: storageRunId, schema_fp: schemaFp });
+  await saveRunIndex(env, companyId, installationId, presentationId, displayName, updatedRun);
+  return jsonResponse({
+    status: "created", token: newToken, capability_url: capabilityUrl(request, newToken),
+    confirm_code: confirmCode, run_id: storageRunId, intake_session_id: intakeSessionId,
+    company_id: companyId, installation_id: installationId, presentation_id: presentationId,
+    expires_at: expires,
+  }, 201);
 }
 
 async function getSession(env, token) {
@@ -109,7 +151,7 @@ async function getSession(env, token) {
   const answeredRows = await loadAnswers(env, token);
   const answeredIds = answeredRows.map((r) => r.question_id);
   const answeredValues = {}; for (const r of answeredRows) answeredValues[r.question_id] = r.value;
-  return jsonResponse({ status: session.status, run_id: session.run_id, question_set: session.question_set, questions: payload.questions, progress: progress(payload, answeredIds, answeredValues), answered: answeredIds, requires_confirm_code: !!session.confirm_code, expires_at: session.expires_at });
+  return jsonResponse({ status: session.status, run_id: session.run_id, company_id: session.company_id, installation_id: session.installation_id, presentation_id: session.presentation_id, intake_session_id: session.intake_session_id, question_set: session.question_set, questions: payload.questions, progress: progress(payload, answeredIds, answeredValues), answered: answeredIds, requires_confirm_code: !!session.confirm_code, expires_at: session.expires_at });
 }
 
 async function postAnswer(request, env, token) {
@@ -166,16 +208,36 @@ async function completeSession(env, token) {
     session.status = "complete";
     session.completed_at = nowSeconds();
     await saveSession(env, session);
-    const runRows = await loadRunIndex(env, session.run_id);
+    const runRows = await loadRunIndex(env, session.company_id, session.installation_id, session.presentation_id, session.display_run_id);
     const updatedRun = runRows.map((r) => (r.token === token ? { ...r, status: "complete" } : r));
-    await saveRunIndex(env, session.run_id, updatedRun);
+    await saveRunIndex(env, session.company_id, session.installation_id, session.presentation_id, session.display_run_id, updatedRun);
   }
   return jsonResponse({ status: "complete", run_id: session.run_id, progress: prog });
 }
 
 // ---- intake storage + dept-start trigger (R2-backed) ------------------------
 
-function intakeKey(sessionId) { return INTAKE_PREFIX + String(sessionId).replace(/[^A-Za-z0-9._-]/g, "") + ".json"; }
+/**
+ * PRES-009: intake keys are the tenant tuple + the OPAQUE server-minted
+ * intake_session_id, stored as its own R2 key segment. The old
+ * strip-characters intakeKey() collapsed distinct ids ("a/b" and "ab", "x y"
+ * and "xy") onto ONE storage key — cross-tenant overwrite. Invalid opaque ids
+ * are rejected by the caller, never sanitized here.
+ */
+function intakeKey(intake) {
+  return INTAKE_PREFIX + intake.company_id + "/" + intake.installation_id + "/" +
+    intake.presentation_id + "/" + intake.run_id + "/" + intake.intake_session_id + ".json";
+}
+
+/** Legacy flat key (pre-tenant rows): opaque-id checked, no sanitizing. */
+function legacyIntakeKey(sessionId) {
+  if (!isValidTokenShapeLike(sessionId)) return null;
+  return INTAKE_PREFIX + sessionId + ".json";
+}
+
+function isValidTokenShapeLike(id) {
+  return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(id);
+}
 
 /**
  * POST /api/intake — store the assembled intake JSON so the box bridge can
@@ -223,12 +285,28 @@ async function storeIntake(request, env) {
   if (missingFields.length) {
     return jsonResponse({ status: "rejected", error: "intake incomplete — required fields missing or empty", missing: missingFields }, 422);
   }
-  const file_name = (body.file_name || "intake.json").replace(/[^A-Za-z0-9._-]/g, "");
-  const session_id = intake.intake_session_id || file_name.replace(/\..+$/, "");
+  // PRES-009: durable tenant identity REQUIRED — opaque ids, never sanitized.
+  const tenantErrors = [];
+  for (const field of ["company_id", "installation_id", "presentation_id", "run_id"]) {
+    const err = opaqueIdError(field, intake[field]);
+    if (err) tenantErrors.push(err);
+  }
+  const sidErr = opaqueIdError("intake_session_id", intake.intake_session_id);
+  if (sidErr) tenantErrors.push(sidErr);
+  if (tenantErrors.length) {
+    return jsonResponse({ status: "rejected", error: "intake tenant identity invalid — mint a session and carry its tuple", details: tenantErrors }, 400);
+  }
   const created = nowSeconds();
-  const key = intakeKey(session_id);
-  await storePutJson(env, key, { session_id, file_name, intake, stored_at: created });
-  return jsonResponse({ status: "stored", session_id, file_name, stored_at: created }, 201);
+  const record = {
+    session_id: intake.intake_session_id,
+    intake_session_id: intake.intake_session_id,
+    file_name: String(body.file_name || "intake.json").slice(0, 200),
+    company_id: intake.company_id, installation_id: intake.installation_id,
+    presentation_id: intake.presentation_id, run_id: intake.run_id,
+    intake, stored_at: created,
+  };
+  await storePutJson(env, intakeKey(record), record);
+  return jsonResponse({ status: "stored", session_id: record.session_id, file_name: record.file_name, stored_at: created, company_id: intake.company_id }, 201);
 }
 
 /**
@@ -236,9 +314,26 @@ async function storeIntake(request, env) {
  */
 async function fetchIntake(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
-  const id = new URL(request.url).searchParams.get("id");
+  const params = new URL(request.url).searchParams;
+  const id = params.get("id");
   if (!id) return errorResponse("id query param required", 400);
-  const key = intakeKey(id);
+  // Scoped fetch (preferred): tuple + opaque id, exact-key read.
+  const company = params.get("company_id") || "";
+  const installation = params.get("installation_id") || "";
+  const presentation = params.get("presentation_id") || "";
+  const run = params.get("run_id") || "";
+  if (!opaqueIdError("company_id", company) && !opaqueIdError("installation_id", installation)
+    && !opaqueIdError("presentation_id", presentation) && !opaqueIdError("run_id", run)
+    && !opaqueIdError("id", id)) {
+    const scoped = await storeGetJson(env, INTAKE_PREFIX + company + "/" + installation + "/" + presentation + "/" + run + "/" + id + ".json");
+    if (scoped) return jsonResponse(scoped, 200);
+    return errorResponse("intake not found", 404);
+  }
+  // Legacy flat-key lookup: only valid opaque ids are ever probed (no
+  // sanitizing — the PRES-009 lossy-collapse path is gone). Quarantined
+  // legacy rows report their state instead of leaking across tenants.
+  const key = legacyIntakeKey(id);
+  if (!key) return jsonResponse({ status: "error", error: "invalid id: must be an opaque id (3-64 chars, [A-Za-z0-9._-], no '/', '\\', '..')" }, 400);
   const obj = await storeGetJson(env, key);
   if (!obj) return errorResponse("intake not found", 404);
   return jsonResponse(obj, 200);
@@ -252,20 +347,38 @@ async function fetchIntake(request, env) {
  */
 async function listIntakes(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
-  const listed = await env.STORE.list({ prefix: INTAKE_PREFIX });
+  // PRES-009: list is SCOPED to an installation/company when the caller passes
+  // them; unscoped legacy-admin callers get their own flat-key rows only.
+  // Tenant-tuple rows surface under their tuple prefix, never globally mixed.
+  const params = new URL(request.url).searchParams;
+  const company = params.get("company_id") || "";
+  const installation = params.get("installation_id") || "";
+  const prefixParts = [];
+  if (company && !opaqueIdError("company_id", company)) prefixParts.push(company);
+  if (installation && !opaqueIdError("installation_id", installation)) prefixParts.push(installation);
+  let prefix = INTAKE_PREFIX;
+  let scopedList = false;
+  if (prefixParts.length === 2) {
+    prefix = INTAKE_PREFIX + prefixParts[0] + "/" + prefixParts[1] + "/";
+    scopedList = true;
+  } else if (prefixParts.length > 0) {
+    return jsonResponse({ status: "error", error: "list scoping requires both company_id and installation_id" }, 400);
+  }
+  const listed = await env.STORE.list({ prefix });
   const intakes = [];
   for (const obj of (listed && listed.objects) || []) {
     const name = obj.key;
-    const sessionId = name.slice(INTAKE_PREFIX.length).replace(/\.json$/, "");
-    if (!sessionId) continue;
-    let file_name = null;
-    let stored_at = null;
     const meta = await storeGetJson(env, name);
-    if (meta) {
-      file_name = meta.file_name || null;
-      stored_at = meta.stored_at != null ? Number(meta.stored_at) : null;
-    }
-    intakes.push({ session_id: sessionId, file_name, stored_at, key: name });
+    if (!meta) continue;
+    const sessionId = scopedList ? meta.session_id : name.slice(INTAKE_PREFIX.length).replace(/\.json$/, "");
+    if (!sessionId) continue;
+    intakes.push({
+      session_id: sessionId,
+      file_name: meta.file_name || null,
+      stored_at: meta.stored_at != null ? Number(meta.stored_at) : null,
+      company_id: meta.company_id || null,
+      key: name,
+    });
   }
   intakes.sort((a, b) => (b.stored_at || 0) - (a.stored_at || 0));
   return jsonResponse({ intakes }, 200);
@@ -298,18 +411,31 @@ async function triggerDeptStart(request, env) {
   ].filter(Boolean).join("\n");
 
   const cc = env.COMMAND_CENTER_URL || "";
-  const key = intakeKey(session_id);
+  // PRES-009: trigger-state writes key on the intake's OWN tenant tuple when
+  // it carries one; a tenantless legacy intake keeps the legacy flat key.
+  const tenantRecord = (!opaqueIdError("company_id", intake.company_id)
+    && !opaqueIdError("installation_id", intake.installation_id)
+    && !opaqueIdError("presentation_id", intake.presentation_id)
+    && !opaqueIdError("run_id", intake.run_id)
+    && !opaqueIdError("intake_session_id", session_id))
+    ? { company_id: intake.company_id, installation_id: intake.installation_id,
+        presentation_id: intake.presentation_id, run_id: intake.run_id,
+        intake_session_id: session_id }
+    : null;
+  const key = tenantRecord ? intakeKey(tenantRecord) : legacyIntakeKey(session_id);
   if (!cc) {
     // No CC board wired on this deployment: record the trigger intent in R2 so
     // the box-side intake_bridge picks the run up (no shortcuts — the build is
     // still gated by canonical-entry).
-    const stored = await storeGetJson(env, key);
-    await storePutJson(env, key, Object.assign({}, stored || {}, {
-      session_id, file_name: (stored && stored.file_name) || "intake.json",
-      dept_trigger: "deferred",
-      dept_trigger_note: "COMMAND_CENTER_URL unset — box-side cc_board.ingest_deck_task will create the card",
-      updated_at: nowSeconds(),
-    }));
+    if (key) {
+      const stored = await storeGetJson(env, key);
+      await storePutJson(env, key, Object.assign({}, stored || {}, {
+        session_id, file_name: (stored && stored.file_name) || "intake.json",
+        dept_trigger: "deferred",
+        dept_trigger_note: "COMMAND_CENTER_URL unset — box-side cc_board.ingest_deck_task will create the card",
+        updated_at: nowSeconds(),
+      }));
+    }
     return jsonResponse({ status: "deferred", session_id, note: "COMMAND_CENTER_URL not set; box-side ingest_deck_task will create the card on pick-up" }, 202);
   }
 
@@ -332,11 +458,13 @@ async function triggerDeptStart(request, env) {
     });
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.task_id) {
-      const stored = await storeGetJson(env, key);
-      await storePutJson(env, key, Object.assign({}, stored || {}, {
-        session_id, file_name: (stored && stored.file_name) || "intake.json",
-        dept_trigger: "fired", dept_task_id: String(data.task_id), updated_at: nowSeconds(),
-      }));
+      if (key) {
+        const stored = await storeGetJson(env, key);
+        await storePutJson(env, key, Object.assign({}, stored || {}, {
+          session_id, file_name: (stored && stored.file_name) || "intake.json",
+          dept_trigger: "fired", dept_task_id: String(data.task_id), updated_at: nowSeconds(),
+        }));
+      }
       return jsonResponse({ status: "fired", session_id, task_id: data.task_id, deduped: !!data.deduped }, 201);
     }
     return errorResponse("dept start failed (HTTP " + resp.status + "): " + (data.error || "unknown"), 502);
@@ -378,13 +506,31 @@ async function saveAnswers(env, token, rows) {
   await storePutJson(env, answerKey(token), rows);
 }
 
-async function loadRunIndex(env, runId) {
-  const arr = await storeGetJson(env, "runs/" + runId + ".json");
+/**
+ * PRES-009: run indexes live under the composite tenant tuple. The human run
+ * name is the LAST segment only — two companies reusing "summer-launch" (or
+ * one company running two decks with the same name) get distinct index files.
+ * The tuple segments are validated opaque ids before any key is built; a
+ * traversal-shaped name can never reach storage.
+ */
+function tenantRunKeyPrefix(companyId, installationId, presentationId) {
+  return RUN_PREFIX + companyId + "/" + installationId + "/" + presentationId + "/";
+}
+
+async function loadRunIndex(env, companyId, installationId, presentationId, runName) {
+  for (const v of [companyId, installationId, presentationId, runName]) {
+    if (isValidTokenShapeLike(v)) continue;
+    return []; // reject traversal-shaped tuple members — nothing to load
+  }
+  const arr = await storeGetJson(env, tenantRunKeyPrefix(companyId, installationId, presentationId) + runName + ".json");
   return Array.isArray(arr) ? arr : [];
 }
 
-async function saveRunIndex(env, runId, rows) {
-  await storePutJson(env, "runs/" + runId + ".json", rows);
+async function saveRunIndex(env, companyId, installationId, presentationId, runName, rows) {
+  for (const v of [companyId, installationId, presentationId, runName]) {
+    if (!isValidTokenShapeLike(v)) return; // never persist a traversal-shaped key
+  }
+  await storePutJson(env, tenantRunKeyPrefix(companyId, installationId, presentationId) + runName + ".json", rows);
 }
 
 async function loadOpenSession(env, token, allowComplete = false) {

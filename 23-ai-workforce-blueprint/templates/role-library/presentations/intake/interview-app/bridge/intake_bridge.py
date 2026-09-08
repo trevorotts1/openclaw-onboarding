@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -434,6 +435,30 @@ def _mark_processed(args, session_id: str) -> None:
     led.write_text("\n".join(sorted(done)) + "\n")
 
 
+def _valid_session_id(sid: object) -> bool:
+    """PRES-009: a session id may become a filesystem path segment (per-session
+    run dirs) and a poll-ledger token. Accept ONLY opaque ids — 3-64 chars,
+    start alphanumeric, then [A-Za-z0-9._-]; never '/', '\\', '..' or control
+    characters. The old code appended whatever the worker returned unvalidated:
+    a traversal-shaped sid ("../other-run", an absolute path, "a/../b") could
+    stamp a run dir OUTSIDE the configured root."""
+    if not isinstance(sid, str):
+        return False
+    if len(sid) < 3 or len(sid) > 64:
+        return False
+    if "/" in sid or "\\" in sid or "\x00" in sid or ".." in sid:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", sid))
+
+
+def _shared_dir_forbidden(args, sid: str) -> bool:
+    """PRES-009: per-session dirs are OFF and the ledger already holds at least
+    one DIFFERENT session — this submission would share its target directory.
+    True (forbidden)."""
+    processed = _processed_ledger(args)
+    return any(other != sid for other in processed)
+
+
 def cmd_poll(args) -> int:
     """Discover finished intakes via the list endpoint and ingest each one once."""
     intakes = _list_intakes(args)
@@ -442,19 +467,40 @@ def cmd_poll(args) -> int:
     processed = _processed_ledger(args)
     ingested = 0
     skipped = 0
+    rejected = 0
     for it in intakes:
         sid = it.get("session_id")
-        if not sid:
+        if not _valid_session_id(sid):
+            # PRES-009: a malformed/traversal-shaped sid is never appended to
+            # any path and never added to the ledger — it is reported and
+            # skipped so the operator can see the source refusing it.
+            rejected += 1
+            print(json.dumps({"status": "invalid_session_id_rejected",
+                              "session_id": sid if isinstance(sid, str) else repr(sid),
+                              "reason": "opaque-id validation failed; not used as a path or ledger token"}),
+                  file=sys.stderr)
             continue
         if sid in processed:
             skipped += 1
             if args.verbose:
                 print(f"poll: {sid} already processed — skip")
             continue
-        # Ingest this session (mirrors `ingest` with a per-session run dir).
+        # Ingest this session. PRES-009: per-session directories are the DEFAULT
+        # (spec: default per-session directories ON and shared target directories
+        # forbidden for multiple submissions). --no-per-session-dirs opts out for
+        # a single-session deployment, and is refused the moment the ledger
+        # already holds a DIFFERENT session (sharing one dir across submissions
+        # is how two decks overwrite each other's intake files).
         run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
         if args.per_session_dirs:
             run_dir = run_dir / sid
+        elif _shared_dir_forbidden(args, sid):
+            print(json.dumps({"status": "shared_target_dir_forbidden",
+                              "session_id": sid,
+                              "reason": "per-session dirs are OFF but the poll ledger already holds another session; pass --per-session-dirs (default) so submissions never share one run dir"}),
+                  file=sys.stderr)
+            rejected += 1
+            continue
         # Reuse the ingest machinery via a synthetic args namespace.
         sub = argparse.Namespace(
             worker_url=args.worker_url, session_id=sid, run_dir=str(run_dir),
@@ -478,7 +524,8 @@ def cmd_poll(args) -> int:
             # Failed — do NOT mark processed; the next poll retries it.
             print(json.dumps({"status": "ingest_failed", "session_id": sid, "rc": rc}))
     print(json.dumps({"status": "poll_done", "discovered": len(intakes),
-                      "ingested": ingested, "already_processed": skipped}))
+                      "ingested": ingested, "already_processed": skipped,
+                      "rejected": rejected}))
     return 0
 
 
@@ -495,8 +542,12 @@ def main(argv=None) -> int:
     p.add_argument("--worker-url", required=True)
     p.add_argument("--run-dir", required=True, help="deck run directory to stamp each intake under")
     p.add_argument("--poll-ledger", required=True, help="path to the poll ledger (processed session ids)")
-    p.add_argument("--per-session-dirs", action="store_true",
-                   help="stamp each intake under <run-dir>/<session-id>/ instead of a single run dir")
+    p.add_argument("--per-session-dirs", dest="per_session_dirs", action="store_true", default=True,
+                   help="stamp each intake under <run-dir>/<session-id>/ (PRES-009 DEFAULT: ON — "
+                        "submissions must never share one target directory)")
+    p.add_argument("--no-per-session-dirs", dest="per_session_dirs", action="store_false",
+                   help="opt out for a single-session deployment; refused when the poll ledger "
+                        "already holds a different session")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_poll)
     args = ap.parse_args(argv)
