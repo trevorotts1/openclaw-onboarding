@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v3.0.1
+version: v3.1.0
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -167,6 +167,10 @@ The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-ag
 | Video Producer (FFmpeg), Audio Generator, media upload | mechanical (no model judgement) | client's configured/default model |
 
 Resolve concrete model IDs via `shared-utils/select_model.py` (Ollama-Cloud-first). NEVER recommend, hardcode, or default any client agent to an Anthropic/Claude model (Opus/Sonnet/Haiku/`claude-*`) — every client runs their own providers (Ollama Cloud / OpenRouter).
+
+### Provider-first model policy (F31 — binding)
+
+Selection is **provider-first, then model**: ask which provider the client wants (Ollama Cloud, OpenRouter, or a direct provider such as DeepSeek), fetch that provider's accessible models, and let the client choose or accept a recommendation. The client's saved choice is authoritative — never silently choose a newer model solely because its version number is higher. Provider-verified FULL slugs (including suffix variants such as `openrouter/z-ai/glm-5.3-flash`) are recognized from the inventory in `shared-utils/model-capabilities.json` (`verified_slugs`); a new model slug is added to the inventory, never to selector code. Roles are selected separately: planner / researcher / writer / prompt_compiler are text roles; **visual QC requires actual image input (vision capability) and is never served by a text-only model**; image and video models are chosen separately. A removed model activates only an approved fallback in the client's saved order; with no approved fallback, show an explicit selection request — no silent substitution, no indefinite wait. Resolution: `shared-utils/social_model_policy.py::select_provider_then_model` with direct-provider adapters in `shared-utils/provider_adapters.py` (DeepSeek direct included; a direct selection is never implicitly routed through OpenRouter or Ollama).
 
 ## Owner Q&A Playbook — "What does the planner do?" / "How do I use it?"
 
