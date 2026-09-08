@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -149,6 +150,110 @@ class PollSidValidationTests(unittest.TestCase):
             content = led.read_text()
             self.assertNotIn("a/../b", content)
             self.assertIn("isn-valid-01", content, "ledger holds valid sids")
+
+
+class TenantScopeTests(unittest.TestCase):
+    """PRES-009 QC repair (F3c): the bridge's list/fetch calls carry the box's
+    tenant scope (CLI args override INTAKE_COMPANY_ID / INTAKE_INSTALLATION_ID
+    env; half a tuple is never sent) so the worker returns only this tenant's
+    rows — never another box's intake."""
+
+    def setUp(self):
+        self._saved_env = {k: os.environ.get(k) for k in
+                           ("INTAKE_COMPANY_ID", "INTAKE_INSTALLATION_ID", "INTAKE_ADMIN_TOKEN")}
+
+    def tearDown(self):
+        for k, v in self._saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_scope_resolution_order_and_half_tuple_refusal(self):
+        os.environ.pop("INTAKE_COMPANY_ID", None)
+        os.environ.pop("INTAKE_INSTALLATION_ID", None)
+        ns = argparse.Namespace(company_id="", installation_id="")
+        self.assertEqual(intake_bridge._scoped_query(ns), "", "no identity -> unscoped (legacy posture)")
+        os.environ["INTAKE_COMPANY_ID"] = "comp-env"
+        os.environ["INTAKE_INSTALLATION_ID"] = "inst-env"
+        ns_env = argparse.Namespace(company_id="", installation_id="")
+        self.assertIn("company_id=comp-env", intake_bridge._scoped_query(ns_env))
+        self.assertIn("installation_id=inst-env", intake_bridge._scoped_query(ns_env))
+        ns_cli = argparse.Namespace(company_id="comp-cli", installation_id="inst-cli")
+        q = intake_bridge._scoped_query(ns_cli)
+        self.assertIn("company_id=comp-cli", q)
+        self.assertIn("installation_id=inst-cli", q)
+        self.assertNotIn("comp-env", q, "CLI args override env")
+        # A HALF tuple is never sent: the worker would otherwise guess.
+        os.environ.pop("INTAKE_INSTALLATION_ID", None)
+        ns_half = argparse.Namespace(company_id="comp-only", installation_id="")
+        self.assertEqual(intake_bridge._scoped_query(ns_half), "")
+
+    def test_list_and_fetch_urls_carry_scope(self):
+        captured = []
+
+        def fake_http(method, url, *, token=None, body=None, timeout=20):
+            captured.append(url)
+            if "/api/intake/list" in url:
+                return 200, {"intakes": [{"session_id": "isn-scoped-1", "file_name": "f.json", "stored_at": 1}]}
+            if "/api/intake?id=" in url:
+                return 200, {"session_id": "isn-scoped-1", "file_name": "f.json", "intake": {"answers": {}}}
+            return 404, {"error": "nope"}
+
+        os.environ["INTAKE_ADMIN_TOKEN"] = "test-token"
+        os.environ["INTAKE_COMPANY_ID"] = "compA"
+        os.environ["INTAKE_INSTALLATION_ID"] = "instA"
+        orig_http = intake_bridge._http
+        intake_bridge._http = fake_http
+        try:
+            got = intake_bridge._list_intakes(argparse.Namespace(
+                worker_url="https://w.test", company_id="", installation_id=""))
+            self.assertEqual([i["session_id"] for i in got], ["isn-scoped-1"])
+            intake_bridge._fetch_intake(argparse.Namespace(
+                worker_url="https://w.test", session_id="isn-scoped-1",
+                company_id="", installation_id=""))
+        finally:
+            intake_bridge._http = orig_http
+        list_urls = [u for u in captured if "/api/intake/list" in u]
+        fetch_urls = [u for u in captured if "/api/intake?id=" in u]
+        self.assertEqual(len(list_urls), 1)
+        self.assertIn("company_id=compA", list_urls[0])
+        self.assertIn("installation_id=instA", list_urls[0])
+        self.assertEqual(len(fetch_urls), 1)
+        self.assertIn("company_id=compA", fetch_urls[0])
+        self.assertIn("installation_id=instA", fetch_urls[0])
+        # The id itself must be quoted, never raw-concatenated.
+        self.assertIn("id=isn-scoped-1", fetch_urls[0])
+
+    def test_poll_threads_scope_into_ingest_subcommand(self):
+        """cmd_poll's synthetic cmd_ingest namespace carries the tenant scope so
+        the per-session fetch is scoped exactly like the discovery list."""
+        seen = {}
+
+        def fake_ingest(sub_args):
+            seen["company_id"] = sub_args.company_id
+            seen["installation_id"] = sub_args.installation_id
+            return 0
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            ledger = tmp / "led.txt"
+            run_root = tmp / "runs"
+            run_root.mkdir(exist_ok=True)
+            orig_list, orig_ingest = intake_bridge._list_intakes, intake_bridge.cmd_ingest
+            intake_bridge._list_intakes = lambda args: [{"session_id": "isn-thread-01"}]
+            intake_bridge.cmd_ingest = fake_ingest
+            try:
+                rc = intake_bridge.main([
+                    "poll", "--worker-url", "https://w.test", "--run-dir", str(run_root),
+                    "--poll-ledger", str(ledger),
+                    "--company-id", "compT", "--installation-id", "instT",
+                ])
+            finally:
+                intake_bridge._list_intakes, intake_bridge.cmd_ingest = orig_list, orig_ingest
+            self.assertEqual(rc, 0)
+            self.assertEqual(seen.get("company_id"), "compT")
+            self.assertEqual(seen.get("installation_id"), "instT")
 
 
 class LegacyMigrationPlanTests(unittest.TestCase):

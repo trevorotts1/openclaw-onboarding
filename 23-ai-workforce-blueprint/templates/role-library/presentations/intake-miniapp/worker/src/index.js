@@ -69,6 +69,14 @@ async function ensureSchema(env) {
     try { await env.DB.exec(stmt); } catch { /* already applied */ }
   }
   migrated = true;
+  // PRES-009 QC repair (F4): the legacy migration ran nowhere in production —
+  // runLegacyMigration was exported but never invoked by any route, so real
+  // legacy D1 databases kept cross-box run collisions active forever. Run it
+  // once per cold start here (idempotent: the double-NULL predicate matches
+  // only un-migrated legacy rows, which shrink to zero; never touches done or
+  // already-quarantined rows). Never fatal — a migration failure must not take
+  // the intake API down; the next cold start retries.
+  try { await runLegacyMigration(env); } catch { /* retried next cold start */ }
 }
 
 export async function runLegacyMigration(env) {
@@ -151,6 +159,14 @@ async function mintSession(request, env) {
   const presErr = opaqueIdError("presentation_id", body.presentation_id);
   if (presErr) return tenantErrorResponse([presErr]);
 
+  // PRES-009 QC repair (F2): box_id is the legacy-migration attribution source
+  // (runLegacyMigration backfills installation_id FROM box_id). It must be the
+  // caller's real box id, opaque-validated — never the display run name. The
+  // pre-repair INSERT bound displayName into box_id, which misattributed every
+  // minted row and broke the migration plan's single-box detection.
+  const boxErr = opaqueIdError("box_id", body.box_id);
+  if (boxErr) return tenantErrorResponse([boxErr]);
+
   const payload = body.questions_payload;
   const check = validateQuestionsPayload(payload);
   if (!check.ok) return errorResponse("questions_payload invalid: " + check.error, 400);
@@ -159,6 +175,7 @@ async function mintSession(request, env) {
   const companyId = body.company_id;
   const installationId = body.installation_id;
   const presentationId = body.presentation_id;
+  const boxId = body.box_id;
 
   // Composite reuse: exact tenant tuple + display run name + compatible
   // schema + still open. The caller's human run_id identifies the run WITHIN
@@ -185,7 +202,7 @@ async function mintSession(request, env) {
   await env.DB.prepare(
     "INSERT INTO sessions (token, run_id, display_name, box_id, question_set, questions_json, confirm_code, company_id, installation_id, presentation_id, intake_session_id, schema_fp, tenant_state, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'open', ?, ?)",
   ).bind(
-    newToken, storageRunId, displayName || storageRunId, displayName || storageRunId,
+    newToken, storageRunId, displayName || storageRunId, boxId,
     payload.question_set, JSON.stringify(payload), confirmCode,
     companyId, installationId, presentationId, intakeSessionId, schemaFp, created, expires,
   ).run();

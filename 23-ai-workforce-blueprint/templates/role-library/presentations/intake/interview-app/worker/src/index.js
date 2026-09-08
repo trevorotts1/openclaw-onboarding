@@ -66,6 +66,14 @@ async function ensureSchema(env) {
     try { await env.DB.exec(stmt); } catch { /* already applied */ }
   }
   migrated = true;
+  // PRES-009 QC repair (F4): the legacy migration ran nowhere in production —
+  // runLegacyMigration was exported but never invoked by any route, so real
+  // legacy D1 databases kept cross-box run collisions active forever. Run it
+  // once per cold start here (idempotent: the double-NULL predicate matches
+  // only un-migrated legacy rows, which shrink to zero; never touches done or
+  // already-quarantined rows). Never fatal — a migration failure must not take
+  // the intake API down; the next cold start retries.
+  try { await runLegacyMigration(env); } catch { /* retried next cold start */ }
 }
 
 /**
@@ -211,6 +219,13 @@ async function mintSession(request, env) {
   if (installErr) return tenantErrorResponse([installErr]);
   const presErr = opaqueIdError("presentation_id", body.presentation_id);
   if (presErr) return tenantErrorResponse([presErr]);
+  // PRES-009 QC repair (F2): box_id is the legacy-migration attribution source
+  // (runLegacyMigration backfills installation_id FROM box_id). It must be the
+  // caller's real box id, opaque-validated — never the display run name. The
+  // pre-repair INSERT bound displayName into box_id, which misattributed every
+  // minted row and broke the migration plan's single-box detection.
+  const boxErr = opaqueIdError("box_id", body.box_id);
+  if (boxErr) return tenantErrorResponse([boxErr]);
 
   const payload = body.questions_payload;
   const check = validateQuestionsPayload(payload);
@@ -220,6 +235,7 @@ async function mintSession(request, env) {
   const companyId = body.company_id;
   const installationId = body.installation_id;
   const presentationId = body.presentation_id;
+  const boxId = body.box_id;
 
   // Composite reuse: exact tenant tuple + display run name + compatible
   // question schema + open. The caller's human run_id identifies the run
@@ -245,7 +261,7 @@ async function mintSession(request, env) {
   await env.DB.prepare(
     "INSERT INTO sessions (token, run_id, display_name, box_id, question_set, questions_json, company_id, installation_id, presentation_id, intake_session_id, schema_fp, tenant_state, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'open', ?, ?)",
   ).bind(
-    newToken, storageRunId, displayName || storageRunId, displayName || storageRunId,
+    newToken, storageRunId, displayName || storageRunId, boxId,
     payload.question_set, JSON.stringify(payload),
     companyId, installationId, presentationId, intakeSessionId, schemaFp, created, expires,
   ).run();
@@ -395,9 +411,22 @@ async function storeIntake(request, env) {
   if (sidErr) return jsonResponse({ status: "rejected", error: "intake tenant identity invalid", details: [sidErr] }, 400);
   const created = nowSeconds();
   if (env.DB) {
+    // PRES-009 QC repair (F3d): session_id is the table PRIMARY KEY, so the old
+    // ON CONFLICT (session_id) DO UPDATE let a second company storing the same
+    // client-chosen (valid-shaped) id OVERWRITE the first company's row — a
+    // cross-tenant clobber. Never overwrite another tenant's row: an existing
+    // row with the same session_id but a DIFFERENT company_id is a hard 409;
+    // the same company re-storing its own session id updates its own row.
+    const existing = await env.DB.prepare(
+      "SELECT company_id FROM intakes WHERE session_id = ?",
+    ).bind(session_id).first();
+    if (existing && existing.company_id && existing.company_id !== intake.company_id) {
+      return jsonResponse({ status: "rejected", error: "intake session id already belongs to another company — mint a session to get a distinct intake_session_id" }, 409);
+    }
     await env.DB.prepare(
       "INSERT INTO intakes (session_id, file_name, intake_json, company_id, installation_id, presentation_id, run_id, tenant_state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) " +
-      "ON CONFLICT (session_id) DO UPDATE SET intake_json = excluded.intake_json, company_id = excluded.company_id, installation_id = excluded.installation_id, presentation_id = excluded.presentation_id, run_id = excluded.run_id, created_at = excluded.created_at",
+      "ON CONFLICT (session_id) DO UPDATE SET intake_json = excluded.intake_json, company_id = excluded.company_id, installation_id = excluded.installation_id, presentation_id = excluded.presentation_id, run_id = excluded.run_id, created_at = excluded.created_at " +
+      "WHERE intakes.company_id IS NULL OR intakes.company_id = excluded.company_id",
     ).bind(session_id, String(body.file_name || "intake.json").slice(0, 200), JSON.stringify(intake), intake.company_id, intake.installation_id, intake.presentation_id, intake.run_id, created).run();
   }
   return jsonResponse({ status: "stored", session_id, file_name: body.file_name || "intake.json", stored_at: created, company_id: intake.company_id }, 201);
@@ -416,15 +445,35 @@ async function storeIntake(request, env) {
  */
 async function fetchIntake(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
-  const id = new URL(request.url).searchParams.get("id");
+  const params = new URL(request.url).searchParams;
+  const id = params.get("id");
   if (!id) return errorResponse("id query param required", 400);
   const sidErr = opaqueIdError("id", id);
   if (sidErr) return jsonResponse({ status: "error", error: sidErr }, 400);
+  // PRES-009 QC repair (F3e): the box bridge now passes its company_id +
+  // installation_id (from --company-id/--installation-id or the
+  // INTAKE_COMPANY_ID/INTAKE_INSTALLATION_ID env). A scoped caller may only
+  // read rows under ITS tuple; an UNSCOPED legacy-admin caller may read only
+  // pre-tenant flat rows (company_id IS NULL) — a tenant-tuple row is never
+  // served to a caller that has not proven that tenant.
+  const company = params.get("company_id") || "";
+  const installation = params.get("installation_id") || "";
+  const scoped = Boolean(company && installation
+    && !opaqueIdError("company_id", company) && !opaqueIdError("installation_id", installation));
   if (!env.DB) return errorResponse("intake not found", 404);
   const row = await env.DB.prepare(
-    "SELECT session_id, file_name, intake_json, tenant_state, quarantine_reason, created_at FROM intakes WHERE session_id = ?"
+    "SELECT session_id, file_name, intake_json, company_id, installation_id, tenant_state, quarantine_reason, created_at FROM intakes WHERE session_id = ?"
   ).bind(id).first();
   if (!row) return errorResponse("intake not found", 404);
+  if (row.company_id || row.installation_id) {
+    // Tuple row: requires exact matching scope. An unscoped caller (or one
+    // carrying a DIFFERENT tenant) never sees the row — 404, indistinguishable
+    // from a nonexistent id.
+    if (!scoped || row.company_id !== company || row.installation_id !== installation) {
+      return errorResponse("intake not found", 404);
+    }
+  }
+  // Legacy flat row (no tenant identity): served to the legacy-admin path.
   if (row.tenant_state === "quarantined") {
     return errorResponse("intake unavailable: " + (row.quarantine_reason || "quarantined") + " — requires operator remediation", 423);
   }
@@ -447,22 +496,29 @@ async function listIntakes(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
   if (!env.DB) return jsonResponse({ intakes: [] }, 200);
   // PRES-009: the list is SCOPED to the authenticated installation/company
-  // when the caller presents scoped credentials. Legacy global-admin callers
-  // (INTAKE_ADMIN_TOKEN bearer alone) still reach their own records but every
-  // AMBIGUOUS legacy row (tenant_state='quarantined') is withheld and surfaced
-  // only by count + remediation, never by id — an ambiguous row must not be
-  // shown to every active company.
+  // when the caller presents scoped credentials. PRES-009 QC repair (F3f): an
+  // UNSCOPED legacy-admin caller now sees ONLY pre-tenant flat rows
+  // (company_id IS NULL) — the old unscoped WHERE returned EVERY company's
+  // active rows, so one box's poller discovered and ingested another box's
+  // intake. Tenant-tuple rows are served only to callers carrying the exact
+  // company_id + installation_id; ambiguous quarantined rows stay withheld
+  // (count + remediation only, never by id).
   const installation = new URL(request.url).searchParams.get("installation_id") || "";
   const company = new URL(request.url).searchParams.get("company_id") || "";
+  const scoped = Boolean(company && installation
+    && !opaqueIdError("company_id", company) && !opaqueIdError("installation_id", installation));
   let sql = "SELECT session_id, file_name, tenant_state, created_at FROM intakes WHERE (tenant_state IS NULL OR tenant_state = 'active')";
   const params = [];
-  if (installation && !opaqueIdError("installation_id", installation)) {
-    sql += " AND installation_id = ?";
-    params.push(installation);
-  }
-  if (company && !opaqueIdError("company_id", company)) {
-    sql += " AND company_id = ?";
-    params.push(company);
+  if (scoped) {
+    sql += " AND company_id = ? AND installation_id = ?";
+    params.push(company, installation);
+  } else {
+    // Unscoped: pre-tenant flat rows only. Legacy rows minted pre-PRES-009 have
+    // NULL company_id; after runLegacyMigration backfills them they carry
+    // company_id? No — legacy backfill sets installation_id only, leaving
+    // company_id NULL. Those belong to the box that minted them; they surface
+    // here so a legacy deployment keeps working.
+    sql += " AND company_id IS NULL";
   }
   sql += " ORDER BY created_at DESC";
   const rows = await env.DB.prepare(sql).bind(...params).all();

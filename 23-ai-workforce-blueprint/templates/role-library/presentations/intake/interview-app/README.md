@@ -88,6 +88,11 @@ next poll.
 
 Box env requirements (sourced from `~/.openclaw/secrets/.env`):
 - `INTAKE_ADMIN_TOKEN` — box→worker auth; MUST match the Worker secret.
+- `INTAKE_COMPANY_ID` / `INTAKE_INSTALLATION_ID` — PRES-009 tenant scope. The
+  poll/ingest calls carry these to the worker so `/api/intake/list` and
+  `/api/intake?id=` return ONLY this box's tenant's rows (CLI
+  `--company-id`/`--installation-id` override them; both must be set — half a
+  tuple is never sent, and an unscoped worker serves only pre-tenant flat rows).
 - `MISSION_CONTROL_URL` / `COMMAND_CENTER_URL` — CC board base URL (cc_board).
 - `WEBHOOK_SECRET` / `CC_WEBHOOK_SECRET` — HMAC signing for cc_board.
 

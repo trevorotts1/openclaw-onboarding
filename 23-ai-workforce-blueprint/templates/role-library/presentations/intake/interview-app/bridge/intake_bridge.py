@@ -30,6 +30,7 @@ import pathlib
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -122,12 +123,18 @@ def _http(method: str, url: str, *, token: str | None = None, body: dict | None 
 
 
 def _fetch_intake(args) -> dict:
-    """Fetch the finished intake record from the Worker (by session id)."""
+    """Fetch the finished intake record from the Worker (by session id).
+
+    PRES-009 QC repair (F3c): carries the box's tenant scope alongside the id
+    (see _scoped_query) — a tuple-stored intake is only reachable through its
+    own tenant scope; an unscoped fetch returns only pre-tenant flat rows.
+    """
     admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
     if not admin:
         print("error: INTAKE_ADMIN_TOKEN not set in env", file=sys.stderr)
         sys.exit(2)
-    url = args.worker_url.rstrip("/") + "/api/intake?id=" + args.session_id
+    base = args.worker_url.rstrip("/") + "/api/intake?id=" + urllib.parse.quote(str(args.session_id), safe="")
+    url = base + _scoped_query(args).replace("?", "&")
     status, resp = _http("GET", url, token=admin)
     if status != 200:
         print(f"error: intake fetch failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
@@ -403,13 +410,44 @@ def cmd_ingest(args) -> int:
     return 4
 
 
+def _tenant_scope(args) -> tuple[str, str]:
+    """PRES-009 QC repair (F3c): the box's tenant identity for worker scoping.
+
+    Resolution order: explicit CLI args (--company-id/--installation-id) then
+    the per-box env (INTAKE_COMPANY_ID / INTAKE_INSTALLATION_ID). Both must be
+    present for the bridge to present tenant scope to the worker; with only
+    one set the scope is invalid and is NOT sent (the worker then serves only
+    pre-tenant flat rows — fail closed, never a half-tuple guess).
+    """
+    company = str(getattr(args, "company_id", "") or os.environ.get("INTAKE_COMPANY_ID", "") or "")
+    installation = str(getattr(args, "installation_id", "") or os.environ.get("INTAKE_INSTALLATION_ID", "") or "")
+    return company, installation
+
+
+def _scoped_query(args) -> str:
+    """Query-string fragment carrying the tenant scope, '' when unscoped."""
+    company, installation = _tenant_scope(args)
+    if company and installation:
+        return "?company_id=" + urllib.parse.quote(company, safe="") \
+            + "&installation_id=" + urllib.parse.quote(installation, safe="")
+    return ""
+
+
 def _list_intakes(args) -> list:
-    """GET /api/intake/list — enumerate finished intakes stored in the worker."""
+    """GET /api/intake/list — enumerate finished intakes stored in the worker.
+
+    PRES-009 QC repair (F3c): the list call now carries the box's
+    company_id + installation_id (CLI args override INTAKE_COMPANY_ID /
+    INTAKE_INSTALLATION_ID env) so the worker returns ONLY this tenant's rows.
+    The old unscoped call returned every tenant's active intakes to whichever
+    box held the admin token, and (on the R2 worker) derived session ids from
+    key paths the opaque-id validator then rejects.
+    """
     admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
     if not admin:
         print("error: INTAKE_ADMIN_TOKEN not set in env", file=sys.stderr)
         sys.exit(2)
-    url = args.worker_url.rstrip("/") + "/api/intake/list"
+    url = args.worker_url.rstrip("/") + "/api/intake/list" + _scoped_query(args)
     status, resp = _http("GET", url, token=admin)
     if status != 200:
         print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
@@ -502,8 +540,12 @@ def cmd_poll(args) -> int:
             rejected += 1
             continue
         # Reuse the ingest machinery via a synthetic args namespace.
+        # PRES-009 QC repair (F3c): carry the tenant scope into cmd_ingest so
+        # its /api/intake?id= fetch is tenant-scoped like the list call.
         sub = argparse.Namespace(
             worker_url=args.worker_url, session_id=sid, run_dir=str(run_dir),
+            company_id=getattr(args, "company_id", ""),
+            installation_id=getattr(args, "installation_id", ""),
             verbose=args.verbose, func=cmd_ingest,
         )
         # FIX F13: one poison session (malformed payload, transport crash) used
@@ -536,12 +578,20 @@ def main(argv=None) -> int:
     i.add_argument("--worker-url", required=True)
     i.add_argument("--session-id", required=True, help="the intake_session_id from the app")
     i.add_argument("--run-dir", required=True, help="deck run directory to stamp")
+    i.add_argument("--company-id", default="", help="PRES-009: tenant company id for worker scoping "
+                   "(overrides INTAKE_COMPANY_ID env; both ids required for scoped reads)")
+    i.add_argument("--installation-id", default="", help="PRES-009: fleet installation id for worker scoping "
+                   "(overrides INTAKE_INSTALLATION_ID env; both ids required for scoped reads)")
     i.add_argument("--verbose", action="store_true")
     i.set_defaults(func=cmd_ingest)
     p = sub.add_parser("poll", help="list finished intakes and ingest each once")
     p.add_argument("--worker-url", required=True)
     p.add_argument("--run-dir", required=True, help="deck run directory to stamp each intake under")
     p.add_argument("--poll-ledger", required=True, help="path to the poll ledger (processed session ids)")
+    p.add_argument("--company-id", default="", help="PRES-009: tenant company id for worker scoping "
+                   "(overrides INTAKE_COMPANY_ID env; both ids required for scoped reads)")
+    p.add_argument("--installation-id", default="", help="PRES-009: fleet installation id for worker scoping "
+                   "(overrides INTAKE_INSTALLATION_ID env; both ids required for scoped reads)")
     p.add_argument("--per-session-dirs", dest="per_session_dirs", action="store_true", default=True,
                    help="stamp each intake under <run-dir>/<session-id>/ (PRES-009 DEFAULT: ON — "
                         "submissions must never share one target directory)")

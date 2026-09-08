@@ -329,6 +329,25 @@ async function fetchIntake(request, env) {
     if (scoped) return jsonResponse(scoped, 200);
     return errorResponse("intake not found", 404);
   }
+  // PRES-009 QC repair (F3e): the bridge knows only the opaque intake_session_id
+  // plus its OWN company/installation identity. With company+installation (no
+  // presentation/run) scan THAT tenant's own prefix for a record whose stored
+  // intake_session_id matches — bounded to the caller's own tenant rows, never
+  // a global id lookup.
+  if (company && installation
+    && !opaqueIdError("company_id", company) && !opaqueIdError("installation_id", installation)
+    && opaqueIdError("id", id) === null) {
+    const prefix = INTAKE_PREFIX + company + "/" + installation + "/";
+    const listed = await env.STORE.list({ prefix });
+    for (const obj of (listed && listed.objects) || []) {
+      const meta = await storeGetJson(env, obj.key);
+      if (!meta) continue;
+      if (meta.intake_session_id === id || meta.session_id === id) {
+        return jsonResponse(meta, 200);
+      }
+    }
+    return errorResponse("intake not found", 404);
+  }
   // Legacy flat-key lookup: only valid opaque ids are ever probed (no
   // sanitizing — the PRES-009 lossy-collapse path is gone). Quarantined
   // legacy rows report their state instead of leaking across tenants.
@@ -370,7 +389,20 @@ async function listIntakes(request, env) {
     const name = obj.key;
     const meta = await storeGetJson(env, name);
     if (!meta) continue;
-    const sessionId = scopedList ? meta.session_id : name.slice(INTAKE_PREFIX.length).replace(/\.json$/, "");
+    let sessionId;
+    if (scopedList) {
+      sessionId = meta.session_id;
+    } else {
+      // PRES-009 QC repair (F3a): an UNSCOPED legacy-admin caller sees ONLY
+      // single-segment legacy flat keys. The old unscoped branch listed the
+      // whole INTAKE_PREFIX including tenant-tuple keys and derived
+      // session_id from the key PATH — a "compA/instA/.../isn-..." composite
+      // the bridge's opaque-id validator then rejects, stalling every tuple
+      // intake on a mixed deployment (and naming foreign tenants to a caller
+      // that never proved one). Tuple rows surface ONLY to scoped callers.
+      if (name.slice(INTAKE_PREFIX.length).includes("/")) continue;
+      sessionId = name.slice(INTAKE_PREFIX.length).replace(/\.json$/, "");
+    }
     if (!sessionId) continue;
     intakes.push({
       session_id: sessionId,

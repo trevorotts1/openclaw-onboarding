@@ -319,6 +319,106 @@ test("[R2 deployed worker] intake storage keys on the tenant tuple; traversal id
   assert.equal(env.STORE.map.size, 2, "distinct ids must be distinct keys");
 });
 
+// ── QC repair regression pins (F2 / F3 / F4) ────────────────────────────────
+
+test("[D1 miniapp worker] box_id is the caller's real box id (migration source), never the display name", async () => {
+  const env = makeEnv();
+  const a = await mint(MINIAPP_WORKER, env, mintBody({ box_id: "box-real-77" }));
+  assert.equal(a.status, 201);
+  const row = env.DB.db.prepare("SELECT box_id, display_name FROM sessions WHERE company_id = ?").get(CO_A);
+  assert.equal(row.box_id, "box-real-77", "box_id must carry the caller's box id");
+  assert.equal(row.display_name, RUN_NAME, "display name rides separately");
+  // Invalid box ids are rejected (they feed legacy migration attribution).
+  const bad = await mint(MINIAPP_WORKER, env, mintBody({ box_id: "../evil", run_id: "other-run-1" }));
+  assert.equal(bad.status, 400);
+});
+
+test("[D1 miniapp worker] cold start runs the legacy migration (double-NULL rows quarantined/backfilled)", async () => {
+  // Fresh module instance: ensureSchema's `migrated` flag is module-global and
+  // earlier tests in this file already consumed it. A cache-busted import gives
+  // a genuinely COLD worker whose first /api request must run schema+migration.
+  const coldWorker = await import(`../worker/src/index.js?cold=${Date.now()}`);
+  const env = makeEnv();
+  // Seed a BASE-schema DB (pre-PRES-009 columns only) with a cross-box legacy
+  // reuse plus a solo-box run, then let the first request trigger ensureSchema.
+  const P = JSON.stringify(PAYLOAD);
+  env.DB.db.exec(`DROP TABLE sessions`);
+  env.DB.db.exec(`CREATE TABLE sessions (
+    token TEXT PRIMARY KEY, run_id TEXT NOT NULL, box_id TEXT, question_set TEXT,
+    questions_json TEXT, confirm_code TEXT, status TEXT NOT NULL DEFAULT 'open',
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, completed_at INTEGER)`);
+  const ins = env.DB.db.prepare(
+    "INSERT INTO sessions (token, run_id, box_id, question_set, questions_json, status, created_at, expires_at) VALUES (?,?,?,?,?,?,?,99999999999)");
+  ins.run("e".repeat(32), "legacy-run", "box-a", "standard", P, "open", 1);
+  ins.run("d".repeat(32), "legacy-run", "box-b", "standard", P, "open", 2);
+  ins.run("c".repeat(32), "solo-run", "box-a", "standard", P, "open", 3);
+  // Any /api request cold-starts schema+migration.
+  await coldWorker.default.fetch(req("https://w.test/api/sessions/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"), env);
+  const rows = env.DB.db.prepare(
+    "SELECT run_id, installation_id, tenant_state FROM sessions ORDER BY created_at").all();
+  const solo = rows.find((r) => r.run_id === "solo-run");
+  assert.equal(solo.installation_id, "box-a", "solo-box legacy run must be backfilled");
+  assert.equal(solo.tenant_state, "active");
+  const shared = rows.filter((r) => r.run_id === "legacy-run");
+  assert.equal(shared.length, 2);
+  assert.ok(shared.every((r) => r.tenant_state === "quarantined"),
+    "cross-box reuse must be quarantined by the cold-start migration");
+  const res = await coldWorker.default.fetch(req(`https://w.test/api/sessions/${"d".repeat(32)}`), env);
+  assert.equal(res.status, 423, "quarantined legacy session withheld after cold start");
+});
+
+test("[R2 deployed worker] unscoped intake list returns legacy flat keys only; tuple rows need scope", async () => {
+  const env = makeR2Env();
+  const admin = env.INTAKE_ADMIN_TOKEN;
+  // Two tenants store tuple-keyed intakes.
+  const brief = { OFFER_NAME: "O", NAMED_METHODOLOGY: "M", TRANSFORMATION_PROMISE: "P", TIME_TO_RESULT: "T", AUDIENCE: "A", CTA_ACTION: "C", TONE: "T2", FINAL_PRICE: "F", WANT_SALES_CHECKOUT: "no", WANT_VSL_PAGE: "no" };
+  for (const [co, inst] of [[CO_A, INST_A], [CO_B, INST_B]]) {
+    const s = await mint(R2_WORKER, env, mintBody({ company_id: co, installation_id: inst }));
+    const store = await R2_WORKER.default.fetch(req("https://w.test/api/intake", {
+      method: "POST", token: admin,
+      body: { file_name: "intake.json", intake: { intake_session_id: s.json.intake_session_id, company_id: co, installation_id: inst, presentation_id: "deck-main-01", run_id: s.json.run_id, deck_brief: brief, pre_presentation_capture: { PRESENTATION_TYPE: "signature" } } },
+    }), env);
+    assert.equal(store.status, 201);
+  }
+  // Pre-tenant flat record for the legacy-admin path.
+  env.STORE.map.set("intakes/isn-legacy-flat-1.json", JSON.stringify({ session_id: "isn-legacy-flat-1", file_name: "legacy.json", stored_at: 1 }));
+  const un = await (await R2_WORKER.default.fetch(req("https://w.test/api/intake/list", { token: admin }), env)).json();
+  assert.deepEqual(un.intakes.map((i) => i.session_id), ["isn-legacy-flat-1"],
+    "unscoped list must return ONLY legacy flat rows — never foreign tuple rows or path-derived composite ids");
+  const scA = await (await R2_WORKER.default.fetch(req(`https://w.test/api/intake/list?company_id=${CO_A}&installation_id=${INST_A}`, { token: admin }), env)).json();
+  assert.equal(scA.intakes.length, 1, "scoped list returns exactly this tenant's row");
+  assert.equal(scA.intakes[0].company_id, CO_A);
+  const scB = await (await R2_WORKER.default.fetch(req(`https://w.test/api/intake/list?company_id=${CO_B}&installation_id=${INST_B}`, { token: admin }), env)).json();
+  assert.equal(scB.intakes.length, 1);
+  assert.notEqual(scA.intakes[0].session_id, scB.intakes[0].session_id);
+});
+
+test("[R2 deployed worker] bridge-shaped scoped fetch (company+installation+id) reaches own tuple row only", async () => {
+  const env = makeR2Env();
+  const admin = env.INTAKE_ADMIN_TOKEN;
+  const brief = { OFFER_NAME: "O", NAMED_METHODOLOGY: "M", TRANSFORMATION_PROMISE: "P", TIME_TO_RESULT: "T", AUDIENCE: "A", CTA_ACTION: "C", TONE: "T2", FINAL_PRICE: "F", WANT_SALES_CHECKOUT: "no", WANT_VSL_PAGE: "no" };
+  const sA = await mint(R2_WORKER, env, mintBody({ company_id: CO_A, installation_id: INST_A }));
+  await R2_WORKER.default.fetch(req("https://w.test/api/intake", {
+    method: "POST", token: admin,
+    body: { file_name: "intake.json", intake: { intake_session_id: sA.json.intake_session_id, company_id: CO_A, installation_id: INST_A, presentation_id: "deck-main-01", run_id: sA.json.run_id, deck_brief: brief, pre_presentation_capture: { PRESENTATION_TYPE: "signature" } } },
+  }), env);
+  const sB = await mint(R2_WORKER, env, mintBody({ company_id: CO_B, installation_id: INST_B }));
+  await R2_WORKER.default.fetch(req("https://w.test/api/intake", {
+    method: "POST", token: admin,
+    body: { file_name: "intake.json", intake: { intake_session_id: sB.json.intake_session_id, company_id: CO_B, installation_id: INST_B, presentation_id: "deck-main-01", run_id: sB.json.run_id, deck_brief: brief, pre_presentation_capture: { PRESENTATION_TYPE: "signature" } } },
+  }), env);
+  const own = await R2_WORKER.default.fetch(
+    req(`https://w.test/api/intake?id=${sA.json.intake_session_id}&company_id=${CO_A}&installation_id=${INST_A}`, { token: admin }), env);
+  assert.equal(own.status, 200, "scoped fetch must reach the tenant's own tuple row");
+  assert.equal((await own.json()).intake.company_id, CO_A);
+  const foreign = await R2_WORKER.default.fetch(
+    req(`https://w.test/api/intake?id=${sB.json.intake_session_id}&company_id=${CO_A}&installation_id=${INST_A}`, { token: admin }), env);
+  assert.equal(foreign.status, 404, "another tenant's row is unreachable through A's scope");
+  const unscoped = await R2_WORKER.default.fetch(
+    req(`https://w.test/api/intake?id=${sB.json.intake_session_id}`, { token: admin }), env);
+  assert.equal(unscoped.status, 404, "unscoped fetch never serves a tenant-tuple row");
+});
+
 test("[R2 deployed worker] run index keys include the tenant tuple; two companies never share an index", async () => {
   const env = makeR2Env();
   const a = await mint(R2_WORKER, env, mintBody({ company_id: CO_A, installation_id: INST_A }));
