@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # =============================================================================
-# SKILL 57 — SOCIAL MEDIA IN A BOX :: BUILD MANIFEST + SIGNED CERTIFICATE
+# SKILL 57 — SOCIAL MEDIA IN A BOX :: BUILD MANIFEST + PROCESS CERTIFICATE
 # -----------------------------------------------------------------------------
 # DETERMINISTIC, FAIL-CLOSED. The publisher physically cannot run without the
-# complete signed manifest this emits. It records / proves:
+# complete manifest this emits. It records / proves:
 #   * config hash (secrets EXCLUDED — never hashed-in, never printed)
 #   * shipped prompt-file hashes vs the canonical PROMPT-HASHES.json pin  -> AF-SM-PROMPT-HASH
 #   * every gate's PASS certificate for the run's declared phases         -> AF-SM-PROCESS-INTEGRITY
@@ -20,7 +20,7 @@
 #           [--canonical PROMPT-HASHES.json] [--sign SIGNER] [--json]
 #   python3 build_manifest.py --self-test
 # =============================================================================
-"""Fail-closed run manifest + signed process certificate for Skill 57."""
+"""Fail-closed run manifest + process certificate for Skill 57."""
 
 import argparse
 import hashlib
@@ -323,7 +323,7 @@ def _canonical_persona(run_dir):
 
 
 def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
-    """The signed certificate's `creative` block (§6 step 6). Proves the client got
+    """The certificate's `creative` block (§6 step 6). Proves the client got
     EXACTLY what they asked for: mode, brief sha, theme source, per-band logged
     overrides, client-copy shas, persona source, em-dash policy, series length, arc,
     style pick. Defaults reproduce a v0.1.0 default week byte-for-byte."""
@@ -543,7 +543,7 @@ def self_test():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Fail-closed run manifest + signed certificate (Skill 57).")
+    ap = argparse.ArgumentParser(description="Fail-closed run manifest + process certificate (Skill 57).")
     ap.add_argument("--run-dir")
     ap.add_argument("--config")
     ap.add_argument("--prompts-dir")
