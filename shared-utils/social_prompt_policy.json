@@ -1,0 +1,115 @@
+{
+  "policy_id": "social-prompt-policy",
+  "policy_version": "1.0.0",
+  "effective_date": "2026-09-08",
+  "owner_requirement": "Every final social-planner image prompt for Kie GPT Image 2 and Agnes contains 9,000-19,000 meaningful stripped Unicode characters. This is a production house policy, not a claim that longer prompts automatically create better images.",
+  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2 + Agnes adapters). Unrelated skills keep their own bands (Graphics GIP bands in 45-design-intelligence-library, Agnes general guidance). This file is the single source of truth for the scoped override.",
+  "house_band": {
+    "min_chars": 9000,
+    "max_chars": 19000,
+    "target_chars": 9000,
+    "hard_boundaries": {
+      "below_min_fails_at": 8999,
+      "min_passes_at": 9000,
+      "max_passes_at": 19000,
+      "above_max_fails_at": 19001
+    },
+    "distinct_from_vendor_caps": true,
+    "note": "8,999 and 19,001 fail production preflight; 9,000 and 19,000 pass length checks but still require semantic QC. The house range is deliberately narrower than any vendor cap so headroom always exists."
+  },
+  "count_rule": {
+    "normalization": "NFC",
+    "trim": true,
+    "python": "len(unicodedata.normalize('NFC', final_prompt).strip())",
+    "typescript": "Array.from(normalized.trim()).length",
+    "parity_fixture": "tests/social-planner/fixtures/f32_count_parity.json",
+    "ts_mirror": "tests/social-planner/fixtures/f32_count_mirror.js",
+    "note": "Both count Unicode CODE POINTS of the NFC-normalized, trimmed final string. Array.from (not .length) in TypeScript because .length counts UTF-16 units, which double-counts astral characters."
+  },
+  "validation_order": [
+    "1. assemble every section (purpose/audience, brand/reference roles, subject/setting, composition, lighting/finish, exact text, preservation/exclusions, output/QC)",
+    "2. append per-reference instructions (role-correct) and the merged negative block LAST",
+    "3. THEN count and hash the final transmitted payload — never an intermediate draft",
+    "4. reject if outside the house band, padded, or contradictory — before any paid call",
+    "5. recheck after every regeneration"
+  ],
+  "providers": {
+    "kie-gpt-image-2": {
+      "provider_id": "kie",
+      "model_id": "gpt-image-2-text-to-image",
+      "vendor_cap_chars": 20000,
+      "vendor_cap_source": "published text-to-image schema maxLength 20000 (verified 2026-09-08)",
+      "headroom_chars": 1000,
+      "uncertainty_note": "Check the selected endpoint independently for image-to-image and future GPT models; a verified provider cap below 9,000 requires a visible compatible-model choice, never truncation.",
+      "adapter_verified": true
+    },
+    "agnes-image-2.1-flash": {
+      "provider_id": "agnes",
+      "model_id": "agnes-image-2.1-flash",
+      "vendor_cap_chars": null,
+      "vendor_cap_source": null,
+      "cap_status": "NOT_PUBLISHED",
+      "uncertainty_note": "Agnes publishes no prompt ceiling in the reviewed documentation. Do not invent a cap; retain this uncertainty and validate the operating range in an authorized integration test (boundary probe only with operator authorization).",
+      "adapter_verified": true
+    }
+  },
+  "token_budget": {
+    "estimate_chars_per_token": 4,
+    "rule": "estimated_tokens = ceil(final_char_count / 4). The estimate MUST fit the provider's published prompt-token allowance where one exists; where none is published the char-level vendor cap governs. The compiler budget exists so token limits can never silently truncate a prompt: over-budget compiles are CONDENSED to fit, never truncated mid-content and never silently sent.",
+    "never_silently_truncate": true
+  },
+  "expansion_rules": {
+    "short_brief": "A short client brief is expanded automatically into the full section structure using USEFUL VISUAL DECISIONS (composition, lighting, palette application, safe areas, material and finish decisions derived from the brief's own audience/purpose/destination). Never demand the client write a long prompt.",
+    "no_padding": "Expansion must add genuine visual control. Repeated sentences, repeated n-grams, and boilerplate stamped twice are PADDING and are rejected (AF-PROMPT-PADDING), not generated.",
+    "overlong_brief": "An overlong brief is condensed by dropping optional guidance blocks lowest-priority-first without removing required meaning (subject, exact text, brand, reference roles, negatives, output spec). If required meaning alone exceeds the ceiling, fail closed (AF-PROMPT-CANNOT-CONDENSE) — never truncate silently."
+  },
+  "rejection_rules": {
+    "padding": "Any sentence appearing more than once in the final prompt, or a duplicated-word-8gram ratio above 0.08, is padding — reject BEFORE spend.",
+    "contradictions": [
+      "logo-vs-style-reference conflict (see reference_roles): an identity/logo reference carrying a style-only do-not-copy directive, or a style-only reference carrying a preserve-the-mark directive, is contradictory — reject AF-PROMPT-CONFLICT before spend.",
+      "exact text declared empty while approved on-image copy is present (or vice versa)",
+      "destination ratio conflicts with declared composition ratio",
+      "two different hex values asserted for the same brand palette slot"
+    ]
+  },
+  "reference_roles": {
+    "identity": {
+      "meaning": "the client's approved logo/mark or brand identity element",
+      "instruction": "REPRODUCE this reference exactly: preserve the approved mark's geometry, colors, proportions and any wordmark spelling. Do not redraw, recolor, restyle or reinterpret it.",
+      "must_not_carry": "a style-only do-not-copy-subject/text directive — that instruction applied to an identity reference is the contradictory logo rule and is rejected"
+    },
+    "product": {
+      "meaning": "the client's actual product",
+      "instruction": "Match the reference product's shape, materials and labeling; do not invent product features.",
+      "must_not_carry": "a directive to invent or generalize the product"
+    },
+    "layout": {
+      "meaning": "a layout/composition reference",
+      "instruction": "Use for layout structure and spacing only; do not copy the subject, faces or text.",
+      "must_not_carry": "a directive to reproduce the reference verbatim"
+    },
+    "style": {
+      "meaning": "style-only reference (color grade, lighting, mood)",
+      "instruction": "Style reference ONLY for color grading, lighting and composition mood — do not copy its subjects, faces, or text.",
+      "must_not_carry": "a preserve-the-logo directive — that instruction on a style-only reference is the contradictory logo rule and is rejected"
+    }
+  },
+  "image_brief_schema": {
+    "$comment": "F29 unified ONE image brief schema. Every social-planner image brief (any provider) carries ALL of these fields; missing required fields fail the brief before any prompt is compiled.",
+    "required": ["brand_palette", "logo_rules", "audience", "composition", "copy", "approved_assets", "safe_areas", "destination_dimensions"],
+    "fields": {
+      "brand_palette": "object {slot: hex} — verified hex palette from the approved brand profile (never ad-hoc colors)",
+      "logo_rules": "object {usage, placement, min_clear_space, references:[{role: identity|product|layout|style, instruction}]} — role-correct per-reference instructions",
+      "audience": "string — intended audience and intended emotional response",
+      "composition": "object {focal_message, hierarchy, framing, whitespace, ratio} — including crop requirements",
+      "copy": "object {on_image_text: string (may be empty = explicitly no text), spelling_lock: true, placement, hierarchy}",
+      "approved_assets": "list of approved reference/product asset ids actually cleared for use",
+      "safe_areas": "object {platform_ratio, keep_in: pct} — vertical/platform safe areas",
+      "destination_dimensions": "object {platform, ratio, pixels} — e.g. {platform:'instagram', ratio:'4:5', pixels:'1080x1350'}"
+    },
+    "post_generation_validation": {
+      "checks": ["delivered dimensions match destination_dimensions", "crop respects safe_areas", "legibility/OCR matches copy.on_image_text exactly (spelling lock)", "brand consistency vs brand_palette and logo_rules", "preview URL references the approved revision; original URL retained"],
+      "isolation": "a failed asset is isolated with bounded regeneration cost/retries and exposed alternatives; one failure never discards successful copy or other account assets"
+    }
+  }
+}

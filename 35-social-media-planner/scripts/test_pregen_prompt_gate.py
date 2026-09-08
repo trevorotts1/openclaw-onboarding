@@ -97,6 +97,7 @@ def main() -> int:
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
+            "--no-social-band",
         )
         check("exit code is 6", r2.returncode == 6, f"got {r2.returncode}, stderr={r2.stderr!r}")
         check("stderr names AF-SM-MODEL-ROUTING", "AF-SM-MODEL-ROUTING" in r2.stderr, r2.stderr)
@@ -110,6 +111,7 @@ def main() -> int:
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
+            "--no-social-band",
         )
         check("exit code is 0", r3.returncode == 0, f"got {r3.returncode}, stderr={r3.stderr!r}")
         check("stdout confirms OK", r3.stdout.strip().startswith("OK:"), r3.stdout)
@@ -122,6 +124,7 @@ def main() -> int:
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
             "--asset-source", "graphics-department",
+            "--no-social-band",
         )
         check("exit code is 6", r4a.returncode == 6, f"got {r4a.returncode}")
         check("stderr names AF-SM-INPUT-QC-GATE", "AF-SM-INPUT-QC-GATE" in r4a.stderr, r4a.stderr)
@@ -136,6 +139,7 @@ def main() -> int:
             "--avoid-list-file", str(avoid_file),
             "--asset-source", "graphics-department",
             "--qc-receipt-file", str(low_receipt),
+            "--no-social-band",
         )
         check("low-score (7.0 < 8.5) receipt still refused (exit 6)", r4b.returncode == 6,
               f"got {r4b.returncode}")
@@ -150,6 +154,7 @@ def main() -> int:
             "--avoid-list-file", str(avoid_file),
             "--asset-source", "graphics-department",
             "--qc-receipt-file", str(good_receipt),
+            "--no-social-band",
         )
         check("passing (8.9 >= 8.5) receipt clears the gate (exit 0)", r4c.returncode == 0,
               f"got {r4c.returncode}, stderr={r4c.stderr!r}")
@@ -164,6 +169,7 @@ def main() -> int:
             "--ratio", "9:16", "--pixels", "1080x1920",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--avoid-list-file", str(avoid_file),
+            "--no-social-band",
             # no --text-overlay
         )
         check("exit code is 0 (no text overlay -> Nano Banana stays legitimate)",
@@ -208,9 +214,59 @@ def main() -> int:
             "--brand-colors", "#0B3D2E,#F5EFE0,#C9A24B",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
+            "--no-social-band",
         )
         check("exit code is 0", r6.returncode == 0, f"got {r6.returncode}, stderr={r6.stderr!r}")
         check("stdout confirms OK", r6.stdout.strip().startswith("OK:"), r6.stdout)
+
+        print("\n=== 7. F32: social-planner hard band 8,999/19,001 fail; 9,000/19,000 pass length ===")
+        def _sized(n: int) -> str:
+            base = "A useful visual decision sentence for the scene. "   # 49 chars
+            suffix = " brand-appropriate, appropriate for the client's audience, no suggestive content."
+            return base + "x" * (n - len(base) - len(suffix)) + suffix
+
+        for size, expect_exit, label in ((8999, 3, "8999 FAILS"), (9000, 0, "9000 passes length"),
+                                         (19000, 0, "19000 passes length"), (19001, 3, "19001 FAILS")):
+            pf = _write(tmp, f"band_{size}.txt", _sized(size))
+            rr = run_gate(
+                "--prompt-file", str(pf), "--model", "gpt-image-2-text-to-image",
+                "--ratio", "4:5", "--pixels", "1080x1350",
+                "--brand-colors", "#0B3D2E,#F5EFE0",
+                "--avoid-list-file", str(avoid_file),
+                # no --text-overlay so routing stays out of the picture
+            )
+            check(f"F32 band {label} (exit {expect_exit})", rr.returncode == expect_exit,
+                  f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
+            if expect_exit == 3:
+                check(f"F32 band {size}: failure names AF-PROMPT-LENGTH",
+                      "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
+
+        print("\n=== 8. F32: GPT Image 2 + Agnes ELIGIBLE through verified adapters (capability routing) ===")
+        for model in ("gpt-image-2-text-to-image", "agnes-image-2.1-flash"):
+            pf = _write(tmp, f"cap_{model.replace('.', '_')}.txt", _sized(9000))
+            rr = run_gate(
+                "--prompt-file", str(pf), "--model", model,
+                "--ratio", "4:5", "--pixels", "1080x1350",
+                "--brand-colors", "#0B3D2E,#F5EFE0",
+                "--avoid-list-file", str(avoid_file),
+            )
+            check(f"capability routing admits {model} for a text-capable band prompt (exit 0)",
+                  rr.returncode == 0, f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
+            check(f"F32 spend receipt recorded for {model}", "F32 spend receipt" in rr.stdout, rr.stdout)
+
+        print("\n=== 9. F32: nano-banana-2 still refused for a text-overlay prompt (GK-20 preserved) ===")
+        sized_overlay = _sized(9000).rstrip() + ' On-image text reads exactly: "Headline Here".'
+        r9 = run_gate(
+            "--prompt-file", str(_write(tmp, "nb.txt", sized_overlay)),
+            "--model", "nano-banana-2",
+            "--ratio", "4:5", "--pixels", "1080x1350",
+            "--brand-colors", "#0B3D2E,#F5EFE0",
+            "--text-overlay", "Headline Here",
+            "--avoid-list-file", str(avoid_file),
+        )
+        check("nano-banana-2 with text overlay refused (exit 6)", r9.returncode == 6,
+              f"got {r9.returncode}")
+        check("refusal names AF-SM-MODEL-ROUTING", "AF-SM-MODEL-ROUTING" in r9.stderr, r9.stderr)
 
     print()
     if FAILURES:

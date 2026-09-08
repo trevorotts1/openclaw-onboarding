@@ -32,6 +32,26 @@
     "posts_row_key": "cycle_id::content_revision::account_id (upsert, never duplicate-append)",
     "overview_summary": "Weekly Overview stays a summary; new summary rows derived from Posts rows carry the technical key in column U (_row_key). Legacy overview rows are retained untouched. Platforms without an overview column (X, Google Business Profile, unfamiliar labels) appear only in the Posts table — no generic-platform fallback into TikTok or any named column.",
     "idempotency_contract": "Readback of Posts!A2:N (and Weekly Overview!A2:U) before any write; existing row_key => values.update on exactly that row; missing => one append. Durable claim/ledger lives in the ONB/CC caller; the webhook stays stateless-safe via readback (F15).",
+    "repair_contract": {
+      "verification": "F14 — BEFORE any write, spreadsheet metadata is read with the SAME googleSheetsOAuth2Api credential the append uses, and the expected tab is checked. A 404 (Requested entity was not found: nonexistent or deleted sheet ID) classifies as repair_state 'sheet_not_found' (identity repair); a 403 classifies as 'sheet_access_denied' (access repair). Neither is ever answered by silently creating a replacement sheet.",
+      "transient": "5xx/429/network failures are transient: bounded retries (retryOnFail, maxTries 3, 2s backoff), then a failed receipt carrying repair_state 'transient' for the caller to re-queue.",
+      "replay": "Pending keyed rows live in the caller's durable ledger (F15) under the SAME row_key. Once verified access is restored, the caller replays each pending row exactly once — the readback upsert updates the existing keyed row in place and never duplicates it, so history is retained.",
+      "error_schema": {
+        "success": false,
+        "repair_required": true,
+        "repair_state": "sheet_not_found|sheet_access_denied|transient",
+        "repair_action": "specific actionable repair instruction (identity vs access)",
+        "sheetId": "string"
+      }
+    },
+    "asset_manifest_contract": {
+      "purpose": "F24 — persist one asset-manifest record per image asset and write trusted =IMAGE(\"https://…\",1) formulas ONLY into the Images tab's designated preview columns. The Posts tab keeps preview_url as RAW (F26 rule: untrusted URLs never become formulas).",
+      "manifest_fields": ["content_id", "asset_id", "company_id", "cycle_id", "content_revision", "kind", "preview_url", "original_url", "ratio", "width", "height", "alt_text", "qc_state"],
+      "image_formula_rule": "The Images write node wraps ONLY caller-validated URLs: https, no quotes/backslashes/control chars, a Sheets-fetchable image host (assets.cdn.filesafe.space/... or an equivalent permanent CDN). Drive page links and soon-expiring URLs are rejected into a repair state, never written.",
+      "formula": "=IMAGE(\"<preview_url>\", 1) written into Images tab preview columns only; adjacent fields (content id, ratio, alt) stay RAW values.",
+      "sizing": "batchUpdate updateDimensionProperties: Images preview columns 220px per the SPEC build contract.",
+      "broken_url": "A formula written for an unreachable/expired URL surfaces a visible repair state (asset_broken) in the receipt; it is never silently dropped."
+    },
     "input_schema": {
       "sheetId": "string (required)",
       "schema_version": "string (optional, must be 1.1.0 if present)",
@@ -51,7 +71,8 @@
       "theme": "string (optional, feeds the overview summary)",
       "week_of": "string (optional, feeds the overview summary)",
       "title": "string (optional, feeds the overview summary)",
-      "notes": "string (optional, feeds the overview summary)"
+      "notes": "string (optional, feeds the overview summary)",
+      "asset": "object (optional, F24 — {content_id, asset_id, kind, preview_url, original_url, ratio, width, height, alt_text, qc_state}; kind=image writes the Images manifest row + trusted =IMAGE formula; kind=video writes the Videos row with poster + Watch video link (F38))"
     },
     "output_schema": {
       "success": "boolean",
@@ -100,6 +121,27 @@
     {
       "parameters": {
         "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}?fields=sheets.properties.title,sheets.properties.sheetId,spreadsheetId",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {},
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      "id": "http-verify-metadata",
+      "name": "Verify Sheet Metadata (F14)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        330,
+        -220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
         "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Posts!A2:N",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
@@ -112,6 +154,36 @@
       "position": [
         440,
         0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F14 — classify the metadata verification result BEFORE any write.\n// The metadata read runs with the SAME googleSheetsOAuth2Api credential the\n// append itself uses, so its status code is authoritative for this exact\n// access path:\n//   404  => 'sheet_not_found'    — nonexistent or deleted sheet ID (identity\n//          repair: fix the registered sheetId in the company registry; NEVER\n//          silently create a replacement sheet).\n//   403  => 'sheet_access_denied' — the credential no longer has access\n//          (access repair: re-grant permission on the EXISTING sheet).\n//   other error => 'transient'   — bounded retries already applied (3x/2s);\n//          surfaced so the caller re-queues without losing the pending row.\n// The error response carries repair_required: true + a SPECIFIC repair_action,\n// which the caller surfaces as a visible repair task. No sheet is ever created\n// as a side effect of a failure.\nconst src = $('Validate + Build Keys').first().json;\nconst err = $input.first().json;\nconst status = err.status || err.statusCode || (err.response && (err.response.status || err.response.statusCode));\nlet repair_state = 'transient';\nlet repair_action = 'Transient Google Sheets error after 3 bounded retries — keep the row pending and replay it on the next cycle (the idempotency ledger upserts, never duplicates).';\nif (status === 404) {\n  repair_state = 'sheet_not_found';\n  repair_action = 'The registered planner sheet ID ' + src.sheetId + ' does not exist or was deleted (Requested entity was not found). Identity repair: correct the sheetId in the company sheet registry — do NOT create a replacement sheet silently; the pending row replays once the registered ID is verified.';\n} else if (status === 403) {\n  repair_state = 'sheet_access_denied';\n  repair_action = 'The append credential is denied access to sheet ' + src.sheetId + '. Access repair: re-grant the operator credential access to the EXISTING sheet, then replay the pending row (no sheet is created).';\n}\nreturn [{ json: {\n  success: false,\n  repair_required: true,\n  repair_state: repair_state,\n  repair_action: repair_action,\n  sheetId: src.sheetId,\n  rowKey: src.rowKey\n} }];"
+      },
+      "id": "code-classify-repair",
+      "name": "Classify Repair (F14)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Classify Repair (F14)').first().json) }}",
+        "options": {
+          "responseCode": 424
+        }
+      },
+      "id": "respond-repair",
+      "name": "Respond: Repair (F14)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        770,
+        -380
       ]
     },
     {
@@ -337,6 +409,368 @@
     },
     {
       "parameters": {
+        "jsCode": "// F24/F38 — after the manifest row is committed (upsert or append), resolve the\n// actual Images row number from the write response so the trusted =IMAGE\n// formula lands in the SAME row the manifest describes. Video rows route to\n// the Videos tab writes via videosRow.\nconst resp = $input.first().json;\nconst prior = $('Find Asset Row (F24)').first().json;\nlet rowNumber = prior.assetRowNumber;\nconst range = (resp.updates ? resp.updates.updatedRange : resp.updatedRange) || '';\nif (!rowNumber && range) {\n  const m = range.match(/:N(\\d+)/);\n  if (m) rowNumber = parseInt(m[1], 10);\n}\nreturn [{ json: {\n  sheetId: prior.sheetId,\n  assetRowNumber: rowNumber,\n  imagesFormula: prior.imagesFormula,\n  videosRow: prior.videosRow,\n  assetManifest: prior.assetManifest,\n  assetRepair: prior.assetRepair,\n  receipt: prior.receipt\n} }];"
+      },
+      "id": "code-normalize-asset",
+      "name": "Normalize Asset Write (F24)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3850,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F24 — validate + persist the asset manifest row and build the Images-tab\n// write. Trusted =IMAGE(\"https://…\",1) formulas are generated ONLY here, ONLY\n// for URLs that pass validation: https scheme, no quotes/backslashes/control\n// characters, and a Sheets-fetchable permanent CDN host. Private Drive page\n// links and soon-expiring URLs are refused into a visible repair state — they\n// are never written as formulas (and never as RAW either). The manifest row\n// itself (content id, ratio, dimensions, alt text, URLs) is RAW values keyed on\n// asset_id; the formula goes into the Images tab's designated preview column.\nconst receipt = $('Build Receipt').first().json.receipt;\nconst src = $('Find Posts Row').first().json;\nconst body = src.body;\nconst asset = body.asset || null;\nif (!asset) return [{ json: { receipt: receipt, assetManifest: null, imagesFormula: null, assetRepair: null } }];\nconst kind = String(asset.kind || 'image');\nconst contentId = String(asset.content_id || (body.cycle_id + '::' + body.content_revision));\nconst assetId = String(asset.asset_id || (contentId + '::' + body.account_id + '::' + kind));\nconst previewUrl = String(asset.preview_url || body.preview_url || '');\nconst originalUrl = String(asset.original_url || '');\n// URL validation — reject what Sheets cannot render.\nlet urlRepair = null;\nif (!previewUrl) {\n  urlRepair = 'asset_missing_url';\n} else if (!/^https:\\/\\//i.test(previewUrl)) {\n  urlRepair = 'asset_url_not_https';\n} else if (/[\"'\\\\\\x00-\\x1f]/.test(previewUrl)) {\n  urlRepair = 'asset_url_unsafe_chars';\n} else if (/drive\\.google\\.com\\/(file\\/d|open\\?id=)/i.test(previewUrl) || /drive\\.usercontent\\.google\\.com/i.test(previewUrl) === false && /docs\\.google\\.com\\/(document|spreadsheets|presentation|uc\\?)/i.test(previewUrl)) {\n  urlRepair = 'asset_url_not_fetchable'; // private Drive page link, not a direct image\n}\nconst ratio = String(asset.ratio || '');\nconst width = asset.width != null ? String(asset.width) : '';\nconst height = asset.height != null ? String(asset.height) : '';\nconst altText = String(asset.alt_text || '');\nconst qcState = String(asset.qc_state || body.qc_state || '');\n// Manifest row (RAW values) — A asset_key, then the manifest fields.\nconst assetKey = ['ASSET', body.company_id, contentId, assetId].join('::');\nconst manifestValues = [assetKey, contentId, assetId, body.company_id, body.cycle_id,\n  body.content_revision, kind, previewUrl, originalUrl, ratio, width, height, altText, qcState];\nconst manifestHeader = [\"asset_key\", \"content_id\", \"asset_id\", \"company_id\", \"cycle_id\", \"content_revision\", \"kind\", \"preview_url\", \"original_url\", \"ratio\", \"width\", \"height\", \"alt_text\", \"qc_state\"];\nlet imagesFormula = null;\nif (kind === 'image' && !urlRepair) {\n  imagesFormula = '=IMAGE(\"' + previewUrl + '\", 1)';\n}\n// F38 — video evidence: the Videos tab carries the poster (trusted =IMAGE of\n// the poster CDN URL — a video cell is a visible poster plus a playback link,\n// never a promised native MP4 player), duration, ratio, version, QC and the\n// client-bound 'Watch video' HYPERLINK to the CC player route. The PUBLISHED\n// destination URL is written separately only after posting; client drafts are\n// NEVER uploaded to public YouTube just to preview — a YouTube smart-chip note\n// is added only when the published destination actually is YouTube.\nlet videosRow = null;\nif (kind === 'video' && !urlRepair) {\n  const watchUrl = String(asset.watch_url || '');\n  if (!/^https:\\/\\//i.test(watchUrl) || /[\"'\\\\\\x00-\\x1f]/.test(watchUrl)) {\n    // An untrusted watch URL is refused — never written as a HYPERLINK.\n    if (!urlRepair) urlRepair = 'asset_watch_url_invalid';\n  } else {\n    const posterUrl = String(asset.poster_url || previewUrl || '');\n    const videoKey = ['VIDEO', body.company_id, contentId, assetId].join('::');\n    const publishedUrl = String(asset.published_url || '');\n    const isYouTube = Boolean(asset.youtube);\n    let watchCell = '=HYPERLINK(\"' + watchUrl + '\", \"Watch video\")';\n    if (isYouTube && publishedUrl) {\n      // YouTube smart-chip note only when applicable (published YouTube link).\n      watchCell += ' | YouTube smart-chip preview applies to the published link only';\n    }\n    videosRow = {\n      video_key: videoKey,\n      header: [\"video_key\", \"content_id\", \"asset_id\", \"company_id\", \"cycle_id\", \"content_revision\", \"version\", \"poster_url\", \"published_url\", \"watch_url\", \"duration_seconds\", \"ratio\", \"captions\", \"qc_state\"],\n      values: [videoKey, contentId, assetId, body.company_id, body.cycle_id,\n        body.content_revision, String(asset.version || body.content_revision || ''),\n        posterUrl, publishedUrl, watchUrl,\n        String(asset.duration_seconds != null ? asset.duration_seconds : ''),\n        String(asset.ratio || ratio || ''), String(asset.captions ? 'captions' : ''), qcState],\n      posterFormula: posterUrl ? '=IMAGE(\"' + posterUrl + '\", 1)' : null,\n      watchFormula: watchCell\n    };\n  }\n}\nreturn [{ json: {\n  receipt: receipt,\n  sheetId: body.sheetId,\n  assetManifest: urlRepair ? null : { asset_key: assetKey, values: manifestValues, header: manifestHeader },\n  imagesFormula: imagesFormula,\n  videosRow: urlRepair ? null : videosRow,\n  assetRepair: urlRepair ? { repair_required: true, repair_state: urlRepair, repair_action: 'Asset URL for ' + contentId + ' failed validation (' + urlRepair + '). Surface a visible repair task; re-upload to the permanent CDN and re-run the cycle. Nothing was written.', asset_id: assetId } : null\n} }];"
+      },
+      "id": "code-build-asset-manifest",
+      "name": "Build Asset Manifest (F24)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2530,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Images!A2:A",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "id": "http-read-images",
+      "name": "Read Images Keys (F24)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2750,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F24/F38 — find the manifest row for this asset_key (upsert, never duplicate).\nconst found = ($input.first().json.values || []);\nconst src = $('Build Asset Manifest (F24)').first().json;\nlet rowNumber = null;\nif (src.assetManifest) {\n  for (let i = 0; i < found.length; i++) {\n    if ((found[i][0] || '') === src.assetManifest.asset_key) { rowNumber = i + 2; break; }\n  }\n}\nreturn [{ json: {\n  assetExisting: src.assetManifest ? rowNumber !== null : false,\n  assetRowNumber: rowNumber,\n  assetManifest: src.assetManifest,\n  imagesFormula: src.imagesFormula,\n  videosRow: src.videosRow,\n  assetRepair: src.assetRepair,\n  sheetId: src.sheetId,\n  receipt: src.receipt\n} }];"
+      },
+      "id": "code-find-asset-row",
+      "name": "Find Asset Row (F24)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2970,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-asset",
+              "leftValue": "={{ $json.assetManifest !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-asset-present",
+      "name": "Asset manifest present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3190,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-asset-exists",
+              "leftValue": "={{ $json.assetExisting }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-asset-exists",
+      "name": "Asset row exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3410,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Images!A{{ $json.assetRowNumber }}:N{{ $json.assetRowNumber }}?valueInputOption=RAW",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.assetManifest.values] }) }}",
+        "options": {}
+      },
+      "id": "http-update-asset",
+      "name": "Update Asset Manifest Row (upsert)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3630,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Images!A:N:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.assetManifest.values] }) }}",
+        "options": {}
+      },
+      "id": "http-append-asset",
+      "name": "Append Asset Manifest Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3630,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Images!P{{ $json.assetRowNumber }}?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[$json.imagesFormula]] }) }}",
+        "options": {}
+      },
+      "id": "http-write-image-formula",
+      "name": "Write Trusted IMAGE Formula (F24)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3630,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Videos!A2:A",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "id": "http-read-videos",
+      "name": "Read Videos Keys (F38)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4180,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-video",
+              "leftValue": "={{ $json.videosRow !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-video-row",
+      "name": "Video evidence row?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4070,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F38 — find the Videos row for this video_key (upsert, never duplicate).\nconst found = ($input.first().json.values || []);\nconst prior = $('Normalize Asset Write (F24)').first().json;\nlet rowNumber = null;\nif (prior.videosRow) {\n  for (let i = 0; i < found.length; i++) {\n    if ((found[i][0] || '') === prior.videosRow.video_key) { rowNumber = i + 2; break; }\n  }\n}\nreturn [{ json: {\n  videoExisting: prior.videosRow ? rowNumber !== null : false,\n  videoRowNumber: rowNumber,\n  videosRow: prior.videosRow,\n  sheetId: prior.sheetId,\n  receipt: prior.receipt\n} }];"
+      },
+      "id": "code-find-video-row",
+      "name": "Find Video Row (F38)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4290,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-vid-exists",
+              "leftValue": "={{ $json.videoExisting }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-video-exists",
+      "name": "Video row exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4510,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Videos!A{{ $json.videoRowNumber }}:N{{ $json.videoRowNumber }}?valueInputOption=RAW",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.videosRow.values] }) }}",
+        "options": {}
+      },
+      "id": "http-update-video",
+      "name": "Update Video Row (upsert)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4730,
+        -580
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Videos!A:N:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [$json.videosRow.values] }) }}",
+        "options": {}
+      },
+      "id": "http-append-video",
+      "name": "Append Video Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4730,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// F38 — normalize the Videos write response: resolve the row number, then\n// build the trusted poster =IMAGE and 'Watch video' HYPERLINK writes for the\n// SAME row. Poster column R (index 17); watch link column S (index 18).\nconst resp = $input.first().json;\nconst prior = $('Find Video Row (F38)').first().json;\nlet rowNumber = prior.videoRowNumber;\nconst range = (resp.updates ? resp.updates.updatedRange : resp.updatedRange) || '';\nif (!rowNumber && range) {\n  const m = range.match(/:N(\\d+)/);\n  if (m) rowNumber = parseInt(m[1], 10);\n}\nconst cell = function (colIndex) {\n  return { sheetId: prior.sheetId ? undefined : undefined, rowIndex: rowNumber - 1, columnIndex: colIndex };\n};\nconst requests = [];\nif (rowNumber && prior.videosRow) {\n  if (prior.videosRow.posterFormula) {\n    requests.push({ updateCells: {\n      rows: [{ values: [{ userEnteredValue: { formulaValue: prior.videosRow.posterFormula } }] }],\n      fields: 'userEnteredValue',\n      start: { sheetId: $('Get Spreadsheet Metadata').first().json.sheets ? 0 : 0, rowIndex: rowNumber - 1, columnIndex: 17 }\n    } });\n  }\n  if (prior.videosRow.watchFormula) {\n    requests.push({ updateCells: {\n      rows: [{ values: [{ userEnteredValue: { formulaValue: prior.videosRow.watchFormula } }] }],\n      fields: 'userEnteredValue',\n      start: { sheetId: 0, rowIndex: rowNumber - 1, columnIndex: 18 }\n    } });\n  }\n}\nreturn [{ json: { videoFormulaRequests: requests, receipt: prior.receipt } }];"
+      },
+      "id": "code-video-formulas",
+      "name": "Build Video Formula Writes (F38)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4730,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.receipt.sheetId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.videoFormulaRequests }) }}",
+        "options": {}
+      },
+      "id": "http-video-formulas",
+      "name": "Write Poster + Watch Video (batchUpdate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4950,
+        -460
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
         "method": "GET",
         "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.receipt.sheetId }}?fields=sheets.properties.title,sheets.properties.sheetId",
         "authentication": "predefinedCredentialType",
@@ -354,7 +788,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F16 — REAL resize: resolve the numeric sheetId of the Posts tab, then build\n// spreadsheet.batchUpdate updateDimensionProperties requests (SPEC build\n// contract widths: platform/account 170, date 110, preview 220, status 140,\n// QC 130; data rows 133px so previews display). Best-effort: a resize failure\n// must never fail the write receipt.\nconst sheets = ($input.first().json.sheets || []);\nlet numeric = null;\nfor (const s of sheets) {\n  if (s.properties && s.properties.title === 'Posts') { numeric = s.properties.sheetId; break; }\n}\nconst posts = $('Normalize Posts Write').first().json;\nconst src = $('Find Posts Row').first().json;\nconst requests = [];\nif (numeric !== null) {\n  const col = function (i) { return { sheetId: numeric, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }; };\n  requests.push({ updateDimensionProperties: { range: col(5), properties: { pixelSize: 170 } } });  // F platform\n  requests.push({ updateDimensionProperties: { range: col(6), properties: { pixelSize: 170 } } });  // G account_name\n  requests.push({ updateDimensionProperties: { range: col(8), properties: { pixelSize: 110 } } });  // I scheduled_local\n  requests.push({ updateDimensionProperties: { range: col(9), properties: { pixelSize: 130 } } });  // J qc_state\n  requests.push({ updateDimensionProperties: { range: col(10), properties: { pixelSize: 140 } } }); // K state\n  requests.push({ updateDimensionProperties: { range: col(11), properties: { pixelSize: 220 } } }); // L preview_url\n  if (posts.postsMode === 'updated' && src.rowNumber) {\n    requests.push({ updateDimensionProperties: { range: { sheetId: numeric, dimension: 'ROWS', startIndex: src.rowNumber - 2, endIndex: src.rowNumber - 1 }, properties: { pixelSize: 133 } } });\n  }\n}\nreturn [{ json: {\n  receipt: $('Build Receipt').first().json.receipt,\n  resizeRequests: requests,\n  resizeApplied: numeric !== null\n} }];"
+        "jsCode": "// F16 — REAL resize: resolve the numeric sheetId of the Posts tab, then build\n// spreadsheet.batchUpdate updateDimensionProperties requests (SPEC build\n// contract widths: platform/account 170, date 110, preview 220, status 140,\n// QC 130; data rows 133px so previews display). Best-effort: a resize failure\n// must never fail the write receipt.\n// F24 — Images tab sizing is part of the same batchUpdate: preview columns\n// (P, where the trusted =IMAGE formula lands) at 220px per the SPEC build\n// contract, so image previews display at useful dimensions without crop.\nconst sheets = ($input.first().json.sheets || []);\nlet numeric = null;\nlet imagesNumeric = null;\nfor (const s of sheets) {\n  if (s.properties && s.properties.title === 'Posts') { numeric = s.properties.sheetId; }\n  if (s.properties && s.properties.title === 'Images') { imagesNumeric = s.properties.sheetId; }\n}\nconst posts = $('Normalize Posts Write').first().json;\nconst src = $('Find Posts Row').first().json;\nconst requests = [];\nif (numeric !== null) {\n  const col = function (i) { return { sheetId: numeric, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }; };\n  requests.push({ updateDimensionProperties: { range: col(5), properties: { pixelSize: 170 } } });  // F platform\n  requests.push({ updateDimensionProperties: { range: col(6), properties: { pixelSize: 170 } } });  // G account_name\n  requests.push({ updateDimensionProperties: { range: col(8), properties: { pixelSize: 110 } } });  // I scheduled_local\n  requests.push({ updateDimensionProperties: { range: col(9), properties: { pixelSize: 130 } } });  // J qc_state\n  requests.push({ updateDimensionProperties: { range: col(10), properties: { pixelSize: 140 } } }); // K state\n  requests.push({ updateDimensionProperties: { range: col(11), properties: { pixelSize: 220 } } }); // L preview_url\n  if (posts.postsMode === 'updated' && src.rowNumber) {\n    requests.push({ updateDimensionProperties: { range: { sheetId: numeric, dimension: 'ROWS', startIndex: src.rowNumber - 2, endIndex: src.rowNumber - 1 }, properties: { pixelSize: 133 } } });\n  }\n}\nif (imagesNumeric !== null) {\n  // F24 — Images preview column P (index 15) and the row for this asset (275px\n  // fits 4:5 in a 220px column per the SPEC gallery contract).\n  requests.push({ updateDimensionProperties: { range: { sheetId: imagesNumeric, dimension: 'COLUMNS', startIndex: 15, endIndex: 16 }, properties: { pixelSize: 220 } } });\n  const assetState = $('Find Asset Row (F24)').first().json;\n  if (assetState && assetState.assetRowNumber) {\n    requests.push({ updateDimensionProperties: { range: { sheetId: imagesNumeric, dimension: 'ROWS', startIndex: assetState.assetRowNumber - 2, endIndex: assetState.assetRowNumber - 1 }, properties: { pixelSize: 275 } } });\n  }\n}\nreturn [{ json: {\n  receipt: $('Build Receipt').first().json.receipt,\n  resizeRequests: requests,\n  resizeApplied: numeric !== null || imagesNumeric !== null\n} }];"
       },
       "id": "code-resolve-sheet",
       "name": "Resolve Posts Sheet ID",
@@ -433,7 +867,34 @@
     "Validate + Build Keys": [
       [
         {
-          "node": "Read Posts (readback)",
+          "node": "Verify Sheet Metadata (F14)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Verify Sheet Metadata (F14)": {
+      "main": [
+        [
+          {
+            "node": "Read Posts (readback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Repair (F14)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Repair (F14)": [
+      [
+        {
+          "node": "Respond: Repair (F14)",
           "type": "main",
           "index": 0
         }
@@ -559,7 +1020,196 @@
     "Build Receipt": [
       [
         {
-          "node": "Get Spreadsheet Metadata",
+          "node": "Build Asset Manifest (F24)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Build Asset Manifest (F24)": [
+      [
+        {
+          "node": "Read Images Keys (F24)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Read Images Keys (F24)": [
+      [
+        {
+          "node": "Find Asset Row (F24)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Find Asset Row (F24)": [
+      [
+        {
+          "node": "Asset manifest present?",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Asset manifest present?": {
+      "main": [
+        [
+          {
+            "node": "Asset row exists?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Spreadsheet Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asset row exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Asset Manifest Row (upsert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Asset Manifest Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Asset Manifest Row (upsert)": [
+      [
+        {
+          "node": "Normalize Asset Write (F24)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Append Asset Manifest Row": [
+      [
+        {
+          "node": "Normalize Asset Write (F24)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Write Trusted IMAGE Formula (F24)": [
+      [
+        {
+          "node": "Video evidence row?",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Video evidence row?": {
+      "main": [
+        [
+          {
+            "node": "Read Videos Keys (F38)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Spreadsheet Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Videos Keys (F38)": [
+      [
+        {
+          "node": "Find Video Row (F38)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Find Video Row (F38)": [
+      [
+        {
+          "node": "Video row exists?",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Video row exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Video Row (upsert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Video Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Video Row (upsert)": [
+      [
+        {
+          "node": "Build Video Formula Writes (F38)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Append Video Row": [
+      [
+        {
+          "node": "Build Video Formula Writes (F38)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Build Video Formula Writes (F38)": [
+      [
+        {
+          "node": "Write Poster + Watch Video (batchUpdate)",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Write Poster + Watch Video (batchUpdate)": [
+      [
+        {
+          "node": "Respond: Success",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    ],
+    "Normalize Asset Write (F24)": [
+      [
+        {
+          "node": "Write Trusted IMAGE Formula (F24)",
           "type": "main",
           "index": 0
         }

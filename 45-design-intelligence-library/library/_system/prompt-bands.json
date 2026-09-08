@@ -48,6 +48,20 @@
       "text_bearing": false,
       "client_deliverable": false,
       "_rationale": "SHORT exists for drafts/ideation only; a SHORT-tier output is NEVER a client deliverable."
+    },
+    "social_planner_image_scoped_override": {
+      "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner / Skill 57 image paths, Kie GPT Image 2 via Kie + Agnes adapters). This band does NOT change any band above and does NOT apply to any other skill; the GIP bands above (and GK-20 routing) remain authoritative for Graphics-department work.",
+      "policy_source": "shared-utils/social_prompt_policy.json",
+      "compiler": "shared-utils/social_prompt_compiler.py",
+      "min": 9000,
+      "max": 19000,
+      "hard_fail_closed": true,
+      "boundaries": { "fail_below": 9000, "pass_at": 9000, "pass_at_max": 19000, "fail_above": 19000 },
+      "count_rule": "len(unicodedata.normalize('NFC', final).strip()) — NFC code points of the FINAL payload AFTER reference instructions + negatives; TypeScript parity Array.from(normalized.trim()).length",
+      "text_bearing": true,
+      "endpoints": ["gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "agnes-image-2.1-flash"],
+      "gk20_note": "GK-20 routing preserved: text_bearing social assets still route to Ideogram per existing rules UNLESS the provider is GPT Image 2 or Agnes reached via the social planner path (this scoped band). Ideogram's own 5,000-char cap means this 9,000-19,000 band can NEVER target Ideogram — the band is GPT Image 2 / Agnes only.",
+      "_rationale": "F32 owner requirement (2026-09-08): every social-planner image prompt for Kie GPT Image 2 and Agnes carries 9,000-19,000 meaningful stripped Unicode characters, validated on the FINAL payload with hash+count recorded before spend. Distinct from the vendor caps (Kie GPT Image 2 published maxLength 20000; Agnes NOT_PUBLISHED)."
     }
   }
 }

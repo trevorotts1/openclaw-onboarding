@@ -31,6 +31,10 @@
     "blog_title": {"min": 1, "max": 80, "unit": "chars", "field": "title", "prompt": "19", "af": "AF-SM-BLOG-TITLE"},
     "blog_meta": {"min": 0, "max": 160, "unit": "chars", "field": "metaDescription", "prompt": "19", "af": "AF-SM-BLOG-META"},
     "blog_body_words": {"min": 700, "max": null, "unit": "words", "field": "body", "prompt": "19", "af": "AF-SM-BLOG-BODY"},
-    "stories_caption": {"min": 0, "max": 250, "unit": "chars", "field": "storiesCaption", "prompt": "16", "af": "AF-SM-STORIES-CAPTION"}
+    "stories_caption": {"min": 0, "max": 250, "unit": "chars", "field": "storiesCaption", "prompt": "16", "af": "AF-SM-STORIES-CAPTION"},
+
+    "$f28_quality_note": "F28 (2026-09-08): the bands above are the SHAPE floor, never the quality standard. Every post ALSO clears the F28 quality rubric (specificity, voice, usefulness, factual support, distinctiveness, CTA) enforced deterministically by shared-utils/social_content_quality.py: AF-QUALITY-FACT (unsupported factual claim — every fact needs a source URL in the brief; uncertain client facts route to clarification or get omitted), AF-QUALITY-VOICE (a different brand's voice), AF-QUALITY-DUPLICATE (prior-week overlap > 0.60), AF-QUALITY-CTA (approved CTA missing), AF-QUALITY-MEANING-DRIFT (platform variant lost the approved meaning). Short effective copy passes WITHOUT padding: never pad to hit a band. Briefs are built from the approved brand profile, audience, offer, source material, theme and recent history.",
+    "quality_duplicate_overlap_max": {"exact_max": 0.60, "unit": "jaccard", "af": "AF-QUALITY-DUPLICATE"},
+    "quality_variant_meaning_overlap_min": {"exact_min": 0.18, "unit": "jaccard", "af": "AF-QUALITY-MEANING-DRIFT"}
   }
 }

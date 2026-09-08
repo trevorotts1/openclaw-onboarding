@@ -18,6 +18,17 @@
     "house_prompt_target_chars": 9000,
     "house_prompt_max_chars": 19000,
     "house_band_status": "PENDING_ACCEPTANCE_TEST",
+    "social_planner_scoped_override": {
+      "applies_to": "social planner only (Skill 35 social-media-planner / Skill 57 image paths)",
+      "policy_source": "shared-utils/social_prompt_policy.json",
+      "compiler": "shared-utils/social_prompt_compiler.py",
+      "house_prompt_min_chars": 9000,
+      "house_prompt_max_chars": 19000,
+      "hard_boundaries": { "fail_below": 9000, "pass_at": 9000, "pass_at_max": 19000, "fail_above": 19000 },
+      "count_rule": "len(unicodedata.normalize('NFC', final).strip())",
+      "band_status": "HARD_FAIL_CLOSED",
+      "note": "8999 fails production preflight; 19001 fails. Distinct from the vendor cap (NOT_PUBLISHED) and from the general 5000-floor band above. Unrelated skills are NOT changed by this override."
+    },
     "reference_images_max": null,
     "reference_image_max_mb": null,
     "size_tiers": ["1K", "2K", "3K", "4K"],
