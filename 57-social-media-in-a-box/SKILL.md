@@ -105,6 +105,20 @@ list, this file, or the config alone.
   key with their chosen model + 2 fallbacks (`route:"fallback"`); vision QC = the client's Gemini;
   media = the client's Kie.ai. Zero `claude-*` / concrete-Anthropic-model ids in any client-path
   file; the manifest proves the model chain per run.
+- ⛔ **Provider-first model choice (F31).** The client's chosen provider (Ollama Cloud, OpenRouter,
+  or a direct provider such as DeepSeek) and chosen model + approved fallbacks are authoritative.
+  Provider-verified FULL slugs (suffix variants like `openrouter/z-ai/glm-5.3-flash` included) are
+  recognized from `shared-utils/model-capabilities.json` (`verified_slugs`) — a new model is added
+  to that inventory, never to selector code. Selection is never silently upgraded to a newer version.
+  A removed model activates only an approved fallback in saved order; without one, an explicit
+  selection request — no silent substitution, no indefinite wait. Resolution:
+  `shared-utils/social_model_policy.py` (provider-first, per-role policy, immutable revision) with
+  direct-provider adapters in `shared-utils/provider_adapters.py` (DeepSeek direct included; never
+  implicitly re-routed through OpenRouter or Ollama).
+- ⛔ **Visual QC sees the asset (F37).** The vision-QC reviewer (grid judge / QC loop) MUST be able
+  to actually view the generated image — a text-only model never produces a passing visual-QC
+  certificate, and a missing vision reviewer leaves that review visibly pending (it never
+  auto-downgrades to a text attempt).
 - **Posting = the client's OWN** Private Integration Token + locationId + connected social accounts,
   through `services.leadconnectorhq.com/social-media-posting/{locationId}/posts`. Never operator
   keys; never co-mingled across brands; agency mode hard-fails on a shared PIT/locationId.

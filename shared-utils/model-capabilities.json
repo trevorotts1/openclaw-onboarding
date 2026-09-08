@@ -159,5 +159,19 @@
       "default_tier": "fast"
     }
   ],
-  "default_capabilities": ["text"]
+  "default_capabilities": ["text"],
+  "verified_slugs": {
+    "_doc": "F31 provider-verified FULL slug inventory: provider-qualified model ids as each provider actually exposes them (suffix variants included). Adding a slug here makes it selectable with NO selector-code change. Keys are lowercase full model ids; each entry carries its capability family (must match a family above) and optional provider metadata. The regex patterns in select_model.py remain the fallback classifier for slugs not yet inventoried.",
+    "_version": "1.0.0",
+    "openrouter/z-ai/glm-5.3-flash": {"family": "glm", "provider": "openrouter", "verified_at": "2026-09-08"},
+    "openrouter/z-ai/glm-5.3": {"family": "glm", "provider": "openrouter", "verified_at": "2026-09-08"},
+    "openrouter/z-ai/glm-4.6": {"family": "glm", "provider": "openrouter", "verified_at": "2026-09-08"},
+    "openrouter/z-ai/glm-4.6-flash": {"family": "glm", "provider": "openrouter", "verified_at": "2026-09-08"},
+    "openrouter/deepseek/deepseek-v4-pro": {"family": "deepseek-pro", "provider": "openrouter", "verified_at": "2026-09-08"},
+    "openrouter/deepseek/deepseek-v4-flash": {"family": "deepseek-flash", "provider": "openrouter", "verified_at": "2026-09-08"},
+    "ollama/deepseek-v4-pro:cloud": {"family": "deepseek-pro", "provider": "ollama-cloud", "verified_at": "2026-09-08"},
+    "ollama/kimi-k2.6:cloud": {"family": "kimi", "provider": "ollama-cloud", "verified_at": "2026-09-08"},
+    "deepseek/deepseek-v4-pro": {"family": "deepseek-pro", "provider": "deepseek-direct", "verified_at": "2026-09-08"},
+    "deepseek/deepseek-v4-flash": {"family": "deepseek-flash", "provider": "deepseek-direct", "verified_at": "2026-09-08"}
+  }
 }
