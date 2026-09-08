@@ -40,16 +40,34 @@ class TestF02SharingPreserved(unittest.TestCase):
     def test_share_node_wired_in_provisioning_chain(self):
         # Copy -> Tag Provisioning Key -> Set Anyone Can Edit (the key tag is the
         # F15 idempotency marker; the share still happens before the response).
+        # F25 extends the chain with the formatting provisioner AFTER the share
+        # (Set Anyone Can Edit -> Build Formatting Requests (F25) -> ... ->
+        # Respond: Created), so the share-then-response invariant is asserted
+        # as graph reachability, not a direct edge.
         export = load_export()
         connections = export["connections"]
         targets = [link["node"]
                    for branch in connections["Tag Provisioning Key"]["main"]
                    for link in branch]
         self.assertIn(LIVE_SHARE_NODE, targets)
-        share_targets = [link["node"]
-                         for branch in connections[LIVE_SHARE_NODE]["main"]
-                         for link in branch]
-        self.assertIn("Respond: Created", share_targets)
+        # Reachability: every path from the share node eventually reaches
+        # 'Respond: Created' without passing through the error branch.
+        reachable = set()
+        frontier = [LIVE_SHARE_NODE]
+        while frontier:
+            current = frontier.pop()
+            if current in reachable:
+                continue
+            reachable.add(current)
+            out = connections.get(current)
+            if out is None:
+                continue
+            branches = out["main"] if isinstance(out, dict) else out
+            for branch in branches:
+                for link in branch:
+                    frontier.append(link["node"])
+        self.assertIn("Respond: Created", reachable,
+                      "the share node must still precede the created response (F02)")
 
     def test_response_reports_anyone_link_sharing(self):
         export = load_export()
