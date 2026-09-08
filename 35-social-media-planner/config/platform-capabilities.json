@@ -1,0 +1,128 @@
+{
+  "$schema_note": "F39 versioned platform strategy + capability profiles (program social-planner-september-eighth, SPEC platform strategy matrices S15-S23). One machine-readable entry per supported platform. The human-readable creative guidance lives in references/platform-strategies/<platform>.md. checked_at records when the profile was last verified against official sources. organic vs advertising guidance is SEPARATED everywhere. A verified profile version is recorded in every content contract (profile_version + checked_at).",
+  "policy": {
+    "version": "1.0.0",
+    "stale_after_days": 45,
+    "stale_behavior": "A profile whose checked_at is older than stale_after_days triggers a refresh task; until the refresh succeeds, the LAST VERIFIED SAFE profile continues to be used (never blocks other channels; never publishes unverified strategy as fact).",
+    "unsupported_feature_policy": "A native feature not supported through the active GHL adapter presents the approved supported variant, or marks that one capability unavailable — it never blocks other channels and never silently drops the destination."
+  },
+  "profiles": {
+    "instagram": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://about.fb.com/news/2024/10/best-practices-education-hub-creators-instagram/"],
+      "source_label": "S15 Instagram best practices",
+      "ghl_supported_formats": ["post", "story", "reel", "carousel"],
+      "ghl_unsupported_native_features": [],
+      "organic_guidance_summary": "Original brand-relevant creative; match the idea to a carousel, image or Reel; opening visually clear, captions legible, vertical safe areas intentional. Watch time #1; DM shares and saves critical. Consult the account's professional-dashboard recommendations.",
+      "advertising_guidance_summary": "Separate lane: paid placement follows Meta ads guidance; organic learnings must not be presented as paid results.",
+      "format_rules": { "feed_image_ratio": "4:5", "feed_image_pixels": "1080x1350", "reel_ratio": "9:16", "reel_pixels": "1080x1920", "story_ratio": "9:16", "story_pixels": "1080x1920", "caption_max_chars": 2200 },
+      "measurement_goals": ["reach", "saves", "shares", "video_retention"],
+      "timing_policy": "Test timing with this audience via native analytics; no universal best hour."
+    },
+    "tiktok": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://ads.tiktok.com/business/en-US/creative-codes"],
+      "source_label": "S16 TikTok Creative Codes (ad guidance; organic transfer is a proposed test, not guaranteed)",
+      "ghl_supported_formats": ["post", "video"],
+      "ghl_unsupported_native_features": ["duet", "stitch"],
+      "organic_guidance_summary": "Vertical 9:16 video: immediate hook, useful body, clear close; motion, native-feeling delivery, captions, appropriately licensed audio.",
+      "advertising_guidance_summary": "Creative Codes vertical framing, hook/body/close and sound principles originate in TikTok AD guidance — cite as ad-derived creative principles, never as promised organic results.",
+      "format_rules": { "video_ratio": "9:16", "video_pixels": "1080x1920", "duration_optimal_seconds": [21, 34] },
+      "measurement_goals": ["watch_time", "completion", "clicks_where_available"],
+      "timing_policy": "Compare watch time and completion; do not promise ad results organically."
+    },
+    "linkedin": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://business.linkedin.com/advertise/linkedin-pages/best-practices"],
+      "source_label": "S17 LinkedIn Pages best practices",
+      "ghl_supported_formats": ["post", "image_post", "video_post"],
+      "ghl_unsupported_native_features": ["document_carousel_pdf"],
+      "organic_guidance_summary": "Lead with professional relevance and a concrete insight or evidence; custom visuals, native video or document storytelling when the delivery path supports it; invite useful discussion. Never copy Instagram captions unchanged.",
+      "advertising_guidance_summary": "Separate lane: sponsored content follows LinkedIn Ads guidance; organic engagement is not ad performance.",
+      "format_rules": { "post_max_chars": 3000, "hook_zone_chars": 140, "hashtags_max": 3 },
+      "measurement_goals": ["engagement", "clicks", "lead_quality_where_measurable"],
+      "timing_policy": "Test post timing; evaluate relevant engagement and clicks."
+    },
+    "facebook": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://about.fb.com/news/2026/03/rewarding-original-creators-on-facebook/"],
+      "source_label": "S18 Facebook original content",
+      "ghl_supported_formats": ["post", "image_post", "reel", "story"],
+      "ghl_unsupported_native_features": [],
+      "organic_guidance_summary": "Original useful posts and Reels for the actual community; clear visuals and substantive context; avoid low-value repost transformations and engagement bait.",
+      "advertising_guidance_summary": "Separate lane: boosted/ad creative follows Meta ads guidance.",
+      "format_rules": { "post_max_chars": 63206, "hook_zone_chars": 125, "reel_ratio": "9:16" },
+      "measurement_goals": ["reach", "meaningful_responses", "retention"],
+      "timing_policy": "Assess reach and responses from native insights; no universal cadence."
+    },
+    "pinterest": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://create.pinterest.com/fundamentals/"],
+      "source_label": "S19 Pinterest fundamentals",
+      "ghl_supported_formats": ["pin"],
+      "ghl_unsupported_native_features": ["idea_pins"],
+      "organic_guidance_summary": "Mobile-friendly visual ideas; 2:3 image is the sound starting format; accurate searchable titles/descriptions; relevant destination link; plan for seasonal discovery.",
+      "advertising_guidance_summary": "Separate lane: promoted pins follow Pinterest Ads guidance.",
+      "format_rules": { "pin_ratio": "2:3", "pin_pixels": "1000x1500", "title_max_chars": 100, "description_max_chars": 500 },
+      "measurement_goals": ["saves", "outbound_clicks"],
+      "timing_policy": "Evaluate saves and outbound clicks over a suitable observation window."
+    },
+    "x": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://business.x.com/en/basics/organic-best-practices"],
+      "source_label": "S20 X organic best practices",
+      "ghl_supported_formats": ["post"],
+      "ghl_unsupported_native_features": ["threads_via_adapter"],
+      "organic_guidance_summary": "Concise central message with relevant media; threads only where they add value AND the adapter supports them; participate in useful conversations under the client's interaction policy.",
+      "advertising_guidance_summary": "Separate lane: X Ads follows X's own guidance.",
+      "format_rules": { "post_max_chars": 280 },
+      "measurement_goals": ["replies", "clicks", "video_activity_where_accessible"],
+      "timing_policy": "Respect current account length/media capabilities."
+    },
+    "youtube": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://support.google.com/youtube/answer/141805?hl=en"],
+      "source_label": "S21 YouTube performance FAQ",
+      "ghl_supported_formats": ["video", "short"],
+      "ghl_unsupported_native_features": ["community_polls"],
+      "organic_guidance_summary": "Title and thumbnail match the actual video; promised value established early; achievable consistent schedule; learn from audience retention. Do not claim an exact upload time guarantees long-term performance.",
+      "advertising_guidance_summary": "Separate lane: YouTube ads guidance governs paid promotion.",
+      "format_rules": { "title_max_chars": 100, "description_max_chars": 5000, "shorts_ratio": "9:16" },
+      "measurement_goals": ["retention", "click_through"],
+      "timing_policy": "Review retention and CTR separately; no guaranteed upload-time effect."
+    },
+    "google-business-profile": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://support.google.com/business/answer/7342169"],
+      "source_label": "S22 Google Business Profile posts",
+      "ghl_supported_formats": ["update_post", "offer", "event"],
+      "ghl_unsupported_native_features": [],
+      "organic_guidance_summary": "Accurate updates, offers or events with complete details, dates and a useful action; appropriate real brand/product imagery; omit stale promotions.",
+      "advertising_guidance_summary": "Separate lane: Google Ads (Local Services, Performance Max) is distinct from GBP posts.",
+      "format_rules": { "post_max_chars": 1500 },
+      "measurement_goals": ["destination_link_clicks", "review_vs_publication_state"],
+      "timing_policy": "Validate offer/event expiry and destination links before production."
+    },
+    "threads": {
+      "profile_version": "2026-09-08",
+      "checked_at": "2026-09-08",
+      "source_urls": ["https://about.fb.com/news/2024/10/find-your-community-with-new-threads-educational-insights/"],
+      "source_label": "S23 Threads creator insights",
+      "ghl_supported_formats": [],
+      "ghl_unsupported_native_features": ["all — verify active GHL support before any production"],
+      "organic_guidance_summary": "Original conversational posts with context and relevant topics; thoughtful replies when interaction is authorized; avoid automated generic replies or copying another platform blindly.",
+      "advertising_guidance_summary": "No advertising lane — Threads organic only.",
+      "format_rules": { "post_max_chars": 500, "tags_max": 1 },
+      "measurement_goals": ["replies", "views_where_available"],
+      "timing_policy": "Evaluate replies and views where available."
+    }
+  }
+}
