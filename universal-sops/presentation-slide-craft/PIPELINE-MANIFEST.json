@@ -1,5 +1,5 @@
 {
-  "manifest_version": 68,
+  "manifest_version": 69,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1384,14 +1384,19 @@
         "workflows/gate-workflow.json"
       ],
       "defers_unless": "intake.want_vsl_page == \"yes\"",
-      "gate_codes": [],
+      "gate_codes": [
+        "AF-U-FORM-GATE"
+      ],
       "preflight": null,
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "executor": {
-        "kind": "agent"
+        "kind": "script",
+        "capability": "ghl_workflow_install",
+        "adapter": "skill44",
+        "cmd": "python3 scripts/ghl_external_installer.py --run-dir {run_dir} --phase P-U-FORM-GATE"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
@@ -1406,14 +1411,19 @@
       "owning_role": "media-librarian-ghl-updater",
       "produces_artifact": "working/sales-checkout/ghl_build_receipt.json",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
-      "gate_codes": [],
+      "gate_codes": [
+        "AF-U-GHL-SALES"
+      ],
       "preflight": null,
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "executor": {
-        "kind": "agent"
+        "kind": "script",
+        "capability": "ghl_page_install",
+        "adapter": "skill06",
+        "cmd": "python3 scripts/ghl_external_installer.py --run-dir {run_dir} --phase P-U-GHL-SALES"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
@@ -1431,14 +1441,19 @@
       "owning_role": "media-librarian-ghl-updater",
       "produces_artifact": "working/vsl/ghl_build_receipt.json",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
-      "gate_codes": [],
+      "gate_codes": [
+        "AF-U-GHL-VSL"
+      ],
       "preflight": null,
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "executor": {
-        "kind": "agent"
+        "kind": "script",
+        "capability": "ghl_page_install",
+        "adapter": "skill06",
+        "cmd": "python3 scripts/ghl_external_installer.py --run-dir {run_dir} --phase P-U-GHL-VSL"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
@@ -4157,6 +4172,36 @@
       "trigger": "RENDER GATE FAILED — the render phase did not complete its full slide output set before assembly; partial decks are refused.",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
+    },
+    {
+      "code": "AF-U-GHL-SALES",
+      "stage": "6.2",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "PRES-011: the elected sales+checkout funnel install (P-U-GHL-SALES) has no verified install proof -- working/sales-checkout/ghl_build_receipt.json absent, schema/status wrong, run or location unbound (stale/foreign/WRONG_LOCATION), inputs changed since install, or no adapter remote IDs (funnel_id/page_ids) with matching-location remote readback and ops-ledger provenance (execution_id). A plan-emitted/model-authored receipt is pending_external_execution, never complete.",
+      "enforced_by": "ghl_external_installer",
+      "py_symbol": null,
+      "check_script": "scripts/ghl_external_installer.py::validate_receipt + phase_verifiers._verify_ghl_sales_install"
+    },
+    {
+      "code": "AF-U-GHL-VSL",
+      "stage": "6.4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "PRES-011: the elected VSL funnel install (P-U-GHL-VSL) has no verified install proof -- working/vsl/ghl_build_receipt.json absent, schema/status wrong, run or location unbound, inputs changed since install, or no adapter funnel/page IDs with matching-location remote readback and ops-ledger provenance. Reuses the verified sales funnel_id when this run already pushed sales+checkout; never a second funnel for one client.",
+      "enforced_by": "ghl_external_installer",
+      "py_symbol": null,
+      "check_script": "scripts/ghl_external_installer.py::validate_receipt + phase_verifiers._verify_ghl_vsl_install"
+    },
+    {
+      "code": "AF-U-FORM-GATE",
+      "stage": "5.6",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "PRES-011: the elected VSL gate form+workflow (P-U-FORM-GATE) has no verified install proof -- ecosystem/gate-form.json or workflows/gate-workflow.json absent, or either without adapter form_id/workflow_id, matching-location readback, run/input binding and ops-ledger provenance (SKILL44_WIDGET -> FORM per vsl-gate-form-spec.json; workflow DRAFT-only). Partial state (form created, workflow missing) resumes without duplicating.",
+      "enforced_by": "ghl_external_installer",
+      "py_symbol": null,
+      "check_script": "scripts/ghl_external_installer.py::validate_receipt + phase_verifiers._verify_form_gate_install"
     }
   ],
   "roles": [
