@@ -1,4 +1,31 @@
-## [v25.0.26]  -  2026-09-09  -  RR-003 identity admission contract (ONB-W2-IDENTITY-AGG)
+## [v25.0.27]  -  2026-09-09  -  Social media planner W3 reconciliation: release fold marker (corrective fold for tag/commit peel mismatch)
+
+Release bookkeeping only. No product changes ship in this fold — no code, no
+skill content, no scripts are modified beyond release markers and this
+changelog entry.
+
+Why this fold exists:
+
+- The v25.0.25 annotated tag was cut by the auto-tag workflow on the merge of
+  PR #1070 (RR-017/RR-030 batch), which carried byte-identical version
+  markers and merged before the social planner release fold (PR #1071), so
+  the tag peels to 31740d9af — the RR batch merge — not to the W3 fold merge
+  b9a4aa0da (which the v25.0.25 GitHub release and receipt reference).
+- The corrective fold that would have marked the W3 fold commit itself was
+  retargeted twice by concurrent RR batches shipping version bumps first:
+  v25.0.26 was consumed by the RR-003 identity batch (PR #1072, merged at
+  9e5ec3446; its tag peels to that commit; no GitHub release object was
+  created for it).
+- This v25.0.27 fold therefore marks the W3 social planner fold commit
+  itself, satisfying the release policy that the latest release tag peels
+  exactly to the released_sha it names.
+
+Scope of the underlying W3 content: the social planner work (F04
+staging-not-review gate, F05 producer adapters, F07 durable cycle service,
+F17 single scheduler with expiry jobs) landed via PR #1069 (batch
+ONB-20260909T011638); its behavioral detail lives in the v25.0.25 release
+notes below and is not restated here. No unrun-live-check claims are made by
+this entry.
 
 ## [v25.0.25]  -  2026-09-09  -  W3 social planner: staging-not-review publish gate, producer adapters, durable cycle service with single scheduler and expiry jobs, weekly theme mini app (F04/F05/F07/F17)
 
