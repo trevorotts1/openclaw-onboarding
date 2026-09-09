@@ -1,4 +1,44 @@
+## [v25.0.25]  -  2026-09-09  -  W3 social planner: staging-not-review publish gate, producer adapters, durable cycle service with single scheduler and expiry jobs, weekly theme mini app (F04/F05/F07/F17)
+
+Batch ONB-20260909T011638 (PR #1069, merged at 81fa6caee5c54e28582bd3f8a2b51094c8e0c9ae).
+Tasks: F04, F05, F07, F17. In-batch skill version bump 57-social-media-in-a-box
+(G3 commit b94672d7f).
+
+Behavior changes:
+
+- Staging-not-review gate (F04): in run-publishing-cycle.sh, staging now
+  returns QUEUED with a durable dispatch record instead of behaving as a
+  review step. in_progress requires an accepted worker ack; review requires
+  verified per-phase artifact hashes. Publish flows stage work for a worker
+  rather than double-acting as review.
+- Producer adapter layer (F05): run_social_media.py (skill 57) gained a
+  producer-adapter seam behind the phase gates. Producers are selected by
+  adapter, each phase writes hash-bound receipts, and interrupted runs
+  resume from the last verified receipt instead of restarting.
+- Durable weekly cycle service (F07): weekly cycle state is persisted with a
+  resumable service loop, so a crashed or restarted run continues from the
+  recorded cycle state rather than losing the week.
+- Single scheduler per company (F17): legacy scheduler paths retire; exactly
+  one scheduler per company owns weekly dispatch. Duplicate scheduling from
+  the legacy paths is removed.
+- Expiry jobs (F17, with F35 groundwork): weekly expiry jobs clean up
+  overdue/finished cycle records on a schedule instead of relying on ad-hoc
+  cleanup.
+- Weekly theme mini app (in-batch UX surface for the planner): theme
+  selection runs through a small dedicated app rather than a spreadsheet
+  step (W3 companion work merged in the same batch).
+
+Migration/compat notes:
+
+- Anything invoking the legacy per-run scheduler paths for skill 57 should
+  move to the single per-company scheduler; the legacy paths now retire.
+- Publish automation that treated "staging" as a review checkpoint must now
+  consume the QUEUED dispatch record and per-phase artifact-hash verification.
+- cc-compat.json onboardingVersion rolled to v25.0.25 in lockstep; no breaking
+  contract change to the CC pairing surface in this release.
+
 ## [v25.0.25]  -  2026-09-09  -  RR-017 Rescue contract + RR-030 harness truthfulness (ONB-W1-RR017-RR030-AGG)
+
 
 ## [v25.0.24]  -  2026-09-08  -  ONB W2 repair batch (F08/F10/F11/F12/F13/F33 + F06/F09/F19 restoration)
 

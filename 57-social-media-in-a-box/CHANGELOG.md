@@ -1,5 +1,19 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.5.1 - 2026-09-09 - release fold: changelog entry for the v1.5.0 producer adapter bump (F05)
+
+Batch ONB-20260909T011638 (PR #1069, merged at 81fa6caee). Version bump
+v1.4.0 -> v1.5.0 shipped in commit b94672d7f (G3 lockstep with
+35-social-media-planner v3.4.0). This entry documents the change that bump
+already carried.
+
+### Changed
+- **Producer adapter layer (F05)** — `run_social_media.py` gained a
+  producer-adapter seam behind the phase gates. Producers are selected by
+  adapter, each phase writes hash-bound receipts, and interrupted runs resume
+  from the last verified receipt instead of restarting. Engine pin unchanged
+  (aa348057842c...); semantic minor for contract-affecting change.
+
 ## 0.2.11 — 2026-07-12 — P3-05 step 11: SOP-SOCIAL-03 image-prompt FORM/AESTHETIC split (durable successor fix)
 
 ### Changed
