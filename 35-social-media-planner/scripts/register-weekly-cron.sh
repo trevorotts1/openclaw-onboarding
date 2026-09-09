@@ -3,36 +3,41 @@
 #  register-weekly-cron.sh
 #  Skill 35 — Social Media Planner / Content Publishing Engine
 #
-#  Registers the weekly content-theme cron via the OpenClaw
-#  gateway cron store (NOT .cron.jobs — that block does not
-#  validate on 2026.5.27+).
+#  F07/F17 (social/wf10-weekly-expiry) — FORWARDING ADAPTER.
 #
-#  IDEMPOTENT + DEDUPING:
-#   - Reads `openclaw cron list` before registering.
-#   - If ONE healthy (non-error) skill35-weekly-theme entry
-#     exists with sessionTarget=main, exits 0 (nothing to do).
-#   - If DUPLICATE entries exist, or a stale/erroring entry
-#     exists, deletes the bad ones then re-registers a clean
-#     single entry.
+#  This script no longer owns the invitation cadence. The DURABLE
+#  cycle service (shared-utils/social_cycle_service.py + the Command
+#  Center's src/lib/jobs/social-cycle.ts on the node-cron scheduler)
+#  owns the state machine: one cycle per company+local week, persisted
+#  invitation/reminder/cutoff state, bounded reminders, next week
+#  created independently of last week's response.
 #
-#  FURNACE-SAFE:
-#   - Schedule: 0 8 * * 6  (Saturday 8 AM only — weekly)
-#   - No retry loop on failure; one clean registration attempt.
-#   - Model: CHEAP/FREE — prefers flash or free OpenRouter
-#     fallback, never the metered primary pro model.
-#   - Idempotency marker: ~/.openclaw/data/skill35/weekly-theme-last-run.json
-#     (written by the cron itself on each Saturday run to skip
-#      double-fires). /tmp marker is NOT used — /tmp is not
-#      persistent across reboots.
+#  What remains here is the LEGACY TRIGGER REGISTRATION — kept as a
+#  forwarding adapter during migration (F17): the cron fires a SHORT
+#  message that (1) calls the cycle service advance step and exits.
+#  It contains NO multi-hour wait, NO noon/6PM fallback instructions,
+#  NO invitation prose — those all live in the durable service now.
+#
+#  IDEMPOTENT + DEDUPING: exactly one healthy entry; re-running is a
+#  no-op. WRONG schedule / erroring entries are replaced.
+#
+#  ENGINE OWNERSHIP VERIFICATION (--verify): after registering, the
+#  script verifies the durable engine-ownership record (exactly one
+#  active owner per company; this legacy name recorded as superseded
+#  by the durable engine when the CC half is live). --verify exits 0
+#  on a verified forwarding-adapter posture, 5 when the ownership
+#  record cannot be confirmed (informational; registration itself
+#  already succeeded).
+#
+#  FURNACE-SAFE: 0 8 * * 6 (Saturday 8 AM weekly), cheap model, one
+#  registration attempt, no retry loop.
 #
 #  FAIL-LOUD: exits non-zero on any registration failure.
-#  Callers (INSTALL.md Step 9) MUST check the exit code.
 #
-#  VPS context: runs inside the Hostinger Docker container
-#  where `openclaw` CLI is on PATH. Same pattern as Skill 38's
-#  04-register-crons.sh.
+#  VPS context: runs inside the Hostinger Docker container where
+#  `openclaw` CLI is on PATH.
 #
-#  Cron: Saturday 8:00 AM (0 8 * * 6) — weekly theme + plan.
+#  Cron: Saturday 8:00 AM (0 8 * * 6) — lightweight trigger only.
 # ============================================================
 set -euo pipefail
 
@@ -40,13 +45,21 @@ CRON_NAME="skill35-weekly-theme"
 CRON_EXPR="0 8 * * 6"
 # sessionTarget MUST be 'main' (isolated + channel-deliver is rejected by the gateway)
 SESSION_TARGET="main"
-# Use the cheap/free flash model; the cron prompt is lightweight (weekly question only).
-# Never set to a metered pro model — this fires every Saturday fleet-wide.
 AGENT_ID="${SKILL35_CRON_AGENT:-main}"
 
-# Idempotency marker directory (persistent across reboots; /tmp is NOT persistent)
+# Durable cycle-service state (the STATE MACHINE lives there now — this
+# script only registers a lightweight trigger that advances it).
+SOCIAL_CYCLE_DIR="${SOCIAL_CYCLE_STATE_DIR:-${HOME}/.openclaw/data/social-cycle}"
 MARKER_DIR="${HOME}/.openclaw/data/skill35"
 mkdir -p "$MARKER_DIR"
+
+VERIFY_ONLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --verify) VERIFY_ONLY=1 ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+  esac
+done
 
 command -v openclaw >/dev/null 2>&1 || {
   echo "ERROR: openclaw CLI not on PATH — cannot register cron via the gateway cron store." >&2
@@ -54,30 +67,78 @@ command -v openclaw >/dev/null 2>&1 || {
   exit 2
 }
 
+if [ "$VERIFY_ONLY" -eq 1 ]; then
+  # F17 --verify: the durable engine owns the schedule. Verify the engine-
+  # ownership record (file-backed twin written by social_cycle_service.py).
+  if [ -f "${SOCIAL_CYCLE_DIR}/engine-ownership.json" ] && python3 - "${SOCIAL_CYCLE_DIR}/engine-ownership.json" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        rows = json.load(fh).get("rows", [])
+except (OSError, ValueError):
+    print("VERIFY-FAIL: unreadable engine-ownership record"); sys.exit(5)
+by_company = {}
+for r in rows:
+    e = by_company.setdefault(r.get("company_id"), {"active": 0, "superseded": 0})
+    if r.get("state") == "active": e["active"] += 1
+    elif r.get("state") == "superseded": e["superseded"] += 1
+ok = bool(by_company) and all(v["active"] == 1 for v in by_company.values())
+print("VERIFY-JSON: companies=%d active_owners=%d superseded=%d ok=%s" % (
+    len(by_company), sum(1 for v in by_company.values() if v["active"] == 1),
+    sum(v["superseded"] for v in by_company.values()), ok))
+sys.exit(0 if ok else 5)
+PY
+  then
+    echo "OK: durable engine-ownership record verified — forwarding adapter posture confirmed." >&2
+    exit 0
+  fi
+  echo "NOTICE: engine-ownership.json not found or invalid under ${SOCIAL_CYCLE_DIR} — the durable cycle service has not claimed ownership yet (deployment-phase step; INSTALL.md documents the handover). The lightweight trigger remains the fallback owner." >&2
+  exit 5
+fi
+
+# --verify-json: machine-checkable ownership verification (used by tests via
+# SOCIAL_CYCLE_STATE_DIR override).
+if [ "${1:-}" = "--verify-json" ]; then
+  python3 - "${SOCIAL_CYCLE_DIR}" <<'PY'
+import json, sys
+state = sys.argv[1] if len(sys.argv) > 1 else ""
+try:
+    with open(f"{state}/engine-ownership.json") as fh:
+        data = json.load(fh)
+except (OSError, ValueError):
+    print("VERIFY-FAIL: no engine-ownership record")
+    sys.exit(1)
+rows = data.get("rows", [])
+active = [r for r in rows if r.get("state") == "active"]
+superseded = [r for r in rows if r.get("state") == "superseded"]
+by_company = {}
+for r in rows:
+    by_company.setdefault(r.get("company_id"), {"active": 0, "superseded": 0})
+    by_company[r.get("company_id")][r.get("state")] = by_company[r.get("company_id")].get(r.get("state"), 0) + 1
+ok = all(v.get("active") == 1 for v in by_company.values()) if by_company else False
+print(f"VERIFY-JSON: companies={len(by_company)} active_owners={sum(1 for v in by_company.values() if v.get('active')==1)} superseded={len(superseded)} ok={ok}")
+sys.exit(0 if ok else 5)
+PY
+  exit $?
+fi
+
 # ----------------------------------------------------------
 # Deduplication: detect and remove stale/erroring/duplicate
 # entries before registering a clean one.
 # ----------------------------------------------------------
 _list_output="$(openclaw cron list 2>/dev/null || true)"
 
-# Count existing entries with this cron name
 _existing_count="$(echo "$_list_output" | grep -c "$CRON_NAME" || true)"
 
 if [ "$_existing_count" -eq 1 ]; then
-  # Exactly one entry — check if it is healthy (main target, non-error, correct schedule)
   _is_main="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "main" || true)"
   _is_error="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "error" || true)"
-  # U129: compare schedule — an existing row scheduled for the wrong day
-  # (e.g. Monday "0 8 * * 1") would otherwise satisfy the count + sessionTarget
-  # checks and be reported as healthy.
   _schedule_ok="$(echo "$_list_output" | grep "$CRON_NAME" | grep -cF "$CRON_EXPR" || true)"
 
   if [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ] && [ "$_schedule_ok" -ge 1 ]; then
     echo "OK: cron '$CRON_NAME' already registered with a healthy main-target entry and correct schedule ($CRON_EXPR) — nothing to do." >&2
     exit 0
   fi
-  # One entry but it is erroring, not on main, or on the wrong schedule —
-  # fall through to delete + re-register.
   if [ "$_schedule_ok" -eq 0 ]; then
     echo "NOTICE: existing '$CRON_NAME' entry has wrong schedule (expected $CRON_EXPR) — will delete and re-register." >&2
   else
@@ -86,15 +147,11 @@ if [ "$_existing_count" -eq 1 ]; then
 fi
 
 if [ "$_existing_count" -ge 1 ]; then
-  # Delete ALL existing entries for this cron name (handles duplicates + erroring entries).
-  # `openclaw cron delete --name` removes by name; if that flag is unavailable, use --all-named.
   echo "Removing ${_existing_count} existing '$CRON_NAME' cron entries before clean registration..." >&2
 
-  # Try by-name deletion first (preferred, leaves other crons intact)
   if openclaw cron delete --name "$CRON_NAME" 2>/dev/null; then
     echo "Removed existing '$CRON_NAME' entries via --name flag." >&2
   else
-    # Fallback: collect IDs from list output and delete individually
     _ids="$(echo "$_list_output" | grep "$CRON_NAME" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' || true)"
     if [ -n "$_ids" ]; then
       while IFS= read -r _id; do
@@ -107,34 +164,24 @@ if [ "$_existing_count" -ge 1 ]; then
 fi
 
 # ----------------------------------------------------------
-# Cron message — tells the agent exactly what to do on fire.
-# Marker path is the persistent ~/.openclaw/data/skill35/
-# weekly-theme-last-run.json (NOT /tmp — /tmp is cleared on
-# reboot and does not survive between Saturdays reliably).
+# Cron message — the FORWARDING ADAPTER trigger. SHORT by law: it runs the
+# cycle-service advance step (a bounded, row-at-a-time operation) and exits.
+# The invitation text, the noon/6PM fallback ladder, and every wait live in
+# the DURABLE cycle service — never again inside a prompt.
 # ----------------------------------------------------------
-CRON_MESSAGE="Skill 35 weekly theme trigger (Saturday 8 AM). \
-Before doing anything, check the idempotency marker: \
-${MARKER_DIR}/weekly-theme-last-run.json. \
-If it exists and its 'weekISO' field matches the current ISO week \
-(date +%G-W%V), skip gracefully — this week's theme request already ran. \
-Otherwise: \
-(1) Ask the owner: 'What is the content theme for this week's social media content? \
-If you do not reply by noon I will use the evergreen theme.' \
-Wait up to 1 hour for a reply. If no reply by 12:00 PM ask once more. \
-If no reply by 6:00 PM, use the evergreen theme. \
-(2) After the theme is confirmed or defaulted, run the weekly social media planning cycle: \
-bash \${HOME}/.openclaw/skills/35-social-media-planner/scripts/run-publishing-cycle.sh \
-for all topics due this week (read \${HOME}/.openclaw/config/content-calendar.json). \
-(3) Write ${MARKER_DIR}/weekly-theme-last-run.json with \
-{\"weekISO\": \"\$(date +%G-W%V)\", \"theme\": \"<chosen theme>\", \"firedAt\": \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"} \
-so re-fires this week are skipped. \
-Model guidance: use the cheapest available model (flash or free OpenRouter fallback). \
-Do NOT use a metered primary pro model for this weekly question."
+CRON_MESSAGE="Skill 35 weekly cycle trigger (Saturday 8 AM) — forwarding adapter for the durable cycle service. \
+Run ONLY this short step and exit: \
+python3 \${HOME}/.openclaw/skills/../../shared-utils/social_cycle_service.py advance \
+  (or, when the Command Center is live on this box, its /api/cron/register scheduler already owns the cadence — \
+   verify engine ownership instead of running a second cadence). \
+The cycle service ensures this client-local week's cycle, sends the invitation through the theme-intake \
+outbox, fires bounded reminders, applies the cutoff disposition, and rolls next week. \
+NEVER wait for a reply inside this session. NEVER hardcode a noon/6PM fallback — the durable service \
+owns reminder and cutoff timing. \
+Model guidance: cheapest available model — this is a short trigger, not a conversation."
 
 # ----------------------------------------------------------
 # Registration — FAIL-LOUD (set -e will propagate non-zero).
-# sessionTarget MUST be 'main'; 'isolated' with --announce
-# --channel is rejected by the gateway (confirmed on client install 2026-06-15).
 # ----------------------------------------------------------
 echo "Registering cron '$CRON_NAME' ($CRON_EXPR, sessionTarget=$SESSION_TARGET, agent=$AGENT_ID)..." >&2
 
@@ -145,16 +192,15 @@ openclaw cron add \
   --session-target "$SESSION_TARGET" \
   --message "$CRON_MESSAGE" \
   --light-context || {
-    echo "ERROR: 'openclaw cron add' failed — Skill 35 weekly-theme cron NOT registered." >&2
+    echo "ERROR: 'openclaw cron add' failed — Skill 35 weekly trigger NOT registered." >&2
     echo "This is a HARD FAIL. Do not proceed with Step 10 until the cron is registered." >&2
     exit 1
   }
 
-echo "OK: cron '$CRON_NAME' registered ($CRON_EXPR — Saturday 8:00 AM weekly)." >&2
+echo "OK: cron '$CRON_NAME' registered ($CRON_EXPR — Saturday 8:00 AM weekly, forwarding adapter)." >&2
 
 # ----------------------------------------------------------
 # Post-registration QC assertion: exactly 1 entry, main target.
-# Hard-fail if the count is wrong.
 # ----------------------------------------------------------
 _post_count="$(openclaw cron list 2>/dev/null | grep -c "$CRON_NAME" || true)"
 if [ "$_post_count" -ne 1 ]; then
@@ -169,14 +215,13 @@ if [ "$_post_main" -lt 1 ]; then
   exit 4
 fi
 
-echo "QC PASS: exactly 1 '$CRON_NAME' cron registered, sessionTarget=main." >&2
+echo "QC PASS: exactly 1 '$CRON_NAME' cron registered, sessionTarget=main."
 
 # Validate config is still clean after registering
 if openclaw config validate 2>/dev/null; then
   echo "OK: openclaw config validate passed." >&2
 else
   echo "WARN: openclaw config validate returned non-zero after cron registration — inspect config." >&2
-  # Non-fatal: config validate failure is a warning, not a blocker for cron registration.
 fi
 
-echo "OK: Skill 35 weekly-theme cron registered, deduped, and QC assertions passed." >&2
+echo "OK: Skill 35 weekly trigger registered (forwarding adapter; durable cycle service owns the cadence)."
