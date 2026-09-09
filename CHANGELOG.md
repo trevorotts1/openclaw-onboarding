@@ -1,3 +1,14 @@
+## [v25.0.31]  -  2026-09-09  -  Repair social planner provisioning, append retries, and completion evidence
+
+- Preserve spreadsheet identity through n8n HTTP steps, compile API-ready credential-bound exports, and validate expressions with n8n's parser.
+- Stamp ownership atomically on new copies; resume interrupted initialization with a formatting checkpoint before sharing. Verify ready sheet headers, ownership and sharing without erasing client entries.
+- Repair Posts/image/video branch context, readback/upsert receipts, trusted previews, formatting masks and new-row dimensions; retain intentional anyone-link edit access.
+- Replace label-only completion claims with an evidence-bound audit that verifies released source, GitHub state and actual captured deployment proofs. Old exports, rollback, inactive workflows and stale reviews fail closed.
+- Require and pin paired Command Center v7.3.1 so fresh installs and fleet refresh do not silently deploy the older v7.1.5 runtime. Publish the CC release first.
+- Enable actual external image fetching, keep weekly counts correct after inserted rows, and prevent new data rows inheriting header colors. Register publication inventories for independent per-account readback verification.
+- Existing planners require verified registry ownership migration before global append-route cutover; release is not evidence that every client installation or provider publication has been accepted.
+
+
 ## [v25.0.30]  -  2026-09-09  -  Social media planner W4+W5: portable deployment health, resumable setup, measured outcomes, final regression coverage
 
 Batch content: PR #1076 (W4 batch, F21/F34/F40, merged at 1d6402b5504409c33806c1098b305c338d13e310)

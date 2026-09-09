@@ -93,6 +93,18 @@ def validate_common(name, export):
         check(n["type"] in allowed,
               f"{name}: node '{n['name']}' type {n['type']}",
               f"FAIL {name}: node '{n['name']}' has unknown type {n['type']}")
+    check(len({n["id"] for n in export["nodes"]}) == len(export["nodes"]), "unique IDs", f"FAIL {name}: duplicate node IDs")
+    check(len({n["name"] for n in export["nodes"]}) == len(export["nodes"]), "unique names", f"FAIL {name}: duplicate node names")
+    for n in export["nodes"]:
+        check(not any(k in n["parameters"] for k in ("retryOnFail", "maxTries", "waitBetweenTries")), "retry settings at node level", f"FAIL {name}: retry settings under parameters at {n['name']}")
+        if n.get("onError") == "continueErrorOutput":
+            out = export["connections"].get(n["name"], {})
+            main = out.get("main", []) if isinstance(out, dict) else []
+            check(len(main) > 1 and bool(main[1]), "wired error output", f"FAIL {name}: unwired error output at {n['name']}")
+        if n["type"] == "n8n-nodes-base.httpRequest":
+            check(n["parameters"].get("authentication") == "predefinedCredentialType", "HTTP auth", f"FAIL {name}: missing auth on {n['name']}")
+            if n["parameters"].get("method") == "POST" and any(x in n["parameters"].get("url", "") for x in ("/copy?", ":append")):
+                check(not n.get("retryOnFail"), "no ambiguous write retry", f"FAIL {name}: blind retry on write {n['name']}")
     # Connectivity: every non-respond node has outgoing connections.
     conn_names = set(export["connections"].keys())
     for n in export["nodes"]:
@@ -103,7 +115,10 @@ def validate_common(name, export):
     # Every connection target exists.
     node_names = {n["name"] for n in export["nodes"]}
     for src, out in export["connections"].items():
-        branches = out["main"] if isinstance(out, dict) else out
+        check(isinstance(out, dict) and isinstance(out.get("main"), list), "canonical connection", f"FAIL {name}: {src} connection must be an object with main arrays")
+        if not isinstance(out, dict) or not isinstance(out.get("main"), list):
+            continue
+        branches = out["main"]
         for branch in branches:
             for link in branch:
                 check(link["node"] in node_names,
@@ -184,7 +199,7 @@ def validate_row_append(export):
           "append: keyed upsert path present",
           "FAIL append: no keyed update path for existing row_keys")
     fjs = js_code_of(export, "Find Posts Row")
-    check("rowNumber" in fjs and "+ 2" in fjs,
+    check("rowNumber" in fjs and re.search(r"\+\s*2\b", fjs),
           "append: upsert targets the exact existing row",
           "FAIL append: upsert does not resolve an exact existing row number")
     # F16 — real resize.

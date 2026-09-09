@@ -18,6 +18,8 @@ on:
       - 57-social-media-in-a-box/scripts/ghl_contracts.py
       - shared-utils/social_cycle_service.py
       - shared-utils/social_prompt_compiler.py
+      - 35-social-media-planner/config/**
+      - scripts/social-completion-audit.py
       - tests/social-planner/**
       - .github/workflows/social-planner-suite-guard.yml
   pull_request:
@@ -30,6 +32,8 @@ on:
       - 57-social-media-in-a-box/scripts/ghl_contracts.py
       - shared-utils/social_cycle_service.py
       - shared-utils/social_prompt_compiler.py
+      - 35-social-media-planner/config/**
+      - scripts/social-completion-audit.py
       - tests/social-planner/**
       - .github/workflows/social-planner-suite-guard.yml
 
@@ -46,6 +50,18 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node for real n8n expression checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate exported workflows with the n8n parser
+        run: |
+          npm ci --ignore-scripts --prefix tests/social-planner/fixtures/n8n-expression-parser
+          node tests/social-planner/fixtures/n8n-expression-parser/verify.cjs
+          python3 35-social-media-planner/config/n8n/sync-create-code.py --check
+          python3 35-social-media-planner/config/n8n/verify-exports.py
+
       - name: Install pytest (proof-file runner; tests themselves stay offline)
         run: python3 -m pip install --quiet pytest
 
@@ -61,7 +77,7 @@ jobs:
           set +e
           SUITE_LOG="$RUNNER_TEMP/social-planner-suite.log"
           : >"$SUITE_LOG"
-          python3 -u -m unittest discover -s tests/social-planner -p 'test_f*.py' -v \
+          python3 -u -m unittest discover -s tests/social-planner -p 'test_*.py' -v \
             >>"$SUITE_LOG" 2>&1
           rc1=$?
           python3 35-social-media-planner/scripts/test_run_publishing_cycle.py \

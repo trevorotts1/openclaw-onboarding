@@ -624,3 +624,15 @@ Send the client this exact summary:
 - **Made the install order explicitly numbered** with Step 0 (contract check) at the top. Steps are no longer reorderable.
 - **Added 8.5/10 QC gate** — the install isn't complete until QC scores 8.5+. Loop and fix below threshold.
 - **Resolved the long-pending `PPSA` placeholder** — removed (was unused for 9 months).
+
+
+### Final reliability deployment gate (F14–F16, F22–F26, F38)
+
+Follow `config/n8n/README.md` for compiled imports, isolated acceptance and
+registry-based migration of existing sheet ownership. Never point existing
+clients at the new append graph before their verified Sheets ownership metadata
+and headers are ready. The create initializer is for new/private initializing
+copies only; it is not a migration tool for client content. A `formatted`
+checkpoint resumes sharing without erasing cells. Treat an `error`/partial
+receipt as a visible repair requirement, never as permission to activate weekly
+work or mark a post published. Always preserve intentional anyone-link edit.

@@ -114,7 +114,7 @@ class TestF25ExportFormattingWiring(unittest.TestCase):
         js = next(n for n in self.create["nodes"]
                   if n["name"] == "Build Formatting Requests (F25)")["parameters"]["jsCode"]
         for st in STATUSES:
-            self.assertIn(f"label: '{st}'", js)
+            self.assertIn(json.dumps(st), js)
 
     def test_frozen_headers_and_wrapped_copy(self):
         js = next(n for n in self.create["nodes"]
@@ -146,13 +146,16 @@ class TestF25UpsertPreservesClientEdits(unittest.TestCase):
     def test_append_upsert_preserves_row_height_and_notes(self):
         with open(APPEND) as f:
             append = json.load(f)
-        # The resize node only resizes the CURRENTLY written row (postsMode
-        # 'updated' + exact rowNumber) — a client-resized OTHER row is never
-        # touched, and nothing in the append path rewrites client notes.
+        # Only newly appended rows are sized; replay preserves client dimensions.
+        # The full exported graph regression executes both branches and checks
+        # that update requests never resize existing rows.
         rjs = next(n for n in append["nodes"]
                    if n["name"] == "Resolve Posts Sheet ID")["parameters"]["jsCode"]
-        self.assertIn("postsMode === 'updated'", rjs)
-        self.assertIn("src.rowNumber", rjs)
+        self.assertIn("postsMode === 'appended'", rjs)
+        self.assertIn("Number(postMatch[1])-1", rjs)
+        from test_append_graph_contract import run, BASE
+        result = run([BASE, BASE])
+        self.assertNotIn("Resize Columns + Row (batchUpdate)", result["runs"][1]["trace"])
         # Overview upsert writes its own keyed row; legacy client rows untouched.
         ojs = next(n for n in append["nodes"]
                    if n["name"] == "Build Overview Summary")["parameters"]["jsCode"]

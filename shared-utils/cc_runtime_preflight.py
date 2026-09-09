@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SECURITY_MIN_VERSION = (7, 1, 5)
+SECURITY_MIN_VERSION = (7, 3, 1)
 NODE_RANGE = '^20.19.0 || ^22.13.0 || >=24'
 
 
@@ -38,8 +38,8 @@ def check_node() -> None:
 
 def assert_cc_package(package: dict) -> None:
     if stable_version(package.get('version', '')) < SECURITY_MIN_VERSION:
-        raise ValueError('Command Center compatibility minimum is v7.1.5; refusing an older checkout. '
-                         'Publish/fetch the paired release with bootstrap ownership repair, scoped department memory and authenticated resumable interviews before retrying.')
+        raise ValueError(f'Command Center compatibility minimum is v{".".join(map(str, SECURITY_MIN_VERSION))}; refusing an older checkout. '
+                         'Publish/fetch the paired release with durable social ownership and per-account publication verification before retrying.')
 
 
 def check_checkout(directory: Path) -> None:

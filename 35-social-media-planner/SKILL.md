@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v3.6.1
+version: "3.6.2"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -311,3 +311,13 @@ This is the ONLY valid sequence for any image delivered by this skill. Every ima
 - Pull via `read` tools before agent prompts.
 
 > **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's CTAs feed Skill 38's inbound pipeline and route posting through Skill 44.
+
+
+### Required publication evidence handoff
+
+Before completing a production task, follow
+`references/publication-verification.md`: register the full company/queue/account
+post inventory as a hashed task deliverable. A separate verification task reads
+back those exact provider IDs; it must never repost. Keep scheduled, partially
+published and verification-required states distinct. Missing proof stays actively
+owned repair work while unrelated healthy accounts continue.
