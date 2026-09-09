@@ -371,10 +371,13 @@ class TestRegistryParity:
         enforced_by postflight_bundle_gate) and the FIX 103-family registrations
         (AF-SPEECH-PACING, AF-RENDER-EMPTY, AF-RENDER-COMPLETE — all
         build_deck-enforced with resolving py_symbols) bring the total to 192
-        and the build_deck-enforced count to 108."""
+        and the build_deck-enforced count to 108. PRES-011 (2026-09-09)
+        registers three AF-U rows (AF-U-GHL-SALES, AF-U-GHL-VSL,
+        AF-U-FORM-GATE — none build_deck-enforced), so the total moves
+        192 -> 195 while the build_deck-enforced count holds at 108."""
         manifest = json.loads(MANIFEST.read_text())
         enforced = [a for a in manifest["autofails"] if a.get("enforced_by") == "build_deck"]
-        assert len(manifest["autofails"]) == 192
+        assert len(manifest["autofails"]) == 195  # PRES-011: 192 + 3 AF-U
         assert len(enforced) == 108
 
 
