@@ -54,8 +54,15 @@ UNDETERMINED_COUNT=0
 JSON_MODE=0
 RESULTS=""   # newline-separated "STEP|NAME|VERDICT|detail" records
 
+# RR-030: an explicit test root beats repurposing HOME. Tests and fixtures set
+# OC_CONFIG_ROOT (exported or passed per-call); this function then resolves
+# every step against that root and the real box's ~/.openclaw is never touched.
+# HOME is left alone so a stray cd/umask/side effect can never redirect a
+# fixture into operator state (and vice versa).
 _oc_root() {
-  if [ -d "/data/.openclaw" ]; then printf '/data/.openclaw'
+  if [ -n "${OC_CONFIG_ROOT:-}" ]; then
+    printf '%s' "$OC_CONFIG_ROOT"
+  elif [ -d "/data/.openclaw" ]; then printf '/data/.openclaw'
   else printf "%s/.openclaw" "$HOME"
   fi
 }
@@ -116,7 +123,9 @@ step0() {
   fi
 
   root="$(_oc_root)"
-  log_dir="/tmp/openclaw"
+  # RR-030: fixtures override the log root with OC_LOG_ROOT so the fixture tree
+  # is fully explicit; the real /tmp/openclaw is never read during a self-test.
+  log_dir="${OC_LOG_ROOT:-/tmp/openclaw}"
   local today; today="$(date +%Y-%m-%d 2>/dev/null || echo unknown)"
   if [ -d "$log_dir" ]; then
     local todays_log="$log_dir/openclaw-${today}.log"
@@ -378,7 +387,7 @@ step5() {
 # ============================================================================
 step6() {
   local log_dir today todays_log hits
-  log_dir="/tmp/openclaw"
+  log_dir="${OC_LOG_ROOT:-/tmp/openclaw}"
   today="$(date +%Y-%m-%d 2>/dev/null || echo unknown)"
   todays_log="$log_dir/openclaw-${today}.log"
   if [ ! -f "$todays_log" ]; then
@@ -555,34 +564,50 @@ self_test() {
   trap 'rm -rf "$sbx"' RETURN
 
   # Fixture 1: healthy config -> STEP3/STEP4 clean, STEP7 clean (no parity problem)
+  # RR-030: fixture state is addressed through the EXPLICIT OC_CONFIG_ROOT, never
+  # by repurposing HOME. Each fixture body runs as its own subshell whose exit
+  # code is the verdict, and the PARENT accumulates it — a broken checker can
+  # no longer print a sad line and lose the failure inside the subshell.
   mkdir -p "$sbx/.openclaw/agents/main"
   cat > "$sbx/.openclaw/openclaw.json" <<'JSON'
 {"agents":{"list":[{"id":"main"}]},"channels":{"telegram":{"streaming":{"mode":"off"}}},"tools":{"toolSearch":{"enabled":true,"mode":"directory"}},"providers":{"anthropic":{"timeoutSeconds":120}}}
 JSON
-  ( HOME="$sbx"; export HOME; PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
+  fixture1() (
+    export OC_CONFIG_ROOT="$sbx/.openclaw-root"
+    mkdir -p "$OC_CONFIG_ROOT/agents/main"
+    cp "$sbx/.openclaw/openclaw.json" "$OC_CONFIG_ROOT/openclaw.json"
+    PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
     step3; s3=$?
     step4; s4=$?
     if [ "$s3" -eq 0 ] && [ "$s4" -eq 0 ]; then
       echo "  ✓ healthy config: streaming + toolSearch both CLEAN"
-    else
-      echo "  ✗ healthy config: expected both clean (s3=$s3 s4=$s4)"; failures=$((failures+1))
+      return 0
     fi
+    echo "  ✗ healthy config: expected both clean (s3=$s3 s4=$s4)"
+    return 1
   )
+  if fixture1; then :; else failures=$((failures + 1)); fi
 
   # Fixture 2: absent streaming key + scalar toolSearch -> both PROBLEM
   mkdir -p "$sbx/.openclaw"
   cat > "$sbx/.openclaw/openclaw.json" <<'JSON'
 {"agents":{"list":[{"id":"main"}]},"tools":{"toolSearch":"tools"}}
 JSON
-  ( HOME="$sbx"; export HOME; PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
+  fixture2() (
+    export OC_CONFIG_ROOT="$sbx/.openclaw-root"
+    rm -rf "$OC_CONFIG_ROOT"; mkdir -p "$OC_CONFIG_ROOT/agents/main"
+    cp "$sbx/.openclaw/openclaw.json" "$OC_CONFIG_ROOT/openclaw.json"
+    PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
     step3; s3=$?
     step4; s4=$?
     if [ "$s3" -ne 0 ] && [ "$s4" -ne 0 ] && [ $((PROBLEM_BITS & STEP_BIT_STREAMING)) -ne 0 ] && [ $((PROBLEM_BITS & STEP_BIT_TOOLSEARCH)) -ne 0 ]; then
       echo "  ✓ absent-streaming + scalar-toolSearch: both flagged PROBLEM"
-    else
-      echo "  ✗ absent-streaming + scalar-toolSearch: expected both PROBLEM (s3=$s3 s4=$s4 bits=$PROBLEM_BITS)"; failures=$((failures+1))
+      return 0
     fi
+    echo "  ✗ absent-streaming + scalar-toolSearch: expected both PROBLEM (s3=$s3 s4=$s4 bits=$PROBLEM_BITS)"
+    return 1
   )
+  if fixture2; then :; else failures=$((failures + 1)); fi
 
   # Fixture 3: registry-strip signature -> STEP7 PROBLEM
   rm -rf "$sbx/.openclaw"
@@ -590,14 +615,21 @@ JSON
   cat > "$sbx/.openclaw/openclaw.json" <<'JSON'
 {"agents":{"list":[{"id":"main"}]},"channels":{"telegram":{"streaming":{"mode":"off"}}},"tools":{"toolSearch":{"enabled":true,"mode":"directory"}}}
 JSON
-  ( HOME="$sbx"; export HOME; PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
+  fixture3() (
+    export OC_CONFIG_ROOT="$sbx/.openclaw-root"
+    rm -rf "$OC_CONFIG_ROOT"
+    mkdir -p "$OC_CONFIG_ROOT/agents/main" "$OC_CONFIG_ROOT/agents/dept-a" "$OC_CONFIG_ROOT/agents/dept-b" "$OC_CONFIG_ROOT/agents/dept-c"
+    cp "$sbx/.openclaw/openclaw.json" "$OC_CONFIG_ROOT/openclaw.json"
+    PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
     step7; s7=$?
     if [ "$s7" -ne 0 ] && [ $((PROBLEM_BITS & STEP_BIT_SUBSTRATE)) -ne 0 ]; then
       echo "  ✓ registry-strip signature (1 registered, 4 dirs): STEP7 flagged PROBLEM"
-    else
-      echo "  ✗ registry-strip signature: expected STEP7 PROBLEM (s7=$s7 bits=$PROBLEM_BITS)"; failures=$((failures+1))
+      return 0
     fi
+    echo "  ✗ registry-strip signature: expected STEP7 PROBLEM (s7=$s7 bits=$PROBLEM_BITS)"
+    return 1
   )
+  if fixture3; then :; else failures=$((failures + 1)); fi
 
   # Fixture 4: MUTATION PROOF -- neutralize the registry-parity condition in
   # a copy of this script, re-run fixture 3, must now silently pass.
@@ -608,18 +640,22 @@ JSON
     failures=$((failures+1))
   else
     chmod +x "$mutated"
-    ( HOME="$sbx"; export HOME
+    fixture4() (
+      export OC_CONFIG_ROOT="$sbx/.openclaw-root"
       # shellcheck disable=SC1090
       . "$mutated" --source-only 2>/dev/null
       PROBLEM_BITS=0; UNDETERMINED_COUNT=0; RESULTS=""
       step7; s7=$?
       if [ "$s7" -eq 0 ]; then
         echo "  ✓ MUTATION PROOF: with the parity check disabled, the SAME registry-strip fixture now silently passes -- confirms fixture 3's PROBLEM verdict is the real check enforcing"
-      else
-        echo "  ✗ MUTATION PROOF FAILED: disabling the check should have flipped fixture 3 to CLEAN (s7=$s7)"
-        failures=$((failures+1))
+        return 0
       fi
+      echo "  ✗ MUTATION PROOF FAILED: disabling the check should have flipped fixture 3 to CLEAN (s7=$s7)"
+      return 1
     )
+    # RR-030: the parent OBSERVES the subshell verdict; a broken step7 inside
+    # fixture4 can no longer vanish into a discarded subshell exit code.
+    if fixture4; then :; else failures=$((failures + 1)); fi
   fi
   rm -f "$mutated"
 
