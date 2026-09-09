@@ -35,9 +35,21 @@
         },
         {
             "name": "rescue-rangers-webhook-secret",
-            "description": "Shared fleet secret sent as X-Rescue-Secret so intake auth accepts the escalation (clean 403 otherwise). Seeded alongside the URL.",
+            "description": "Shared fleet secret sent as X-Rescue-Secret so intake auth accepts the escalation (clean 403 otherwise). Seeded alongside the URL. RR-003: active until the operator retires it per box after the auditable deadline; once a box is enrolled it sends its per-enrollment credential instead (see rescue-box-cred).",
             "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_SECRET",
             "required": true
+        },
+        {
+            "name": "rescue-box-cred",
+            "description": "RR-003 per-enrollment box credential (v2 admission schema): secret value sent as X-RR-Box-Cred, with the public enrollment id sent as X-RR-Box-Id. OPERATOR-SEEDED ONLY (never self-service, never shared). Values live in the operator secret env; names only here. Absent until the operator enrolls the box — the shared fleet secret keeps working until explicitly retired.",
+            "cfg_key": "env.vars.RR_BOX_CRED",
+            "required": false
+        },
+        {
+            "name": "rescue-box-cred-id",
+            "description": "RR-003 public enrollment id this box's credential is bound to (sent as X-RR-Box-Id alongside X-RR-Box-Cred). Not a secret; identifies which enrolled canonical company box and permitted-action set the credential carries.",
+            "cfg_key": "env.vars.RR_BOX_ID",
+            "required": false
         },
         {
             "name": "rescue-push-secret",
