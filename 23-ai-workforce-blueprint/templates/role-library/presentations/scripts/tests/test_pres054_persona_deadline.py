@@ -84,11 +84,29 @@ def _make_run_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch, tmp_path):
     """Every test starts with clean registries and a scoped PERSONA_PROC_DIR
-    so no test can reap or account anything outside its own tmp_path."""
+    so no test can reap or account anything outside its own tmp_path.
+
+    Resolutions in this suite run on an in-process counting lease UNLESS the
+    test names the engine governor explicitly: the engine's shared token
+    bucket is process-global, and draining it inside THIS suite changes the
+    timing of later suites in the same pytest process (hosts/tests that
+    instrument time.sleep globally see every governor poll-sleep). The one
+    governor-integration test below names the governor and restores the
+    bucket afterward."""
     monkeypatch.setenv("PERSONA_PROC_DIR", str(tmp_path / "proc"))
+
+    held = []
+
+    def _counting_acquire(provider, timeout_s=None, n=1):
+        held.append({"provider": provider, "n": n})
+        return {"provider": provider, "n": n}
+
+    def _counting_release(lease):
+        held.append({"released": lease})
+
+    pdead.set_lease_provider(_counting_acquire, _counting_release)
     pdead.clear_attempt_log()
     pdead._ACTIVE.clear()
-    pdead.set_lease_provider(None, None)
     os.environ.pop("PERSONA_FOR_JOB_DEADLINE", None)
     os.environ.pop("PERSONA_RESOLUTION_ID", None)
     os.environ.pop("SKILL51_BLEND_GOVERNS", None)
@@ -216,6 +234,8 @@ def test_capacity_slots_released_once_per_attempt(tmp_path):
     one absolute deadline, a hung attempt 1 consumes the budget, so exactly
     ONE attempt runs: ONE acquire, ONE release, no leak, and the retry that
     would have double-booked capacity never starts."""
+    # the suite fixture registered a fresh counting adapter per test; use a
+    # local one here so we can count exactly what THIS resolution did
     held = []
     released = []
 
@@ -252,9 +272,12 @@ def test_capacity_slots_released_once_per_attempt(tmp_path):
 def test_persona_provider_uses_shared_governor(tmp_path, monkeypatch):
     """With no external adapter, LeaseGuard accounts through the engine's own
     rate governor (presentation_job.governor) under the ``persona`` provider
-    — shared capacity, not an unlocked per-process counter."""
+    — shared capacity, not an unlocked per-process counter. Restores the
+    consumed token afterward so later suites in the same process keep the
+    bucket they expect."""
     from presentation_job import governor
 
+    pdead.set_lease_provider(None, None)  # this test names the governor
     monkeypatch.setenv("PRESENTATION_GOVERNOR_LOG", str(tmp_path / "gov.jsonl"))
     g = pdead.LeaseGuard(provider="persona").acquire(timeout_s=5)
     assert g.acquired is True
@@ -265,6 +288,9 @@ def test_persona_provider_uses_shared_governor(tmp_path, monkeypatch):
     # after release the slot is back
     if gov_state:
         assert gov_state.get("inflight", 0) == 0
+    with governor._lock:
+        st = governor._state_for("persona")
+        st.tokens = float(governor.provider_config("persona")["burst"])
 
 
 def test_governor_timeout_propagates_no_slot_leak(tmp_path, monkeypatch):
@@ -272,6 +298,7 @@ def test_governor_timeout_propagates_no_slot_leak(tmp_path, monkeypatch):
     fails without holding a slot (acquire raised, nothing to release)."""
     from presentation_job import governor
 
+    pdead.set_lease_provider(None, None)  # this test names the governor
     # saturate the persona provider so acquire() cannot admit: the 1-slot
     # inflight ceiling is held by "someone else" AND the window budget is
     # spent, so neither path can admit within the timeout
@@ -290,6 +317,13 @@ def test_governor_timeout_propagates_no_slot_leak(tmp_path, monkeypatch):
         lease.acquire(timeout_s=0.5)
     assert lease.acquired is False
     assert lease._lease is None
+    # restore the shared bucket for later suites in this process
+    with governor._lock:
+        st = governor._state_for("persona")
+        st.inflight = 0
+        st.events = []
+        st.tokens = 0.0
+        st.last_refill = 0.0
 
 
 # ---------------------------------------------------------------------------
