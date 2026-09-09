@@ -8,7 +8,8 @@ publication after the production task, separately for each connected account.
    dispatch task. Never derive them from a display name or another client.
 2. Write `publish-receipts.json` inside that task's approved artifact directory.
    Register it through the existing `POST /api/tasks/:taskId/deliverables` flow
-   before finishing the task; preserve the captured SHA. A file left only in a
+   with `Authorization: Bearer $MC_API_TOKEN` before finishing the task; preserve
+   the captured SHA. A file left only in a
    private staging directory is not registered evidence.
 3. The production receipt carries `company_id`, `queue_id`, `planned_posts`,
    `created_posts`, and `posts`. Each post identifies `platform`, `account_id`,
@@ -33,6 +34,11 @@ publication after the production task, separately for each connected account.
    or unreadable artifacts remain visible verification/repair work. Continue
    independent healthy accounts. The scheduler owns bounded retries and
    escalation; a worker must not declare success just to clear the card.
+
+> **Required write-back authentication:** production and verification deliverable
+> registration must use `Authorization: Bearer $MC_API_TOKEN` from the assigned
+> runtime environment. A missing or wrong token causes HTTP 401 and leaves the
+> task unfinished. Do not substitute `$OPENCLAW_GATEWAY_TOKEN`; do not log tokens.
 
 Legacy production receipts may omit company/queue only when the existing
 queue-to-task and task-to-company database ownership independently binds them.
