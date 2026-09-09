@@ -219,11 +219,19 @@ def _blocked_run(tmp_path: Path, name: str, reason: str,
 
 
 @pytest.fixture(autouse=True)
-def _clean_env(monkeypatch):
+def _clean_env(monkeypatch, tmp_path):
     monkeypatch.delenv(ar.AUTO_RESUME_ENV, raising=False)
     monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
     monkeypatch.delenv("PRESENTATION_MANIFEST", raising=False)
     monkeypatch.delenv("PRESENTATION_SUPERVISE_APPLY", raising=False)
+    # PRES-019 QC4: the known-plan recovery path reads the resource profile
+    # (the ask-once store). Point the store at an empty per-test directory --
+    # the operator's live profile (this box: ollama-cloud LOCKED) must never
+    # leak into a leg, or plan-pending tests would flip to KNOWN-PLAN.
+    cfg = tmp_path / "profile-store"
+    cfg.mkdir(exist_ok=True)
+    monkeypatch.setenv("PRESENTATION_RESOURCE_PROFILE_DIR", str(cfg))
+    monkeypatch.setenv("PRESENTATION_CAPACITY_CONFIG_DIR", str(cfg))
 
 
 # ===========================================================================
@@ -501,3 +509,161 @@ class TestPlanPendingVisibility:
         assert doc_pending.get("configuration_pending")
         assert doc_healthy.get("configuration_pending") is None
         assert ar.evaluate(healthy).resume is True  # still retryable
+
+
+# ===========================================================================
+# 8. QC4 -- KNOWN-PLAN-NOT-REASKED. The recovery request matches a plan
+#    ALREADY KNOWN to the operator (the resource profile carries a locked
+#    interview answer for the provider the park names): the system must NOT
+#    re-ask (no configuration_pending stamp pointing the client at a
+#    question they answered) and must NOT loop; it proceeds with the known
+#    plan (a bounded auto-resume -- capacity.detect reads the locked entry
+#    and MEASUREs at it) or reports the known-plan state (a recorded
+#    DECLINE: no tier to measure, so a resume would re-park; the report
+#    names the recorded decline and the door that widens the run).
+# ===========================================================================
+
+def _plan_profile_dir(tmp_path: Path) -> Path:
+    """The per-test profile store (the autouse fixture made it empty)."""
+    cfg = tmp_path / "profile-store"
+    cfg.mkdir(exist_ok=True)
+    return cfg
+
+
+class TestKnownPlanNotReasked:
+    def test_locked_plan_never_reasks_and_proceeds(self, tmp_path):
+        """THE QC4 LEG. The client already answered the plan question
+        (record_plan_answer locked it). The recovery request that matches
+        that plan must NOT re-ask it and must NOT park it behind a
+        configuration_pending stamp again: it proceeds with the known plan
+        (resume=True), spending one bounded attempt like any other
+        auto-resume."""
+        cfg = _plan_profile_dir(tmp_path)
+        from presentation_job import resource_profile as rp, capacity as cap
+        cap.record_plan_answer("ollama-cloud", "$100/month", cfg)
+        run_dir = _blocked_run(tmp_path, "knownplan", RESOURCE_PLAN_REASON)
+        d = ar.evaluate(run_dir)
+        assert d.code == ar.DECISION_KNOWN_PLAN
+        assert d.resume is True
+        assert "ALREADY KNOWN" in d.why
+        assert "$100/month" in d.why
+        assert "NOT re-ask" in d.why or "does NOT re-ask" in d.why
+        doc = json.loads((run_dir / "state.json").read_text())
+        assert doc.get("configuration_pending") is None
+
+    def test_known_plan_cli_exit_is_resume(self, tmp_path):
+        """The poller's contract is the exit code: 0 authorises the
+        dispatch (which re-measures capacity and proceeds at the known
+        plan's width), and the attempt rides the same cap/backoff ledger as
+        every other auto-resume."""
+        cfg = _plan_profile_dir(tmp_path)
+        from presentation_job import resource_profile as rp, capacity as cap
+        cap.record_plan_answer("ollama-cloud", "$100/month", cfg)
+        run_dir = _blocked_run(tmp_path, "knownplan2", RESOURCE_PLAN_REASON)
+        rc = ar.main(["--run-dir", str(run_dir)])
+        assert rc == ar.EXIT_RESUME
+        rows = json.loads((run_dir / "state.json").read_text()).get(
+            ar.STATE_KEY) or []
+        assert len(rows) == 1  # the attempt is counted, bounded as always
+        doc = json.loads((run_dir / "state.json").read_text())
+        assert doc.get("configuration_pending") is None
+
+    def test_known_plan_resume_is_bounded_never_a_loop(self, tmp_path):
+        """The loop bound, proven: three known-plan resumes exhaust the SAME
+        cap, and the fourth evaluation is CAP-EXHAUSTED -- parked for a
+        human, never an unbounded re-dispatch. Each cycle simulates the real
+        resume lifecycle: the engine clears the park (and re-parks at the
+        same gate, as it would if the park had a second cause) WITHOUT
+        wiping the attempt ledger the way a bare state rewrite would -- the
+        ledger rows are preserved exactly as the engine's _reset_parked_
+        state leaves them."""
+        cfg = _plan_profile_dir(tmp_path)
+        from presentation_job import resource_profile as rp, capacity as cap
+        cap.record_plan_answer("ollama-cloud", "$100/month", cfg)
+        run_dir = _blocked_run(tmp_path, "knownplan3", RESOURCE_PLAN_REASON)
+        for cycle in range(ar.AUTO_RESUME_CAP):
+            # age the ledger past this cycle's backoff window (backoff
+            # minutes grow per attempt: 0, then 10, then 30). Age relative
+            # to REAL wall time: record_attempt stamps rows with the real
+            # clock, and evaluate() counts against the same real clock.
+            if cycle:
+                state = json.loads((run_dir / "state.json").read_text())
+                real_now = datetime.now(timezone.utc)
+                for row in state.get(ar.STATE_KEY) or []:
+                    row["at"] = (real_now - timedelta(
+                        minutes=60 * (cycle + 1))).isoformat()
+                (run_dir / "state.json").write_text(
+                    json.dumps(state, indent=2))
+            assert ar.main(["--run-dir", str(run_dir)]) == ar.EXIT_RESUME
+            # the engine's own park-clear path on each resume -- it pops
+            # blocked/terminal and PRESERVES every other state key (the
+            # attempt ledger included)
+            state = json.loads((run_dir / "state.json").read_text())
+            state.pop("blocked", None)
+            state["terminal"] = None
+            # ...and the run re-parks at the same gate for the next tick
+            # (a fresh blocked record; the attempt ledger stays)
+            state["terminal"] = "BLOCKED"
+            state["blocked"] = {"phase": "P0A-INTAKE",
+                                "reason": RESOURCE_PLAN_REASON,
+                                "at": NOW.isoformat(timespec="seconds")}
+            (run_dir / "state.json").write_text(json.dumps(state, indent=2))
+        assert ar.evaluate(run_dir).code == ar.DECISION_CAP
+
+    def test_known_decline_reports_known_plan_never_reasks(self, tmp_path):
+        """The OTHER known answer: the client chose 'use conservative
+        default'. The question is locked -- no re-ask, no
+        configuration_pending stamp about the question -- but the run stays
+        parked (a declined cap-table provider has no tier capacity could
+        measure, so a resume would re-park): the recovery request REPORTS
+        THE KNOWN-PLAN STATE instead."""
+        cfg = _plan_profile_dir(tmp_path)
+        from presentation_job import resource_profile as rp
+        rp.record_conservative_default("ollama-cloud", cfg)
+        run_dir = _blocked_run(tmp_path, "declined", RESOURCE_PLAN_REASON)
+        d = ar.evaluate(run_dir)
+        assert d.code == ar.DECISION_KNOWN_PLAN
+        assert d.resume is False
+        assert "DECLINE" in d.why or "conservative default" in d.why
+        assert "NOT re-asked" in d.why
+        doc = json.loads((run_dir / "state.json").read_text())
+        stamp = doc.get("configuration_pending")
+        assert isinstance(stamp, dict)
+        # the stamp reports the KNOWN decline, never the question again
+        assert "conservative default" in stamp["owner"]
+        assert "not be asked" in stamp["next_action"]
+        assert "answer the pending resource-plan question" \
+            not in stamp["next_action"]
+
+    def test_unanswered_plan_still_pends(self, tmp_path):
+        """Control: with NO locked answer the park is genuinely pending --
+        the plain configuration-pending verdict, unchanged."""
+        _plan_profile_dir(tmp_path)  # empty store
+        run_dir = _blocked_run(tmp_path, "stillpending", RESOURCE_PLAN_REASON)
+        d = ar.evaluate(run_dir)
+        assert d.code == ar.DECISION_CONFIGURATION_PENDING
+        assert d.resume is False
+
+    def test_credential_park_unaffected_by_known_plan(self, tmp_path):
+        """Control: the OTHER configuration shape (the FIX 114 key gate)
+        never consults the plan store and never becomes KNOWN-PLAN."""
+        cfg = _plan_profile_dir(tmp_path)
+        from presentation_job import capacity as cap
+        cap.record_plan_answer("ollama-cloud", "$100/month", cfg)
+        run_dir = _blocked_run(tmp_path, "keygate", NO_RESOLVABLE_KEY_REASON)
+        d = ar.evaluate(run_dir)
+        assert d.code == ar.DECISION_CONFIGURATION_PENDING
+        assert d.resume is False
+
+    def test_non_plan_provider_marker_stays_configuration_pending(
+            self, tmp_path):
+        """Control: a plan-gate marker about a provider with NO locked
+        profile entry must not be promoted by a live profile entry about a
+        DIFFERENT provider (this box's real profile is not consulted: the
+        store is the per-test one the fixture points the envs at)."""
+        cfg = _plan_profile_dir(tmp_path)
+        from presentation_job import capacity as cap
+        cap.record_plan_answer("deepseek-direct", "v4 Pro", cfg)
+        run_dir = _blocked_run(tmp_path, "otherprov", RESOURCE_PLAN_REASON)
+        d = ar.evaluate(run_dir)
+        assert d.code == ar.DECISION_CONFIGURATION_PENDING

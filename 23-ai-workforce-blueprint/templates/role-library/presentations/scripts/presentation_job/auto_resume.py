@@ -110,6 +110,96 @@ except ImportError:  # pragma: no cover -- direct-path import, tests and shims
 
 
 # ---------------------------------------------------------------------------
+# PRES-019 QC4 -- THE KNOWN-PLAN RECOVERY PATH (never re-ask, never loop).
+# ---------------------------------------------------------------------------
+
+#: Provider ids a plan-gate park can name. Only these exist on the plan
+#: interview at all (capacity.CAP_TABLE_PROVIDERS + capacity.NO_CAP_PROVIDERS);
+#: a reason naming anything else has no one-time question behind it, so there
+#: is no known-plan state to consult and the plain CONFIGURATION-PENDING
+#: verdict is the honest one. Read lazily via _plan_gate_providers() so this
+#: module keeps importing without the capacity graph.
+_PLAN_GATE_PROVIDERS: Tuple[str, ...] = ()
+
+#: Park-reason shapes that name WHICH provider owes a plan answer. The park
+#: reasons this engine actually writes name the provider twice (the refusal
+#: sentence and the interview question); one regex over the reason is enough,
+#: and a miss degrades to the plain configuration-pending verdict -- it can
+#: never invent a known-plan state out of an unnameable reason.
+_PLAN_PROVIDER_RE = None  # compiled lazily, see _plan_provider_from_reason
+
+
+def _plan_gate_providers() -> Tuple[str, ...]:
+    """The providers whose plan can be KNOWN: cap-table rows plus BYOK
+    entries. Never imports at module level -- capacity pulls a detection
+    graph this module must not pay for on a plain read."""
+    global _PLAN_GATE_PROVIDERS
+    if _PLAN_GATE_PROVIDERS:
+        return _PLAN_GATE_PROVIDERS
+    try:
+        try:
+            from .capacity import CAP_TABLE_PROVIDERS, NO_CAP_PROVIDERS
+        except ImportError:  # pragma: no cover -- direct-path run
+            from capacity import CAP_TABLE_PROVIDERS, NO_CAP_PROVIDERS  # type: ignore[no-redef]
+        _PLAN_GATE_PROVIDERS = tuple(sorted(set(CAP_TABLE_PROVIDERS)
+                                            | set(NO_CAP_PROVIDERS)))
+    except Exception:  # noqa: BLE001 -- a broken graph answers "no gate names"
+        _PLAN_GATE_PROVIDERS = ()
+    return _PLAN_GATE_PROVIDERS
+
+
+def _plan_provider_from_reason(reason: str) -> Optional[str]:
+    """The provider a plan-gate park reason asks about, or None.
+
+    Reasons are human sentences ("capacity is PARKED: provider ollama-cloud
+    was detected but its plan is undeclared..."), so this matches the known
+    provider ids literally in the reason text. First canonical id found wins;
+    an id that appears only inside a longer token never matches (word
+    boundary on the left, and the ids themselves are the canonical tokens)."""
+    text = str(reason or "").lower()
+    for provider in _plan_gate_providers():
+        if not provider:
+            continue
+        idx = text.find(provider)
+        if idx >= 0 and (idx == 0 or not (text[idx - 1].isalnum()
+                                          or text[idx - 1] == "_")):
+            return provider
+    return None
+
+
+def _known_plan_entry(provider: Optional[str],
+                      config_dir: Optional[Path] = None
+                      ) -> Optional[Dict[str, Any]]:
+    """The provider's LOCKED interview entry, or None.
+
+    THE ASK-ONCE STORE IS THE RESOURCE PROFILE (resource_profile.py): an
+    entry is a known answer only when it is LOCKED -- `record_plan_answer`
+    locks a tier, `record_conservative_default` locks the decline, and a
+    probe-created entry (no lock) is NOT an answer. Read-only, lazy import
+    (the profile imports capacity, so a module-level import would be
+    circular), never raises: a box with no profile, a flag-disabled profile
+    or a corrupt one yields None and the caller keeps the plain verdict."""
+    if not provider:
+        return None
+    try:
+        try:
+            from . import resource_profile as rp  # package-relative
+        except ImportError:  # pragma: no cover -- direct-path run
+            import resource_profile as rp  # type: ignore[no-redef]
+    except ImportError:
+        return None
+    try:
+        if not rp.flag_enabled():
+            return None
+        entry = rp.get_provider(rp.load_profile(config_dir), provider)
+        if entry and entry.get("locked"):
+            return entry
+        return None
+    except Exception:  # noqa: BLE001 -- a broken profile never breaks the read
+        return None
+
+
+# ---------------------------------------------------------------------------
 # THE BOUNDS. Every one of these is a number a runaway cannot exceed.
 # ---------------------------------------------------------------------------
 
@@ -226,6 +316,22 @@ DECISION_UNREADABLE = "UNDETERMINED"
 # action is, and the visibility stamp below keeps that in state.json across
 # detached execution (where a notify may not even have a transport).
 DECISION_CONFIGURATION_PENDING = "CONFIGURATION-PENDING"
+
+# PRES-019 QC4: the recovery request matched a plan ALREADY KNOWN to the
+# operator -- the resource profile carries a locked interview answer for the
+# provider the park names. The system must NOT re-ask (the question was put
+# once, and it was answered) and must NOT loop (a stamp that points the
+# client at a question they already answered IS the loop, asked from the
+# recovery side). Two shapes, one code:
+#   * plan recorded  -> RESUME: the park's cause is cured (capacity.detect
+#     reads the locked entry and MEASUREs); proceeding with the known plan is
+#     exactly what a resume does -- bounded by the same cap/backoff as any.
+#   * plan DECLINED  -> skip: the decline locks ask-once too, but
+#     capacity.detect still PARKs a cap-table provider whose plan was
+#     declined (there is no tier to measure), so resuming would re-park at
+#     the same gate and loop. Report the known-plan state instead: owner and
+#     next action named, nothing re-asked.
+DECISION_KNOWN_PLAN = "KNOWN-PLAN"
 
 EXIT_RESUME = 0
 EXIT_USAGE = 2
@@ -538,6 +644,98 @@ def _configuration_pending_decision(run_path: Path, phase: Optional[str],
                     failure_class=fclass, phase=phase)
 
 
+def _known_plan_decision(run_path: Path, phase: Optional[str],
+                         reason: str, fclass: str, provider: str,
+                         entry: Dict[str, Any]) -> Decision:
+    """PRES-019 QC4: the KNOWN-PLAN verdict -- the recovery request matched a
+    plan already known to the operator.
+
+    The question was asked ONCE (resource_profile's lock) and the profile
+    carries the answer, so the recovery machinery must NOT put it again: a
+    configuration_pending stamp that points the client at a question they
+    already answered is the re-ask, and re-issuing it every poller tick is
+    the loop. What happens instead depends on WHICH known answer it is:
+
+      * a recorded TIER (plan_tier set): the park's cause is cured --
+        capacity.detect reads the locked entry (its own stage-2 precedence:
+        model slug > detected > profile > override) and returns MEASURED at
+        the recorded plan. The recovery request therefore PROCEEDS WITH THE
+        KNOWN PLAN: resume=True, one bounded attempt (the same cap/backoff
+        ladder as every other auto-resume -- the bounds are what stop a
+        loop if the park turns out to have a second cause). The stamp is
+        NOT configuration_pending (the configuration is not pending; it is
+        known); the decision's why names the recorded plan and where it is
+        stored, and state.json carries a known_plan stamp so the provenance
+        survives detached execution.
+
+      * a recorded DECLINE (locked, no tier): ask-once locks the decline
+        too -- the client answered, so no re-ask. But capacity.detect still
+        PARKs a cap-table provider whose plan was declined (nothing to
+        measure), so a resume here would re-park at the same gate and
+        loop. The recovery request therefore stays parked and REPORTS THE
+        KNOWN-PLAN STATE: owner + next action name the recorded decline and
+        the door that actually widens the run (an explicit operator
+        declaration), and a configuration_pending stamp records THAT --
+        never the question again.
+    """
+    plan_text = str(entry.get("plan_tier") or "").strip()
+    if plan_text:
+        why = (
+            f"the park at {phase or 'an unrecorded phase'} names a plan-gate "
+            f"({reason[:160]!r}), but the plan is ALREADY KNOWN: the resource "
+            f"profile carries a locked answer for {provider} "
+            f"(plan_tier={plan_text!r}, answered_at="
+            f"{str(entry.get('answered_at') or 'unrecorded')[:19]}). The "
+            "one-time question was asked once and answered -- this recovery "
+            "does NOT re-ask it and does NOT stamp configuration_pending; it "
+            f"proceeds with the known plan. Owner: the operator (nothing to "
+            "do unless the answer itself is wrong).")
+        return Decision(True, why, DECISION_KNOWN_PLAN, EXIT_RESUME,
+                        failure_class=fclass, phase=phase)
+    # The recorded answer is a DECLINE. Never re-ask; never loop; report.
+    owner = ("the client (they chose 'use conservative default' for this "
+             "provider)")
+    next_action = ("the decline is already recorded and will not be asked "
+                   "again; a declined cap-table provider has no tier to "
+                   "measure, so the run needs the operator to widen it "
+                   "explicitly (--declare-capacity N --declare-provider "
+                   f"{provider}) or to record a real plan tier")
+    why = (f"the park at {phase or 'an unrecorded phase'} names a plan-gate, "
+           f"but the answer is ALREADY KNOWN and it is a DECLINE: the "
+           f"resource profile carries a locked 'use conservative default' "
+           f"for {provider}. The question is NOT re-asked (asked ONCE, and "
+           "it was answered); the run stays parked because a declined "
+           "cap-table provider has no tier capacity could measure -- a "
+           "resume here would re-park at the same gate. Owner: "
+           f"{owner}. Next action: {next_action}.")
+
+    def _stamp(state: Dict[str, Any]) -> None:
+        state["configuration_pending"] = {
+            "at": utcnow(),
+            "phase": phase,
+            "reason": reason[:400],
+            "matched_marker": next(
+                (m for m in CONFIGURATION_PENDING_MARKERS
+                 if m in reason.lower()), None),
+            "failure_class": fclass,
+            "known_plan": {
+                "provider": provider,
+                "recorded_choice": "use conservative default",
+                "answered_at": entry.get("answered_at"),
+                "source": "resource profile (locked entry)",
+            },
+            "owner": owner,
+            "next_action": next_action,
+            "reminder": ("the recorded decline is reported as the known "
+                         "answer it is -- the question is never re-asked"),
+            "by": "presentation_job.auto_resume",
+        }
+
+    _merge(run_path, _stamp)
+    return Decision(False, why, DECISION_KNOWN_PLAN, EXIT_SKIP,
+                    failure_class=fclass, phase=phase)
+
+
 def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
     """The full verdict for one run dir. PURE: reads only, writes nothing.
 
@@ -586,8 +784,36 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
     reason_text = str(reason or "")
     reason_lower = reason_text.lower()
     if any(m in reason_lower for m in CONFIGURATION_PENDING_MARKERS):
-        return _configuration_pending_decision(run_path, phase, reason_text,
-                                               fclass)
+        # --- PRES-019 QC4: check the ask-once store BEFORE declaring the
+        # configuration missing. A plan-gate park whose provider already
+        # carries a LOCKED interview answer must not re-ask (the stamp would
+        # point the client at a question they answered). Two shapes:
+        #   * a recorded TIER -- the recovery request PROCEEDS WITH THE
+        #     KNOWN PLAN. The bounds below (cap, backoff) still gate the
+        #     resume: a stronger bound outranks a known plan, so the fourth
+        #     tick on a run that keeps re-parking is CAP-EXHAUSTED for a
+        #     human, never an unbounded re-dispatch. The known-plan decision
+        #     therefore returns the Decision the bounds produce -- the
+        #     `known_plan` flag only changes WHAT the decision says (the
+        #     known plan, never a re-ask), never WHAT the bounds allow.
+        #   * a recorded DECLINE -- parked, reported as KNOWN-PLAN (the
+        #     decline itself never re-asks and never loops; a resume would
+        #     re-park at the same gate).
+        plan_provider = _plan_provider_from_reason(reason_text)
+        plan_entry = _known_plan_entry(plan_provider)
+        if plan_provider and plan_entry:
+            known = _known_plan_decision(run_path, phase, reason_text,
+                                         fclass, plan_provider, plan_entry)
+            if not known.resume:
+                return known
+            # fall through: the cap/backoff bounds decide whether this
+            # known-plan resume may actually proceed.
+            known_plan_reason = known.why
+        else:
+            return _configuration_pending_decision(run_path, phase,
+                                                   reason_text, fclass)
+    else:
+        known_plan_reason = None
 
     # --- BOUND 1: class. The heal ladder's own classifier, not a second one.
     if fclass == FAILURE_OWNER_DECISION:
@@ -646,7 +872,9 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
                         f"most recent {newest.isoformat() if newest else 'unknown'}). "
                         "This run is now parked for a HUMAN -- three automatic "
                         "attempts did not clear it, so it is not the kind of "
-                        "failure another attempt fixes.",
+                        f"failure another attempt fixes. "
+                        + (f"(The plan is already known -- {known_plan_reason}"
+                           if known_plan_reason else ""),
                         DECISION_CAP, EXIT_SKIP, failure_class=fclass,
                         phase=phase, counted=len(counted))
 
@@ -669,6 +897,18 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
                     "its whole cap inside three poller ticks.",
                     DECISION_BACKOFF, EXIT_SKIP, failure_class=fclass,
                     phase=phase, counted=len(counted), attempt=attempt)
+
+    if known_plan_reason:
+        # PRES-019 QC4: the bounds allowed this resume and the plan is
+        # already known -- report the KNOWN-PLAN verdict, not a plain RESUME,
+        # so the decision line never reads as if the question were asked.
+        return Decision(
+            True,
+            f"attempt {attempt} of {AUTO_RESUME_CAP}: {known_plan_reason} "
+            f"(bounded as always: {len(counted)} attempt(s) spent in the "
+            f"last {AUTO_RESUME_WINDOW_HOURS}h, manifest pin {status}).",
+            DECISION_KNOWN_PLAN, EXIT_RESUME, failure_class=fclass,
+            phase=phase, attempt=attempt, counted=len(counted))
 
     return Decision(
         True,

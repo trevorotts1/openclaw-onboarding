@@ -130,13 +130,23 @@ def cli(run_dir: Path, *extra: str) -> int:
 
 
 @pytest.fixture(autouse=True)
-def _no_rollback_no_transport(monkeypatch):
+def _no_rollback_no_transport(monkeypatch, tmp_path):
     """Every leg runs with the rollback OFF and no notify transport, unless
     the leg itself sets one. Inheriting an operator's env into a test is how a
     suite passes on one box and fails on another."""
     monkeypatch.delenv(ar.AUTO_RESUME_ENV, raising=False)
     monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
     monkeypatch.delenv("PRESENTATION_MANIFEST", raising=False)
+    # PRES-019 QC4: the known-plan recovery path reads the resource profile
+    # (the ask-once store). A test must never read the OPERATOR's live
+    # profile -- on the operator box that profile has ollama-cloud locked,
+    # which would flip every plan-park leg to KNOWN-PLAN -- so both profile
+    # store envs are pointed at an empty per-test directory. A leg that
+    # wants a KNOWN-PLAN state writes its own profile there.
+    cfg = tmp_path / "profile-store"
+    cfg.mkdir(exist_ok=True)
+    monkeypatch.setenv("PRESENTATION_RESOURCE_PROFILE_DIR", str(cfg))
+    monkeypatch.setenv("PRESENTATION_CAPACITY_CONFIG_DIR", str(cfg))
 
 
 # ===========================================================================
