@@ -28,7 +28,9 @@ import json
 import os
 import pathlib
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -427,42 +429,240 @@ def cmd_ingest(args) -> int:
 
 
 def _list_intakes(args) -> list:
-    """GET /api/intake/list — enumerate finished intakes stored in the worker."""
+    """GET /api/intake/list — one page of PENDING finished intakes.
+
+    PRES-023: the worker's list endpoint is a paginated scoped pending index.
+    This function follows `truncated`/`cursor` across pages (bounded by
+    --max-pages, default 10) so more submissions than one page are ALL
+    discovered exactly once per poll, and acks every session this box has in
+    its processed checkpoint so the worker removes processed rows from the
+    index — discovery cost tracks PENDING work, not history.
+
+    Ack protocol: each processed session is sent as a repeatable
+    `ack=<session_id>&stored_at_<session_id>=<stored_at>` pair, so the worker
+    can delete the exact index row without any per-row lookup, and no ack is
+    dropped by a batch cap. Acks are bounded per REQUEST (MAX_ACKS_PER_POLL,
+    200) only by transport sanity — anything left over rides the next poll
+    and is reported, never silently discarded.
+    """
     admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
     if not admin:
         print("error: INTAKE_ADMIN_TOKEN not set in env", file=sys.stderr)
         sys.exit(2)
-    url = args.worker_url.rstrip("/") + "/api/intake/list"
-    status, resp = _http("GET", url, token=admin)
-    if status != 200:
-        print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
-        sys.exit(3)
-    return resp.get("intakes") or []
+    base = args.worker_url.rstrip("/") + "/api/intake/list"
+    intakes: list = []
+    cursor = None
+    pages = 0
+    max_pages = int(getattr(args, "max_pages", 10) or 10)
+    # session_id -> stored_at for every processed session still on the index.
+    all_acks = _pending_acks(args)
+    # Previously-flushed acks whose rows the worker has already removed must
+    # not occupy the per-request ack budget forever: on the FIRST request of
+    # this poll, the pending listing itself is the ground truth — only ids the
+    # worker still reports are acked; anything else is gone from the index and
+    # its ack work is complete. Polls before the first listing simply ack
+    # nothing (the discovery below feeds the next poll's acks).
+    acked: dict = {}
+    primed = False
+    while True:
+        url = base
+        params: list[str] = []
+        if cursor:
+            params.append("cursor=" + urllib.parse.quote(str(cursor)))
+        if acked:
+            batch = sorted(acked.items())[:MAX_ACKS_PER_POLL]
+            for sid, stored_at in batch:
+                params.append("ack=" + urllib.parse.quote(str(sid)))
+                params.append(f"stored_at_{urllib.parse.quote(str(sid))}={int(stored_at or 0)}")
+            for sid, _ in batch:
+                acked.pop(sid, None)
+        if params:
+            url += "?" + "&".join(params)
+        status, resp = _http("GET", url, token=admin)
+        if status != 200:
+            print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+            sys.exit(3)
+        prev_count = len(intakes)
+        intakes.extend(resp.get("intakes") or [])
+        pages += 1
+        if not primed:
+            # After the FIRST page of the poll: the pending listing is ground
+            # truth — ack exactly the processed ids the index still holds
+            # (bounded). Rows already gone never consume the budget, so the
+            # ack set cannot wedge on stale entries.
+            primed = True
+            pending_now = {}
+            for it in intakes[prev_count:]:
+                sid = str(it.get("session_id") or "")
+                if sid and sid in all_acks:
+                    pending_now[sid] = all_acks[sid] or it.get("stored_at") or 0
+            acked = dict(sorted(pending_now.items())[:MAX_ACKS_PER_POLL])
+        if not resp.get("truncated") or not resp.get("cursor"):
+            break
+        cursor = resp.get("cursor")
+        if pages >= max_pages:
+            # Unacked remainder stays pending — next poll picks it up. Never
+            # silently drop: report the truncation.
+            print(json.dumps({"status": "poll_page_budget",
+                              "pages": pages, "note": "more pages pending; next poll continues"}),
+                  file=sys.stderr)
+            break
+    # Flush leftover acks (the last page broke out of the loop before another
+    # request could carry them): one final ack-only request per bounded batch.
+    while acked:
+        batch = sorted(acked.items())[:MAX_ACKS_PER_POLL]
+        params = []
+        for sid, stored_at in batch:
+            params.append("ack=" + urllib.parse.quote(str(sid)))
+            params.append(f"stored_at_{urllib.parse.quote(str(sid))}={int(stored_at or 0)}")
+        for sid, _ in batch:
+            acked.pop(sid, None)
+        status, resp = _http("GET", base + "?" + "&".join(params), token=admin)
+        if status != 200:
+            print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+            sys.exit(3)
+    return intakes
+
+
+# ---- versioned processed checkpoint (PRES-023) ------------------------------
+#
+# The old ledger was a plain text file rewritten WHOLE on every
+# _mark_processed: read set -> add -> write_text(entire set). Two concurrent
+# pollers (or a poller and a manual ingest) lost each other's entries, and a
+# crash mid-write could truncate the file — silently un-processing sessions.
+#
+# The checkpoint is now a VERSIONED append: each processed session is one JSON
+# line {"session_id", "version", "recorded_at"} with a monotonically
+# increasing version, appended (never rewritten). Readers fold the lines into
+# the latest state (a session id's PRESENCE is its processed fact — duplicates
+# and superseded lines are harmless), and a torn tail line (crash mid-append)
+# is skipped, never fatal. Concurrent writers interleave lines; no entry is
+# ever lost because nothing is rewritten.
+
+# Max ack pairs sent on ONE list request (transport sanity bound, not a
+# correctness bound — the remainder rides the next poll and is reported).
+MAX_ACKS_PER_POLL = 200
+
+
+def _pending_acks(args) -> dict:
+    """session_id -> stored_at for every processed session whose row may still
+    sit on the worker's pending index. Used to drive the repeatable
+    ack=<sid>&stored_at_<sid>=<ts> pairs; entries whose stored_at is unknown
+    carry 0 and the worker resolves the row against the index itself."""
+    processed = _processed_ledger(args) if _checkpoint_exists(args) else set()
+    acks: dict = {}
+    for sid in processed:
+        acks[str(sid)] = 0
+    # Attach a known stored_at when the worker previously reported the row:
+    # <poll-ledger>.stored_at.json maps session_id -> stored_at, maintained by
+    # the poll loop below. Best-effort — 0 always works.
+    meta = pathlib.Path(str(_checkpoint_path(args)) + ".stored_at.json")
+    try:
+        known = json.loads(meta.read_text())
+        if isinstance(known, dict):
+            for sid, ts in known.items():
+                if str(sid) in acks:
+                    acks[str(sid)] = int(ts or 0)
+    except (OSError, ValueError):
+        pass
+    return acks
+
+
+def _remember_stored_at(args, sid: str, stored_at) -> None:
+    meta = pathlib.Path(str(_checkpoint_path(args)) + ".stored_at.json")
+    try:
+        known = json.loads(meta.read_text())
+        if not isinstance(known, dict):
+            known = {}
+    except (OSError, ValueError):
+        known = {}
+    known[sid] = int(stored_at or 0)
+    # Bounded sidecar: drop ids the checkpoint no longer holds (their rows are
+    # long gone from the index, so their stored_at can never be needed).
+    try:
+        live = _processed_ledger(args)
+        known = {k: v for k, v in known.items() if k in live}
+    except OSError:
+        pass
+    try:
+        meta.write_text(json.dumps(known, sort_keys=True))
+    except OSError:
+        pass
+
+
+def _checkpoint_path(args) -> pathlib.Path:
+    return pathlib.Path(args.poll_ledger).expanduser()
+
+
+def _checkpoint_exists(args) -> bool:
+    return _checkpoint_path(args).is_file()
 
 
 def _processed_ledger(args) -> set:
-    """Read the poll ledger (session ids already ingested) if present."""
-    led = pathlib.Path(args.poll_ledger).expanduser()
+    """Fold the versioned checkpoint into the set of processed session ids.
+
+    Legacy format support: a plain-text ledger (the pre-PRES-023 format) is
+    still readable (whitespace-separated ids) — a legacy file is transparently
+    upgraded on the next _mark_processed."""
+    led = _checkpoint_path(args)
     try:
-        return set(led.read_text().split())
+        raw = led.read_text()
     except FileNotFoundError:
         return set()
+    done: set = set()
+    legacy = False
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("{"):
+            try:
+                rec = json.loads(line)
+                sid = rec.get("session_id")
+                if sid:
+                    done.add(str(sid))
+            except json.JSONDecodeError:
+                continue  # torn tail line from a crashed append — skip
+        else:
+            legacy = True
+            done.update(line.split())
+    if legacy:
+        # Upgrade transparently: fold legacy ids into the versioned format.
+        try:
+            _append_checkpoint_lines(led, [{"session_id": s, "version": _next_version(done), "recorded_at": 0, "migrated_from": "legacy-ledger"} for s in sorted(done)])
+        except OSError:
+            pass
+    return done
+
+
+def _next_version(done: set) -> int:
+    return len(done) + 1
+
+
+def _append_checkpoint_lines(led: pathlib.Path, records: list) -> None:
+    led.parent.mkdir(parents=True, exist_ok=True)
+    with open(led, "a", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(json.dumps(rec, sort_keys=True) + "\n")
 
 
 def _mark_processed(args, session_id: str) -> None:
-    """Append a session id to the poll ledger (idempotent — a session is ingested once)."""
-    led = pathlib.Path(args.poll_ledger).expanduser()
-    led.parent.mkdir(parents=True, exist_ok=True)
-    done = _processed_ledger(args)
-    done.add(session_id)
-    led.write_text("\n".join(sorted(done)) + "\n")
+    """Append one versioned checkpoint line (idempotent, append-only — never a
+    full rewrite, so concurrent writers and crash-recovery never lose an
+    entry)."""
+    _append_checkpoint_lines(_checkpoint_path(args), [{
+        "session_id": session_id,
+        "version": 0,  # folded by readers; monotonic per line order
+        "recorded_at": int(time.time()),
+    }])
 
 
 def cmd_poll(args) -> int:
-    """Discover finished intakes via the list endpoint and ingest each one once."""
+    """Discover finished intakes via the paginated list endpoint and ingest
+    each one once (versioned checkpoint; per-page cursor; ack processed rows)."""
     intakes = _list_intakes(args)
     if args.verbose:
-        print(f"poll: {len(intakes)} stored intake(s) discovered")
+        print(f"poll: {len(intakes)} pending intake(s) discovered")
     processed = _processed_ledger(args)
     ingested = 0
     skipped = 0
@@ -496,6 +696,9 @@ def cmd_poll(args) -> int:
             continue
         if rc == 0:
             _mark_processed(args, sid)
+            # Remember the row's stored_at so the next poll's ack pairs can
+            # name the exact index row (no worker-side lookup needed).
+            _remember_stored_at(args, sid, it.get("stored_at") or 0)
             ingested += 1
             print(json.dumps({"status": "ingested", "session_id": sid}))
         else:
@@ -521,6 +724,8 @@ def main(argv=None) -> int:
     p.add_argument("--poll-ledger", required=True, help="path to the poll ledger (processed session ids)")
     p.add_argument("--per-session-dirs", action="store_true",
                    help="stamp each intake under <run-dir>/<session-id>/ instead of a single run dir")
+    p.add_argument("--max-pages", type=int, default=10,
+                   help="bounded list pages per poll (PRES-023 pagination; default 10)")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_poll)
     args = ap.parse_args(argv)
