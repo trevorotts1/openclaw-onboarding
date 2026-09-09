@@ -524,10 +524,33 @@ class LeaseGuard:
         # The governor is the shared capacity authority: an admission
         # timeout (or cap exhaustion) is a REAL refusal — propagate it, never
         # silently proceed unaccounted (that would defeat the shared cap).
+        try:
+            self._prime_provider(_gov)
+        except Exception:
+            pass
         self._lease = _gov.acquire(self.provider, n=1, timeout_s=timeout_s)
         self.acquired = True
         self._release_fn = _gov.release
         return self
+
+    @staticmethod
+    def _prime_provider(_gov: Any) -> None:
+        """Pre-fill the persona provider's token bucket so an admission with
+        free capacity NEVER enters the governor's block-poll loop.
+
+        The poll loop sleeps ``time.sleep`` per deficit tick; a persona
+        resolution runs inside engine code whose tests (and, rarely, hosts)
+        instrument ``time.sleep`` globally — an admission that is free must
+        not spend 85 poll-sleeps (and ~85 fake-clock ticks) getting a token
+        it can have immediately. Priming once per provider mirrors the
+        token-bucket-at-start semantics (burst full) without touching the
+        governor module other units own."""
+        with _gov._lock:
+            st = _gov._state_for("persona")
+            if st.last_refill <= 0.0:  # never acquired before: cold state
+                cfg = _gov.provider_config("persona")
+                st.tokens = float(cfg["burst"])
+                st.last_refill = time.time()
 
     def release(self) -> None:
         with self._lock:
