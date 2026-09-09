@@ -214,7 +214,14 @@ also stamp `skill35_planner_kind` and `skill35_template_schema=1.2.0` into
 Sheets metadata and Drive appProperties. A matching Drive provisioning key
 alone is not sufficient ownership evidence.
 
-Before promoting the append route for existing clients, enumerate their
+Use `compat/README.md` and its compiler to deploy all five credential-bound
+workflows. The public router preserves exact legacy document requests under the
+operator’s intentional anyone-with-link edit policy. It verifies the actual
+Google permission and headers before a fixed RAW Overview write. It does not
+claim tenant ownership or publication. Any modern fields select the strict
+workflow; a strict failure never falls back to legacy.
+
+Before upgrading an existing client to the strict per-account flow, enumerate its
 verified company registry bindings. For each existing sheet: read its ID and
 owner from that registry, verify the same Google credentials can read it,
 back up values/notes/format metadata, compare the required headers, and stamp
@@ -223,7 +230,9 @@ incoming webhook body or create a replacement for an inaccessible sheet.
 Missing headers need a preserving structural migration; never run the new-copy
 initializer or clear legitimate historical rows. If ownership is ambiguous,
 keep that client on the previous compatible route, expose a repair task, and
-continue unrelated healthy work. A global cutover must wait for this inventory.
+continue unrelated healthy work. The compatibility router can keep verified public legacy document writes working
+while those client upgrades are prepared; this inventory is not a prerequisite
+for restoring the legacy public-document service.
 
 The caller must hold a durable lock around the entire readback/write/receipt
 operation. Google serializes individual writes, not a read-then-write sequence

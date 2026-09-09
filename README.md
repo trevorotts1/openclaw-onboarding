@@ -3,7 +3,7 @@
 > **v25.0.16 — Private interview renewal and pause/resume on Mac and VPS.** Resume partial onboarding without replacing client identity; preserve service configuration, migrate the correct database and reconcile the client’s standard board foundation. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.1.5**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.0.31.
+> **Version:** see `/version` - this repo at v25.0.32.
 
 
 
@@ -158,7 +158,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.0.31** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.0.32** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
@@ -366,3 +366,18 @@ Runs automatically at install (`install.sh` Step 10a) and on every update
   The pre-push gate tiers exactly like the script does — curated roster, then the roster derived
   from `~/clawd/accounts/accounts.md`, fail-closed when neither is available — and only blocks a
   push when the gate actually reports hits; it never blocks a clean tree.
+
+
+## Social planner n8n compatibility repair (v25.0.32)
+
+The shared spreadsheet webhooks support both historical document requests and
+modern company-bound requests through a contract router. Use the
+[complete five-workflow compiler](35-social-media-planner/config/n8n/compat/README.md)
+with verified Google credential references; importing bare source exports over
+active URLs can break existing clients. Legacy writes verify the intentionally
+public document capability and preserve the actual header row and existing data.
+Modern validation never falls back to the legacy lane.
+
+Repository updates and live workflow activation are separate operations. Verify
+actual Google create/append receipts and readback after deployment; a workflow
+being active or a local doctor report does not establish successful posting.

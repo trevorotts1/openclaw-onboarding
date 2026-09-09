@@ -537,8 +537,10 @@ bash "$SHARED_UTILS/social-service.sh" --install --timezone "$TZ" \
 # 2) Record the n8n contract version the deployment carries (the doctor reads
 #    this; stale mappings are a FAILED health check, not a warning):
 mkdir -p ~/.openclaw/data/skill35
+: "${SHEET_CREATE_WORKFLOW_ID:?Use the activated public router ID from deployment}"
+: "${ROW_APPEND_WORKFLOW_ID:?Use the activated public router ID from deployment}"
 cat > ~/.openclaw/data/skill35/n8n-mapping.json <<EOF
-{"schema_version":"1.1.0","sheet_create_workflow_id":"INyGjT8jQ6JjrZSh","row_append_workflow_id":"myXde6jbIIkaG5zW","persisted_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"schema_version":"1.1.0","sheet_create_workflow_id":"${SHEET_CREATE_WORKFLOW_ID}","row_append_workflow_id":"${ROW_APPEND_WORKFLOW_ID}","persisted_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 EOF
 
 # 3) Run the ONE doctor command (portable proof the install is healthy):
@@ -548,11 +550,13 @@ python3 "$SHARED_UTILS/social-planner-doctor.py"
 The doctor checks (each maps to a WF-owned durable record): company identity,
 active engine + scheduler registration, worker acknowledgement (a stopped
 worker is reported as a HEALTH PROBLEM — never as work progressing), last/next
-cycle, GHL discovery (read-only with `--live`), sheet access/schema/registry,
+cycle, GHL credential resolution (`--live`), recorded sheet schema/registry,
 n8n contract version, unresolved retries/overdue dispatch. Exit 0 healthy /
 1 degraded / 2 unhealthy. Run it again after any restart/recovery; save the
-JSON with the install receipt. Provider names alone are NOT deployment
-evidence — the doctor output is.
+JSON with the install receipt. Doctor output is preflight evidence only: it does not itself prove a real GHL
+account-discovery response, live n8n Google credentials, or a successful sheet
+write. Complete the live compatibility acceptance in `config/n8n/compat/README.md`
+and verify an approved GHL post separately.
 
 The service layer sends NOTHING itself (silence doctrine): overdue states are
 surfaced by the doctor and, on boxes with the Command Center, by the
@@ -629,10 +633,12 @@ Send the client this exact summary:
 ### Final reliability deployment gate (F14–F16, F22–F26, F38)
 
 Follow `config/n8n/README.md` for compiled imports, isolated acceptance and
-registry-based migration of existing sheet ownership. Never point existing
-clients at the new append graph before their verified Sheets ownership metadata
-and headers are ready. The create initializer is for new/private initializing
+the compatibility compiler and migration of existing sheet ownership. Keep the
+shared URLs on the contract router: exact legacy document requests use the
+public-edit document lane, while modern identity-bearing requests use the strict
+versioned graph. Never point an upgraded client at the strict append graph before
+its verified Sheets ownership metadata and headers are ready. The create initializer is for new/private initializing
 copies only; it is not a migration tool for client content. A `formatted`
-checkpoint resumes sharing without erasing cells. Treat an `error`/partial
+checkpoint resumes modern sharing without erasing cells. Legacy creation always creates a fresh copy; it never searches existing documents by name/email. Reconcile execution history after an ambiguous legacy copy/append result before retrying. Treat an `error`/partial
 receipt as a visible repair requirement, never as permission to activate weekly
 work or mark a post published. Always preserve intentional anyone-link edit.
