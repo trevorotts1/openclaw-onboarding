@@ -1,3 +1,36 @@
+## [v25.0.30]  -  2026-09-09  -  Social media planner W4+W5: portable deployment health, resumable setup, measured outcomes, final regression coverage
+
+Batch content: PR #1076 (W4 batch, F21/F34/F40, merged at 1d6402b5504409c33806c1098b305c338d13e310)
+and PR #1077 (W5 batch, F20, merged at 1eff8b53a85671c105c8dfa9d84de6d128a0d5fd).
+Skill version bumps already on main: 57-social-media-in-a-box 1.5.1 -> 1.6.0 (W4, commit
+bcfa09389, frontmatter aligned bbe52413f); 35-presentation-engine 3.5.0 -> 3.6.0 (W5, commit
+e7690a084, frontmatter aligned in 13b0af0fd). CC-side counterpart ships as CC v7.3.0
+(migration 140 is CC-side; this ONB fold carries no DB migrations).
+
+Behavior changes (ONB side):
+
+- Portable deployment health (F21, commits 11ce36783, b16ba5664, 9f544ca98): doctor and
+  service-health contract is environment-portable. Hard failures exit >=2, never a soft 1,
+  so supervisors can distinguish "degraded" from "dead". Service units export OPENCLAW_ROOT
+  so checks resolve the right install root on any box layout.
+- Transactional resumable setup (F34, commit 11ce36783 plus repair f6e54ff81): bootstrap
+  writes real receipts at each step and resumes from the last durable step on restart;
+  intake_url is always a real receipt at deliver time, never a placeholder.
+- Measured outcomes (F40, commit 674ac44f3): outcome learning reports UNKNOWN-not-zero when
+  metrics cannot be verified (no fabricated success), keeps learning inputs isolated per
+  client, and policy-guards tentative low-sample reviews and one-variable variants.
+- Final regression coverage (F20, commits 13b0af0fd and repairs 502acdb96..c3d63d918):
+  stale Skill 35 tests replaced with behavior + failure-injection coverage (15-test
+  failure-injection suite), CI guard added so stale tests cannot silently return, and the
+  CI pipeline hardened (pipefail, production-gated Sheets-404 handling, pytest install,
+  full-fidelity failure logs). Skill 35 v3.5.0 -> 3.6.0, skill 57 v1.5.1 -> 1.6.0.
+
+Migration notes: additive only. Skill version bumps (35, 57) are already on main and ride
+the normal update-skills.sh path; no schema changes ship on the ONB side (CC migration 140
+is CC-repo-side and ships with CC v7.3.0). No unrun-live-check claims are made by this
+entry: all CI results cited are actual runs; no live n8n deployment or installed-client
+upgrade is claimed here.
+
 ## [v25.0.29]  -  2026-09-09  -  RR-027 rescue credential hygiene: shared dotenv parser plus child-env scrub, header-file map seeding, receiver 1.4.0 to 1.5.0
 
 ## [v25.0.28]  -  2026-09-09  -  RR-006 RR-004 RR-021 core receiver batch (retire legacy writer, additive lease echo, durable done-ledger identity)
