@@ -6,333 +6,148 @@
   <meta name="robots" content="noindex, nofollow" />
   <title>Presentation Intake</title>
   <style>
-    /* ============================================================
-       Presentation Interview app — branded intake UI.
-       Design system (locked, see design/design_prompt.md):
-       ivory #FBF7F4  | charcoal #231F20 | crimson #C8104E
-       champagne gold #C9A24B | liquid gold #B8860B->#E6C66E
-       Montserrat editorial sans, LIGHT MODE ONLY.
-       One static file; no external assets. Self-contained.
-       ============================================================ */
+    /* One question per screen. No external assets — everything inline so the
+       Pages deploy is a single static file. Theme-aware (respects the client's
+       light/dark preference). */
     :root {
-      --bg-top: #FCF8F4; --bg-bottom: #F7F1EA;
-      --ink: #231F20; --muted: #6E6558; --field: #A79E8F;
-      --card: #FFFFFF; --stone: #E7DFD4; --hairline: #EDE6DC;
-      --crimson: #C8104E; --crimson-deep: #A40D40;
-      --gold: #C9A24B; --gold-dark: #B8860B; --gold-light: #E6C66E;
-      --track: #E7DFD4; --ok: #1F7A4D; --err: #B3261E;
-      --shadow: 0 12px 40px rgba(35, 31, 32, 0.06);
+      --bg: #f7f7f8; --card: #ffffff; --ink: #1c1c22; --muted: #6b6b78;
+      --line: #e6e6ee; --accent: #f2b134; --accent-ink: #1c1c22;
+      --ok: #1f9d55; --err: #c0392b; --shadow: 0 8px 30px rgba(20,20,40,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14141a; --card: #1e1e26; --ink: #f2f2f6; --muted: #9a9aa8;
+        --line: #2c2c38; --accent: #f2b134; --accent-ink: #1c1c22;
+        --shadow: 0 8px 30px rgba(0,0,0,.35);
+      }
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      color: var(--ink);
-      min-height: 100vh;
-      display: flex; flex-direction: column;
+      background: var(--bg); color: var(--ink);
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column;
       -webkit-font-smoothing: antialiased;
-      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
-      background-attachment: fixed;
     }
-    /* TOP BRAND BAR */
-    header.brand {
-      display: flex; align-items: center; justify-content: space-between;
-      max-width: 1080px; width: 100%; margin: 0 auto;
-      padding: 22px clamp(18px, 5vw, 40px);
-    }
-    .brandmark { display: flex; align-items: center; gap: 10px; }
-    .brandmark .glyph {
-      width: 30px; height: 30px; border: 1px solid var(--gold);
-      border-radius: 50%; display: grid; place-items: center;
-      color: var(--gold-dark); font-size: 16px; font-weight: 700;
-    }
-    .wordmark { font-weight: 800; letter-spacing: 0.06em; font-size: 14px; color: var(--ink); }
-    .wordmark em { font-style: normal; color: var(--crimson); }
-    .exit {
-      border: 1px solid var(--hairline); background: transparent; color: var(--muted);
-      border-radius: 999px; padding: 8px 18px; font: inherit; font-size: 13px;
-      font-weight: 600; cursor: pointer; letter-spacing: 0.04em;
-    }
-    .exit:hover { color: var(--ink); border-color: var(--stone); }
-    /* INTRO */
-    .intro { text-align: center; margin-bottom: 26px; }
-    .kicker {
-      font-weight: 700; letter-spacing: 0.32em; text-transform: uppercase;
-      color: var(--gold-dark); font-size: 12px; margin: 0 0 10px;
-    }
-    .intro h2 { margin: 0; font-weight: 800; font-size: clamp(18px, 3vw, 22px); color: var(--ink); }
+    .bar { height: 4px; background: var(--line); position: sticky; top: 0; z-index: 5; }
+    .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .35s ease; }
     main {
       flex: 1; width: 100%; max-width: 640px; margin: 0 auto;
-      padding: 0 clamp(18px, 5vw, 32px) 40px;
-      display: flex; flex-direction: column;
+      padding: clamp(20px, 5vw, 48px) clamp(18px, 5vw, 32px);
+      display: flex; flex-direction: column; justify-content: center;
     }
-    /* CARD */
+    .step { color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 14px; }
     .card {
-      background: var(--card); border: 1px solid var(--hairline);
-      border-radius: 18px; box-shadow: var(--shadow);
-      padding: clamp(26px, 5vw, 40px) clamp(22px, 5vw, 44px);
+      background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+      padding: clamp(20px, 5vw, 34px); box-shadow: var(--shadow);
     }
-    /* SEGMENTED PROGRESS — 7-pill liquid-gold system */
-    .progress-head {
-      display: flex; align-items: baseline; justify-content: space-between;
-      margin-bottom: 12px;
+    .prompt { font-size: clamp(20px, 4.5vw, 27px); font-weight: 650; line-height: 1.3; margin: 0 0 10px; }
+    .help { color: var(--muted); font-size: 15px; margin: 0 0 22px; }
+    textarea, input[type="number"], input[type="text"] {
+      width: 100%; background: transparent; color: var(--ink);
+      border: 1.5px solid var(--line); border-radius: 12px; padding: 13px 14px;
+      font: inherit; resize: vertical; min-height: 52px;
     }
-    .progress-label {
-      font-weight: 800; font-size: 13px; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--ink);
-    }
-    .progress-count { font-weight: 600; font-size: 12px; color: var(--muted); }
-    .segments { display: flex; gap: 6px; width: 100%; margin-bottom: 26px; }
-    .seg {
-      flex: 1; height: 8px; border-radius: 999px;
-      background: var(--track); transition: background .25s ease;
-    }
-    .seg.done { background: linear-gradient(90deg, var(--gold-dark), var(--gold-light)); }
-    .seg.active { background: var(--crimson); }
-    /* QUESTION */
-    .prompt {
-      font-weight: 900; font-size: clamp(24px, 4.5vw, 34px);
-      line-height: 1.25; color: var(--ink); margin: 0 0 10px;
-    }
-    .prompt .emph { color: var(--crimson); }
-    .help { color: var(--muted); font-size: 15px; font-weight: 500; margin: 0 0 24px; line-height: 1.5; }
-    /* INPUTS */
-    .field-label {
-      display: block; font-weight: 700; font-size: 12px;
-      letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink);
-      margin: 0 0 8px;
-    }
-    textarea, input[type="text"], input[type="number"], input[type="url"], input[type="email"] {
-      width: 100%; background: #fff; color: var(--ink);
-      border: 1px solid var(--stone); border-radius: 14px; padding: 15px 18px;
-      font: inherit; font-size: 16px; resize: vertical;
-    }
-    textarea { min-height: 110px; }
-    textarea:focus, input:focus { outline: none; border-color: var(--crimson); }
-    ::placeholder { color: var(--field); }
-    /* CHOICE BUTTONS (enum / boolean) */
+    textarea { min-height: 120px; }
+    textarea:focus, input:focus { outline: none; border-color: var(--accent); }
     .opts { display: flex; flex-direction: column; gap: 10px; }
     .opt {
-      text-align: left; background: #fff; color: var(--ink);
-      border: 1px solid var(--stone); border-radius: 14px; padding: 16px 18px;
+      text-align: left; background: transparent; color: var(--ink);
+      border: 1.5px solid var(--line); border-radius: 12px; padding: 15px 16px;
       font: inherit; cursor: pointer; transition: border-color .15s, background .15s;
     }
-    .opt:hover { border-color: var(--crimson); }
-    .opt[aria-pressed="true"] {
-      border-color: var(--crimson);
-      background: linear-gradient(0deg, rgba(200,16,78,0.06), rgba(200,16,78,0.06)), #fff;
-    }
-    /* LOGO CAPTURE — upload/drop zone + "no logo" escape */
-    .logo-zone {
-      border: 1.5px dashed var(--gold); border-radius: 14px;
-      padding: 26px 20px; text-align: center; cursor: pointer;
-      background: linear-gradient(0deg, rgba(201,162,75,0.05), rgba(201,162,75,0.05)), #fff;
-      transition: border-color .15s, background .15s;
-    }
-    .logo-zone:hover, .logo-zone.drag { border-color: var(--crimson); }
-    .logo-zone .cloud { font-size: 26px; color: var(--gold-dark); margin-bottom: 6px; }
-    .logo-zone .lz-main { font-weight: 800; font-size: 15px; color: var(--ink); }
-    .logo-zone .lz-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
-    .logo-preview {
-      display: none; align-items: center; gap: 14px; margin-top: 14px;
-      border: 1px solid var(--stone); border-radius: 12px; padding: 10px 14px;
-    }
-    .logo-preview img { max-height: 52px; max-width: 120px; object-fit: contain; }
-    .logo-preview .lp-name { font-size: 13px; color: var(--muted); word-break: break-all; }
-    .link-row { display: flex; gap: 8px; margin-top: 12px; }
-    .link-row input { flex: 1; }
-    .link-row button {
-      border: 1px solid var(--crimson); color: var(--crimson); background: #fff;
-      border-radius: 14px; padding: 0 16px; font: inherit; font-size: 13px; font-weight: 700;
-      cursor: pointer; white-space: nowrap;
-    }
-    .link-row button:hover { background: rgba(200,16,78,0.06); }
-    .no-logo {
-      margin-top: 14px; text-align: center;
-    }
-    .no-logo button {
-      background: transparent; border: none; color: var(--crimson);
-      font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
-      text-decoration: underline; text-underline-offset: 3px;
-    }
-    .no-logo button:hover { color: var(--crimson-deep); }
-    /* IMAGE LINKS */
-    .img-list { display: flex; flex-direction: column; gap: 10px; }
-    .img-row { display: flex; gap: 8px; align-items: center; }
-    .img-row input { flex: 1; }
-    .img-row .remove {
-      border: none; background: transparent; color: var(--muted);
-      font-size: 18px; cursor: pointer; width: 30px; height: 30px; line-height: 1;
-      border-radius: 8px; flex: 0 0 auto;
-    }
-    .img-row .remove:hover { color: var(--err); background: rgba(179,38,30,0.06); }
-    .add-link {
-      background: transparent; border: none; color: var(--crimson);
-      font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
-      text-align: left; padding: 6px 0;
-    }
-    .add-link:hover { color: var(--crimson-deep); }
-    /* NAV ROW */
-    .row { display: flex; align-items: center; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+    .opt:hover { border-color: var(--accent); }
+    .opt[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    .row { display: flex; gap: 12px; align-items: center; margin-top: 22px; flex-wrap: wrap; }
     button.primary {
-      background: var(--crimson); color: #fff; border: none;
-      border-radius: 999px; padding: 16px 34px; font: inherit;
-      font-weight: 800; font-size: 15px; cursor: pointer;
-      min-width: 140px; letter-spacing: 0.02em;
-      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      box-shadow: 0 6px 18px rgba(200,16,78,0.22);
+      background: var(--accent); color: var(--accent-ink); border: none;
+      border-radius: 12px; padding: 13px 26px; font: inherit; font-weight: 650;
+      cursor: pointer; min-width: 120px;
     }
-    button.primary:hover { background: var(--crimson-deep); }
-    button.primary:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
-    button.primary .arrow { font-size: 15px; }
+    button.primary:disabled { opacity: .45; cursor: not-allowed; }
     button.ghost {
-      background: transparent; color: var(--muted); border: 1px solid var(--stone);
-      border-radius: 999px; padding: 15px 22px; font: inherit; font-size: 14px;
-      font-weight: 600; cursor: pointer;
+      background: transparent; color: var(--muted); border: 1.5px solid var(--line);
+      border-radius: 12px; padding: 13px 18px; font: inherit; cursor: pointer;
     }
-    button.ghost:hover { color: var(--ink); border-color: var(--gold); }
-    .msg { min-height: 20px; font-size: 14px; margin-top: 14px; font-weight: 500; }
+    .msg { min-height: 20px; font-size: 14px; margin-top: 12px; }
     .msg.err { color: var(--err); }
     .msg.ok { color: var(--ok); }
+    /* PRES-005 status chip: Saved / Queued / Worker accepted / Action needed */
+    .status-chip {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin: 0 0 14px; padding: 10px 14px; border-radius: 12px;
+      border: 1.5px solid var(--line); font-size: 13.5px; font-weight: 600;
+    }
+    .status-chip .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: 0 0 auto; }
+    .status-chip[data-state="saved"] .dot { background: var(--ok); }
+    .status-chip[data-state="queued"] .dot { background: var(--accent); }
+    .status-chip[data-state="worker_accepted"] .dot { background: var(--ok); }
+    .status-chip[data-state="action_needed"] .dot { background: var(--err); }
+    .status-chip[data-state="action_needed"] { border-color: var(--err); }
+    .status-chip .job-ref { color: var(--muted); font-weight: 500; word-break: break-all; }
     .center { text-align: center; }
-    .big { font-size: clamp(26px, 5vw, 36px); font-weight: 900; margin: 10px 0; color: var(--ink); }
-    .privacy {
-      text-align: center; color: var(--muted); font-size: 12.5px;
-      padding: 22px 18px 30px; font-weight: 500;
+    .big { font-size: clamp(24px, 5vw, 34px); font-weight: 720; margin: 10px 0; }
+    .code {
+      font-variant-numeric: tabular-nums; letter-spacing: .3em; font-size: 22px;
+      background: var(--line); padding: 8px 14px; border-radius: 10px; display: inline-block;
     }
-    .spin {
-      width: 28px; height: 28px; border: 3px solid var(--stone);
-      border-top-color: var(--crimson); border-radius: 50%;
-      animation: sp .8s linear infinite; margin: 40px auto;
-    }
+    .review-list { list-style: none; margin: 0 0 6px; padding: 0; text-align: left; }
+    .review-list li { border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 13.5px; }
+    .review-list .rq { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+    .review-list .ra { margin-top: 2px; }
+    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px; }
+    .spin { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent);
+      border-radius: 50%; animation: sp 0.8s linear infinite; margin: 30px auto; }
     @keyframes sp { to { transform: rotate(360deg); } }
-    :focus-visible { outline: 3px solid var(--crimson); outline-offset: 2px; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     .hidden { display: none !important; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
-    /* REVIEW + DONE */
-    .review-list { list-style: none; margin: 0 0 6px; padding: 0; }
-    .review-list li {
-      border-bottom: 1px solid var(--hairline); padding: 10px 0;
-      font-size: 14px; text-align: left;
-    }
-    .review-list .rq { font-weight: 700; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
-    .review-list .ra { margin-top: 2px; color: var(--ink); }
-    .check { display: inline-block; margin-right: 8px; color: var(--crimson); font-weight: 900; }
-    .thanks { font-size: 15px; color: var(--muted); line-height: 1.6; }
   </style>
 </head>
 <body>
-  <header class="brand">
-    <div class="brandmark">
-      <span class="glyph" aria-hidden="true">&#127807;</span>
-      <span class="wordmark">ZERO <em>HUMAN</em> WORKFORCE</span>
-    </div>
-    <button class="exit" id="exitBtn" type="button">Exit</button>
-  </header>
-
-  <main id="app" role="main" aria-label="Presentation intake questions">
-    <div class="intro">
-      <p class="kicker">Presentation Brief</p>
-      <h2>Let&rsquo;s gather a few details to design your deck.</h2>
-    </div>
-    <div class="card" id="stage" role="region" aria-live="polite">
-      <div class="spin" id="loader" role="status" aria-label="Loading"></div>
-    </div>
+  <div class="bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Interview progress"><i id="progress"></i></div>
+  <main id="app" role="main" aria-label="Interview questions">
+    <div class="spin" id="loader" role="status" aria-label="Loading"></div>
   </main>
-  <footer class="privacy">Your answers are private and only used to build your presentation.</footer>
+  <footer role="contentinfo"><span class="sr-only">Privacy note:</span> Your answers are saved as you go — you can close this and come back to the same link.</footer>
 
   <script>
   (function () {
     "use strict";
 
-    /* ---- embedded question set (source: questions.json) ---- */
-    var QUESTIONS = /*__QUESTIONS__*/[
-      { id: "presentation_type", order: 0, kind: "enum",
-        prompt: "What <span class=\"emph\">kind of presentation</span> do you need?",
-        help: "This is the first thing we need to know — it decides how we build everything else in your brief, from structure to length.",
-        label: "Presentation type", required: true, storeOn: "pre_presentation_capture.PRESENTATION_TYPE",
-        allowed_values: ["from_scratch", "content_personal", "content_general", "signature"],
-        value_labels: {
-          "from_scratch": "From scratch — brainstorm and build a brand-new presentation",
-          "content_personal": "From something I already have, for ONE specific person",
-          "content_general": "From something I already have, for a room or wider audience",
-          "signature": "The full Signature Presentation (100+ slides, multi-part keynote)"
-        } },
-      { id: "offer_name", order: 1, kind: "text",
-        prompt: "What are you selling at the end — the exact name of your product or offer?",
-        help: "The offer sold at the end of the presentation — never invented.",
-        label: "Offer name", placeholder: "e.g. The Momentum Method", required: true, storeOn: "deck_brief.OFFER_NAME" },
-      { id: "named_methodology", order: 1.5, kind: "text",
-        prompt: "Do you have a named methodology, framework, or system you deliver this through — what is it called, in your own words?",
-        help: "The branded method name — client-supplied only, never invented for you. If you don&rsquo;t have a named method, say so plainly (e.g. &lsquo;no formal name, we just do X&rsquo;) rather than inventing one — an honest &lsquo;no&rsquo; is still a real answer.",
-        label: "Named methodology", placeholder: "e.g. The Three-Move Pipeline System, or 'no formal name'", required: true, storeOn: "deck_brief.NAMED_METHODOLOGY" },
-      { id: "transformation_promise", order: 2, kind: "text",
-        prompt: "What&rsquo;s the before-and-after this offer delivers — who are they before, and who are they after?",
-        help: "The transformation promise drives the whole arc.",
-        label: "Transformation promise", placeholder: "e.g. stuck and overwhelmed → clear, confident, closing", required: true, storeOn: "deck_brief.TRANSFORMATION_PROMISE" },
-      { id: "time_to_result", order: 2.5, kind: "text",
-        prompt: "How long does it typically take a client to see this result once they start — the real, honest timeframe?",
-        help: "State the true delivery timeframe in your own words (e.g. &lsquo;8 weeks&rsquo;, &lsquo;about 3 sessions&rsquo;, or &lsquo;it varies, typically N weeks&rsquo;) — never a faster number to sound more impressive.",
-        label: "Time to result", placeholder: "e.g. 8 weeks to final, a shift in 2", required: true, storeOn: "deck_brief.TIME_TO_RESULT" },
-      { id: "audience", order: 3, kind: "text",
-        prompt: "Who is this presentation for?",
-        help: "Industry, income level, and the pain point that brought them here. This seeds the audience-engine.",
-        label: "Audience", placeholder: "e.g. women entrepreneurs, 35-55, tired of inconsistent clients", required: true, storeOn: "deck_brief.AUDIENCE" },
-      { id: "cta_action", order: 4, kind: "text",
-        prompt: "What is the exact call-to-action — the verb and next step you want them to take?",
-        help: "This drives the closing slide&rsquo;s action language.",
-        label: "Call to action", placeholder: "e.g. book a call, buy the program, join the waitlist", required: true, storeOn: "deck_brief.CTA_ACTION" },
-      { id: "brand_primary", order: 5, kind: "logo",
-        prompt: "Do you have a <span class=\"emph\">logo</span> or brand colors for the slides?",
-        help: "If no logo is on file, provide one here — or we build without one and stay on-brand to the presentation system.",
-        label: "Logo", required: false, storeOn: "deck_brief.BRAND_PRIMARY", logo_on_slides: "deck_brief.LOGO_ON_SLIDES" },
-      { id: "image_links", order: 6, kind: "image_links",
-        prompt: "Paste any <span class=\"emph\">image links</span> you want used in the deck.",
-        help: "Product photos, headshots, brand imagery. Optional — add up to 5.",
-        label: "Image links", required: false, storeOn: "deck_brief.IMAGE_LINKS" },
-      { id: "tone", order: 7, kind: "text",
-        prompt: "Pick a <span class=\"emph\">tone</span> — Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium.",
-        help: "One of the seven named styles, or blend two.",
-        label: "Tone", placeholder: "e.g. Inspirational + Teacher", required: true, storeOn: "deck_brief.TONE" },
-      { id: "final_price", order: 8, kind: "text",
-        prompt: "What is the <span class=\"emph\">final price</span> of the offer?",
-        help: "The offer price only — what a buyer pays at the end. Set 0 if this is a free-only close.",
-        label: "Final price", placeholder: "e.g. $497", required: true, storeOn: "deck_brief.FINAL_PRICE" },
-      { id: "speech_speed_preference", order: 9, kind: "enum",
-        prompt: "At what <span class=\"emph\">pace</span> should we record the audio narration?",
-        help: "default = recommended setting, medium = slightly faster, fast = high energy.",
-        label: "Speech speed", required: true, storeOn: "intake.json", key: "speech_speed_preference",
-        allowed_values: ["default", "medium", "fast"],
-        value_labels: { "default": "Default pace (recommended)", "medium": "Medium pace", "fast": "Fast pace" } },
-      { id: "want_sales_checkout", order: 10, kind: "enum",
-        prompt: "Do you need a <span class=\"emph\">sales page and checkout page</span> along with the presentation?",
-        help: "Default yes. A no records a client waiver — you keep the deck and optionally a VSL page.",
-        label: "Sales page + checkout", required: true, storeOn: "pre_presentation_capture.WANT_SALES_CHECKOUT",
-        allowed_values: ["yes", "no"],
-        value_labels: { "yes": "Yes, build the sales page and checkout page", "no": "No thank you" } },
-      { id: "want_vsl_page", order: 11, kind: "enum",
-        prompt: "Would you like a <span class=\"emph\">VSL page</span> — a video sales letter — along with this?",
-        help: "Default no — a VSL page needs the video to exist first.",
-        label: "VSL page", required: true, storeOn: "pre_presentation_capture.WANT_VSL_PAGE",
-        allowed_values: ["yes", "no"],
-        value_labels: { "yes": "Yes, build the VSL page", "no": "No thank you" } },
-      { id: "client_notes", order: 12, kind: "text",
-        prompt: "Anything else important we should <span class=\"emph\">know</span> before we start?",
-        help: "Extras: target slide count, deadline, proof assets, anything else. Optional.",
-        label: "Notes", placeholder: "Anything else we should know?", required: false, storeOn: "deck_brief.CLIENT_NOTES" }
-    ];
+    // ---- config + token --------------------------------------------------
+    // Token is the last path segment of /s/<token>. API is same-origin /api.
+    // PRES-005: the ONLY identity this page parses is the server-issued
+    // capability token. Session/company/presentation identity (run_id,
+    // question_set, questions) is retrieved FROM the server with that token —
+    // nothing is minted client-side, and no admin token ever appears here.
+    var API = (window.__INTAKE_API_BASE__ || "") + "/api";
+    var token = (function () {
+      var m = location.pathname.match(/\/s\/([0-9a-f]{32})/i);
+      if (m) return m[1];
+      var q = new URLSearchParams(location.search).get("t");
+      return q || "";
+    })();
 
-    var MAX_QUESTIONS = 20;
-    var TOTAL = QUESTIONS.length; /* 15 curated questions -> "Question N of 15" */
-    var answers = {};             /* qid -> { raw, value, storeOn, kind, label } */
-
-    var stage = document.getElementById("stage");
     var app = document.getElementById("app");
-    var exitBtn = document.getElementById("exitBtn");
-    var currentIndex = 0;
-    var submitting = false;
+    var bar = document.getElementById("progress");
+    var progressContainer = bar && bar.parentElement;
 
-    /* ---- helpers ---- */
+    var state = {
+      questions: [],
+      progress: null,
+      answered: [],
+      answeredValues: {},   /* qid -> stored value (server truth, for review + restore) */
+      runId: "",
+      requiresConfirm: false,
+      confirmCode: "",
+      selected: null,
+      jobState: "draft",    /* draft | saved | queued | worker_accepted | action_needed */
+      jobRef: "",
+      outboxPoll: null,
+    };
+
+    // ---- tiny helpers ----------------------------------------------------
     function el(tag, attrs, kids) {
       var e = document.createElement(tag);
       attrs = attrs || {};
@@ -340,485 +155,525 @@
         if (k === "class") e.className = attrs[k];
         else if (k === "text") e.textContent = attrs[k];
         else if (k === "html") e.innerHTML = attrs[k];
-        else if (k === "style") e.setAttribute("style", attrs[k]);
-        else if (k === "value") e.value = attrs[k];
         else e.setAttribute(k, attrs[k]);
       });
       (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
       return e;
     }
-    function clear() { while (stage.firstChild) stage.removeChild(stage.firstChild); }
-    function scrollTop() { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) { window.scrollTo(0, 0); } }
-
-    /* ---- segmented progress ---- */
-    function renderProgress() {
-      var head = el("div", { class: "progress-head" });
-      head.appendChild(el("span", { class: "progress-label", text: "Question " + (currentIndex + 1) + " of " + TOTAL }));
-      var pct = Math.round((currentIndex / TOTAL) * 100);
-      head.appendChild(el("span", { class: "progress-count", text: pct + "%" }));
-      var segs = el("div", { class: "segments", role: "progressbar", "aria-valuemin": "1", "aria-valuemax": String(TOTAL), "aria-valuenow": String(currentIndex + 1), "aria-label": "Interview progress" });
-      for (var i = 0; i < TOTAL; i++) {
-        var c = "seg";
-        if (i < currentIndex) c += " done";
-        else if (i === currentIndex) c += " active";
-        segs.appendChild(el("span", { class: c }));
+    function clear() { while (app.firstChild) app.removeChild(app.firstChild); }
+    function setBar(p) {
+      if (!p || !p.total) {
+        bar.style.width = "0%";
+        if (progressContainer) progressContainer.setAttribute("aria-valuenow", "0");
+        return;
       }
-      return [head, segs];
+      var pct = Math.round((p.answered / p.total) * 100);
+      bar.style.width = pct + "%";
+      if (progressContainer) progressContainer.setAttribute("aria-valuenow", String(pct));
     }
-
-    /* ---- field builders per kind ---- */
-    function buildChoice(q, onChange) {
-      var group = el("div", { class: "opts", role: "radiogroup", "aria-label": q.label || q.prompt });
-      (q.allowed_values || []).forEach(function (v) {
-        var label = (q.value_labels && q.value_labels[v]) || v;
-        var b = el("button", { class: "opt", role: "radio", "aria-checked": "false", text: label });
-        b.onclick = function () {
-          Array.prototype.forEach.call(group.children, function (c) { c.setAttribute("aria-checked", "false"); });
-          b.setAttribute("aria-checked", "true");
-          onChange(v);
-        };
-        b.onkeydown = function (e) {
-          if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); var p = b.previousElementSibling; if (p) p.focus(); }
-          if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); var n = b.nextElementSibling; if (n) n.focus(); }
-        };
-        group.appendChild(b);
-      });
-      return group;
-    }
-
-    function buildLogo(q, onChange) {
-      var wrap = el("div");
-      var state = { mode: "none", url: "", file: null, name: "" }; /* none | link | file | declined */
-
-      var zone = el("div", { class: "logo-zone", tabindex: "0", role: "button", "aria-label": "Upload logo or paste a link" });
-      zone.appendChild(el("div", { class: "cloud", text: "↑" }));
-      zone.appendChild(el("div", { class: "lz-main", text: "Upload logo" }));
-      zone.appendChild(el("div", { class: "lz-sub", text: "or paste a link below" }));
-      var fileInput = el("input", { type: "file", accept: "image/*", class: "hidden", "aria-hidden": "true" });
-      zone.appendChild(fileInput);
-      var onFile = function () {
-        var f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        state.mode = "file"; state.file = f; state.name = f.name;
-        preview(state); onChange(state);
-      };
-      zone.onclick = function () { fileInput.click(); };
-      zone.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } };
-      fileInput.onchange = onFile;
-      wrap.appendChild(zone);
-      wrap.appendChild(fileInput);
-
-      var row = el("div", { class: "link-row" });
-      var urlInput = el("input", { type: "url", placeholder: "or paste an image link…", "aria-label": "Logo image link" });
-      var go = el("button", { text: "Use link" });
-      go.onclick = function () {
-        var v = urlInput.value.trim();
-        if (!v) return;
-        state.mode = "link"; state.url = v; state.name = v;
-        preview(state); onChange(state);
-      };
-      urlInput.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); go.click(); } };
-      row.appendChild(urlInput); row.appendChild(go);
-      wrap.appendChild(row);
-
-      var noLogo = el("div", { class: "no-logo" });
-      var nb = el("button", { text: "No logo on file — build without one" });
-      nb.onclick = function () {
-        state.mode = "declined";
-        preview(state); onChange(state);
-      };
-      noLogo.appendChild(nb);
-      wrap.appendChild(noLogo);
-
-      var previewEl = el("div", { class: "logo-preview" });
-      wrap.appendChild(previewEl);
-
-      function preview(s) {
-        previewEl.innerHTML = "";
-        if (s.mode === "file" && s.file) {
-          var url = URL.createObjectURL(s.file);
-          previewEl.appendChild(el("img", { src: url, alt: "Logo preview" }));
-          previewEl.appendChild(el("span", { class: "lp-name", text: s.name }));
-          previewEl.style.display = "flex";
-        } else if (s.mode === "link" && s.url) {
-          previewEl.appendChild(el("img", { src: s.url, alt: "Logo preview" }));
-          previewEl.appendChild(el("span", { class: "lp-name", text: s.url }));
-          previewEl.style.display = "flex";
-        } else if (s.mode === "declined") {
-          previewEl.appendChild(el("span", { class: "lp-name", text: "Building without a logo — staying on-brand to the presentation system." }));
-          previewEl.style.display = "flex";
-        } else {
-          previewEl.style.display = "none";
-        }
-      }
-      return wrap;
-    }
-
-    function buildImageLinks(q, onChange) {
-      var wrap = el("div");
-      var MAX = 5;
-      var list = [];
-      var listEl = el("div", { class: "img-list" });
-
-      function emit() { onChange(list.filter(function (v) { return v; })); }
-
-      function addRow(val) {
-        if (list.length >= MAX) return;
-        var row = el("div", { class: "img-row" });
-        var inp = el("input", { type: "url", placeholder: "Image link (" + (list.length + 1) + "/" + MAX + ")…", value: val || "" });
-        var rm = el("button", { class: "remove", text: "×", "aria-label": "Remove this image link" });
-        row.appendChild(inp); row.appendChild(rm);
-        listEl.appendChild(row);
-        list.push("");
-        var idx = list.length - 1;
-        inp.oninput = function () { list[idx] = inp.value.trim(); emit(); };
-        rm.onclick = function () {
-          listEl.removeChild(row);
-          list.splice(idx, 1);
-          emit();
-          // re-number placeholders
-          Array.prototype.forEach.call(listEl.children, function (r, i) {
-            r.querySelector("input").placeholder = "Image link (" + (i + 1) + "/" + MAX + ")…";
-          });
-        };
-      }
-
-      addRow("");
-      wrap.appendChild(listEl);
-      var add = el("button", { class: "add-link", text: "+ Add another link" });
-      add.onclick = function () { if (list.length < MAX) { addRow(""); setTimeout(function () { var last = listEl.lastChild && listEl.lastChild.querySelector("input"); if (last) last.focus(); }, 30); } };
-      wrap.appendChild(add);
-      return wrap;
-    }
-
-    /* ---- render a question ---- */
-    function render() {
-      var q = QUESTIONS[currentIndex];
-      if (!q) return renderReview();
-      clear();
-      var prog = renderProgress();
-      prog.forEach(function (p) { stage.appendChild(p); });
-
-      var promptHtml = q.prompt || "";
-      stage.appendChild(el("h1", { class: "prompt", html: promptHtml }));
-      if (q.help) stage.appendChild(el("p", { class: "help", html: q.help }));
-
-      var value = null; /* resolved value passed to next() */
-      var fieldWrap = el("div");
-
-      if (q.kind === "enum") {
-        var g = buildChoice(q, function (v) { value = v; next.disabled = false; });
-        fieldWrap.appendChild(g);
-      } else if (q.kind === "boolean") {
-        var g2 = buildChoice(q, function (v) { value = v; next.disabled = false; });
-        fieldWrap.appendChild(g2);
-      } else if (q.kind === "logo") {
-        var lw = buildLogo(q, function (s) {
-          value = s;
-          /* a logo answer always satisfies the question */
-          next.disabled = false;
-        });
-        fieldWrap.appendChild(lw);
-      } else if (q.kind === "image_links") {
-        var iw = buildImageLinks(q, function (arr) { value = arr; });
-        fieldWrap.appendChild(iw);
-      } else {
-        fieldWrap.appendChild(el("label", { class: "field-label", text: q.label || "Answer" }));
-        if (q.kind === "integer") {
-          var num = el("input", { type: "number", step: "1", "aria-label": q.label || q.prompt, placeholder: q.placeholder || "" });
-          num.oninput = function () { value = num.value.trim(); next.disabled = q.required !== false && !value; };
-          fieldWrap.appendChild(num);
-        } else {
-          var ta = el("textarea", { "aria-label": q.label || q.prompt, placeholder: q.placeholder || "Type your answer…" });
-          ta.oninput = function () { value = ta.value.trim(); next.disabled = q.required !== false && !value; };
-          fieldWrap.appendChild(ta);
-        }
-      }
-      stage.appendChild(fieldWrap);
-
-      var msg = el("div", { class: "msg", role: "alert", "aria-live": "polite" });
-      var last = currentIndex === TOTAL - 1;
-      var next = el("button", { class: "primary", html: (last ? "Submit my brief" : "Continue") + ' <span class="arrow">&#8594;</span>' });
-      next.disabled = q.required === true;
-      var row = el("div", { class: "row" });
-      row.appendChild(next);
-      if (q.required === false) {
-        var skip = el("button", { class: "ghost", text: "Skip" });
-        skip.onclick = function () { advance(emptyFor(q), true); };
-        row.appendChild(skip);
-      }
-      stage.appendChild(row);
-      stage.appendChild(msg);
-
-      function emptyFor(qq) {
-        if (qq.kind === "logo") return { mode: "declined", url: "", file: null, name: "" };
-        if (qq.kind === "image_links") return [];
-        return qq.default != null ? qq.default : "";
-      }
-
-      next.onclick = function () {
-        var v = value;
-        if ((v === null || v === undefined || v === "") && q.required !== false) { return; }
-        advance(v == null ? emptyFor(q) : v, false);
-      };
-
-      setTimeout(function () {
-        var first = stage.querySelector("textarea, input, [role=radio], .logo-zone");
-        if (first) first.focus();
-      }, 60);
-    }
-
-    function serialize(q, v) {
-      /* normalize to the value the bridge + intake_writer.py consume */
-      if (q.kind === "logo") {
-        if (!v) v = { mode: "declined", url: "", file: null, name: "" };
-        if (v.mode === "declined") {
-          return { value: "", logo_mode: "declined", note: "no logo on file — building without one" };
-        }
-        if (v.mode === "file") {
-          return { value: "", logo_mode: "file", logo_file_name: v.name, note: "logo uploaded by client (file name captured; binary lives in the run dir when the bridge stores it)" };
-        }
-        return { value: v.url || "", logo_mode: "link", note: "logo provided by link" };
-      }
-      if (q.kind === "image_links") {
-        return { value: (v || []).join("\n"), image_links: (v || []).filter(function (x) { return x; }) };
-      }
-      return { value: String(v == null ? "" : v) };
-    }
-
-    /* ---- advance / review / submit ---- */
-    function advance(v, skipped) {
-      var q = QUESTIONS[currentIndex];
-      var s = serialize(q, v);
-      answers[q.id] = {
-        raw: v, value: s.value,
-        extra: s, kind: q.kind, label: q.label || q.prompt,
-        storeOn: q.storeOn, order: q.order,
-        skipped: !!skipped
-      };
-      currentIndex++;
-      if (currentIndex >= QUESTIONS.length) { renderReview(); scrollTop(); }
-      else { render(); scrollTop(); }
-    }
-
-    function renderReview() {
-      clear();
-      var prog = renderProgress();
-      prog.forEach(function (p) { stage.appendChild(p); });
-      stage.appendChild(el("h1", { class: "prompt", html: "That&rsquo;s everything — ready to <span class=\"emph\">send</span>?" }));
-      stage.appendChild(el("p", { class: "help", text: "Your answers are stored on the box and handed to the presentation department, which starts your deck. You may follow up in chat." }));
-
-      var ul = el("ul", { class: "review-list" });
-      QUESTIONS.forEach(function (q) {
-        var a = answers[q.id];
-        if (!a) return;
-        var val = a.skipped ? "(skipped)" : (a.kind === "image_links" && a.extra && a.extra.image_links && a.extra.image_links.length ? a.extra.image_links.join("  ·  ") : (a.value || "(none)"));
-        if (a.kind === "logo" && a.extra) {
-          if (a.extra.logo_mode === "declined") val = "Building without a logo";
-          else if (a.extra.logo_mode === "file") val = "Logo file: " + (a.extra.logo_file_name || "uploaded");
-          else if (a.extra.value) val = "Logo link: " + a.extra.value;
-          else val = "(no logo)";
-        }
-        ul.appendChild(el("li", {}, [
-          el("div", { class: "rq", text: q.label || q.id }),
-          el("div", { class: "ra", text: val })
-        ]));
-      });
-      stage.appendChild(ul);
-
-      var msg = el("div", { class: "msg", role: "alert", "aria-live": "polite" });
-      var go = el("button", { class: "primary", text: "Submit my brief" });
-      go.onclick = function () { go.disabled = true; msg.className = "msg"; msg.textContent = "Submitting…"; submit(msg, go); };
-      stage.appendChild(el("div", { class: "row", style: "justify-content:center" }, [go]));
-      stage.appendChild(msg);
-    }
-
-    /* ---- SUBMIT: store on box + trigger the presentation dept ---- */
-    function submit(msg, btn) {
-      if (submitting) return;
-      submitting = true;
-
-      var qid = "pres-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
-      var payload = buildIntakePayload(qid);
-
-      /* 1) write answers to a JSON intake file (dept format) */
-      writeIntakeFile(payload).then(function (w) {
-        /* 2) trigger the presentation department start (kanban card, no shortcuts) */
-        return triggerDepartment(qid, payload).then(function (t) {
-          return { w: w, t: t };
-        });
-      }).then(function (res) {
-        renderDone();
-      }).catch(function (err) {
-        submitting = false;
-        msg.className = "msg err";
-        msg.textContent = err && err.message ? err.message : "Something went wrong sending your answers — please try again.";
-        if (btn) btn.disabled = false;
-      });
-    }
-
-    function buildIntakePayload(qid) {
-      var answersByStore = {};
-      var pre = {};
-      var brief = {};
-      var intake = {};
-
-      QUESTIONS.forEach(function (q) {
-        var a = answers[q.id];
-        if (!a) return;
-        var target = a.storeOn === "intake.json"
-          ? ["intake.json", q.key || "json"]
-          : (a.storeOn || "").split(".");
-        var section = target.length > 1 ? target[0] : "deck_brief";
-        var key = target.length > 1 ? target[1] : (q.key || a.storeOn);
-        var v = a.value;
-        if (a.kind === "image_links") v = a.extra && a.extra.image_links ? a.extra.image_links : [];
-        if (a.kind === "logo") {
-          if (a.extra.logo_mode === "declined") { brief.LOGO_ON_SLIDES = false; return; }
-          if (a.extra.value) brief.LOGO_ON_SLIDES = true;
-          else brief.LOGO_ON_SLIDES = false;
-        }
-        if (section === "pre_presentation_capture") pre[key] = v;
-        else if (section === "intake.json") intake[key] = v;
-        else brief[key] = v;
-      });
-
-      var payload = {
-        interview_confirmed: true,
-        deck_type: "webinar",
-        presentation_mode: "general",
-        audience_mode: "STANDARD",
-        target_talk_minutes: 20,
-        created_at: new Date().toISOString(),
-        source: "presentation-interview-app",
-        intake_session_id: qid,
-        pre_presentation_capture: Object.assign(
-          { REPRESENTATION_MIX: "100% of the stated audience", AUDIENCE_COMPOSITION_NOTE: brief.AUDIENCE || "", GROUNDED_CONTENT: brief.OFFER_NAME || "", VISUAL_MIX: "mix", DARK_OK: false, HOOK_SEED: brief.TRANSFORMATION_PROMISE || "" },
-          pre
-        ),
-        deck_brief: brief,
-        intake: intake,
-        answers: Object.keys(answers).reduce(function (m, id) {
-          m[id] = answers[id].value;
-          return m;
-        }, {})
-      };
-      /* F11 — presentation_type is never fabricated. The hardcoded
-         "from_scratch" made every live submission die in the box-side bridge
-         (UngroundedDeckTypeError) before any kanban card existed.
-         presentation_type is only ever the client's own answer to the
-         presentation_type question; if it was never answered the key is absent
-         and intake_writer.py fails closed rather than guessing a deck type.
-         Parity with pages/index.html (repo canonical copy). */
-      if (answers.presentation_type && answers.presentation_type.value) {
-        payload.presentation_type = answers.presentation_type.value;
-      }
-      return payload;
-    }
-
-    /* F10 — a hung sink used to leave the spinner forever: fetch has NO default
-       timeout. Every POST now races an abort timer (20 s) and retries twice
-       with backoff before surfacing a retryable error message. */
     var FETCH_TIMEOUT_MS = 20000;
-    var FETCH_RETRIES = 2;
-
-    function fetchWithTimeout(url, opts, retriesLeft) {
+    function api(path, opts) {
       opts = opts || {};
-      retriesLeft = (typeof retriesLeft === "number") ? retriesLeft : FETCH_RETRIES;
+      opts.headers = Object.assign({ "content-type": "application/json" }, opts.headers || {});
       var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
       var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, FETCH_TIMEOUT_MS) : null;
       if (ctrl) opts.signal = ctrl.signal;
-      return fetch(url, opts).then(function (r) {
+      return fetch(API + path, opts).then(function (r) {
         if (timer) clearTimeout(timer);
-        return r;
+        return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
       }).catch(function (err) {
         if (timer) clearTimeout(timer);
-        var timedOut = err && (err.name === "AbortError");
-        if (timedOut && retriesLeft > 0) {
-          return new Promise(function (res) { setTimeout(res, 1500 * (FETCH_RETRIES - retriesLeft + 1)); })
-            .then(function () { return fetchWithTimeout(url, opts, retriesLeft - 1); });
-        }
         err = err || new Error("network error");
-        if (timedOut) err.message = "The server took too long to respond. Please try again.";
+        if (err.name === "AbortError") err.message = "The server took too long to respond.";
         throw err;
       });
     }
 
-    /* write the intake JSON file (client-side download + POST to the box sink) */
-    function writeIntakeFile(payload) {
-      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      /* If the app is hosted behind the sink (Worker/Pages with a /api/intake
-         endpoint), POST it there. Otherwise fall back to a client-side file
-         download so the answers are always stored. */
-      var sink = document.body.getAttribute("data-intake-sink") || "";
-      var fname = "intake-" + (payload.intake_session_id || "pres") + ".json";
-      if (sink) {
-        return fetchWithTimeout(sink, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file_name: fname, intake: payload }) })
-          .then(function (r) { if (!r.ok) throw new Error("The box could not store your intake file."); return { stored: "box", fname: fname }; })
-          .catch(function (err) { /* fall back to download */ download(blob, fname); return { stored: "download", fname: fname }; });
+    // ---- status chip (PRES-005 states) -----------------------------------
+    var JOB_LABELS = {
+      draft: "Not submitted yet",
+      saved: "Saved",
+      queued: "Queued",
+      worker_accepted: "Worker accepted",
+      action_needed: "Action needed",
+    };
+    function setJobState(s, jobRef, detail) {
+      state.jobState = s;
+      if (jobRef) state.jobRef = jobRef;
+      renderChip(detail);
+    }
+    function renderChip(detail) {
+      var chip = document.getElementById("status-chip");
+      if (!chip) {
+        chip = el("div", { class: "status-chip", id: "status-chip", "data-state": state.jobState, role: "status", "aria-live": "polite" });
+        chip.appendChild(el("span", { class: "dot", "aria-hidden": "true" }));
+        var label = el("span", { class: "status-label", text: "" });
+        chip.appendChild(label);
+        chip.appendChild(el("span", { class: "job-ref", text: "" }));
+        app.insertBefore(chip, app.firstChild);
       }
-      download(blob, fname);
-      return Promise.resolve({ stored: "download", fname: fname });
+      chip.setAttribute("data-state", state.jobState);
+      chip.querySelector(".status-label") && (chip.querySelector(".status-label").textContent = "");
+      var lbl = chip.querySelector(".status-label");
+      if (!lbl) { lbl = el("span", { class: "status-label" }); chip.insertBefore(lbl, chip.querySelector(".job-ref")); }
+      lbl.textContent = detail || JOB_LABELS[state.jobState] || "";
+      chip.querySelector(".job-ref").textContent = state.jobRef ? ("Job " + state.jobRef) : "";
+      if (state.jobState === "draft" && !detail) chip.classList.add("hidden"); else chip.classList.remove("hidden");
     }
 
-    /* trigger the presentation department (kanban start) */
-    function triggerDepartment(qid, payload) {
-      var url = document.body.getAttribute("data-dept-trigger") || "";
-      if (!url) {
-        /* No sink wired: the trigger is logged + the JSON file carries
-           intake_session_id, so the box-side intake_bridge.py/cc_board.py
-           intake path can pick it up (see repo docs). */
-        return Promise.resolve({ trigger: "deferred", note: "box picks up via intake_session_id; no /api/dept-start endpoint wired on this static host" });
-      }
-      return fetchWithTimeout(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ intake_session_id: qid, intake: payload }) })
-        .then(function (r) { if (!r.ok) throw new Error("The presentation department could not be started."); return { trigger: "fired", url: url }; });
+    // ---- global keyboard shortcuts ---------------------------------------
+    function installKeyboardShortcuts() {
+      document.addEventListener("keydown", function (e) {
+        if (e.altKey && (e.key === "n" || e.key === "N")) {
+          var nextBtn = document.querySelector("button.primary:not(:disabled)");
+          if (nextBtn) { e.preventDefault(); nextBtn.click(); }
+        }
+      });
     }
 
-    function download(blob, fname) {
+    // ---- boot ------------------------------------------------------------
+    function boot() {
+      if (!token) return fatal("This intake link is missing its code. Please use the exact link you were sent.");
+      api("/sessions/" + token).then(function (res) {
+        if (!res.ok) {
+          if (res.status === 410) return fatal("This intake link has expired. Ask for a fresh link.");
+          if (res.status === 404) return fatal("We couldn't find this intake. Please check your link.");
+          if (res.status === 409) return showCompleted(true);
+          return fatal(res.body && res.body.error ? res.body.error : "Something went wrong loading your intake.");
+        }
+        state.questions = res.body.questions || [];
+        state.progress = res.body.progress;
+        state.answered = res.body.answered || [];
+        state.runId = res.body.run_id || "";
+        state.requiresConfirm = !!res.body.requires_confirm_code;
+        setBar(state.progress);
+        if (state.requiresConfirm && !state.confirmCode) return askConfirm();
+        if (res.body.status === "complete" || (state.progress && state.progress.complete)) {
+          // Session already complete server-side: restore the outbox view so a
+          // reload after submission lands on the real state, never a fake form.
+          return showCompleted(false);
+        }
+        // PRES-005 resume: fetch the saved answers so the restored view shows
+        // them (review + saved count) before the current question.
+        api("/sessions/" + token + "/answers").then(function (r) {
+          if (r.ok) {
+            (r.body.answers || []).forEach(function (a) { state.answeredValues[a.question_id] = a.value; });
+          }
+          render();
+        }).catch(function () { render(); });
+      }).catch(function () { fatal("Network problem. Please check your connection and reload."); });
+    }
+
+    function currentQuestion() {
+      var cid = state.progress && state.progress.current_id;
+      if (!cid) return null;
+      for (var i = 0; i < state.questions.length; i++) {
+        if (state.questions[i].id === cid) return state.questions[i];
+      }
+      return null;
+    }
+    function questionById(qid) {
+      for (var i = 0; i < state.questions.length; i++) {
+        if (state.questions[i].id === qid) return state.questions[i];
+      }
+      return null;
+    }
+
+    // ---- confirmation code (optional, high-trust) ------------------------
+    function askConfirm() {
+      clear();
+      var inputId = "confirm-input";
+      var msgId = "confirm-msg";
+      var input = el("input", { type: "text", id: inputId, inputmode: "numeric", maxlength: "6", placeholder: "6-digit code", "aria-describedby": "confirm-help" });
+      var msg = el("div", { class: "msg", id: msgId, role: "alert", "aria-live": "polite" });
+      var go = el("button", { class: "primary", text: "Continue", "aria-keyshortcuts": "Enter" });
+      go.onclick = function () {
+        state.confirmCode = input.value.trim();
+        if (!/^\d{6}$/.test(state.confirmCode)) { msg.className = "msg err"; msg.textContent = "Enter the 6-digit code you were given."; return; }
+        state.requiresConfirm = false; render();
+      };
+      input.onkeydown = function (e) {
+        if (e.key === "Enter" && !go.disabled) { e.preventDefault(); go.click(); }
+      };
+      app.appendChild(el("div", { class: "card" }, [
+        el("h1", { class: "prompt", text: "Enter your access code" }),
+        el("p", { class: "help", id: "confirm-help", text: "You were given a 6-digit code in chat. It keeps this intake private to you." }),
+        input, el("div", { class: "row" }, [go]), msg,
+      ]));
+      setTimeout(function () { document.getElementById(inputId) && document.getElementById(inputId).focus(); }, 50);
+    }
+
+    // ---- render one question --------------------------------------------
+    function render() {
+      var q = currentQuestion();
+      if (!q) return showCompleted(false);
+      state.selected = null;
+      clear();
+      renderChip();
+      if (state.answered.length) {
+        app.appendChild(el("div", {
+          class: "step", "aria-live": "polite",
+          text: "Resumed — " + state.answered.length + " answer" + (state.answered.length === 1 ? "" : "s") + " saved on the server."
+        }));
+      }
+
+      var stepText = "Question " + ((state.progress.current_index || 0) + 1) + " of " + state.progress.total;
+      var cardId = "card-" + (q.id || Math.random().toString(36).slice(2,8));
+      var card = el("div", { class: "card", id: cardId, role: "region", "aria-label": stepText });
+      card.appendChild(el("h1", { class: "prompt", text: q.prompt }));
+      if (q.help) card.appendChild(el("p", { class: "help", text: q.help }));
+
+      var inputWrap = el("div");
+      var getValue;
+
+      var kind = q.kind || "text";
+      if (kind === "enum" && (q.allowed_values || []).length) {
+        var groupEl = el("div", { class: "opts", role: "radiogroup", "aria-label": q.prompt || "Select an option" });
+        (q.allowed_values || []).forEach(function (v) {
+          var label = (q.value_labels && q.value_labels[v]) || v;
+          var b = el("button", { class: "opt", role: "radio", "aria-checked": "false", text: label });
+          b.onclick = function () {
+            state.selected = v;
+            Array.prototype.forEach.call(groupEl.children, function (c) { c.setAttribute("aria-checked", "false"); });
+            b.setAttribute("aria-checked", "true");
+            next.disabled = false;
+          };
+          b.onkeydown = function (e) {
+            if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); var p = b.previousElementSibling; if (p) p.focus(); }
+            if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); var n = b.nextElementSibling; if (n) n.focus(); }
+          };
+          groupEl.appendChild(b);
+        });
+        inputWrap.appendChild(groupEl);
+        getValue = function () { return state.selected; };
+      } else if (kind === "boolean") {
+        var yn = el("div", { class: "opts", role: "radiogroup", "aria-label": q.prompt || "Yes or No" });
+        [["true", "Yes"], ["false", "No"]].forEach(function (pair) {
+          var b = el("button", { class: "opt", role: "radio", "aria-checked": "false", text: pair[1] });
+          b.onclick = function () {
+            state.selected = pair[0];
+            Array.prototype.forEach.call(yn.children, function (c) { c.setAttribute("aria-checked", "false"); });
+            b.setAttribute("aria-checked", "true");
+            next.disabled = false;
+          };
+          b.onkeydown = function (e) {
+            if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); var p = b.previousElementSibling; if (p) p.focus(); }
+            if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); var n = b.nextElementSibling; if (n) n.focus(); }
+          };
+          yn.appendChild(b);
+        });
+        inputWrap.appendChild(yn);
+        getValue = function () { return state.selected; };
+      } else if (kind === "integer") {
+        var num = el("input", { type: "number", step: "1", placeholder: q.default != null ? String(q.default) : "", "aria-label": q.prompt || "Enter a number" });
+        num.oninput = function () { next.disabled = q.required !== false && !num.value.trim(); };
+        inputWrap.appendChild(num);
+        getValue = function () { return num.value.trim(); };
+      } else {
+        var ta = el("textarea", { placeholder: "Type your answer…", "aria-label": q.prompt || "Type your answer" });
+        ta.oninput = function () { next.disabled = q.required !== false && !ta.value.trim(); };
+        inputWrap.appendChild(ta);
+        getValue = function () { return ta.value.trim(); };
+      }
+      card.appendChild(inputWrap);
+
+      var msgId = "msg-" + (q.id || Math.random().toString(36).slice(2,8));
+      var msg = el("div", { class: "msg", id: msgId, role: "alert", "aria-live": "polite" });
+      var next = el("button", { class: "primary", text: "Next", "aria-keyshortcuts": "Alt+N", "aria-describedby": msgId });
+      var row = el("div", { class: "row" }, [next]);
+      // Optional questions can be skipped to their default.
+      if (q.required === false) {
+        var skip = el("button", { class: "ghost", text: "Skip", "aria-label": "Skip this question" });
+        skip.onclick = function () { submit(q, q.default != null ? String(q.default) : "", msg, next); };
+        row.appendChild(skip);
+      }
+      next.disabled = q.required !== false; // enabled once an answer exists
+      next.onclick = function () {
+        var val = getValue();
+        if ((val === null || val === undefined || val === "") && q.required !== false) { return; }
+        submit(q, val == null ? "" : String(val), msg, next);
+      };
+
+      card.appendChild(row);
+      card.appendChild(msg);
+      var stepDiv = el("div", { class: "step", "aria-live": "polite", "aria-atomic": "true", text: stepText });
+      app.appendChild(el("div", {}, [stepDiv, card]));
+      setTimeout(function () {
+        var cardEl = document.getElementById(cardId);
+        if (!cardEl) return;
+        var firstInput = cardEl.querySelector("textarea, input, [role=radio], button");
+        if (firstInput) firstInput.focus();
+      }, 50);
+    }
+
+    // ---- submit one answer (autosave: server stores it immediately) ------
+    function submit(q, value, msg, next) {
+      next.disabled = true;
+      msg.className = "msg"; msg.textContent = "Saving…";
+      var payload = { question_id: q.id, value: value };
+      if (state.confirmCode) payload.confirm_code = state.confirmCode;
+      api("/sessions/" + token + "/answers", { method: "POST", body: JSON.stringify(payload) })
+        .then(function (res) {
+          if (!res.ok) {
+            msg.className = "msg err";
+            msg.textContent = (res.body && res.body.error) || "That answer wasn't accepted. Please try again.";
+            next.disabled = false;
+            // If the server says we're out of order, resync from the server.
+            if (res.status === 409) boot();
+            return;
+          }
+          // Autosaved: the server now holds this answer durably.
+          state.progress = res.body.progress;
+          if (state.answered.indexOf(q.id) === -1) state.answered.push(q.id);
+          state.answeredValues[q.id] = res.body.value != null ? res.body.value : value;
+          setBar(state.progress);
+          setJobState("saved", "", "Saved — " + state.answered.length + " of " + state.progress.total + " answers stored.");
+          msg.className = "msg ok"; msg.textContent = "Saved.";
+          if (state.progress.complete) return showCompleted(false);
+          render();
+        })
+        .catch(function (err) {
+          msg.className = "msg err";
+          msg.textContent = (err && err.message ? err.message + " " : "") + "Your answer is kept here — retry.";
+          next.disabled = false;
+        });
+    }
+
+    // ---- completion: transactional completion outbox ---------------------
+    // "Send" marks the session complete AND enqueues the validated intake for
+    // the box bridge in one server-side transactional step. The UI shows only
+    // what actually happened: Queued (durable outbox written), Worker accepted
+    // (the box bridge picked it up), or Action needed (nothing was queued).
+    function showCompleted(already) {
+      stopOutboxPoll();
+      api("/sessions/" + token + "/outbox").then(function (r) {
+        if (r.ok && r.body && r.body.status && r.body.status !== "none") {
+          if (r.body.status === "worker_accepted") return renderAccepted(r.body);
+          if (r.body.status === "queued") return renderQueued(r.body, false);
+          if (r.body.status === "action_needed") return renderActionNeeded(r.body, null);
+        }
+        renderReview(already);
+      }).catch(function () { renderReview(already); });
+    }
+
+    function stopOutboxPoll() {
+      if (state.outboxPoll) { clearTimeout(state.outboxPoll); state.outboxPoll = null; }
+    }
+
+    function renderReview(already) {
+      clear();
+      renderChip();
+      var card = el("div", { class: "card" });
+      card.appendChild(el("h1", { class: "prompt", text: already ? "You're all set" : "That's everything — ready to send?" }));
+      if (!already) {
+        card.appendChild(el("p", { class: "help", text: "Review is optional. When you send, your presentation team picks it up and may follow up with a question or two." }));
+      }
+
+      var ul = el("ul", { class: "review-list" });
+      var shown = 0;
+      state.questions.forEach(function (q) {
+        if (state.answered.indexOf(q.id) === -1) return;
+        var v = state.answeredValues[q.id];
+        if (v === undefined || v === "") return;
+        shown++;
+        ul.appendChild(el("li", {}, [
+          el("div", { class: "rq", text: q.label || stripTags(q.prompt) || q.id }),
+          el("div", { class: "ra", text: String(v) }),
+        ]));
+      });
+      if (shown) card.appendChild(ul);
+
+      var msg = el("div", { class: "msg", id: "complete-msg", role: "alert", "aria-live": "polite" });
+      var go = el("button", { class: "primary", text: "Send my answers", "aria-keyshortcuts": "Alt+N" });
+      go.onclick = function () {
+        go.disabled = true; msg.className = "msg"; msg.textContent = "Sending…";
+        setJobState("saved", "", "Saved — handing to the build desk…");
+        var body = {};
+        if (state.confirmCode) body.confirm_code = state.confirmCode;
+        api("/sessions/" + token + "/complete", { method: "POST", body: JSON.stringify(body) }).then(function (res) {
+          if (!res.ok) {
+            if (res.status === 409 && res.body && res.body.missing) {
+              return renderActionNeeded({ missing: res.body.missing, job_ref: res.body.outbox && res.body.outbox.job_ref }, null);
+            }
+            msg.className = "msg err";
+            msg.textContent = (res.body && res.body.error) || "Couldn't send — your answers stay saved. Please try again.";
+            setJobState("action_needed", res.body && res.body.outbox && res.body.outbox.job_ref, "Action needed — nothing was queued yet. Your answers stay saved.");
+            go.disabled = false; return;
+          }
+          var ob = res.body.outbox || {};
+          if (ob.status === "action_needed") return renderActionNeeded(ob, null);
+          if (ob.status === "queued") return renderQueued(ob, true);
+          // No outbox payload (older worker): the session is complete; say
+          // exactly that — never claim the build started.
+          setJobState("queued", ob.job_ref || "", "Complete — the box bridge picks your intake up automatically.");
+          renderDoneCard("Complete", "Your session is complete and your answers are stored. The box bridge picks the intake up automatically. Reopen this link to check status.", ob.job_ref || "");
+        }).catch(function () {
+          msg.className = "msg err";
+          msg.textContent = "Network problem — your answers stay saved. Please try again.";
+          setJobState("action_needed", "", "Action needed — nothing was queued yet. Your answers stay saved.");
+          go.disabled = false;
+        });
+      };
+      card.appendChild(el("div", { class: "row", style: "justify-content:center" }, [go]));
+      card.appendChild(msg);
+      app.appendChild(card);
+      setTimeout(function () { go.focus(); }, 50);
+    }
+
+    function renderQueued(ob, pollForAccepted) {
+      setJobState("queued", ob.job_ref, "Queued — your intake is stored and waiting for the build desk. Job " + (ob.job_ref || "") + ".");
+      clear();
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Queued" }));
+      card.appendChild(el("p", { class: "help", text: "Your answers are stored and your intake is queued for the presentation department. This link is your receipt — reopen it any time to check status." }));
+      if (ob.job_ref) card.appendChild(el("p", { class: "code", text: ob.job_ref }));
+      card.appendChild(el("p", { class: "help", id: "outbox-note", text: "Waiting for the build desk to accept…" }));
+      var backupRow = el("div", { class: "row", style: "justify-content:center" });
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      app.appendChild(card);
+      if (pollForAccepted) pollOutbox();
+    }
+
+    function renderAccepted(ob) {
+      setJobState("worker_accepted", ob.job_ref, "Worker accepted — the build desk has your intake. Job " + (ob.job_ref || "") + ".");
+      clear();
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Worker accepted" }));
+      card.appendChild(el("p", { class: "help", text: "The presentation department's worker accepted your intake. Your deck build is queued — you can close this tab." }));
+      if (ob.job_ref) card.appendChild(el("p", { class: "code", text: ob.job_ref }));
+      var backupRow = el("div", { class: "row", style: "justify-content:center" });
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      app.appendChild(card);
+    }
+
+    function renderDoneCard(title, text, jobRef) {
+      clear();
+      bar.style.width = "100%";
+      if (progressContainer) progressContainer.setAttribute("aria-valuenow", "100");
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: title }));
+      card.appendChild(el("p", { class: "help", text: text }));
+      if (jobRef) card.appendChild(el("p", { class: "code", text: jobRef }));
+      var backupRow = el("div", { class: "row", style: "justify-content:center" });
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      app.appendChild(card);
+    }
+
+    // ---- Action needed: the only honest failure state ---------------------
+    // Nothing was queued. Answers remain saved server-side; retry is offered.
+    // A download here is a BACKUP and is labeled NOT SUBMITTED — it never
+    // flips the screen to success.
+    function renderActionNeeded(ob, errText) {
+      stopOutboxPoll();
+      setJobState("action_needed", ob && ob.job_ref, "Action needed — your intake was NOT submitted. Nothing is queued.");
+      clear();
+      var card = el("div", { class: "card" });
+      card.appendChild(el("h1", { class: "prompt", text: "Action needed" }));
+      card.appendChild(el("p", { class: "help", text: errText || "We could not hand your intake to the build desk. Your answers are saved on the server — nothing was submitted yet." }));
+      if (ob && ob.missing && ob.missing.length) {
+        card.appendChild(el("p", { class: "help", text: "Still missing: " + ob.missing.join(", ") }));
+      }
+      var msg = el("div", { class: "msg", role: "alert", "aria-live": "polite" });
+      var retry = el("button", { class: "primary", text: "Retry sending" });
+      retry.onclick = function () {
+        retry.disabled = true; msg.className = "msg"; msg.textContent = "Sending…";
+        var body = {};
+        if (state.confirmCode) body.confirm_code = state.confirmCode;
+        api("/sessions/" + token + "/complete", { method: "POST", body: JSON.stringify(body) }).then(function (res) {
+          if (!res.ok) {
+            msg.className = "msg err";
+            msg.textContent = (res.body && res.body.error) || "Still failing — your answers stay saved. Try again shortly.";
+            setJobState("action_needed", res.body && res.body.outbox && res.body.outbox.job_ref);
+            retry.disabled = false; return;
+          }
+          var ob2 = res.body.outbox || {};
+          if (ob2.status === "action_needed") return renderActionNeeded(ob2, null);
+          if (ob2.status === "queued") return renderQueued(ob2, true);
+          setJobState("queued", ob2.job_ref || "");
+          renderDoneCard("Complete", "Your session is complete and your answers are stored. The box bridge picks the intake up automatically. Reopen this link to check status.", ob2.job_ref || "");
+        }).catch(function () {
+          msg.className = "msg err";
+          msg.textContent = "Network problem — your answers stay saved. Try again.";
+          retry.disabled = false;
+        });
+      };
+      var backupRow = el("div", { class: "row" });
+      backupRow.appendChild(retry);
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      card.appendChild(msg);
+      app.appendChild(card);
+    }
+
+    // ---- backup download: explicitly NOT a submission ---------------------
+    function backupButton() {
+      var b = el("button", { class: "ghost", text: "Download backup copy (not submitted by this)" });
+      b.onclick = function () { downloadBackup(); };
+      return b;
+    }
+    function downloadBackup() {
+      var backup = {
+        notice: "BACKUP COPY — NOT SUBMITTED. This file is a courtesy copy of your saved answers only. Submission happens through the intake page; this download does not submit or start anything.",
+        generated_at: new Date().toISOString(),
+        intake_session_id: token,
+        run_id: state.runId,
+        job_state: state.jobState,
+        job_ref: state.jobRef,
+        answers: state.answeredValues,
+      };
+      var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
       try {
         var a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = fname;
+        a.download = "intake-backup-" + token + ".json";
         document.body.appendChild(a);
         a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       } catch (e) { /* non-fatal */ }
     }
 
-    function renderDone() {
-      clear();
-      stage.appendChild(el("div", { class: "center" }));
-      var c = el("div", { class: "center" });
-      c.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Thank you!" }));
-      c.appendChild(el("p", { class: "thanks", text: "Your answers are in. The presentation department has everything it needs to start — you can close this tab." }));
-      c.appendChild(el("p", { class: "msg ok", text: "✓ Submitted" }));
-      stage.appendChild(c);
-      if (app) {
-        var intro = app.querySelector(".intro");
-        if (intro) intro.style.display = "none";
+    // poll GET /outbox until the worker (box bridge) accepts, capped so the
+    // page never loops forever; reload re-checks.
+    function pollOutbox() {
+      stopOutboxPoll();
+      var tries = 0;
+      function tick() {
+        api("/sessions/" + token + "/outbox").then(function (r) {
+          if (r.ok && r.body && r.body.status === "worker_accepted") {
+            return renderAccepted(r.body);
+          }
+          tries++;
+          if (tries < 20) state.outboxPoll = setTimeout(tick, 3000);
+          else {
+            var note = document.getElementById("outbox-note");
+            if (note) note.textContent = "Still queued — the build desk picks this up automatically. Reopen this link later to check status.";
+          }
+        }).catch(function () { tries++; if (tries < 20) state.outboxPoll = setTimeout(tick, 3000); });
       }
+      state.outboxPoll = setTimeout(tick, 3000);
+    }
+
+    function stripTags(html) {
+      var d = document.createElement("div");
+      d.innerHTML = html || "";
+      return (d.textContent || "").trim();
     }
 
     function fatal(text) {
       clear();
-      stage.appendChild(el("div", { class: "center" }));
-      stage.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Hmm." }));
-      stage.appendChild(el("p", { class: "help", text: text }));
+      app.appendChild(el("div", { class: "card center", role: "alert" }, [
+        el("div", { class: "big", role: "heading", "aria-level": "1", text: "Hmm." }),
+        el("p", { class: "help", text: text }),
+      ]));
     }
 
-    /* ---- keyboard ---- */
-    document.addEventListener("keydown", function (e) {
-      if (e.altKey && (e.key === "n" || e.key === "N")) {
-        var b = stage.querySelector("button.primary:not(:disabled)");
-        if (b) { e.preventDefault(); b.click(); }
-      }
-    });
-
-    if (exitBtn) exitBtn.onclick = function () { if (window.confirm("Leave the interview? Your answers so far are saved.")) { window.close(); } };
-
-    if (QUESTIONS.length > MAX_QUESTIONS) fatal("This intake is misconfigured (too many questions).");
-    else render();
+    installKeyboardShortcuts();
+    boot();
   })();
   </script>
+  <script src="skip-defer.js" defer></script>
 </body>
 </html>
