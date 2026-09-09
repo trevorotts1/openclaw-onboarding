@@ -11,7 +11,10 @@ or arithmetic. Zero model calls, anywhere, ever (see `SKILL.md` doctrine item 1)
 
 - **P1** -- act now. Bypasses the daily alert batch cap; escalates to the Rescue
   Rangers channel if unacknowledged for 30 minutes (D4); a dead-man P1 (sentinel
-  dark) escalates immediately.
+  dark) escalates immediately. Escalation (RR-015) is a rescue ADMISSION via the
+  shared client `scripts/lib/rescue_admission.py` — a durable ticket with a
+  validated receipt; the group message is supplemental visibility only. A
+  failed/refused/unavailable admission leaves the P1 event open and retryable.
 - **P2** -- drift worth a look. Batched with the day's other P2/P3 alerts up to the
   per-box daily cap (4/day), except that a P1 always bypasses the batch.
 - **P3** -- informational. Digest-line only (for example, a snapshot-pruning note).

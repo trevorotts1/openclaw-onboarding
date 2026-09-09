@@ -115,8 +115,10 @@ def cmd_ingest(box, digest):
     return rec
 
 
-def cmd_cycle(state_dir=None, sender=None, dry_run=False):
-    """Advance the aggregator cycle; fire the dead-man switch for silent boxes."""
+def cmd_cycle(state_dir=None, sender=None, dry_run=False, admission=None):
+    """Advance the aggregator cycle; fire the dead-man switch for silent boxes.
+    `admission` is the injectable admission client (tests pass a stub so the
+    cycle NEVER reaches the network); None resolves the shared client."""
     th = C.load_skill_config("thresholds.json").get("aggregator", {})
     dead_man = th.get("dead_man_cycles", 2)
     st = _read_state()
@@ -135,7 +137,7 @@ def cmd_cycle(state_dir=None, sender=None, dry_run=False):
             dark.append(box)
             rec["sentinel_dark"] = True
             _write_json(bf, rec)
-            _fire_dead_man(box, cycle - last, state_dir, sender, dry_run)
+            _fire_dead_man(box, cycle - last, state_dir, sender, dry_run, admission)
         else:
             if rec.get("sentinel_dark"):
                 rec["sentinel_dark"] = False
@@ -143,12 +145,20 @@ def cmd_cycle(state_dir=None, sender=None, dry_run=False):
     return {"ok": True, "cycle": cycle, "boxes": len(st.get("boxes", [])), "sentinel_dark": dark}
 
 
-def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run):
-    """Record a P1 'sentinel dark' on the OPERATOR box ledger and alert + escalate
-    immediately (the box cannot speak for itself)."""
+def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=None):
+    """Record a P1 'sentinel dark' on the OPERATOR box ledger, alert the
+    operator, and route the dead-man through RESCUE ADMISSION immediately (D4:
+    dead-man escalates immediately -- the box cannot speak for itself).
+
+    RR-015: admission is the REAL deliverable -- a durable rescue ticket with a
+    validated receipt. The event is marked escalated ONLY when the admission
+    receipt says admitted/replay; a failed/refused/unavailable admission leaves
+    the event OPEN so the 30-minute escalate() path (or the next cycle) can
+    retry it. dry_run mutates NOTHING (no event, no admission, no send)."""
     try:
         import ews_alert
         from ews_sentinel import F
+        import ews_common
     except ImportError:
         return
     detail = ("SENTINEL DARK: box '%s' has not reported a fresh tick for %d aggregator "
@@ -156,24 +166,66 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run):
               "self-report; investigate now." % (box, silent_cycles))
     finding = F("S7", "P1", "fleet:%s" % box, "deadman", detail,
                 dedup_key="deadman|%s" % box)
+    reason = "admission status unknown (dry run)"
+    admitted = False
+    ticket_id = None
     with Ledger(state_dir) as led:
-        led.record_event("S7", "P1", key_path="fleet:%s" % box, klass="deadman", detail=detail,
-                         dedup_key="deadman|%s" % box)
-    # operator alert
+        eid = led.record_event("S7", "P1", key_path="fleet:%s" % box, klass="deadman",
+                               detail=detail, dedup_key="deadman|%s" % box)
+        if dry_run:
+            reason = "dry run: no admission attempted"
+        else:
+            client = admission if admission is not None else ews_common.load_rescue_admission()
+            admit_fn = getattr(client, "admit", None)
+            if admit_fn is None and callable(client):
+                admit_fn = client
+            if client is None or admit_fn is None:
+                # missing shared client: owned setup fault; event stays OPEN so
+                # the escalate() sweep retries it after the next unacked window.
+                reason = "admission client unavailable (shared client missing)"
+                led.record_digest("rescue_admission_client_unavailable",
+                                  "deadman|%s" % box,
+                                  payload="box=%s" % box)
+            else:
+                receipt = admit_fn(
+                    state_dir, box=box,
+                    problem_text=("[EWS ESCALATION] " + detail),
+                    source="skill-60-ews-fleet", signal="S7",
+                    key_path="fleet:%s" % box, dedup_key="deadman|%s" % box,
+                    event_id=eid, tick_ts=now_utc())
+                reason = receipt.get("status", "failed")
+                ticket_id = receipt.get("ticket_id")
+                admitted = reason in ("admitted", "replay")
+                if admitted:
+                    led.ack_event(eid, "escalated")
+                    if ticket_id:
+                        led.record_digest("rescue_admission_ticket", "deadman|%s" % box,
+                                          payload="ticket_id=%s box=%s" % (ticket_id, box))
+                else:
+                    led.record_digest("rescue_admission_%s" % reason,
+                                      "deadman|%s" % box,
+                                      payload="box=%s" % box)
+    # operator alert (deduped; unchanged)
     try:
         ews_alert.route_finding(finding, state_dir, sender=sender, dry_run=dry_run)
     except Exception:  # noqa: BLE001
         pass
-    # immediate Rescue Rangers escalation (D4: dead-man escalates immediately)
-    rescue = None
-    for n in ("EWS_RESCUE_CHAT", "RESCUE_RANGERS_CHAT_ID"):
-        rescue = rescue or os.environ.get(n)
-    if rescue and not dry_run:
-        snd = sender or ews_alert._gateway_sender
-        try:
-            snd("rescue-rangers", rescue, "[EWS ESCALATION] " + detail)
-        except Exception:  # noqa: BLE001
-            pass
+    # Telegram group visibility: SUPPLEMENTAL ONLY (a message is NOT admission).
+    if not dry_run:
+        rescue = None
+        for n in ("EWS_RESCUE_CHAT", "RESCUE_RANGERS_CHAT_ID"):
+            rescue = rescue or os.environ.get(n)
+        if rescue:
+            snd = sender or ews_alert._gateway_sender
+            try:
+                ok, _detail = snd("rescue-rangers", rescue, "[EWS ESCALATION] " + detail)
+                with Ledger(state_dir) as led:
+                    led.record_digest(
+                        "rescue_group_visibility" if ok else "rescue_group_visibility_failed",
+                        "deadman|%s" % box, payload="box=%s" % box)
+            except Exception:  # noqa: BLE001
+                pass
+    return {"status": reason, "ticket_id": ticket_id, "admitted": admitted}
 
 
 def cmd_digest():
@@ -238,10 +290,20 @@ def self_test():
     import tempfile as _tf
     print("[ews_fleet] self-test: ingest, dead-man switch (2 cycles), fleet digest")
     sent = []
+    admission_calls = []
 
     def fake_sender(account, target, text):
         sent.append({"account": account, "target": target, "text": text})
         return True, "fake"
+
+    # RR-015: the dead-man path goes through the SHARED admission client. The
+    # self-test injects a stub so the cycle NEVER reaches the network; the real
+    # client is exercised offline in its own self-test.
+    def fake_admission(state_dir=None, box="", problem_text="", **kw):
+        admission_calls.append({"box": box, "problem": problem_text})
+        return {"status": "admitted", "operation_id": "op-deadman-fixture",
+                "ticket_id": "T-DM-1", "admission_schema": "v1",
+                "detail": "admitted ticket_id=T-DM-1", "reply_digest": "d1"}
 
     with _tf.TemporaryDirectory() as td:
         os.environ["EWS_FLEET_DIR"] = str(Path(td) / "ews-fleet")
@@ -259,19 +321,42 @@ def self_test():
         print("  ingest case: PASS (2 boxes green)")
 
         # cycle 1: alpha re-reports, bravo goes silent
-        cmd_cycle(sender=fake_sender)  # cycle -> 1
+        cmd_cycle(sender=fake_sender, admission=fake_admission)  # cycle -> 1
         cmd_ingest("box-alpha-example", {"last_tick_ts": now_utc(), "red_flags": 0, "by_severity": {}})
         # cycle 2: bravo still silent (last_report_cycle=0, now cycle 2 => 2 cycles => dark)
-        res = cmd_cycle(sender=fake_sender)
+        res = cmd_cycle(sender=fake_sender, admission=fake_admission)
         assert "box-bravo-example" in res["sentinel_dark"], res
         assert "box-alpha-example" not in res["sentinel_dark"]
         print("  dead-man case: PASS (silent box dark after 2 cycles; reporting box healthy)")
 
-        # dead-man fired an operator alert AND a rescue escalation
+        # dead-man fired an operator alert, a RESCUE ADMISSION (RR-015) and the
+        # supplemental group visibility message
+        assert len(admission_calls) == 1 and admission_calls[0]["box"] == "box-bravo-example"
         assert any(s["account"] == "operator" for s in sent)
         assert any(s["account"] == "rescue-rangers" and "8888rescue" == s["target"] for s in sent)
         assert any("SENTINEL DARK" in s["text"] for s in sent)
-        print("  escalation case: PASS (dead-man alerts operator + escalates to Rescue Rangers)")
+        with Ledger() as led:
+            # the dead-man event was acked ONLY because the receipt admitted
+            evs = [dict(r) for r in led.conn.execute(
+                "SELECT * FROM events WHERE dedup_key=?",
+                ("deadman|box-bravo-example",)).fetchall()]
+            assert evs and evs[0]["ack_state"] == "escalated", evs
+        print("  escalation case: PASS (dead-man admission given once; event escalated on receipt)")
+
+        # a FAILED dead-man admission leaves the event OPEN (RR-005 contract)
+        def failing_admission(state_dir=None, box="", problem_text="", **kw):
+            return {"status": "failed", "operation_id": "op-deadman-fail",
+                    "ticket_id": None, "admission_schema": "v1",
+                    "detail": "intake unreachable", "reply_digest": None}
+        cmd_cycle(sender=fake_sender, admission=failing_admission)  # cycle -> 3
+        with Ledger() as led:
+            evs2 = [dict(r) for r in led.conn.execute(
+                "SELECT * FROM events WHERE dedup_key=? ORDER BY event_id",
+                ("deadman|box-bravo-example",)).fetchall()]
+            # the first event is escalated; the new cycle event stays OPEN
+            assert evs2[0]["ack_state"] == "escalated", evs2
+            assert any(e["ack_state"] == "open" for e in evs2), evs2
+        print("  dead-man-failure case: PASS (failed admission leaves event OPEN, retryable)")
 
         # digest now shows bravo RED (sentinel dark)
         d1 = cmd_digest()

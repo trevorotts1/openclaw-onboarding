@@ -221,10 +221,27 @@ class Ledger:
                 key             TEXT PRIMARY KEY,
                 value           TEXT
             );
+            CREATE TABLE IF NOT EXISTS rescue_admissions (
+                admission_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                operation_id     TEXT NOT NULL,
+                source           TEXT NOT NULL,
+                box              TEXT,
+                signal           TEXT,
+                event_id         INTEGER,
+                dedup_key        TEXT,
+                status           TEXT NOT NULL,
+                ticket_id        TEXT,
+                reply_digest     TEXT,
+                admission_schema TEXT,
+                detail           TEXT,
+                exception_type   TEXT,
+                attempted_at     TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS ix_events_open  ON events(ack_state, signal);
             CREATE INDEX IF NOT EXISTS ix_events_ts    ON events(tick_ts);
             CREATE INDEX IF NOT EXISTS ix_stamps_key   ON baseline_stamps(key_path);
             CREATE INDEX IF NOT EXISTS ix_digests_key  ON digests(dedup_key, sent_ts);
+            CREATE INDEX IF NOT EXISTS ix_admissions_op ON rescue_admissions(operation_id, admission_id);
             """
         )
         self.conn.execute(
@@ -413,6 +430,44 @@ class Ledger:
         else:
             row = self.conn.execute(
                 "SELECT COUNT(*) AS n FROM digests WHERE sent_ts >= ?", (since_iso,)).fetchone()
+        return int(row["n"])
+
+    # ---- rescue admission journal (RR-015) ---------------------------------
+    # Durable per-attempt journal for the SHARED admission client
+    # (scripts/lib/rescue_admission.py). One row per admission attempt, status
+    # + ids + a reply DIGEST -- never the reply body, never a credential value.
+    # An attempt here does NOT change incident state: the caller (ews_alert
+    # escalate / ews_fleet dead-man) decides ack transitions from the receipt.
+    def record_admission_attempt(self, operation_id, source, box=None, signal=None,
+                                 event_id=None, dedup_key=None, status="failed",
+                                 ticket_id=None, reply_digest=None,
+                                 admission_schema=None, detail=None,
+                                 exception_type=None):
+        cur = self.conn.execute(
+            "INSERT INTO rescue_admissions(operation_id,source,box,signal,event_id,"
+            "dedup_key,status,ticket_id,reply_digest,admission_schema,detail,"
+            "exception_type,attempted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (str(operation_id), str(source), box, signal, event_id, dedup_key,
+             str(status), ticket_id, reply_digest, admission_schema, detail,
+             exception_type, now_utc()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def latest_admission(self, operation_id):
+        """The newest journaled attempt for an operation id, else None."""
+        row = self.conn.execute(
+            "SELECT * FROM rescue_admissions WHERE operation_id=? "
+            "ORDER BY admission_id DESC LIMIT 1", (str(operation_id),)).fetchone()
+        return dict(row) if row else None
+
+    def count_admissions(self, status=None):
+        if status:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM rescue_admissions WHERE status=?",
+                (str(status),)).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM rescue_admissions").fetchone()
         return int(row["n"])
 
 

@@ -3,6 +3,46 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.1.0] - 2026-09-09
+
+RR-015 (Rescue Rangers wave 3, RR-W3-EWS): EWS escalations now route through
+actual rescue admission — a durable ticket with a validated receipt — instead of
+a gateway Telegram message to the Rescue Rangers group.
+
+- New shared versioned admission client `scripts/lib/rescue_admission.py`
+  (STDLIB, offline-testable, injected transport): payload carries the nine-field
+  legacy intake contract plus a stable `operation_id` (same event + inputs =
+  same id, so replays fold at the intake), resolved enrollment schema (`v2`
+  per-enrollment `RR_BOX_CRED`/`RR_BOX_ID`, else `v1` shared
+  `RESCUE_RANGERS_WEBHOOK_SECRET`, else unauthenticated soft phase), bounded
+  HTTP (120s default timeout = 4x the measured 30.3s admission path, 64 KiB body
+  read), structured receipt statuses (admitted/replay/refused/failed/dry_run/
+  no_enrollment/client_unavailable) and the Skill 61 verdict rule — a 2xx body
+  whose verdict says refuse is a REFUSAL, an unparseable answer is UNDETERMINED
+  (never a success, never a refusal). Responses carrying a credential shape are
+  dropped whole; journal detail carries ids and statuses only.
+- Durable per-attempt journal in the ledger (`rescue_admissions` table via the
+  sole state writer `ews_ledger.py`): operation_id, status, ticket_id, reply
+  DIGEST (never the body), schema, sanitized detail. A journal row never changes
+  incident state.
+- `ews_alert.py escalate()` rewired: ONLY a validated admission receipt marks
+  the event `escalated`; a failed/refused/undetermined/unavailable admission
+  leaves the P1 event OPEN and retry-eligible (the RR-005 ack-loss defect stays
+  fixed). Dry run branches before every ledger mutation and every network
+  action. Box identity for the payload is the enrolled canonical slug
+  (`FLEET_STANDING_BOX_SLUG`) first, never a display/hostname fallback. The
+  Telegram group send remains, but as supplemental visibility only, recorded
+  under its own digest kinds and never able to consume an incident.
+- `ews_fleet.py` dead-man path rewired the same way: the sentinel-dark P1 goes
+  through admission, is acked on a validated receipt, and stays open (and
+  owner-retryable via the 30-minute escalate sweep) on failure. `cmd_cycle()`
+  gained an injectable `admission` seam so the self-test never reaches the
+  network.
+- Docs updated: HOW-TO-USE.md, REPAIRS.md, docs/SIGNAL-CATALOG.md, ews-entry.sh
+  usage block. The Skill 61 UNSENT autonomous drain is NOT touched — its
+  deliberately disarmed backlog policy is preserved (this client never drains
+  and never replays autonomously).
+
 ## [1.0.0] - 2026-09-03
 
 Fixed a self-amplifying alert-storm bug: `route_finding()`'s "no operator alert
