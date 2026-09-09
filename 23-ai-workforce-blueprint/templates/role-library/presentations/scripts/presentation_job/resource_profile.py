@@ -1571,3 +1571,161 @@ def open_gap_records(profile: Optional[Dict[str, Any]] = None,
         "additions_pending_probe": [r for r in _addition_rows(prof)
                                     if r.get("reprobe_required")],
     }
+
+
+# ---------------------------------------------------------------------------
+# PRES-015 -- profile reconciliation: DECLARED facts vs DERIVED facts.
+# Spec step 4: "version client declarations, entitlements, reserves and
+# derived provider facts separately; reconcile only derived facts."
+#
+# The classes, on one provider entry:
+#   DECLARED (client/operator statements -- reconciliation NEVER touches):
+#       provider, plan_tier, plan_known, consented, locked, answered_at,
+#       locked_choice, ceiling_source in {"interview", "declared",
+#       "conservative-default"}, max_concurrent (the explicit allocation),
+#       model_plan, creative_prefs, notes, wired_models.
+#   DERIVED (machine projections of the current cap table / probes --
+#       reconciliation may refresh these, and ONLY these):
+#       concurrency_ceiling when ceiling_source is "cap-table" or "probe"
+#       (derived FROM plan_tier by CAP_TABLE), plus the reconciliation
+#       stamp itself.
+# A tier change that used to drop an explicit max_concurrent (the PRES-044
+# defect class) cannot happen here: max_concurrent is a DECLARED field and
+# the derived write below merges around it.
+# ---------------------------------------------------------------------------
+
+#: Entry keys whose values are CLIENT/OPERATOR statements. Reconciliation
+#: never writes them; unknown root keys and unknown provider keys are
+#: preserved the same way (the merge is additive, never a rebuild).
+_DECLARED_ENTRY_KEYS = frozenset({
+    "provider", "plan_tier", "plan_known", "consented", "locked",
+    "locked_choice", "answered_at", "max_concurrent",
+    "ceiling_source_declared", "model_plan", "creative_prefs", "notes",
+})
+
+#: ceiling_source values that mark concurrency_ceiling as DERIVED (safe to
+#: refresh from the current cap table). "interview"/"declared"/
+#: "conservative-default" ceilings are statements -- never overwritten.
+_DERIVED_CEILING_SOURCES = frozenset({"cap-table", "probe"})
+
+#: The reconciliation marker stamped on the entry (not a decision field:
+#: diagnostics only).
+RECONCILE_SOURCE = "reconcile"
+
+
+def _entry_declared_keys(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """The subset of one provider entry that reconciliation must preserve
+    verbatim -- every key that is NOT a known derived projection. Unknown
+    keys (operator metadata, future fields) land here too: preservation is
+    the default, overwriting needs a reason."""
+    derived = {"ceiling_source", "concurrency_ceiling", "detected"}
+    out = {}
+    for key, value in entry.items():
+        if key in derived and key in ("ceiling_source",):
+            # ceiling_source IS the classifier -- keep it (it says whether the
+            # ceiling beside it is a statement or a projection) but do not
+            # count it as an untouchable declaration when it marks a derived
+            # ceiling.
+            if value in _DERIVED_CEILING_SOURCES:
+                continue
+            out[key] = value
+        elif key in derived:
+            continue
+        else:
+            out[key] = value
+    return out
+
+
+def reconcile_profile(declarations: Dict[str, Any],
+                      config_dir: Optional[Path] = None,
+                      *,
+                      profile: Optional[Dict[str, Any]] = None,
+                      ) -> Dict[str, Any]:
+    """Fold DERIVED provider facts (cap-table ceilings for the CURRENT
+    plan_tier) into the store WITHOUT touching any declared field.
+
+    `declarations` is the one-revision client picture reconcile callers
+    hold (the same shape load_profile() returns: {"providers": {...}}).
+    Only entries whose ceiling_source marks the ceiling DERIVED are
+    refreshed, and only to what the CURRENT CAP_TABLE says for the entry's
+    CURRENT (provider, plan_tier) -- a tier change flows through, an
+    explicit max_concurrent does not.
+
+    Idempotent by construction: running it twice over the same inputs
+    yields the same document (the second run refreshes the same derived
+    values to the same numbers and re-stamps reconcile_at). Explicit
+    reserve/allocation fields (`max_concurrent`) and unknown fields
+    (`operator_notes`, future keys) survive untouched -- the PRES-044
+    acceptance, asserted by the PRES-015 tests. Never raises on a broken
+    store: a read error degrades to "reconciled nothing" with the reason.
+
+    With `profile` given, THAT dict is reconciled and returned WITHOUT
+    persisting (the pure half a caller with its own transaction uses);
+    without it, the on-disk store is read, reconciled and saved under the
+    store's own process lock (the PRES-044 single-lock contract)."""
+    try:
+        base = profile if profile is not None else load_profile(config_dir)
+    except Exception as exc:  # noqa: BLE001 -- a broken store never blocks
+        return {"reconciled": False, "reason": f"load failed: "
+                f"{exc.__class__.__name__}: {exc}"}
+    if not isinstance(base, dict) or base.get("error"):
+        return {"reconciled": False,
+                "reason": str(base.get("error") or "profile-not-a-dict")}
+    if not flag_enabled() and profile is None:
+        return {"reconciled": False, "reason": "flag-disabled"}
+    changed: List[str] = []
+    providers = base.setdefault("providers", {})
+    decl_providers = (declarations or {}).get("providers") or {}
+    for provider_id, decl in decl_providers.items():
+        if not isinstance(decl, dict):
+            continue
+        entry = providers.get(provider_id)
+        if not isinstance(entry, dict):
+            # A declared provider the store has never heard of is NOT
+            # invented here: reconciliation folds derived facts INTO
+            # existing entries, it does not create clients.
+            continue
+        # Preserve EVERY declared/unknown key verbatim.
+        preserved = _entry_declared_keys(entry)
+        source = entry.get("ceiling_source")
+        if source not in _DERIVED_CEILING_SOURCES:
+            # The ceiling on this entry is a statement (or there is none):
+            # nothing derived to refresh. Preserve the entry whole.
+            continue
+        norm_provider = (_capacity.normalize_provider(provider_id)
+                         if _capacity is not None else provider_id)
+        norm_plan = (decl.get("plan_tier") or entry.get("plan_tier"))
+        if _capacity is not None and norm_provider:
+            norm_plan = _capacity.normalize_plan(norm_plan, norm_provider)
+        if _capacity is not None and norm_provider and norm_plan \
+                and (norm_provider, norm_plan) in _capacity.CAP_TABLE:
+            derived_ceiling = _capacity.CAP_TABLE[(norm_provider, norm_plan)]
+            if entry.get("concurrency_ceiling") != derived_ceiling:
+                entry["concurrency_ceiling"] = derived_ceiling
+                changed.append(f"{provider_id}: ceiling -> {derived_ceiling}")
+        # ceiling_source stays "cap-table"; the entry keeps every declared
+        # field (plan_tier included) from BEFORE the fold.
+        for key, value in preserved.items():
+            entry.setdefault(key, value)
+        entry[RECONCILE_SOURCE] = {
+            "reconciled_at": _now(),
+            "changed": bool(provider_id in changed
+                            or any(c.startswith(f"{provider_id}:") for c in changed)),
+        }
+    if changed:
+        base["reconcile_log"] = list(base.get("reconcile_log") or [])[-7:] + [
+            {"at": _now(), "changes": changed}]
+    if profile is not None:
+        return {"reconciled": True, "persisted": False,
+                "changes": changed, "profile": base}
+    if not changed:
+        # Nothing moved: still stamp diagnostics on the in-memory copy, but
+        # skip the write (an idempotent no-op does not dirty the store).
+        return {"reconciled": True, "persisted": False, "changes": []}
+    try:
+        save_profile(base, config_dir)
+    except Exception as exc:  # noqa: BLE001 -- a failed write is visible, never silent
+        return {"reconciled": True, "persisted": False,
+                "write_error": f"{exc.__class__.__name__}: {exc}",
+                "changes": changed}
+    return {"reconciled": True, "persisted": True, "changes": changed}

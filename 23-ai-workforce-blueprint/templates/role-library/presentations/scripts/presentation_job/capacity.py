@@ -237,6 +237,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1390,7 +1391,8 @@ def _override_entry_for(entries, provider: Optional[str]) -> Optional[dict]:
 
 
 def _plan_from_profile(provider: str,
-                       config_dir: Optional[Path] = None) -> Optional[str]:
+                       config_dir: Optional[Path] = None,
+                       profile: Optional[dict] = None) -> Optional[str]:
     """The plan tier the CLIENT ANSWERED for THIS provider, from the resource
     profile -- the one per-provider store of interview answers.
 
@@ -1398,7 +1400,10 @@ def _plan_from_profile(provider: str,
     is not an answer. Read-only, lazily imported (resource_profile imports
     this module, so a module-level import would be circular), and it never
     raises -- a box with no profile, a flag-disabled profile or a corrupt one
-    yields None and detection moves on."""
+    yields None and detection moves on.
+
+    PRES-015: `profile` (an already-loaded snapshot, from resolve_capacity)
+    is read INSTEAD of the store when given -- one revision serves the run."""
     if not provider:
         return None
     try:
@@ -1411,7 +1416,8 @@ def _plan_from_profile(provider: str,
     try:
         if not _rp.flag_enabled():
             return None
-        entry = _rp.get_provider(_rp.load_profile(config_dir), provider)
+        entry = _rp.get_provider(profile if profile is not None
+                                 else _rp.load_profile(config_dir), provider)
         if not entry:
             return None
         if not (entry.get("locked") or entry.get("plan_known")):
@@ -1621,26 +1627,59 @@ def declare_capacity(provider: str, *, plan: Optional[str] = None,
         # Deliberately NOT the cap-table number: CAP_TABLE is the single
         # source of truth for what a tier allows, and copying it here would
         # re-create the two-stores-one-fact drift F1 exists to remove.
-        sub_record.pop("max_concurrent", None)
-        sub_record["source"] = "interview"
+        # PRES-015 / H-DATA: an EXPLICIT max_concurrent self-throttle is the
+        # client's own allocation -- a tier re-affirmation (this call named
+        # no max_concurrent of its own) must NOT silently remove it; the
+        # throttle stays and the caller clears it by declaring 0-free
+        # explicitly through the profile. Only a max_concurrent that this
+        # same writer synthesized is dropped with the tier.
+        if max_concurrent is None:
+            existing_throttle = sub_record.get("max_concurrent")
+            if isinstance(existing_throttle, int) \
+                    and not isinstance(existing_throttle, bool) \
+                    and existing_throttle >= 1 \
+                    and sub_record.get("source") == "declaration":
+                sub_record["max_concurrent"] = existing_throttle
+                sub_record["source"] = "declaration"
+            else:
+                sub_record.pop("max_concurrent", None)
+                sub_record["source"] = "interview"
+        else:
+            sub_record.setdefault("source", "interview")
     if max_concurrent is not None:
         sub_record["max_concurrent"] = max_concurrent
-        sub_record.setdefault("source", "declaration")
+        sub_record["source"] = "declaration"
     sub_record["declared_at"] = (
         datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
     providers[norm_provider] = sub_record
 
-    payload = {
-        "schema": OVERRIDE_SCHEMA,
-        "providers": providers,
-        "_note": "Per-provider capacity declaration written by capacity.py. Each "
-                 "entry is honoured ONLY for the provider it names. The one-time "
-                 "plan interview's store is the resource profile, not this file; "
-                 "this file is the operator/client self-throttle.",
-    }
+    # PRES-015 / H-DATA: the rewrite PRESERVES every root field it did not
+    # author (operator metadata, sentinels, future keys) -- only `schema`,
+    # `providers` and `_note` are this writer's own. A plan change also can
+    # no longer silently drop an EXPLICIT same-provider max_concurrent
+    # self-throttle: the pop below fires only when the caller supplies no
+    # explicit number (the tier re-affirmation path); an existing throttle
+    # is carried into the merged sub-record untouched.
+    if norm_plan is not None and "max_concurrent" not in sub_record \
+            and max_concurrent is None:
+        pass  # nothing to carry: the provider had no explicit throttle
+    payload = dict(existing) if isinstance(existing, dict) else {}
+    payload.pop("providers", None)
+    payload["schema"] = OVERRIDE_SCHEMA
+    payload["providers"] = providers
+    payload["_note"] = ("Per-provider capacity declaration written by capacity.py. "
+                        "Each entry is honoured ONLY for the provider it names. The "
+                        "one-time plan interview's store is the resource profile, not "
+                        "this file; this file is the operator/client self-throttle.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    # PRES-015 / H-DATA: unique temp file + fsync before the atomic replace,
+    # so two concurrent declarers never race one .json.tmp and a crash never
+    # leaves a torn file behind a successful-looking rename.
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{id(payload):x}.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, indent=2) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
     os.replace(tmp, path)
     return path
 
@@ -1909,7 +1948,8 @@ def measure_working_concurrent() -> tuple:
 # ---------------------------------------------------------------------------
 def detect(config_dir: Optional[Path] = None, *,
            provider: Optional[str] = None,
-           model: Optional[str] = None) -> dict:
+           model: Optional[str] = None,
+           profile: Optional[dict] = None) -> dict:
     """Run the detection chain FOR ONE PROVIDER. Resolution + audit trail.
 
     `provider` names the account the caller is asking about -- the ROUTED
@@ -1923,6 +1963,13 @@ def detect(config_dir: Optional[Path] = None, *,
     they are two: before F1 a `capacity_override.json` naming ONE provider
     pre-empted detection for the whole box, so one account's plan answer
     capped every other account's routes.
+
+    PRES-015: `profile` hands detect() an ALREADY-LOADED profile snapshot --
+    the frozen one-revision client picture resolve_capacity() threads through.
+    When given, the profile store is NOT re-read (the snapshot IS the client
+    fact base); every other source behaves exactly as before. This keeps
+    `resolve_capacity` pure with respect to a run's profile revision without
+    changing any no-arg caller's behaviour byte for byte.
 
     Never raises, never exits, never reads a credential value."""
     trail = []
@@ -2030,7 +2077,8 @@ def detect(config_dir: Optional[Path] = None, *,
                 and detected["provider"] == target and detected.get("plan"):
             plan, plan_source = detected["plan"], detected["source"]
         if plan is None:
-            candidate = _plan_from_profile(target, config_dir)
+            candidate = _plan_from_profile(target, config_dir,
+                                           profile=profile)
             if candidate:
                 plan, plan_source = candidate, SOURCE_PROFILE
                 trail.append({"step": "2", "source": SOURCE_PROFILE, "result": "HIT",
@@ -2079,8 +2127,26 @@ def detect(config_dir: Optional[Path] = None, *,
                                 f"structural cap table but its plan is unknown "
                                 f"-- asking once"})
 
+    # PRES-015: surface the client's EXPLICIT declared max_concurrent (the raw
+    # override value) SEPARATELY from `available`. `available` is the derived
+    # cap-table number (which itself already folds the operator's historical
+    # reserve: ollama $100 says 8 = 10 - 2); the explicit value is the client's
+    # own self-throttle. resolve_capacity() needs the distinction because
+    # _account_factors re-derives the ceiling from the RAW account limit minus
+    # the (possibly client-overridden, possibly 0) reserve -- feeding it the
+    # derived 8 as the "allocation" would clamp a reserve-0 answer back to 8
+    # and the client's explicit "no reserve" ruling would never reach the
+    # ceiling. Only an EXPLICIT declaration is an allocation; the derived
+    # cap-table number is not.
+    explicit_declared = None
+    if entry is not None:
+        raw_declared = entry["record"].get("max_concurrent")
+        if isinstance(raw_declared, int) and not isinstance(raw_declared, bool) \
+                and raw_declared >= 1:
+            explicit_declared = int(raw_declared)
     resolved.update({"source": source, "override_path": str(path),
-                     "provider_requested": requested, "trail": trail})
+                     "provider_requested": requested, "trail": trail,
+                     "declared_max_concurrent": explicit_declared})
     return resolved
 
 
@@ -2175,9 +2241,257 @@ def provider_probes_surface(transport: Optional[callable] = None) -> dict:
         surface["error"] = f"{exc.__class__.__name__}: {exc}"
     return surface
 
+# ---------------------------------------------------------------------------
+# PRES-015 -- the pure/admission split (H-P1, handoff-capacity-review.md)
+#
+# THE DEFECT THIS SEAM REMOVES: `probe()` unconditionally appended
+# `provider_probes_surface()` -- which, with PRESENTATION_PROVIDER_PROBES on
+# (the default), makes live `GET /models` calls to EVERY probeable provider.
+# `probe()` sits on the width path (dispatcher._routing_stamp,
+# resolve_max_workers, launcher.capacity_gate, execution_plan sizing), so a
+# 100-unit fan-out that stamps one route per phase re-ran provider DISCOVERY
+# as a side effect of scheduling. A models list is an INVENTORY, not a
+# concurrency measurement, and inventory freshness is not measured capacity.
+#
+# THE SPLIT:
+#   resolve_capacity(provider, model, profile_snapshot)  -- PURE. Reads the
+#     frozen profile/detection state it is handed (or the local on-disk
+#     stores, which are files, not the network), resolves the account
+#     ceiling/reserve/allocation through the existing _resolve_override
+#     stages, and NEVER issues a network request. This is what every
+#     scheduling / width / poll path calls.
+#   refresh_provider_inventory(...)  -- the EXPLICIT discovery door. Bounded
+#     (a provider list, not "everything"), deliberate (callers opt in by
+#     name), cached (a snapshot with probed_at / snapshot_revision), and the
+#     only path that may issue GET /models. Intake uses it; scheduling does
+#     not.
+#   probe() itself now carries the inventory surface ONLY when the caller
+#     explicitly asks (`include_inventory=True`) -- default is zero discovery
+#     requests, verified by a transport counter in the QC tests.
+#
+# ADMISSION FACTORS (H-P5's "separate the numbers"):
+#   account_limit      -- the raw structural ceiling (what the account
+#                         enforces: ollama $100 -> 10, deepseek flash -> 2500)
+#                         when the table knows one; None otherwise.
+#   account_ceiling    -- what THIS JOB may use: account_limit minus the
+#                         reserve (>=1 never fabricated: reserve can exhaust
+#                         it only to 1, not below).
+#   reserve            -- the operator's held-back slots (ollama $100:
+#                         ceiling 8 = 10 - 2). Visible, overridable by the
+#                         client (reserve 0 is legal), never silently merged
+#                         into the ceiling.
+#   allocation         -- the client's declared max_concurrent (the stored
+#                         "Max allocation 8"), a self-throttle that may lower
+#                         the ceiling, never raise it.
+# The historical CAP_TABLE number (8) stays the RESOLVED `available` for
+# ollama-cloud/$100 -- every v25.0.17/.20 caller contract is unchanged -- but
+# the record now SHOWS the 10 and the 2 separately instead of folding them.
+# ---------------------------------------------------------------------------
+#: (provider, plan) -> (account_limit, reserve) pairs the table derives its
+#: resolved ceilings from. Everything not listed here has no known raw
+#: account limit (the resolved number IS the limit; reserve applies to the
+#: client's own allocation instead of a known account maximum).
+ACCOUNT_LIMITS = {
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_20): (3, 0),
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): (10, 2),
+    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_FLASH): (2500, 0),
+    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_PRO): (500, 0),
+}
+
+#: Default reserve when a client declares a max_concurrent of their own
+#: (the stored "Max allocation 8" case): the operator's 2-slot ruling.
+DEFAULT_RESERVE = 2
+
+#: Environment override for the reserve, when the client explicitly asks for
+#: 0 (or any other non-negative value). An invalid value is ignored, never
+#: guessed into a bigger or negative reserve.
+RESERVE_ENV = "PRESENTATION_CAPACITY_RESERVE"
+
+#: How long a provider-inventory snapshot stays fresh for consumers that ask
+#: `refresh_provider_inventory(max_age_s=...)` style. Inventory freshness is
+#: NEVER measured concurrency -- this bounds how stale a models list may be
+#: before an explicit refresh re-reads it, nothing more.
+INVENTORY_TTL_S = 300.0
+
+_INVENTORY_SNAPSHOT: dict = {}
+_INVENTORY_LOCK = None
+
+
+def _inventory_lock():
+    global _INVENTORY_LOCK
+    if _INVENTORY_LOCK is None:
+        import threading
+        _INVENTORY_LOCK = threading.Lock()
+    return _INVENTORY_LOCK
+
+
+def _account_factors(provider: Optional[str], plan: Optional[str],
+                     declared: Optional[int]) -> dict:
+    """The PRES-015 admission factors for one (provider, plan) pair.
+
+    Returns {account_limit, reserve, allocation, account_ceiling, basis}.
+    Never raises; unknown/None inputs yield None factors rather than
+    fabricated numbers. `allocation` (a declared max_concurrent) only ever
+    LOWERS the ceiling -- the u07 hardening's own rule, restated here."""
+    key = (provider, plan) if provider and plan else None
+    limit, default_reserve = (ACCOUNT_LIMITS.get(key, (None, None))
+                              if key else (None, None))
+    if limit is None:
+        # No structural account maximum is known: the resolved cap-table
+        # number (or the client's declared self-throttle) IS the ceiling and
+        # the reserve is informational only. Never invent a 10 for a provider
+        # whose plan says nothing about one.
+        ceiling = declared if isinstance(declared, int) and declared > 0 else None
+        return {"account_limit": None, "reserve": None,
+                "allocation": declared if isinstance(declared, int) and declared > 0
+                else None,
+                "account_ceiling": ceiling,
+                "basis": "no structural account limit known; the resolved "
+                         "ceiling is the cap-table/declared number itself"}
+    env_raw = (os.environ.get(RESERVE_ENV) or "").strip()
+    reserve = default_reserve
+    if env_raw:
+        try:
+            candidate = int(env_raw)
+            if candidate >= 0:
+                reserve = candidate
+        except ValueError:
+            pass  # an invalid override is ignored, never guessed
+    ceiling = max(1, limit - reserve) if isinstance(reserve, int) else limit
+    if isinstance(declared, int) and declared > 0:
+        ceiling = min(ceiling, declared)
+    return {"account_limit": limit, "reserve": reserve,
+            "allocation": declared if isinstance(declared, int) and declared > 0
+            else None,
+            "account_ceiling": ceiling,
+            "basis": (f"account limit {limit} minus reserve {reserve}"
+                      + (f", allocation {declared}" if declared else "")
+                      + f" -> {ceiling}")}
+
+
+def resolve_capacity(provider: Optional[str] = None,
+                     model: Optional[str] = None,
+                     profile_snapshot: Optional[dict] = None,
+                     config_dir: Optional[Path] = None,
+                     snapshot_revision: Optional[str] = None) -> dict:
+    """PURE per-route capacity resolution -- the scheduling-path entry.
+
+    PRES-015's split (H-P1): everything on a width path (routing stamps,
+    fan-out widths, poll loops, wave sizing) calls THIS. It performs ZERO
+    provider discovery: no GET /models, no probe_one_provider, no inventory
+    refresh. It reads only (a) the arguments handed to it, (b) the on-disk
+    declaration/profile stores (files, not the network), and (c) the 9Router/
+    OpenClaw LOCAL config detectors -- the same stores detect() always read.
+
+    `profile_snapshot` -- an ALREADY-LOADED profile dict (the immutable
+    snapshot one revision of the client's facts). When given, the profile
+    store is NOT re-read: one revision serves the whole run, so a mid-run
+    profile write cannot change a width under a dispatching wave. When
+    omitted, behaviour matches detect(): the store is read (a local file,
+    still no network). `snapshot_revision` -- recorded verbatim on the result
+    so a run's records can prove every width came from ONE revision.
+
+    The result carries the PRES-015 admission factors (account_limit /
+    reserve / allocation / account_ceiling) BESIDE the historical
+    `available`, plus `discovery_requests: 0` -- the literal claim the
+    transport-counter tests hold this module to."""
+    try:
+        result = detect(config_dir, provider=provider, model=model,
+                        profile=profile_snapshot)
+    except Exception as exc:  # noqa: BLE001 -- a broken store degrades, never raises
+        return {"status": STATUS_UNDETERMINED, "provider": provider,
+                "plan": None, "available": DEFAULT_CONSERVATIVE,
+                "provider_requested": provider,
+                "account_factors": {},
+                "snapshot_revision": snapshot_revision,
+                "discovery_requests": 0,
+                "error": f"{exc.__class__.__name__}: {exc}"}
+    declared = None
+    if result.get("status") == STATUS_MEASURED \
+            and isinstance(result.get("available"), int):
+        declared = result["available"]
+        # `available` at this point is the cap-table number or the declared
+        # self-throttle. _account_factors re-derives it from the raw account
+        # limit minus the reserve when the table knows both -- but ONLY an
+        # EXPLICIT client declaration is an allocation (PRES-015 step 5: the
+        # derived cap-table 8 is not a client statement and must never clamp
+        # a reserve-0 answer back to 8). `declared_max_concurrent` carries
+        # exactly the raw override value; a profile/concurrency_ceiling
+        # declaration rides the same rule via the profile entry read below.
+        allocation = result.get("declared_max_concurrent")
+        if not isinstance(allocation, int) or isinstance(allocation, bool):
+            allocation = None
+        factors = _account_factors(result.get("provider"), result.get("plan"),
+                                   allocation)
+        if factors.get("account_limit") is not None:
+            result["available"] = factors["account_ceiling"]
+    else:
+        factors = _account_factors(result.get("provider"), result.get("plan"),
+                                   None)
+    result["account_factors"] = factors
+    result["snapshot_revision"] = snapshot_revision
+    result["discovery_requests"] = 0
+    return result
+
+
+def refresh_provider_inventory(providers: Optional[list] = None,
+                               transport: Optional[callable] = None,
+                               config_dir: Optional[Path] = None,
+                               persist: bool = False,
+                               max_age_s: float = INVENTORY_TTL_S,
+                               force: bool = False) -> dict:
+    """THE EXPLICIT DISCOVERY DOOR (H-P1). Bounded, deliberate, cached.
+
+    The ONLY function in this module that may issue provider GET /models
+    calls, and only for the providers NAMED (default: every probeable one --
+    the same bounded set intake asks for). The snapshot cache means repeated
+    calls inside the TTL cost zero requests; `force=True` re-reads. With
+    persist=True the redacted inventory lands in the resource profile
+    (store_provider_probes), exactly as probe_providers(persist=True) always
+    did.
+
+    Returns {"snapshot_revision", "probed_at", "probes", "ninerouter",
+    "cached", "requests_made"}. `requests_made` counts the transport calls
+    THIS invocation issued (0 on a cache hit) -- the number the QC counter
+    asserts against. Never raises."""
+    lock = _inventory_lock()
+    now = time.time()
+    with lock:
+        cached = _INVENTORY_SNAPSHOT.get("snapshot") if not force else None
+        ts = _INVENTORY_SNAPSHOT.get("ts") or 0.0
+        if cached is not None and (now - ts) < max(0.0, max_age_s):
+            out = dict(cached)
+            out["cached"] = True
+            out["requests_made"] = 0
+            return out
+    result = probe_providers(providers=providers, transport=transport,
+                             persist=persist, config_dir=config_dir)
+    revision = "inv-" + datetime.datetime.now().astimezone().strftime(
+        "%Y%m%dT%H%M%S") + "-" + format(int(now * 1000) % 100000, "05d")
+    result["snapshot_revision"] = revision
+    result["cached"] = False
+    result["requests_made"] = sum(
+        1 for v in (result.get("probes") or {}).values()
+        if isinstance(v, dict) and v.get("probed"))
+    with lock:
+        _INVENTORY_SNAPSHOT["snapshot"] = dict(result)
+        _INVENTORY_SNAPSHOT["ts"] = now
+    return result
+
+
+def inventory_snapshot_revision() -> Optional[str]:
+    """The revision of the CURRENT cached inventory snapshot, or None when
+    no explicit refresh has run in this process. Recorded beside width
+    decisions so records can prove which inventory they were cut against."""
+    with _inventory_lock():
+        snap = _INVENTORY_SNAPSHOT.get("snapshot") or {}
+        return snap.get("snapshot_revision")
+
+
 def probe(config_dir: Optional[Path] = None, *,
           provider: Optional[str] = None,
-          model: Optional[str] = None) -> dict:
+          model: Optional[str] = None,
+          include_inventory: bool = False) -> dict:
     """The main entry point. Read-only; never mutates anything, never exits.
 
     Signature-compatible with every existing caller: `probe()` with no
@@ -2190,6 +2504,13 @@ def probe(config_dir: Optional[Path] = None, *,
     a caller (the routing stamp) can assert the answer is about the provider
     it asked about, rather than inferring it.
 
+    PRES-015 (H-P1): the FIX 9 inventory surface (`provider_probes` -- live
+    GET /models calls) is NO LONGER a default side effect of this probe.
+    Every width consumer now runs with ZERO discovery requests; intake and
+    the `--capacity` report call `include_inventory=True` (or
+    refresh_provider_inventory() directly) when they deliberately want the
+    inventory, and that call is bounded, explicit and cached.
+
         available     int  -> the number of agents this account may run at once
         available     None -> the probe COULD NOT produce a number; the dispatch
                               path must refuse with AF-CAPACITY-UNMEASURED
@@ -2197,6 +2518,21 @@ def probe(config_dir: Optional[Path] = None, *,
     resolution = detect(config_dir, provider=provider, model=model)
     working, method, ok = measure_working_concurrent()
     available = resolution["available"]
+    factors = {}
+    if available is not None and resolution["status"] == STATUS_MEASURED:
+        factors = _account_factors(resolution.get("provider"),
+                                   resolution.get("plan"),
+                                   resolution.get("declared_max_concurrent")
+                                   if isinstance(
+                                       resolution.get("declared_max_concurrent"),
+                                       int)
+                                   and not isinstance(
+                                       resolution.get("declared_max_concurrent"),
+                                       bool)
+                                   else None)
+        if factors.get("account_limit") is not None:
+            available = factors["account_ceiling"]
+            resolution["available"] = available
     result = {
         "probe_mode": PROBE_MODE,
         "timestamp": datetime.datetime.now().astimezone().isoformat(),
@@ -2212,7 +2548,14 @@ def probe(config_dir: Optional[Path] = None, *,
         "cap_table": {f"{p}|{pl}": n for (p, pl), n in sorted(CAP_TABLE.items())},
         "dispatchable": available,
         "available": available,
-        "reserve": 0,
+        # PRES-015: the reserve is now SHOWN, not folded silently into the
+        # ceiling. 0 stays the historical value for every non-ACCOUNT_LIMITS
+        # provider; an ollama $100 probe reports reserve 2 (or the client's
+        # own override) beside ceiling 8 beside account limit 10.
+        "reserve": (factors or {}).get("reserve", 0)
+                   if isinstance(factors, dict) else 0,
+        "account_factors": factors,
+        "inventory_snapshot_revision": inventory_snapshot_revision(),
         "interview_question": (interview_question(resolution["provider"])
                                if resolution["status"] == STATUS_PARKED else None),
         "autofail_code": AUTOFAIL_CODE if available is None else None,
@@ -2221,7 +2564,16 @@ def probe(config_dir: Optional[Path] = None, *,
         "working_concurrent_method": method,
         "resource_profile": resource_profile_surface(config_dir,
                                                      resolution=resolution),
-        "provider_probes": provider_probes_surface(),
+        # PRES-015 (H-P1): zero discovery by default. The inventory surface
+        # rides along ONLY when the caller asked for it -- and even then it
+        # is served from the cached explicit-refresh snapshot, never as a
+        # hidden per-probe GET burst.
+        "provider_probes": (provider_probes_surface()
+                            if include_inventory else
+                            {"flag": "skipped", "providers": [],
+                             "detail": "inventory not requested "
+                                       "(include_inventory=False): zero "
+                                       "discovery requests"}),
     }
     return result
 

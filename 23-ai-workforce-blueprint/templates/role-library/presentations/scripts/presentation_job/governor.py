@@ -324,7 +324,15 @@ def _plan_tier_inflight(provider: str) -> Optional[int]:
     [U5] Any positive recorded ceiling is honored, not just the two the
     cap table happened to hold when FIX 14 was written.  A profile that
     records the operator's reserved 8 gets 8; a profile that records a
-    measured 47 gets 47.  Previously both fell through to the tier map."""
+    measured 47 gets 47.  Previously both fell through to the tier map.
+
+    PRES-015: the ceiling read honours the account-split reserve. When the
+    profile entry names a structural cap-table (provider, plan) pair, the
+    ceiling applied is the CURRENT account_factors ceiling (raw account
+    limit minus the live reserve, allocation folded) -- so a client whose
+    reserve is 0 gets the full 10 in flight, and one who declared
+    max_concurrent 4 gets 4 -- without any hand edit to this file. Reads
+    only local declaration stores; never raises; never a credential."""
     try:
         path = _resource_profile_path()
         if path is None:
@@ -334,6 +342,30 @@ def _plan_tier_inflight(provider: str) -> Optional[int]:
         entry = _profile_provider_entry(data, provider)
         if not entry:
             return None
+        # PRES-015 first: a locked structural pair resolves through the
+        # account split so the live reserve/allocation govern the ceiling.
+        try:
+            from . import capacity as _cap  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            try:
+                from presentation_job import capacity as _cap
+            except ImportError:
+                _cap = None
+        if _cap is not None:
+            norm_p = _cap.normalize_provider(provider)
+            norm_plan = _cap.normalize_plan(
+                entry.get("plan_tier") or entry.get("plan"), norm_p)
+            if norm_p and norm_plan \
+                    and (norm_p, norm_plan) in _cap.ACCOUNT_LIMITS:
+                factors = _cap._account_factors(
+                    norm_p, norm_plan,
+                    entry.get("max_concurrent")
+                    if isinstance(entry.get("max_concurrent"), int)
+                    and not isinstance(entry.get("max_concurrent"), bool)
+                    else None)
+                ceiling = factors.get("account_ceiling")
+                if isinstance(ceiling, int) and ceiling > 0:
+                    return ceiling
         ceiling = entry.get("concurrency_ceiling")
         if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool):
             if 0 < float(ceiling) < float("inf"):
