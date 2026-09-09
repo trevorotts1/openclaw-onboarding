@@ -61,11 +61,16 @@ for arg in "$@"; do
   esac
 done
 
-command -v openclaw >/dev/null 2>&1 || {
-  echo "ERROR: openclaw CLI not on PATH — cannot register cron via the gateway cron store." >&2
-  echo "Expose the openclaw CLI and re-run. Do NOT write to .cron.jobs — it does not validate on 2026.5.27+." >&2
-  exit 2
-}
+# The openclaw CLI guard applies ONLY to registration (--verify is a
+# file-based check of the engine-ownership record and must work on any box,
+# including CI where no CLI is installed — F17 test contract: exit 5/0).
+if [ "$VERIFY_ONLY" -ne 1 ]; then
+  command -v openclaw >/dev/null 2>&1 || {
+    echo "ERROR: openclaw CLI not on PATH — cannot register cron via the gateway cron store." >&2
+    echo "Expose the openclaw CLI and re-run. Do NOT write to .cron.jobs — it does not validate on 2026.5.27+." >&2
+    exit 2
+  }
+fi
 
 if [ "$VERIFY_ONLY" -eq 1 ]; then
   # F17 --verify: the durable engine owns the schedule. Verify the engine-

@@ -46,6 +46,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install pytest (proof-file runner; tests themselves stay offline)
+        run: python3 -m pip install --quiet pytest
+
       - name: Run the social-planner suite (hermetic, offline)
         shell: bash
         run: |
