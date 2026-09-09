@@ -566,6 +566,45 @@ def build_skill06_task(*, offer: dict, intent: str, scope: dict,
 
 
 # --- Adapters (live/test seams; memory fakes for proof) --------------------------
+#
+# SEAM STATUS (PRES-025 repair, 2026-09-09): no host/test-location or provider
+# sandbox resource is designated anywhere in this packet (HOST-ACCEPTANCE.md:
+# "No live acceptance ran in this audit"; SOURCES.md names no GHL location or
+# sandbox merchant; standing SOP rule: operator credits for tests, never a
+# client location). The caf CLI's Skill-44-adjacent writes (contacts create,
+# workflows enroll, payments create-product) target a REAL location and spend
+# real budget, and the Skill 06 live path (ghl_form_builder.build_form with
+# dry_run=False) drives a REAL agent-browser session against a REAL location.
+# Firing any of those here without a wave-owner-designated test location
+# would be a cross-client write. So there are exactly two adapter kinds:
+#
+#   * memory fakes (MemoryLeadAdapter / MemoryPaymentSandbox) -- offline proof
+#     of the mode contracts. Suite-labeled, never host acceptance.
+#   * LIVE ADAPTER STUBS (Skill44LiveAdapter / Skill06LiveTaskRunner /
+#     ProviderSandboxLiveAdapter) -- same protocols, but every mutating method
+#     raises DeferralRequired naming the missing designated resource
+#     (test location, merchant/sandbox path) instead of touching anything.
+#     A future run whose wave owner designates the resource implements the
+#     stub body behind the same signature; the verifier below already accepts
+#     either proof kind.
+class DeferralRequired(RuntimeError):
+    """Raised by live-adapter stubs when the packet designates no
+    host/test-location or provider sandbox resource to run against."""
+
+
+DEFERRAL_OWNER = "W3 WF10 wave owner"
+DEFERRAL_ACTION = ("designate one synthetic GHL test location + one provider "
+                   "sandbox/test merchant path for PRES-025 acceptance 2/3, "
+                   "then implement the stub bodies behind these same "
+                   "signatures and re-run")
+
+
+def live_deferral(reason: str) -> DeferralRequired:
+    return DeferralRequired(
+        f"{reason} -- no host/test-location or sandbox resource is designated "
+        f"in this packet (owner: {DEFERRAL_OWNER}; action: {DEFERRAL_ACTION})")
+
+
 class LeadCaptureAdapter:
     """Protocol: Skill 44 supported form/workflow ops + submit proof."""
 
@@ -670,6 +709,131 @@ class MemoryLeadAdapter(LeadCaptureAdapter):
                 "contacts": len(contacts),
                 "enrollments": sum(len(self.workflows[w]["enrolled"]) for w in wf_ids),
                 "workflow_ids": wf_ids}
+
+
+class Skill44LiveAdapter(LeadCaptureAdapter):
+    """Live Skill 44 seam (caf contacts/workflows): STUB.
+
+    Same protocol as MemoryLeadAdapter. Every mutating method raises
+    DeferralRequired until the wave owner designates the synthetic test
+    location this acceptance must run in. Intended body: caf contacts create
+    (+ list/get for readback), caf workflows enroll, scoped to the
+    designated location; validation errors and duplicate resubmits recorded
+    on the proof. Nothing here invents IDs or claims a live run."""
+
+    def __init__(self, location_id: str):
+        self.location_id = location_id
+
+    def create_form(self, contract: dict) -> str:
+        raise live_deferral("Skill44LiveAdapter.create_form: live Skill 44 "
+                            "form creation needs a designated test location")
+
+    def create_workflow(self, contract: dict, form_id: str) -> str:
+        raise live_deferral("Skill44LiveAdapter.create_workflow: live Skill 44 "
+                            "workflow creation needs a designated test location")
+
+    def submit_lead(self, form_id: str, payload: dict) -> dict:
+        raise live_deferral("Skill44LiveAdapter.submit_lead: live lead submit "
+                            "needs a designated test location")
+
+    def readback(self, form_id: str) -> dict:
+        raise live_deferral("Skill44LiveAdapter.readback: live readback needs "
+                            "a designated test location")
+
+
+class Skill06LiveTaskRunner:
+    """Live Skill 06 seam (ghl_form_builder.build_form, dry_run=False): STUB.
+
+    Same task shape build_skill06_task() emits (form_fields / location_id /
+    tags / embed_target). run() raises DeferralRequired until the wave owner
+    designates the synthetic test location. Intended body: build_form(task,
+    evidence_root, dry_run=False) against the designated location, then
+    return the dry-run-style plan plus the live form_id / form_url /
+    embed snippet. The dry_run=True plan path stays available offline and
+    is exercised by the Skill06 dry-run compatibility test."""
+
+    def __init__(self, location_id: str):
+        self.location_id = location_id
+
+    def run(self, task: dict, evidence_root: str) -> dict:
+        raise live_deferral("Skill06LiveTaskRunner.run: live Skill 06 widget "
+                            "integration needs a designated test location")
+
+
+class ProviderSandboxLiveAdapter(PaymentSandboxAdapter):
+    """Live provider sandbox seam (caf payments create-product/create-price):
+    STUB.
+
+    Same protocol as MemoryPaymentSandbox. Every method raises
+    DeferralRequired until the wave owner designates the provider
+    sandbox/test merchant path. Intended body: caf payments create-product
+    (+ create-price) scoped to the designated sandbox location, then a
+    sandbox checkout session with verified success/cancel routes; the
+    real_charges list must stay empty and is asserted by the verifier.
+    Never a real charge."""
+
+    def __init__(self, location_id: str):
+        self.location_id = location_id
+        self.real_charges: List[dict] = []
+
+    def create_product(self, offer: dict) -> dict:
+        raise live_deferral("ProviderSandboxLiveAdapter.create_product: live "
+                            "sandbox product mapping needs a designated "
+                            "sandbox merchant path")
+
+    def checkout_session(self, product: dict, success_url: str,
+                         cancel_url: str) -> dict:
+        raise live_deferral("ProviderSandboxLiveAdapter.checkout_session: "
+                            "live sandbox session needs a designated sandbox "
+                            "merchant path")
+
+
+def live_adapter_deferrals(location_id: str = "undesignated-test-location"
+                           ) -> List[str]:
+    """Exercise every live stub and return the DeferralRequired messages.
+
+    Used by the repair evidence runner: proves each seam refuses to invent a
+    live run (fail-closed deferral) rather than silently passing or writing
+    to a real location."""
+    offer = {"name": "Deferral Probe", "price_display": "$1",
+             "amount_minor": 100, "currency": "USD", "price_mode": ""}
+    scope = {"deck_slug": "deferral-probe", "run_id": "probe",
+             "location_id": location_id, "location_bound": False}
+    fields = build_form_schema(offer=offer, intent=INTENT_LEAD,
+                               deck_slug="deferral-probe")
+    contract = build_skill44_contract(offer=offer, intent=INTENT_LEAD,
+                                      scope=scope, fields=fields)
+    task = build_skill06_task(offer=offer, intent=INTENT_LEAD,
+                              scope=scope, fields=fields)
+    messages: List[str] = []
+    lead = Skill44LiveAdapter(location_id)
+    for label, fn in (("create_form", lambda: lead.create_form(contract)),
+                      ("create_workflow",
+                       lambda: lead.create_workflow(contract, "form_probe")),
+                      ("submit_lead",
+                       lambda: lead.submit_lead("form_probe", {"email": "p@t.t"})),
+                      ("readback", lambda: lead.readback("form_probe"))):
+        try:
+            fn()
+            messages.append(f"Skill44LiveAdapter.{label}: NO-RAISE (BAD)")
+        except DeferralRequired as exc:
+            messages.append(f"Skill44LiveAdapter.{label}: {exc}")
+    pay = ProviderSandboxLiveAdapter(location_id)
+    for label, fn in (("create_product", lambda: pay.create_product(offer)),
+                      ("checkout_session",
+                       lambda: pay.checkout_session({"product_id": "p"},
+                                                    "https://t.t/s", "https://t.t/c"))):
+        try:
+            fn()
+            messages.append(f"ProviderSandboxLiveAdapter.{label}: NO-RAISE (BAD)")
+        except DeferralRequired as exc:
+            messages.append(f"ProviderSandboxLiveAdapter.{label}: {exc}")
+    try:
+        Skill06LiveTaskRunner(location_id).run(task, "/tmp/pres025-deferral")
+        messages.append("Skill06LiveTaskRunner.run: NO-RAISE (BAD)")
+    except DeferralRequired as exc:
+        messages.append(f"Skill06LiveTaskRunner.run: {exc}")
+    return messages
 
 
 class MemoryPaymentSandbox(PaymentSandboxAdapter):
@@ -1106,6 +1270,17 @@ def _selftest() -> int:
     except ValueError:
         pass
 
+    # 6) live-adapter stubs: every mutating seam must refuse with an exact
+    #    deferral (owner + action) instead of touching a real location.
+    deferrals = live_adapter_deferrals()
+    if len(deferrals) != 7:
+        fails.append(f"live deferral sweep wrong size: {len(deferrals)} != 7")
+    for msg in deferrals:
+        if "NO-RAISE (BAD)" in msg:
+            fails.append(f"live stub performed or passed silently: {msg}")
+        if "W3 WF10 wave owner" not in msg or "designate" not in msg:
+            fails.append(f"live deferral names no owner/action: {msg}")
+
     if fails:
         print("checkout_form_builder selftest -> FAIL")
         for f in fails:
@@ -1113,7 +1288,7 @@ def _selftest() -> int:
         return 1
     print("checkout_form_builder selftest -> PASS (allowlist, escaping, CTA "
           "audit, offer/intent/scope, lead proof incl. duplicates, sandbox "
-          "mapping with zero real charge, blockers)")
+          "mapping with zero real charge, blockers, live-stub deferrals x7)")
     return 0
 
 

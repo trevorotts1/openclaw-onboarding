@@ -52,6 +52,37 @@ import sales_checkout_builder as scb  # noqa: E402
 import vsl_builder as vb  # noqa: E402
 import checkout_form_builder as cfb  # noqa: E402  (PRES-025 real producer)
 
+
+def _skill06_tools():
+    """Import the REAL Skill 06 form builder (06-ghl-install-pages/tools/).
+
+    Resolves the tools dir relative to this repo checkout so the test runs
+    from any worktree without hardcoding an absolute path. Snapshot-free:
+    saves and restores sys.path / sys.modules around the import so sibling
+    tests (VSL, webinar) never see Skill 06's shadow modules."""
+    import importlib
+    here = Path(__file__).resolve()
+    tools = None
+    for parent in list(here.parents)[:14]:
+        cand = parent / "06-ghl-install-pages" / "tools"
+        if (cand / "ghl_form_builder.py").is_file():
+            tools = cand
+            break
+    if tools is None:
+        raise FileNotFoundError(
+            "06-ghl-install-pages/tools/ghl_form_builder.py not found above "
+            f"{here} -- run from a full checkout")
+    saved_path = list(sys.path)
+    saved_modules = dict(sys.modules)
+    try:
+        if str(tools) not in sys.path:
+            sys.path.insert(0, str(tools))
+        return importlib.import_module("ghl_form_builder")
+    finally:
+        sys.path[:] = saved_path
+        for key in [k for k in sys.modules if k not in saved_modules]:
+            del sys.modules[key]
+
 # 1x1 transparent PNG -- a real, valid PNG (correct magic bytes), just tiny.
 # Used as the pre-seeded "hero render" so --skip-design never needs kie.ai.
 _TINY_PNG = base64.b64decode(
@@ -506,6 +537,198 @@ class TestFormCheckoutVerifier:
         ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
         assert ok is True, reasons
         assert any("MISSING_MERCHANT" in r for r in reasons)
+
+
+# ---------------------------------------------------------------------------
+# PRES-025 repair: frozen-archive runner + live-stub + Skill06 seams
+# ---------------------------------------------------------------------------
+class TestFix17FrozenArchiveRunner:
+    """fix17 archival isolation (repair item a): the 5-failed parity claim is
+    re-proven by RUNNING the suite inside frozen git-archive copies of base
+    and candidate -- never the live source tree, never a stash.
+
+    Repo-root note: the git top-level is the FULL onboarding checkout, so
+    archived paths are repo-relative from the worktree root
+    ('23-ai-workforce-blueprint/...'). The fix17 fixture resolves its
+    manifest by walking UP from scripts/ to
+    universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json -- an
+    UNTRACKED working file, so the archive cannot carry it. The runner
+    therefore overlays the LIVE manifest path read-only (no live source
+    module is imported; the manifest is data, and its version/sha is
+    pinned in the assertion)."""
+
+    SUB = "23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+    FIX17_NODE = "tests/test_fix17_verifier_import_failclosed.py"
+    # Top-level single-file modules the fix17 fixture imports (sys.path =
+    # scripts/): phase_verifiers itself plus everything it pulls at import.
+    TOP_MODULES = ("phase_verifiers.py", "sales_checkout_builder.py",
+                   "vsl_builder.py", "checkout_form_builder.py",
+                   "ghl_media.py", "run_signature_deck.py")
+
+    def _materialize(self, ref: str, dest: Path) -> Path:
+        import subprocess
+        dest.mkdir(parents=True, exist_ok=True)
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, check=True,
+                             cwd=Path(__file__).resolve().parent).stdout.strip()
+        paths = [f"{self.SUB}/tests", f"{self.SUB}/presentation_job"]
+        have = subprocess.run(
+            ["git", "ls-tree", ref, "--name-only", "-r", "--",
+             f"{self.SUB}/"], capture_output=True, text=True, check=True,
+            cwd=top).stdout.splitlines()
+        have = set(have)
+        for mod in self.TOP_MODULES:
+            if f"{self.SUB}/{mod}" in have:
+                paths.append(f"{self.SUB}/{mod}")
+        archive = subprocess.run(
+            ["git", "archive", ref, *paths],
+            capture_output=True, check=True, cwd=top).stdout
+        if not archive:
+            raise AssertionError(
+                f"git archive of {ref} returned empty bytes -- frozen "
+                f"materialization impossible (cwd={top})")
+        import tarfile
+        import io
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tf:
+            tf.extractall(dest)
+        scripts = dest / self.SUB
+        assert (scripts / self.FIX17_NODE).is_file(), (
+            f"{self.FIX17_NODE} missing in frozen archive of {ref}")
+        # Read-only manifest overlay (data only): the fixture walks UP from
+        # scripts/ up to 12 levels looking for universal-sops/
+        # presentation-slide-craft/PIPELINE-MANIFEST.json. Symlink the live
+        # tree at EVERY ancestor level inside the sandbox (dest is a bare
+        # tmp dir, so no live source is shadowed). No live SOURCE module is
+        # imported by the fixture (sys.path points at the frozen scripts/
+        # only); the manifest is data, version/sha pinned below.
+        live_craft = Path(top) / "universal-sops" / "presentation-slide-craft"
+        assert (live_craft / "PIPELINE-MANIFEST.json").is_file(), (
+            "live manifest overlay missing -- cannot run the frozen fixture")
+        node = scripts
+        for _ in range(12):
+            target = node / "universal-sops"
+            target.mkdir(parents=True, exist_ok=True)
+            link = target / "presentation-slide-craft"
+            if not link.exists():
+                link.symlink_to(live_craft)
+            if node.parent == node:
+                break
+            node = node.parent
+            if dest not in node.parents and node != dest:
+                break
+        return scripts
+
+    def _run_fix17(self, scripts: Path) -> list:
+        import subprocess
+        # --rootdir pins pytest's rootdir to the frozen copy: without it,
+        # pytest walks UP past the sandbox, finds the LIVE scripts/ rootdir
+        # (conftest/ini markers), and imports LIVE modules -- which silently
+        # changes the control outcome (6 failed instead of 5 failed).
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", self.FIX17_NODE, "-q",
+             "-p", "no:cacheprovider", f"--rootdir={scripts}",
+             "-c", "/dev/null"], capture_output=True, text=True,
+            cwd=str(scripts), timeout=300)
+        if "no tests ran" in (proc.stdout + proc.stderr).lower():
+            raise AssertionError(
+                f"fix17 collected zero tests in frozen archive at {scripts} "
+                f"-- stdout={proc.stdout[-500:]!r} stderr={proc.stderr[-500:]!r}")
+        failed = sorted(
+            line.split("::", 1)[1].split(" ", 1)[0]
+            for line in proc.stdout.splitlines()
+            if line.startswith("FAILED "))
+        tail = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+        return failed, tail
+
+    def test_fix17_frozen_archives_match_live_tree_parity(self, tmp_path):
+        """Frozen base-vs-candidate archives show the IDENTICAL 5-failed set
+        the verdict recorded live -- the delta is pre-existing, proven
+        without touching the live tree."""
+        import json as _json
+        base_scripts = self._materialize("2244b00fe3a26cb8888450c881123ce21adb733e",
+                                         tmp_path / "fix17base")
+        cand_scripts = self._materialize("HEAD", tmp_path / "fix17cand")
+        base_hash = __import__("hashlib").sha256(
+            (base_scripts / self.FIX17_NODE).read_bytes()).hexdigest()
+        cand_hash = __import__("hashlib").sha256(
+            (cand_scripts / self.FIX17_NODE).read_bytes()).hexdigest()
+        assert base_hash == cand_hash, (
+            "the fix17 suite file itself must be byte-identical base-vs-"
+            f"candidate (base {base_hash[:12]} vs cand {cand_hash[:12]}) -- "
+            "else 'pre-existing' is unproven")
+        overlay_manifest = _json.loads(
+            (base_scripts / "universal-sops" / "presentation-slide-craft"
+             / "PIPELINE-MANIFEST.json").read_text(encoding="utf-8"))
+        assert overlay_manifest.get("manifest_version") == 68, (
+            "frozen runs must resolve manifest_version 68 through the overlay")
+        assert len(overlay_manifest.get("phases", [])) == 62
+        base_failed, base_tail = self._run_fix17(base_scripts)
+        cand_failed, cand_tail = self._run_fix17(cand_scripts)
+        assert len(base_failed) == 5, f"frozen base must show 5 failed: {base_tail}"
+        assert base_failed == cand_failed, (
+            f"frozen parity broken -- base {base_failed} vs cand {cand_failed}")
+        assert "5 failed, 2 passed" in base_tail, base_tail
+        assert "5 failed, 2 passed" in cand_tail, cand_tail
+
+
+class TestLiveAdapterDeferralsFailClosed:
+    """Repair item (b), seam half: every live seam refuses without a
+    designated test location / sandbox path -- exact owner + action, never a
+    silent pass, never a real write."""
+
+    def test_all_seven_live_seams_raise_deferral(self):
+        messages = cfb.live_adapter_deferrals()
+        assert len(messages) == 7, messages
+        for msg in messages:
+            assert "NO-RAISE (BAD)" not in msg, msg
+            assert "W3 WF10 wave owner" in msg, msg
+            assert "designate" in msg, msg
+
+    def test_deferral_error_type_is_distinct(self):
+        assert issubclass(cfb.DeferralRequired, RuntimeError)
+        try:
+            cfb.Skill44LiveAdapter("loc_probe").submit_lead(
+                "form_probe", {"email": "probe@example.com"})
+        except cfb.DeferralRequired as exc:
+            assert "designated test location" in str(exc)
+        else:
+            raise AssertionError("Skill44LiveAdapter.submit_lead must defer")
+
+
+class TestSkill06DryRunCompatibility:
+    """Repair item: the Skill06 task this stage emits must be ACCEPTED by the
+    REAL Skill 06 builder's offline plan path (preflight pass, template plan
+    + dependency plan + click list) for BOTH intents -- the seam the live
+    Skill06LiveTaskRunner.run() will execute behind dry_run=False once a
+    test location is designated."""
+
+    def _run_dry(self, tmp_path: Path, intent: str):
+        gfb = _skill06_tools()
+        offer = {"name": "Acme Widget Mastery", "price_display": "$997",
+                 "amount_minor": 99700, "currency": "USD", "price_mode": ""}
+        scope = {"deck_slug": "acme-widget", "run_id": "run",
+                 "location_id": "unbound-test", "location_bound": False}
+        fields = cfb.build_form_schema(offer=offer, intent=intent,
+                                       deck_slug="acme-widget")
+        task = cfb.build_skill06_task(offer=offer, intent=intent,
+                                      scope=scope, fields=fields)
+        evidence = tmp_path / f"skill06-{intent}"
+        evidence.mkdir(parents=True, exist_ok=True)
+        return gfb.build_form(dict(task), str(evidence), dry_run=True)
+
+    def test_skill06_dry_run_accepts_lead_task(self, tmp_path):
+        res = self._run_dry(tmp_path, cfb.INTENT_LEAD)
+        assert res.get("error") in (None, ""), res.get("error")
+        assert (res.get("preflight") or {}).get("pass") is True, res.get("preflight")
+        assert res.get("dry_run") is True
+        assert len(res.get("pages") or []) == 5, res.get("pages")
+
+    def test_skill06_dry_run_accepts_sandbox_task(self, tmp_path):
+        res = self._run_dry(tmp_path, cfb.INTENT_PAYMENT_SANDBOX)
+        assert res.get("error") in (None, ""), res.get("error")
+        assert (res.get("preflight") or {}).get("pass") is True, res.get("preflight")
+        assert res.get("dry_run") is True
+        assert len(res.get("pages") or []) == 6, res.get("pages")
 
 
 # ---------------------------------------------------------------------------
