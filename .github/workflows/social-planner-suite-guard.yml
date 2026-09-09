@@ -47,7 +47,12 @@ jobs:
           python-version: "3.11"
 
       - name: Run the social-planner suite (hermetic, offline)
+        shell: bash
         run: |
+          # pipefail: a piped suite failure must fail the CI step, never be
+          # masked by the downstream `tail` (the Actions default is bash -e
+          # WITHOUT pipefail — a discover-suite regression was invisible).
+          set -o pipefail
           python3 -m unittest discover -s tests/social-planner -p 'test_f*.py' -v 2>&1 | tail -20
           python3 35-social-media-planner/scripts/test_run_publishing_cycle.py
           python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py -q
