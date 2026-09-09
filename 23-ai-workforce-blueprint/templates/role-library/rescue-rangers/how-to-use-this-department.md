@@ -86,17 +86,19 @@ the attempts and evidence.
 ## 3. How the Escalation Path Works (end-to-end)
 
 1. **Client side (the distress call).** The stuck agent POSTs a **nine-field**
-   escalation to the Rescue Rangers Relay webhook (`RESCUE_RANGERS_WEBHOOK_URL`,
-   with `X-Rescue-Secret`). The nine fields are: `person`, `clientName`,
-   `agentName`, `boxName`, `boxType`, `openclawVersion`, `problem`, `alreadyTried`,
-   `returnTo`. The canonical instructions live in each box's AGENTS.md (rendered
-   from `scripts/rescue-escalation-section.md.tpl`). Hard cap: **25 exchanges per
-   client per day.**
-2. **Relay (cloud).** The n8n "Rescue Rangers Relay" workflow authenticates the
-   secret, runs the **Relay Brain** (validates the nine-field contract, routes
-   `escalate | pending | answer | status`, holds the transport-buffer queue), posts
-   the ticket to the Rescue Rangers HQ Telegram group (Fixer topic), and runs the
-   return leg back to the client agent.
+   escalation to the fleet intake webhook (`RESCUE_RANGERS_WEBHOOK_URL`,
+   canonical `rr-v2-intake` on RR-01; the old `/webhook/rescue-rangers` Relay
+   path is **retired**), with `X-Rescue-Secret`. The nine fields are: `person`,
+   `clientName`, `agentName`, `boxName`, `boxType`, `openclawVersion`, `problem`,
+   `alreadyTried`, `returnTo`. The canonical instructions live in each box's
+   AGENTS.md (rendered from `scripts/rescue-escalation-section.md.tpl`). Hard cap:
+   **25 exchanges per client per day.**
+2. **Intake + ledger (cloud).** The RR-01 intake workflow authenticates the
+   secret, verifies identity/enrollment, and mints the ticket through the
+   **RR-04 Data Tables ledger** (sole production writer); RR-02 coach / RR-03
+   direct queue the work, RR-07 receiver claims/ACKs it, RR-05 sweeps and RR-08
+   heartbeat watch it. (The old "Rescue Rangers Relay" workflow is retired;
+   do not point new wiring at it.)
 3. **Operator runtime (the brain).** Two transports on the operator Mac: a **push
    receiver** (over a dedicated Cloudflare tunnel) that runs ONE turn of the rescue
    agent per ticket, and a **pull poller** (cron) that drains pending tickets. A
@@ -108,8 +110,9 @@ the attempts and evidence.
    through the relay → the client's own agent tells its owner the outcome (a/b/c).
    The Operator is paged only after the first two tiers have run and can document
    why neither worked.
-5. **Durable record + board.** Every ticket is written to the SQLite ledger (system
-   of record) and boarded on the Command Center Kanban, so the open-ticket, aging,
+5. **Durable record + board.** Every ticket is written to the **RR-04 n8n Data
+   Tables ledger** (live system of record; the SQLite ledger is compatibility-only
+   drill tooling) and boarded on the Command Center view, so the open-ticket, aging,
    and SLA views exist.
 
 ---
@@ -145,10 +148,12 @@ the VPS-safe `status`-poll return leg exists).
 
 ## 6. Tools This Department Operates
 
-See `TOOLS.md` for the full inventory. In brief: the n8n Relay + Relay Brain (with
-the nine-field validation patch), the push receiver + pull poller + watchdog on the
-operator Mac, the durable ledger (`rescue_ledger.py`), the Command Center board
-caller (`rescue_cc_board.py`), the staticData migration (`migrate-rescue-staticdata.py`),
+See `TOOLS.md` for the full inventory. In brief: the current-v2 intake pipeline
+(RR-01 intake → RR-04 Data Tables ledger → RR-02 coach / RR-03 direct → RR-07
+receiver → RR-05 sweeps / RR-08 heartbeat), the push receiver + pull poller +
+watchdog on the operator Mac, the drill ledger (`rescue_ledger.py`,
+compatibility-only), the drill board caller (`rescue_cc_board.py`,
+compatibility-only), the staticData migration (`migrate-rescue-staticdata.py`),
 and the onboarding AGENTS.md stamper (`stamp-rescue-escalation-section.sh`).
 
 ---

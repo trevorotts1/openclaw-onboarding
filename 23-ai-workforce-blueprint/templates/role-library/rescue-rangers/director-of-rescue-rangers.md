@@ -48,11 +48,15 @@ this department formalizes it. The runtime you dispatch:
   over a dedicated Cloudflare tunnel that runs ONE turn of the rescue agent per
   ticket, and a pull poller (cron) that drains pending tickets. A watchdog keeps
   the receiver alive with a bounded restart cap (anti-crash-loop).
-- **The durable ledger:** `rescue_ledger.py` — the SQLite system of record that
-  replaced the volatile n8n staticData queue (every ticket, every SLA timestamp,
-  every per-client daily counter now survives a workflow re-import).
-- **The board:** `rescue_cc_board.py` — puts every ticket on the Command Center
-  Kanban so the open-ticket and aging views exist.
+- **The durable ledger:** the **RR-04 n8n Data Tables ledger** (subworkflow
+  `RR-04-ledger` — the sole ticket-state writer, fail-closed status gate) is the
+  live system of record for the current-v2 pipeline. `rescue_ledger.py` is
+  **compatibility-only** drill/migration tooling (offline drills, historical
+  migration) — never a production writer.
+- **The board:** the Command Center rescue dashboard (read-only) plus the
+  RR-018/019 external-rescue execution contract. `rescue_cc_board.py` is
+  **compatibility-only** drill tooling — never run it against production ticket
+  state.
 
 You own the *policy* over this machinery. The Ticket Clerk owns its plumbing.
 
