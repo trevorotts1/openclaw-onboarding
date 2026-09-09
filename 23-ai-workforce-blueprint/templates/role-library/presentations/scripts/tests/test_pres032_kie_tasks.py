@@ -325,3 +325,122 @@ def test_resume_after_verify_reuses_without_create(tmp_path):
     assert second["create_calls"] == 0
     assert len(fakes2.create_calls) == 0
     assert len(second["completed"]) == 1
+
+
+def _recording_governor(monkeypatch=None):
+    calls = []
+
+    class _Gov:
+        def acquire(self, provider=None, n=1, timeout_s=None, poll=False):
+            calls.append(("acquire", provider, poll))
+            return object()
+
+        def release(self, lease):
+            calls.append(("release",))
+
+        def report_429(self, provider):
+            calls.append(("r429",))
+            return 0.5
+
+        def report_ok(self, provider):
+            calls.append(("rok",))
+
+    gov = _Gov()
+    if monkeypatch is not None:
+        monkeypatch.setenv("KIE_TASKS_USE_GOVERNOR", "1")
+    return gov, calls
+
+
+def test_governor_opt_in_shares_canonical_seam(tmp_path, monkeypatch):
+    """Opt-in leases: submit acquires poll=False, polls acquire poll=True,
+    ok/429 telemetry reported — the build_deck.py seam, fail-soft."""
+    import os
+    os.environ["KIE_TASKS_USE_GOVERNOR"] = "1"
+    try:
+        gov, calls = _recording_governor()
+        fakes = FakeProvider()
+        out = tmp_path / "renders"
+        result = kie_tasks.run(
+            [_make_task("s1", "p1", out, fakes)],
+            state_dir=tmp_path / "state", run_id="r", artifact_id="t",
+            poll_once=fakes.poll_once, download=fakes.download(),
+            verify=lambda p, s: {"width": 1, "height": 1, "ocr": {}},
+            poll_interval_s=0, deadline_s=60, sleep=lambda s: None,
+            governor=gov)
+        assert len(result["completed"]) == 1
+        acquires = [c for c in calls if c[0] == "acquire"]
+        assert acquires[0] == ("acquire", "kie", False), acquires
+        assert ("acquire", "kie", True) in acquires, acquires
+        assert ("rok",) in calls
+    finally:
+        os.environ.pop("KIE_TASKS_USE_GOVERNOR", None)
+
+
+def test_governor_opt_in_reports_429_and_bounds(tmp_path):
+    """A 429-named poll failure reports r429 and exhausts at the bound."""
+    import os
+    os.environ["KIE_TASKS_USE_GOVERNOR"] = "1"
+    try:
+        gov, calls = _recording_governor()
+
+        def _poll429(tid):
+            raise type("RateLimited", (Exception,), {})("HTTP 429 slow down")
+
+        fakes = FakeProvider()
+        out = tmp_path / "renders"
+        result = kie_tasks.run(
+            [_make_task("s1", "p1", out, fakes)],
+            state_dir=tmp_path / "state", run_id="r", artifact_id="t",
+            poll_once=_poll429, download=fakes.download(),
+            verify=lambda p, s: {}, poll_interval_s=0, deadline_s=60,
+            sleep=lambda s: None, governor=gov, max_429_streak=3)
+        assert result["failed"][0]["error_kind"] == "rate_exhausted"
+        assert sum(1 for c in calls if c[0] == "r429") == 3
+    finally:
+        os.environ.pop("KIE_TASKS_USE_GOVERNOR", None)
+
+
+def test_default_path_never_touches_governor(tmp_path):
+    """Default run() is lease-free: a passed governor module is ignored and
+    no global governor state is touched (deterministic offline tests)."""
+
+    class _Boom:
+        def acquire(self, *a, **k):
+            raise AssertionError("default must not acquire")
+
+        def release(self, *a, **k):
+            raise AssertionError("default must not release")
+
+        def report_429(self, *a, **k):
+            raise AssertionError("default must not report")
+
+        def report_ok(self, *a, **k):
+            raise AssertionError("default must not report")
+
+    fakes = FakeProvider()
+    out = tmp_path / "renders"
+    result = kie_tasks.run(
+        [_make_task("s1", "p1", out, fakes)],
+        state_dir=tmp_path / "state", run_id="r", artifact_id="t",
+        poll_once=fakes.poll_once, download=fakes.download(),
+        verify=lambda p, s: {"width": 1, "height": 1, "ocr": {}},
+        poll_interval_s=0, deadline_s=60, sleep=lambda s: None,
+        governor=_Boom())
+    assert len(result["completed"]) == 1
+
+
+def test_submit_wave_spacing_holds_kie_ceiling(tmp_path):
+    """20-submits/10s ceiling: cap=2 per 5s window forces exactly one wait."""
+    ticks = {"n": 1000.0}
+    sleeps = []
+    fakes = FakeProvider()
+    out = tmp_path / "renders"
+    tasks = [_make_task(f"w{i}", f"prompt {i}", out, fakes) for i in range(3)]
+    result = kie_tasks.run(
+        tasks, state_dir=tmp_path / "state", run_id="r", artifact_id="t",
+        poll_once=fakes.poll_once, download=fakes.download(),
+        verify=lambda p, s: {"width": 1, "height": 1, "ocr": {}},
+        poll_interval_s=0, deadline_s=60, sleep=lambda s: sleeps.append(s),
+        clock=lambda: ticks["n"], submit_wave_cap=2, submit_wave_window_s=5.0)
+    assert result["create_calls"] == 3
+    assert sleeps == [5.0], sleeps

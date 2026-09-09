@@ -18,15 +18,20 @@ every caller (never a forked copy):
   submitted -> running -> provider_complete -> downloaded -> verified
   (plus terminal: failed_*, timeout, superseded)
 
-RATE LOGIC IS NOT FORKED: every createTask POST and every recordInfo GET is
-expected to flow through the canonical deck renderer's governor
-(``presentation_job.governor``, providers.yaml ``kie`` row: 20 submits / 10 s
-burst, max_inflight 100, daily cap 5000). This module acquires those slots
-through the same ``acquire(poll=...)`` / ``report_ok`` / ``report_429`` seam
-build_deck.py uses; when the governor module is absent the helpers degrade to
-a no-op passthrough (fail-soft, same as build_deck.py) and the module's own
-wave spacing (20 submits per 10 s window) still holds the documented KIE
-ceiling. No second rate model lives here.
+RATE LOGIC IS SHARED, NOT FORKED. Two layers:
+
+1. Wave spacing (always on): at most 20 createTask submits per rolling
+   10 s window — the documented KIE ceiling (``providers.yaml`` ``kie``
+   row: 20 submits / 10 s burst, max_inflight 100, daily cap 5000). The
+   pre-PRES-032 CLI spaced waves the same way; this lifecycle keeps that
+   bound instead of firing N back-to-back POSTs for an N-slide deck.
+2. Governor leases (opt-in): pass ``governor="auto"`` (or set
+   ``KIE_TASKS_USE_GOVERNOR=1``) and every createTask POST acquires the
+   canonical deck-renderer governor (``presentation_job.governor``) with
+   ``poll=False`` and every recordInfo GET with ``poll=True``, reporting
+   ok/429 through the same seam ``build_deck.py`` uses — fail-soft to
+   unthrottled on any governor error. Default is a no-op twin so offline
+   tests stay deterministic and never touch global governor state.
 
 Standard library only. No network, no model catalog, no prompt gate imports —
 callers inject transport callables so tests run fully offline.
@@ -157,8 +162,24 @@ def _now_iso():
 
 
 # ---------------------------------------------------------------------------
-# Governor seam — the SAME seam build_deck.py uses, fail-soft when absent
+# Governor seam — opt-in via governor="auto" (or KIE_TASKS_USE_GOVERNOR=1).
+# Uses the SAME seam build_deck.py uses — acquire(poll=...) / report_ok /
+# report_429 — fail-soft to unthrottled on any governor error. Default is a
+# no-op twin so offline tests stay deterministic and never touch the global
+# governor state (its token/timeout/deadline counters are wall-clock based
+# and do not honor injected sleep/clock fakes).
 # ---------------------------------------------------------------------------
+
+GOVERNOR_PROVIDER = "kie"
+GOVERNOR_ACQUIRE_TIMEOUT_S = 90.0
+
+# Documented KIE ceiling (providers.yaml ``kie`` row): at most 20 createTask
+# submits per rolling 10 s window. The pre-PRES-032 CLI already spaced waves
+# this way; the lifecycle keeps the bound so an N-slide deck never fires N
+# back-to-back POSTs. Pure wave spacing — no governor needed.
+SUBMIT_WAVE_CAP = 20
+SUBMIT_WAVE_WINDOW_S = 10.0
+
 
 def _import_governor(scripts_dir=None):
     try:
@@ -211,6 +232,57 @@ class _NoopGovernor:
 def governor_for(scripts_dir=None):
     """The canonical kie governor, or a no-op twin when it is absent."""
     return _import_governor(scripts_dir) or _NoopGovernor()
+
+
+def _resolve_governor(governor, scripts_dir=None):
+    """Normalize the ``governor`` run() argument to (module, enabled).
+
+    ``governor=None`` (default) -> no-op twin, disabled. ``"auto"`` ->
+    canonical governor, enabled when importable (still fail-soft per call).
+    An explicit module object is used as-is and enabled only when
+    KIE_TASKS_USE_GOVERNOR=1, so a directly-passed module never surprises
+    offline callers."""
+    if governor is None:
+        return _NoopGovernor(), False
+    if governor == "auto":
+        mod = governor_for(scripts_dir)
+        return mod, not isinstance(mod, _NoopGovernor)
+    if isinstance(governor, _NoopGovernor):
+        return governor, False
+    enabled = bool(os.environ.get("KIE_TASKS_USE_GOVERNOR", "").strip().lower()
+                   in ("1", "on", "true", "yes"))
+    return governor, enabled
+
+
+def _gov_acquire(gov, enabled, *, poll):
+    if not enabled:
+        return None
+    try:
+        return gov.acquire(GOVERNOR_PROVIDER, n=1,
+                           timeout_s=GOVERNOR_ACQUIRE_TIMEOUT_S, poll=poll)
+    except Exception:  # noqa: BLE001 — never let the limiter block the render
+        return None
+
+
+def _gov_release(gov, enabled, lease):
+    if not enabled or lease is None:
+        return
+    try:
+        gov.release(lease)
+    except Exception:  # noqa: BLE001 — release must never raise into the run
+        pass
+
+
+def _gov_report(gov, enabled, kind):
+    if not enabled:
+        return
+    try:
+        if kind == "429":
+            gov.report_429(GOVERNOR_PROVIDER)
+        elif kind == "ok":
+            gov.report_ok(GOVERNOR_PROVIDER)
+    except Exception:  # noqa: BLE001 — telemetry must never raise
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +402,9 @@ def _is_rate_limited(exc):
 def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
         download, verify, out_dir=None, create=None, poll_interval_s=10.0,
         deadline_s=900.0, max_429_streak=15, max_download_attempts=3,
-        max_submit_429_streak=15, on_event=None, sleep=None, clock=None):
+        max_submit_429_streak=15, on_event=None, sleep=None, clock=None,
+        governor=None, scripts_dir=None, submit_wave_cap=SUBMIT_WAVE_CAP,
+        submit_wave_window_s=SUBMIT_WAVE_WINDOW_S):
     """Submit (only missing/revised work) then round-robin poll every task.
 
     ``tasks``: list of ``{"slide", "spec", "submit"(), "out_path",
@@ -344,11 +418,22 @@ def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
     pass that observed its success — never held behind a slower sibling.
     Every outcome is bounded: timeouts and failures are recorded terminal and
     never silently resubmitted.
+
+    Rate sharing: at most ``submit_wave_cap`` submits per rolling
+    ``submit_wave_window_s`` window (the KIE 20/10s ceiling) always holds.
+    Shared governor leases are opt-in via ``governor="auto"`` (or
+    KIE_TASKS_USE_GOVERNOR=1): createTask POSTs acquire with poll=False and
+    recordInfo GETs with poll=True through the canonical
+    ``presentation_job.governor`` seam build_deck.py uses, fail-soft to
+    unthrottled. Default is lease-free so unit tests using injected
+    sleep/clock fakes stay deterministic.
     """
     sleep = sleep or time.sleep
     clock = clock or time.time
     started = clock()
     global_deadline = started + deadline_s
+    gov, gov_enabled = _resolve_governor(governor, scripts_dir)
+    submit_times = []  # clock() stamps of createTask POSTs (wave spacing)
 
     store = load_state(state_dir)
     records = store.get("tasks", {})
@@ -393,10 +478,10 @@ def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
                        deadline_at=_now_iso())
                 emit("resumed", slide, task_id=rec.get("task_id"))
                 continue
-            if rec.get("state") == "verified" and not render_reuse_ok(out_path, want):
-                # Ledger says verified but the bytes are gone/stale: fall
-                # through to a fresh submit (bounded, exactly once).
-                pass
+            # Otherwise (verified-but-unreusable bytes, or an old terminal
+            # failure with a matching spec): fall through to exactly one
+            # fresh submit — the new record replaces the old one, never a
+            # silent carry-over and never an unbounded loop.
         if rec and rec.get("task_id") and rec.get("spec_hash") != want:
             _touch(rec, state="superseded",
                    error="spec revised; old task id retired, submitting fresh")
@@ -408,7 +493,27 @@ def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
         submit_streak = 0
         while True:
             try:
-                task_id = task["submit"]()
+                # Wave spacing (always on): hold the KIE 20-submits/10s
+                # ceiling across this run's POSTs. Uses the injected clock/
+                # sleep so offline tests stay deterministic.
+                if submit_wave_cap and submit_wave_cap > 0:
+                    now_t = clock()
+                    submit_times[:] = [
+                        t for t in submit_times
+                        if now_t - t < submit_wave_window_s]
+                    if len(submit_times) >= submit_wave_cap:
+                        sleep(submit_wave_window_s - (now_t - submit_times[0]))
+                        now_t = clock()
+                        submit_times[:] = [
+                            t for t in submit_times
+                            if now_t - t < submit_wave_window_s]
+                lease = _gov_acquire(gov, gov_enabled, poll=False)
+                try:
+                    task_id = task["submit"]()
+                finally:
+                    _gov_release(gov, gov_enabled, lease)
+                _gov_report(gov, gov_enabled, "ok")
+                submit_times.append(clock())
                 break
             except Exception as exc:  # noqa: BLE001 — classified below
                 if _is_auth_error(exc):
@@ -489,9 +594,15 @@ def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
             _touch(rec, state="running", last_poll_at=_now_iso(),
                    next_poll_at=_now_iso())
             try:
-                status = poll_once(task_id)
+                lease = _gov_acquire(gov, gov_enabled, poll=True)
+                try:
+                    status = poll_once(task_id)
+                finally:
+                    _gov_release(gov, gov_enabled, lease)
+                _gov_report(gov, gov_enabled, "ok")
             except Exception as exc:  # noqa: BLE001
                 if _is_auth_error(exc):
+                    _gov_report(gov, gov_enabled, "ok")
                     _touch(rec, state="failed", error=str(exc),
                            error_kind="auth_error")
                     failed.append({"slide": slide, "error": str(exc),
@@ -500,6 +611,7 @@ def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
                     done_this_pass.append(slide)
                     continue
                 if _is_rate_limited(exc):
+                    _gov_report(gov, gov_enabled, "429")
                     rec["rate429_streak"] = int(rec.get("rate429_streak") or 0) + 1
                     if rec["rate429_streak"] >= max_429_streak:
                         _touch(rec, state="failed", error=str(exc),
@@ -583,9 +695,10 @@ def run(tasks, *, state_dir, run_id, artifact_id, poll_once,
                     os.unlink(tmp_path)
                 except OSError:
                     pass
-                _touch(rec, state="failed", error=str(exc),
+                msg = str(exc)
+                _touch(rec, state="failed", error=msg,
                        error_kind="malformed"
-                       if "magic" in str(exc) or "PNG" in str(exc)
+                       if ("magic" in msg or "PNG" in msg)
                        else "verify_failed")
                 failed.append({"slide": slide, "error": str(exc),
                                "error_kind": rec["error_kind"]})

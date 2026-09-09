@@ -602,8 +602,9 @@ def main():
     # (state dir beside renders_dir), resumes known ids on restart with zero
     # duplicate createTask calls, and round-robin polls all due tasks so a
     # ready result downloads + QCs immediately instead of waiting behind a
-    # slow sibling. Rate logic is NOT forked: kie_tasks acquires the same
-    # canonical kie governor build_deck.py uses.
+    # slow sibling. Rate sharing: the lifecycle always holds the KIE
+    # 20-submits/10s wave ceiling; shared governor leases are opt-in via
+    # KIE_TASKS_USE_GOVERNOR=1 (same acquire/report seam build_deck.py uses).
     import kie_tasks as _lifecycle
 
     print(f"\n=== KIE.ai generate — {len(slides)} slides ===")
@@ -693,6 +694,10 @@ def main():
             deadline_s=float(
                 os.environ.get("KIE_DEADLINE_S",
                                str(MAX_POLL_PASSES * POLL_INTERVAL_S))),
+            governor="auto",
+            scripts_dir=Path(__file__).resolve().parent,
+            submit_wave_cap=RATE_CAP_REQUESTS,
+            submit_wave_window_s=float(RATE_CAP_WINDOW_S),
         )
     except _lifecycle.FatalAuth as exc:
         # FIX-6 preserved: a 401/403 is PERMANENT — abort the run now with one
