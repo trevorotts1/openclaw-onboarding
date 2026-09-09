@@ -173,6 +173,34 @@ AUTO_RESUME_ENV = "PRESENTATION_AUTO_RESUME"
 #: the transport unresolved and the alert lands nowhere).
 ALERT_CHAT_LABEL = "auto-resume"
 
+#: PRES-019 (step 4): vocabulary that names a MISSING CONFIGURATION rather
+#: than a failure a retry could cure. Two shapes, both observable in the
+#: parks this engine actually writes:
+#:   * a provider key gate -- model_router FIX 114 parks with the exact
+#:     phrase "has no resolvable key"; a credential the run cannot resolve
+#:     is an OWNER-of-the-box action (add the key to the env store), never
+#:     an auto-resume;
+#:   * a resource-plan gate -- a provider whose one-time resource-plan
+#:     answer is still pending parks asking for it (resource_profile's
+#:     ask-once contract); the answer belongs to the client, not to a poller
+#:     tick.
+#: Matched case-insensitively against the blocked reason. Anything that
+#: matches is a CONFIGURATION-PENDING decision: never auto-resumed (the run
+#: would re-park at the same gate and a bound would be wasted), never
+#: silent (the stamp below names who owns the answer and what the next
+#: action is, and survives across detached execution where a notify may
+#: have no transport).
+CONFIGURATION_PENDING_MARKERS: Tuple[str, ...] = (
+    "has no resolvable key",
+    "no store carries a plausible credential",
+    "resource plan pending",
+    "resource-plan pending",
+    "resource_plan answer",
+    "plan is undeclared",
+    "plan undeclared",
+    "its plan is unknown",
+)
+
 
 # --- decision codes --------------------------------------------------------
 # Distinct names so a log line, a test and an operator all say the same thing
@@ -189,6 +217,15 @@ DECISION_BACKOFF = "BACKOFF"
 DECISION_DISABLED = "DISABLED"
 DECISION_MANIFEST_PIN = "MANIFEST-PIN"
 DECISION_UNREADABLE = "UNDETERMINED"
+# PRES-019 (step 4): a park that is really a missing CONFIGURATION -- an
+# unanswerable provider credential or an un-answered one-time resource-plan
+# question. Retrying the engine without the missing answer is not a bound
+# being spent, it is a bound being WASTED: the run will re-park at the same
+# gate. So configuration parks are a distinct class: never auto-resumed,
+# never silent -- every decision says WHO owns the answer and WHAT the next
+# action is, and the visibility stamp below keeps that in state.json across
+# detached execution (where a notify may not even have a transport).
+DECISION_CONFIGURATION_PENDING = "CONFIGURATION-PENDING"
 
 EXIT_RESUME = 0
 EXIT_USAGE = 2
@@ -431,6 +468,76 @@ def _refund_manifest_pin_attempts(state: Dict[str, Any], now: datetime) -> int:
 # THE DECISION
 # ---------------------------------------------------------------------------
 
+def _configuration_pending_decision(run_path: Path, phase: Optional[str],
+                                    reason: str, fclass: str) -> Decision:
+    """PRES-019 (step 4): the CONFIGURATION-PENDING verdict.
+
+    Two jobs, one stamp:
+
+      1. NEVER RESUME. The Decision itself does that (resume=False) -- no
+         attempt is spent, no backoff is started, the cap is untouched.
+
+      2. STAMP THE VISIBILITY. `evaluate` is a pure read, so the stamp is
+         written here (the write side of the decision), directly into
+         state.json through the launcher's locked merge: owner, next action,
+         the matched configuration reason and a reminder time. The stamp is
+         what keeps a missing provider answer VISIBLE across detached
+         execution -- a poller tick on an unattended box may have no notify
+         transport at all, but state.json is read by every later pass
+         (report, board, watchdog), so the pending configuration is reported
+         as pending by anything that looks, never as "working".
+
+    The stamp is idempotent per (phase, reason): rewritten on every
+    evaluation, so a cured-and-reparked configuration refreshes it, and a
+    merged write that loses a race simply loses to the newer truth.
+    Fail-soft: an unwritable state.json degrades this to the plain decision
+    -- the verdict still holds, only the stamp is lost.
+    """
+    marker_hit = next(
+        (m for m in CONFIGURATION_PENDING_MARKERS if m in reason.lower()), None)
+    if marker_hit and ("resolvable key" in marker_hit
+                       or "plausible credential" in marker_hit):
+        owner = "the box owner (a provider credential must be added to the "
+        owner += "env store)"
+        next_action = ("add a plausible credential for the named provider to "
+                       "the box env store, then resume with `presentation_job.py "
+                       "--resume --run-dir <run-dir>`")
+    elif marker_hit:
+        owner = "the client (a one-time resource-plan answer)"
+        next_action = ("answer the pending resource-plan question for the "
+                       "named provider; the run unblocks exactly once the "
+                       "answer is recorded")
+    else:  # pragma: no cover -- defensive; callers match first
+        owner = "the box owner"
+        next_action = ("resolve the missing configuration named in the blocked "
+                       "reason, then resume")
+    why = (f"the park at {phase or 'an unrecorded phase'} is a missing "
+           f"CONFIGURATION ({reason[:180]!r}) -- retrying the engine without "
+           "the missing answer re-parks at the same gate, so no attempt is "
+           f"spent and none will be. Owner: {owner}. Next action: "
+           f"{next_action}. The configuration_pending stamp in state.json "
+           "keeps this visible to every later pass.")
+
+    def _stamp(state: Dict[str, Any]) -> None:
+        state["configuration_pending"] = {
+            "at": utcnow(),
+            "phase": phase,
+            "reason": reason[:400],
+            "matched_marker": marker_hit,
+            "failure_class": fclass,
+            "owner": owner,
+            "next_action": next_action,
+            "reminder": ("shown as PENDING, never as working, by every "
+                         "status pass until the answer is recorded"),
+            "by": "presentation_job.auto_resume",
+        }
+
+    _merge(run_path, _stamp)
+    return Decision(False, why,
+                    DECISION_CONFIGURATION_PENDING, EXIT_SKIP,
+                    failure_class=fclass, phase=phase)
+
+
 def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
     """The full verdict for one run dir. PURE: reads only, writes nothing.
 
@@ -464,6 +571,23 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
     phase = str(blocked.get("phase") or "") or None
     reason = blocked.get("reason")
     fclass = classify_failure(reason)
+
+    # --- PRES-019 BOUND 0: missing CONFIGURATION is not a retryable failure.
+    # Checked BEFORE the class bound: a park like "provider X has no
+    # resolvable key" classifies provider_error (the gate that names it talks
+    # about providers), and provider_error is the class the backoff bound is
+    # otherwise happy to spend attempts on. Retrying into a gate that can
+    # only be answered by a human (a credential in the box's env store) or by
+    # the client (the one-time resource-plan answer) burns the cap and parks
+    # the run in exactly the same place. So a configuration park gets its own
+    # verdict: never resumed, and -- unlike a plain skip -- stamped with WHO
+    # owns the answer and WHAT the next action is, kept in state.json so the
+    # visibility survives detached execution.
+    reason_text = str(reason or "")
+    reason_lower = reason_text.lower()
+    if any(m in reason_lower for m in CONFIGURATION_PENDING_MARKERS):
+        return _configuration_pending_decision(run_path, phase, reason_text,
+                                               fclass)
 
     # --- BOUND 1: class. The heal ladder's own classifier, not a second one.
     if fclass == FAILURE_OWNER_DECISION:
