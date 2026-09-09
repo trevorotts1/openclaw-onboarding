@@ -169,6 +169,41 @@ class TestResumableSetup(unittest.TestCase):
         refs = (Path(self.root) / "data" / "skill35" / "sheet-refs.env").read_text()
         self.assertIn("SKILL35_CONTENT_SHEET_ID=SHEET-F34", refs)
 
+    def test_8_intake_url_never_empty_at_deliver(self):
+        """F34-OBS-03: the delivered links carry a REAL intake URL — from the
+        mini-app probe receipt when live, else the verified planner URL as a
+        labeled fallback. Never a placeholder/empty string."""
+        counter = {}
+        state = sb.bootstrap(_request(), env=self.env, hooks=_hooks(counter))
+        delivered = counter["delivered"]
+        self.assertTrue(delivered["links"].get("intake_url"),
+                        "intake_url must not be empty at deliver")
+        self.assertEqual(delivered["links"]["intake_url"],
+                         "https://docs.google.com/spreadsheets/d/SHEET-F34")
+        # The offline fallback is LABELED (visible provenance, never silent).
+        self.assertEqual(state["readiness"]["mini_app"]["intake_source"],
+                         "planner_url_fallback")
+        # A live mini-app probe supplies ITS intake_url instead.
+        root2 = tempfile.mkdtemp(prefix="f34-intake-")
+        env2 = {"OPENCLAW_ROOT": root2}
+
+        def mini_app_live():
+            return {"ok": True, "state": "ok", "intake_url": "https://cc.example.com/social-theme?t=live-ticket"}
+
+        hooks2 = _hooks(counter)
+        hooks2["probes"] = {"mini_app": mini_app_live}
+        state2 = sb.bootstrap(_request(company_id="co-f34-c"), env=env2, hooks=hooks2)
+        self.assertEqual(state2["intake_url"],
+                         "https://cc.example.com/social-theme?t=live-ticket")
+        # A CONFIGURED mini-app probe that returns no intake_url is RETRYABLE,
+        # never a silent empty link.
+        root3 = tempfile.mkdtemp(prefix="f34-intake-bad-")
+        env3 = {"OPENCLAW_ROOT": root3}
+        hooks3 = _hooks(counter)
+        hooks3["probes"] = {"mini_app": lambda: {"ok": True, "state": "ok"}}
+        with self.assertRaises(sb.BootstrapRetryable):
+            sb.bootstrap(_request(company_id="co-f34-d"), env=env3, hooks=hooks3)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
