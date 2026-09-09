@@ -69,22 +69,35 @@ intake trace, GATE 1 deps, GATE 2 bypass-scan, GATE 3 version/hash pin).
 
 The box discovers finished intakes by polling the Worker's
 `GET /api/intake/list` (admin-auth; returns stored session metadata), then
-ingests each session once via `bridge/intake_bridge.py poll`:
+drives each session through the durable submission states via
+`bridge/intake_bridge.py poll`:
 
 ```bash
 python3 bridge/intake_bridge.py poll \
   --worker-url "https://presentation-interview.<FLEET_DOMAIN>" \
-  --run-dir "<presentations-runs-dir>" \
-  --poll-ledger "<ledger-path>/processed.txt" \
-  --per-session-dirs
+  --run-dir "<presentations-runs-dir>"
 ```
 
-`poll` fetches the list, ingests each not-yet-processed session (writes
-`working/copy/intake.json` + `working/interview/intake_ledger.json` via
-`intake_writer.py`, then calls `cc_board.ingest_deck_task` → Command Center
-kanban card), and records the session id in the ledger so the next poll skips
-it (idempotent). A failed ingest is NOT marked processed and is retried on the
-next poll.
+`poll` fetches the list and drives each session through the durable states
+(PRES-008). There is NO boolean processed ledger: each submission carries its
+own crash-safe state document at
+`<run-dir>/<session-id>/working/checkpoints/intake_submission_state.json`,
+driven by `bridge/launch_ledger.py` through
+
+    staged → board_registered → launch_pending → launching
+           → worker_acknowledged   (handoff COMPLETE)
+    failed_retryable   (an attempt failed; bounded backoff re-arms)
+    blocked_actionable (permanent refusal / exhausted budget; remediation
+                        recorded; other sessions keep progressing)
+
+Handoff completes ONLY on a persisted current execution id PLUS a live
+worker-start acknowledgement: a 202 deferred, a dispatch refusal, a held
+lease, and backoff all stay retryable, and the next poll re-drives them.
+Per-session directories are the default; a shared target directory for
+multiple submissions is forbidden. Backoff/notify knobs (all optional env):
+`PRES008_BACKOFF_BASE_S`, `PRES008_BACKOFF_CAP_S`,
+`PRES008_MAX_RETRY_ATTEMPTS`, `PRES008_NOTIFY_THRESHOLDS`,
+`PRES008_CLAIM_TTL_S`.
 
 Box env requirements (sourced from `~/.openclaw/secrets/.env`):
 - `INTAKE_ADMIN_TOKEN` — box→worker auth; MUST match the Worker secret.
@@ -106,6 +119,8 @@ board directly).
 node --test test/test_worker.mjs
 python3 test/test_intake_writer.py
 python3 test/test_payload.py
+python3 test/test_intake_bridge_dispatch.py
+python3 test/test_pres008_durable_states.py
 python3 payload/build_questions_payload.py --selftest
 ```
 
