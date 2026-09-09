@@ -151,16 +151,18 @@ test("validateAndMigrate names missing fields specifically", () => {
 });
 
 test("the generated UI regenerates from the contract without drift", () => {
-  // --check exits non-zero when pages/index.html, deployed-r2/public/index.html,
-  // pages/questions.json or schema/intake_fields.json drift from the contract.
+  // --check exits non-zero when pages/index.html, pages/questions.json or
+  // schema/intake_fields.json drift from the contract. (deployed-r2/
+  // public/index.html is PRES-005-owned and server-driven — outside this
+  // generator by design, see the disjoint-ownership repair.)
   execFileSync(process.execPath, [join(app, "tools", "gen_ui_questions.mjs"), "--check"], {
     cwd: app,
     stdio: "pipe",
   });
 });
 
-test("both UI pages ask the conditional declined-reason only after a no", () => {
-  for (const page of ["pages/index.html", "deployed-r2/public/index.html"]) {
+test("the PRES-006 UI page asks the conditional declined-reason only after a no", () => {
+  for (const page of ["pages/index.html"]) {
     const html = readFileSync(join(app, page), "utf-8");
     assert.match(html, /conditional_on: \{ id: "want_sales_checkout", equals: "no" \}/, page);
     assert.match(html, /conditional_on: \{ id: "want_vsl_page", equals: "no" \}/, page);

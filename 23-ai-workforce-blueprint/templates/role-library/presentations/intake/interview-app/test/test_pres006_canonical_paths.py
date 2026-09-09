@@ -102,9 +102,11 @@ class TestMirrorMatchesTheGeneratedContract(unittest.TestCase):
             self.contract["migration"]["boolean_normalization"])
 
     def test_no_independent_required_copies_exist_in_the_workers(self):
-        # The Workers import schema/intake_contract.js — the hand-copied
-        # REQUIRED_BRIEF_FIELDS arrays are gone from both src/index.js files.
-        for worker in ("worker/src/index.js", "deployed-r2/src/index.js"):
+        # The PRES-006-owned Worker imports schema/intake_contract.js — the
+        # hand-copied REQUIRED_BRIEF_FIELDS array is gone from worker/src/index.js.
+        # (deployed-r2/src/index.js is PRES-005-owned since the disjoint-ownership
+        # repair and keeps its own pres005 F21 gate — outside this assertion.)
+        for worker in ("worker/src/index.js",):
             src = (APP / worker).read_text(encoding="utf-8")
             self.assertNotIn("const REQUIRED_BRIEF_FIELDS", src, worker)
             self.assertIn("../schema/intake_contract.js", src.replace("\\", "/"), worker)

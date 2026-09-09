@@ -3,7 +3,7 @@
   "section": "deck-intake-mini",
   "version": "2.0.0",
   "question_set": "standard",
-  "source": "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html, deployed-r2/public/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate.",
+  "source": "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate. (deployed-r2/public/index.html is PRES-005-owned and server-driven — not regenerated.)",
   "contract_version": 2,
   "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 18.",
   "questions": [

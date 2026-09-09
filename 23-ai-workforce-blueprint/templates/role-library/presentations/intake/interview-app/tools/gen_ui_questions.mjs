@@ -2,15 +2,20 @@
 // =============================================================================
 // PRES-006 — generate the UI question sets from the ONE canonical contract.
 // =============================================================================
-// The hosted UI (pages/index.html, deployed-r2/public/index.html) embeds its
-// QUESTIONS array between /*__QUESTIONS__*/[ ... ]; pages/questions.json is
-// the JSON projection the box minted from (used by the fallback snapshot and
-// the tests). Both are GENERATED here from schema/intake_fields.js — the UI
-// never restates a field path, so form and validators cannot drift.
+// The PRES-006-owned hosted UI (pages/index.html) embeds its QUESTIONS array
+// between /*__QUESTIONS__*/[ ... ]; pages/questions.json is the JSON
+// projection the box minted from (used by the fallback snapshot and the
+// tests). Both are GENERATED here from schema/intake_fields.js — the UI never
+// restates a field path, so form and validators cannot drift.
+//
+// PRES-005 DISJOINT-OWNERSHIP NOTE: deployed-r2/public/index.html is owned by
+// PRES-005 and deliberately NOT regenerated here — its capability-session UI
+// fetches questions from the server (no embedded block), so there is nothing
+// for this generator to splice.
 //
 // Usage:
 //   node tools/gen_ui_questions.mjs --check     # exit 1 when generated != on disk
-//   node tools/gen_ui_questions.mjs             # rewrite both UIs + the JSON
+//   node tools/gen_ui_questions.mjs             # rewrite the UI + the JSON
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,7 +31,6 @@ const require = createRequire(import.meta.url);
 const { INTAKE_CONTRACT } = await import("../schema/intake_fields.js");
 
 const PAGES_HTML = join(app, "pages", "index.html");
-const R2_HTML = join(app, "deployed-r2", "public", "index.html");
 const QUESTIONS_JSON = join(app, "pages", "questions.json");
 const CONTRACT_JSON = join(app, "schema", "intake_fields.json");
 
@@ -92,7 +96,7 @@ function buildJsonProjection() {
     section: "deck-intake-mini",
     version: "2.0.0",
     question_set: "standard",
-    source: "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html, deployed-r2/public/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate.",
+    source: "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate. (deployed-r2/public/index.html is PRES-005-owned and server-driven — not regenerated.)",
     contract_version: INTAKE_CONTRACT.version,
     description:
       "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is " + questions.length + ".",
@@ -134,7 +138,7 @@ function main() {
 
   let failed = false;
 
-  for (const [label, path] of [["pages/index.html", PAGES_HTML], ["deployed-r2/public/index.html", R2_HTML]]) {
+  for (const [label, path] of [["pages/index.html", PAGES_HTML]]) {
     const html = readFileSync(path, "utf-8");
     const generated = spliceQuestions(html, block);
     if (checkOnly) {

@@ -1,12 +1,13 @@
 // =============================================================================
 // PRES-006 — schema-driven intake completeness gate + version-aware migration.
 // =============================================================================
-// Both Workers (worker/src/index.js, deployed-r2/src/index.js) import THIS
-// module. It reads the one canonical field-path contract (intake_fields.js)
-// and derives everything: the required set, the false-vs-missing distinction,
-// and the legacy migration. The hand-copied REQUIRED_BRIEF_FIELDS arrays that
-// used to live in each worker (and to drift) are gone — this is their only
-// replacement.
+// The PRES-006-owned Worker (worker/src/index.js) imports THIS module. It
+// reads the one canonical field-path contract (intake_fields.js) and derives
+// everything: the required set, the false-vs-missing distinction, and the
+// legacy migration. The hand-copied REQUIRED_BRIEF_FIELDS array that used to
+// live in the worker (and to drift) is gone — this is its only replacement.
+// (deployed-r2/src/index.js is PRES-005-owned since the disjoint-ownership
+// repair and keeps its own pres005 completeness gate.)
 //
 // Pure functions only — unit-testable with `node --test` offline, no
 // Cloudflare runtime, no network.
