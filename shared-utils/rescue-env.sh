@@ -323,9 +323,13 @@ rescue_env_header_file() {
     _ref_dir="$1"; _ref_name="$2"; _ref_val="$3"
     [ -d "$_ref_dir" ] || return 1
     _ref_path=""
-    _ref_path=$(mktemp "$_ref_dir/rescue-hdr.XXXXXX" 2>/dev/null) || return 1
+    # umask 077 first: close the mktemp-to-chmod window against a hostile
+    # umask (022 inherited from cron/systemd) on ALL platforms, then chmod
+    # 600 as the explicit backstop. Never rely on parent-dir perms.
+    _ref_path=$(umask 077; mktemp "$_ref_dir/rescue-hdr.XXXXXX" 2>/dev/null) || return 1
     chmod 600 "$_ref_path" 2>/dev/null || true
     printf '%s: %s\n' "$_ref_name" "$_ref_val" > "$_ref_path" || { rm -f "$_ref_path"; return 1; }
+    chmod 600 "$_ref_path" 2>/dev/null || true
     printf '%s\n' "$_ref_path"
 }
 
@@ -341,7 +345,11 @@ rescue_env_private_tmp() {
     [ -n "$_rpt_base" ] || return 1
     [ -d "$_rpt_base" ] || return 1
     _rpt_dir="$_rpt_base/tmp"
-    mkdir -p "$_rpt_dir" 2>/dev/null || return 1
+    # umask 077 first so mkdir -p creates 0700 even under an inherited 022
+    # umask; explicit chmod 700 after as the backstop. Never rely on the
+    # parent state dir's own mode (Ubuntu CI gate FAIL, 2026-09-09: the
+    # chmod ran but the test's own stat probe misread the result).
+    ( umask 077; mkdir -p "$_rpt_dir" 2>/dev/null ) || return 1
     chmod 700 "$_rpt_dir" 2>/dev/null || true
     printf '%s\n' "$_rpt_dir"
 }

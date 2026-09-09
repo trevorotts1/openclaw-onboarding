@@ -26,7 +26,11 @@
 # the receiver, no network beyond 127.0.0.1, no real credential.
 set -u
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Portable script-dir probe: BASH_SOURCE under bash, $0 under POSIX sh/dash
+# (Ubuntu runners link /bin/sh to dash, where BASH_SOURCE is a bad
+# substitution and the gate's `sh` leg died before any assertion).
+if [ -n "${BASH_SOURCE:-}" ]; then _HERE_SRC="${BASH_SOURCE[0]}"; else _HERE_SRC="$0"; fi
+HERE="$(cd "$(dirname "$_HERE_SRC")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 WIRE="$REPO/65-rescue-receiver/wire.sh"
 POLL="$REPO/65-rescue-receiver/rescue-poll.sh"
@@ -61,6 +65,11 @@ make_box() {  # make_box <dir> <store-lines-file>
   cp "$WIRE" "$root/.openclaw/skills/65-rescue-receiver/wire.sh"
   cp "$HELPER" "$root/.openclaw/skills/shared-utils/rescue-env.sh"
   cp "$store" "$root/.openclaw/secrets/.env"
+  # Synthetic hermetic fixture only (sentinel values, never real credentials):
+  # the repo chmod-600 invariant requires every .sh that writes secrets/.env
+  # to also call chmod 600. This call guards the FIXTURE file the line above
+  # just wrote — it does not weaken real coverage.
+  chmod 600 "$root/.openclaw/secrets/.env"
   # stub openclaw: records its env + argv, answers every mode
   cat > "$root/bin/openclaw" <<STUB
 #!/bin/bash
@@ -169,6 +178,7 @@ python3 "$PB/receiver.py" 2>/dev/null &
 RECV_PID=$!
 sleep 0.7
 printf 'RR_RECEIVER_URL=http://127.0.0.1:%s/gw\nRR_BOX_TOKEN="%s"\nRR_BOX_SLUG=box-synthetic\n' "$RECV_PORT" "$TOK" > "$PB/.openclaw/secrets/.env"
+chmod 600 "$PB/.openclaw/secrets/.env"  # synthetic hermetic fixture guard (see make_box note)
 OPENCLAW_RECORD="$PB/agent-record.txt" \
 RR_BOX_TOKEN="$TOK" \
 RESCUE_RANGERS_WEBHOOK_SECRET="$ESC" RESCUE_RANGERS_HELP_CHAT_ID=999 \
@@ -210,6 +220,7 @@ grep -qF "$TOK" "$PB/poll-stderr" 2>/dev/null && bad "poll stderr leaked the tok
 MB="$(mktemp -d "${TMPDIR:-/tmp}/rr027-mal.XXXXXX")"
 make_box "$MB" "$STORE/store.env"
 printf 'RR_RECEIVER_URL=https://e.com\nRR_BOX_TOKEN=tok\nRR_BOX_SLUG=s\nGARBAGELINE\nBAD-KEY=v\n' > "$MB/.openclaw/secrets/.env"
+chmod 600 "$MB/.openclaw/secrets/.env"  # synthetic hermetic fixture guard (see make_box note)
 HOME="$MB" sh "$MB/.openclaw/skills/65-rescue-receiver/rescue-poll.sh" 2>"$MB/err"
 mal=$?
 grep -q "malformed line 4" "$MB/err" && grep -q "malformed line 5" "$MB/err" \
@@ -239,6 +250,7 @@ PYEOF
 python3 "$SPB/receiver.py" "$SPB/claim-body.txt" 2>/dev/null &
 SPID=$!; sleep 0.5
 printf "RR_RECEIVER_URL=http://127.0.0.1:%s/gw\nRR_BOX_TOKEN=t\nRR_BOX_SLUG='box slug spaces'\n" "$((RECV_PORT + 1))" > "$SPB/.openclaw/secrets/.env"
+chmod 600 "$SPB/.openclaw/secrets/.env"  # synthetic hermetic fixture guard (see make_box note)
 HOME="$SPB" PATH="$SPB/bin:$PATH" RR_POLL_NO_JITTER=1 sh "$SPB/.openclaw/skills/65-rescue-receiver/rescue-poll.sh" >/dev/null 2>&1
 kill $SPID 2>/dev/null; wait $SPID 2>/dev/null
 grep -qF '"box_slug":"box slug spaces"' "$SPB/claim-body.txt" 2>/dev/null \
@@ -308,6 +320,7 @@ python3 "$PB/receiver.py" 2>/dev/null &
 RPID2=$!
 sleep 0.5
 printf 'RR_RECEIVER_URL=http://127.0.0.1:%s/gw\nRR_BOX_TOKEN="%s"\nRR_BOX_SLUG=box-synthetic\n' "$RECV_PORT" "$TOK" > "$PTB/.openclaw/secrets/.env"
+chmod 600 "$PTB/.openclaw/secrets/.env"  # synthetic hermetic fixture guard (see make_box note)
 (
   for _ in 1 2 3; do
     OPENCLAW_RECORD="$PTB/pt-record.txt" RR_BOX_TOKEN="$TOK" RESCUE_RANGERS_WEBHOOK_SECRET="$ESC" \

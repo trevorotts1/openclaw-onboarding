@@ -23,7 +23,11 @@
 # ever printed by the helper (the test captures and inspects, never shows).
 set -u
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Portable script-dir probe: BASH_SOURCE under bash, $0 under POSIX sh/dash
+# (Ubuntu runners link /bin/sh to dash, where BASH_SOURCE is a bad
+# substitution and the gate's `sh` leg died before any assertion).
+if [ -n "${BASH_SOURCE:-}" ]; then _HERE_SRC="${BASH_SOURCE[0]}"; else _HERE_SRC="$0"; fi
+HERE="$(cd "$(dirname "$_HERE_SRC")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 HELPER="$REPO/shared-utils/rescue-env.sh"
 
@@ -136,21 +140,24 @@ fi
 grep -qF "$TOK" "$CHILD_OUT" && ok "control: un-scrubbed child DOES inherit the exported alias (scrub is load-bearing)" || bad "control child did not inherit — the leak detector cannot fail"
 
 # --- 4. header file: 0600 in a private dir, value never in argv -------------
+# Portable stat probe: GNU `stat -c` FIRST. BSD `stat -f` must never lead:
+# on GNU/Linux `-f` means filesystem-status, exits 0 with a dump, and the
+# `||` fallback never fires (RR-027 Ubuntu gate FAIL, 2026-09-09).
 ( . "$HELPER"; HDR=$(rescue_env_private_tmp "$FIX/state" ) && echo "$HDR" > "$FIX/hdrdir" ) >/dev/null 2>&1
 HDRDIR=$(cat "$FIX/hdrdir" 2>/dev/null)
 if [ -n "$HDRDIR" ] && [ -d "$HDRDIR" ]; then
-  perms=$(stat -f "%Lp" "$HDRDIR" 2>/dev/null || stat -c "%a" "$HDRDIR" 2>/dev/null)
+  perms=$(stat -c "%a" "$HDRDIR" 2>/dev/null || stat -f "%Lp" "$HDRDIR" 2>/dev/null)
   [ "$perms" = "700" ] && ok "private tmp dir is 0700" || bad "private tmp dir perms $perms"
 else
   # caller may pass an existing dir directly
   mkdir -p "$FIX/state"; chmod 700 "$FIX/state"; HDRDIR="$FIX/state/tmp"
   ( . "$HELPER"; rescue_env_private_tmp "$FIX/state" >/dev/null ); chmod 700 "$HDRDIR" 2>/dev/null
-  perms=$(stat -f "%Lp" "$HDRDIR" 2>/dev/null || stat -c "%a" "$HDRDIR" 2>/dev/null)
+  perms=$(stat -c "%a" "$HDRDIR" 2>/dev/null || stat -f "%Lp" "$HDRDIR" 2>/dev/null)
   [ "$perms" = "700" ] && ok "private tmp dir is 0700 (existing-base path)" || bad "private tmp dir perms $perms"
 fi
 HDRP=$( ( . "$HELPER"; rescue_env_header_file "$HDRDIR" "X-RR-Box-Token" "$TOK" ) )
 if [ -n "$HDRP" ] && [ -f "$HDRP" ]; then
-  hperms=$(stat -f "%Lp" "$HDRP" 2>/dev/null || stat -c "%a" "$HDRP" 2>/dev/null)
+  hperms=$(stat -c "%a" "$HDRP" 2>/dev/null || stat -f "%Lp" "$HDRP" 2>/dev/null)
   [ "$hperms" = "600" ] && ok "header file is 0600" || bad "header file perms $hperms"
   grep -qF "X-RR-Box-Token: $TOK" "$HDRP" && ok "header file carries the header NAME+value" || bad "header file content wrong"
 else
