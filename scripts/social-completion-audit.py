@@ -8,6 +8,7 @@ synthetic passing fixture proves this validator, never a deployment. See
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -35,6 +36,10 @@ HOST_CHECKS = {"install", "migrations", "health", "service-registered", "restart
 N8N_CHECKS = {"fresh-import", "create", "append", "duplicate-provision", "two-company-isolation",
               "retry-restart", "missing-credentials", "template-access-failure", "interrupted-formatting",
               "sheet-visual", "permission-anyone-writer"}
+WORKFLOW_SOURCES = {
+    "create": "35-social-media-planner/config/n8n/social-planner-sheet-create.json",
+    "append": "35-social-media-planner/config/n8n/social-planner-row-append.json",
+}
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -66,6 +71,50 @@ def strict_json(raw):
             result[key] = value
         return result
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f"invalid JSON constant {value}")))
+
+
+def workflow_projection(raw):
+    """Keep every operational field; exclude only non-runtime export/API root metadata."""
+    obj = strict_json(raw)
+    require(isinstance(obj, dict), "workflow definition must be a JSON object")
+    require(isinstance(obj.get("name"), str) and obj["name"].strip(), "workflow name missing")
+    require(isinstance(obj.get("nodes"), list) and obj["nodes"], "workflow nodes missing/empty")
+    require(isinstance(obj.get("connections"), dict) and isinstance(obj.get("settings"), dict), "workflow connections/settings missing")
+    names = []
+    for node in obj["nodes"]:
+        require(isinstance(node, dict) and isinstance(node.get("parameters"), dict), "invalid workflow node")
+        require(all(node.get(key) for key in ("id", "name", "type", "typeVersion")), "missing workflow node identity/type")
+        names.append(node["name"])
+    require(len(set(names)) == len(names), "duplicate workflow node names")
+    return {key: deepcopy(obj[key]) for key in ("name", "nodes", "connections", "settings")}
+
+
+def deployed_projection(released_bytes, mapping):
+    """Deterministic prepare-import contract, applied to RELEASED source, never capture claims."""
+    require(set(mapping) == {"credential_references", "webhook_prefix", "workflow_name", "approval_evidence"}, "unsupported deployment mapping")
+    refs = mapping["credential_references"]
+    require(isinstance(refs, dict) and set(refs) <= {"googleDriveOAuth2Api", "googleSheetsOAuth2Api"}, "unsupported credential reference type")
+    for ref in refs.values():
+        require(isinstance(ref, dict) and set(ref) == {"id", "name"} and all(isinstance(v, str) and v.strip() for v in ref.values()), "credential mapping must contain only id/name references")
+    prefix = mapping["webhook_prefix"]
+    require(prefix is None or isinstance(prefix, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9/_-]{0,127}", prefix), "invalid approved webhook prefix")
+    name = mapping["workflow_name"]
+    require(name is None or isinstance(name, str) and name.strip(), "invalid approved workflow name")
+    result = workflow_projection(released_bytes)
+    if name is not None:
+        result["name"] = name
+    for node in result["nodes"]:
+        credential_type = node["parameters"].get("nodeCredentialType")
+        if node["type"] == "n8n-nodes-base.googleDrive":
+            credential_type = "googleDriveOAuth2Api"
+        if credential_type:
+            require(credential_type in refs, "missing approved credential reference")
+            node["credentials"] = {credential_type: deepcopy(refs[credential_type])}
+        if prefix and node["type"] == "n8n-nodes-base.webhook":
+            path = node["parameters"]["path"]
+            require(isinstance(path, str) and path, "webhook path missing")
+            node["parameters"]["path"] = prefix.strip("/") + "/" + path
+    return result
 
 
 class GitHubProofProvider:
@@ -299,15 +348,27 @@ class Auditor:
             require(proof["environment"] in ("sandbox", "installed") and proof["target_id"] == dep["target_id"], "deployment proof is fixture/wrong target")
             require(proof["source_releases"] == dep["source_releases"], "deployment proof tested old source")
         if profile == "n8n":
-            require(set(dep["workflows"]) == {"create", "append", "weekly"}, "missing required deployed workflow")
-            for flow in dep["workflows"].values():
+            require(set(dep["workflows"]) == set(WORKFLOW_SOURCES), "missing required deployed workflow")
+            for role, flow in dep["workflows"].items():
+                require(flow["source_repo_path"] == WORKFLOW_SOURCES[role], "workflow role points to wrong released source")
                 source = self.provider.file("ONB", dep["source_releases"]["ONB"], flow["source_repo_path"])
                 require(digest(source) == flow["source_file_sha256"], "workflow source not bound to release")
+                mapping = self.read(flow["deployment_mapping"])
+                self.raw(mapping["approval_evidence"])
+                expected = deployed_projection(source, mapping)
+                expected_hash = digest(canonical(expected))
                 normalization = self.proof(flow["normalization_proof"])
-                require(normalization["source_releases"] == dep["source_releases"] and normalization["source_sha256"] == digest(source) and normalization["canonical_sha256"] == flow["expected_sha256"], "normalization proof not bound to released workflow")
+                require(normalization["source_releases"] == dep["source_releases"] and normalization["source_sha256"] == digest(source) and normalization["canonical_sha256"] == expected_hash and normalization["mapping_sha256"] == digest(canonical(mapping)), "normalization proof not bound to released workflow/mapping")
                 require(flow["active"] is True and flow["workflow_id"] and flow["execution_id"], "new workflow inactive/unexecuted")
                 require(flow["execution_result"] == "success", "workflow execution failed")
-                require(flow["expected_sha256"] == digest(self.raw(flow["source_definition"])) == digest(self.raw(flow["deployed_definition"])), "deployed definition differs from intended canonical artifact")
+                imported = workflow_projection(self.raw(flow["source_definition"]))
+                deployed = workflow_projection(self.raw(flow["deployed_definition"]))
+                require(flow["expected_sha256"] == expected_hash and imported == expected and deployed == expected, "deployed definition differs from recomputed released workflow")
+            scheduler = dep["weekly_scheduler"]
+            require(scheduler["legacy_n8n_active"] is False and scheduler["single_owner"] is True and scheduler["legacy_n8n_workflow_id"], "legacy weekly scheduler remains active/owner unproven")
+            require(scheduler["kind"] == "command-center-cycle-service", "wrong canonical weekly scheduler")
+            scheduler_proof = self.proof(scheduler["proof"])
+            require(scheduler_proof["source_releases"] == dep["source_releases"] and scheduler_proof["environment"] in ("sandbox", "installed"), "canonical weekly scheduler not proven on released build")
             require(dep["template_id"] and dep["template_readback"], "template acceptance missing")
             self.raw(dep["template_readback"])
         else:

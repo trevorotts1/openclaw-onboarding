@@ -24,7 +24,20 @@ class Provider:
     """Injected independent proof provider, not a CLI offline bypass."""
     def __init__(self):
         self.overrides = {}
-        self.file_bytes = b'1.2.3 release marker and workflow fixture\n'
+        self.file_bytes = b'1.2.3 release marker fixture\n'
+        self.workflow_source = {'name': 'released-fixture', 'settings': {'executionOrder': 'v1'},
+            'nodes': [
+                {'id': 'trigger', 'name': 'Trigger', 'type': 'n8n-nodes-base.webhook', 'typeVersion': 2,
+                 'position': [0, 0], 'parameters': {'path': 'released-route', 'httpMethod': 'POST'}},
+                {'id': 'request', 'name': 'Request', 'type': 'n8n-nodes-base.httpRequest', 'typeVersion': 4,
+                 'position': [200, 0], 'parameters': {'url': 'https://example.invalid/current',
+                 'nodeCredentialType': 'googleDriveOAuth2Api'}, 'retryOnFail': True, 'onError': 'continueErrorOutput'},
+                {'id': 'code', 'name': 'Current code', 'type': 'n8n-nodes-base.code', 'typeVersion': 2,
+                 'position': [400, 0], 'parameters': {'jsCode': 'return items;'}}],
+            'connections': {'Trigger': {'main': [[{'node': 'Request', 'type': 'main', 'index': 0}]]},
+                            'Request': {'main': [[{'node': 'Current code', 'type': 'main', 'index': 0}]]}},
+            'contract': {'fixture_only': True}}
+        self.workflow_bytes = json.dumps(self.workflow_source).encode()
         self.later_refs = None
 
     def release(self, repo, receipt):
@@ -44,7 +57,7 @@ class Provider:
         return {'diff_sha256': DIFF, 'tree_sha': TREE, 'released_paths_equal': True, 'batch_paths_equal': True}
 
     def file(self, repo, sha, path):
-        return self.file_bytes
+        return self.workflow_bytes if path in audit.WORKFLOW_SOURCES.values() else self.file_bytes
 
 
 class Packet:
@@ -111,17 +124,30 @@ class Packet:
                    'company_id': 'synthetic-company', 'source_releases': RELEASE, 'recorded_at': self.when,
                    'checks': checks}
             if profile == 'n8n':
-                self.put('n8n/source.json', b'{"nodes": [], "fixture_only": true}\n')
-                self.put('n8n/deployed.json', b'{"nodes": [], "fixture_only": true}\n')
-                self.proof('proofs/normalize.json', environment='sandbox', source_releases=RELEASE, source_sha256=audit.digest(self.provider.file_bytes), canonical_sha256=audit.digest(self.root.joinpath('n8n/source.json').read_bytes()))
+                mapping = {'credential_references': {'googleDriveOAuth2Api': {'id': 'fixture-credential', 'name': 'Fixture Drive'}},
+                           'webhook_prefix': 'sandbox', 'workflow_name': 'sandbox-fixture', 'approval_evidence': 'logs/capture.txt'}
+                expected = {key: deepcopy(self.provider.workflow_source[key]) for key in ('name', 'nodes', 'connections', 'settings')}
+                expected['name'] = 'sandbox-fixture'
+                expected['nodes'][0]['parameters']['path'] = 'sandbox/released-route'
+                expected['nodes'][1]['credentials'] = deepcopy(mapping['credential_references'])
+                expected_hash = audit.digest(audit.canonical(expected))
+                self.put('n8n/mapping.json', mapping)
+                self.put('n8n/source.json', expected)
+                self.put('n8n/deployed.json', {**expected, 'id': 'server-generated-id', 'active': True})
+                self.proof('proofs/normalize.json', environment='sandbox', source_releases=RELEASE,
+                           source_sha256=audit.digest(self.provider.workflow_bytes), canonical_sha256=expected_hash,
+                           mapping_sha256=audit.digest(audit.canonical(mapping)))
+                self.proof('proofs/weekly-owner.json', environment='sandbox', source_releases=RELEASE)
                 dep.update({'template_id': 'synthetic-template', 'template_readback': 'logs/capture.txt',
+                    'weekly_scheduler': {'kind': 'command-center-cycle-service', 'legacy_n8n_active': False,
+                                         'legacy_n8n_workflow_id': 'old-weekly-id', 'single_owner': True, 'proof': 'proofs/weekly-owner.json'},
                     'workflows': {kind: {'active': True, 'workflow_id': kind, 'execution_id': 'synthetic-id',
-                        'execution_result': 'success', 'source_repo_path': 'fixture.json',
-                        'source_file_sha256': audit.digest(self.provider.file_bytes),
-                        'normalization_proof': 'proofs/normalize.json',
-                        'expected_sha256': audit.digest(self.root.joinpath('n8n/source.json').read_bytes()),
+                        'execution_result': 'success', 'source_repo_path': audit.WORKFLOW_SOURCES[kind],
+                        'source_file_sha256': audit.digest(self.provider.workflow_bytes),
+                        'normalization_proof': 'proofs/normalize.json', 'deployment_mapping': 'n8n/mapping.json',
+                        'expected_sha256': expected_hash,
                         'source_definition': 'n8n/source.json', 'deployed_definition': 'n8n/deployed.json'}
-                        for kind in ('create', 'append', 'weekly')}})
+                        for kind in ('create', 'append')}})
             else:
                 dep.update({'installed_releases': RELEASE, 'migrations_applied': [139, 140],
                             'service_registered': True, 'restart_passed': True, 'persistent_state_verified': True})
@@ -256,9 +282,50 @@ class CompletionRegressionTests(unittest.TestCase):
         self.rejected('inactive/unexecuted')
 
     def test_wrong_deployed_definition_rejected(self):
-        self.packet.put('n8n/deployed.json', b'{"unexpected": "old workflow"}\n')
-        self.packet.freeze()
+        self.packet.change('n8n/deployed.json', lambda d: d['nodes'][2]['parameters'].update(jsCode='old code;'))
         self.rejected('deployed definition differs')
+
+    def test_identical_old_captures_and_forged_normalization_are_rejected(self):
+        old = self.packet.get('n8n/source.json')
+        old['nodes'][1]['parameters']['url'] = 'https://example.invalid/OLD'
+        old['nodes'][2]['parameters']['jsCode'] = 'old code;'
+        for path in ('n8n/source.json', 'n8n/deployed.json'):
+            self.packet.put(path, old)
+        old_hash = audit.digest(audit.canonical(old))
+        normalization = self.packet.get('proofs/normalize.json')
+        normalization['canonical_sha256'] = old_hash
+        self.packet.put('proofs/normalize.json', normalization)
+        dep = self.packet.get('deployments/n8n.json')
+        for flow in dep['workflows'].values():
+            flow['expected_sha256'] = old_hash
+        self.packet.put('deployments/n8n.json', dep)
+        self.packet.freeze()
+        self.rejected('normalization proof not bound to released workflow/mapping')
+
+    def test_non_json_released_source_cannot_certify_json_captures(self):
+        self.packet.provider.workflow_bytes = b'not a JSON workflow'
+        dep = self.packet.get('deployments/n8n.json')
+        for flow in dep['workflows'].values():
+            flow['source_file_sha256'] = audit.digest(self.packet.provider.workflow_bytes)
+        self.packet.put('deployments/n8n.json', dep)
+        self.packet.freeze()
+        self.rejected('Expecting value')
+
+    def test_role_cannot_point_to_other_released_workflow(self):
+        self.packet.change('deployments/n8n.json', lambda d: d['workflows']['create'].update(source_repo_path=audit.WORKFLOW_SOURCES['append']))
+        self.rejected('wrong released source')
+
+    def test_unapproved_runtime_mapping_rejected(self):
+        self.packet.change('n8n/mapping.json', lambda d: d.update(jsCode='replace all code'))
+        self.rejected('unsupported deployment mapping')
+
+    def test_changed_retry_policy_is_not_normalized_away(self):
+        self.packet.change('n8n/deployed.json', lambda d: d['nodes'][1].update(retryOnFail=False))
+        self.rejected('deployed definition differs')
+
+    def test_duplicate_legacy_weekly_scheduler_rejected(self):
+        self.packet.change('deployments/n8n.json', lambda d: d['weekly_scheduler'].update(legacy_n8n_active=True))
+        self.rejected('legacy weekly scheduler remains active')
 
     def test_old_contabo_build_rejected(self):
         self.packet.change('deployments/contabo-docker.json', lambda d: d.update(installed_releases={'ONB': '0' * 40, 'CC': '0' * 40}))
