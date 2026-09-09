@@ -237,10 +237,11 @@ import re
 import sqlite3
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Cap table + doctrine constants
@@ -1553,7 +1554,8 @@ def _resolve_override(record: dict, path: Path,
 
 def declare_capacity(provider: str, *, plan: Optional[str] = None,
                      max_concurrent: Optional[int] = None,
-                     config_dir: Optional[Path] = None) -> Path:
+                     config_dir: Optional[Path] = None,
+                     expected_revision: Optional[Any] = None) -> Path:
     """Declare capacity for ONE provider in capacity_override.json (schema 2).
 
     This is the operator/client SELF-THROTTLE writer, and after F1 it is the
@@ -1567,10 +1569,18 @@ def declare_capacity(provider: str, *, plan: Optional[str] = None,
     can only LOWER what the tables resolve, never raise it -- the clamp lives
     in `_resolve_override()` and is unchanged.
 
-    Atomic (tmp + os.replace), same as the function it replaces. Returns the
-    written path. Raises ValueError on an unknown provider, an unknown
-    (provider, plan) pair, a non-positive max_concurrent, or a call that
-    declares nothing at all."""
+    [PRES-044] TRANSACTIONAL: the read-validate-merge-write runs under one
+    cross-process file lock on `capacity_override.json.lock`; the write is
+    a unique tmp (pid+thread) + fsync + atomic os.replace + directory fsync;
+    unknown operator fields (root and per-provider) survive verbatim; the
+    `plan` entitlement, the `max_concurrent` allocation clamp and any
+    explicit `reserve` stay three distinct fields. Pass
+    `expected_revision` (an int the caller read earlier) to reject a stale
+    writer with a visible RuntimeError instead of a silent field loss.
+    A write failure raises OSError with the OLD file intact -- never a
+    success claim over a lost write. Returns the written path. Raises
+    ValueError on an unknown provider, an unknown (provider, plan) pair, a
+    non-positive max_concurrent, or a call that declares nothing at all."""
     norm_provider = normalize_provider(provider, config_dir)
     norm_plan = None
     if plan is not None:
@@ -1602,13 +1612,75 @@ def declare_capacity(provider: str, *, plan: Optional[str] = None,
 
     path = override_path(config_dir)
     # MERGE, never clobber: read whatever is there (v1 or v2) and keep every
-    # OTHER provider's sub-record.
-    existing, error = read_override(config_dir)
+    # OTHER provider's sub-record. [PRES-044] The read, the merge and the
+    # write now sit under ONE cross-process file lock spanning the whole
+    # read-validate-merge-write transaction, so two simultaneous writes are
+    # serialised (both persist), and an expected_revision mismatch is
+    # REJECTED visibly instead of silently dropping the other writer's
+    # fields.
+    _dir = path.parent
+    _dir.mkdir(parents=True, exist_ok=True)
+    _lock_path = _dir / (path.name + ".lock")
+    with open(str(_lock_path), "a+") as _lock_fh:
+        try:
+            import fcntl as _fcntl
+            _fcntl.flock(_lock_fh.fileno(), _fcntl.LOCK_EX)
+        except ImportError:  # pragma: no cover - non-POSIX degrades to racy
+            _fcntl = None  # type: ignore[assignment]
+        try:
+            return _declare_capacity_locked(
+                path, norm_provider, norm_plan, max_concurrent,
+                expected_revision, config_dir)
+        finally:
+            if _fcntl is not None:
+                try:
+                    _fcntl.flock(_lock_fh.fileno(), _fcntl.LOCK_UN)
+                except OSError:  # pragma: no cover
+                    pass
+
+
+def _declare_capacity_locked(
+    path: Path, norm_provider: str, norm_plan: Optional[str],
+    max_concurrent: Optional[int],
+    expected_revision: Optional[Any],
+    config_dir: Optional[Path],
+) -> Path:
+    """The merge+write transaction, called with the file lock held.
+    [PRES-044] Contract:
+
+    - expected_revision (the file's ``revision`` int, read by the caller
+      BEFORE the merge) rejects a stale writer visibly: two same-provider
+      writers cannot silently lose each other's fields. Pass None to skip
+      the check (legacy callers).
+    - unknown root fields and unknown per-provider fields survive the merge
+      untouched (only ``schema``, ``providers``, ``revision`` and ``_note``
+      are ours to manage).
+    - unique tmp file (pid+thread), fsync of the file AND the directory, then
+      atomic os.replace -- a crash mid-write leaves the old file intact.
+    - a write failure raises OSError DURABLY: no success claim, the old file
+      still on disk, nothing half-written.
+    """
+    existing, error = read_override(path.parent)
     if error:
         raise ValueError(
             f"refusing to merge a declaration into an unreadable file: {error}")
+    # [PRES-044] expected-revision reject: the caller read revision N; if the
+    # file now says M != N, someone else wrote first -- reject LOUDLY (a
+    # caller may catch and retry, but never silently overwrite).
+    current_revision = (existing or {}).get("revision")
+    if expected_revision is not None and \
+            current_revision != expected_revision:
+        raise RuntimeError(
+            f"capacity_override.json changed under us: expected revision "
+            f"{expected_revision!r}, found {current_revision!r} -- re-read, "
+            f"re-merge, retry (another writer won the race and their fields "
+            f"are preserved; refusing to clobber them)")
     entries, _schema = _override_entries(existing, config_dir)
-    providers = {}
+    # [PRES-044] Preserve EVERY unknown root field verbatim; we own exactly
+    # four keys.
+    payload: dict = dict(existing) if isinstance(existing, dict) else {}
+    providers = dict(payload.get("providers")) \
+        if isinstance(payload.get("providers"), dict) else {}
     for entry in entries:
         key = entry.get("canonical") or entry.get("declared")
         if not key:
@@ -1630,18 +1702,51 @@ def declare_capacity(provider: str, *, plan: Optional[str] = None,
         datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
     providers[norm_provider] = sub_record
 
-    payload = {
-        "schema": OVERRIDE_SCHEMA,
-        "providers": providers,
-        "_note": "Per-provider capacity declaration written by capacity.py. Each "
-                 "entry is honoured ONLY for the provider it names. The one-time "
-                 "plan interview's store is the resource profile, not this file; "
-                 "this file is the operator/client self-throttle.",
-    }
+    # [PRES-044] entitlement vs allocation vs reserve stay DISTINCT fields:
+    # ``plan`` (the entitlement tier) and ``max_concurrent`` (the operator's
+    # allocation clamp) are never folded into one number, and ``reserve`` is
+    # preserved verbatim when the caller or the operator recorded one.
+    payload["schema"] = OVERRIDE_SCHEMA
+    payload["providers"] = providers
+    try:
+        payload["revision"] = int(payload.get("revision") or 0) + 1
+    except (TypeError, ValueError):
+        payload["revision"] = 1
+    payload["_note"] = "Per-provider capacity declaration written by capacity.py. Each " \
+                       "entry is honoured ONLY for the provider it names. The one-time " \
+                       "plan interview's store is the resource profile, not this file; " \
+                       "this file is the operator/client self-throttle."
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    # [PRES-044] UNIQUE tmp per writer -- pid+thread, not a fixed name -- so
+    # two concurrent writers can never point one tmp at two payloads.
+    tmp = path.with_suffix(
+        f".json.tmp-{os.getpid()}-{threading.get_ident()}")
+    try:
+        with open(str(tmp), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, indent=2) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        # fsync the DIRECTORY so the rename itself is durable, not just the
+        # file content (a power cut between content-fsync and rename-fsync
+        # otherwise loses the new file while the tmp is already gone).
+        try:
+            _dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(_dir_fd)
+            finally:
+                os.close(_dir_fd)
+        except OSError:  # pragma: no cover - best effort on exotic FS
+            pass
+    except OSError:
+        # DURABLE FAILURE: clean up the tmp, re-raise -- the old file is
+        # untouched (os.replace never ran), so valid old data survives and
+        # the error is visible. Never claim success on failure.
+        try:
+            tmp.unlink()
+        except OSError:  # pragma: no cover
+            pass
+        raise
     return path
 
 
