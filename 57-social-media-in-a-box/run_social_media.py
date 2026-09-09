@@ -1444,6 +1444,16 @@ def _sheets_outage_recovery(run_dir):
 def _chk_writeback(run_dir):
     ok, msg = _verify_writeback_receipt(run_dir)
     if not ok:
+        # F20 (ONB-F20-01 repair): a Sheets failure (404/outage — the write
+        # never returned a real range, or the row never landed) must NEVER
+        # republish already-published posts. The published delivery rows (F10)
+        # are independent; the outage exposes a SEPARATE planner-sync task via
+        # the outcome-recovery helper (fail-soft) so the operator can sync the
+        # row later instead of the publish failing with nothing actionable.
+        preserved, sync_task = _sheets_outage_recovery(run_dir)
+        if sync_task:
+            msg = "%s; planner sync task %s exposed (%s) — published posts preserved" % (
+                msg, sync_task.get("task_id"), sync_task.get("kind"))
         return False, msg
     # The stable row must be READ BACK (working/plan/row_readback.json) before
     # writeback is complete: {found: true, row_key, values: [...]}. A receipt
@@ -1456,6 +1466,9 @@ def _chk_writeback(run_dir):
         if not ok2:
             return False, msg2
     elif rec.get("reconciled") is not True:
+        # Same outage semantics at the readback boundary: the row never
+        # landed — never republish, expose the sync task.
+        _sheets_outage_recovery(run_dir)
         return False, ("AF-SM-WRITEBACK-PROOF: the stable row was not found by readback — the "
                        "write is NOT complete (reconcile before any retry creates a second row)")
     return True, "writeback PROVEN: receipt complete + stable row read back (row_key %s)" % (

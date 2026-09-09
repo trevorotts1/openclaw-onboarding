@@ -329,25 +329,74 @@ class TestDuplicateDelivery(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 5. Sheets 404 / outage
+# 5. Sheets 404 / outage — the PRODUCTION gate (ONB-F20-01 repair)
 # ---------------------------------------------------------------------------
 class TestSheetsOutage(unittest.TestCase):
-    """QC-F20: a Sheets outage never republishes already-published posts; it
-    exposes a separate planner-sync task (F13)."""
+    """QC-F20 (re-targeted per ONB-F20-01): drive the SHEETS-404 failure
+    through the production writeback gate — _run_checker("_chk_writeback")
+    (the _CHECKERS map call-path, NOT the test-only helper). A Sheets outage
+    (the row never landed / receipt carries no real range) FAILS the gate,
+    NEVER republishes already-published posts, and exposes a separate
+    planner-sync task so the operator can sync the row later."""
 
-    def test_sheets_404_preserves_published_and_exposes_sync_task(self):
+    def _run_gate(self, rd):
+        """Invoke the production gate exactly as the phase runner does."""
+        return rsm._run_checker("_chk_writeback", rd)
+
+    def _receipt(self, row20, sheet_id, updated_range):
+        return {
+            "row": row20,
+            "spreadsheet_id": sheet_id,
+            "schema_version": rsm.PLANNER_SCHEMA_VERSION,
+            "row_key": "rk-outage-fb1-r3",
+            "updatedRange": updated_range,
+            "content_hash": rsm._row_content_hash(row20),
+        }
+
+    def _row20(self):
+        return ["rk-outage-fb1-r3", "Brand One", "facebook", "fb-1",
+                "2026-09-07", "post-1", "published", "Theme", "copy",
+                "url"] + [""] * 10
+
+    def test_sheets_404_gate_fails_closed_never_republishes(self):
+        with tempfile.TemporaryDirectory() as td:
+            rd = _run_dir(td, accounts=("fb-1",))
+            # Published delivery row on record (F10) — the outage must not
+            # regress it.
+            rsm._upsert_delivery_row(rd, "co-1", "cy-1", 3, "fb-1",
+                                     remote_post_id="post-fb-1",
+                                     provider_state="published")
+            # Sheets 404: NO receipt was written (the append 404'd).
+            ok, msg = self._run_gate(rd)
+            self.assertFalse(ok, "a Sheets 404 must FAIL the writeback gate")
+            self.assertIn("planner sync task", msg)
+            self.assertIn("published posts preserved", msg)
+            # Published posts preserved — no republish, no state regression.
+            rows = {r["account_id"]: r for r in rsm._delivery_rows(rd)}
+            self.assertEqual(rows["fb-1"]["provider_state"], "published")
+            # The separate planner-sync task is exposed for the operator.
+            task = rsm._json(rd, "working/plan/planner_sync_task.json")
+            self.assertIsInstance(task, dict)
+            self.assertEqual(task["kind"], "planner-sync")
+            self.assertEqual(task["state"], "open")
+
+    def test_gate_nominal_appended_response_404_shapes_fail(self):
         with tempfile.TemporaryDirectory() as td:
             rd = _run_dir(td, accounts=("fb-1",))
             rsm._upsert_delivery_row(rd, "co-1", "cy-1", 3, "fb-1",
-                                     remote_post_id="post-fb-1", provider_state="published")
-            preserved, task = rsm._sheets_outage_recovery(rd)
-            self.assertTrue(preserved, "published posts must survive a Sheets outage")
-            self.assertIsNotNone(task)
-            self.assertEqual(task["kind"], "planner-sync")
-            self.assertEqual(task["state"], "open")
-            # Delivery row is UNTOUCHED by the outage.
-            rows = rsm._delivery_rows(rd)
-            self.assertEqual(rows[0]["provider_state"], "published")
+                                     remote_post_id="post-fb-1",
+                                     provider_state="published")
+            # A nominal "appended" receipt WITHOUT a real A1 range (the 404
+            # body shape) — must fail, not pass.
+            (rd / "working" / "plan" / "row_appended.json").write_text(
+                json.dumps(self._receipt(self._row20(), "sheet-1", "")),
+                encoding="utf-8")
+            ok, msg = self._run_gate(rd)
+            self.assertFalse(ok, "a 404-shaped receipt must fail closed")
+            self.assertIn("updatedRange", msg)
+            rows = {r["account_id"]: r for r in rsm._delivery_rows(rd)}
+            self.assertEqual(rows["fb-1"]["provider_state"], "published",
+                             "outage never regresses published rows")
 
     def test_no_published_rows_means_no_sync_task(self):
         with tempfile.TemporaryDirectory() as td:
