@@ -112,7 +112,7 @@ class FakeGoogle {
   }
   driveCopy(name, provisioningKey, schemaVersion) {
     this.sheetCount += 1;
-    const file = { id: 'new-sheet-' + this.sheetCount, name, appProperties: { skill35_provisioning_key: provisioningKey, schema_version: schemaVersion } };
+    const file = { id: 'new-sheet-' + this.sheetCount, name, appProperties: { skill35_provisioning_key: provisioningKey, skill35_company_id: provisioningKey.split('::')[0], skill35_template_schema: '1.2.0', skill35_provisioning_state: 'initializing', schema_version: schemaVersion } };
     this.files.push(file);
     return file;
   }
@@ -122,7 +122,7 @@ class FakeGoogle {
 }
 
 function makeHarness(google) {
-  const $input = { first: () => ({ json: globalThis.__input || {} }) };
+  const $input = { first: () => ({ json: globalThis.__input || {} }), all: () => [{ json: globalThis.__input || {} }] };
   const $ = (name) => ({ first: () => ({ json: globalThis['__node_' + name] || {} }) });
   return { $input, $ };
 }
@@ -167,11 +167,9 @@ async function simulateConcurrent(count) {
       e.prior['Find Posts Row'] = e.found;
     }
   }
-  // Stage 3: side effects, serialized by Google. Each execution re-reads back
-  // RIGHT before its side effect (the real webhook flow: validate -> readback
-  // -> copy/write is one serial node chain per execution, and Google
-  // serializes the side effects). A later execution sees the earlier one's
-  // committed file/row and dedups; only the first actor writes.
+  // Stage 3 simulates the REQUIRED caller-side durable lock. Google and n8n
+  // do not serialize read-then-write across executions. This tests replay
+  // under that lock, not standalone concurrent webhook safety.
   for (const e of executions) {
     if (mode_ === 'create') {
       const files = google.driveSearch(e.validated.readbackQuery);
@@ -223,7 +221,7 @@ class TestF15ConcurrentSimulation(unittest.TestCase):
             self.fail(f"simulation failed: {proc.stderr.strip()}")
         return json.loads(proc.stdout.strip().splitlines()[-1])
 
-    def test_20_concurrent_creates_make_one_sheet(self):
+    def test_20_caller_serialized_creates_make_one_sheet(self):
         result = self.run_sim(
             CREATE, "Validate + Build Provisioning Key", 20,
             {"body": {"brandName": "Acme", "clientEmail": "a@b.co",

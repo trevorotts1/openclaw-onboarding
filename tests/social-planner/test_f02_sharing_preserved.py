@@ -38,18 +38,13 @@ class TestF02SharingPreserved(unittest.TestCase):
         self.assertEqual(perms["type"], "anyone")
 
     def test_share_node_wired_in_provisioning_chain(self):
-        # Copy -> Tag Provisioning Key -> Set Anyone Can Edit (the key tag is the
-        # F15 idempotency marker; the share still happens before the response).
-        # F25 extends the chain with the formatting provisioner AFTER the share
-        # (Set Anyone Can Edit -> Build Formatting Requests (F25) -> ... ->
-        # Respond: Created), so the share-then-response invariant is asserted
-        # as graph reachability, not a direct edge.
+        # Formatting is durably checkpointed before sharing; only after sharing
+        # succeeds is the file marked ready. The sharing repair branch stays wired.
         export = load_export()
         connections = export["connections"]
-        targets = [link["node"]
-                   for branch in connections["Tag Provisioning Key"]["main"]
-                   for link in branch]
+        targets = [link["node"] for branch in connections["Sharing Ready?"]["main"] for link in branch]
         self.assertIn(LIVE_SHARE_NODE, targets)
+        self.assertEqual(connections[LIVE_SHARE_NODE]["main"][0][0]["node"], "Tag Provisioning Key")
         # Reachability: every path from the share node eventually reaches
         # 'Respond: Created' without passing through the error branch.
         reachable = set()

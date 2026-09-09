@@ -27,14 +27,25 @@ BlackCEO Automations hub (`main.blackceoautomations.com`):
 
 ## Status of these files — deployable versioned contracts (F16)
 
-The two `*.json` files here are **sanitized, importable, parameterized exports**
-derived from the reviewed live workflows (Sheet Creator `INyGjT8jQ6JjrZSh`, row
-append `myXde6jbIIkaG5zW`; sanitized definitions in
-`run/sandbox/n8n/`). They are NOT reconstructed placeholders. A clean n8n
-sandbox can import them directly; the only post-import step is selecting the
-operator Google Drive/Sheets OAuth2 credentials on the credential-bearing nodes
-(credential values are never committed — every node references a credential
-*placeholder*, and `verify-exports.py` fails any export that carries one).
+The two JSON files are credential-free source contracts. Their extra `contract`,
+`schema_version`, and `meta` fields are repository documentation, not API input.
+Use `prepare-import.py` to produce API-ready payloads and bind actual n8n
+credential references. Never hand-edit a production graph to make an export
+importable. Google credential secrets are never stored in the source or output.
+
+```bash
+python3 35-social-media-planner/config/n8n/prepare-import.py \
+  --credentials-map /secure/operator/n8n-credential-refs.json \
+  --output-dir /secure/operator/social-import-new \
+  --webhook-prefix isolated-acceptance
+```
+
+The credential file maps `googleDriveOAuth2Api` and `googleSheetsOAuth2Api` to
+`{"id":"existing-n8n-id","name":"existing-n8n-name"}`. These are references to
+already configured credentials, not access tokens. The output directory must
+be new; the compiler refuses to overwrite deployment snapshots. Omit the
+sandbox prefix only for an approved production cutover. Verify both credential
+classes can access the isolated copied sheet before activating client work.
 
 Versioned export contract:
 
@@ -81,8 +92,15 @@ n8n alone cannot persist dedup keys durably, so the contract spans BOTH sides:
 2. **Webhook side does a Google readback before repeating the side effect:**
    - sheet-create: Drive `files.list` for `appProperties
      skill35_provisioning_key = <company_id>::<planner_kind>` before copying.
-     A crash after Google succeeded + replay returns the existing sheet with
-     `deduped: true` instead of creating a second one.
+     `files.copy` stamps company ownership, the provisioning key and an
+     `initializing` state in the same Google request. The copy explicitly goes
+     to the operator's root. Initialization removes template-only content and
+     provisions the required five tabs. After formatting/sizing succeeds, a
+     durable `formatted` checkpoint is written BEFORE sharing. A retry at that
+     checkpoint verifies structure and repairs sharing without clearing cells.
+     Only then is the sheet marked `ready`. Ready replay verifies ownership,
+     required tabs/headers and current sharing; it preserves client notes and
+     dimensions. Every replay returns the same artifact with `deduped: true`.
    - row-append: read `Posts!A2:N`, look up `row_key =
      cycle_id::content_revision::account_id`. Existing row → `values.update`
      on exactly that row (upsert); missing row → one append. A new content
@@ -154,7 +172,8 @@ Sheets-fetchable permanent CDN — not private Drive page links, not
 soon-expiring URLs) and written ONLY into the Images tab's designated preview
 column (P). Posts keeps `preview_url` RAW (F26). Invalid URLs refuse into a
 visible repair state (`asset_url_not_https` / `asset_url_unsafe_chars` /
-`asset_url_not_fetchable` / `asset_missing_url`) with nothing written. The
+`asset_url_not_fetchable` / `asset_missing_url`) without pretending that asset succeeded. A healthy Posts record may already
+be saved; the receipt reports partial work and required asset repair. The
 batchUpdate resizes the Images preview column to 220px and the asset row to
 275px (SPEC gallery contract).
 
@@ -182,8 +201,36 @@ version, QC state, captions flag, and a clearly labeled **Watch video**
 HYPERLINK to the client-bound Command Center player route
 (`/social/media/{assetId}`) — a visible poster plus a real playback
 destination, never a promised native in-sheet MP4 player. The PUBLISHED
-destination URL is written separately only after posting; a YouTube smart-chip
-note appears only when the published link actually is YouTube. Client drafts
+destination URL is written separately only after posting; a YouTube destination remains a normal separately stored URL; a valid
+HYPERLINK is never corrupted by appending a smart-chip hint to its formula. Client drafts
 are NEVER uploaded to public YouTube to manufacture a preview. Preview access
 is a short-lived signed token bound to company + asset (CC route); expired
 access renews by re-fetching while authenticated.
+## Existing planners and safe cutover
+
+The append flow requires exactly one Sheets developerMetadata entry named
+`skill35_company_id` equal to the canonical caller company. New create flows
+also stamp `skill35_planner_kind` and `skill35_template_schema=1.2.0` into
+Sheets metadata and Drive appProperties. A matching Drive provisioning key
+alone is not sufficient ownership evidence.
+
+Before promoting the append route for existing clients, enumerate their
+verified company registry bindings. For each existing sheet: read its ID and
+owner from that registry, verify the same Google credentials can read it,
+back up values/notes/format metadata, compare the required headers, and stamp
+ownership only when all evidence agrees. Do not infer ownership from an
+incoming webhook body or create a replacement for an inaccessible sheet.
+Missing headers need a preserving structural migration; never run the new-copy
+initializer or clear legitimate historical rows. If ownership is ambiguous,
+keep that client on the previous compatible route, expose a repair task, and
+continue unrelated healthy work. A global cutover must wait for this inventory.
+
+The caller must hold a durable lock around the entire readback/write/receipt
+operation. Google serializes individual writes, not a read-then-write sequence
+across concurrent n8n executions. Copy/append requests have no blind HTTP retry;
+a timeout requires readback under the same lock. Fixed-range updates may retry.
+
+Do not declare the program complete from unit tests or an active workflow flag.
+Capture the active published graph, actual sandbox execution and Google
+readback; bind that proof to the released source and use
+`scripts/social-completion-audit.py`. See `docs/social-completion-evidence.md`.

@@ -160,7 +160,7 @@ def validate_export(name, export):
         check("This Week" in js, f"{name}: This Week view provisioned",
               f"FAIL {name}: formatting node does not create the This Week view")
         labels = [s.get("label") for s in (
-            [{"label": m} for m in re.findall(r"label: '([^']+)'", js)])]
+            [{"label": m} for m in re.findall(r"label: '([^']+)'", js) + re.findall(r'"label"\s*:\s*"([^"\n]+)"', js)])]
         for st in ("Complete", "Failed", "QC Review", "Scheduled", "Published", "Needs Attention"):
             check(st in labels, f"{name}: status '{st}' has a color rule + label",
                   f"FAIL {name}: status '{st}' missing from the color/label rule list")

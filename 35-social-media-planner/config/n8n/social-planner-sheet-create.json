@@ -14,10 +14,10 @@
     "webhook_path": "social-planner-sheet-create",
     "schema_version": "1.1.0",
     "sharing_contract": "anyone-with-the-link EDIT (Drive permission type=anyone, role=writer) is intentional and must be preserved; never migrate to named-user-only (F02).",
-    "idempotency_contract": "provisioning_key = company_id::planner_kind; Drive readback on appProperties skill35_provisioning_key before copy; replay returns the existing file with deduped=true (F15). Durable claim/ledger lives in the ONB/CC caller.",
+    "idempotency_contract": "Caller must serialize company_id::planner_kind in a durable lease. Drive files.copy stamps ownership and initializing state atomically; every retry reads back, resumes pending formatting or returns verified ready file. Ambiguous/multiple/unowned matches fail closed. Never retry a copy blindly.",
     "repair_contract": {
-      "verification": "F14 — BEFORE provisioning completes, the template sheet's metadata is read with the SAME credential class the copy uses (googleDriveOAuth2Api), verifying the template is reachable and expected to exist. The provisioned sheet's metadata is then read back with the Sheets credential the appends use (Verify Provisioned Sheet + Registry Verification step in INSTALL.md) before the receipt is returned.",
-      "transient": "5xx/429/network failures on the copy are transient: bounded retries (retryOnFail, maxTries 3, 2s backoff) before the error receipt.",
+      "verification": "F14 \u2014 BEFORE provisioning completes, the template sheet's metadata is read with the SAME credential class the copy uses (googleDriveOAuth2Api), verifying the template is reachable and expected to exist. The provisioned sheet's metadata is then read back with the Sheets credential the appends use (Verify Provisioned Sheet + Registry Verification step in INSTALL.md) before the receipt is returned.",
+      "transient": "GET nodes retry at most three times. Mutating calls surface errors without automatic retries; caller reconciles same provisioning identity and resumes.",
       "classification": "404 on the template => 'template_not_found' (identity repair: fix templateSheetId). 403 => 'template_access_denied' (access repair: re-grant operator access to the EXISTING template). Neither ever silently creates a replacement sheet.",
       "error_schema": {
         "status": "error",
@@ -46,7 +46,7 @@
       "schema_version": "1.1.0"
     },
     "credential_references": [
-      "googleDriveOAuth2Api — select the operator Google Drive credential on: Copy Template Sheet, Set Anyone Can Edit, Drive Readback, Tag Provisioning Key (re-wire after import; never committed)."
+      "googleDriveOAuth2Api on Drive HTTP and Set Anyone Can Edit; googleSheetsOAuth2Api on all Sheets HTTP calls. Bind through prepare-import.py; never commit actual credentials."
     ]
   },
   "nodes": [
@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// WF04 F15 — validate the create request and build the provisioning key.\n// Payload contract (schema_version 1.1.0):\n// { brandName, clientEmail, company_id, planner_kind, templateSheetId, timezone? }\n// provisioning_key = company_id + '::' + planner_kind — unique per company and\n// planner kind (run/contracts/sheet_registry.json rule). The caller persists the\n// operation in its own ledger BEFORE this call and reconciles AFTER; this\n// webhook stays stateless-safe via the Drive readback that follows.\nconst body = $input.first().json.body || {};\nconst required = ['brandName', 'clientEmail', 'company_id', 'planner_kind', 'templateSheetId'];\nfor (const field of required) {\n  if (body[field] === undefined || body[field] === null || body[field] === '') {\n    throw new Error('missing required field: ' + field);\n  }\n}\nconst provisioningKey = [body.company_id, body.planner_kind].join('::');\nreturn [{ json: {\n  brandName: body.brandName,\n  clientEmail: body.clientEmail,\n  provisioningKey: provisioningKey,\n  readbackQuery: \"appProperties has { key='skill35_provisioning_key' and value='\" + provisioningKey + \"' } and trashed = false\",\n  templateSheetId: body.templateSheetId,\n  body: body\n} }];"
+        "jsCode": "// One request, one verified caller company. Never interpolate unchecked Drive query values.\nif ($input.all().length !== 1) throw new Error('Exactly one provisioning request is required');\nconst body = $input.first().json.body;\nif (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid request body');\nfor (const field of ['brandName','clientEmail','company_id','planner_kind','templateSheetId']) {\n  if (typeof body[field] !== 'string' || !body[field].trim()) throw new Error('missing required field: '+field);\n}\nfor (const field of ['company_id','planner_kind','templateSheetId']) {\n  if (!/^[A-Za-z0-9_-]+$/.test(body[field])) throw new Error('Invalid identity: '+field);\n}\nconst provisioningKey = body.company_id+'::'+body.planner_kind;\n// Google Drive property key + value is limited to 124 bytes.\nif (provisioningKey.length + 'skill35_provisioning_key'.length > 124) throw new Error('Provisioning identity is too long');\nconst timezone=body.timezone || 'UTC';\nnew Intl.DateTimeFormat('en-US',{timeZone:timezone}).format();\nreturn [{json:{...body,body,timezone,provisioningKey,\n  sheetName:body.brandName.trim()+' Social Media Planner',\n  readbackQuery:\"appProperties has { key='skill35_provisioning_key' and value='\"+provisioningKey+\"' } and trashed = false\"}}];\n"
       },
       "id": "code-validate-create",
       "name": "Validate + Build Provisioning Key",
@@ -77,15 +77,18 @@
       "position": [
         220,
         0
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent($json.readbackQuery) }}&fields=files(id,name,webViewLink)&pageSize=10",
+        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent($('Validate + Build Provisioning Key').first().json.readbackQuery) }}&fields=nextPageToken,files(id,name,webViewLink,appProperties)&pageSize=10",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
-        "options": {}
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "http-drive-readback",
       "name": "Drive Readback (find existing)",
@@ -94,18 +97,21 @@
       "position": [
         440,
         0
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.templateSheetId }}?fields=id,name,trashed,mimeType&supportsAllDrives=true",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Validate + Build Provisioning Key').first().json.templateSheetId }}?fields=id,name,trashed,mimeType&supportsAllDrives=true",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
-        "options": {},
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 2000
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "http-verify-template",
       "name": "Verify Template Access (F14)",
@@ -115,11 +121,14 @@
         330,
         -220
       ],
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
-        "jsCode": "// F14 — classify the template verification result BEFORE provisioning.\n// Same credential class (googleDriveOAuth2Api) the copy uses, so the status is\n// authoritative for the copy path:\n//   404 => 'template_not_found'    — the templateSheetId is wrong or deleted\n//          (identity repair: correct the registered template ID; NEVER make a\n//          replacement template or an ad-hoc sheet as a side effect).\n//   403 => 'template_access_denied' — the operator credential lost access to\n//          the template (access repair: re-grant access to the EXISTING file).\n//   other => 'transient' — bounded retries (3x/2s) already applied; surfaced so\n//          the caller retries provisioning without losing the pending marker.\nconst src = $('Validate + Build Provisioning Key').first().json;\nconst err = $input.first().json;\nconst status = err.status || err.statusCode || (err.response && (err.response.status || err.response.statusCode));\nlet repair_state = 'transient';\nlet repair_action = 'Transient Google Drive error after 3 bounded retries — provisioning stays pending; retry the create with the SAME provisioning key (the readback dedupes).';\nif (status === 404) {\n  repair_state = 'template_not_found';\n  repair_action = 'The template sheet ID ' + src.templateSheetId + ' does not exist or was deleted. Identity repair: correct the registered templateSheetId — do NOT provision a replacement sheet from another source silently; the pending marker reconciles once the ID is verified.';\n} else if (status === 403) {\n  repair_state = 'template_access_denied';\n  repair_action = 'The operator Drive credential is denied access to the template ' + src.templateSheetId + '. Access repair: re-grant the operator credential access to the EXISTING template, then retry provisioning with the SAME provisioning key.';\n}\nreturn [{ json: {\n  status: 'error',\n  repair_required: true,\n  repair_state: repair_state,\n  repair_action: repair_action,\n  provisioning_key: src.provisioningKey\n} }];"
+        "jsCode": "// F14 \u2014 classify the template verification result BEFORE provisioning.\n// Same credential class (googleDriveOAuth2Api) the copy uses, so the status is\n// authoritative for the copy path:\n//   404 => 'template_not_found'    \u2014 the templateSheetId is wrong or deleted\n//          (identity repair: correct the registered template ID; NEVER make a\n//          replacement template or an ad-hoc sheet as a side effect).\n//   403 => 'template_access_denied' \u2014 the operator credential lost access to\n//          the template (access repair: re-grant access to the EXISTING file).\n//   other => 'transient' \u2014 bounded retries (3x/2s) already applied; surfaced so\n//          the caller retries provisioning without losing the pending marker.\nconst src = $('Validate + Build Provisioning Key').first().json;\nconst err = $input.first().json;\nconst e=typeof err.error==='object' ? err.error : err; const status=Number(e.httpCode || e.statusCode || e.status || e.response?.statusCode || e.response?.status || err.statusCode || err.response?.statusCode || err.response?.status);\nlet repair_state = 'transient';\nlet repair_action = 'Transient Google Drive error after 3 bounded retries \u2014 provisioning stays pending; retry the create with the SAME provisioning key (the readback dedupes).';\nif (status === 404) {\n  repair_state = 'template_not_found';\n  repair_action = 'The template sheet ID ' + src.templateSheetId + ' does not exist or was deleted. Identity repair: correct the registered templateSheetId \u2014 do NOT provision a replacement sheet from another source silently; the pending marker reconciles once the ID is verified.';\n} else if (status === 403) {\n  repair_state = 'template_access_denied';\n  repair_action = 'The operator Drive credential is denied access to the template ' + src.templateSheetId + '. Access repair: re-grant the operator credential access to the EXISTING template, then retry provisioning with the SAME provisioning key.';\n}\nreturn [{ json: {\n  status: 'error',\n  repair_required: true,\n  repair_state: repair_state,\n  repair_action: repair_action,\n  provisioning_key: src.provisioningKey\n} }];"
       },
       "id": "code-classify-repair",
       "name": "Classify Repair (F14)",
@@ -128,7 +137,8 @@
       "position": [
         550,
         -380
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -149,7 +159,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F15 — Drive readback. If a Drive file already carries this provisioning key\n// in its appProperties, the sheet was created in a previous run (crash after\n// Google succeeded, receipt lost). Return the EXISTING artifact instead of\n// copying again: replay must return the existing sheet, never a duplicate.\nconst files = ($input.first().json.files || []);\nconst src = $('Validate + Build Provisioning Key').first().json;\nconst existing = files.length > 0 ? files[0] : null;\nreturn [{ json: {\n  existing: existing !== null,\n  existingFile: existing,\n  provisioningKey: src.provisioningKey,\n  brandName: src.brandName,\n  clientEmail: src.clientEmail,\n  templateSheetId: src.templateSheetId,\n  body: src.body\n} }];"
+        "jsCode": "const src=$('Validate + Build Provisioning Key').first().json;\nconst response=$input.first().json;\nif (!Array.isArray(response.files)) throw new Error('Malformed Drive readback');\nif (response.nextPageToken || response.files.length>1) throw new Error('Ambiguous provisioning identity; reconcile registry before retry');\nconst existingFile=response.files[0] || null;\nif (existingFile) {\n  const p=existingFile.appProperties || {};\n  if (!existingFile.id || p.skill35_company_id!==src.company_id || p.skill35_provisioning_key!==src.provisioningKey)\n    throw new Error('Existing planner ownership is unverified; migrate from verified registry before retry');\n  if (!['initializing','formatted','ready'].includes(p.skill35_provisioning_state)) throw new Error('Existing planner state requires verified migration');\n  if (p.skill35_template_schema!=='1.2.0') throw new Error('Existing planner schema requires a preserving migration');\n}\nreturn [{json:{...src,existing:!!existingFile,existingFile}}];\n"
       },
       "id": "code-interpret-readback",
       "name": "Interpret Readback",
@@ -158,7 +168,8 @@
       "position": [
         660,
         0
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -196,19 +207,22 @@
     },
     {
       "parameters": {
-        "operation": "copy",
-        "fileId": {
-          "__rl": true,
-          "value": "={{ $json.templateSheetId }}",
-          "mode": "id"
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Validate + Build Provisioning Key').first().json.templateSheetId }}/copy?fields=id,name,appProperties&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 60000
         },
-        "name": "={{ $json.brandName }} Social Media Planner",
-        "options": {}
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ (()=>{const src=$('Validate + Build Provisioning Key').first().json;return JSON.stringify({name:src.sheetName,parents:['root'],appProperties:{skill35_provisioning_key:src.provisioningKey,skill35_company_id:src.company_id,skill35_planner_kind:src.planner_kind,skill35_template_schema:'1.2.0',skill35_provisioning_state:'initializing'} });})() }}"
       },
       "id": "drive-copy-template",
       "name": "Copy Template Sheet",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1100,
         160
@@ -218,14 +232,16 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.id }}?fields=id,name,webViewLink,appProperties",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Sheet Context').first().json.sheetId }}?fields=id,name,appProperties",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 60000
+        },
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ appProperties: { skill35_provisioning_key: $('Interpret Readback').first().json.provisioningKey, schema_version: '1.1.0' } }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({appProperties:{skill35_provisioning_state:'ready'} }) }}"
       },
       "id": "http-tag-key",
       "name": "Tag Provisioning Key",
@@ -234,14 +250,15 @@
       "position": [
         1320,
         160
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "operation": "share",
         "fileId": {
           "__rl": true,
-          "value": "={{ $json.id }}",
+          "value": "={{ $('Sheet Context').first().json.sheetId }}",
           "mode": "id"
         },
         "permissionsUi": {
@@ -259,11 +276,12 @@
       "position": [
         1540,
         160
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "// F25 — build the readability/formatting provisioning requests for the NEW\n// sheet from the sheet-template.schema.json contract:\n//   - TEXT_EQ conditional format rules for every status (color + written\n//     label — NUMBER_EQ against text is the defect this replaces and is never\n//     emitted),\n//   - setDataValidation dropdowns over the same status list,\n//   - frozen header rows (Posts also freezes its first two columns),\n//   - wrapped copy (repeatCell wrapStrategy WRAP),\n//   - protected formula ranges (Images preview column P),\n//   - the compact This Week view tab with its ~8 client-facing columns.\n// All requests run in ONE spreadsheet.batchUpdate after the share step.\nconst sheets = ($input.first().json.sheets || []);\nconst numeric = {};\nfor (const s of sheets) {\n  if (s.properties) numeric[s.properties.title] = s.properties.sheetId;\n}\nconst STATUSES = [\n  { label: 'Complete', color: { red: 0.718, green: 0.882, blue: 0.804 } },\n  { label: 'Failed', color: { red: 0.957, green: 0.780, blue: 0.765 } },\n  { label: 'QC Review', color: { red: 0.988, green: 0.910, blue: 0.698 } },\n  { label: 'Scheduled', color: { red: 0.827, green: 0.890, blue: 0.992 } },\n  { label: 'Published', color: { red: 0.788, green: 0.855, blue: 0.973 } },\n  { label: 'Needs Attention', color: { red: 0.965, green: 0.678, blue: 0.663 } }\n];\nconst requests = [];\nconst statusTabs = [];\nif (numeric['Weekly Overview'] !== undefined) statusTabs.push(numeric['Weekly Overview']);\nif (numeric['Posts'] !== undefined) statusTabs.push(numeric['Posts']);\nfor (const tabId of statusTabs) {\n  for (const st of STATUSES) {\n    requests.push({ addConditionalFormatRule: {\n      rule: {\n        ranges: [{ sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 21 }],\n        booleanRule: {\n          condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: st.label }] },\n          format: { backgroundColor: st.color }\n        }\n      },\n      index: 0\n    } });\n  }\n  requests.push({ setDataValidation: {\n    range: { sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 21 },\n    rule: {\n      condition: { type: 'ONE_OF_LIST', values: STATUSES.map(s => ({ userEnteredValue: s.label })) },\n      showCustomUi: true,\n      strict: true\n    }\n  } });\n  requests.push({ repeatCell: {\n    range: { sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 21 },\n    cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'TOP' } }\n  } });\n  requests.push({ updateSheetProperties: {\n    properties: { sheetId: tabId, gridProperties: { frozenRowCount: 1 } },\n    fields: 'gridProperties.frozenRowCount'\n  } });\n}\nif (numeric['Posts'] !== undefined) {\n  requests.push({ updateSheetProperties: {\n    properties: { sheetId: numeric['Posts'], gridProperties: { frozenColumnCount: 2 } },\n    fields: 'gridProperties.frozenColumnCount'\n  } });\n}\nif (numeric['Images'] !== undefined) {\n  // F25 — protect the trusted IMAGE formula column (P) from client edits.\n  requests.push({ addProtectedRange: {\n    protectedRange: {\n      range: { sheetId: numeric['Images'], startColumnIndex: 15, endColumnIndex: 16 },\n      description: 'Trusted =IMAGE formula column (F24/F25) — protected',\n      warningOnly: false\n    }\n  } });\n}\n// This Week view — created only when the copy did not already carry it.\nconst addRequests = [];\nif (numeric['This Week'] === undefined) {\n  addRequests.push({ addSheet: { properties: { title: 'This Week', gridProperties: { frozenRowCount: 1, columnCount: 8, rowCount: 40 }, rightToLeft: false } } });\n}\nreturn [{ json: {\n  newSheetRequests: addRequests,\n  formatRequests: requests,\n  statuses: STATUSES.map(s => s.label)\n} }];"
+        "jsCode": "const SCHEMA={\"tabs\":{\"Weekly Overview\":{\"frozen_columns\":0,\"headings\":[\"Week Of\",\"Theme of the Week\",\"Research\",\"Core Content\",\"Images\",\"Videos\",\"Facebook\",\"Instagram\",\"LinkedIn\",\"YouTube\",\"TikTok\",\"Pinterest\",\"Carousels\",\"Blog\",\"Podcast\",\"Email\",\"QC\",\"Scheduled\",\"Overall\",\"Notes\"],\"status_columns\":[\"QC\",\"Overall\"]},\"This Week\":{\"headings\":[\"Week\",\"Client\",\"Next Action\",\"Drafting\",\"QC\",\"Scheduled\",\"Published\",\"Needs Attention\"]},\"Posts\":{\"frozen_columns\":2,\"headings\":[\"row_key\",\"company_id\",\"cycle_id\",\"content_revision\",\"account_id\",\"platform\",\"account_name\",\"format\",\"scheduled_local\",\"scheduled_utc\",\"state\",\"qc_state\",\"preview_url\",\"remote_url\"],\"status_columns\":[\"state\",\"qc_state\"]},\"Images\":{\"headings\":[\"asset_key\",\"content_id\",\"asset_id\",\"company_id\",\"cycle_id\",\"content_revision\",\"kind\",\"preview_url\",\"original_url\",\"ratio\",\"width\",\"height\",\"alt_text\",\"qc_state\"]},\"Videos\":{\"headings\":[\"video_key\",\"content_id\",\"asset_id\",\"company_id\",\"cycle_id\",\"content_revision\",\"version\",\"poster_url\",\"published_url\",\"watch_url\",\"duration_seconds\",\"ratio\",\"captions\",\"qc_state\"]}},\"status_colors\":{\"description\":\"F25 \\u2014 every status value gets BOTH a TEXT_EQ conditional format rule (never NUMBER_EQ: statuses are text) and a written label, so color is never the only signal. Dropdowns are enforced with setDataValidation on the same value list.\",\"statuses\":[{\"label\":\"Complete\",\"color\":\"#b7e1cd\",\"color_label\":\"green \\u2014 done\"},{\"label\":\"Failed\",\"color\":\"#f4c7c3\",\"color_label\":\"red \\u2014 needs repair\"},{\"label\":\"QC Review\",\"color\":\"#fce8b2\",\"color_label\":\"amber \\u2014 in review\"},{\"label\":\"Scheduled\",\"color\":\"#d3e3fd\",\"color_label\":\"blue \\u2014 queued for posting\"},{\"label\":\"Published\",\"color\":\"#c9daf8\",\"color_label\":\"blue \\u2014 live on platform\"},{\"label\":\"Needs Attention\",\"color\":\"#f6aea9\",\"color_label\":\"red \\u2014 blocking issue\"}]}};\n// Run ONLY on a privately initializing copy, never a ready client planner.\nconst ctx=$('Sheet Context').first().json;\nif(ctx.formatted) throw new Error('Refusing to reset an existing ready planner');\nconst metadata=$input.first().json;\nconst templates=SCHEMA.tabs;\nconst current=metadata.sheets || [];\nconst ids=new Set(current.map(s=>s.properties.sheetId));\nconst byTitle=Object.fromEntries(current.map(s=>[s.properties.title,s]));\nconst numeric={}; const newSheetRequests=[]; const formatRequests=[];\nconst order=['This Week','Weekly Overview','Posts','Images','Videos'];\nlet nextId=1;\nfor(const title of order){\n  const existing=byTitle[title];\n  while(ids.has(nextId))nextId++;\n  const id=existing ? existing.properties.sheetId : nextId++;\n  ids.add(id); numeric[title]=id;\n  const columns=title==='Images'?16:title==='Videos'?19:title==='Weekly Overview'?21:templates[title].headings.length;\n  if(!existing)newSheetRequests.push({addSheet:{properties:{sheetId:id,title,gridProperties:{rowCount:1000,columnCount:columns}}}});\n  const grid=existing?.properties.gridProperties || {};\n  formatRequests.push({updateSheetProperties:{properties:{sheetId:id,index:order.indexOf(title),gridProperties:{frozenRowCount:1,frozenColumnCount:templates[title].frozen_columns||0,rowCount:Math.max(grid.rowCount||0,1000),columnCount:Math.max(grid.columnCount||0,columns)}},fields:'index,gridProperties'}});\n  // Template content (including sample publication claims) is never client content.\n  formatRequests.push({updateCells:{range:{sheetId:id},fields:'userEnteredValue,note,dataValidation'}});\n  for(let i=(existing?.conditionalFormats||[]).length-1;i>=0;i--)formatRequests.push({deleteConditionalFormatRule:{sheetId:id,index:i}});\n  const headings=[...templates[title].headings];\n  if(title==='Weekly Overview')headings[20]='cycle_id';\n  if(title==='Images')headings[15]='Image preview';\n  if(title==='Videos'){headings[17]='Video poster';headings[18]='Watch video';}\n  formatRequests.push({updateCells:{start:{sheetId:id,rowIndex:0,columnIndex:0},rows:[{values:Array.from(headings,h=>({userEnteredValue:{stringValue:h||''}}))}],fields:'userEnteredValue'}});\n  formatRequests.push({repeatCell:{range:{sheetId:id},cell:{userEnteredFormat:{wrapStrategy:'WRAP',verticalAlignment:'TOP'}},fields:'userEnteredFormat.wrapStrategy,userEnteredFormat.verticalAlignment'}});\n  formatRequests.push({repeatCell:{range:{sheetId:id,startRowIndex:0,endRowIndex:1},cell:{userEnteredFormat:{backgroundColor:{red:.10,green:.16,blue:.25},textFormat:{bold:true,foregroundColor:{red:1,green:1,blue:1}}}},fields:'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat'}});\n  formatRequests.push({updateDimensionProperties:{range:{sheetId:id,dimension:'ROWS',startIndex:0,endIndex:1},properties:{pixelSize:44},fields:'pixelSize'}});\n  formatRequests.push({updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:0,endIndex:columns},properties:{pixelSize:170},fields:'pixelSize'}});\n  // Strict dropdowns apply only to status cells, never captions, dates or URLs.\n  for(const column of templates[title].status_columns || []){\n    // QC overview is a multi-account textual aggregate, not an enum.\n    if(title==='Weekly Overview' && column==='QC')continue;\n    const col=templates[title].headings.indexOf(column);\n    const range={sheetId:id,startRowIndex:1,startColumnIndex:col,endColumnIndex:col+1};\n    const statusValues=SCHEMA.status_colors.statuses.map(s=>s.label);\n    const runtime=['draft','drafting','pending','queued','working','qc_pending','qc_review','approved','passed','rejected','scheduled','published','failed','blocked','needs_attention','skipped','complete','completed','cancelled'];\n    const labels=[...new Set([...statusValues,...runtime])];\n    formatRequests.push({setDataValidation:{range,rule:{condition:{type:'ONE_OF_LIST',values:labels.map(s=>({userEnteredValue:s}))},showCustomUi:true,strict:true}}});\n    for(const label of labels){\n      const st=SCHEMA.status_colors.statuses.find(s=>s.label.toLowerCase()===label.toLowerCase()) || SCHEMA.status_colors.statuses[2];\n      const hex=st.color.slice(1);const color={red:parseInt(hex.slice(0,2),16)/255,green:parseInt(hex.slice(2,4),16)/255,blue:parseInt(hex.slice(4,6),16)/255};\n      formatRequests.push({addConditionalFormatRule:{rule:{ranges:[range],booleanRule:{condition:{type:'TEXT_EQ',values:[{userEnteredValue:label}]},format:{backgroundColor:color}}},index:0}});\n    }\n  }\n  const formulaCols=title==='Images'?[15]:title==='Videos'?[17,18]:title==='This Week'?[0,2,3,4,5,6,7]:[];\n  for(const col of formulaCols){\n    const description='skill35 trusted formula '+title+' '+col;\n    if(!(existing?.protectedRanges||[]).some(r=>r.description===description))formatRequests.push({addProtectedRange:{protectedRange:{description,range:{sheetId:id,startRowIndex:1,startColumnIndex:col,endColumnIndex:col+1},warningOnly:false}}});\n  }\n  if(title==='Images' || title==='Videos'){\n    const col=title==='Images'?15:17;\n    formatRequests.push({updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:col,endIndex:col+1},properties:{pixelSize:title==='Images'?220:240},fields:'pixelSize'}});\n  }\n}\nfor(const sheet of current){\n  if(!order.includes(sheet.properties.title))formatRequests.push({deleteSheet:{sheetId:sheet.properties.sheetId}});\n}\nformatRequests.push({updateSpreadsheetProperties:{properties:{title:ctx.sheetName,timeZone:ctx.timezone},fields:'title,timeZone'}});\nfor(const [key,value] of Object.entries({skill35_company_id:ctx.company_id,skill35_planner_kind:ctx.planner_kind,skill35_template_schema:'1.2.0'})){\n  const entries=(metadata.developerMetadata||[]).filter(m=>m.metadataKey===key);\n  for(const entry of entries)formatRequests.push({deleteDeveloperMetadata:{dataFilter:{developerMetadataLookup:{metadataId:entry.metadataId}}}});\n  formatRequests.push({createDeveloperMetadata:{developerMetadata:{metadataKey:key,metadataValue:value,location:{spreadsheet:true},visibility:'DOCUMENT'}}});\n}\nreturn [{json:{newSheetRequests,formatRequests,numeric,statuses:SCHEMA.status_colors.statuses.map(s=>s.label)}}];\n"
       },
       "id": "code-build-formatting",
       "name": "Build Formatting Requests (F25)",
@@ -272,19 +290,22 @@
       "position": [
         1760,
         60
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Tag Provisioning Key').first().json.id }}:batchUpdate",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Sheet Context').first().json.sheetId }}:batchUpdate",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 60000
+        },
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ requests: $json.newSheetRequests.concat($json.formatRequests) }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({requests:$json.newSheetRequests.concat($json.formatRequests)}) }}"
       },
       "id": "http-provision-formatting",
       "name": "Provision Formatting (F25 batchUpdate)",
@@ -298,7 +319,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// F25 — resolve the freshly created 'This Week' tab (if any) and size its\n// eight client-facing columns, then hand the identity fields to the response.\nconst created = $input.first().json;\nconst added = ((created || {}).replies || []).filter(r => r.addSheet).map(r => r.addSheet.properties);\nconst thisWeek = added.find(p => p.title === 'This Week') || null;\nconst requests = [];\nif (thisWeek) {\n  const widths = [110, 170, 220, 130, 130, 130, 130, 150];\n  widths.forEach((px, i) => requests.push({ updateDimensionProperties: {\n    range: { sheetId: thisWeek.sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 },\n    properties: { pixelSize: px }\n  } }));\n  // Header labels (RAW): week, client, next action, counts, attention + links row.\n  const header = ['Week', 'Client', 'Next Action', 'Drafting', 'QC', 'Scheduled', 'Published', 'Needs Attention'];\n  requests.push({ updateCells: {\n    rows: [{ values: header.map(v => ({ userEnteredValue: { stringValue: v } })) }],\n    fields: 'userEnteredValue',\n    start: { sheetId: thisWeek.sheetId, rowIndex: 0, columnIndex: 0 }\n  } });\n}\nreturn [{ json: { identityStamps: requests, thisWeekCreated: thisWeek !== null } }];"
+        "jsCode": "const numeric=$('Build Formatting Requests (F25)').first().json.numeric;\nconst ctx=$('Sheet Context').first().json;\nconst id=numeric['This Week'];\nconst identityStamps=[];\n[110,190,300,130,130,130,130,160].forEach((pixelSize,i)=>identityStamps.push({updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:i,endIndex:i+1},properties:{pixelSize},fields:'pixelSize'}}));\n// Summary is restricted to the current local week; no invented completion counts.\nconst week='=TODAY()-WEEKDAY(TODAY(),2)+1';\nconst count=(field,state)=>`COUNTIFS(Posts!${field}2:${field},\"${state}\",Posts!I2:I,\">=\"&TEXT(A2,\"yyyy-mm-dd\"),Posts!I2:I,\"<\"&TEXT(A2+7,\"yyyy-mm-dd\"))`;\nconst values=[{formulaValue:week},{stringValue:ctx.brandName},{formulaValue:'=IF(H2>0,\"Review items needing attention\",IF(SUM(D2:G2)=0,\"Choose this week\u2019s theme\",\"Review progress and approvals\"))'},\n {formulaValue:'='+count('K','draft')+'+'+count('K','drafting')},\n {formulaValue:'='+count('L','qc_pending')+'+'+count('L','qc_review')+'+'+count('L','QC Review')},\n {formulaValue:'='+count('K','scheduled')},{formulaValue:'='+count('K','published')},\n {formulaValue:'='+count('K','failed')+'+'+count('K','blocked')+'+'+count('K','needs_attention')}];\nidentityStamps.push({updateCells:{start:{sheetId:id,rowIndex:1,columnIndex:0},rows:[{values:values.map(userEnteredValue=>({userEnteredValue}))}],fields:'userEnteredValue'}});\nidentityStamps.push({repeatCell:{range:{sheetId:id,startRowIndex:1,endRowIndex:2,startColumnIndex:0,endColumnIndex:1},cell:{userEnteredFormat:{numberFormat:{type:'DATE',pattern:'mmm d, yyyy'}}},fields:'userEnteredFormat.numberFormat'}});\nreturn [{json:{identityStamps,thisWeekCreated:true}}];\n"
       },
       "id": "code-this-week-view",
       "name": "Provision This Week View (F25)",
@@ -307,19 +328,22 @@
       "position": [
         2200,
         60
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Tag Provisioning Key').first().json.id }}:batchUpdate",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Sheet Context').first().json.sheetId }}:batchUpdate",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 60000
+        },
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ requests: $json.identityStamps }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({requests:$json.identityStamps}) }}"
       },
       "id": "http-this-week-sizing",
       "name": "This Week Sizing (batchUpdate)",
@@ -334,7 +358,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'success', deduped: false, sheetId: $('Tag Provisioning Key').first().json.id, sheetUrl: 'https://docs.google.com/spreadsheets/d/' + $('Tag Provisioning Key').first().json.id + '/edit', sheetName: $('Tag Provisioning Key').first().json.name, sharedWith: 'anyone with the link can edit', provisioning_key: $('Interpret Readback').first().json.provisioningKey, company_id: $('Validate + Build Provisioning Key').first().json.body.company_id, planner_kind: $('Validate + Build Provisioning Key').first().json.body.planner_kind, schema_version: '1.1.0' }) }}",
+        "responseBody": "={{ (()=>{const c=$('Sheet Context').first().json;return JSON.stringify({status:'success',deduped:c.deduped,sheetId:c.sheetId,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.sheetId+'/edit',sheetName:c.sheetName,sharedWith:'anyone with the link can edit',provisioning_key:c.provisioningKey,company_id:c.company_id,planner_kind:c.planner_kind,schema_version:'1.1.0',template_schema:'1.2.0'});})() }}",
         "options": {}
       },
       "id": "respond-created",
@@ -349,7 +373,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'success', deduped: true, sheetId: $json.existingFile.id, sheetUrl: 'https://docs.google.com/spreadsheets/d/' + $json.existingFile.id + '/edit', sheetName: $json.existingFile.name, sharedWith: 'anyone with the link can edit', provisioning_key: $json.provisioningKey, company_id: $('Validate + Build Provisioning Key').first().json.body.company_id, planner_kind: $('Validate + Build Provisioning Key').first().json.body.planner_kind, schema_version: '1.1.0' }) }}",
+        "responseBody": "={{ (()=>{const c=$('Sheet Context').first().json;return JSON.stringify({status:'success',deduped:c.deduped,sheetId:c.sheetId,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.sheetId+'/edit',sheetName:c.sheetName,sharedWith:'anyone with the link can edit',provisioning_key:c.provisioningKey,company_id:c.company_id,planner_kind:c.planner_kind,schema_version:'1.1.0',template_schema:'1.2.0'});})() }}",
         "options": {}
       },
       "id": "respond-existing",
@@ -364,7 +388,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Failed to create sheet. Check Google Drive credentials and template access.', error: $json.message || 'Unknown error' }) }}",
+        "responseBody": "={{ JSON.stringify({status:'error',repair_required:true,repair_state:'provisioning_incomplete',message:'Provisioning did not complete. Reconcile the SAME company provisioning key before retrying; do not create a replacement or activate weekly work.',error:typeof $json.error==='string'?$json.error:($json.error?.message || $json.message || 'Google or validation error')}) }}",
         "options": {
           "responseCode": 500
         }
@@ -377,6 +401,237 @@
         1100,
         400
       ]
+    },
+    {
+      "name": "Sheet Context",
+      "id": "sheet-context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const src=$('Interpret Readback').first().json;\nconst file=src.existing ? src.existingFile : $input.first().json;\nconst p=file.appProperties || {};\nif (typeof file.id!=='string' || !/^[A-Za-z0-9_-]+$/.test(file.id) || p.skill35_company_id!==src.company_id || p.skill35_provisioning_key!==src.provisioningKey)\n  throw new Error('Drive copy/readback did not prove this company owns the planner');\nreturn [{json:{...src,sheetId:file.id,sheetName:file.name || src.sheetName,deduped:src.existing,\n  ready:p.skill35_provisioning_state==='ready',formatted:['formatted','ready'].includes(p.skill35_provisioning_state)}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Verify Provisioned Sheet",
+      "id": "verify-provisioned-sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Sheet Context').first().json.sheetId }}?fields=spreadsheetId,properties,sheets(properties,conditionalFormats,protectedRanges),developerMetadata",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Verify Sheet Ownership",
+      "id": "verify-sheet-ownership",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$('Sheet Context').first().json;const meta=$input.first().json;\nif(meta.spreadsheetId!==ctx.sheetId || !Array.isArray(meta.sheets))throw new Error('Sheet metadata readback failed');\nconst expected={skill35_company_id:ctx.company_id,skill35_planner_kind:ctx.planner_kind,skill35_template_schema:'1.2.0'};\nfor(const [key,value] of Object.entries(expected)){\n const entries=(meta.developerMetadata||[]).filter(x=>x.metadataKey===key);\n if(entries.some(x=>x.metadataValue!==value) || (ctx.formatted && entries.length!==1))throw new Error('Sheet ownership/schema missing or mismatched; verified migration required');\n}\nif(ctx.formatted)for(const title of ['This Week','Weekly Overview','Posts','Images','Videos'])if(!meta.sheets.some(x=>x.properties.title===title))throw new Error('Existing planner missing required tab '+title+'; preserving structural repair required');\nreturn [{json:{...meta,ready:ctx.formatted}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Provisioning Complete?",
+      "id": "provisioning-complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-existing",
+              "leftValue": "={{ $json.ready }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Validate Template Type",
+      "id": "validate-template-type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "jsCode": "const t=$input.first().json;const s=$('Validate + Build Provisioning Key').first().json;if(t.id!==s.templateSheetId || t.trashed || t.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('Registered template is not an accessible, non-trashed Google Sheet');return [{json:t}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Verify Ready Headers",
+      "id": "verify-ready-headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Sheet Context').first().json.sheetId }}/values:batchGet?ranges=Posts!A1:N1&ranges=Images!A1:N1&ranges=Videos!A1:N1&ranges='Weekly%20Overview'!A1:T1&ranges='This%20Week'!A1:H1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Validate Ready Headers",
+      "id": "validate-ready-headers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "jsCode": "const expected=[[\"row_key\", \"company_id\", \"cycle_id\", \"content_revision\", \"account_id\", \"platform\", \"account_name\", \"format\", \"scheduled_local\", \"scheduled_utc\", \"state\", \"qc_state\", \"preview_url\", \"remote_url\"], [\"asset_key\", \"content_id\", \"asset_id\", \"company_id\", \"cycle_id\", \"content_revision\", \"kind\", \"preview_url\", \"original_url\", \"ratio\", \"width\", \"height\", \"alt_text\", \"qc_state\"], [\"video_key\", \"content_id\", \"asset_id\", \"company_id\", \"cycle_id\", \"content_revision\", \"version\", \"poster_url\", \"published_url\", \"watch_url\", \"duration_seconds\", \"ratio\", \"captions\", \"qc_state\"], [\"Week Of\", \"Theme of the Week\", \"Research\", \"Core Content\", \"Images\", \"Videos\", \"Facebook\", \"Instagram\", \"LinkedIn\", \"YouTube\", \"TikTok\", \"Pinterest\", \"Carousels\", \"Blog\", \"Podcast\", \"Email\", \"QC\", \"Scheduled\", \"Overall\", \"Notes\"], [\"Week\", \"Client\", \"Next Action\", \"Drafting\", \"QC\", \"Scheduled\", \"Published\", \"Needs Attention\"]];const v=$input.first().json.valueRanges;if(!Array.isArray(v)||v.length!==expected.length)throw new Error('Missing existing planner headers');expected.forEach((h,i)=>{if(JSON.stringify(v[i].values?.[0])!==JSON.stringify(h))throw new Error('Existing planner header mismatch; preserving structural repair required');});return [{json:{verified:true}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Mark Formatting Complete",
+      "id": "mark-formatting-complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Sheet Context').first().json.sheetId }}?fields=id,appProperties",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({appProperties:{skill35_provisioning_state:'formatted'} }) }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Read Sharing Permission",
+      "id": "read-sharing-permission",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Sheet Context').first().json.sheetId }}/permissions?fields=nextPageToken,permissions(id,type,role)&pageSize=100&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Check Sharing Permission",
+      "id": "check-sharing-permission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "jsCode": "const p=$input.first().json;if(!Array.isArray(p.permissions)||p.nextPageToken)throw new Error('Sharing readback incomplete');return [{json:{shared:p.permissions.some(x=>x.type==='anyone'&&x.role==='writer')}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Sharing Ready?",
+      "id": "sharing-ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        750
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-existing",
+              "leftValue": "={{ $json.shared }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -395,17 +650,6 @@
       "main": [
         [
           {
-            "node": "Verify Template Access (F14)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Verify Template Access (F14)": {
-      "main": [
-        [
-          {
             "node": "Drive Readback (find existing)",
             "type": "main",
             "index": 0
@@ -413,27 +657,25 @@
         ],
         [
           {
-            "node": "Classify Repair (F14)",
+            "node": "Respond: Error",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Classify Repair (F14)": [
-      [
-        {
-          "node": "Respond: Repair (F14)",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ],
     "Drive Readback (find existing)": {
       "main": [
         [
           {
             "node": "Interpret Readback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
             "type": "main",
             "index": 0
           }
@@ -448,6 +690,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -455,14 +704,50 @@
       "main": [
         [
           {
-            "node": "Respond: Existing",
+            "node": "Sheet Context",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Copy Template Sheet",
+            "node": "Verify Template Access (F14)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Template Access (F14)": {
+      "main": [
+        [
+          {
+            "node": "Validate Template Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Repair (F14)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Repair (F14)": {
+      "main": [
+        [
+          {
+            "node": "Respond: Repair (F14)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
             "type": "main",
             "index": 0
           }
@@ -470,6 +755,168 @@
       ]
     },
     "Copy Template Sheet": {
+      "main": [
+        [
+          {
+            "node": "Sheet Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet Context": {
+      "main": [
+        [
+          {
+            "node": "Verify Provisioned Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Provisioned Sheet": {
+      "main": [
+        [
+          {
+            "node": "Verify Sheet Ownership",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Sheet Ownership": {
+      "main": [
+        [
+          {
+            "node": "Provisioning Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provisioning Complete?": {
+      "main": [
+        [
+          {
+            "node": "Verify Ready Headers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Formatting Requests (F25)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Formatting Requests (F25)": {
+      "main": [
+        [
+          {
+            "node": "Provision Formatting (F25 batchUpdate)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provision Formatting (F25 batchUpdate)": {
+      "main": [
+        [
+          {
+            "node": "Provision This Week View (F25)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provision This Week View (F25)": {
+      "main": [
+        [
+          {
+            "node": "This Week Sizing (batchUpdate)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "This Week Sizing (batchUpdate)": {
+      "main": [
+        [
+          {
+            "node": "Mark Formatting Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Anyone Can Edit": {
       "main": [
         [
           {
@@ -491,59 +938,145 @@
       "main": [
         [
           {
+            "node": "Respond: Created",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Template Type": {
+      "main": [
+        [
+          {
+            "node": "Copy Template Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Ready Headers": {
+      "main": [
+        [
+          {
+            "node": "Validate Ready Headers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Ready Headers": {
+      "main": [
+        [
+          {
+            "node": "Read Sharing Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Formatting Complete": {
+      "main": [
+        [
+          {
+            "node": "Read Sharing Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sharing Permission": {
+      "main": [
+        [
+          {
+            "node": "Check Sharing Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sharing Permission": {
+      "main": [
+        [
+          {
+            "node": "Sharing Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sharing Ready?": {
+      "main": [
+        [
+          {
+            "node": "Tag Provisioning Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Set Anyone Can Edit",
             "type": "main",
             "index": 0
           }
         ]
       ]
-    },
-    "Set Anyone Can Edit": {
-      "main": [
-        [
-          {
-            "node": "Build Formatting Requests (F25)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Formatting Requests (F25)": [
-      [
-        {
-          "node": "Provision Formatting (F25 batchUpdate)",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ],
-    "Provision Formatting (F25 batchUpdate)": [
-      [
-        {
-          "node": "Provision This Week View (F25)",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ],
-    "Provision This Week View (F25)": [
-      [
-        {
-          "node": "This Week Sizing (batchUpdate)",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ],
-    "This Week Sizing (batchUpdate)": [
-      [
-        {
-          "node": "Respond: Created",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
+    }
   }
 }

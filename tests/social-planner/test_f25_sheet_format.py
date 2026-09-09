@@ -114,7 +114,7 @@ class TestF25ExportFormattingWiring(unittest.TestCase):
         js = next(n for n in self.create["nodes"]
                   if n["name"] == "Build Formatting Requests (F25)")["parameters"]["jsCode"]
         for st in STATUSES:
-            self.assertIn(f"label: '{st}'", js)
+            self.assertIn(json.dumps(st), js)
 
     def test_frozen_headers_and_wrapped_copy(self):
         js = next(n for n in self.create["nodes"]
