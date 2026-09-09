@@ -304,7 +304,7 @@ RESCEOF
     printf 'unset RR_BOX_TOKEN RR_BOX_SLUG RR_BOX_CRED RR_RECEIVER_SECRET RESCUE_PUSH_SECRET %s\nexec "$@"\n' \
         "${RESCUE_ENV_EXTRA_UNSET:-}" > "$_res_tmp"
     # shellcheck disable=SC2086
-    sh "$_res_tmp" "$@" < "$_res_tmp.dummy" 2>/dev/null
+    sh "$_res_tmp" "$@" 2>/dev/null
     _res_rc=$?
     rm -f "$_res_tmp" "$_res_tmp.dummy" 2>/dev/null || true
     return "$_res_rc"
