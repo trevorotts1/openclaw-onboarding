@@ -430,16 +430,35 @@ class FanoutSpecError(ValueError):
 
 @dataclass(frozen=True)
 class FanoutSpec:
+    # PRES-014 (W2 WF05): max_units was AMBIGUOUS between the phase's desired
+    # work count (style variants: 3) and the submission batching width. Two
+    # separate fields now; `max_units` stays as the legacy constructor alias
+    # and is MIGRATED by parse_fanout_field (see migrate note there) -- a
+    # directly-constructed FanoutSpec(by=..., max_units=N) keeps working with
+    # N landing in BOTH fields, which preserves the shipped behavior exactly.
     by: str                      # "slide" | "section" | "file"
-    max_units: Optional[int] = None   # submission-batch cap; None = all units at once
+    max_units: Optional[int] = None   # LEGACY alias -- migrated, see above
+    desired_count: Optional[int] = None  # how many units this phase WANTS done
+    batch_width: Optional[int] = None    # how many units IN FLIGHT per admission batch
+
+    def __post_init__(self) -> None:
+        # Legacy construction (FanoutSpec(by=..., max_units=3)) migrates in
+        # place: frozen dataclass, so object.__setattr__ is the only writer.
+        # Explicit new fields win; the alias never overrides them.
+        if self.desired_count is None and self.max_units and self.max_units > 0:
+            object.__setattr__(self, "desired_count", int(self.max_units))
+        if self.batch_width is None and self.max_units and self.max_units > 0:
+            object.__setattr__(self, "batch_width", int(self.max_units))
 
     def batches(self, units: List["Unit"]) -> List[List["Unit"]]:
-        """Split `units` into submission batches of at most `max_units`.
-        max_units=None (or <= 0, refused at parse) => one batch."""
-        if not self.max_units or self.max_units >= len(units):
+        """Split `units` into submission batches of at most `batch_width`.
+        batch_width None (or <= 0) => one batch. COVERAGE, not concurrency:
+        every unit lands in exactly one batch, in order."""
+        width = self.batch_width
+        if not width or width < 1 or width >= len(units):
             return [units]
-        return [units[i:i + self.max_units]
-                for i in range(0, len(units), self.max_units)]
+        return [units[i:i + width]
+                for i in range(0, len(units), width)]
 
 
 def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
@@ -450,6 +469,15 @@ def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
     FanoutSpecError -- a typo'd "by": "Slide" or a string "max_units": "12"
     must never silently degrade to serial dispatch (same refusal rule as
     manifest.py's _parse_workers_field).
+
+    PRES-014 MIGRATION: legacy {"by", "max_units"} parses through unchanged
+    and FanoutSpec migrates max_units into BOTH desired_count and batch_width
+    (every shipped declaration names a desired work count; a bounded batch of
+    that width still covers every slide). A manifest declaring the new
+    unambiguous fields uses them directly; max_units is then ignored -- the
+    ambiguous name must not win when its successors are present. A NEGATIVE
+    or non-int value for ANY of the three numeric fields is refused at parse
+    time -- a silent coercion would corrupt the admission plan.
     """
     if raw is None:
         return None
@@ -462,13 +490,18 @@ def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
     if not isinstance(by, str) or by.strip().lower() not in FANOUT_BY_VALUES:
         raise FanoutSpecError(
             f"fanout.by must be one of {FANOUT_BY_VALUES}, got {by!r}")
-    max_units = raw.get("max_units")
-    if max_units is not None:
-        if isinstance(max_units, bool) or not isinstance(max_units, int) \
-                or max_units < 1:
-            raise FanoutSpecError(
-                f"fanout.max_units must be a positive int, got {max_units!r}")
-    return FanoutSpec(by=by.strip().lower(), max_units=max_units)
+    for fname in ("max_units", "desired_count", "batch_width"):
+        val = raw.get(fname)
+        if val is not None:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 1:
+                raise FanoutSpecError(
+                    f"fanout.{fname} must be a positive int, got {val!r}")
+    return FanoutSpec(
+        by=by.strip().lower(),
+        max_units=raw.get("max_units"),
+        desired_count=raw.get("desired_count"),
+        batch_width=raw.get("batch_width"),
+    )
 
 
 def unit_output_dir(run_dir: Path, phase_id: str) -> Path:

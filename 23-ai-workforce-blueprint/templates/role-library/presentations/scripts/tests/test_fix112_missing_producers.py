@@ -160,8 +160,11 @@ def test_style_preview_phase_consumes_the_authored_spec(tmp_path):
     spec_phase = _phase(m, "P-STYLE-SPEC")
     assert "working/copy/style_preview_spec.json" in preview.get("consumes", [])
     assert spec_phase["produces_artifact"] == "working/copy/style_preview_spec.json"
-    # And the unit is manifest-declared, not hardcoded glue:
-    assert spec_phase.get("fanout") == {"by": "slide", "max_units": 3}
+    # And the unit is manifest-declared, not hardcoded glue. PRES-014 (W2
+    # WF05) migrated the ambiguous max_units to the unambiguous pair:
+    # desired_count 3 (the phase WANTS 3 variants) + batch_width 3.
+    assert spec_phase.get("fanout") == {"by": "slide", "desired_count": 3,
+                                        "batch_width": 3}
     # build_deck's real --sample gate refuses anything but 3x3:
     assert spec_phase["order"] < preview["order"]
 
