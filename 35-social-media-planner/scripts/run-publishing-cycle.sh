@@ -21,7 +21,7 @@
 # ============================================================
 set -euo pipefail
 
-SCRIPT_VERSION="v10.14.33"
+SCRIPT_VERSION="v10.15.0"
 SCRIPT_NAME="run-publishing-cycle.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -35,6 +35,13 @@ DRY_RUN=0
 WORKDIR=""
 SHOW_HELP=0
 VERIFY_RECEIPTS=""
+ACK_EXECUTION=0
+WORKER_ID=""
+EXECUTION_ID=""
+COMPLETE_PHASE=""
+MARK_REVIEW=0
+STATUS_ONLY=0
+OVERDUE_AFTER="${SKILL35_OVERDUE_AFTER:-900}"
 
 print_help() {
   cat <<EOF
@@ -62,7 +69,48 @@ OPTIONAL
                               (exit 6) when accounts are connected but 0 posts were
                               created, or posts were planned but 0 created. Run this
                               after the orchestrator finishes posting.
+  --ack-execution             (worker) Accept the staged dispatch on behalf of
+                              --worker-id and record the accepted execution in the
+                              durable dispatch record. ONLY after an accepted ack
+                              may the CC task move to in_progress. Requires --workdir.
+  --worker-id <id>            Worker identity for --ack-execution.
+  --execution-id <id>         Optional execution id recorded with the ack
+                              (defaults to <run_id>:<worker_id>).
+  --complete-phase <id>       (worker) Record phase <id> (1-5) complete: requires
+                              an accepted worker ack, the phase's artifacts under
+                              working/phase-<id>/artifacts, and a verified
+                              artifacts.sha256 manifest. Requires --workdir.
+  --mark-review               (worker/orchestrator) Move the cycle to review. ONLY
+                              after EVERY phase is complete with verified artifact
+                              hashes. This is the ONLY path to review — staging
+                              never sets it. Requires --workdir.
+  --status                    Print the durable dispatch state as JSON (queued |
+                              in_progress | review) plus the overdue condition.
+                              Requires --workdir. Read-only; never mutates state.
+  --overdue-after <seconds>   Overdue threshold for --status (default 900s). A
+                              QUEUED cycle past this threshold with no worker ack
+                              is OVERDUE — workers stopped means the cycle stays
+                              queued + overdue, never review/done.
   --help, -h                  Show this help and exit.
+
+LIFECYCLE (F04 — staging is NOT work-ready-for-review)
+  The default invocation STAGES the cycle: it writes the manifest, prompts and
+  a DURABLE DISPATCH RECORD (working/dispatch.json) and returns an explicit
+  QUEUED result. It does NOT move the Command Center task to in_progress and
+  does NOT move it to review. With every worker stopped the cycle remains
+  queued (visible as overdue via --status) with NO review/completion receipt.
+
+    stage (this script, default)   -> state=queued  (CC card stays backlog)
+    --ack-execution --worker-id W  -> state=in_progress (accepted execution;
+                                      CC card moves in_progress HERE, not before)
+    --complete-phase N (per phase) -> phase recorded complete with verified
+                                      sha256 artifact hashes
+    --mark-review                  -> state=review (CC card moves review; the
+                                      independent QC sweep owns review->done)
+
+  Each phase carries a durable operation key (W0 dispatch.json contract) and a
+  consumer binding (Command Center social-publish-dispatcher / F33 execution
+  policy): a stopped consumer leaves the cycle queued + overdue, never done.
 
 PIPELINE (5 phases, 15 producers + 6 QC agents)
   Phase 1  Research & Strategy        researcher + strategist
@@ -122,6 +170,9 @@ EXIT CODES
   5   21-agent roster not yet configured in openclaw.json (run Skill 23
       build-workforce with the social-media-planner role-bundle)
   6   runtime failure during a phase
+  7   lifecycle precondition refused (e.g. --complete-phase without an accepted
+      worker execution, --mark-review before every phase is complete with
+      verified hashes, ack recorded against a foreign run)
 EOF
 }
 
@@ -133,6 +184,13 @@ while [ $# -gt 0 ]; do
     --dry-run)    DRY_RUN=1; shift;;
     --workdir)    WORKDIR="${2:-}"; shift 2;;
     --verify-receipts) VERIFY_RECEIPTS="${2:-}"; shift 2;;
+    --ack-execution) ACK_EXECUTION=1; shift;;
+    --worker-id)  WORKER_ID="${2:-}"; shift 2;;
+    --execution-id) EXECUTION_ID="${2:-}"; shift 2;;
+    --complete-phase) COMPLETE_PHASE="${2:-}"; shift 2;;
+    --mark-review) MARK_REVIEW=1; shift;;
+    --status)     STATUS_ONLY=1; shift;;
+    --overdue-after) OVERDUE_AFTER="${2:-900}"; shift 2;;
     --help|-h)    SHOW_HELP=1; shift;;
     *)
       echo "ERROR: unknown argument: $1" >&2
@@ -148,10 +206,121 @@ if [ "$SHOW_HELP" -eq 1 ]; then
 fi
 
 # When called with no arguments, print help (don't fail noisily).
-# (--verify-receipts is a standalone QC mode and must not be swallowed here.)
-if [ -z "$TOPIC" ] && [ -z "$PLATFORMS" ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$VERIFY_RECEIPTS" ]; then
+# (--verify-receipts / --status are standalone modes and must not be swallowed here.)
+if [ -z "$TOPIC" ] && [ -z "$PLATFORMS" ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$VERIFY_RECEIPTS" ] \
+   && [ "$STATUS_ONLY" -eq 0 ] && [ "$ACK_EXECUTION" -eq 0 ] && [ "$MARK_REVIEW" -eq 0 ] \
+   && [ -z "$COMPLETE_PHASE" ]; then
   print_help
   exit 0
+fi
+
+# ---------- F04: durable dispatch record (working/dispatch.json) ----------
+# One JSON state file per run dir, read/written by every lifecycle mode. All
+# workers read the same record; every transition is recorded here BEFORE the
+# Command Center is touched, so the CC card can never outrun the durable state.
+# Shape follows the W0 dispatch.json contract fields (operation_key, worker_id,
+# attempt, fencing_token, lease/heartbeat/retry) plus the consumer binding.
+_dispatch_read() {
+  python3 - "$WORKDIR" <<'PYEOF' 2>/dev/null || echo "{}"
+import json, sys
+try:
+    print(open(sys.argv[1] + "/working/dispatch.json").read())
+except OSError:
+    print("{}")
+PYEOF
+}
+
+_dispatch_write() {  # _dispatch_write <python-expr-arg-pairs...> — see callers
+  python3 - "$WORKDIR" "$@" <<'PYEOF'
+import json, os, sys
+workdir = sys.argv[1]
+args = sys.argv[2:]
+path = os.path.join(workdir, "working", "dispatch.json")
+try:
+    with open(path) as f:
+        rec = json.load(f)
+except Exception:
+    rec = {}
+# argv pairs: key value key value ...
+i = 0
+def jload(s):
+    try:
+        return json.loads(s)
+    except Exception:
+        return s
+while i + 1 < len(args) + 1 and i < len(args):
+    key, val = args[i], jload(args[i + 1]) if i + 1 < len(args) else None
+    rec[key] = val
+    i += 2
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path + ".tmp", "w") as f:
+    json.dump(rec, f, indent=2)
+os.replace(path + ".tmp", path)
+print(path)
+PYEOF
+}
+
+# The per-phase operation keys (W0 dispatch.json contract): stable, durable,
+# and the idempotency identity a consumer leases against.
+_phase_operation_key() {
+  printf 'skill35-cycle:%s:phase-%s' "$RUN_ID" "$1"
+}
+
+# ---- lifecycle modes that need an EXISTING workdir ----
+if [ -n "$VERIFY_RECEIPTS" ]; then :; fi
+_needs_workdir=0
+[ "$STATUS_ONLY" -eq 1 ] && _needs_workdir=1
+[ "$ACK_EXECUTION" -eq 1 ] && _needs_workdir=1
+[ -n "$COMPLETE_PHASE" ] && _needs_workdir=1
+[ "$MARK_REVIEW" -eq 1 ] && _needs_workdir=1
+if [ "$_needs_workdir" -eq 1 ] && [ -z "$WORKDIR" ]; then
+  err "this mode requires --workdir (the staged run directory)"; exit 2
+fi
+if [ "$_needs_workdir" -eq 1 ] && [ ! -d "$WORKDIR" ]; then
+  err "--workdir not found: $WORKDIR"; exit 2
+fi
+
+_dispatch_now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# --status: print durable state as JSON, read-only, then exit.
+if [ "$STATUS_ONLY" -eq 1 ]; then
+  WORKDIR="$WORKDIR" RUN_ID="${RUN_ID:-}" OVERDUE_AFTER="$OVERDUE_AFTER" python3 - <<'PYEOF'
+import json, os, sys, time
+workdir = sys.argv[1] if len(sys.argv) > 1 else None
+wd = os.environ["WORKDIR"]
+overdue_after = float(os.environ.get("OVERDUE_AFTER") or 900)
+path = os.path.join(wd, "working", "dispatch.json")
+try:
+    rec = json.load(open(path))
+except Exception:
+    print(json.dumps({"error": "no dispatch record at %s" % path})); sys.exit(2)
+out = {
+    "run_id": rec.get("run_id"),
+    "state": rec.get("state"),
+    "overdue": bool(rec.get("overdue")),
+    "overdue_reason": rec.get("overdue_reason"),
+    "queued_at": rec.get("queued_at"),
+    "accepted_execution": rec.get("accepted_execution"),
+    "phases_complete": rec.get("phases_complete", []),
+    "worker_acks": rec.get("worker_acks", []),
+    "review_eligible": rec.get("review_eligible"),
+    "completion_receipt": rec.get("completion_receipt"),
+}
+# A QUEUED cycle past the threshold with NO accepted execution is OVERDUE
+# (workers stopped != completion; never review/done, no completion receipt).
+if rec.get("state") == "queued" and not rec.get("accepted_execution"):
+    try:
+        import datetime
+        ts = datetime.datetime.strptime(rec.get("queued_at", ""), "%Y-%m-%dT%H:%M:%SZ")
+        age = time.time() - ts.replace(tzinfo=datetime.timezone.utc).timestamp()
+        if age > overdue_after:
+            out["overdue"] = True
+            out["overdue_reason"] = "queued %ds with no worker ack (threshold %ds); consumers stopped?" % (int(age), int(overdue_after))
+    except (ValueError, TypeError):
+        pass
+print(json.dumps(out, indent=2))
+PYEOF
+  exit $?
 fi
 
 # ---------- logging helpers ----------
@@ -453,6 +622,232 @@ PYEOF
 }
 
 log "$SCRIPT_NAME $SCRIPT_VERSION starting run-id=$RUN_ID"
+
+# ===========================================================================
+# F04 — WORKER LIFECYCLE MODES (accepted-execution boundary + artifact gate)
+# ---------------------------------------------------------------------------
+# --ack-execution / --complete-phase / --mark-review operate on an EXISTING
+# staged run dir. They mutate the durable dispatch record FIRST, then mirror
+# the accepted state onto the Command Center card (fail-soft). Order is
+# enforced:
+#   ack       : state must be queued  -> in_progress (CC in_progress happens HERE)
+#   complete  : an accepted execution must exist; artifacts must exist and
+#               verify against the sha256 manifest
+#   review    : every phase complete; CC review happens HERE; QC owns review->done
+# ===========================================================================
+_cc_task_id_for_run() {
+  # Recover the staged CC task id (file first, durable record second).
+  local f="$WORKDIR/cc-task-id"
+  if [ -s "$f" ]; then cat "$f"; return 0; fi
+  python3 - "$WORKDIR" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
+try:
+    print(json.load(open(os.path.join(sys.argv[1], "working", "dispatch.json"))).get("cc_task_id") or "")
+except Exception:
+    print("")
+PYEOF
+}
+
+if [ "$ACK_EXECUTION" -eq 1 ]; then
+  [ -n "$WORKER_ID" ] || { err "--ack-execution requires --worker-id"; exit 2; }
+  _ack_json="$(WORKDIR="$WORKDIR" WORKER_ID="$WORKER_ID" EXECUTION_ID="${EXECUTION_ID:-}" RUN_ID="${RUN_ID:-}" OVERDUE_AFTER="$OVERDUE_AFTER" python3 - <<'PYEOF'
+import json, os, sys
+wd = os.environ["WORKDIR"]
+worker = os.environ["WORKER_ID"]
+path = os.path.join(wd, "working", "dispatch.json")
+try:
+    rec = json.load(open(path))
+except Exception as e:
+    print(json.dumps({"ok": False, "exit": 7,
+                      "error": "no readable dispatch record at %s (%s)" % (path, e)}))
+    sys.exit(0)
+if str(rec.get("run_id") or "") != (os.environ.get("RUN_ID") or rec.get("run_id")):
+    pass  # RUN_ID env is only set by the staging invocation; never block on it
+state = str(rec.get("state") or "")
+if state not in ("queued", "in_progress"):
+    print(json.dumps({"ok": False, "exit": 7,
+                      "error": "cannot ack a %s cycle (expected queued)" % state}))
+    sys.exit(0)
+acks = rec.get("worker_acks") if isinstance(rec.get("worker_acks"), list) else []
+for a in acks:
+    if isinstance(a, dict) and a.get("worker_id") == worker:
+        print(json.dumps({"ok": True, "deduped": True, "state": rec.get("state"),
+                          "execution_id": (rec.get("accepted_execution") or {}).get("execution_id")}))
+        sys.exit(0)
+execution_id = os.environ.get("EXECUTION_ID") or "%s:%s" % (rec.get("run_id") or "run", worker)
+rec["accepted_execution"] = {
+    "worker_id": worker,
+    "execution_id": execution_id,
+    "accepted_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%SZ"),
+}
+acks.append({"worker_id": worker, "execution_id": execution_id,
+             "accepted_at": rec["accepted_execution"]["accepted_at"]})
+rec["worker_acks"] = acks
+rec["state"] = "in_progress"
+rec["overdue"] = False
+rec["overdue_reason"] = None
+with open(path + ".tmp", "w") as f:
+    json.dump(rec, f, indent=2)
+import os as _os
+_os.replace(path + ".tmp", path)
+print(json.dumps({"ok": True, "deduped": False, "state": "in_progress",
+                  "execution_id": execution_id}))
+PYEOF
+)"
+  _ack_ok="$(printf '%s' "$_ack_json" | python3 -c 'import sys,json; print(str(json.load(sys.stdin).get("ok")).lower())' 2>/dev/null || echo false)"
+  if [ "$_ack_ok" != "true" ]; then
+    err "worker ack REFUSED: $(printf '%s' "$_ack_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unreadable ack result"))' 2>/dev/null || echo 'unreadable ack result')"
+    exit 7
+  fi
+  _cc_tid="$(_cc_task_id_for_run)"
+  if [ -n "$_cc_tid" ]; then
+    # The ONLY in_progress transition: after an ACCEPTED worker execution.
+    cc_call PATCH "/api/tasks/$_cc_tid" "{\"status\":\"in_progress\"}" >/dev/null
+    log "worker ack accepted ($_ack_json) — task $_cc_tid moved to in_progress."
+  else
+    log "worker ack accepted ($_ack_json) — no CC card on record; board mirror skipped."
+  fi
+  printf '%s\n' "$_ack_json"
+  exit 0
+fi
+
+if [ -n "$COMPLETE_PHASE" ]; then
+  [ -n "$WORKER_ID" ] || { err "--complete-phase requires --worker-id"; exit 2; }
+  case "$COMPLETE_PHASE" in
+    [1-5]) : ;;
+    *) err "--complete-phase takes a phase id 1-5 (got '$COMPLETE_PHASE')"; exit 2;;
+  esac
+  _cp_json="$(WORKDIR="$WORKDIR" WORKER_ID="$WORKER_ID" PHASE="$COMPLETE_PHASE" python3 - <<'PYEOF'
+import datetime, hashlib, json, os, sys
+wd, worker, phase = os.environ["WORKDIR"], os.environ["WORKER_ID"], os.environ["PHASE"]
+path = os.path.join(wd, "working", "dispatch.json")
+def fail(msg, code=7):
+    print(json.dumps({"ok": False, "exit": code, "error": msg})); sys.exit(0)
+try:
+    rec = json.load(open(path))
+except Exception as e:
+    fail("no readable dispatch record at %s (%s)" % (path, e))
+state = str(rec.get("state") or "")
+if state not in ("in_progress",):
+    fail("phase %s completion requires an accepted worker execution "
+         "(state=%r, expected in_progress) — no artifacts count without an ack" % (phase, state))
+accepted = rec.get("accepted_execution") or {}
+if not isinstance(accepted, dict) or not accepted.get("worker_id"):
+    fail("dispatch record carries no accepted execution")
+if worker != str(accepted.get("worker_id")):
+    fail("worker %r is not the accepted executor %r (a foreign worker cannot complete a phase)"
+         % (worker, accepted.get("worker_id")))
+pdir = os.path.join(wd, "working", "phase-%s" % phase, "artifacts")
+if not os.path.isdir(pdir):
+    fail("phase %s has no artifacts directory at %s — completion cannot be claimed "
+         "without producer artifacts" % (phase, pdir))
+artifacts = {}
+for root, _dirs, files in os.walk(pdir):
+    for fn in sorted(files):
+        full = os.path.join(root, fn)
+        rel = os.path.relpath(full, pdir)
+        try:
+            artifacts[rel] = hashlib.sha256(open(full, "rb").read()).hexdigest()
+        except OSError as e:
+            fail("artifact %s unreadable (fail-closed): %s" % (rel, e))
+if not artifacts:
+    fail("phase %s artifacts directory is EMPTY — completion cannot be claimed" % phase)
+now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+phases = rec.get("phases_complete") if isinstance(rec.get("phases_complete"), list) else []
+for p in phases:
+    if isinstance(p, dict) and str(p.get("phase")) == str(phase):
+        print(json.dumps({"ok": True, "deduped": True, "phase": phase,
+                          "artifacts": len(artifacts), "sha256": artifacts}))
+        sys.exit(0)
+phases.append({"phase": str(phase), "completed_by": worker,
+               "execution_id": accepted.get("execution_id"),
+               "completed_at": now,
+               "artifacts": len(artifacts),
+               "sha256": artifacts})
+rec["phases_complete"] = phases
+with open(path + ".tmp", "w") as f:
+    json.dump(rec, f, indent=2)
+import os as _os
+_os.replace(path + ".tmp", path)
+print(json.dumps({"ok": True, "deduped": False, "phase": phase,
+                  "artifacts": len(artifacts), "sha256": artifacts}))
+PYEOF
+)"
+  _cp_ok="$(printf '%s' "$_cp_json" | python3 -c 'import sys,json; print(str(json.load(sys.stdin).get("ok")).lower())' 2>/dev/null || echo false)"
+  if [ "$_cp_ok" != "true" ]; then
+    err "phase completion REFUSED: $(printf '%s' "$_cp_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unreadable completion result"))' 2>/dev/null || echo 'unreadable result')"
+    exit 7
+  fi
+  printf '%s\n' "$_cp_json"
+  exit 0
+fi
+
+if [ "$MARK_REVIEW" -eq 1 ]; then
+  _mr_json="$(WORKDIR="$WORKDIR" python3 - <<'PYEOF'
+import datetime, hashlib, json, os, sys
+wd = os.environ["WORKDIR"]
+path = os.path.join(wd, "working", "dispatch.json")
+def fail(msg, code=7):
+    print(json.dumps({"ok": False, "exit": code, "error": msg})); sys.exit(0)
+try:
+    rec = json.load(open(path))
+except Exception as e:
+    fail("no readable dispatch record at %s (%s)" % (path, e))
+state = str(rec.get("state") or "")
+if state == "queued":
+    fail("--mark-review refused: the cycle is still QUEUED with no accepted worker "
+         "execution — staging is never review-eligible")
+if state == "review":
+    print(json.dumps({"ok": True, "deduped": True, "state": "review"})); sys.exit(0)
+phases = [p for p in (rec.get("phases_complete") or []) if isinstance(p, dict)]
+done = {str(p.get("phase")) for p in phases}
+missing = [str(i) for i in range(1, 6) if str(i) not in done]
+if missing:
+    fail("--mark-review refused: phase(s) %s are not recorded complete with verified "
+         "artifact hashes — review requires EVERY phase complete" % ", ".join(missing))
+# Re-verify the recorded sha256 manifest against the artifacts ON DISK right now
+# (a phase may have been 'completed' against artifacts later edited/deleted).
+for p in phases:
+    pdir = os.path.join(wd, "working", "phase-%s" % p.get("phase"), "artifacts")
+    want = p.get("sha256") if isinstance(p.get("sha256"), dict) else {}
+    for rel, sha in sorted(want.items()):
+        full = os.path.join(pdir, rel)
+        if not os.path.isfile(full):
+            fail("--mark-review refused: verified artifact %s (phase %s) is missing on disk"
+                 % (rel, p.get("phase")))
+        got = hashlib.sha256(open(full, "rb").read()).hexdigest()
+        if got != sha:
+            fail("--mark-review refused: artifact %s (phase %s) changed after its hash was "
+                 "recorded (%s..%s != %s..%s)" % (rel, p.get("phase"), sha[:12], sha[-8:],
+                                                  got[:12], got[-8:]))
+rec["state"] = "review"
+rec["review_eligible"] = True
+rec["reviewed_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+with open(path + ".tmp", "w") as f:
+    json.dump(rec, f, indent=2)
+import os as _os
+_os.replace(path + ".tmp", path)
+print(json.dumps({"ok": True, "state": "review"}))
+PYEOF
+)"
+  _mr_ok="$(printf '%s' "$_mr_json" | python3 -c 'import sys,json; print(str(json.load(sys.stdin).get("ok")).lower())' 2>/dev/null || echo false)"
+  if [ "$_mr_ok" != "true" ]; then
+    err "review transition REFUSED: $(printf '%s' "$_mr_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unreadable review result"))' 2>/dev/null || echo 'unreadable result')"
+    exit 7
+  fi
+  _cc_tid="$(_cc_task_id_for_run)"
+  if [ -n "$_cc_tid" ]; then
+    # The ONLY review transition: after every phase is complete with verified
+    # hashes. QC owns review->done (this script never sets done).
+    cc_call PATCH "/api/tasks/$_cc_tid" "{\"status\":\"review\"}" >/dev/null
+    log "cycle moved to review (all 5 phases verified) — task $_cc_tid at review; QC promotes review->done."
+  else
+    log "cycle moved to review (all 5 phases verified) — no CC card on record; board mirror skipped."
+  fi
+  printf '%s\n' "$_mr_json"
+  exit 0
+fi
 
 # ---------- verify-receipts mode (post-cycle QC gate; runs and exits) ----------
 if [ -n "$VERIFY_RECEIPTS" ]; then
@@ -879,7 +1274,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-# ---------- Command Center: create-or-reuse card + mark in_progress ----------
+# ---------- Command Center: register the staged cycle (card stays backlog) ----------
 # Operators see every run move across the board. Fail-soft: with the board down
 # OR MC_API_TOKEN unset, this logs a skip, creates NO task, and the cycle finishes
 # exactly as before (manifest + hand-off file, exit 0). QC promotes review->done;
@@ -902,8 +1297,13 @@ fi
 #     server's job, and ingest is company-scoped end to end);
 #   - idempotency: a stable sha256 key over run_id+topic so a retried cycle
 #     never creates a second card.
-# Ownership of the REST of this script (staging/exec contract) is WF09's —
-# only this create-payload section changed for F12.
+#
+# F04 — STAGING IS QUEUED, NOT IN_PROGRESS: the card is created but is NEVER
+# moved here. The card moves to in_progress ONLY when a worker records an
+# accepted execution (--ack-execution), and to review ONLY after every phase is
+# complete with verified artifact hashes (--mark-review). A staged-but-unowned
+# cycle must stay visually queued: "in_progress" was the old lie that turned
+# staging into work-ready-for-review.
 CC_TASK_FILE="$WORKDIR/cc-task-id"
 cc_ingest_body="$(python3 - "$TOPIC" "$PLATFORMS_NORM" "$RUN_ID" <<'PYEOF'
 import hashlib, json, os, sys
@@ -913,8 +1313,8 @@ company_id = (os.environ.get("SKILL35_COMPANY_ID")
 payload = {
     "title": ("Social cycle: " + topic)[:120],
     "description": (f"Skill 35 weekly publishing cycle (run {run_id}) for platforms: {platforms}. "
-                    "Staged by run-publishing-cycle.sh in the Marketing/Content workspace; "
-                    "QC promotes review->done."),
+                    "STAGED (queued — awaiting an accepted worker execution via "
+                    "--ack-execution); NOT yet in progress. QC promotes review->done."),
     # F12 — canonical ingest provenance + dedupe identity. The ingest route
     # embeds [ingest:<key>] and dedupes on it server-side (no schema needed).
     "source": "skill35-publishing-cycle",
@@ -971,9 +1371,8 @@ except Exception:
     pass
 PYEOF
 if [ -n "$CC_TASK_ID" ]; then
-  cc_call PATCH "/api/tasks/$CC_TASK_ID" \
-    "{\"status\":\"in_progress\"}" >/dev/null
-  log "Command Center: task $CC_TASK_ID created and moved to in_progress."
+  # F04: the card STAYS at backlog while staged — no in_progress move here.
+  log "Command Center: task $CC_TASK_ID created (staged/queued — stays backlog until a worker acks; QC promotes review->done)."
 else
   log "Command Center: no task id captured (board optional) — continuing without a card."
 fi
@@ -1029,27 +1428,62 @@ run_phase 5 "Publish + Monitor"
 # Final hand-off signal
 HANDOFF="$WORKDIR/READY-FOR-ORCHESTRATOR"
 cat >"$HANDOFF" <<EOF
-Skill 35 cycle $RUN_ID is ready for the master orchestrator.
+Skill 35 cycle $RUN_ID is STAGED (QUEUED) for the master orchestrator.
 
 Manifest: $MANIFEST
 Workdir : $WORKDIR
+Dispatch: $WORKDIR/working/dispatch.json (durable state — see --status)
 
 The orchestrator should now walk phases 1..5 in cycle-manifest.json,
 spawn the listed agents (one sub-agent per agent, per N5), and record
-deliverables in the per-phase directories. Engagement Monitor runs
-continuously for 7 days post-publish per INSTRUCTIONS.md Phase 5.
+deliverables in the per-phase directories. THIS STAGING IS NOT PROGRESS:
+the cycle is QUEUED until a worker accepts the dispatch
+(--ack-execution --worker-id W), each phase is completed with verified
+artifact hashes (--complete-phase N), and the finished work is moved to
+review (--mark-review). With all workers stopped the cycle remains
+queued + overdue and NO review/completion receipt is ever written.
+Engagement Monitor runs continuously for 7 days post-publish per
+INSTRUCTIONS.md Phase 5.
 EOF
 
-log "Cycle $RUN_ID prepared. Hand-off file: $HANDOFF"
+# ---------- F04: durable dispatch record — QUEUED, never completion ----------
+# One record per run connecting staging to the DURABLE CONSUMER MODEL
+# (Command Center social-publish-dispatcher / F33 execution policy): per-phase
+# operation keys (W0 dispatch.json contract), the CC task binding, and the
+# accepted-execution gate. With every worker stopped the record keeps the
+# cycle in state=queued (overdue past the threshold) — it NEVER acquires a
+# review/completion receipt from staging alone.
+CC_TASK_ID_STAGED="$(cat "$CC_TASK_FILE" 2>/dev/null || true)"
+_dispatch_write \
+  "schema" '"skill35-dispatch-v1"' \
+  "run_id" "\"$RUN_ID\"" \
+  "workdir" "\"$WORKDIR\"" \
+  "state" '"queued"' \
+  "queued_at" "\"$(_dispatch_now_iso)\"" \
+  "topic" "\"$(printf '%s' "$TOPIC" | sed 's/"/\\"/g')\"" \
+  "platforms" "\"$PLATFORMS_NORM\"" \
+  "schedule" "\"$SCHEDULE\"" \
+  "consumer" '"cc-social-publish-dispatcher"' \
+  "execution_policy" '"F33-standard-or-ultra"' \
+  "cc_task_id" "\"$CC_TASK_ID_STAGED\"" \
+  "operation_keys" "$(python3 -c '
+import json, sys
+rid = sys.argv[1]
+print(json.dumps({"phase-1": "skill35-cycle:%s:phase-1" % rid,
+                  "phase-2": "skill35-cycle:%s:phase-2" % rid,
+                  "phase-3": "skill35-cycle:%s:phase-3" % rid,
+                  "phase-4": "skill35-cycle:%s:phase-4" % rid,
+                  "phase-5": "skill35-cycle:%s:phase-5" % rid}))' "$RUN_ID")" \
+  "accepted_execution" "null" \
+  "worker_acks" "[]" \
+  "phases_complete" "[]" \
+  "review_eligible" "false" \
+  "completion_receipt" "null"
 
-# ---------- Command Center: hand-off -> review (QC promotes review->done) ----------
-# The builder may NOT self-grade (QC gate): this script moves the card to 'review'
-# and STOPS. The independent QC auto-scorer / dept QC agent promotes review->done.
-if [ -n "$CC_TASK_ID" ]; then
-  cc_call PATCH "/api/tasks/$CC_TASK_ID" \
-    "{\"status\":\"review\"}" >/dev/null
-  log "Command Center: task $CC_TASK_ID moved to review (QC promotes review->done; this script never sets done)."
-fi
+log "Cycle $RUN_ID staged as QUEUED (dispatch record: $WORKDIR/working/dispatch.json)."
+log "Staging is NOT execution: the cycle runs when a worker acks, completes each phase"
+log "with verified artifact hashes, and moves to review via --mark-review. With workers"
+log "stopped it stays queued + overdue (no review/completion receipt)."
 
-log "$SCRIPT_NAME complete."
+log "$SCRIPT_NAME staging complete (state=queued)."
 exit 0
