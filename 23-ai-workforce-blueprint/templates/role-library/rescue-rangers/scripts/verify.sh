@@ -198,16 +198,18 @@ fi
 #     (CC ingest/route.ts: wrong/absent signature -> 401; unset secret+allow
 #     flag -> dev mode) — our _sign must produce the digest the route accepts.
 #   - patch_status must refuse a status outside the CC TaskStatus enum
-#     OFFLINE (CC validation.ts TaskStatus) — enum parity against the LIVE
-#     CC source when available, else against the pinned 10-value enum.
+#     (write-back calls carry Authorization: Bearer $MC_API_TOKEN; a 401 here
+#     means the header is missing) OFFLINE (CC validation.ts TaskStatus) —
+#     enum parity against the LIVE CC source when available, else against
+#     the pinned 10-value enum.
 #   - a 500 board must be fail-soft (return None/False, record receipt).
 # ---------------------------------------------------------------------------
 CONTRACT_SERVER="$MUT/contract_server.py"
 if [ -n "$PY" ]; then
   cat > "$CONTRACT_SERVER" <<'PYSRV'
 # Contract fixture server: behaves like the CURRENT CC /api/tasks/ingest and
-# PATCH /api/tasks/{id} routes (auth + enum per CC src/lib/validation.ts and
-# src/app/api/tasks/ingest/route.ts).
+# PATCH /api/tasks/{id} routes (auth via Authorization: Bearer $MC_API_TOKEN
+# + enum per CC src/lib/validation.ts and src/app/api/tasks/ingest/route.ts).
 import hashlib, hmac, json, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
