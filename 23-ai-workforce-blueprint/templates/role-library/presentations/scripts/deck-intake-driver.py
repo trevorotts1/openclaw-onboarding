@@ -989,6 +989,69 @@ def _import_capacity():
 #: 10 into it), and the ledger key that subfield stores on.
 _PLAN_TIER_SUBFIELD = "resource_plan"
 
+#: PRES-006 — the durable configuration_pending event. An intake turn whose
+#: PLAN-TIER half went unstated (the client answered the model/mode subfields
+#: but not the tier, or skipped the turn) is NOT a decline and NOT an answer:
+#: it is configuration_pending. Before this event, the empty-tier return said
+#: nothing, so the run later PARKed on AF-CAPACITY-UNMEASURED with no durable
+#: record of why, no owner and no next action. The event is APPENDED to the
+#: run dir's configuration_events.jsonl (never rewritten) and names the
+#: missing field, the provider still owed an answer, the scoped resume link
+#: and the next action. It never BLOCKS anything: independent already-
+#: configured routes proceed, and the ask-once lock stays untouched (no lock
+#: is written for a turn the client did not answer — that is exactly the
+#: no-ask-once-lock rule this implements).
+CONFIGURATION_PENDING_EVENT = "configuration_pending"
+_CONFIG_EVENTS_RELPATH = Path("working") / "events" / "configuration_events.jsonl"
+
+
+def _emit_configuration_pending(run_dir: Path, pending_providers: List[str],
+                                missing_field: str, session_hint: str = "") -> List[dict]:
+    """Append one configuration_pending event per still-owed provider.
+
+    Read-only inputs, append-only output. Never raises into the intake flow:
+    a failed event write is reported on stderr and the turn proceeds — the
+    event is VISIBILITY, never a gate. The resume link is the client's own
+    /s/<session> capability surface scoped to this interview (never an admin
+    URL); without a base URL configured it is emitted relative for the
+    poller/supervisor to render."""
+    events: List[dict] = []
+    if not pending_providers:
+        return events
+    base = (os.environ.get("PRESENTATION_INTAKE_BASE_URL") or "").rstrip("/")
+    session_id = session_hint or ""
+    resume = f"{base}/s/{session_id}" if base else f"/s/{session_id}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for provider in pending_providers:
+        events.append({
+            "event": CONFIGURATION_PENDING_EVENT,
+            "at": now_iso,
+            "session_id": session_id,
+            "run_dir": str(run_dir),
+            "field": "resource_plan",
+            "missing_field": missing_field,
+            "provider": provider,
+            "resume_url": resume,
+            "next_action": (
+                f"answer the resource-plan {missing_field} for {provider}; "
+                "the run is NOT blocked — already configured routes proceed"),
+            "state": CONFIGURATION_PENDING_EVENT,
+            "owner": "presentation-intake",
+            "source": "deck-intake-driver",
+        })
+    try:
+        out = run_dir / _CONFIG_EVENTS_RELPATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("a", encoding="utf-8") as fh:
+            for ev in events:
+                fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"  WARN  [CONFIG-PENDING] could not append the "
+              f"configuration_pending event ({exc.__class__.__name__}: {exc}) "
+              f"-- the pending configuration is still real, only its durable "
+              f"record is missing.", file=sys.stderr)
+    return events
+
 
 def _claimed_plan_tier(qdef: Dict[str, Any], text: str) -> str:
     """The plan-tier half of the answer AS THE CLIENT ACTUALLY GAVE IT.
@@ -1026,7 +1089,9 @@ def _claimed_plan_tier(qdef: Dict[str, Any], text: str) -> str:
 
 
 def _record_plan_tier(qdef: Dict[str, Any], text: str,
-                      entries: Dict[str, Any]) -> int:
+                      entries: Dict[str, Any],
+                      run_dir: Optional[Path] = None,
+                      session_hint: str = "") -> int:
     """Lock the client's PLAN TIER onto the resource profile. THE F5 WIRE.
 
     THE DEFECT THIS CLOSES (MEASURED on v25.0.17 / eaedc0633). Production
@@ -1063,11 +1128,33 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
     refused. Called BEFORE the model plan so a refused answer never
     half-lands."""
     raw = _claimed_plan_tier(qdef, text)
+    cap = _import_capacity()
+    rp = _import_resource_profile()
+
+    # PRES-006: WHO IS STILL OWED A TIER, inspected BEFORE the empty-tier
+    # return. The empty return used to say nothing; now, when providers are
+    # still owed an answer and THIS turn did not state one, a durable
+    # configuration_pending event is emitted (missing field, provider, scoped
+    # resume link, next action) so the waiting state stays visible with an
+    # owner — while the run itself stays UNBLOCKED and the ask-once lock is
+    # untouched (absence never writes a lock, a default, or another provider's
+    # answer).
+    if not raw and cap is not None:
+        try:
+            surface = (cap.probe() or {}).get("resource_profile") or {}
+            owed = [q.get("provider") for q in (surface.get("pending_questions") or [])
+                    if q.get("id") == _PLAN_TIER_SUBFIELD and q.get("provider")]
+            owed = list(dict.fromkeys(owed))
+            if owed:
+                _emit_configuration_pending(run_dir or Path.cwd(), owed,
+                                            _PLAN_TIER_SUBFIELD,
+                                            session_hint=session_hint)
+        except Exception:  # noqa: BLE001 — visibility must never kill intake
+            pass
+
     if not raw:
         return 0  # the client said nothing about a plan: absence is absence
 
-    cap = _import_capacity()
-    rp = _import_resource_profile()
     if cap is None or rp is None:
         return 0  # already announced loudly on stderr; the ledger keeps the answer
 
@@ -1457,7 +1544,8 @@ def cmd_answer(args) -> int:
             # AF-CAPACITY-UNMEASURED until an operator hand-ran the capacity
             # CLI. Recorded ahead of the model plan so a refused tier never
             # half-lands a model plan either.
-            rc = _record_plan_tier(qdef, text, entries)
+            rc = _record_plan_tier(qdef, text, entries, run_dir=run_dir,
+                                   session_hint=str(run_dir.name))
             if rc != 0:
                 return rc
             rc = _record_client_model_plan(derived, entries)

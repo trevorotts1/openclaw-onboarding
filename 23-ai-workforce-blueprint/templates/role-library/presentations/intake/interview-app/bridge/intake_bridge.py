@@ -336,12 +336,36 @@ def cmd_ingest(args) -> int:
     if intake_writer is not None:
         run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
+        # PRES-006: the record is migrated to the current contract version and
+        # gated on the canonical REQUIRED set BEFORE anything is written — a
+        # contradictory legacy record or an incomplete one raises here and
+        # nothing (no intake.json, no ledger, no card) is produced.
+        intake_writer.migrate_intake(intake)
+        missing = intake_writer.validate_intake_completeness(intake)
+        if missing:
+            print(json.dumps({"status": "intake_incomplete",
+                              "session_id": args.session_id,
+                              "missing": missing,
+                              "error": "required canonical fields missing or empty "
+                                       f"(contract v{intake_writer.INTAKE_CONTRACT_VERSION})"}),
+                  file=sys.stderr)
+            return 6
         intake_writer.write_intake_file(run_dir, intake)
         intake_writer.write_ledger(run_dir, intake)
         if hasattr(intake_writer, "write_transcript"):
             intake_writer.write_transcript(run_dir, intake)
+        # PRES-006: missing optional resource-plan subfields are
+        # configuration_pending — a durable event with the missing field, the
+        # provider, the scoped resume link and the next action. The run is NOT
+        # blocked: already configured independent routes proceed. The
+        # pending-provider list rides the intake record (stamped upstream from
+        # the capacity probe) — this bridge never runs the probe.
+        pending_events = intake_writer.emit_configuration_pending_events(
+            run_dir, intake, args.session_id)
         if args.verbose:
-            print(f"wrote run-dir record under {run_dir}/working/")
+            print(f"wrote run-dir record under {run_dir}/working/"
+                  + (f" ({len(pending_events)} configuration_pending event(s))"
+                     if pending_events else ""))
     else:
         print("error: intake_writer.py not importable — cannot stamp the run dir", file=sys.stderr)
         return 2

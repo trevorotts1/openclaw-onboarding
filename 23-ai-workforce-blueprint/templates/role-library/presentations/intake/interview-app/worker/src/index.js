@@ -33,6 +33,14 @@ import {
   answersSince, progress, jsonResponse, errorResponse, isQuestionActive,
   DEFAULT_TTL_DAYS,
 } from "./lib.js";
+// PRES-006: the completeness gate and the legacy migration are GENERATED from
+// the one canonical field-path contract (../schema/intake_fields.js). The
+// hand-copied REQUIRED_BRIEF_FIELDS array this worker used to carry is gone —
+// it drifted from the form and rejected every complete payload (the upsell
+// flags are stored canonically under pre_presentation_capture.*, not
+// deck_brief). validateAndMigrate distinguishes a real "no" answer from a
+// missing one and refuses contradictory legacy records with an explanation.
+import { validateAndMigrate } from "../schema/intake_contract.js";
 
 export default {
   async fetch(request, env) {
@@ -170,56 +178,40 @@ async function loadOpenSession(env, token, allowComplete = false) {
  * box's deck-intake-driver / cc_board ingest path expects. Stored in D1 and
  * made available to the box bridge (which polls it into the run dir).
  *
- * F21 COMPLETENESS GATE: an intake missing any REQUIRED deck_brief field (the
- * required+block_gate questions of the curated set) or pre_presentation_capture.
- * PRESENTATION_TYPE is rejected with 422 naming the missing fields. Before this
- * gate the server accepted `{}` — a hollow intake flowed downstream, the bridge
- * minted a card from it, and the failure only surfaced mid-build as garbage
- * copy. Server-side validation mirrors what the UI enforces client-side.
+ * PRES-006 SCHEMA-DRIVEN COMPLETENESS GATE: the required set comes from the
+ * one canonical field-path contract (schema/intake_fields.js via
+ * schema/intake_contract.js) — no independent REQUIRED_BRIEF_FIELDS copy that
+ * can drift. A "no"/"false" answer is a REAL answer and never counts as
+ * missing; only undefined/null/blank is missing. A legacy (pre-contract)
+ * record is MIGRATED forward first; a record carrying contradictory legacy
+ * values is REFUSED (422) with the migration explanation naming both values.
+ * The F21 fail-closed posture is unchanged: an incomplete intake is rejected
+ * naming the missing fields.
  */
-const REQUIRED_BRIEF_FIELDS = [
-  "OFFER_NAME",
-  "NAMED_METHODOLOGY",
-  "TRANSFORMATION_PROMISE",
-  "TIME_TO_RESULT",
-  "AUDIENCE",
-  "CTA_ACTION",
-  "TONE",
-  "FINAL_PRICE",
-  "WANT_SALES_CHECKOUT",
-  "WANT_VSL_PAGE",
-];
-
-function validateIntakeCompleteness(intake) {
-  const brief = (intake && typeof intake.deck_brief === "object" && intake.deck_brief) || {};
-  const pre = (intake && typeof intake.pre_presentation_capture === "object" && intake.pre_presentation_capture) || {};
-  const missing = [];
-  for (const f of REQUIRED_BRIEF_FIELDS) {
-    const v = brief[f];
-    if (v === undefined || v === null || (typeof v === "string" && !v.trim())) missing.push("deck_brief." + f);
-  }
-  if (!pre.PRESENTATION_TYPE || (typeof pre.PRESENTATION_TYPE === "string" && !pre.PRESENTATION_TYPE.trim())) {
-    missing.push("pre_presentation_capture.PRESENTATION_TYPE");
-  }
-  return missing;
-}
-
 async function storeIntake(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
   const intake = body.intake;
   if (!intake || typeof intake !== "object") return errorResponse("intake object required", 400);
-  const missingFields = validateIntakeCompleteness(intake);
-  if (missingFields.length) {
-    return jsonResponse({ status: "rejected", error: "intake incomplete — required fields missing or empty", missing: missingFields }, 422);
+  const result = validateAndMigrate(intake);
+  if (!result.ok) {
+    if (result.conflicts) {
+      return jsonResponse({
+        status: "rejected",
+        error: "intake rejected — " + (result.note || "contradictory legacy values"),
+        migration_conflicts: result.conflicts,
+        migration_note: result.note,
+      }, 422);
+    }
+    return jsonResponse({ status: "rejected", error: result.note || "intake incomplete — required fields missing or empty", missing: result.missing }, 422);
   }
   const file_name = (body.file_name || "intake.json").replace(/[^A-Za-z0-9._-]/g, "");
   const session_id = intake.intake_session_id || file_name.replace(/\..+$/, "");
   const created = nowSeconds();
   if (env.DB) {
-    await env.DB.prepare("INSERT INTO intakes (session_id, file_name, intake_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (session_id) DO UPDATE SET intake_json = excluded.intake_json, created_at = excluded.created_at").bind(session_id, file_name, JSON.stringify(intake), created).run();
+    await env.DB.prepare("INSERT INTO intakes (session_id, file_name, intake_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (session_id) DO UPDATE SET intake_json = excluded.intake_json, created_at = excluded.created_at").bind(session_id, file_name, JSON.stringify(result.intake), created).run();
   }
-  return jsonResponse({ status: "stored", session_id, file_name, stored_at: created }, 201);
+  return jsonResponse({ status: "stored", session_id, file_name, stored_at: created, schema_version: result.intake.schema_version, migrated: result.migrated || [] }, 201);
 }
 
 /**
