@@ -1,5 +1,22 @@
 # Skill 35 — n8n Workflow Definitions (config/n8n)
 
+> **F17 — weekly-theme trigger SUPERSEDED (social/wf10-weekly-expiry).** The
+> live n8n weekly-theme workflow (`VXRfHv2UT6QbD7Sg`) — the one that reads
+> Sheet1, filters a `Date To Be Published` value for today by string
+> equality, and updates a theme — is a competing entry path with no client
+> invitation step and no durable state. It is SUPERSEDED by the durable
+> cycle service (ONB `shared-utils/social_cycle_service.py` + the Command
+> Center's `cc-cycle-service` node-cron engine). IF that trigger is retained
+> at all, it must be pointed at the VERSIONED schema (`schema_version` ≥
+> 1.1.0, company/week keys per `run/contracts/sheet_registry.json`) and must
+> use LOCAL WEEK boundaries computed in the client's timezone — never string
+> equality with today. Disabling the live trigger is a DEPLOYMENT-PHASE step:
+> prove the replacement first (exactly one active `cc-cycle-service`
+> engine-ownership row per company; verify via
+> `register-weekly-cron.sh --verify`), then disable the n8n trigger. The
+> handover procedure is documented in `35-social-media-planner/INSTALL.md`
+> (Step 9, "Deployment-phase handover").
+
 Skill 35's Google Sheet integration runs through two n8n webhooks hosted on the
 BlackCEO Automations hub (`main.blackceoautomations.com`):
 

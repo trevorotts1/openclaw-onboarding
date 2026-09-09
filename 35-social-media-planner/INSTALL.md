@@ -437,6 +437,31 @@ The script:
 - Marker path: `~/.openclaw/data/skill35/weekly-theme-last-run.json` (persistent across reboots; written by the cron on each fire to skip double-fires within the same ISO week).
 - Model: cheap/free (flash or free OpenRouter fallback) — NOT the metered primary pro model.
 
+**F07/F17 — forwarding adapter, not the owner (important):** the registered trigger is a
+LIGHTWEIGHT forwarding adapter. The invitation/reminder/cutoff cadence is owned by the DURABLE
+cycle service (`shared-utils/social_cycle_service.py` on ONB-only boxes; the Command Center's
+`node-cron` engine `cc-cycle-service` wherever CC is live). The trigger's message contains no
+multi-hour wait and no noon/6PM fallback — the durable service owns that timing and records it
+in the engine-ownership record (`~/.openclaw/data/social-cycle/engine-ownership.json`).
+Verify the handover after the CC side is deployed:
+
+```bash
+bash "$REGISTER_SCRIPT" --verify   # exit 0 = durable engine owns the schedule (one active owner/company)
+```
+
+Exit 5 means the CC cycle service has not claimed ownership yet (the lightweight trigger remains
+the fallback owner) — that is the expected state until the deployment step below runs.
+
+**Deployment-phase handover (disable the superseded trigger only after proving the replacement):**
+once the Command Center's `social-cycle` job is live on the box (visible in `job_liveness` and
+`social_engine_ownership` with exactly one active `cc-cycle-service` row per company), retire the
+legacy gateway trigger: `openclaw cron delete --name skill35-weekly-theme`, then re-run the verify
+above. Do NOT disable the legacy trigger before the durable engine's ownership record verifies —
+that order is what prevents a week with zero invitations. The n8n weekly-theme trigger
+(VXRfHv2UT6QbD7Sg) is likewise superseded: the export README documents the versioned-schema
+requirement, and disabling the live n8n trigger is the same deployment-phase step (prove the
+replacement first, then disable).
+
 **If the client's HEARTBEAT.md already contains the Saturday theme-request block** (from a prior install of this skill), remove it:
 
 ```bash
