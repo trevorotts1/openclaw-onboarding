@@ -196,6 +196,16 @@ def main(argv=None):
 
 
 def self_test():
+    import os
+    import tempfile
+    os.environ["RR_LEDGER_DRILL"] = "1"
+    try:
+        return _self_test_body()
+    finally:
+        os.environ.pop("RR_LEDGER_DRILL", None)
+
+
+def _self_test_body():
     import tempfile
     print("[migrate-rescue-staticdata] self-test: nested export, aliases, idempotency, counters")
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
