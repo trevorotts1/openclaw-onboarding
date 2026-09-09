@@ -3443,37 +3443,523 @@ def _pu_artifact_paths(run_dir: Path, artifacts: List[str]) -> List[Path]:
     return artifact_paths(run_dir, expanded)
 
 
+def _pu_manifest_declared_artifacts(phase_id: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """PRES-012: the CANONICAL manifest resolver, not a hand-built upward walk.
+
+    Returns (declared_artifacts, None) or (None, config_error_reason). The
+    canonical resolver is manifest_source.resolve_manifest (the ONE resolver
+    every lockstep tool in this directory uses) -- it refuses (SystemExit) when
+    no manifest can be proven, which here becomes a CONFIGURATION ERROR verdict,
+    never a silent removal of the gate semantics. A manifest that lacks the
+    phase id is likewise a configuration error: the verifier must never shrink
+    to a weaker check when the manifest it is told to enforce is absent.
+    """
+    try:
+        import manifest_source
+        path, provenance = manifest_source.resolve_manifest(Path(__file__).resolve().parent)
+    except SystemExit:
+        return None, ("AF-U-CONFIG: no canonical PIPELINE-MANIFEST.json could be resolved "
+                      f"for {phase_id} -- the verifier refuses to guess its artifact "
+                      "contract (PRES-012: a missing manifest is a configuration error, "
+                      "never a weaker check)")
+    except Exception as exc:  # noqa: BLE001 -- any resolver failure is config, not pass
+        return None, f"AF-U-CONFIG: manifest resolver failed ({exc!r}) for {phase_id}"
+    try:
+        man = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return None, f"AF-U-CONFIG: resolved manifest {path} unreadable ({exc!r})"
+    declared: List[str] = []
+    for ph in (man.get("phases") or []):
+        if not isinstance(ph, dict) or ph.get("id") != phase_id:
+            continue
+        pa = ph.get("produces_artifact")
+        if isinstance(pa, str):
+            declared.append(pa)
+        elif isinstance(pa, list):
+            declared.extend(a for a in pa if isinstance(a, str))
+    if not declared:
+        return None, (f"AF-U-CONFIG: manifest v{man.get('manifest_version')} declares no "
+                      f"produces_artifact for {phase_id} (resolved from {provenance}) -- "
+                      "the verifier cannot enforce a contract the manifest does not state")
+    return declared, None
+
+
+def _pu_phase_shape(phase_id: str) -> str:
+    """The schema-specific checker family for one P-U-* phase id (PRES-012).
+
+    Every phase gets a SPECIFIC verifier; the generic any-path check is gone.
+    Shapes: json (parseable JSON object), receipt (the unified
+    build_receipt/ghl_build_receipt family), ghl_receipt (GHL receipts with the
+    full schema_version/scope/revision/hash contract), html (real assembled
+    page markers), png (decoded image), text (non-empty content), collection
+    (non-empty upsell collateral dir), qc (scorecard with per-criterion rows
+    and independent-reviewer provenance), form (Skill-44 gate form/workflow
+    plan objects)."""
+    if phase_id.endswith("P-U-GHL-SALES") or phase_id.endswith("P-U-GHL-VSL"):
+        return "ghl_receipt"
+    if phase_id == "P-U-FORM-GATE":
+        return "form_gate"
+    if phase_id == "P-U-QC":
+        return "upsell_qc"
+    if phase_id == "P-U-COLLATERAL":
+        return "collection"
+    if phase_id.endswith("P-U-HTML-SALES") or phase_id.endswith("P-U-HTML-CHECKOUT") or phase_id.endswith("P-U-HTML-VSL"):
+        return "html"
+    if phase_id.endswith("P-U-DESIGN-RENDER-SALES") or phase_id.endswith("P-U-DESIGN-RENDER-CHECKOUT") or phase_id.endswith("P-U-DESIGN-RENDER-VSL"):
+        return "png"
+    return "text_or_json"
+
+
+_PU_JSON_ARTIFACTS = ("copy_ledger.json", "gate-form.json", "gate-workflow.json")
+
+def _pu_check_json_object(run_dir: Path, rel: str) -> List[str]:
+    """A declared .json artifact must parse as a JSON OBJECT (not a bare string,
+    not prose). Returns the reason list ('' == pass)."""
+    p = artifact_path(run_dir, rel)
+    reasons: List[str] = []
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    if p.stat().st_size == 0:
+        return [f"{rel}: file is zero bytes"]
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return [f"{rel}: not valid JSON ({exc.__class__.__name__}) -- a prose/junk file "
+                "is not this phase's artifact"]
+    if not isinstance(obj, dict):
+        return [f"{rel}: JSON must be an object (got {type(obj).__name__})"]
+    return reasons
+
+
+def _pu_check_receipt_identity(run_dir: Path, p: Path, *, scope_key: str) -> List[str]:
+    """PRES-012 unified receipt contract (build_receipt / ghl_build_receipt).
+
+    A receipt is TRUSTED only when it is a parseable JSON object carrying:
+      * schema_version (a non-empty string) -- an unversioned receipt cannot be
+        judged against any contract;
+      * scope: the run it belongs to -- deck_slug (or run_id) must be present;
+      * provenance: an execution_id/request_id naming the run that produced it;
+      * identity hashes: at least one sha256 over the INPUT the receipt claims
+        to represent (input_sha256 / artifact_sha256 / content_sha256);
+    and for a GHL receipt (ghl_build_receipt.json) additionally:
+      * location_id (the client GHL location the work claims to live in) that is
+        non-empty and is NOT a placeholder (a made-up location is a fabrication);
+      * at least one remote artifact id (page_id/form_id/funnel_id/file_id) that
+        is non-empty;
+      * every preview_url/page_url is an http(s) URL that is not a placeholder
+        host and not a made-up domain (example.com/.invalid/localhost etc.).
+    A receipt whose fields are present but self-contradictory (e.g. a location
+    id that differs from the run's resolved location) still FAILS -- identity is
+    checked against what the run itself declares (intake.json), never trusted
+    from the receipt alone."""
+    reasons: List[str] = []
+    tag = p.name
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return [f"{tag}: not valid JSON ({exc.__class__.__name__}) -- a prose 'I did it' "
+                "receipt is not execution evidence"]
+    if not isinstance(obj, dict):
+        return [f"{tag}: receipt must be a JSON object (got {type(obj).__name__})"]
+
+    def _first(*keys: str) -> str:
+        for k in keys:
+            v = obj.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+
+    schema_version = _first("schema_version", "receipt_schema_version")
+    if not schema_version:
+        reasons.append(
+            f"{tag}: carries no schema_version -- PRES-012 requires a versioned receipt "
+            "(schema_version) so the contract it claims to satisfy is named")
+    scope = _first("deck_slug", "run_id", "scope")
+    if not scope:
+        reasons.append(
+            f"{tag}: carries no run scope (deck_slug/run_id/scope) -- a receipt that "
+            "names no run cannot be bound to THIS run")
+    execution_id = _first("execution_id", "request_id", "execution")
+    if not execution_id:
+        reasons.append(
+            f"{tag}: carries no execution_id/request_id -- a receipt with no execution "
+            "identity proves nothing about who ran what")
+    input_sha = _first("input_sha256", "input_hash", "artifact_sha256", "content_sha256", "receipt_input_sha256")
+    if not input_sha:
+        reasons.append(
+            f"{tag}: carries no revision/input hash (input_sha256/artifact_sha256/"
+            "content_sha256) -- a receipt that hashes nothing cannot be tied to the "
+            "exact inputs it claims to represent")
+    if re.search(r"[0-9a-f]{64}", input_sha or "") is None:
+        reasons.append(
+            f"{tag}: the revision/input hash {input_sha!r} is not a sha256-shaped "
+            "digest -- a made-up hash is not provenance")
+
+    # GHL-specific identity (ghl_build_receipt.json family).
+    if scope_key == "ghl_receipt" or "ghl" in p.name:
+        location_id = _first("location_id", "ghl_location_id")
+        if not location_id:
+            reasons.append(
+                f"{tag}: carries no location_id -- a GHL receipt must name the client "
+                "location it claims to have touched")
+        elif _scb is not None:
+            try:
+                placeholder_hosts = _scb.PLACEHOLDER_HOSTS
+            except Exception:  # noqa: BLE001
+                placeholder_hosts = ()
+            loc_l = location_id.lower()
+            if any(ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
+                reasons.append(
+                    f"{tag}: location_id {location_id!r} reads as a placeholder -- a made-up "
+                    "location is a fabrication, not a push record")
+        remote_ids = {
+            k: _first(k) for k in
+            ("page_id", "form_id", "funnel_id", "workflow_id", "file_id", "media_id", "site_id")
+        }
+        if not any(remote_ids.values()):
+            reasons.append(
+                f"{tag}: carries no remote artifact id (page_id/form_id/funnel_id/"
+                "workflow_id/file_id) -- a GHL push receipt must name WHAT was created")
+        urls = obj.get("preview_urls") or obj.get("public_urls") or []
+        if isinstance(urls, list):
+            bad_urls: List[str] = []
+            for u in urls:
+                ok, why = _pu_real_url(u)
+                if not ok:
+                    bad_urls.append(why)
+            if bad_urls:
+                reasons.append(
+                    f"{tag}: preview URL(s) not real: {'; '.join(bad_urls[:2])} -- a "
+                    "made-up URL is not execution evidence")
+        elif _first("preview_url", "public_url"):
+            ok, why = _pu_real_url(_first("preview_url", "public_url"))
+            if not ok:
+                reasons.append(f"{tag}: preview URL not real ({why})")
+        # Remote readback (READ-ONLY list-back, mirrors _verify_ghl_upload):
+        # when the canonical LOCATION PIT resolves, the receipt's claimed remote
+        # artifact must survive a real list-back. Never mutates; NOTE-fails-soft
+        # on a box whose PIT does not resolve.
+        reasons.extend(_pu_ghl_readback_reasons(run_dir, obj))
+    return reasons
+
+
+def _pu_real_url(u: object) -> Tuple[bool, str]:
+    """http(s) URL whose host is real: not a placeholder host or subdomain of
+    one (mirrors sales_checkout_builder._real_url / PLACEHOLDER_HOSTS)."""
+    if not isinstance(u, str) or not u.strip().lower().startswith(("http://", "https://")):
+        return False, f"{u!r} is not an http(s) URL"
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(u.strip()).hostname or "").lower()
+    except (ValueError, TypeError):
+        return False, f"{u!r} does not parse as a URL"
+    if not host:
+        return False, f"{u!r} has no host"
+    placeholder_hosts = ("example.com", "example.org", "example.net", "example.edu",
+                         "invalid", "localhost", "127.0.0.1", "0.0.0.0",
+                         "test.com", "changeme.com", "todo.com", "foo.bar")
+    if any(host == ph or host.endswith("." + ph) for ph in placeholder_hosts):
+        return False, f"{u!r} resolves to placeholder host {host!r}"
+    return True, host
+
+
+def _pu_ghl_readback_reasons(run_dir: Path, receipt: dict) -> List[str]:
+    """READ-ONLY remote readback for a GHL receipt (PRES-012 step 3/4). When the
+    canonical LOCATION PIT + location resolve, the receipt's file_id/page_id
+    must survive a real read-only list-back of the GHL media library. A receipt
+    that does not survive the listing is a fabrication. Fail-soft on transport/
+    scope absence (NOTE reason) -- a box without GHL env cannot be forced to
+    read back, but a box whose PIT DOES resolve gets the real check."""
+    reasons: List[str] = []
+    try:
+        import ghl_media
+        pit = ghl_media.resolve_location_pit()
+        loc = ghl_media.resolve_location_id()
+    except Exception as exc:  # noqa: BLE001
+        return [f"NOTE: GHL readback skipped (env/import: {exc})"]
+    if not pit or not loc:
+        return [f"NOTE: GHL readback skipped (no LOCATION PIT/location id)"]
+    # Only the FILE-kind receipts (media pushes) have a listable id; page/form
+    # receipts name page_id/form_id which the media list-back cannot see, so
+    # those receipts stand on their identity + hash contract here.
+    file_id = str(receipt.get("file_id") or receipt.get("media_id") or "").strip()
+    if not file_id:
+        return reasons
+    try:
+        listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
+    except Exception as exc:  # noqa: BLE001 -- read-only transport issue is NOTE-soft
+        return [f"NOTE: GHL readback failed ({exc})"]
+    entries = listing.get("data") or []
+    found = any(
+        isinstance(e, dict) and str(e.get("fileId") or e.get("_id") or "") == file_id
+        for e in entries
+    )
+    if not found:
+        reasons.append(
+            "ghl receipt: the claimed remote file id is NOT present in the GHL "
+            "media library listing (read-only list-back) -- a receipt that does "
+            "not survive a real readback is a fabrication")
+    return reasons
+
+
+def _pu_check_html(run_dir: Path, rel: str) -> List[str]:
+    """A declared HTML artifact must be a real assembled page: non-trivial
+    content, an <h1>/<body> skeleton, and NOT a bare placeholder."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    if p.stat().st_size == 0:
+        return [f"{rel}: file is zero bytes"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    if len(text.strip()) < 200:
+        return [f"{rel}: only {len(text.strip())} chars -- too small to be a real "
+                "assembled page"]
+    low = text.lower()
+    if "<body" not in low:
+        return [f"{rel}: has no <body> element -- not a real assembled page"]
+    if "lorem ipsum" in low or "placeholder" in low.replace("placeholder=", "") and "<h1" not in low:
+        return [f"{rel}: reads as a placeholder/wireframe page, not assembled content"]
+    return []
+
+
+def _pu_check_png(run_dir: Path, rel: str) -> List[str]:
+    """A declared PNG artifact must decode: real PNG magic + plausible header
+    dimensions (the stdlib struct read; no third-party dependency)."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    data = p.read_bytes()
+    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return [f"{rel}: not a PNG (bad magic) -- a renamed/decoy file is not this "
+                "phase's artifact"]
+    # IHDR: width/height at fixed offsets; a 0x0 image is not a real render.
+    try:
+        import struct
+        w, h = struct.unpack(">II", data[16:24])
+        if w == 0 or h == 0:
+            return [f"{rel}: PNG decodes to {w}x{h} -- a zero-dimension image is not "
+                    "a real rendered design"]
+    except Exception as exc:  # noqa: BLE001
+        return [f"{rel}: PNG header unreadable ({exc!r})"]
+    return []
+
+
+def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
+    """A declared text/markdown artifact must carry real content (>= 40 chars
+    of non-whitespace) -- one junk line is not a fragment."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    if p.stat().st_size == 0:
+        return [f"{rel}: file is zero bytes"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    if len(text.strip()) < 40:
+        return [f"{rel}: only {len(text.strip())} chars of content -- too small to "
+                "be a real authored fragment"]
+    return []
+
+
+def _pu_check_form_gate(run_dir: Path, rel: str) -> List[str]:
+    """P-U-FORM-GATE's two declared Skill-44 plan artifacts. Each must be a
+    parseable JSON OBJECT with the Skill-44 operation shape: gate-form.json
+    needs a form definition (name + fields list); gate-workflow.json needs a
+    workflow definition (name + at least one action/step). The two files are
+    TWO outputs -- either one missing is the phase's own declared output
+    missing, never satisfied by its sibling."""
+    reasons: List[str] = []
+    obj_reasons = _pu_check_json_object(run_dir, rel)
+    if obj_reasons:
+        return obj_reasons
+    p = artifact_path(run_dir, rel)
+    obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    name = obj.get("name") or obj.get("form_name") or obj.get("workflow_name")
+    if not (isinstance(name, str) and name.strip()):
+        reasons.append(f"{rel}: no operation name (name/form_name/workflow_name) -- "
+                       "a Skill-44 plan object must name the form/workflow it declares")
+    fields = obj.get("fields") or obj.get("actions") or obj.get("steps")
+    if rel.endswith("gate-form.json") and not (isinstance(fields, list) and fields):
+        reasons.append(f"{rel}: no fields list -- a gate form plan must declare the "
+                       "capture fields it installs")
+    if rel.endswith("gate-workflow.json") and not (isinstance(fields, list) and fields):
+        reasons.append(f"{rel}: no actions/steps list -- a Skill-44 workflow plan must "
+                       "declare what the workflow does")
+    return reasons
+
+
+def _pu_check_qc_scorecard(run_dir: Path, rel: str) -> List[str]:
+    """P-U-QC's upsell scorecard: per-criterion rows with numeric scores and an
+    independent-reviewer provenance block (build_deck._qc_independence_reason --
+    the SAME check every other QC gate uses; a self-graded scorecard cannot
+    pass)."""
+    reasons: List[str] = _pu_check_json_object(run_dir, rel)
+    if reasons:
+        return reasons
+    p = artifact_path(run_dir, rel)
+    obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    criteria = obj.get("criteria")
+    if not (isinstance(criteria, list) and criteria):
+        reasons.append(f"{rel}: no criteria rows -- a scorecard that grades nothing "
+                       "attests nothing")
+    else:
+        scored = [c for c in criteria if isinstance(c, dict)
+                  and isinstance(c.get("score"), (int, float))]
+        if len(scored) != len(criteria):
+            reasons.append(f"{rel}: {len(criteria) - len(scored)} criteria row(s) carry "
+                           "no numeric score -- every row must be honestly scored")
+    independence = _bd_fn("_qc_independence_reason") if _bd is not None else None
+    if independence is not None:
+        try:
+            why = independence(obj) or ""
+        except Exception as exc:  # noqa: BLE001
+            why = f"independence check raised {exc!r}"
+        if why:
+            reasons.append(f"{rel}: {why}")
+    else:
+        blk = obj.get("qc_independence")
+        blk = blk if isinstance(blk, dict) else {}
+        reviewer = blk.get("graded_by") or obj.get("graded_by") or ""
+        if not (isinstance(reviewer, str) and reviewer.strip()):
+            reasons.append(f"{rel}: no independent-reviewer provenance (qc_independence."
+                           "graded_by) -- a self-graded scorecard cannot pass")
+    return reasons
+
+
+def _pu_check_collection(run_dir: Path, rel: str) -> List[str]:
+    """A declared collection artifact ('delivery/<slug>-FINAL/upsell/*') must
+    resolve to a NON-EMPTY directory of real files -- an empty upsell dir is
+    the phase's declared output missing.
+
+    Resolution order (never silently weaker):
+      1. the literal run-dir directory (after {deck_slug} substitution),
+      2. the working/upsell/ root convention (the P-U-* branch phases),
+      3. a glob of the pattern's parent for the collection family.
+    """
+    base = rel[:-2] if rel.endswith("/*") else rel
+    candidates: List[Path] = []
+    literal = run_dir / base
+    if literal.is_dir():
+        candidates.append(literal)
+    upsell_dir = run_dir / "working" / "upsell" / base
+    if upsell_dir.is_dir():
+        candidates.append(upsell_dir)
+    if "/" in base:
+        parent = run_dir / base.rsplit("/", 1)[0]
+        fam = base.rsplit("/", 1)[-1]
+        if parent.is_dir():
+            candidates.extend(sorted(m for m in parent.glob(f"{fam}*") if m.is_dir()))
+    for p in candidates:
+        members = [m for m in p.iterdir() if m.is_file()]
+        if not members:
+            return [f"{rel}: collection directory {p.name!r} is empty -- every "
+                    "expected collection member is required, not the directory alone"]
+        empties = [m.name for m in members if m.stat().st_size == 0]
+        if empties:
+            return [f"{rel}: empty collection member(s): {', '.join(empties)}"]
+    if not candidates:
+        return [f"{rel}: no collection content found -- the phase's declared "
+                "output set is missing"]
+    # Candidates existed but every one was empty/already-reported above; the
+    # first empty-dir reason already returned. Reaching here means at least one
+    # candidate dir had members (the loop returned False only on empties) --
+    # a populated collection passes.
+    return []
+
+
 def _make_pu_verifier(phase_id: str, artifacts: List[str]):
     def _verify(run_dir: Path) -> Tuple[bool, List[str]]:
         from presentation_job.defers import evaluate_defers_unless, load_intake
-        import json as _json
+
+        # ── PRES-012: the manifest is the CONTRACT, resolved canonically ──────
+        # The declared produces_artifact comes from the canonical manifest
+        # resolver, never from the registry's hand-maintained list alone. A
+        # missing/unreadable/phase-less manifest is a CONFIGURATION ERROR
+        # (fail-closed), never a weaker check.
+        declared, config_error = _pu_manifest_declared_artifacts(phase_id)
+        if config_error:
+            return False, [config_error]
+
         # Gate state: manifest entry drives the same evaluate the planner uses.
         gate = None
         try:
-            man = _json.loads((Path(__file__).resolve().parent.parent /
-                               ".." / ".." / ".." / ".." / ".." / "universal-sops" /
-                               "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
-                              .read_text(encoding="utf-8"))
+            import manifest_source
+            man_path, _prov = manifest_source.resolve_manifest(Path(__file__).resolve().parent)
+            man = json.loads(Path(man_path).read_text(encoding="utf-8"))
             gate = next((ph.get("defers_unless") for ph in man["phases"]
                          if ph["id"] == phase_id), None)
+        except SystemExit:
+            gate = None
         except Exception:
             gate = None
         intake = load_intake(run_dir)
         if gate and intake and not evaluate_defers_unless(gate, intake):
             return True, [f"NOTE: {phase_id} deferred -- defers_unless not "
                           f"satisfied by this run's intake answers"]
-        paths = _pu_artifact_paths(run_dir, artifacts)
-        missing = [str(a) for a in artifacts if a not in
-                   [str(x.relative_to(run_dir)) if x.is_relative_to(run_dir) else str(x)
-                    for x in paths]]
-        if not paths:
-            return False, [f"AF-U-{phase_id}: none of the declared artifacts "
-                           f"({', '.join(artifacts)}) exist under the run dir -- "
-                           f"the phase ran but produced nothing provable"]
-        empty = [str(x) for x in paths
-                 if x.is_file() and x.stat().st_size == 0]
-        if empty:
-            return False, [f"AF-U-{phase_id}: empty artifact(s): {', '.join(empty)}"]
+
+        # ── EVERY declared output is required -- no any-path satisfaction ────
+        # The manifest's 'a + b' spelling is expanded; a collection member
+        # ('.../*') resolves through the shared resolver and must be non-empty.
+        reasons: List[str] = []
+        shape = _pu_phase_shape(phase_id)
+        expanded: List[str] = []
+        for art in declared:
+            art = art.strip()
+            if not art:
+                continue
+            if " + " in art:
+                expanded.extend(part.strip() for part in art.split(" + ") if part.strip())
+            else:
+                expanded.append(art)
+        # Token substitution: the manifest spells collection paths with
+        # {deck_slug} (e.g. 'delivery/{deck_slug}-FINAL/upsell/*'). Resolve it
+        # from the run's own intake deck_slug -- the same token the engine's
+        # resolve_artifact_patterns substitutes -- so a collection declared in
+        # the manifest resolves to the run's REAL directory, never a literal
+        # '{deck_slug}' path that nothing wrote.
+        deck_slug = ""
+        try:
+            intake_obj = json.loads((run_dir / "working" / "copy" / "intake.json")
+                                    .read_text(encoding="utf-8", errors="replace"))
+            if isinstance(intake_obj, dict):
+                deck_slug = str(intake_obj.get("deck_slug") or "").strip()
+        except Exception:  # noqa: BLE001 -- an unresolved token stays literal
+            deck_slug = ""
+        for rel in expanded:
+            if "{deck_slug}" in rel and deck_slug:
+                rel = rel.replace("{deck_slug}", deck_slug)
+            if rel.endswith("/*"):
+                reasons.extend(_pu_check_collection(run_dir, rel))
+                continue
+            p = artifact_path(run_dir, rel)
+            if p is None:
+                reasons.append(f"{rel}: file not found -- phase artifact missing")
+                continue
+            if p.stat().st_size == 0:
+                reasons.append(f"{rel}: file is zero bytes")
+                continue
+            if shape == "ghl_receipt":
+                reasons.extend(_pu_check_receipt_identity(run_dir, p, scope_key="ghl_receipt"))
+            elif shape == "form_gate":
+                reasons.extend(_pu_check_form_gate(run_dir, rel))
+            elif shape == "html":
+                reasons.extend(_pu_check_html(run_dir, rel))
+            elif shape == "png":
+                reasons.extend(_pu_check_png(run_dir, rel))
+            elif shape == "upsell_qc":
+                reasons.extend(_pu_check_qc_scorecard(run_dir, rel))
+            elif shape == "collection":
+                reasons.extend(_pu_check_collection(run_dir, rel))
+            elif rel.endswith(".json") or rel in _PU_JSON_ARTIFACTS:
+                reasons.extend(_pu_check_json_object(run_dir, rel))
+            else:
+                reasons.extend(_pu_check_text(run_dir, rel))
+        if reasons:
+            return False, [f"AF-U-{phase_id}: " + r for r in reasons]
         return True, []
     _verify.__name__ = f"_verify_{phase_id.lower().replace('-', '_')}"
     return _verify
