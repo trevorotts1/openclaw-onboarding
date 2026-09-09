@@ -38,7 +38,8 @@ snapshot. Keep them outside source control. The compiler performs no live writes
    bindings and activate those targets first.
 3. Smoke-test the four targets with isolated operator-owned test fixtures. Verify
    fresh legacy copies contain no historical template data on any tab before
-   public sharing; verify replay preserves already shared client content.
+   public sharing. Repeated legacy create calls must produce different new IDs;
+   brand/email must never look up or disclose an existing document.
 4. Replace ownership of the two unprefixed canonical webhook paths with the
    compatibility router. Disable previous owners of those exact paths to avoid
    conflicting active webhooks. The router forwards to fixed compiled targets,
@@ -58,10 +59,15 @@ workflow retention settings remain as released.
 
 Legacy append is not idempotent. If an append times out after Google may have
 written the row, reconcile the spreadsheet before retrying. Never add blind
-retries to copy, append, or router POST requests. Legacy creation checkpoints
-`initializing`, `formatted`, and `ready`; initialization refuses to clear any
-copied document already accessible by a non-owner. Unknown existing states need
-preserving migration rather than automatic destructive initialization.
+retries to copy, append, or router POST requests. Every legacy create request makes a fresh copy, matching the original contract.
+There is no brand/email lookup, deduplication, recovery-token route, or automatic
+resume. Guessable names and email addresses must never reveal the link to an
+existing public-edit document. The returned `deduped` value is always false.
+After a lost or ambiguous create response, reconcile that n8n execution and its
+Google copy receipt manually before sending another request; a new request can
+create another document. Creation records `initializing`, `formatted`, and
+`ready` for diagnosis only. Initialization refuses to clear any newly copied
+document already accessible by a non-owner.
 
 Offline verification (the pinned parser dependency must be installed first):
 
