@@ -38,7 +38,23 @@
 #   spamming logs. It runs every 2 minutes on 38 machines forever.
 #
 # RECEIVER_VERSION: reported in every claim and ack (fleet version visibility).
-RECEIVER_VERSION="1.3.0"
+#
+# v1.4.0 (RR-W2-CORE, RR-004 pairing): ADDITIVE claim/ack fields. The server
+# (RR-07 / the Fleet Ops transactional claim service) now issues an
+# attempt/owner token, a lease generation and an explicit lease expiry on every
+# claim. The receiver echoes them verbatim on the ack — it does NOT interpret,
+# gate on, or require them yet. Strict mode arrives only AFTER the server
+# contract is confirmed additive-compatible (SPEC RR-004 shared rollout
+# contract: public receiver changes pair with additive server support FIRST;
+# old servers that omit the fields keep working because the fields simply echo
+# as empty strings).
+RECEIVER_VERSION="1.4.0"
+
+# Attempt identity echoed from the claim (empty when the server is pre-RR-004).
+# Initialized empty so `set -u` never trips on the cached-re-ack path.
+ATTEMPT_ID=""
+ATTEMPT_GENERATION=""
+LEASE_EXPIRES_AT=""
 
 # ---------------------------------------------------------------------------
 # OpenClaw root resolution. <root>/secrets/.env holds enrollment credentials.
@@ -375,6 +391,10 @@ _parse_claim() {
             SESSION_KEY=$(_json_field "$_pc_resp" "session_key")
             PAYLOAD_B64=$(_json_field "$_pc_resp" "payload_b64")
             MODE=$(_json_field "$_pc_resp" "mode")
+            # RR-004 additive fields (v1.4.0): echo-only; empty on old servers.
+            ATTEMPT_ID=$(_json_field "$_pc_resp" "attempt_id")
+            ATTEMPT_GENERATION=$(_json_field "$_pc_resp" "attempt_generation")
+            LEASE_EXPIRES_AT=$(_json_field "$_pc_resp" "lease_expires_at")
             [ -n "$IDEMPOTENCY_KEY" ] || return 1
             return 0
             ;;
@@ -498,7 +518,24 @@ _ack() {
         _excerpt_json=",\"reply_excerpt\":\"$(_json_str "$_ack_excerpt")\""
     fi
 
-    _ack_body="{\"action\":\"ack\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\",\"idempotency_key\":\"$(_json_str "$IDEMPOTENCY_KEY")\",\"verdict\":\"$(_json_str "$_ack_verdict")\",\"exit_code\":$_ack_exit,\"reply_chars\":$_ack_chars,\"fail_reason\":$_fr_json,\"elapsed_s\":$_ack_elapsed${_excerpt_json},\"receiver_version\":\"$(_json_str "$RECEIVER_VERSION")\"}"
+    # RR-004 additive fields (v1.4.0): the attempt identity is echoed back so
+    # the server can fence the ack against the CURRENT owner (generation +
+    # token) and reject stale/expired/replaced acknowledgments. Fields are
+    # omitted-not-nulled when empty so pre-RR-004 servers see no change.
+    # ${VAR:-} everywhere: with `set -u` an unset variable (pre-claim cached
+    # re-ack, or a failed parse) must yield EMPTY, never abort the script.
+    _attempt_json=""
+    if [ -n "${ATTEMPT_ID:-}" ]; then
+        _attempt_json=",\"attempt_id\":\"$(_json_str "${ATTEMPT_ID:-}")\""
+    fi
+    if [ -n "${ATTEMPT_GENERATION:-}" ]; then
+        _attempt_json="${_attempt_json},\"attempt_generation\":${ATTEMPT_GENERATION:-}"
+    fi
+    if [ -n "${LEASE_EXPIRES_AT:-}" ]; then
+        _attempt_json="${_attempt_json},\"lease_expires_at\":\"$(_json_str "${LEASE_EXPIRES_AT:-}")\""
+    fi
+
+    _ack_body="{\"action\":\"ack\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\",\"idempotency_key\":\"$(_json_str "$IDEMPOTENCY_KEY")\",\"verdict\":\"$(_json_str "$_ack_verdict")\",\"exit_code\":$_ack_exit,\"reply_chars\":$_ack_chars,\"fail_reason\":$_fr_json,\"elapsed_s\":$_ack_elapsed${_excerpt_json}${_attempt_json},\"receiver_version\":\"$(_json_str "$RECEIVER_VERSION")\"}"
 
     _ack_out=$(_post "$_ack_body") || true
     _log "ack verdict=$_ack_verdict exit=$_ack_exit chars=$_ack_chars reason=$_ack_reason elapsed=${_ack_elapsed}s"
@@ -525,10 +562,26 @@ _write_done() {
         "") _fr_json="null" ;;
         *)  _fr_json="\"$(_json_str "$_wd_reason")\"" ;;
     esac
-    _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | tr -c 'A-Za-z0-9._-' '_')
+    # RR-021/RR-025: collision-resistant done-file identity. The old
+    # tr-normalization ALIASED distinct keys (a/b and a_b both -> key-a_b),
+    # so one ticket's cached verdict could satisfy another's dedup check.
+    # The exact key is hashed instead; no lossy normalization anywhere.
+    _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | shasum -a 256 2>/dev/null | cut -d' ' -f1) \
+        || _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | sha256sum 2>/dev/null | cut -d' ' -f1) \
+        || _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | tr -c 'A-Za-z0-9._-' '_')
     _tmp=$(mktemp "$_DONE/.tmp-XXXXXX" 2>/dev/null) || return 1
     printf '{"verdict":"%s","exit_code":%s,"reply_chars":%s,"fail_reason":%s,"elapsed_s":%s}\n' \
         "$_wd_verdict" "$_wd_exit" "$_wd_chars" "$_fr_json" "$_wd_elapsed" > "$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
+    # RR-021: the claimed instruction's record must be DURABLY on disk before
+    # the poll proceeds — a crash or a lost ACK must never lose the work item.
+    # fsync the record (python3 is present on every supported box; `sync` is
+    # the coarse fallback; failure to sync is treated as a write failure).
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import os,sys
+f=open(sys.argv[1],"rb"); os.fsync(f.fileno()); f.close()' "$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
+    else
+        sync 2>/dev/null
+    fi
     mv "$_tmp" "$_DONE/$_safe" 2>/dev/null || { rm -f "$_tmp"; return 1; }
     return 0
 }
@@ -539,7 +592,10 @@ _write_done() {
 # the agent turn (one agent turn, ever).
 # ---------------------------------------------------------------------------
 _reack_cached() {
-    _rc_safe=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')
+    # same collision-resistant identity as _write_done (must agree exactly)
+    _rc_safe=$(printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -d' ' -f1) \
+        || _rc_safe=$(printf '%s' "$1" | sha256sum 2>/dev/null | cut -d' ' -f1) \
+        || _rc_safe=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')
     [ -f "$_DONE/$_rc_safe" ] || return 1
     _rc_body=$(cat "$_DONE/$_rc_safe" 2>/dev/null)
     [ -n "$_rc_body" ] || return 1

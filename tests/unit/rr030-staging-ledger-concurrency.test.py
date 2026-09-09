@@ -57,8 +57,14 @@ def open_one(state, tid, client):
         "ledger_path": json.dumps(str(LEDGER)),
         "state": str(state), "tid": tid, "client": client,
     }
+    # RR-006: the legacy Python writer is RETIRED — production-style runs
+    # exit 78. This gate is an explicit offline drill against an isolated
+    # tempdir state dir, so it opts into drill mode (same pattern as the
+    # board/migrate self-tests). Production refusal without the env is
+    # unchanged and pinned by tests/rescue/RR-006/test_legacy_writer_retired.py.
+    env = dict(os.environ, RR_LEDGER_DRILL="1")
     return subprocess.run([sys.executable, "-c", src],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, env=env)
 
 
 def rows(state):

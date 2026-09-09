@@ -358,13 +358,23 @@ fi
 # ---------------------------------------------------------------------------
 # GATE: INSTALLED — the install leg, exercised in an explicit state dir
 # (RESCUE_STATE_DIR), never HOME.
+#
+# RR-006 gate contract: the installed legacy Python writer is RETIRED — every
+# production-style run refuses with exit 78 (EX_RETIRED). The drill opt-out is
+# the documented compatibility contract: RR_LEDGER_DRILL=1 AND an explicit
+# isolated --state-dir (pinned by tests/rescue/RR-006/test_legacy_writer_retired.py).
+# These INSTALLED cases ARE that sanctioned offline drill: they run in $MUT
+# scratch, never HOME, never production ticket state. The retirement refusal
+# itself is gated separately (UNIT self-tests + the RR-006 suite), so this is
+# not a SKIP=PASS hole: a broken drill still fails, and the refusal path is
+# exercised for real elsewhere in this battery.
 # ---------------------------------------------------------------------------
 if [ -n "$PY" ]; then
   INST="$MUT/installed-root"
   harness_case INSTALLED "install-rescue-ledger.sh installs tooling + schema into an explicit state dir" \
-    -- bash "$HERE/install-rescue-ledger.sh" --state-dir "$INST"
+    -- env RR_LEDGER_DRILL=1 bash "$HERE/install-rescue-ledger.sh" --state-dir "$INST"
   harness_case INSTALLED "installed ledger boots standalone (init idempotent, schema pinned)" \
-    -- env RESCUE_STATE_DIR="$INST" "$PY" "$INST/rescue_ledger.py" init
+    -- env RR_LEDGER_DRILL=1 RESCUE_STATE_DIR="$INST" "$PY" "$INST/rescue_ledger.py" --state-dir "$INST" init
   harness_case INSTALLED "installed battery passes against the INSTALLED tree (not the repo tree)" \
     -- "$PY" -c "
 import importlib.util, sys

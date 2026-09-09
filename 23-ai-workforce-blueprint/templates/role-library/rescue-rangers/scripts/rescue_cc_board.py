@@ -475,13 +475,9 @@ def self_test():
                            state_dir=sd, env={"COMMAND_CENTER_URL": "http://x"}) is False
         print("  enum-guard case: PASS ('delivered' rejected — not a CC status)")
 
-        # aging sweep reads the durable ledger. RR-030: this case is REQUIRED.
-        # The old blanket `except Exception` printed SKIP on any failure —
-        # including an assert fired by a genuinely broken sweep — and still
-        # returned 0 (baseline-proven). Now the ledger import is the only
-        # failure that degrades, and a MISSING LEDGER FAILS THE SELF-TEST:
-        # the two files ship as one unit and a verify.sh that passes without
-        # the ledger is a green line over a hole.
+        # aging sweep reads the retired writer under the explicit offline-drill
+        # opt-out (RR-006: isolated tempdir fixture only, never ticket state).
+        # RR-030 guard retained: missing ledger FAILS (no blanket-SKIP hole).
         _ledger_py = Path(__file__).with_name("rescue_ledger.py")
         if not _ledger_py.is_file():
             print(f"  aging-sweep case: FAIL (rescue_ledger.py not found next to "
@@ -489,24 +485,32 @@ def self_test():
                   f"not optional)")
             print("[rescue_cc_board] self-test: FAIL")
             return 1
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("rescue_ledger", str(_ledger_py))
-        rl = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(rl)
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-        led = rl.Ledger(sd)
-        old = (_dt.now(_tz.utc) - _td(hours=5)).replace(microsecond=0).isoformat()
-        led.open_ticket("tkt-old", client="beta", problem="stuck", ts_open=old)
-        led.open_ticket("tkt-new", client="beta", problem="fresh")
-        # RR-030: exercise the SWEEP (the actual checker) directly — no blanket
-        # except between this assert and the caller. A broken sweep raises and
-        # the assert below fails the self-test loudly.
-        aged = {t["ticket_id"] for t in aging_sweep(led, 120)}
-        assert "tkt-old" in aged and "tkt-new" not in aged, (
-            f"aging_sweep returned {sorted(aged)}; expected tkt-old aged in, "
-            f"tkt-new excluded — the sweep is broken")
-        led.close()
-        print("  aging-sweep case: PASS (durable ledger drives the SLA view)")
+        import os as _os
+        _prev_drill = _os.environ.get("RR_LEDGER_DRILL")
+        _os.environ["RR_LEDGER_DRILL"] = "1"
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "rescue_ledger", str(_ledger_py))
+            rl = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(rl)
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            led = rl.Ledger(sd)
+            old = (_dt.now(_tz.utc) - _td(hours=5)).replace(microsecond=0).isoformat()
+            led.open_ticket("tkt-old", client="beta", problem="stuck", ts_open=old)
+            led.open_ticket("tkt-new", client="beta", problem="fresh")
+            # RR-030: exercise the SWEEP directly — assert fails loudly, no SKIP.
+            aged = {t["ticket_id"] for t in aging_sweep(led, 120)}
+            assert "tkt-old" in aged and "tkt-new" not in aged, (
+                f"aging_sweep returned {sorted(aged)}; expected tkt-old aged in, "
+                f"tkt-new excluded — the sweep is broken")
+            led.close()
+            print("  aging-sweep case: PASS (durable ledger drives the SLA view)")
+        finally:
+            if _prev_drill is None:
+                _os.environ.pop("RR_LEDGER_DRILL", None)
+            else:
+                _os.environ["RR_LEDGER_DRILL"] = _prev_drill
 
     print("[rescue_cc_board] self-test: PASS")
     return 0
