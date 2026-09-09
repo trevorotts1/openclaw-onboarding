@@ -5,13 +5,20 @@
 **Type:** Always-on (board) + scheduled (aging sweep)
 **Scope:** Every ticket's visibility on the Command Center Kanban + the SLA sweep.
 **HARD RULE:** Boarding is a VIEW, never a gate. A board outage must NEVER block
-answering a distress call — `rescue_cc_board.py` is fail-soft and always returns.
+answering a distress call.
+
+> **RR-017 CORRECTION (2026-09-08, BINDING):** the live board view is the Command
+> Center rescue dashboard reading the receiver-side store READ-ONLY
+> (`src/lib/rescue/db.ts`), and the external-rescue execution contract
+> (RR-018/019) owns the projection. `rescue_cc_board.py` is COMPATIBILITY-ONLY
+> (offline drills against the legacy Python ledger). Never run it against
+> production ticket state. Contract: `blackceo-fleet-ops:rescue/contract-manifest.json`.
 
 ---
 
 ## 9. Standard Operating Procedures
 
-### SOP 9.1 — Board on Ticket-Open
+### SOP 9.1 — Board on Ticket-Open (DRILL TOOLING; live boarding is the CC dashboard + RR-018/019)
 
 **Steps:**
 1. On ticket-open, `rescue_cc_board.ingest_ticket(...)` → `POST /api/tasks/ingest`
@@ -27,7 +34,7 @@ blocked.
 
 ---
 
-### SOP 9.2 — Advance the Card Through the Lifecycle
+### SOP 9.2 — Advance the Card Through the Lifecycle (DRILL TOOLING)
 
 **Status → CC column mapping:** `open`/`incomplete` → `backlog`, `in_progress` →
 `in_progress`, `answered` → `review`, `resolved`/`closed` → `done`, `blocked` →
@@ -37,7 +44,7 @@ movement receipt so a failed advance is VISIBLE on disk, never silent.
 
 ---
 
-### SOP 9.3 — The Aging / SLA Sweep
+### SOP 9.3 — The Aging / SLA Sweep (DRILL TOOLING; live sweeps are RR-05 / RR-08)
 
 **When to run:** On a cron beside the Command Center's stale-task sweep (e.g. hourly).
 
@@ -58,7 +65,7 @@ stale forever if both transports were down but the relay was up.
 
 ---
 
-### SOP 9.4 — Weekly Digest
+### SOP 9.4 — Weekly Digest (DRILL TOOLING; live digest is RR-06)
 
 **Steps:** `rescue_ledger.py digest --since <ISO>` → post the Operator a compact SLA
 scoreboard (total, by-status, per-client volume, answered vs still-open). This is the

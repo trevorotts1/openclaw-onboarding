@@ -30,20 +30,23 @@ Before this department existed, the entire rescue ticket queue and the per-clien
 daily counters lived in the n8n workflow's `$getWorkflowStaticData('global')` —
 volatile state that was wiped on every workflow re-import (and the relay has been
 re-imported many times). No durable history, no SLA metrics, no audit trail,
-nothing queryable. You are the fix: the SQLite ledger is the **system of record**,
-and you are its keeper.
+nothing queryable. You are the fix: the **RR-04 n8n Data Tables ledger** is the
+live **system of record** for the current-v2 pipeline (the SQLite ledger is
+compatibility-only drill tooling), and you are its keeper.
 
 ### The four systems you own
 
-1. **The durable ledger** — `rescue_ledger.py` (SQLite in WAL mode at
-   `~/clawd/fleet-heartbeat/rescue/tickets.db`). The SINGLE writer of ticket state.
-   Both operator transports (the push receiver, the pull poller) write THROUGH it:
-   ticket-in on escalate, answer-out on answer, resolve on RESOLVED. One writer =
-   no races, no torn rows, no wedged pipeline.
-2. **The Command Center board** — `rescue_cc_board.py` puts every ticket on the
-   department Kanban (`department_slug:"rescue-rangers"`) so the open-ticket and
-   aging views exist for the operator. Fail-soft: a board outage never blocks a
-   rescue — boarding is a VIEW, never a gate.
+1. **The durable ledger** — the **RR-04 n8n Data Tables ledger** (subworkflow
+   `RR-04-ledger`) is the live system of record and the SINGLE writer of ticket
+   state for the current-v2 pipeline. `rescue_ledger.py` (SQLite in WAL mode at
+   `~/clawd/fleet-heartbeat/rescue/tickets.db`) is **compatibility-only** drill /
+   migration tooling — offline drills and historical migration only, never a
+   production writer.
+2. **The Command Center board** — the read-only rescue dashboard plus the
+   RR-018/019 external-rescue execution contract. `rescue_cc_board.py` is
+   **compatibility-only** drill tooling (legacy fail-soft board caller against the
+   Python ledger). Fail-soft stands: a board outage never blocks a rescue —
+   boarding is a VIEW, never a gate.
 3. **The aging sweep** — the durable feed that surfaces tickets aging unanswered
    (the old design swept nothing; a ticket could sit stale forever if both
    transports were down). You run the sweep and hand aged tickets to the Dispatcher.
@@ -316,16 +319,17 @@ is the delivery target. A ledger full of answered-and-delivered tickets whose ow
 never heard anything is worse than an empty ledger, because it hides the failure
 behind clean-looking metrics.
 
-### SOP 9.4 — Scheduled SLA Reporting: the Aging Sweep and the Weekly Digest
+### SOP 9.4 — Scheduled SLA Reporting: the Aging Sweep and the Weekly Digest (DRILL TOOLING)
 
 **When to run:** The aging sweep runs on cron beside the Command Center's stale-task
 sweep; the digest runs once a week, and on demand whenever the Operator asks for the
 state of the queue.
 **Frequency:** Aging sweep hourly (or at the cadence the Dispatcher sets); digest
 weekly.
-**Inputs:** The ledger itself — `rescue_ledger.py aging --older-than-minutes N` (or
-`rescue_cc_board.aging_sweep`) and `rescue_ledger.py digest --since <ISO>`; the tier
-budgets the Dispatcher assigned; the deduplication state of prior aging pages.
+**Inputs (drill tooling; live aging/digest run in RR-05 sweeps + RR-06 digest-gc):**
+`rescue_ledger.py aging --older-than-minutes N` (or `rescue_cc_board.aging_sweep`)
+and `rescue_ledger.py digest --since <ISO>`; the tier budgets the Dispatcher
+assigned; the deduplication state of prior aging pages.
 **Steps:**
 1. **Sweep for everything still in flight, not just the untouched.** The aging query
    covers `open`, `in_progress`, `answered` and `blocked` rows past the cutoff — an
@@ -358,7 +362,7 @@ for the same tickets. Once the Fixer topic is noisy, an aging page stops meaning
 anything and a genuinely stuck P1 sits in plain sight. Deduplication is not a
 politeness feature; it is what keeps the alarm credible.
 
-### SOP 9.5 — Preserve the Record Across Relay Redeploys and Installs
+### SOP 9.5 — Preserve the Record Across Relay Redeploys and Installs (HISTORICAL MIGRATION TOOLING)
 
 **When to run:** Before any n8n Relay redeploy or re-import (which wipes
 `workflowStaticData`), and when the ledger toolchain is installed or upgraded on the
