@@ -1,0 +1,67 @@
+name: rescue-rangers-rr030-gates
+
+# RR-030 — Rescue Rangers gates: the offline battery, the harness
+# hides-nothing proofs, the board/triage fail-only proofs, the staging
+# persistence concurrency gate, and the required-runtimes gate.
+# Triggered whenever any guarded file changes.
+
+on:
+  push:
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/**"
+      - scripts/rescue-rangers-harness.sh
+      - scripts/rr-triage.sh
+      - tests/unit/rr030-*.test.sh
+      - tests/unit/rr030-*.test.py
+      - .github/workflows/rescue-rangers-rr030-gates.yml
+  pull_request:
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/**"
+      - scripts/rescue-rangers-harness.sh
+      - scripts/rr-triage.sh
+      - tests/unit/rr030-*.test.sh
+      - tests/unit/rr030-*.test.py
+      - .github/workflows/rescue-rangers-rr030-gates.yml
+
+jobs:
+  rescue-rangers-rr030-gates:
+    name: RR-030 gates (battery + negatives + concurrency + runtimes)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax gates
+        run: |
+          bash -n scripts/rescue-rangers-harness.sh
+          bash -n scripts/rr-triage.sh
+          bash -n "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/verify.sh"
+
+      - name: Python syntax gates
+        run: |
+          python3 -m py_compile "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_cc_board.py"
+          python3 -m py_compile "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_ledger.py"
+
+      - name: Full offline battery (UNIT + CONTRACT + INSTALLED + mutation drills)
+        run: |
+          bash "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/verify.sh"
+
+      - name: Harness hides-nothing proofs
+        run: |
+          bash tests/unit/rr030-harness-hides-nothing.test.sh
+
+      - name: Board self-test fail-only proofs
+        run: |
+          python3 tests/unit/rr030-board-selftest-failsonly.test.py
+
+      - name: Triage self-test fail-only proofs
+        run: |
+          bash tests/unit/rr030-triage-selftest-failsonly.test.sh
+
+      - name: Staging persistence concurrency gate
+        run: |
+          python3 tests/unit/rr030-staging-ledger-concurrency.test.py
+
+      - name: Required-runtimes gate (node absence must FAIL)
+        run: |
+          bash tests/unit/rr030-verify-required-runtimes.test.sh

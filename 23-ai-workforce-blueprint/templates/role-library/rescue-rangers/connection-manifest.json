@@ -1,30 +1,50 @@
 {
-  "_comment": "Connection-manifest for the OPERATOR-ONLY Rescue Rangers department. Posture-only: it declares WHICH env keys the rescue path depends on so verify-wiring can confirm they are SET — it NEVER contains a value. The webhook URL + fleet secret are seeded fleet-wide at onboarding (install.sh); the push secret is OPERATOR-BOX-ONLY (the receiver's Cloudflare-tunnel auth) and is therefore not required on client boxes.",
-  "dept": "rescue-rangers",
-  "version": "1.0.0",
-  "client_facing": false,
-  "connection_points": [
-    {
-      "name": "rescue-rangers-webhook-url",
-      "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rr-v2-intake.",
-      "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_URL",
-      "required": true
+    "_comment": "Connection-manifest for the OPERATOR-ONLY Rescue Rangers department. Posture-only: it declares WHICH env keys the rescue path depends on so verify-wiring can confirm they are SET — it NEVER contains a value. The webhook URL + fleet secret are seeded fleet-wide at onboarding (install.sh); the push secret is OPERATOR-BOX-ONLY (the receiver's Cloudflare-tunnel auth) and is therefore not required on client boxes. RR-017: authoritative dependency/ownership contract lives in the PRIVATE blackceo-fleet-ops repo at rescue/contract-manifest.json; this manifest stays posture-only and public-safe.",
+    "dept": "rescue-rangers",
+    "version": "2.0.0",
+    "client_facing": false,
+    "contract_authority": {
+        "private_manifest": "blackceo-fleet-ops:rescue/contract-manifest.json",
+        "public_client_contract": "rescue-rangers/contract/PUBLIC-CLIENT-CONTRACT.md",
+        "persistence_authority": "RR-04 n8n Data Tables (current-v2 pipeline). The Python SQLite ledger is compatibility-only drill/migration tooling, NOT the live system of record.",
+        "transactional_architecture": "Retain RR-04 Data Tables with proven atomic operations (single-writer RR-04 subworkflow, fail-closed status gate, idempotency keys, conditional updates). See blackceo-fleet-ops:rescue/architecture.json."
     },
-    {
-      "name": "rescue-rangers-webhook-secret",
-      "description": "Shared fleet secret sent as X-Rescue-Secret so the relay Auth Check accepts the escalation (clean 403 otherwise). Seeded alongside the URL.",
-      "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_SECRET",
-      "required": true
-    },
-    {
-      "name": "rescue-push-secret",
-      "description": "OPERATOR-BOX-ONLY: authenticates the relay's push to the operator receiver over the dedicated rescue Cloudflare tunnel. Not present on client boxes by design.",
-      "cfg_key": "env.vars.RESCUE_PUSH_SECRET",
-      "required": false
-    }
-  ],
-  "deferred_live_dependencies": [
-    "n8n Relay Brain redeploy (nine-field validation + status branch) — operator-run, pre-change JSON export + staging test first",
-    "VPS outbound-only status-poll return leg armed on live VPS client boxes (batched fleet roll)"
-  ]
+    "legacy_paths": [
+        {
+            "path": "old Relay webhook (webhook/rescue-rangers)",
+            "classification": "retired",
+            "rule": "inactive; canonical intake is rr-v2-intake; any box env still carrying this URL is a false-pass trap (rr-reconcile.sh check 5)"
+        },
+        {
+            "path": "Python SQLite ledger + CC board caller (rescue_ledger.py / rescue_cc_board.py / install-rescue-ledger.sh / migrate-rescue-staticdata.py)",
+            "classification": "compatibility-only",
+            "rule": "offline drill/migration tooling only; NEVER a production ticket-state writer; must not run against the live Data Tables"
+        },
+        {
+            "path": "CC push path (receiver/poller/watchdog + node:sqlite transport store)",
+            "classification": "active",
+            "rule": "live operator-side transports; the public CC tombstone stays and receives no private code"
+        }
+    ],
+    "connection_points": [
+        {
+            "name": "rescue-rangers-webhook-url",
+            "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rr-v2-intake. The retired /webhook/rescue-rangers path must not be used.",
+            "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_URL",
+            "required": true
+        },
+        {
+            "name": "rescue-rangers-webhook-secret",
+            "description": "Shared fleet secret sent as X-Rescue-Secret so intake auth accepts the escalation (clean 403 otherwise). Seeded alongside the URL.",
+            "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_SECRET",
+            "required": true
+        },
+        {
+            "name": "rescue-push-secret",
+            "description": "OPERATOR-BOX-ONLY: authenticates the relay's push to the operator receiver over the dedicated rescue Cloudflare tunnel. Not present on client boxes by design.",
+            "cfg_key": "env.vars.RESCUE_PUSH_SECRET",
+            "required": false
+        }
+    ],
+    "deferred_live_dependencies": []
 }

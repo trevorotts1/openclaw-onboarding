@@ -7,6 +7,12 @@
 **HARD RULE:** No distress call is ever dropped. Every inbound escalation gets a
 ledger row, a board card, and either an answer or a clear operator page.
 
+> **RR-017 CORRECTION (2026-09-08):** "ledger row" means the live **RR-04 n8n
+> Data Tables** ledger (current-v2 pipeline). The Python SQLite ledger is
+> compatibility-only drill tooling; its `count-today` command in SOP 9.1 applies
+> to DRILLS ONLY — the live cap lives in the intake pipeline's `rr_cap_counters`
+> table. Contract: `blackceo-fleet-ops:rescue/contract-manifest.json`.
+
 ---
 
 ## 9. Standard Operating Procedures
@@ -20,8 +26,9 @@ ledger row, a board card, and either an answer or a clear operator page.
    `openclawVersion`, `problem`, `alreadyTried`, `returnTo`). The `alreadyTried`
    list tells you what NOT to repeat. INCOMPLETE tickets carry `missing_fields` —
    work them with degraded context; never drop them.
-2. **Cap check before anything else:** `python3 rescue_ledger.py count-today
-   --client <client> --cap 25` (exit 3 = at/over). At cap → do NOT loop: deliver
+2. **Cap check before anything else:** live `rr_cap_counters` table (drill
+   equivalent: `python3 rescue_ledger.py count-today --client <client> --cap 25`,
+   exit 3 = at/over). At cap → do NOT loop: deliver
    outcome (b) — instruct the client's agent to have its owner ping the Operator
    (`5252140759`) directly — and page the Operator. The client-instruction IS the
    outcome (b); it is delivered by the client's own agent and is a complete

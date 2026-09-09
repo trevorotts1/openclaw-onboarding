@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
 # RESCUE RANGERS :: install-rescue-ledger.sh
-# Installs the durable ticket ledger + tooling onto the OPERATOR Mac.
+#
+# RR-017 CLASSIFICATION: COMPATIBILITY-ONLY (offline drill + historical
+# migration tooling). The LIVE current-v2 ledger is the RR-04 n8n Data Tables
+# pipeline — this script does NOT install it and MUST NOT be run against
+# production ticket state (competing-writer prohibition). Authoritative
+# contract: blackceo-fleet-ops:rescue/contract-manifest.json.
+#
+# Installs the drill ticket-ledger + tooling onto the OPERATOR Mac.
 # (Topic-4 FIX 4-A install leg — runnable script; EXECUTION IS DEFERRED to the
 #  operator. Repo-side only, this file is never auto-run by onboarding.)
 # -----------------------------------------------------------------------------
