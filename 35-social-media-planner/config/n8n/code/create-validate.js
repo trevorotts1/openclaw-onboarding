@@ -8,6 +8,7 @@ for (const field of ['brandName','clientEmail','company_id','planner_kind','temp
 for (const field of ['company_id','planner_kind','templateSheetId']) {
   if (!/^[A-Za-z0-9_-]+$/.test(body[field])) throw new Error('Invalid identity: '+field);
 }
+if (body.sharing !== undefined && !['private','anyone'].includes(body.sharing)) throw new Error('Invalid sharing policy');
 const provisioningKey = body.company_id+'::'+body.planner_kind;
 // Google Drive property key + value is limited to 124 bytes.
 if (provisioningKey.length + 'skill35_provisioning_key'.length > 124) throw new Error('Provisioning identity is too long');

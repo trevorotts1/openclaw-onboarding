@@ -18,6 +18,16 @@ created_date: 2026-04-14
 
 # Content Publishing Engine Skill
 
+## Weekly mini-app link delivery
+
+When a client says “trigger the social media planner,” “start my weekly plan,” or asks for a fresh link, use the installed Command Center's `scripts/social-theme-link.py` helper. Run `python3 <installed-command-center>/scripts/social-theme-link.py`; add `--renew` for an expired/lost link and `--week YYYY-MM-DD` only for a specified Monday. Resolve the installed app directory on THIS client’s box. The helper authenticates locally and sends a single-use, 24-hour mini-app invitation to that installation’s verified owner conversation. Never fabricate a URL or substitute a Google Sheet URL for the questionnaire.
+
+Only `delivered` plus a message receipt proves delivery. `already_delivered` means the earlier message exists; `already_submitted` means preserve the sealed answers and show the registered planner instead. Report `delivery_uncertain` or any error immediately; never claim the link arrived or retry uncertain sends blindly. Renewal preserves the same draft.
+
+Automatic invitations require an explicitly configured schedule and `SOCIAL_THEME_AUTOPILOT_ENABLED=1` in Command Center. Respect the client's timezone, pause, and stop controls. A one-week budget approval never authorizes spending in later weeks. Submission hands the sealed revision to the company’s Social Media board; queued is not produced, and publishing still requires the recorded approval.
+
+Reuse the verified `(company_id, social-planner)` sheet registry entry. New create requests may set `sharing: "private"` to grant edit access only to the verified `clientEmail` plus the management owner. Private mode is stored on the Drive file and preserved on retries. Never report a sheet ready before ownership, headers, and sharing readback succeed.
+
 ## Purpose
 The Content Publishing Engine orchestrates multi-agent workflows to research, create, produce, publish, and monitor content across every social channel the client has enabled in their GHL Social Planner. It handles text posts, images, videos/Reels, carousels, comments, blog posts, podcasts, and HTML email newsletters.
 
