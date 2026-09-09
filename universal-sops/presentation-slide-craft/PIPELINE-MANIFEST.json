@@ -1907,19 +1907,19 @@
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
       ],
-      "produces_artifact": "working/sales-checkout/build_receipt.json",
+      "produces_artifact": "working/sales-checkout/checkout_form.json",
       "gate_codes": [
         "AF-U-FORM-CHECKOUT"
       ],
       "preflight": null,
-      "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). STATUS (2026-08-19, confirmed by full-file search of sales_checkout_builder.py by both C1 and, independently, C5's SOP audit): P-U-FORM-CHECKOUT has NO dedicated implementation anywhere yet -- upsell-questions.json names it as its own id family distinct from P-U-CHECKOUT-*, but no script wires the checkout page's payment/lead-capture FORM fields as a separate build step; there is no working/upsell/checkout_form.json and no design note beyond SALES-CHECKOUT-BUILDER-SOP.md SS4's proposal. This phase currently re-invokes sales_checkout_builder.py with --skip-design (no kie.ai spend) as an interim placeholder that re-verifies the SAME build_receipt.json P-U-SALES-BUILD produced, so the phase/gate/step-count entry the intake app already promised the client exists and is DEFERS-correct -- it does not yet independently prove a payment/lead form was wired. A follow-up unit must implement the real form/payment-field wiring (see SALES-CHECKOUT-BUILDER-SOP.md SS4 'THE CHECKOUT FORM') and update this phase's executor + AF-U-FORM-CHECKOUT check accordingly. DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76). MERGE-NOTE 2026-09-01: merge/apicur-train's parallel DESIGN-OPUS proposal for this id (order 5.5, Skill-44 SKILL44_WIDGET seam, ecosystem/checkout-form.json) was superseded by this wired 8.77 placeholder entry; nothing consumed the 5.5 design (verified 2026-09-01 full-repo grep).",
+      "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). PRES-025 REAL PRODUCER (replaces the 2026-08-19 interim placeholder that re-invoked sales_checkout_builder.py and re-verified the SAME build_receipt.json without wiring any form): scripts/checkout_form_builder.py derives the form schema from the client-approved offer (OFFER_NAME + FINAL_PRICE/CURRENCY), emits the Skill 44 FORM/workflow contract (checkout_form_skill44.json) and the Skill 06 page/widget task (checkout_form_skill06_task.json), and persists form/workflow/product IDs into working/sales-checkout/checkout_form.json. Lead-capture completes on a test-location submit proof (one scoped contact + one workflow enrollment); payment completes on the provider SANDBOX path only (product/amount/currency + success/cancel routes, zero real charge). MISSING_OFFER / MISSING_MERCHANT / WRONG_LOCATION / UNSUPPORTED_PAYMENT block THIS phase only (soft NOTE checkpoint; deck + notifications continue). DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76).",
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
       },
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/sales_checkout_builder.py --run-dir {run_dir} --skip-design"
+        "cmd": "python3 scripts/checkout_form_builder.py --run-dir {run_dir}"
       },
       "verifier": "phase_verifiers.verify",
       "heartbeat_minutes": 20,
@@ -1949,7 +1949,7 @@
         "working/sales-checkout/html/sales.html",
         "working/sales-checkout/html/checkout.html",
         "working/vsl/html/vsl.html",
-        "working/sales-checkout/build_receipt.json"
+        "working/sales-checkout/checkout_form.json"
       ]
     },
     {
@@ -4041,10 +4041,10 @@
       "stage": "8.77",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the checkout page's payment/lead-capture form (P-U-FORM-CHECKOUT) has no dedicated implementation as of 2026-08-19 (confirmed by full-file search of sales_checkout_builder.py -- see the phase's routing_note); this code currently fires on the SAME placeholder-receipt condition as AF-U-CHECKOUT-BUILD and MUST be re-scoped to the real form/payment field check once a follow-up unit implements SALES-CHECKOUT-BUILDER-SOP.md SS4.",
-      "enforced_by": "sales_checkout_builder",
+      "trigger": "the elected checkout form (P-U-FORM-CHECKOUT) has no real form proof: working/sales-checkout/checkout_form.json absent, stale (intake/checkout.html changed since emit), page CTA audit failing (#/empty/javascript: or no order form), scope mismatch (wrong location), or mode contract unmet -- lead-capture needs status=complete with form_id + workflow_id + one-contact/one-enrollment submit proof (validation + duplicates exercised); sandbox payment needs product/amount/currency mapping + success/cancel routes with zero real charge. Phase-scoped blockers (MISSING_OFFER / MISSING_MERCHANT / WRONG_LOCATION / UNSUPPORTED_PAYMENT) soft-checkpoint as NOTE, never deck failure.",
+      "enforced_by": "checkout_form_builder",
       "py_symbol": null,
-      "check_script": "scripts/sales_checkout_builder.py::verify_push_receipt"
+      "check_script": "scripts/checkout_form_builder.py::main + phase_verifiers._verify_upsell_form_checkout"
     },
     {
       "code": "AF-U-VSL-BUILD",
