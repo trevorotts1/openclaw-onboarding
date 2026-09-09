@@ -1,3 +1,5 @@
+## [v25.0.26]  -  2026-09-09  -  RR-003 identity admission contract (ONB-W2-IDENTITY-AGG)
+
 ## [v25.0.25]  -  2026-09-09  -  W3 social planner: staging-not-review publish gate, producer adapters, durable cycle service with single scheduler and expiry jobs, weekly theme mini app (F04/F05/F07/F17)
 
 Batch ONB-20260909T011638 (PR #1069, merged at 81fa6caee5c54e28582bd3f8a2b51094c8e0c9ae).
