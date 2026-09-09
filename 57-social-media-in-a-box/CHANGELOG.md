@@ -1,6 +1,6 @@
 # Changelog — Social Media in a Box (Skill 57)
 
-## v1.5.0 - 2026-09-09 - W3 batch: producer adapter layer behind the phase gates (F05)
+## v1.5.1 - 2026-09-09 - release fold: changelog entry for the v1.5.0 producer adapter bump (F05)
 
 Batch ONB-20260909T011638 (PR #1069, merged at 81fa6caee). Version bump
 v1.4.0 -> v1.5.0 shipped in commit b94672d7f (G3 lockstep with
