@@ -1,0 +1,53 @@
+name: social-planner-suite-guard
+
+# F20: CI runs the relevant suite. Any change to the social planner engine
+# (35/57 scripts, shared-utils contract modules, tests) triggers the hermetic
+# unittest suite — offline, fake transports, no network. The suite FAILS when
+# the consumer is removed, review is marked before artifacts, live verification
+# is bypassed, a second week is not invited, or a fabricated post id is
+# accepted as live success (the pointer stale-test regression F20 replaced).
+
+on:
+  push:
+    paths:
+      - 35-social-media-planner/scripts/test_run_publishing_cycle.py
+      - 35-social-media-planner/scripts/prove_content_conversation_loop.py
+      - 35-social-media-planner/scripts/pregen_prompt_gate.py
+      - 35-social-media-planner/scripts/run-publishing-cycle.sh
+      - 57-social-media-in-a-box/run_social_media.py
+      - 57-social-media-in-a-box/scripts/ghl_contracts.py
+      - shared-utils/social_cycle_service.py
+      - shared-utils/social_prompt_compiler.py
+      - tests/social-planner/**
+      - .github/workflows/social-planner-suite-guard.yml
+  pull_request:
+    paths:
+      - 35-social-media-planner/scripts/test_run_publishing_cycle.py
+      - 35-social-media-planner/scripts/prove_content_conversation_loop.py
+      - 35-social-media-planner/scripts/pregen_prompt_gate.py
+      - 35-social-media-planner/scripts/run-publishing-cycle.sh
+      - 57-social-media-in-a-box/run_social_media.py
+      - 57-social-media-in-a-box/scripts/ghl_contracts.py
+      - shared-utils/social_cycle_service.py
+      - shared-utils/social_prompt_compiler.py
+      - tests/social-planner/**
+      - .github/workflows/social-planner-suite-guard.yml
+
+jobs:
+  social-planner-suite-guard:
+    name: social planner contract + failure-injection suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the social-planner suite (hermetic, offline)
+        run: |
+          python3 -m unittest discover -s tests/social-planner -p 'test_f*.py' -v 2>&1 | tail -20
+          python3 35-social-media-planner/scripts/test_run_publishing_cycle.py
+          python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py -q
