@@ -197,6 +197,287 @@ def _offline_exception_on_record(run_dir):
     return isinstance(rec, dict) and rec.get("offline_exception") is True
 
 
+# ===========================================================================
+# F05 — PRODUCER ADAPTER LAYER (behind the phase gates, never replacing them)
+# ---------------------------------------------------------------------------
+# run_social_media.py is the DETERMINISTIC STATE MACHINE: it checks artifacts,
+# it does not author them. The MISSING HALF was the producer: a fresh run with
+# valid config + an approved theme failed on missing working/plan/plan.json
+# with nothing invoking production. Now every manifest phase can name a
+# producer ADAPTER; the orchestrator invokes the phase's adapter BEFORE its
+# gate when the gate's artifact is absent (or its inputs changed), so missing
+# files TRIGGER PRODUCTION — or a specific dependency failure — and never a
+# claim that production occurred.
+#
+# ADAPTER INTERFACE (one adapter per manifest phase):
+#     def produce(run_dir, phase, ctx) -> {"ok": bool, "error"?: str, ...}
+#   * ok=False fails the phase CLOSED with a specific message (a failed
+#     producer is never a gate pass and never a fabricated artifact).
+#   * The adapter owns HOW production happens (real adapters dispatch work
+#     through the F33 execution policy / worker pool; stub/fake adapters used
+#     in tests stamp receipts simulated=true and can NEVER satisfy a live
+#     completion — the F08 gate contract already refuses simulated evidence).
+#   * The gate (_chk_*) ALWAYS runs after the producer: the producer layer
+#     sits BEHIND the gates, not replacing them. Every deterministic validator
+#     is untouched.
+#
+# RECEIPTS (working/producers/receipts.json, one row per producer invocation):
+#     phase, adapter, assigned_agent, execution_id, input_hashes (sha256 of
+#     the adapter's declared inputs), output_hashes (sha256 of produced
+#     artifacts), receipt (per-phase completion receipt), simulated flag.
+# RESUME: on re-run a phase's outputs are reused ONLY when its declared input
+# hashes still match; an edited input (e.g. a changed theme hash) reruns the
+# producer and every downstream phase after it.
+# ===========================================================================
+PRODUCERS_RECEIPTS = "working/producers/receipts.json"
+
+
+def _sha256_text(data):
+    import hashlib
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_path(path):
+    import hashlib
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+class ProducerError(Exception):
+    """A producer adapter failed. Specific, never a fabricated success."""
+
+
+class ProducerRegistry:
+    """Adapter registry: real adapters register under their manifest phase id
+    (the registry hook the F33 execution policy dispatches work through);
+    register("stub", ...) replaces entries with a fake for tests."""
+
+    def __init__(self):
+        self._adapters = {}
+
+    def register(self, phase_id, adapter, *, assigned_agent=None, inputs=None,
+                 replaces=False):
+        if phase_id in self._adapters and not replaces:
+            raise ProducerError(
+                "producer adapter for %r already registered (pass replaces=True "
+                "to override — e.g. a stub in tests)" % phase_id)
+        self._adapters[phase_id] = {
+            "adapter": adapter, "assigned_agent": assigned_agent or "",
+            "inputs": list(inputs or []),
+        }
+        return adapter
+
+    def register_stub(self, phase_id, adapter, *, assigned_agent=None, inputs=None):
+        return self.register(phase_id, adapter, assigned_agent=assigned_agent,
+                             inputs=inputs, replaces=True)
+
+    def get(self, phase_id):
+        rec = self._adapters.get(phase_id)
+        if rec is None:
+            return None
+        return dict(rec, phase_id=phase_id)
+
+    def registered(self):
+        return sorted(self._adapters)
+
+
+#: The ONE default registry (real adapters register here; tests inject stubs
+#: with replaces=True or build their own registry and pass it to run()).
+PRODUCER_REGISTRY = ProducerRegistry()
+
+
+def _producer_receipts(run_dir):
+    rows = _json(run_dir, PRODUCERS_RECEIPTS, [])
+    return rows if isinstance(rows, list) else []
+
+
+def _write_producer_receipt(run_dir, rec):
+    rows = [r for r in _producer_receipts(run_dir)
+            if not (isinstance(r, dict) and r.get("phase") == rec.get("phase"))]
+    rows.append(rec)
+    p = Path(run_dir) / "working" / "producers" / "receipts.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    return p
+
+
+def _producer_input_hashes(run_dir, entry):
+    """sha256 over the adapter's declared input files (theme, config, plan...).
+    An input that cannot be hashed fails the producer CLOSED (unknown inputs
+    can never justify reusing stale output)."""
+    hashes = {}
+    for rel in entry["inputs"]:
+        p = Path(run_dir) / rel
+        sha = _sha256_path(p)
+        if sha is None:
+            raise ProducerError(
+                "producer input %s is missing/unreadable (fail-closed)" % rel)
+        hashes[rel] = sha
+    return hashes
+
+
+def _outputs_reusable(run_dir, entry, input_hashes):
+    """Resume contract: reuse ONLY outputs whose input hashes still match the
+    receipt AND whose produced outputs still exist with matching output hashes.
+    Any drift -> rerun (and downstream phases rerun after it)."""
+    rows = [r for r in _producer_receipts(run_dir)
+            if isinstance(r, dict) and r.get("phase") == entry["phase_id"]]
+    if not rows:
+        return False
+    rec = rows[-1]
+    if rec.get("input_hashes") != input_hashes:
+        return False
+    out = rec.get("output_hashes") or {}
+    if not out:
+        return False
+    for rel, sha in out.items():
+        if _sha256_path(Path(run_dir) / rel) != sha:
+            return False
+    return True
+
+
+def _invoke_producer(run_dir, entry, *, execution_mode_simulated):
+    """Invoke ONE phase's producer adapter and record its receipt. Returns
+    (ok, msg). The gate ALWAYS still runs after this."""
+    import datetime
+    adapter = entry["adapter"]
+    try:
+        input_hashes = _producer_input_hashes(run_dir, entry)
+    except ProducerError as exc:
+        _write_producer_receipt(run_dir, {
+            "phase": entry["phase_id"],
+            "adapter": getattr(adapter, "__name__", repr(adapter)),
+            "assigned_agent": entry["assigned_agent"],
+            "input_hashes": {}, "output_hashes": {},
+            "ok": False, "error": str(exc),
+            "recorded_at": _utc_now_iso(),
+        })
+        return False, ("producer %s FAILED: %s — production did NOT occur (specific "
+                       "dependency failure, never a fabricated completion)"
+                       % (entry["phase_id"], exc))
+    if _outputs_reusable(run_dir, entry, input_hashes):
+        rows = [r for r in _producer_receipts(run_dir)
+                if isinstance(r, dict) and r.get("phase") == entry["phase_id"]]
+        rec = rows[-1]
+        return True, ("producer %s REUSED (input hashes unchanged, outputs verified: %d "
+                      "artifact(s))" % (entry["phase_id"], len(rec.get("output_hashes") or {})))
+    ctx = {
+        "phase_id": entry["phase_id"],
+        "run_dir": run_dir,
+        "input_hashes": input_hashes,
+        "simulated": bool(execution_mode_simulated),
+    }
+    try:
+        result = adapter(run_dir, entry["phase_id"], ctx)
+    except Exception as exc:  # noqa: BLE001 — a producer crash is a producer failure
+        _write_producer_receipt(run_dir, {
+            "phase": entry["phase_id"], "adapter": getattr(adapter, "__name__", repr(adapter)),
+            "assigned_agent": entry["assigned_agent"],
+            "input_hashes": input_hashes, "output_hashes": {},
+            "ok": False, "error": "producer raised: %s" % exc,
+            "recorded_at": _utc_now_iso(),
+        })
+        return False, ("producer %s FAILED (raised %s) — production did NOT occur; "
+                       "fix and re-run" % (entry["phase_id"], type(exc).__name__))
+    result = result if isinstance(result, dict) else {"ok": bool(result)}
+    ok = result.get("ok") is True
+    outputs = result.get("outputs") or {}
+    output_hashes = {}
+    for rel in (outputs if isinstance(outputs, (list, dict)) else []):
+        rel_path = rel if isinstance(rel, str) else str(rel)
+        sha = _sha256_path(Path(run_dir) / rel_path)
+        if sha is None:
+            return False, ("producer %s declared output %s but it is missing on disk — "
+                           "never a claim that production occurred"
+                           % (entry["phase_id"], rel_path))
+        output_hashes[rel_path] = sha
+    rec = {
+        "phase": entry["phase_id"],
+        "adapter": getattr(adapter, "__name__", repr(adapter)),
+        "assigned_agent": entry["assigned_agent"],
+        "execution_id": result.get("execution_id") or ctx.get("execution_id") or "",
+        "input_hashes": input_hashes,
+        "output_hashes": output_hashes,
+        "ok": bool(ok),
+        "receipt": result.get("receipt"),
+        "simulated": bool(result.get("simulated", execution_mode_simulated)),
+        "recorded_at": _utc_now_iso(),
+    }
+    if not ok:
+        rec["error"] = str(result.get("error") or "producer reported failure (no detail)")
+        _write_producer_receipt(run_dir, rec)
+        return False, ("producer %s FAILED: %s — production did NOT occur (specific "
+                       "dependency failure, never a fabricated completion)"
+                       % (entry["phase_id"], rec["error"]))
+    _write_producer_receipt(run_dir, rec)
+    return True, ("producer %s completed (%d artifact(s), %s)"
+                  % (entry["phase_id"], len(output_hashes),
+                     "SIMULATED=true" if rec["simulated"] else "live"))
+
+
+def run_with_producers(manifest, mode, run_dir, *, registry=None):
+    """F05 run loop: per phase, invoke the phase's producer adapter (when one is
+    registered) BEFORE its gate, then run the unchanged deterministic gate.
+    A producer failure BLOCKS with a specific message (exit 2, same as a gate
+    failure) — the gate itself is untouched and still decides pass/fail."""
+    reg = registry if registry is not None else PRODUCER_REGISTRY
+    try:
+        simulated = _run_is_simulated(run_dir)
+    except ConfigurationError as exc:
+        print("FATAL: %s" % exc, file=sys.stderr)
+        return EXIT_GATE
+    phases = manifest.get("modes", {}).get(mode)
+    if not phases:
+        print("FATAL: unknown mode %r" % mode, file=sys.stderr)
+        return EXIT_USAGE
+    gates = {}
+    for pid in phases:
+        ph = _phase(manifest, pid)
+        if not ph:
+            print("FATAL: phase %s missing from manifest" % pid, file=sys.stderr)
+            return EXIT_USAGE
+        checker = (ph.get("preflight") or {}).get("checker")
+        print("=== PHASE %s — %s ===" % (pid, ph.get("name", "")))
+        entry = reg.get(pid)
+        if entry is not None:
+            ok, msg = _invoke_producer(run_dir, entry, execution_mode_simulated=simulated)
+            print("   [%s] producer: %s" % ("OK" if ok else "FAIL", msg))
+            if not ok:
+                gates[pid] = {"passed": False}
+                _write_gates(run_dir, gates)
+                _LAST_BLOCK.clear()
+                _LAST_BLOCK.update({"phase_id": pid, "note": msg})
+                print("BLOCKED at %s (producer failed; fail-closed). Fix and re-run." % pid,
+                      file=sys.stderr)
+                return EXIT_GATE
+        ok, msg = _run_checker(checker, run_dir)
+        print("   [%s] %s: %s" % ("OK" if ok else "FAIL", checker, msg))
+        gates[pid] = {"passed": bool(ok)}
+        # Persist gates BEFORE the manifest phase so build_manifest can read P0..P5.
+        if pid != "P6-MANIFEST":
+            _write_gates(run_dir, gates)
+        if not ok:
+            _write_gates(run_dir, gates)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
+            print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid, file=sys.stderr)
+            return EXIT_GATE
+    _write_gates(run_dir, gates)
+    print("ALL REQUESTED PHASES PASSED for mode '%s'." % mode)
+    cert = run_dir / "delivery" / "PROCESS-CERTIFICATE.json"
+    if cert.is_file():
+        try:
+            sha = json.loads(cert.read_text())["certificate_sha"]
+            print("CERTIFICATE: %s (sha %s)" % (cert, sha[:12]))
+        except (ValueError, KeyError):
+            pass
+    return EXIT_PASS
+
+
 def _utc_now_iso():
     import datetime
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1567,6 +1848,10 @@ def main(argv=None):
     ap.add_argument("--mode", choices=MODES)
     ap.add_argument("--run-dir", help="the run directory (contains working/)")
     ap.add_argument("--plan", action="store_true", help="print the mode's phase plan and exit")
+    ap.add_argument("--producers", action="store_true",
+                    help="run the F05 producer adapter layer BEHIND the phase gates: each "
+                         "phase's producer is invoked before its gate (missing artifacts "
+                         "trigger production; unchanged inputs reuse verified outputs)")
     ap.add_argument("--narrated", action="store_true",
                     help="request the narrated video lane (C8) — DEFERRED to v0.3.0 (fails closed)")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
@@ -1598,7 +1883,12 @@ def main(argv=None):
     if _run_persona_adapter(run_dir):
         return EXIT_GATE
     _mc_task = _mc_board_begin(run_dir, args.mode)
-    rc = run(manifest, args.mode, run_dir)
+    # F05: with --producers the run loop invokes each phase's producer adapter
+    # behind the unchanged gates; without it, the pure deterministic walk.
+    if getattr(args, "producers", False):
+        rc = run_with_producers(manifest, args.mode, run_dir)
+    else:
+        rc = run(manifest, args.mode, run_dir)
     if rc == EXIT_PASS:
         _mc_board_done(run_dir, _mc_task)
     else:
