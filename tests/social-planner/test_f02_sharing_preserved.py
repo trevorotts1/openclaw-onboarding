@@ -31,11 +31,10 @@ class TestF02SharingPreserved(unittest.TestCase):
         nodes = [n for n in export["nodes"] if n["name"] == LIVE_SHARE_NODE]
         self.assertEqual(len(nodes), 1, "share node must exist exactly once")
         node = nodes[0]
-        self.assertEqual(node["type"], "n8n-nodes-base.googleDrive")
-        self.assertEqual(node["parameters"]["operation"], "share")
-        perms = node["parameters"]["permissionsUi"]["permissionsValues"]
-        self.assertEqual(perms["role"], "writer")
-        self.assertEqual(perms["type"], "anyone")
+        self.assertEqual(node["type"], "n8n-nodes-base.httpRequest")
+        self.assertEqual(node["parameters"]["method"], "POST")
+        self.assertIn("{type:'anyone',role:'writer'}", node["parameters"]["jsonBody"])
+        self.assertEqual(node["parameters"]["nodeCredentialType"], "googleDriveOAuth2Api")
 
     def test_share_node_wired_in_provisioning_chain(self):
         # Formatting is durably checkpointed before sharing; only after sharing
@@ -44,7 +43,7 @@ class TestF02SharingPreserved(unittest.TestCase):
         connections = export["connections"]
         targets = [link["node"] for branch in connections["Sharing Ready?"]["main"] for link in branch]
         self.assertIn(LIVE_SHARE_NODE, targets)
-        self.assertEqual(connections[LIVE_SHARE_NODE]["main"][0][0]["node"], "Tag Provisioning Key")
+        self.assertEqual(connections[LIVE_SHARE_NODE]["main"][0][0]["node"], "Read Sharing Permission")
         # Reachability: every path from the share node eventually reaches
         # 'Respond: Created' without passing through the error branch.
         reachable = set()
