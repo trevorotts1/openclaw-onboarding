@@ -25,22 +25,23 @@ class Compatibility(unittest.TestCase):
 
     def test_security_floor_and_resolver(self):
         compat=load_cc_compat(ROOT)
-        self.assertEqual(compat['commandCenter']['minVersion'],'v7.1.5')
-        self.assertEqual(resolve_cc_tag(compat),'v7.1.5')
-        for version in ['6.1.0','7.0.0','7.1.0','7.1.1','7.1.2','7.1.3','7.1.4']:
+        self.assertEqual(compat['commandCenter']['minVersion'],'v7.3.1')
+        self.assertEqual(resolve_cc_tag(compat),'v7.3.1')
+        self.assertEqual(guard.SECURITY_MIN_VERSION, guard.stable_version(compat['commandCenter']['minVersion']))
+        for version in ['6.1.0','7.0.0','7.1.0','7.1.1','7.1.2','7.1.3','7.1.4','7.1.5','7.2.0','7.3.0']:
             with self.assertRaises(ValueError): assert_min_version(version,compat)
             with self.assertRaises(ValueError): guard.assert_cc_package({'version':version})
-        guard.assert_cc_package({'version':'7.1.5'})
+        guard.assert_cc_package({'version':'7.3.1'})
         compat['commandCenter']['pinnedTag']=None
-        self.assertEqual(resolve_cc_tag(compat,['v7.0.0','v7.1.5']),'v7.1.5')
+        self.assertEqual(resolve_cc_tag(compat,['v7.0.0','v7.3.1']),'v7.3.1')
         with self.assertRaises(ValueError): resolve_cc_tag(compat,['v7.0.0'])
 
     def test_cli_node_and_checkout_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             directory=Path(td); node=directory/'node'; package=directory/'package.json'
-            package.write_text('{"version":"7.1.5"}')
+            package.write_text('{"version":"7.3.1"}')
             env={**os.environ,'PATH':str(directory)}
-            for node_version,cc_version,expected in [('v22.12.0','7.1.5',1),('v22.13.0','7.0.0',1),('v22.13.0','7.1.0',1),('v22.13.0','7.1.1',1),('v22.13.0','7.1.2',1),('v22.13.0','7.1.3',1),('v22.13.0','7.1.4',1),('v22.13.0','7.1.5',0)]:
+            for node_version,cc_version,expected in [('v22.12.0','7.3.1',1),('v22.13.0','7.0.0',1),('v22.13.0','7.1.0',1),('v22.13.0','7.1.1',1),('v22.13.0','7.1.2',1),('v22.13.0','7.1.3',1),('v22.13.0','7.1.4',1),('v22.13.0','7.1.5',1),('v22.13.0','7.3.0',1),('v22.13.0','7.3.1',0)]:
                 node.write_text('#!/bin/sh\nprintf "%s\\n" "'+node_version+'"\n');node.chmod(0o755)
                 package.write_text(json.dumps({'version':cc_version}))
                 result=subprocess.run([sys.executable,str(ROOT/'shared-utils/cc_runtime_preflight.py'),'--checkout',td],env=env,capture_output=True,text=True)
@@ -99,7 +100,7 @@ class Compatibility(unittest.TestCase):
             directory=Path(td);(directory/'package.json').write_text('{"version":"7.0.0"}')
             result=runner.BoxResult('fixture',dry_run=False)
             with patch.object(guard,'check_node',side_effect=ValueError('unsupported Node')), patch.object(runner.subprocess,'run') as run:
-                runner.step_pull_cc({'cc_dir':directory},'v7.1.5',result,False)
+                runner.step_pull_cc({'cc_dir':directory},'v7.3.1',result,False)
                 run.assert_not_called()
                 self.assertNotEqual(result.steps.get('pull-cc'),'ok')
             result=runner.BoxResult('fixture',dry_run=False)
@@ -107,7 +108,7 @@ class Compatibility(unittest.TestCase):
                 subprocess.CompletedProcess([],0,''),
                 subprocess.CompletedProcess([],0,'{"version":"7.0.0"}')
             ]) as run:
-                runner.step_pull_cc({'cc_dir':directory},'v7.1.5',result,False)
+                runner.step_pull_cc({'cc_dir':directory},'v7.3.1',result,False)
                 self.assertEqual(run.call_count,2)  # fetch/read only; old updater never invoked
                 self.assertNotEqual(result.steps.get('pull-cc'),'ok')
             for method,step in [(runner.step_build_cc,'build-cc'),(runner.step_restart_cc,'restart-cc')]:
