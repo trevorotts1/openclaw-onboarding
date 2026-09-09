@@ -327,6 +327,21 @@ def step_readiness(state: Dict[str, Any], request: Dict[str, Any],
         if not results[probe_name].get("ok"):
             raise BootstrapRetryable("readiness probe '%s' failed (%s) — the planner is NOT ready; resume after the component is healthy"
                                      % (probe_name, results[probe_name].get("state")))
+    # F34-OBS-03: the intake URL must come from a RECEIPT, never be handed
+    # out empty. The mini-app readiness probe owns the real intake link when
+    # the mini app is live (F27); on an offline profile the durable intake
+    # receipt falls back to the VERIFIED planner URL so the delivered links
+    # are never placeholders. A configured-but-empty probe intake_url is a
+    # retryable failure, not a silent blank.
+    intake = (results.get("mini_app") or {}).get("intake_url") or state.get("intake_url")
+    if intake:
+        state["intake_url"] = intake
+    elif (results.get("mini_app") or {}).get("state") == "assumed_offline_profile":
+        state["intake_url"] = (state.get("registry") or {}).get("sheet_url")
+        results["mini_app"]["intake_url"] = state["intake_url"]
+        results["mini_app"]["intake_source"] = "planner_url_fallback"
+    else:
+        raise BootstrapRetryable("mini_app readiness probe returned NO intake_url — the intake link must come from a verified receipt (F27), never an empty string; resume after the mini app publishes its intake URL")
     # ONE schedule: the durable cycle engine claims ownership (F17). A legacy
     # trigger is the fallback only until the durable engine verifies.
     schedule = _register_schedule(state, request, env)
