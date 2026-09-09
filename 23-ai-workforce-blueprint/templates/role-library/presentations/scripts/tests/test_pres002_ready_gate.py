@@ -431,3 +431,63 @@ def test_deferred_producer_cannot_satisfy_required_edge(tmp_path):
         f"a deferred producer must not satisfy a required edge: {wd}"
     assert ps_req.get("status") == "pending"
     assert not (rd / "working" / "req.txt").exists()
+
+# ---------------------------------------------------------------------------
+# 7. PRES-002-R2 (QC repair): a member re-admitted and withheld AGAIN on a
+#    later tick lands in failed_rcs ONCE -- no duplicate failed_units rows,
+#    no double final-refresh. The park message counts PHASES, not withhold
+#    cycles.
+# ---------------------------------------------------------------------------
+def test_withhold_requeued_twice_records_one_failed_units_row(tmp_path, monkeypatch):
+    # A waits 0.6s (one slow producer); C depends on it and is withheld while
+    # A runs. The scheduler withholds C on the first tick, requeues it when
+    # A's status advances, and admits it again -- the re-withhold must NOT
+    # add a second failed_rcs entry when C ultimately succeeds, and a final
+    # failed C must produce exactly ONE failed_units row.
+    phases = [
+        ("A", 1, "working/a.txt", [], _cmd_that_writes("working/a.txt", 0.6)),
+        ("C", 2, "working/c.txt", ["working/a.txt"],
+         _cmd_that_writes("working/c.txt", 0.02)),
+    ]
+    eng = _engine(tmp_path, phases)
+    withholds: list = []
+    real_gate = eng._check_predecessor_success
+
+    def spy(phase):
+        rc = real_gate(phase)
+        if rc is not None:
+            withholds.append(phase.id)
+        return rc
+
+    eng._check_predecessor_success = spy
+    rc = eng.run()
+    assert rc == EXIT_OK, eng.state.get("blocked")
+    assert eng._phase_state("A").get("status") == "done"
+    assert eng._phase_state("C").get("status") == "done"
+    # C was withheld at least once (the gate saw A pending), and the run still
+    # parked nothing: the withhold bookkeeping left NO failed_units rows.
+    assert withholds, "the gate never exercised the withhold path"
+    rows = [r for r in (eng.state.get("failed_units") or [])
+            if r.get("phase") in ("A", "C")]
+    assert rows == [], (
+        f"a successful run must carry zero failed_units rows for A/C: {rows}")
+
+
+def test_terminal_bad_ancestor_parks_once_per_phase_not_per_cycle(tmp_path):
+    # A fails immediately; C depends on it. The scheduler withholds C, sees A
+    # terminal-bad, and stops re-admitting. Even under multiple withhold
+    # cycles the park must carry exactly ONE failed_units row for C (and one
+    # for A), never one per cycle.
+    phases = [
+        ("A", 1, "working/a.txt", [], FAIL_CMD),
+        ("C", 2, "working/c.txt", ["working/a.txt"],
+         _cmd_that_writes("working/c.txt", 0.02)),
+    ]
+    eng = _engine(tmp_path, phases)
+    rc = eng.run()
+    assert rc != EXIT_OK
+    rows = [r.get("phase") for r in (eng.state.get("failed_units") or [])]
+    assert sorted(rows) == ["A", "C"], (
+        f"one failed_units row per phase, never per withhold cycle: {rows}")
+    assert eng._phase_state("C").get("status") == "pending"
+    assert not (tmp_path / "run" / "working" / "c.txt").exists()

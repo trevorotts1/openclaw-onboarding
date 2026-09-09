@@ -3387,7 +3387,17 @@ class Engine:
                                 # gate passes, else the final
                                 # waiting_dependency record stands and the
                                 # run parks once).
-                                failed_rcs.append((ph.id, rc))
+                                # PRES-002-R2 (QC repair): ONE entry per phase.
+                                # A member re-admitted and withheld AGAIN on a
+                                # later tick re-lands here; without the guard
+                                # every withhold cycle appends a duplicate row,
+                                # inflating failed_units with repeats of one
+                                # phase and double-running it in the final
+                                # refresh (which iterates failed_rcs). The
+                                # FIRST withhold entry is authoritative; the
+                                # refresh re-reads the phase record anyway.
+                                if not any(p == ph.id for p, _r in failed_rcs):
+                                    failed_rcs.append((ph.id, rc))
                                 blockers = tuple(
                                     (w.get("blocked_by"),
                                      w.get("pred_status"))
@@ -3506,11 +3516,15 @@ class Engine:
             #     record (and the event row) now names the blocker's FINAL
             #     status -- the exact terminal-bad edge the operator must see.
             #   * the gate raises -> keep the withhold as recorded.
+            _refreshed: set = set()
             for pid, _rc in list(failed_rcs):
+                if pid in _refreshed:
+                    continue
                 ps = self._phase_state(pid)
                 if ps.get("status") != PHASE_STATUS_PENDING or \
                         not ps.get("waiting_dependency"):
                     continue
+                _refreshed.add(pid)
                 ph = by_id.get(pid) or self.manifest.phase_or_none(pid)
                 if ph is None:
                     continue
