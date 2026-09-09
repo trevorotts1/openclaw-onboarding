@@ -1,3 +1,40 @@
+## [v25.0.24]  -  2026-09-08  -  ONB W2 repair batch (F08/F10/F11/F12/F13/F33 + F06/F09/F19 restoration)
+
+Batch ONB-20260909-repairs (PR #1066 restoration; PR #1067, merged at
+700d9074143e). Tasks: F08, F10, F11, F12, F13, F33-ONB, plus restoration of
+F06/F09/F19 preflight content. Skill bumps in-batch: 35-social-media-planner
+v3.3.0, 57-social-media-in-a-box v1.4.0 (G3).
+
+Behavior changes:
+
+- Execution-mode strictness (F08): probes are rejected in production
+  execution mode, OFFLINE=0 stays live in production, and fixture receipts
+  no longer satisfy live-completion checks — production runs must complete
+  against the live system, not a fixture.
+- Per-destination delivery + provider readback (F10): delivery tracking is
+  written as per-destination rows with provider-state readback, and timeout
+  reconciliation runs without creating duplicate delivery rows.
+- QC matrix from plan + independent reviewer (F11): the QC matrix is derived
+  from the plan itself rather than hand-assembled, the reviewer identity is
+  asserted as independent from the builder, and the integrity attestation
+  uses truthful SHA-256 wording about what was actually hashed.
+- Canonical ingest with HMAC verification (F12): board ingest accepts the
+  canonical payload form with HMAC(secret, rawBody) signatures, and a board
+  outbox replay path redelivers missed ingest events.
+- Writeback proof (F13): sheet writeback receipts now carry the
+  company-bound spreadsheet ID, the updatedRange of the write, and a
+  row-key readback, so a claimed write can be proven against the sheet.
+- Standard/Ultra execution policy (F33, ONB side): the Standard and Ultra
+  execution tiers run with provider semaphores and dependency waves, so
+  concurrency is bounded per provider and dependent work runs after its
+  dependencies.
+- F06/F09/F19 preflight content restoration (PR #1066): the preflight
+  content for F06, F09, and F19 is restored from its pre-batch state.
+
+Compatibility: none breaking. Skill version bumps: 35-social-media-planner
+to v3.3.0 and 57-social-media-in-a-box to v1.4.0. No live checks were run as
+part of this release; nothing in these notes claims a live-system verdict.
+
 ## [v25.0.23]  -  2026-09-08  -  Social media planner W2 batch: repair states, dry-run migration, asset manifests, prompt policy, versioned platform strategy
 
 Batch ONB-20260908T204954 (PR #1064, merged at b1c989e444). Tasks:
