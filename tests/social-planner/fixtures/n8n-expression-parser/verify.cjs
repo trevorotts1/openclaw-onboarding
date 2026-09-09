@@ -37,11 +37,11 @@ for (const name of fs.readdirSync(directory).filter((file) => file.endsWith('.js
 assert.throws(() => compile("={{ JSON.stringify({appProperties:{state:'ready'}}) }}"), /Unexpected end|syntax/i);
 const safe = "={{ JSON.stringify({appProperties:{state:'ready'} }) }}";
 assert.doesNotThrow(() => compile(safe));
-assert.equal(parser.execute(safe.slice(1), {}), '{"appProperties":{"state":"ready"}}');
+assert.equal(parser.execute(safe.slice(1), { JSON }), '{"appProperties":{"state":"ready"}}');
 // IIFEs themselves are supported: don't misdiagnose the arrow as the cause.
 const safeIife = "={{ (()=>{const src={name:'Fixture'};return JSON.stringify({name:src.name,appProperties:{state:'initializing'} });})() }}";
 assert.doesNotThrow(() => compile(safeIife));
-assert.equal(JSON.parse(parser.execute(safeIife.slice(1), {})).appProperties.state, 'initializing');
+assert.equal(JSON.parse(parser.execute(safeIife.slice(1), { JSON })).appProperties.state, 'initializing');
 assert.ok(checked > 0, 'No real export expressions checked');
 const result = { parser: '@n8n/tournament@1.10.1', checked, regressionAssertions: 6, failures, passed: failures.length === 0 };
 console.log(JSON.stringify(result, null, 2));
