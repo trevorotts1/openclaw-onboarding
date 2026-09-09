@@ -535,22 +535,26 @@ class LeaseGuard:
 
     @staticmethod
     def _prime_provider(_gov: Any) -> None:
-        """Pre-fill the persona provider's token bucket so an admission with
-        free capacity NEVER enters the governor's block-poll loop.
+        """Top the persona provider's token bucket up to burst before every
+        persona acquire, so a persona admission NEVER enters the governor's
+        block-poll loop for want of a token.
 
-        The poll loop sleeps ``time.sleep`` per deficit tick; a persona
-        resolution runs inside engine code whose tests (and, rarely, hosts)
-        instrument ``time.sleep`` globally — an admission that is free must
-        not spend 85 poll-sleeps (and ~85 fake-clock ticks) getting a token
-        it can have immediately. Priming once per provider mirrors the
-        token-bucket-at-start semantics (burst full) without touching the
-        governor module other units own."""
+        Why this is safe, not a cap bypass: persona resolution is one call
+        per phase, phases apart by minutes — the sustained-rate limit
+        (rps 1.0) can never bind it in production; the caps that DO matter
+        for this path stay fully enforced by acquire() itself: max_inflight
+        (concurrent persona resolutions), the rolling 10 s window ceiling,
+        and daily_cap. What priming removes is only the token-deficit
+        poll-sleeps (up to ~85 ``time.sleep`` ticks on a drained bucket),
+        which corrupt any host that instruments ``time.sleep`` globally
+        (deterministic-clock test harnesses count every tick — a drained
+        bucket left by an earlier suite then changes a later suite's
+        timing). Governor module itself untouched (owned by another unit)."""
         with _gov._lock:
             st = _gov._state_for("persona")
-            if st.last_refill <= 0.0:  # never acquired before: cold state
-                cfg = _gov.provider_config("persona")
-                st.tokens = float(cfg["burst"])
-                st.last_refill = time.time()
+            cfg = _gov.provider_config("persona")
+            st.tokens = float(cfg["burst"])
+            st.last_refill = time.time()
 
     def release(self) -> None:
         with self._lock:
