@@ -171,8 +171,8 @@ fi
 # ----------------------------------------------------------
 CRON_MESSAGE="Skill 35 weekly cycle trigger (Saturday 8 AM) — forwarding adapter for the durable cycle service. \
 Run ONLY this short step and exit: \
-python3 \${HOME}/.openclaw/skills/../../shared-utils/social_cycle_service.py advance \
-  (or, when the Command Center is live on this box, its /api/cron/register scheduler already owns the cadence — \
+python3 \${HOME}/.openclaw/skills/../../shared-utils/social_cycle_cli.py advance \
+  (the F21 one-step runner; or, when the Command Center is live on this box, its /api/cron/register scheduler already owns the cadence — \
    verify engine ownership instead of running a second cadence). \
 The cycle service ensures this client-local week's cycle, sends the invitation through the theme-intake \
 outbox, fires bounded reminders, applies the cutoff disposition, and rolls next week. \

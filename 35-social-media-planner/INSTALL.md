@@ -281,6 +281,41 @@ ffmpeg -version | head -1 || { echo "FFmpeg missing — install: brew install ff
 
 ### Step 7: Run First-Run Protocol (references/playbook.md Section 0)
 
+**F34 — setup is TRANSACTIONAL and RESUMABLE (run this way, not the legacy imperative path):**
+The install is driven by the durable bootstrap state machine
+(`shared-utils/social_bootstrap.py`) with ONE checkpoint file per company at
+`<openclaw-root>/data/social-bootstrap/<company_id>::<planner_kind>/state.json`.
+Steps 4/4a–4f below describe WHAT the machine does; the bootstrap runner owns
+WHEN each is safe to run. Record the verified identity FIRST, then run
+`python3 shared-utils/social_bootstrap.py bootstrap --config request.json`
+(from the skill entry) — it resumes from the last durable checkpoint after any
+crash and never provisions a second sheet: step 2 re-POSTs the SAME
+`company_id::planner_kind` provisioning key and the F15 webhook returns the
+already-created sheet (`deduped: true`). A crash AFTER Google created the file
+but BEFORE the registry step re-uses it — the file is adopted, never duplicated.
+The five steps, each saved to the durable state file before the next begins:
+
+1. `identity` — VERIFIED company_id, owner, notification destination,
+   timezone, deployment type and engine ownership recorded FIRST. Model/
+   provider preferences and a READ-ONLY GHL account-access test are collected
+   here; absent optional channels are recorded EXCLUSIONS (never silent
+   failures, never asked-for-later promises).
+2. `planner` — create-or-adopt EXACTLY ONE company planner via the
+   `social-planner-sheet-create` webhook under the F15 provisioning key.
+3. `registry` — verify the F02 sharing contract (anyone/writer), the expected
+   tabs/schema with the SAME credential class the appends use (F14), persist
+   the durable sheet registry (`unique(company_id, planner_kind)`) and
+   synchronize local references (MEMORY.md/env are copies, never ownership).
+4. `readiness` — verify worker/board/mini-app readiness receipts and register
+   ONE schedule (the durable cycle engine claims ownership; legacy triggers
+   are superseded, never both armed — F17).
+5. `deliver` — deliver the REAL planner + intake links. `ready: true` is
+   written ONLY when every prior step has a verified receipt in the state
+   file; a webhook 200 alone is NEVER treated as installation complete.
+
+Resume after any crash: re-run the same bootstrap command — completed steps
+re-verify (never re-create) and only the interrupted step re-executes.
+
 Read brand info from core files, then ask only what's missing:
 1. Read `identity.md`, `soul.md`, `memory.md`, `agents.md`, `heartbeat.md`
 2. Extract: brand name, founder, target audience, brand colors, tone, voice, products/services
@@ -480,6 +515,49 @@ else
   echo "No ungated Saturday block found — nothing to remove"
 fi
 ```
+
+### Step 9-bis: Install the durable service contract (F21 — portable deployment health)
+
+After the weekly trigger registers, install the SERVICE layer that survives
+reboots and is verifiable on ANY supported profile (Mac launchd, Docker VPS
+systemd) — never a Mac-only proof:
+
+```bash
+SHARED_UTILS="${HOME}/.openclaw/skills/shared-utils"
+[ -d "$SHARED_UTILS" ] || SHARED_UTILS="/data/.openclaw/skills/shared-utils"
+
+# 1) Install/upgrade the durable cycle service (one SHORT advance step per
+#    tick; correct service-user HOME, canonical secret paths, CLIENT timezone):
+bash "$SHARED_UTILS/social-service.sh" --install --timezone "$TZ" \
+  --runner "$SHARED_UTILS/social_cycle_cli.py" || {
+  echo "HARD FAIL: social-service.sh install failed — fix the error above; the install MUST NOT claim completion." >&2
+  exit 1
+}
+
+# 2) Record the n8n contract version the deployment carries (the doctor reads
+#    this; stale mappings are a FAILED health check, not a warning):
+mkdir -p ~/.openclaw/data/skill35
+cat > ~/.openclaw/data/skill35/n8n-mapping.json <<EOF
+{"schema_version":"1.1.0","sheet_create_workflow_id":"INyGjT8jQ6JjrZSh","row_append_workflow_id":"myXde6jbIIkaG5zW","persisted_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+
+# 3) Run the ONE doctor command (portable proof the install is healthy):
+python3 "$SHARED_UTILS/social-planner-doctor.py"
+```
+
+The doctor checks (each maps to a WF-owned durable record): company identity,
+active engine + scheduler registration, worker acknowledgement (a stopped
+worker is reported as a HEALTH PROBLEM — never as work progressing), last/next
+cycle, GHL discovery (read-only with `--live`), sheet access/schema/registry,
+n8n contract version, unresolved retries/overdue dispatch. Exit 0 healthy /
+1 degraded / 2 unhealthy. Run it again after any restart/recovery; save the
+JSON with the install receipt. Provider names alone are NOT deployment
+evidence — the doctor output is.
+
+The service layer sends NOTHING itself (silence doctrine): overdue states are
+surfaced by the doctor and, on boxes with the Command Center, by the
+`social-publish-dispatcher` overdue sweep through the authorized notification
+path (`notifySystem` → rescue webhook / owner chat).
 
 ### Step 10: Run QC.md and require 8.5+ to pass
 
