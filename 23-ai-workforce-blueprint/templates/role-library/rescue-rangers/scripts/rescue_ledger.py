@@ -224,10 +224,23 @@ class Ledger:
         except OSError:
             pass
         self.db_path = db_path(self.state_dir)
-        self.conn = sqlite3.connect(str(self.db_path), timeout=30)
+        self.conn = sqlite3.connect(str(self.db_path), timeout=30,
+                                    isolation_level=None)
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        # RR-030 concurrency: busy_timeout must be set BEFORE journal_mode
+        # (PRAGMA journal_mode takes the write lock; 12 parallel first-open
+        # processes raced it with the default 0ms timeout -> "database is
+        # locked"). Retry the WAL switch briefly under contention.
         self.conn.execute("PRAGMA busy_timeout=30000")
+        for _attempt in range(20):
+            try:
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) or _attempt == 19:
+                    raise
+                import time as _t
+                _t.sleep(0.05 * (_attempt + 1))
         self._bootstrap()
 
     def close(self):
