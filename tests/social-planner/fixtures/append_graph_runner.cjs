@@ -62,7 +62,7 @@ for(const inputBody of request.bodies) {
   let output=input, branch=0;
   try {
    if(n.type.endsWith('.code')) {
-    output=vm.runInNewContext(`(function(){${n.parameters.jsCode}\n})()`,{$input:{first:()=>({json:input})},$:(name)=>{if(!Object.hasOwn(prior,name))throw Error('UNEXECUTED NODE '+name);return {first:()=>({json:prior[name]})}},URL,JSON})[0].json;
+    output=vm.runInNewContext(`(function(){${n.parameters.jsCode}\n})()`,{$input:{first:()=>({json:input})},$:(name)=>{if(!Object.hasOwn(prior,name))throw Error('UNEXECUTED NODE '+name);return {first:()=>({json:prior[name]})}},JSON})[0].json;
    } else if(n.type.endsWith('.httpRequest')) {
     const params=Object.fromEntries(Object.entries(n.parameters).map(([k,v])=>[k,parseExpr(v,input,prior)]));
     output=http(current,params,params.jsonBody?JSON.parse(params.jsonBody):undefined);
