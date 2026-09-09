@@ -24,7 +24,7 @@ function execute(body){
    if(url.pathname.endsWith('/copy')){
     if(!b.appProperties?.skill35_company_id || !b.appProperties.skill35_provisioning_key)throw Error('copy ownership not atomic');
     const id='created_'+(state.files.length+1);const file={id,name:b.name,appProperties:b.appProperties};state.files.push(file);
-    state.sheets[id]={spreadsheetId:id,developerMetadata:[],sheets:(req.templateTabs||['Weekly Overview','Example (never copy)']).map((title,i)=>({properties:{title,sheetId:40+i,gridProperties:{rowCount:20,columnCount:26}},conditionalFormats:[]}))};writes.push({name,body:b});
+    state.sheets[id]={spreadsheetId:id,developerMetadata:[],sheets:(req.templateTabs||['Weekly Overview','Example (never copy)']).map((title,i)=>({properties:{title,sheetId:40+i,gridProperties:{rowCount:20,columnCount:26}},conditionalFormats:[],merges:req.templateMerged?[{sheetId:40+i,startRowIndex:0,endRowIndex:1,startColumnIndex:0,endColumnIndex:26}]:[]}))};writes.push({name,body:b});
     return structuredClone(file);
    }
    const id=url.pathname.split('/').at(-1),file=state.files.find(f=>f.id===id);
@@ -41,12 +41,13 @@ function execute(body){
    const type=Object.keys(r)[0],op=r[type];
    if(['repeatCell','updateDimensionProperties','updateCells','updateSheetProperties','updateSpreadsheetProperties'].includes(type) && !op.fields)throw Error('missing fields '+type);
    if(r.addSheet){sheet.sheets.push({properties:op.properties});replies.push({addSheet:{properties:op.properties}});continue}
+   if(r.unmergeCells){const tab=sheet.sheets.find(s=>s.properties.sheetId===op.range.sheetId);tab.merges=[];replies.push({});continue}
    if(r.deleteSheet){sheet.sheets=sheet.sheets.filter(s=>s.properties.sheetId!==op.sheetId);replies.push({});continue}
    const sid=op.range?.sheetId ?? op.start?.sheetId ?? op.properties?.sheetId;
    if(sid!==undefined && !sheet.sheets.some(s=>s.properties.sheetId===sid))throw Error('unknown numeric sheet ID');
    if(r.setDataValidation && op.range.endColumnIndex-op.range.startColumnIndex!==1)throw Error('status validation on content columns');
    if(r.updateDimensionProperties && !(op.range.endIndex>op.range.startIndex))throw Error('invalid dimension range');
-   if(r.updateCells && op.start?.rowIndex===0){const title=sheet.sheets.find(x=>x.properties.sheetId===op.start.sheetId).properties.title;sheet.headers ||= {};sheet.headers[title]=op.rows[0].values.map(x=>x.userEnteredValue.stringValue);if(title==='Weekly Overview')sheet.headers[title]=sheet.headers[title].slice(0,20);if(title==='Images'||title==='Videos')sheet.headers[title]=sheet.headers[title].slice(0,14);}
+   if(r.updateCells && op.start?.rowIndex===0){const title=sheet.sheets.find(x=>x.properties.sheetId===op.start.sheetId).properties.title;sheet.headers ||= {};sheet.headers[title]=op.rows[0].values.map(x=>x.userEnteredValue.stringValue);if(sheet.sheets.find(s=>s.properties.title===title).merges?.length)sheet.headers[title]=sheet.headers[title].slice(0,1);if(title==='Weekly Overview')sheet.headers[title]=sheet.headers[title].slice(0,20);if(title==='Images'||title==='Videos')sheet.headers[title]=sheet.headers[title].slice(0,14);}
    if(r.createDeveloperMetadata)sheet.developerMetadata.push({...op.developerMetadata,metadataId:sheet.developerMetadata.length+1});
    if(r.deleteDeveloperMetadata)sheet.developerMetadata=sheet.developerMetadata.filter(x=>x.metadataId!==op.dataFilter.developerMetadataLookup.metadataId);
    replies.push({});

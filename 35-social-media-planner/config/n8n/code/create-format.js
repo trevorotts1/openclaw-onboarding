@@ -18,6 +18,8 @@ for(const title of order){
   if(!existing)newSheetRequests.push({addSheet:{properties:{sheetId:id,title,gridProperties:{rowCount:1000,columnCount:columns}}}});
   const grid=existing?.properties.gridProperties || {};
   formatRequests.push({updateSheetProperties:{properties:{sheetId:id,index:order.indexOf(title),gridProperties:{frozenRowCount:1,frozenColumnCount:templates[title].frozen_columns||0,rowCount:Math.max(grid.rowCount||0,1000),columnCount:Math.max(grid.columnCount||0,columns)}},fields:'index,gridProperties'}});
+  // Copied merged title cells can silently hide all but the first header.
+  formatRequests.push({unmergeCells:{range:{sheetId:id}}});
   // Template content (including sample publication claims) is never client content.
   formatRequests.push({updateCells:{range:{sheetId:id},fields:'userEnteredValue,note,dataValidation'}});
   for(let i=(existing?.conditionalFormats||[]).length-1;i>=0;i--)formatRequests.push({deleteConditionalFormatRule:{sheetId:id,index:i}});

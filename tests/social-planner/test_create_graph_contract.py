@@ -53,6 +53,10 @@ class CreateGraph(unittest.TestCase):
   formulas=[v['userEnteredValue'].get('formulaValue','') for q in summary if 'updateCells'in q for row in q['updateCells']['rows'] for v in row['values']]
   self.assertTrue(any('Posts!K:K' in f for f in formulas))
   self.assertFalse(any('Posts!K2:' in f or 'Posts!I2:' in f for f in formulas))
+ def test_inherited_merged_headers_are_unmerged_before_headers_and_ready_replay(self):
+  r=run([BODY,BODY],templateTabs=['This Week','Weekly Overview','Posts','Images','Videos'],templateMerged=True)
+  self.assertTrue(all(x['response']['status']=='success' for x in r['runs']))
+  self.assertTrue(all(not s.get('merges') for s in r['state']['sheets']['created_1']['sheets']))
  def test_every_existing_tab_metadata_branch(self):
   r=run(templateTabs=['This Week','Weekly Overview','Posts','Images','Videos']);self.assertEqual(r['runs'][0]['response']['status'],'success')
  def test_shared_copy_never_reformatted_after_final_tag_failure(self):
