@@ -774,6 +774,28 @@ def _html_content_strings_present(html: str, fields: Dict[str, str]) -> List[str
 # kie.ai design — reuse kie_generate.py verbatim (subprocess), never a new
 # implementation of the KIE call (task rule: reuse the canonical helper).
 # ---------------------------------------------------------------------------
+def _kie_tasks_module():
+    """Import the shared PRES-032 lifecycle (kie_tasks.py beside this file)."""
+    here = _here()
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    import kie_tasks  # noqa: E402
+    return kie_tasks
+
+
+def _kie_spec_for(kie_tasks, prompt_entry: Dict[str, Any]) -> dict:
+    return kie_tasks.build_spec(
+        prompt=prompt_entry.get("prompt", ""),
+        mode=prompt_entry.get("mode", "t2i"),
+        model=None,  # builders pin model via kie_generate catalog, not here
+        aspect_ratio=prompt_entry.get("aspect_ratio", ASPECT_RATIO),
+        resolution=prompt_entry.get("resolution", RESOLUTION),
+        copy=prompt_entry.get("copy"),
+        input_urls=(prompt_entry.get("input_urls", [])
+                    if str(prompt_entry.get("mode", "t2i")).lower() == "i2i" else []),
+    )
+
+
 def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[bool, str]:
     kie_script = _here() / "kie_generate.py"
     if not kie_script.is_file():
@@ -788,19 +810,25 @@ def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
-        # F51 (SMOKE-1, 2026-09-01): kie_generate is flaky (provider 500/429 between
-        # waves). The hero PNGs are CONTENT-STABLE once baked — a re-bake that fails
-        # must not make executor retries fail forever when a good bake is already on
-        # disk (the same reuse contract --skip-design encodes). Reuse existing
-        # above-floor renders if BOTH are present; only then fail.
-        existing = []
-        for png in (renders_dir / "sales-hero.png", renders_dir / "checkout-hero.png"):
-            if png.is_file() and png.stat().st_size > 51200:
-                existing.append(png.name)
-        if len(existing) == 2:
-            print(f"  F51: kie_generate exited {proc.returncode}; reusing verified "
-                  f"existing hero renders ({', '.join(existing)})", file=sys.stderr)
-            return True, "kie_generate.py: reused existing verified hero renders"
+        # PRES-032 replaces the F51 size-only reuse: the hero PNGs are reused
+        # after a failed re-bake ONLY when each PNG's sidecar (.qc.json)
+        # records the CURRENT prompt spec hash + matching sha256 with a
+        # verified QC stamp. A changed hero prompt NEVER accepts the old PNG
+        # merely because it exists above a byte floor.
+        try:
+            kie_tasks = _kie_tasks_module()
+        except Exception as exc:  # noqa: BLE001 — no lifecycle, no reuse claim
+            return False, f"kie_generate.py exited {proc.returncode} ({exc})"
+        matched = [p.get("slide") for p in prompts
+                   if kie_tasks.render_reuse_ok(
+                       renders_dir / f"{p.get('slide')}.png",
+                       kie_tasks.spec_hash(_kie_spec_for(kie_tasks, p)))]
+        if matched and len(matched) == len(prompts):
+            print(f"  PRES-032: kie_generate exited {proc.returncode}; reusing "
+                  f"spec-matched verified hero renders "
+                  f"({', '.join(str(r) for r in matched)})", file=sys.stderr)
+            return True, ("kie_generate.py: reused spec-matched verified "
+                          "hero renders")
         return False, f"kie_generate.py exited {proc.returncode}"
     return True, "kie_generate.py: all slides downloaded"
 

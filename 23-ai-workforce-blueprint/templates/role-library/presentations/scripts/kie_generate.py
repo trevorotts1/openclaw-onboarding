@@ -308,6 +308,13 @@ def _is_placeholder_value(value: str) -> bool:
     return False
 
 
+class RateLimited(Exception):
+    """HTTP 429 from KIE.ai — transient throttling, bounded retry only. Raised
+    by _http_json so the shared lifecycle (kie_tasks) can back off per task
+    without treating it as a terminal failure. PRES-032: a 429 is never silent
+    and never unbounded (KIE_SUBMIT_MAX_429 / max_429_streak bound it)."""
+
+
 class AuthError(Exception):
     """Permanent authentication failure (HTTP 401/403) — the request is identical
     and will fail forever: the key is wrong, the Authorization header format is
@@ -344,6 +351,10 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
                 "the Authorization: Bearer header format, and that the key is not "
                 "locked/rate-blocked by the provider."
             ) from exc
+        if exc.code == 429:
+            # PRES-032: transient throttling — bounded retry by the caller,
+            # never a silent hang, never unlimited.
+            raise RateLimited(f"HTTP 429 {method} {url}") from exc
         body_text = exc.read().decode(errors="replace")
         raise RuntimeError(
             f"HTTP {exc.code} {method} {url}\n"
@@ -463,38 +474,57 @@ def _submit_slide(slide: dict, api_key: str) -> str:
     return task_id
 
 
-def _poll_task(task_id: str, api_key: str) -> str:
-    """Poll recordInfo until success/fail. Returns resultUrls[0] on success."""
+def poll_task_once(task_id: str, api_key: str) -> dict:
+    """Single recordInfo status check for ONE task (shared with kie_tasks).
+
+    Returns {"state": "success", "result_url": resultUrls[0]} on success or
+    {"state": <in-flight>, "result_url": None} while waiting. Raises
+    RuntimeError on a terminal FAIL state, AuthError on 401/403, RateLimited
+    on 429 — the caller retries on the next round-robin pass.
+    """
     url = f"{POLL_URL}?taskId={task_id}"
-    for attempt in range(MAX_POLL_PASSES):
-        resp = _http_json("GET", url, api_key)
-        data = resp.get("data", {})
-        state = data.get("state", "").lower()
+    resp = _http_json("GET", url, api_key)
+    data = resp.get("data", {})
+    state = str(data.get("state", "")).lower()
 
-        if state == "success":
-            result_json_str = data.get("resultJson")
-            if not result_json_str:
-                raise RuntimeError(
-                    f"taskId {task_id}: state=success but resultJson is missing.\n"
-                    f"Full response: {json.dumps(resp)}"
-                )
-            result_obj = json.loads(result_json_str)
-            urls = result_obj.get("resultUrls", [])
-            if not urls:
-                raise RuntimeError(
-                    f"taskId {task_id}: resultJson parsed but resultUrls is empty.\n"
-                    f"Parsed resultJson: {json.dumps(result_obj)}"
-                )
-            return urls[0]
-
-        if state in ("fail", "failed", "error", "cancelled"):
-            fail_code = data.get("failCode", "unknown")
-            fail_msg  = data.get("failMsg", "no message")
+    if state == "success":
+        result_json_str = data.get("resultJson")
+        if not result_json_str:
             raise RuntimeError(
-                f"taskId {task_id}: terminal state '{state}'. "
-                f"failCode={fail_code} failMsg={fail_msg}"
+                f"taskId {task_id}: state=success but resultJson is missing.\n"
+                f"Full response: {json.dumps(resp)}"
             )
+        try:
+            result_obj = json.loads(result_json_str)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"taskId {task_id}: resultJson is not valid JSON: {exc}") from exc
+        urls = result_obj.get("resultUrls", []) or []
+        if not urls:
+            raise RuntimeError(
+                f"taskId {task_id}: resultJson parsed but resultUrls is empty.\n"
+                f"Parsed resultJson: {json.dumps(result_obj)}"
+            )
+        return {"state": "success", "result_url": urls[0]}
 
+    if state in ("fail", "failed", "error", "cancelled"):
+        fail_code = data.get("failCode", "unknown")
+        fail_msg = data.get("failMsg", "no message")
+        raise RuntimeError(
+            f"taskId {task_id}: terminal state '{state}'. "
+            f"failCode={fail_code} failMsg={fail_msg}"
+        )
+    return {"state": state, "result_url": None}
+
+
+def _poll_task(task_id: str, api_key: str) -> str:
+    """Legacy serial poll kept for backward callers; new code uses the shared
+    round-robin lifecycle (kie_tasks.run + poll_task_once)."""
+    for attempt in range(MAX_POLL_PASSES):
+        status = poll_task_once(task_id, api_key)
+        if status.get("state") == "success":
+            return status["result_url"]
+        state = status.get("state", "")
         # still waiting
         print(f"  [{attempt+1}/{MAX_POLL_PASSES}] taskId {task_id}: state={state!r}, sleeping {POLL_INTERVAL_S}s...")
         time.sleep(POLL_INTERVAL_S)
@@ -566,114 +596,120 @@ def main():
 
     _guardrail_scan_prompts(slides)
 
-    # ------------------------------------------------------------------
-    # Phase 1: Submit in waves of RATE_CAP_REQUESTS
-    # ------------------------------------------------------------------
-    task_map: dict[str, dict] = {}   # taskId -> slide dict
+    # PRES-032: run every slide through the SHARED resumable lifecycle
+    # (kie_tasks.run) — the only submit/poll/download path in this helper.
+    # The lifecycle persists each taskId atomically on createTask response
+    # (state dir beside renders_dir), resumes known ids on restart with zero
+    # duplicate createTask calls, and round-robin polls all due tasks so a
+    # ready result downloads + QCs immediately instead of waiting behind a
+    # slow sibling. Rate logic is NOT forked: kie_tasks acquires the same
+    # canonical kie governor build_deck.py uses.
+    import kie_tasks as _lifecycle
 
     print(f"\n=== KIE.ai generate — {len(slides)} slides ===")
     print(f"Submit endpoint: {CREATE_URL}")
     print(f"Rate cap: {RATE_CAP_REQUESTS} per {RATE_CAP_WINDOW_S}s\n")
 
-    for wave_start in range(0, len(slides), RATE_CAP_REQUESTS):
-        wave = slides[wave_start : wave_start + RATE_CAP_REQUESTS]
-        print(f"--- Submitting wave: slides {wave_start+1}–{wave_start+len(wave)} ---")
+    # The lifecycle state lives beside renders_dir (one dir per run/artifact
+    # for the CLI; builders pass their own run-scoped dir — see run_kie_tasks).
+    state_dir = renders_dir / ".kie-tasks"
 
-        for slide in wave:
-            slide_name = slide.get("slide", f"slide-{wave_start+1:02d}")
-            try:
-                task_id = _submit_slide(slide, api_key)
-                task_map[task_id] = slide
-                print(f"  SUBMITTED {slide_name} -> taskId={task_id}")
-            except AuthError as exc:
-                # FIX-6 — fail-fast on auth errors: a 401/403 is PERMANENT, so EVERY
-                # remaining slide would fail identically. Abort the run now (one clear
-                # diagnosis) instead of burning the whole wave budget on guaranteed
-                # failures. No backoff, no re-submit.
-                print(f"FATAL: {exc}", file=sys.stderr)
-                print("A 401/403 is a permanent auth failure — no slide can submit. "
-                      "Fix the KIE_API_KEY / Authorization header, do NOT retry.",
-                      file=sys.stderr)
-                sys.exit(2)
-            except Exception as exc:
-                print(f"  SUBMIT ERROR {slide_name}: {exc}", file=sys.stderr)
-                # record as failed with sentinel
-                slide["_submit_error"] = str(exc)
-
-        if wave_start + RATE_CAP_REQUESTS < len(slides):
-            print(f"  Sleeping {RATE_CAP_WINDOW_S}s (rate cap window)...")
-            time.sleep(RATE_CAP_WINDOW_S)
-
-    # ------------------------------------------------------------------
-    # Phase 2: Initial wait before polling
-    # ------------------------------------------------------------------
-    if not task_map:
-        print("FATAL: no tasks submitted successfully.", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"\nAll waves submitted. Waiting {INITIAL_POLL_WAIT_S}s before first poll...")
-    time.sleep(INITIAL_POLL_WAIT_S)
-
-    # ------------------------------------------------------------------
-    # Phase 3: Poll and download
-    # ------------------------------------------------------------------
-    failed: list[str] = []
-    succeeded: list[str] = []
-
-    for task_id, slide in task_map.items():
-        slide_name = slide.get("slide", task_id)
-        out_path   = renders_dir / f"{slide_name}.png"
-        print(f"\nPolling {slide_name} (taskId={task_id})...")
-
+    def _model_for_slide(slide: dict):
         try:
-            result_url = _poll_task(task_id, api_key)
-            print(f"  SUCCESS state=success, resultUrls[0]={result_url}")
-            _download(result_url, out_path)
+            t2i, i2i = _image_models()
+        except Exception:  # noqa: BLE001 — catalog failure degrades the pin
+            return None
+        return i2i if str(slide.get("mode", "i2i")).lower() == "i2i" else t2i
 
-            # Verify the file is a real PNG (check magic bytes)
-            with open(out_path, "rb") as f:
-                magic = f.read(8)
-            if magic[:4] != b"\x89PNG":
+    def _verify_downloaded(tmp_path: Path, slide_name: str) -> dict:
+        # Caller's slide dict for aspect/copy context.
+        slide = next((s for s in slides
+                      if str(s.get("slide")) == str(slide_name)), {})
+        extra_dims = None
+        readback = {"matched": None, "available": False}
+        if prompt_gate is not None and prompt_gate.presentations_gate_enabled():
+            exp_ratio, min_w = _expected_ratio_and_minwidth(slide)
+            dims = prompt_gate.verify_aspect_ratio(
+                tmp_path, expected_ratio=exp_ratio, min_width=min_w,
+                slide_id=slide_name)
+            readback = prompt_gate.ocr_readback(
+                tmp_path, slide.get("copy"), slide_id=slide_name)
+            if readback.get("checked") and readback.get("matched") is False:
                 raise RuntimeError(
-                    f"Downloaded file does not appear to be a PNG "
-                    f"(magic bytes: {magic[:8].hex()}). "
-                    f"Check KIE resultUrls[0] is a direct image URL."
+                    f"OCR readback: rendered text does not match approved copy "
+                    f"(unreadable/garbled: {readback.get('misses')}). "
+                    "Re-render this slide."
                 )
+            extra_dims = dims
+        width = extra_dims["width"] if extra_dims else None
+        height = extra_dims["height"] if extra_dims else None
+        return {"width": width, "height": height, "ocr": readback}
 
-            # POST-DOWNLOAD ASPECT/2K + OCR verification (prompt_gate) — PRESENTATIONS-ONLY
-            # (opt-in via KIE_PROMPT_GATE=presentations). Skipped for shared callers (GHL,
-            # funnel, etc.) whose renders are not English-only 16:9 2K, so their behavior is
-            # unchanged. When enabled: a non-16:9 / sub-2K response, or rendered text that
-            # does not match the approved copy, fails the slide instead of shipping distorted
-            # or garbled.
-            extra = ""
-            if prompt_gate is not None and prompt_gate.presentations_gate_enabled():
-                exp_ratio, min_w = _expected_ratio_and_minwidth(slide)
-                dims = prompt_gate.verify_aspect_ratio(
-                    out_path, expected_ratio=exp_ratio, min_width=min_w, slide_id=slide_name)
-                readback = prompt_gate.ocr_readback(out_path, slide.get("copy"), slide_id=slide_name)
-                if readback.get("checked") and readback.get("matched") is False:
-                    raise RuntimeError(
-                        f"OCR readback: rendered text does not match approved copy "
-                        f"(unreadable/garbled: {readback.get('misses')}). Re-render this slide."
-                    )
-                ocr_note = ("ocr=match" if readback.get("matched")
-                            else ("ocr=engine-absent" if not readback.get("available")
-                                  else "ocr=recorded"))
-                extra = f", {dims['width']}x{dims['height']}, {ocr_note}"
-
-            file_size = out_path.stat().st_size
-            print(f"  DOWNLOADED -> {out_path} ({file_size:,} bytes, PNG verified{extra})")
-            succeeded.append(slide_name)
-
-        except Exception as exc:
-            print(f"  FAIL {slide_name}: {exc}", file=sys.stderr)
-            failed.append(slide_name)
-
-    # Also mark any that failed at submit time
+    lifecycle_tasks = []
     for slide in slides:
-        if "_submit_error" in slide:
-            failed.append(slide.get("slide", "unknown"))
+        slide_name = str(slide.get("slide", "slide-??"))
+        spec = _lifecycle.build_spec(
+            prompt=slide.get("prompt", ""),
+            mode=slide.get("mode", "i2i"),
+            model=_model_for_slide(slide),
+            aspect_ratio=slide.get("aspect_ratio", ASPECT_RATIO),
+            resolution=slide.get("resolution", RESOLUTION),
+            copy=slide.get("copy"),
+            input_urls=(slide.get("input_urls", [])
+                        if str(slide.get("mode", "i2i")).lower() == "i2i" else []),
+        )
+        out_path = renders_dir / f"{slide_name}.png"
+
+        def _make_submit(s=slide):
+            def _go():
+                return _submit_slide(s, api_key)
+            return _go
+
+        lifecycle_tasks.append({
+            "slide": slide_name,
+            "spec": spec,
+            "submit": _make_submit(),
+            "out_path": out_path,
+        })
+
+    def _poll_once(task_id: str) -> dict:
+        return poll_task_once(task_id, api_key)
+
+    def _download_to(url: str, tmp_path: Path) -> None:
+        _download(url, tmp_path)
+
+    try:
+        result = _lifecycle.run(
+            lifecycle_tasks,
+            state_dir=state_dir,
+            run_id=str(prompts_path),
+            artifact_id="kie-generate",
+            poll_once=_poll_once,
+            download=_download_to,
+            verify=_verify_downloaded,
+            out_dir=renders_dir,
+            poll_interval_s=float(
+                os.environ.get("KIE_ROUND_POLL_S", str(POLL_INTERVAL_S))),
+            deadline_s=float(
+                os.environ.get("KIE_DEADLINE_S",
+                               str(MAX_POLL_PASSES * POLL_INTERVAL_S))),
+        )
+    except _lifecycle.FatalAuth as exc:
+        # FIX-6 preserved: a 401/403 is PERMANENT — abort the run now with one
+        # clear diagnosis instead of burning the wave budget. No backoff.
+        print(f"FATAL: {exc}", file=sys.stderr)
+        print("A 401/403 is a permanent auth failure — no slide can submit. "
+              "Fix the KIE_API_KEY / Authorization header, do NOT retry.",
+              file=sys.stderr)
+        sys.exit(2)
+
+    succeeded = [str(r["slide"]) for r in result["completed"]]
+    failed = ([str(r["slide"]) for r in result["failed"]]
+              + [str(s.get("slide", "unknown")) for s in slides
+                 if str(s.get("slide")) not in
+                 {str(r["slide"]) for r in result["completed"]}
+                 and str(s.get("slide")) not in
+                 {str(r["slide"]) for r in result["failed"]}])
 
     # ------------------------------------------------------------------
     # Summary
@@ -681,10 +717,13 @@ def main():
     print(f"\n=== SUMMARY ===")
     print(f"Succeeded: {len(succeeded)}")
     print(f"Failed:    {len(failed)}")
-    if succeeded:
-        print("  OK: " + ", ".join(succeeded))
+    for rec in result["completed"]:
+        print(f"  OK {rec['slide']} file={rec.get('file')} "
+              f"taskId={rec.get('taskId')}")
+    for rec in result["failed"]:
+        print(f"  FAILED {rec['slide']}: [{rec.get('error_kind')}] "
+              f"{rec.get('error')}", file=sys.stderr)
     if failed:
-        print("  FAILED: " + ", ".join(failed), file=sys.stderr)
         sys.exit(1)
 
     sys.exit(0)
