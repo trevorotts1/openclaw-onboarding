@@ -123,6 +123,7 @@ install_mac() {
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>${HOME}</string>
+    <key>OPENCLAW_ROOT</key><string>${HOME}/.openclaw</string>
     <key>SOCIAL_PLANNER_TIMEZONE</key><string>$TIMEZONE</string>
     <key>SOCIAL_CYCLE_SEND</key><string>outbox</string>
   </dict>
@@ -172,9 +173,15 @@ After=network.target
 [Service]
 Type=oneshot
 Environment=HOME=/data
+Environment=OPENCLAW_ROOT=/data/.openclaw
 Environment=SOCIAL_PLANNER_TIMEZONE=$TIMEZONE
 Environment=SOCIAL_CYCLE_SEND=none
-# Canonical secret path for the Docker profile (values never printed):
+# Canonical secret path for the Docker profile (values never printed).
+# F21-ONB-02: OPENCLAW_ROOT is EXPORTED so every consumer (the cycle runner,
+# the doctor, the bootstrap) resolves the SAME canonical root — without it a
+# non-root service user's state_dir fell back to $HOME/.openclaw (or /root),
+# splitting the durable state the doctor reads from the state the service
+# writes. The doctor's _openclaw_root() reads this exact variable.
 ExecStart=/bin/sh -c '. /data/.openclaw/secrets/.env 2>/dev/null; exec python3 $SOCIAL_SERVICE_RUNNER advance'
 EOF
   cat > "$unit_dir/${TIMER_LINUX}.timer" <<EOF
@@ -232,6 +239,9 @@ self_test() {
   [ -f "$plist" ] && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL: plist missing"; }
   grep -q "StartInterval" "$plist" 2>/dev/null && pass=$((pass+1)) || fail=$((fail+1))
   grep -q "SOCIAL_PLANNER_TIMEZONE" "$plist" 2>/dev/null && pass=$((pass+1)) || fail=$((fail+1))
+  # F21-ONB-02: the unit must EXPORT OPENCLAW_ROOT so every consumer
+  # (runner, doctor, bootstrap) resolves the SAME canonical root.
+  grep -q "OPENCLAW_ROOT" "$plist" 2>/dev/null && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL: OPENCLAW_ROOT not exported in unit"; }
   [ -f "$reg" ] && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL: registration missing"; }
   grep -q '"profile":"mac"' "$reg" 2>/dev/null && pass=$((pass+1)) || fail=$((fail+1))
   echo "self-test: pass=$pass fail=$fail"
