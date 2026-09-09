@@ -2028,6 +2028,51 @@ def read_persona_bundle(run_dir: Path, phase_id: str) -> Optional[Dict[str, Any]
     return None
 
 
+# PRES-031: phase -> task_mode for persona section selection. Copy, prompt,
+# speech, page/VSL and QC units each receive the tier-2 governance sections
+# (rationale, task personas, guardrails); unknown phases default to copy
+# (the richest governance tier -- fail toward more governance, never less).
+_PERSONA_TASK_MODE_BY_PHASE = {
+    "P4-COPY": "copy",
+    "P-SP-STRUCTURE": "copy",
+    "P-SP-P3-HYGIENE": "copy",
+    "P4-PROMPT": "prompt",
+    "P-PROMPT-QC": "qc",
+    "P1Q-COPY-QC": "qc",
+    "P-SHIFT-QC": "qc",
+    "P-SPEECH-QC": "qc",
+    "P-TYPO-QC": "qc",
+    "P-QC-AGGREGATE": "qc",
+    "P-U-QC": "qc",
+    "P9-SPEECH": "speech",
+    "P9-SPEECH-WEBINAR-INTRO": "speech",
+    "P7-TELEPROMPTER": "speech",
+    "P-U-SALES-COPY": "page",
+    "P-U-CHECKOUT-COPY": "page",
+    "P-U-VSL-COPY": "vsl",
+    "P-U-VSL-RESEARCH": "vsl",
+    "P-U-SALES-BUILD": "page",
+    "P-U-CHECKOUT-BUILD": "page",
+    "P-U-VSL-BUILD": "vsl",
+    "P-U-HTML-SALES": "page",
+    "P-U-HTML-CHECKOUT": "page",
+    "P-U-HTML-VSL": "vsl",
+}
+
+
+def _persona_task_mode(phase_id: str,
+                       order: Optional[Dict[str, Any]] = None) -> str:
+    mode = _PERSONA_TASK_MODE_BY_PHASE.get(phase_id)
+    if mode:
+        return mode
+    if isinstance(order, dict):
+        hint = str(order.get("task_mode") or order.get("mode") or "")
+        if hint.strip().lower() in ("copy", "prompt", "speech", "page",
+                                    "vsl", "qc", "render"):
+            return hint.strip().lower()
+    return "copy"
+
+
 # ---------------------------------------------------------------------------
 # Upstream artifact context (spec S5.3 item 4). A fixed, generous candidate
 # list of the files role SOPs actually name as required reading -- read
@@ -2227,10 +2272,31 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
         role_context,
     ]
     if persona_bundle:
+        # PRES-031: schema-validated section selection replaces the arbitrary
+        # 8000-character slice. The COMPLETE bundle is cached by scoped
+        # input/context hash (persona_context); this unit receives the
+        # task-mode sections it needs. Required governance rules are never
+        # dropped silently: an incomplete selection FAILS CLOSED here (loud
+        # preflight error naming the missing rules) instead of shipping a
+        # truncated voice to the model.
+        from presentation_job import persona_context as _persona_context
+        _task_mode = _persona_task_mode(phase_id, order)
+        _selection = _persona_context.select_bundle_sections(
+            persona_bundle, phase_id=phase_id, task_mode=_task_mode)
+        if not _selection.get("complete"):
+            raise RoleSOPNotFound(
+                f"AF-PERSONA-GOVERNANCE: persona bundle for phase "
+                f"{phase_id} is incomplete for task_mode={_task_mode}: "
+                f"{_selection.get('why')}. Missing schema: "
+                f"{_selection.get('missing_schema') or []}; missing "
+                f"governance markers: "
+                f"{_selection.get('missing_markers') or []}. Restructure "
+                f"context (budget {_selection.get('budget')}) -- never ship "
+                f"a silently-truncated governing voice.")
         system_parts.append(
             "=== GOVERNING BLENDED-PERSONA VOICE (already resolved by the engine for this "
             "phase -- write IN this voice, do not re-resolve or contradict it) ===\n"
-            + json.dumps(persona_bundle, indent=2)[:8000]
+            + _selection["text"]
         )
     system_prompt = "\n\n".join(system_parts)
 
