@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: "3.6.2"
+version: "3.6.3"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -321,3 +321,13 @@ post inventory as a hashed task deliverable. A separate verification task reads
 back those exact provider IDs; it must never repost. Keep scheduled, partially
 published and verification-required states distinct. Missing proof stays actively
 owned repair work while unrelated healthy accounts continue.
+
+
+### n8n compatibility deployment
+
+Use the five-workflow compiler in `config/n8n/compat/README.md`; never activate a
+credential-free source export directly. The shared URLs must preserve legacy
+`{sheetId,row}` document writes and route modern requests to the strict company
+flow. Public document capability is not company ownership or publication proof.
+Do not migrate an existing planner by running a new-copy initializer. A passing
+local doctor report alone does not prove live n8n Google writes or GHL posting.
