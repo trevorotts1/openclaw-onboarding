@@ -46,7 +46,7 @@ usage() {
 $PROG — the ONE sanctioned command to run Social Media in a Box.
 
 USAGE:
-  bash $PROG --run-dir DIR --mode MODE [--plan]
+  bash $PROG --run-dir DIR --mode MODE [--producers]
 
 REQUIRED:
   --run-dir DIR   the run directory (contains working/)
@@ -57,6 +57,11 @@ REQUIRED:
 
 OPTIONS:
   --plan          print the mode's canonical phase plan and exit (gates still run)
+  --producers     run the F05 producer adapter layer behind the phase gates:
+                  each phase's registered adapter is invoked BEFORE its gate so
+                  missing artifacts trigger production (or a specific dependency
+                  failure — never a claim that production occurred). Gates always
+                  still run. (Also: SMIB_PRODUCERS=1.)
   -h | --help     this help
 
 There is NO other sanctioned way to run the skill. A hand-rolled social poster is
@@ -66,12 +71,13 @@ EOF
     exit 2
 }
 
-RUN_DIR="" MODE="" PLAN=0
+RUN_DIR="" MODE="" PLAN=0 PRODUCERS=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --run-dir) RUN_DIR="${2:-}"; shift 2 ;;
         --mode)    MODE="${2:-}"; shift 2 ;;
         --plan)    PLAN=1; shift ;;
+        --producers) PRODUCERS=1; shift ;;
         -h|--help) usage ;;
         *) die "unknown argument: $1 (run with --help)" ;;
     esac
@@ -356,6 +362,14 @@ export OC_SMIB_ENTRY_NONCE
 trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
 cmd=(python3 "$RUNNER" --mode "$MODE" --run-dir "$RUN_DIR")
+# F05 — the producer adapter layer sits BEHIND the phase gates: with
+# SMIB_PRODUCERS=1 (or --producers) each phase's registered adapter is invoked
+# BEFORE its gate, so missing artifacts trigger production (or a specific
+# dependency failure) instead of a bare gate refusal. The gates themselves are
+# untouched and always still run.
+if [ "$PRODUCERS" -eq 1 ] || [ "${SMIB_PRODUCERS:-0}" = "1" ]; then
+    cmd+=(--producers)
+fi
 note "run: ${cmd[*]}"
 "${cmd[@]}"
 _rc=$?
