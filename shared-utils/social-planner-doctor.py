@@ -52,6 +52,15 @@ EXIT_DEGRADED = 1
 EXIT_UNHEALTHY = 2
 EXIT_USAGE = 3
 
+# F21-ONB-01 (repair round 1): exit codes are HARD-FAILURE-PRESERVING.
+# Only SOFT states may degrade (exit 1). These soft states are informational:
+# the GHL probe skipped because --live was not passed. EVERY other failed
+# check — worker_stale, probe_error, credentials_missing, retries overdue,
+# ownership violation, mapping drift — is UNHEALTHY (exit >= 2), never a
+# soft 1: a stopped worker or a failed probe must page the operator, not
+# masquerade as a degraded-but-fine deployment.
+SOFT_FAIL_STATES = {"skipped_offline"}
+
 # The n8n export contract version the deployment must carry (WF04 F15/F16).
 EXPECTED_N8N_SCHEMA_VERSION = "1.1.0"
 # publish receipts considered stale after this many seconds (worker silence).
@@ -320,7 +329,11 @@ def run_doctor(env: Optional[Dict[str, str]] = None, live: bool = False,
         c.get("ok", False) for name, c in checks.items()
         if name in HARD_CHECKS
     )
-    soft_bad = [n for n, c in checks.items() if n not in HARD_CHECKS and not c.get("ok", False)]
+    soft_bad = [
+        n for n, c in checks.items()
+        if n not in HARD_CHECKS and not c.get("ok", False)
+        and c.get("state") in SOFT_FAIL_STATES
+    ]
     verdict = {
         "doctor": "social-planner-doctor",
         "deployment": deployment,
@@ -383,6 +396,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(json.dumps(verdict, indent=1, sort_keys=True))
     if verdict["ok"]:
         return EXIT_OK
+    # F21-ONB-01: exit >= 2 on ANY failed check except a labeled SOFT state
+    # (the --live GHL probe skip). A hard failure NEVER degrades to 1.
     return EXIT_UNHEALTHY if not verdict["degraded_soft"] else EXIT_DEGRADED
 
 

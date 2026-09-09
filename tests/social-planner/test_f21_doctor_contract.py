@@ -105,6 +105,27 @@ class TestDoctorVerdict(unittest.TestCase):
         self.assertIn("NOT progressing", v["checks"]["worker"]["detail"])
         self.assertFalse(v["checks"]["worker"]["ok"])
 
+    def test_2b_hard_failures_exit_unhealthy_never_degraded(self):
+        """F21-ONB-01: a failed check other than a labeled SOFT state exits
+        UNHEALTHY (2), never DEGRADED (1)."""
+        root = _healthy_fixture()
+        runs = Path(root) / "data" / "skill-35" / "runs" / "run-20260909-f21"
+        old = time.time() - 8.5 * 86400
+        os.utime(runs / "working" / "dispatch.json", (old, old))
+        env = _env(root)
+        # Reproduce main()'s verdict->exit mapping on a worker_stale verdict.
+        v = doctor.run_doctor(env=env, root_override=root)
+        self.assertTrue(v["degraded_soft"] == [], "worker_stale must NOT be classified soft")
+        mapped = doctor.EXIT_UNHEALTHY if not v["degraded_soft"] else doctor.EXIT_DEGRADED
+        self.assertGreaterEqual(mapped, 2, "worker_stale must exit >= 2, never a soft 1")
+        # The only soft state is the --live GHL probe skip.
+        self.assertEqual(doctor.SOFT_FAIL_STATES, {"skipped_offline"})
+        # A probe_error (check_ghl exception path) is ALSO hard: verify the
+        # state name is not in the soft set.
+        self.assertNotIn("probe_error", doctor.SOFT_FAIL_STATES)
+        self.assertNotIn("worker_stale", doctor.SOFT_FAIL_STATES)
+        self.assertNotIn("credentials_missing", doctor.SOFT_FAIL_STATES)
+
     def test_3_stale_or_missing_n8n_mapping_fails_health(self):
         root = _healthy_fixture()
         (Path(root) / "data" / "skill35" / "n8n-mapping.json").unlink()
