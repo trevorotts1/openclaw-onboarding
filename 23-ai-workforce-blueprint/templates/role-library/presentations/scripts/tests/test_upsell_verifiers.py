@@ -50,6 +50,7 @@ import pytest  # noqa: E402
 import phase_verifiers as pv  # noqa: E402
 import sales_checkout_builder as scb  # noqa: E402
 import vsl_builder as vb  # noqa: E402
+import checkout_form_builder as cfb  # noqa: E402  (PRES-025 real producer)
 
 # 1x1 transparent PNG -- a real, valid PNG (correct magic bytes), just tiny.
 # Used as the pre-seeded "hero render" so --skip-design never needs kie.ai.
@@ -289,59 +290,222 @@ class TestFormCheckoutVerifier:
         assert ok is False
 
     def test_elected_with_no_receipt_yet_fails_hard(self, tmp_path):
-        """NON-VACUOUS PROOF: elected, sales/checkout genuinely built, but the
-        delegated GHL push receipt has not landed yet -- must FAIL, not pass,
-        because produces_artifact names build_receipt.json specifically."""
+        """NON-VACUOUS PROOF (PRES-025 real producer): elected, sales/checkout
+        genuinely built, but the form stage has not run -- checkout_form.json
+        absent -- must FAIL, not pass, because produces_artifact names the
+        form receipt specifically."""
         rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
         rc = _build_sales_checkout(rd)
         assert rc == scb.EXIT_OK
-        assert not (rd / "working" / "sales-checkout" / "build_receipt.json").exists()
+        assert not (rd / "working" / "sales-checkout" / "checkout_form.json").exists()
         ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
         assert ok is False
-        assert any("build_receipt.json" in r for r in reasons)
+        assert any("checkout_form.json" in r for r in reasons)
 
-    def test_elected_with_fabricated_receipt_fails_hard(self, tmp_path):
-        """NON-VACUOUS PROOF: a PRESENT but placeholder receipt (example.com
-        preview url) must FAIL, not pass -- a caller-authored preview proves
-        no page was really built."""
+    def test_elected_with_plan_emitted_but_no_ids_fails_hard(self, tmp_path):
+        """Plan emitted (Skill 44/06 contracts written, no IDs yet) is NOT
+        completion -- the delegated execution has not landed."""
         rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
         rc = _build_sales_checkout(rd)
         assert rc == scb.EXIT_OK
-        sc_dir = rd / "working" / "sales-checkout"
-        (sc_dir / "build_receipt.json").write_text(json.dumps({
-            "preview_urls": ["https://example.com/fake"],
-            "funnel_id": "abc123",
-        }))
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
         ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
         assert ok is False
-        assert any("placeholder" in r for r in reasons)
+        assert any("plan emitted" in r for r in reasons)
 
-    def test_elected_with_receipt_missing_funnel_id_fails_hard(self, tmp_path):
+    def test_elected_with_dead_checkout_cta_fails_hard(self, tmp_path):
+        """A checkout page whose form posts nowhere (action='#') can never
+        carry a completing form -- the CTA audit fails the phase first."""
         rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
         rc = _build_sales_checkout(rd)
         assert rc == scb.EXIT_OK
-        sc_dir = rd / "working" / "sales-checkout"
-        (sc_dir / "build_receipt.json").write_text(json.dumps({
-            "preview_urls": ["https://app.gohighlevel.com/v2/preview/real123"],
-        }))
+        html_path = rd / "working" / "sales-checkout" / "html" / "checkout.html"
+        html_path.write_text(
+            html_path.read_text(encoding="utf-8").replace('action="/acme-widget-checkout"',
+                                                          'action="#"'),
+            encoding="utf-8")
         ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
         assert ok is False
-        assert any("funnel_id" in r for r in reasons)
+        assert any("action" in r or "href" in r or "CTA" in r for r in reasons)
 
-    def test_elected_with_real_receipt_passes(self, tmp_path):
-        """The genuine PASS: a real-shaped receipt (real host, non-empty
-        funnel_id) verifies via the SAME verify_push_receipt() the executor
-        itself calls."""
+    def test_elected_with_stale_receipt_fails_hard(self, tmp_path):
+        """An offer edit after plan-emit invalidates the receipt -- stale form
+        proof must FAIL until the stage re-runs."""
         rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
         rc = _build_sales_checkout(rd)
         assert rc == scb.EXIT_OK
-        sc_dir = rd / "working" / "sales-checkout"
-        (sc_dir / "build_receipt.json").write_text(json.dumps({
-            "preview_urls": ["https://app.gohighlevel.com/v2/preview/real123"],
-            "funnel_id": "z20T0cPnEoh2kCep5u6I",
-        }))
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"]["OFFER_NAME"] = "Renamed Offer After Plan"
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is False
+        assert any("STALE" in r for r in reasons)
+
+    def test_elected_lead_complete_passes(self, tmp_path):
+        """The genuine lead-capture PASS: form + workflow IDs plus a
+        test-location submit proof (one scoped contact + one enrollment,
+        validation + duplicates exercised)."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
+        receipt_path = rd / "working" / "sales-checkout" / "checkout_form.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["form"]["form_id"] = "form_mem_0001"
+        receipt["form"]["action"] = "/acme-widget-checkout"
+        receipt["workflow"]["workflow_id"] = "wf_mem_0002"
+        receipt["status"] = "complete"
+        receipt["proof"] = {
+            "kind": "lead_submit", "location_id": "unbound-test",
+            "form_id": "form_mem_0001", "workflow_id": "wf_mem_0002",
+            "contacts": 1, "enrollments": 1,
+            "validation_exercised": True, "duplicate_exercised": True,
+        }
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
         ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
         assert ok is True, reasons
+
+    def test_elected_lead_zero_enrollment_fails_hard(self, tmp_path):
+        """A 'complete' lead receipt with zero enrollments proves no workflow
+        -- must FAIL."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
+        receipt_path = rd / "working" / "sales-checkout" / "checkout_form.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["form"]["form_id"] = "form_mem_0001"
+        receipt["workflow"]["workflow_id"] = "wf_mem_0002"
+        receipt["status"] = "complete"
+        receipt["proof"] = {
+            "kind": "lead_submit", "location_id": "unbound-test",
+            "form_id": "form_mem_0001", "workflow_id": "wf_mem_0002",
+            "contacts": 1, "enrollments": 0,
+            "validation_exercised": True, "duplicate_exercised": True,
+        }
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is False
+        assert any("enrollment" in r for r in reasons)
+
+    def test_elected_sandbox_complete_passes(self, tmp_path):
+        """The genuine sandbox PASS: product/amount/currency mapping +
+        success/cancel routes, zero real charge."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"]["FINAL_PRICE"] = "$997"
+        intake["deck_brief"]["CHECKOUT_MODE"] = "payment_sandbox"
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
+        receipt_path = rd / "working" / "sales-checkout" / "checkout_form.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assert receipt["intent"] == cfb.INTENT_PAYMENT_SANDBOX
+        receipt["form"]["form_id"] = "form_mem_0001"
+        receipt["status"] = "complete"
+        receipt["proof"] = {
+            "kind": "sandbox_session", "mode": "sandbox",
+            "product_id": "prod_mem_0001", "session_id": "sess_mem_0002",
+            "amount_minor": 99700, "currency": "USD",
+            "success_url": "https://shop.example.test/success",
+            "cancel_url": "https://shop.example.test/cancel",
+            "real_charge": False,
+        }
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is True, reasons
+
+    def test_elected_sandbox_real_charge_fails_hard(self, tmp_path):
+        """A sandbox proof recording a real charge is refused -- the sandbox
+        is structurally incapable of charging."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"]["FINAL_PRICE"] = "$997"
+        intake["deck_brief"]["CHECKOUT_MODE"] = "payment_sandbox"
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
+        receipt_path = rd / "working" / "sales-checkout" / "checkout_form.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["form"]["form_id"] = "form_mem_0001"
+        receipt["status"] = "complete"
+        receipt["proof"] = {
+            "kind": "sandbox_session", "mode": "sandbox",
+            "product_id": "prod_mem_0001", "session_id": "sess_mem_0002",
+            "amount_minor": 99700, "currency": "USD",
+            "success_url": "https://shop.example.test/success",
+            "cancel_url": "https://shop.example.test/cancel",
+            "real_charge": True,
+        }
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is False
+        assert any("real charge" in r for r in reasons)
+
+    def test_missing_offer_blocks_soft_not_fail(self, tmp_path):
+        """No client-approved offer: the phase BLOCKS (soft NOTE naming
+        MISSING_OFFER) -- deck production continues, checkout alone waits."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"] = {}
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_BLOCKED
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is True, reasons
+        assert any("MISSING_OFFER" in r for r in reasons)
+
+    def test_wrong_location_blocks_soft_not_fail(self, tmp_path, monkeypatch):
+        """Intake location disagreeing with the bound location blocks the
+        checkout phase softly -- never a cross-client write, never a deck fail."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["GHL_LOCATION_ID"] = "loc_WRONG"
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        monkeypatch.setenv("GOHIGHLEVEL_LOCATION_ID", "loc_BOUND")
+        try:
+            rc = _build_sales_checkout(rd)
+            assert rc == scb.EXIT_OK
+            rc2 = cfb.main(["--run-dir", str(rd)])
+            assert rc2 == cfb.EXIT_BLOCKED
+            ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+            assert ok is True, reasons
+            assert any("WRONG_LOCATION" in r for r in reasons)
+        finally:
+            monkeypatch.delenv("GOHIGHLEVEL_LOCATION_ID", raising=False)
+
+    def test_unsupported_payment_blocks_soft_not_fail(self, tmp_path):
+        """Live payment elected with no merchant: explicit actionable
+        MISSING_MERCHANT block -- the pipeline never invents a destination."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"]["FINAL_PRICE"] = "$997"
+        intake["deck_brief"]["CHECKOUT_MODE"] = "payment"
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_BLOCKED
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is True, reasons
+        assert any("MISSING_MERCHANT" in r for r in reasons)
 
 
 # ---------------------------------------------------------------------------
