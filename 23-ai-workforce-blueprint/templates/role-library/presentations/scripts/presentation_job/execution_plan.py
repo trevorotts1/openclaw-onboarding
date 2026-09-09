@@ -50,16 +50,19 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
 import re
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
-    from .state import EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED  # package-relative
+    from .state import (  # package-relative
+        EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED, utcnow, sha256_file)
 except ImportError:
-    from state import EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED  # direct file run
+    from state import (  # direct file run
+        EXIT_OK, EXIT_USAGE, EXIT_GATE_BLOCKED, utcnow, sha256_file)
 
 try:
     from .capacity import (AUTOFAIL_CODE, UNBOUNDED, CapacityUnmeasured,
@@ -299,6 +302,174 @@ def load_phase_dag(manifest_path: str | Path) -> Dict[str, List[str]]:
     """
     phases = _load_raw_phases(manifest_path)
     return build_edges(phases)
+
+
+# ---------------------------------------------------------------------------
+# PRES-002: the explicit edge graph -- every artifact edge persisted with the
+# patterns that create it and whether the edge crosses an optional (declined-
+# client) branch -- plus its durable persistence for the engine's runtime
+# predecessor-success gate.
+# ---------------------------------------------------------------------------
+def build_edge_records(phases: List[dict]) -> Dict[str, Any]:
+    """PRES-002 step 1: the EXPLICIT edge graph.
+
+    build_edges returns only the producer->dependents adjacency; the engine's
+    runtime gate needs more than that: WHICH consumed pattern creates the edge
+    (so a blocked edge can be named to an operator), and whether the edge
+    crosses an OPTIONAL branch (so a client-declined branch defers only its
+    documented descendants instead of dead-ending them).
+
+    Returns {"edges": [...], "prerequisites": {consumer: [producer, ...]}}:
+
+      edges        list of {producer, consumer, via, optional} dicts, one per
+                   (producer, consumer) pair in build_edges' adjacency, in
+                   producer manifest order then consumer manifest order.
+                   `via` is the list of consumed patterns that created the
+                   edge. `optional` is True when the CONSUMER phase declares a
+                   defers_unless gate -- the consumer belongs to an
+                   optional branch the client may decline, so this edge may
+                   legitimately be satisfied by a DEFERRED producer (the
+                   consumer defers itself on the same answer).
+      prerequisites the transpose: consumer -> sorted unique [producer...]
+                   -- the ready predicate's required-predecessor set.
+
+    Deterministic: derived purely from the manifest, stable across runs.
+    """
+    by_id = {p["id"]: p for p in phases}
+    dag = build_edges(phases)
+    edges: List[Dict[str, Any]] = []
+    prerequisites: Dict[str, List[str]] = {}
+    for producer in sorted(dag):
+        for consumer in dag[producer]:
+            consumer_raw = by_id.get(consumer) or {}
+            via: List[str] = []
+            if consumer_raw:
+                producer_patterns = _as_artifact_list(
+                    (by_id.get(producer) or {}).get("produces_artifact"))
+                for cpat in _as_artifact_list(consumer_raw.get("consumes")):
+                    if any(_patterns_match(ppat, cpat)
+                           for ppat in producer_patterns):
+                        if cpat not in via:
+                            via.append(cpat)
+            # PRES-002 optional-declaration: an edge INTO a defers_unless-gated
+            # phase is optional -- the consumer is part of a branch the client
+            # may decline, and on a decline the whole branch defers together
+            # (Engine.run's phase_is_deferred filter). Every other edge is
+            # required: a FAILED/BLOCKED producer dead-ends the consumer.
+            optional = bool(consumer_raw.get("defers_unless"))
+            edges.append({
+                "producer": producer,
+                "consumer": consumer,
+                "via": via,
+                "optional": optional,
+            })
+            prerequisites.setdefault(consumer, [])
+            if producer not in prerequisites[consumer]:
+                prerequisites[consumer].append(producer)
+    return {"edges": edges, "prerequisites": prerequisites}
+
+
+EDGE_GRAPH_REL = Path("working") / "checkpoints" / "dependency-edges.json"
+
+
+def persist_execution_graph(manifest_path: str | Path,
+                            run_dir: str | Path) -> Dict[str, Any]:
+    """PRES-002 step 1: persist the explicit edge graph for THIS run.
+
+    Writes <run_dir>/working/checkpoints/dependency-edges.json atomically
+    (temp file + os.replace, the StateStore discipline) with:
+
+      manifest_sha256 -- the sha of the manifest the graph was built from;
+                         the runtime gate re-refuses to admit a consumer
+                         when the graph on disk was built from a DIFFERENT
+                         manifest (a stale graph must never authorize a run).
+      manifest_version, phase_count, built_at
+      edges           build_edge_records(phases)["edges"]
+      prerequisites   build_edge_records(phases)["prerequisites"]
+
+    Returns the payload written. Raises on a manifest that cannot be loaded
+    (the caller -- Engine.run -- treats a plan/graph failure as a run
+    refusal, never as a bypass)."""
+    phases = _load_raw_phases(manifest_path)
+    records = build_edge_records(phases)
+    raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    payload = {
+        "graph": "presentation-dependency-edges-v1",
+        "manifest_sha256": sha256_file(Path(manifest_path)),
+        "manifest_version": raw.get("manifest_version"),
+        "phase_count": len(phases),
+        "built_at": utcnow(),
+        "edges": records["edges"],
+        "prerequisites": records["prerequisites"],
+    }
+    out = Path(run_dir) / EDGE_GRAPH_REL
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(out.name + f".tmp-{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, out)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return payload
+
+
+def load_persisted_graph(run_dir: str | Path,
+                         expected_manifest_sha: str) -> Optional[Dict[str, Any]]:
+    """Read THIS run's persisted edge graph, or None when absent/unreadable.
+
+    Returns the payload ONLY when its manifest_sha256 matches
+    `expected_manifest_sha` -- a graph persisted under a different manifest
+    (a repin, or a foreign run dir) satisfies nothing. Never raises."""
+    path = Path(run_dir) / EDGE_GRAPH_REL
+    if not path.is_file():
+        return None
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(obj, dict) or obj.get("graph") != \
+            "presentation-dependency-edges-v1":
+        return None
+    if not expected_manifest_sha or \
+            obj.get("manifest_sha256") != expected_manifest_sha:
+        return None
+    return obj
+
+
+def optional_edge_predecessors(graph: Optional[Dict[str, Any]]) -> Dict[str, set]:
+    """The set of OPTIONAL (defers_unless-gated) producers per consumer, from
+    the persisted graph. A consumer may be satisfied by a DEFERRED producer
+    only when every edge between them is optional -- the client declined the
+    branch and the consumer defers with it. Empty map when no graph."""
+    out: Dict[str, set] = {}
+    if not isinstance(graph, dict):
+        return out
+    for e in graph.get("edges") or []:
+        if not isinstance(e, dict) or not e.get("optional"):
+            continue
+        out.setdefault(e.get("consumer") or "", set()).add(e.get("producer") or "")
+    return out
+
+
+def required_prerequisites(graph: Optional[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """consumer -> [required producer...] from the persisted graph: only
+    producers joined by at least one REQUIRED (non-optional) edge. A consumer
+    whose every edge to a producer is optional does not REQUIRE that producer
+    -- the branch may be declined as a whole. Falls back to the graph's own
+    prerequisites list filtered per-edge above; empty when no graph."""
+    out: Dict[str, List[str]] = {}
+    if not isinstance(graph, dict):
+        return out
+    optional_by_consumer = optional_edge_predecessors(graph)
+    for consumer, preds in (graph.get("prerequisites") or {}).items():
+        required = sorted(
+            p for p in (preds or [])
+            if p not in optional_by_consumer.get(consumer, set()))
+        out[consumer] = required
+    return out
 
 
 # ---------------------------------------------------------------------------

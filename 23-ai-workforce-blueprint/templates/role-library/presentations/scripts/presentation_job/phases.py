@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as _fut_wait, FIRST_COMPLETED
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,7 +23,10 @@ from typing import Any, Dict, List, Optional, Tuple
 # helpers) instead of a hand-stamped stub dict.
 from . import capacity as _capacity
 from .capacity import CapacityUnmeasured, autofail_payload, refusal_message
-from .execution_plan import build_execution_plan
+from .execution_plan import (build_execution_plan, build_edge_records,
+                             load_persisted_graph, optional_edge_predecessors,
+                             persist_execution_graph, required_prerequisites,
+                             _load_raw_phases)
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
     ENTRY_COMMAND,
@@ -335,6 +339,17 @@ def _wave_execution_enabled() -> bool:
     unset, not OFF — an EMPTY value must never silently select the rollback
     path). =0 restores the exact pre-fix serial engine loop."""
     raw = os.environ.get("PRESENTATION_WAVE_EXECUTION")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+
+def _ready_scheduler_enabled() -> bool:
+    """PRES-002 (2026-09-09): the dynamic ready scheduler is DEFAULT ON.
+    Only exactly "0" disables (same quote/whitespace discipline as
+    _wave_execution_enabled -- an EMPTY value is ON, never a silent
+    rollback). =0 restores the FIX-1 wave-join loop byte-for-byte."""
+    raw = os.environ.get("PRESENTATION_READY_SCHEDULER")
     if raw is None:
         return True
     return raw.strip().strip("'\"") != "0"
@@ -1072,6 +1087,202 @@ class Engine:
         })
         return rc
 
+    # -- PRES-002: the runtime predecessor-success gate --------------------
+    def _pred_input_hashes_valid(self, pred_id: str) -> bool:
+        """PRES-002: are the predecessor's CURRENT banked artifacts still the
+        bytes it banked at done?
+
+        The ready predicate accepts a DONE predecessor only when every banked
+        artifact still validates against the sha256 recorded at its DONE
+        checkpoint (artifacts.validate_artifact with the recorded sha). A
+        predecessor whose files were deleted, truncated, or rewritten after it
+        banked is NOT current -- the descendant must wait (or, once the run
+        re-runs the predecessor, re-admit on the fresh hashes). Never raises."""
+        try:
+            ps = self._phase_state(pred_id)
+            if ps.get("status") != PHASE_STATUS_DONE:
+                return False
+            bad = self._revalidate_banked_by_id(pred_id, ps)
+            return not bad
+        except Exception:  # noqa: BLE001 — a freshness probe must never crash the run
+            return False
+
+    def _revalidate_banked_by_id(self, pid: str, ps: Dict[str, Any]) -> List[str]:
+        """_revalidate_banked against the phase object for pid, resolved from
+        the pinned manifest (a prerequisite may sit outside the phases this
+        run() invocation walks -- `only`/`until`/routed-around). A phase id
+        the manifest no longer carries validates its banked sha256 only
+        (existence + byte-identity), never a per-type floor it may not
+        declare."""
+        ph = self.manifest.phase_or_none(pid)
+        if ph is not None:
+            return self._revalidate_banked(ph, ps)
+        bad: List[str] = []
+        shas = ps.get("sha256") or {}
+        for rel in (ps.get("artifacts") or []):
+            ok, why = validate_artifact(self.run_dir, rel, self.manifest,
+                                        recorded_sha=shas.get(rel))
+            if not ok:
+                bad.append(f"{rel}: {why}")
+        return bad
+
+    def _check_predecessor_success(self, phase: Phase) -> Optional[int]:
+        """PRES-002 (TODO.md step 1): THE runtime ready predicate.
+
+        Called at the TOP of run_phase, BEFORE the phase is marked running,
+        before any transport call. A phase whose required predecessors have
+        not passed never runs:
+
+          * every REQUIRED predecessor (edge not optional) must be DONE with
+            its banked artifacts still valid against the hashes recorded at
+            its done checkpoint -- CURRENT input-version hashes, not stale
+            files left by an earlier life (a stale prior A cannot unlock C);
+          * a predecessor still PENDING/RUNNING withholds admission:
+            waiting_dependency, no transport call -- the wave loop simply
+            records the rc and moves on, and the phase stays pending for the
+            next pass;
+          * a predecessor in QUARANTINED/FAILED/BLOCKED/OBSOLETE parks the
+            descendant in waiting_dependencies with the blocking edge NAMED
+            (phase + status + via pattern), and no transport call happens;
+          * a DEFERRED predecessor satisfies only an OPTIONAL edge -- the
+            consumer belongs to the same declinable branch (defers_unless on
+            the consumer itself), or is a conditional executor that resolves
+            its own gate (F59). A deferred predecessor can NEVER satisfy a
+            required edge.
+
+        Returns None to proceed (ready), or EXIT_GATE_BLOCKED with the phase
+        left PENDING when admission is withheld. Best-effort on every
+        failure: a graph/read problem fails OPEN for RUNNING-only ancestors
+        (the wave scheduler still orders phases correctly) but never admits
+        past a known-terminal-bad ancestor.
+
+        PRESENTATION_DAG_ADMISSION=0 disables the whole gate (documented
+        rollback to the pre-fix run_phase)."""
+        if os.environ.get("PRESENTATION_DAG_ADMISSION", "").strip().strip("'\"") == "0":
+            return None
+        # PRES-002: the gate rides the SCHEDULER. It applies only when this
+        # run dir carries the persisted edge graph (Engine.run persisted it
+        # at plan build -- the run is scheduler-driven, and the ready loop
+        # re-admits withheld phases as blockers settle). A DIRECT single-phase
+        # run_phase call (fix29's style-pick stage, fault17's
+        # _run_agent_phase tiebreaker checks, --phase diagnostics) is the
+        # pre-fix single-phase path and is NOT gated: the predecessor
+        # question there belongs to whoever invoked the phase, exactly as
+        # before this unit.
+        try:
+            graph = load_persisted_graph(self.run_dir, self.manifest.sha256)
+        except Exception as exc:  # noqa: BLE001 — a graph failure must never block a run
+            self.report.event(
+                "warn", f"dag admission: prerequisite graph unavailable ({exc!r}) "
+                        "-- proceeding without the predecessor gate")
+            return None
+        if graph is None:
+            # No persisted graph: not a scheduler-driven run (direct
+            # single-phase call or pre-plan entry) -- no runtime gate.
+            return None
+        try:
+            required = required_prerequisites(graph)
+        except Exception as exc:  # noqa: BLE001 — a graph failure must never block a run
+            self.report.event(
+                "warn", f"dag admission: prerequisite graph unavailable ({exc!r}) "
+                        "-- proceeding without the predecessor gate")
+            return None
+        preds = required.get(phase.id) or []
+        if not preds:
+            return None
+        deferred_ok = optional_edge_predecessors(graph).get(phase.id, set())
+        waiting: List[Dict[str, Any]] = []
+        for pred_id in preds:
+            ps_pred = self._phase_state(pred_id)
+            status = ps_pred.get("status")
+            if status == PHASE_STATUS_DONE:
+                if self._pred_input_hashes_valid(pred_id):
+                    continue
+                # DONE on paper but its banked bytes no longer validate --
+                # a STALE predecessor cannot unlock its consumer. The run
+                # re-runs the predecessor first (banked revalidation reset it
+                # to pending); this pass refuses admission.
+                waiting.append({
+                    "phase": phase.id, "blocked_by": pred_id,
+                    "pred_status": status,
+                    "reason": f"{pred_id} is done but its banked artifact(s) "
+                              "no longer match the hashes recorded at its "
+                              "done checkpoint (stale input version)",
+                })
+                continue
+            if status == PHASE_STATUS_DEFERRED:
+                if pred_id in deferred_ok:
+                    # Optional branch declined as a whole: the consumer defers
+                    # itself (defers_unless) or its conditional executor
+                    # resolves the gate (F59). Satisfied-by-declaration.
+                    continue
+                waiting.append({
+                    "phase": phase.id, "blocked_by": pred_id,
+                    "pred_status": status,
+                    "reason": f"{pred_id} deferred, but phase {phase.id} requires "
+                              "it through a non-optional edge",
+                })
+                continue
+            if status in (PHASE_STATUS_QUARANTINED, PHASE_STATUS_FAILED,
+                          PHASE_STATUS_BLOCKED, PHASE_STATUS_OBSOLETE):
+                waiting.append({
+                    "phase": phase.id, "blocked_by": pred_id,
+                    "pred_status": status,
+                    "reason": f"{pred_id} ended in {status} -- the blocking edge "
+                              f"{pred_id} -> {phase.id} stops this phase",
+                })
+                continue
+            # pending / running / unknown: in flight, not yet passed.
+            waiting.append({
+                "phase": phase.id, "blocked_by": pred_id,
+                "pred_status": status,
+                "reason": f"{pred_id} still {status} -- prerequisite not yet done",
+            })
+        if not waiting:
+            return None
+        # Admission withheld. The phase record keeps status PENDING (never
+        # running) and carries the durable waiting_dependency record; the
+        # wave loop collects the rc and continues with every other runnable
+        # phase. NO transport call happens for this phase on this pass.
+        for w in waiting:
+            self.report.event(
+                "phase.waiting_dependency",
+                f"{w['phase']} waits on {w['blocked_by']} "
+                f"({w['pred_status']}): {w['reason']}")
+        with self._state_lock:
+            ps = self._phase_state(phase.id)
+            ps["waiting_dependency"] = waiting
+            self.store.save(self.state)
+        return EXIT_GATE_BLOCKED
+
+    def _snapshot_predecessor_hashes(self, phase: Phase) -> None:
+        """PRES-002: at DONE time, stamp the phase record with the banked
+        input-version hashes of every required predecessor whose work this
+        phase consumed. The next admission of a CONSUMER of THIS phase
+        re-validates against these hashes (via _pred_input_hashes_valid) --
+        the persisted predecessor input-version hashes TODO.md step 1 asks
+        for. Best-effort: stamping must never block a completion."""
+        try:
+            graph = load_persisted_graph(self.run_dir, self.manifest.sha256)
+            if graph is None:
+                graph = build_edge_records(_load_raw_phases(self.manifest.path))
+            preds = required_prerequisites(graph).get(phase.id) or []
+            if not preds:
+                return
+            snap: Dict[str, Dict[str, str]] = {}
+            for pred_id in preds:
+                ps_pred = self._phase_state(pred_id)
+                shas = ps_pred.get("sha256") or {}
+                if isinstance(shas, dict) and shas:
+                    snap[pred_id] = dict(shas)
+            if snap:
+                with self._state_lock:
+                    ps = self._phase_state(phase.id)
+                    ps["pred_input_hashes"] = snap
+                    self.store.save(self.state)
+        except Exception as exc:  # noqa: BLE001 — stamping must never block completion
+            self.report.event("warn", f"predecessor hash stamp failed: {exc!r}")
+
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
         # FIX 109 (wave-B3, judge defect a): the intake provenance check runs
@@ -1105,6 +1316,17 @@ class Engine:
             if gate_rc is not None:
                 return gate_rc
 
+        # PRES-002 (2026-09-09): the runtime predecessor-success gate, AFTER
+        # the intake gate (whose AF-INTAKE-GATE park is the pre-fix contract
+        # for the intake cluster) and BEFORE any RUNNING checkpoint. A phase
+        # whose required predecessors have not passed with current
+        # input-version hashes never enters its executor here:
+        # waiting_dependency is recorded with the blocking edge named, and NO
+        # transport call is made.
+        dag_rc = self._check_predecessor_success(phase)
+        if dag_rc is not None:
+            return dag_rc
+        with self._state_lock:
             self.state["current_phase"] = phase.id
             self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
             self._checkpoint(phase.id, status=PHASE_STATUS_RUNNING,
@@ -1305,6 +1527,11 @@ class Engine:
                              verifier_ok=verifier_ok, verifier_notes=verifier_notes,
                              owner_skip_approval=verifier_skipped,
                              intake_sha_at_done=_intake_sha_now(self.run_dir))
+            # PRES-002: stamp the input-version hashes this phase consumed at
+            # done (each required predecessor's banked artifact sha256). The
+            # persisted record the ready predicate re-validates consumers
+            # against -- best-effort, never blocks the completion.
+            self._snapshot_predecessor_hashes(phase)
             # FIX 30 — the engine itself writes the attestation row on done.
             # Runs BEFORE the (heavier) board/report work so a crash between
             # this checkpoint and the report can never leave a checked-out
@@ -3019,6 +3246,32 @@ class Engine:
                 print(json.dumps(autofail_payload(capacity_probe), indent=2),
                       file=sys.stderr)
                 return EXIT_GATE_BLOCKED
+            # PRES-002 step 1: persist the EXPLICIT edge graph for this run,
+            # built from the same pinned manifest the plan just scheduled.
+            # The runtime predecessor gate (run_phase) reads it back; a graph
+            # persisted under a different manifest sha satisfies nothing.
+            # Best-effort on the state SUMMARY only -- the file write failing
+            # is loud, and the gate falls back to building the graph from the
+            # pinned manifest directly.
+            try:
+                graph_payload = persist_execution_graph(
+                    self.manifest.path, self.run_dir)
+                with self._state_lock:
+                    self.state["dependency_edges"] = {
+                        "graph": graph_payload["graph"],
+                        "manifest_sha256": graph_payload["manifest_sha256"],
+                        "manifest_version": graph_payload.get("manifest_version"),
+                        "phase_count": graph_payload.get("phase_count"),
+                        "edge_count": len(graph_payload.get("edges") or []),
+                        "built_at": graph_payload.get("built_at"),
+                        "path": str(Path(self.run_dir) /
+                                    "working/checkpoints/dependency-edges.json"),
+                    }
+                    self.store.save(self.state)
+            except Exception as exc:  # noqa: BLE001 — persistence must never block the run
+                self.report.event(
+                    "warn", f"dag admission: edge-graph persistence failed ({exc!r}) "
+                            "-- the runtime gate falls back to the pinned manifest")
             by_id = {p.id: p for p in phases}
             planned_ids = [pid for wave in plan["waves"] for pid in wave]
             wave_phases = [[by_id[pid] for pid in wave if pid in by_id]
@@ -3061,17 +3314,177 @@ class Engine:
                     return list(pool.map(_member_rc, members))
 
             failed_rcs: List[Tuple[str, int]] = []
-            for wave_no, members in enumerate(wave_phases, 1):
-                if not members:
-                    continue
-                # Per-unit results, in wave-member order. A non-OK rc from one
-                # unit (the phase quarantined itself via _fail_unit or parked
-                # via _block) is recorded — the rest of the wave already ran
-                # to completion and every DOWNSTREAM wave still runs while it
-                # is runnable.
-                for m, rc in zip(members, _run_wave(wave_no, members)):
-                    if rc != EXIT_OK:
-                        failed_rcs.append((m.id, rc))
+            # PRES-002 (TODO.md step 2): DYNAMIC READY SCHEDULER. The planned
+            # waves remain the per-phase REPORTING group (`wave=` telemetry
+            # unchanged), but the loop is a dynamic ready queue, never a
+            # full-wave join barrier: a persistent pool admits every phase
+            # whose predecessor set passes the moment it passes -- a quick
+            # ancestor unlocks its descendant while an UNRELATED slow peer in
+            # the same planned wave is still running -- and a member withheld
+            # by the runtime predecessor gate is re-queued (its rc was
+            # collected without any transport call) until its prerequisite
+            # set passes or the run parks. FIX 9b containment (per-unit crash
+            # guard, all rcs collected, park ONCE at the end) is unchanged.
+            # PRESENTATION_READY_SCHEDULER=0 restores the FIX-1 wave-join
+            # loop below byte-for-byte (documented rollback).
+            if _ready_scheduler_enabled():
+                available = plan["available"]
+                if not isinstance(available, int) or isinstance(available, bool):
+                    # UNBOUNDED (a real measurement): width is bounded by
+                    # ready work, never the sentinel literal.
+                    available = max(1, len(planned_ids))
+                wave_of: Dict[str, int] = {}
+                for wno, wave in enumerate(plan["waves"], 1):
+                    for pid in wave:
+                        wave_of[pid] = wno
+                queue = list(wave_phases and [p for wave in wave_phases
+                                              for p in wave] or [])
+                in_flight: Dict[Any, Phase] = {}
+                last_blocker_status: Dict[str, tuple] = {}
+                with ThreadPoolExecutor(max_workers=max(1, available)) as pool:
+                    while True:
+                        if _shutdown_requested():
+                            break
+                        # Reap finished futures first (frees slots). A member
+                        # the runtime gate WITHHELD (still pending with a
+                        # waiting_dependency entry, rc collected without any
+                        # transport call) is RE-QUEUED whenever its blocker's
+                        # recorded status ADVANCED since the last withhold
+                        # (pending -> running -> done/quarantined/...): the
+                        # world moved and the gate must re-read it -- the
+                        # moment the blocker settles the descendant is
+                        # admitted again, even while an unrelated slow peer
+                        # still runs. Same-status repeats are NOT re-admitted
+                        # (re-running the gate every tick would spin hot for
+                        # the blocker's whole budget). A blocker already
+                        # terminal-bad NEVER clears this run: the withhold is
+                        # final immediately (the blocking edge is recorded;
+                        # the run parks once at the end).
+                        requeue: List[Phase] = []
+                        completed_now: set = set()
+                        for fut in [f for f in list(in_flight) if f.done()]:
+                            ph = in_flight.pop(fut)
+                            completed_now.add(ph.id)
+                            try:
+                                rc = fut.result()
+                            except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                                rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+                            if rc == EXIT_OK:
+                                # A phase that succeeds on a later admission
+                                # clears any earlier withhold record -- the
+                                # withhold was provisional, not final.
+                                failed_rcs = [(p, r) for (p, r) in failed_rcs
+                                              if p != ph.id]
+                                continue
+                            ps = self._phase_state(ph.id)
+                            if ps.get("waiting_dependency") and \
+                                    ps.get("status") == PHASE_STATUS_PENDING:
+                                # EVERY withhold lands in failed_rcs NOW: it is
+                                # a non-OK rc. If the member later re-runs and
+                                # succeeds it is removed (above); if it never
+                                # does, the post-loop refresh re-evaluates it
+                                # against the settled world (runs it when the
+                                # gate passes, else the final
+                                # waiting_dependency record stands and the
+                                # run parks once).
+                                failed_rcs.append((ph.id, rc))
+                                blockers = tuple(
+                                    (w.get("blocked_by"),
+                                     w.get("pred_status"))
+                                    for w in (ps.get("waiting_dependency")
+                                              or []))
+                                bad = all(
+                                    st in (PHASE_STATUS_QUARANTINED,
+                                           PHASE_STATUS_FAILED,
+                                           PHASE_STATUS_BLOCKED,
+                                           PHASE_STATUS_OBSOLETE)
+                                    for _pid, st in blockers)
+                                if bad:
+                                    continue
+                                # Re-queue on a blocker-status ADVANCE since
+                                # the last withhold; the first withhold always
+                                # re-queues (nothing to compare against yet).
+                                if blockers != last_blocker_status.get(ph.id):
+                                    requeue.append(ph)
+                                last_blocker_status[ph.id] = blockers
+                            else:
+                                failed_rcs.append((ph.id, rc))
+                        if requeue:
+                            queue.extend(requeue)
+                        # Post-reap sweep: a member parked-withheld in a prior
+                        # cycle (its own future long reaped, statuses unchanged
+                        # then) whose blocker has since ADVANCED (e.g. A went
+                        # running -> done while C sat parked) gets re-queued
+                        # NOW -- its gate re-reads the moved world. Without
+                        # this, a quick ancestor completing would never wake
+                        # its parked descendant until some other future
+                        # completed, deferring admission past the ancestor's
+                        # own completion (the exact barrier this scheduler
+                        # removes).
+                        for psx in list(self.state.get("phases", [])):
+                            if not isinstance(psx, dict):
+                                continue
+                            pid = psx.get("id")
+                            wd = psx.get("waiting_dependency")
+                            if not wd or psx.get("status") != \
+                                    PHASE_STATUS_PENDING:
+                                continue
+                            if any(p.id == pid for p in in_flight.values()):
+                                continue
+                            cur = tuple(
+                                (w.get("blocked_by"),
+                                 self._phase_state(
+                                     w.get("blocked_by") or "").get("status"))
+                                for w in wd)
+                            if cur != last_blocker_status.get(pid):
+                                ph = by_id.get(pid)
+                                if ph is not None:
+                                    last_blocker_status[pid] = cur
+                                    queue.insert(0, ph)
+                                    break
+                        # Admit the head of the queue while slots exist.
+                        while queue and len(in_flight) < max(1, available):
+                            m = queue.pop(0)
+                            in_flight[pool.submit(
+                                self.run_phase_timed, m,
+                                wave=wave_of.get(m.id, 0))] = m
+                        if not in_flight:
+                            if not queue:
+                                break
+                            # Nothing running and nothing admissible: every
+                            # survivor's blocker ended terminal-bad (the gate
+                            # will never clear it this run). Record the
+                            # withholds so the run parks once at the end,
+                            # exactly as FIX 9b does for units.
+                            for ph in queue:
+                                failed_rcs.append((ph.id, EXIT_GATE_BLOCKED))
+                            break
+                        _fut_wait(set(in_flight), timeout=0.5,
+                                  return_when=FIRST_COMPLETED)
+                    # with-block exit JOINED the pool: every in-flight member
+                    # is done; collect its rc.
+                    for fut, ph in in_flight.items():
+                        try:
+                            rc = fut.result()
+                        except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                            rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+                        if rc != EXIT_OK:
+                            failed_rcs.append((ph.id, rc))
+            else:
+                # FIX-1 wave-join loop (PRES-002 rollback path): every member
+                # of a wave joins before the next wave starts. PRESERVED
+                # byte-for-byte as the documented rollback.
+                for wave_no, members in enumerate(wave_phases, 1):
+                    if not members:
+                        continue
+                    # Per-unit results, in wave-member order. A non-OK rc from
+                    # one unit (the phase quarantined itself via _fail_unit or
+                    # parked via _block) is recorded — the rest of the wave
+                    # already ran to completion and every DOWNSTREAM wave
+                    # still runs while it is runnable.
+                    for m, rc in zip(members, _run_wave(wave_no, members)):
+                        if rc != EXIT_OK:
+                            failed_rcs.append((m.id, rc))
             for p in extra:
                 # FIX 9b containment: same per-unit crash guard as _run_wave so
                 # an extra (selected-but-unplanned) phase that crashes records
@@ -3082,6 +3495,39 @@ class Engine:
                     rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
                 if rc != EXIT_OK:
                     failed_rcs.append((p.id, rc))
+            # PRES-002: FINAL withhold refresh. A member withheld-final while
+            # its blocker was mid-flight (or carrying a stale status from a
+            # prior pass) gets ONE last gate evaluation now that every future
+            # has settled. Three outcomes:
+            #   * the gate PASSES  -> the phase is READY: run it now,
+            #     synchronously (few members, and the pool is drained); a
+            #     success REMOVES it from failed_rcs so the run need not park.
+            #   * the gate withholds again -> the durable waiting_dependency
+            #     record (and the event row) now names the blocker's FINAL
+            #     status -- the exact terminal-bad edge the operator must see.
+            #   * the gate raises -> keep the withhold as recorded.
+            for pid, _rc in list(failed_rcs):
+                ps = self._phase_state(pid)
+                if ps.get("status") != PHASE_STATUS_PENDING or \
+                        not ps.get("waiting_dependency"):
+                    continue
+                ph = by_id.get(pid) or self.manifest.phase_or_none(pid)
+                if ph is None:
+                    continue
+                try:
+                    rc = self._check_predecessor_success(ph)
+                except Exception:  # noqa: BLE001 — a refresh must never break the park
+                    continue
+                if rc is None:
+                    # Ready now: run it for real (same containment as _run_wave).
+                    try:
+                        rc = self.run_phase_timed(
+                            ph, wave=len(plan["waves"]) + 1)
+                    except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                        rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+                    if rc == EXIT_OK:
+                        failed_rcs = [(p, r) for (p, r) in failed_rcs
+                                      if p != pid]
             if failed_rcs:
                 # FIX 9b: park ONCE for the whole run, after every runnable
                 # phase has been given its chance. No mid-run early exits.
@@ -3105,6 +3551,13 @@ class Engine:
                     self.store.save(self.state)
                 for pid, rc in failed_rcs:
                     ps = self._phase_state(pid)
+                    # PRES-002: a phase the runtime gate WITHHELD (still
+                    # pending with a waiting_dependency entry, rc collected
+                    # without any transport call) did not die -- it never
+                    # ran. It stays pending for the next run/resume; it must
+                    # NOT be normalized to failed here.
+                    if ps.get("waiting_dependency"):
+                        continue
                     if ps.get("status") in (PHASE_STATUS_RUNNING,
                                             PHASE_STATUS_PENDING):
                         # The unit parked itself below (blocked/quarantined/failed
