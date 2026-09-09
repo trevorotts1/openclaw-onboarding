@@ -91,11 +91,18 @@ class TestF38PosterExtraction(unittest.TestCase):
             self.assertTrue(os.path.exists(ev["poster"]), "poster file exists")
             self.assertIsNone(ev["not_verified"])
         else:
+            # No ffmpeg on this box: the contract is that a skipped poster is
+            # NEVER reported as success (exit 2, no evidence JSON). The adapter
+            # prints "video not found" when the file is missing and the
+            # "NOT VERIFIED" note only when the video exists but extraction
+            # fails — accept either; the returncode is the load-bearing check.
             proc = run_adapter("--video", os.path.join(self.tmp, "missing.mp4"),
                                "--asset-id", "asset-a-1",
                                "--cc-base-url", "https://cc.example.com", "--out", out)
             self.assertEqual(proc.returncode, 2, "a skipped poster is never reported as success")
-            self.assertIn("NOT VERIFIED", proc.stderr)
+            self.assertTrue(
+                "NOT VERIFIED" in proc.stderr or "video not found" in proc.stderr,
+                f"adapter must refuse without a poster: {proc.stderr}")
 
     def test_missing_video_fails_not_verified(self):
         proc = run_adapter("--video", os.path.join(self.tmp, "nope.mp4"),

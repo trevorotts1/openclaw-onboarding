@@ -1,0 +1,78 @@
+name: social-planner-suite-guard
+
+# F20: CI runs the relevant suite. Any change to the social planner engine
+# (35/57 scripts, shared-utils contract modules, tests) triggers the hermetic
+# unittest suite — offline, fake transports, no network. The suite FAILS when
+# the consumer is removed, review is marked before artifacts, live verification
+# is bypassed, a second week is not invited, or a fabricated post id is
+# accepted as live success (the pointer stale-test regression F20 replaced).
+
+on:
+  push:
+    paths:
+      - 35-social-media-planner/scripts/test_run_publishing_cycle.py
+      - 35-social-media-planner/scripts/prove_content_conversation_loop.py
+      - 35-social-media-planner/scripts/pregen_prompt_gate.py
+      - 35-social-media-planner/scripts/run-publishing-cycle.sh
+      - 57-social-media-in-a-box/run_social_media.py
+      - 57-social-media-in-a-box/scripts/ghl_contracts.py
+      - shared-utils/social_cycle_service.py
+      - shared-utils/social_prompt_compiler.py
+      - tests/social-planner/**
+      - .github/workflows/social-planner-suite-guard.yml
+  pull_request:
+    paths:
+      - 35-social-media-planner/scripts/test_run_publishing_cycle.py
+      - 35-social-media-planner/scripts/prove_content_conversation_loop.py
+      - 35-social-media-planner/scripts/pregen_prompt_gate.py
+      - 35-social-media-planner/scripts/run-publishing-cycle.sh
+      - 57-social-media-in-a-box/run_social_media.py
+      - 57-social-media-in-a-box/scripts/ghl_contracts.py
+      - shared-utils/social_cycle_service.py
+      - shared-utils/social_prompt_compiler.py
+      - tests/social-planner/**
+      - .github/workflows/social-planner-suite-guard.yml
+
+jobs:
+  social-planner-suite-guard:
+    name: social planner contract + failure-injection suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest (proof-file runner; tests themselves stay offline)
+        run: python3 -m pip install --quiet pytest
+
+      - name: Run the social-planner suite (hermetic, offline)
+        shell: bash
+        run: |
+          # Full-fidelity failure evidence. The Actions default shell is
+          # `bash -e`: a failing python3 aborts the script BEFORE `rc1=$?` and
+          # the log echo ever run (seen live: zero step output + bare exit 1).
+          # So: set +e explicitly, capture every rc with ||-guards, and ALWAYS
+          # print the log before exiting. The file is the ground truth.
+          set -o pipefail
+          set +e
+          SUITE_LOG="$RUNNER_TEMP/social-planner-suite.log"
+          : >"$SUITE_LOG"
+          python3 -u -m unittest discover -s tests/social-planner -p 'test_f*.py' -v \
+            >>"$SUITE_LOG" 2>&1
+          rc1=$?
+          python3 35-social-media-planner/scripts/test_run_publishing_cycle.py \
+            >>"$SUITE_LOG" 2>&1
+          rc2=$?
+          python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py -q \
+            >>"$SUITE_LOG" 2>&1
+          rc3=$?
+          echo "=== suite rcs: discover=$rc1 cycle-test=$rc2 pytest=$rc3 ==="
+          cat "$SUITE_LOG"
+          if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || [ "$rc3" -ne 0 ]; then
+            echo "::error::social-planner suite failed (discover=$rc1 cycle=$rc2 pytest=$rc3)"
+            exit 1
+          fi
