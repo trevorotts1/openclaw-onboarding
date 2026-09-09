@@ -14,7 +14,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait as _fut_wait
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -3259,18 +3259,12 @@ class Engine:
                     # drained, or every survivor waits on a failed ancestor.
                     break
                 # Short nonblocking wait: the next claim scan re-evaluates
-                # readiness as soon as ANY member finishes, not on a wave
-                # boundary. A 0.5s poll keeps admission latency tiny without
-                # burning CPU (the dispatcher's own interval is 10s).
-                done_any = False
-                deadline = time.monotonic() + 0.5
-                while time.monotonic() < deadline:
-                    if any(f.done() for f in in_flight):
-                        done_any = True
-                        break
-                    time.sleep(0.05)
-                if not done_any:
-                    continue
+                # readiness the MOMENT any member finishes, not on a wave
+                # boundary. FIRST_COMPLETED returns instantly on completion
+                # with no CPU burn (the dispatcher's own interval is 10s).
+                if in_flight:
+                    _fut_wait(set(in_flight), timeout=1.0,
+                              return_when=FIRST_COMPLETED)
         # with-block exit JOINED the pool: every in-flight member is done.
         for fut, ph in in_flight.items():
             try:
