@@ -280,35 +280,49 @@ def test_qc_reserve_holds_last_slot_while_saturated(tmp_path, monkeypatch):
 # Serial (wave-join) vs ready-queue benchmark on the SAME fixtures
 # (QC-PRES-036 check 3: speed without relaxing QC).
 #
-# The fixture shape is where the barrier WASTES time: A is quick and its
-# descendant C is quick; B and D are slow independent work. Wave-join holds
-# C back until the slow B joins wave 1; the ready queue admits C early. The
-# wall difference IS the barrier's cost on identical fixtures.
+# The fixture shape is where the barrier WASTES time: A is quick and a CHAIN
+# of quick descendants hangs off it (C1->C2->C3->C4); B is slow independent
+# work. Wave-join holds the whole chain back until the slow B joins wave 1,
+# then runs it serially; the ready queue admits each link the moment its
+# prerequisite passes -- DURING B. The wall difference IS the barrier's cost,
+# and it grows with the chain length.
 # ---------------------------------------------------------------------------
 _FIXTURE_PHASES = [
     ("A", 1, "working/a.txt", [], _cmd_that_writes("working/a.txt", 0.02)),
     ("B", 2, "working/b.txt", [], _cmd_that_writes("working/b.txt", 0.7)),
-    ("C", 3, "working/c.txt", ["working/a.txt"], _cmd_that_writes("working/c.txt", 0.02)),
-    ("D", 4, "working/d.txt", ["working/b.txt"], _cmd_that_writes("working/d.txt", 0.02)),
+    ("C1", 3, "working/c1.txt", ["working/a.txt"],
+     _cmd_that_writes("working/c1.txt", 0.02)),
+    ("C2", 4, "working/c2.txt", ["working/c1.txt"],
+     _cmd_that_writes("working/c2.txt", 0.02)),
+    ("C3", 5, "working/c3.txt", ["working/c2.txt"],
+     _cmd_that_writes("working/c3.txt", 0.02)),
+    ("C4", 6, "working/c4.txt", ["working/c3.txt"],
+     _cmd_that_writes("working/c4.txt", 0.02)),
 ]
+_FIXTURE_IDS = ("A", "B", "C1", "C2", "C3", "C4")
 
 
 def test_ready_queue_beats_wave_join_on_identical_fixtures(tmp_path, monkeypatch):
-    eng = _engine(tmp_path, _FIXTURE_PHASES)
-    t0 = time.monotonic()
-    rc_rq = eng.run()
-    t_rq = time.monotonic() - t0
-    assert rc_rq == EXIT_OK
-    assert all(eng._phase_state(p).get("status") == "done" for p in ("A", "B", "C", "D"))
+    # Best-of-2 per mode, wave-join measured FIRST (the first engine run of a
+    # process pays one-time warm-up -- pyc compile, module imports -- which
+    # would otherwise smear the comparison; both modes get the same treatment
+    # so the comparison stays honest).
+    def _timed_run(root, *, ready: bool):
+        monkeypatch.setenv("PRESENTATION_READY_QUEUE", "1" if ready else "0")
+        best = None
+        for i in range(2):
+            eng = _engine(root / f"run{i}", _FIXTURE_PHASES)
+            t0 = time.monotonic()
+            rc = eng.run()
+            wall = time.monotonic() - t0
+            assert rc == EXIT_OK
+            assert all(eng._phase_state(p).get("status") == "done"
+                       for p in _FIXTURE_IDS)
+            best = wall if best is None else min(best, wall)
+        return best
 
-    # Same fixtures, wave-join loop (PRESENTATION_READY_QUEUE=0 -> FIX-1 path).
-    monkeypatch.setenv("PRESENTATION_READY_QUEUE", "0")
-    eng2 = _engine(tmp_path / "second", _FIXTURE_PHASES)
-    t1 = time.monotonic()
-    rc_wj = eng2.run()
-    t_wj = time.monotonic() - t1
-    assert rc_wj == EXIT_OK
-    assert all(eng2._phase_state(p).get("status") == "done" for p in ("A", "B", "C", "D"))
+    t_wj = _timed_run(tmp_path / "wavejoin", ready=False)
+    t_rq = _timed_run(tmp_path / "ready", ready=True)
     assert t_rq < t_wj, (
         f"ready queue {t_rq:.2f}s not faster than wave-join {t_wj:.2f}s "
         "on identical fixtures")
