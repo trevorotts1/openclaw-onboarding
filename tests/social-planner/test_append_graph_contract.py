@@ -78,6 +78,12 @@ class GraphTests(unittest.TestCase):
   r=run([b]);self.assertTrue(r['runs'][0]['response']['partial']);self.assertEqual(len(r['state']['Posts']),2);self.assertEqual(r['state']['Images'],[])
  def test_upsert_preserves_existing_dimensions(self):
   r=run([BASE,BASE]);self.assertNotIn('Resize Columns + Row (batchUpdate)',r['runs'][1]['trace'])
+ def test_new_rows_reset_inherited_header_style_without_touching_replays(self):
+  r=run([BASE,BASE])
+  styles=[q['repeatCell'] for x in r['writes'] for q in x.get('body',{}).get('requests',[]) if 'repeatCell' in q]
+  self.assertTrue(styles)
+  self.assertTrue(all(q['range']['startRowIndex']>=1 and q['cell']['userEnteredFormat']['textFormat']['bold'] is False for q in styles))
+  self.assertNotIn('Resize Columns + Row (batchUpdate)',r['runs'][1]['trace'])
  def test_all_connections_and_error_ports_are_canonical(self):
   w=json.loads(WORKFLOW.read_text())
   for n in w['nodes']:

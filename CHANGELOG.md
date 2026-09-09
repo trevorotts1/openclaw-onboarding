@@ -4,6 +4,7 @@
 - Stamp ownership atomically on new copies; resume interrupted initialization with a formatting checkpoint before sharing. Verify ready sheet headers, ownership and sharing without erasing client entries.
 - Repair Posts/image/video branch context, readback/upsert receipts, trusted previews, formatting masks and new-row dimensions; retain intentional anyone-link edit access.
 - Replace label-only completion claims with an evidence-bound audit that verifies released source, GitHub state and actual captured deployment proofs. Old exports, rollback, inactive workflows and stale reviews fail closed.
+- Enable actual external image fetching, keep weekly counts correct after inserted rows, and prevent new data rows inheriting header colors. Register publication inventories for independent per-account readback verification.
 - Existing planners require verified registry ownership migration before global append-route cutover; release is not evidence that every client installation or provider publication has been accepted.
 
 

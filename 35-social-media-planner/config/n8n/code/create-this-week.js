@@ -5,7 +5,8 @@ const identityStamps=[];
 [110,190,300,130,130,130,130,160].forEach((pixelSize,i)=>identityStamps.push({updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:i,endIndex:i+1},properties:{pixelSize},fields:'pixelSize'}}));
 // Summary is restricted to the current local week; no invented completion counts.
 const week='=TODAY()-WEEKDAY(TODAY(),2)+1';
-const count=(field,state)=>`COUNTIFS(Posts!${field}2:${field},"${state}",Posts!I2:I,">="&TEXT(A2,"yyyy-mm-dd"),Posts!I2:I,"<"&TEXT(A2+7,"yyyy-mm-dd"))`;
+const count=(field,state)=>`SUMPRODUCT((LOWER(Posts!${field}:${field})="${state.toLowerCase()}")*(LEFT(Posts!I:I,10)>=TEXT(A2,"yyyy-mm-dd"))*(LEFT(Posts!I:I,10)<TEXT(A2+7,"yyyy-mm-dd")))`;
+
 const values=[{formulaValue:week},{stringValue:ctx.brandName},{formulaValue:'=IF(H2>0,"Review items needing attention",IF(SUM(D2:G2)=0,"Choose this week’s theme","Review progress and approvals"))'},
  {formulaValue:'='+count('K','draft')+'+'+count('K','drafting')},
  {formulaValue:'='+count('L','qc_pending')+'+'+count('L','qc_review')+'+'+count('L','QC Review')},

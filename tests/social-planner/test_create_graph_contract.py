@@ -46,6 +46,13 @@ class CreateGraph(unittest.TestCase):
  def test_duplicate_matching_files_are_never_arbitrarily_selected(self):
   first=run();state=first['state'];state['files'].append(state['files'][0].copy());r=run(state=state)
   self.assertEqual(r['runs'][0]['response']['status'],'error');self.assertFalse(r['writes'])
+ def test_gallery_external_fetch_enabled_and_summary_survives_appended_rows(self):
+  r=run();fmt=next(x['body']['requests'] for x in r['writes'] if x['name']=='Provision Formatting (F25 batchUpdate)')
+  self.assertTrue(any(x.get('updateSpreadsheetProperties',{}).get('properties',{}).get('importFunctionsExternalUrlAccessAllowed') is True for x in fmt))
+  summary=next(x['body']['requests'] for x in r['writes'] if x['name']=='This Week Sizing (batchUpdate)')
+  formulas=[v['userEnteredValue'].get('formulaValue','') for q in summary if 'updateCells'in q for row in q['updateCells']['rows'] for v in row['values']]
+  self.assertTrue(any('Posts!K:K' in f for f in formulas))
+  self.assertFalse(any('Posts!K2:' in f or 'Posts!I2:' in f for f in formulas))
  def test_every_existing_tab_metadata_branch(self):
   r=run(templateTabs=['This Week','Weekly Overview','Posts','Images','Videos']);self.assertEqual(r['runs'][0]['response']['status'],'success')
  def test_shared_copy_never_reformatted_after_final_tag_failure(self):

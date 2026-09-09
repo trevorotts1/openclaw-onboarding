@@ -234,3 +234,11 @@ Do not declare the program complete from unit tests or an active workflow flag.
 Capture the active published graph, actual sandbox execution and Google
 readback; bind that proof to the released source and use
 `scripts/social-completion-audit.py`. See `docs/social-completion-evidence.md`.
+
+
+New copies enable the Sheets `importFunctionsExternalUrlAccessAllowed` property
+while it is false so trusted IMAGE previews can actually render. A written
+formula alone is insufficient proof: acceptance reads effective cell values and
+rejects image errors. This Week summaries use whole-column references so Google
+row insertion cannot move the counts below newly appended content. See the
+[Google Sheets property contract](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets#spreadsheetproperties).

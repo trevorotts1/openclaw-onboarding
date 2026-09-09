@@ -547,6 +547,8 @@ PYEOF
 #   {"connected_accounts": N, "planned_posts": N, "created_posts": N,
 #    "posts": [{"platform": "...", "post_id": "...", "url": "...", "tier": N,
 #               "readback": {"id": "<post_id>"}}]}
+# CC reconciliation additionally requires registered company/queue/account/post
+# inventory and independent readback; see references/publication-verification.md.
 # U128: counters alone are three numbers from the same pipeline — an empty
 # posts array with created_posts=N used to pass. Now each post must carry an
 # immutable receipt (non-empty post_id + url), the array length must match
@@ -1193,14 +1195,16 @@ log "workdir   = $WORKDIR"
 # build-workforce manifest approach (write JSON; the AI agent spawns
 # sub-agents under its own control — see build-workforce.py L1442).
 MANIFEST="$WORKDIR/cycle-manifest.json"
-python3 - "$MANIFEST" "$TOPIC" "$PLATFORMS_NORM" "$SCHEDULE" "$RUN_ID" "$WORKDIR" <<'PYEOF'
+python3 - "$MANIFEST" "$TOPIC" "$PLATFORMS_NORM" "$SCHEDULE" "$RUN_ID" "$WORKDIR" "$SKILL_DIR/skill-version.txt" <<'PYEOF'
 import json, sys, time
-manifest_path, topic, platforms, schedule, run_id, workdir = sys.argv[1:7]
+from pathlib import Path
+manifest_path, topic, platforms, schedule, run_id, workdir, version_file = sys.argv[1:8]
 plist = [p for p in platforms.split(",") if p]
 
 manifest = {
     "skill": "35-social-media-planner",
-    "skill_version": "v10.14.33",
+    "skill_version": Path(version_file).read_text().strip(),
+    "publication_evidence_contract": "references/publication-verification.md",
     "run_id": run_id,
     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "topic": topic,
@@ -1251,6 +1255,7 @@ manifest = {
         {
             "id": 5,
             "name": "Publish + Monitor",
+            "receipt_handoff": "Register complete company/queue/account/post inventory as publish-receipts.json through the production task deliverables endpoint before completing. Verification agents read back these original IDs only; never republish. Follow references/publication-verification.md.",
             "agents": [
                 "publisher",
                 "podcast-publisher",

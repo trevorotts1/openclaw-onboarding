@@ -37,7 +37,7 @@ for(const title of order){
     const col=templates[title].headings.indexOf(column);
     const range={sheetId:id,startRowIndex:1,startColumnIndex:col,endColumnIndex:col+1};
     const statusValues=SCHEMA.status_colors.statuses.map(s=>s.label);
-    const runtime=['draft','drafting','pending','queued','working','qc_pending','qc_review','approved','passed','rejected','scheduled','published','failed','blocked','needs_attention','skipped','complete','completed','cancelled'];
+    const runtime=['PASS','FAIL','PENDING','IN_REVIEW','SKIP','draft','drafting','pending','queued','working','qc_pending','qc_review','approved','passed','rejected','scheduled','published','failed','blocked','needs_attention','skipped','complete','completed','cancelled'];
     const labels=[...new Set([...statusValues,...runtime])];
     formatRequests.push({setDataValidation:{range,rule:{condition:{type:'ONE_OF_LIST',values:labels.map(s=>({userEnteredValue:s}))},showCustomUi:true,strict:true}}});
     for(const label of labels){
@@ -60,6 +60,8 @@ for(const sheet of current){
   if(!order.includes(sheet.properties.title))formatRequests.push({deleteSheet:{sheetId:sheet.properties.sheetId}});
 }
 formatRequests.push({updateSpreadsheetProperties:{properties:{title:ctx.sheetName,timeZone:ctx.timezone},fields:'title,timeZone'}});
+// Required for IMAGE previews; set only while false (true is read-only).
+if(metadata.properties?.importFunctionsExternalUrlAccessAllowed!==true)formatRequests.push({updateSpreadsheetProperties:{properties:{importFunctionsExternalUrlAccessAllowed:true},fields:'importFunctionsExternalUrlAccessAllowed'}});
 for(const [key,value] of Object.entries({skill35_company_id:ctx.company_id,skill35_planner_kind:ctx.planner_kind,skill35_template_schema:'1.2.0'})){
   const entries=(metadata.developerMetadata||[]).filter(m=>m.metadataKey===key);
   for(const entry of entries)formatRequests.push({deleteDeveloperMetadata:{dataFilter:{developerMetadataLookup:{metadataId:entry.metadataId}}}});
