@@ -86,7 +86,7 @@ the attempts and evidence.
 ## 3. How the Escalation Path Works (end-to-end)
 
 1. **Client side (the distress call).** The stuck agent POSTs a **nine-field**
-   escalation to the fleet intake webhook (`RESCUE_RANGERS_WEBHOOK_URL` —
+   escalation to the fleet intake webhook (`RESCUE_RANGERS_WEBHOOK_URL`,
    canonical `rr-v2-intake` on RR-01; the old `/webhook/rescue-rangers` Relay
    path is **retired**), with `X-Rescue-Secret`. The nine fields are: `person`,
    `clientName`, `agentName`, `boxName`, `boxType`, `openclawVersion`, `problem`,
@@ -97,7 +97,7 @@ the attempts and evidence.
    secret, verifies identity/enrollment, and mints the ticket through the
    **RR-04 Data Tables ledger** (sole production writer); RR-02 coach / RR-03
    direct queue the work, RR-07 receiver claims/ACKs it, RR-05 sweeps and RR-08
-   heartbeat watch it. (The old "Rescue Rangers Relay" workflow is retired —
+   heartbeat watch it. (The old "Rescue Rangers Relay" workflow is retired;
    do not point new wiring at it.)
 3. **Operator runtime (the brain).** Two transports on the operator Mac: a **push
    receiver** (over a dedicated Cloudflare tunnel) that runs ONE turn of the rescue
