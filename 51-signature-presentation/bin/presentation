@@ -69,30 +69,63 @@ PYEOF
     [ -n "$OC_PATHS_CANDIDATES" ] && note "oc_paths secrets order: $(printf '%s' "$OC_PATHS_CANDIDATES" | tr '\n' ' ')"
 fi
 
-# --- 3. secrets: source first existing candidate, set -a, print nothing -----
-# Never print a secret value. Source with set -a so every child (python3,
-# reportlab pipeline, notify transport) sees the keys (FIX 72 export-safe).
-# Order: oc_paths candidates (Fix 68 authority) first, then the platform
-# shell fallbacks; the first file that EXISTS wins. Names are echoed, never
-# values.
+# --- 3. secrets: exported client credentials suffice; a secrets FILE is
+# only loaded when the caller did not already export what the run needs.
+# PRES-050: the old gate exited 60 whenever no secrets FILE existed, even
+# when the caller had explicitly exported client-scoped credentials — that
+# made OpenClaw provisioning mandatory for standalone use. New rule: an
+# explicitly exported PRESENTATION_CREDENTIAL_PROFILE (or a configured
+# PRESENTATION_NOTIFY_CMD) is sufficient and no file is required. The file
+# load below is a FILL-IN for names the environment lacks, never an
+# override of explicit exports. OPENCLAW_SECRETS (the oc_paths authority's
+# explicit pin) is honored first. Names are echoed, never values.
+_have_creds=0
+if [ -n "${PRESENTATION_CREDENTIAL_PROFILE:-}" ] || [ -n "${PRESENTATION_NOTIFY_CMD:-}" ]; then
+    _have_creds=1
+    note "explicit exported credentials present (profile: ${PRESENTATION_CREDENTIAL_PROFILE:-<notify-cmd-only>}); no secrets file required"
+fi
 SECRETS_LOADED=0
 _SECRETS_CANDIDATES=""
+if [ -n "${OPENCLAW_SECRETS:-}" ]; then
+    _SECRETS_CANDIDATES="$OPENCLAW_SECRETS "
+fi
 if [ -n "$OC_PATHS_CANDIDATES" ]; then
-    _SECRETS_CANDIDATES="$(printf '%s' "$OC_PATHS_CANDIDATES" | tr '\n' ' ') "
+    _SECRETS_CANDIDATES="${_SECRETS_CANDIDATES}$(printf '%s' "$OC_PATHS_CANDIDATES" | tr '\n' ' ') "
 fi
 _SECRETS_CANDIDATES="${_SECRETS_CANDIDATES}$OC_ROOT/secrets/.env $HOME/.openclaw/secrets/.env"
-for _cand in $_SECRETS_CANDIDATES; do
-    if [ -f "$_cand" ]; then
-        set -a
-        # shellcheck disable=SC1090
-        . "$_cand"
-        set +a
-        SECRETS_LOADED=1
-        note "secrets sourced (set -a): $_cand"
-        break
-    fi
-done
-[ "$SECRETS_LOADED" -eq 1 ] || die "no secrets env found (tried: $_SECRETS_CANDIDATES). Skill 07/05 must provision it first; refusing to run keyless." 60
+if [ "$_have_creds" -eq 0 ]; then
+    for _cand in $_SECRETS_CANDIDATES; do
+        if [ -f "$_cand" ]; then
+            set -a
+            # shellcheck disable=SC1090
+            . "$_cand"
+            set +a
+            SECRETS_LOADED=1
+            note "secrets sourced (set -a): $_cand"
+            break
+        fi
+    done
+    [ "$SECRETS_LOADED" -eq 1 ] || die "no secrets env found (tried: $_SECRETS_CANDIDATES) and no exported PRESENTATION_CREDENTIAL_PROFILE/PRESENTATION_NOTIFY_CMD. Export client credentials or provision the secrets file first; refusing to run keyless." 60
+else
+    # Fill-in only: source the first existing file WITHOUT overriding names
+    # already set in the environment (explicit exports win).
+    for _cand in $_SECRETS_CANDIDATES; do
+        if [ -f "$_cand" ]; then
+            while IFS='=' read -r _k _v; do
+                case "$_k" in ''|\#*) continue ;; esac
+                _k="$(printf '%s' "$_k" | tr -d '[:space:]')"
+                [ -n "$_k" ] || continue
+                if [ -z "$(eval "printf '%s' \"\${$_k:-}\"")" ]; then
+                    _v="$(printf '%s' "$_v" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")"
+                    eval "$_k=\"\$_v\""; export "$_k"
+                fi
+            done < "$_cand"
+            SECRETS_LOADED=1
+            note "secrets fill-in (exports kept): $_cand"
+            break
+        fi
+    done
+fi
 
 # --- 4. dept materialization gate (fail-closed) ------------------------------
 DEPT_SCRIPTS="$OC_WORKSPACE/departments/Presentations/scripts"
@@ -160,42 +193,20 @@ else
     unset PRESENTATION_RUN_DIR
 fi
 
-# Normalize "--run-dir=DIR" to the door's "--run-dir DIR" form (argv rebuild).
-_newargs=""
-_have_newargs=0
-for _a in "$@"; do
-    case "$_a" in
-        --run-dir=*)
-            if [ "$_have_newargs" -eq 0 ]; then
-                _newargs="--run-dir ${_a#--run-dir=}"
-                _have_newargs=1
-            else
-                _newargs="$_newargs --run-dir ${_a#--run-dir=}"
-            fi
-            ;;
-        *)
-            if [ "$_have_newargs" -eq 0 ]; then
-                _newargs="$_a"
-                _have_newargs=1
-            else
-                _newargs="$_newargs|$_a"
-            fi
-            ;;
-    esac
-done
-
 # --- 7. exec the canonical door, pass through args and exit code ------------
+# PRES-050: argv travels in a REAL shell array — no pipe-delimited rebuild,
+# no unquoted re-split. The door accepts ONLY the "--run-dir DIR" form, so
+# an "--run-dir=DIR" element is normalized to TWO array elements; every
+# other element passes through byte-identical (spaces, Unicode, literal
+# pipes and dollar signs preserved).
 DOOR="$DEPT_SCRIPTS/presentation-canonical-entry.sh"
 [ -f "$DOOR" ] || die "canonical door not found at $DOOR" 61
-if [ "$_have_newargs" -eq 1 ]; then
-    # Re-split the rebuilt argv (paths may contain no IFS chars in the
-    # supported usage; the door's own parsing is the same split). The run-dir
-    # normalization is the ONLY transformation this wrapper makes.
-    # shellcheck disable=SC2086
-    note "dispatching canonical door: $DOOR $(printf '%s' "$_newargs" | tr '|' ' ')"
-    # shellcheck disable=SC2086
-    exec bash "$DOOR" $(printf '%s' "$_newargs" | tr '|' ' ')
-else
-    note "dispatching canonical door: $DOOR $*"
-    exec bash "$DOOR" "$@"
-fi
+_newargv=()
+for _a in "$@"; do
+    case "$_a" in
+        --run-dir=*) _newargv+=("--run-dir" "${_a#--run-dir=}") ;;
+        *) _newargv+=("$_a") ;;
+    esac
+done
+note "dispatching canonical door: $DOOR (${#_newargv[@]} args)"
+exec bash "$DOOR" "${_newargv[@]}"

@@ -7,10 +7,11 @@ Contract (matches report.dispatch3 / notify_preflight expectations):
     working/outbox.jsonl (the file queue the host relays)
   * exit 0 on queued, non-zero on malformed input / unwritable queue
 
-Run-dir resolution, first match wins:
-  1. $PRESENTATION_RUN_DIR (bin/presentation callers pass it through the env)
-  2. $PWD/working          (invoked from inside a run dir)
-  3. $PWD                  (the run dir itself)
+Run-dir resolution (PRES-050: no cwd guessing):
+  * $PRESENTATION_RUN_DIR (bin/presentation callers pass it through the env)
+    is REQUIRED. Without it the transport refuses (exit 4) instead of
+    appending to whatever directory the caller happens to stand in — a
+    guessed write is how one client's rows land in another client's run.
 openclaw is NEVER invoked here — this transport exists precisely because the
 gateway CLI is absent on the host (FIX 69); the HOST relays the rows.
 """
@@ -20,16 +21,17 @@ import sys
 
 
 def _run_dir() -> str:
-    """Return the RUN DIR (the dir that contains working/)."""
+    """Return the RUN DIR (the dir that contains working/).
+
+    PRES-050: $PRESENTATION_RUN_DIR is required. The old cwd-guessing
+    fallback is removed: writing to $PWD because the env was unset puts
+    rows in an unrelated directory with no error, which is silent
+    cross-client misdelivery. Callers get exit 4 (refused, no write).
+    """
     env = os.environ.get("PRESENTATION_RUN_DIR", "")
     if env and os.path.isdir(env):
         return env
-    cwd = os.getcwd()
-    if os.path.basename(cwd) == "working":
-        return os.path.dirname(cwd)
-    if os.path.isdir(os.path.join(cwd, "working")):
-        return cwd
-    return cwd
+    return ""
 
 
 def main() -> int:
@@ -42,6 +44,10 @@ def main() -> int:
         print("outbox-queue: stdin JSON must be an object", file=sys.stderr)
         return 3
     rd = _run_dir()
+    if not rd:
+        print("outbox-queue: PRESENTATION_RUN_DIR is unset or not a directory; "
+              "refusing to guess from cwd (no write performed)", file=sys.stderr)
+        return 4
     working = rd if os.path.basename(rd) == "working" else os.path.join(rd, "working")
     outbox = os.path.join(working, "outbox.jsonl")
     try:
