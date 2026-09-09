@@ -27,77 +27,9 @@
         0
       ],
       "parameters": {
-        "jsCode": "const b=$input.first().json.body;\nif(!b || typeof b!=='object' || Array.isArray(b))throw new Error('Expected one legacy object');\nif(Object.keys(b).some(k=>!['brandName','clientEmail'].includes(k)))throw new Error('Use current company-bound route for non-legacy fields');\nconst modern=['company_id','companyId','schema_version','schemaVersion','planner_kind','provisioning_key','templateSheetId','cycle_id','content_revision','account_id'];\nif(modern.some(k=>Object.prototype.hasOwnProperty.call(b,k)))throw new Error('Modern request must use strict company-bound create route');\nfor(const k of ['brandName','clientEmail'])if(typeof b[k]!=='string'||!b[k].trim()||/[\\x00-\\x1f]/.test(b[k]))throw new Error('Legacy create requires '+k);\nconst brand=b.brandName.trim(),email=b.clientEmail.trim();\nconst bytes=s=>encodeURIComponent(s).replace(/%[A-F0-9]{2}/g,'x').length;\nif(bytes('skill35_legacy_brand')+bytes(brand)>124||bytes('skill35_legacy_email')+bytes(email)>124)throw new Error('Use current company-bound setup for long identity fields');\nif(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))throw new Error('Invalid clientEmail');\nconst esc=s=>s.replace(/\\\\/g,'\\\\\\\\').replace(/'/g,\"\\\\'\");\nreturn [{json:{brand,email,name:brand+' Social Media Planner',query:\"trashed = false and appProperties has { key='skill35_legacy_brand' and value='\"+esc(brand)+\"' } and appProperties has { key='skill35_legacy_email' and value='\"+esc(email)+\"' }\"}}];"
+        "jsCode": "const b=$input.first().json.body;\nif(!b || typeof b!=='object' || Array.isArray(b))throw new Error('Expected one legacy object');\nif(Object.keys(b).some(k=>!['brandName','clientEmail'].includes(k)))throw new Error('Use current company-bound route for non-legacy fields');\nconst modern=['company_id','companyId','schema_version','schemaVersion','planner_kind','provisioning_key','templateSheetId','cycle_id','content_revision','account_id'];\nif(modern.some(k=>Object.prototype.hasOwnProperty.call(b,k)))throw new Error('Modern request must use strict company-bound create route');\nfor(const k of ['brandName','clientEmail'])if(typeof b[k]!=='string'||!b[k].trim()||/[\\x00-\\x1f]/.test(b[k]))throw new Error('Legacy create requires '+k);\nconst brand=b.brandName.trim(),email=b.clientEmail.trim();\nconst bytes=s=>encodeURIComponent(s).replace(/%[A-F0-9]{2}/g,'x').length;\nif(bytes('skill35_legacy_brand')+bytes(brand)>124||bytes('skill35_legacy_email')+bytes(email)>124)throw new Error('Use current company-bound setup for long identity fields');\nif(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))throw new Error('Invalid clientEmail');\nreturn [{json:{brand,email,name:brand+' Social Media Planner'}}];"
       },
       "onError": "continueErrorOutput"
-    },
-    {
-      "name": "Read Legacy Copies",
-      "id": "read-legacy-copies",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        360,
-        0
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent($json.query) + '&fields=files(id,name,mimeType,trashed,appProperties),nextPageToken&pageSize=100' }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleDriveOAuth2Api",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "onError": "continueErrorOutput"
-    },
-    {
-      "name": "Resolve Legacy Copy",
-      "id": "resolve-legacy-copy",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        540,
-        0
-      ],
-      "parameters": {
-        "jsCode": "const r=$input.first().json,c=$('Validate Legacy Create').first().json;\nif(!Array.isArray(r.files)||r.nextPageToken||r.files.length>1)throw new Error('Ambiguous legacy document; reconcile existing copies');\nconst f=r.files[0];if(f&&(f.mimeType!=='application/vnd.google-apps.spreadsheet'||f.trashed||f.appProperties?.skill35_legacy_brand!==c.brand||f.appProperties?.skill35_legacy_email!==c.email))throw new Error('Legacy document identity mismatch');\nif(f&&!['initializing','formatted','ready'].includes(f.appProperties?.skill35_legacy_state))throw new Error('Existing legacy document needs preserving migration; refusing initialization');\nreturn [{json:{...c,existing:!!f,id:f?.id||null,state:f?.appProperties?.skill35_legacy_state||'initializing'}}];"
-      },
-      "onError": "continueErrorOutput"
-    },
-    {
-      "name": "Legacy Copy Exists",
-      "id": "legacy-copy-exists",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        720,
-        0
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "exists",
-              "leftValue": "={{ $json.existing }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      }
     },
     {
       "name": "Copy Legacy Template",
@@ -374,7 +306,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const c=$('Resolve Legacy Sheet').first().json,r=$input.first().json;\nif(!$('Check Legacy Sharing').first().json.shared && !(r.id&&r.type==='anyone'&&r.role==='writer'&&!r.deleted&&!r.expirationTime))throw new Error('Sharing was not confirmed');\nreturn [{json:{status:'success',sheetId:c.id,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.id+'/edit',sheetName:c.name,sharedWith:'anyone with the link can edit',clientEmail:c.email,deduped:$('Resolve Legacy Copy').first().json.existing,mode:'legacy_document_only',company_registration_verified:false,publication_verified:false}}];"
+        "jsCode": "const c=$('Resolve Legacy Sheet').first().json,r=$input.first().json;\nif(!$('Check Legacy Sharing').first().json.shared && !(r.id&&r.type==='anyone'&&r.role==='writer'&&!r.deleted&&!r.expirationTime))throw new Error('Sharing was not confirmed');\nreturn [{json:{status:'success',sheetId:c.id,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.id+'/edit',sheetName:c.name,sharedWith:'anyone with the link can edit',clientEmail:c.email,deduped:false,retry_policy:'reconcile_execution_before_retry; legacy create always creates a new document',mode:'legacy_document_only',company_registration_verified:false,publication_verified:false}}];"
       },
       "onError": "continueErrorOutput"
     },
@@ -466,43 +398,7 @@
       "main": [
         [
           {
-            "node": "Read Legacy Copies",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Legacy Create Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Legacy Copies": {
-      "main": [
-        [
-          {
-            "node": "Resolve Legacy Copy",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Legacy Create Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Resolve Legacy Copy": {
-      "main": [
-        [
-          {
-            "node": "Legacy Copy Exists",
+            "node": "Copy Legacy Template",
             "type": "main",
             "index": 0
           }
@@ -744,24 +640,6 @@
         [
           {
             "node": "Legacy Create Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Legacy Copy Exists": {
-      "main": [
-        [
-          {
-            "node": "Resolve Legacy Sheet",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Copy Legacy Template",
             "type": "main",
             "index": 0
           }

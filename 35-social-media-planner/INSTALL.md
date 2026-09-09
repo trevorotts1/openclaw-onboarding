@@ -639,6 +639,6 @@ public-edit document lane, while modern identity-bearing requests use the strict
 versioned graph. Never point an upgraded client at the strict append graph before
 its verified Sheets ownership metadata and headers are ready. The create initializer is for new/private initializing
 copies only; it is not a migration tool for client content. A `formatted`
-checkpoint resumes sharing without erasing cells. Treat an `error`/partial
+checkpoint resumes modern sharing without erasing cells. Legacy creation always creates a fresh copy; it never searches existing documents by name/email. Reconcile execution history after an ambiguous legacy copy/append result before retrying. Treat an `error`/partial
 receipt as a visible repair requirement, never as permission to activate weekly
 work or mark a post published. Always preserve intentional anyone-link edit.

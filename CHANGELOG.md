@@ -3,9 +3,9 @@
 - Restore canonical n8n URLs through a contract router: exact legacy document requests remain compatible; modern requests stay company-bound with no legacy downgrade after failure.
 - Compile all five workflows with explicit Google credential references and a trusted webhook base; never activate credential-free source exports directly.
 - Verify intentional public-edit permission and the exact legacy header row before a fixed RAW Overview write. Reports identify document writes without claiming company ownership or social publication.
-- Preserve legacy titles and history; new legacy copies clear template sample values before public sharing and resume without clearing formatted/ready documents.
+- Preserve legacy titles and history; new legacy copies clear template sample values before public sharing. Legacy creation always makes a fresh copy and never discovers existing document links from a name/email.
 - Document live cutover, rollback, and required sandbox receipts. The doctor is preflight evidence, not proof of live Google/GHL execution. Skill version is v3.6.3; paired CC remains v7.3.1.
-- Live n8n acceptance: both create and append contracts passed through the canonical URLs; serial replay preserved data, modern wrong-company requests were rejected, and mixed payloads never downgraded. Concurrent first-create deduplication still requires caller serialization.
+- Live n8n acceptance: both create and append contracts passed through the canonical URLs; modern serial replay preserved data, modern wrong-company requests were rejected, and mixed payloads never downgraded. Legacy copy/append responses with an ambiguous outcome require execution-log reconciliation before any retry; modern concurrent first-create deduplication still requires caller serialization.
 
 
 ## [v25.0.31]  -  2026-09-09  -  Repair social planner provisioning, append retries, and completion evidence
