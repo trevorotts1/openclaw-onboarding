@@ -1,3 +1,5 @@
+## [v25.0.28]  -  2026-09-09  -  RR-006 RR-004 RR-021 core receiver batch (retire legacy writer, additive lease echo, durable done-ledger identity)
+
 ## [v25.0.27]  -  2026-09-09  -  Social media planner W3 reconciliation: release fold marker (corrective fold for tag/commit peel mismatch)
 
 Release bookkeeping only. No product changes ship in this fold — no code, no
