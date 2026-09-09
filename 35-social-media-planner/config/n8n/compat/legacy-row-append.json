@@ -1,0 +1,469 @@
+{
+  "name": "Social Planner Legacy Public Document Append",
+  "nodes": [
+    {
+      "id": "legacy-legacy-row-webhook",
+      "name": "Legacy Row Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-planner-compat-20260909/legacy-row-append",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "legacy-validate-legacy-input",
+      "name": "Validate Legacy Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body=$input.first().json.body;\nif(!body || typeof body!=='object' || Array.isArray(body))throw new Error('legacy_invalid_body');\nconst modern=[\"company_id\", \"companyId\", \"schema_version\", \"schemaVersion\", \"cycle_id\", \"cycleId\", \"content_revision\", \"contentRevision\", \"account_id\", \"accountId\", \"account_name\", \"accountName\", \"planner_kind\", \"plannerKind\", \"format\", \"scheduled_local\", \"scheduled_utc\", \"qc_state\", \"preview_url\", \"remote_url\", \"asset\", \"row_key\", \"rowKey\"];\nif(Object.keys(body).some(k=>k!=='sheetId'&&k!=='row'))throw new Error('legacy_identity_or_unknown_fields_rejected');\nif(typeof body.sheetId!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(body.sheetId))throw new Error('legacy_invalid_sheet_id');\nconst row=body.row;\nif(!row || typeof row!=='object'||Array.isArray(row))throw new Error('legacy_invalid_row');\nif(modern.some(k=>Object.prototype.hasOwnProperty.call(row,k)))throw new Error('legacy_identity_fields_rejected');\nconst aliases=[[\"Week Of\", \"weekOf\"], [\"Theme of the Week\", \"theme\"], [\"Research\", \"research\"], [\"Core Content\", \"coreContent\", \"title\"], [\"Images\", \"images\"], [\"Videos\", \"videos\"], [\"Facebook\", \"facebook\"], [\"Instagram\", \"instagram\"], [\"LinkedIn\", \"linkedin\"], [\"YouTube\", \"youtube\"], [\"TikTok\", \"tiktok\"], [\"Pinterest\", \"pinterest\"], [\"Carousels\", \"carousels\"], [\"Blog\", \"blog\"], [\"Podcast\", \"podcast\"], [\"Email\", \"email\"], [\"QC\", \"qc\"], [\"Scheduled\", \"scheduled\", \"date\"], [\"Overall\", \"overall\", \"status\"], [\"Notes\", \"notes\"]];\nconst allowed=new Set(aliases.flat().concat(['platform']));\nif(Object.keys(row).some(k=>!allowed.has(k)))throw new Error('legacy_unknown_row_fields_rejected');\nfor(const value of Object.values(row)){\n if(value!==null && !['string','number','boolean'].includes(typeof value))throw new Error('legacy_non_scalar_cell');\n if(typeof value==='number'&&!Number.isFinite(value))throw new Error('legacy_non_finite_cell');\n if(typeof value==='string'&&value.length>50000)throw new Error('legacy_cell_too_large');\n}\nif(JSON.stringify(row).length>250000)throw new Error('legacy_row_too_large');\nconst values=aliases.map(keys=>{for(const key of keys)if(row[key]!==undefined&&row[key]!==null&&row[key]!=='')return row[key];return '';});\nif(!values.some(v=>v!==''))throw new Error('legacy_empty_row');\nconst warnings=Object.prototype.hasOwnProperty.call(row,'platform')?['Generic platform was not mapped into TikTok or another platform column; use an explicit platform column.']:[];\nreturn [{json:{sheetId:body.sheetId,values,warnings}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-read-public-document",
+      "name": "Read Public Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Validate Legacy Input').first().json.sheetId }}?fields=id,mimeType,trashed&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "legacy-validate-public-document",
+      "name": "Validate Public Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const src=$('Validate Legacy Input').first().json;\nconst file=$input.first().json;\nif(file.id!==src.sheetId || file.mimeType!=='application/vnd.google-apps.spreadsheet' || file.trashed!==false)throw new Error('legacy_document_not_verified');\nreturn [{json:{verified:true}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-read-public-edit-permission",
+      "name": "Read Public Edit Permission",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Validate Legacy Input').first().json.sheetId }}/permissions?fields=nextPageToken,permissions(id,type,role,deleted,expirationTime)&pageSize=100&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "legacy-validate-public-edit-capability",
+      "name": "Validate Public Edit Capability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const data=$input.first().json;\nif(!Array.isArray(data.permissions)||data.nextPageToken)throw new Error('legacy_permission_readback_incomplete');\nconst now=Date.now();\nconst allowed=data.permissions.some(p=>{\n if(p.type!=='anyone'||p.role!=='writer'||p.deleted===true)return false;\n if(p.expirationTime!==undefined&&p.expirationTime!==null){\n  const expiry=typeof p.expirationTime==='string'?Date.parse(p.expirationTime):NaN;\n  if(!Number.isFinite(expiry)||expiry<=now)return false;\n }\n return true;\n});\nif(!allowed)throw new Error('legacy_public_edit_capability_missing');\nreturn [{json:{verified:true}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-read-legacy-sheet-metadata",
+      "name": "Read Legacy Sheet Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Validate Legacy Input').first().json.sheetId }}?fields=spreadsheetId,sheets.properties(title,sheetId)",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "legacy-validate-legacy-sheet",
+      "name": "Validate Legacy Sheet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const src=$('Validate Legacy Input').first().json;\nconst metadata=$input.first().json;\nif(metadata.spreadsheetId!==src.sheetId||!Array.isArray(metadata.sheets))throw new Error('legacy_sheet_metadata_mismatch');\nconst tabs=metadata.sheets.filter(s=>s.properties?.title==='Weekly Overview');\nif(tabs.length!==1||!Number.isInteger(tabs[0].properties.sheetId)||tabs[0].properties.sheetId<0)throw new Error('legacy_weekly_overview_missing');\nreturn [{json:{verified:true}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-read-legacy-headers",
+      "name": "Read Legacy Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Validate Legacy Input').first().json.sheetId }}/values/Weekly%20Overview!A1:T10",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "legacy-validate-legacy-headers",
+      "name": "Validate Legacy Headers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const data=$input.first().json;\nconst expected=[\"Week Of\", \"Theme of the Week\", \"Research\", \"Core Content\", \"Images\", \"Videos\", \"Facebook\", \"Instagram\", \"LinkedIn\", \"YouTube\", \"TikTok\", \"Pinterest\", \"Carousels\", \"Blog\", \"Podcast\", \"Email\", \"QC\", \"Scheduled\", \"Overall\", \"Notes\"];\nif(!Array.isArray(data.values)||data.values.length>10)throw new Error('legacy_headers_require_preserving_repair');\nconst matches=data.values.flatMap((row,index)=>JSON.stringify(row)===JSON.stringify(expected)?[index+1]:[]);\nif(matches.length!==1)throw new Error('legacy_headers_require_preserving_repair');\nreturn [{json:{...$('Validate Legacy Input').first().json,headerRow:matches[0]}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-append-legacy-overview-raw",
+      "name": "Append Legacy Overview RAW",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Validate Legacy Input').first().json.sheetId }}/values/Weekly%20Overview!A{{ $('Validate Legacy Headers').first().json.headerRow }}:T:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({values: $('Validate Legacy Input').first().json.values ? [$('Validate Legacy Input').first().json.values] : []}) }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-build-legacy-write-receipt",
+      "name": "Build Legacy Write Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const src=$('Validate Legacy Headers').first().json;\nconst response=$input.first().json;\nconst range=response.updates?.updatedRange;\nconst match=typeof range==='string'?range.match(/^'?Weekly Overview'?!A(\\d+):T(\\d+)$/):null;\nif(response.spreadsheetId!==src.sheetId || !match || Number(match[1])<=src.headerRow || match[1]!==match[2] || response.updates.updatedRows!==1)throw new Error('legacy_append_receipt_unverified_reconcile_before_retry');\nreturn [{json:{success:true,sheetId:src.sheetId,updatedRange:range,legacy_overview_only:true,publication_verified:false,company_ownership_claimed:false,warnings:src.warnings}}];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "legacy-respond-legacy-success",
+      "name": "Respond Legacy Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2400,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "legacy-respond-legacy-failure",
+      "name": "Respond Legacy Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success:false,legacy_overview_only:true,publication_verified:false,company_ownership_claimed:false,repair_required:true,repair_state:/^legacy_[a-z_]+$/.test($json.error?.message || $json.message || '') ? ($json.error?.message || $json.message) : 'legacy_upstream_failure',message:'Verify this exact document public-edit permission and legacy headers. After an ambiguous append failure, reconcile the sheet before retrying to avoid duplicate rows.'}) }}",
+        "options": {
+          "responseCode": "={{ /^legacy_[a-z_]+$/.test($json.error?.message || $json.message || '') ? 422 : 502 }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Legacy Row Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Legacy Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Legacy Input": {
+      "main": [
+        [
+          {
+            "node": "Read Public Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Public Document": {
+      "main": [
+        [
+          {
+            "node": "Validate Public Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Public Document": {
+      "main": [
+        [
+          {
+            "node": "Read Public Edit Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Public Edit Permission": {
+      "main": [
+        [
+          {
+            "node": "Validate Public Edit Capability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Public Edit Capability": {
+      "main": [
+        [
+          {
+            "node": "Read Legacy Sheet Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Legacy Sheet Metadata": {
+      "main": [
+        [
+          {
+            "node": "Validate Legacy Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Legacy Sheet": {
+      "main": [
+        [
+          {
+            "node": "Read Legacy Headers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Legacy Headers": {
+      "main": [
+        [
+          {
+            "node": "Validate Legacy Headers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Legacy Headers": {
+      "main": [
+        [
+          {
+            "node": "Append Legacy Overview RAW",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Legacy Overview RAW": {
+      "main": [
+        [
+          {
+            "node": "Build Legacy Write Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Legacy Write Receipt": {
+      "main": [
+        [
+          {
+            "node": "Respond Legacy Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Legacy Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
