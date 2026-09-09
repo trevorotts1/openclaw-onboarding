@@ -9560,28 +9560,31 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     return 1
   }
 
-  # Emits one row per canon dep:  name|kind|spec|pip_packages_csv
+  # Emits one row per canon dep:  name|kind|spec|pip_packages_csv|required|features_csv
   _pres_deps_rows() {
     python3 - "$1" <<'PYEOF'
 import json, sys
 try:
     canon = json.load(open(sys.argv[1]))
 except Exception as exc:
-    print("__CANON_UNPARSABLE__|__canon__|%s: %s|" % (sys.argv[1], exc))
+    print("__CANON_UNPARSABLE__|__canon__|%s: %s|||" % (sys.argv[1], exc))
     sys.exit(0)
 for dep in canon.get("deps", []) or []:
     name = dep.get("name", "")
     kind = dep.get("kind", "")
+    req = "1" if dep.get("required", True) else "0"
+    feats = ",".join(dep.get("features") or [])
     if kind == "binary":
-        print("%s|binary|%s|" % (name, dep.get("binary_name", "") or name))
+        print("%s|binary|%s||%s|%s" % (name, dep.get("binary_name", "") or name, req, feats))
     elif kind == "python_import":
-        print("%s|python_import|%s|%s" % (
+        print("%s|python_import|%s|%s|%s|%s" % (
             name,
             dep.get("import_spec", ""),
             ",".join(dep.get("pip_packages") or []),
+            req, feats,
         ))
     else:
-        print("%s|%s||" % (name, kind))
+        print("%s|%s|||%s|%s" % (name, kind, req, feats))
 PYEOF
   }
 
@@ -9594,6 +9597,17 @@ PYEOF
       *" $1 "*) return 0 ;;
     esac
     _pres_missing="${_pres_missing:-} $1"
+  }
+
+  # Append a token to the caller's _pres_video_missing exactly once. Same dynamic
+  # scoping contract as _pres_missing_add: these are the OPTIONAL video-only canon
+  # deps (ffmpeg/ffprobe) that are missing. They must never hide a required gap,
+  # and they must not block a deck-only run -- only the video branch.
+  _pres_video_missing_add() {
+    case " ${_pres_video_missing:-} " in
+      *" $1 "*) return 0 ;;
+    esac
+    _pres_video_missing="${_pres_video_missing:-} $1"
   }
 
   # Install every canon python_import row that is not yet importable in the
@@ -9612,7 +9626,7 @@ PYEOF
       echo "    ⚠ presentation-deps canon not found (checked the skill checkout, its role-library copy, and the materialized department) — canon converge skipped; the hardcoded core deps above still applied"
       return 0
     fi
-    while IFS='|' read -r _n _k _s _pkgs; do
+    while IFS='|' read -r _n _k _s _pkgs _req _feats; do
       [ -z "$_n" ] && continue
       [ "$_k" = "python_import" ] || continue
       [ -z "$_s" ] && continue
@@ -9631,23 +9645,122 @@ PYEOF
     done < <(_pres_deps_rows "$_canon")
   }
 
+  # PRES-033: persist the presentation readiness receipt. Called at the end of
+  # converge_presentation_deps (dynamic scoping reads _pres_missing /
+  # _pres_video_missing / _PRES_OC_ROOT / _PRES_VENV_PY). Fields: selected root,
+  # exact interpreter, dependency versions, missing required + optional video
+  # capabilities, remediation owner (the Capacity & Reliability Engineer —
+  # capacity-reliability-engineer.md §11 verifies all deps at Phase-0.5), and a
+  # timestamp. Written to <root>/logs/presentation-readiness.json so CC / the
+  # readiness probe can surface DEGRADED readiness instead of trusting
+  # content-copy success. Never fatal: a receipt write failure logs and returns 0.
+  _pres_receipt_write() {
+    local _now _rec _out
+    _now="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+    _rec_dir="$_PRES_OC_ROOT/logs"
+    mkdir -p "$_rec_dir" 2>/dev/null || true
+    REC_DIR="$_rec_dir" REC_NOW="$_now" REC_ROOT="$_PRES_OC_ROOT" \
+    REC_PY="${_PRES_VENV_PY:-}" REC_MISSING="${_pres_missing:-}" \
+    REC_VIDEO="${_pres_video_missing:-}" REC_CANON="${_pres_deps_canon:-}" \
+    python3 - <<'PY' 2>/dev/null || return 0
+import json, os, subprocess, sys
+from pathlib import Path
+
+def try_run(cmd):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        return (out.stdout or out.stderr).strip().splitlines()[0] if (out.stdout or out.stderr).strip() else None
+    except Exception:
+        return None
+
+root = os.environ.get("REC_ROOT", "")
+py = os.environ.get("REC_PY", "")
+interp = py if py and os.path.exists(py) else (try_run(["command", "-v", "python3"]) or "python3")
+versions = {}
+# Python package versions from the pipeline interpreter (if it exists).
+if interp and os.path.exists(interp):
+    vscript = (
+        "import importlib.metadata as md;"
+        "import json,sys;"
+        "out={};"
+        "for p in ('reportlab','python-pptx','pypdf','pytesseract','Pillow'):"
+        "  try: out[p]=md.version(p)"
+        "  except Exception: out[p]=None;"
+        "print(json.dumps(out))"
+    )
+    try:
+        r = subprocess.run([interp, "-c", vscript], capture_output=True, text=True, timeout=30)
+        versions = json.loads(r.stdout or "{}") if r.stdout.strip() else {}
+    except Exception:
+        versions = {}
+pyver = None
+if interp and os.path.exists(interp):
+    try:
+        r = subprocess.run([interp, "--version"], capture_output=True, text=True, timeout=10)
+        pyver = (r.stdout or r.stderr).strip().splitlines()[0] if (r.stdout or r.stderr).strip() else None
+    except Exception:
+        pyver = None
+bin_versions = {}
+for tool in ("soffice", "pdftoppm", "ffmpeg", "ffprobe", "tesseract"):
+    bin_versions[tool] = try_run([tool, "--version"]) or try_run([tool, "-version"]) or None
+rec = {
+    "schema": "presentation-readiness/1",
+    "status": "READY" if not os.environ.get("REC_MISSING") else "DEGRADED",
+    "ready": not bool(os.environ.get("REC_MISSING")),
+    "ts": os.environ.get("REC_NOW", ""),
+    "root": root,
+    "interpreter": interp,
+    "python_version": pyver,
+    "versions": versions,
+    "binary_versions": bin_versions,
+    "canon": os.environ.get("REC_CANON", ""),
+    "missing_required": [s.strip() for s in os.environ.get("REC_MISSING", "").split() if s.strip()],
+    "missing_optional_video": [s.strip() for s in os.environ.get("REC_VIDEO", "").split() if s.strip()],
+    "remediation_owner": "capacity-reliability-engineer",
+    "note": "readiness receipt written by update-skills.sh converge_presentation_deps (PRES-033). DEGRADED = a required presentation dep is missing; GATE 1 refuses builds until resolved. Optional video deps missing disables only the P9.6-WEBINAR-VIDEO branch.",
+}
+out = Path(os.environ["REC_DIR"]) / "presentation-readiness.json"
+tmp = out.with_suffix(".tmp")
+with open(tmp, "w") as fh:
+    json.dump(rec, fh, indent=2)
+os.replace(tmp, out)
+print(f"  [pres-readiness] {out} status={rec['status']}")
+PY
+    echo "  [pres-readiness] receipt written (root=$_PRES_OC_ROOT, missing='${_pres_missing:-}', optional_video='${_pres_video_missing:-}')"
+    return 0
+  }
+
   # Verify EVERY canon row (binary + python_import) on top of the hardcoded core
   # checks above, so this verdict matches qc-completeness.sh's exit-6 deps gate.
+  # PRES-033: each canon row carries required=1|0. A required row missing lands in
+  # _pres_missing (blocks readiness, nonzero). An OPTIONAL row (video-only
+  # ffmpeg/ffprobe) missing lands in _pres_video_missing ONLY -- it can never be
+  # hidden inside _pres_missing, and it can never fake a required failure either.
+  # A canon row that omits the classification defaults to required (fail closed).
   pres_deps_verify_rows() {
-    local _canon _n _k _s _pkgs _py
+    local _n _k _s _pkgs _req _feats _py
+    local _canon=""
     if ! _canon="$(_pres_deps_canon_path)"; then
       _pres_missing_add "__CANON_MISSING__(presentation-deps.json)"
       return 0
     fi
+    _pres_deps_canon="$_canon"
     command -v python3 >/dev/null 2>&1 || return 0
     _py="$_PRES_VENV_PY"
     [ -x "$_py" ] || _py="python3"
-    while IFS='|' read -r _n _k _s _pkgs; do
+    while IFS='|' read -r _n _k _s _pkgs _req _feats; do
       [ -z "$_n" ] && continue
       case "$_k" in
         __canon__)     _pres_missing_add "__CANON_UNPARSABLE__" ;;
-        binary)        command -v "$_s" >/dev/null 2>&1 || _pres_missing_add "$_s" ;;
-        python_import) [ -n "$_s" ] && { "$_py" -c "import ${_s}" >/dev/null 2>&1 || _pres_missing_add "python(${_s})"; } ;;
+        binary)
+          if command -v "$_s" >/dev/null 2>&1; then :; else
+            if [ "$_req" = "0" ]; then _pres_video_missing_add "$_s"; else _pres_missing_add "$_s"; fi
+          fi ;;
+        python_import)
+          [ -z "$_s" ] && continue
+          if "$_py" -c "import ${_s}" >/dev/null 2>&1; then :; else
+            if [ "$_req" = "0" ]; then _pres_video_missing_add "python(${_s})"; else _pres_missing_add "python(${_s})"; fi
+          fi ;;
         *)             _pres_missing_add "${_n}(unknown-kind:${_k})" ;;
       esac
     done < <(_pres_deps_rows "$_canon")
@@ -9657,8 +9770,24 @@ PYEOF
     echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx, pypdf, pytesseract, ffmpeg, ffprobe, tesseract — per presentation-deps.json)..."
     local _PRES_VENV="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations"
     local _PRES_VENV_PY="$_PRES_VENV/bin/python"
+    # PRES-033: resolve the OpenClaw root via the canonical shared resolver
+    # (shared-utils/resolve-oc-root.sh — /data/.openclaw on VPS else
+    # $HOME/.openclaw on Mac). The VPS reassert script path is derived from
+    # THAT root, never hardcoded, so a container with a custom/mounted root is
+    # not re-asserted against a /data path that belongs to a different box.
+    _PRES_OC_ROOT=""
+    # NOTE the [ -n ] guard: an assignment of an EMPTY string still exits 0, so
+    # a resolver that ran but found no root must NOT count as a resolution.
+    if declare -F resolve_oc_root >/dev/null 2>&1 \
+       && _PRES_OC_ROOT="$(resolve_oc_root 2>/dev/null || true)" \
+       && [ -n "$_PRES_OC_ROOT" ]; then
+      :
+    else
+      _PRES_OC_ROOT="${OC_CONFIG:-$HOME/.openclaw}"
+      [ -d "/data/.openclaw" ] && _PRES_OC_ROOT="/data/.openclaw"
+    fi
     if [ "${OPENCLAW_PLATFORM:-}" = "vps" ]; then
-      local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+      local _reassert="$_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
       if [ -x "$_reassert" ]; then
         echo "    VPS: running the idempotent reassert script ($_reassert)..."
         bash "$_reassert" >/dev/null 2>&1 || echo "    ⚠ reassert script reported an issue (non-fatal)"
@@ -9744,11 +9873,22 @@ PYEOF
         echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_VENV_PY (exported for this update; qc-completeness consumes it)"
       fi
     fi
-    # Hard end-of-converge WARNING when any canon dep is STILL missing (FIX 70:
+    # Hard end-of-converge verdict when any canon dep is STILL missing (FIX 70:
     # the verify pass now checks every presentation-deps.json row on top of the
     # pre-existing hardcoded core checks, so this verdict matches the
     # qc-completeness.sh exit-6 gate).
+    # PRES-033: (a) optional video deps (ffmpeg/ffprobe) are classified separately
+    # so a missing optional dep NEVER hides a required gap and never claims a
+    # required failure; (b) a nonempty required missing list makes this function
+    # RETURN NONZERO (readiness = false) instead of printing a warning and
+    # returning 0 -- the exact defect this unit fixes; (c) the readiness receipt
+    # (root, interpreter, versions, missing, remediation owner, timestamp) is
+    # persisted so CC can surface degraded readiness, never claim ready from
+    # content-copy success alone.
     local _pres_missing=""
+    local _pres_video_missing=""
+    local _pres_versions=""
+    local _pres_python_ver=""
     command -v soffice  >/dev/null 2>&1 || _pres_missing="${_pres_missing} soffice"
     command -v pdftoppm >/dev/null 2>&1 || _pres_missing="${_pres_missing} pdftoppm"
     if [ -x "$_PRES_VENV_PY" ]; then
@@ -9760,13 +9900,53 @@ PYEOF
     command -v ffprobe >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffprobe"
     command -v tesseract >/dev/null 2>&1 || _pres_missing="${_pres_missing} tesseract"
     pres_deps_verify_rows
+    # PRES-033: the canonical classification RE-CLASSIFIES the hardcoded checks
+    # above: ffmpeg/ffprobe are optional video deps per presentation-deps.json,
+    # so a bare missing ffmpeg/ffprobe moves from the required set to the
+    # optional video set. A required dep that ALSO gates video (none today) stays
+    # required. Never double-count: remove the token from _pres_missing if it was
+    # classified optional, then append to the optional set.
+    for _opt in ffmpeg ffprobe; do
+      if command -v "$_opt" >/dev/null 2>&1; then :; else
+        _pres_missing="$(printf '%s' "$_pres_missing" | sed "s/ ${_opt}//")"
+        _pres_video_missing_add "$_opt"
+      fi
+    done
     if [ -n "$_pres_missing" ]; then
-      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
+      echo "  [pres-readiness] aggregated updater result PRESERVED: unrelated department updates already performed are NOT rolled back; the final exit code latches this readiness verdict."
     else
       echo "  ✓ presentation deps converged: soffice + pdftoppm + venv(reportlab + python-pptx + pypdf + pytesseract) + ffmpeg/ffprobe + tesseract all present (canon-checked)"
     fi
+    if [ -n "$_pres_video_missing" ]; then
+      echo "  ℹ PRESENTATION_VIDEO_DEPS_MISSING (optional branch):${_pres_video_missing}. Deck, presenter guide, workbook and QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled until these resolve. Mac: brew install ffmpeg. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
+    fi
+    # PRES-033 readiness receipt: persists the exact root/interpreter/versions/
+    # missing/remediation-owner/timestamp so a later CC readiness probe can
+    # surface DEGRADED readiness instead of trusting content-copy success.
+    _pres_receipt_write
+    # PRES-033 (the defect): return DOCUMENTED NONZERO readiness when required
+    # deps are missing. 2 = "content current, presentation readiness degraded"
+    # (same family as the updater's GHL-MCP/CC-runtime infra exits, which also
+    # write the stamp and return 2). The caller preserves the aggregated result:
+    # unrelated department updates already completed are NOT rolled back, and a
+    # later aggregated latch decides the final exit code (see below).
+    if [ -n "$_pres_missing" ]; then
+      return 2
+    fi
+    return 0
   }
-  converge_presentation_deps
+  # PRES-033: the converge verdict is CAPTURED, not aborted on. A missing required
+  # dep returns 2 from converge_presentation_deps; the run continues through the
+  # remaining post-stamp steps (qc-completeness gate, Telegram note, resume-cron,
+  # registry-parity) so unrelated department updates already performed are
+  # preserved -- then the aggregated latch below folds the presentation readiness
+  # into the FINAL exit code, exactly like the GHL-MCP/CC-runtime infra latches.
+  _PRES_DEPS_CONVERGE_RC=0
+  converge_presentation_deps || _PRES_DEPS_CONVERGE_RC=$?
+  if [ "$_PRES_DEPS_CONVERGE_RC" -ne 0 ]; then
+    echo "  ⚠ Presentation readiness DEGRADED (converge_presentation_deps exit $_PRES_DEPS_CONVERGE_RC) -- see the PRESENTATION_DEPS_MISSING block above. Unrelated department updates already completed are NOT rolled back; the final exit code carries this latch."
+  fi
   # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
   # are a path, never a secret) so the door + engine resolve the venv python on the
   # next run without depending on this process env. Append-only + idempotent.
@@ -10100,6 +10280,12 @@ BACKUP_BLOCK
   fi
 
   if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ] || [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
+    return 2
+  fi
+  # PRES-033: presentation readiness latch. Same exit-2 family: content is
+  # current, the presentation department's readiness is degraded, and fleet
+  # drivers must not report this roll as fully successful.
+  if [ "${_PRES_DEPS_CONVERGE_RC:-0}" -ne 0 ]; then
     return 2
   fi
   return 0
