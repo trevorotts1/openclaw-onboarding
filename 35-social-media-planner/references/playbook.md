@@ -385,6 +385,40 @@ After all content is scheduled and logged to Google Sheets:
 54. Memory-core captures these notes automatically. Dreaming may promote high-value insights (e.g., "Hormozi-style content produced 2x engagement on sales-focused themes") into MEMORY.md overnight.
 55. Memory Wiki can compile weekly performance into a structured "Social Media Performance" wiki page over time.
 
+**Step 12b: Record Measured Outcomes (F40 — never fabricate performance)**
+
+A completion certificate or delivery receipt proves a post was CREATED and
+PUBLISHED; it is NOT evidence that the content performed. The measured-outcome
+loop (shared-utils/social_measured_outcomes.py, mirrored in the Command
+Center) keeps creation, publication and ACTUAL audience response separate:
+
+56. Collect provider-supported metrics per post with the account id, the
+    post id, the measurement window and fetched_at, through the GHL analytics
+    adapter (57-social-media-in-a-box/scripts/ghl_contracts.py
+    `extract_post_metrics` over the posts/list readback) or manual input.
+    Store them with `social_measured_outcomes.record_metric` under the
+    client's own company directory ($SOCIAL_OUTCOMES_DIR/<company_id>/).
+57. A metric the provider did not report is UNKNOWN — never zero, never
+    interpolated. State the gap in the memory note: "reach: UNKNOWN for 2 of
+    3 posts (not reported)"; never write "0 engagement".
+58. Save baseline and trial variants BEFORE comparing:
+    `register_variant(company, variable, label, role='baseline')` for the
+    current standard, and one trial per cycle with EXACTLY ONE major variable
+    changed (format | hook | timing | creative) named in `compared_to`.
+    Never change two variables between cycles.
+59. Review performance at the agreed cadence (weekly default) with
+    `review_company(company_id)`. The review's recommendation cites the
+    actual posts and windows read. Low samples (fewer than 5 known
+    observations) stay TENTATIVE and receive no proposals — a tentative
+    conclusion never triggers uncontrolled content or spending increases.
+60. Keep client-specific memory client-specific: never reuse another
+    company's private creative, hooks, personas or results. Every read and
+    write is scoped to one company directory.
+61. Performance proposals may change formats, hooks, timing and creative —
+    NEVER the saved provider/model selection or publishing policy/consent
+    (those are the client's explicit choices, F31/F37; the policy guard
+    rejects such proposals outright).
+
 **Dependency Note:** This skill depends on Skill 31 (Upgraded Memory System) for memory-core, Dreaming, and Memory Wiki functionality. If Skill 31 is not installed, Steps 51-55 are skipped and the AI logs to MEMORY.md directly instead.
 
 **Dependency Note:** This skill depends on Skill 30 (Fish Audio API Reference) for podcast production via Fish Audio S2. If Skill 30 is not installed, podcast production (Step 7) is skipped and the AI notifies the client: "Podcast production requires Fish Audio S2 (Skill 30). Install Skill 30 to enable weekly podcast episodes."
@@ -2339,32 +2373,7 @@ Image cell sizing by ratio:
 - 1:1 images: Column width 14 (~101px display), Row height 100pt (~133px). Full image visible, proportionally smaller.
 
 **Row/Column Sizing (CRITICAL):**
-When the AI writes image URLs using =IMAGE() formulas, it MUST also resize the rows and columns to display the images properly. Raw URLs in cells that are too small display as truncated text. The AI MUST call the Google Sheets API batchUpdate method to set:
-- Image columns: pixelSize 108 (for 4:5, 2:3, 1:1) or 79 (for 9:16)
-- Data rows containing images: pixelSize 133 (for 4:5, 2:3, 1:1) or 153 (for 9:16)
-
-Example batchUpdate request for a Day tab (column D, rows 2-21):
-```json
-{
-  "requests": [
-    {
-      "updateDimensionProperties": {
-        "range": {"sheetId": 123, "dimension": "COLUMNS", "startIndex": 3, "endIndex": 4},
-        "properties": {"pixelSize": 108},
-        "fields": "pixelSize"
-      }
-    },
-    {
-      "updateDimensionProperties": {
-        "range": {"sheetId": 123, "dimension": "ROWS", "startIndex": 1, "endIndex": 21},
-        "properties": {"pixelSize": 133},
-        "fields": "pixelSize"
-      }
-    }
-  ]
-}
-```
-The n8n webhook (`social-planner-row-append`) should apply this sizing automatically when it detects an =IMAGE() formula in the payload. If the webhook does not handle sizing, the AI MUST call the Sheets API directly after appending the row.
+When the AI writes image URLs using =IMAGE() formulas, it MUST also resize the rows and columns to display the images properly. Raw URLs in cells that are too small display as truncated text. The `social-planner-row-append` webhook applies the sizing ITSELF in its batchUpdate — SPEC build-contract widths: Posts platform/account columns 170px, date column 110px, preview column 220px, state 140px, QC 130px; appended data rows 133px tall; Images preview column P 220px. The AI does NOT re-apply 108px/79px legacy sizing — those values are superseded. Only when a write receipt reports the resize failed (best-effort by contract) does the AI call the Google Sheets API `spreadsheet.batchUpdate` directly with those SPEC widths.
 
 **Video Links:**
 Google Sheets cannot embed playable video. The AI inserts a clickable hyperlink:
@@ -2378,7 +2387,7 @@ Google Sheets cannot embed playable video. The AI inserts a clickable hyperlink:
 3. Write "Week of [start date] - [end date], [year]" in Column A.
 4. For each platform sheet, write all 7 days of content across the columns: Day 1 post in column B, Day 1 comment in column C, Day 1 image in column D, Day 2 post in column E, etc.
 5. **Insert image URLs using =IMAGE("url", 1) for inline display — NEVER write a raw URL as text.** Every image cell value must be a formula string starting with `=IMAGE(`. Raw URLs render as unclickable text and defeat the purpose of the visual planner.
-6. **Resize image columns and data rows** via batchUpdate (see "Row/Column Sizing" above) so the =IMAGE() thumbnails display at full size. Image columns → 108px wide (79px for 9:16); data rows → 133px tall (153px for 9:16). Apply to ALL tabs that contain images, not just one.
+6. **Column/row sizing** — the webhook applies it (see "Row/Column Sizing" above; SPEC widths 170/110/220/140/130, data rows 133px, Images preview 220px). Only when the write receipt reports the resize failed, call batchUpdate directly with those SPEC widths.
 7. Write content at 100-120 characters per cell (2-3 lines visible). The AI writes the full content to the cell, but the fixed row height naturally hides anything beyond the preview. Click the cell to see full text in the formula bar.
 8. Insert video links using =HYPERLINK().
 9. For the Images master sheet, write all 3 ratios per day across columns (4:5 URL, 4:5 Preview, 2:3 URL, 2:3 Preview, 9:16 URL, 9:16 Preview) for each of the 7 days. Preview columns use =IMAGE(); URL columns may stay as text.

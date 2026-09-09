@@ -207,7 +207,7 @@ Podcast episodes are published via n8n webhook.
 }
 ```
 
-**CRITICAL:** Image cells MUST use `=IMAGE("url", 1)` formula syntax, NOT raw URLs. Raw URLs display as unclickable text. The webhook writes values with `valueInputOption: USER_ENTERED` so formula strings are evaluated by Google Sheets into inline images. The webhook also resizes image columns to 108px wide and data rows to 133px tall for proper thumbnail display.
+**CRITICAL:** Image cells MUST use `=IMAGE("url", 1)` formula syntax, NOT raw URLs. Raw URLs display as unclickable text. The webhook writes values with `valueInputOption: USER_ENTERED` so formula strings are evaluated by Google Sheets into inline images. The webhook (`social-planner-row-append`) also resizes columns and the appended row in the SAME `spreadsheet.batchUpdate` — SPEC build-contract widths (Posts: platform/account 170px, date 110px, preview 220px, state 140px, QC 130px; data rows 133px; Images preview column P 220px) so `=IMAGE()` thumbnails display at full size. A resize failure is best-effort and never fails the write receipt.
 
 ---
 
