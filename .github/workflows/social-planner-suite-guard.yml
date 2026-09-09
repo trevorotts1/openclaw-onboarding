@@ -49,16 +49,17 @@ jobs:
       - name: Run the social-planner suite (hermetic, offline)
         shell: bash
         run: |
-          # Full-fidelity failure evidence: capture EVERYTHING to a file, then
-          # echo only the tail on success. tail-on-the-pipe hid the unittest
-          # "Ran/FAILED" summary (stdout is block-buffered when piped, stderr
-          # interleaves early — the last-20 window landed on a mid-suite stdout
-          # flush chunk, so a real CI failure was invisible as exit-1 with no
-          # traceback). The file is the ground truth; never truncate it away.
+          # Full-fidelity failure evidence. The Actions default shell is
+          # `bash -e`: a failing python3 aborts the script BEFORE `rc1=$?` and
+          # the log echo ever run (seen live: zero step output + bare exit 1).
+          # So: set +e explicitly, capture every rc with ||-guards, and ALWAYS
+          # print the log before exiting. The file is the ground truth.
           set -o pipefail
+          set +e
           SUITE_LOG="$RUNNER_TEMP/social-planner-suite.log"
+          : >"$SUITE_LOG"
           python3 -u -m unittest discover -s tests/social-planner -p 'test_f*.py' -v \
-            >"$SUITE_LOG" 2>&1
+            >>"$SUITE_LOG" 2>&1
           rc1=$?
           python3 35-social-media-planner/scripts/test_run_publishing_cycle.py \
             >>"$SUITE_LOG" 2>&1
@@ -66,9 +67,9 @@ jobs:
           python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py -q \
             >>"$SUITE_LOG" 2>&1
           rc3=$?
-          tail -40 "$SUITE_LOG"
+          echo "=== suite rcs: discover=$rc1 cycle-test=$rc2 pytest=$rc3 ==="
+          cat "$SUITE_LOG"
           if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || [ "$rc3" -ne 0 ]; then
-            echo "::error::social-planner suite failed (discover=$rc1 cycle=$rc2 pytest=$rc3) — full log above tail follows:"
-            cat "$SUITE_LOG"
+            echo "::error::social-planner suite failed (discover=$rc1 cycle=$rc2 pytest=$rc3)"
             exit 1
           fi
