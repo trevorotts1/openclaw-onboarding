@@ -1,3 +1,5 @@
+## [v25.0.25]  -  2026-09-09  -  RR-017 Rescue contract + RR-030 harness truthfulness (ONB-W1-RR017-RR030-AGG)
+
 ## [v25.0.24]  -  2026-09-08  -  ONB W2 repair batch (F08/F10/F11/F12/F13/F33 + F06/F09/F19 restoration)
 
 Batch ONB-20260909-repairs (PR #1066 restoration; PR #1067, merged at
