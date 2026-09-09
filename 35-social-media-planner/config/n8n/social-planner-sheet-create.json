@@ -82,7 +82,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent($json.readbackQuery) }}&fields=files(id,name,webViewLink)&pageSize=10",
+        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent($('Validate + Build Provisioning Key').first().json.readbackQuery) }}&fields=files(id,name,webViewLink)&pageSize=10",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
         "options": {}
