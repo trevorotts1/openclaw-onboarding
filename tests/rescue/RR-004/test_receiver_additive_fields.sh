@@ -33,10 +33,20 @@ echo "== RR-004 ONB: receiver additive claim/ack fields =="
 [ -f "$POLL" ] && say_ok "rescue-poll.sh exists" || say_fail "rescue-poll.sh missing" "$POLL"
 
 # 1. version advanced
+# RR-027 note: this assertion pins the ADDITIVE FLOOR (>= 1.4.0), not the
+# exact string — the RR-027 credential-hygiene slice legitimately advanced
+# RECEIVER_VERSION again (1.5.0) and pinning an exact value would make every
+# later additive bump break this gate.
 ver="$(grep -E '^RECEIVER_VERSION=' "$POLL" | head -1 | cut -d'"' -f2)"
-[ "$ver" = "1.4.0" ] && say_ok "RECEIVER_VERSION is 1.4.0" || say_fail "RECEIVER_VERSION" "got $ver"
+case "$ver" in
+  1.4.*|1.[5-9].*|[2-9].*) say_ok "RECEIVER_VERSION carries the additive floor (>=1.4.0): $ver" ;;
+  *) say_fail "RECEIVER_VERSION" "got $ver" ;;
+esac
 pkg="$(cat "$REPO/65-rescue-receiver/skill-version.txt" | tr -d '[:space:]')"
-[ "$pkg" = "v23.1.0" ] && say_ok "skill package bumped to v23.1.0" || say_fail "skill-version.txt" "got $pkg"
+case "$pkg" in
+  v23.[1-9]*|v2[4-9]*) say_ok "skill package bumped past v23.1.0: $pkg" ;;
+  *) say_fail "skill-version.txt" "got $pkg" ;;
+esac
 
 # 2. additive parse fields present
 for f in attempt_id attempt_generation lease_expires_at; do
@@ -70,17 +80,24 @@ PYEOF
 export -f stub_json_field
 JSON_FIELD_STUB=1
 
-# extract the exact functions we need by line range (through each closing brace)
-ACK_END="$(awk 'NR>=488 && /^}/ {print NR; exit}' "$POLL")"
-JSONF_END="$(awk 'NR>=308 && /^}/ {print NR; exit}' "$POLL")"
-JSONS_END="$(awk 'NR>=215 && /^}/ {print NR; exit}' "$POLL")"
-PARSE_START="$(grep -n '^_parse_claim()' "$POLL" | cut -d: -f1)"
-PARSE_END="$(awk -v s="$PARSE_START" 'NR>=s && /^}/ {print NR; exit}' "$POLL")"
+# extract the exact functions we need. NAME-anchored, not line-anchored
+# (a hardcoded line number broke the moment any edit above shifted the
+# file — the extraction silently sliced into the middle of _parse_claim
+# and produced a stray ';;'). Each function is cut from its own
+# definition line to its first column-0 closing brace.
+extract_fn() {  # extract_fn <file> <fn-name>
+  local f="$1" fn="$2" s e
+  s="$(grep -n "^${fn}()" "$f" | head -1 | cut -d: -f1)"
+  [ -n "$s" ] || { echo "EXTRACT-MISSING ${fn}" >&2; return 1; }
+  e="$(awk -v s="$s" 'NR>=s && /^}/ {print NR; exit}' "$f")"
+  [ -n "$e" ] || { echo "EXTRACT-UNTERMINATED ${fn}" >&2; return 1; }
+  sed -n "${s},${e}p" "$f"
+}
 {
-  sed -n "308,${JSONF_END}p" "$POLL"
-  sed -n "215,${JSONS_END}p" "$POLL"
-  sed -n "${PARSE_START},${PARSE_END}p" "$POLL"
-  sed -n "488,${ACK_END}p" "$POLL"
+  extract_fn "$POLL" _json_field
+  extract_fn "$POLL" _json_str
+  extract_fn "$POLL" _parse_claim
+  extract_fn "$POLL" _ack
   echo '_log() { :; }'
   echo "_ack_capture=\"$FIX/captured-body.txt\""
   echo '_post() { printf '"'"'%s'"'"' "$_ack_body" >> "$_ack_capture"; return 0; }'

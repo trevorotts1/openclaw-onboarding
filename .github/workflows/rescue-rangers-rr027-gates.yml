@@ -1,0 +1,67 @@
+name: rescue-rangers-rr027-gates
+
+# RR-027 — Rescue credential hygiene gates: the shared dotenv-parse +
+# child-env-scrub helper (shared-utils/rescue-env.sh) and the three consumers
+# (wire.sh, rescue-poll.sh, seed-rr-agent-map.sh). Proves the RCV05 leak
+# classes stay fixed: synthetic exported / inherited / unexported secrets
+# never reach a child env, an argv, or a log; the necessary authorized
+# inference credential still works; malformed lines and permission shapes
+# fail visibly. Triggered whenever any guarded file changes.
+
+on:
+  push:
+    paths:
+      - "shared-utils/rescue-env.sh"
+      - "65-rescue-receiver/wire.sh"
+      - "65-rescue-receiver/rescue-poll.sh"
+      - "scripts/seed-rr-agent-map.sh"
+      - "tests/unit/rr027-*.test.sh"
+      - "tests/rescue/RR-004/**"
+      - ".github/workflows/rescue-rangers-rr027-gates.yml"
+  pull_request:
+    paths:
+      - "shared-utils/rescue-env.sh"
+      - "65-rescue-receiver/wire.sh"
+      - "65-rescue-receiver/rescue-poll.sh"
+      - "scripts/seed-rr-agent-map.sh"
+      - "tests/unit/rr027-*.test.sh"
+      - "tests/rescue/RR-004/**"
+      - ".github/workflows/rescue-rangers-rr027-gates.yml"
+
+jobs:
+  rescue-rangers-rr027-gates:
+    name: RR-027 gates (parse + scrub + no-argv-key + regressions)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax gates
+        run: |
+          bash -n shared-utils/rescue-env.sh
+          sh -n shared-utils/rescue-env.sh
+          bash -n 65-rescue-receiver/wire.sh
+          bash -n 65-rescue-receiver/rescue-poll.sh
+          sh -n 65-rescue-receiver/rescue-poll.sh
+          bash -n scripts/seed-rr-agent-map.sh
+
+      - name: Helper contract (parse / get / scrub / header-file / private tmp)
+        run: |
+          bash tests/unit/rr027-rescue-env.test.sh
+          sh tests/unit/rr027-rescue-env.test.sh
+
+      - name: Consumer leak gates (child env + argv + logs, sentinel-driven)
+        run: |
+          bash tests/unit/rr027-no-credential-in-child-env.test.sh
+          sh tests/unit/rr027-no-credential-in-child-env.test.sh
+
+      - name: Receiver additive-fields regression (RR-004 pairing)
+        run: |
+          bash tests/rescue/RR-004/test_receiver_additive_fields.sh
+
+      - name: Dependency regressions (RR-017 / RR-003 / RR-006 / RR-021 batteries)
+        run: |
+          python3 tests/unit/rescue-contract-rr017.test.py
+          python3 tests/unit/rescue-contract-rr003.test.py
+          python3 tests/rescue/RR-006/test_legacy_writer_retired.py
+          python3 tests/rescue/RR-021/test_receiver_work_preserved.py

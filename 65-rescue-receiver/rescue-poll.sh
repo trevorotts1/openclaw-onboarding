@@ -39,6 +39,21 @@
 #
 # RECEIVER_VERSION: reported in every claim and ack (fleet version visibility).
 #
+# v1.5.0 (RR-W3-INSTALL, RR-027): the secret store is PARSED, not sourced.
+# The old `. "$_SECRETS"` executed the file as shell and left whatever the
+# CALLER's environment had already exported (a synthetic RR_BOX_TOKEN in an
+# upstream env file — the CONFIRMED RCV05 leak) untouched in this process's
+# env, where the child agent turn inherited it despite the comment above.
+# Now: the shared dotenv parser (shared-utils/rescue-env.sh) reads ONLY the
+# three required rescue values, preserves quoting/space behavior, never
+# expands values, fails visibly (logged, values never printed) on malformed
+# lines, and every child — agent turn, default-agent probe — runs through
+# rescue_env_scrub so NO rescue credential alias can survive into any child
+# env, while the box's necessary authorized model/tool credentials pass
+# through untouched. Exception/trace output from the agent is reduced to a
+# failure CLASS (never logged verbatim) so a stack-trace env echo cannot
+# leak a credential into the poll log.
+#
 # v1.4.0 (RR-W2-CORE, RR-004 pairing): ADDITIVE claim/ack fields. The server
 # (RR-07 / the Fleet Ops transactional claim service) now issues an
 # attempt/owner token, a lease generation and an explicit lease expiry on every
@@ -48,7 +63,7 @@
 # contract: public receiver changes pair with additive server support FIRST;
 # old servers that omit the fields keep working because the fields simply echo
 # as empty strings).
-RECEIVER_VERSION="1.4.0"
+RECEIVER_VERSION="1.5.0"
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -73,18 +88,87 @@ _SECRETS="$_OCROOT/secrets/.env"
 [ -f "$_SECRETS" ] || exit 0
 
 # ---------------------------------------------------------------------------
-# Source the secret store WITHOUT exporting. `set -u` is dropped across the
-# source: a store line whose value carries an unescaped `$` would otherwise
-# abort the whole shell under `set -u`; with it off a stray `$VAR` expands to
-# empty instead of aborting, and every correctly-quoted secret is preserved.
+# RR-027 credential hygiene: PARSE the documented dotenv store instead of
+# sourcing it as shell. The old `. "$_SECRETS"` executed the file's lines as
+# shell code (a hostile or simply malformed line gained shell semantics, an
+# unescaped `$` silently expanded to empty) and left every variable in the
+# file in this process's variable table — a synthetic `export RR_BOX_TOKEN`
+# line in any upstream env file reached the CHILD AGENT below despite the
+# comments claiming it never exports, because an export made BEFORE this
+# script ran is simply inherited and nothing ever removed it.
+#
+# The SHARED parser (shared-utils/rescue-env.sh) reads ONLY the three
+# required rescue values, keeps quoting/space behavior, never expands
+# values, and reports malformed lines on stderr BY NAME AND LINE NUMBER
+# (never a value). A store that carries malformed lines is a visible
+# failure (exit 0 with the reason logged — the poll never silently runs a
+# half-parsed config), never a guessed half-success.
 # ---------------------------------------------------------------------------
-_src_ok=0
-set +u
+_POLL_HELPERS=""
+for _cand in "$_OCROOT/skills/shared-utils/rescue-env.sh" \
+             "${_POLL_SELF_DIR:-}" ; do
+    [ -n "$_cand" ] && [ -f "$_cand" ] && { _POLL_HELPERS="$_cand"; break; }
+done
+if [ -z "$_POLL_HELPERS" ]; then
+    # The poll script lives at <root>/skills/65-rescue-receiver/ on a box;
+    # the shared helper is at <root>/skills/shared-utils/. Derive from the
+    # script's own path when it was invoked as a file (the cron does).
+    _SELF="$0"
+    case "$_SELF" in
+        */65-rescue-receiver/rescue-poll.sh)
+            _poll_dir="${_SELF%/*}"
+            _cand="$_poll_dir/../shared-utils/rescue-env.sh"
+            [ -f "$_cand" ] && _POLL_HELPERS="$_cand"
+            ;;
+    esac
+fi
+if [ -z "$_POLL_HELPERS" ]; then
+    # Fail closed and quiet (the cron contract): the roll will repair the
+    # missing helper on the next pass; without it we must not fall back to
+    # sourcing the store as shell — that is exactly the defect RR-027 fixes.
+    exit 0
+fi
 # shellcheck disable=SC1090
-. "$_SECRETS" 2>/dev/null && _src_ok=1
-set -u
+. "$_POLL_HELPERS"
 
-[ "$_src_ok" = "1" ] || exit 0
+RR_RECEIVER_URL=""
+RR_BOX_TOKEN=""
+RR_BOX_SLUG=""
+_src_malformed=0
+_rr_val=""
+_rr_rc=0
+_rr_val=$(rescue_env_get "$_SECRETS" RR_RECEIVER_URL 2>/dev/null); _rr_rc=$?
+case "$_rr_rc" in 0|3) RR_RECEIVER_URL="$_rr_val" ;; 2) exit 0 ;; esac
+[ "$_rr_rc" = 3 ] && _src_malformed=1
+_rr_val=$(rescue_env_get "$_SECRETS" RR_BOX_TOKEN 2>/dev/null); _rr_rc=$?
+case "$_rr_rc" in 0|3) RR_BOX_TOKEN="$_rr_val" ;; 2) exit 0 ;; esac
+[ "$_rr_rc" = 3 ] && _src_malformed=1
+_rr_val=$(rescue_env_get "$_SECRETS" RR_BOX_SLUG 2>/dev/null); _rr_rc=$?
+case "$_rr_rc" in 0|3) RR_BOX_SLUG="$_rr_val" ;; 2) exit 0 ;; esac
+[ "$_rr_rc" = 3 ] && _src_malformed=1
+# The values land in NON-EXPORTED shell variables (assignment in the main
+# shell only; no `export` anywhere in this file — the scrub below enforces
+# it for the child even if the caller's environment exported a rescue alias
+# before this script started).
+#
+# RR-027 child scrub list for THIS script: an agent turn seeded from a
+# ticket is NOT the box's own escalation path, so the shared escalation
+# secret is removed too (the box's own AGENTS.md escalation flow keeps its
+# credential — it does not run through this poll). RESCUE_ENV_EXTRA_UNSET
+# is the documented extension hook of rescue-env.sh.
+
+if [ "$_src_malformed" = "1" ]; then
+    # Visible malformed-config handling (RR-027 "fail visibly"): replay the
+    # parser's reason lines (file+line+shape only, values never printed) to
+    # stderr — the cron's stderr is the operator's surface — plus a one-line
+    # log record. The poll never runs a half-parsed config.
+    mkdir -p "$_OCROOT/state/rr-receiver" 2>/dev/null || true
+    rescue_env_parse "$_SECRETS" RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG >/dev/null
+    printf '%s rr-poll malformed-config config=%s (rescue-env reasons above; values never printed)\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$_SECRETS" \
+        >> "$_OCROOT/state/rr-receiver/rescue-poll.log" 2>/dev/null || true
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Hard-required enrollment. Missing any one => inert-until-enrolled dark state.
@@ -254,6 +338,11 @@ _post() {
     _tmpbody=$(mktemp "$_TMP/rr-poll-body.XXXXXX" 2>/dev/null) || { rm -f "$_hdr"; return 1; }
     chmod 600 "$_hdr" 2>/dev/null
     chmod 600 "$_tmpbody" 2>/dev/null
+    # RR-027: the header write is a builtin redirection (the value never
+    # enters any process argv), into the 0700 private state tmp dir, with a
+    # 0600 mode and same-call cleanup (below) — the 0600-header-file contract
+    # this script has always documented, now the ONLY path (the shared helper
+    # exists for the wire/seed paths that previously lacked one).
     printf 'X-RR-Box-Token: %s\n' "$RR_BOX_TOKEN" > "$_hdr"
     printf '%s' "$_req_body" > "$_tmpbody"
     _out=""
@@ -345,7 +434,10 @@ except Exception:
 # => empty (caller treats empty as "resolution failed", never a guessed success).
 # ---------------------------------------------------------------------------
 _resolve_default_agent() {
-    _rda_out=$("$_OC_BIN" agents list --json 2>/dev/null) || return 0
+    # RR-027: this child reads no rescue credential; still scrubbed so NO
+    # child of this poll can ever inherit a rescue alias, whatever the
+    # caller's environment exported.
+    _rda_out=$(rescue_env_scrub "$_OC_BIN" agents list --json 2>/dev/null) || return 0
     [ -n "$_rda_out" ] || return 0
     if command -v jq >/dev/null 2>&1; then
         printf '%s' "$_rda_out" | jq -r '
@@ -700,21 +792,41 @@ fi
 
 _start_ts=$(date +%s 2>/dev/null || echo 0)
 
-# Run the agent turn with a timeout. The reply text is extracted from the JSON
-# stdout. --timeout 600 keeps the box-side wall BELOW the RR-07 receiver's 600s
-# claim lease (a 540s wall left a 60s gap in which the lease could expire and
-# re-deliver the SAME instruction to a second claim — double-delivery hazard,
-# seen as "already closed" dedup losses on late answers). The token is NOT in
-# this command line and is NOT exported to this child. The exit code is captured
-# with NO `|| true` (that would mask a non-zero rc and lie about delivery).
+# RR-027 child-env scrub (spec: "explicitly remove rescue credential aliases
+# from child env while allowing necessary authorized model/tool credentials").
+# Whatever the caller's environment exported (a synthetic RR_BOX_TOKEN in an
+# upstream env file is the CONFIRMED leak path), the child agent turn cannot
+# see a rescue alias. The necessary authorized inference/tool credentials the
+# box itself carries (GEMINI_API_KEY, KIE_API_KEY, ...) are untouched — only
+# rescue credential NAMES are removed. The poll's own token is additionally
+# protected at the source: this script now PARSES the store (no sourcing, no
+# export), so an exported RR_BOX_TOKEN here is only possible if an UPSTREAM
+# env exported it before this script even started — and the scrub removes
+# that too.
+# The message payload rides as an argument (unchanged from the proven
+# delivery command); the bearer token never appears in this argv at all.
+# RESCUE_ENV_EXTRA_UNSET adds the box's own escalation secret to the scrub
+# list for THIS child (an agent turn seeded from a ticket is not the box's
+# escalation path; the box's own AGENTS.md escalation flow keeps its
+# credential because it does not run through this poll).
+RESCUE_ENV_EXTRA_UNSET="RESCUE_RANGERS_WEBHOOK_SECRET RESCUE_RANGERS_HELP_CHAT_ID"
 _AGENT_ERR_PATH="$_TMP/rr-poll-agent-err.$$"
-AGENT_OUT=$("$_OC_BIN" agent --agent "$AGENT_ID" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>"$_AGENT_ERR_PATH")
+AGENT_OUT=$(rescue_env_scrub "$_OC_BIN" agent --agent "$AGENT_ID" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>"$_AGENT_ERR_PATH")
 AGENT_RC=$?
 _AGENT_ERR=""
 if [ -f "$_AGENT_ERR_PATH" ]; then
     _AGENT_ERR=$(cat "$_AGENT_ERR_PATH" 2>/dev/null)
     rm -f "$_AGENT_ERR_PATH"
 fi
+# RR-027 redaction: the agent's stderr is a structured-rejection /
+# exception surface that could echo an environment-shaped credential value
+# under a Node stack trace (an env-var dump in an exception message). Only
+# the failure CLASS is kept for the fallback gate; the bytes are never
+# logged (the token discipline: no credential value in any log, ever).
+case "$_AGENT_ERR" in
+    *"Unknown agent id"*) : ;;
+    *) _AGENT_ERR="" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Agent-id fallback (v1.1.0): some boxes have no agent named "main", so the
@@ -728,12 +840,14 @@ case "$_AGENT_ERR" in
         # Gate on a genuinely FAILED first turn. A turn that exited 0 already
         # delivered to the client; re-running it would double-deliver and could
         # overwrite that real success with the retry's failure. "One agent turn,
-        # ever" holds only if this guard is here.
+        # ever" holds only if this guard is here. The retry runs through the
+        # SAME rescue_env_scrub wrapper (RR-027: no rescue alias reaches any
+        # child), and its stderr is discarded at the source (2>/dev/null).
         if [ "$_rc_first" -ne 0 ]; then
             _RESOLVED_AGENT=$(_resolve_default_agent)
             if [ -n "$_RESOLVED_AGENT" ] && [ "$_RESOLVED_AGENT" != "$AGENT_ID" ]; then
                 _log "agent-id-fallback from=$AGENT_ID to=$_RESOLVED_AGENT rc_before=$_rc_first"
-                AGENT_OUT=$("$_OC_BIN" agent --agent "$_RESOLVED_AGENT" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>/dev/null)
+                AGENT_OUT=$(rescue_env_scrub "$_OC_BIN" agent --agent "$_RESOLVED_AGENT" --session-key "$SESSION_KEY" --message "$MSG" --json --timeout 600 2>/dev/null)
                 AGENT_RC=$?
                 AGENT_ID="$_RESOLVED_AGENT"
             fi

@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v22.0.59"
+  version: "v23.2.0"
   priority: HIGH
 ---
 
@@ -42,6 +42,13 @@ pre-proven local delivery command, and acks the verdict.
   re-run on every roll.
 - Requires `65-rescue-receiver/rescue-poll.sh` to exist under the box's skills
   dir; the skill dir ships via the normal update-skills roll.
+- Requires `shared-utils/rescue-env.sh` (RR-027): the shared dotenv parser +
+  child-env scrub. Enrollment values are PARSED (never sourced as shell, never
+  exported), and every child of the poll runs with rescue credential aliases
+  removed from its environment while necessary authorized model/tool
+  credentials pass through untouched. Malformed store lines fail VISIBLY
+  (file + line named on stderr, values never printed) instead of a silent
+  half-config.
 
 ## What the agent needs to know
 
