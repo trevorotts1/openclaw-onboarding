@@ -93,6 +93,8 @@ class CompatibilityTests(unittest.TestCase):
             data = json.loads((COMPAT / filename).read_text())
             self.assertEqual(set(data), {'name', 'nodes', 'connections', 'settings'})
             self.assertTrue(all('credentials' not in node for node in data['nodes']))
+            self.assertEqual(data['settings']['saveDataSuccessExecution'], 'all')
+            self.assertEqual(data['settings']['saveDataErrorExecution'], 'all')
         creator = json.loads((COMPAT / 'legacy-sheet-create.json').read_text())
         copy = next(n for n in creator['nodes'] if n['name'] == 'Copy Legacy Template')
         self.assertEqual(copy['parameters']['url'], 'https://www.googleapis.com/drive/v3/files/__LEGACY_TEMPLATE_ID__/copy?fields=id,name,mimeType')
