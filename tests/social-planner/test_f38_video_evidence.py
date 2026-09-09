@@ -153,11 +153,12 @@ class TestF38SheetEvidenceRow(unittest.TestCase):
         self.assertIn('=HYPERLINK("https://cc.example.com/social/media/asset-a-1"', wf)
         self.assertIn("Watch video", wf)
 
-    def test_youtube_smart_chip_note_only_when_applicable(self):
+    def test_youtube_published_link_does_not_corrupt_watch_formula(self):
         out = self.evidence(youtube=True,
                             published_url="https://www.youtube.com/watch?v=xyz")
-        self.assertIn("YouTube smart-chip", out["videosRow"]["watchFormula"])
-        # Without a published YouTube link there is no smart-chip note.
+        self.assertEqual(out["videosRow"]["watchFormula"], '=HYPERLINK("https://cc.example.com/social/media/asset-a-1", "Watch video")')
+        self.assertIn("https://www.youtube.com/watch?v=xyz", out["videosRow"]["values"])
+        # The published URL stays in a RAW cell, never appended as formula syntax.
         plain = self.evidence()
         self.assertNotIn("YouTube smart-chip", plain["videosRow"]["watchFormula"])
 

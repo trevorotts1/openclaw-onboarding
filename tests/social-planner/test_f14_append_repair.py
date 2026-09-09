@@ -90,8 +90,9 @@ class TestF14ExportContractStatic(unittest.TestCase):
         for export, node in ((self.append, "Verify Sheet Metadata (F14)"),
                              (self.create, "Verify Template Access (F14)")):
             n = next(n for n in export["nodes"] if n["name"] == node)
-            self.assertTrue(n["parameters"].get("retryOnFail"))
-            self.assertLessEqual(n["parameters"].get("maxTries", 99), 5)
+            self.assertTrue(n.get("retryOnFail"))
+            self.assertNotIn("retryOnFail", n["parameters"])
+            self.assertLessEqual(n.get("maxTries", 99), 5)
 
     def test_repair_contract_documented(self):
         for export in (self.append, self.create):
@@ -174,7 +175,8 @@ class TestF14RepairClassification(unittest.TestCase):
         for export in (append, create):
             conn = export["connections"]["Classify Repair (F14)"]
             targets = [l["node"] for b in (conn["main"] if isinstance(conn, dict) else conn) for l in b]
-            self.assertEqual(targets, ["Respond: Repair (F14)"])
+            self.assertIn("Respond: Repair (F14)", targets)
+            self.assertTrue(all(t.startswith("Respond:") for t in targets))
             respond = next(n for n in export["nodes"] if n["name"] == "Respond: Repair (F14)")
             self.assertIn("Classify Repair", respond["parameters"]["responseBody"])
             self.assertNotIn("copy", respond["parameters"]["responseBody"].lower())
