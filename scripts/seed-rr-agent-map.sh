@@ -25,12 +25,20 @@
 #
 # Safety: backs up the live table to /tmp before any write, announces before
 # writing, reads back and verifies afterwards.
+#
+# RR-027 credential hygiene: the n8n API key rides in a 0600 header file
+# under a 0700 private temp dir (curl `-H @file`) — NEVER in an argument
+# list. The old form (`-H "X-N8N-API-KEY: ${N8N_API_KEY}"`) put the key on
+# every call's argv, readable by any local user via `ps -o command` for the
+# life of the process. The POST payload also rides via --data-binary @file.
+# Header files and payloads are removed on exit (trap cleanup). Malformed
+# key material fails visibly: the header write fails loudly instead of
+# POSTing an empty auth header.
 
 set -euo pipefail
 
 HOST="${N8N_HOST:-https://main.blackceoautomations.com}"
 TABLE_ID="EFPgipZtKatC5xPw"   # rr_agent_map (recreated 2026-08-13 after the original table was deleted)
-export RR_AGENT_MAP_TABLE_ID="$TABLE_ID"
 DRY_RUN=0
 ROSTER_FILE=""
 while [ "${1:-}" = "--dry-run" ]; do DRY_RUN=1; shift || true; done
@@ -53,9 +61,43 @@ else
 fi
 
 # --- Backup -------------------------------------------------------------------
+# RR-027: the API key rides in a 0600 header file under a 0700 private temp
+# dir (shared helper rescue_env_header_file), NEVER in curl's argv — an
+# argv header is readable by any local user via `ps -o command` for the
+# life of the process, and this script previously put the key on EVERY
+# call's command line. Cleanup removes every header file on exit.
+_HDR_DIR=""
+RESOLVED_FILE=""
+cleanup() {
+  [ -n "$_HDR_DIR" ] && [ -d "$_HDR_DIR" ] && rm -rf "$_HDR_DIR" 2>/dev/null
+  rm -f "$SLUGS_FILE" /tmp/rr-seed-payload.json /tmp/rr-seed-after.json "$RESOLVED_FILE" 2>/dev/null || true
+}
+trap cleanup EXIT
+_HDR_DIR=$(mktemp -d "${TMPDIR:-/tmp}/rr-seed-hdr.XXXXXX") || exit 1
+chmod 700 "$_HDR_DIR"
+_HDR_FILE=""
+# shellcheck disable=SC1091
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/shared-utils/rescue-env.sh" 2>/dev/null \
+  || . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../shared-utils/rescue-env.sh"
+if command -v rescue_env_header_file >/dev/null 2>&1; then
+  _HDR_FILE=$(rescue_env_header_file "$_HDR_DIR" "X-N8N-API-KEY" "$N8N_API_KEY") || { echo "seed-rr-agent-map: cannot write auth header file" >&2; exit 1; }
+else
+  # No shared helper in this tree layout: write the header file directly
+  # with the SAME contract (builtin redirection, 0600, private dir).
+  _HDR_FILE="$_HDR_DIR/api-key-header"
+  ( umask 077; printf 'X-N8N-API-KEY: %s\n' "$N8N_API_KEY" > "$_HDR_FILE" ) || { echo "seed-rr-agent-map: cannot write auth header file" >&2; exit 1; }
+fi
+n8n_get() {  # n8n_get <output-file> — GET the table with header-file auth
+  curl -sS -H @"$_HDR_FILE" "$HOST/api/v1/data-tables/$TABLE_ID/rows" > "$1"
+}
+n8n_post_chunk() {  # n8n_post_chunk <json-chunk> — POST with header-file auth
+  curl -sS -o /dev/null -w '%{http_code}' -X POST -H @"$_HDR_FILE" \
+    -H 'Content-Type: application/json' --data-binary @"$1" \
+    "$HOST/api/v1/data-tables/$TABLE_ID/rows"
+}
 BAK="/tmp/rr_agent_map-backup-$(date +%Y%m%dT%H%M%S).json"
 if [ "$DRY_RUN" -eq 0 ]; then
-  curl -sS -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$HOST/api/v1/data-tables/$TABLE_ID/rows" > "$BAK"
+  n8n_get "$BAK"
   echo "seed-rr-agent-map: backup -> $BAK ($(wc -c < "$BAK" | tr -d ' ') bytes)"
 fi
 
@@ -63,8 +105,9 @@ fi
 # The API has no row-level delete/upsert, so a plain re-run would accumulate
 # duplicate rows. Compute the set of slugs that ALREADY have a row and insert
 # only the missing ones — a re-run is then a true no-op (0 rows).
-EXISTING=$(curl -sS -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$HOST/api/v1/data-tables/$TABLE_ID/rows" \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin); rows=d.get("data",[]); print("\n".join(sorted(set(r.get("box_slug","") for r in rows if r.get("box_slug")))))' 2>/dev/null || true)
+_EXISTING_FILE="$_HDR_DIR/existing.json"
+n8n_get "$_EXISTING_FILE"
+EXISTING=$(python3 -c 'import json,sys; d=json.load(sys.stdin); rows=d.get("data",[]); print("\n".join(sorted(set(r.get("box_slug","") for r in rows if r.get("box_slug")))))' < "$_EXISTING_FILE" 2>/dev/null || true)
 python3 - "$SLUGS_FILE" "$EXISTING" > /tmp/rr-seed-missing.txt <<'DEDUP'
 import sys
 want = [l.strip() for l in open(sys.argv[1]) if l.strip()]
@@ -157,34 +200,39 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 echo "seed-rr-agent-map: ANNOUNCING WRITE — $N rows into rr_agent_map (resolved default agents). Backup: $BAK"
-# chunks of 10 (payload above is one batch; split here for robustness)
-python3 -c '
-import json, subprocess, os, sys
-key = os.environ["N8N_API_KEY"]; host = os.environ.get("N8N_HOST", "https://main.blackceoautomations.com")
-table = os.environ["RR_AGENT_MAP_TABLE_ID"]
+# chunks of 10 (payload above is one batch; split here for robustness).
+# RR-027: the key is in the 0600 HEADER FILE (n8n_post_chunk), never on a
+# command line; the chunk rides via --data-binary @file, never an inline
+# argument either.
+_CHUNKS_DIR="$_HDR_DIR/chunks"
+mkdir -p "$_CHUNKS_DIR"
+python3 - "$_CHUNKS_DIR" >/dev/null <<'CHUNKER'
+import json, os, sys
 rows = json.load(open("/tmp/rr-seed-payload.json"))["data"]
-ok = 0
+outdir = sys.argv[1]
 for i in range(0, len(rows), 10):
-    chunk = {"data": rows[i:i+10]}
-    p = subprocess.run(["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}",
-        "-X", "POST", "-H", f"X-N8N-API-KEY: {key}", "-H", "Content-Type: application/json",
-        "--data", json.dumps(chunk), f"{host}/api/v1/data-tables/{table}/rows"],
-        capture_output=True, text=True)
-    code = p.stdout.strip()
-    if code.startswith("2"):
-        n = len(chunk["data"])
-        ok += n; print("  batch %d: HTTP %s (%d rows)" % (i//10, code, n))
-    else:
-        print("  batch %d: HTTP %s FAILED — %s" % (i//10, code, p.stderr[:200]), file=sys.stderr)
-print("seed-rr-agent-map: wrote %d/%d rows" % (ok, len(rows)))
-sys.exit(0 if ok == len(rows) else 1)
-'
-RC=$?
+    with open(os.path.join(outdir, "chunk-%03d.json" % (i // 10)), "w") as f:
+        json.dump({"data": rows[i:i+10]}, f)
+CHUNKER
+RC=0
+_ok=0; _total=0
+for _cf in "$_CHUNKS_DIR"/chunk-*.json; do
+  [ -f "$_cf" ] || continue
+  _code=$(n8n_post_chunk "$_cf")
+  case "$_code" in
+    2*) _n=$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["data"]))' "$_cf" 2>/dev/null || echo 0)
+        _ok=$((_ok + _n)); echo "  batch: HTTP $_code ($_n rows)" ;;
+    *)   echo "  batch: HTTP ${_code:-none} FAILED" >&2; RC=1 ;;
+  esac
+done
+_total=$(python3 -c 'import json;print(len(json.load(open("/tmp/rr-seed-payload.json"))["data"]))')
+echo "seed-rr-agent-map: wrote $_ok/$_total rows"
+[ "$_ok" -eq "$_total" ] && [ "$RC" -eq 0 ] && RC=0 || RC=1
 
 # --- Verify -------------------------------------------------------------------
 # Verify against the RESOLVED map (slug -> agent), not a hardcoded 'main' guess.
 if [ "$RC" -eq 0 ]; then
-  curl -sS -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$HOST/api/v1/data-tables/$TABLE_ID/rows" > /tmp/rr-seed-after.json
+  n8n_get /tmp/rr-seed-after.json
   python3 -c '
 import json, sys
 resolved = {}
@@ -208,5 +256,4 @@ sys.exit(0 if not missing and not wrong else 1)
   RC=$?
 fi
 
-rm -f "$SLUGS_FILE" /tmp/rr-seed-payload.json /tmp/rr-seed-after.json "$RESOLVED_FILE"
 exit "$RC"
