@@ -385,6 +385,40 @@ After all content is scheduled and logged to Google Sheets:
 54. Memory-core captures these notes automatically. Dreaming may promote high-value insights (e.g., "Hormozi-style content produced 2x engagement on sales-focused themes") into MEMORY.md overnight.
 55. Memory Wiki can compile weekly performance into a structured "Social Media Performance" wiki page over time.
 
+**Step 12b: Record Measured Outcomes (F40 — never fabricate performance)**
+
+A completion certificate or delivery receipt proves a post was CREATED and
+PUBLISHED; it is NOT evidence that the content performed. The measured-outcome
+loop (shared-utils/social_measured_outcomes.py, mirrored in the Command
+Center) keeps creation, publication and ACTUAL audience response separate:
+
+56. Collect provider-supported metrics per post with the account id, the
+    post id, the measurement window and fetched_at, through the GHL analytics
+    adapter (57-social-media-in-a-box/scripts/ghl_contracts.py
+    `extract_post_metrics` over the posts/list readback) or manual input.
+    Store them with `social_measured_outcomes.record_metric` under the
+    client's own company directory ($SOCIAL_OUTCOMES_DIR/<company_id>/).
+57. A metric the provider did not report is UNKNOWN — never zero, never
+    interpolated. State the gap in the memory note: "reach: UNKNOWN for 2 of
+    3 posts (not reported)"; never write "0 engagement".
+58. Save baseline and trial variants BEFORE comparing:
+    `register_variant(company, variable, label, role='baseline')` for the
+    current standard, and one trial per cycle with EXACTLY ONE major variable
+    changed (format | hook | timing | creative) named in `compared_to`.
+    Never change two variables between cycles.
+59. Review performance at the agreed cadence (weekly default) with
+    `review_company(company_id)`. The review's recommendation cites the
+    actual posts and windows read. Low samples (fewer than 5 known
+    observations) stay TENTATIVE and receive no proposals — a tentative
+    conclusion never triggers uncontrolled content or spending increases.
+60. Keep client-specific memory client-specific: never reuse another
+    company's private creative, hooks, personas or results. Every read and
+    write is scoped to one company directory.
+61. Performance proposals may change formats, hooks, timing and creative —
+    NEVER the saved provider/model selection or publishing policy/consent
+    (those are the client's explicit choices, F31/F37; the policy guard
+    rejects such proposals outright).
+
 **Dependency Note:** This skill depends on Skill 31 (Upgraded Memory System) for memory-core, Dreaming, and Memory Wiki functionality. If Skill 31 is not installed, Steps 51-55 are skipped and the AI logs to MEMORY.md directly instead.
 
 **Dependency Note:** This skill depends on Skill 30 (Fish Audio API Reference) for podcast production via Fish Audio S2. If Skill 30 is not installed, podcast production (Step 7) is skipped and the AI notifies the client: "Podcast production requires Fish Audio S2 (Skill 30). Install Skill 30 to enable weekly podcast episodes."

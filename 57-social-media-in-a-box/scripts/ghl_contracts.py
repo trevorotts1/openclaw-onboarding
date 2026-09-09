@@ -225,6 +225,85 @@ def normalize_post(raw):
     }
 
 
+# ---------------------------------------------------------------------------
+# F40 — GHL ANALYTICS ADAPTER SEAM (extends S1/S2 patterns; NO live calls).
+# ---------------------------------------------------------------------------
+# The provider reports per-post engagement in the posts/list payloads wherever
+# the platform supplies it. The F40 contract: collect provider-supported
+# metrics WITH account/post id, measurement window and fetched_at; represent
+# unavailable data as UNKNOWN — never zero, never interpolated. A metric the
+# payload does not carry is simply absent from the observations (the
+# social_measured_outcomes store records the explicit unknown only where the
+# caller asks for coverage of an expected metric).
+#
+# Metric keys seen across generations (absent key or non-numeric value ⇒
+# UNKNOWN): counts.reactions|likes|comments, metrics.impressions|reach, and
+# flat numeric fields of the same names.
+METRIC_KEYS = {
+    "impressions": ("metrics.impressions", "counts.impressions", "impressions"),
+    "reach": ("metrics.reach", "counts.reach", "reach"),
+    "reactions": ("counts.reactions", "counts.likes", "reactions", "likes"),
+    "comments": ("counts.comments", "comments"),
+    "clicks": ("metrics.clicks", "counts.clicks", "clicks"),
+}
+
+
+def _dig(raw, dotted):
+    cur = raw
+    for part in dotted.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
+
+
+def extract_post_metrics(raw, fetched_at=None, window_start=None, window_end=None):
+    """One posts/list post object -> normalized metric observations with
+    UNKNOWN semantics (F40).
+
+    Returns a list of {post_id, metric, value, is_unknown, window_start,
+    window_end, fetched_at, source:'ghl-analytics'} rows for the KNOWN
+    metric keys. A metric the provider did not report produces an explicit
+    unknown row (value None, is_unknown True) — NEVER a zero — so downstream
+    coverage is honest. A post id that cannot be resolved yields no rows
+    (never an invented post).
+    """
+    pid = raw.get("id") or raw.get("_id") or raw.get("postId")
+    if pid is None or not str(pid).strip():
+        return []
+    out = []
+    for metric, keys in METRIC_KEYS.items():
+        value = None
+        found = False
+        for key in keys:
+            v = _dig(raw, key)
+            if v is None:
+                continue
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)) and v == v and v not in (float("inf"), float("-inf")):
+                value, found = float(v), True
+                break
+            if isinstance(v, str):
+                try:
+                    value, found = float(v), True
+                    break
+                except ValueError:
+                    continue
+        out.append({
+            "post_id": str(pid).strip(),
+            "account_id": str(raw.get("accountId") or raw.get("account_id") or "").strip(),
+            "metric": metric,
+            "value": value if found else None,
+            "is_unknown": not found,
+            "window_start": window_start,
+            "window_end": window_end,
+            "fetched_at": fetched_at,
+            "source": "ghl-analytics",
+        })
+    return out
+
+
 def fetch_posts(pit, location_id, post_type="all", accounts=None,
                 from_date=None, to_date=None, transport=None,
                 timeout=POSTS_TIMEOUT, max_pages=MAX_PAGES,

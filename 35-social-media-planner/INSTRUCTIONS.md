@@ -79,6 +79,15 @@ If any source is missing, **STOP** and surface the gap via the triple-fire trigg
 ```
 1. Researcher: memory_search + web_search on topic → raw data dump
 2. Strategist: synthesizes into strategy.md, pulling voice from SOUL.md
+3. (F40 measured outcomes) Strategist reads the client's OWN prior outcomes
+   before picking the week's angle: shared-utils/social_measured_outcomes.py
+   `latest_metrics(company_id)` + `reviews(company_id)`. Recommendations cite
+   actual posts and windows; missing analytics is UNKNOWN (never zero, never
+   invented). A prior review's proposals (format/hook/timing/creative, one
+   variable per trial) MAY seed this week's variant — registered with
+   `register_variant(..., compared_to=<baseline>)`. Tentative (low-sample)
+   conclusions never drive uncontrolled content or spending changes, and
+   NEVER another company's private creative or results.
 ```
 
 ### Phase 2 — Content Creation
@@ -128,6 +137,19 @@ The Publisher does NOT post yet — it queues. The owner can review the schedule
 **Outputs:** Live posts, metrics dashboard updates
 
 Engagement Monitor runs continuously for 7 days post-publish; results flow into `~/.openclaw/data/engagement/<run-id>.json`.
+
+**F40 — measured outcomes (delivery receipt ≠ performance evidence):** the
+publish receipts (publish-receipts.json / delivery rows) prove creation and
+publication ONLY. The Engagement Monitor folds its 7-day readback into the
+measured-outcome store with
+shared-utils/social_measured_outcomes.py: every provider-reported metric is
+recorded per post with account id, measurement window and fetched_at
+(`record_metric`); every metric the provider did NOT report is recorded as
+UNKNOWN — never zero, never interpolated. The next cycle's Phase 1 reads the
+aggregated outcomes and the cadence review (`review_company`) before choosing
+angles; low-sample conclusions stay tentative and receive no proposals.
+Proposals may change formats, hooks, timing and creative — never the saved
+provider/model selection or publishing policy/consent (F31/F37).
 
 ---
 
