@@ -92,6 +92,29 @@ try:
 except ImportError:  # pragma: no cover - pre-FIX-14 trees limit nothing new
     _governor = None  # type: ignore[assignment]
 
+# [PRES-003 / PRES-004] ADMISSION DELEGATION. fanout no longer acquires the
+# governor through its own raw `_gov.acquire` call -- the raw call is exactly
+# the nested-double-acquisition defect PRES-003 names ("consolidate fanout's
+# raw governor call with dispatcher reentrant admission to avoid nested double
+# acquisition"). The dispatcher's `_govern_acquire` is the ONE reentrant
+# admission seam: it counts depth per (thread, folded provider), takes ONE
+# real lease for the outermost frame, and returns that same lease to nested
+# frames. A fanout worker whose unit runs inside a dispatch_complete already
+# holds the outer lease for this logical call; a standalone worker's first
+# _govern_acquire takes the lease itself. Either way: ONE logical HTTP
+# request, ONE lease.
+#
+# Refusal contract: _govern_acquire either returns a live lease (admitted) or
+# None (the governor refused -- daily cap exhausted raises GovernorTimeout,
+# the module is absent, or acquire failed). None means NO WORKER RUNS. The
+# old code caught the exception and called worker_fn anyway -- the confirmed
+# fail-open defect. A refused unit now ends as a VISIBLE "blocked" unit
+# result, never a transport call.
+try:
+    from presentation_job import dispatcher as _dispatcher_mod  # noqa: E402
+except ImportError:  # pragma: no cover - standalone import of fanout only
+    _dispatcher_mod = None  # type: ignore[assignment]
+
 # Reused, never re-invented (spec S2.3): the one retry budget the serial path
 # already uses at dispatcher.py:1815 (`for attempt in range(1, DISPATCH_RETRY_CAP + 1)`).
 DEFAULT_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3
@@ -388,6 +411,7 @@ def run_units(
             "verified": sum(1 for v in vals if v == "verified"),
             "failed": sum(1 for v in vals if v == "failed"),
             "skipped": sum(1 for v in vals if v == "skipped"),
+            "blocked": sum(1 for v in vals if v == "blocked"),
             "pending": sum(1 for v in vals if v == "pending"),
         }
 
@@ -467,6 +491,14 @@ def run_units(
         _gov_provider = unit.payload.get("provider") or "deepseek-direct"
         _gov_enabled = bool(unit.payload.get("provider")) or \
             bool(unit.payload.get("govern"))
+        # [PRES-003/004] ADMISSION: the dispatcher's reentrant seam, never the
+        # raw governor. _admit is None only on a pre-FIX-14 tree (no governor
+        # module at all) and then behaves byte-for-byte like the old no-op.
+        _admit = getattr(_dispatcher_mod, "_govern_acquire", None) \
+            if (_gov_enabled and _dispatcher_mod is not None) else None
+        _report_ok = getattr(_dispatcher_mod, "_govern_ok", None)
+        _report_429 = getattr(_dispatcher_mod, "_govern_429", None)
+        _release = getattr(_dispatcher_mod, "_govern_release", None)
         _gov = _governor if _gov_enabled else None
         is_subprocess = bool(unit.payload.get("subprocess_argv"))
         while attempts < cap:
@@ -492,24 +524,30 @@ def run_units(
             if payload_stamps:
                 unit.payload.setdefault("fanout_deadline", payload_stamps)
             _lease = None
-            if _gov is not None:
-                try:
-                    # FIX 14 named call site: fanout acquires one governor
-                    # lease per attempt so a 40-unit wave can never exceed the
-                    # provider's max_inflight or rps/burst window.
-                    _lease = _gov.acquire(_gov_provider)
-                except Exception:  # noqa: BLE001 -- gating never kills a unit
-                    _lease = None
+            if _admit is not None:
+                # [PRES-003/004] ADMISSION IS REQUIRED: a refusal (None --
+                # daily cap exhausted, acquire failed, or provider
+                # unresolvable) means NO TRANSPORT CALL. The old code
+                # swallowed the exception and ran worker_fn anyway; that
+                # fail-open is the defect this replaces. The refused unit
+                # becomes a VISIBLE blocked state in the progress artifact
+                # and a typed failed result.
+                _lease = _admit(_gov_provider)
+                if _lease is None:
+                    _emit(unit.key, "blocked")
+                    return UnitResult(
+                        key=unit.key, status="failed", attempts=attempts,
+                        reasons=[f"admission refused for provider "
+                                 f"{_gov_provider!r}: governor denied the "
+                                 f"lease (budget/capacity exhausted or "
+                                 f"unavailable) -- no outbound call was made"])
             try:
                 if is_subprocess:
                     result = _run_subprocess_unit(unit)
                 else:
                     result = worker_fn(unit)
-                if _gov is not None:
-                    try:
-                        _gov.report_ok(_gov_provider)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if _report_ok is not None:
+                    _report_ok(_gov_provider)
                 _emit(unit.key, "verified" if result.status == "ok" else "failed")
                 return result
             except ProviderTaskPending as ptp:
@@ -529,12 +567,9 @@ def run_units(
             except Exception as exc:  # noqa: BLE001 -- transient-fault safety net (S2.3)
                 last_exc = exc
                 text = f"{type(exc).__name__}: {exc}"
-                if _gov is not None and ("429" in text or
-                                         "rate limit" in text.lower()):
-                    try:
-                        _gov.report_429(_gov_provider)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if _report_429 is not None and ("429" in text or
+                                                "rate limit" in text.lower()):
+                    _report_429(_gov_provider)
                 if attempts >= cap:
                     break
                 _emit(unit.key, "retrying")
@@ -556,11 +591,8 @@ def run_units(
                 else:
                     time.sleep(min(30, 5 * attempts))
             finally:
-                if _gov is not None and _lease is not None:
-                    try:
-                        _gov.release(_lease)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if _release is not None and _lease is not None:
+                    _release(_gov_provider, _lease)
         # PRES-013: the worker raised on every attempt with no result and
         # no provider task id. The DURABLE async-pending marker keeps the
         # phase surface showing a resumable failure (append_unit_ledger_row

@@ -120,6 +120,8 @@ the existing capacity probe, exactly as before this fix.
 
 from __future__ import annotations
 
+import threading  # noqa: F401 -- [PRES-044] unique tmp naming in save_profile
+
 import fnmatch
 import json
 import os
@@ -318,10 +320,19 @@ def load_profile(config_dir: Optional[Path] = None) -> Dict[str, Any]:
 
 def save_profile(profile: Dict[str, Any],
                  config_dir: Optional[Path] = None) -> Optional[Path]:
-    """Redact, then atomically write the profile. Returns the written path.
+    """Redact, then transactionally write the profile. Returns the written path.
 
     Refused (returns None) when the flag is off -- the documented rollback
-    selects the no-persistence safe path."""
+    selects the no-persistence safe path.
+
+    [PRES-044] The write is a TRANSACTION, same contract as
+    capacity.declare_capacity: one cross-process file lock
+    (``resource_profile.json.lock``) spanning read-modify-write for every
+    caller that follows the load-modify-save pattern under the same lock; a
+    UNIQUE tmp per writer (pid+thread), fsync of file and directory, atomic
+    os.replace. A write failure raises OSError with the OLD file intact --
+    never a success claim over a lost write, never a half-written profile
+    for a reader."""
     if not flag_enabled():
         return None
     cleaned = redact_record(profile)
@@ -329,10 +340,43 @@ def save_profile(profile: Dict[str, Any],
     cleaned.setdefault(".schema_version", SCHEMA_VERSION)
     path = profile_path(config_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cleaned, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
-    return path
+    lock_path = path.parent / (path.name + ".lock")
+    with open(str(lock_path), "a+") as lock_fh:
+        try:
+            import fcntl as _fcntl
+            _fcntl.flock(lock_fh.fileno(), _fcntl.LOCK_EX)
+        except ImportError:  # pragma: no cover - non-POSIX degrades to racy
+            _fcntl = None  # type: ignore[assignment]
+        try:
+            tmp = path.with_suffix(
+                f".json.tmp-{os.getpid()}-{threading.get_ident()}")
+            try:
+                with open(str(tmp), "w", encoding="utf-8") as fh:
+                    fh.write(json.dumps(cleaned, indent=2) + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, path)
+                try:
+                    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except OSError:  # pragma: no cover - exotic FS
+                    pass
+            except OSError:
+                try:
+                    tmp.unlink()
+                except OSError:  # pragma: no cover
+                    pass
+                raise
+            return path
+        finally:
+            if _fcntl is not None:
+                try:
+                    _fcntl.flock(lock_fh.fileno(), _fcntl.LOCK_UN)
+                except OSError:  # pragma: no cover
+                    pass
 
 
 # ---------------------------------------------------------------------------
