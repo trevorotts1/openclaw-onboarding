@@ -538,6 +538,86 @@ _VSL_ONLY_PHASE_IDS = frozenset({"P-U-VSL-BUILD"})
 # on no client data at all, which is the defect this gate closes.
 _INTAKE_ARTIFACT = "working/copy/intake.json"
 
+# ---------------------------------------------------------------------------
+# PRES-036 (2026-09-08): durable READY-QUEUE scheduling behind
+# PRESENTATION_READY_QUEUE (default ON; =0 restores the FIX-1 wave-join loop
+# byte-for-byte). The wave loop joined EVERY member of a wave before starting
+# later-wave work, so one hung ancestor delayed the whole run behind it
+# (SPEC.md PRES-036 source: the phases.py wave barrier). The ready queue
+# admits a phase the moment its prerequisite set passes and runs long tasks on
+# a persistent pool -- no per-wave join, ever.
+#
+# Design (TODO.md PRES-036 steps 1-4):
+#   1. durable ready queue + short nonblocking claim scans:
+#      Engine._ready_queue_tick re-evaluates the artifact-DAG ready predicate
+#      every admission cycle; long tasks execute in _run_ready_queue's
+#      persistent ThreadPoolExecutor, each member wrapped in run_phase_timed's
+#      own containment contract (a hung/crashed member is contained to its
+#      unit; the pool itself outlives waves).
+#   2. admit newly ready descendants as soon as their prerequisite set passes;
+#      waves survive as REPORTING groups only (each phase still runs under the
+#      `wave` number the pinned plan assigned, so stage telemetry/grouping is
+#      unchanged -- the GROUP is no longer a SCHEDULING barrier).
+#   3. fair sharing + critical-path/age priority: _ready_queue_tick ranks the
+#      ready set by (longest dependent-descendant chain, manifest order) so
+#      the head of the critical path is never starved by busywork; admission
+#      order across equal-priority phases is stable manifest order.
+#   4. queued/running counts, last real progress and an ETA built from the
+#      OBSERVED critical path (measured stage durations when present) are
+#      written to state["ready_queue"] every admission cycle.
+#
+# QC reserve: when the pool is saturated, exactly one slot is kept available
+# for a QC-owning phase (_READY_QUEUE_QC_PHASE_IDS -- the eight QC gates the
+# pipeline manifest declares) so queued authors cannot starve QC (QC.md
+# QC-PRES-036 check 2). With the pool unsaturated the reserve is unused and
+# QC phases run like anyone else.
+#
+# Failing ancestor handling: a descendant whose required ancestor ended the
+# run in QUARANTINED/FAILED/BLOCKED/OBSOLETE is never admitted -- it stays
+# parked in state["ready_queue"]["waiting_dependencies"] with the blocking
+# edge named, and no transport call is made for it. Siblings keep running.
+# A DEFERRED ancestor does not block: its consumers pass the same defers
+# gate themselves (Engine.run's phase_is_deferred filter).
+_READY_QUEUE_QC_PHASE_IDS = frozenset({
+    "P1Q-COPY-QC", "P-TYPO-QC", "P-PROMPT-QC", "P-IMAGE-QC",
+    "P-SHIFT-QC", "P-SPEECH-QC", "P-QC-AGGREGATE", "P-U-QC",
+})
+
+def _ready_queue_enabled() -> bool:
+    """PRES-036: default ON. Only exactly "0" disables (same quote/whitespace
+    discipline as _wave_execution_enabled -- an EMPTY value is ON, never a
+    silent rollback). =0 restores the FIX-1 wave-join loop exactly."""
+    raw = os.environ.get("PRESENTATION_READY_QUEUE")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+def _phase_terminal_bad(status: Optional[str]) -> bool:
+    """True when a phase status can never again unblock its descendants on
+    this run: quarantined (unit failed, run continues), failed (died without
+    recording its own terminal state), blocked (operator park) or obsolete.
+    PENDING/RUNNING/DONE/DEFERRED are NOT bad -- pending/running may still
+    pass, and a deferred phase's consumers run the defers gate themselves."""
+    return status in (PHASE_STATUS_QUARANTINED, PHASE_STATUS_FAILED,
+                      PHASE_STATUS_BLOCKED, PHASE_STATUS_OBSOLETE)
+
+def _critical_path_len(pid: str, dag: Dict[str, List[str]], memo: Dict[str, int]) -> int:
+    """Longest chain of ARTIFACT-DEPENDENT descendants below pid (the dag is
+    the artifact graph in execution_plan.build_edges adjacency shape:
+    producer -> [dependents]; it is cycle-free by construction --
+    load_phase_dag / topological_sort validated it). This is the scheduling
+    priority: a phase sitting on the head of the longest downstream chain
+    starts before one that blocks nothing."""
+    if pid in memo:
+        return memo[pid]
+    best = 0
+    for child in dag.get(pid, ()):
+        c = _critical_path_len(child, dag, memo)
+        if c > best:
+            best = c
+    memo[pid] = best + 1
+    return memo[pid]
+
 
 class _SafeFormatDict(dict):
     """str.format_map() helper: a {token} in a manifest-authored client_report
@@ -2903,6 +2983,304 @@ class Engine:
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
 
+    # -- PRES-036: the durable ready queue ---------------------------------
+    def _ancestors_of(self, pid: str, dep_dag: Dict[str, List[str]]) -> set:
+        """Every phase pid transitively DEPENDS on, via the artifact DAG
+        reversed to prerequisite shape (dep_dag[consumer] = [prerequisites]).
+        Computed on the small phase graph, memoized per call site."""
+        seen: set = set()
+        stack = [pid]
+        while stack:
+            cur = stack.pop()
+            for dep in dep_dag.get(cur, ()):
+                if dep not in seen:
+                    seen.add(dep)
+                    stack.append(dep)
+        seen.discard(pid)
+        return seen
+
+    def _prereq_dag(self) -> Dict[str, List[str]]:
+        """Consumer -> [prerequisite phase ids] over the SAME artifact edges
+        the plan builder uses (execution_plan.load_phase_dag adjacency is
+        producer -> [dependents]; this is its transpose). Built from the
+        pinned manifest path so scheduler and plan never disagree."""
+        try:
+            from .execution_plan import load_phase_dag
+            fwd = load_phase_dag(self.manifest.path)
+        except Exception as exc:  # noqa: BLE001 — a DAG failure here is reported, never a crash
+            self.report.event(
+                "warn", f"ready queue: prerequisite graph unavailable ({exc!r}); "
+                        "treating every phase as its own ready set")
+            return {}
+        # Reverse it: prerequisites[consumer] = [producers it waits on].
+        prereq: Dict[str, List[str]] = {pid: [] for pid in fwd}
+        for producer, dependents in fwd.items():
+            for consumer in dependents:
+                if producer not in prereq.setdefault(consumer, []):
+                    prereq[consumer].append(producer)
+        return prereq
+
+    def _ready_queue_tick(self, phases: List[Phase], dag_fwd: Dict[str, List[str]],
+                          memo: Dict[str, int]) -> Dict[str, Any]:
+        """ONE short nonblocking claim scan over the durable ready queue.
+
+        Returns {"ready": [Phase...], "waiting": [(pid, blocking_pid)...],
+        "running": [pid...], "queued": n, "done": n, "blocked_descendants": n}
+        -- NEVER sleeps, NEVER touches transport, never mutates phase state
+        beyond reading it. The ready predicate (TODO.md step 2): every
+        transitive prerequisite is DONE; an ancestor still pending/running
+        holds the descendant QUEUED; an ancestor in a terminal-bad status
+        parks the descendant in waiting_dependencies with the edge named --
+        the descendant never runs and never makes a transport call.
+
+        Priority (TODO.md step 3): longest critical path first, then manifest
+        order (age/stability tie-break) -- fair sharing falls out of the
+        persistent pool draining whichever phase is ready, not of any per-job
+        quota (one run = one job here; fairness ACROSS jobs is the
+        dispatcher's scan-root scheduler, dispatcher.py _ScanRootScheduler).
+        """
+        prereq = self._prereq_dag()
+        ready: List[Phase] = []
+        waiting: List[Tuple[str, Optional[str]]] = []
+        running: List[str] = []
+        done_n = 0
+        for p in phases:
+            ps = self._phase_state(p.id)
+            status = ps.get("status")
+            if status == PHASE_STATUS_DONE:
+                done_n += 1
+                continue
+            if status in (PHASE_STATUS_RUNNING, PHASE_STATUS_QUARANTINED,
+                          PHASE_STATUS_FAILED, PHASE_STATUS_BLOCKED,
+                          PHASE_STATUS_DEFERRED, PHASE_STATUS_OBSOLETE):
+                if status == PHASE_STATUS_RUNNING:
+                    running.append(p.id)
+                continue
+            # status is pending (or absent): evaluate the prerequisite set.
+            blocking: Optional[str] = None
+            for anc in sorted(self._ancestors_of(p.id, prereq)):
+                if anc == p.id:
+                    continue
+                anc_status = self._phase_state(anc).get("status")
+                if _phase_terminal_bad(anc_status):
+                    blocking = anc
+                    break
+                if anc_status != PHASE_STATUS_DONE and anc_status != PHASE_STATUS_DEFERRED:
+                    # Still in flight (pending/running) -- prerequisite not
+                    # yet passed; keep waiting, no transport call.
+                    blocking = anc
+                    break
+            if blocking is None:
+                ready.append(p)
+            else:
+                waiting.append((p.id, blocking))
+        ready.sort(key=lambda p: (-_critical_path_len(p.id, dag_fwd, memo), p.order, p.id))
+        return {"ready": ready, "waiting": waiting, "running": running,
+                "queued": len(ready), "done": done_n}
+
+    def _observed_stage_seconds(self) -> Dict[str, float]:
+        """Read back this run's own stage-timings phase_exit rows -- the raw
+        material for the observed-critical-path ETA (TODO.md step 4)."""
+        out: Dict[str, float] = {}
+        try:
+            tf = self._telemetry_dir() / "stage-timings.jsonl"
+            if tf.exists():
+                with tf.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if row.get("event") != "phase_exit":
+                            continue
+                        pid = row.get("phase_id")
+                        if pid:
+                            out[pid] = out.get(pid, 0.0) + float(row.get("duration_s") or 0.0)
+        except OSError:
+            pass
+        return out
+
+    def _write_ready_queue_state(self, waiting: List[Tuple[str, Optional[str]]],
+                                 running: List[str], queued: int, done_n: int,
+                                 total: int) -> None:
+        """The durable queue report (TODO.md step 4): queued vs running
+        counts, last real progress (heartbeat + slowest current phase) and an
+        ETA derived from the OBSERVED critical path -- the measured duration
+        of the longest remaining dependent chain, never a guess off the plan.
+
+        Best-effort and bounded: written under the state lock, never raised."""
+        try:
+            observed = self._observed_stage_seconds()
+            # Longest remaining chain by OBSERVED durations (0s for phases
+            # that have not run yet -- they contribute their measured peers'
+            # median, else zero, never a made-up constant presented as data).
+            measured = [v for v in observed.values() if v > 0]
+            median = sorted(measured)[len(measured) // 2] if measured else 0.0
+            remaining_ids = set()
+            for ps in self.state.get("phases", []):
+                if ps.get("status") not in (PHASE_STATUS_DONE, PHASE_STATUS_DEFERRED):
+                    remaining_ids.add(ps.get("id"))
+            # ETA walks the critical chain of NOT-YET-DONE phases using
+            # observed durations where they exist, the peers' median duration
+            # for phases that have never run, and zero only when the run has
+            # no measurement at all. Labeled honestly in the payload as an
+            # observed-critical-path ESTIMATE (eta_basis), never a promise.
+            eta_s = 0.0
+            prereq = self._prereq_dag()
+            # The recursion needs the FORWARD adjacency; build it once from
+            # the prerequisite graph (prerequisite -> [consumers]).
+            fwd: Dict[str, List[str]] = {}
+            for consumer, prods in prereq.items():
+                for pr in prods:
+                    fwd.setdefault(pr, []).append(consumer)
+
+            def _chain(node: str, visiting: set) -> float:
+                if node in visiting or node not in remaining_ids:
+                    return 0.0
+                visiting = visiting | {node}
+                dur = observed.get(node)
+                if dur is None:
+                    dur = median
+                return dur + max((_chain(c, visiting) for c in fwd.get(node, ())), default=0.0)
+
+            eta_s = max((_chain(p, set()) for p in sorted(remaining_ids)), default=0.0)
+            hb = self.state.get("heartbeat") or {}
+            payload = {
+                "queued": queued,
+                "running": len(running),
+                "running_ids": sorted(running),
+                "done": done_n,
+                "total": total,
+                "waiting_dependencies": [
+                    {"phase": pid, "blocked_by": by} for pid, by in waiting],
+                "last_progress_at": hb.get("last_checkpoint_at") or hb.get("phase_started_at"),
+                "current_phase": hb.get("current_phase"),
+                "eta_basis": "observed_critical_path",
+                "eta_seconds": round(eta_s, 1),
+                "eta_measured_phases": sum(1 for p in remaining_ids if p in observed),
+                "updated_at": utcnow(),
+            }
+            with self._state_lock:
+                self.state["ready_queue"] = payload
+                self.store.save(self.state)
+        except Exception as exc:  # noqa: BLE001 — reporting must never break scheduling
+            self.report.event("warn", f"ready-queue report failed: {exc!r}")
+
+    def _run_ready_queue(self, phases: List[Phase], plan: dict) -> List[Tuple[str, int]]:
+        """PRES-036 step 1: the durable ready queue + persistent supervised
+        pool. Replaces the wave-join loop as the DEFAULT scheduler.
+
+        Every admission cycle:
+          * _ready_queue_tick (short, nonblocking) re-derives the ready set;
+          * admitted members run on the PERSISTENT pool -- the pool is never
+            joined per wave, so one hung member cannot head-of-line block
+            later-ready work (SPEC.md PRES-036 check 1);
+          * waves remain the per-phase REPORTING group (`wave=` from the
+            pinned plan) -- stage telemetry/grouping unchanged;
+          * one QC reserve slot is honored while the pool is saturated;
+          * state["ready_queue"] carries queued/running counts, last real
+            progress and the observed-critical-path ETA.
+
+        Containment mirrors FIX 9b: a member crash is folded into its rc,
+        every sibling's rc is still collected, and the run parks ONCE at the
+        end (the caller's failed_rcs handling is unchanged).
+        """
+        dag_fwd = self._prereq_dag()  # producer -> [dependents] adjacency
+        memo: Dict[str, int] = {}
+        available = plan.get("available")
+        if not isinstance(available, int) or isinstance(available, bool):
+            # UNBOUNDED (a real measurement): width is bounded by ready work,
+            # never by the sentinel literal (same contract as the wave loop).
+            available = 8
+        total = len(phases)
+        failed_rcs: List[Tuple[str, int]] = []
+        wave_of = {}
+        for wno, wave in enumerate(plan.get("waves") or [], 1):
+            for pid in wave:
+                wave_of[pid] = wno
+        pending = {p.id: p for p in phases}
+        by_id = pending
+        in_flight: Dict[Any, Phase] = {}
+
+        def _width() -> int:
+            return max(1, available)
+
+        with ThreadPoolExecutor(max_workers=_width()) as pool:
+            while True:
+                if _shutdown_requested():
+                    break
+                tick = self._ready_queue_tick(list(by_id.values()), dag_fwd, memo)
+                # Reap finished futures first (frees slots before admitting).
+                for fut in [f for f in list(in_flight) if f.done()]:
+                    ph = in_flight.pop(fut)
+                    try:
+                        rc = fut.result()
+                    except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                        rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+                    if rc != EXIT_OK:
+                        failed_rcs.append((ph.id, rc))
+                # Parked-blocked descendants: record + skip, never transport.
+                for pid, blocked_by in tick["waiting"]:
+                    ps = self._phase_state(pid)
+                    if ps.get("status") == PHASE_STATUS_PENDING and blocked_by \
+                            and _phase_terminal_bad(self._phase_state(blocked_by).get("status")):
+                        # Not admitted, never re-queued for transport this run.
+                        self.report.event(
+                            "phase.waiting_dependency",
+                            f"{pid} waits on {blocked_by} "
+                            f"({self._phase_state(blocked_by).get('status')}) -- not admitted")
+                # Admit from the ready set while slots exist. While the pool
+                # is saturated, hold exactly ONE slot for a QC phase if any
+                # ready phase is QC (the QC reserve, TODO.md step 3): the
+                # reserve is the LAST slot only -- when the pool has free
+                # slots the reserve costs nothing and QC runs like anyone
+                # else.
+                running_ids = {ph.id for ph in in_flight.values()}
+                qc_in_ready = [p for p in tick["ready"] if p.id in _READY_QUEUE_QC_PHASE_IDS]
+                for p in tick["ready"]:
+                    if len(in_flight) >= _width():
+                        break
+                    is_qc = p.id in _READY_QUEUE_QC_PHASE_IDS
+                    if not is_qc and qc_in_ready and \
+                            len(in_flight) == _width() - 1:
+                        # Last slot while saturated: reserve it for QC.
+                        continue
+                    in_flight[pool.submit(
+                        self.run_phase_timed, p, wave=wave_of.get(p.id, 0))] = p
+                # Durable report every cycle (cheap: json + one save).
+                self._write_ready_queue_state(
+                    tick["waiting"],
+                    sorted({ph.id for ph in in_flight.values()}),
+                    queued=len([p for p in tick["ready"] if p.id not in
+                                {q.id for q in in_flight.values()}]),
+                    done_n=tick["done"], total=total)
+                if not in_flight:
+                    # Nothing running and nothing admissible: the run has
+                    # drained, or every survivor waits on a failed ancestor.
+                    break
+                # Short nonblocking wait: the next claim scan re-evaluates
+                # readiness as soon as ANY member finishes, not on a wave
+                # boundary. A 0.5s poll keeps admission latency tiny without
+                # burning CPU (the dispatcher's own interval is 10s).
+                done_any = False
+                deadline = time.monotonic() + 0.5
+                while time.monotonic() < deadline:
+                    if any(f.done() for f in in_flight):
+                        done_any = True
+                        break
+                    time.sleep(0.05)
+                if not done_any:
+                    continue
+        # with-block exit JOINED the pool: every in-flight member is done.
+        for fut, ph in in_flight.items():
+            try:
+                rc = fut.result()
+            except BaseException as exc:  # noqa: BLE001
+                rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+            if rc != EXIT_OK:
+                failed_rcs.append((ph.id, rc))
+        return failed_rcs
+
     # -- the loop ---------------------------------------------------------
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
         # U024 — sacred-structure warn check, once at engine start-up.
@@ -3029,6 +3407,31 @@ class Engine:
             # dropped just because a subset selection didn't intersect a wave.
             extra = [p for p in phases if p.id not in planned_ids]
 
+            # PRES-036: the durable ready queue is the DEFAULT scheduler when
+            # it is enabled -- same plan, same wave REPORTING groups, same
+            # capacity ceiling, but admission is per-phase (prerequisite set
+            # passes -> run now) on a persistent pool with no per-wave join.
+            # =0 (or the ready queue explicitly disabled) selects the FIX-1
+            # wave-join loop below, byte-for-byte, as the documented rollback.
+            if _ready_queue_enabled():
+                failed_rcs = self._run_ready_queue(phases, plan)
+                for p in extra:
+                    # Same per-unit crash guard as _run_wave (FIX 9b): an
+                    # extra (selected-but-unplanned) phase that crashes
+                    # records its rc instead of aborting the run.
+                    try:
+                        rc = self.run_phase_timed(p, wave=len(plan["waves"]) + 1)
+                    except BaseException as exc:  # noqa: BLE001 — collect, never abandon
+                        rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
+                    if rc != EXIT_OK:
+                        failed_rcs.append((p.id, rc))
+                if failed_rcs:
+                    return self._park_failed_units(failed_rcs)
+                self._emit_run_summary(run_started_t)
+                if only:
+                    return EXIT_OK
+                return self.close()
+
             # FIX 9b (MASTER Part 8 Fix 9): one failing unit no longer stops the
             # run. _run_wave COLLECTS every result — all wave members are joined
             # (list(pool.map) already guarantees that) and ALL their exit codes
@@ -3085,46 +3488,10 @@ class Engine:
             if failed_rcs:
                 # FIX 9b: park ONCE for the whole run, after every runnable
                 # phase has been given its chance. No mid-run early exits.
-                with self._state_lock:
-                    # FIX 5 (emitter): a parked run skips the run summary,
-                    # so drain the mirror queue before leaving.
-                    self._flush_telemetry_cc()
-                    self.state.setdefault("failed_units", []).extend(
-                        {"phase": pid, "rc": rc} for pid, rc in failed_rcs)
-                    if self.state.get("terminal") is None:
-                        self.state["terminal"] = "BLOCKED"
-                        self.state["blocked"] = {
-                            "phase": failed_rcs[0][0],
-                            "reason": (
-                                f"{len(failed_rcs)} unit(s) failed after all runnable "
-                                f"phases ran: " + ", ".join(
-                                    f"{pid} (rc {rc})" for pid, rc in failed_rcs)),
-                            "at": utcnow(),
-                            "units": [pid for pid, _ in failed_rcs],
-                        }
-                    self.store.save(self.state)
-                for pid, rc in failed_rcs:
-                    ps = self._phase_state(pid)
-                    if ps.get("status") in (PHASE_STATUS_RUNNING,
-                                            PHASE_STATUS_PENDING):
-                        # The unit parked itself below (blocked/quarantined/failed
-                        # status from _fail_unit); only normalize a unit that died
-                        # without recording its own terminal state.
-                        with self._state_lock:
-                            self._checkpoint(
-                                pid, status=PHASE_STATUS_FAILED, failed_rc=rc,
-                                failed_reason=f"phase exited rc={rc} without parking")
-                first_pid, first_rc = failed_rcs[0]
-                print("\n" + "=" * 72, file=sys.stderr)
-                print(f"PARKED at {first_pid} (+{len(failed_rcs) - 1} other failed unit(s))",
-                      file=sys.stderr)
-                for pid, rc in failed_rcs:
-                    print(f"  failed unit: {pid} rc={rc}", file=sys.stderr)
-                print("\n  continue with:", file=sys.stderr)
-                print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
-                      file=sys.stderr)
-                print("=" * 72 + "\n", file=sys.stderr)
-                return failed_rcs[0][1]
+                # (PRES-036: factored verbatim into _park_failed_units so the
+                # ready-queue path parks identically -- same terminal, same
+                # failed_units ledger, same resume banner.)
+                return self._park_failed_units(failed_rcs)
         else:
             # PRESENTATION_WAVE_EXECUTION=0 rollback path: the pre-fix serial
             # loop, byte-for-byte (every phase wave=0).
@@ -3142,6 +3509,54 @@ class Engine:
         if only:
             return EXIT_OK
         return self.close()
+
+    def _park_failed_units(self, failed_rcs: List[Tuple[str, int]]) -> int:
+        """FIX 9b park, factored (PRES-036): park ONCE for the whole run,
+        after every runnable phase has been given its chance. No mid-run
+        early exits. Identical behavior for the wave-join path and the
+        ready-queue path: drain the telemetry mirror, extend failed_units,
+        set terminal=BLOCKED once, normalize any unit that died without
+        recording its own terminal state, print the resume banner."""
+        with self._state_lock:
+            # FIX 5 (emitter): a parked run skips the run summary,
+            # so drain the mirror queue before leaving.
+            self._flush_telemetry_cc()
+            self.state.setdefault("failed_units", []).extend(
+                {"phase": pid, "rc": rc} for pid, rc in failed_rcs)
+            if self.state.get("terminal") is None:
+                self.state["terminal"] = "BLOCKED"
+                self.state["blocked"] = {
+                    "phase": failed_rcs[0][0],
+                    "reason": (
+                        f"{len(failed_rcs)} unit(s) failed after all runnable "
+                        f"phases ran: " + ", ".join(
+                            f"{pid} (rc {rc})" for pid, rc in failed_rcs)),
+                    "at": utcnow(),
+                    "units": [pid for pid, _ in failed_rcs],
+                }
+            self.store.save(self.state)
+        for pid, rc in failed_rcs:
+            ps = self._phase_state(pid)
+            if ps.get("status") in (PHASE_STATUS_RUNNING,
+                                    PHASE_STATUS_PENDING):
+                # The unit parked itself below (blocked/quarantined/failed
+                # status from _fail_unit); only normalize a unit that died
+                # without recording its own terminal state.
+                with self._state_lock:
+                    self._checkpoint(
+                        pid, status=PHASE_STATUS_FAILED, failed_rc=rc,
+                        failed_reason=f"phase exited rc={rc} without parking")
+        first_pid, first_rc = failed_rcs[0]
+        print("\n" + "=" * 72, file=sys.stderr)
+        print(f"PARKED at {first_pid} (+{len(failed_rcs) - 1} other failed unit(s))",
+              file=sys.stderr)
+        for pid, rc in failed_rcs:
+            print(f"  failed unit: {pid} rc={rc}", file=sys.stderr)
+        print("\n  continue with:", file=sys.stderr)
+        print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
+              file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return failed_rcs[0][1]
 
     def _emit_run_summary(self, run_started_t: float) -> None:
         """FIX 5: emit a run-level summary -- total wall clock + slowest 3 phases.
