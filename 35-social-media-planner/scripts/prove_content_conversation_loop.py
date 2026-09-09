@@ -197,8 +197,45 @@ def leg1_pregen_gate_and_qc() -> dict:
         "brand-appropriate, appropriate for the client's audience, no "
         "suggestive content, soft daylight, no on-image text."
     )
+    # F20/F32: the gate enforces a 9,000-19,000 char house band on the FINAL
+    # transmitted payload. A hand-written 181-char prompt is below the floor
+    # and would fail the gate — the AGREED producer path compiles the brief
+    # through shared-utils/social_prompt_compiler.py FIRST (expand sections +
+    # per-reference instructions), then gates the compiled payload.
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(_REPO_ROOT / "shared-utils"))
+        import social_prompt_compiler as _spc
+    except Exception:  # noqa: BLE001 — compiler missing: fail the leg, never fake it
+        return {"pass": False,
+                "pregen_gate_ok": False,
+                "pregen_gate_exit_code": 99,
+                "pregen_gate_problems": ["social_prompt_compiler.py not importable — "
+                                         "cannot compile the prompt to the agreed band"],
+                "qc19_receipt": qc19_receipt_fixture,
+                "cta_dm_first_with_comment_backup": cta_dm_first,
+                "post_copy": post_copy}
+    _brief = {
+        "objective": "a warm weekly campaign image of a laptop and coffee flat-lay",
+        "audience": "small business owners",
+        "theme": "pipeline confidence",
+        "brand_palette": {"primary": "#0B3D2E", "accent": "#F5EFE0"},
+        "copy": {"on_image_text": None},
+        "destination_dimensions": {"platform": "instagram", "ratio": "4:5",
+                                   "pixels": "1080x1350"},
+        "scene_notes": prompt_text,
+    }
+    compiled = _spc.compile_prompt(_brief, "kie", "gpt-image-2-text-to-image")
+    if not compiled.get("ok"):
+        return {"pass": False,
+                "pregen_gate_ok": False,
+                "pregen_gate_exit_code": 3,
+                "pregen_gate_problems": compiled.get("problems", []),
+                "qc19_receipt": qc19_receipt_fixture,
+                "cta_dm_first_with_comment_backup": cta_dm_first,
+                "post_copy": post_copy}
     gate_result = pgg.check_prompt(
-        prompt_text,
+        compiled["final_prompt"],
         model="nano-banana-2",
         ratio="4:5",
         pixels="1080x1350",
