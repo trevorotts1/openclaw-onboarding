@@ -14,8 +14,8 @@
    "id": "want_sales_checkout",
    "section": "deck-intake-upsell",
    "order": 7.6,
-   "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no)",
-   "help": "Default YES. The sales page + checkout page is a standard upsell deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely.",
+   "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no) A 'yes' builds the sales page, the checkout page, and wires the checkout order form (lead-capture; card payments only in the provider sandbox until a merchant is connected -- live charges are never invented).",
+   "help": "Default YES. The sales page + checkout page + checkout order form is a standard upsell deliverable and one of the engine's fail-closed gates. The form ships as lead-capture (order form + follow-up workflow); live card charges need a connected merchant, otherwise the checkout phase reports an explicit actionable blocker while deck work continues. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely.",
    "kind": "text",
    "allowed_values": [
     "yes",
