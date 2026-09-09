@@ -1,0 +1,90 @@
+# PRES-043 release matrix — pinned profiles + upgrade policy
+#
+# Two Linux Docker profiles (Hostinger VPS, Contabo VPS) share one Debian base
+# and differ ONLY in the documented dimensions. The macOS runner is NOT a
+# Docker profile: it runs on macos-latest with Homebrew. Pinning policy:
+# image DIGESTS (not tags), exact apt versions where load-bearing, exact pip
+# pins in requirements files, named font packages. Upgrades are deliberate:
+# bump the pin in THIS file + the matching Dockerfile/lockfile, re-run the
+# matrix, record new receipts. Never float tags in CI.
+
+matrix_version: "1.0.0"
+
+# Base image shared by both Linux profiles. Pinned by DIGEST so a rebuild
+# pulls byte-identical layers. Re-verify with:
+#   docker inspect python:3.11-slim --format '{{.RepoDigests}}'
+base_image:
+  tag: "python:3.11-slim"
+  digest: "sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534"
+  ref: "python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534"
+  observed: "2026-09-09 operator Mac (docker pull): Debian 13.6 (trixie) arm64; python:3.11.16-slim resolves to same digest"
+  # NOTE: Debian MAJOR floats with the tag (today trixie/13.6). A major bump
+  # changes apt Candidate versions below — that is an upgrade event, not a
+  # silent drift: bump digest + re-record apt versions + re-run matrix.
+
+# Linux system packages. Versions observed 2026-09-09 via
+# `apt-cache policy` inside python:3.11-slim (Debian trixie). LibreOffice,
+# poppler, tesseract, ffmpeg are load-bearing render deps from
+# presentation-deps.json; fonts are load-bearing for deterministic layout.
+apt_packages:
+  libreoffice-impress: "4:25.2.3-2+deb13u6"
+  poppler-utils: "25.03.0-5+deb13u4"
+  tesseract-ocr: "5.5.0-1+b1"
+  ffmpeg: "7:7.1.5-0+deb13u1"
+  fonts-dejavu-core: "2.37-8"
+  fonts-liberation: "1:2.1.5-3"
+
+# Python packages. Exact pins live in the profile requirements files
+# (requirements-hostinger.txt / requirements-contabo.txt); the versions
+# below are the 2026-09-09 verified-compatible set shared by both.
+pip_packages:
+  reportlab: "4.4.10"
+  python-pptx: "1.0.2"
+  pypdf: "6.7.5"
+  pytesseract: "0.3.13"
+  Pillow: "11.3.0"
+  pytest: "8.3.4 (test runner only; ships in the matrix image so the Docker legs execute the battery)"
+
+# Fonts. Both profiles install fonts-dejavu-core + fonts-liberation so
+# fc-list inside the container resolves real faces; a render with NO font
+# package installed must fail with an actionable state (QC-PRES-043 check 2),
+# never silently substitute.
+fonts:
+  packages: ["fonts-dejavu-core", "fonts-liberation"]
+  probe: "fc-list | grep -iE 'dejavu|liberation'"
+
+# GitHub Actions pins. Tags float; SHAs do not. Re-pin with
+# `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`.
+actions:
+  checkout_v4: "actions/checkout@v4"
+  setup_python_v5: "actions/setup-python@v5"
+
+runners:
+  macos: "macos-latest"
+  linux: "ubuntu-latest"
+
+# Profile dimensions: what differs between Hostinger and Contabo legs.
+# Everything else (base image, apt set, pip set, fonts) is IDENTICAL.
+profiles:
+  hostinger:
+    workspace_root: "/data/.openclaw"
+    platform_env: "vps"
+    scheduler: "openclaw cron (SILENT main-session: presentation-intake-poll */5, presentation-watchdog */10)"
+    notes: "Hostinger VPS Docker deployment per CC vps-docker-bootstrap.sh template"
+  contabo:
+    workspace_root: "/data/.openclaw"
+    platform_env: "vps"
+    scheduler: "openclaw cron (SILENT main-session: presentation-intake-poll */5, presentation-watchdog */10)"
+    notes: "Contabo VPS Docker deployment; same scheduler contract, separate receipt leg"
+
+# Upgrade policy (controlled, not floating):
+# 1. Bump ONE pin (digest, apt version, pip version, font package, action SHA).
+# 2. Re-run the FULL matrix (macos + both Docker legs).
+# 3. Record new receipts under run/evidence/PRES-043/<SHA>/ with new hashes.
+# 4. A green matrix on the new pins is the ONLY upgrade acceptance.
+# Monthly: re-pull tags, diff digests/versions against this file, open a
+# bump PR if anything moved. CI never pulls :latest or unpinned tags.
+upgrade_policy:
+  cadence: "monthly re-pull + diff; bump PR on movement"
+  acceptance: "full matrix green on new pins; receipts re-recorded"
+  forbidden: ["floating tags in CI", ":latest", "unpinned apt/pip installs"]
