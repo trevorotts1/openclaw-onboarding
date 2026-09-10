@@ -13,6 +13,40 @@ prevention.
 
 ## 9. Standard Operating Procedures
 
+### SOP 9.0 — Durable Postmortem Job Path (RR-035, BINDING)
+
+Qualification is mechanical, not judgment: **P1 severity OR third strike
+episode** (mint = episode 1; each recurrence folds one more episode).
+The FLEET quality plane (`rescue/service/postmortem-service.mjs`)
+persists the severity/strike assessment and transactionally enqueues
+**exactly one** postmortem job per qualifying ticket — replays and
+restarts converge to the same job, never a second.
+
+- **Owner is always `postmortem-qc`**, never the mitigation actor; the job
+  carries its own due time (72h), evidence digest + reference, lease and
+  retry. The mitigation actor is recorded alongside so the claim gate can
+  refuse self-review.
+- **Mitigation never waits** for the retrospective: the ticket closes
+  through the ledger independently; the job is a side effect of the
+  outcome, never a gate on it.
+- **Independent reviewer required:** the claim refuses the recorded
+  mitigation actor. The QC record stores reviewer, artifact reference,
+  root cause, prevention proposal, and evidence version
+  (ledger-schema | assessor-schema | ticket-version).
+- **A proposed fix can NEVER auto-activate:** `activate:true` is refused;
+  no apply/deploy path exists in the quality plane. Acceptance is a
+  routing decision through normal review/batch release only.
+- **Operator-only weekly prevention review** with health + missed-run
+  catchup; week keys are `pmweek|*`, cursor + receipts DISTINCT from the
+  RR-038 daily operations digest (`digest|*`) — the two planes never
+  share state. A provider outage leaves weeks open and jobs pending;
+  catchup regenerates them on the next run instead of skipping.
+- **Privacy:** attach evidence by digest + reference; never regenerate
+  guesses and never copy client problem text into the retrospective.
+
+Merge gate: the FLEET service + battery land first (RR-035 FLEET slice);
+this SOP text takes effect with that landing, not before.
+
 ### SOP 9.1 — Pull the Durable Record
 
 **Steps:** Read the ticket from the ledger (`rescue_ledger.py get --ticket-id <id>`):
@@ -58,7 +92,9 @@ detection signature.
 
 ### SOP 9.5 — Weekly Quality Review
 
-**Steps:** Read the week's resolved + incomplete tickets. Flag: any answered ticket
+**Steps:** Run the operator-only weekly prevention review (SOP 9.0 job
+queue is the source list, not a fresh scan). Read the week's resolved +
+incomplete tickets. Flag: any answered ticket
 with `return_delivered=0`; any client that hit the daily cap; any defect class that
 recurred; any diagnosis later contradicted (a wrong-layer fix). Summarize into a
 short prevention memo for the Dispatcher + Operator; recommend FAST-tiering recurring
