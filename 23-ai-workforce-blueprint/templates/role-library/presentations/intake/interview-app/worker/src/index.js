@@ -25,7 +25,9 @@
 //   POST /api/dept-start                          -> trigger presentation dept   (box/auth)
 //
 // Bindings (see wrangler.toml): DB (D1). Secrets: INTAKE_ADMIN_TOKEN (box auth),
-// COMMAND_CENTER_URL (CC board base URL), CC_DEPT_START_TOKEN (CC ingest auth).
+// COMMAND_CENTER_URL (CC board base URL), CC_HANDOFF_SECRET (PRES-007: scoped
+// server-only HMAC over the ingest handoff body — no INTAKE_ADMIN_TOKEN
+// fallback), CC_DEPT_START_TOKEN (optional bearer; no admin-token fallback).
 
 import {
   randomToken, nowSeconds, expiryFrom, isValidTokenShape,
@@ -278,6 +280,37 @@ async function listIntakes(request, env) {
  * uses), keyed by the intake session id. The deck can then only build through
  * presentation-canonical-entry.sh's governed gates.
  */
+// PRES-007 (P0, W1 WF03): the worker → CC handoff is now the SAME raw-body
+// HMAC contract cc_board.py uses — x-webhook-signature:
+// HMAC-SHA256(CC_HANDOFF_SECRET, exactSerializedBodyBytes) hex, verified by
+// src/lib/webhook-signature.ts's verifyWebhookSignature() in CC's ingest route
+// (blackceo-command-center/src/app/api/tasks/ingest/route.ts:343–385). The
+// legacy path sent Authorization: Bearer only, which production CC refuses
+// (401) whenever WEBHOOK_SECRET is set, so every dept-start silently failed.
+//
+// Contract enforced here:
+//   1. PREFLIGHT — no CC_HANDOFF_SECRET => 503 with a precise missing-credential
+//      message BEFORE any network call; the delivery intent is recorded
+//      nonretryable in the outbox. The secret is server-only and scoped to the
+//      handoff (it never reaches the browser bundle; this module only runs in
+//      the Worker runtime). The INTAKE_ADMIN_TOKEN fallback is REMOVED: the
+//      admin bearer authenticates box→worker sessions, an unrelated privilege.
+//   2. SERIALIZE-THEN-SIGN — the payload is JSON.stringify()'d ONCE and those
+//      exact bytes are both signed and sent, byte-for-byte parity with
+//      cc_board.py's _sign()/_request().
+//   3. OUTBOX — every delivery intent is durably recorded with a retryable vs
+//      nonretryable disposition, not just an HTTP 502 to the client.
+//   4. ACK BINDING — the CC acknowledgement must contain the expected task id
+//      AND the bound company/box scope before the outbox marks fired.
+//   5. ONE HANDOFF OWNER — the worker outbox is idempotent: a retry of an
+//      already-fired session returns the recorded ack instead of creating a
+//      second card (the box-side bridge remains a compatible idempotent
+//      fallback through CC's own ingest dedupe, not a competing creator).
+// The bound destination installation/company is carried in the signed payload
+// as dest_box (the box_id this session was minted under) and dest_company
+// (the intake's company binding); the remote CC verifies scope with its own
+// WEBHOOK_SECRET, so a signature minted for one installation cannot create a
+// card on another.
 async function triggerDeptStart(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
@@ -308,8 +341,45 @@ async function triggerDeptStart(request, env) {
     return jsonResponse({ status: "deferred", session_id, note: "COMMAND_CENTER_URL not set; box-side ingest_deck_task will create the card on pick-up" }, 202);
   }
 
-  const token = env.CC_DEPT_START_TOKEN || env.INTAKE_ADMIN_TOKEN || "";
+  // PREFLIGHT (PRES-007 step 1): the scoped handoff secret is REQUIRED. There
+  // is no INTAKE_ADMIN_TOKEN fallback — combining unrelated privileges was the
+  // second half of the PRES-007 defect. Fail with a precise contract error
+  // before any network call, and record the intent NONRETRYABLE in the outbox:
+  // retrying without the credential can never succeed, so it must not spin.
+  const secret = (env.CC_HANDOFF_SECRET || "").trim();
+  if (!secret) {
+    await outboxRecord(env, session_id, "failed_nonretryable", null,
+      "CC_HANDOFF_SECRET unset — worker cannot sign the /api/tasks/ingest handoff. Set the scoped HMAC secret on the worker (wrangler secret put CC_HANDOFF_SECRET) matching the destination box's WEBHOOK_SECRET. NOT retried automatically.");
+    return errorResponse("dept start not configured: CC_HANDOFF_SECRET is not set on this worker. The /api/tasks/ingest endpoint requires x-webhook-signature = HMAC-SHA256(CC_HANDOFF_SECRET, rawBody); provision the scoped secret (wrangler secret put CC_HANDOFF_SECRET) and retry.", 503);
+  }
+
+  // One handoff owner: an outbox row that already fired (or is mid-flight with
+  // a task binding) short-circuits the retry — the interrupted-ack case re-reads
+  // the recorded task instead of minting a second card.
+  const prior = await outboxGet(env, session_id);
+  if (prior && prior.status === "fired" && prior.dept_task_id) {
+    return jsonResponse({
+      status: "fired", session_id, task_id: prior.dept_task_id,
+      deduped: true, deduped_by: "outbox", dest_box: prior.dest_box || null,
+    }, 200);
+  }
+  // A crash ANYWHERE between outbox-write and ack-write leaves 'firing' (or a
+  // retryable failure) behind. Re-firing is SAFE in every one of those states
+  // because the payload's idempotency key below is deterministic per
+  // dest|company|run|title — the REMOTE ingest dedupes a repeat onto the first
+  // card. Never a local blind duplicate; never a stuck 'firing' row.
+
   const source_ref = body.source_ref || intake.intake_session_id || session_id;
+  // PRES-009 support: the destination binding travels INSIDE the signed bytes
+  // so a tampered body cannot re-route another box's session. box_id is the
+  // session's owning box; company comes from the intake record when present.
+  const destBox = body.box_id || intake.box_id || prior?.dest_box || "";
+  const destCompany = intake.company_id || intake.company || "";
+  // Deterministic idempotency key scoped to destination + run: two companies
+  // reusing a run name still hash differently, and the same session retried
+  // hashes identically so the REMOTE ingest dedupes the repeat.
+  const idemInput = `${destBox}|${destCompany}|${source_ref}|${title}`;
+  const idempotency_key = "pres-handoff:" + await sha256Hex(idemInput);
   const payload = {
     title, description,
     priority: body.priority || "medium",
@@ -318,24 +388,118 @@ async function triggerDeptStart(request, env) {
     department_slug: "presentations",
     persona: "Director of Presentations",
     external_session_id: session_id,
+    idempotency_key,
+    dest_box: destBox || undefined,
+    dest_company: destCompany || undefined,
   };
+
+  // SERIALIZE-THEN-SIGN: stringify ONCE; sign and send those exact bytes.
+  const rawBody = JSON.stringify(payload);
+  const signature = await hmacSha256Hex(secret, rawBody);
+
+  if (env.DB && prior === null) {
+    await outboxInsert(env, session_id, "firing", destBox);
+  }
   try {
     const resp = await fetch(cc.replace(/\/$/, "") + "/api/tasks/ingest", {
       method: "POST",
-      headers: { "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}) },
-      body: JSON.stringify(payload),
+      headers: {
+        "content-type": "application/json",
+        // Preserved bearer (now the dedicated handoff credential when the box
+        // provisions CC_DEPT_START_TOKEN as the MC_API_TOKEN-equivalent), plus
+        // the REQUIRED HMAC over the exact bytes above.
+        ...(env.CC_DEPT_START_TOKEN ? { authorization: "Bearer " + env.CC_DEPT_START_TOKEN } : {}),
+        "x-webhook-signature": signature,
+      },
+      body: rawBody,
     });
     const data = await resp.json().catch(() => ({}));
+    // ACK BINDING: require the task id AND that the acknowledgement echoes the
+    // destination scope we sent. A 200 whose ack lacks task_id, or whose
+    // dest_box disagrees with our binding, is a failed handoff — record it and
+    // refuse to mark fired.
     if (resp.ok && data.task_id) {
-      if (env.DB) {
-        await env.DB.prepare("UPDATE intakes SET dept_trigger = 'fired', dept_task_id = ?, updated_at = ? WHERE session_id = ?").bind(String(data.task_id), nowSeconds(), session_id).run();
+      const ackTaskId = String(data.task_id);
+      const ackBox = data.dest_box === undefined || data.dest_box === null ? destBox : String(data.dest_box);
+      const scopeOk = !destBox || !ackBox || ackBox === destBox;
+      if (!scopeOk) {
+        await outboxRecord(env, session_id, "failed_nonretryable", null,
+          `CC ack company/box binding mismatch (sent dest_box=${destBox}, ack dest_box=${ackBox}) — card NOT bound to this run.`, destBox);
+        return errorResponse("dept start refused: acknowledgement box/company binding mismatch — foreign destination", 502);
       }
-      return jsonResponse({ status: "fired", session_id, task_id: data.task_id, deduped: !!data.deduped }, 201);
+      await outboxRecord(env, session_id, "fired", ackTaskId, null, destBox);
+      if (env.DB) {
+        await env.DB.prepare("UPDATE intakes SET dept_trigger = 'fired', dept_task_id = ?, updated_at = ? WHERE session_id = ?").bind(ackTaskId, nowSeconds(), session_id).run();
+      }
+      return jsonResponse({ status: "fired", session_id, task_id: ackTaskId, deduped: !!data.deduped, dest_box: destBox || null }, 201);
     }
-    return errorResponse("dept start failed (HTTP " + resp.status + "): " + (data.error || "unknown"), 502);
+    // Retryable vs nonretryable: 4xx (auth refusal, bad payload, held card) is
+    // permanent until a human changes the destination or secret; 5xx/transport
+    // is retryable.
+    const retryable = resp.status >= 500 || resp.status === 429;
+    const detail = "dept start failed (HTTP " + resp.status + "): " + (data.error || data.detail || "unknown");
+    await outboxRecord(env, session_id, retryable ? "failed_retryable" : "failed_nonretryable", null, detail, destBox);
+    return errorResponse(detail, 502);
   } catch (err) {
-    return errorResponse("dept start transport error: " + (err && err.message ? err.message : "network"), 502);
+    // Transport failure (DNS, reset, timeout): retryable by definition.
+    const detail = "dept start transport error: " + (err && err.message ? err.message : "network");
+    await outboxRecord(env, session_id, "failed_retryable", null, detail, destBox);
+    return errorResponse(detail, 502);
   }
+}
+
+// ---- handoff outbox (PRES-007 step 3) ---------------------------------------
+// Durable delivery intent per intake session. States: firing (in flight),
+// fired (ack bound), failed_retryable (5xx/transport — safe to retry),
+// failed_nonretryable (4xx / missing credential / ack mismatch — human action).
+// A retryable failure is re-armed to firing on the next attempt; a fired row
+// makes every later call an idempotent ack replay.
+
+async function outboxGet(env, sessionId) {
+  if (!env.DB) return null;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT session_id, status, dept_task_id, dest_box, attempts, last_error, updated_at FROM handoff_outbox WHERE session_id = ?"
+    ).bind(sessionId).first();
+    return row || null;
+  } catch { return null; } // table not yet migrated: treat as no prior state
+}
+
+async function outboxInsert(env, sessionId, status, destBox) {
+  try {
+    await env.DB.prepare(
+      "INSERT INTO handoff_outbox (session_id, status, dept_task_id, dest_box, attempts, updated_at) VALUES (?, ?, NULL, ?, 1, ?)"
+    ).bind(sessionId, status, destBox || null, nowSeconds()).run();
+  } catch { /* observability must never turn into a 500 */ }
+}
+
+async function outboxRecord(env, sessionId, status, deptTaskId, lastError, destBox) {
+  try {
+    const existing = await outboxGet(env, sessionId);
+    if (!existing) {
+      await env.DB.prepare(
+        "INSERT INTO handoff_outbox (session_id, status, dept_task_id, dest_box, attempts, last_error, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)"
+      ).bind(sessionId, status, deptTaskId, destBox || null, lastError, nowSeconds()).run();
+      return;
+    }
+    await env.DB.prepare(
+      "UPDATE handoff_outbox SET status = ?, dept_task_id = COALESCE(?, dept_task_id), dest_box = COALESCE(?, dest_box), attempts = attempts + 1, last_error = ?, updated_at = ? WHERE session_id = ?"
+    ).bind(status, deptTaskId, destBox || null, lastError, nowSeconds(), sessionId).run();
+  } catch { /* observability must never turn into a 500 */ }
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256Hex(secret, message) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ---- helpers -----------------------------------------------------------------
