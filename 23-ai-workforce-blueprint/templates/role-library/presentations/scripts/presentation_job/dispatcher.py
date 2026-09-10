@@ -145,8 +145,22 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
 # after; a 429 feeds report_429, a clean response feeds report_ok. The gates
 # live HERE (module-level helpers) so dispatcher, parallel_prompt_worker and
 # fanout all gate through the same code path instead of re-deriving the
-# acquire/release/refcount dance per module. With _governor absent (pre-FIX-14
-# tree) every helper is a byte-for-byte no-op.
+# acquire/release/refcount dance per module.
+#
+# [PRES-003] THE GATE IS FAIL-CLOSED, NOT BEST-EFFORT.  The old helper caught
+# every acquire exception and returned None, and every transport treated None
+# as "proceed unthrottled" -- a broken governor, an exhausted daily cap or a
+# missing module all silently turned into UNLIMITED outbound spend.  Admission
+# is now REQUIRED for paid/network work and TYPED:
+#
+#     _govern_admit(provider) -> _GovernAdmission(admitted, lease, blocked,
+#                                                 retry_after_s, reason)
+#
+#   * admitted  -- a live lease (or a reentrant/local-bypass pass) exists.
+#   * retry     -- not admitted now (timeout, governor error): retry_after_s
+#                  says when to re-attempt.  Transport is NOT invoked.
+#   * blocked   -- permanent (governor module missing): a preflight error with
+#                  visible remediation.  Transport is NOT invoked.
 #
 # WHY THE ATTEMPT-SCOPED LEASE REGISTRY: the transports issue one HTTP request
 # per retry attempt inside their own `for attempt in range(1, retries + 1)`
@@ -158,10 +172,82 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
 # _GOVERN_DEPTH counts, per thread, how many nested _govern_acquire calls are
 # already holding for the same provider; only depth 0 actually touches the
 # governor (a "logical acquire"), deeper nesting reuses the same lease.
+#
+# [PRES-003] REENTRANT SINGLE-LEASE FIX: a depth-0 acquire that FAILED used to
+# be un-counted and the transport's nested frame would then try a SECOND real
+# acquire -- and if THAT one succeeded, the logical request proceeded with a
+# lease the outer admission had already given up on (the fail-open hole).  A
+# failed admission now leaves depth 0 and NO active lease, and the refusal
+# propagates as a typed outcome before any transport frame can run: one
+# logical HTTP request holds exactly one lease, or makes no HTTP request.
+#
+# [PRES-003] LOCAL BYPASS ALLOWLIST: only explicitly classified local
+# CPU/file/image-inspection units bypass the provider gate -- by token, never
+# by absence.  Anything else (including an unnameable provider) is gated.
 # ---------------------------------------------------------------------------
 _GOVERN_DEPTH_LOCK = threading.Lock()
 _GOVERN_DEPTH: Dict[str, int] = {}   # f"{thread_ident}:{provider}" -> nested depth
 _GOVERN_ACTIVE: Dict[str, Any] = {}  # same key -> live lease to release once
+
+#: [PRES-003] Local-bypass tokens.  A unit whose provider identity is one of
+#: these is explicitly classified LOCAL (CPU or file work -- QC graders, file
+#: assembly, local image inspection): it consumes no provider budget and is
+#: admitted with lease=None.  These tokens must never be sent as a network
+#: provider id; the transports only ever name real providers.
+_GOVERN_LOCAL_BYPASS = frozenset({
+    "local", "local-cpu", "local-file", "local-image-inspection",
+})
+
+#: [PRES-003] Bounded wait for one admission.  A refusal is a TYPED outcome
+#: the caller retries with its own backoff -- never an unbounded block inside
+#: the gate and never a silent pass-through.
+_GOVERN_ACQUIRE_TIMEOUT_S = 120.0
+
+
+class _GovernAdmission:
+    """Typed admission outcome for one provider on one thread.
+
+    admitted     -- the call may proceed; `lease` is live (None only for a
+                    local-bypass or reentrant pass, which release as None).
+    blocked      -- PERMANENT refusal (missing/broken governor): a preflight
+                    error with remediation in `reason`; retrying cannot fix it.
+    retry_after_s -- seconds to wait before re-attempting (retry class only).
+    reason       -- human-readable, operator-visible, never empty on refusal.
+    """
+
+    __slots__ = ("admitted", "lease", "blocked", "retry_after_s", "reason")
+
+    def __init__(self, *, admitted: bool, lease: Any = None,
+                 blocked: bool = False, retry_after_s: Optional[float] = None,
+                 reason: str = "") -> None:
+        self.admitted = bool(admitted)
+        self.lease = lease
+        self.blocked = bool(blocked)
+        self.retry_after_s = retry_after_s
+        self.reason = str(reason or "")
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
+        return (f"_GovernAdmission(admitted={self.admitted}, "
+                f"blocked={self.blocked}, retry_after_s={self.retry_after_s}, "
+                f"reason={self.reason!r})")
+
+
+def _govern_refusal_text(provider: str, admission: "_GovernAdmission") -> str:
+    """The one-line, sidecar-greppable refusal reason.  "No outbound call was
+    attempted" is part of the contract: the reader must be able to tell from
+    the log alone that zero transport calls were made."""
+    canon = _govern_provider(provider)
+    if admission.blocked:
+        return (f"GOVERNOR-BLOCKED: provider {canon} admission permanently "
+                f"refused ({admission.reason}) -- no outbound call was "
+                f"attempted. Fix the governor before re-dispatching: "
+                f"restore/repair presentation_job/governor.py so acquire() "
+                f"works, then reissue the work order.")
+    wait = admission.retry_after_s
+    wait_s = f"{wait:.0f}s" if isinstance(wait, (int, float)) else "unknown"
+    return (f"GOVERNOR-RETRY: provider {canon} admission not granted "
+            f"({admission.reason}) -- no outbound call was attempted; "
+            f"retry after {wait_s}.")
 
 
 # U4 (2026-09-07) -- PROVIDER IDENTITY IS FOLDED ONCE, HERE, FOR EVERY GATE.
@@ -214,37 +300,67 @@ def _govern_provider(provider: Any) -> str:
 def _govern_key(provider: str) -> str:
     return f"{threading.get_ident()}:{_govern_provider(provider)}"
 
-def _govern_acquire(provider: str):
-    """Acquire one lease for `provider` on this thread, re-entrant per depth.
-    Returns the live lease object (or None when the governor module is absent
-    or acquire itself fails -- gating is best-effort, never fatal)."""
-    if _governor is None:
-        return None
-    # U4: fold ONCE, then use the SAME canonical id for the depth key and for
-    # the governor call, so `deepseek` and `deepseek-direct` share one bucket
-    # and one depth counter instead of opening two of each.
+def _govern_admit(provider: str) -> "_GovernAdmission":
+    """[PRES-003] Required, typed admission for `provider` on this thread.
+
+    Admitted -> live lease (reentrant frames reuse the outer lease; explicitly
+    local tokens bypass with lease=None).  Refused -> a typed retry/blocked
+    outcome and NO governor state is left behind, so the caller must not (and
+    cannot) invoke the transport.  Never raises."""
     canon = _govern_provider(provider)
+    if canon in _GOVERN_LOCAL_BYPASS:
+        # Explicitly classified local unit: no provider budget, no lease.
+        return _GovernAdmission(admitted=True, lease=None,
+                                reason="local-bypass: local CPU/file unit "
+                                       "admitted outside the provider gate")
     key = f"{threading.get_ident()}:{canon}"
     with _GOVERN_DEPTH_LOCK:
         depth = _GOVERN_DEPTH.get(key, 0)
-        _GOVERN_DEPTH[key] = depth + 1
-    if depth > 0:
-        # Nested call: the outer frame already holds the lease for this
-        # logical call on this thread.
+        if depth > 0:
+            # Nested call: the outer frame already holds the lease for this
+            # logical call on this thread.
+            return _GovernAdmission(admitted=True,
+                                    lease=_GOVERN_ACTIVE.get(key),
+                                    reason="reentrant: outer admission's lease")
+        # Hold the frame count while the real acquire runs, so a concurrent
+        # nested admission cannot sneak past; a failed admit pops it again.
+        _GOVERN_DEPTH[key] = 1
+    if _governor is None:
         with _GOVERN_DEPTH_LOCK:
-            return _GOVERN_ACTIVE.get(key)
+            _GOVERN_DEPTH.pop(key, None)
+        return _GovernAdmission(
+            admitted=False, blocked=True,
+            reason=("presentation_job/governor.py is missing or failed to "
+                    "import -- the per-provider admission governor is REQUIRED "
+                    "for outbound work"))
     try:
-        lease = _governor.acquire(canon)
-    except Exception:  # noqa: BLE001 -- a broken governor never kills a run
-        lease = None
+        lease = _governor.acquire(canon, timeout_s=_GOVERN_ACQUIRE_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 -- typed outcome, never a pass
+        with _GOVERN_DEPTH_LOCK:
+            _GOVERN_DEPTH.pop(key, None)
+        timeout = type(exc).__name__ == "GovernorTimeout" or \
+            isinstance(exc, TimeoutError)
+        if timeout:
+            return _GovernAdmission(
+                admitted=False, retry_after_s=30.0,
+                reason=f"governor acquire timed out after "
+                       f"{_GOVERN_ACQUIRE_TIMEOUT_S}s ({exc})")
+        return _GovernAdmission(
+            admitted=False, retry_after_s=0.0,
+            reason=f"governor acquire failed: {type(exc).__name__}: {exc}")
     with _GOVERN_DEPTH_LOCK:
-        if lease is not None:
-            _GOVERN_ACTIVE[key] = lease
-        else:
-            # Nothing was acquired: un-count this frame so release symmetry
-            # stays exact (depth returns to 0, next call re-attempts).
-            _GOVERN_DEPTH[key] = max(0, _GOVERN_DEPTH.get(key, 1) - 1)
-    return lease
+        _GOVERN_ACTIVE[key] = lease
+    return _GovernAdmission(admitted=True, lease=lease, reason="admitted")
+
+def _govern_acquire(provider: str):
+    """Back-compat wrapper around :func:`_govern_admit`: returns the live
+    lease, or None when the admission was refused.  Callers that treat None as
+    "no outer lease of my own" (parallel_prompt_worker) stay correct because
+    the ENFORCING gate is the transport's own admission inside
+    dispatch_complete -- a refused call never reaches the wire.  Callers that
+    need the typed outcome call _govern_admit directly."""
+    admission = _govern_admit(provider)
+    return admission.lease if admission.admitted else None
 
 def _govern_release(provider: str, lease: Any) -> None:
     """Release the lease taken by _govern_acquire for `provider` on this
@@ -264,25 +380,50 @@ def _govern_release(provider: str, lease: Any) -> None:
         except Exception:  # noqa: BLE001
             pass
 
-def _govern_429(provider: str) -> None:
-    """Feed a 429 back to the governor (rate halved 60 s). Best-effort."""
+def _govern_429(provider: str, retry_after_s: Optional[float] = None) -> None:
+    """Feed a 429 back to the governor. Best-effort. [PRES-016] carries the
+    response's Retry-After (seconds) when the provider sent one, so the
+    penalty matches what the provider actually asked for."""
     if _governor is None:
         return
     try:
         # U4: the penalty must land on the bucket the calls were admitted
         # from, so it folds exactly like _govern_acquire.
-        _governor.report_429(_govern_provider(provider))
+        _governor.report_429(_govern_provider(provider),
+                             retry_after_s=retry_after_s)
     except Exception:  # noqa: BLE001
         pass
 
 def _govern_ok(provider: str) -> None:
-    """Feed a clean response back to the governor. Best-effort."""
+    """Feed a clean response back to the governor (one healthy sample).
+    Best-effort. [PRES-016] recovery is additive per healthy window, decided
+    inside governor.report_ok."""
     if _governor is None:
         return
     try:
         _governor.report_ok(_govern_provider(provider))  # U4: same fold
     except Exception:  # noqa: BLE001
         pass
+
+
+def _govern_retry_after(exc: BaseException) -> Optional[float]:
+    """[PRES-016] The provider's Retry-After header, in seconds, when the
+    exception is an HTTPError carrying one.  Only the integer-seconds form is
+    parsed; the HTTP-date form yields None (the 60 s default stands) -- an
+    honest "unknown" beats a wrong clock parse."""
+    try:
+        headers = getattr(exc, "headers", None)
+        if headers is None:
+            return None
+        raw = headers.get("Retry-After")
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text or any(ch.isalpha() for ch in text.replace("GMT", "")):
+            return None
+        return float(text)
+    except Exception:  # noqa: BLE001 -- a malformed header is just None
+        return None
 
 # ---------------------------------------------------------------------------
 # DeepSeek V4 Flash direct -- confirmed live configuration (openclaw.json),
@@ -1474,7 +1615,14 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
         # so the governor halves the next 60 s of rate; a clean response feeds
         # report_ok. Lease is released before the loop's backoff sleep so a
         # sleeping retry never occupies an in-flight slot.
-        _lease = _govern_acquire("deepseek-direct")
+        # [PRES-003] ADMISSION IS REQUIRED: a refused admission (daily cap,
+        # timeout, broken governor, missing module) raises HERE, before the
+        # request is built -- the transport is never invoked without one.
+        _admission = _govern_admit("deepseek-direct")
+        if not _admission.admitted:
+            raise DeepSeekCallError(
+                _govern_refusal_text("deepseek-direct", _admission))
+        _lease = _admission.lease
         try:
             req = urllib.request.Request(
                 DEEPSEEK_CHAT_URL, data=data, method="POST",
@@ -1497,7 +1645,9 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                     pass
                 if exc.code == 429 or exc.code >= 500:
                     if exc.code == 429:
-                        _govern_429("deepseek-direct")
+                        # [PRES-016] honor the provider's own Retry-After.
+                        _govern_429("deepseek-direct",
+                                    retry_after_s=_govern_retry_after(exc))
                     last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
                 else:
                     raise DeepSeekCallError(f"HTTP {exc.code} (non-transient): {payload}") from exc
@@ -1671,7 +1821,11 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
         # (openrouter / ollama-cloud / agnes / ...). Same contract as
         # deepseek_complete: report_429 before backoff on 429, report_ok on a
         # clean response, lease released before the backoff sleep.
-        _lease = _govern_acquire(provider)
+        # [PRES-003] admission is required: refusal raises before the request.
+        _admission = _govern_admit(provider)
+        if not _admission.admitted:
+            raise DeepSeekCallError(_govern_refusal_text(provider, _admission))
+        _lease = _admission.lease
         try:
             req = urllib.request.Request(
                 f"{base.rstrip('/')}/chat/completions", data=data, method="POST",
@@ -1695,7 +1849,9 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                     pass
                 if exc.code == 429 or exc.code >= 500:
                     if exc.code == 429:
-                        _govern_429(provider)
+                        # [PRES-016] honor the provider's own Retry-After.
+                        _govern_429(provider,
+                                    retry_after_s=_govern_retry_after(exc))
                     last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
                 elif exc.code == 402 and "can only afford" in payload:
                     # F31 (SMOKE-1, 2026-09-01): OpenRouter 402 names the exact
@@ -1862,18 +2018,26 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     # FIX 14: the routed entrypoint itself holds one logical governor lease
     # for the phase's provider across the whole dispatch (all retry attempts
     # of the chosen transport run inside it). The transports take their own
-    # per-attempt leases, but the re-entrancy depth counter in _govern_acquire
+    # per-attempt leases, but the re-entrancy depth counter in _govern_admit
     # means exactly ONE real acquire per logical call per provider per thread:
     # this outer frame is it, the inner transport frames re-use this lease.
     # Every return path AND every exception releases through _govern_release
     # via the single finally below.
+    # [PRES-003] THE ENFORCING GATE: a refused admission (missing/broken
+    # governor, exhausted budget, acquire timeout) raises BEFORE any transport
+    # work -- zero outbound calls, with a typed, greppable GOVERNOR-BLOCKED /
+    # GOVERNOR-RETRY reason the caller's sidecar records verbatim.
     route = (decision or {}).get("route") or None
     router_id = str((decision or {}).get("router") or "")
     profile_state = str((decision or {}).get("profile_state") or "")
     _route_unknown_yet = (route is None or router_id == "disabled")
     _dispatch_provider = "deepseek-direct" if _route_unknown_yet \
         else str(route.get("provider") or "deepseek-direct")
-    _dispatch_lease = _govern_acquire(_dispatch_provider)
+    _dispatch_admission = _govern_admit(_dispatch_provider)
+    if not _dispatch_admission.admitted:
+        raise DeepSeekCallError(
+            _govern_refusal_text(_dispatch_provider, _dispatch_admission))
+    _dispatch_lease = _dispatch_admission.lease
     try:
         if route is None and router_id != "disabled":
             if profile_state == "has_providers":

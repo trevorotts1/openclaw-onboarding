@@ -193,19 +193,32 @@ def _admit(provider, want):
     return n
 
 
-def test_burst_follows_the_ceiling_so_a_wave_can_actually_open(
+def test_burst_stays_the_start_rate_concurrency_never_lifts_it(
         tmp_path, monkeypatch):
-    """Measured on the operator box before this fix: deepseek-direct, profile
-    ceiling 100, admitted 20 of a 100-wide ultra wave and queued the other 80
-    behind a 10-second window. providers.yaml's burst was 20."""
+    """[PRES-016] SUPERSEDES the U5 admission-window lift.  The old rule
+    ("a width the governor will not admit is not a width") conflated the
+    CONCURRENT-REQUEST axis with the REQUEST-START axis: provider_config used
+    to raise `burst` to the profile's concurrency ceiling, so a recorded 100
+    slots silently granted permission to START 100 requests in one rolling
+    10-second window.  A concurrency ceiling is how many requests may be in
+    flight at once; the start-rate is how quickly new ones may BEGIN.  Only a
+    provider-declared start rate may widen `burst` -- so the lift is gone:
+    `burst` stays exactly the providers.yaml row, `max_inflight` follows the
+    ceiling, and a 100-wide wave opens ACROSS several windows at the yaml
+    start-rate instead of pretending one window can carry it.
+    (The OpenRouter burst-100 row is an explicit operator-declared START-rate
+    declaration, 2026-09-07 -- untouched, not a lift.)"""
     _write_profile(tmp_path, monkeypatch, "deepseek-direct",
                    concurrency_ceiling=100, ceiling_source="declared")
     cfg = governor.provider_config("deepseek-direct")
-    assert cfg["max_inflight"] == 100
-    assert cfg["burst"] >= 100, (
-        f"burst {cfg['burst']} < ceiling 100: acquire() would admit only "
-        f"{cfg['burst']} of a 100-wide wave per rolling 10s window")
-    assert _admit("deepseek-direct", 100) == 100
+    yaml_burst = int(governor._config_for("deepseek-direct").get("burst") or 0)
+    assert cfg["max_inflight"] == 100, "the ceiling still binds concurrency"
+    assert cfg["burst"] == yaml_burst, (
+        f"burst {cfg['burst']} was lifted by the concurrency ceiling "
+        f"(yaml row: {yaml_burst}); concurrency must not fabricate a "
+        "start-rate (PRES-016)")
+    assert _admit("deepseek-direct", yaml_burst) == yaml_burst, (
+        "one window still admits exactly the yaml burst without waiting")
 
 
 def test_sustained_rate_is_not_touched(tmp_path, monkeypatch):
