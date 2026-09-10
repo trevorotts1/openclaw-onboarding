@@ -424,6 +424,12 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
                 "signal": ev["signal"],
                 "admission_status": admission_status,
                 "ticket_id": admission_ticket,
+                # RR-015: the intake's enrollment verdict must reach the
+                # operator-facing event, not just the receipt -- an admitted
+                # ticket whose box has no usable rr_box_auth row is a PENDING
+                # REPAIR the operator owns (RR-02 fails closed NEEDS_HUMAN).
+                "box_enrolled": receipt.get("box_enrolled"),
+                "box_enrollment_reason": receipt.get("box_enrollment_reason"),
                 "supplemental_msg": msg_ok,
             })
     return escalated

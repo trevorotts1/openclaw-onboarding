@@ -169,6 +169,7 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
     reason = "admission status unknown (dry run)"
     admitted = False
     ticket_id = None
+    receipt = {}
     with Ledger(state_dir) as led:
         eid = led.record_event("S7", "P1", key_path="fleet:%s" % box, klass="deadman",
                                detail=detail, dedup_key="deadman|%s" % box)
@@ -236,7 +237,10 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
                         "deadman|%s" % box, payload="box=%s" % box)
             except Exception:  # noqa: BLE001
                 pass
-    return {"status": reason, "ticket_id": ticket_id, "admitted": admitted}
+    return {"status": reason, "ticket_id": ticket_id, "admitted": admitted,
+            "box_enrolled": receipt.get("box_enrolled") if not dry_run else None,
+            "box_enrollment_reason": (receipt.get("box_enrollment_reason")
+                                      if not dry_run else None)}
 
 
 def cmd_digest():
