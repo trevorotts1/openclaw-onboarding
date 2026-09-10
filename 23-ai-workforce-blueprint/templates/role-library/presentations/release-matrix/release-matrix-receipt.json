@@ -22,24 +22,10 @@
       "font_faces_dejavu_liberation": "0",
       "battery": "12 passed (test-native-mac-battery.log)",
       "outputs": {
-        "pptx": {
-          "name": "PRES043-DECK01-FINAL.pptx",
-          "sha256": "ffeb5c363d912e464a43e58ad97f74dd15667a9a1ed6a9dd050ed076d2b14d72",
-          "bytes": 29327
-        },
-        "pdf": {
-          "name": "PRES043-DECK01-FINAL.pdf",
-          "sha256": "663d514f03772902829bef081a8ac0b40181af13e3760ed18e2e68465f99cc0a",
-          "bytes": 17048
-        },
-        "png": {
-          "name": "demo-page-1.png",
-          "sha256": "95b6bb985b007852eaf8cdf26986c811ddb1222372b1b68c2ed3cc1290ab4262",
-          "bytes": 38623
-        }
+        "note": "per-run sha256+bytes recorded in run/evidence/PRES-043/<SHA>/release-matrix-receipt.json"
       },
       "ocr_excerpt": "PRES-043 matrix probe slide 1\n\nFixture client presO43-fixture-client deck pres043-deck-01 body line for OCR readback",
-      "log_sha256": "50a689e72d759cec7d8d7be1ad68db0baff25ed611556faf6d012ed045847135"
+      "packaged_receipt": "run/evidence/PRES-043/<SHA>/release-matrix-receipt-<profile>.json"
     },
     "docker_hostinger": {
       "status": "PASS",
@@ -52,24 +38,10 @@
       "font_faces_dejavu_liberation": "20",
       "battery": "12 passed (test-docker-hostinger-battery.log)",
       "outputs": {
-        "pptx": {
-          "name": "PRES043-DECK01-FINAL.pptx",
-          "sha256": "685f50cf3990dcd8849830b4112c3b4bf6dafa4026495c4d39fd8f316ad1bbfb",
-          "bytes": 29327
-        },
-        "pdf": {
-          "name": "PRES043-DECK01-FINAL.pdf",
-          "sha256": "4f3f46175ab1b9573a6957c2708c69f3a6092340a4b4a0c8dd47c286f2872538",
-          "bytes": 20511
-        },
-        "png": {
-          "name": "page-1.png",
-          "sha256": "74b9f0ede08a729ee8b4420be8abba544ae7e6404209e4f4ff9f9d5f5516c23e",
-          "bytes": 39538
-        }
+        "note": "per-run sha256+bytes recorded in run/evidence/PRES-043/<SHA>/release-matrix-receipt.json"
       },
       "ocr_excerpt": "PRES-043 matrix probe slide 1\n\nFixture client pres043-fixture-client deck pres043-deck-01 body line for OCR readback",
-      "log_sha256": "28cfab9402adeea763d7abe6f9e348a695865c73c424438dca01961522bbb653"
+      "packaged_receipt": "run/evidence/PRES-043/<SHA>/release-matrix-receipt-<profile>.json"
     },
     "docker_contabo": {
       "status": "PASS",
@@ -82,26 +54,12 @@
       "font_faces_dejavu_liberation": "20",
       "battery": "12 passed (test-docker-contabo-battery.log)",
       "outputs": {
-        "pptx": {
-          "name": "PRES043-DECK01-FINAL.pptx",
-          "sha256": "e8024fe4d829e9d1c56892e3a9c589b6dfca43d9fb10d395975a5de46e62de18",
-          "bytes": 29327
-        },
-        "pdf": {
-          "name": "PRES043-DECK01-FINAL.pdf",
-          "sha256": "2c544af04be92ac081ad6379612c6b7e32cd247c2041977ce6c73734328b2eef",
-          "bytes": 20511
-        },
-        "png": {
-          "name": "page-1.png",
-          "sha256": "74b9f0ede08a729ee8b4420be8abba544ae7e6404209e4f4ff9f9d5f5516c23e",
-          "bytes": 39538
-        }
+        "note": "per-run sha256+bytes recorded in run/evidence/PRES-043/<SHA>/release-matrix-receipt.json"
       },
       "ocr_excerpt": "PRES-043 matrix probe slide 1\n\nFixture client pres043-fixture-client deck pres043-deck-01 body line for OCR readback",
       "memory_bounded_leg": "passed (--memory 2g --memory-swap 2g)",
       "readonly_output_leg": "passed",
-      "log_sha256": "66b88e4dd30c734654f5536422c65ff837b346c37d0108152ee0c1393c40caf0"
+      "packaged_receipt": "run/evidence/PRES-043/<SHA>/release-matrix-receipt-<profile>.json"
     }
   },
   "packaged_receipts": {
@@ -131,5 +89,6 @@
     "d23c79f15463964dfc758cab6b47d18d5801c41c repair-commit note"
   ],
   "final_head_note": "This receipt rides the final commit on branch wf13-matrix-pres043; its own commit sha is the branch HEAD containing this file (a receipt cannot name its own commit). run/candidates/PRES-043/<SHA>/candidate.json carries the final proposed_sha.",
-  "self_reference_note": "This receipt rides branch wf13-matrix-pres043; its own commit is the branch HEAD that contains it. The authoritative proposed sha for QC lives in run/candidates/PRES-043/<SHA>/candidate.json and in the QC verdict, which CAN name a fixed commit because they are evidence files outside this commit."
+  "self_reference_note": "This receipt rides branch wf13-matrix-pres043; its own commit is the branch HEAD that contains it. The authoritative proposed sha for QC lives in run/candidates/PRES-043/<SHA>/candidate.json and in the QC verdict, which CAN name a fixed commit because they are evidence files outside this commit.",
+  "full_receipt": "The authoritative full receipt (per-run output hashes, log hashes, OCR excerpts, fixture smoke ids) lives at run/evidence/PRES-043/<SHA>/release-matrix-receipt.json next to the raw logs."
 }
