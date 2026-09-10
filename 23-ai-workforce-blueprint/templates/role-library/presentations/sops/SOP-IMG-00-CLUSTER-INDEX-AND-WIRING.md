@@ -46,5 +46,5 @@ These SOPs are the source; the build step folds short pointers into the existing
 
 - Skill 45 is real and complete: PPT-ANALYSIS-SOP v1.1 (rasterize -> 3-8 families -> Deck Style System + SHORT/MEDIUM/LONG templates); INDEX.md v2.0 is empty on every section; SOP-DIU-607 fully specifies the alias/lookbook system; SOP-DIU-611 is the boundary contract; SOP-DIU-612 is the cross-dept request block (CDO sole intake).
 - MODEL-SPECS v1.2: 7 endpoints, none of them image-to-text; GPT-Image-2 I2I takes `input_urls` (<=16, 30MB); the style-reference-only directive is mandatory for style refs.
-- CLIENT-WEBINAR-DECK-SOP §9: GPT-Image-2-only manifest; I2I default with logo URL in `input_urls`; the full createTask/recordInfo lifecycle + the `resultUrls` (not `.url`) parse.
+- CLIENT-WEBINAR-DECK-SOP §9: GPT-Image-2.5-only manifest; I2I default with logo URL in `input_urls`; the full createTask/recordInfo lifecycle + the `resultUrls` (not `.url`) parse.
 - The forensic reference deck confirmed logo mutation came from per-slide T2I instead of I2I, and that none of the named defects was an auto-fail at the gate. These SOPs make them auto-fails.

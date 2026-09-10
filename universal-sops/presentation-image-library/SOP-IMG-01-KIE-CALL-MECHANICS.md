@@ -14,7 +14,7 @@ Concern 20 (verbatim): "Kie.ai text-to-image vs image-to-image vs image-to-text/
 
 The reference-case forensic (Dimension F) proved the consequence of guessing the mode: the logomark mutated into at least four different marks across the deck (ringed leaf, bare leaf, monogram, mountain peak) because the slides were generated text-to-image per slide instead of composited image-to-image with one locked logo asset passed as a reference. An agent that does not know the exact call structure for each mode WILL default to text-to-image and WILL reinvent the logo.
 
-This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
+This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
 
 This is a build-mechanics reference. NONE of its content is ever printed on a slide. (Cross-ref the Audience-Facing battery in the slide-craft cluster.)
 
@@ -30,8 +30,8 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 
 | Mode | Kie.ai endpoint family | What it does | When the Presentations pipeline uses it |
 |---|---|---|---|
-| **A. Text-to-Image (T2I)** | model `gpt-image-2-text-to-image` | Generates a slide image from words ONLY. No reference images. The model invents every pixel, including any logo or face described in words. | ONLY when the deck has NO logo asset AND no founder portrait for this slide (`LOGO_ON_SLIDES = false` AND archetype is not A5). Rare. |
-| **B. Image-to-Image (I2I)** | model `gpt-image-2-image-to-image` | Generates a slide image from words PLUS up to 16 reference image URLs passed in `input_urls`. The references anchor real assets (the locked logo, the founder's real face, an optional style-reference frame) so they are composited rather than reinvented. | THE DEFAULT for every slide that carries the logo (i.e. almost every slide), and for every A5 founder-portrait slide. |
+| **A. Text-to-Image (T2I)** | model `gpt-image-2-5-sunburst-text-to-image` | Generates a slide image from words ONLY. No reference images. The model invents every pixel, including any logo or face described in words. | ONLY when the deck has NO logo asset AND no founder portrait for this slide (`LOGO_ON_SLIDES = false` AND archetype is not A5). Rare. |
+| **B. Image-to-Image (I2I)** | model `gpt-image-2-5-sunburst-image-to-image` | Generates a slide image from words PLUS up to 16 reference image URLs passed in `input_urls`. The references anchor real assets (the locked logo, the founder's real face, an optional style-reference frame) so they are composited rather than reinvented. | THE DEFAULT for every slide that carries the logo (i.e. almost every slide), and for every A5 founder-portrait slide. |
 | **C. Image-to-Text / JSON (analysis)** | NOT a Kie.ai generation endpoint | "Read this image and return structured findings" (e.g. analyze a reference deck into named style families; QC-read a rendered slide for defects). | Done by the multimodal LLM agent READING the image directly. There is no Kie.ai HTTP call for this. See §6. |
 
 **The hard mode-selection rule (this is the gate):**
@@ -39,6 +39,50 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 > If a logo asset exists (`LOGO_ON_SLIDES = true`, a `LOGO_URL` is on file) OR the slide is archetype A5 (founder portrait) OR any reference frame is being passed for style → the call MUST be Mode B (I2I) with the reference URL(s) in `input_urls`. A T2I call (Mode A) on any such slide is an AUTO-FAIL.
 
 There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to POST an "extract JSON" job to Kie.ai is wrong; analysis is the agent's own multimodal read (§6).
+
+---
+
+## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 — TWO-MODEL SYSTEM, operator ruling 2026-09-09)
+
+As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT-Image-2.5. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
+
+**DEFAULT — GPT-Image-2.5 (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
+- Mode A: `gpt-image-2-5-sunburst-text-to-image`
+- Mode B: `gpt-image-2-5-sunburst-image-to-image`
+
+**2.5 supported aspect ratios — EXACTLY these 13, nothing else:**
+`auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`
+- **1K-ONLY (2K and 4K REJECTED for these four):** `27:16`, `16:27`, `9:8`, `8:9`.
+- 2K and 4K are available for every other ratio in the list.
+
+**2.5 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`, DOCS marker 2026-09-09). This cap applies to the 2.5 model ONLY — see the legacy-route cap below, which is a different number.
+
+**APPROVED SUBSTITUTIONS — these four route to 2.5 under a substitute ratio (operator-blessed):**
+
+| Requested | Renders on 2.5 as |
+|---|---|
+| `5:4` | `4:3` |
+| `4:5` | `3:4` |
+| `2:1` | `16:9` |
+| `1:2` | `9:16` |
+
+**LEGACY ROUTE — MANDATORY for these three ratios, no exceptions:**
+
+| Ratio | Model (Mode A / Mode B) |
+|---|---|
+| `3:1` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+| `1:3` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+| `9:21` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+
+The operator rated 2.5's rendering of these three too weak to substitute (candidates 21:9, 9:16, and 16:27 were each considered and rejected). Do NOT send `3:1`, `1:3`, or `9:21` to the 2.5 model. Do NOT silently pick a different ratio for these three — each keeps its own requested ratio and routes to the legacy model as-is, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
+
+**Legacy-route prompt cap: 25,000 chars — OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for the legacy route only. Never apply the 20,000 figure to a legacy-route call, and never apply 25,000 to a 2.5 call.
+
+**A ratio in NEITHER list above** (not one of the 13 allowed-on-2.5 ratios, not one of the three legacy ratios) is still a HARD-FAIL — reject outright, no warn-only, no silent substitution.
+
+**UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) — never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
+
+The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A legacy-route call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
 
 ---
 
@@ -69,7 +113,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gpt-image-2-text-to-image",
+    "model": "gpt-image-2-5-sunburst-text-to-image",
     "input": {
       "prompt": "<the slide-NN QC-passed prompt, up to 20000 chars>",
       "aspect_ratio": "16:9",
@@ -81,7 +125,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 **JSON body (the shape):**
 ```json
 {
-  "model": "gpt-image-2-text-to-image",
+  "model": "gpt-image-2-5-sunburst-text-to-image",
   "input": {
     "prompt": "<full QC-passed prompt>",
     "aspect_ratio": "16:9",
@@ -106,7 +150,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gpt-image-2-image-to-image",
+    "model": "gpt-image-2-5-sunburst-image-to-image",
     "input": {
       "prompt": "<the slide-NN QC-passed prompt>. The first reference image is the company logo: place it exactly as specified, do not redraw, recolor, or restyle it.",
       "input_urls": ["<LOGO_URL>"],
@@ -122,7 +166,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gpt-image-2-image-to-image",
+    "model": "gpt-image-2-5-sunburst-image-to-image",
     "input": {
       "prompt": "<the slide-NN QC-passed prompt>. The first reference image is the company logo (place as specified, do not redraw). The second reference image is the founder; her likeness drives the portrait.",
       "input_urls": ["<LOGO_URL>", "<FOUNDER_PORTRAIT_URL>"],
@@ -135,7 +179,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 **JSON body (the shape):**
 ```json
 {
-  "model": "gpt-image-2-image-to-image",
+  "model": "gpt-image-2-5-sunburst-image-to-image",
   "input": {
     "prompt": "<full QC-passed prompt + the reference-naming sentence(s)>",
     "input_urls": ["<LOGO_URL>", "<FOUNDER_PORTRAIT_URL if A5>", "<STYLE_FRAME_URL if used>"],
@@ -171,7 +215,7 @@ The Slide Submitter (at submit time) and the QC Specialist (at image QC) enforce
 
 | # | Check (trigger) | PASS | AUTO-FAIL |
 |---|---|---|---|
-| 1 | **Mode matches assets.** If `LOGO_URL` exists OR slide is A5 OR a style frame is passed, the submitted body's `model` is `gpt-image-2-image-to-image` and `input_urls` is non-empty. | I2I used, refs present | T2I used on a slide that has a logo/portrait/style frame, OR I2I with an empty `input_urls` |
+| 1 | **Mode matches assets.** If `LOGO_URL` exists OR slide is A5 OR a style frame is passed, the submitted body's `model` is `gpt-image-2-5-sunburst-image-to-image` and `input_urls` is non-empty. | I2I used, refs present | T2I used on a slide that has a logo/portrait/style frame, OR I2I with an empty `input_urls` |
 | 2 | **Reference naming.** Every URL in `input_urls` is named, in order, in the prompt ("first reference is the logo...", "second is the founder..."). | All refs named in order | A ref URL present with no naming sentence |
 | 3 | **Logo "place, do not redraw."** The logo reference sentence forbids redrawing/recoloring/restyling the logo. | Sentence present | Logo described only in words with no "do not redraw" instruction (the mutation path) |
 | 4 | **Style-frame directive.** If a STYLE reference frame is in `input_urls`, the style-reference-only directive sentence is present verbatim. | Directive present | Style frame attached, directive missing |
@@ -199,9 +243,9 @@ Check 9 is the closing of the reference-case logo-mutation loop: passing the log
 
 ## 9. PASS vs FAIL EXAMPLES (drawn from the actual reference-case defects)
 
-**FAIL (the real reference-case defect):** A content slide with a logo on file was submitted with body `{"model":"gpt-image-2-text-to-image","input":{"prompt":"...with the [CLIENT_LOGO_NAME] ringed-leaf logo in the lower right..."}}`. No `input_urls`. Result: the model invented a logo, and across the deck it drew a ringed leaf on one slide, a bare leaf on another, a monogram on a third, a mountain peak on a fourth. Fails check 1 (T2I on a logo slide) and check 9 (logo not identical to a locked asset).
+**FAIL (the real reference-case defect):** A content slide with a logo on file was submitted with body `{"model":"gpt-image-2-5-sunburst-text-to-image","input":{"prompt":"...with the [CLIENT_LOGO_NAME] ringed-leaf logo in the lower right..."}}`. No `input_urls`. Result: the model invented a logo, and across the deck it drew a ringed leaf on one slide, a bare leaf on another, a monogram on a third, a mountain peak on a fourth. Fails check 1 (T2I on a logo slide) and check 9 (logo not identical to a locked asset).
 
-**PASS:** The same slide submitted as `{"model":"gpt-image-2-image-to-image","input":{"prompt":"... The first reference image is the company logo: place it on a white chip in the lower-right corner at ~9% slide width, do not redraw, recolor, or restyle it. ...","input_urls":["https://media.../client-logo.png"],"aspect_ratio":"16:9","resolution":"2K"}}`. One locked logo asset, named as the first reference, with the "do not redraw" instruction. Passes checks 1–3; the rendered logo is the same mark on every slide (check 9).
+**PASS:** The same slide submitted as `{"model":"gpt-image-2-5-sunburst-image-to-image","input":{"prompt":"... The first reference image is the company logo: place it on a white chip in the lower-right corner at ~9% slide width, do not redraw, recolor, or restyle it. ...","input_urls":["https://media.../client-logo.png"],"aspect_ratio":"16:9","resolution":"2K"}}`. One locked logo asset, named as the first reference, with the "do not redraw" instruction. Passes checks 1–3; the rendered logo is the same mark on every slide (check 9).
 
 **FAIL:** An A5 founder slide submitted I2I with `input_urls:["<LOGO_URL>","<FOUNDER_URL>"]` but the prompt never said which reference was which. The model painted the logo's colors onto the founder's blazer. Fails check 2 (references not named in order).
 

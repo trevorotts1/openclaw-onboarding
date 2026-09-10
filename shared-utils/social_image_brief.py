@@ -282,7 +282,7 @@ def route_by_capability(model_id: str, needs_text: bool,
                         capability_lookup=None) -> dict:
     """Route by CAPABILITY (reliable text rendering), never a stale model name.
     Uses model-capabilities.json via select_model.capabilities_for_model when no
-    explicit lookup is given. GPT Image 2 / Agnes eligible through verified
+    explicit lookup is given. GPT Image 2.5 / Agnes eligible through verified
     adapters; a text-bearing asset never routes to a non-text model."""
     caps = list(capability_lookup(model_id)) if capability_lookup else []
     if not caps:
@@ -298,7 +298,7 @@ def route_by_capability(model_id: str, needs_text: bool,
         return {"routed": False, "reason": (
             f"model '{model_id}' does not declare reliable text rendering — "
             "route text-bearing assets to a text-capable model by capability "
-            "(Ideogram V3 DESIGN, GPT Image 2 via Kie, or Agnes).")}
+            "(Ideogram V3 DESIGN, GPT Image 2.5 via Kie, or Agnes).")}
     return {"routed": True, "model_id": model_id, "capabilities": caps}
 
 

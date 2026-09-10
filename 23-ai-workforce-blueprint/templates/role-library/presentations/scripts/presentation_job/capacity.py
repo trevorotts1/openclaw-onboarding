@@ -545,7 +545,7 @@ PROVIDER_PROBE_DEFS = {
     },
     # ------------------------------------------------------------------
     # kie probe target (master plan Part 8 Fix 13 / W08a-B3): kie.ai is the
-    # department's image provider (gpt-image-2 per model_catalog.json) and the
+    # department's image provider (gpt-image-2.5 per model_catalog.json) and the
     # only probeable provider with NO probe definition -- a box whose ONLY key
     # is KIE_API_KEY reported an empty inventory, and FIX 12's preflight then
     # priced its phases off an unverified account. kie.ai exposes no

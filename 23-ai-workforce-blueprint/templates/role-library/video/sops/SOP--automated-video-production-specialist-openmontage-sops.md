@@ -119,7 +119,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 3. **Budget measurement:** Compute the estimated cost for the selected pipeline:
    - `documentary-montage.yaml` free path: estimated cost = $0.00. No further budget gate needed.
-   - Kie image generation (`gpt-image-2-image-to-image` or `gpt-image-2-text-to-image`): check `07-kie-setup/EXAMPLES.md` or the client's `_local/PRICING.md` for current per-task cost. Multiply by the number of image tasks in the pipeline.
+   - Kie image generation (`gpt-image-2-5-sunburst-image-to-image` or `gpt-image-2-5-sunburst-text-to-image`): check `07-kie-setup/EXAMPLES.md` or the client's `_local/PRICING.md` for current per-task cost. Multiply by the number of image tasks in the pipeline.
    - Kie video generation (`gemini-omni-video` / `veo3` / `veo3_fast`): multiply per-task cost by number of video clips.
    - Sum to a total `estimated_cost_usd`.
 
@@ -161,7 +161,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
    Pipeline:            [pipeline_defs yaml selected]
 
    Paid calls in scope:
-     Image generation:  [count] x gpt-image-2-image-to-image  (or gpt-image-2-text-to-image)
+     Image generation:  [count] x gpt-image-2-5-sunburst-image-to-image  (or gpt-image-2-5-sunburst-text-to-image)
                         Provider: Kie.AI | Endpoint: POST https://api.kie.ai/api/v1/jobs/createTask
                         Est. cost per call: $[per_call_usd]
      Video generation:  [count] x gemini-omni-video (default) or veo3_fast (fallback)
@@ -229,8 +229,8 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 4. **Kie image generation calls (when in scope):**
 
    Model selection:
-   - Use `gpt-image-2-image-to-image` when source reference images are provided in the brief (`image_input` field populated)
-   - Use `gpt-image-2-text-to-image` when generating from text prompt only (no source images)
+   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (`image_input` field populated)
+   - Use `gpt-image-2-5-sunburst-text-to-image` when generating from text prompt only (no source images)
 
    API call shape (must match `07-kie-setup/EXAMPLES.md` and `46-kie-callback-relay/kie-slide-submitter.js`):
    ```
@@ -239,7 +239,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
    Content-Type: application/json
 
    {
-     "model": "gpt-image-2-image-to-image",
+     "model": "gpt-image-2-5-sunburst-image-to-image",
      "input": {
        "prompt":        "[text prompt]",
        "image_input":   ["[reference_image_url]"],

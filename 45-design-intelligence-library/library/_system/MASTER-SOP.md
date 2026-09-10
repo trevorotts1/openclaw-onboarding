@@ -186,7 +186,7 @@ Every style card carries three prompt templates. Tiers are calibrated to verifie
 |---|---|---|---|
 | **SHORT** | ≤ 500 chars | ALL models | Fast drafts, volume runs, quick iterations |
 | **MEDIUM** | ≤ 2,800 chars | ALL models (fits Seedream 4.5's 3,000 ceiling with headroom; safe for Ideogram/Wan 5,000) | **Default production tier** |
-| **LONG** | ≤ 19,000 chars | GPT-Image 2 + Nano Banana 2 ONLY (20,000 ceilings) | Full style spec: complex layouts, text-heavy designs, maximum fidelity |
+| **LONG** | ≤ 19,000 chars | GPT-Image 2.5 + Nano Banana 2 ONLY (20,000 ceilings) | Full style spec: complex layouts, text-heavy designs, maximum fidelity |
 
 ### 5.1 Required structure for each tier
 
@@ -240,7 +240,7 @@ When instructed e.g. *"Create an image using style FB-003 with subject X and hea
 1. **Look up FB-003 in INDEX.md** → open the card file.
 2. **Read the card fully**, including hard rules and the test log (the test log contains known failure modes and fixes).
 3. **Read the category `_RULES.md`** for aspect ratio and platform constraints.
-4. **Choose the tier**: default MEDIUM unless the operator specifies, the design is text-heavy (→ LONG on GPT-Image 2 / Nano Banana 2), or it's a draft run (→ SHORT).
+4. **Choose the tier**: default MEDIUM unless the operator specifies, the design is text-heavy (→ LONG on GPT-Image 2.5 / Nano Banana 2), or it's a draft run (→ SHORT).
 5. **Choose the model** using the routing table in MODEL-SPECS.md (category rules may override).
 6. **Fill the variables** into the template. Do not improvise style changes — the card is law. If the operator requests a deviation, apply it and note it in your response, but do NOT edit the card unless told to.
 7. **Assemble the API request** using the JSON templates in MODEL-SPECS.md.

@@ -27,7 +27,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
   `run_signature_deck.py`, fronted by `presentation-canonical-entry.sh`). It reads the
   Layer-A rich prompts **VERBATIM** — it does **not** compose them, does **not** have an
   image tool of its own, and does **not** turn a bare `scene`/`copy` pair into a prompt.
-  It submits each rich prompt to `gpt-image-2-text-to-image` / `-image-to-image` (16:9,
+  It submits each rich prompt to `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image` (16:9,
   2K, the mandatory English/Latin-only pin appended), polls, downloads, verifies every
   PNG, assembles the full-bleed `.pptx`, and then runs **two distinct gates over two
   distinct bundles**: the **postflight completeness gate** enforces the **ten-file
@@ -155,7 +155,7 @@ code) — **never silently, never by your own choice.**
 
 Every per-slide rich prompt you (or the Slide Image Creator role) author is fail-loud
 gated: below the **9,000-character HARD floor** (a thin/stub prompt, AF-P1) or above the
-**18,000-character HARD ceiling** (a 2,000-char safety margin below the GPT-Image-2 API
+**18,000-character HARD ceiling** (a 2,000-char safety margin below the GPT-Image-2.5 API
 ceiling of 20,000, AF-P2) is refused, not rendered. The mandatory English/Latin-only pin
 the render step appends to EVERY prompt (if the authored prompt does not already carry
 it) is, verbatim:

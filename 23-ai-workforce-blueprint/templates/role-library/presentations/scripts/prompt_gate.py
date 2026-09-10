@@ -110,7 +110,7 @@ PROMPT_CHAR_TARGET_HIGH = 18000  # SOP authoring-target HIGH end (matches the ha
 PROMPT_CHAR_CEILING = 18000    # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: catches paste-repetition padding
 
-# The GPT-Image-2 platform ceiling on input.prompt (both endpoints). ensure_english_pin
+# The GPT-Image-2.5 platform ceiling on input.prompt (both endpoints). ensure_english_pin
 # never appends past this — but PROMPT_CHAR_CEILING (18,000) already leaves 2,000 chars
 # of margin, so the pin (~230 chars) always fits.
 API_PROMPT_HARD_CEILING = 20000
@@ -353,7 +353,7 @@ def prompt_problems(prompt_text: str, copy_val=None) -> List[str]:
     if length > PROMPT_CHAR_CEILING:
         problems.append(
             f"AF-P2: prompt is {length} chars, over the hard ceiling of {PROMPT_CHAR_CEILING} "
-            "(2,000 under the 20,000 GPT-Image-2 API ceiling). Tighten redundant phrasing "
+            "(2,000 under the 20,000 GPT-Image-2.5 API ceiling). Tighten redundant phrasing "
             "(never delete the negative block or any spelling-lock).")
 
     missing_blocks = _missing_structural_blocks(prompt_text.lower())
@@ -379,7 +379,7 @@ def presentations_gate_enabled() -> bool:
     specs and whose renders are NOT English-only 16:9 2K — Skill 06 (GHL landing images),
     Skill 49 (Signature Funnel, 5,000-char band), Skill 47 (movie frames), Skill 59
     (Anthology book covers, portrait), and the video roles. Forcing the presentations band /
-    English-only pin / gpt-image-2 mode-pin on those callers would break them. So the heavy
+    English-only pin / gpt-image-2.5 mode-pin on those callers would break them. So the heavy
     gate is opt-in: the PRESENTATIONS context sets KIE_PROMPT_GATE=presentations to enable
     it; every other caller gets only the always-on universal-safe checks
     (verify_prompt_minimal: dead-endpoint + empty-prompt refusal)."""
@@ -435,7 +435,7 @@ def ensure_english_pin(prompt_text: str) -> str:
     """Return `prompt_text` guaranteed to carry the mandatory English/Latin anti-garble
     pin. Belt-and-braces: if the pin is already present (authoring-side responsibility),
     the prompt is returned unchanged; otherwise the pin is appended. Never appends past the
-    GPT-Image-2 API hard ceiling (a post-gate prompt is <=18,000, so the ~230-char pin
+    GPT-Image-2.5 API hard ceiling (a post-gate prompt is <=18,000, so the ~230-char pin
     always fits with 2,000 chars of margin). This is what makes ENGLISH_PIN REAL — before
     this function the constant was defined and appended nowhere."""
     if has_english_pin(prompt_text):
@@ -455,7 +455,7 @@ def ensure_english_pin(prompt_text: str) -> str:
 def check_mode_consistency(model: str, input_urls, logo_bearing: bool = False,
                            slide_id=None) -> None:
     """Refuse (PromptGateError) an inconsistent model/reference combination:
-      * input_urls (reference images) present => model MUST be gpt-image-2-image-to-image
+      * input_urls (reference images) present => model MUST be gpt-image-2-5-sunburst-image-to-image
         (a text-to-image call ignores the references and invents its own mark).
       * a slide flagged logo-bearing with EMPTY input_urls => hard fail (the canonical
         invented-logo defect: T2I on a logo slide invents a new mark each render).

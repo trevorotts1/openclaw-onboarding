@@ -3,7 +3,7 @@ name: anthology-engine
 description: |
   The Anthology Engine, the per-client orchestrator that turns ONE participant's universal Convert and Flow form submission into ONE gated, quality-controlled 2,000 to 3,500 word anthology chapter (never twelve), delivered as BOTH a Google Doc and a designed PDF with no font below 14 point, links pushed to standardized Convert and Flow contact custom fields keyed by contact_id. It owns ALL external input and output and CALLS Skill 54 (Anthology Writer) as its authoring core; it never re-authors the chapter pipeline. Four layers: a deterministic intake router; an Airtable-backed durable multi-participant ledger (contact_id plus anthology_id); the Skill 54 authoring core extended with the Skill 52 avatar handoff and the newly pinned prompts; Google Drive plus PDF plus Convert and Flow delivery; and the producer and participant surfaces INSIDE the client's own Command Center (a seeded Anthology department board, home-screen tiles, and a token-scoped participant page). Every stage is an idempotent, resumable job against the ledger; a crash, a credit outage, or a six-month pause costs nothing. Runs S0 intake to S9 anthology assembly through one sanctioned entry (anthology-engine-entry.sh). The producer is the OpenClaw box owner; participants are external co-authors with no login. Runtime is NEVER an Anthropic-family model: the client's own NON-Anthropic provider chain only. Move in silence: operator-verbose, client-silent, only three sanctioned nudge templates ever reach a client. Sibling of Skill 53 (Book Writer) and Skill 54 (Anthology Writer); it deprecates neither. Trigger with "run the anthology engine", "start an anthology", "onboard an anthology producer", "assemble the anthology", or an inbound anthology intake webhook.
 trigger: anthology engine
-version: v1.0.0
+version: v1.0.1
 ---
 
 # Anthology Engine (Skill 59)
@@ -187,7 +187,7 @@ registry-bound Convert and Flow pipeline-stage update fires.
 | S4 blurb and outline | Book Blurb then single-chapter Create Outline placing every personal story; Docs plus PDFs | producer, then participant outline approval |
 | S5 chapter | ONE complete chapter, 2,000 to 3,500 measured stripped words, title locked, every story placed; full Gate B battery BEFORE the gate opens | participant: Approve as-is OR Request rewrite with notes |
 | S6 chapter rewrite | optional, budget 2; notes become chapter_updates; the Thornfield persona rewrites inside the band; re-enters the S5 gate | re-enters S5 |
-| S7 cover image | the cover prompt generator, then Kie.ai GPT-image-2 PORTRAIT 1024x1536 via Skills 07 and 46 against the verified text-to-image portrait endpoint; PNG to Drive | none |
+| S7 cover image | the cover prompt generator, then Kie.ai GPT-image-2.5 PORTRAIT 1024x1536 via Skills 07 and 46 against the verified text-to-image portrait endpoint; PNG to Drive | none |
 | S8 package and deliver | Google Doc plus 14-point-floor PDF; Convert and Flow media upload; exact-key field writes by contact_id read back byte-for-byte; control fields; per-gate pipeline-stage update; signed certificate; card to review | card to review (QC scorer owns review to done) |
 | S9 anthology assembly | fired ONLY by the producer ready-to-assemble trigger; order curation, editor's introduction in the producer's voice, front and back matter, contributor bios; compile from FROZEN approved chapters byte-identical; full manuscript Doc plus PDF; producer sign-off closes it | s9_ready then s9_producer |
 

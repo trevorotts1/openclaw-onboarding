@@ -131,13 +131,13 @@ Clearing the LENGTH floor (9,000 chars; max 18,000) is **necessary but never suf
 
 ### Engine 5 - WORLD INTELLIGENCE (world-building)
 
-**Definition.** The render KNOWS what the real world looks like. The environment is believable for THIS character: a roughly 15-year-old's room is a sports poster and a few trophies in a normal house - NOT a million-dollar condo. GPT-Image-2 is the mandated model specifically because of its strong real-world grounding.
+**Definition.** The render KNOWS what the real world looks like. The environment is believable for THIS character: a roughly 15-year-old's room is a sports poster and a few trophies in a normal house - NOT a million-dollar condo. GPT-Image-2.5 is the mandated model specifically because of its strong real-world grounding.
 
 **How to verify it landed.** Ask "would this exact person actually be in this exact room, with these exact props, at this moment?" - yes = pass. Props and scale match the character's real life and station.
 
 **Failure modes (auto-failed at QC).** Aspirational over-scaling (a teen in a luxury penthouse); a generic studio backdrop where a real scene belongs; props that contradict the character's station.
 
-[CROSS-REF] Already enforced: slide-image-creator-sops.md element 11 (WORLD ENGINE), SOP 9.3 "Lighting + World Library," QC grounding criterion. ADDED by this update: the believability / scale calibration rule (the "trophies, not a condo" example) in slide-image-creator-sops.md SOP 9.3, and the GPT-Image-2-for-grounding rationale STATED in SOP-IMG-01 (the model was pinned without the "why").
+[CROSS-REF] Already enforced: slide-image-creator-sops.md element 11 (WORLD ENGINE), SOP 9.3 "Lighting + World Library," QC grounding criterion. ADDED by this update: the believability / scale calibration rule (the "trophies, not a condo" example) in slide-image-creator-sops.md SOP 9.3, and the GPT-Image-2.5-for-grounding rationale STATED in SOP-IMG-01 (the model was pinned without the "why").
 
 ---
 
@@ -262,4 +262,4 @@ The Pricing / Hook / Recap rows restate §5 rule 2 (the three NAMING-only engine
 
 ## 6. INTEGRATION NOTE
 
-This SOP is the index; the enforcement is distributed. Cross-reference: slide-image-creator-sops.md (Facial, Lighting, Story, World, Product), SOP-DESIGN-01 (Typography), SOP-IMG-01 (the GPT-Image-2 grounding rationale), SOP-PITCH-02 (Pricing first law), SOP-PITCH-03 (Recap), SOP-SLIDE-03 / hook-strategist-sops.md (Hook), SOP-PITCH-04 (External Proof), SOP-SLIDE-04 (the required slide-type beats), brand-steward-sops.md (Subtle Brand Cue), presenter-coach-sops.md + delivery-concierge-sops.md (Hybrid delivery), pptx-assembly-specialist-sops.md (notes pane), and SOP-SLIDE-00 Section 8 (the registered auto-fail codes). The promotion of the three existing un-named engines (Facial, Audience, World) into the named nine is the highest-leverage change: it makes the department sound and behave as deliberate as it already is.
+This SOP is the index; the enforcement is distributed. Cross-reference: slide-image-creator-sops.md (Facial, Lighting, Story, World, Product), SOP-DESIGN-01 (Typography), SOP-IMG-01 (the GPT-Image-2.5 grounding rationale), SOP-PITCH-02 (Pricing first law), SOP-PITCH-03 (Recap), SOP-SLIDE-03 / hook-strategist-sops.md (Hook), SOP-PITCH-04 (External Proof), SOP-SLIDE-04 (the required slide-type beats), brand-steward-sops.md (Subtle Brand Cue), presenter-coach-sops.md + delivery-concierge-sops.md (Hybrid delivery), pptx-assembly-specialist-sops.md (notes pane), and SOP-SLIDE-00 Section 8 (the registered auto-fail codes). The promotion of the three existing un-named engines (Facial, Audience, World) into the named nine is the highest-leverage change: it makes the department sound and behave as deliberate as it already is.

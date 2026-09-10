@@ -4,7 +4,7 @@
 Protocol (GIP) prompt-band gate (diu_validator.py prompt-band).
 
 Graphics had MAX-only cap tiers and NO minimum floor anywhere: a one-line prompt could
-reach the paid Kie.ai / GPT-Image 2 API unchallenged. FIX 1-A/1-B added per-asset-class
+reach the paid Kie.ai / GPT-Image 2.5 API unchallenged. FIX 1-A/1-B added per-asset-class
 BANDS (prompt-bands.json) with a HARD MIN floor (AF-GIP-PROMPT-FLOOR), the MAX cap
 (AF-DIU-PROMPT-CAP), and a length-INDEPENDENT quality gate (AF-GIP-PROMPT-QUALITY): the
 8-class negative block, a per-string spelling-lock + verbatim copy on text-bearing bands,

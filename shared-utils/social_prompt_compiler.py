@@ -3,7 +3,7 @@
 social_prompt_compiler.py — F32 social-planner image prompt compiler + validator.
 
 Owner requirement (SPEC "Build contract for detailed image prompts"): every final
-social-planner image prompt for Kie GPT Image 2 and Agnes contains 9,000–19,000
+social-planner image prompt for Kie GPT Image 2.5 and Agnes contains 9,000–19,000
 meaningful stripped Unicode characters. The client may supply one short sentence;
 this compiler produces the full brief.
 
@@ -21,7 +21,7 @@ Contract:
     logo-vs-style-reference conflict) BEFORE any paid call.
   - token budget so limits cannot silently truncate: over-budget compiles are
     condensed to fit, never truncated mid-content, never silently sent.
-  - house band 9,000–19,000 is DISTINCT from vendor caps (Kie GPT Image 2
+  - house band 9,000–19,000 is DISTINCT from vendor caps (Kie GPT Image 2.5
     published maxLength 20000; Agnes publishes no cap — NOT_PUBLISHED).
 
 Scoped override: social planner ONLY. Unrelated skills keep their own bands.
@@ -581,7 +581,7 @@ def compile_prompt(brief: dict, provider: str, model: str,
     band = policy.get("house_band", {})
     lo, hi = int(band.get("min_chars", 9000)), int(band.get("max_chars", 19000))
     prov = policy.get("providers", {}).get(f"{provider}-{model.split('/')[-1]}") or \
-        policy.get("providers", {}).get(f"{provider}-gpt-image-2") or \
+        policy.get("providers", {}).get(f"{provider}-gpt-image-2-5") or \
         policy.get("providers", {}).get("agnes-image-2.1-flash")
     vendor_cap = (prov or {}).get("vendor_cap_chars")
     vendor_cap_source = (prov or {}).get("vendor_cap_source")
@@ -713,7 +713,7 @@ if __name__ == "__main__":  # pragma: no cover — small CLI for manual runs
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         ok = 0
-        r = compile_prompt({"audience": "test"}, "kie", "gpt-image-2-text-to-image")
+        r = compile_prompt({"audience": "test"}, "kie", "gpt-image-2-5-sunburst-text-to-image")
         ok += 0 if r["ok"] and 9000 <= r["count"] <= 19000 else 1
         v = validate_final("x" * 8999)
         ok += 0 if not v["ok"] else 1

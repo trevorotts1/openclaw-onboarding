@@ -8,7 +8,7 @@
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
-> **Cost profile:** Typically PAID — VSL production usually requires brand-original generated imagery and/or talking-head video via Kie (`gpt-image-2-*` for stills, `gemini-omni-video` default / `veo3_fast` fallback for clips). `SOP--movie-producer-rule-zero-budget.md` (RZ-1 through RZ-5) governs every paid call. A VSL is a conversion asset: the offer logic and proof sequence are authoritative inputs from the VSL Specialist, not invented here.
+> **Cost profile:** Typically PAID — VSL production usually requires brand-original generated imagery and/or talking-head video via Kie (`gpt-image-2-5-*` for stills, `gemini-omni-video` default / `veo3_fast` fallback for clips). `SOP--movie-producer-rule-zero-budget.md` (RZ-1 through RZ-5) governs every paid call. A VSL is a conversion asset: the offer logic and proof sequence are authoritative inputs from the VSL Specialist, not invented here.
 
 ---
 
@@ -60,7 +60,7 @@
 **Steps:**
 
 1. Run the Skill 47 `verify-deps.sh` preflight. Fail-loud.
-2. From the beat map, count: Kie image stills (`gpt-image-2-image-to-image` when a brand reference is supplied; `gpt-image-2-text-to-image` otherwise) and Kie video clips (`gemini-omni-video` default; `veo3`/`veo3_fast` fallback for text-to-video).
+2. From the beat map, count: Kie image stills (`gpt-image-2-5-sunburst-image-to-image` when a brand reference is supplied; `gpt-image-2-5-sunburst-text-to-image` otherwise) and Kie video clips (`gemini-omni-video` default; `veo3`/`veo3_fast` fallback for text-to-video).
 3. Hand the full call list to `SOP--movie-producer-rule-zero-budget.md` RZ-2 for cost estimation and remaining-budget computation.
 4. Provider audit: `kie` AVAILABLE; all native paid providers UNAVAILABLE; Piper AVAILABLE (VSL narration may use Piper or hand to Skill 30 for premium TTS per the handoff SOP).
 
@@ -107,7 +107,7 @@
 
 **Steps:**
 
-1. Generate stills via Kie image (`POST https://api.kie.ai/api/v1/jobs/createTask`, `gpt-image-2-image-to-image`, `image_input` = brand reference, `aspect_ratio` from brief, `resolution: 2K`). Poll `recordInfo`, download, record `kie_task_id` + `kie_result_url`.
+1. Generate stills via Kie image (`POST https://api.kie.ai/api/v1/jobs/createTask`, `gpt-image-2-5-sunburst-image-to-image`, `image_input` = brand reference, `aspect_ratio` from brief, `resolution: 2K`). Poll `recordInfo`, download, record `kie_task_id` + `kie_result_url`.
 2. Generate clips via Kie video. For `gemini-omni-video`: `duration` MUST be a STRING (`"8"`), `aspect_ratio` MUST be set (omitting either causes HTTP 422). For `veo3`/`veo3_fast` fallback use the `/api/v1/veo/generate` + `/api/v1/veo/record-info` endpoint pair. Record every `kie_task_id` + `kie_result_url`.
 3. Narration: Piper offline TTS for the script, OR hand to Skill 30 (Fish Audio) per the handoff SOP when premium voice is required. Do NOT reimplement cloud TTS in the pipeline.
 4. Assemble to the beat map with FFmpeg: stills + clips + narration + brand color title/end cards, in the script's persuasion order. The strongest proof and the call-to-action land last.

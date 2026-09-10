@@ -114,7 +114,7 @@ def canonical_script_names() -> set:
 # Detection patterns — a non-canonical *.py inside the run dir that matches any of
 # these is a hand-rolled renderer/assembler and is BLOCKED.
 # ---------------------------------------------------------------------------
-# AF-LOCAL-CANVAS: locally fabricating the slide image instead of kie.ai gpt-image-2.
+# AF-LOCAL-CANVAS: locally fabricating the slide image instead of kie.ai gpt-image-2.5.
 _LOCAL_CANVAS_PATTERNS = [
     # Image.new(...) with a 2048x1152 (or 1152x2048) slide canvas, dims in either order.
     (re.compile(r"Image\.new\s*\([^)]*\b2048\b[^)]*\b1152\b", re.S), "Image.new() 2048x1152 slide canvas"),

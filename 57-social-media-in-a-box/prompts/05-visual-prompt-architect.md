@@ -36,7 +36,7 @@ UNIFIED IMAGE BRIEF: {{ $json.imageBrief }}
 ROUTING (capability, not brand name):
 - If the brief's copy.on_image_text is non-empty (text-bearing asset), the prompt
   is routed to a model that declares reliable text rendering
-  (shared-utils/model-capabilities.json): Ideogram V3 DESIGN, GPT Image 2 via Kie,
+  (shared-utils/model-capabilities.json): Ideogram V3 DESIGN, GPT Image 2.5 via Kie,
   or Agnes through their verified adapters. Never route text-bearing assets to a
   non-text model by name or habit.
 - Non-text imagery may route to any verified image-generation model.

@@ -63,7 +63,7 @@ def _write_file(path: Path, content: bytes) -> str:
 
 def _asset(local_path: Path, content: bytes, **overrides: Any) -> Dict[str, Any]:
     base = {
-        "model_id": "kie-gpt-image-2-image-to-image",
+        "model_id": "kie-gpt-image-2-5-sunburst-image-to-image",
         "provider_task_id": "fixture-task",
         "local_path": str(local_path),
         "hash_sha256": _write_file(local_path, content),

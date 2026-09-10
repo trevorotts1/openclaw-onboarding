@@ -177,7 +177,7 @@ The deterministic pipeline renders each slide as **text-to-image by default** â€
 with no official logo is a plain t2i generation. When the deck has an OFFICIAL logo,
 `build_deck.py` switches that render to **image-to-image**: pass `--logo <URL>` (or set
 `brand.logo_image_path` in `working/copy/intake.json` to a URL) and the real logo rides
-`input_urls` into the SAME single generation (`gpt-image-2-image-to-image` class, model
+`input_urls` into the SAME single generation (`gpt-image-2-5-sunburst-image-to-image` class, model
 resolved from the catalog), so KIE composites the actual mark â€” no AI wordmark. A LOCAL
 PNG logo is different: the render stays t2i and `assemble_pptx` composites the exact PNG
 onto every slide at assembly time (top-right, ~13% of slide width). You never pass logo

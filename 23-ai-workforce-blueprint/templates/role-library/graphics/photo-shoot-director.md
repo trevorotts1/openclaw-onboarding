@@ -162,7 +162,7 @@ This role contributes to the company revenue cascade by: **enabling high-value p
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| Kie.ai (via Generation Operator) | AI image generation for all shoot modes; routes to NB2 (Nano Banana 2), GPT-Image-2 I2I, Wan 2.7, Ideogram V3 as specified in MODEL-SPECS — you assemble the brief and Identity Lock Block; the Operator fires the API calls | Indirect — routed via Generation Operator per standard handoff | Never submit Kie.ai calls directly; the Operator owns API execution and receipts |
+| Kie.ai (via Generation Operator) | AI image generation for all shoot modes; routes to NB2 (Nano Banana 2), GPT-Image-2.5 I2I, Wan 2.7, Ideogram V3 as specified in MODEL-SPECS — you assemble the brief and Identity Lock Block; the Operator fires the API calls | Indirect — routed via Generation Operator per standard handoff | Never submit Kie.ai calls directly; the Operator owns API execution and receipts |
 | PHOTO-SHOOT-SOP.md | Master operating protocol for all shoot modes A–F: sourcing hierarchy, Identity Lock Block assembly, retouching catalog, shoot logging | `_system/PHOTO-SHOOT-SOP.md` in the client's design library (master-files/design-library/) | Single source of truth for all shoot-mode decision logic; never replicate its content, point to it |
 | MODEL-SPECS.md | Endpoint routing table, format/size limits for reference images, shoot-mode endpoint assignments (NB2 / GPT-I2I / Wan / Ideogram) | `_system/MODEL-SPECS.md` in the client's design library | Read for format/size validation during brief assembly; never modify |
 | IDENTITY.md (per-client) | Client identity profile: reference image set, shoot history, Identity Lock Block seed, consent record pointer | `personal-photo-shoot/{client-slug}/IDENTITY.md` | The single source of truth for the client's identity profile; all lock-block assembly starts here |
@@ -201,7 +201,7 @@ This role contributes to the company revenue cascade by: **enabling high-value p
 2. Assemble the Identity Lock Block per PHOTO-SHOOT-SOP §4: exact physical descriptors drawn from the IDENTITY.md profile, framed as hard constraints. The block must be present verbatim in every generation prompt for this shoot. Do NOT summarize or paraphrase — copy the block as specified.
 3. Add the universal Identity Lock Block clause per FORESIGHT-ENHANCEMENTS improvement: `"Do not render any other recognizable real person in the scene."` This clause is mandatory on every block, regardless of mode.
 4. Select the Mode-appropriate workflow per PHOTO-SHOOT-SOP §5:
-   - Mode A (Headshot): tight Identity Lock Block, NB2 or GPT-Image-2 I2I per MODEL-SPECS routing table, studio/natural light settings.
+   - Mode A (Headshot): tight Identity Lock Block, NB2 or GPT-Image-2.5 I2I per MODEL-SPECS routing table, studio/natural light settings.
    - Mode B (Lifestyle): Identity Lock Block + environment/activity descriptors, extended context prompt.
    - Mode C (Branded editorial): Identity Lock Block + brand foundation block (from box brand config), editorial-style context.
    - Mode D (Contact sheet): Identity Lock Block, multiple-variation contact sheet workflow (PHOTO-SHOOT-SOP §8 step 1), Kie.ai n=4 contact-sheet tier.
@@ -252,7 +252,7 @@ This role contributes to the company revenue cascade by: **enabling high-value p
 **Frequency:** Every shoot brief that references client identity images.
 **Inputs:** The reference image set listed in IDENTITY.md (or new images provided by the client for this specific shoot), MODEL-SPECS endpoint size/format limits for the target endpoint.
 **Steps:**
-1. Validate each reference image against the target endpoint's format and size limits per MODEL-SPECS §1/§5: GPT-Image-2 I2I and NB2 accept up to 30MB (jpeg/png/webp/jpg); Seedream Edit and Wan accept up to 10MB. Reject and request a replacement for any reference that exceeds the limit or is in an unsupported format — do NOT attempt to submit an oversized reference.
+1. Validate each reference image against the target endpoint's format and size limits per MODEL-SPECS §1/§5: GPT-Image-2.5 I2I and NB2 accept up to 30MB (jpeg/png/webp/jpg); Seedream Edit and Wan accept up to 10MB. Reject and request a replacement for any reference that exceeds the limit or is in an unsupported format — do NOT attempt to submit an oversized reference.
 2. For any real-person likeness reference (identity photos, client headshots): the ONLY permitted hosting path is the client's GHL media library for that client's GHL location. Public ImgBB or any other public-permanent hosting is PROHIBITED for identity reference images.
 3. Upload the validated reference images to the client's GHL media library. Record the upload receipts (URLs + upload timestamp) in the shoot record.
 4. Verify each URL fetches correctly: perform a URL-liveness check (HTTP HEAD or GET returning 200 with the expected content-type) before including it in the shoot brief. A URL that returns a non-200 response is not usable — re-upload before submitting to the Operator.

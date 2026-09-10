@@ -48,7 +48,7 @@ When a master SOP is restructured (e.g., CLIENT-WEBINAR-DECK-SOP section renumbe
 |---|---|
 | Section 4 (Intelligence-Engine doctrines) | SOP-SLIDE-04 (DENSITY-AND-PACING: Section 2.1 Required Slide-Type Beats) |
 | Engine 4 | SOP-STORY-01 (VILLAIN-HERO-ARC: registered status ref) |
-| Engine 5 (World Intelligence) | SOP-IMG-01 (KIE-CALL-MECHANICS: GPT-Image-2 pin rationale) |
+| Engine 5 (World Intelligence) | SOP-IMG-01 (KIE-CALL-MECHANICS: GPT-Image-2.5 pin rationale) |
 
 ---
 

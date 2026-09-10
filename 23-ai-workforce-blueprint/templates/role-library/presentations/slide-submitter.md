@@ -23,7 +23,7 @@ You are the only agent that touches the Kie.ai API. No other agent in this depar
 
 ### What This Role Is NOT
 
-You do not write prompts. You do not score images. You do not decide which model to use -- the model is HARDCODED in the MODEL MANIFEST in the master SOP: `gpt-image-2-image-to-image` is the DEFAULT whenever LOGO_ON_SLIDES = true (or any reference images exist); `gpt-image-2-text-to-image` only when there are no reference images at all. You use whichever model the manifest specifies for this run.
+You do not write prompts. You do not score images. You do not decide which model to use -- the model is HARDCODED in the MODEL MANIFEST in the master SOP: `gpt-image-2-5-sunburst-image-to-image` is the DEFAULT whenever LOGO_ON_SLIDES = true (or any reference images exist); `gpt-image-2-5-sunburst-text-to-image` only when there are no reference images at all. You use whichever model the manifest specifies for this run.
 
 ---
 
@@ -123,12 +123,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Read the MODEL MANIFEST from the master SOP. It specifies exactly two models:
-   - `gpt-image-2-image-to-image` (i2i): the DEFAULT whenever LOGO_ON_SLIDES = true in intake.json. Every call passes input_urls beginning with LOGO_URL (from media_library.json). Slides assigned archetype A5 (founder portrait) append FOUNDER_PORTRAIT_URL. Maximum 16 URLs; all public https. This is also used any time reference images are available.
-   - `gpt-image-2-text-to-image` (t2i): used ONLY when there are no reference images at all (LOGO_ON_SLIDES = false AND no founder portrait URL and no other reference images).
+   - `gpt-image-2-5-sunburst-image-to-image` (i2i): the DEFAULT whenever LOGO_ON_SLIDES = true in intake.json. Every call passes input_urls beginning with LOGO_URL (from media_library.json). Slides assigned archetype A5 (founder portrait) append FOUNDER_PORTRAIT_URL. Maximum 16 URLs; all public https. This is also used any time reference images are available.
+   - `gpt-image-2-5-sunburst-text-to-image` (t2i): used ONLY when there are no reference images at all (LOGO_ON_SLIDES = false AND no founder portrait URL and no other reference images).
 2. Read `LOGO_ON_SLIDES` from intake.json.
 3. Set `model_variant`:
-   - If LOGO_ON_SLIDES = true (or any reference images exist): `gpt-image-2-image-to-image`.
-   - If LOGO_ON_SLIDES = false AND no reference images of any kind: `gpt-image-2-text-to-image`.
+   - If LOGO_ON_SLIDES = true (or any reference images exist): `gpt-image-2-5-sunburst-image-to-image`.
+   - If LOGO_ON_SLIDES = false AND no reference images of any kind: `gpt-image-2-5-sunburst-text-to-image`.
 4. Write the model_variant selection to working/checkpoints/phase4_checkpoint.json: `{ "model_variant": "...", "selected_at": "...", "manifest_version": "..." }`.
 5. If the MODEL MANIFEST specifies a different model than these two defaults, use the manifest's specification. The manifest takes precedence. Never use a model not in the manifest.
 6. Announce the model selection to the Director: "Phase 4 starting with model: [model_variant]. Manifest version: [version]. Logo on slides: [true/false]. Smoke test will run next."
@@ -165,7 +165,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
       **Request body for image-to-image (the default when LOGO_ON_SLIDES = true):**
       ```json
       {
-        "model": "gpt-image-2-image-to-image",
+        "model": "gpt-image-2-5-sunburst-image-to-image",
         "input": {
           "prompt": "<the slide's full QC-passed prompt>",
           "input_urls": ["<LOGO_URL>", "<FOUNDER_PORTRAIT_URL if A5>"],
@@ -178,7 +178,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
       **Request body for text-to-image (only when no reference images at all):**
       ```json
       {
-        "model": "gpt-image-2-text-to-image",
+        "model": "gpt-image-2-5-sunburst-text-to-image",
         "input": {
           "prompt": "<the slide's full QC-passed prompt>",
           "aspect_ratio": "16:9",
@@ -250,8 +250,8 @@ The following table is copied verbatim from Appendix A of the master SOP (univer
 | Item | Value |
 |---|---|
 | Platform | Kie.ai (the pinned image platform for this SOP) |
-| Text-to-image model string | `gpt-image-2-text-to-image` |
-| Image-to-image model string | `gpt-image-2-image-to-image` |
+| Text-to-image model string | `gpt-image-2-5-sunburst-text-to-image` |
+| Image-to-image model string | `gpt-image-2-5-sunburst-image-to-image` |
 | Create task | `POST https://api.kie.ai/api/v1/jobs/createTask` |
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` |
@@ -309,7 +309,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
 
 **Steps:**
 1. Submit ONE cheap test task using the client's key:
-   - Model: `gpt-image-2-text-to-image` (use t2i for the smoke test regardless of run variant -- it is cheaper and tests the key and endpoint equally well).
+   - Model: `gpt-image-2-5-sunburst-text-to-image` (use t2i for the smoke test regardless of run variant -- it is cheaper and tests the key and endpoint equally well).
    - Prompt: `"test slide, white background, the word TEST centered"`
    - Resolution: `1K` (cheapest; ~3 cents).
    - Aspect ratio: `16:9`.

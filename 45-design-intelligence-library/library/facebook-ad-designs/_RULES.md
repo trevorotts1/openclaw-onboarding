@@ -19,6 +19,6 @@
 - Brand default: bold, vibrant, high saturation, cinematic (client brand standard — see workspace brand config) unless card says otherwise.
 
 ## Model routing (overrides MODEL-SPECS defaults)
-- Default: GPT-Image 2 (layout adherence) or Nano Banana 2 (people-led creative).
+- Default: GPT-Image 2.5 (layout adherence) or Nano Banana 2 (people-led creative).
 - Photoreal person + minimal text → Nano Banana 2.
-- Text/offer-led creative → GPT-Image 2 LONG or Ideogram V3 DESIGN.
+- Text/offer-led creative → GPT-Image 2.5 LONG or Ideogram V3 DESIGN.

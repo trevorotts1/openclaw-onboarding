@@ -16,5 +16,5 @@
 - Barcode zone: reserve lower-left or lower-right clean corner.
 
 ## Model routing
-- Default: GPT-Image 2 LONG — only model that reliably handles 6+ exact text strings in one layout.
+- Default: GPT-Image 2.5 LONG — only model that reliably handles 6+ exact text strings in one layout.
 - Backup: Nano Banana 2 LONG. Never Seedream (3K chars cannot hold a full cover spec).

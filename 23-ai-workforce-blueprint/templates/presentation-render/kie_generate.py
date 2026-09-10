@@ -15,7 +15,7 @@ USAGE:
       {
         "slide": "slide-01",
         "prompt": "...",
-        "mode": "i2i",          // "i2i" = gpt-image-2-image-to-image (DEFAULT), "t2i" = gpt-image-2-text-to-image
+        "mode": "i2i",          // "i2i" = gpt-image-2-5-sunburst-image-to-image (DEFAULT), "t2i" = gpt-image-2-5-sunburst-text-to-image
         "input_urls": ["https://..."]   // required when mode == "i2i"
       },
       ...
@@ -304,7 +304,7 @@ def _submit_slide(slide: dict, api_key: str) -> str:
     # SHARED PROMPT GATE (prompt_gate.py). This helper is REUSED by non-presentations
     # skills (06 GHL, 49 funnel, and others), so the FULL presentations rich gate
     # (9,000–18,000-char floor + structural / 8-class negative / spelling-lock / density /
-    # demographic teeth + English pin + gpt-image-2 mode-pin) is OPT-IN via
+    # demographic teeth + English pin + gpt-image-2.5 mode-pin) is OPT-IN via
     # KIE_PROMPT_GATE=presentations. Every caller ALWAYS gets the universal-safe floor
     # (dead-endpoint + empty-prompt refusal) so no path submits a literally-empty prompt.
     raw_prompt = slide["prompt"]
@@ -332,7 +332,7 @@ def _submit_slide(slide: dict, api_key: str) -> str:
     urls = slide.get("input_urls", []) if mode == "i2i" else []
     if _pres_gate:
         # Mode consistency (transport-layer kill for the invented-logo defect): references
-        # present => model MUST be gpt-image-2-image-to-image; a logo-bearing slide with
+        # present => model MUST be gpt-image-2-5-sunburst-image-to-image; a logo-bearing slide with
         # empty input_urls hard-fails. Presentations-only (other skills use other models).
         prompt_gate.check_mode_consistency(model, urls,
                                            logo_bearing=bool(slide.get("logo_bearing")),

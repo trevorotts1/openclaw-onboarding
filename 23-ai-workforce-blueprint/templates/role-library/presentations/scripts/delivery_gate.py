@@ -419,7 +419,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 def inspect_pptx_artifact(pptx_path):
     """Open the delivered .pptx as the OOXML zip it MUST be and inspect every real
     ppt/slides/slideN.xml part for SELECTABLE native on-slide text (<a:t> runs). A
-    canonical deck is full-bleed kie.ai gpt-image-2 images with the words BAKED IN —
+    canonical deck is full-bleed kie.ai gpt-image-2.5 images with the words BAKED IN —
     so a real slide part has NO non-empty <a:t> run (speaker notes live in a separate
     ppt/notesSlides part and are allowed). Any selectable on-slide text means the deck
     was hand-built / overlaid (python-pptx add_textbox, Google Slides / Keynote
@@ -461,7 +461,7 @@ def inspect_pptx_artifact(pptx_path):
                 f"AF-OVERLAY-DELIVERED: {pptx_path.name} carries SELECTABLE native on-slide "
                 "text (<a:t> runs) instead of words baked into a kie.ai image — "
                 + "; ".join(offenders[:8])
-                + ". A canonical deck is full-bleed gpt-image-2 images with NO selectable "
+                + ". A canonical deck is full-bleed gpt-image-2.5 images with NO selectable "
                 "body text; this deck was HAND-BUILT (python-pptx / Google Slides / overlay), "
                 "not kie-rendered. REJECTED."))
     finally:

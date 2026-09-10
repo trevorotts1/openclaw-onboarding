@@ -1073,7 +1073,7 @@ content panel behind the checklist. Ink: #3D2B1F — all text ink. White base ba
 throughout. No dark or navy backgrounds.
 
 === 10. LOGO (ONE locked mark, image-to-image) ===
-The first reference image is the company logo (Mode B, gpt-image-2-image-to-image,
+The first reference image is the company logo (Mode B, gpt-image-2-5-sunburst-image-to-image,
 the locked logo URL as the first entry of input_urls): place it lower-right; do not redraw,
 recolor, restyle, reinterpret, or invent it — reproduce the supplied mark pixel-for-pixel.
 The only mark on the page is the supplied reference logo. NEVER describe the logo in words

@@ -155,7 +155,7 @@ Same reason Skill 23's build-resume layer is a separate component:
 | Item | Model | Approx Cost | Cap |
 |------|-------|-------------|-----|
 | Infographic #1 | Local HTML + Playwright Chromium (no model call) | $0 | 0 retries needed (deterministic) |
-| Infographic #2 | `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image; fallback `gpt-image-2-text-to-image`) | ~$0.04 / ~$0.04 | 3 retries |
+| Infographic #2 | `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image; fallback `gpt-image-2-5-sunburst-text-to-image`) | ~$0.04 / ~$0.04 | 3 retries |
 | Celebration video | `gemini-omni-video` (fallback `veo3_fast`) | ~$0.40 | 3 retries (with model fallback) |
 | Notion pages | Notion API (free per workspace) | $0 | 3 retries per page |
 | Telegram sends | openclaw message send | $0 | 3 retries per send |
@@ -182,9 +182,9 @@ The script also auto-falls-back from `gemini-omni-video` to `veo3_fast` on its t
 
 **Infographic #1** is rendered locally via HTML + CSS + a headless Chromium screenshot (Playwright). It is NOT a diffusion-model call.
 
-Why: diffusion models (GPT Image 2, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
+Why: diffusion models (GPT Image 2.5, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
 
-The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used), which has dramatically better text rendering than the prior `gpt-image-2`.
+The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used), which has dramatically better text rendering than the prior `gpt-image-2.5`.
 
 ## Files in This Folder
 

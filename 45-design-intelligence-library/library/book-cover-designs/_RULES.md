@@ -4,7 +4,7 @@
 ## Formats & aspect ratios
 | Use | Ratio | Model ratio param |
 |---|---|---|
-| Standard trade (6×9 in) | 2:3 | `2:3` (GPT-Image 2, Nano Banana 2, Seedream) |
+| Standard trade (6×9 in) | 2:3 | `2:3` (GPT-Image 2.5, Nano Banana 2, Seedream) |
 | Square-ish workbook (8×10) | 4:5 | `4:5` |
 | Ebook/thumbnail master | 2:3 | `2:3`, must read at 80px wide |
 
@@ -18,6 +18,6 @@
 - Anthology/client context: covers often carry many contributor names — when {ADDITIONAL_NAMES} present, assign a dedicated zone (typically lower band), never scattered.
 
 ## Model routing
-- Default: GPT-Image 2 LONG (multiple exact text strings demand the 20K budget).
+- Default: GPT-Image 2.5 LONG (multiple exact text strings demand the 20K budget).
 - Typography-as-art covers → Ideogram V3 DESIGN (portrait preset, expand_prompt false).
 - Iterating an approved cover → Seedream 4.5 Edit.

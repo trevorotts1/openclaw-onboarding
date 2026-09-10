@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # generate_cover.sh - Podcast Production Engine, Step 10 (COVER ART).
 #
-# Kie.ai GPT-image-2 cover generation seeded from Skill 57 prompt 14, then an
+# Kie.ai GPT-Image-2.5 cover generation seeded from Skill 57 prompt 14, then an
 # in-house ffmpeg finalize chain that produces an Apple-Podcasts-valid square
 # JPEG (1500 to 3000 on a side, RGB, under 512 kilobytes) with a spec-valid
 # filename. The pipeline owns the up-to-3 image attempts (furnace
@@ -35,7 +35,7 @@
 # ENVIRONMENT (all optional except the key; every knob mirrors furnace-design)
 #   KIE_API_KEY                Kie.ai key (required for generation; read, never printed)
 #   KIE_API_BASE               default https://api.kie.ai
-#   KIE_COVER_MODEL            default gpt-image-2-text-to-image
+#   KIE_COVER_MODEL            default gpt-image-2-5-sunburst-text-to-image
 #   KIE_COVER_ASPECT           default 1:1
 #   KIE_COVER_RESOLUTION       default 2K   (2048px; inside Podbean's 1500-3000 range, no upscale)
 #   KIE_COVER_RESOLUTION_FALLBACK  default 2K (used once if the API rejects the primary)
@@ -66,7 +66,7 @@ set -euo pipefail
 # Config (env with defaults)
 # ---------------------------------------------------------------------------
 KIE_API_BASE="${KIE_API_BASE:-https://api.kie.ai}"
-KIE_COVER_MODEL="${KIE_COVER_MODEL:-gpt-image-2-text-to-image}"
+KIE_COVER_MODEL="${KIE_COVER_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
 KIE_COVER_ASPECT="${KIE_COVER_ASPECT:-1:1}"
 KIE_COVER_RESOLUTION="${KIE_COVER_RESOLUTION:-2K}"
 # Kie.ai remains the PRIMARY cover provider (2026-08-03 ruling: KIE + Agnes + FAL

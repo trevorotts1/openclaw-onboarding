@@ -190,12 +190,12 @@ class IdempotencyTests(unittest.TestCase):
             state = se.ProjectState(run_dir)
             _mk_project(run_dir)
             state.begin_task(
-                provider="kie", model="gpt-image-2-text-to-image", operation="generate_image",
+                provider="kie", model="gpt-image-2-5-sunburst-text-to-image", operation="generate_image",
                 params={"prompt": "hero"}, estimated_cost_usd=0.03,
             )
             with self.assertRaises(se.IdempotencyViolation):
                 state.begin_task(
-                    provider="kie", model="gpt-image-2-text-to-image", operation="generate_image",
+                    provider="kie", model="gpt-image-2-5-sunburst-text-to-image", operation="generate_image",
                     params={"prompt": "hero"}, estimated_cost_usd=0.03,
                 )
         finally:
@@ -558,7 +558,7 @@ class InterruptionRecoveryTests(unittest.TestCase):
             state1 = se.ProjectState(run_dir)
             _mk_project(run_dir)
             entry = state1.begin_task(
-                provider="kie", model="gpt-image-2-image-to-image", operation="generate_image",
+                provider="kie", model="gpt-image-2-5-sunburst-image-to-image", operation="generate_image",
                 params={"scene_id": "scene-01", "ref": "anchor.png"}, estimated_cost_usd=0.03,
             )
             state1.transition_task(entry["task_id"], "submitted", provider_task_id="pt-Z")
@@ -569,7 +569,7 @@ class InterruptionRecoveryTests(unittest.TestCase):
             state2 = se.ProjectState(run_dir)  # simulate restart: fresh object, same run_dir
             with self.assertRaises(se.IdempotencyViolation):
                 state2.begin_task(
-                    provider="kie", model="gpt-image-2-image-to-image", operation="generate_image",
+                    provider="kie", model="gpt-image-2-5-sunburst-image-to-image", operation="generate_image",
                     params={"scene_id": "scene-01", "ref": "anchor.png"}, estimated_cost_usd=0.03,
                 )
             ledger = state2.load("cost-ledger")

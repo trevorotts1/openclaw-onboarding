@@ -115,7 +115,7 @@ This is a KIE provisioning behavior, not a slug typo.
 
 **Workaround (already wired into the repo):**
 `37-zhc-closeout/scripts/generate-infographics.sh` keeps `nano-banana-2` as
-the PRIMARY model and falls back to `gpt-image-2-text-to-image` (the proven
+the PRIMARY model and falls back to `gpt-image-2-5-sunburst-text-to-image` (the proven
 safety net) when the primary is rejected. As of v10.X.8 the retry loop also
 detects a `model name not supported` / 422 submit error and switches to the
 fallback EARLY instead of burning both primary attempts. Override the primary

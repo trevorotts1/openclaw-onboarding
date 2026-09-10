@@ -820,7 +820,7 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # (authentic skip approvals) in PIPELINE-MANIFEST.autofails so sync_check lockstep
 # passes (the repo-side half of the 27-drift-item repair). Floor moves WITH the manifest.
 # 38 -> 39: Feature L2-D (Gauntlet Loop 2, Feature B) adds P8.25-WORKBOOK — the fillable
-# PDF workbook phase (kie.ai gpt-image-2 backgrounds + reportlab AcroForm assembly,
+# PDF workbook phase (kie.ai gpt-image-2.5 backgrounds + reportlab AcroForm assembly,
 # scripts/workbook_builder.py) — raising manifest_version to 39 in the same commit.
 # 39 -> 40: Feature L2-G (Gauntlet Loop 2, Feature C) adds P9.6-WEBINAR-VIDEO — the
 # webinar video phase (ffmpeg Ken Burns + xfade slideshow + GHL v3 500MB video upload,

@@ -4,7 +4,7 @@
 WHAT THIS IS
 ------------
 The image-hosting half of Skill 48's pipeline. After the 10 approved ad rasters are
-generated (by the reused Kie ``gpt-image-*`` adapter), this module uploads each PNG to
+generated (by the reused Kie ``gpt-image-2-5-*`` adapter), this module uploads each PNG to
 the CLIENT's own GoHighLevel media library and returns the PUBLIC, login-free GCS object
 URL that the PLAI hand-off package references. It owns the deterministic, mechanical
 media calls so they are never improvised:

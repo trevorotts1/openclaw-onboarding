@@ -35,7 +35,7 @@ For GPT-image-2 and Agnes Image (skills 63/64), the full band is **5,000–19,00
 
 When any brief involves the client's LOGO, wordmark, brand mark, monogram, or
 any existing brand image, the Prompt Author MUST route to IMAGE-TO-IMAGE
-generation (GPT-Image 2 I2I via `input_urls`, or Agnes I2I via
+generation (GPT-Image-2.5 I2I via `input_urls`, or Agnes I2I via
 `extra_body.image[]`). Text-to-image logo generation is PROHIBITED — a T2I model
 cannot render a specific client's logo accurately and will invent a lookalike.
 As the Brand Identity Specialist, you are the authority on logo fidelity: flag

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """qc_gip_agnes_prompt_band.py — QC gate that checks image-prompt length and
-REJECTS below 5,000 or above 19,000 characters for GPT-image-2 and Agnes Image.
+REJECTS below 5,000 or above 19,000 characters for GPT-image-2.5 and Agnes Image.
 
 This is a unified pre-commit / CI gate covering both scopes:
-  1. Graphics department GIP prompts (GPT-image-2 T2I/I2I)
+  1. Graphics department GIP prompts (GPT-image-2.5 T2I/I2I)
   2. Agnes skills 63/64 prompts (Agnes Image 2.1 Flash)
 
 THE RULE (decision GK-D2, extended to Agnes via skills 63/64):
-  For image prompts generated for GPT-image-2 OR Agnes Image 2.1 Flash:
+  For image prompts generated for GPT-image-2.5 OR Agnes Image 2.1 Flash:
   NEVER BELOW 5,000 characters AND NEVER ABOVE 19,000 characters.
   Valid range: 5,000-19,000.
   Max API capacity is 25,000; 19,000 gives ~6,000 chars headroom.
@@ -141,7 +141,7 @@ def check_style_ref_directive(prompt_text: str,
         problems.append(("AF-QC-STYLE-REF-DIRECTIVE",
                          "style reference images attached but the style-reference-only "
                          "directive is ABSENT (MODEL-SPECS section 4, MANDATORY for "
-                         "GPT-Image 2 I2I / Agnes I2I). Add: 'Use the attached images "
+                         "GPT-Image 2.5 I2I / Agnes I2I). Add: 'Use the attached images "
                          "only as style reference for color grading, lighting, and "
                          "composition -- do not copy their subjects, faces, or text.'"))
     return problems
@@ -328,7 +328,7 @@ def _gate_files(paths: List[Path], logo_check: bool = False,
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
-        description="QC gate: enforce 5,000-19,000 char band for GPT-image-2 "
+        description="QC gate: enforce 5,000-19,000 char band for GPT-image-2.5 "
                     "and Agnes Image prompts, plus logo image-to-image rule "
                     "and style-reference-only directive.")
     ap.add_argument("--self-test", action="store_true",

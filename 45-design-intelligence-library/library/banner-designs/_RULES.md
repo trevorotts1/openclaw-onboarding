@@ -19,4 +19,4 @@
 - Text renders smallest in banners — typography instructions need maximum redundancy; consider generating type-led banners on GPT-Image 2 at 3:1 and outpainting/cropping.
 
 ## Model routing
-- Ultra-wide → Nano Banana 2 (mandatory). Standard wide (21:9, 16:9) → GPT-Image 2 or Nano Banana 2. Typography-led at supported preset → Ideogram V3 (landscape_16_9) then crop.
+- Ultra-wide → Nano Banana 2 (mandatory). Standard wide (21:9, 16:9) → GPT-Image 2.5 or Nano Banana 2. Typography-led at supported preset → Ideogram V3 (landscape_16_9) then crop.

@@ -152,9 +152,9 @@ After generating, view the set as a whole: same palette? same grade? same type s
 
 | Need | Resolution | Endpoints that can deliver it |
 |---|---|---|
-| Internal drafts / contact sheets | 1K | GPT-Image 2, Nano Banana 2, Wan 2.7 |
+| Internal drafts / contact sheets | 1K | GPT-Image 2.5, Nano Banana 2, Wan 2.7 |
 | Standard screen-share deck (default) | 2K | All (Seedream `basic` = 2K) |
-| Projection, print handouts, zoom-heavy, premium client decks | 4K | GPT-Image 2, Nano Banana 2, Seedream `high` — **NOT Wan 2.7 (2K max)** |
+| Projection, print handouts, zoom-heavy, premium client decks | 4K | GPT-Image 2.5, Nano Banana 2, Seedream `high` — **NOT Wan 2.7 (2K max)** |
 
 If the chosen resolution isn't available on the routed endpoint, re-route per MODEL-SPECS rather than silently downgrading — and tell the operator.
 

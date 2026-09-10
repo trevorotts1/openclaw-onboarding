@@ -1,3 +1,11 @@
+## [v25.0.33]  -  2026-09-10  -  GPT-image-2.5 migration: Kie.ai default to GPT-image-2.5 sunburst, legacy GPT-image-2 kept for 3:1/1:3/9:21
+
+- Migrate the Kie.ai text-to-image and image-to-image default to gpt-image-2-5-sunburst: default selection, registry restamps, and role-library guidance now resolve to the 2.5 sunburst canonical model IDs.
+- Retain legacy gpt-image-2 as the required route for aspect ratios 3:1, 1:3, and 9:21 only (GPT Image 2.5 does not serve them; routed per operator ruling 2026-09-09, Ruling 6) and keep the "legacy"-qualified pin phrases resolving to gpt-image-2.
+- Add operator-approved aspect-ratio substitutions on 2.5 (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16); substitution is always reported, never silently invented.
+- Update the short-aliases policy: unqualified "gpt image 2" / "gpt-image-2.0" style phrases now resolve to gpt-image-2-5-sunburst; only legacy-qualified phrasing keeps the old model.
+- Restamp downstream registries and bump affected skill-version.txt files (06, 07, 23, 35, 37, 38, 45, 46, 47, 48, 49, 51, 54, 57, 58, 59, 62, 63 and related) so skill content changes ride with their version bumps (G3).
+
 ## [v25.0.32]  -  2026-09-09  -  Restore live n8n social planner compatibility with credential-bound workflows
 
 - Restore canonical n8n URLs through a contract router: exact legacy document requests remain compatible; modern requests stay company-bound with no legacy downgrade after failure.

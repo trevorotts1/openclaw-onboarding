@@ -7,7 +7,7 @@ Authority: SPEC.md "Build contract for detailed image prompts" (program social-p
 
 ## 0. SCOPED OVERRIDE — Social Planner Only (F32)
 
-The social media planner (Skill 35 social-media-planner / Skill 57 social-media-in-a-box image paths, Kie GPT Image 2 via Kie + Agnes adapters) carries a HARD house band:
+The social media planner (Skill 35 social-media-planner / Skill 57 social-media-in-a-box image paths, Kie GPT Image 2.5 via Kie + Agnes adapters) carries a HARD house band:
 
 - **House band (social planner ONLY)**: **9,000–19,000** stripped Unicode characters, enforced FAIL-CLOSED — 8,999 fails production preflight, 9,000 passes length checks (semantic QC still required), 19,000 passes, 19,001 fails.
 - Count rule: `len(unicodedata.normalize("NFC", final).strip())` in Python; `Array.from(normalized.trim()).length` in TypeScript. Validate the FINAL transmitted prompt AFTER reference instructions and negatives are added. Record hash + count + policy version + provider/model + capability source before spend.
@@ -26,7 +26,7 @@ First-party documentation from Agnes AI (`https://wiki.agnes-ai.com/en/docs/agne
 - `cap_status`: `"NOT_PUBLISHED"`
 
 ### No Invented Vendor Cap (Spec §10.5)
-The ~25K figure belongs to KIE GPT Image 2 (owner-observed; its PUBLISHED text-to-image schema maxLength is 20,000) and was incorrectly attributed to Agnes in earlier versions of Skill 63. Do not invent or enforce a vendor cap on Agnes. This uncertainty is retained: no published Agnes cap exists, so the house band governs and an authorized integration test validates the operating range.
+The ~25K figure belongs to KIE GPT Image 2 (legacy, owner-observed 2026-08-27 — retained by operator ruling 2026-09-09 for aspect ratios 3:1, 1:3, 9:21 only). GPT Image 2.5 (the current default, operator ruling 2026-09-09) instead publishes a 20,000-char cap in its own docs (DOCS status, NOT owner-confirmed). Either figure was incorrectly attributed to Agnes in earlier versions of Skill 63. Do not invent or enforce a vendor cap on Agnes. This uncertainty is retained: no published Agnes cap exists, so the house band governs and an authorized integration test validates the operating range.
 
 ---
 

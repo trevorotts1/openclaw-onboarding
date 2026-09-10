@@ -33,12 +33,12 @@ Wire skill 45 into the Presentations pipeline as the imagery STYLE-INTELLIGENCE 
 
 Per SOP-DIU-611 and the 00-START-HERE T7b mirror, the two pipelines stay separate and there are exactly TWO legal crossings:
 
-- **Presentations** owns CLIENT-WEBINAR-DECK-SOP: webinar/funnel decks, the five archetypes (A1-A5), white-base doctrine, the GPT-Image-2-only model manifest, narrative + price-ladder + PPTX assembly.
+- **Presentations** owns CLIENT-WEBINAR-DECK-SOP: webinar/funnel decks, the five archetypes (A1-A5), white-base doctrine, the GPT-Image-2.5-only model manifest, narrative + price-ladder + PPTX assembly.
 - **DIU (in Graphics)** owns PPT-ANALYSIS-SOP: visual style analysis, the 3-8-family Deck Style System, the Rotation Engine, the 7-endpoint roster.
 - **Crossing A:** the Brand Steward consumes a PPT-category style card's **Foundation Prompt Block** as the STYLE BLOCK input for a webinar deck, requested via SOP-DIU-612. This is the ONLY way DIU style content enters a Presentations deck.
 - **Crossing B:** for DIU strategy-(b) decks, the DIU delivers text-clear background imagery to Presentations for editable overlay. (Not the webinar-deck path; out of scope here.)
 
-**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the GPT-Image-2-only manifest. The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
+**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the GPT-Image-2.5-only manifest. The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
 
 ---
 
@@ -99,7 +99,7 @@ When a client supplies a reference deck (concern: "analyze a PowerPoint, detect 
 | 2 | **Crossing A used, not bypassed.** A style-match deck's STYLE BLOCK contains a Foundation Prompt Block sourced from a registered card (recorded `style_card_id@version` in brand_registry.json). | Foundation block sourced via SOP-DIU-612 | Slide Image Creator wrote style from memory / invented a look on a deck that requested a style match (violates SOP-DIU-611 hard rule 3) |
 | 3 | **Single intake point.** The style request went to the CDO via SOP-DIU-612, not to the Generation Operator or Slide Image Creator directly. | CDO intake | A direct DIU call bypassing the CDO |
 | 4 | **Family count is named + evidenced.** The analysis output names 3-8 families and lists member slide numbers per family. | 3-8 named families with slide map | A vague style estimate, >8 families (over-split), or 0 families |
-| 5 | **Webinar deck stayed in the Presentations pipeline.** The deck was NOT routed into the DIU Rotation Engine, and generation used the GPT-Image-2-only manifest. | Presentations pipeline + GPT-Image-2 | Webinar deck routed through the Rotation Engine or a non-manifest model |
+| 5 | **Webinar deck stayed in the Presentations pipeline.** The deck was NOT routed into the DIU Rotation Engine, and generation used the GPT-Image-2.5-only manifest. | Presentations pipeline + GPT-Image-2.5 | Webinar deck routed through the Rotation Engine or a non-manifest model |
 | 6 | **Bootstrap seed present (per box).** After onboarding, INDEX.md contains the `PPT-001_gold-standard` production rows. | Seed registered | No seed; library still empty after onboarding |
 | 7 | **No-reference path is clean.** If intake declares NO style reference, no crossing fired and the STYLE BLOCK was built from intake brand fields + the SOP-IMG-03 creative-develop path. | No spurious crossing | A crossing fired with no style reference (wasted DIU spend) |
 

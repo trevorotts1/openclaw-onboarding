@@ -16,4 +16,4 @@
 - The LONG tier is the tier of record for FN- cards (web heroes are detail-dense and text-heavy) — author it to the STYLE-CARD-TEMPLATE `### LONG` section so `ghl_image_stage._diu_extract_long_tier` can lift it. A card with no LONG tier is rejected fail-loud when referenced.
 
 ## Model routing
-- Follow MODEL-SPECS routing by task. The LONG tier targets **GPT-Image 2 / Nano Banana 2** (20,000-char ceilings), matching the Skill 6 rail's `gpt-image-2` generator. No category override beyond the ratio rules above.
+- Follow MODEL-SPECS routing by task. The LONG tier targets **GPT-Image 2.5 / Nano Banana 2** (20,000-char ceilings), matching the Skill 6 rail's `gpt-image-2.5` generator. No category override beyond the ratio rules above.

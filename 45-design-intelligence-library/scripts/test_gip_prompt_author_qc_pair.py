@@ -108,7 +108,7 @@ def _compliant_visual_long_prompt() -> str:
         "LOGO / REFERENCE DIRECTIVE: no logo baked into this frame. Use the attached images only as style "
         "reference for color grading, lighting, and composition — do not copy their subjects, faces, or "
         "text.",
-        "TECHNICAL: endpoint gpt-image-2-text-to-image, aspect ratio 1:1, resolution 2048x2048, output "
+        "TECHNICAL: endpoint gpt-image-2-5-sunburst-text-to-image, aspect ratio 1:1, resolution 2048x2048, output "
         "format png, no watermark.",
         "SECONDARY SCENE DETAIL: a shelf of hand-labeled jars and a small potted fern sits just out of "
         "focus behind the subject's right shoulder, reinforcing an established, grounded brand feel "

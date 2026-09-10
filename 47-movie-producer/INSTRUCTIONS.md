@@ -149,8 +149,8 @@ When `KIE_API_KEY` is in `.env`:
 - Free engines (FFmpeg, Remotion, HyperFrames, Piper, free stock corpus) are unaffected — they report AVAILABLE regardless of API keys.
 
 **Kie image models:**
-- `gpt-image-2-image-to-image` — when source images are provided (edit mode)
-- `gpt-image-2-text-to-image` — when no source image (text-to-image)
+- `gpt-image-2-5-sunburst-image-to-image` — when source images are provided (edit mode)
+- `gpt-image-2-5-sunburst-text-to-image` — when no source image (text-to-image)
 - Output: 16:9 aspect ratio, 2K resolution, PNG
 
 **Kie video models:**

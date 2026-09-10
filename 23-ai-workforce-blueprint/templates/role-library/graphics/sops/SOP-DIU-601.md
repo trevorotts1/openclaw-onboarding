@@ -19,7 +19,7 @@ The Generation Operator runs this SOP as a mandatory gate before every API submi
 
 | File | Sections used | What it governs |
 |---|---|---|
-| `_system/MODEL-SPECS.md` | §1 (endpoint roster, aspect-ratio table, char caps per endpoint), §3 (tier compatibility + LONG-to-MEDIUM rule), §4 (endpoint prompting notes, style_reference_only), §5 (JSON templates + required params per endpoint) | Char-count caps, aspect-ratio support, required params, Seedream 3,000-char silent-fail ceiling, GPT-Image-2/NB2 filter note |
+| `_system/MODEL-SPECS.md` | §1 (endpoint roster, aspect-ratio table, char caps per endpoint), §3 (tier compatibility + LONG-to-MEDIUM rule), §4 (endpoint prompting notes, style_reference_only), §5 (JSON templates + required params per endpoint) | Char-count caps, aspect-ratio support, required params, Seedream 3,000-char silent-fail ceiling, GPT-Image-2.5/NB2 filter note |
 | `_system/prompt-bands.json` | all bands | GIP per-asset-class prompt bands: MIN floor (`AF-GIP-PROMPT-FLOOR`) + MAX cap + distinct-word density floor. Enforced by `diu_validator.py prompt-band` (preflight step 2) and SOP-GIP-01. |
 | `_system/MASTER-SOP.md` | §3.2 (assembly packet requirements), §5 (submit-and-exit discipline) | What a valid assembly packet must contain; exit-after-submit rule |
 | `_system/NEGATIVE-PROMPTING-SOP.md` | §4 (contradiction audit) | Compiled-negatives artifact must exist and pass contradiction audit before preflight clears |

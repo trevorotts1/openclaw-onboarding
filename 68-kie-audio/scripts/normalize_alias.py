@@ -30,8 +30,8 @@ ALIAS_MAP = {
     "seed dream": "Seedream",
     "idiogram": "Ideogram",
     "imagine 4": "Imagen 4",
-    "gpt-img2": "GPT Image 2",
-    "gpt-image 2.0": "GPT Image 2",
+    "gpt-img2": "GPT Image 2.5",
+    "gpt-image 2.0": "GPT Image 2.5",
     "nano banana light": "Nano Banana 2 Lite",  # when context says version 2
 }
 
@@ -69,8 +69,8 @@ def self_test() -> int:
         "Seed Dream": "Seedream",
         "Idiogram": "Ideogram",
         "Imagine 4": "Imagen 4",
-        "GPT-img2": "GPT Image 2",
-        "GPT-image 2.0": "GPT Image 2",
+        "GPT-img2": "GPT Image 2.5",
+        "GPT-image 2.0": "GPT Image 2.5",
         "Nano Banana Light": "Nano Banana 2 Lite",
         "z-image": "z-image",          # Z-Image stays its own family (guard)
     }

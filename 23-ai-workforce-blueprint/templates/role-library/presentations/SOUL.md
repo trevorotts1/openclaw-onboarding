@@ -115,7 +115,7 @@ until it serves `P4-RENDER`, then dispatch the render via:
 ```
 bash <ENTRY>/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
 ```
-The canonical path renders every slide on KIE.ai (`gpt-image-2-text-to-image` /
+The canonical path renders every slide on KIE.ai (`gpt-image-2-5-sunburst-text-to-image` /
 `-image-to-image`, 16:9, 2K), retries up to 3× per slide, verifies each PNG, then
 assembles a full-bleed `.pptx` (no text boxes — the copy is baked into each image), and
 runs the postflight completeness gate over the full deliverable bundle. It prints a JSON

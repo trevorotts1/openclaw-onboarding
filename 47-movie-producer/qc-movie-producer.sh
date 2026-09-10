@@ -128,8 +128,8 @@ assert "kie_image.py source declares image_generation capability" \
   "grep -Eq 'capability[[:space:]]*=[[:space:]]*.image_generation.' \"${ADAPTER_IMG_SRC}\""
 assert "kie_video.py source declares video_generation capability" \
   "grep -Eq 'capability[[:space:]]*=[[:space:]]*.video_generation.' \"${ADAPTER_VID_SRC}\""
-assert "kie_image.py source uses the fleet gpt-image-2-image-to-image model id" \
-  "grep -q 'gpt-image-2-image-to-image' \"${ADAPTER_IMG_SRC}\""
+assert "kie_image.py source uses the fleet gpt-image-2-5-sunburst-image-to-image model id" \
+  "grep -q 'gpt-image-2-5-sunburst-image-to-image' \"${ADAPTER_IMG_SRC}\""
 assert "kie_video.py source uses the fleet gemini-omni-video model id" \
   "grep -q 'gemini-omni-video' \"${ADAPTER_VID_SRC}\""
 assert "kie_video.py source uses the fleet veo3_fast fallback model id" \

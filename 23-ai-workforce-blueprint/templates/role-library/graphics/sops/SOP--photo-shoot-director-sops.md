@@ -45,7 +45,7 @@
 2. Assemble the Identity Lock Block per PHOTO-SHOOT-SOP §4: exact physical descriptors drawn from the IDENTITY.md profile, framed as hard constraints. The block must be present verbatim in every generation prompt for this shoot. Do NOT summarize or paraphrase.
 3. Add the universal Identity Lock Block clause: `"Do not render any other recognizable real person in the scene."` This clause is mandatory on every block, regardless of mode.
 4. Select the Mode-appropriate workflow per PHOTO-SHOOT-SOP §5:
-   - Mode A (Headshot): tight Identity Lock Block, NB2 or GPT-Image-2 I2I per MODEL-SPECS routing table, studio/natural light settings.
+   - Mode A (Headshot): tight Identity Lock Block, NB2 or GPT-Image-2.5 I2I per MODEL-SPECS routing table, studio/natural light settings.
    - Mode B (Lifestyle): Identity Lock Block + environment/activity descriptors, extended context prompt.
    - Mode C (Branded editorial): Identity Lock Block + brand foundation block (from box brand config), editorial-style context.
    - Mode D (Contact sheet): Identity Lock Block, multiple-variation contact sheet workflow (PHOTO-SHOOT-SOP §8 step 1), Kie.ai n=4 contact-sheet tier.
@@ -117,7 +117,7 @@
 **Inputs:** The reference image set listed in IDENTITY.md (or new images provided by the client for this specific shoot), MODEL-SPECS endpoint size/format limits for the target endpoint.
 
 **Steps:**
-1. Validate each reference image against the target endpoint's format and size limits per MODEL-SPECS §1/§5: GPT-Image-2 I2I and NB2 accept up to 30MB (jpeg/png/webp/jpg); Seedream Edit and Wan accept up to 10MB. Reject and request a replacement for any reference that exceeds the limit or is in an unsupported format.
+1. Validate each reference image against the target endpoint's format and size limits per MODEL-SPECS §1/§5: GPT-Image-2.5 I2I and NB2 accept up to 30MB (jpeg/png/webp/jpg); Seedream Edit and Wan accept up to 10MB. Reject and request a replacement for any reference that exceeds the limit or is in an unsupported format.
 2. For any real-person likeness reference (identity photos, client headshots): the ONLY permitted hosting path is the client's GHL media library for that client's GHL location. Public ImgBB or any other public-permanent hosting is PROHIBITED for identity reference images.
 3. Upload the validated reference images to the client's GHL media library. Record the upload receipts (URLs + upload timestamp) in the shoot record.
 4. Verify each URL fetches correctly: perform a URL-liveness check (HTTP HEAD or GET returning 200 with the expected content-type) before including it in the shoot brief.

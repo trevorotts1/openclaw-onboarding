@@ -106,7 +106,7 @@ art style into the base; the four styles and the portrait 2:3 geometry are the e
 ## Render target (wired downstream, not in this prompt)
 
 The emitted prompt is rendered on the CLIENT's own Kie.ai account with model
-**GPT-image-2** against the TEXT-TO-IMAGE **portrait** endpoint (`aspect_ratio`
+**GPT-image-2.5** against the TEXT-TO-IMAGE **portrait** endpoint (`aspect_ratio`
 `"2:3"` → 1024×1536), through the Skill 07 setup and the Skill 46 callback relay,
 by `stage_s7_cover.py`. A single cover per contributor is below the callback
 threshold, so the box polls the render job directly. This is never the 16:9

@@ -103,7 +103,7 @@ proves the endpoint answers and the credential authenticates:
 
 If the operator has ALREADY authorized a generation smoke test, one small
 verification image may be created on the operator account (never a client
-account): see EXAMPLES.md example 1 (GPT Image 2 t2i, 1K, 1:1) — but treat a
+account): see EXAMPLES.md example 1 (GPT Image 2.5 t2i, 1K, 1:1) — but treat a
 real generation as an authorized, deliberate act; do not "smoke test" on
 credits without explicit permission for this box.
 

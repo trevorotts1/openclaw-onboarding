@@ -132,7 +132,7 @@ phases, mirroring `WORKBOOK-BUILDER-SOP.md`'s single-phase/multi-internal-step p
 1. **COPY.** Long-form VSL page copy from the same locked sources as the deck and the sales page
    (`intake.json`, `price_ladder.json` for price -- never authored fresh) plus the deck's own hook/
    proof/story arc so the VSL reads as a continuation of the presentation, not a separate pitch.
-2. **DESIGN (Kie.ai, gpt-image-2 or the client's routed Agnes tier -- no alternative provider, ever,
+2. **DESIGN (Kie.ai, gpt-image-2.5 or the client's routed Agnes tier -- no alternative provider, ever,
    no partial-verification passes).** Same **9,000-18,000 stripped-char** rich-prompt band as the sales/checkout
    pages (`SALES-CHECKOUT-BUILDER-SOP.md` §3 step 2) -- not Loop 2C's looser 5,000-19,000 research
    band. Brand palette + logo from `intake.json`, logo I2I only.

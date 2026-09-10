@@ -55,7 +55,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.0 -- Client-Asset Ingest + Scratch-Deck Parser (Decision 1C)
 
-**When to run:** At intake, whenever `intake.json.assets_provided:true` (the client answered the Brainstorming Buddy ASSET BRANCH with materials). Runs BEFORE Phase 2 so the Brand Steward + Slide Image Creator can consume the provided assets as gpt-image-2 `input_urls`.
+**When to run:** At intake, whenever `intake.json.assets_provided:true` (the client answered the Brainstorming Buddy ASSET BRANCH with materials). Runs BEFORE Phase 2 so the Brand Steward + Slide Image Creator can consume the provided assets as gpt-image-2.5 `input_urls`.
 
 **Inputs:**
 - intake.json (`assets_provided`, the captured asset list / uploads)

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://openclaw/presentations/slides.schema.json",
   "title": "Presentations deck slides.json schema",
-  "description": "DETERMINISTIC deck pipeline input. An AI agent produces THIS file from the source material (transcript/brief). build_deck.py then renders it with ZERO further AI judgement: it composes a KIE.ai prompt per slide (photographic scene + the EXACT English copy + the mandatory English/Latin-only pin), calls KIE.ai gpt-image-2, downloads one full-bleed 16:9 PNG per slide, and assembles a .pptx. The agent NEVER generates images itself. All wording that must appear on a slide must be written, spelled correctly, in the 'copy' array — KIE renders that text INTO the image.",
+  "description": "DETERMINISTIC deck pipeline input. An AI agent produces THIS file from the source material (transcript/brief). build_deck.py then renders it with ZERO further AI judgement: it composes a KIE.ai prompt per slide (photographic scene + the EXACT English copy + the mandatory English/Latin-only pin), calls KIE.ai gpt-image-2.5, downloads one full-bleed 16:9 PNG per slide, and assembles a .pptx. The agent NEVER generates images itself. All wording that must appear on a slide must be written, spelled correctly, in the 'copy' array — KIE renders that text INTO the image.",
   "type": "array",
   "minItems": 1,
   "items": {
@@ -37,7 +37,7 @@
       "mode": {
         "type": "string",
         "enum": ["t2i"],
-        "description": "Image generation mode. The DETERMINISTIC pipeline uses ONLY 't2i' (gpt-image-2-text-to-image) — the copy is rendered into a freshly generated photographic scene. (Image-to-image logo placement remains available via the separate kie_generate.py helper but is out of scope for build_deck.py.) Defaults to 't2i' if omitted."
+        "description": "Image generation mode. The DETERMINISTIC pipeline uses ONLY 't2i' (gpt-image-2-5-sunburst-text-to-image) — the copy is rendered into a freshly generated photographic scene. (Image-to-image logo placement remains available via the separate kie_generate.py helper but is out of scope for build_deck.py.) Defaults to 't2i' if omitted."
       }
     }
   },

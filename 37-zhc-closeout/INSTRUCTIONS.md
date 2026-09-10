@@ -143,8 +143,8 @@ Stylized flow diagram. Less text-heavy than Step 2, so AI image gen is still app
 2. Fill `templates/infographic-2-prompt.md` with the same placeholders + one extra:
    - `{{EXAMPLE_TASK}}` — pulled from `workforce-interview-answers.md`; if not present, use a generic task seeded by the client's industry (e.g. "Launch a new email campaign" for a marketing-heavy client; "Onboard a new patient" for a healthcare client).
 3. Invoke `scripts/generate-infographics.sh workflow`. The script POSTs to KIE.AI `/jobs/createTask` with:
-   - Primary model: `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image) - much better at text rendering than the prior `gpt-image-2`. Fallback `gpt-image-2-text-to-image`. Override via env `ZHC_IMAGE_MODEL`. (The bare `gemini-3-1-flash-image` slug returns HTTP 422 on KIE — the code pins `nano-banana-2`.)
-   - Fallback model (attempt 3): `gpt-image-2-text-to-image`.
+   - Primary model: `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image) - much better at text rendering than the prior `gpt-image-2.5`. Fallback `gpt-image-2-5-sunburst-text-to-image`. Override via env `ZHC_IMAGE_MODEL`. (The bare `gemini-3-1-flash-image` slug returns HTTP 422 on KIE — the code pins `nano-banana-2`.)
+   - Fallback model (attempt 3): `gpt-image-2-5-sunburst-text-to-image`.
 4. Write `infographic2Url` to state file.
 
 **Retries:** 3 total (attempts 1-2 primary, attempt 3 fallback). Failure path same as Step 2.

@@ -34,8 +34,8 @@
       "file": "kie_generate.py",
       "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
       "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
-      "canonical_sha256": "d0c79a8b560f76582fbda79c194757ea33bf663726829d3be4e97cbd74666eac",
-      "mirror_sha256": "6c6eaa298c11cf35b39e459b9dc0b80673225737ba371a21983f28cb684dec08",
+      "canonical_sha256": "a0e52e0de377d34a9b01700619938f20ffb746056f8f131e694122bc4ca4001c",
+      "mirror_sha256": "610dc4d533ccb928ccc8c0d9b7ad1f0a49c95aeb16ce7f35c4dba7ef6cf7104b",
       "canonical_side": "role-library-scripts",
       "reason": "Pre-existing divergence recorded, not reconciled (694 vs 613 lines). The mirror twin still owes the FIX 68/67 port the role-library docstring names: the oc_paths _secrets_candidates seam, _import_secret_helper, _kie_alias_names, _is_placeholder_value and the _load_api_key canon loop. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-07"
@@ -44,8 +44,8 @@
       "file": "slides.schema.json",
       "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json",
       "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/slides.schema.json",
-      "canonical_sha256": "e27dea6d79a640dd023d69cf8c1a62d25542da0a0eec6d744ba702b84a4ab668",
-      "mirror_sha256": "d5cae6865069537fb08e522a3f75069fe2d32142dca3520855a178f9ba4f2d8f",
+      "canonical_sha256": "d9558e56ce97f03dcd91a083ffccb319b195a9a7a03096f3811f32a6b7e60b82",
+      "mirror_sha256": "efd126db2fa85fbcacbf2c69a545256328f74de1b51264ea6a2f55593dfbfa8c",
       "canonical_side": "role-library-scripts",
       "reason": "Pre-existing divergence recorded, not reconciled. Same duplicated-basename class as kie_generate.py, found by the same scan. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-07"

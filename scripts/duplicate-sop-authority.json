@@ -33,8 +33,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "role_library_sha256": "9476574615ea97066a2de2c7a4be525e236778efcacfe38b955fb557e9dae2c9",
-      "universal_sops_sha256": "89205fbb92635ded5b53c1fdcd34e0482415c340b72aeeeab01c89672dc5c4a2",
+      "role_library_sha256": "61d4cbf1e2873e84826a7c72308b6aa185d9384a07913d88c346d6a17a1ab7ee",
+      "universal_sops_sha256": "4f302a8a78a18ee95444c759e50cc14bf55803583ebb725127e88f22074b3d47",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -44,8 +44,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
-      "role_library_sha256": "4d03865f5f3fcff5fa4f54ca92edddc34c3d0a24800b462507df3d5f9ee05bca",
-      "universal_sops_sha256": "fa8a5245acc325fd356b8fe2075ce85f2ed657ad8b315b90dfbc441d4d6b1ea3",
+      "role_library_sha256": "7b4b1e8c471a384f9c7b71bde0d74b226d9b2e0652bc6247cf82eb0658da2be7",
+      "universal_sops_sha256": "cab56829dd3da6241033be724e08b6a2804a69697798adf365c2a99a7036b9b9",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -66,8 +66,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
-      "role_library_sha256": "aaaee4f0b8a1dbbe4018c4add748c2893fe9bce1e8e08d550e34f3507ed69d1a",
-      "universal_sops_sha256": "1cb1a171204f5b141e5a643053cdd1a262f79c3b505f477b8cb83a1653dd6030",
+      "role_library_sha256": "2f26066a31d4a20720b1ab23e4e70b739e51835203a081d357f503828b292cdc",
+      "universal_sops_sha256": "2800f41e0cfc82822cd3789edbf61c599f675c414d90ba2314fb64b035f2ca69",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -99,8 +99,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-03-HOOK-DOCTRINE.md",
       "universal_sops_path": "universal-sops/presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md",
-      "role_library_sha256": "67eba418b6c88f13f11784cb8b3efd5eb98826aab91dd2396ffb63a7c285d65f",
-      "universal_sops_sha256": "c62bccfe953afcfbbb5205b6e36e81c753a103e77961113aea35584f87a8e41f",
+      "role_library_sha256": "9ecd71a694736d4efabd61503712117a6e8db100cd93d77d93b1e1c57f2ea9b3",
+      "universal_sops_sha256": "edae9c49ddb8e6a71d73f351a416ae186272e1a4d4ab423c1bb91bc37ae4be7a",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"

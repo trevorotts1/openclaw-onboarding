@@ -38,7 +38,7 @@ Independent units, one agent each, all branch-and-pull-request:
 - W1.9 Blueprint and sizing module: title rules, signature lines, budgets, 140 words per minute table.
 - W1.10 Tagging module: S2.1 Pro square-bracket palette, density targets, mandatory locations, S1 conversion table.
 - W1.11 Fish render module: adapt Skill 35 script; s2.1-pro header, reference_id, split-and-join, condition_on_previous_chunks, ffprobe verify, LUFS mastering, free-tier refusal.
-- W1.12 Image module: Kie.ai GPT-image-2 per Skill 57 prompt 14; ffmpeg finalize chain; polling bounds.
+- W1.12 Image module: Kie.ai GPT-Image-2.5 per Skill 57 prompt 14; ffmpeg finalize chain; polling bounds.
 - W1.13 Documents module: destination detection, Episode Package renderer, clean Speech Script, sharing rules.
 - W1.14 Book teaser module: writing rules, fabrication boundary, book-typeset PDF renderer, 14-point floor.
 - W1.15 Podbean publish module: per playbook section 15 plus the spec's step_b; idempotent permalink guard; scheduling.

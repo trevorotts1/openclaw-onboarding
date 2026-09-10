@@ -131,7 +131,7 @@ Output JSON: `{"page_type":"thank-you","buttons":["Join The Community","Share Wi
 
 ## PROMPT 7 — IMAGE PROMPT (per section; the 5,000–19,000-char builder)
 
-For each section that carries an image, build ONE natural-language `gpt-image-2` prompt of
+For each section that carries an image, build ONE natural-language `gpt-image-2.5` prompt of
 **5,000–19,000 characters** (no Midjourney syntax, **no em dashes**). Use the 8-block build order and
 resolve every spintax choice from the locked brief (representation honored EXACTLY, brand colors named
 as plain color words):

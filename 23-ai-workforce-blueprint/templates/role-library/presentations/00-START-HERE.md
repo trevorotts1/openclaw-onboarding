@@ -22,7 +22,7 @@
 > ```
 >
 > The entry script runs three **fail-closed** gates and only then dispatches the canonical
-> orchestrator `run_signature_deck.py` → `build_deck.py` (kie.ai gpt-image-2 only, words baked
+> orchestrator `run_signature_deck.py` → `build_deck.py` (kie.ai gpt-image-2.5 only, words baked
 > into each image, zero native on-slide text, full phase-attestation chain):
 > 1. **deps check** — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
 >    or the build refuses to start.
@@ -185,7 +185,7 @@ All 62 declared phases are listed once, in the sequence below, in the manifest's
 49. **`P-SPEECH-QC`** (order 8.6) -- CONDITIONAL, defers when no speech QC report exists -- qc-specialist-speech-presentations independently reviews the speech (average >= 8.5).
 50. **`P-QC-AGGREGATE`** (order 8.65, script: `scripts/qc_aggregate.py`) -- qc-specialist-presentations combines the six domain QC reports (Copy/Typography/Prompt/Image/Priority-Shift/Speech) into `working/qc/final_qc_report.json`, verifying independent-reviewer + anti-bypass provenance first.
 51. **`P9.5-NOTES-SYNC`** (order 8.7) -- pptx-assembly-specialist syncs the notes pane AFTER the speech is finalized.
-52. **`P-U-SALES-BUILD`** (order 8.75, script: `scripts/sales_checkout_builder.py`) -- CONDITIONAL, upsell branch -- DEFERS unless the client elects it (`intake/upsell-questions.json` `want_sales_checkout`, default YES; a decline is a logged client waiver in the client's own words, never inferred from silence) -- media-librarian-ghl-updater builds the sales page AND the checkout page in one invocation (copy -> kie gpt-image-2 design -> HTML -> `06-ghl-install-pages/tools/ghl_rest_canvas.py` GHL funnel push-plan). Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.
+52. **`P-U-SALES-BUILD`** (order 8.75, script: `scripts/sales_checkout_builder.py`) -- CONDITIONAL, upsell branch -- DEFERS unless the client elects it (`intake/upsell-questions.json` `want_sales_checkout`, default YES; a decline is a logged client waiver in the client's own words, never inferred from silence) -- media-librarian-ghl-updater builds the sales page AND the checkout page in one invocation (copy -> kie gpt-image-2.5 design -> HTML -> `06-ghl-install-pages/tools/ghl_rest_canvas.py` GHL funnel push-plan). Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.
 53. **`P-U-CHECKOUT-BUILD`** (order 8.76, script: `scripts/sales_checkout_builder.py`) -- CONDITIONAL, upsell branch, same flag/waiver as `P-U-SALES-BUILD` -- re-invokes the same script with `--skip-design` (no fresh kie.ai spend) purely to give the checkout page its own tracked gate/AF code and step-count entry; `P-U-SALES-BUILD`'s single invocation already wrote `checkout.html`.
 54. **`P-U-FORM-CHECKOUT`** (order 8.77, script: `scripts/sales_checkout_builder.py`) -- CONDITIONAL, upsell branch, same flag/waiver as `P-U-CHECKOUT-BUILD` -- INTERIM PLACEHOLDER: re-verifies the same `build_receipt.json` P-U-SALES-BUILD produced; no dedicated payment/lead-capture form-wiring implementation exists yet (see `SALES-CHECKOUT-BUILDER-SOP.md` SS4 "THE CHECKOUT FORM" for the proposed follow-up).
 55. **`P-U-COLLATERAL`** (order 8.8, CONDITIONAL -- defers unless `intake.want_sales_checkout == "yes" or intake.want_vsl_page == "yes"`) -- Upsell Collateral Backup (delivery/<SLUG>-FINAL/upsell/*). Owned by `delivery-concierge`. Produces `delivery/{deck_slug}-FINAL/upsell/*`. Full contract: the `P-U-COLLATERAL` row in [`PIPELINE-MANIFEST.json`](../../../../universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json).

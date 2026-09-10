@@ -197,7 +197,7 @@ Light is **mandatory** on every rendered asset. No dark backgrounds anywhere. Wr
 - Navy = ink only; Gold = precious, used sparingly; Teal = accent.
 - 60–85% white space.
 - Geometric sans-serif type; serif only on hero/title slides.
-- Include in the file: the full reusable Kie.ai **gpt-image-2 style directive** for 16:9 slides and portrait posters, plus an aspect/resolution quick-reference.
+- Include in the file: the full reusable Kie.ai **gpt-image-2.5 style directive** for 16:9 slides and portrait posters, plus an aspect/resolution quick-reference.
 
 **Aspect/resolution quick-reference:**
 - Slides & micro-infographics: 16:9, 2K.

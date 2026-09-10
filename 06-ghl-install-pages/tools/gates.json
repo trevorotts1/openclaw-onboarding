@@ -386,7 +386,7 @@
   },
 
   "image_manifest_non_empty": {
-    "_doc": "PLAN-4 FIX-2/FIX-4 — Image pipeline gate. A build is blocked from being marked done if images/manifest.json is absent OR contains zero records OR any record lacks an https URL with a verified HTTP 200 response. The real image pipeline (generate via Kie.ai gpt-image-2 -> verify PNG -> upload to GoHighLevel CDN -> embed <img> -> confirm CDN URL returns HTTP 200) must run. An empty images/ folder is a hard FAIL, not a warn.",
+    "_doc": "PLAN-4 FIX-2/FIX-4 — Image pipeline gate. A build is blocked from being marked done if images/manifest.json is absent OR contains zero records OR any record lacks an https URL with a verified HTTP 200 response. The real image pipeline (generate via Kie.ai gpt-image-2.5 -> verify PNG -> upload to GoHighLevel CDN -> embed <img> -> confirm CDN URL returns HTTP 200) must run. An empty images/ folder is a hard FAIL, not a warn.",
     "required": true,
     "guard_script": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
     "checked_by": "ghl_gate.py require-pass (reads images/manifest.json and asserts non-empty with https+200 records)",

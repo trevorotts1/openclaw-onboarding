@@ -199,7 +199,7 @@
           "code": "E",
           "name": "Grounded Image Context",
           "hard_gate": false,
-          "note": "Scene descriptions anchoring Kie/GPT-Image-2 renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"
+          "note": "Scene descriptions anchoring Kie/GPT-Image-2.5 renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"
         },
         {
           "code": "F",
@@ -1853,7 +1853,7 @@
         "AF-U-SALES-BUILD"
       ],
       "preflight": null,
-      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie gpt-image-2 design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
+      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie GPT-Image-2.5 design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
@@ -2955,7 +2955,7 @@
       "stage": "Intake/2",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as gpt-image-2 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
+      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as GPT-Image-2.5 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_assets_manifest",
       "secondary_py_symbols": [
@@ -3037,7 +3037,7 @@
       "stage": "5/6/Postflight",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when the eliminated legacy native-text-overlay ledger file is present in the run dir (its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md; its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed gpt-image-2 image. Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
+      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when the eliminated legacy native-text-overlay ledger file is present in the run dir (its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md; its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed image (GPT-Image-2.5 default, or the legacy gpt-image-2 route for 3:1 / 1:3 / 9:21 per Ruling 6). Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_no_overlay",
       "secondary_py_symbols": [
@@ -3050,7 +3050,7 @@
       "stage": "4/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck — or any slide PNG — was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai gpt-image-2 path. Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native PowerPoint text-box overlay assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck — or any slide PNG — was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai path (GPT-Image-2.5 default; the legacy gpt-image-2 route is equally canonical for 3:1 / 1:3 / 9:21 per Ruling 6, 2026-09-09). Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native PowerPoint text-box overlay assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -3062,7 +3062,7 @@
       "stage": "4/5/6",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai gpt-image-2 — the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai (GPT-Image-2.5 default, or the legacy gpt-image-2 route for 3:1 / 1:3 / 9:21 per Ruling 6) — the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [

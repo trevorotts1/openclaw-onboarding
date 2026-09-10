@@ -128,7 +128,7 @@ class AssetUploadRequest:
 
 @dataclass(frozen=True)
 class ImageGenerationRequest:
-    model_id: str  # registry id, e.g. "kie-gpt-image-2-text-to-image"
+    model_id: str  # registry id, e.g. "kie-gpt-image-2-5-sunburst-text-to-image"
     prompt: str
     aspect_ratio: str = "16:9"
     resolution: str = "2K"

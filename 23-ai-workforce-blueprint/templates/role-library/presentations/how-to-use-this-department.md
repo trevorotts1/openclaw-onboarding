@@ -88,7 +88,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Presenters Speech Writer** | Writes the FULL word-for-word "here is what you say" script keyed to each slide. |
 | **Slide Copywriter** | Writes every word on every slide (P4-COPY). |
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). |
-| **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (owns_phase null at manifest v68; unreconciled). |
+| **Slide Submitter** | Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled). |
 | **Typography Architect** | Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
@@ -180,8 +180,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Slide Submitter**
 
-- *What it is for:* Submits all prompts to Kie.ai GPT Image 2 (owns_phase null at manifest v68; unreconciled).
-- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT Image 2 (owns_phase null at manifest v68; unreconciled)."
+- *What it is for:* Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled).
+- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68."
 
 **Typography Architect**
 
@@ -310,7 +310,7 @@ All image generation MUST route through the canonical module `build_deck.py`. A 
 
 ## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
 
-A slide image MUST be generated via kie.ai GPT Image 2. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+A slide image MUST be generated via kie.ai GPT-Image-2.5. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
 
 ---
 

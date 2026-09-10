@@ -5,8 +5,8 @@ Presentations department (WORKBOOK-REDESIGN-PLAN.md §3).
 
 Every presentation gets a branded, content-rich workbook as TWO deliverables:
 
-  [1] DESIGN — generates each page via kie.ai gpt-image-2
-      (gpt-image-2-text-to-image for page 1 / the brand template; gpt-image-2-image-to-image
+  [1] DESIGN — generates each page via kie.ai gpt-image-2.5
+      (gpt-image-2-5-sunburst-text-to-image for page 1 / the brand template; gpt-image-2-5-sunburst-image-to-image
       for later pages, referencing page 1 + the client brand render for harmony). Prompts
       are 9,000-18,000 chars and carry the page's REAL content baked in (content-in-image,
       WORKBOOK-REDESIGN-PLAN.md §2): headline, subhead, bullets, question, quote, quiz,
@@ -40,7 +40,7 @@ Every presentation gets a branded, content-rich workbook as TWO deliverables:
 RULES
   * Never print a credential value. KIE_API_KEY is read like kie_generate.py (env first,
     then the client's standard secrets stores).
-  * Model sovereignty: gpt-image-2 ONLY (gpt-image-2-text-to-image / gpt-image-2-image-to-image).
+  * Model sovereignty: gpt-image-2.5 ONLY (gpt-image-2-5-sunburst-text-to-image / gpt-image-2-5-sunburst-image-to-image).
   * No browser / no UI automation for GHL — only the REST path.
   * This is NOT the deck renderer. It does NOT touch build_deck.py. It does NOT assemble
     PPTX. It produces TWO additional deliverables: the regular workbook PDF and the
@@ -1369,7 +1369,7 @@ def _record_ledger(run_dir: Path, record: dict) -> None:
 # ---------------------------------------------------------------------------
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Build the fillable PDF workbook "
-                                             "(kie.ai gpt-image-2 backgrounds + reportlab AcroForm).")
+                                             "(kie.ai gpt-image-2.5 backgrounds + reportlab AcroForm).")
     ap.add_argument("--run-dir", default=None)
     ap.add_argument("--out", default=None, help="regular (share/print) workbook PDF path")
     ap.add_argument("--out-fillable", default=None, help="fillable workbook PDF path")

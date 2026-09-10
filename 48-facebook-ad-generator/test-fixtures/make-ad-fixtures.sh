@@ -55,7 +55,7 @@ cat > "$BAD/working/checkpoints/s5-image-receipt.json" <<'JSON'
 {
   "image_count": 10,
   "images": [
-    {"kie_task_id": "a27542cb60343417e562afc2be65da5c", "width": 1500, "height": 1500, "model": "gpt-image-2-text-to-image", "would_cross": false}
+    {"kie_task_id": "a27542cb60343417e562afc2be65da5c", "width": 1500, "height": 1500, "model": "gpt-image-2-5-sunburst-text-to-image", "would_cross": false}
   ]
 }
 JSON

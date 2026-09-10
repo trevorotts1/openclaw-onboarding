@@ -152,6 +152,7 @@ ROUTER_CATALOG_ALIAS: Dict[str, str] = {
     "deepseek-v4-pro": "text.strong",
     "deepseek-v4-flash": "text.fast",
     "gpt-image-2": "image.t2i",
+    "gpt-image-2-5": "image.t2i",
 }
 
 
@@ -401,6 +402,7 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
     ],
     "image_render": [  # Kie render; the script executor owns the phase
         {"alias": "gpt-image-2"},
+        {"alias": "gpt-image-2-5"},
     ],
     "speech_text": [
         {"alias": "deepseek-v4-pro"},

@@ -123,19 +123,19 @@ class GenerateImageTests(unittest.TestCase):
     def test_generate_image_resolves_slug_from_registry_not_hardcoded(self) -> None:
         self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         handle = self.provider.generate_image(
-            base.ImageGenerationRequest(model_id="kie-gpt-image-2-text-to-image", prompt="a red barn")
+            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
         )
         body = self.transport.post_calls[0]["body"]
-        self.assertEqual(body["model"], "gpt-image-2-text-to-image")  # the registry slug, not the model_id
+        self.assertEqual(body["model"], "gpt-image-2-5-sunburst-text-to-image")  # the registry slug, not the model_id
         self.assertEqual(handle.status, "queued")
         self.assertEqual(handle.provider, "kie")
-        self.assertEqual(handle.model_id, "kie-gpt-image-2-text-to-image")
+        self.assertEqual(handle.model_id, "kie-gpt-image-2-5-sunburst-text-to-image")
 
     def test_generate_image_includes_reference_urls_as_image_input(self) -> None:
         self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         self.provider.generate_image(
             base.ImageGenerationRequest(
-                model_id="kie-gpt-image-2-image-to-image",
+                model_id="kie-gpt-image-2-5-sunburst-image-to-image",
                 prompt="edit this",
                 reference_image_urls=("https://fixtures.example/ref1.png", "https://fixtures.example/ref2.png"),
             )
@@ -150,7 +150,7 @@ class GenerateImageTests(unittest.TestCase):
         self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         self.provider.generate_image(
             base.ImageGenerationRequest(
-                model_id="kie-gpt-image-2-text-to-image", prompt="a barn", negative_prompt="clouds"
+                model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a barn", negative_prompt="clouds"
             )
         )
         body = self.transport.post_calls[0]["body"]
@@ -161,7 +161,7 @@ class GenerateImageTests(unittest.TestCase):
             provider = kie.KieProvider(transport=self.transport)
             with self.assertRaises(base.ProviderTaskError) as ctx:
                 provider.generate_image(
-                    base.ImageGenerationRequest(model_id="kie-gpt-image-2-text-to-image", prompt="x")
+                    base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x")
                 )
             self.assertIn("KIE_API_KEY", str(ctx.exception))
             self.assertEqual(len(self.transport.post_calls), 0)  # refused before any HTTP call

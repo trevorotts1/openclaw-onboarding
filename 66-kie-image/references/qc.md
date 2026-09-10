@@ -25,10 +25,15 @@ of the image asset — using the system's visual capability, never a filename or
 Inspect the downloaded full-resolution asset:
 
 1. **Dimensions vs requested.**
-   - GPT Image 2: 1:1 cannot convert to 4K; `auto` ratio yields 1K only; at
-     2K/4K the ratios **5:4, 4:5, 3:1, 1:3, 9:21** are excluded — if the
-     returned image is one of those ratios at 2K/4K, the route silently bent
-     the request. Verify against the requested resolution enum (1K/2K/4K.
+   - GPT Image 2 (legacy, 3:1/1:3/9:21 only): 1:1 cannot convert to 4K; `auto`
+     ratio yields 1K only; at 2K/4K the ratios **5:4, 4:5, 3:1, 1:3, 9:21** are
+     excluded — if the returned image is one of those ratios at 2K/4K, the
+     route silently bent the request. Verify against the requested resolution
+     enum (1K/2K/4K).
+   - GPT Image 2.5 (default, operator ruling 2026-09-09): a SEPARATE rule set,
+     never merged with the legacy one above — at 2K/4K the ratios **27:16,
+     16:27, 9:8, 8:9** are excluded (1K only); the legacy auto/1:1 rules do
+     NOT apply here.
    - Seedream: Basic/High/Ultra maps to resolution tiers (Pro Basic=1K,
      High=2K; Lite Basic=2K/High=3K/Ultra=4K; 4.5 Basic=2K/High=4K). Confirm
      the returned size matches the tier that was requested.
@@ -74,7 +79,7 @@ Inspect the downloaded full-resolution asset:
    encoding (URL vs data URI), crop/normalize a ref to legal format, change
    aspect ratio to a supported enum value, or route i2i on the same family.
 3. **Another compatible model in the SAME provider** — only if model selection
-   was automatic or the user permits it. e.g. GPT Image 2 -> Nano Banana Pro;
+   was automatic or the user permits it. e.g. GPT Image 2.5 -> Nano Banana Pro;
    Seedream 5.0 Pro -> Seedream 5.0 Lite. Record the switch.
 4. **Another provider** — only when generic provider routing is allowed or the
    user approves.

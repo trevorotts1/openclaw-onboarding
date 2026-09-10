@@ -8,8 +8,10 @@
 
 | # | Endpoint | Kie.ai model ID | Prompt limit | Negative prompt | Reference images | Resolutions | Notes |
 |---|---|---|---|---|---|---|---|
-| 1a | **GPT-Image 2 — Text-to-Image** | `gpt-image-2-text-to-image` | **20,000 chars** | No (inline only) | None | 1K / 2K / 4K | Layout king, longest prompts |
-| 1b | **GPT-Image 2 — Image-to-Image** | `gpt-image-2-image-to-image` | **20,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Long prompts + refs combined |
+| 1a | **GPT-Image 2.5 — Text-to-Image** | `gpt-image-2-5-sunburst-text-to-image` | **20,000 chars** | No (inline only) | None | 1K / 2K / 4K | Layout king, longest prompts |
+| 1b | **GPT-Image 2.5 — Image-to-Image** | `gpt-image-2-5-sunburst-image-to-image` | **20,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Long prompts + refs combined |
+| 1a-legacy | **GPT-Image 2 — Text-to-Image (LEGACY, retained)** | `gpt-image-2-text-to-image` | **20,000 chars** | No (inline only) | None | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 — dispatch target for 3:1 / 1:3 / 9:21 only, not for new general work |
+| 1b-legacy | **GPT-Image 2 — Image-to-Image (LEGACY, retained)** | `gpt-image-2-image-to-image` | **20,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 — dispatch target for 3:1 / 1:3 / 9:21 only, not for new general work |
 | 2 | **Nano Banana 2** (Gemini 3.1 Flash Image) | `nano-banana-2` | **20,000 chars** | No (inline only) | `image_input`, optional, **up to 14**, 30MB each | 1K / 2K / 4K | jpg/png output; ultra-wide ratios |
 | 3a | **Seedream 4.5 — Text-to-Image** | `seedream/4.5-text-to-image` | **3,000 chars** | No (inline only) | None | basic = 2K, high = 4K | `aspect_ratio` REQUIRED |
 | 3b | **Seedream 4.5 — Edit** | `seedream/4.5-edit` | **3,000 chars** | No (inline only) | `image_urls` **REQUIRED**, multiple, 10MB each | basic = 2K, high = 4K | Edit-instruction phrasing |
@@ -23,10 +25,13 @@
 | Endpoint | Supported ratios |
 |---|---|
 | GPT-Image 2 (both T2I and I2I) | auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 3:1, 1:3, 21:9, 9:21 |
+| GPT-Image 2.5 (both T2I and I2I) | auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9 — 27:16 / 16:27 / 9:8 / 8:9 are 1K ONLY |
 | Nano Banana 2 | auto, 1:1, **1:4, 4:1, 1:8, 8:1** (ultra-wide!), 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9 |
 | Seedream 4.5 (both T2I and Edit) | 1:1, 4:3, 3:4, 16:9, 9:16, 2:3, 3:2, 21:9 — **required parameter, no auto** |
 | Ideogram V3 | Presets only: square, square_hd, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9 |
 | Wan 2.7 | 1:1, 3:4, 4:3, 1:8, 8:1, 9:16, 16:9, 21:9 |
+
+> **Operator routing (ruling 2026-09-09, dual-model era):** on GPT-Image 2.5, four dropped ratios get an approved substitute — `5:4`→`4:3`, `4:5`→`3:4`, `2:1`→`16:9`, `1:2`→`9:16`. Three ratios the operator rated the 2.5 substitutes too weak for stay on the **legacy** GPT-Image 2 route instead of substituting: `3:1`, `1:3`, `9:21` (see roster rows `1a-legacy` / `1b-legacy` above). This is the only case where a request should dispatch to the legacy model ID rather than the 2.5 sunburst ID.
 
 ---
 
@@ -60,31 +65,31 @@ This is the THIRD Kie.ai mode, alongside text-to-image (T2I) and image-to-image 
 
 ## 2. MODEL ROUTING TABLE
 
-> **PRESENTATIONS MODEL SOVEREIGNTY:** For client presentation decks, the model is PINNED in the client's intake.json (field: `model_pin`). The canonical primary is `gpt-image-2-text-to-image` (text-to-image) or `gpt-image-2-image-to-image` (with reference images). The routing table below applies to ALL OTHER use cases. For presentations, `nano-banana-2` is FALLBACK-ONLY and requires a logged hard API failure event. See CLIENT-WEBINAR-DECK-SOP.md Section 1A and AF-MODEL-SOVEREIGNTY.
+> **PRESENTATIONS MODEL SOVEREIGNTY:** For client presentation decks, the model is PINNED in the client's intake.json (field: `model_pin`). The canonical primary is `gpt-image-2-5-sunburst-text-to-image` (text-to-image) or `gpt-image-2-5-sunburst-image-to-image` (with reference images). The routing table below applies to ALL OTHER use cases. For presentations, `nano-banana-2` is FALLBACK-ONLY and requires a logged hard API failure event. See CLIENT-WEBINAR-DECK-SOP.md Section 1A and AF-MODEL-SOVEREIGNTY.
 
 Choose by task. Category `_RULES.md` files may override.
 
 | Task | First choice | Backup | Why |
 |---|---|---|---|
-| Text-heavy design (book cover, magazine cover, banner with copy) | GPT-Image 2 T2I (LONG tier) | Nano Banana 2 | 20K chars specs every text element; strongest layout adherence |
-| **Text-heavy design FROM a style reference image** | **GPT-Image 2 I2I (LONG tier + refs)** | Nano Banana 2 | The only combo of 20K prompt + reference images + full layout control |
-| Design built around typography as the art | Ideogram V3, `style: "DESIGN"` | GPT-Image 2 T2I | Purpose-built typographic engine + true negative_prompt |
+| Text-heavy design (book cover, magazine cover, banner with copy) | GPT-Image 2.5 T2I (LONG tier) | Nano Banana 2 | 20K chars specs every text element; strongest layout adherence |
+| **Text-heavy design FROM a style reference image** | **GPT-Image 2.5 I2I (LONG tier + refs)** | Nano Banana 2 | The only combo of 20K prompt + reference images + full layout control |
+| Design built around typography as the art | Ideogram V3, `style: "DESIGN"` | GPT-Image 2.5 T2I | Purpose-built typographic engine + true negative_prompt |
 | **Ultra-wide banners (8:1, 4:1)** | **Nano Banana 2 — ONLY option** (Wan 2.7 backup for 8:1) | — | Only models supporting ultra-wide ratios |
-| Style transfer FROM multiple references | Nano Banana 2 (up to 14 refs) | GPT-Image 2 I2I | Reference capacity |
-| Editing/iterating an existing generated image | Seedream 4.5 Edit | GPT-Image 2 I2I | Built as a unified edit model; GPT I2I when the edit needs a long spec |
-| **Surgical edits on a real photo (retouching, wardrobe swap, single-element change)** | **Seedream 4.5 Edit — only true editor** | GPT-Image 2 I2I (expect more drift) | See Editing Hierarchy note below |
-| Personal Photo Shoot — new identity-locked scenes | Nano Banana 2 (multi-ref) | GPT-Image 2 I2I | Per PHOTO-SHOOT-SOP routing |
-| Photorealistic people / portraits | Nano Banana 2 | GPT-Image 2 T2I | Strong skin/lighting fidelity |
+| Style transfer FROM multiple references | Nano Banana 2 (up to 14 refs) | GPT-Image 2.5 I2I | Reference capacity |
+| Editing/iterating an existing generated image | Seedream 4.5 Edit | GPT-Image 2.5 I2I | Built as a unified edit model; GPT I2I when the edit needs a long spec |
+| **Surgical edits on a real photo (retouching, wardrobe swap, single-element change)** | **Seedream 4.5 Edit — only true editor** | GPT-Image 2.5 I2I (expect more drift) | See Editing Hierarchy note below |
+| Personal Photo Shoot — new identity-locked scenes | Nano Banana 2 (multi-ref) | GPT-Image 2.5 I2I | Per PHOTO-SHOOT-SOP routing |
+| Photorealistic people / portraits | Nano Banana 2 | GPT-Image 2.5 T2I | Strong skin/lighting fidelity |
 | Fast clean T2I drafts at 2K, short prompts | Seedream 4.5 T2I (SHORT/MEDIUM) | Wan 2.7 | Quality-per-character efficiency |
 | Volume draft runs (many variants, seed control) | Wan 2.7 (n=1–4 per call) | Nano Banana 2 @1K | Batch + seed reproducibility |
-| Complex multi-element ad layouts | GPT-Image 2 T2I | Nano Banana 2 | Scene composition strength |
+| Complex multi-element ad layouts | GPT-Image 2.5 T2I | Nano Banana 2 | Scene composition strength |
 
 ### THE EDITING HIERARCHY (important)
-**Seedream 4.5 Edit is the only endpoint in this roster that performs true surgical image editing** — change the named element while genuinely preserving everything else. GPT-Image 2 I2I and Nano Banana 2 *can* modify images, but they lean toward regeneration: expect drift in untouched areas, especially faces. Routing rule: if the task is "change X on THIS photo, keep the rest," it goes to Seedream 4.5 Edit unless the instruction won't fit in 3,000 chars. This matters most for Personal Photo Shoot retouching (PHOTO-SHOOT-SOP §6).
+**Seedream 4.5 Edit is the only endpoint in this roster that performs true surgical image editing** — change the named element while genuinely preserving everything else. GPT-Image 2.5 I2I and Nano Banana 2 *can* modify images, but they lean toward regeneration: expect drift in untouched areas, especially faces. Routing rule: if the task is "change X on THIS photo, keep the rest," it goes to Seedream 4.5 Edit unless the instruction won't fit in 3,000 chars. This matters most for Personal Photo Shoot retouching (PHOTO-SHOOT-SOP §6).
 
 ## 3. TIER ↔ ENDPOINT COMPATIBILITY
 
-| Tier | Budget | GPT-Image 2 (T2I + I2I) | Nano Banana 2 | Seedream 4.5 (T2I + Edit) | Ideogram V3 | Wan 2.7 |
+| Tier | Budget | GPT-Image 2.5 (T2I + I2I) | Nano Banana 2 | Seedream 4.5 (T2I + Edit) | Ideogram V3 | Wan 2.7 |
 |---|---|---|---|---|---|---|
 | SHORT | ≤500 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | MEDIUM | ≤2,800 | ✅ | ✅ | ✅ (3,000 cap) | ✅ (5,000 cap) | ✅ (5,000 cap) |
@@ -96,14 +101,14 @@ Choose by task. Category `_RULES.md` files may override.
 
 ## 4. MODEL-SPECIFIC PROMPTING NOTES
 
-### GPT-Image 2 (T2I and I2I)
+### GPT-Image 2.5 (T2I and I2I)
 - Handles long, structured prompts better than short ones — LONG tier is its home.
 - T2I endpoint: everything must be in words.
 - **I2I endpoint: refs are optional.** When passing refs for STYLE (not editing), the style-reference-only directive is MANDATORY (see Nano Banana 2 note below — same directive, same reason).
 - Negatives go inline as "Do not..." sentences in the final paragraph.
 
 ### Nano Banana 2
-- Up to 14 reference images. For style work: pass 1–3 refs labeled in the prompt as STYLE REFERENCE ONLY: *"Use the attached images only as style reference for color grading, lighting, and composition — do not copy their subjects, faces, or text."* This sentence is MANDATORY whenever refs are attached for style (prevents verbatim copying — a known failure mode from past work). **Applies equally to GPT-Image 2 I2I.**
+- Up to 14 reference images. For style work: pass 1–3 refs labeled in the prompt as STYLE REFERENCE ONLY: *"Use the attached images only as style reference for color grading, lighting, and composition — do not copy their subjects, faces, or text."* This sentence is MANDATORY whenever refs are attached for style (prevents verbatim copying — a known failure mode from past work). **Applies equally to GPT-Image 2.5 I2I.**
 - The ultra-wide specialist (8:1, 4:1, 1:8, 1:4). All banner work routes here.
 - `output_format`: use `png` for anything with text or that needs further editing; `jpg` for final photographs.
 
@@ -140,10 +145,10 @@ All GENERATION endpoints (5.1–5.7) share the same task lifecycle:
 
 > **Exception:** the image-to-JSON / vision-analysis template (5.8) does NOT use this lifecycle. It is a synchronous chat-completions call to a different endpoint; see Section 1B.
 
-### 5.1 GPT-Image 2 — Text-to-Image
+### 5.1 GPT-Image 2.5 — Text-to-Image
 ```json
 {
-  "model": "gpt-image-2-text-to-image",
+  "model": "gpt-image-2-5-sunburst-text-to-image",
   "input": {
     "prompt": "{ASSEMBLED_PROMPT — up to 20000 chars}",
     "aspect_ratio": "{ASPECT_RATIO}",
@@ -153,10 +158,10 @@ All GENERATION endpoints (5.1–5.7) share the same task lifecycle:
 }
 ```
 
-### 5.2 GPT-Image 2 — Image-to-Image (refs optional)
+### 5.2 GPT-Image 2.5 — Image-to-Image (refs optional)
 ```json
 {
-  "model": "gpt-image-2-image-to-image",
+  "model": "gpt-image-2-5-sunburst-image-to-image",
   "input": {
     "prompt": "{ASSEMBLED_PROMPT — up to 20000 chars. If refs are for style, MUST include the style-reference-only directive.}",
     "input_urls": ["{REF_URL_1}", "{REF_URL_2}"],

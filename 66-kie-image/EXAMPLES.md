@@ -32,14 +32,14 @@ ALWAYS run the validators first (see INSTRUCTIONS.md step 4): select_image_model
 validate_prompt.py, validate_payload.py. A bad payload never reaches the API.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 1: GPT IMAGE 2 TEXT-TO-IMAGE (default pick, 1:1 1K)
+EXAMPLE 1: GPT IMAGE 2.5 TEXT-TO-IMAGE (default pick, 1:1 1K)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 curl -sS https://api.kie.ai/api/v1/jobs/createTask \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-image-2-text-to-image",
+    "model": "gpt-image-2-5-sunburst-text-to-image",
     "callBackUrl": "https://your-domain.example/kie/callback",
     "input": {
       "prompt": "A futuristic Black woman CEO standing in a glass office overlooking a neon city at dusk, cinematic lighting, 1:1",
@@ -48,28 +48,34 @@ curl -sS https://api.kie.ai/api/v1/jobs/createTask \
     }
   }'
 
-Notes: resolution enum 1K/2K/4K. "auto" (=no aspect_ratio) yields 1K only;
-1:1 cannot convert to 4K; 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21.
+Notes: resolution enum 1K/2K/4K. 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K
+only). Operator ruling 2026-09-09: 3:1, 1:3, 9:21 are NOT served by this
+model — use the retained legacy `gpt-image-2-text-to-image` for those three
+ratios instead (see the MODEL NOTE at the end of this file).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 2: GPT IMAGE 2 IMAGE-TO-IMAGE (16 refs max, 30MB)
+EXAMPLE 2: GPT IMAGE 2.5 IMAGE-TO-IMAGE (16 refs max, 30MB)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 curl -sS https://api.kie.ai/api/v1/jobs/createTask \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-image-2-image-to-image",
+    "model": "gpt-image-2-5-sunburst-image-to-image",
     "input": {
       "prompt": "Restyle the product shot to matte black on a white studio background, preserving the original geometry, lighting direction, and camera angle",
-      "aspect_ratio": "4:5",
+      "aspect_ratio": "3:4",
       "resolution": "2K",
       "input_urls": [ "https://example.com/product-clean.png" ]
     }
   }'
 
 Notes: "Supported formats: JPEG, PNG, WEBP, JPG"; "Maximum file size: 30MB;
-Maximum files: 16". Ratio/resolution obey the same exclusions as Example 1.
+Maximum files: 16" (carried forward unchanged from GPT Image 2). Ratio 3:4 is
+the operator-approved substitute for a 4:5 vertical product shot (4:5 is not
+in the GPT Image 2.5 ratio enum; the selector performs this substitution
+automatically — this example shows the already-substituted payload).
+Ratio/resolution otherwise obey the same 1K-only exclusion list as Example 1.
 Client logo/brand work MUST be I2I with the logo as input_urls[0] (never T2I).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -158,7 +164,8 @@ MISTAKE 1: Treating createTask 200 as the finished image.
 
 MISTAKE 2: Skipping the validators.
   validate_prompt.py + validate_payload.py run BEFORE dispatch. Wan >5,000
-  chars, GPT Image 2 excluded ratios at 2K/4K, >16 refs, wrong 30MB vs 10MB
+  chars, GPT Image 2 / GPT Image 2.5 excluded ratios at 2K/4K (two separate
+  lists, never merged — see MISTAKE 5), >16 refs, wrong 30MB vs 10MB
   limits — all rejected locally, never charged.
 
 MISTAKE 3: Inventing a prompt cap.
@@ -169,8 +176,14 @@ MISTAKE 4: Converting Qwen's "4.5K token inputs" into a 4,500-char rule.
   Tokens are not characters. Rule D. Use token estimation; docs schema
   maxLength 5000 chars sits alongside (recorded as a known inconsistency).
 
-MISTAKE 5: Forgetting the ratio rules for GPT Image 2.
-  auto -> 1K only; 1:1 never 4K; 5:4/4:5/3:1/1:3/9:21 excluded at 2K/4K.
+MISTAKE 5: Forgetting the ratio rules — and mixing up which model they
+belong to (operator ruling 2026-09-09, two SEPARATE rule sets):
+  GPT Image 2 (legacy, 3:1/1:3/9:21 route only): auto -> 1K only; 1:1 never
+  4K; 5:4/4:5/3:1/1:3/9:21 excluded at 2K/4K.
+  GPT Image 2.5 (default): 27:16/16:27/9:8/8:9 excluded at 2K/4K (1K only);
+  the legacy auto/1:1 rules do NOT apply here. 5:4/4:5/2:1/1:2 are served via
+  an operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
+  3:1/1:3/9:21 are not served at all and route to GPT Image 2 instead.
 
 MISTAKE 6: Text-to-image for a client logo.
   Logo/brand-mark work must be I2I with the logo as a reference. A T2I model

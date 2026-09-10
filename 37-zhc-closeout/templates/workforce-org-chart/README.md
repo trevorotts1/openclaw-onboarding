@@ -8,7 +8,7 @@ role counts.
 
 ## Why HTML + Playwright, not AI image generation
 
-Text-heavy infographics break diffusion-style image models. GPT Image 2 and
+Text-heavy infographics break diffusion-style image models. GPT Image 2.5 and
 Nano Banana cannot reliably render small labels like "Risk & Compliance"
 or "2 roles" - they hallucinate fake letters, drop punctuation, mangle
 emoji, or omit words entirely. This was learned from early fleet closeout

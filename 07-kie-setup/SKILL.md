@@ -78,7 +78,7 @@ When dispatching media generation requests, use this routing architecture:
 - **Rate limits:** Maximum 20 new tasks per 10 seconds per account. Maximum 10 status queries per second per API key. Obey HTTP 429 with backoff.
 - **Generated files expire:** KIE media links expire after 14 days (some temporary URLs earlier). Download and persist assets immediately.
 - **For production batch jobs and decks:** Use Skill 46 (kie-callback-relay) callback architecture rather than polling sequentially.
-- **Department pipelines OVERRIDE defaults:** Never override a model pinned by Presentations (GPT-Image-2 only), Movie Producer, or department manifests.
+- **Department pipelines OVERRIDE defaults:** Never override a model pinned by Presentations (GPT-Image-2.5 only), Movie Producer, or department manifests.
 - **The API key convention is `KIE_API_KEY`:** Stored in `~/.openclaw/secrets/.env` (and `~/.openclaw/.env`). Reference only; NEVER print or log the key.
 
 ## Skill 46 Companion (Callback Architecture)

@@ -229,7 +229,7 @@ def main() -> int:
                                          (19000, 0, "19000 passes length"), (19001, 3, "19001 FAILS")):
             pf = _write(tmp, f"band_{size}.txt", _sized(size))
             rr = run_gate(
-                "--prompt-file", str(pf), "--model", "gpt-image-2-text-to-image",
+                "--prompt-file", str(pf), "--model", "gpt-image-2-5-sunburst-text-to-image",
                 "--ratio", "4:5", "--pixels", "1080x1350",
                 "--brand-colors", "#0B3D2E,#F5EFE0",
                 "--avoid-list-file", str(avoid_file),
@@ -241,8 +241,8 @@ def main() -> int:
                 check(f"F32 band {size}: failure names AF-PROMPT-LENGTH",
                       "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
 
-        print("\n=== 8. F32: GPT Image 2 + Agnes ELIGIBLE through verified adapters (capability routing) ===")
-        for model in ("gpt-image-2-text-to-image", "agnes-image-2.1-flash"):
+        print("\n=== 8. F32: GPT Image 2.5 + Agnes ELIGIBLE through verified adapters (capability routing) ===")
+        for model in ("gpt-image-2-5-sunburst-text-to-image", "agnes-image-2.1-flash"):
             pf = _write(tmp, f"cap_{model.replace('.', '_')}.txt", _sized(9000))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", model,

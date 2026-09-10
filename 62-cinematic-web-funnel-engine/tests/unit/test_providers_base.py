@@ -128,7 +128,7 @@ class MediaProviderContractTests(unittest.TestCase):
         self.assertEqual(handle.status, "queued")
         self.assertEqual(handle.model_id, "kie-bytedance-seedance-1.5-pro")
         estimate = provider.estimate_cost(
-            base.ImageGenerationRequest(model_id="kie-gpt-image-2-text-to-image", prompt="x")
+            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x")
         )
         self.assertTrue(estimate.verified)
 
@@ -238,8 +238,8 @@ class RegistryResolutionTests(unittest.TestCase):
             self.registry.get_model("does-not-exist")
 
     def test_get_model_known_returns_entry(self) -> None:
-        entry = self.registry.get_model("kie-gpt-image-2-text-to-image")
-        self.assertEqual(entry["provider_model_slug"], "gpt-image-2-text-to-image")
+        entry = self.registry.get_model("kie-gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual(entry["provider_model_slug"], "gpt-image-2-5-sunburst-text-to-image")
 
     def test_unknown_tier_raises_capability_tier_not_found(self) -> None:
         with self.assertRaises(base.CapabilityTierNotFoundError):
@@ -250,7 +250,7 @@ class RegistryResolutionTests(unittest.TestCase):
         ids = {m["model_id"] for m in video_models}
         self.assertIn("kie-bytedance-seedance-1.5-pro", ids)
         self.assertIn("kie-gemini-omni-video", ids)
-        self.assertNotIn("kie-gpt-image-2-text-to-image", ids)
+        self.assertNotIn("kie-gpt-image-2-5-sunburst-text-to-image", ids)
 
     def test_list_models_filters_by_status_active(self) -> None:
         for entry in self.registry.list_models(status="active"):
@@ -258,12 +258,12 @@ class RegistryResolutionTests(unittest.TestCase):
 
     def test_concept_image_tier_resolves_to_text_to_image(self) -> None:
         entry = self.registry.resolve_default("concept_image")
-        self.assertEqual(entry["model_id"], "kie-gpt-image-2-text-to-image")
+        self.assertEqual(entry["model_id"], "kie-gpt-image-2-5-sunburst-text-to-image")
         self.assertIn("text-to-image", entry["capabilities"])
 
     def test_production_scene_image_tier_resolves_to_image_to_image(self) -> None:
         entry = self.registry.resolve_default("production_scene_image")
-        self.assertEqual(entry["model_id"], "kie-gpt-image-2-image-to-image")
+        self.assertEqual(entry["model_id"], "kie-gpt-image-2-5-sunburst-image-to-image")
         self.assertIn("image-to-image", entry["capabilities"])
 
     def test_premium_override_tier_resolves_and_requires_explicit_approval(self) -> None:
@@ -310,22 +310,22 @@ class SlugAndPriceResolutionTests(unittest.TestCase):
         self.assertEqual(self.registry.slug_for("kie-veo3-quality"), "veo3")
 
     def test_price_for_resolution_keyed_amount(self) -> None:
-        # gpt-image-2 pricing is unverified in the registry, so strict=False
+        # gpt-image-2-5 pricing is unverified in the registry, so strict=False
         # is required to inspect the resolved-but-unverified amount.
         price_2k = self.registry.price_for(
-            "kie-gpt-image-2-text-to-image", resolution="2K", strict=False
+            "kie-gpt-image-2-5-sunburst-text-to-image", resolution="2K", strict=False
         )
         price_1080 = self.registry.price_for(
-            "kie-gpt-image-2-text-to-image", resolution="1080p", strict=False
+            "kie-gpt-image-2-5-sunburst-text-to-image", resolution="1080p", strict=False
         )
         self.assertEqual(price_2k["resolved_amount"], 0.05)
         self.assertEqual(price_1080["resolved_amount"], 0.03)
 
     def test_price_for_strict_raises_on_unverified_price(self) -> None:
-        # gpt-image-2 has an amount but price.verified is False (fleet
+        # gpt-image-2-5 has an amount but price.verified is False (fleet
         # internal estimate, not a confirmed Kie.ai published price).
         with self.assertRaises(base.UnpricedModelError):
-            self.registry.price_for("kie-gpt-image-2-text-to-image", resolution="2K", strict=True)
+            self.registry.price_for("kie-gpt-image-2-5-sunburst-text-to-image", resolution="2K", strict=True)
 
     def test_price_for_strict_raises_on_null_amount(self) -> None:
         with self.assertRaises(base.UnpricedModelError):
@@ -352,7 +352,7 @@ class SlugAndPriceResolutionTests(unittest.TestCase):
 
     def test_estimate_unverified_priced_model_with_strict_false_computes_total(self) -> None:
         estimate = self.registry.estimate(
-            "kie-gpt-image-2-text-to-image", quantity=3, resolution="2K", strict=False
+            "kie-gpt-image-2-5-sunburst-text-to-image", quantity=3, resolution="2K", strict=False
         )
         self.assertEqual(estimate.unit_price, 0.05)
         self.assertEqual(estimate.estimated_total, 0.15)

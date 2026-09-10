@@ -16,7 +16,7 @@
 ## 0. What the funnel is
 
 A request-driven pipeline that produces the signature funnel end-to-end: **12-section Hero copy →
-per-section long-form image prompts (5,000–19,000 chars) → Kie.ai `gpt-image-2` images in the
+per-section long-form image prompts (5,000–19,000 chars) → Kie.ai `gpt-image-2.5` images in the
 signature look → GHL media folder + uploads → HTML assembly → GHL funnel build with 3/5/7
 configurable steps and accept/decline branching → preview + human approval → optional 10 promo
 emails.** The funnel spans up to seven steps: **Main → (Checkout, 7-step only) → Upsell-1 →
@@ -136,7 +136,7 @@ jumps past it; **every path terminates at Thank-You** — nobody ends a purchase
 
 ## 4. IMAGE SYSTEM (SACRED band: 5,000–19,000 chars per prompt)
 
-- **Model:** Kie.ai `gpt-image-2`, **text-to-image by default** via the Skill 47 adapter. 16:9 / 2K
+- **Model:** Kie.ai `gpt-image-2.5`, **text-to-image by default** via the Skill 47 adapter. 16:9 / 2K
   defaults; Sec 4 → 16:9 (was 21:9); Sec 12 → 3:4 (was 2:3). All Midjourney syntax retired.
 - **Prompt band: 5,000–19,000 characters** (stripped length; whitespace never counts), enforced by
   `prove_sf_prompt_floor.py` (two-floor gate — length floor + structure/excellence floor). A failing
