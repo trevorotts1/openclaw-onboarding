@@ -1,0 +1,123 @@
+name: rescue-rangers-rr031-gates
+
+# RR-031 — Rescue Rangers RECONCILE gate: the agent-map reconciler
+# (scripts/reconcile-rr-agent-map.sh + scripts/_rr_registry_lib.py), its
+# deprecation shim (scripts/seed-rr-agent-map.sh) and the fail-closed wrapper
+# call site (scripts/apply-fleet-standards.sh).
+#
+# THE DEFECT CLASS THIS GATE CLOSES (RCV-09). The old seeder read ONE page of
+# rr_agent_map and filled only ABSENT slugs, so an existing WRONG mapping
+# survived every run. It used shared fixed /tmp paths, unbounded calls, and
+# resolved each box's default agent on the OPERATOR HOST over SSH — so a
+# Docker-installed box could never resolve its own container. Its wrapper read
+# exit-0-with-skips as success, so a run that did nothing looked green.
+#
+# WHY THIS WORKFLOW EXISTS AT ALL. tests/unit/rr031-reconcile-agent-map.test.sh
+# is a 102-assertion gate. A check nothing runs is not a check; it is a comment
+# (see unwired-checks-guard.yml for the measured precedent). So the gate is
+# wired here on every push and PR that can affect it.
+#
+# ANTI-VACUITY is the whole point of this workflow, so it does not stop at
+# "the suite passed". The suite itself carries a negative control per detector,
+# and this job additionally re-proves the instrument by MUTATING the reconciler
+# four ways (single-page reader / insert-only / continue-past-incomplete /
+# no-scoped-lock) and requiring the suite to go RED each time. A green that
+# cannot go red proves nothing.
+#
+# Hermetic: loopback HTTP stub only, stub ssh/docker/curl binaries, temp
+# everything. No fleet box, no real credential, no network beyond 127.0.0.1.
+#
+# Security note: consumes only repo file content. No GitHub event fields
+# (PR title/body, branch names, commit messages) reach any run: block, so there
+# is no workflow-injection surface here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/reconcile-rr-agent-map.sh"
+      - "scripts/_rr_registry_lib.py"
+      - "scripts/seed-rr-agent-map.sh"
+      - "scripts/apply-fleet-standards.sh"
+      - "tests/unit/rr031-*.test.sh"
+      - "tests/unit/fixtures/mock-rr-datatable.py"
+      - ".github/workflows/rescue-rangers-rr031-gates.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/reconcile-rr-agent-map.sh"
+      - "scripts/_rr_registry_lib.py"
+      - "scripts/seed-rr-agent-map.sh"
+      - "scripts/apply-fleet-standards.sh"
+      - "tests/unit/rr031-*.test.sh"
+      - "tests/unit/fixtures/mock-rr-datatable.py"
+      - ".github/workflows/rescue-rangers-rr031-gates.yml"
+
+jobs:
+  rescue-rangers-rr031-gates:
+    name: RR-031 gates (reconcile + abort + lock + deadlines + mutation drills)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell + Python syntax gates
+        run: |
+          set -euo pipefail
+          bash -n scripts/reconcile-rr-agent-map.sh
+          bash -n scripts/seed-rr-agent-map.sh
+          bash -n scripts/apply-fleet-standards.sh
+          bash -n tests/unit/rr031-reconcile-agent-map.test.sh
+          python3 -m py_compile scripts/_rr_registry_lib.py
+          python3 -m py_compile tests/unit/fixtures/mock-rr-datatable.py
+
+      - name: RR-031 gate (identity, pagination, repair, container, pending, lock, deadlines, credentials)
+        run: |
+          bash tests/unit/rr031-reconcile-agent-map.test.sh
+
+      - name: Anti-vacuity — mutation drills (each mutant MUST turn the gate red)
+        run: |
+          set -euo pipefail
+          # A green that cannot go red is not a check. Four mutants, one per
+          # load-bearing behaviour, each must produce a non-zero exit.
+          rm -rf /tmp/rr031-mut && mkdir -p /tmp/rr031-mut
+          for m in A B C D; do
+            mkdir -p "/tmp/rr031-mut/$m"
+            cp -R scripts shared-utils tests "/tmp/rr031-mut/$m/"
+          done
+          python3 - <<'PY'
+          import sys
+          def patch(path, old, new, label):
+              s = open(path).read()
+              if old not in s:
+                  sys.exit("mutation anchor missing: %s" % label)
+              open(path, "w").write(s.replace(old, new, 1))
+          patch("/tmp/rr031-mut/A/scripts/_rr_registry_lib.py",
+                '    nxt = d.get("nextCursor")',
+                '    nxt = None  # MUTANT A: single-page reader',
+                "A")
+          patch("/tmp/rr031-mut/B/scripts/_rr_registry_lib.py",
+                '        elif str(existing[0].get("local_agent_id") or "") == agent:\n            verified += 1\n        else:',
+                '        elif True:  # MUTANT B: never repair an existing row\n            verified += 1\n        else:',
+                "B")
+          s = open("/tmp/rr031-mut/C/scripts/reconcile-rr-agent-map.sh").read()
+          i = s.index('    py emit-empty "aborted=1"')
+          j = s.index("exit 1", i) + len("exit 1")
+          open("/tmp/rr031-mut/C/scripts/reconcile-rr-agent-map.sh", "w").write(
+              s[:i] + '    echo "MUTANT C: continuing past an incomplete source" >&2' + s[j:])
+          s = open("/tmp/rr031-mut/D/scripts/reconcile-rr-agent-map.sh").read()
+          s = s.replace("acquire_lock() {", "acquire_lock() { return 0  # MUTANT D\n  : <<'NOLOCK'\n", 1)
+          s = s.replace('  printf \'%s\\n\' "$OWN_PID" > "$LOCK_PATH/pid"\n}',
+                        '  printf \'%s\\n\' "$OWN_PID" > "$LOCK_PATH/pid"\nNOLOCK\n}', 1)
+          open("/tmp/rr031-mut/D/scripts/reconcile-rr-agent-map.sh", "w").write(s)
+          PY
+          fail=0
+          for m in A B C D; do
+            if (cd "/tmp/rr031-mut/$m" && bash tests/unit/rr031-reconcile-agent-map.test.sh >/dev/null 2>&1); then
+              echo "MUTANT $m PASSED the gate — the gate cannot detect it (vacuous)"
+              fail=1
+            else
+              echo "mutant $m correctly turned the gate red"
+            fi
+          done
+          exit "$fail"

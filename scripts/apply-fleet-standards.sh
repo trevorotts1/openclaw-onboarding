@@ -2995,7 +2995,7 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
-# ─── 5k. Seed the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─────
+# ─── 5k. Reconcile the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─
 # WHY. RR-02-coach reads rr_agent_map (box_slug -> local_agent_id) before
 # diagnosing an escalation. A receiver-covered box with no row is routed to
 # agent_id_unmapped and pages a human instead of running the diagnosis chain
@@ -3003,25 +3003,58 @@ fi
 # the table at enrollment). The map lives in n8n; only the operator box carries
 # the n8n key, so this step is operator-only and self-skips everywhere else.
 #
-# WHAT. Run scripts/seed-rr-agent-map.sh (shipped beside this script): idempotent
-# upsert of local_agent_id=main per fleet slug, backup-before-write, read-back
-# verify. RR-02-coach additionally auto-seeds (source=auto_seed_rr02) when a box
-# somehow still arrives unmapped, so a missing row can never page a human again.
+# WHAT. Run scripts/reconcile-rr-agent-map.sh (shipped beside this script),
+# which SUPERSEDES the old insert-only seed-rr-agent-map.sh. RR-031: the old
+# step read ONE page and only filled ABSENT slugs, so an existing WRONG mapping
+# survived forever; it resolved the default agent on the operator HOST, so a
+# Docker-installed box could never resolve its own container; it used shared
+# fixed /tmp paths; and its calls were unbounded. The reconciler fetches every
+# page with checked status and schema and aborts writes on an incomplete
+# source, repairs existing wrong mappings through the supported filter-addressed
+# PATCH, resolves each box's runtime INSIDE its exact container via the
+# fleet-prover box descriptor, enforces a unique tenant+box mapping, records
+# unreachable/default-less boxes as pending with an owner instead of inventing
+# `main`, and finishes with ACTUAL changed/verified/pending counts.
 #
-# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open: key absent, roster
-# absent, or script error => log and skip; this step can never fail a roll.
+# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open for a ROLL — a
+# mapping problem must never abort a fleet roll — but NEVER SILENT: the exit
+# code is surfaced in the log line, a pending entry can never be reported as
+# `ok`, and the per-run log is private (0700) instead of a shared /tmp name
+# that two concurrent rolls would clobber. `ok` is printed only for exit 0,
+# which the reconciler returns only when changed/verified are complete with
+# zero pending entries.
 if [ -n "${N8N_API_KEY:-}" ]; then
-  _RR_SEED_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/seed-rr-agent-map.sh"
-  if [ ! -f "$_RR_SEED_SH" ]; then
-    echo "[apply-fleet-standards] RR_AGENT_MAP_SEED skipped — seed-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
+  _RR_RECON_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/reconcile-rr-agent-map.sh"
+  if [ ! -f "$_RR_RECON_SH" ]; then
+    echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE skipped — reconcile-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
   else
-    if "$_RR_SEED_SH" >/tmp/rr-seed-apply.log 2>&1; then
-      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED ok ($(grep -o 'VERIFY.*' /tmp/rr-seed-apply.log | head -1))"
+    _RR_LOG_DIR="$( (umask 077; mktemp -d "${TMPDIR:-/tmp}/rr-reconcile-apply.XXXXXX") 2>/dev/null || echo "")"
+    if [ -z "$_RR_LOG_DIR" ]; then
+      echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE skipped — cannot create a private log dir (fail-open)"
     else
-      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED error — see /tmp/rr-seed-apply.log (fail-open)"
+      chmod 700 "$_RR_LOG_DIR" 2>/dev/null || true
+      _RR_LOG="$_RR_LOG_DIR/reconcile.log"
+      _RR_RC=0
+      "$_RR_RECON_SH" --apply --verify >"$_RR_LOG" 2>&1 || _RR_RC=$?
+      case "$_RR_RC" in
+        0)
+          _RR_COUNTS="$(grep -o 'changed=[0-9]*' "$_RR_LOG" | tail -1)"
+          _RR_COUNTS="$_RR_COUNTS $(grep -o 'verified=[0-9]*' "$_RR_LOG" | tail -1)"
+          _RR_COUNTS="$_RR_COUNTS $(grep -o 'pending=[0-9]*' "$_RR_LOG" | tail -1)"
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE ok ($(echo "$_RR_COUNTS" | tr -s ' '))"
+          ;;
+        3)
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE deferred — another reconcile run holds the scoped lock; this roll made no mapping writes (next roll retries)"
+          ;;
+        *)
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE INCOMPLETE (rc=$_RR_RC) — mappings were NOT fully reconciled; pending entries and counts:"
+          grep -E 'pending |changed=|INCOMPLETE|ABORTING' "$_RR_LOG" 2>/dev/null | tail -12 | sed 's/^/    /'
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE log: $_RR_LOG"
+          ;;
+      esac
     fi
+    unset _RR_RECON_SH _RR_RC _RR_COUNTS
   fi
-  unset _RR_SEED_SH
 fi
 
 echo ""
