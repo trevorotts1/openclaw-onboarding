@@ -64,6 +64,27 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+
+def _spawn_python() -> str:
+    """PRES-035: the interpreter supervised/spawned children run under.
+
+    Same contract as launcher._spawn_python: this process was started by
+    the pinned scheduler entry point, so sys.executable already IS the
+    validated pin on the live path. An explicit
+    PRESENTATION_PIPELINE_INTERPRETER wins only when it names a usable
+    executable; a set-but-unusable pin is reported, never silently
+    skipped, never used.
+    """
+    pin = (os.environ.get("PRESENTATION_PIPELINE_INTERPRETER") or "").strip()
+    if pin:
+        if os.path.isabs(pin) and os.path.isfile(pin) and os.access(pin, os.X_OK):
+            return pin
+        print(f"supervisor: PRESENTATION_PIPELINE_INTERPRETER={pin} is set "
+              f"but not an executable file — spawning under this process's "
+              f"interpreter ({sys.executable}); fix the pin or re-run "
+              f"update-skills.sh", file=sys.stderr)
+    return sys.executable or "python3"
+
 from .state import (
     _read_json, pid_is_alive, utcnow, LOCK_FILENAME,
     EXIT_OK, EXIT_SUPERVISOR_ALARM, EXIT_SUPERVISOR_NO_RUNS,
@@ -413,7 +434,7 @@ def _restart(scan_root: Path, run_dir: Path,
     # direction that matters: the acquire above already proved no other holder.
     handed_off = _release_restart_lease(lease)
     log_dir = scan_root / RESTART_LOG_DIRNAME
-    argv = [sys.executable, str(entry_script), "--resume", "--run-dir", str(run_dir)]
+    argv = [_spawn_python(), str(entry_script), "--resume", "--run-dir", str(run_dir)]
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f"{run_dir.name}.log"

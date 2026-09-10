@@ -7,6 +7,75 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="${1:-${LOG:-/dev/null}}"
 
 # ---------------------------------------------------------------------------
+# PRES-035 — native-tool fallback PATH + ONE pipeline interpreter for the tick.
+# launchd hands this job essentially NO environment; the rendered plist
+# carries BOTH Homebrew prefixes (Apple Silicon /opt/homebrew/bin + Intel
+# /usr/local/bin) behind the system prefix, but a tick from a pre-PRES-035
+# plist (or a hand invocation under a bare cron PATH) still needs the same
+# discovery. Nothing is removed; the rendered/operator PATH survives intact.
+# The interpreter pin (PRESENTATION_PIPELINE_INTERPRETER, rendered by
+# install_watchdog_schedule and validated before render) wins; a NON-BLANK
+# hand value wins for one invocation; the client venv is next; PATH python3
+# is the last resort. Every `python3` below runs through the shim this block
+# installs at the FRONT of PATH, so helpers, passes and spawned engines all
+# use the validated pin with zero line changes. Rollback:
+# PRESENTATION_PIPELINE_PIN=0 restores bare-PATH behavior.
+# ---------------------------------------------------------------------------
+case ":${PATH:-}:" in
+    *":/opt/homebrew/bin:"*) ;;
+    *) PATH="/opt/homebrew/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" ;;
+esac
+case ":$PATH:" in
+    *":/usr/local/bin:"*) ;;
+    *) PATH="/usr/local/bin:$PATH" ;;
+esac
+export PATH
+_PRES35_PIN="${PRESENTATION_PIPELINE_INTERPRETER:-}"
+if [ "${PRESENTATION_PIPELINE_PIN:-1}" != "0" ] && [ -z "$_PRES35_PIN" ] \
+    && [ -f "${SCRIPT_DIR}/presentation_job/pipeline_interp.py" ]; then
+    _PRES35_PIN="$(cd "${SCRIPT_DIR}" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null || true)"
+fi
+case "$_PRES35_PIN" in /*) ;;
+    *) _PRES35_PIN="" ;;
+esac
+if [ -n "$_PRES35_PIN" ] && ! "$_PRES35_PIN" -c 'import sys' >/dev/null 2>&1; then
+    echo "WARNING: [interp] schedule pin $_PRES35_PIN does not execute — falling back to PATH python3 for this tick; fix the pin or re-run update-skills.sh" >> "${LOG}" 2>&1
+    _PRES35_PIN=""
+fi
+if [ -z "$_PRES35_PIN" ] && [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ]; then
+    echo "WARNING: [interp] PRESENTATION_PIPELINE_INTERPRETER=${PRESENTATION_PIPELINE_INTERPRETER} unusable (missing or not executable) — fell through to PATH python3; fix the pin or re-run update-skills.sh" >> "${LOG}" 2>&1
+fi
+if [ -n "$_PRES35_PIN" ]; then
+    PRESENTATION_PIPELINE_INTERPRETER="$_PRES35_PIN"
+    export PRESENTATION_PIPELINE_INTERPRETER
+    _PRES35_VER="$("$_PRES35_PIN" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
+    echo "[interp] pipeline interpreter: $_PRES35_PIN (Python $_PRES35_VER)" >> "${LOG}" 2>&1
+    _PRES35_SHIM="${TMPDIR:-/tmp}/pres35-interp-shim-$$"
+    if mkdir -p "$_PRES35_SHIM" 2>/dev/null \
+        && printf '#!/bin/sh\nexec "%s" "$@"\n' "$_PRES35_PIN" > "$_PRES35_SHIM/python3" 2>/dev/null \
+        && chmod +x "$_PRES35_SHIM/python3" 2>/dev/null; then
+        PATH="$_PRES35_SHIM:$PATH"
+        export PATH
+        echo "[interp] shim installed: python3 -> $_PRES35_PIN" >> "${LOG}" 2>&1
+    else
+        echo "WARNING: [interp] shim install failed — bare python3 resolves via PATH (tick continues, pin exported)" >> "${LOG}" 2>&1
+    fi
+    unset _PRES35_SHIM
+    # Scheduler readiness receipt: actual sys.executable/version + required
+    # import proof vs the rendered pin; mismatch degrades with bounded
+    # remediation instead of reusing stale proof.
+    if [ -f "${SCRIPT_DIR}/presentation_job/pipeline_interp.py" ] && [ "${SCAN_ROOT:-}" != "<SCAN_ROOT>" ] && [ -d "${SCAN_ROOT:-}" ]; then
+        ( cd "${SCRIPT_DIR}" && python3 -m presentation_job.pipeline_interp --check-readiness --scheduler watchdog --recorded "${PRESENTATION_PIPELINE_INTERPRETER:-}" --runs-root "${SCAN_ROOT}" 2>&1 ) \
+            | while IFS= read -r _pres35_line; do
+                echo "[interp] ${_pres35_line}" >> "${LOG}" 2>&1
+            done || true
+    fi
+else
+    echo "WARNING: [interp] no validated pipeline interpreter — bare python3 resolves via PATH (pre-PRES-035 behavior)" >> "${LOG}" 2>&1
+fi
+unset _PRES35_PIN _PRES35_VER
+
+# ---------------------------------------------------------------------------
 # ENV STORE -- this file's own header already says it: "Called by launchd with
 # NO environment". Every path defaults, but the CREDENTIALS never did.
 #

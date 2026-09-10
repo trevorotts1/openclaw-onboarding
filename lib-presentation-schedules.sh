@@ -66,6 +66,32 @@
 [ -n "${__PRESENTATION_SCHEDULES_LIB_SOURCED:-}" ] && return 0
 __PRESENTATION_SCHEDULES_LIB_SOURCED=1
 
+# ════════════════════════════════════════════════════════════════════════════
+# PRES-035 — resolve ONE absolute pipeline interpreter for the schedules.
+# ════════════════════════════════════════════════════════════════════════════
+# Single shell front for presentation_job/pipeline_interp.py (the authority):
+# selected client config + PRESENTATION_PIPELINE_INTERPRETER, validated
+# BEFORE anything renders, passed explicitly into the poller/watchdog
+# schedules. Prints the absolute path or nothing; exit nonzero = unresolved.
+# A set-but-unusable override is reported on stderr, never silently skipped
+# (the module says why and continues to the client venv — that note is the
+# evidence the pin went stale, not a silent substitution).
+#
+# Rollback: PRESENTATION_PIPELINE_PIN=0 restores the pre-fix unpinned render.
+# Per-client overrides are never clobbered here: this function only READS.
+# (update-skills.sh preserves the box's existing explicit pin; the plist
+# render preserves an installed explicit pin the same way OWNER_CHAT_ID is
+# preserved.)
+_pres35_resolve_interpreter() {
+    local _scripts_dir="${1:-}" _mod_out="" _rc=0
+    [ -n "$_scripts_dir" ] || return 1
+    [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ] && return 1
+    [ -f "$_scripts_dir/presentation_job/pipeline_interp.py" ] || return 1
+    _mod_out="$(cd "$_scripts_dir" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null)" || _rc=$?
+    [ "$_rc" -eq 0 ] || return 1
+    case "$_mod_out" in /*) printf '%s\n' "$_mod_out"; return 0 ;; *) return 1 ;; esac
+}
+
 # ── Minimal UI-helper fallbacks (install.sh already defines richer ones; these
 #    only fill in for update-skills.sh, which logs with plain echo). Guarded so
 #    a caller's own helpers always win. ─────────────────────────────────────────
@@ -220,18 +246,38 @@ install_intake_poll_schedule() {
         #            is SAFE here: the poller loads the box's env store itself
         #            and its precedence only lets a NON-BLANK process value
         #            win, so an empty string cannot shadow the store.
+        #   INTERPRETER (PRES-035) — the ONE absolute pipeline interpreter,
+        #            resolved via presentation_job/pipeline_interp.py from the
+        #            selected client config + PRESENTATION_PIPELINE_INTERPRETER
+        #            and VALIDATED before anything renders. A set-but-unusable
+        #            override is reported, never silently skipped; per-client
+        #            overrides are preserved (see the update-skills.sh guard).
         local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
-        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
+        # PRES-035: PATH carries BOTH Homebrew prefixes (Apple Silicon
+        # /opt/homebrew/bin AND Intel /usr/local/bin) behind the system
+        # prefix, so native-tool discovery survives on either arch. The
+        # poller script itself prepends the same two prefixes at runtime;
+        # the launchd value must agree with it, never narrow it.
+        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin"
+        local _pres35_interp=""; _pres35_interp="$(_pres35_resolve_interpreter "$_dept_scripts_dir" 2>/dev/null || true)"
         local _poll_notify_cmd=""
         if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
             _poll_notify_cmd="$_dept_scripts_dir/presentation-notify.py"
         else
             warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
         fi
+        # PRES-035: the resolved interpreter is REQUIRED, not advisory. A
+        # schedule rendered without it would run every python under a bare
+        # PATH lookup again — the defect this unit closes — so refuse and
+        # keep the prior plist rather than ship an unpinned job.
+        if [ -z "$_pres35_interp" ]; then
+            warn "PRES-035: pipeline interpreter UNRESOLVED (client config + PRESENTATION_PIPELINE_INTERPRETER + PATH all refused) — intake poll NOT scheduled; prior plist and running job preserved."
+            return 1
+        fi
         # Parse the actual template, substitute values as plist strings (never
         # sed/XML/shell fragments), validate, then atomically promote beside the
         # destination. Failed rendering leaves the old plist and job untouched.
-        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" <<'PY_RENDER_INTAKE_PLIST'
+        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" "$_pres35_interp" <<'PY_RENDER_INTAKE_PLIST'
 import os
 from pathlib import Path
 import plistlib
@@ -240,12 +286,14 @@ import shlex
 import sys
 import tempfile
 
-template, destination, poll, log, runtime_path, runs, notify, client_root, workspace = sys.argv[1:]
+template, destination, poll, log, runtime_path, runs, notify, client_root, workspace, pipeline_interp = sys.argv[1:]
 text = Path(template).read_text()
 # The repository template has a documentation comment before its XML declaration.
 start = text.find('<?xml')
 if start < 0:
     raise ValueError('Intake poll template has no XML declaration')
+if not pipeline_interp or not pipeline_interp.startswith('/'):
+    raise ValueError('PRES-035: rendered pipeline interpreter is not absolute')
 data = plistlib.loads(text[start:].encode())
 values = {
     '<POLL_SCRIPT_PATH>': poll, '<LOG_PATH>': log, '<POLL_PATH>': runtime_path,
@@ -281,10 +329,13 @@ if (result.get('Label') != 'com.blackceo.presentation-intake-poll'
     raise ValueError('Intake poll template does not satisfy the scheduler contract')
 # Carry client context into launchd's otherwise empty environment, even when
 # scripts themselves were sourced from a shared installer checkout.
+# PRES-035: the validated interpreter rides as an explicit pin — a scheduled
+# tick never re-resolves it from a bare PATH lookup.
 result['EnvironmentVariables'].update({
     'OPENCLAW_ROOT': client_root,
     'OPENCLAW_WORKSPACE_PATH': workspace,
     'OPENCLAW_WORKSPACE_ROOT': workspace,
+    'PRESENTATION_PIPELINE_INTERPRETER': pipeline_interp,
 })
 encoded = plistlib.dumps(result)
 if plistlib.loads(encoded) != result:
@@ -305,7 +356,7 @@ PY_RENDER_INTAKE_PLIST
             warn "FIX 61: intake poll render/validation failed — prior plist and running job preserved; no launchctl changes made."
             return 1
         fi
-        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
+        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>}, pipeline interpreter: $_pres35_interp)"
         # Reload semantics: if already loaded, unload first so a re-run picks up
         # a re-rendered copy. 'launchctl load' on an already-loaded job is the
         # documented "Load failed: 5: Input/output error" — treat it as loaded.
@@ -471,6 +522,13 @@ install_watchdog_schedule() {
     #    whole pass — so an empty here is only safe because the script loads
     #    the box env store before that gate runs.
     local _wd_scripts_dir; _wd_scripts_dir="$(dirname "$WD_SRC")"
+    # PRES-035: the watchdog's interpreter pin. Same resolver as the poller,
+    # validated before either branch renders; a re-render never proceeds on
+    # an unpinned job. Per-client overrides are preserved — see PRESERVE
+    # below: an installed plist's explicit pin wins over no pin here, exactly
+    # like OWNER_CHAT_ID (an override the operator set for this box is live
+    # configuration, not drift to re-render away).
+    local _pres35_wd_interp=""; _pres35_wd_interp="$(_pres35_resolve_interpreter "$_wd_scripts_dir" 2>/dev/null || true)"
     local _wd_notify_cmd=""
     if [ -f "$_wd_scripts_dir/presentation-notify.py" ]; then
         _wd_notify_cmd="$_wd_scripts_dir/presentation-notify.py"
@@ -501,11 +559,18 @@ install_watchdog_schedule() {
         # Every value is %q-quoted into an `env` prefix — never interpolated
         # into the prompt as a bare word. An EMPTY notify/owner/apply renders
         # as an empty assignment, which env_store.py treats as absence (a
-        # blank never wins over a store value).
+        # blank never wins over a store value). The interpreter pin is the
+        # exception: PRES-035 renders an env assignment ONLY when a validated
+        # interpreter resolved; an empty pin would let the scheduled tick
+        # fall back to a bare PATH lookup — the defect.
         local _wd_command
-        printf -v _wd_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q SCAN_ROOT=%q GRACE=1.5 SCAN_DEPTH=3 PRESENTATION_NOTIFY_CMD=%q OWNER_CHAT_ID=%q PRESENTATION_SUPERVISE_APPLY=%q sh %q %q' \
+        if [ -z "$_pres35_wd_interp" ]; then
+            warn "PRES-035: pipeline interpreter UNRESOLVED (client config + PRESENTATION_PIPELINE_INTERPRETER + PATH all refused) — watchdog cron NOT registered; prior schedule preserved."
+            return 1
+        fi
+        printf -v _wd_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q SCAN_ROOT=%q GRACE=1.5 SCAN_DEPTH=3 PRESENTATION_NOTIFY_CMD=%q OWNER_CHAT_ID=%q PRESENTATION_SUPERVISE_APPLY=%q PRESENTATION_PIPELINE_INTERPRETER=%q sh %q %q' \
             "$_wd_root" "$_wd_workspace" "$_wd_workspace" "$_wd_runs_dir" \
-            "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$WD_SRC" "$_wd_log"
+            "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$_pres35_wd_interp" "$WD_SRC" "$_wd_log"
         local WD_PROMPT="[PRESENTATION-WATCHDOG] Run the presentation watchdog pass: $_wd_command . This is an idempotent maintenance scan; it detects stalled deck runs, reconciles the board, supervises engine liveness (report-only unless PRESENTATION_SUPERVISE_APPLY is set) and discovers run dirs."
         if _oc_cron_silent_main "presentation-watchdog" "$WD_CHANNEL_AGENT" "*/10 * * * *" "America/New_York" "$WD_PROMPT" --light-context; then
             success "F12: presentation-watchdog cron installed (SILENT main-session, 10-min, no client auto-announce; supervisor ${_wd_supervise_note})"
@@ -534,9 +599,16 @@ install_watchdog_schedule() {
         # PATH: launchd supplies none, and this script needs python3, and
         # `timeout`/`gtimeout` (it explicitly warns and runs unbounded without
         # one), and the openclaw CLI the notify transport execs. Same prefix
-        # list, and same reasoning, as the intake-poll render.
-        local _wd_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
-        if ! python3 - "$WD_TPL" "$WD_PLIST_DST" "$WD_SRC" "$WD_LOG_PATH" "$_wd_path" "$_wd_runs_dir" "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$_wd_root" "$_wd_workspace" <<'PY_RENDER_WATCHDOG_PLIST'
+        # list, and same reasoning, as the intake-poll render. PRES-035: BOTH
+        # Homebrew prefixes ride (Apple Silicon + Intel), never one alone.
+        local _wd_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin"
+        # PRES-035: unpinned watchdog job is not rendered. The prior plist
+        # (with its preserved operator pins) stays loaded instead.
+        if [ -z "$_pres35_wd_interp" ]; then
+            warn "PRES-035: pipeline interpreter UNRESOLVED (client config + PRESENTATION_PIPELINE_INTERPRETER + PATH all refused) — watchdog NOT scheduled; prior plist and running job preserved."
+            return 1
+        fi
+        if ! python3 - "$WD_TPL" "$WD_PLIST_DST" "$WD_SRC" "$WD_LOG_PATH" "$_wd_path" "$_wd_runs_dir" "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$_wd_root" "$_wd_workspace" "$_pres35_wd_interp" <<'PY_RENDER_WATCHDOG_PLIST'
 import os
 from pathlib import Path
 import plistlib
@@ -546,12 +618,18 @@ import sys
 import tempfile
 
 (template, destination, script, log, runtime_path, scan_root, notify,
- owner_chat, supervise_apply, client_root, workspace) = sys.argv[1:]
+ owner_chat, supervise_apply, client_root, workspace,
+ pipeline_interp) = sys.argv[1:]
 text = Path(template).read_text()
 # The repository template has a documentation comment before its XML declaration.
 start = text.find('<?xml')
 if start < 0:
     raise ValueError('Watchdog template has no XML declaration')
+# PRES-035: the validated interpreter is a required render input, never an
+# empty pin — an empty pin would schedule a tick that resolves python from a
+# bare PATH lookup again.
+if not pipeline_interp or not pipeline_interp.startswith('/'):
+    raise ValueError('PRES-035: rendered pipeline interpreter is not absolute')
 data = plistlib.loads(text[start:].encode())
 values = {
     '<WATCHDOG_SCRIPT_PATH>': script,
@@ -597,21 +675,40 @@ env.update({
     'OPENCLAW_WORKSPACE_PATH': workspace,
     'OPENCLAW_WORKSPACE_ROOT': workspace,
 })
+# PRES-035: the validated interpreter rides as an explicit pin — a scheduled
+# tick never re-resolves it from a bare PATH lookup. (Set again below from
+# the preserved/installed value; kept out of the bulk update so the preserve
+# block owns exactly one writer for this key.)
+if pipeline_interp:
+    env['PRESENTATION_PIPELINE_INTERPRETER'] = pipeline_interp
 # This value is parsed by shlex.split in the notification transport.
 env['PRESENTATION_NOTIFY_CMD'] = shlex.quote(notify) if notify else ''
 
-# PRESERVE, NEVER STRIP. An operator arming the supervisor (F12c) or pinning
-# an owner chat id edits the INSTALLED plist. A roll that re-rendered from the
-# template alone would silently drop both on the next update -- the installer
-# would be undoing the operator's live configuration. So a value this run did
-# not resolve is carried forward from the plist already on disk, and only an
-# explicit value in THIS process's environment overrides it.
+# PRESERVE, NEVER STRIP. An operator arming the supervisor (F12c), pinning
+# an owner chat id, or pinning an explicit pipeline interpreter (PRES-035
+# per-client override) edits the INSTALLED plist. A roll that re-rendered
+# from the template alone would silently drop those on the next update --
+# the installer would be undoing the operator's live configuration. So a
+# value this run did not resolve is carried forward from the plist already
+# on disk, and only an explicit value in THIS process's environment
+# overrides it. For the interpreter: a freshly-resolved usable value always
+# wins; an operator's previously-installed explicit pin survives only when
+# this run resolved nothing usable (the render refuses unpinned above, so
+# this carry is belt-and-braces against a future caller passing an empty
+# pin) — same precedence posture as OWNER_CHAT_ID, restricted to this
+# box's own pin, never another client's.
 previous = {}
 try:
     with open(destination, 'rb') as stream:
         previous = plistlib.load(stream).get('EnvironmentVariables', {}) or {}
 except (FileNotFoundError, ValueError, OSError):
     previous = {}
+
+carried_interp = str(previous.get('PRESENTATION_PIPELINE_INTERPRETER', '') or '')
+if pipeline_interp:
+    env['PRESENTATION_PIPELINE_INTERPRETER'] = pipeline_interp
+elif carried_interp:
+    env['PRESENTATION_PIPELINE_INTERPRETER'] = carried_interp
 
 for name, resolved in (('OWNER_CHAT_ID', owner_chat),
                        ('PRESENTATION_SUPERVISE_APPLY', supervise_apply)):
@@ -643,7 +740,7 @@ PY_RENDER_WATCHDOG_PLIST
             warn "F12: watchdog plist render/validation failed — prior plist and running job preserved; no launchctl changes made."
             return 1
         fi
-        success "F12: validated $WD_PLIST_DST (watchdog: $WD_SRC, log: $WD_LOG_PATH, scan root: $_wd_runs_dir, notify transport: ${_wd_notify_cmd:-<EMPTY — env store must supply it>}, owner chat: ${_wd_owner_chat:-<EMPTY — env store or a prior plist must supply it>}, supervisor: ${_wd_supervise_note})"
+        success "F12: validated $WD_PLIST_DST (watchdog: $WD_SRC, log: $WD_LOG_PATH, scan root: $_wd_runs_dir, notify transport: ${_wd_notify_cmd:-<EMPTY — env store must supply it>}, owner chat: ${_wd_owner_chat:-<EMPTY — env store or a prior plist must supply it>}, pipeline interpreter: $_pres35_wd_interp, supervisor: ${_wd_supervise_note})"
         # Reload semantics, identical to the intake poll's: 'launchctl load' on
         # an already-loaded job is the documented "Load failed: 5: Input/output
         # error", so unload first and treat an already-listed label as loaded.
