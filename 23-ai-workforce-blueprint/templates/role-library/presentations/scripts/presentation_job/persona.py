@@ -25,6 +25,11 @@ BLEND_TIMEOUT_S = 90          # (Fix 28, 2026-09-02) raised from 30 s: the 30 s 
                                # "timeout: int = 60"); 90 s gives one full seam
                                # budget plus headroom, and the retry below gives
                                # one second attempt before the phase blocks.
+                               # (PRES-054, 2026-09-09) this is now the WHOLE
+                               # resolution budget: one absolute deadline for
+                               # ALL attempts AND the selector subprocess below
+                               # it — see persona_deadline.Deadline. A fresh
+                               # wall per retry no longer exists.
 BLEND_PHASE_FOR = {           # pipeline phase id -> Skill-51 narrative phase
     "P-SP-STRUCTURE":  "avatar-section",
     "P4-COPY":         "signature-story",
@@ -207,37 +212,52 @@ def resolve_for_phase(run_dir: Path, phase_id: str,
         return {"persona_governance": "legacy-intake-tone",
                 "phase_id": phase_id}
 
-    # Normal path: call governed_phase_voice under a hard timeout.
-    # (Fix 28, 2026-09-02) One retry: a single timed-out attempt no longer
-    # blocks the phase immediately. Attempt 1 gets BLEND_TIMEOUT_S; if it
-    # times out, exactly one fresh attempt (a new executor thread, so a wedged
-    # first call cannot poison the retry) gets the same wall; only a second
-    # timeout raises TimeoutError and blocks the phase.
-    import concurrent.futures
-    bundle = None
-    attempts = 2
-    for attempt in range(1, attempts + 1):
-        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        try:
-            fut = ex.submit(
-                mod.governed_phase_voice,
-                narrative, avatar_context,
-                department="presentations", record=True)
-            try:
-                bundle = fut.result(timeout=BLEND_TIMEOUT_S)
-                break
-            except concurrent.futures.TimeoutError:
-                if attempt >= attempts:
-                    raise TimeoutError(
-                        f"blend_voice_governance.governed_phase_voice('{narrative}') "
-                        f"timed out after {BLEND_TIMEOUT_S}s on attempt {attempt} "
-                        f"of {attempts} for phase {phase_id}. The persona "
-                        "resolution seam (persona_for_job.py) did not respond "
-                        "within the governance wall; one retry was spent.") from None
-                import time as _time
-                _time.sleep(1.0)
-        finally:
-            ex.shutdown(wait=False)
+    # Normal path: call governed_phase_voice under ONE absolute deadline.
+    #
+    # (PRES-054, 2026-09-09) Replaces the Fix-28 shape. The defect: a timed-out
+    # Future did not stop the selector subprocess the seam had spawned (its own
+    # default spawn ceiling was 600 s vs this module's 90 s wall), and
+    # ``shutdown(wait=False)`` left the wedge running while the retry started —
+    # expensive work alive under a fresh attempt, unaccounted capacity.
+    #
+    # Now: ONE absolute monotonic deadline (persona_deadline.Deadline) bounds
+    # every retry; each attempt runs on its own executor thread; the executor
+    # holds ONE governor lease for the whole attempt and releases it exactly
+    # once; a timed-out attempt has its OWNED child process tree SIGTERM'd,
+    # SIGKILL'd and reaped BEFORE the next attempt is admitted (a Future cancel
+    # is never treated as proof the subprocess stopped — the reap proof is).
+    # Attempts stay bounded (MAX_RESOLVE_ATTEMPTS); TimeoutError/PersonaCancelled
+    # still block the phase (callers' existing except handling unchanged), and
+    # persona_deadline.record_event emits visible persona_timeout /
+    # persona_cancelled state into THIS run's own state.json only.
+    from .persona_deadline import (
+        PersonaCancelled,
+        PersonaExecutor,
+        PersonaTimeout,
+        current_budget_s,
+        record_event,
+    )
+
+    executor = PersonaExecutor(job_id="presentation-job", phase_id=phase_id,
+                               run_dir=Path(run_dir),
+                               budget_s=current_budget_s())
+    try:
+        bundle = executor.run(mod.governed_phase_voice, narrative,
+                              avatar_context, department="presentations",
+                              record=True)
+    except PersonaTimeout as exc:
+        record_event(run_dir, "persona_timeout",
+                     f"persona resolution for {phase_id} exceeded the "
+                     f"absolute deadline ({exc}); owned child tree terminated "
+                     "and reaped before this state was recorded",
+                     phase_id=phase_id, proof=exc.proof)
+        raise TimeoutError(str(exc)) from None
+    except PersonaCancelled as exc:
+        record_event(run_dir, "persona_cancelled",
+                     f"persona resolution for {phase_id} was cancelled; "
+                     "owned child tree terminated and reaped",
+                     phase_id=phase_id, proof=exc.proof)
+        raise RuntimeError(str(exc)) from None
 
     # Write the bundle to state.json and record the event.
     _try_record_bundle(run_dir, phase_id, narrative, bundle)
