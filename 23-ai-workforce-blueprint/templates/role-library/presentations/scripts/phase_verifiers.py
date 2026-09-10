@@ -3010,6 +3010,109 @@ def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, []
 
 
+# ---------------------------------------------------------------------------
+# PRES-011 -- external-install receipts (P-U-GHL-SALES / P-U-GHL-VSL /
+# P-U-FORM-GATE). These three phases have EXTERNAL effects (Skill 06
+# page-install, Skill 44 form/workflow) and are executed by
+# ghl_external_installer.py -- never by model text. The gate mechanic is
+# delegated to the page builders' own resolvers (the same source the
+# executors use, so verifier and executor can never drift); completion
+# requires the installer's own validate_receipt() (adapter remote IDs +
+# matching-location remote readback + run/input binding + ops-ledger
+# provenance). A perfect-looking model receipt with no adapter execution
+# behind it fails here by construction.
+# ---------------------------------------------------------------------------
+try:
+    import ghl_external_installer as _gx
+except ImportError:
+    _gx = None  # type: ignore[assignment]
+
+
+def _verify_pres011_gate(phase_id: str, run_dir: Path) -> Optional[Tuple[bool, List[str]]]:
+    """Resolve the elect/decline gate for a PRES-011 phase. Returns None when
+    the phase is ELECTED (the caller must then check the receipt), else the
+    (ok, reasons) defer/waived/fail_closed verdict."""
+    if _gx is None:
+        return False, [f"{phase_id}: ghl_external_installer module unavailable "
+                       "-- cannot resolve the gate or the receipt; fail-closed, "
+                       "not a pass"]
+    intake: dict = {}
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json")
+                            .read_text(encoding="utf-8"))
+        if not isinstance(intake, dict):
+            intake = {}
+    except (OSError, json.JSONDecodeError):
+        intake = {}
+    try:
+        gate = _gx.resolve_gate(run_dir, phase_id, intake)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"{phase_id}: gate resolution raised {exc!r}"]
+    decision = gate.get("decision")
+    if decision in ("defer", "waived"):
+        return True, [f"NOTE: {phase_id} {decision} -- {gate.get('detail', '')}"]
+    if decision == "fail_closed":
+        return False, [f"{phase_id}: gate fail_closed -- {gate.get('detail', '')}"]
+    if decision != "build":
+        return False, [f"{phase_id}: unrecognized gate decision {decision!r}"]
+    return None
+
+
+def _verify_ghl_sales_install(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-GHL-SALES (order 6.2): elected sales+checkout funnel install.
+
+    produces_artifact (manifest): working/sales-checkout/ghl_build_receipt.json."""
+    gated = _verify_pres011_gate("P-U-GHL-SALES", run_dir)
+    if gated is not None:
+        return gated
+    if _gx is None:
+        return False, ["AF-U-GHL-SALES: ghl_external_installer unavailable"]
+    try:
+        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-GHL-SALES")
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-GHL-SALES: receipt validation raised {exc!r}"]
+    if ok:
+        return True, []
+    return False, [f"AF-U-GHL-SALES: {detail}"]
+
+
+def _verify_ghl_vsl_install(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-GHL-VSL (order 6.4): elected VSL funnel install.
+
+    produces_artifact (manifest): working/vsl/ghl_build_receipt.json."""
+    gated = _verify_pres011_gate("P-U-GHL-VSL", run_dir)
+    if gated is not None:
+        return gated
+    if _gx is None:
+        return False, ["AF-U-GHL-VSL: ghl_external_installer unavailable"]
+    try:
+        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-GHL-VSL")
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-GHL-VSL: receipt validation raised {exc!r}"]
+    if ok:
+        return True, []
+    return False, [f"AF-U-GHL-VSL: {detail}"]
+
+
+def _verify_form_gate_install(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-FORM-GATE (order 5.6): elected VSL gate form + workflow.
+
+    produces_artifact (manifest): ecosystem/gate-form.json +
+    workflows/gate-workflow.json -- BOTH required, each with adapter IDs
+    and readback."""
+    gated = _verify_pres011_gate("P-U-FORM-GATE", run_dir)
+    if gated is not None:
+        return gated
+    if _gx is None:
+        return False, ["AF-U-FORM-GATE: ghl_external_installer unavailable"]
+    try:
+        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-FORM-GATE")
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-GATE: receipt validation raised {exc!r}"]
+    if ok:
+        return True, []
+    return False, [f"AF-U-FORM-GATE: {detail}"]
+
 
 # ---------------------------------------------------------------------------
 # FIX 112 — the two remaining missing producers.
@@ -3345,6 +3448,10 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-U-CHECKOUT-BUILD": _verify_upsell_checkout_build,
     "P-U-FORM-CHECKOUT":  _verify_upsell_form_checkout,
     "P-U-VSL-BUILD":      _verify_upsell_vsl_build,
+    # --- PRES-011: external-install receipts (Skill 06/44 adapters) ---
+    "P-U-GHL-SALES":      _verify_ghl_sales_install,
+    "P-U-GHL-VSL":        _verify_ghl_vsl_install,
+    "P-U-FORM-GATE":      _verify_form_gate_install,
     # --- FIX 112: the two remaining missing producers ---
     "P-STYLE-SPEC":       _verify_style_spec,
     "P-STYLE-PICK":       _verify_style_pick,
@@ -3988,7 +4095,15 @@ for _pid, _arts in (
     ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
     ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
     ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),
-    ("P-U-FORM-GATE",      ["ecosystem/gate-form.json", "workflows/gate-workflow.json"]),
+    # PRES-011: P-U-FORM-GATE / P-U-GHL-SALES / P-U-GHL-VSL are NOT in this
+    # generic presence table anymore. Their receipts prove REMOTE installs
+    # (adapter IDs + readback + ops-ledger provenance via
+    # ghl_external_installer.validate_receipt), which bare existence can
+    # never establish -- see _verify_ghl_sales_install /
+    # _verify_ghl_vsl_install / _verify_form_gate_install above, registered
+    # in PHASE_VERIFIERS alongside the upsell-build verifiers. Re-adding
+    # them here would OVERWRITE those substance verifiers with the generic
+    # checker (this loop assigns unconditionally).
     # DEFECT-4 (manifest v67): both GHL funnel builds declared the SAME bare
     # `build_receipt.json`, so whichever ran first satisfied the other's
     # presence check (and the dispatcher's already_satisfied pre-check would
@@ -3996,8 +4111,6 @@ for _pid, _arts in (
     # own funnel directory. The names are deliberately NOT
     # working/<funnel>/build_receipt.json: those two paths already belong to
     # sales_checkout_builder.py and vsl_builder.py respectively.
-    ("P-U-GHL-SALES",      ["working/sales-checkout/ghl_build_receipt.json"]),
-    ("P-U-GHL-VSL",        ["working/vsl/ghl_build_receipt.json"]),
     ("P-U-COLLATERAL",     ["delivery/upsell/*"]),
     ("P-U-QC",             ["qc/upsell-scorecard.json"]),
 ):
