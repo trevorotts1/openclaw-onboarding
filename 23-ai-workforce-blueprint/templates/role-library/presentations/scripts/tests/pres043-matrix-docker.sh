@@ -39,7 +39,13 @@ if ! docker info >/dev/null 2>&1; then
   exit 3
 fi
 
-[ -n "$EVIDENCE_DIR" ] && mkdir -p "$EVIDENCE_DIR"
+if [ -n "$EVIDENCE_DIR" ]; then
+  mkdir -p "$EVIDENCE_DIR"
+  # Exactly-once evidence: a re-run REPLACES the per-profile receipt files
+  # rather than appending, so digest blocks never accumulate duplicates.
+  DIGESTS_FILE="$EVIDENCE_DIR/docker-images-digests.txt"
+  : > "$DIGESTS_FILE"
+fi
 
 run_profile() {
   local profile="$1" tag="pres043-$1" dockerfile="$MATRIX_DIR/Dockerfile.$1"
