@@ -1,58 +1,213 @@
 #!/usr/bin/env python3
-"""presentation-outbox-queue — the FIX 69 file-queue notify transport.
+"""presentation-outbox-queue — the FIX 69 file-queue notify transport,
+PRES-052 supervised-relay edition.
 
 Contract (matches report.dispatch3 / notify_preflight expectations):
-  * reads ONE JSON notify row on stdin: {"chat_id":...,"kind":...,"message":...}
-  * appends it, one JSON object per line, to the run dir's
-    working/outbox.jsonl (the file queue the host relays)
+  * reads ONE JSON notify row on stdin:
+    {"chat_id":...,"kind":...,"message":...} plus optional typed relay
+    fields (company, presentation, run_id, stage, event_id, revision,
+    lease_holder, ack_deadline_s)
+  * appends ONE typed envelope row, one JSON object per line, to the run
+    dir's working/outbox.jsonl (the file queue the supervised host
+    viewer/transport drains from job start — NOT finish-only)
   * exit 0 on queued, non-zero on malformed input / unwritable queue
 
-Run-dir resolution, first match wins:
-  1. $PRESENTATION_RUN_DIR (bin/presentation callers pass it through the env)
-  2. $PWD/working          (invoked from inside a run dir)
-  3. $PWD                  (the run dir itself)
+PRES-052 changes vs the FIX 69 version:
+
+  * TYPED ENVELOPE — every row carries schema (pres-outbox-v1), company /
+    presentation / run scoping, a unique event_id, revision, delivery
+    state (always "queued" here — queued is not delivered, and this
+    transport NEVER claims otherwise), lease snapshot, ack/retry
+    deadline, and acknowledgement slots for the local vs CC
+    destinations (both empty at queue time).
+  * NO CWD GUESSING — the run dir comes from $PRESENTATION_RUN_DIR,
+    which bin/presentation always exports. The old $PWD/working and
+    $PWD fallbacks are GONE (they let a row land in whatever directory
+    the caller happened to stand in): without the variable the transport
+    refuses, unless --allow-cwd-guess is passed explicitly (legacy
+    callers only; the guess is then stamped guess:true so the viewer
+    can flag it).
+  * CROSS-COMPANY REFUSAL — when the run dir carries state.json with a
+    scoped company, a row stamping a DIFFERENT company is refused (exit
+    6): two clients / two decks can never read each other events through
+    a misdirected row.
+  * NO CREDENTIALS — this transport reads no *BOT_TOKEN* variable and
+    never touches api.telegram.org; the default local channel is the
+    host viewer itself (requested local host channel by default).
+
 openclaw is NEVER invoked here — this transport exists precisely because the
-gateway CLI is absent on the host (FIX 69); the HOST relays the rows.
+gateway CLI is absent on the host (FIX 69); the HOST relays the rows through
+the supervised viewer active from job start.
 """
+import argparse
 import json
 import os
 import sys
+import time
+import uuid
+from datetime import datetime, timezone
+
+SCHEMA = "pres-outbox-v1"
+
+#: Exit codes (stable dispatch3 contract family).
+EXIT_OK = 0
+EXIT_BAD_JSON = 3
+EXIT_BAD_ROW = 3
+EXIT_UNWRITABLE = 5
+EXIT_NO_RUN_DIR = 5
+EXIT_SCOPE_MISMATCH = 6
 
 
-def _run_dir() -> str:
-    """Return the RUN DIR (the dir that contains working/)."""
-    env = os.environ.get("PRESENTATION_RUN_DIR", "")
-    if env and os.path.isdir(env):
-        return env
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _run_state_company(run_dir: str) -> str:
+    """Scoped company from state.json, "" when unknown. Never raises."""
+    sp = os.path.join(run_dir, "state.json")
+    if not os.path.isfile(sp):
+        return ""
+    try:
+        with open(sp, "r", encoding="utf-8") as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(state, dict):
+        return ""
+    intake = state.get("intake")
+    if isinstance(intake, dict):
+        for key in ("client", "client_name"):
+            val = intake.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    for key in ("client_name", "client"):
+        val = state.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def _run_dir(allow_guess: bool) -> str:
+    """Return the RUN DIR. PRESENTATION_RUN_DIR wins; without it, refuse
+    unless --allow-cwd-guess (legacy) — and then say so on the row."""
+    env = os.environ.get("PRESENTATION_RUN_DIR", "").strip()
+    if env:
+        return env, False
+    if not allow_guess:
+        return "", False
     cwd = os.getcwd()
     if os.path.basename(cwd) == "working":
-        return os.path.dirname(cwd)
-    if os.path.isdir(os.path.join(cwd, "working")):
-        return cwd
-    return cwd
+        return os.path.dirname(cwd), True
+    return cwd, True
 
 
-def main() -> int:
+def _read_lease(run_dir: str) -> dict:
+    p = os.path.join(run_dir, "working", ".lease.json")
+    if not os.path.isfile(p):
+        return {"holder": "", "expires_at": ""}
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return {"holder": "", "expires_at": ""}
+    if not isinstance(doc, dict):
+        return {"holder": "", "expires_at": ""}
+    holder = doc.get("holder") or doc.get("who") or ""
+    if isinstance(holder, dict):
+        holder = str(holder.get("who") or holder.get("pid") or "")
+    return {"holder": str(holder or ""),
+            "expires_at": str(doc.get("expires_at") or doc.get("expires") or "")}
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="presentation-outbox-queue")
+    ap.add_argument("--allow-cwd-guess", action="store_true",
+                    help="legacy fallback: resolve the run dir from $PWD when "
+                         "PRESENTATION_RUN_DIR is unset (stamped guess:true).")
+    args = ap.parse_args(argv)
     try:
         row = json.load(sys.stdin)
     except json.JSONDecodeError as exc:
         print(f"outbox-queue: stdin is not valid JSON: {exc}", file=sys.stderr)
-        return 3
+        return EXIT_BAD_JSON
     if not isinstance(row, dict):
         print("outbox-queue: stdin JSON must be an object", file=sys.stderr)
-        return 3
-    rd = _run_dir()
-    working = rd if os.path.basename(rd) == "working" else os.path.join(rd, "working")
+        return EXIT_BAD_ROW
+    rd, guessed = _run_dir(args.allow_cwd_guess)
+    if not rd:
+        print("outbox-queue: PRESENTATION_RUN_DIR is unset — refusing to "
+              "guess the run dir (PRES-052: no cwd guessing). The "
+              "bin/presentation wrapper always exports it; pass "
+              "--allow-cwd-guess only for legacy callers.",
+              file=sys.stderr)
+        return EXIT_NO_RUN_DIR
+    if not os.path.isdir(rd):
+        print(f"outbox-queue: run dir does not exist: {rd}", file=sys.stderr)
+        return EXIT_NO_RUN_DIR
+    # Cross-company refusal: a row stamping a different company than the
+    # run's own scoped company is never queued.
+    run_company = _run_state_company(rd)
+    row_company = str(row.get("company") or "").strip()
+    if run_company and row_company and row_company != run_company:
+        print(f"outbox-queue: REFUSING cross-company row "
+              f"(row company={row_company!r} != run company={run_company!r}) "
+              f"— two clients can never read each other events.",
+              file=sys.stderr)
+        return EXIT_SCOPE_MISMATCH
+    try:
+        ack_deadline_s = float(row.get("ack_deadline_s") or 30)
+    except (TypeError, ValueError):
+        ack_deadline_s = 30.0
+    if ack_deadline_s <= 0:
+        ack_deadline_s = 30.0
+    lease = _read_lease(rd)
+    try:
+        revision = int(row.get("revision") or 1)
+    except (TypeError, ValueError):
+        revision = 1
+    envelope = {
+        "schema": SCHEMA,
+        "event_id": str(row.get("event_id") or uuid.uuid4().hex[:16]),
+        "company": row_company or run_company or "operator",
+        "presentation": str(row.get("presentation") or os.path.basename(rd)),
+        "run_id": str(row.get("run_id") or os.path.basename(rd)),
+        "run_dir": rd,
+        "task_id": str(row.get("task_id") or ""),
+        "stage": str(row.get("stage") or ""),
+        "revision": revision,
+        "kind": str(row.get("kind") or "progress"),
+        "chat_id": row.get("chat_id"),
+        "message": row.get("message", ""),
+        # Delivery state: ALWAYS queued at queue time. Queued is not
+        # delivered — acknowledgement arrives via the supervised relay
+        # (acked_local_at / acked_cc_at), never from this row alone.
+        "state": "queued",
+        "created_at": _now_iso(),
+        "created_epoch": time.time(),
+        "lease_holder": lease["holder"],
+        "lease_expires_at": lease["expires_at"],
+        "retry_not_before": _now_iso(),
+        "ack_deadline_s": ack_deadline_s,
+        "acked_local_at": "",
+        "acked_cc_at": "",
+        "attempts_local": 0,
+        "attempts_cc": 0,
+        "channel": str(row.get("channel") or "local-viewer"),
+        "guessed_run_dir": bool(guessed),
+    }
+    working = os.path.join(rd, "working")
     outbox = os.path.join(working, "outbox.jsonl")
     try:
         os.makedirs(working, exist_ok=True)
         with open(outbox, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row, sort_keys=True) + "\n")
+            fh.write(json.dumps(envelope, sort_keys=True) + "\n")
     except OSError as exc:
         print(f"outbox-queue: could not append to {outbox}: {exc}", file=sys.stderr)
-        return 5
-    print(f"queued: outbox={outbox} kind={row.get('kind', 'progress')}", flush=True)
-    return 0
+        return EXIT_UNWRITABLE
+    print(f"queued: outbox={outbox} kind={envelope['kind']} "
+          f"event={envelope['event_id']} state=queued "
+          f"(queued is not delivered)", flush=True)
+    return EXIT_OK
 
 
 if __name__ == "__main__":
