@@ -91,16 +91,17 @@ def process_start_identity(pid):
         return "", False
 
     parts = []
+    have_id = False
     try:
         out = subprocess.check_output(
             ["ps", "-o", "lstart=", "-p", str(pid)],
             stderr=subprocess.DEVNULL,
         ).decode("utf-8", "replace").strip()
+        if out:
+            parts.append(out)
+            have_id = True
     except Exception:
-        return "", False
-    if not out:
-        return "", False
-    parts.append(out)
+        pass  # no procps (slim containers); /proc below is the authority there
 
     try:
         with open("/proc/%d/stat" % pid, "rb") as fh:
@@ -110,8 +111,12 @@ def process_start_identity(pid):
             fields = raw[close + 2:].split()
             if len(fields) > 19:
                 parts.append("starttime=%s" % fields[19])
+                have_id = True
     except Exception:
         pass  # macOS: no /proc.  lstart alone is sufficient.
+
+    if not have_id:
+        return "", False
 
     try:
         with open("/proc/%d/boot_id" % pid, "r") as fh:
