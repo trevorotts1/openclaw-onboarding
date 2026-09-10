@@ -71,7 +71,9 @@ curl -sS https://api.kie.ai/api/v1/jobs/createTask \
   }'
 
 Notes: "Supported formats: JPEG, PNG, WEBP, JPG"; "Maximum file size: 30MB;
-Maximum files: 16" (carried forward unchanged from GPT Image 2). Ratio 3:4 is
+Maximum files: 16" (carried forward unchanged from GPT Image 2). Live probe
+2026-09-10: the endpoint also accepts image_input (task 8fcde5... success,
+6 credits); input_urls stays preferred. Ratio 3:4 is
 the operator-approved substitute for a 4:5 vertical product shot (4:5 is not
 in the GPT Image 2.5 ratio enum; the selector performs this substitution
 automatically — this example shows the already-substituted payload).
