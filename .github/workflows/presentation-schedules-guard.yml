@@ -35,6 +35,7 @@ on:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template
       - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template
       - tests/unit/presentation-schedules-installed.test.sh
+      - tests/unit/pres034-scheduler-reconcile.test.sh
       - .github/workflows/presentation-schedules-guard.yml
   pull_request:
     paths:
@@ -45,6 +46,7 @@ on:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.plist.template
       - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-intake-poll.plist.template
       - tests/unit/presentation-schedules-installed.test.sh
+      - tests/unit/pres034-scheduler-reconcile.test.sh
       - .github/workflows/presentation-schedules-guard.yml
 
 jobs:
@@ -61,8 +63,14 @@ jobs:
           bash -n update-skills.sh
           bash -n lib-presentation-schedules.sh
           bash -n tests/unit/presentation-schedules-installed.test.sh
+          bash -n tests/unit/pres034-scheduler-reconcile.test.sh
 
       - name: Run presentation-schedules install tests
         run: |
           chmod +x tests/unit/presentation-schedules-installed.test.sh
           bash tests/unit/presentation-schedules-installed.test.sh
+
+      - name: Run PRES-034 scheduler-reconcile tests
+        run: |
+          chmod +x tests/unit/pres034-scheduler-reconcile.test.sh
+          bash tests/unit/pres034-scheduler-reconcile.test.sh

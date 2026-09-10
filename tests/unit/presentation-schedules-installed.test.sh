@@ -348,8 +348,40 @@ if [ "$sub" = "cron" ]; then
   action="${1:-}"; shift || true
   case "$action" in
     add)    echo "  --session <target>" ;;
-    create) printf 'CREATE %s\n' "$*" >> "$OPENCLAW_MOCK_ARGS" ;;
-    list)   cat "$OPENCLAW_MOCK_PRESENT" 2>/dev/null || true ;;
+    create)
+      printf 'CREATE %s\n' "$*" >> "$OPENCLAW_MOCK_ARGS"
+      # PRES-034: the installer reads the real job list (not only the
+      # presence probe), so the mock MUST model what create registered —
+      # otherwise a present job looks absent to the reconciler and a
+      # duplicate is registered (the exact defect). Shape matches the live
+      # gateway's `cron list --json` output; the payload text is the argv
+      # after --system-event (word-split here is fine: the prompt's own
+      # spaces only matter for the DRIFT comparison, which uses the same
+      # split value on both runs).
+      python3 - "$OPENCLAW_MOCK_PRESENT" "$*" <<'PYEOF'
+import json, sys
+out_path, args = sys.argv[1], sys.argv[2]
+flags = args.split()
+text = ""
+for i, a in enumerate(flags):
+    if a == "--system-event" and i + 1 < len(flags):
+        text = " ".join(flags[i + 1:])
+        break
+job = {"id": "wd-present-1", "name": "presentation-watchdog", "enabled": True,
+       "agentId": "main",
+       "schedule": {"kind": "cron", "expr": "*/10 * * * *", "tz": "America/New_York"},
+       "sessionTarget": "main",
+       "payload": {"kind": "systemEvent", "text": text},
+       "delivery": {"mode": "none"}}
+json.dump({"jobs": [job]}, open(out_path, "w"))
+PYEOF
+      ;;
+    list)
+      # The present JSON (written by create above) is what the reconciler sees.
+      if [ "${OC_CRON_PRESENT_FORCE:-absent}" = "present" ]; then
+        cat "$OPENCLAW_MOCK_PRESENT" 2>/dev/null || printf '%s\n' '{"jobs":[]}'
+      fi
+      ;;
     *)      : ;;
   esac
   exit 0
@@ -399,7 +431,9 @@ MOCKEOF
   grep -qE -- '--session main|--session-target main' "$MOCK_ARGS" \
     && pass "I6: cron is a main-session self-ping" \
     || fail "I6: cron is not a main-session job"
-  # Idempotence: a present job must not be re-registered.
+  # Idempotence: a present job must not be re-registered. PRES-034: the mock
+  # above wrote the registered job into cron-present.txt, so the second run
+  # reads a REAL present job — an in-sync one is left untouched.
   set +e; OC_CRON_PRESENT_FORCE=present run_vps_installer; set -e
   creates2=$(grep -c '^CREATE ' "$MOCK_ARGS" 2>/dev/null || true)
   [ "${creates2:-0}" -eq 1 ] \
