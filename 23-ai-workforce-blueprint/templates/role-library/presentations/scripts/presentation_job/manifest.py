@@ -194,15 +194,7 @@ class Phase:
     produces_artifact: List[str]
     executor_kind: str                  # "script" | "agent" | "none"
     executor_cmd: Optional[str]
-    # PRES-011 (TODO step 1): explicit executor capabilities. External-effect
-    # phases (ghl_page_install / ghl_workflow_install / ghl_media_rest) must
-    # never be routed to a text-only writer (text_artifact / multi_artifact);
-    # executor_adapter names the owning installer family (skill06 / skill44).
-    # NOTE: both default AFTER verifier (dataclass rule: no non-default field
-    # may follow a defaulted one).
     verifier: Optional[str]
-    executor_capability: Optional[str] = None
-    executor_adapter: Optional[str] = None
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
@@ -425,41 +417,11 @@ class Manifest:
             for pattern in phase_obj.produces_artifact:
                 producers.setdefault(_pattern_norm(pattern), []).append(phase_obj.id)
 
-        # PRES-011 (V6): executor-capability contracts. Unknown capabilities
-        # refuse the manifest; external-effect phases on text-only writers
-        # refuse at load (the same refusal ghl_external_installer.
-        # preflight_check_phase reports -- enforced here so a bad manifest
-        # can never reach a paid dispatch).
-        _PRES011_KNOWN_CAPABILITIES = (
-            "text_artifact", "multi_artifact", "ghl_media_rest",
-            "ghl_page_install", "ghl_workflow_install",
-        )
-        _PRES011_EXTERNAL = (
-            "ghl_media_rest", "ghl_page_install", "ghl_workflow_install",
-        )
-        _PRES011_EXTERNAL_PHASES = (
-            "P-U-GHL-SALES", "P-U-GHL-VSL", "P-U-FORM-GATE",
-        )
-
         problems: List[str] = []
         for p, phase_obj in zip(phases_raw, self.phases):
             pid = phase_obj.id
             if not phase_obj.produces_artifact:
                 problems.append(f"phase {pid}: declares no produces_artifact")
-            cap = phase_obj.executor_capability
-            kind = phase_obj.executor_kind
-            if cap is not None and cap not in _PRES011_KNOWN_CAPABILITIES:
-                problems.append(
-                    f"phase {pid}: unknown executor.capability {cap!r} "
-                    f"(known: {', '.join(_PRES011_KNOWN_CAPABILITIES)})")
-            if (pid in _PRES011_EXTERNAL_PHASES
-                    or (cap in _PRES011_EXTERNAL)):
-                if kind in ("agent", "none") or (
-                        cap in ("text_artifact", "multi_artifact")):
-                    problems.append(
-                        f"phase {pid}: external-effect phase "
-                        f"(capability={cap}) routed to text-only writer "
-                        f"(executor.kind={kind}) -- AF-EXTERNAL-TEXT-ROUTING")
 
             # (a) explicit consumes list — the manifest may declare inputs directly.
             consumed: List[str] = []
@@ -542,11 +504,6 @@ class Manifest:
                 # resolves to "agent" — which is exactly why A3 must ship in warn-mode first.
                 executor_kind=(ex.get("kind") or "agent"),
                 executor_cmd=ex.get("cmd"),
-                # PRES-011: explicit capability + owning adapter, validated
-                # below (unknown capabilities refuse the manifest; external
-                # phases on text writers refuse at preflight).
-                executor_capability=ex.get("capability"),
-                executor_adapter=ex.get("adapter"),
                 verifier=p.get("verifier"),
                 client_report=p.get("client_report") or {},
                 heartbeat_minutes=p.get("heartbeat_minutes"),
@@ -923,11 +880,7 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # phases.Engine._style_pick_intake_auto -> defers.load_intake, making the declared DAG
 # match what the phase actually does (precedent: P-STYLE-SPEC already declares it).
 # The floor is set to 68 = the new manifest_version, per U019 step 8.
-# 68 -> 69 (PRES-011): P-U-FORM-GATE / P-U-GHL-SALES / P-U-GHL-VSL leave the
-# text-only agent writer for the ghl_external_installer.py script executors
-# with explicit executor.capability (ghl_workflow_install / ghl_page_install)
-# + gate_codes AF-U-FORM-GATE / AF-U-GHL-SALES / AF-U-GHL-VSL.
-MIN_MANIFEST_VERSION = 69  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+MIN_MANIFEST_VERSION = 68  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
