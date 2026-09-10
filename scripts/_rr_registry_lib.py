@@ -477,11 +477,22 @@ def cmd_verify(final_path, snap_path):
     return 0 if (not missing and not wrong and not dupes) else 1
 
 
+def parse_extras(extras):
+    """The shell passes the k=v list as ONE quoted argument
+    ("aborted=0 duplicates=0 complete=0 ..."), so each element must be split on
+    whitespace first — otherwise the whole string lands in one base key and the
+    machine-readable line carries every key TWICE (once from the override
+    string, once from base). QC RR-W4-REGISTRY: emit each key exactly once."""
+    pairs = []
+    for e in extras:
+        pairs.extend(e.split())
+    return pairs
+
 def cmd_emit_empty(extras):
     base = {"aborted": 1, "changed": 0, "verified": 0, "pending": 0, "failed": 0,
             "duplicates": 0, "rows_inserted": 0, "rows_updated": 0, "pages": 0,
             "complete": 0, "identity_source": "unknown"}
-    for e in extras:
+    for e in parse_extras(extras):
         if "=" in e:
             k, v = e.split("=", 1)
             base[k] = v
@@ -506,7 +517,7 @@ def cmd_emit(final_path, extras):
         "rows_updated": 0,
         "complete": 1,
     }
-    for e in extras:
+    for e in parse_extras(extras):
         if "=" in e:
             k, v = e.split("=", 1)
             base[k] = v
