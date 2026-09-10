@@ -1,7 +1,7 @@
 # QC Checklist: KIE.ai Setup
 
 ## 1. Purpose
-Enables the agent to use KIE.ai as the unified API for image, video, and audio generation, with Nano Banana Pro as the default image model.
+Enables the agent to use KIE.ai as the unified API for image, video, and audio generation, with GPT-Image-2.5 sunburst (`gpt-image-2-5-sunburst-*`) as the default image model.
 
 ## 2. Installation Checks
 - [ ] Skill folder exists and contains `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, the full reference `.md`, and the `.skill` package.
@@ -25,7 +25,7 @@ Enables the agent to use KIE.ai as the unified API for image, video, and audio g
 ## 5. Functional Checks
 - [ ] Mask-print the first 10 characters of `KIE_API_KEY` to confirm the environment loads correctly.
 - [ ] Call the credit endpoint and confirm a successful balance response.
-- [ ] Create a test image task with model `nano-banana-pro` using the documented `createTask` endpoint and capture the returned task ID.
+- [ ] Create a test image task with model `gpt-image-2-5-sunburst-text-to-image` using the documented `createTask` endpoint and capture the returned task ID.
 - [ ] Poll the documented status endpoint and confirm the task transitions through a valid async state and eventually returns result data or a valid in-progress state.
 - [ ] Ask the agent what a 401, 402, and 429 mean. Expected: bad/missing key, insufficient credits, and rate limit respectively.
 
