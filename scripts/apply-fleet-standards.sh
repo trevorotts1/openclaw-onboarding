@@ -2840,7 +2840,7 @@ fi
 # strictly required for THIS change to propagate -- it is done anyway so the
 # faster "replace" path (rather than the heading-regex "upgrade" fallback)
 # stays the steady-state path on every future roll, not a permanent detour.
-RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
+RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
 RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -2882,8 +2882,14 @@ path = sys.argv[1]
 slug = os.environ["RESCUE_BOX_SLUG"]
 tpl_path = os.environ["RESCUE_TPL"]
 
-START = "<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
-END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->"
+# RR-002 compatibility versioning: V2 -> V3 adds the canonical correlation
+# fields (incident_id / operation_id / attempt_id / result_digest / runtime_id)
+# to the resolution protocol. A box still carrying V2 is NOT matched by this
+# START/END pair, so it takes the `upgrade` branch below -- whose stale-marker
+# regex consumes the V2 opening tag (any V\d+) and re-renders the section, so
+# the migration is one roll and leaves no orphaned older marker behind.
+START = "<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
+END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->"
 # R7: a box still carrying the V1 marker pair falls through to the "upgrade"
 # (bare heading) branch below on its first V2 roll -- it is not matched by
 # the V2 START/END pair above, so `si == -1`, and the code takes the
@@ -2907,6 +2913,20 @@ ei = txt.find(END)
 if si != -1 and ei != -1 and ei > si:
     cur_start, cur_end = si, ei + len(END)
     mode = "replace"
+    # IDEMPOTENCY DEFECT (found by tests/unit/rescue-escalation-v2-marker-bump
+    # .test.sh SCENARIO 3, reproducible on origin/main before the RR-002 bump):
+    # the template renders content BEYOND the END marker (the
+    # "## What Rescue Rangers IS + your own wiring" section). The replace
+    # branch above only covered START..END, so every re-stamp spliced the whole
+    # template back in while leaving the PREVIOUS render's tail in place --
+    # duplicating that section on every roll. The re-stamp runs unconditionally
+    # on every fleet roll, so this accumulated silently per box. Consume the
+    # tail we ourselves rendered last time, if it is sitting right there.
+    _tpl_ei = tpl.find(END)
+    if _tpl_ei != -1:
+        _tail = tpl[_tpl_ei + len(END):]
+        if _tail and txt[cur_end:cur_end + len(_tail)] == _tail:
+            cur_end += len(_tail)
 else:
     # R7: also consume a STALE marker-comment line of ANY version number
     # immediately above the heading (e.g. a lingering V1 opening tag left

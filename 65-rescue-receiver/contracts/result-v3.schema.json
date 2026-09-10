@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "65-rescue-receiver/contracts/result-v3.schema.json",
+  "title": "Rescue result schema v3 (public receiver subset)",
+  "description": "RR-001 ONB mirror of the canonical FLEET contract rescue/result-v3.schema.json. This is the PUBLIC RECEIVER SUBSET: the identity fields, repair/verification state, evidence references, remaining blocker, outcome digest and the receiver's own transport receipts. The canonical FLEET file is authoritative; this mirror is pinned by x-canonical (path + $id + version + sha256) so drift is detectable (tests/rescue/RR-001/test_result_v3_contract_mirror.py). A transport receipt (delivered) is a SEPARATE record from repair state (repair_status); one never implies the other, and a receipt alone never resolves an incident.",
+  "version": "3.0.0",
+  "x-canonical": {
+    "repo": "blackceo-fleet-ops",
+    "path": "rescue/result-v3.schema.json",
+    "$id": "rescue/result-v3.schema.json",
+    "version": "3.0.0",
+    "required": [
+      "incident_id",
+      "instruction_id",
+      "attempt_id",
+      "runtime_id",
+      "outcome_digest",
+      "repair_status",
+      "verification_status"
+    ],
+    "repair_status": [
+      "repaired",
+      "advice_delivered",
+      "partial",
+      "not_repaired"
+    ],
+    "verification_status": [
+      "verified",
+      "unverified",
+      "verifier_failed",
+      "pending"
+    ],
+    "sha256": "c12c7ef6a1c7d96eca30bc878fb7fcc691d28acfd39fb43ae6020a0ccf22876b"
+  },
+  "x-mirror": {
+    "repo": "openclaw-onboarding",
+    "path": "65-rescue-receiver/contracts/result-v3.schema.json"
+  },
+  "type": "object",
+  "required": [
+    "incident_id",
+    "instruction_id",
+    "attempt_id",
+    "runtime_id",
+    "outcome_digest",
+    "repair_status",
+    "verification_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "incident_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Canonical incident id (RR-002: the admission ticket id echoed into the originating task journal; a resolution MUST carry it)."
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "enrollment_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "instruction_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "attempt_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "runtime_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Authenticated runtime identity of the box that produced the result (RR-002: never free text)."
+    },
+    "operation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Unique per delivery attempt. A repeated operation_id is an idempotent receipt, never a second effect."
+    },
+    "outcome_digest": {
+      "type": "string",
+      "minLength": 20,
+      "description": "sha256 hex of the canonical structured outcome (redacted reply, evidence refs, scope, cards, verifier, actor). Empty or prose is never a digest."
+    },
+    "repair_status": {
+      "enum": [
+        "repaired",
+        "advice_delivered",
+        "partial",
+        "not_repaired"
+      ],
+      "description": "What actually happened to the machine. advice_delivered means ONLY advice was delivered; it must never be folded into repaired."
+    },
+    "verification_status": {
+      "enum": [
+        "verified",
+        "unverified",
+        "verifier_failed",
+        "pending"
+      ],
+      "description": "Independent symptom verification state. repaired REQUIRES verified."
+    },
+    "outcome_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Advice-only completion must name its outcome type (advice_delivered|answered|deferred|client_reported|...), so a reader can tell advice from a repair. Required when repair_status=advice_delivered (see allOf)."
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Referenced evidence (symptom check, preflight, revert, execution receipt, verification receipt)."
+    },
+    "verifier": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "actor",
+        "revision"
+      ]
+    },
+    "remaining_blocker": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "next_action": {
+          "type": "string"
+        },
+        "due_at": {
+          "type": "string"
+        }
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "properties": {
+        "classifier": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string"
+        },
+        "deterministic": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fix_card": {
+      "type": "object",
+      "properties": {
+        "card_id": {
+          "type": "string"
+        },
+        "card_version": {
+          "type": "string"
+        },
+        "scope_authorized": {
+          "type": "boolean"
+        },
+        "preflight_ok": {
+          "type": "boolean"
+        },
+        "revert_ok": {
+          "type": "boolean"
+        },
+        "executed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "card_id",
+        "card_version"
+      ]
+    },
+    "transport_receipt": {
+      "type": "object",
+      "description": "RECEIVER-OWNED. Recorded separately from repair state (RR-001). A delivered transport receipt alone NEVER resolves: it is a delivery fact, not a repair claim. receipt_state is one of the receiver's terminal receipt states.",
+      "properties": {
+        "delivered_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reply_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "receipt_state": {
+          "enum": [
+            "receipt_confirmed",
+            "receipt_pending",
+            "receipt_only_unverified",
+            "receipt_unconfirmed"
+          ],
+          "description": "receipt_confirmed = the server returned a matching structured receipt for THIS operation+attempt. receipt_only_unverified = the transport delivered but no v3 repair proof was attached (legacy ACK: readable as delivered-only until upgraded)."
+        }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "description": "Redacted actual structured client reply (RR-001: the stored answer was the original instruction, not the client reply).",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "reply_chars": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "history_failure_reason": {
+      "type": "string",
+      "description": "When the repair addresses a failure that historically rejected a real repair (defective historical wording), the repair is still valid on its own v3 evidence."
+    }
+  },
+  "allOf": [
+    {
+      "description": "RR-001 gate restated in the mirror so a receiver-side validator cannot accept a promise as a repair.",
+      "if": {
+        "properties": {
+          "repair_status": {
+            "const": "repaired"
+          }
+        },
+        "required": [
+          "repair_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "fix_card",
+          "evidence_refs"
+        ],
+        "properties": {
+          "verification_status": {
+            "const": "verified"
+          },
+          "fix_card": {
+            "required": [
+              "card_id",
+              "card_version",
+              "scope_authorized"
+            ],
+            "properties": {
+              "scope_authorized": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Advice-only completion carries an explicit outcome type and never claims the machine was fixed.",
+      "if": {
+        "properties": {
+          "repair_status": {
+            "const": "advice_delivered"
+          }
+        },
+        "required": [
+          "repair_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "outcome_type"
+        ],
+        "properties": {
+          "outcome_type": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}
