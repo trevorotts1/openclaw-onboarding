@@ -15,6 +15,10 @@ or arithmetic. Zero model calls, anywhere, ever (see `SKILL.md` doctrine item 1)
   shared client `scripts/lib/rescue_admission.py` — a durable ticket with a
   validated receipt; the group message is supplemental visibility only. A
   failed/refused/unavailable admission leaves the P1 event open and retryable.
+  A box the intake will not authenticate has a MISSING ENROLLMENT, which is
+  recorded as a pending repair with a named owner and a next action — it is
+  never reported as an admission, and never as a policy refusal of the
+  incident.
 - **P2** -- drift worth a look. Batched with the day's other P2/P3 alerts up to the
   per-box daily cap (4/day), except that a P1 always bypasses the batch.
 - **P3** -- informational. Digest-line only (for example, a snapshot-pruning note).

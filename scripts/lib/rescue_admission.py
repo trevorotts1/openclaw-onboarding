@@ -46,6 +46,34 @@
 #     admitted | refused | failed | replay | dry_run | no_enrollment |
 #     client_unavailable, plus operation_id, ticket_id (when the intake
 #     answered one), admission_schema and a sanitized detail.
+#   * missing enrollment is a PENDING REPAIR with an OWNER, never an admission
+#     and never a policy refusal of the incident (RR-015 exact repair, and the
+#     reason this clause exists: "A gateway Telegram message is NOT admission"
+#     applies equally to an unauthenticated POST). See the intake-contract
+#     drift block below for the live evidence that made this reachable.
+#
+# -----------------------------------------------------------------------------
+# CURRENT INTAKE CONTRACT (verified against the shipped FLEET export, not from
+# memory -- blackceo-fleet-ops rescue/workflows/RR-01-intake.json on FLEET main,
+# node "Webhook Auth Check", read 2026-09-10):
+#
+#   * AUTH is the FIRST node after the webhook trigger and it FAILS CLOSED. It
+#     reads EXACTLY ONE header -- `x-rescue-secret` -- and compares its SHA-256
+#     against a stored accepted-hash set. There is NO "soft"/unauthenticated
+#     phase in the current intake: an unauthenticated POST is answered 403
+#     {"status":"unauthorized"} before payload parsing, before any admission
+#     claim, before any ticket.
+#   * RR-003 (identity lane) DECLARES a v2 per-enrollment pair (X-RR-Box-Cred +
+#     X-RR-Box-Id) and this client implements it, but the LIVE intake does not
+#     READ those headers yet. Sending them therefore lands on the 403 above.
+#     That is a FLEET workflow-export change owned by the manifest/export
+#     owner -- it is NOT edited from here. Until it lands, a v2-only box
+#     receives `no_enrollment` (truthful: its credential is not accepted by the
+#     current intake) rather than a fabricated "refused".
+#   * VERDICT: the body carries `accepted` (bool) with `status`/`reason`; a
+#     duplicate is answered 200 {"accepted":true,"status":"duplicate_ignored"}
+#     -- the fold this client reports as `replay`.
+# -----------------------------------------------------------------------------
 #   * Reuse means REUSE: the timeout shape, the verdict parsing and the
 #     redaction rules are the Skill 61 loop_escalate.py concepts (its measured
 #     30.3s admission and the 200-with-refusal trap), carried here as the
@@ -128,6 +156,19 @@ BOX_SLUG_ENV = "FLEET_STANDING_BOX_SLUG"              # canonical per-box slug
 TIMEOUT_ENV = "EWS_RESCUE_ADMISSION_TIMEOUT"
 DEFAULT_TIMEOUT = 120.0
 BODY_READ_LIMIT = 65536
+V2_HEADERS_ENV = "EWS_RESCUE_ADMISSION_SEND_V2_HEADERS"
+
+# OWNERSHIP of a missing enrollment. RR-015: "Record missing enrollment as
+# pending repair with owner". The owner is the same role that seeds the
+# enrollment rows themselves -- per the FLEET contract manifest, rr_box_auth is
+# written by the "operator seeder (D08)" (RR-07-receiver-gw maintains only
+# last_seen/last_ack/receiver_version). Carried as a NAMED constant so the
+# journal, the digest and the receipt all agree on one owner string.
+REPAIR_OWNER_ENROLLMENT = "operator-seeder-D08"
+REPAIR_ACTION_ENROLLMENT = "enroll this box in rr_box_auth with an accepted admission credential"
+# Status vocabulary: a receipt status that is a PENDING REPAIR (owned, visible,
+# retryable) rather than an admission, a policy refusal, or an unowned fault.
+PENDING_REPAIR_STATUSES = ("no_enrollment",)
 
 # A validated admission receipt needs: a 2xx status AND an intake verdict of
 # accept/admit. An unparseable body is UNDETERMINED (never a refusal, never a
@@ -329,6 +370,31 @@ def intake_verdict(body_text):
     return None
 
 
+def is_replay_answer(body_text) -> bool:
+    """True when the intake folded this operation onto an EXISTING ticket
+    instead of minting a new one. The live intake answers a duplicate with
+    HTTP 200 {"accepted":true,"status":"duplicate_ignored"} (node 'Build
+    Non-Admitted Response', FLEET export) -- an accepted admission whose
+    identity already existed. Reported as `replay` so a caller can distinguish
+    "this attempt is what created the ticket" from "the ticket already existed
+    and this attempt folded onto it"; BOTH are ack-eligible (a replay proves a
+    durable ticket exists), and neither is ever a refusal."""
+    if not body_text:
+        return False
+    try:
+        doc = json.loads(body_text)
+    except ValueError:
+        return False
+    if not isinstance(doc, dict):
+        return False
+    status = str(doc.get("status", "")).strip().lower()
+    if status in ("duplicate_ignored", "duplicate", "replay", "folded"):
+        return True
+    adm = doc.get("admission")
+    return isinstance(adm, dict) and str(adm.get("decision", "")).lower() in (
+        "duplicate", "replay", "folded")
+
+
 def _ticket_id(doc):
     if isinstance(doc, dict):
         for k in ("ticketId", "ticket_id", "ticket"):
@@ -354,6 +420,36 @@ def _handle_http_error(exc):
         "intake HTTP %d: %s" % (code, trim(detail))) from exc
 
 
+# Auth-shaped refusals. The current intake auth gate fails closed with 403
+# {"status":"unauthorized"} for any header it cannot verify, so an auth refusal
+# is NOT evidence the incident was rejected -- it is evidence this BOX's
+# credential is not accepted by this intake. Kept as an explicit tuple (never a
+# loose substring scan on the whole body) so a payload refusal that merely
+# mentions authorization cannot be misread.
+_AUTH_REFUSAL_MARKERS = (
+    "unauthorized", "identity_mismatch", "forbidden", "forbidden_action",
+    "invalid_credential", "credential_not_accepted", "not_enrolled",
+)
+
+
+def is_auth_refusal(detail) -> bool:
+    """True when a refusal says the CALLER's credential/enrollment was not
+    accepted (an owned setup repair), not that the incident was rejected."""
+    d = " ".join(str(detail or "").lower().split())
+    return any(marker in d for marker in _AUTH_REFUSAL_MARKERS)
+
+
+def sends_v2_headers() -> bool:
+    """Whether this client should actually emit the RR-003 v2 per-enrollment
+    headers. DEFAULT FALSE: the live intake reads ONLY x-rescue-secret (verified
+    against the shipped FLEET export), so emitting unread v2 headers would turn
+    a healthy v1 escalation into a 403. Opt a box in with
+    EWS_RESCUE_ADMISSION_SEND_V2_HEADERS=1 once the intake-side v2 reader has
+    landed -- that FLEET export change belongs to the manifest/export owner."""
+    return _unquote_env(os.environ.get(V2_HEADERS_ENV, "")).lower() in (
+        "1", "true", "yes", "on")
+
+
 # --------------------------------------------------------------------------- #
 # production transport (stdlib urllib; used only when not injected)
 # --------------------------------------------------------------------------- #
@@ -367,11 +463,23 @@ def urllib_transport(url, payload_bytes, timeout=None):
     timeout = timeout or timeout_seconds()
     schema, cred, bid = resolve_admission_schema()
     headers = {"Content-Type": "application/json"}
-    if schema == "v2":
+    # The header this client SENDS is decided by what the LIVE intake READS,
+    # not by which credential the box happens to hold. The current intake
+    # accepts only x-rescue-secret, so that is the default. A box carrying a v2
+    # pair PLUS the shared secret authenticates as v1 (accepted today); a box
+    # carrying ONLY the v2 pair cannot authenticate at all until the intake-side
+    # v2 reader lands -- that is reported truthfully as no_enrollment, and the
+    # v2 headers are emitted only when explicitly opted in.
+    if schema == "v2" and sends_v2_headers():
         headers["X-RR-Box-Cred"] = cred
         headers["X-RR-Box-Id"] = bid
-    elif schema == "v1":
-        headers["X-Rescue-Secret"] = cred
+    elif schema in ("v2", "v1"):
+        if schema == "v2":
+            # v2 pair present but v2 headers not enabled: try the shared secret
+            # as the credential the live intake actually accepts.
+            cred = _unquote_env(os.environ.get(SECRET_ENV, ""))
+        if cred:
+            headers["X-Rescue-Secret"] = cred
     req = urllib.request.Request(url, data=payload_bytes,
                                  headers=headers, method="POST")
     try:
@@ -469,9 +577,27 @@ def admit(state_dir=None, box="", problem_text="", *,
         try:
             resp_text = tx(url, body)
         except AdmissionRefused as exc:
-            receipt["status"] = "refused"
             receipt["detail"] = trim(str(exc))
             receipt["detail_sanitized"] = True
+            # RR-015: "Record missing enrollment as pending repair with owner;
+            # do not report admission because a group send succeeded." An auth
+            # refusal is an OWNED SETUP REPAIR of this box's enrollment, NOT a
+            # policy refusal of the incident -- so it must not be journaled or
+            # reported in the same class. Detection is on the client-side facts
+            # available WITHOUT trusting the body: the credential schema this
+            # attempt actually presented, or an auth-shaped refusal reason.
+            if schema == "none" or is_auth_refusal(receipt["detail"]):
+                receipt["status"] = "no_enrollment"
+                receipt["pending_repair"] = True
+                receipt["repair_owner"] = REPAIR_OWNER_ENROLLMENT
+                receipt["repair_action"] = REPAIR_ACTION_ENROLLMENT
+                receipt["detail"] = (
+                    "no enrollment accepted by the intake (schema=%s); "
+                    "pending repair owned by %s: %s"
+                    % (schema, REPAIR_OWNER_ENROLLMENT, REPAIR_ACTION_ENROLLMENT))
+                journal("no_enrollment", receipt["detail"], None)
+                return receipt
+            receipt["status"] = "refused"
             journal("refused", receipt["detail"], None)
             return receipt
         except AdmissionTransportError as exc:
@@ -497,18 +623,38 @@ def admit(state_dir=None, box="", problem_text="", *,
             except ValueError:
                 pass
             ticket = _ticket_id(doc)
-            receipt["status"] = "admitted"
+            # A duplicate fold is an ACCEPTED admission whose identity already
+            # existed -- reported as replay, journaled as its own status, and
+            # ack-eligible exactly like admitted (a durable ticket provably
+            # exists either way).
+            replay = is_replay_answer(resp_text)
+            receipt["status"] = "replay" if replay else "admitted"
             receipt["ticket_id"] = ticket
             receipt["reply_digest"] = digest
-            receipt["detail"] = ("admitted%s"
-                                 % (" ticket_id=" + str(ticket) if ticket else ""))
-            journal("admitted", receipt["detail"], ticket, digest)
+            receipt["detail"] = ("%s%s" % (
+                "replay (folded onto an existing ticket)" if replay else "admitted",
+                " ticket_id=" + str(ticket) if ticket else ""))
+            journal(receipt["status"], receipt["detail"], ticket, digest)
             return receipt
         if verdict is False:
-            receipt["status"] = "refused"
             receipt["reply_digest"] = digest
             receipt["detail"] = trim(resp_text) or "intake refused payload"
             receipt["detail_sanitized"] = True
+            # Same split as the 4xx path: an auth/enrollment refusal reached on
+            # a 2xx-with-refusal answer is a pending enrollment repair, not a
+            # policy refusal of the incident.
+            if schema == "none" or is_auth_refusal(receipt["detail"]):
+                receipt["status"] = "no_enrollment"
+                receipt["pending_repair"] = True
+                receipt["repair_owner"] = REPAIR_OWNER_ENROLLMENT
+                receipt["repair_action"] = REPAIR_ACTION_ENROLLMENT
+                receipt["detail"] = (
+                    "no enrollment accepted by the intake (schema=%s); "
+                    "pending repair owned by %s: %s"
+                    % (schema, REPAIR_OWNER_ENROLLMENT, REPAIR_ACTION_ENROLLMENT))
+                journal("no_enrollment", receipt["detail"], None, digest)
+                return receipt
+            receipt["status"] = "refused"
             journal("refused", receipt["detail"], None, digest)
             return receipt
         # UNDETERMINED (malformed / non-JSON / empty): a value was printed by
@@ -587,6 +733,29 @@ def self_test():
           "HTML answer is UNDETERMINED, never success")
     check(intake_verdict("") is None, "empty body is UNDETERMINED, never success")
 
+    # replay: the intake's duplicate fold is an ACCEPTED admission, not a refusal
+    check(is_replay_answer('{"accepted":true,"status":"duplicate_ignored"}'),
+          "duplicate fold detected as replay")
+    check(not is_replay_answer('{"accepted":true,"ticketId":"T1"}'),
+          "a first admission is not a replay")
+    check(not is_replay_answer("<html>502</html>"),
+          "unparseable answer is never a replay")
+
+    # auth refusals are an OWNED ENROLLMENT REPAIR, not a policy refusal
+    check(is_auth_refusal("intake HTTP 403: unauthorized"),
+          "403 unauthorized classified as an auth refusal")
+    check(is_auth_refusal('{"status":"identity_mismatch"}'),
+          "identity_mismatch classified as an auth refusal")
+    check(not is_auth_refusal("intake HTTP 400: missing message"),
+          "a payload refusal is NOT an auth refusal")
+    _prev_v2 = os.environ.pop(V2_HEADERS_ENV, None)
+    try:
+        check(sends_v2_headers() is False,
+              "v2 headers are OFF by default (the live intake reads only x-rescue-secret)")
+    finally:
+        if _prev_v2 is not None:
+            os.environ[V2_HEADERS_ENV] = _prev_v2
+
     # redaction: a credential SHAPE is dropped whole
     t = trim("synthetic-fixture-ok Bearer sk-proj-x" + "A" * 40)
     check("redacted" in t, "credential-shaped response is dropped whole")
@@ -628,15 +797,72 @@ def self_test():
                            AssertionError("a replay must not re-post")),
                        url="https://intake.invalid/x")
             check(r2["status"] == "failed", "replay attempt still attempts (caller policy decides)")
-            # refusal does not become failure and vice versa
+            # refusal does not become failure and vice versa. A POLICY refusal
+            # (the incident/payload was rejected) stays `refused`; an AUTH
+            # refusal is a different class entirely -- see the no_enrollment
+            # case immediately below.
+            # This case must present a credential: with NO credential at all the
+            # request cannot have been authenticated, so a refusal is about the
+            # enrollment and no_enrollment is the honest answer (proven in the
+            # case below). A POLICY refusal is only distinguishable once this
+            # box actually authenticated.
             def refuse_transport(url, body):
-                raise AdmissionRefused("intake HTTP 403: identity_mismatch")
-            r3 = admit(td, box="box-admission-example",
+                raise AdmissionRefused("intake HTTP 400: missing message")
+            _saved_secret = os.environ.get(SECRET_ENV)
+            os.environ[SECRET_ENV] = "fixture-v1-shared-secret-not-real"
+            try:
+                r3 = admit(td, box="box-admission-example",
+                           problem_text="fixture problem 1234 5678",
+                           source="skill-60-ews", signal="S6",
+                           dedup_key="S6|config.owner", event_id=8,
+                           transport=refuse_transport, url="https://intake.invalid/x")
+            finally:
+                if _saved_secret is None:
+                    os.environ.pop(SECRET_ENV, None)
+                else:
+                    os.environ[SECRET_ENV] = _saved_secret
+            check(r3["status"] == "refused", "policy refusal classified refused", r3)
+            check("no_enrollment" != r3["status"],
+                  "a policy refusal is NOT misclassified as a pending repair")
+
+            # RR-015: a missing/unaccepted ENROLLMENT is a PENDING REPAIR with an
+            # owner -- not an admission, and not a policy refusal either.
+            def auth_refuse_transport(url, body):
+                raise AdmissionRefused("intake HTTP 403: unauthorized")
+            _saved = {k: os.environ.pop(k, None) for k in (BOX_CRED_ENV, BOX_ID_ENV, SECRET_ENV)}
+            try:
+                r3b = admit(td, box="box-admission-example",
+                            problem_text="fixture problem 1234 5678",
+                            source="skill-60-ews", signal="S6",
+                            dedup_key="S6|config.owner", event_id=10,
+                            transport=auth_refuse_transport, url="https://intake.invalid/x")
+                check(r3b["status"] == "no_enrollment",
+                      "unaccepted credential reported no_enrollment, not refused", r3b)
+                check(r3b["pending_repair"] is True and
+                      r3b["repair_owner"] == REPAIR_OWNER_ENROLLMENT and
+                      bool(r3b["repair_action"]),
+                      "no_enrollment carries a pending-repair owner and next action", r3b)
+                check(r3b["ticket_id"] is None,
+                      "no_enrollment is NEVER reported as an admission", r3b)
+                with _led.Ledger(td) as led:
+                    jr = led.latest_admission(r3b["operation_id"])
+                check(jr is not None and jr["status"] == "no_enrollment",
+                      "no_enrollment journaled under its own status", jr)
+            finally:
+                for k, v in _saved.items():
+                    if v is not None:
+                        os.environ[k] = v
+
+            # the intake's duplicate fold is an accepted admission -> replay
+            r5 = admit(td, box="box-admission-example",
                        problem_text="fixture problem 1234 5678",
                        source="skill-60-ews", signal="S6",
-                       dedup_key="S6|config.owner", event_id=8,
-                       transport=refuse_transport, url="https://intake.invalid/x")
-            check(r3["status"] == "refused", "403 refusal classified refused")
+                       dedup_key="S6|config.owner", event_id=11,
+                       transport=lambda u, b: '{"accepted":true,"status":"duplicate_ignored","ticketId":"T1"}',
+                       url="https://intake.invalid/x")
+            check(r5["status"] == "replay",
+                  "a duplicate fold is reported replay, not admitted/refused", r5)
+            check(r5["ticket_id"] == "T1", "replay still carries the ticket id")
             # dry_run: no network, no journal
             before = None
             with _led.Ledger(td) as led:

@@ -13,8 +13,14 @@
 #      box, same source; a re-post carries the SAME identity (intake can fold)
 #   4. gateway unavailable does NOT block the healthy outbound HTTP path: the
 #      sender stub raising changes NOTHING about an admitted receipt
-#   5. failed transport / refusal / undetermined answer / missing client /
-#      no enrollment config never consume the alert (event stays OPEN)
+#   5. failed transport / policy refusal / undetermined answer / missing client
+#      / missing enrollment never consume the alert (event stays OPEN); a
+#      MISSING ENROLLMENT is recorded as pending repair WITH AN OWNER and is
+#      never reported as an admission (RR-015 exact repair)
+#   8. duplicate fold -> replay: accepted + ack-eligible, never a refusal
+#   9. header selection follows what the LIVE intake READS: x-rescue-secret by
+#      default (verified against the shipped FLEET export); the unread v2
+#      per-enrollment headers are emitted ONLY on explicit opt-in
 #   6. dry-run changes no state (no ack, no admission post, no journal row)
 #   7. nine-field legacy contract present; client versioned; credential VALUES
 #      never journaled (names/shapes only in diagnostics)
@@ -74,13 +80,13 @@ os.environ["EWS_OPERATOR_CHAT"] = "9999op-drill"
 
 
 def admission_client(posts, status=200, body='{"accepted":true,"ticketId":"T-RR015"}',
-                     raise_cls=None):
+                     raise_cls=None, refuse_detail="fixture transport failure"):
     """A fake module whose admit() drives the REAL client with an injected
     transport. posts records what actually went to the wire."""
     def transport(url, payload_bytes, timeout=None):
         posts.append({"url": url, "body": json.loads(payload_bytes.decode("utf-8"))})
         if raise_cls:
-            raise raise_cls("fixture transport failure")
+            raise raise_cls(refuse_detail)
         return body
 
     def admit(state_dir=None, box="", problem_text="", **kw):
@@ -93,10 +99,48 @@ def admission_client(posts, status=200, body='{"accepted":true,"ticketId":"T-RR0
     return {"admit": admit, "load": None}
 
 
+CRED_ENVS = (client.BOX_CRED_ENV, client.BOX_ID_ENV, client.SECRET_ENV,
+             client.V2_HEADERS_ENV)
+
+
+def _raise_unauth():
+    """Fixture transport: the LIVE intake's fail-closed auth answer."""
+    raise client.AdmissionRefused('intake HTTP 403: {"status":"unauthorized"}')
+
+
 def clear_state():
     for k in ("EWS_STATE_DIR", "EWS_FLEET_DIR", "EWS_BOX_NAME",
               "FLEET_STANDING_BOX_SLUG", "EWS_RESCUE_CHAT", "EWS_OPERATOR_CHAT"):
         os.environ.pop(k, None)
+    for k in CRED_ENVS:
+        os.environ.pop(k, None)
+
+
+def creds(schema="v1", value="fixture-shared-secret-not-a-real-value"):
+    """Pin the admission credential for ONE case so the schema the client
+    presents is knowable: 'v1' shared secret, 'v2' per-enrollment pair, or
+    'none' (no credential anywhere). Returns the prior env for restore().
+
+    RR-015 drills must never depend on ambient credentials: a case asserting a
+    POLICY refusal is only meaningful when a credential was actually presented
+    -- with none, the same refusal is correctly reported as no_enrollment."""
+    saved = {k: os.environ.get(k) for k in CRED_ENVS}
+    for k in CRED_ENVS:
+        os.environ.pop(k, None)
+    if schema == "v1":
+        os.environ[client.SECRET_ENV] = value
+    elif schema == "v2":
+        os.environ[client.BOX_CRED_ENV] = value
+        os.environ[client.BOX_ID_ENV] = "box-enroll-fixture"
+    return saved
+
+
+def restore(saved):
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
 
 
 # --------------------------------------------------------------------------
@@ -239,6 +283,11 @@ with tempfile.TemporaryDirectory(prefix="rr015-c4-") as td:
 # CASE 5: failure classes NEVER consume the alert
 # --------------------------------------------------------------------------
 with tempfile.TemporaryDirectory(prefix="rr015-c5-") as td:
+    # No case in this block may depend on ambient credentials: pin a v1 shared
+    # secret (5e overrides to "none") so the schema the client presents, and
+    # therefore the refusal-class split, is genuinely exercised.
+    _c5_saved = creds("v1")
+
     # 5a transport failure
     posts = []
     cl = admission_client(posts, raise_cls=client.AdmissionTransportError)
@@ -252,8 +301,12 @@ with tempfile.TemporaryDirectory(prefix="rr015-c5-") as td:
     check(any(e["event_id"] == eid and e["admission_status"] == "failed" for e in esc),
           "transport failure status failed", esc)
 
-    # 5b explicit refusal (403): terminal for this attempt, event still OPEN
-    cl2 = admission_client([], raise_cls=client.AdmissionRefused)
+    # 5b explicit POLICY refusal (400: missing message): reached, terminal for
+    # this attempt, event still OPEN -- and NOT reclassified as an enrollment
+    # repair, because a credential WAS presented and the reason is not
+    # auth-shaped.
+    cl2 = admission_client([], raise_cls=client.AdmissionRefused,
+                           refuse_detail="intake HTTP 400: missing message")
     with Ledger(td) as led:
         eid2 = led.record_event("S6", "P1", "c", "config", "drill-f",
                                 tick_ts="2000-01-01T00:00:00+00:00")
@@ -263,8 +316,11 @@ with tempfile.TemporaryDirectory(prefix="rr015-c5-") as td:
         rows = led.conn.execute(
             "SELECT status FROM rescue_admissions WHERE event_id=? "
             "ORDER BY admission_id DESC LIMIT 1", (eid2,)).fetchone()
-    check(st2 == "open", "403 refusal leaves event OPEN", st2)
-    check(rows is not None and rows[0] == "refused", "refusal journaled as refused", rows)
+    check(st2 == "open", "policy refusal leaves event OPEN", st2)
+    check(rows is not None and rows[0] == "refused",
+          "policy refusal journaled as refused (never as an enrollment repair)", rows)
+    check(not any(e["admission_status"] == "no_enrollment" for e in esc2),
+          "a policy refusal is NOT misreported as a missing enrollment", esc2)
 
     # 5c undetermined answer (HTML): never a success, never a refusal
     cl3 = admission_client([], body="<html>502 Bad Gateway</html>")
@@ -296,6 +352,65 @@ with tempfile.TemporaryDirectory(prefix="rr015-c5-") as td:
     check(st4 == "open", "missing client leaves event OPEN (owned setup fault)", st4)
     check(any(e["event_id"] == eid4 and e["admission_status"] == "client_unavailable"
               for e in esc4), "missing client reported client_unavailable", esc4)
+
+    # 5e NO ENROLLMENT at the EWS path: a box the intake will not authenticate
+    # (403 unauthorized) has a MISSING ENROLLMENT, which RR-015 says must be
+    # recorded as a PENDING REPAIR WITH AN OWNER -- visible, retryable, and
+    # never reported as an admission (and never as a generic refusal).
+    creds("none")
+    cl5 = admission_client([], raise_cls=client.AdmissionRefused,
+                           refuse_detail='intake HTTP 403: {"status":"unauthorized"}')
+    with Ledger(td) as led:
+        eid5 = led.record_event("S6", "P1", "c", "config", "drill-k",
+                                tick_ts="2000-01-01T00:00:00+00:00", dedup_key="drill-k")
+    esc5 = A.escalate(td, sender=lambda *a: (True, "x"), admission=cl5["admit"])
+    with Ledger(td) as led:
+        st5 = led.conn.execute("SELECT ack_state FROM events WHERE event_id=?", (eid5,)).fetchone()[0]
+        dg = [dict(r) for r in led.conn.execute(
+            "SELECT kind,payload FROM digests WHERE dedup_key=?", ("drill-k",)).fetchall()]
+        adm5 = led.conn.execute(
+            "SELECT status,detail FROM rescue_admissions WHERE event_id=? "
+            "ORDER BY admission_id DESC LIMIT 1", (eid5,)).fetchone()
+    check(st5 == "open", "missing enrollment leaves the event OPEN (retry-eligible)", st5)
+    check(any(e["event_id"] == eid5 and e["admission_status"] == "no_enrollment" for e in esc5),
+          "missing enrollment reported no_enrollment, never as an admission", esc5)
+    check(not any(e["admission_status"] == "admitted" for e in esc5),
+          "a missing enrollment is NEVER reported as an admission", esc5)
+    kinds5 = [d["kind"] for d in dg]
+    check("rescue_admission_pending_repair" in kinds5,
+          "missing enrollment recorded as pending repair (digest)", kinds5)
+    check(not any(k == "rescue_admission_ticket" for k in kinds5),
+          "no admission ticket digest is minted for a missing enrollment", kinds5)
+    pr = [d for d in dg if d["kind"] == "rescue_admission_pending_repair"]
+    check(bool(pr) and client.REPAIR_OWNER_ENROLLMENT in (pr[0]["payload"] or "")
+          and "action=" in (pr[0]["payload"] or ""),
+          "pending-repair record carries an OWNER and a next action", pr)
+    check(adm5 is not None and adm5["status"] == "no_enrollment",
+          "journal: the attempt is status no_enrollment (not refused/failed)", adm5)
+    restore(_c5_saved)
+
+    # 5f CLIENT level: v2-only enrollment (credential pair, v2 headers OFF by
+    # default because the live intake reads only x-rescue-secret) -> the box
+    # cannot authenticate -> no_enrollment + pending-repair owner, and NOT
+    # ack-eligible, so no caller can mark an event escalated on it.
+    creds("v2")
+    r6 = client.admit(td, box="box-rr015-canonical", problem_text="drill-l",
+                      source="skill-60-ews", signal="S6", dedup_key="drill-l",
+                      event_id=4242, transport=lambda *a, **k: _raise_unauth(),
+                      url="https://intake.invalid/rr-v2-intake")
+    check(r6["status"] == "no_enrollment",
+          "v2-only box with the live intake reports no_enrollment", r6.get("status"))
+    check(r6.get("pending_repair") is True
+          and r6.get("repair_owner") == client.REPAIR_OWNER_ENROLLMENT
+          and bool(r6.get("repair_action")),
+          "no_enrollment receipt carries pending_repair + owner + action", r6)
+    check(not C.admission_is_ack_eligible(r6["status"]),
+          "no_enrollment is NOT ack-eligible (never an admission)")
+    check(C.admission_is_pending_repair(r6["status"]),
+          "no_enrollment is recognised as a pending repair by the shared vocabulary")
+    check(not client.is_auth_refusal("intake HTTP 400: missing message")
+          and client.is_auth_refusal('intake HTTP 403: {"status":"unauthorized"}'),
+          "auth-shaped refusals are distinguished from policy refusals")
     clear_state()
 
 # --------------------------------------------------------------------------
@@ -354,6 +469,111 @@ with tempfile.TemporaryDirectory(prefix="rr015-c7-") as td:
           "credential value never journaled")
     check(r["ticket_id"] == "T-X", "receipt carries the ticket id")
     clear_state()
+
+# --------------------------------------------------------------------------
+# CASE 8: duplicate fold -> REPLAY (accepted + ack-eligible, never a refusal)
+# The live intake answers a re-post of the same operation_id with HTTP 200
+# {"accepted":true,"status":"duplicate_ignored"}: the ticket already existed.
+# RR-015 replays must preserve identity and must NOT be reported as a fresh
+# admission, nor as a refusal -- and they MUST still be ack-eligible, because a
+# fold proves a durable ticket exists.
+# --------------------------------------------------------------------------
+with tempfile.TemporaryDirectory(prefix="rr015-c8-") as td:
+    creds("v1")
+    posts = []
+    cl = admission_client(
+        posts, body='{"accepted":true,"status":"duplicate_ignored","ticketId":"T-RR015-EXISTING"}')
+    with Ledger(td) as led:
+        eid = led.record_event("S6", "P1", "c", "config", "drill-m",
+                               tick_ts="2000-01-01T00:00:00+00:00", dedup_key="drill-m")
+    esc = A.escalate(td, sender=lambda *a: (True, "x"), admission=cl["admit"])
+    with Ledger(td) as led:
+        st = led.conn.execute("SELECT ack_state FROM events WHERE event_id=?", (eid,)).fetchone()[0]
+        rows = [dict(r) for r in led.conn.execute(
+            "SELECT status,ticket_id FROM rescue_admissions WHERE event_id=? "
+            "ORDER BY admission_id", (eid,)).fetchall()]
+    check(len(posts) == 1, "replay case posts once", len(posts))
+    check(any(e["event_id"] == eid and e["admission_status"] == "replay" for e in esc),
+          "duplicate fold reported replay", esc)
+    check(not any(e["admission_status"] in ("refused", "failed") for e in esc),
+          "a duplicate fold is never reported as a refusal or a failure", esc)
+    check(any(e["ticket_id"] == "T-RR015-EXISTING" for e in esc),
+          "replay carries the EXISTING ticket id", esc)
+    check(st == "escalated",
+          "replay is ack-eligible: a fold proves a durable ticket exists", st)
+    check([r["status"] for r in rows] == ["replay"],
+          "journal: duplicate fold journaled under its own status", rows)
+    clear_state()
+
+# --------------------------------------------------------------------------
+# CASE 9: the credential HEADER this client sends is decided by what the LIVE
+# intake READS, not by which credential the box happens to hold.
+# Verified against the shipped FLEET export `rescue/workflows/RR-01-intake.json`
+# node "Webhook Auth Check", which reads ONLY x-rescue-secret and fails closed
+# with 403 {"status":"unauthorized"}; the RR-003 v2 per-enrollment headers
+# (X-RR-Box-Cred / X-RR-Box-Id) are declared in the identity schema but NOT read
+# by the live intake. Emitting them by default turned a healthy escalation into
+# a 403, so the default is x-rescue-secret and v2 is opt-in
+# (EWS_RESCUE_ADMISSION_SEND_V2_HEADERS=1) until an intake-side reader lands --
+# that FLEET export change belongs to the manifest/export owner.
+# --------------------------------------------------------------------------
+with tempfile.TemporaryDirectory(prefix="rr015-c9-") as td:
+    import urllib.request
+
+    seen = []
+
+    class _Resp:
+        status = 200
+
+        def read(self, n):
+            return b'{"accepted":true,"ticketId":"T-HDR"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    _real_urlopen = urllib.request.urlopen
+    urllib.request.urlopen = lambda req, timeout=None: (seen.append(req.headers), _Resp())[1]
+    try:
+        clear_state()
+        os.environ[client.SECRET_ENV] = "fixture-v1-secret-value"
+        client.urllib_transport("https://intake.invalid/rr-v2-intake", b"{}")
+        h1 = {k.lower() for k in seen[-1]}
+        check(any("rescue-secret" in k for k in h1) and not any("rr-box" in k for k in h1),
+              "v1 credential sends x-rescue-secret, never unread v2 headers", h1)
+
+        # a box holding BOTH falls back to the secret the live intake accepts
+        os.environ[client.BOX_CRED_ENV] = "fixture-cred-value-not-real"
+        os.environ[client.BOX_ID_ENV] = "box-enroll-fixture"
+        client.urllib_transport("https://intake.invalid/rr-v2-intake", b"{}")
+        h2 = {k.lower() for k in seen[-1]}
+        check(any("rescue-secret" in k for k in h2) and not any("rr-box" in k for k in h2),
+              "v2 pair + shared secret falls back to the accepted v1 header", h2)
+
+        # v2 pair and NO shared secret: no header the live intake accepts, so
+        # the honest outcome is no_enrollment -- NOT a silent unauthenticated
+        # post that the intake 403s as an anonymous caller.
+        os.environ.pop(client.SECRET_ENV, None)
+        client.urllib_transport("https://intake.invalid/rr-v2-intake", b"{}")
+        h3 = {k.lower() for k in seen[-1]}
+        check(not any("rr-box" in k for k in h3),
+              "an unread v2 header is never emitted while the intake cannot read it", h3)
+
+        # explicit opt-in is the seam the intake-side reader lands behind
+        os.environ[client.SECRET_ENV] = "fixture-v1-secret-value"
+        os.environ[client.V2_HEADERS_ENV] = "1"
+        check(client.sends_v2_headers() is True, "v2 header emission is opt-in via env")
+        client.urllib_transport("https://intake.invalid/rr-v2-intake", b"{}")
+        h4 = {k.lower() for k in seen[-1]}
+        check(any("rr-box-cred" in k for k in h4) and any("rr-box-id" in k for k in h4),
+              "opt-in emits the v2 per-enrollment headers", h4)
+        clear_state()
+        check(client.sends_v2_headers() is False,
+              "v2 header emission is OFF by default (live intake reads only x-rescue-secret)")
+    finally:
+        urllib.request.urlopen = _real_urlopen
 
 # --------------------------------------------------------------------------
 # clean up env and summarize

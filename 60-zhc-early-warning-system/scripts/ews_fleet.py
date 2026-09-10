@@ -195,12 +195,23 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
                     event_id=eid, tick_ts=now_utc())
                 reason = receipt.get("status", "failed")
                 ticket_id = receipt.get("ticket_id")
-                admitted = reason in ("admitted", "replay")
+                admitted = ews_common.admission_is_ack_eligible(reason)
                 if admitted:
                     led.ack_event(eid, "escalated")
                     if ticket_id:
                         led.record_digest("rescue_admission_ticket", "deadman|%s" % box,
                                           payload="ticket_id=%s box=%s" % (ticket_id, box))
+                elif ews_common.admission_is_pending_repair(reason):
+                    # RR-015: missing enrollment is a PENDING REPAIR with an
+                    # owner -- visible and retryable, never an admission and
+                    # never a generic refusal. The dead-man event stays OPEN so
+                    # the escalate sweep owns the retry.
+                    led.record_digest(
+                        "rescue_admission_pending_repair", "deadman|%s" % box,
+                        payload=("box=%s reason=%s owner=%s action=%s" % (
+                            box, reason,
+                            receipt.get("repair_owner") or "operator-seeder-D08",
+                            receipt.get("repair_action") or "enroll this box")))
                 else:
                     led.record_digest("rescue_admission_%s" % reason,
                                       "deadman|%s" % box,
@@ -357,6 +368,34 @@ def self_test():
             assert evs2[0]["ack_state"] == "escalated", evs2
             assert any(e["ack_state"] == "open" for e in evs2), evs2
         print("  dead-man-failure case: PASS (failed admission leaves event OPEN, retryable)")
+
+        # RR-015: a MISSING ENROLLMENT on the dead-man path is a PENDING REPAIR
+        # with an owner -- recorded as such, never an admission, never a
+        # generic refusal, and the dead-man event stays OPEN so the escalate
+        # sweep owns the retry (the box still cannot speak for itself).
+        def unenrolled_admission(state_dir=None, box="", problem_text="", **kw):
+            return {"status": "no_enrollment", "operation_id": "op-deadman-noenroll",
+                    "ticket_id": None, "admission_schema": "none",
+                    "detail": "no enrollment accepted by the intake (schema=none)",
+                    "reply_digest": None, "pending_repair": True,
+                    "repair_owner": "operator-seeder-D08",
+                    "repair_action": "enroll this box in rr_box_auth with an "
+                                     "accepted admission credential"}
+        cmd_cycle(sender=fake_sender, admission=unenrolled_admission)  # cycle -> 4
+        with Ledger() as led:
+            evs3 = [dict(r) for r in led.conn.execute(
+                "SELECT * FROM events WHERE dedup_key=? ORDER BY event_id",
+                ("deadman|box-bravo-example",)).fetchall()]
+            rows = [dict(r) for r in led.conn.execute(
+                "SELECT kind,payload FROM digests WHERE kind=?",
+                ("rescue_admission_pending_repair",)).fetchall()]
+        assert any(e["ack_state"] == "open" for e in evs3), evs3
+        assert not any(e["ack_state"] == "escalated" for e in evs3[1:]), evs3
+        assert rows, "missing enrollment must record a pending-repair digest"
+        assert "owner=operator-seeder-D08" in (rows[0]["payload"] or ""), rows
+        assert "action=" in (rows[0]["payload"] or ""), rows
+        print("  dead-man-no-enrollment case: PASS (pending repair with owner; "
+              "event stays OPEN, never admitted)")
 
         # digest now shows bravo RED (sentinel dark)
         d1 = cmd_digest()

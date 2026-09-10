@@ -97,7 +97,9 @@ Every line in that shape is load-bearing:
   ADMISSION (a durable ticket via the shared client `scripts/lib/rescue_admission.py`);
   the Rescue Rangers group message is supplemental visibility only. An escalation
   whose admission is refused, times out, or cannot find the client leaves the P1
-  event open and retryable — nothing about the send can consume it.
+  event open and retryable — nothing about the send can consume it. A box with
+  no accepted enrollment is reported as a PENDING REPAIR with an owner and a
+  next action, and is never called admitted.
 - **Box name + signal + key path** — which box, which of the ten signals (S1-S10, see
   `docs/SIGNAL-CATALOG.md`), and the exact dot-path into `openclaw.json` that moved,
   when the signal is config-shaped.

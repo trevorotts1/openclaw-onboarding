@@ -350,6 +350,7 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
             admission_ok = False
             admission_status = "client_unavailable"
             admission_ticket = None
+            receipt = {}
             client = admission if admission is not None else C.load_rescue_admission()
             # The seam accepts BOTH shapes: the loaded module (has .admit) or
             # a bare callable (tests/drills inject one).
@@ -374,13 +375,27 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
                     event_id=ev["event_id"], tick_ts=ev.get("tick_ts") or "")
                 admission_status = receipt.get("status", "failed")
                 admission_ticket = receipt.get("ticket_id")
-                admission_ok = admission_status in ("admitted", "replay")
+                admission_ok = C.admission_is_ack_eligible(admission_status)
             # --- 2. independent ack decision from the RECEIPT, never the send.
+            # RR-015: a MISSING ENROLLMENT is a PENDING REPAIR with an owner --
+            # recorded as such, visible, retryable, and NEVER reported as an
+            # admission. It is also NOT swallowed as a generic refusal: the
+            # repair (enroll this box) is a different owner and a different
+            # action from an intake policy refusal of this incident.
             if admission_ok:
                 led.ack_event(ev["event_id"], "escalated")
                 if admission_ticket:
                     led.record_digest("rescue_admission_ticket", ev["dedup_key"] or "",
                                       payload="ticket_id=%s box=%s" % (admission_ticket, box))
+            elif C.admission_is_pending_repair(admission_status):
+                led.record_digest(
+                    "rescue_admission_pending_repair",
+                    ev["dedup_key"] or "",
+                    payload=("box=%s reason=%s owner=%s action=%s" % (
+                        box, admission_status,
+                        receipt.get("repair_owner") or "operator-seeder-D08",
+                        receipt.get("repair_action") or "enroll this box")),
+                )
             else:
                 led.record_digest(
                     "rescue_admission_%s" % admission_status,

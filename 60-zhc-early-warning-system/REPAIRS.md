@@ -124,7 +124,11 @@ incident through the shared client (`scripts/lib/rescue_admission.py`) to the
 rescue intake, so the escalation is a durable ticket with a receipt, not a chat
 message. The audit output is read-only and safe to paste; it never carries a
 secret value or another client's data. A failed or refused admission does NOT
-consume the P1: it stays open and the next escalate pass retries it.
+consume the P1: it stays open and the next escalate pass retries it. If the
+intake answers 403 because this box has no accepted enrollment, that is logged
+as a pending repair owned by operator seeder D08 ("enroll this box in rr_box_auth
+with an accepted admission credential") — the escalation is NOT admitted, and
+not counted as refused either.
 
 ## Signal -> most-likely repair
 

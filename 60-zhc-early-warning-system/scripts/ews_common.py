@@ -58,6 +58,27 @@ def load_rescue_admission():
             return None
     return None
 
+# Admission receipt vocabulary shared by BOTH EWS escalation paths (RR-015), so
+# ews_alert.escalate and ews_fleet._fire_dead_man can never disagree about which
+# receipt statuses are ack-eligible and which are a pending enrollment repair.
+#
+#   ACK_ELIGIBLE          a validated receipt proving a durable ticket exists
+#   PENDING_REPAIR_STATUS one that is an OWNED SETUP REPAIR with an owner and a
+#                         next action -- recorded as such, never as admission,
+#                         never as a policy refusal of the incident
+#
+# `no_enrollment` counts as a pending repair whether the client reports it
+# directly or the intake refuses the attempt for an unaccepted credential: an
+# auth refusal is evidence about THIS BOX's enrollment, not about the incident.
+ACK_ELIGIBLE_ADMISSION = ("admitted", "replay")
+PENDING_REPAIR_STATUSES = ("no_enrollment",)
+
+def admission_is_ack_eligible(status) -> bool:
+    return str(status or "") in ACK_ELIGIBLE_ADMISSION
+
+def admission_is_pending_repair(status) -> bool:
+    return str(status or "") in PENDING_REPAIR_STATUSES
+
 MISSING = object()  # sentinel distinct from JSON null
 
 
