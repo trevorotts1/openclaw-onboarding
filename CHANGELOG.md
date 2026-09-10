@@ -1,3 +1,14 @@
+## [v25.0.37]  -  2026-09-10  -  Batch ONB-20260910-201420 PR #1091 unblock: 8 CI failures repaired
+
+- G3 skill-version bump: branch touches 222 files under 23-ai-workforce-blueprint/ without a version bump, so bump 23-ai-workforce-blueprint/skill-version.txt 25.0.36 -> 25.0.37 (51-signature-presentation/skill-version.txt v2.0.3 -> v2.1.0 already rides in the batch). Roll all 10 repo markers v25.0.36 -> v25.0.37 via scripts/bump-version.sh; `bump-version.sh --check` reports all 10 agree.
+- GHL Tier-2 auth-fallback: remove hardcoded operator-checkout absolute paths from test_pres009_worker_isolation.mjs and test_dept_start_handoff.mjs (CC_ROOT / COMMAND_CENTER_ROOT env with loud failure instead). guard-ghl-auth-fallback.sh PASS.
+- Live smoke x2: live-smoke-refusal leg in presentation-release-matrix.yml now pip-installs pytest==8.3.4 before invoking pytest (CI root cause was `python3: No module named pytest`). Refusal pair passes (2 passed) with `-p no:cacheprovider` from the tests directory.
+- ONB-STATE-001 compile: pres034-docker-acceptance.sh embedded heredoc `print("  --clear-to"); exit 0` -> `sys.exit(0)` (`exit` is undefined at module scope, a SyntaxError that died silently at runtime). check-embedded-python-syntax.py PASS, 0 bodies failed.
+- QC invariants (PRD 1.8): packaged persona_service resources/helpers/embedding_engine.py was a second 1331-line GEMINI_MODEL definition; replaced with a 50-line re-export shim of shared-utils/embedding_engine.py (no model constant of its own). GEMINI_MODEL now defined exactly once; all 6 gemini wrappers <= 6 lines; pres053 suite 18 passed.
+- _retired.json: regenerated (artifacts 41 -> 42, sops 8 -> 9; records retired GHL-EXTERNAL-INSTALLER-SOP.md). gen-retired-artifacts-ledger.py --check OK.
+- isolated-launch: test_fix61 harness now extracts top-level _PRESCHED_* schedule-contract constants and slices the lib from _presched_lock() so `set -u` sees _PRESCHED_POLL_NAME. 16 passed.
+- Merge origin/main d9c4a9797 (v25.0.36 docs follow-up) with zero conflict markers: CHANGELOG keeps the v25.0.36 entry and adds this one; update-skills.sh carries both hunks (ONBOARDING_VERSION v25.0.37 plus the branch _pres_deps_rows 6-column / _pres_video_missing_add canon hunks). pres034 docker acceptance ALL LEGS DONE; pres043 matrix 12 passed; repo-consistency gate 10 OK, 0 DRIFT.
+
 ## [v25.0.36]  -  2026-09-10  -  Presentation department batch ONB-20260910-201420: docs follow-up summarizing merged slices
 
 Release bookkeeping only. No product changes ship in this fold — no code, no
