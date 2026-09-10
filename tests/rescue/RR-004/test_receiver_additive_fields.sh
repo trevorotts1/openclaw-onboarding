@@ -93,12 +93,32 @@ extract_fn() {  # extract_fn <file> <fn-name>
   [ -n "$e" ] || { echo "EXTRACT-UNTERMINATED ${fn}" >&2; return 1; }
   sed -n "${s},${e}p" "$f"
 }
+# Dependency closure of _ack. RR-008 gave _ack a durable journal + ACK_PENDING
+# outbox, so the fixture must provide those helpers and their state dirs or
+# _ack would halt at "journal write failed" before ever reaching its stubbed
+# _post. The assertions below are unchanged: this only supplies what the
+# function under test now requires.
 {
   extract_fn "$POLL" _json_field
   extract_fn "$POLL" _json_str
+  extract_fn "$POLL" _sha
+  extract_fn "$POLL" _now_iso
+  extract_fn "$POLL" _op_id_for
+  extract_fn "$POLL" _journal_put
+  extract_fn "$POLL" _journal_phase
+  extract_fn "$POLL" _pending_put
+  extract_fn "$POLL" _post_class
+  extract_fn "$POLL" _ack_send
   extract_fn "$POLL" _parse_claim
   extract_fn "$POLL" _ack
   echo '_log() { :; }'
+  echo "mkdir -p \"$FIX/state/journal\" \"$FIX/state/ack-pending\""
+  echo "_JOURNAL=\"$FIX/state/journal\""
+  echo "_PENDING=\"$FIX/state/ack-pending\""
+  echo "_RECONCILE=\"$FIX/state/reconcile\""
+  echo "_TMP=\"$FIX\""
+  echo "RR_BOX_SLUG=\"box-synthetic\""
+  echo "RECEIVER_VERSION=\"fixture\""
   echo "_ack_capture=\"$FIX/captured-body.txt\""
   echo '_post() { printf '"'"'%s'"'"' "$_ack_body" >> "$_ack_capture"; return 0; }'
 } > "$FIX/funcs.sh"

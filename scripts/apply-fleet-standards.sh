@@ -2902,10 +2902,47 @@ except Exception:
 # already wrote v2). Fallback: the bare heading through the next top-level "## "
 # heading — the same boundary propagate-rescue-webhook.sh uses — which is the
 # one-time upgrade path from an unmarked section.
+TAIL_HEADING_RE = re.compile(r'## What Rescue Rangers IS[^\n]*\n')
+
+def tail_span_after(text, pos):
+    """RR-002: the canonical template carries a SECOND, unmarked section after
+    the END marker ("What Rescue Rangers IS + your own wiring"). The rendered
+    unit is the WHOLE template, so the owned span must cover that section too.
+
+    MEASURED DEFECT (this is not hypothetical): with the span ending at the END
+    marker, ESCPY replaced the 5953-byte marker span with the 7940-byte full
+    render on every roll. `noop` was therefore UNREACHABLE -- verdict was
+    `replace:5953:7940` forever, and each fleet roll appended one more copy of
+    the tail section to every box's AGENTS.md. The idempotency contract this
+    script advertises ("idempotent BY CONTENT") was false for the one section
+    that had no marker.
+
+    Extend the span ONLY when the tail heading is the very next content after
+    `pos` (nothing but blank lines between). A looser search would let an
+    unrelated later heading be swallowed -- deleting box content. Returns the
+    end offset of the tail section (next top-level "## " heading, or EOF), or
+    `pos` unchanged when the tail is not immediately adjacent."""
+    end = pos
+    while True:
+        m = re.match(r'(?:[ \t]*\n)*', text[end:])
+        start = end + m.end()
+        hm = TAIL_HEADING_RE.match(text, start)
+        if not hm:
+            return end
+        nxt = re.compile(r'^## ', re.MULTILINE).search(text, hm.end())
+        end = nxt.start() if nxt else len(text)
+        # LOOP, do not stop at the first tail: the defect above shipped, so a
+        # box rolled N times carries N adjacent copies of this section. The
+        # first pass through the fixed code must COLLAPSE them to exactly one,
+        # which is reachable only if every adjacent copy is inside the span.
+        # Written as a loop rather than `while`-on-a-regex so a heading that is
+        # merely similar (not immediately adjacent) still terminates it.
+
 si = txt.find(START)
 ei = txt.find(END)
 if si != -1 and ei != -1 and ei > si:
-    cur_start, cur_end = si, ei + len(END)
+    cur_start = si
+    cur_end = tail_span_after(txt, ei + len(END))
     mode = "replace"
 else:
     # R7: also consume a STALE marker-comment line of ANY version number
@@ -2924,7 +2961,13 @@ else:
     if not m:
         # No section at all. Do NOT create one — see the contract above.
         print("absent"); raise SystemExit(0)
-    cur_start, cur_end = m.start(), m.end()
+    # RR-002: the upgrade branch needs the SAME tail handling as the replace
+    # branch. The heading regex above stops at the next top-level "## ", which
+    # on a box that already inherited the tail is the tail's own heading — so
+    # the old tail sat OUTSIDE the replaced span and the whole template (tail
+    # included) was re-appended ahead of it. MEASURED on a V1 fixture carrying
+    # one tail: verdict `upgrade:162:7940`, tail copies 1 -> 2 in a single roll.
+    cur_start, cur_end = m.start(), tail_span_after(txt, m.end())
     mode = "upgrade"
 
 current = txt[cur_start:cur_end]
