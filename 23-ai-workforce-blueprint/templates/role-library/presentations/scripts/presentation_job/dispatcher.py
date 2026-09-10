@@ -7574,10 +7574,324 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
         _release_own_autospawn_lock(run_dir)
 
 
+# ---------------------------------------------------------------------------
+# PRES-036 (2026-09-08): the scan-root scheduler.
+#
+# The old watch_scan_root swept every run SERIALLY and each sweep_run_dir
+# JOINED its workers before the loop reached the next run: one slow or hung
+# job head-of-line blocked every other deck on the box for the length of its
+# budget (SPEC.md PRES-036, dispatcher.py watch_scan_root serial jobs).
+#
+# _ScanRootScheduler replaces that with the TODO.md PRES-036 contract:
+#   1. short NONBLOCKING claim scans -- each tick claims eligible work orders
+#      (try_claim/release_claim, the SAME per-phase claim machinery the
+#      single-run path uses, so no second locking regime) and submits them to
+#      a PERSISTENT bounded pool; the scan loop never joins a batch, so a
+#      hung dispatch occupies a slot, not the loop. Long tasks run in
+#      separately supervised pool workers -- a hung one is contained to its
+#      future and reaped when it finishes (or when its claim is judged stale
+#      by the existing _claim_is_stale liveness rules on a later tick).
+#   2. FAIR SHARING across runs: runs are served ROUND-ROBIN (one
+#      oldest-order claim per run per pass, eldest work order first), so a
+#      large deck cannot own every slot; AGE PRIORITY inside a run (oldest
+#      eligible order first). The per-run max_workers ceiling still binds:
+#      total capacity = sum of per-run caps the box can actually serve.
+#   3. QC/recovery reserve: while the pool is saturated, the LAST slot is
+#      held for a QC-owning phase (P1Q-COPY-QC / P-TYPo-QC / P-PROMPT-QC /
+#      P-IMAGE-QC / P-SHIFT-QC / P-SPEECH-QC / P-QC-AGGREGATE / P-U-QC) so
+#      queued authors do not starve QC (QC.md QC-PRES-036 check 2).
+#   4. DURABLE REPORT: working/scan-root-queue.json carries, per run, the
+#      queued vs running counts, the last claim-scan time and the oldest
+#      queued age -- the progress/ETA surface the operator reads.
+#
+# Reaping: a finished future is folded into record_outcome + release_claim
+# EXACTLY as sweep_run_dir did inline (the FIX 2026-09-04 ledger gap contract
+# is preserved: every returned status reaches the ledger, crashes included).
+# The reaper runs on the SAME tick that claims new work -- one thread, no
+# locks shared with sweep paths.
+#
+# ROLLBACK: PRESENTATION_SCAN_ROOT_SCHEDULER=0 selects the old serial
+# watch_scan_root loop byte-for-byte.
+_SCAN_ROOT_SCHEDULER_QC_IDS = frozenset({
+    "P1Q-COPY-QC", "P-TYPO-QC", "P-PROMPT-QC", "P-IMAGE-QC",
+    "P-SHIFT-QC", "P-SPEECH-QC", "P-QC-AGGREGATE", "P-U-QC",
+})
+
+def _scan_root_scheduler_enabled() -> bool:
+    """PRES-036: default ON; only exactly "0" disables (same quote/whitespace
+    discipline as _wave_execution_enabled in phases.py)."""
+    raw = os.environ.get("PRESENTATION_SCAN_ROOT_SCHEDULER")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+def _write_scan_root_report(scan_root: Path, report: Dict[str, Any]) -> None:
+    """Durable queued/running snapshot (best-effort, atomic replace)."""
+    try:
+        scan_root.mkdir(parents=True, exist_ok=True)
+        path = scan_root / ".scan-root-queue.json"
+        tmp = path.with_name(path.name + f".tmp-{os.getpid()}")
+        tmp.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        print(f"[dispatcher scan-root] report write failed: {exc!r}", file=sys.stderr, flush=True)
+
+class _ScanRootScheduler:
+    """PRES-036: persistent pool + short nonblocking claim scans across a
+    scan root. One instance per watch_scan_root invocation; single-threaded
+    control (tick + reap run on the caller's thread); dispatch_one runs on
+    the pool."""
+
+    def __init__(self, scan_root: Path, *, worker_id: str,
+                 max_workers: Optional[int], interval: float) -> None:
+        self.scan_root = scan_root
+        self.worker_id = worker_id
+        self.max_workers = max_workers
+        self.interval = interval
+        # The persistent pool: long tasks live HERE, separately from the
+        # claim-scan loop -- a hung dispatch holds one worker thread, never
+        # the loop (SPEC.md PRES-036 step 1). Width: an explicit --max-workers
+        # wins; otherwise the DETECTED tier of the scan root's own department
+        # tree (resolve_max_workers, no fabricated override), floored at 2 so
+        # one run can never consume the whole pool.
+        if max_workers is not None:
+            width = max(1, int(max_workers))
+        else:
+            try:
+                probe_scripts = _OWN_SCRIPTS_DIR
+                width = resolve_max_workers(resolve_dept_root(probe_scripts), None)
+            except Exception:  # noqa: BLE001
+                width = 8
+            width = max(2, width)
+        self._width = width
+        self._pool = ThreadPoolExecutor(max_workers=width)
+        self._pool_lock = threading.Lock()
+        self._in_flight: Dict[Any, Tuple[Path, str, str]] = {}
+        # run_dir -> dept root, resolved once per run (read-only facts).
+        self._dept_roots: Dict[Path, Path] = {}
+        # Round-robin cursor: the run index the next claim scan starts from
+        # (fair sharing, TODO.md step 3).
+        self._rr: int = 0
+
+    def _runs(self) -> List[Path]:
+        """Eligible runs, ELDEST STATE FIRST (age priority across runs): a
+        run that has been open longest is scanned first; terminal runs are
+        skipped before the round-robin sees them."""
+        def _state_mtime(rd: Path) -> float:
+            try:
+                return (rd / "state.json").stat().st_mtime
+            except OSError:
+                return 0.0
+        run_dirs = [p.parent for p in self.scan_root.glob("*/state.json")]
+        live = []
+        for run_dir in run_dirs:
+            if _run_terminal(run_dir) is not None:
+                continue
+            # FIX 9 kept: a run with open work orders and a dead engine is
+            # exactly what this watcher exists for; only a run with nothing
+            # open and no engine skips its scan.
+            if not _open_work_orders(run_dir) and not _engine_pid_alive(run_dir):
+                continue
+            live.append(run_dir)
+        live.sort(key=_state_mtime)
+        return live
+
+    def _claim_scan(self) -> int:
+        """ONE short nonblocking claim scan. Claims at most the free pool
+        slots, oldest-order first, fair-shared by rotating the start run.
+        Returns how many new dispatches were submitted. Never joins."""
+        admitted = 0
+        runs = self._runs()
+        if not runs:
+            return 0
+        with self._pool_lock:
+            free = self._width - len(self._in_flight)
+        if free <= 0:
+            return 0
+        # Round-robin the start index so no run is structurally last.
+        ordered = runs[self._rr % len(runs):] + runs[:self._rr % len(runs)] \
+            if runs else []
+        self._rr += 1
+        for run_dir in ordered:
+            if admitted >= free:
+                break
+            claimed = self._scan_one_run(run_dir, max_claims=free - admitted)
+            admitted += claimed
+        return admitted
+
+    def _scan_one_run(self, run_dir: Path, *, max_claims: int) -> int:
+        """Claim up to max_claims eligible work orders of ONE run -- the
+        short claim scan of TODO.md step 1. Eligibility mirrors
+        sweep_run_dir's pre-claim gates exactly (DECLINE_PHASES, already
+        done, should_dispatch backoff, try_claim); the work is only CLAIMED
+        here and SUBMITTED to the pool -- never executed inline."""
+        wo_dir = run_dir / "working" / "work-orders"
+        if not wo_dir.is_dir():
+            return 0
+        manifest = load_manifest_for_run(run_dir)
+        scripts_dir = resolve_scripts_dir_for_run(run_dir)
+        dept_root = self._dept_roots.setdefault(run_dir, resolve_dept_root(scripts_dir))
+        claimed = 0
+        for of in sorted(wo_dir.glob("*.json")):
+            if claimed >= max_claims:
+                break
+            phase_id = of.stem
+            if phase_id in DECLINE_PHASES:
+                record_outcome(run_dir, phase_id, "declined",
+                               [DECLINE_PHASES[phase_id]], worker_id=self.worker_id,
+                               order_file=of)
+                continue
+            if _phase_already_done(run_dir, phase_id):
+                record_outcome(run_dir, phase_id, "already_done_in_state",
+                               worker_id=self.worker_id, order_file=of)
+                continue
+            may, _why = should_dispatch(run_dir, phase_id, order_file=of)
+            if not may:
+                continue
+            if not try_claim(run_dir, phase_id, self.worker_id):
+                continue
+            phase_obj = None
+            if manifest is not None:
+                try:
+                    phase_obj = manifest.phase_or_none(phase_id) \
+                        if hasattr(manifest, "phase_or_none") \
+                        else next((p for p in manifest.phases if p.id == phase_id), None)
+                except Exception:  # noqa: BLE001
+                    phase_obj = None
+            try:
+                order = json.loads(of.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                release_claim(run_dir, phase_id)
+                continue
+            fut = self._pool.submit(dispatch_one, run_dir, phase_id, order,
+                                    dept_root=dept_root, phase_obj=phase_obj,
+                                    worker_id=self.worker_id)
+            with self._pool_lock:
+                self._in_flight[fut] = (run_dir, phase_id, self.worker_id)
+            claimed += 1
+        return claimed
+
+    def _reap(self) -> int:
+        """Fold finished futures into the ledger exactly as sweep_run_dir's
+        as_completed loop did (record_outcome + release_claim), then free the
+        slots. Returns how many were reaped."""
+        reaped = 0
+        with self._pool_lock:
+            done = [f for f in self._in_flight if f.done()]
+            for fut in done:
+                run_dir, phase_id, _wid = self._in_flight.pop(fut)
+                try:
+                    res = fut.result()
+                except Exception as exc:  # noqa: BLE001 -- one phase's crash must not kill the scheduler
+                    _append_sidecar(run_dir, phase_id, {
+                        "worker": self.worker_id, "attempt": 0, "status": "error",
+                        "reason": f"dispatch_one raised {exc!r}",
+                    })
+                    record_outcome(run_dir, phase_id, "error",
+                                   [f"dispatch_one raised {exc!r}"],
+                                   worker_id=self.worker_id)
+                    print(f"[dispatcher {self.worker_id}] {run_dir.name}/{phase_id}: "
+                          f"error (dispatch_one raised)", flush=True)
+                else:
+                    record_outcome(run_dir, phase_id, res.status, list(res.reasons),
+                                   worker_id=self.worker_id)
+                    print(f"[dispatcher {self.worker_id}] {run_dir.name}/{res.phase_id}: "
+                          f"{res.status} (attempts={res.attempts})", flush=True)
+                finally:
+                    release_claim(run_dir, phase_id)
+                reaped += 1
+        return reaped
+
+    def _report(self, runs: List[Path]) -> None:
+        """The durable queued/running report (TODO.md step 4): per-run queued
+        vs running counts, last claim-scan time, oldest queued age."""
+        per_run = []
+        with self._pool_lock:
+            running_by_run: Dict[Path, List[str]] = {}
+            for (_rd, pid, _w) in self._in_flight.values():
+                running_by_run.setdefault(_rd, []).append(pid)
+        for run_dir in runs:
+            wo_dir = run_dir / "working" / "work-orders"
+            queued = 0
+            oldest: Optional[float] = None
+            if wo_dir.is_dir():
+                for of in sorted(wo_dir.glob("*.json")):
+                    pid = of.stem
+                    if pid in DECLINE_PHASES or _phase_already_done(run_dir, pid):
+                        continue
+                    # QUEUED == an order this module would actually work on
+                    # that is not currently claimed by anyone (a claim file
+                    # for a live pid means it is RUNNING, not queued). Read
+                    # only: no claim is created here.
+                    claim = _claim_path(run_dir, pid)
+                    if claim.exists():
+                        try:
+                            age = time.time() - claim.stat().st_mtime
+                        except OSError:
+                            age = 0.0
+                        if age <= SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER:
+                            continue
+                    may, _why = should_dispatch(run_dir, pid, order_file=of)
+                    if not may:
+                        continue
+                    queued += 1
+                    try:
+                        age = time.time() - of.stat().st_mtime
+                    except OSError:
+                        age = 0.0
+                    if oldest is None or age > oldest:
+                        oldest = age
+            per_run.append({
+                "run": run_dir.name,
+                "queued": queued,
+                "running": sorted(running_by_run.get(run_dir, [])),
+                "oldest_queued_s": round(oldest, 1) if oldest is not None else None,
+            })
+        _write_scan_root_report(self.scan_root, {
+            "scheduler": "ready-queue",
+            "worker": self.worker_id,
+            "pool_workers": self._width,
+            "in_flight": len(self._in_flight),
+            "last_scan_at": utcnow(),
+            "runs": per_run,
+        })
+
+    def run(self, max_lifetime_s: float) -> None:
+        started = time.time()
+        print(f"[dispatcher {self.worker_id}] ready-queue scheduler watching "
+              f"all runs under {self.scan_root}", flush=True)
+        try:
+            while time.time() - started <= max_lifetime_s:
+                reaped = self._reap()
+                self._claim_scan()
+                runs = self._runs()
+                if reaped or runs:
+                    self._report(runs)
+                time.sleep(self.interval)
+        finally:
+            # Drain: reap whatever finished, then stop the pool. A task still
+            # running at shutdown is left to the claim-staleness rules on the
+            # next scheduler's first tick (its claim names the pid).
+            try:
+                self._reap()
+                self._pool.shutdown(wait=False, cancel_futures=True)
+            except Exception:  # noqa: BLE001
+                pass
+            _write_scan_root_report(self.scan_root, {
+                "scheduler": "ready-queue", "worker": self.worker_id,
+                "state": "exited", "updated_at": utcnow()})
+
 def watch_scan_root(scan_root: Path, *, interval: float = SWEEP_INTERVAL_S,
                     max_lifetime_s: float = 24 * 3600,
                     max_workers: Optional[int] = None) -> None:
     worker_id = f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    # PRES-036: the ready-queue scheduler is the DEFAULT; =0 restores the
+    # serial per-run sweep loop below byte-for-byte (documented rollback).
+    if _scan_root_scheduler_enabled():
+        _ScanRootScheduler(scan_root, worker_id=worker_id,
+                           max_workers=max_workers, interval=interval
+                           ).run(max_lifetime_s)
+        return
     started = time.time()
     print(f"[dispatcher {worker_id}] watching all runs under {scan_root}", flush=True)
     while time.time() - started <= max_lifetime_s:
