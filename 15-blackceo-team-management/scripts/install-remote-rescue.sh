@@ -83,9 +83,18 @@ if ! OC_ROOT="$(resolve_root)"; then
   echo "Nothing was written." >&2
   exit 2
 fi
-echo "OpenClaw root: $OC_ROOT"
 
+# An explicit config path is authoritative for WHERE THE ROOT IS. Deriving the
+# workspace from a different root than the config would put the operator's
+# session storage outside the tree the config lives in — and on a Docker box
+# that is outside the mount entirely.
 CFG_PATH="${OPENCLAW_CONFIG_PATH:-$OC_ROOT/openclaw.json}"
+CFG_DIR="$(cd "$(dirname "$CFG_PATH")" && pwd)"
+if [ "$CFG_DIR" != "$OC_ROOT" ]; then
+  echo "Config path override: root taken from the config's own directory ($CFG_DIR)"
+  OC_ROOT="$CFG_DIR"
+fi
+echo "OpenClaw root: $OC_ROOT"
 if [ ! -f "$CFG_PATH" ]; then
   echo "No config at $CFG_PATH — nothing to repair, nothing written." >&2
   exit 2
@@ -135,39 +144,16 @@ print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
 PYEOF
 )"
 
-ROLLBACK_SRC="$CFG_PATH.rr032-rollback-$(date -u +%Y%m%d-%H%M%S)"
+ROLLBACK_SRC=""
+if [ "$CHECK_MODE" != "1" ]; then
+  ROLLBACK_SRC="$CFG_PATH.rr032-rollback-$(date -u +%Y%m%d-%H%M%S)"
+fi
 
 OPENCLAW_BIN="$(command -v openclaw || true)"
 
 # Candidate validation runner: the INSTALLED openclaw validates the candidate.
 # Fails closed — if openclaw is absent the candidate is not promoted on the
 # strength of a structural check alone.
-runner_validate() {
-  local cand="$1"
-  if [ -z "$OPENCLAW_BIN" ]; then
-    echo '{"rc":1,"valid":false,"detail":"openclaw binary not on PATH; refusing to promote an unvalidated candidate"}'
-    return 0
-  fi
-  local out rc
-  set +e
-  out="$(OPENCLAW_CONFIG_PATH="$cand" "$OPENCLAW_BIN" config validate --json 2>&1)"
-  rc=$?
-  set -e
-  python3 - "$rc" "$out" <<'PYEOF'
-import json, sys
-rc = int(sys.argv[1]); raw = sys.argv[2]
-valid = False; detail = raw.strip()[:400]
-try:
-    parsed = json.loads(raw)
-    valid = bool(parsed.get("valid")) and rc == 0
-    issues = parsed.get("issues") or []
-    detail = "; ".join(str(i) for i in issues)[:400] or raw.strip()[:400]
-except Exception:
-    valid = False
-print(json.dumps({"rc": rc, "valid": valid, "detail": detail}))
-PYEOF
-}
-
 REPORT_JSON="$(mktemp -t rr032-report)"
 set +e
 python3 "$ENGINE" \
@@ -176,6 +162,7 @@ python3 "$ENGINE" \
   $( [ "$REPAIR_MODE" = 1 ] && echo --repair ) \
   $( [ "${NONINTERACTIVE:-0}" = 1 ] && echo --noninteractive ) \
   --requested "$REQUESTED_CHAT_ID" \
+  $( [ "$CHECK_MODE" = 1 ] && echo --check ) \
   --source-revision "sha256:$SOURCE_SHA" \
   --expect-sha "$SOURCE_SHA" \
   --oc-root "$OC_ROOT" \
@@ -185,7 +172,8 @@ python3 "$ENGINE" \
   --reconcile-routing \
   --owner-agent-id "${RR_OWNER_AGENT_ID:-main}" \
   $( for id in $OPERATOR_IDS; do echo --operator-id "$id"; done ) \
-  --rollback-src "$ROLLBACK_SRC" \
+  $( [ -n "$ROLLBACK_SRC" ] && printf '%s\n' --rollback-src "$ROLLBACK_SRC" ) \
+  --validator-program "$HERE/lib/rr-validate-candidate.sh" \
   --promote-program "$HERE/lib/rr-promote-atomic.sh" \
   --report "$REPORT_JSON" >/dev/null
 ENGINE_RC=$?

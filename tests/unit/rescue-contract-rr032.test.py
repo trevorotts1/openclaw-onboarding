@@ -605,6 +605,31 @@ def case_repair_wires_real_routing(tmp):
 
 
 # ---------------------------------------------------------------------------
+# 14 — check mode is READ-ONLY: it must not touch the config it inspects
+# ---------------------------------------------------------------------------
+def case_check_mode_is_read_only(tmp):
+    cfg = os.path.join(tmp, "c14.json")
+    write_cfg(cfg, "enabled")
+    before = sha(cfg)
+    rep, _ = run_engine(tmp, cfg, "999888777", before, extra=["--check"])
+    check(rep.get("check_only") is True,
+          "14 check mode is reported as check_only in the output")
+    check(rep.get("promote") == "not-attempted",
+          "14 check mode attempts no promote (got %r)" % rep.get("promote"))
+    check(sha(cfg) == before,
+          "14 check mode left the inspected config byte-for-byte unchanged")
+    check(read_vars(cfg).get(CANON) == OPS[0],
+          "14 check mode did not apply the destination it was asked to inspect")
+    check(rep.get("state") == "destination-changed",
+          "14 check mode still REPORTS the state it found (got %r)" % rep.get("state"))
+    leftovers = [f for f in os.listdir(tmp)
+                 if ".rr032-candidate" in f and os.path.basename(f).startswith("c14")]
+    check(not leftovers, "14 check mode wrote no candidate file")
+    checks = [f for f in os.listdir(tmp) if ".rr032-rollback" in f and "c14" in f]
+    check(not checks, "14 check mode wrote no rollback snapshot")
+
+
+# ---------------------------------------------------------------------------
 # negative control for THIS FILE
 # ---------------------------------------------------------------------------
 def self_control(tmp):
@@ -653,6 +678,7 @@ def main():
         case_routing_acceptance(tmp)
         case_field_presence_is_not_routing(tmp)
         case_repair_wires_real_routing(tmp)
+        case_check_mode_is_read_only(tmp)
         self_control(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

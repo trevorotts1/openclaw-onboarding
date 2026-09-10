@@ -239,15 +239,34 @@ the old hardcoded `5252140759` default was the leakage vector.)
 
 ### ISOLATION GUARANTEE
 
-OpenClaw keys every conversation as `agent:<agentId>:telegram:<chatId>`. For operators and the owner to have fully separate sessions the routing must resolve to a different `agentId`. This step achieves that by:
+OpenClaw keys every conversation as `agent:<agentId>:<peerKind>:<id>`. For operators
+and the owner to have fully separate sessions the routing must resolve to a
+different `agentId`, and that resolution is done by the **bindings** table — not
+by a per-agent field. This step achieves that by:
 
-- Giving `remote-rescue` its own `workspace` directory (physically separate session storage from `main`).
-- Binding operator chat IDs to `remote-rescue` via `agents.list[remote-rescue].telegram.allowFrom`. OpenClaw checks per-agent `allowFrom` before falling back to the default agent.
-- Adding operator IDs to `channels.telegram.allowFrom` (bot must accept their messages) but NOT to `channels.telegram.groupAllowFrom` (the owner's Command Center group stays owner-only).
+- Writing one top-level **`bindings`** entry per operator identity:
+  `{agentId: "remote-rescue", match: {channel: "telegram", peer: {kind: "direct", id: "<operatorChatId>"}}, session: {dmScope: "per-peer"}}`.
+  The resolver matches this at tier `binding.peer`, which is what actually routes
+  the DM. Verified against the shipped resolver in OpenClaw 2026.9.2 (3928bad).
+- Giving `remote-rescue` its own `workspace` directory (physically separate
+  session storage from `main`).
+- Adding operator IDs to `channels.telegram.allowFrom` (the bot must accept their
+  messages) but NOT to `channels.telegram.groupAllowFrom` (the owner's Command
+  Center group stays owner-only).
+
+⚠️ **What does NOT route (RR-032).** `channels.telegram.allowFrom` grants inbound
+access but has **no routing effect** — every operator DM still resolves to
+`main`. A per-agent `telegram.allowFrom` is not even a valid schema key
+(`Unrecognized key: "telegram"`), and a per-agent `workspace` does not route
+either. Earlier revisions of this document claimed
+`agents.list[remote-rescue].telegram.allowFrom` performed the binding; it does
+not, and a box configured that way hands every operator DM to the owner's agent.
+The installer now writes the bindings table and **verifies the result against the
+installed resolver** rather than asserting on field presence.
 
 Resulting session keys (fully disjoint):
-- Owner: `agent:main:telegram:<ownerChatId>`
-- Each operator: `agent:remote-rescue:telegram:<operatorChatId>`
+- Owner: `agent:main:main`
+- Each operator: `agent:remote-rescue:direct:<operatorChatId>`
 
 ### Interactive install (default)
 
@@ -256,18 +275,30 @@ bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
 ```
 
 The script will:
-1. Prompt for the operator escalation Telegram chat ID. **Leave BLANK to DISABLE
-   operator escalation on this box (the safe client-box default — no hardcoded id).**
-2. ONLY if a chat id was provided: write it to `env.vars.OPERATOR_ESCALATION_CHAT_ID`
-   (and back-compat `OPERATOR_TELEGRAM_CHAT_ID`) via `openclaw config set ... --strict-json`.
-   If blank, nothing is written and operator escalation stays disabled.
+1. Prompt for the operator escalation chat ID, and **name the three outcomes**:
+   blank = **preserve** the destination this box already has, an id = **set** it,
+   the literal `disable` = **remove** operator escalation from this box.
+   Blank is never treated as disable — that was the RR-032 defect, where a repair
+   run printed `DISABLED` while the previously written destination survived.
+2. On a chat id: write it to `env.vars.OPERATOR_ESCALATION_CHAT_ID` **and**
+   `env.vars.OPERATOR_TELEGRAM_CHAT_ID` (aliases kept in agreement). On `disable`:
+   remove both. On blank: write neither, and report `preserved` when the box
+   already had an approved destination, `preserve-no-destination` when it did not.
 3. Add operator IDs to `channels.telegram.allowFrom` and STRIP them from
    `channels.telegram.groupAllowFrom` (operator INBOUND access — always applied).
-4. Append or update `remote-rescue` in `agents.list` with `workspace`,
-   `telegram.allowFrom` binding, and `subagents.allowAgents: ["*"]` (idempotent).
-5. Create the workspace directory at `~/.openclaw/workspaces/remote-rescue`.
+4. Append or update `remote-rescue` in the roster with `workspace` and
+   `subagents.allowAgents: ["*"]`, and write the **`bindings`** entry per operator
+   identity that actually routes the DM (idempotent).
+5. Create the workspace directory under the **verified OpenClaw root** (so a
+   Docker box uses `/data/.openclaw/workspaces/remote-rescue`, not a `$HOME`
+   path outside the mount). An existing valid custom mount is retained.
 6. (Only if an escalation chat was provided) send a one-time bootstrap message to
    that operator chat explaining the isolated routing (no `/agent` switch needed).
+
+Every write is a transaction: the source revision is locked and hashed (CAS), a
+temporary candidate is written and validated, and promotion is atomic with a
+rollback snapshot. A stale revision, an invalid candidate or a failed promote
+leaves the live config exactly as it was and says so in the report.
 
 ### Non-interactive install (rollout automation)
 
@@ -289,22 +320,36 @@ NONINTERACTIVE=1 bash 15-blackceo-team-management/scripts/install-remote-rescue.
 
 ### Verification (MANDATORY before proceeding to Step 1)
 
+Read-only: inspects and reports, writes nothing.
+
 ```bash
-openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID   # empty == escalation disabled (OK on a client box)
-openclaw config get agents.list | grep -A15 "remote-rescue"
+NONINTERACTIVE=1 bash 15-blackceo-team-management/scripts/install-remote-rescue.sh --check
+openclaw config validate
+
 python3 -c "
 import json, os
-cfg=json.load(open(next(p for p in ['$HOME/.openclaw/openclaw.json','/data/.openclaw/openclaw.json'] if os.path.exists(p))))
-op_ids={'5252140759','6663821679','6771245262'}
-leak=op_ids & set(cfg.get('channels',{}).get('telegram',{}).get('groupAllowFrom') or [])
-print('FAIL groupAllowFrom leak:',leak) if leak else print('PASS groupAllowFrom clean')
-rr=next((a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue'),None)
-print('PASS' if rr and rr.get('workspace') and rr.get('telegram',{}).get('allowFrom') else 'FAIL remote-rescue binding missing')
+root = '/data/.openclaw' if os.path.isdir('/data/.openclaw') else os.path.expanduser('~/.openclaw')
+cfg = json.load(open(os.path.join(root, 'openclaw.json')))
+op_ids = {'5252140759','6663821679','6771245262'}
+leak = op_ids & set(cfg.get('channels',{}).get('telegram',{}).get('groupAllowFrom') or [])
+print('FAIL groupAllowFrom leak:', leak) if leak else print('PASS groupAllowFrom clean')
+allow = set(cfg.get('channels',{}).get('telegram',{}).get('allowFrom') or [])
+print('PASS operators inbound-allowed') if not (op_ids - allow) else print('FAIL missing from allowFrom:', op_ids - allow)
+routed = {str(((b.get('match') or {}).get('peer') or {}).get('id'))
+          for b in (cfg.get('bindings') or [])
+          if isinstance(b, dict) and b.get('agentId') == 'remote-rescue'}
+print('PASS operators actually routed') if not (op_ids - routed) else print('FAIL no binding route for:', op_ids - routed)
+ag = cfg.get('agents', {})
+ent = ag.get('entries') if isinstance(ag.get('entries'), dict) else None
+rr = ent.get('remote-rescue') if ent is not None else next((a for a in ag.get('list',[]) if a.get('id')=='remote-rescue'), None)
+print('PASS remote-rescue workspace set') if rr and rr.get('workspace') else print('FAIL remote-rescue workspace missing')
 "
-openclaw config validate
 ```
 
-All four checks must pass. Then verify with a live DM from an operator account (config check alone is a false pass).
+All checks must pass. The routing check reads the **bindings** table because that
+is what resolves — a box can show a populated `allowFrom` and still route every
+operator DM to the owner. Finish with a live DM from an operator account: a
+config inspection alone is a false pass.
 
 ---
 
