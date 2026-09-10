@@ -174,6 +174,15 @@ def make_fixtures(tmp):
     with open(badp, "w") as fh:
         fh.write("#!/usr/bin/env bash\nexit 7\n")
     os.chmod(badp, 0o755)
+    tornp = os.path.join(tmp, "promote_tears_then_fails.sh")
+    with open(tornp, "w") as fh:
+        fh.write("#!/usr/bin/env bash\n"
+                 "# A promotion that DAMAGES the live config and then fails: truncate\n"
+                 "# the live file to a half-written fragment, then die. A rollback that\n"
+                 "# never actually restores would leave this torn config behind.\n"
+                 "printf '%s' '{\"env\": {\"vars\": {' > \"$2\"\n"
+                 "exit 9\n")
+    os.chmod(tornp, 0o755)
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +330,30 @@ def case_promote_failure_rolls_back(tmp):
           "8 the live config was restored byte-for-byte after the failed promote")
     check(read_vars(cfg).get(CANON) == OPS[0],
           "8 the pre-run destination is back, not the failed candidate's")
+
+    # The real failure mode: the live file is damaged BEFORE the failure, so a
+    # rollback that never restores would leave a torn config behind.
+    torn = os.path.join(tmp, "c8-torn.json")
+    write_cfg(torn, "enabled")
+    before_torn = sha(torn)
+    rep2, _ = run_engine(tmp, torn, "999888777", before_torn,
+                         promote="promote_tears_then_fails.sh")
+    check(rep2.get("state") == "rolled-back",
+          "8f a promotion that damages the live config then fails reports rolled-back (got %r)"
+          % rep2.get("state"))
+    check(sha(torn) == before_torn,
+          "8g the DAMAGED live config was restored byte-for-byte, not left torn")
+    try:
+        with open(torn) as fh:
+            doc = json.load(fh)
+        parsed = True
+    except ValueError:
+        doc, parsed = {}, False
+    check(parsed, "8h the restored config is parseable JSON again, not a fragment")
+    check((doc.get("env") or {}).get("vars", {}).get(CANON) == OPS[0],
+          "8i the restored config carries the pre-run destination")
+    check(rep2.get("rollback", "").startswith("restored-source-bytes"),
+          "8j the rollback reason names the restored source bytes (%r)" % rep2.get("rollback"))
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +531,80 @@ def case_field_presence_is_not_routing(tmp):
 
 
 # ---------------------------------------------------------------------------
+# 13 — repair WIRES routing from the old inert shape, verified by the resolver
+# ---------------------------------------------------------------------------
+def case_repair_wires_real_routing(tmp):
+    """The decisive case: start from the shape the old installer produced.
+
+    A config carrying only `agents.list[].telegram.allowFrom` + a per-agent
+    workspace has NO routing effect. The repair must replace that with real
+    bindings, and the resolver must confirm the result. Asserting on the
+    presence of a written field would pass on the broken shape too.
+    """
+    cfg = os.path.join(tmp, "c13.json")
+    with open(cfg, "w") as fh:
+        json.dump({
+            "agents": {
+                "ownership": "explicit",
+                "entries": {
+                    "main": {"workspace": os.path.join(tmp, "ws", "owner")},
+                    "remote-rescue": {
+                        "name": "Remote Rescue by T Otts",
+                        "workspace": os.path.join(tmp, "ws", "rr"),
+                        "telegram": {"allowFrom": OPS},
+                    },
+                },
+            },
+            "channels": {"telegram": {"allowFrom": ["111"] + OPS, "groupAllowFrom": ["111"]}},
+            "env": {"vars": {CANON: OPS[0], ALIAS: OPS[0]}},
+        }, fh, indent=2)
+
+    rep, _ = run_engine(tmp, cfg, "", sha(cfg), workspace_explicit=False)
+    with open(cfg) as fh:
+        doc = json.load(fh)
+
+    bindings = doc.get("bindings") or []
+    check(len(bindings) == len(OPS),
+          "13 the repair wrote one binding per operator identity (got %d)" % len(bindings))
+    by_peer = {}
+    for b in bindings:
+        peer = ((b.get("match") or {}).get("peer") or {})
+        by_peer[str(peer.get("id"))] = b
+    for op in OPS:
+        b = by_peer.get(op)
+        check(b is not None and b.get("agentId") == "remote-rescue",
+              "13 operator %s is bound to remote-rescue" % op)
+        check(b is not None and (b.get("session") or {}).get("dmScope") == "per-peer",
+              "13 operator %s binding isolates the session with dmScope=per-peer" % op)
+    check("telegram" not in (doc["agents"]["entries"]["remote-rescue"] or {}),
+          "13 the inert per-agent telegram key was removed, not left to look like routing")
+
+    resolver = find_resolver()
+    if resolver is None:
+        skip("13 resolver absent; the repaired routing could not be resolved")
+        return
+    argv = ["node", VERIFIER, "--config", cfg, "--module", resolver, "--owner-id", OWNER_ID]
+    for op in OPS:
+        argv += ["--operator-id", op]
+    proc = subprocess.run(argv, capture_output=True, text=True)
+    try:
+        out = json.loads(proc.stdout)
+    except ValueError:
+        bad("13 verifier produced no verdict on the repaired config: %s" % proc.stderr[-200:])
+        return
+    check(out.get("verdict") == "PASS",
+          "13 the repaired config actually routes, verified by the real resolver (got %r)"
+          % out.get("verdict"))
+    for c in out.get("checks") or []:
+        if c.get("subject") in OPS:
+            actual = c.get("actual") or {}
+            check(actual.get("agentId") == "remote-rescue"
+                  and actual.get("sessionKey") == "agent:remote-rescue:direct:%s" % c.get("subject"),
+                  "13 operator %s resolves to its own isolated session after repair (%r)"
+                  % (c.get("subject"), actual.get("sessionKey")))
+
+
+# ---------------------------------------------------------------------------
 # negative control for THIS FILE
 # ---------------------------------------------------------------------------
 def self_control(tmp):
@@ -545,6 +652,7 @@ def main():
         case_owner_operator_separation(tmp)
         case_routing_acceptance(tmp)
         case_field_presence_is_not_routing(tmp)
+        case_repair_wires_real_routing(tmp)
         self_control(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
