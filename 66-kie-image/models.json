@@ -94,7 +94,7 @@
         "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (verbatim): \"up to 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. See GPT Image 2 (Text-to-Image) entry. This 25,000 owner-confirmation applies to GPT Image 2 ONLY and has NOT been retested on GPT Image 2.5 Sunburst (operator ruling 2026-09-09); see the gpt-image-2-5-sunburst-image-to-image entry for the separate 2.5 cap.",
         "Playground verbatim: \"5:4 and 4:5 aspect ratios only support 1K images\" (i2i route)."
       ],
-      "notes": "LEGACY ROUTE (operator ruling 2026-09-09): retained only for aspect ratios 3:1, 1:3, 9:21, which GPT Image 2.5 Sunburst does not serve. Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each."
+      "notes": "LEGACY ROUTE (operator ruling 2026-09-09): retained only for aspect ratios 3:1, 1:3, 9:21, which GPT Image 2.5 Sunburst does not serve. Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each. Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page."
     },
     {
       "provider": "kie",
@@ -175,7 +175,7 @@
         "Aspect ratio set is new and does not carry over GPT Image 2's rules: the retired 'auto -> 1K only' and '1:1 cannot convert to 4K' rules are NOT restated in the 2.5 docs. 1K-only ratios (2K/4K rejected outright): 27:16, 16:27, 9:8, 8:9.",
         "Operator ruling 2026-09-09 (Ruling 6, dual-route): 3:1, 1:3, and 9:21 are NOT served by this model -- those three ratios route to the retained legacy gpt-image-2-image-to-image entry instead. 5:4, 4:5, 2:1, and 1:2 ARE served here via operator-approved substitution (5:4->4:3, 4:5->3:4, 2:1->16:9, 1:2->9:16) rather than as literal ratios."
       ],
-      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each."
+      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each. Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page."
     },
     {
       "provider": "kie",

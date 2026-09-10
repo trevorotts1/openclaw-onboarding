@@ -121,7 +121,8 @@
         "note": "Budget gate must re-verify against live Kie.ai pricing/account balance deltas before treating this as authoritative."
       },
       "verified_date": "2026-07-14",
-      "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py; CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md §10.1"
+      "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py; CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md §10.1",
+      "wire_note": "Live probe 2026-09-10: endpoint accepts input_urls and image_input; Skill-62 providers/kie.py:515 sends image_input (pinned by test_providers_kie); input_urls preferred per vendor page."
     },
     {
       "model_id": "kie-gpt-image-2-image-to-image",
@@ -148,7 +149,8 @@
       },
       "verified_date": "2026-07-14",
       "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py; CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md §10.1",
-      "legacy_note": "RETAINED live per operator RULING 6 (2026-09-09): NOT deleted/renamed away by the GPT-Image-2.5 migration. This is the required route for aspect ratios 3:1, 1:3, and 9:21, which the GPT-Image-2.5 route does not support. It is no longer the tier default (capability_tiers.production_scene_image.candidates lists the 2.5 sunburst id first, and resolve_default() returns candidates in declaration order), but it stays directly addressable via get_model()/slug_for()/price_for()/estimate() for callers that need it explicitly. NOTE: no per-aspect-ratio auto-routing to this legacy id exists anywhere in this engine's pipeline code as of this migration pass -- that would be new routing logic, out of scope here, and is reported separately."
+      "legacy_note": "RETAINED live per operator RULING 6 (2026-09-09): NOT deleted/renamed away by the GPT-Image-2.5 migration. This is the required route for aspect ratios 3:1, 1:3, and 9:21, which the GPT-Image-2.5 route does not support. It is no longer the tier default (capability_tiers.production_scene_image.candidates lists the 2.5 sunburst id first, and resolve_default() returns candidates in declaration order), but it stays directly addressable via get_model()/slug_for()/price_for()/estimate() for callers that need it explicitly. NOTE: no per-aspect-ratio auto-routing to this legacy id exists anywhere in this engine's pipeline code as of this migration pass -- that would be new routing logic, out of scope here, and is reported separately.",
+      "wire_note": "Live probe 2026-09-10: endpoint accepts input_urls and image_input; Skill-62 providers/kie.py:515 sends image_input (pinned by test_providers_kie); input_urls preferred per vendor page."
     },
     {
       "model_id": "kie-gemini-omni-video",
