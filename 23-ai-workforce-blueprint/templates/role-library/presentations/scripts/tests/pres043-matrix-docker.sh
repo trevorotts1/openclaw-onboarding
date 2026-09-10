@@ -65,6 +65,11 @@ run_profile() {
   if [ -n "$EVIDENCE_DIR" ]; then
     docker run --rm -v "$REPO_ROOT:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests "$tag" \
       bash -lc 'python3 -m pytest test_pres043_release_matrix.py -q -p no:cacheprovider' 2>&1 | tee "$EVIDENCE_DIR/battery-$profile.log"
+    log "acceptance receipt from INSIDE $tag (versions + output hashes)"
+    # stdout is the JSON receipt; stderr (pdf_export progress) flows to this
+    # driver's own log, never into the JSON.
+    docker run --rm -v "$REPO_ROOT:/opt/engine:ro" -e "PROFILE=$profile" -e PYTHONDONTWRITEBYTECODE=1 -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests "$tag" \
+      python3 pres043-container-receipt.py > "$EVIDENCE_DIR/release-matrix-receipt-$profile.json"
   else
     docker run --rm -v "$REPO_ROOT:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests "$tag" \
       bash -lc 'python3 -m pytest test_pres043_release_matrix.py -q -p no:cacheprovider'

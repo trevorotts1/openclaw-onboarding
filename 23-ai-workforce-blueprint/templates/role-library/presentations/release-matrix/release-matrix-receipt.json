@@ -1,0 +1,128 @@
+{
+  "receipt_name": "release-matrix-receipt.json",
+  "matrix_version": "1.0.0",
+  "task": "PRES-043",
+  "candidate_sha": "6edf56f53c988bfdda883c968da38d6f1d5efa68",
+  "base_sha": "2244b00fe3a26cb8888450c881123ce21adb733e",
+  "branch": "wf13-matrix-pres043",
+  "recorded_at_utc": "2026-09-10T00:26:00Z",
+  "recorded_by": "opus-chain (W4 WF13 writer)",
+  "legs": {
+    "native_mac": {
+      "status": "PASS",
+      "runner": "operator Mac Mini (real hardware, not a CI label)",
+      "os": "ProductName:\t\tmacOS;ProductVersion:\t\t26.3.1;ProductVersionExtra:\t(a);BuildVersion:\t\t25D771280a;",
+      "host": "Darwin TrevelynsMini2 25.3.0 Darwin Kernel Version 25.3.0: Wed Jan 28 20:51:28 PST 2026; root:xnu-12377.91.3~2/RELEASE_ARM64_T6041 arm64",
+      "interpreter": "Python 3.14.7",
+      "soffice": "LibreOffice 26.2.4.2 0229ac93fcf0d7cbc6376066c6f35021cef002dc",
+      "pdftoppm": "pdftoppm version 26.04.0",
+      "tesseract": "tesseract 5.5.2",
+      "ffmpeg": "ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers",
+      "font_faces_total": "2797",
+      "font_faces_dejavu_liberation": "0",
+      "battery": "12 passed (test-native-mac-battery.log)",
+      "outputs": {
+        "pptx": {
+          "name": "PRES043-DECK01-FINAL.pptx",
+          "sha256": "ffeb5c363d912e464a43e58ad97f74dd15667a9a1ed6a9dd050ed076d2b14d72",
+          "bytes": 29327
+        },
+        "pdf": {
+          "name": "PRES043-DECK01-FINAL.pdf",
+          "sha256": "663d514f03772902829bef081a8ac0b40181af13e3760ed18e2e68465f99cc0a",
+          "bytes": 17048
+        },
+        "png": {
+          "name": "demo-page-1.png",
+          "sha256": "95b6bb985b007852eaf8cdf26986c811ddb1222372b1b68c2ed3cc1290ab4262",
+          "bytes": 38623
+        }
+      },
+      "ocr_excerpt": "PRES-043 matrix probe slide 1\n\nFixture client presO43-fixture-client deck pres043-deck-01 body line for OCR readback",
+      "log_sha256": "50a689e72d759cec7d8d7be1ad68db0baff25ed611556faf6d012ed045847135"
+    },
+    "docker_hostinger": {
+      "status": "PASS",
+      "image_repo_digest": "sha256:05d32291453584e3d2533f1f24366179fdd02f2277cd5c61e8ec145ab399e575",
+      "os": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\";NAME=\"Debian GNU/Linux\";",
+      "interpreter": "Python 3.11.16",
+      "soffice": "LibreOffice 25.2.3.2 520(Build:2)",
+      "pdftoppm": "pdftoppm version 25.03.0",
+      "tesseract": "tesseract 5.5.0",
+      "font_faces_dejavu_liberation": "20",
+      "battery": "12 passed (test-docker-hostinger-battery.log)",
+      "outputs": {
+        "pptx": {
+          "name": "PRES043-DECK01-FINAL.pptx",
+          "sha256": "685f50cf3990dcd8849830b4112c3b4bf6dafa4026495c4d39fd8f316ad1bbfb",
+          "bytes": 29327
+        },
+        "pdf": {
+          "name": "PRES043-DECK01-FINAL.pdf",
+          "sha256": "4f3f46175ab1b9573a6957c2708c69f3a6092340a4b4a0c8dd47c286f2872538",
+          "bytes": 20511
+        },
+        "png": {
+          "name": "page-1.png",
+          "sha256": "74b9f0ede08a729ee8b4420be8abba544ae7e6404209e4f4ff9f9d5f5516c23e",
+          "bytes": 39538
+        }
+      },
+      "ocr_excerpt": "PRES-043 matrix probe slide 1\n\nFixture client pres043-fixture-client deck pres043-deck-01 body line for OCR readback",
+      "log_sha256": "28cfab9402adeea763d7abe6f9e348a695865c73c424438dca01961522bbb653"
+    },
+    "docker_contabo": {
+      "status": "PASS",
+      "image_repo_digest": "sha256:3dd3d309ced5852607a29089a3197a7ae2faf689f0d96be367dc934f36356252",
+      "os": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\";NAME=\"Debian GNU/Linux\";",
+      "interpreter": "Python 3.11.16",
+      "soffice": "LibreOffice 25.2.3.2 520(Build:2)",
+      "pdftoppm": "pdftoppm version 25.03.0",
+      "tesseract": "tesseract 5.5.0",
+      "font_faces_dejavu_liberation": "20",
+      "battery": "12 passed (test-docker-contabo-battery.log)",
+      "outputs": {
+        "pptx": {
+          "name": "PRES043-DECK01-FINAL.pptx",
+          "sha256": "e8024fe4d829e9d1c56892e3a9c589b6dfca43d9fb10d395975a5de46e62de18",
+          "bytes": 29327
+        },
+        "pdf": {
+          "name": "PRES043-DECK01-FINAL.pdf",
+          "sha256": "2c544af04be92ac081ad6379612c6b7e32cd247c2041977ce6c73734328b2eef",
+          "bytes": 20511
+        },
+        "png": {
+          "name": "page-1.png",
+          "sha256": "74b9f0ede08a729ee8b4420be8abba544ae7e6404209e4f4ff9f9d5f5516c23e",
+          "bytes": 39538
+        }
+      },
+      "ocr_excerpt": "PRES-043 matrix probe slide 1\n\nFixture client pres043-fixture-client deck pres043-deck-01 body line for OCR readback",
+      "memory_bounded_leg": "passed (--memory 2g --memory-swap 2g)",
+      "readonly_output_leg": "passed",
+      "log_sha256": "66b88e4dd30c734654f5536422c65ff837b346c37d0108152ee0c1393c40caf0"
+    }
+  },
+  "packaged_receipts": {
+    "in_container_hostinger": "release-matrix-receipt-hostinger.json",
+    "in_container_contabo": "release-matrix-receipt-contabo.json"
+  },
+  "fault_legs": {
+    "missing_fonts": "FONTS_UNAVAILABLE (empty FONTCONFIG_FILE = 0 faces vs control 2797)",
+    "readonly_output_volume": "READONLY_OUTPUT_VOLUME (unprivileged write refused)",
+    "low_disk": "DISK_LOW/DISK_OK bounded probe",
+    "cgroup_memory_pressure": "CGROUP_PRESSURE_READING or CGROUP_UNAVAILABLE_ON_HOST + next action",
+    "unavailable_native_renderer": "RENDERER_UNAVAILABLE + PRESENTATION_DEPS_MISSING gate"
+  },
+  "restart_resume_identity": "test_restart_resume_only_incomplete_units: resume renders ONLY unit-03; identity pres043-fixture-client / pres043-deck-02 / run-pres043-02 retained (native + both containers)",
+  "live_provider_smoke": {
+    "status": "NOT VERIFIED",
+    "reason": "No GHL_SANDBOX_* credentials exist in any env store on this box (searched: process env, ~/.openclaw/secrets/.env, ~/.openclaw/.env). A hosted operator-authorized sandbox run cannot be performed from this unit.",
+    "fixture_server_skill": "AUTHORIZED PATH PROVEN against a local fixture server: PRES043_LIVE_SMOKE=1 + GHL_SANDBOX_LOCATION_ID/PIT/BASE_URL -> rc=0, real fixture remote IDs ['fx-location-sandbox-file-0001','fx-location-sandbox-file-0002'] with readback (ghl-sandbox-fixture-smoke-cli.log). Refusal without auth: rc=3 (ghl-sandbox-refusal-cli.log).",
+    "next_action": "Operator (Trevor) supplies GHL_SANDBOX_LOCATION_ID, GHL_SANDBOX_PIT, GHL_SANDBOX_BASE_URL for a hosted sandbox location; then: PRES043_LIVE_SMOKE=1 python3 tests/pres043_live_smoke.py and record the returned remote IDs + readback into this receipt's live_provider_smoke block.",
+    "who_can_unblock": "Trevor (operator) \u2014 sandbox credentials are operator-held; never client credentials."
+  },
+  "seam_fixed_in_this_repair": "pres043_live_smoke.py previously read GHL_SANDBOX_BASE_URL but never used it (canonical list_media hard-codes the production origin), so an authorized sandbox run could only hit PRODUCTION. A _SandboxOpener now rewrites ONLY the request origin to the sandbox base; no base -> LiveSmokeRefused.",
+  "drift_gate_note": "scripts/ci/presentations-drift-gates.sh (8 gates) = ALL GATES PASSED. The role-library copy additionally runs GATE-D (FIX 113) repo/department hash drift; it FAILS exit 11 on this box because the 3 PRES-043 test files are repo-only until the reinstall/update roll mirrors the department copy (~/.openclaw/workspace). That mirror roll is outside this unit's owned paths and is not performed (no GO). Recorded, not waived."
+}
