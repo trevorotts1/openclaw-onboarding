@@ -139,6 +139,7 @@ if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
   _PRES_DEPS_MISSING=""
   _PRES_DEPS_CANON=""
   _PRES_PY3=""
+  _PRES_VIDEO_MISSING=""
   for _cand in "$SKILL_DIR/presentations/scripts/presentation-deps.json" \
                "$SKILL_DIR/templates/role-library/presentations/scripts/presentation-deps.json" \
                "$(python3 "$SCRIPT_DIR/_qc_get.py" departments_dir </dev/null 2>/dev/null | tail -1 || true)/Presentations/scripts/presentation-deps.json"; do
@@ -148,15 +149,24 @@ if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
     # Canon-driven gate: check every dep named in the JSON. Kind binary ->
     # command -v; kind python_import -> import_spec inside the SAME interpreter
     # the pipeline runs (FIX 71 venv). Unknown kind -> report, never skip.
-    while IFS='|' read -r _dep_name _dep_kind _dep_spec; do
+    # PRES-033: each row carries required=1|0 (default 1 = fail closed). A row
+    # with required=0 (ffmpeg/ffprobe, video-only) missing lands in
+    # _PRES_VIDEO_MISSING — NEVER in the hard required set, and never able to
+    # hide a required gap.
+    while IFS='|' read -r _dep_name _dep_kind _dep_spec _dep_req; do
       [ -z "$_dep_name" ] && continue
       case "$_dep_kind" in
         __canon__)
           _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} __CANON_UNPARSABLE__(${_dep_spec})"
           ;;
         binary)
-          command -v "$_dep_spec" >/dev/null 2>&1 \
-            || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ${_dep_name}(${_dep_spec}; see ${_PRES_DEPS_CANON})"
+          if command -v "$_dep_spec" >/dev/null 2>&1; then :; else
+            if [ "$_dep_req" = "0" ]; then
+              _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ${_dep_name}(${_dep_spec}; see ${_PRES_DEPS_CANON})"
+            else
+              _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ${_dep_name}(${_dep_spec}; see ${_PRES_DEPS_CANON})"
+            fi
+          fi
           ;;
         python_import)
           if [ -z "${_PRES_PY3:-}" ] && [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
@@ -179,18 +189,19 @@ import json, sys
 try:
     canon = json.load(open(sys.argv[1]))
 except Exception as exc:
-    print(f"__CANON_UNPARSABLE__|__canon__|{sys.argv[1]}: {exc}")
+    print(f"__CANON_UNPARSABLE__|__canon__|{sys.argv[1]}: {exc}||")
     sys.exit(0)
 for dep in canon.get("deps", []):
     name = dep.get("name", "")
     kind = dep.get("kind", "")
+    req = "1" if dep.get("required", True) else "0"
     if kind == "binary":
         spec = dep.get("binary_name", "") or name
-        print(f"{name}|binary|{spec}")
+        print(f"{name}|binary|{spec}|{req}")
     elif kind == "python_import":
-        print(f"{name}|python_import|{dep.get('import_spec', '')}")
+        print(f"{name}|python_import|{dep.get('import_spec', '')}|{req}")
     else:
-        print(f"{name}|{kind}|")
+        print(f"{name}|{kind}||{req}")
 PYEOF
 )
   else
@@ -224,19 +235,37 @@ PYEOF
     "$_PRES_PY3" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 \
       || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(reportlab+python-pptx+pypdf in the department venv; fix: ${_PRES_PY3} -m pip install reportlab python-pptx pypdf)"
   fi
-  command -v ffmpeg  >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ffmpeg(webinar video render; brew install ffmpeg)"
-  command -v ffprobe >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} ffprobe(webinar video probe; part of ffmpeg)"
+  # PRES-033: ffmpeg/ffprobe are OPTIONAL (video-only) canon deps. A missing
+  # optional video dep is reported as a separate VIDEO_DEPS_MISSING advisory and
+  # does NOT trip the required hard gate; deck, presenter guide, workbook and QC
+  # can still run. It can never hide a required gap (required checks above stay
+  # in _PRES_DEPS_MISSING), and a required gap is never mislabeled optional.
+  command -v ffmpeg  >/dev/null 2>&1 || _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ffmpeg(webinar video render; brew install ffmpeg)"
+  command -v ffprobe >/dev/null 2>&1 || _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ffprobe(webinar video probe; part of ffmpeg)"
   # FIX 70 (W20b-B3): tesseract is in the canon (ocr_verify.py + build_deck.py
   # in-loop OCR readback drive it via pytesseract). Kept as a hardcoded check TOO
   # so the gate still enforces it on a box whose canon file went missing.
   command -v tesseract >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} tesseract(OCR readback; brew install tesseract / apt install tesseract-ocr)"
   "$_PRES_PY3" -c "import pytesseract" >/dev/null 2>&1 \
     || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(pytesseract in the department venv; fix: ${_PRES_PY3} -m pip install pytesseract)"
+  if [ -n "${_PRES_VIDEO_MISSING:-}" ]; then
+    log "PRESENTATION_VIDEO_DEPS_MISSING (optional branch):${_PRES_VIDEO_MISSING} — deck/presenter-guide/workbook/QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled"
+  fi
   if [ -n "$_PRES_DEPS_MISSING" ]; then
     log "PRESENTATION_DEPS_MISSING — missing:${_PRES_DEPS_MISSING}"
     log "  The Skill 23 presentation pipeline cannot run. Re-run install.sh Step 6.5,"
-    log "  or on a VPS run: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
-    log "  FIX 71 venv one-liner: python3 -m venv $HOME/.openclaw/.venv-presentations && $HOME/.openclaw/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf   (VPS: use /data/.openclaw/.venv-presentations)"
+    # PRES-033: the VPS reassert path is derived from the CANONICAL OpenClaw root
+    # (resolve_oc_root — /data/.openclaw else $HOME/.openclaw), never hardcoded.
+    if declare -F resolve_oc_root >/dev/null 2>&1 \
+       && _PRES_QC_ROOT="$(resolve_oc_root 2>/dev/null || true)" \
+       && [ -n "$_PRES_QC_ROOT" ]; then
+      :
+    else
+      _PRES_QC_ROOT="$HOME/.openclaw"
+      [ -d "/data/.openclaw" ] && _PRES_QC_ROOT="/data/.openclaw"
+    fi
+    log "  or on a VPS run: bash $_PRES_QC_ROOT/scripts/reassert-presentation-deps.sh"
+    log "  FIX 71 venv one-liner: python3 -m venv $HOME/.openclaw/.venv-presentations && $HOME/.openclaw/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf   (VPS: use $_PRES_QC_ROOT/.venv-presentations)"
     printf '{"status":"PRESENTATION_DEPS_MISSING","ts":"%s","missing":"%s","interpreter":"%s"}\n' "$TS" "${_PRES_DEPS_MISSING# }" "$_PRES_PY3" > "$JSON_FILE"
     exit 6
   fi
