@@ -2,7 +2,7 @@
   "receipt_name": "release-matrix-receipt.json",
   "matrix_version": "1.0.0",
   "task": "PRES-043",
-  "candidate_sha": "6edf56f53c988bfdda883c968da38d6f1d5efa68",
+  "candidate_sha": "branch wf13-matrix-pres043 HEAD (this commit; a receipt cannot name its own sha) \u2014 see run/candidates/PRES-043/<SHA>/candidate.json proposed_sha for the exact value",
   "base_sha": "2244b00fe3a26cb8888450c881123ce21adb733e",
   "branch": "wf13-matrix-pres043",
   "recorded_at_utc": "2026-09-10T00:26:00Z",
@@ -126,8 +126,10 @@
   "seam_fixed_in_this_repair": "pres043_live_smoke.py previously read GHL_SANDBOX_BASE_URL but never used it (canonical list_media hard-codes the production origin), so an authorized sandbox run could only hit PRODUCTION. A _SandboxOpener now rewrites ONLY the request origin to the sandbox base; no base -> LiveSmokeRefused.",
   "drift_gate_note": "scripts/ci/presentations-drift-gates.sh (8 gates) = ALL GATES PASSED. The role-library copy additionally runs GATE-D (FIX 113) repo/department hash drift; it FAILS exit 11 on this box because the 3 PRES-043 test files are repo-only until the reinstall/update roll mirrors the department copy (~/.openclaw/workspace). That mirror roll is outside this unit's owned paths and is not performed (no GO). Recorded, not waived.",
   "repair_commits": [
-    "6edf56f53c988bfdda883c968da38d6f1d5efa68 (seam+fixture leg+digests)",
-    "4421c3a50 (in-container receipts + consolidated receipt)"
+    "6edf56f53c988bfdda883c968da38d6f1d5efa68 seam + fixture leg + real digests",
+    "4421c3a50 in-container receipts + consolidated receipt",
+    "d23c79f15463964dfc758cab6b47d18d5801c41c repair-commit note"
   ],
-  "final_head_note": "This receipt rides the final commit on branch wf13-matrix-pres043; its own commit sha is the branch HEAD containing this file (a receipt cannot name its own commit). run/candidates/PRES-043/<SHA>/candidate.json carries the final proposed_sha."
+  "final_head_note": "This receipt rides the final commit on branch wf13-matrix-pres043; its own commit sha is the branch HEAD containing this file (a receipt cannot name its own commit). run/candidates/PRES-043/<SHA>/candidate.json carries the final proposed_sha.",
+  "self_reference_note": "This receipt rides branch wf13-matrix-pres043; its own commit is the branch HEAD that contains it. The authoritative proposed sha for QC lives in run/candidates/PRES-043/<SHA>/candidate.json and in the QC verdict, which CAN name a fixed commit because they are evidence files outside this commit."
 }
