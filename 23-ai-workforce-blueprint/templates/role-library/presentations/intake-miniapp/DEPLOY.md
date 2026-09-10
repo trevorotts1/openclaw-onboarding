@@ -71,8 +71,14 @@ python3 payload/build_questions_payload.py --set standard --run-id RUN123 --out 
 # mint a session (INTAKE_ADMIN_TOKEN must be in the box env)
 python3 bridge/intake_bridge.py mint \
   --worker-url https://intake.<FLEET_DOMAIN> \
-  --run-id RUN123 --box-id boxA --questions /tmp/payload.json
+  --run-id RUN123 --box-id boxA \
+  --company-id <company> --installation-id <installation> --presentation-id <deck> \
+  --questions /tmp/payload.json
 # → prints {"capability_url": "https://intake.<FLEET_DOMAIN>/s/<token>", ...}
+#   company-id/installation-id/presentation-id are REQUIRED (PRES-009): the
+#   worker mints the durable tenant tuple server-side; the --run-id is
+#   display-only. The --box-id must be an opaque id (3-64 chars, [A-Za-z0-9._-]) —
+#   it is the legacy-migration attribution source.
 
 # after the client fills it in, pull answers into the run's intake ledger
 python3 bridge/intake_bridge.py sync \

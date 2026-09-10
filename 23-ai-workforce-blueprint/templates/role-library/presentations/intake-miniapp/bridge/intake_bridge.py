@@ -124,8 +124,14 @@ def cmd_mint(args) -> int:
         return 2
     payload = json.loads(pathlib.Path(args.questions).read_text(encoding="utf-8"))
     body = {
+        # PRES-009: the caller's --run-id is DISPLAY-ONLY. The worker mints the
+        # durable company/installation/presentation/run tuple server-side; the
+        # tenant ids name WHO and WHICH deck this intake feeds and are required.
         "run_id": args.run_id,
         "box_id": args.box_id,
+        "company_id": args.company_id,
+        "installation_id": args.installation_id,
+        "presentation_id": args.presentation_id,
         "questions_payload": payload,
         "want_confirm_code": bool(args.confirm_code),
     }
@@ -140,6 +146,11 @@ def cmd_mint(args) -> int:
         "token": resp.get("token"),
         "capability_url": resp.get("capability_url"),
         "reused": resp.get("reused", False),
+        "run_id": resp.get("run_id"),
+        "intake_session_id": resp.get("intake_session_id"),
+        "company_id": resp.get("company_id"),
+        "installation_id": resp.get("installation_id"),
+        "presentation_id": resp.get("presentation_id"),
     }
     if resp.get("confirm_code"):
         out["confirm_code"] = resp["confirm_code"]  # box speaks this in chat if used
@@ -220,8 +231,11 @@ def main(argv: list[str]) -> int:
 
     m = sub.add_parser("mint", help="open a hosted intake session and print the capability link")
     m.add_argument("--worker-url", required=True)
-    m.add_argument("--run-id", required=True)
+    m.add_argument("--run-id", required=True, help="DISPLAY-ONLY human run name; the worker mints the durable run id")
     m.add_argument("--box-id", required=True)
+    m.add_argument("--company-id", required=True, help="PRES-009: tenant company id (opaque, 3-64 chars)")
+    m.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id (opaque, 3-64 chars)")
+    m.add_argument("--presentation-id", required=True, help="PRES-009: deck/presentation id (opaque, 3-64 chars)")
     m.add_argument("--questions", required=True, help="path to a questions_payload.json (from build_questions_payload.py)")
     m.add_argument("--confirm-code", action="store_true", help="mint a 6-digit high-trust code")
     m.add_argument("--ttl-days", type=float, default=None)
