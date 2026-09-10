@@ -1,3 +1,5 @@
+## [v25.0.35]  -  2026-09-10  -  RR-013 resources + RR-014 monitoring + RR-015 EWS aggregate batch
+
 ## [v25.0.34]  -  2026-09-10  -  Sunburst default sweep: slide-submitter SOP + example to GPT-image-2-5, prompt-bands endpoint order sunburst-first
 
 - Fix slide-submitter-sops.md:24 + slide-submitter.md:415 model_variant to gpt-image-2-5-sunburst-image-to-image (was legacy DEFAULT/example, contradicted own manifest).
