@@ -1,0 +1,3073 @@
+#!/usr/bin/env python3
+"""
+Persona Selector v2 — v2.1-aware persona selection.
+
+This is THE canonical persona selector (PRD item 1.1, v11.3.x+).
+select-persona-for-task.py (v1) is a deprecated shim that delegates here.
+
+Features:
+1. Stickiness check — looks at the `persona_assignment` table (Command Center DB)
+   first. If a sticky assignment exists for (department, task_category) with
+   score ≥0.5, returns it without re-scoring.
+2. Adaptive weights — uses `adaptive_weights.get_weights_for_task()` instead of
+   static (25/25/20/15/15).
+3. Behavioral profile reading — Layer 2 (Owner Values) reads the v2.0 Ch 12
+   `## Behavioral Identity Profile` section of USER.md instead of the v1.1
+   value-based section.
+4. Persona version pinning — records persona_version on the task at dispatch.
+5. Hybrid mode — when detect_interaction_mode returns 'hybrid', selects TWO
+   personas (one per mode) instead of one.
+6. Emit task_category in the output so the dashboard / Command Center can
+   write to persona_assignment for stickiness on the NEXT task.
+7. Anti-repetition variety (v10.14.28) — overused personas in the last
+   VARIETY_WINDOW_HOURS get a per-use penalty applied to their score, and
+   when the top three candidates are within VARIETY_DOMINANCE_RATIO of each
+   other we sample from them weighted by adjusted score instead of always
+   picking #1. This stops the "Godin every time" failure mode Trevor flagged
+   on 2026-05-24. Quality is preserved (top-1 still wins when it dominates
+   by ≥1.5x). Disable with `--no-variety` for deterministic debugging.
+8. PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel; item 1.1 was the port):
+   Stage A — governing-personas.md pool (dept pre-qualified list, or all personas).
+   Stage B — category-tag filter: persona-categories.json `domain` key (correct key,
+             Defect 1 fix) + infer_task_category derived tags (Defect 3) + _norm_tag
+             normalisation so DEPT_DOMAIN_TAGS and persona domains both use lowercase-
+             hyphenated form before comparison (Defect 2). Never filters to zero.
+   Stage C — gemini-search semantic candidate retrieval (top-10, intersected with B).
+             CLI contract fixed to match gemini-search.py: positional query + --limit,
+             stdout text parsed for PERSONA: lines (Defect 4). Never filters to zero.
+   Stage D — existing 5-layer scoring on survivors only.
+   Output JSON includes "funnel": {"pool": N, "category": N, "semantic": N} (canonical
+   PRD 1.2 keys) so the dashboard and QC can see the funnel working.
+
+Output: JSON with persona_id, persona_name, score, interaction_mode, breakdown,
+and (if hybrid) secondary_persona_*.
+
+Usage:
+    python3 23-ai-workforce-blueprint/scripts/persona-selector-v2.py \
+        --task "write a follow-up email to the prospect" \
+        --department sales \
+        --format json
+"""
+import argparse
+import json
+import os
+import random
+import re
+import sqlite3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
+
+from detect_platform import get_openclaw_paths  # type: ignore
+from resolve_db import find_dashboard_db, is_db_found  # type: ignore  # PRD 1.3: single shared resolver
+from adaptive_weights import get_weights_for_task, DEFAULT_WEIGHTS  # type: ignore
+from canonical_slug import canonical_dept_slug  # type: ignore  # PRD 1.5: dept identity contract
+
+# ── Mechanical-task gate — SINGLE SOURCE: shared-utils/mechanical-gate.py ─────
+# Both this selector (whole-task gate) and decompose-task.py (per-subtask gate)
+# import the SAME classifier so the "no persona required" shell-command contract
+# can never diverge (F3.7). Loaded BY PATH because the file is hyphenated — the
+# same importlib trick used for infer-task-category.py below. A tiny inline
+# fallback mirrors the BASE rule so a box missing the shared file still gates
+# identically (never-to-zero resilience).
+GOVERNANCE_PERSONA_FALLBACK = "covey-7-habits"  # overridden by shared module when present
+try:
+    import importlib.util as _mg_ilu
+    _mg_path = Path(__file__).parent.parent.parent / "shared-utils" / "mechanical-gate.py"
+    if _mg_path.is_file():
+        _mg_spec = _mg_ilu.spec_from_file_location("mechanical_gate_mod", str(_mg_path))
+        _mg_mod = _mg_ilu.module_from_spec(_mg_spec)
+        _mg_spec.loader.exec_module(_mg_mod)  # type: ignore
+        is_mechanical_task = _mg_mod.is_mechanical
+        GOVERNANCE_PERSONA_FALLBACK = _mg_mod.GOVERNANCE_PERSONA_FALLBACK
+    else:
+        raise ImportError("mechanical-gate.py not found")
+except Exception:
+    def is_mechanical_task(text, *, delivery_verbs=()):  # type: ignore
+        # Inline mirror of shared-utils/mechanical-gate.py BASE rule.
+        if not text:
+            return False
+        t = text.lower()
+        if any(m in t for m in ("check disk", "check memory")):
+            return True
+        if any(re.search(r"\b" + re.escape(m) + r"\b", t)
+               for m in ("restart", "reboot", "ping", "ls", "chmod", "chown")):
+            return True
+        if delivery_verbs and any(m in t for m in delivery_verbs):
+            return True
+        return False
+
+try:
+    # The category inferer ships as infer-task-category.py (HYPHENATED) — a name Python
+    # cannot import as a module via `import infer_task_category` (underscores). The old
+    # `from infer_task_category import ...` therefore ALWAYS raised ImportError and the
+    # stub below ran, so EVERY task inferred "general" and the category-derived domain
+    # tags (incl. the video-edit/montage production split) were never applied. Load the
+    # hyphenated file by path so the real inferer is used. Fall back to the safe
+    # "general" stub only if the file is genuinely absent (never-to-zero behavior).
+    import importlib.util as _ilu
+    _itc_path = Path(__file__).parent / "infer-task-category.py"
+    if _itc_path.is_file():
+        _itc_spec = _ilu.spec_from_file_location("infer_task_category_mod", str(_itc_path))
+        _itc_mod = _ilu.module_from_spec(_itc_spec)
+        _itc_spec.loader.exec_module(_itc_mod)  # type: ignore
+        infer_task_category = _itc_mod.infer_task_category  # type: ignore
+    else:
+        raise ImportError("infer-task-category.py not found")
+except Exception:
+    def infer_task_category(task_text: str) -> str:
+        return "general"
+
+try:
+    from llm_score import score_layer, summarize_persona_blueprint  # type: ignore
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+    def score_layer(*args, **kwargs):  # type: ignore
+        return {"score": 0.6, "reasoning": "llm_score module not available",
+                "model": "stub", "cached": False, "fallback": True}
+    def summarize_persona_blueprint(persona_id: str, max_chars: int = 2000) -> str:  # type: ignore
+        return f"(no blueprint summary — llm_score module not available)"
+
+try:
+    from semantic_task_fit import semantic_task_fit  # type: ignore
+    SEMANTIC_AVAILABLE = True
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+    def semantic_task_fit(persona_id, task_text, paths, persona_summary=""):  # type: ignore
+        return {"score": 0.6, "method": "module_missing", "detail": "semantic_task_fit not importable"}
+
+try:
+    # G13: in-process Stage-C retrieval that shares ONE task embedding with
+    # Layer-5 semantic_task_fit (same module cache). Replaces the gemini-search
+    # subprocess as the primary path (subprocess kept as fallback).
+    from semantic_task_fit import semantic_persona_ids  # type: ignore
+    SEMANTIC_PERSONA_IDS_AVAILABLE = True
+except ImportError:
+    SEMANTIC_PERSONA_IDS_AVAILABLE = False
+    def semantic_persona_ids(task_text, paths, top_k=10):  # type: ignore
+        return None
+
+
+# When env var SCORING_MODE=llm, use LLM evaluation for Layers 1-4.
+# When SCORING_MODE=heuristic (default), use the keyword-hit baseline.
+# Wave 3 default flips to "llm" once owner has tested in production.
+SCORING_MODE = os.environ.get("SCORING_MODE", "llm" if LLM_AVAILABLE else "heuristic").lower()
+
+
+# ── Guaranteed-fallback persona pins (FDN-1 / F3.1) ───────────────────────────
+# Pinned constants (GEMINI_MODEL-style) that make the selector's core invariant
+# provable rather than hopeful: in SELECT mode the JSON NEVER carries
+# persona_id: null unless no_persona_required is set. These two ids are the LAST
+# resort of two independent resolution orders; a per-client override in
+# company-config.json always resolves IN FRONT of the constant (client
+# sovereignty first — the constant is only the floor).
+#
+#   • DEFAULT_PERSONA_FALLBACK — attached when the persona universe is empty
+#     (fresh box / Skill-22 absent / clobbered categories). It is a deliberately
+#     generic, brand-safe house voice seeded as a PERMANENT fleet persona and
+#     tagged fallback:true in persona-categories.json, which EXCLUDES it from the
+#     normal scoring funnel (list_available_personas drops fallback personas) so
+#     it can never out-score a real specialist. Only _fallback_persona() ever
+#     returns it. Resolution order (Q2): company-config.default_persona_id ->
+#     first real seed-categories key (deterministic) -> this constant.
+#   • GOVERNANCE_PERSONA_FALLBACK — the oversight pointer attached to mechanical
+#     / no_persona_required tasks so EVERY task carries a governance persona for
+#     the dispatch gate, without pretending a chmod needs coaching. Resolution
+#     order (Q1): company-config.governance_persona_id -> this constant. NOTE: the
+#     constant itself is defined at the mechanical-gate single-source block above
+#     (so a per-box shared-utils/mechanical-gate.py override stays authoritative);
+#     it is deliberately NOT reassigned here.
+DEFAULT_PERSONA_FALLBACK = "blackceo-house-voice"
+
+
+# -------- Coaching/Leadership/Hybrid mode detection (copied from v1 for portability) --------
+COACHING_SIGNALS = [
+    "i'm stuck", "i don't know", "help me decide", "what should i do",
+    "i'm not sure", "can you help me", "i feel", "i'm struggling",
+    "advice", "should i", "what do you think", "i need guidance",
+    "confused", "overwhelmed", "not working", "failing", "lost",
+    "perspective", "opinion", "feedback on my", "review my thinking",
+]
+LEADERSHIP_SIGNALS = [
+    "write", "create", "build", "design", "publish", "send", "post",
+    "analyze", "research", "draft", "update", "edit", "format",
+    "generate", "produce", "execute", "implement", "run", "deploy",
+    "schedule", "automate", "set up", "configure", "test",
+]
+
+
+def detect_interaction_mode(task_description: str) -> str:
+    """Returns 'leadership' | 'coaching' | 'hybrid'."""
+    task_lower = task_description.lower()
+    c_score = sum(1 for s in COACHING_SIGNALS if s in task_lower)
+    l_score = sum(1 for s in LEADERSHIP_SIGNALS if s in task_lower)
+    if c_score >= 2 and l_score >= 2:
+        return "hybrid"
+    return "coaching" if c_score > l_score else "leadership"
+
+
+# -------- Dashboard DB lookups (stickiness + weight overrides) --------
+# find_dashboard_db() is imported from shared-utils/resolve_db.py (PRD 1.3).
+# The local copy was removed to eliminate divergent candidate lists.
+
+def check_sticky_assignment(department_id: str, task_category: str, db_path: Path):
+    """Returns sticky assignment dict or None.
+
+    Anti-staleness ENFORCEMENT (v14.23.3): a row flagged needs_review=1 — set by
+    write_persona_assignment_db() once the SAME persona is picked
+    ANTI_STALENESS_THRESHOLD times in a row WITHOUT a switch — is NOT trusted.
+    We return None so main() re-scores from scratch.
+
+    Before this, needs_review was descriptive only: the gate kept serving the
+    stale pick forever even after a better candidate emerged. That is exactly
+    how a (operations, design) row locked onto sinek-start-with-why (0.5915)
+    kept being returned after the v14.15 craft-domain bonus had already made
+    rohde-the-sketchnote-workbook (0.6896) the correct fresh-score winner — the
+    selector "went deaf" to its own raised flag. Enforcement, not description.
+    """
+    if not db_path or not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        # needs_review may be absent on very old installs; tolerate that.
+        try:
+            cols = {c[1] for c in conn.execute("PRAGMA table_info(persona_assignment)").fetchall()}
+        except sqlite3.Error:
+            cols = set()
+        nr_select = ", needs_review" if "needs_review" in cols else ""
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT persona_id, persona_name, persona_mode, persona_version, last_score"
+            + nr_select +
+            " FROM persona_assignment WHERE department_id = ? AND task_category = ?",
+            (department_id, task_category),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row or row[4] is None or row[4] < 0.5:
+            return None
+        # Busted cache: a flagged-stale row forces a fresh re-score upstream.
+        if nr_select and len(row) > 5 and row[5] == 1:
+            return None
+        return {
+            "persona_id": row[0],
+            "persona_name": row[1] or row[0],
+            "persona_mode": row[2],
+            "persona_version": row[3] or 1,
+            "last_score": row[4],
+        }
+    except sqlite3.Error:
+        return None
+    return None
+
+
+def resolve_conversion_goal_arg(argv_value, env_value: str) -> str:
+    """A-U4 — --conversion-goal argv / OPENCLAW_CONVERSION_GOAL env precedence
+    (mirrors the OPENCLAW_AUDIENCE pattern, but with an argv transport too):
+    an explicit `--conversion-goal` (even an intentionally-empty '' override)
+    wins; otherwise the env var is read. Pure + independently testable so the
+    precedence rule itself is locked without exercising the full CLI/DB path.
+    """
+    if argv_value is not None:
+        return argv_value
+    return env_value or ""
+
+
+def find_selection_log() -> Path:
+    """Locate persona-selection-log.md. Returns Path (may not exist)."""
+    if "PERSONA_SELECTION_LOG_PATH" in os.environ:
+        return Path(os.environ["PERSONA_SELECTION_LOG_PATH"])
+    candidates = [
+        Path.home() / ".openclaw" / "skills" / "23-ai-workforce-blueprint" / "persona-selection-log.md",
+        Path("/data/.openclaw/skills/23-ai-workforce-blueprint/persona-selection-log.md"),
+        Path.home() / "clawd" / "skills" / "23-ai-workforce-blueprint" / "persona-selection-log.md",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
+
+
+def write_selection_log_md(log_path: Path, entry: dict):
+    """Append a single row to persona-selection-log.md. Best-effort, never raises."""
+    try:
+        if not log_path.parent.exists():
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        if not log_path.exists():
+            log_path.write_text(
+                "# Persona Selection Log\n\n"
+                "Every task dispatch produces a log entry here. "
+                "Append-only.\n\n"
+                "| date | task-id | dept | task-cat | selected | score | mode | reasoning |\n"
+                "|------|---------|------|----------|----------|-------|------|-----------|\n",
+                encoding="utf-8",
+            )
+        reasoning = (entry.get("reasoning") or "").replace("|", "/").replace("\n", " ")[:240]
+        row = (
+            f"| {entry.get('date', '?')} "
+            f"| {entry.get('task_id', '?')} "
+            f"| {entry.get('department', '?')} "
+            f"| {entry.get('task_category', '?')} "
+            f"| {entry.get('persona_id', '?')} "
+            f"| {entry.get('score', 0):.2f} "
+            f"| {entry.get('mode', '?')} "
+            f"| {reasoning} |\n"
+        )
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(row)
+    except OSError as e:
+        print(f"[persona-selector] WARN: could not write selection log: {e}", file=sys.stderr)
+
+
+def _ensure_persona_assignment_columns(conn):
+    """Ensure consecutive_count + needs_review columns exist (anti-staleness)."""
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(persona_assignment)").fetchall()}
+    if "consecutive_count" not in cols:
+        try:
+            conn.execute("ALTER TABLE persona_assignment ADD COLUMN consecutive_count INTEGER DEFAULT 0")
+        except sqlite3.Error:
+            pass
+    if "needs_review" not in cols:
+        try:
+            conn.execute("ALTER TABLE persona_assignment ADD COLUMN needs_review INTEGER DEFAULT 0")
+        except sqlite3.Error:
+            pass
+
+
+ANTI_STALENESS_THRESHOLD = 5  # 5+ consecutive same persona → flag for review
+
+# ─── Anti-repetition variety constants (v10.14.28) ────────────────────────
+# Trevor's complaint, 2026-05-24: "the system did not properly assign persona
+# to the task and some time i just keep using the same on over and over again
+# without any consideration." Fix: recency penalty + top-N weighted sample.
+VARIETY_WINDOW_HOURS = 24      # look-back window for recent-use counts (GLOBAL fallback — see variety_window_hours_for_department())
+VARIETY_PENALTY_PER_USE = 0.08 # 8% score reduction per recent use
+VARIETY_PENALTY_CAP_USES = 5   # penalty saturates at 5 uses (= 40% cap)
+VARIETY_DOMINANCE_RATIO = 1.5  # top-1 must be ≥1.5x top-3 to skip sampling
+VARIETY_SAMPLE_TOP_N = 3       # weighted-sample pool size when sampling
+VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
+
+# ─── P9-2: per-department variety window scoping (FINAL-REVIEW-2026-07-01) ──
+# read_recent_use_counts() already scopes the recent-use COUNT to a single
+# department (WHERE department_id = ?) — but VARIETY_WINDOW_HOURS itself was
+# one GLOBAL constant (24h) applied to EVERY department's look-back SPAN. A
+# low-volume department (few tasks/day) almost never accumulates a recent use
+# inside a fixed 24h span (variety never engages there), while a high-volume
+# department can rack up VARIETY_PENALTY_CAP_USES within a fraction of that
+# same 24h span and over-penalize a genuinely best-fit persona. Scoping the
+# SPAN to each department's own recent task velocity (below) fixes both
+# symptoms with one mechanism. Unknown/empty department -> unchanged global
+# VARIETY_WINDOW_HOURS (existing behaviour preserved exactly).
+DEPT_VARIETY_LOOKBACK_DAYS = 7        # velocity sample window (read-only, cheap)
+DEPT_VARIETY_WIDEN_MAX = 4.0          # low-volume dept: widen up to 4x (96h)
+DEPT_VARIETY_NARROW_MIN = 0.25        # high-volume dept: narrow down to 1/4 (6h)
+DEPT_VARIETY_LOW_VOLUME_PER_DAY = 1.0   # < 1 selection/day -> widen
+DEPT_VARIETY_HIGH_VOLUME_PER_DAY = 6.0  # > 6 selections/day -> narrow
+
+# ─── G13: Stage-D fan-out backstop (token-furnace guard) ───────────────────
+# On a FRESH box (no governing-personas.md, no domain-tag coverage) the funnel
+# can hand the FULL persona library to Stage D. With SCORING_MODE='llm' that is
+# 4 LLM calls per persona → ~160 calls on ONE task (the F7 furnace). Two guards
+# enforced at the scoring gate in select_persona():
+#   1. LLM GATE — LLM layer-scoring only runs when the candidate set can be
+#      BOUNDED: a governing pool exists OR an in-process semantic ranking is
+#      available to cap finalists. Otherwise this selection silently uses the
+#      cheap heuristic path (zero API fan-out). Root-cause kill; no cron, no
+#      self-resurrect — the burn simply cannot start on an unbounded fresh box.
+#   2. FINALIST CAP — even when bounded, never LLM-score more than
+#      STAGE_D_LLM_FINALIST_CAP personas; keep the top-cap by semantic rank.
+# Heuristic mode is unaffected (it is already cheap: keyword layers + one shared
+# task embed reused across personas), so the full survivor list still scores
+# there and selection quality on bounded boxes is preserved.
+STAGE_D_LLM_FINALIST_CAP = max(1, int(os.environ.get("STAGE_D_LLM_FINALIST_CAP", "12")))
+
+# ─── PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel) ─────────────────────
+# Stage A: governing-personas.md → candidate pool (or all personas fallback)
+# Stage B: category-tag filter using persona-categories.json `domain` key +
+#          infer-task-category.py derived tags (PRD 1.2 Defects 1-3 fixed)
+# Stage C: gemini-search semantic candidate retrieval (top-10 intersected)
+#          called via CLI contract that matches gemini-search.py as it exists:
+#          positional `query` + `--limit` flag, stdout text parsed for PERSONA:
+# Stage D: existing 5-layer scoring on survivors
+# Never filters to zero: each stage falls back to prior stage's output.
+# Output JSON: "funnel": {"pool": N, "category": N, "semantic": N}
+# plus additive diagnostics: pool_source, semantic_engine.
+
+# Department → domain tags. Values use the SAME canonical form as
+# persona-categories.json `domain` values: lowercase, hyphenated.
+# Both sides are routed through _norm_tag() before comparison (Defect 2 guard).
+#
+# KEY CONTRACT (dead-key reconciliation, 2026-07-03): every key here is a
+# CANONICAL dept slug. main() runs args.department through canonical_dept_slug()
+# BEFORE Stage B does `raw_dept_tags = DEPT_DOMAIN_TAGS.get(department, [])`, so a
+# lookup key is ONLY ever a canonical slug. The pre-canonical legacy keys that used
+# to sit here — billing, operations, creative, hr, it, app-development, ceo, com —
+# were provably DEAD: canonical_dept_slug() rewrites the raw form to a DIFFERENT
+# canonical slug that already has its own key (billing→billing-finance,
+# ceo/com→master-orchestrator, app-development→engineering) or to a slug that no
+# live templates/role-library/_index.json department produces (operations, creative,
+# hr, it), so none of the eight was ever the target of a lookup. None of the eight
+# is an alias TARGET in canonical_slug.ALIAS_MAP either, so removing them cannot
+# strand a live department. They are removed; each live department is reached only
+# through its canonical slug. scripts/test-dept-domain-mirror.py LOCKS this: it fails
+# if any key is not a canonical slug of a live _index.json department, if any live
+# department is left uncovered, or if these tags silently NARROW the build-workforce.py
+# dept_to_domains matrix pool (the persona↔matrix mirror invariant).
+DEPT_DOMAIN_TAGS = {
+    "marketing": ["marketing", "copywriting", "communication", "sales", "strategy-innovation"],
+    "paid-advertisement": ["marketing", "copywriting", "strategy-innovation"],
+    "sales": ["sales", "communication", "strategy-innovation", "marketing"],
+    "customer-support": ["communication", "operations", "coaching"],
+    "legal": ["operations", "strategy-innovation", "leadership"],
+    "web-development": ["marketing", "sales", "copywriting", "strategy-innovation", "operations"],
+    # W6/W2.2: 'engineering' is the renamed software/app/web/backend/cloud dept.
+    # Tags MUST mirror build-workforce.py generate_persona_matrix dept_to_domains
+    # ("engineering": ["software-craft","productivity-systems","strategy-innovation",
+    # "operations"]) so the matrix (pool authoring) and the selector (Stage B filter)
+    # pre-qualify the SAME persona pool for the slug. DEP-6: software/app/web/backend/
+    # cloud craft NOW has a literal controlled-vocab domain — 'software-craft' — carried
+    # by the first true engineering-craft persona (hunt-thomas-pragmatic-programmer). It
+    # is listed FIRST as the craft-defining primary; the build/ops/idea-framing domains
+    # (productivity-systems = build discipline, operations = ship/run, strategy-innovation
+    # = architecture/idea framing) remain so pre-DEP-6 engineering personas still qualify.
+    "engineering": ["software-craft", "productivity-systems", "strategy-innovation", "operations"],
+    "graphics": ["copywriting", "communication", "marketing"],
+    "video": ["video", "editing", "montage", "visual-storytelling", "copywriting", "communication", "marketing"],
+    "audio": ["copywriting", "communication", "marketing"],
+    "research": ["strategy-innovation", "productivity-systems", "operations"],
+    "communications": ["communication", "copywriting", "marketing"],
+    "personal-assistant": ["communication", "productivity-systems", "operations"],
+    "general-task": ["leadership", "strategy-innovation", "productivity-systems"],
+    "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
+    # ── CANONICAL-SLUG COVERAGE SYNC (2026-07-03) ───────────────────────────
+    # DEPT_DOMAIN_TAGS is looked up with the CANONICAL dept slug: main() runs
+    # args.department through canonical_dept_slug() BEFORE Stage B does
+    # `raw_dept_tags = DEPT_DOMAIN_TAGS.get(department, [])`. The 34 live
+    # departments in templates/role-library/_index.json canonicalise to 33
+    # slugs; the entries ABOVE covered only 15 of them, so 18 live depts —
+    # INCLUDING presentations + social-media, the exact depts Skills 51/57 route
+    # to — fell to raw_dept_tags=[] and Stage B lost dept pre-qualification.
+    # The tag lists below MIRROR build-workforce.py generate_persona_matrix /
+    # create_governing_personas_md `dept_to_domains` EXACTLY (keyed on the
+    # canonical slug), so the matrix (pool authoring) and this selector (Stage B
+    # filter) pre-qualify the SAME persona pool per slug — the mirror invariant
+    # in the "engineering" note above. The FIVE depts build-workforce.py does
+    # NOT key (client-experience-booking, founding-member-concierge,
+    # launch-operations, master-orchestrator, product-production) mirror
+    # build-workforce's OWN dept_to_domains.get(dept, ["leadership"]) fallback;
+    # to enrich them, add them to build-workforce.py dept_to_domains FIRST, then
+    # mirror here, so the two sides never re-diverge.
+    "account-management": ["communication", "coaching", "strategy-innovation"],
+    "billing-finance": ["finance", "operations"],
+    "bugs": ["productivity-systems", "strategy-innovation", "operations"],
+    "client-experience-booking": ["leadership"],
+    "crm": ["sales", "communication", "operations"],
+    "founding-member-concierge": ["leadership"],
+    "healer": ["coaching", "personal-development", "mindset"],
+    "launch-operations": ["leadership"],
+    "listings": ["marketing", "sales", "copywriting"],
+    "logistics-fulfillment": ["operations", "productivity-systems"],
+    "master-orchestrator": ["leadership"],
+    "openclaw-maintenance": ["productivity-systems", "strategy-innovation", "operations"],
+    "podcast": ["copywriting", "communication", "marketing"],
+    "presentations": ["copywriting", "marketing", "communication"],
+    "product-production": ["leadership"],
+    "quality-control": ["productivity-systems", "operations", "strategy-innovation"],
+    "scheduling-dispatch": ["operations", "productivity-systems", "leadership"],
+    "social-media": ["marketing", "communication", "copywriting"],
+}
+
+# Maps infer-task-category.py category slugs → set of persona domain tags.
+# Only maps to domains that ACTUALLY EXIST in persona-categories.json:
+#   coaching, communication, copywriting, finance, leadership, marketing,
+#   mindset, operations, personal-development, productivity-systems,
+#   sales, strategy-innovation
+# "general" intentionally maps to empty set — contributes nothing so Stage B
+# keys solely off department tags (the stub infer_task_category path is safe).
+_CATEGORY_DOMAINS: dict = {
+    "email-outreach":   {"marketing", "copywriting", "communication"},
+    "social-post":      {"marketing", "copywriting", "communication"},
+    "content-write":    {"copywriting", "communication"},
+    "video-script":     {"copywriting", "marketing", "communication"},
+    # video-edit / montage routes to the PRODUCTION-craft domains so an editing/montage
+    # task surfaces the editing persona (e.g. Pudovkin), NOT a copy persona. This is the
+    # deterministic split between "write the video script" (video-script → copy family)
+    # and "edit the montage / pace the cut" (video-edit → production family).
+    "video-edit":       {"editing", "montage", "visual-storytelling", "video"},
+    "research":         {"strategy-innovation", "productivity-systems"},
+    "strategy":         {"strategy-innovation", "leadership", "operations"},
+    # No literal "design" domain exists in persona-categories.json. A visual/design/
+    # sketchnote task is fundamentally about TRANSLATING ideas into a clear visual
+    # narrative, so it routes to the domains that carry that craft:
+    # visual-storytelling (sketchnote/visual-thinking family), communication
+    # (message clarity), copywriting, strategy-innovation (idea framing).
+    "design":           {"visual-storytelling", "communication", "copywriting", "strategy-innovation"},
+    # DEP-6: 'code' is the software-craft (backend/frontend/web/api/architecture)
+    # task category. Its PRIMARY craft domain is the new controlled-vocab tag
+    # 'software-craft' (see CRAFT_PRIMARY_DOMAINS); the build/ops/idea-framing
+    # domains are carried for Stage-B funnel recall so pre-DEP-6 engineering
+    # proxies still enter the pool (never-to-zero). infer-task-category.py does
+    # not (yet) emit 'code' — this key is reached when a caller forces the task
+    # category (F3.9 SOP CODE slot / DEP-4 slot-driven decomposition), so a CODE
+    # slot deterministically pins the craft floor + primary-domain bonus onto the
+    # real engineering specialist rather than a nearest-domain generalist.
+    "code":             {"software-craft", "productivity-systems", "strategy-innovation", "operations"},
+    "ops":              {"operations", "productivity-systems"},
+    "finance":          {"finance", "operations"},
+    "legal":            {"leadership", "strategy-innovation"},
+    "hr":               {"leadership", "communication", "personal-development"},
+    "customer-service": {"communication", "coaching"},
+    "coaching-prompt":  {"coaching", "mindset", "personal-development"},
+    "review-feedback":  {"communication", "coaching"},
+    "general":          set(),  # empty: contributes nothing; dept tags carry Stage B alone
+}
+
+
+def _norm_tag(s: str) -> str:
+    """Normalize a domain tag to lowercase-hyphenated form.
+
+    Fixes Defect 2: DEPT_DOMAIN_TAGS had Title-Case/slash form (e.g.
+    "Strategy/Innovation", "Productivity/Systems") while persona-categories.json
+    stores "strategy-innovation", "productivity-systems".  Routing BOTH sides
+    through this function ensures set-intersection works.  Centralised here so
+    a future vocabulary change only requires editing one place.
+    """
+    import re as _re
+    s = s.lower()
+    s = _re.sub(r"[/ _]+", "-", s)
+    return s.strip("-")
+
+
+# ── Perspective bonus: additive-only, never-to-zero ────────────────────────────
+# perspective[] tags in persona-categories.json (the 6-tag perspectiveTags vocab)
+# describe the lived-experience LENS a persona's SOURCE genuinely carries
+# (e.g. african-american-experience, faith-spirituality). They are DESCRIPTIVE
+# metadata, never a filter: an empty or absent perspective[] must NEVER eliminate
+# or zero-score a persona. _category_filter() (Stage B) keys ONLY off domain[] and
+# is deliberately left untouched here. Perspective participates in selection ONLY
+# as a small ADDITIVE bonus, and ONLY when the task text explicitly invokes that
+# same lens — so perspective routing degrades gracefully (a generic task ignores it
+# entirely; the ~41 personas with perspective=[] are never affected) instead of
+# being dead weight or a trap. The bonus is bounded so it acts as a gentle
+# tiebreaker, never a dominant scoring term.
+PERSPECTIVE_BONUS_MAX = 0.05      # hard cap on the total perspective bonus
+PERSPECTIVE_BONUS_PER_TAG = 0.025 # per overlapping lens, summed then capped
+
+# Maps each perspectiveTags vocab entry → task-text trigger phrases. Only the lens
+# a task EXPLICITLY invokes earns a bonus; no match → 0.0 for everyone.
+PERSPECTIVE_KEYWORDS: dict = {
+    "african-american-experience": [
+        "african american", "african-american", "black community", "black men",
+        "black women", "black founder", "black entrepreneur", "racism", "racial",
+        "civil rights", "the culture",
+    ],
+    "womens-challenges": [
+        "women", "woman", "female founder", "female entrepreneur", "motherhood",
+        "as a mother", "for moms", "girl boss",
+    ],
+    "mens-challenges": [
+        "men's", "for men", "fatherhood", "as a father", "masculinity", "brotherhood",
+    ],
+    "family-relationships": [
+        "family", "parenting", "co-parent", "marriage", "spouse", "raising kids",
+        "raising children", "sibling", "in-law",
+    ],
+    "faith-spirituality": [
+        "faith", "spiritual", "god ", "prayer", "church", "ministry", "scripture",
+        "biblical", "gospel", "christian",
+    ],
+    "love-romantic-relationships": [
+        "romantic", "dating", "love life", "my partner", "relationship advice",
+        "marriage",
+    ],
+}
+
+
+def infer_task_perspectives(task_text: str) -> set:
+    """Return the set of perspective tags the TASK text explicitly invokes.
+
+    Empty set for the common (generic-task) case — which yields a 0.0 bonus for
+    every persona, so perspective is purely opt-in and never harmful.
+    """
+    text = (task_text or "").lower()
+    hits: set = set()
+    for tag, kws in PERSPECTIVE_KEYWORDS.items():
+        if any(kw in text for kw in kws):
+            hits.add(tag)
+    return hits
+
+
+def perspective_bonus(persona_perspectives, task_perspectives) -> float:
+    """Additive-only, never-to-zero perspective score adjustment.
+
+    Returns 0.0 when the persona has no perspective[] tags, OR the task invokes
+    none, OR the two sets do not overlap. Returns a small POSITIVE bonus (capped at
+    PERSPECTIVE_BONUS_MAX) ONLY on genuine overlap. The return value is guaranteed
+    >= 0.0, so applying it can never reduce, eliminate, or zero-score a persona.
+    """
+    if not persona_perspectives or not task_perspectives:
+        return 0.0
+    overlap = set(persona_perspectives) & set(task_perspectives)
+    if not overlap:
+        return 0.0
+    return min(len(overlap) * PERSPECTIVE_BONUS_PER_TAG, PERSPECTIVE_BONUS_MAX)
+
+
+# ── Craft domain-primary-match bonus: specialist routing (v14.15.0) ─────────────
+# Root-cause of the "rohde loses on a sketchnote task" defect: the 5-layer score
+# answers "is this persona aligned with the COMPANY?" well but UNDER-rewards being
+# the right SPECIALIST. On a CRAFT task the true expert (rohde-the-sketchnote-
+# workbook, domain=visual-storytelling) has the highest task_fit yet is dragged
+# below a generic on-brand persona (hormozi) whose company_kpis score is higher,
+# because the task_fit lead (~0.05) is smaller than the company-fit edge. Worse,
+# two domain peers can TIE on semantic task_fit (rohde and forte-building-second-
+# brain both score high on "map a process") so task_fit alone cannot pick the
+# specialist. This bonus closes both gaps by rewarding the persona whose declared
+# `domain` IS the task category's PRIMARY (craft-defining) domain. It is:
+#   • CRAFT-GATED — only categories in CRAFT_PRIMARY_DOMAINS earn it. Strategic /
+#     marketing categories (strategy, finance, legal, hr, coaching-prompt, ...)
+#     are absent, so the bonus is identically 0.0 for every persona there →
+#     PROVABLY no behaviour change on strategic tasks (mission still dominates).
+#   • ADDITIVE & NEVER-TO-ZERO — a non-matching persona gets +0.0; no persona is
+#     ever penalised, eliminated, or zero-scored. Mirrors perspective_bonus().
+#   • SPECIALIST-GRADED — scaled by (overlap / |primary|), so a FULL specialist
+#     (matches every craft-defining domain) earns the full bonus while a
+#     peripheral match (e.g. rohde on a video-EDIT task: visual-storytelling only,
+#     1 of 4) earns proportionally less, letting the film-editing specialist
+#     (pudovkin: video+editing+montage+visual-storytelling, 4 of 4) win cleanly.
+#   • RELEVANCE-COUPLED — scaled by the persona's own task_fit, so a domain label
+#     without semantic relevance earns little (rewards right-domain AND relevant).
+#   • BOUNDED & ENV-TUNABLE — capped at CRAFT_DOMAIN_MATCH_BONUS (env; default 0.18).
+#
+# PRIMARY domains are the TIGHT craft-defining set (NOT the broad Stage-B
+# _CATEGORY_DOMAINS union, which intentionally includes supporting domains like
+# communication/strategy-innovation for funnel recall). Only the defining domain
+# marks the specialist, so only it earns the bonus.
+CRAFT_PRIMARY_DOMAINS: dict = {
+    # DEP-6 (IMAGE slot): visual-communication joins visual-storytelling as a
+    # craft-defining domain for design/image work, so the IMAGE-craft specialists
+    # (budelmann-brand-identity-essentials — form/color/imagery/typography — and,
+    # via specialty recall on color-heavy tasks, opara-color-works) earn the full
+    # craft bonus on image-generation/visual-identity tasks. Purely additive and
+    # task_fit-coupled: a sketchnote/visual-thinking task (rohde) still wins on
+    # task_fit via its visual-storytelling match, so this does not displace the
+    # existing design specialist — it surfaces the image-generation specialist.
+    "design":         {"visual-storytelling", "visual-communication"},
+    "video-edit":     {"video", "editing", "montage", "visual-storytelling"},
+    "video-script":   {"copywriting"},
+    "content-write":  {"copywriting"},
+    "social-post":    {"copywriting"},
+    "email-outreach": {"copywriting"},
+    # DEP-6 (CODE slot): 'software-craft' is the craft-defining primary for code
+    # work, so the engineering-craft specialist (hunt-thomas-pragmatic-programmer)
+    # earns the craft domain bonus on a CODE task/slot instead of a nearest-domain
+    # proxy. Reached via a forced task_category (F3.9 CODE slot / DEP-4).
+    "code":           {"software-craft"},
+}
+
+
+def _craft_domain_match_bonus_max() -> float:
+    """Hard cap / scale of the craft domain-primary-match bonus (env-tunable)."""
+    try:
+        v = float(os.environ.get("CRAFT_DOMAIN_MATCH_BONUS", "0.18"))
+    except (TypeError, ValueError):
+        v = 0.18
+    return max(0.0, min(v, 0.5))
+
+
+def craft_domain_bonus(persona_domains, primary_domains, task_fit) -> float:
+    """Additive-only, never-to-zero specialist bonus.
+
+    Returns 0.0 unless the persona's declared `domain` overlaps the task
+    category's PRIMARY (craft-defining) domain set. On overlap returns
+        CAP * (|overlap| / |primary|) * task_fit
+    so a full specialist with strong semantic fit earns the full CAP, while a
+    partial domain match or a weak-task_fit match earns proportionally less.
+    Guaranteed >= 0.0 and <= CAP — it can never reduce, eliminate, or zero-score
+    any persona, and is identically 0.0 on non-craft categories (empty primary).
+    """
+    if not persona_domains or not primary_domains:
+        return 0.0
+    pd = {_norm_tag(t) for t in persona_domains}
+    prim = {_norm_tag(t) for t in primary_domains}
+    overlap = pd & prim
+    if not overlap:
+        return 0.0
+    cap = _craft_domain_match_bonus_max()
+    frac = len(overlap) / len(prim)
+    tf = max(0.0, min(float(task_fit), 1.0))
+    return round(min(cap * frac * tf, cap), 4)
+
+
+# ── Appendix-completeness preference bonus (P13-1, FINAL-REVIEW-2026-07-01) ──
+# Personas whose PLAYBOOK-APPENDIX.md is MISSING or COMPLETE_WITH_WARNINGS ship
+# with a thinner (or absent) reusable copy/funnel asset library than a persona
+# whose appendix is COMPLETE — see Phase 3b / run_playbook_appendix() in
+# 22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py,
+# which now writes that state into this same persona's `appendixStatus` field
+# in persona-categories.json (_append_persona_to_categories). On an
+# asset-heavy task — the SAME CRAFT_PRIMARY_DOMAINS categories that gate
+# craft_domain_bonus (design/video-edit/video-script/content-write/
+# social-post/email-outreach), i.e. tasks that actually consume the
+# appendix's swipe file/formulas/scripts — a persona with a COMPLETE appendix
+# should be mildly preferred over an otherwise-similar peer that lacks one, so
+# the matched specialist actually HAS the assets the task needs.
+#   • GATED to CRAFT_PRIMARY_DOMAINS categories -> 0.0 on every non-asset-heavy
+#     task (strategy/finance/etc), provably unchanged there.
+#   • ADDITIVE & NEVER-TO-ZERO: MISSING / FAILED / COMPLETE_WITH_WARNINGS / an
+#     absent field (every persona shipped before this fix) all earn +0.0 —
+#     never a penalty. Mirrors perspective_bonus()/craft_domain_bonus().
+def _appendix_completeness_bonus_max() -> float:
+    """Hard cap of the appendix-completeness preference bonus (env-tunable)."""
+    try:
+        v = float(os.environ.get("APPENDIX_COMPLETE_BONUS", "0.06"))
+    except (TypeError, ValueError):
+        v = 0.06
+    return max(0.0, min(v, 0.2))
+
+
+def appendix_completeness_bonus(appendix_status, task_category: str) -> float:
+    """Additive-only, never-to-zero preference bonus for a COMPLETE
+    PLAYBOOK-APPENDIX.md on an asset-heavy task category. Returns 0.0 for any
+    non-asset-heavy category or any status other than the literal 'COMPLETE'
+    string (MISSING / FAILED / COMPLETE_WITH_WARNINGS / None all -> 0.0, so a
+    persona shipped before this field existed is never penalised)."""
+    if task_category not in CRAFT_PRIMARY_DOMAINS:
+        return 0.0
+    if appendix_status == "COMPLETE":
+        return _appendix_completeness_bonus_max()
+    return 0.0
+
+
+# ── Specialty (custom-tag) specialist routing — DEPARTMENT-AGNOSTIC (v14.22.0) ──
+# Root-cause of the department-brittle specialist defects:
+#   • 'network marketing recruiting downline duplication' NEVER selected the real
+#     specialist brunson-network-marketing-secrets (returned hormozi/allan-dib),
+#   • 'sketchnote' only reached rohde-the-sketchnote-workbook under dept=design.
+# WHY: the funnel gates the pool on the COARSE `domain` tags + DEPT_DOMAIN_TAGS, and
+# scoring rewards company/mission fit. brunson-network-marketing-secrets carries the
+# SAME generic domain[]=[marketing,sales,copywriting] as hormozi/allan-dib, so domain
+# routing cannot distinguish it, and under a department whose DEPT_DOMAIN_TAGS does not
+# include those domains (e.g. general-task) Stage B drops it entirely. The DISTINCTIVE
+# signal — persona-categories.json `custom[]` (brunson: mlm/network-marketing/recruiting/
+# duplication; rohde: sketchnoting/visual-thinking/idea-mapping) — was never read.
+#
+# Fix (additive-only, never-to-zero, department-agnostic, mirrors craft/perspective):
+#   1. SPECIALIST RECALL (build_candidate_pool): any persona in the FULL library whose
+#      distinctive custom[] specialty tags the task EXPLICITLY names is UNIONed into the
+#      final candidate pool — so a clearly-named specialist is a scoring candidate no
+#      matter which department, governing pool, or semantic top-k is in play.
+#   2. SPECIALTY BONUS (select_persona): that persona earns a bounded, graded,
+#      task_fit-coupled bonus so it actually WINS over a generic on-brand persona.
+# A generic task names NO custom tag -> empty hit set -> 0.0 effect everywhere, so this
+# is provably inert on ordinary tasks (no behaviour change; mission still dominates).
+
+# Over-generic single-word custom tags that must NOT, alone, mark a specialist (they are
+# just coarse domain words and would over-fire). A multi-word tag containing one of these
+# (e.g. "direct-sales") is still distinctive and is kept.
+_SPECIALTY_GENERIC_STOP = {
+    "marketing", "sales", "copy", "copywriting", "content", "design", "video", "audio",
+    "strategy", "leadership", "coaching", "mindset", "finance", "operations",
+    "communication", "productivity", "systems", "general", "business", "growth",
+}
+
+
+def _stem_match(a: str, b: str) -> bool:
+    """True if two single tokens denote the same concept: equal, or one is a prefix of
+    the other for a substantial shared stem (handles sketchnote~sketchnoting,
+    recruit~recruiting). Conservative: requires the shorter token to be >= 5 chars."""
+    if a == b:
+        return True
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    return len(short) >= 5 and long.startswith(short)
+
+
+def specialty_tag_hits(task_text: str, custom_tags) -> set:
+    """Return the set of a persona's DISTINCTIVE `custom` specialty tags that the task
+    text explicitly invokes. A hyphenated tag ('network-marketing') matches only when
+    EVERY one of its words is present (stem-aware) in the task; a single-word tag matches
+    as a stem-aware word. Over-generic single-word tags (_SPECIALTY_GENERIC_STOP) are
+    ignored. Empty set for a generic task -> never affects it."""
+    if not custom_tags:
+        return set()
+    text = (task_text or "").lower()
+    words = set(re.findall(r"[a-z0-9]+", text))
+    hits: set = set()
+    for raw in custom_tags:
+        t = _norm_tag(raw)
+        parts = [p for p in t.split("-") if p]
+        if not parts:
+            continue
+        # A single-word tag that is just a coarse domain word is not distinctive.
+        if len(parts) == 1 and parts[0] in _SPECIALTY_GENERIC_STOP:
+            continue
+        if len(parts) == 1 and len(parts[0]) < 4:
+            continue
+        # Every word of the tag must be present (stem-aware) in the task text.
+        if all(any(_stem_match(p, w) for w in words) for p in parts):
+            hits.add(t)
+    return hits
+
+
+def _specialty_bonus_max() -> float:
+    """Hard cap / scale of the specialty (custom-tag) specialist bonus (env-tunable)."""
+    try:
+        v = float(os.environ.get("SPECIALTY_TAG_BONUS", "0.40"))
+    except (TypeError, ValueError):
+        v = 0.40
+    return max(0.0, min(v, 0.6))
+
+
+def specialty_domain_bonus(num_hits: int, task_fit) -> float:
+    """Additive-only, never-to-zero specialist bonus for naming a persona's distinctive
+    specialty. Returns 0.0 when the task named none of the persona's custom tags. On a
+    match returns CAP * ramp(hits) * (0.5 + 0.5*task_fit), so naming the niche is a strong
+    but bounded, relevance-coupled signal. Guaranteed >= 0.0 and <= CAP."""
+    if num_hits <= 0:
+        return 0.0
+    cap = _specialty_bonus_max()
+    ramp = {1: 0.7, 2: 0.9}.get(num_hits, 1.0)
+    tf = max(0.0, min(float(task_fit), 1.0))
+    return round(min(cap * ramp * (0.5 + 0.5 * tf), cap), 4)
+
+
+def find_specialists_by_custom_tags(task_text: str, all_personas, categories_data) -> set:
+    """Department-agnostic SPECIALIST RECALL: personas in the full library whose
+    distinctive custom[] specialty tags the task explicitly invokes. Returns a set of
+    persona ids (subset of all_personas). Empty for a generic task -> inert."""
+    if not categories_data:
+        return set()
+    personas_data = categories_data.get("personas", {}) or categories_data
+    found: set = set()
+    avail = set(all_personas)
+    for pid, info in personas_data.items():
+        if pid not in avail or not isinstance(info, dict):
+            continue
+        if specialty_tag_hits(task_text, info.get("custom") or []):
+            found.add(pid)
+    return found
+
+
+def task_signal_bypasses_stickiness(task_text: str, paths: dict) -> bool:
+    """F3.5 — CHEAP task-signal gate on category-level stickiness.
+
+    Category stickiness serves ONE cached persona for the whole
+    (department, task_category) key with last_score >= 0.5, short-circuiting the
+    funnel, the Layer-5 semantic stage, and the perspective/specialty recall
+    bonuses (check_sticky_assignment + the main() short-circuit). With only ~17
+    coarse categories, two very different tasks collapse to the same key — e.g.
+    "write a sales email to Black women founders" and "write a cold email to
+    plumbing wholesalers" both infer (marketing, email-outreach) — so the second
+    task's cached pick is served for the first, and a lived-experience or named
+    specialist never gets a chance while the row is trusted (anti-staleness only
+    fires after ANTI_STALENESS_THRESHOLD identical picks).
+
+    This runs the two CHEAPEST task-signal detectors already in this module —
+    both pure Python, NO embedding, NO subprocess, NO network — and returns True
+    if EITHER fires (the task explicitly invokes a perspective LENS or names a
+    distinctive SPECIALTY the library carries):
+
+      1. infer_task_perspectives(): pure-regex scan over PERSPECTIVE_KEYWORDS.
+      2. find_specialists_by_custom_tags(): substring probe of the task text
+         against personas' distinctive custom[] specialty tags (NO embedding).
+
+    A generic task fires NEITHER → returns False → the sticky fast path is left
+    exactly as-is (added cost: one keyword scan; the persona-categories.json read
+    is skipped entirely unless the perspective probe already came up empty).
+    Best-effort and fail-open: any load/parse error yields False so a signal
+    check can never break or slow the trusted fast path more than it already is.
+    """
+    try:
+        # Cheapest probe first — pure regex, no file I/O. Short-circuits the
+        # (still cheap) categories.json read for the common perspective case.
+        if infer_task_perspectives(task_text):
+            return True
+        pc_file = paths.get("persona_categories")
+        if not pc_file or not Path(pc_file).exists():
+            return False
+        try:
+            categories_data = json.loads(Path(pc_file).read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        all_personas = list_available_personas(paths)
+        if not all_personas:
+            return False
+        return bool(find_specialists_by_custom_tags(task_text, all_personas, categories_data))
+    except Exception:
+        return False
+
+
+# ── SOP persona-hint recall + bonus (F3.4 / F4.2) ─────────────────────────────
+# The governing SOP's `sops.persona_hints` list (canonical persona ids such as
+# `voss-never-split-difference`) was WRITTEN by five writers and READ by ZERO
+# consumers (F4.2 — the "Triad Rule: Task + SOP + Persona" was never enforced).
+# The selector now CONSUMES it, treating each hinted persona EXACTLY like a
+# specialty-recall specialist:
+#   • UNION the hinted personas into the scoring pool (department-agnostic,
+#     never-to-zero — only ever ADDS candidates; a hint can never remove one),
+#     surfaced at the FRONT of the semantic order so the LLM-finalist cap cannot
+#     drop the very persona the SOP asked for; and
+#   • grant a BOUNDED, additive, task_fit-coupled `sop_hint_bonus` (mirrors
+#     `specialty_domain_bonus`, cap ~0.30) so a RELEVANT hinted specialist wins,
+#     while a STALE / irrelevant hint (low task_fit) earns only a small nudge and
+#     CANNOT force a bad match over a strong semantic / specialty signal.
+
+
+def _sop_hint_bonus_max() -> float:
+    """Hard cap / scale of the SOP persona-hint bonus (env-tunable). Mirrors
+    _specialty_bonus_max(); default 0.30 keeps it strictly below the specialty-tag
+    cap (0.40) so an explicitly-named specialty always outranks a mere SOP hint."""
+    try:
+        v = float(os.environ.get("SOP_HINT_BONUS", "0.30"))
+    except (TypeError, ValueError):
+        v = 0.30
+    return max(0.0, min(v, 0.6))
+
+
+def sop_hint_bonus(task_fit) -> float:
+    """Additive-only, never-to-zero bonus for a persona the governing SOP hinted.
+    Returns CAP * (0.5 + 0.5*task_fit): a hint is a strong but bounded, relevance-
+    coupled signal — an on-topic hinted persona (high task_fit) approaches the cap,
+    a stale hint (low task_fit) earns roughly half. Guaranteed >= 0.0 and <= CAP.
+    Mirrors specialty_domain_bonus()'s task_fit coupling with a fixed ramp of 1.0
+    (a persona is either hinted or not — there is no hit-count to graduate)."""
+    cap = _sop_hint_bonus_max()
+    tf = max(0.0, min(float(task_fit), 1.0))
+    return round(min(cap * (0.5 + 0.5 * tf), cap), 4)
+
+
+def _build_sop_match_text(task: str, sop_name=None, sop_steps=None,
+                          sop_slug=None) -> str:
+    """Fold the governing SOP's name + step names (+ slug tokens) into the task
+    text to form ONE composite query. This composite is the string used for
+    infer_task_category, Stage-C semantic retrieval, and the Layer-5 task_fit
+    embed — passing the SAME string to Stage-C and Layer-5 means the shared
+    module-level embedding cache produces exactly ONE embed for the whole
+    selection (no extra API call for the SOP context).
+
+    Never-to-zero: with no SOP context supplied the result is byte-identical to
+    `task`, so the default (no --sop-*) path is provably unchanged."""
+    parts = [task or ""]
+    if sop_name:
+        parts.append(str(sop_name))
+    if sop_steps:
+        parts.extend(str(s) for s in sop_steps if s)
+    if sop_slug:
+        # slug tokens ("build-a-website" -> "build a website") add mild signal.
+        parts.append(str(sop_slug).replace("-", " "))
+    text = " ".join(p.strip() for p in parts if p and p.strip())
+    return text or (task or "")
+
+
+# Gemini-search script candidate locations (checked in order). The canonical INSTALLED
+# wrappers (~/.openclaw/scripts and /data/.openclaw/scripts on VPS) are FIRST, matching
+# the resolver order documented in orchestrator.py / the repo-hygiene path sweep; the
+# legacy ~/.openclaw/workspace/scripts and /data/.openclaw/workspace/scripts locations are
+# kept only as deprioritized fallbacks for old boxes.
+_GEMINI_SEARCH_CANDIDATES = [
+    Path(__file__).parent / "gemini-search.py",
+    Path.home() / ".openclaw" / "scripts" / "gemini-search.py",
+    Path("/data/.openclaw/scripts/gemini-search.py"),
+    Path.home() / ".openclaw" / "workspace" / "scripts" / "gemini-search.py",
+    Path("/data/.openclaw/workspace/scripts/gemini-search.py"),
+    Path.home() / "Downloads" / "openclaw-master-files" / "23-ai-workforce-blueprint" / "scripts" / "gemini-search.py",
+]
+
+
+def _find_gemini_search() -> "Path | None":
+    """Locate the gemini-search.py script. Returns None if not found."""
+    for c in _GEMINI_SEARCH_CANDIDATES:
+        if c.exists():
+            return c
+    return None
+
+
+def _load_governing_personas(paths: dict, department: str) -> "list | None":
+    """
+    Stage A: load governing-personas.md for the department and return the
+    pre-qualified persona ID list. Returns None when the file is absent
+    (caller falls back to full library — never-to-zero).
+
+    Parser notes:
+    - create_role_workspaces.py writes backtick-wrapped IDs in a markdown table
+      (e.g. `bly-copywriters-handbook`) — caught by the ID regex below.
+    - generate-governing-personas.sh writes author NAMES, not IDs, in the
+      "## Available Persona Pool" section; these do NOT match the ID regex, so
+      the shell-generated stub legitimately yields None → "all personas" fallback.
+      Do NOT expand the regex to match author names — that would produce garbage.
+    """
+    import re as _re
+    company_root = paths.get("company_root")
+    if not company_root:
+        return None
+    # Try canonical path and legacy alternatives
+    dept_candidates = [
+        company_root / "departments" / department / "governing-personas.md",
+        company_root / department / "governing-personas.md",
+    ]
+    for dept_path in dept_candidates:
+        if dept_path.exists():
+            text = dept_path.read_text(encoding="utf-8", errors="replace")
+            personas: set = set()
+            for m in _re.finditer(r"(?:^|\s)([a-z][a-z0-9]+-[a-z0-9-]+)(?=\s|$|,|\))", text, _re.MULTILINE):
+                personas.add(m.group(1))
+            if personas:
+                return sorted(personas)
+    return None
+
+
+def _category_filter(candidates: list, department: str, task_text: str,
+                     categories_data: dict) -> list:
+    """
+    Stage B (PRD item 1.2): narrow candidates to those whose domain tags
+    intersect the combined department + task-derived domain tag set.
+
+    Fixes three defects from the prior _dept_keyword_filter() implementation:
+      Defect 1 — reads correct key: `domain` (not `domain_tags`/`tags`)
+      Defect 2 — normalises both sides via _norm_tag() before intersection
+                 (DEPT_DOMAIN_TAGS had Title-Case/slash; personas have lowercase-hyphen)
+      Defect 3 — adds task-derived domains from infer_task_category() to the
+                 filter set so a finance task in a marketing dept still surfaces
+                 finance-aligned personas
+
+    Never-to-zero: returns `candidates` unchanged when:
+      - categories_data is empty (fresh install, Skill 22 hasn't run)
+      - filter_tags is empty (no dept entry + general task category)
+      - intersection is empty (no persona matches the combined tags)
+    """
+    if not categories_data:
+        return candidates  # never-to-zero: Skill 22 not yet run
+
+    # Build normalised department tag set
+    raw_dept_tags = DEPT_DOMAIN_TAGS.get(department, [])
+    dept_tags = {_norm_tag(t) for t in raw_dept_tags}
+
+    # Add task-category-derived domain tags (Defect 3)
+    task_cat = infer_task_category(task_text)  # "general" when stub active
+    raw_task_tags = _CATEGORY_DOMAINS.get(task_cat, set())
+    task_tags = {_norm_tag(t) for t in raw_task_tags}
+    filter_tags = dept_tags | task_tags
+
+    if not filter_tags:
+        return candidates  # never-to-zero: no tags to filter by
+
+    personas_data = categories_data.get("personas", {}) or categories_data
+
+    def _match(tagset):
+        """Return candidates whose persona domain intersects `tagset`."""
+        out = []
+        for c in candidates:
+            info = personas_data.get(c, {})
+            # Primary key: `domain` (Defect 1 fix). Fallback keys kept so a future
+            # schema change producing domain_tags/tags still works; primary wins.
+            # IMPORTANT: do NOT change persona-categories.json to add domain_tags —
+            # fixing Defect 1 is selector-side only (see PRD 1.2 risk note §7.9).
+            raw_ptags = (info.get("domain") or info.get("domain_tags") or info.get("tags") or [])
+            ptags = {_norm_tag(t) for t in raw_ptags}
+            if ptags & tagset:
+                out.append(c)
+        return out
+
+    # PER-STAGE SPLIT (PRD Deliverable-7): when the inferred task category maps to a
+    # SPECIFIC, non-empty domain family (e.g. video-edit -> {editing,montage,
+    # visual-storytelling,video}; video-script -> {copywriting,marketing,communication}),
+    # PREFER narrowing to that family so a multi-family department (video spans BOTH the
+    # production-craft and the copy families in DEPT_DOMAIN_TAGS) routes deterministically:
+    # an "edit the montage / pace the cut" task surfaces the editing persona, while a
+    # "write the video script/hook" task surfaces a copy persona. Only when the
+    # task-family intersection is empty do we fall back to the broad dept-tag union
+    # (never-to-zero). When the task category is "general" (task_tags empty) the broad
+    # union path below is taken exactly as before — no behavior change for non-craft tasks.
+    if task_tags:
+        task_family_match = _match(task_tags)
+        if task_family_match:
+            return task_family_match
+
+    filtered = _match(filter_tags)
+    return filtered if filtered else candidates  # never-to-zero guard
+
+
+def _semantic_candidate_retrieval(task_text: str, paths: dict, top_k: int = 10) -> "list | None":
+    """
+    Stage C: return an ordered list of persona IDs most similar to the task,
+    or None if the search engine is unavailable/errors.
+
+    G13 / PRD item 1.8 — PRIMARY path is now the in-process programmatic API
+    semantic_task_fit.semantic_persona_ids(). It embeds the task ONCE and caches
+    that embedding in the shared module-level cache, so Layer-5 task-fit reuses
+    the SAME vector instead of paying for a second embed. The prior design
+    embedded the task twice per selection: once inside the gemini-search.py
+    subprocess here, and again in-process for Layer 5. Routing Stage C through
+    the shared API collapses that to a single embed (the core G13 efficiency win)
+    AND removes a subprocess spawn from the hot path.
+
+    FALLBACK path (unchanged contract) — gemini-search.py subprocess, used only
+    when the programmatic API is unavailable or returns no candidates (e.g. the
+    semantic_task_fit module is not importable, or numpy/genai is missing but the
+    standalone script still works). CLI contract matched to gemini-search.py as
+    it exists (PRD item 1.2 Defect 4 fix):
+      argv: [python3, gemini-search.py, "--limit", N, "--", task_text]
+      ("--limit" MUST precede "--": argparse treats everything after "--" as
+       positionals, so a trailing "--limit N" there is parsed as stray
+       positional args → exit 2 and the semantic stage goes dark.)
+      stdout: human text; both semantic and keyword-fallback paths print
+              "PERSONA: <id>" on each result line — one regex catches both:
+                [N] SCORE: 0.83 | PERSONA: hormozi-100m-offers
+                [N] KEYWORD-HITS: 4 | PERSONA: bly-copywriters-handbook
+      The "--" before task_text guards against task descriptions that begin
+      with "-" being parsed by argparse as flags.
+
+    ID-convention note: the index stores persona FOLDER names as IDs (e.g.
+    "hormozi-100m-offers").  These are the same IDs used as keys in
+    persona-categories.json, so Stage C's intersection with pool_b self-heals
+    naming mismatches via never-to-zero (empty intersection → keep pool_b).
+    """
+    # PRIMARY (G13): in-process, single shared task embedding.
+    if SEMANTIC_PERSONA_IDS_AVAILABLE:
+        try:
+            ids = semantic_persona_ids(task_text, paths, top_k=top_k)
+            if ids:
+                return ids
+        except Exception:
+            pass  # fall through to subprocess fallback (never-to-zero)
+
+    # FALLBACK: gemini-search.py subprocess (legacy contract).
+    import re as _re
+    import subprocess as _subprocess
+    sp = _find_gemini_search()
+    if not sp:
+        return None
+    try:
+        r = _subprocess.run(
+            [sys.executable, str(sp), "--limit", str(top_k), "--", task_text],
+            capture_output=True, text=True, timeout=20,
+        )
+        if r.returncode != 0:
+            return None
+        # Parse "PERSONA: <id>" from both embedding and keyword-fallback output.
+        ids: list = []
+        seen: set = set()
+        for m in _re.finditer(r"PERSONA:\s*(\S+)", r.stdout):
+            pid = m.group(1).strip()
+            if pid and pid not in seen:
+                seen.add(pid)
+                ids.append(pid)
+        return ids if ids else None
+    except Exception:
+        return None
+
+
+def build_candidate_pool(task_text: str, department: str, all_personas: list,
+                          paths: dict, sop_hints: list = None) -> tuple:
+    """
+    Run the three-stage pre-scoring funnel and return
+    (candidate_list, funnel_dict, semantic_order).
+
+    semantic_order (G13): the funnel survivors ordered by semantic rank (best
+    task-match first), or [] when no semantic signal was available. select_persona
+    uses it to cap Stage-D LLM finalists to the most task-relevant personas.
+
+    Safety invariant: each stage count is >= 1 whenever all_personas is non-empty,
+    and counts are monotonically non-increasing (pool >= category >= semantic)
+    because every stage is a filter-or-fallback, never a strict reduction.
+    The no-personas case is handled upstream at select_persona() line ~1055.
+
+    Stage A: governing-personas.md pool, or all_personas if absent.
+    Stage B: category-tag filter (persona-categories.json `domain` key +
+             infer_task_category derived tags). Never-to-zero.
+    Stage C: gemini-search semantic retrieval — intersect with Stage B result.
+             If intersection is empty, keep Stage B result (never-to-zero).
+
+    funnel_dict canonical keys (PRD 1.2 contract):
+      pool     — Stage A count  (governing pool or full library)
+      category — Stage B count  (after category-tag filter)
+      semantic — Stage C count  (after semantic intersection)
+    Plus additive diagnostics (dashboard use, not canonical):
+      pool_source    — "governing-personas.md" | "all (no governing-personas.md)"
+      semantic_engine — "gemini-search" | "unavailable (fallback to Stage B)"
+    """
+    # Load persona-categories.json for Stage B
+    pc_file = paths.get("persona_categories")
+    categories_data: dict = {}
+    if pc_file and Path(pc_file).exists():
+        try:
+            categories_data = json.loads(Path(pc_file).read_text(encoding="utf-8"))
+        except Exception:
+            categories_data = {}
+
+    # Stage A — governing pool or full library (never-to-zero)
+    governing = _load_governing_personas(paths, department)
+    if governing:
+        pool_a = [p for p in governing if p in all_personas]
+        if not pool_a:
+            pool_a = all_personas  # governing list references personas not yet installed
+        pool_note = "governing-personas.md"
+    else:
+        pool_a = list(all_personas)
+        pool_note = "all (no governing-personas.md)"  # PRD literal — dashboard greps for this
+
+    # Stage B — category-tag filter (Defects 1-3 fixed; task_text feeds infer_task_category)
+    pool_b = _category_filter(pool_a, department, task_text, categories_data)
+
+    # Stage C — semantic retrieval (G13: in-process shared-embed primary;
+    # gemini-search subprocess fallback — Defect 4 CLI contract preserved there)
+    semantic_ids = _semantic_candidate_retrieval(task_text, paths, top_k=10)
+    if semantic_ids:
+        semantic_set = set(semantic_ids)
+        intersection = [p for p in pool_b if p in semantic_set]
+        pool_c = intersection if intersection else pool_b  # never-to-zero
+        semantic_note = "gemini-search"
+    else:
+        pool_c = pool_b
+        semantic_note = "unavailable (fallback to Stage B)"
+
+    # SPECIALIST RECALL (v14.22.0) — department-agnostic. UNION in any persona from the
+    # FULL library whose distinctive custom[] specialty tags the task explicitly names,
+    # so a clearly-named specialist (e.g. brunson-network-marketing-secrets on a network-
+    # marketing task, rohde-the-sketchnote-workbook on a sketchnote task) is ALWAYS a
+    # scoring candidate even when DEPT_DOMAIN_TAGS / governing pool / semantic top-k
+    # would have gated it out. Never-to-zero: only ever ADDS candidates.
+    #
+    # IMPORTANT — the canonical funnel counts (pool >= category >= semantic) describe the
+    # NARROWING funnel and MUST stay monotonic (PRD 1.2 invariant; A6 guard). Recall is an
+    # EXPANSION, so it is reported on a SEPARATE "recalled" key and the semantic count is
+    # captured PRE-recall. The returned scoring candidate list still includes the recalled
+    # specialists (they participate in Stage-D scoring); only the reported funnel counts
+    # are kept monotonic.
+    semantic_count = len(pool_c)  # pre-recall — preserves pool >= category >= semantic
+    specialists = find_specialists_by_custom_tags(task_text, all_personas, categories_data)
+    recalled = sorted(s for s in specialists if s not in set(pool_c))
+
+    # SOP PERSONA-HINT UNION (F3.4 / F4.2) — department-agnostic, never-to-zero.
+    # UNION in any INSTALLED persona named by the governing SOP's persona_hints
+    # that neither the funnel nor specialty-recall already surfaced. Only ever
+    # ADDS candidates (a hint can never remove one); non-installed / unknown ids
+    # are dropped (never reference a persona that isn't on this box). Reported on
+    # a SEPARATE "hinted" key so the narrowing funnel counts stay monotonic
+    # (pool >= category >= semantic), exactly like "recalled".
+    avail_set = set(all_personas)
+    already = set(pool_c) | set(recalled)
+    hinted = sorted(h for h in (sop_hints or []) if h in avail_set and h not in already)
+    candidates = list(pool_c) + recalled + hinted
+
+    # G13: survivors ranked by semantic relevance (best first). Used by
+    # select_persona to keep the top-N finalists when capping LLM fan-out.
+    # Empty when there was no semantic signal (caller degrades gracefully).
+    # Recalled specialists AND SOP-hinted personas are surfaced at the FRONT of
+    # the semantic order so the LLM-finalist cap (when bounded) cannot drop the
+    # very persona we recalled or the SOP asked for.
+    cand_set = set(candidates)
+    recalled_set = set(recalled)
+    hinted_set = set(hinted)
+    front = list(recalled) + list(hinted)
+    front_set = recalled_set | hinted_set
+    semantic_order = (front
+                      + [p for p in (semantic_ids or []) if p in cand_set and p not in front_set])
+
+    # Emit canonical 3 keys (PRD 1.2 §3 output contract) + additive diagnostics
+    funnel = {
+        "pool": len(pool_a),
+        "category": len(pool_b),
+        "semantic": semantic_count,
+        "recalled": len(recalled),
+        "hinted": len(hinted),
+        "pool_source": pool_note,
+        "semantic_engine": semantic_note,
+    }
+    return candidates, funnel, semantic_order
+
+
+def read_recent_use_counts(department_id: str, task_category: str,
+                            window_hours: int, db_path: Path) -> dict:
+    """Return {persona_id: count} of selections in last window_hours for this
+    (department, task_category). READS persona_selection_log (which Track A
+    is also using for its history table — additive, no conflict). If the DB
+    is missing or unreadable, returns {} so the variety penalty becomes a
+    no-op and the selector still works."""
+    if not db_path or not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # Match `"task_category":"<cat>"` OR `"task_category": "<cat>"` —
+        # we use whitespace-tolerant separate %-clauses chained together so
+        # both compact (selector-written, v10.14.28+) and pretty-printed
+        # (legacy rows from any external writer) JSON match.
+        cur.execute(
+            """
+            SELECT persona_id, COUNT(*) AS uses
+            FROM persona_selection_log
+            WHERE department_id = ?
+              AND COALESCE(layer_scores, '') LIKE ?
+              AND COALESCE(layer_scores, '') LIKE ?
+              AND selected_at >= datetime('now', ?)
+            GROUP BY persona_id
+            """,
+            (
+                department_id,
+                '%task_category%',
+                f'%{task_category}%',
+                f"-{int(window_hours)} hours",
+            ),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return {pid: int(uses) for pid, uses in rows if pid}
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: recent_use_counts read failed: {e}",
+              file=sys.stderr)
+        return {}
+
+
+def variety_window_hours_for_department(department_id: str, db_path: Path) -> int:
+    """P9-2: return the variety look-back window (hours) scoped to
+    department_id's own recent task velocity, instead of the single global
+    VARIETY_WINDOW_HOURS constant every department previously shared.
+
+    Falls back to the global VARIETY_WINDOW_HOURS constant, UNCHANGED, when
+    department_id is falsy (unknown department) or the DB is unavailable /
+    unreadable — so a caller that doesn't know its department (or a box with
+    no DB yet) behaves EXACTLY as before this fix. Preserves existing
+    behaviour by construction: this function only ever WIDENS or NARROWS the
+    span for a KNOWN department; read_recent_use_counts()'s own
+    department_id scoping of the count itself is unchanged.
+
+    Velocity is sampled cheaply (a single COUNT(*) over the last
+    DEPT_VARIETY_LOOKBACK_DAYS days) — no new tables, no embeddings.
+    """
+    if not department_id or not db_path or not db_path.exists():
+        return VARIETY_WINDOW_HOURS
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM persona_selection_log
+            WHERE department_id = ?
+              AND selected_at >= datetime('now', ?)
+            """,
+            (department_id, f"-{int(DEPT_VARIETY_LOOKBACK_DAYS)} days"),
+        )
+        row = cur.fetchone()
+        conn.close()
+        count = int(row[0]) if row and row[0] is not None else 0
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: variety_window_hours_for_department "
+              f"read failed: {e}", file=sys.stderr)
+        return VARIETY_WINDOW_HOURS
+
+    per_day = count / float(DEPT_VARIETY_LOOKBACK_DAYS)
+    if per_day < DEPT_VARIETY_LOW_VOLUME_PER_DAY:
+        return int(VARIETY_WINDOW_HOURS * DEPT_VARIETY_WIDEN_MAX)
+    if per_day > DEPT_VARIETY_HIGH_VOLUME_PER_DAY:
+        return max(1, int(VARIETY_WINDOW_HOURS * DEPT_VARIETY_NARROW_MIN))
+    return VARIETY_WINDOW_HOURS
+
+
+def variety_penalty_factor(recent_use_count: int) -> float:
+    """Return the score multiplier for a persona used N times recently.
+    0 uses → 1.0 (no penalty). 5+ uses → 0.6 (40% penalty, capped)."""
+    capped = min(max(int(recent_use_count), 0), VARIETY_PENALTY_CAP_USES)
+    return 1.0 - VARIETY_PENALTY_PER_USE * capped
+
+
+def pick_with_variety(scored: list) -> tuple:
+    """Pick a persona from `scored` (already sorted desc by adjusted score).
+    Returns (picked_dict, picked_index, was_sampled_bool). If the top score
+    dominates the #3 (or the last in the pool) by ≥VARIETY_DOMINANCE_RATIO,
+    just picks #1 deterministically. Otherwise samples from the top-N
+    weighted by adjusted score so variety shows up over many calls without
+    introducing noise into clear winners."""
+    if not scored:
+        return None, -1, False
+    pool = scored[:VARIETY_SAMPLE_TOP_N]
+    if len(pool) == 1:
+        return pool[0], 0, False
+    top = pool[0]["score"]
+    floor = pool[-1]["score"]
+    # If the bottom of the pool is zero/negative, dominance ratio is undefined;
+    # fall back to deterministic top-1 to avoid divide-by-zero weirdness.
+    if floor <= 0:
+        return pool[0], 0, False
+    if top >= VARIETY_DOMINANCE_RATIO * floor:
+        return pool[0], 0, False
+    weights = [max(s["score"], 1e-6) for s in pool]
+    seed = os.environ.get(VARIETY_SAMPLE_SEED_ENV)
+    rng = random.Random(seed) if seed else random
+    picked = rng.choices(pool, weights=weights, k=1)[0]
+    idx = scored.index(picked)
+    return picked, idx, True
+
+
+def write_persona_selection_log_row(db_path: Path, entry: dict):
+    """Insert a row into persona_selection_log so the next call's variety
+    lookup can see this pick. Idempotent-ish: if task_id is repeated we just
+    append (the table has no UNIQUE on task_id, only an index). Stuffs
+    task_category into layer_scores JSON so read_recent_use_counts can scope
+    by category without a schema change."""
+    if not db_path or not db_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # Compact JSON (no spaces) so read_recent_use_counts can LIKE-match
+        # `"task_category":"<cat>"` without worrying about default-pretty-print
+        # whitespace drift. Same row format the variety query expects.
+        layer_json = json.dumps({
+            "task_category":   entry.get("task_category", "general"),
+            "layers":          entry.get("layers", {}),
+            "variety_applied": entry.get("variety_applied", False),
+        }, default=str, separators=(",", ":"))
+        cur.execute(
+            """
+            INSERT INTO persona_selection_log
+                (task_id, persona_id, persona_name, mode, score,
+                 layer_scores, department_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                entry.get("task_id") or f"selector-{os.urandom(4).hex()}",
+                entry["persona_id"],
+                entry.get("persona_name") or entry["persona_id"],
+                entry.get("mode") or "leadership",
+                float(entry.get("score", 0.0)),
+                layer_json,
+                entry.get("department", ""),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: persona_selection_log insert failed: {e}",
+              file=sys.stderr)
+
+
+def write_persona_assignment_db(db_path: Path, entry: dict):
+    """Upsert into persona_assignment table. Best-effort, never raises.
+
+    Anti-staleness guard (v10.8.0): when the same persona is selected for
+    the same (department, task_category) ≥5 times in a row WITHOUT switching,
+    `needs_review` is flipped to 1. The orchestrator / dashboard surfaces
+    rows with needs_review=1 so a human (or a meta-agent) can decide whether
+    the stickiness is genuine or a sign the selector has gone deaf.
+    """
+    if not db_path or not db_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(db_path))
+        _ensure_persona_assignment_columns(conn)
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT persona_id, switch_count, consecutive_count, needs_review "
+            "FROM persona_assignment "
+            "WHERE department_id = ? AND task_category = ?",
+            (entry["department"], entry["task_category"]),
+        )
+        existing = cur.fetchone()
+        switch_count = 0
+        consecutive_count = 1
+        if existing:
+            (existing_persona_id, existing_switch_count,
+             existing_consecutive, existing_needs_review) = existing
+            switch_count = existing_switch_count or 0
+            if existing_persona_id != entry["persona_id"]:
+                # Persona switched — fresh streak (and a switch heals the flag).
+                switch_count += 1
+                consecutive_count = 1
+            elif existing_needs_review == 1:
+                # Post-flag re-score CONFIRMED the same persona: the v14.23.3 gate
+                # busted the stale cache, main() re-scored, and this persona
+                # genuinely won again. Reset the streak so it earns a fresh trust
+                # window instead of immediately re-flagging — periodic re-validation,
+                # no thrash.
+                consecutive_count = 1
+            else:
+                consecutive_count = (existing_consecutive or 0) + 1
+
+        # Anti-staleness flag: same persona ≥ THRESHOLD in a row WITHOUT a switch
+        needs_review = 1 if consecutive_count >= ANTI_STALENESS_THRESHOLD else 0
+        if needs_review:
+            print(
+                f"[persona-selector] FLAG: {entry['persona_id']} selected "
+                f"{consecutive_count}x in a row for "
+                f"({entry['department']}, {entry['task_category']}) — "
+                f"needs_review=1",
+                file=sys.stderr,
+            )
+
+        cur.execute(
+            """
+            INSERT INTO persona_assignment
+                (department_id, task_category, persona_id, persona_name,
+                 persona_mode, persona_version, last_score, last_assigned_at,
+                 switch_count, consecutive_count, needs_review)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+            ON CONFLICT (department_id, task_category) DO UPDATE SET
+                persona_id        = excluded.persona_id,
+                persona_name      = excluded.persona_name,
+                persona_mode      = excluded.persona_mode,
+                persona_version   = excluded.persona_version,
+                last_score        = excluded.last_score,
+                last_assigned_at  = excluded.last_assigned_at,
+                switch_count      = excluded.switch_count,
+                consecutive_count = excluded.consecutive_count,
+                needs_review      = excluded.needs_review
+            """,
+            (
+                entry["department"],
+                entry["task_category"],
+                entry["persona_id"],
+                entry.get("persona_name") or entry["persona_id"],
+                entry.get("mode"),
+                int(entry.get("persona_version", 1)),
+                float(entry.get("score", 0.0)),
+                switch_count,
+                consecutive_count,
+                needs_review,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: persona_assignment upsert failed: {e}", file=sys.stderr)
+
+
+def record_selection(selection: dict, task_text: str, department: str, db_path: Path):
+    """
+    Persist a selection to both persona-selection-log.md and the
+    persona_assignment DB table. Adds no fields to the selection dict
+    (returns None). Safe to call after main() prints the result.
+    """
+    from datetime import datetime
+    if not selection or not selection.get("persona_id"):
+        return  # nothing to record (e.g., mechanical task / no persona)
+
+    llm_meta = selection.get("layers", {}).get("_llm_reasoning", {}) if isinstance(selection.get("layers"), dict) else {}
+    reasoning_parts = []
+    for k in ("mission", "owner_values", "company_kpis", "dept_kpis"):
+        v = llm_meta.get(k) if isinstance(llm_meta, dict) else None
+        if v:
+            reasoning_parts.append(f"{k}: {v[:60]}")
+    reasoning = " | ".join(reasoning_parts) if reasoning_parts else "(heuristic mode — no LLM reasoning)"
+
+    entry = {
+        "date":           datetime.now().strftime("%Y-%m-%d"),
+        "task_id":        os.environ.get("OPENCLAW_TASK_ID", "(no-task-id)"),
+        "department":     department,
+        "task_category":  selection.get("task_category", "general"),
+        "persona_id":     selection["persona_id"],
+        "persona_name":   selection.get("persona_name") or selection["persona_id"],
+        "mode":           selection.get("interaction_mode") or selection.get("mode") or "leadership",
+        "persona_version": selection.get("persona_version", 1),
+        "score":          selection.get("score", 0.0),
+        "reasoning":      reasoning,
+        "layers":         selection.get("layers", {}),
+        "variety_applied": selection.get("variety_applied", False),
+    }
+    write_selection_log_md(find_selection_log(), entry)
+    write_persona_assignment_db(db_path, entry)
+    # v10.14.28: per-pick history row so the NEXT call's variety penalty can
+    # see who's been getting hammered. Track A's perm fix is required for the
+    # write to succeed on locked-down clients; failure is logged and ignored
+    # (variety degrades to baseline behavior — still correct, just stickier).
+    write_persona_selection_log_row(db_path, entry)
+
+
+def record_task_completion(task_id: str, persona_id: str, department: str,
+                            task_category: str, task_text: str, task_output: str,
+                            db_path: Path = None) -> dict:
+    """
+    Invoke verify-persona-adherence.py to score how well the agent's output
+    followed the assigned persona's methodology. Writes the result to
+    persona_assignment.verification_json + verification_last_score +
+    verification_count via the verify script's own DB writer.
+
+    This is the WIRING that the v2.0 audit Phase 16 PM4 flagged as missing:
+    the script existed but nothing called it. Now persona-selector-v2.py
+    itself can be invoked with --mode record-completion to trigger the
+    adherence verification post-task.
+
+    Returns the verify script's JSON result (or an error dict on failure).
+    """
+    import subprocess
+    if db_path is None:
+        db_path = find_dashboard_db()
+
+    verify_script = Path(__file__).parent / "verify-persona-adherence.py"
+    if not verify_script.exists():
+        return {
+            "ok": False,
+            "error": f"verify-persona-adherence.py not found at {verify_script}",
+        }
+
+    # Write task_output to a temp file (CLI takes --output-file or --output-text;
+    # using a file avoids any shell quoting / large-content issues).
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False,
+                                       encoding="utf-8") as tmp:
+        tmp.write(task_output)
+        tmp_path = tmp.name
+
+    cmd = [
+        sys.executable, str(verify_script),
+        "--persona-id", persona_id,
+        "--task-id",    task_id,
+        "--department", department,
+        "--task-category", task_category,
+        "--task-text",  task_text[:1500],
+        "--output-file", tmp_path,
+        "--format",     "json",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        if proc.returncode != 0:
+            return {
+                "ok":         False,
+                "error":      f"verify exited {proc.returncode}",
+                "stderr":     proc.stderr[:500],
+            }
+        try:
+            result = json.loads(proc.stdout)
+            result["ok"] = True
+            return result
+        except json.JSONDecodeError:
+            return {
+                "ok":     False,
+                "error":  "verify output not JSON",
+                "stdout": proc.stdout[:500],
+            }
+    except subprocess.TimeoutExpired:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return {"ok": False, "error": "verify-persona-adherence timed out (120s)"}
+    except Exception as e:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def apply_weight_overrides(persona_id: str, base_score: float, department_id: str,
+                            task_category: str, db_path: Path) -> tuple:
+    """Returns (adjusted_score, applied_factor)."""
+    if os.environ.get('OPENCLAW_COMPANY_ID'):
+        # Global adaptation has no company namespace; retain unbiased base score.
+        return base_score, 1.0
+    if not db_path or not db_path.exists():
+        return base_score, 1.0
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT adjustment_factor FROM persona_weight_overrides
+            WHERE persona_id = ?
+              AND (department_id = ? OR department_id IS NULL)
+              AND (task_category = ? OR task_category IS NULL)
+              AND (expires_at IS NULL OR expires_at > datetime('now'))
+            ORDER BY applied_at DESC LIMIT 1
+        """, (persona_id, department_id, task_category))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return base_score * row[0], row[0]
+    except sqlite3.Error:
+        pass
+    return base_score, 1.0
+
+
+# -------- Persona scoring (reads behavioral profile from USER.md) --------
+def read_owner_profile(paths: dict) -> str:
+    """Read the behavioral profile section of USER.md (fallback to full USER.md)."""
+    user_md = paths["user_md"]
+    if not user_md.exists():
+        return ""
+    content = user_md.read_text(encoding="utf-8", errors="replace")
+    marker = "## Behavioral Identity Profile"
+    if marker in content:
+        start = content.index(marker)
+        # Stop at next ## not part of behavioral
+        rest = content[start:]
+        next_sec = rest.find("\n## ", 100)
+        if next_sec > 0:
+            return rest[:next_sec]
+        return rest[:2000]
+    fallback = "## Owner Identity Profile"
+    if fallback in content:
+        start = content.index(fallback)
+        return content[start : start + 1500]
+    return content[:600]
+
+
+def list_available_personas(paths: dict) -> list:
+    """Read persona-categories.json or scan personas dir.
+
+    Schema 1.0 wraps the 40 persona IDs under a top-level "personas" key alongside
+    metadata fields (schemaVersion, created, domainTags, perspectiveTags). The
+    pre-v10.14.27 version returned `list(data.keys())` which yielded the 5 meta
+    fields instead of the 40 real persona IDs — causing the selector to score
+    "schemaVersion" / "created" / "domainTags" / "perspectiveTags" / "personas"
+    as if they were personas and return the title-cased meta-key
+    ("Schemaversion") as the chosen persona for every task. Fixed in v10.14.27
+    (PR #24); v10.14.28 keeps that fix and adds the variety logic on top.
+    """
+    pc_file = paths["persona_categories"]
+    if pc_file.exists():
+        try:
+            data = json.loads(pc_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                # Schema 1.0 (current): personas live under data["personas"].
+                if isinstance(data.get("personas"), dict):
+                    # FDN-1 / F3.1: a persona tagged fallback:true (the generic
+                    # house-voice default) is a PERMANENT SEED that must NEVER
+                    # compete in the normal funnel — only _fallback_persona()
+                    # may return it. Dropping it at the single source of the
+                    # candidate universe keeps it out of Stage A/B/C (Stage C's
+                    # intersect-with-pool_b then filters it out of semantic hits
+                    # too) and out of the deterministic "first seed key" default.
+                    return [
+                        k for k, v in data["personas"].items()
+                        if not (isinstance(v, dict) and v.get("fallback"))
+                    ]
+                if isinstance(data.get("personas"), list):
+                    return [
+                        d.get("id") or d.get("name")
+                        for d in data["personas"]
+                        if isinstance(d, dict) and not d.get("fallback")
+                    ]
+                # Legacy flat-dict schema: filter out known meta-keys.
+                META_KEYS = {"schemaVersion", "schema_version", "created",
+                             "updated", "domainTags", "domain_tags",
+                             "perspectiveTags", "perspective_tags",
+                             "personas", "metadata", "version"}
+                return [k for k in data.keys() if k not in META_KEYS]
+            if isinstance(data, list):
+                return [d.get("id") or d.get("name") for d in data if isinstance(d, dict)]
+        except Exception:
+            pass
+    persona_root = paths["coaching_personas"] / "personas"
+    if persona_root.exists():
+        return [p.name for p in persona_root.iterdir() if p.is_dir()]
+    return []
+
+
+_COMPANY_CONFIG_CACHE = {"path": None, "data": None, "warned": False}
+
+
+def load_company_config(paths: dict) -> dict:
+    """Load company-config.json (schema v2.0). Warns ONCE to stderr if absent."""
+    cfg_path = paths.get("company_config")
+    if not cfg_path or not cfg_path.exists():
+        if not _COMPANY_CONFIG_CACHE["warned"]:
+            print(f"[persona-selector] WARN: company-config.json not found at "
+                  f"{cfg_path}. Layers 1-3 will fall back to neutral defaults. "
+                  f"Re-run Skill 23 build-workforce to generate it.",
+                  file=sys.stderr)
+            _COMPANY_CONFIG_CACHE["warned"] = True
+        return {}
+    if _COMPANY_CONFIG_CACHE["path"] == str(cfg_path) and _COMPANY_CONFIG_CACHE["data"] is not None:
+        return _COMPANY_CONFIG_CACHE["data"]
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        _COMPANY_CONFIG_CACHE["path"] = str(cfg_path)
+        _COMPANY_CONFIG_CACHE["data"] = data
+        if data.get("schema_version", "1.0") < "2.0":
+            print(f"[persona-selector] WARN: company-config.json is schema "
+                  f"v{data.get('schema_version', '1.0')} — Layers 1-3 need v2.0. "
+                  f"Re-run Skill 23 build-workforce to upgrade.",
+                  file=sys.stderr)
+        return data
+    except Exception as e:
+        print(f"[persona-selector] ERROR reading company-config.json: {e}", file=sys.stderr)
+        return {}
+
+
+def _resolve_default_persona_id(paths: dict, available: list = None) -> tuple:
+    """Resolve the default fallback persona id + a source tag (FDN-1 / Q2).
+
+    Resolution order, client-sovereignty first:
+      1. company-config.json `default_persona_id` — per-client override.
+      2. first REAL seed-categories persona key (deterministic, sorted) —
+         list_available_personas already drops fallback:true personas, so this
+         never returns the generic house-voice over a real persona.
+      3. DEFAULT_PERSONA_FALLBACK pinned constant.
+    Never returns None. Returns (persona_id, source_tag).
+    """
+    cfg = load_company_config(paths)
+    configured = ""
+    if isinstance(cfg, dict):
+        configured = (cfg.get("default_persona_id") or "").strip()
+    if configured:
+        return configured, "company_config"
+    if available is None:
+        available = list_available_personas(paths)
+    real = sorted(p for p in available if p and p != DEFAULT_PERSONA_FALLBACK)
+    if real:
+        return real[0], "first_seed_category"
+    return DEFAULT_PERSONA_FALLBACK, "default_persona"
+
+
+def _resolve_governance_persona_id(paths: dict) -> tuple:
+    """Resolve the governance/oversight persona id for mechanical (no_persona_
+    required) tasks (FDN-1 / Q1).
+
+    Resolution order, client-sovereignty first:
+      1. company-config.json `governance_persona_id` — per-client override.
+      2. GOVERNANCE_PERSONA_FALLBACK pinned constant ('covey-7-habits').
+    Never returns None. The mechanical task keeps no_persona_required:true AND
+    carries this pointer so the dispatch gate has a persona for every task
+    (oversight pointer, not a full Section-4 persona load).
+    """
+    cfg = load_company_config(paths)
+    configured = ""
+    if isinstance(cfg, dict):
+        configured = (cfg.get("governance_persona_id") or "").strip()
+    if configured:
+        return configured, "company_config"
+    return GOVERNANCE_PERSONA_FALLBACK, "governance_default"
+
+
+def _fallback_persona(paths: dict, department: str, mode: str) -> dict:
+    """Build a guaranteed non-null SELECT-mode result for the empty-universe path
+    (F3.1 A1: fresh box, Skill 22 absent, or categories unreadable/clobbered).
+
+    The invariant this enforces: SELECT mode never emits persona_id:null unless
+    no_persona_required is set. Rather than a naked NO_PERSONAS_AVAILABLE result
+    (exit-0 with persona_id:null, which downstream dispatch then delivers as a
+    naked task), attach the resolved default persona, tag it fallback:
+    "default_persona", and KEEP the warning so the degraded state stays loud and
+    is logged by record_selection.
+    """
+    pid, source = _resolve_default_persona_id(paths)
+    return {
+        "persona_id": pid,
+        "persona_name": pid.replace("-", " ").title(),
+        "persona_version": 1,
+        "score": 0.0,
+        "interaction_mode": mode,
+        "mode": mode,
+        "fallback": "default_persona",
+        "fallback_source": source,
+        "warning": "NO_PERSONAS_AVAILABLE",
+        "message": ("No personas are installed; attached the default fallback "
+                    "persona so no task is dispatched naked. Run Skill 22 on at "
+                    "least one book to activate persona-guided work."),
+        "funnel": {"pool": 0, "category": 0, "semantic": 0},
+    }
+
+
+def _persona_keywords(persona_id: str) -> list:
+    """Tokenize persona-id into lowercase keyword list (filter stopwords)."""
+    stop = {"the", "and", "of", "or", "a", "an", "to", "in", "on", "for"}
+    parts = persona_id.lower().replace("_", "-").split("-")
+    return [p for p in parts if p and p not in stop]
+
+
+# Human-readable label keys, in priority order, for an object-shaped KPI /
+# value entry. company-config.json drifted between two schemas in the wild:
+#   schema A (template / upgrade-company-config.py): list[str]
+#       e.g. ["monthly recurring revenue", "client retention 90-day"]
+#   schema B (some live boxes, e.g. interview-generated):  list[dict]
+#       e.g. [{"name": "monthly recurring revenue", "target": "50000"}, ...]
+# The pre-v13.8.9 scoring layers did `", ".join(company_kpis)` assuming schema A,
+# which raised `TypeError: sequence item 0: expected str instance, dict found`
+# on every box carrying a schema-B config (crashing the whole selector).
+_KPI_LABEL_KEYS = ("name", "label", "kpi", "metric", "title", "text")
+
+
+def _kpi_labels(items) -> list:
+    """Coerce a company_kpis / owner_values / dept_kpis array to a list of
+    human-readable label strings, robust to BOTH config schemas.
+
+    - str item  → used as-is (stripped).
+    - dict item → first non-empty value among _KPI_LABEL_KEYS; if none of those
+                  keys is present, fall back to the first non-empty string value
+                  in the dict, else a compact JSON dump so nothing is silently
+                  lost.
+    - anything else → str(item).
+
+    Empty / None / non-list input returns []. Never raises — this is the guard
+    that keeps `" ".join(_kpi_labels(...))` from ever crashing the selector.
+    """
+    if not items:
+        return []
+    if not isinstance(items, (list, tuple)):
+        # Defensive: a bare string slipped through (pre-v2.0 comma form, etc.)
+        if isinstance(items, str):
+            return [p.strip() for p in items.split(",") if p.strip()]
+        return [str(items)]
+    out = []
+    for item in items:
+        if item is None:
+            continue
+        if isinstance(item, str):
+            s = item.strip()
+            if s:
+                out.append(s)
+        elif isinstance(item, dict):
+            label = None
+            for k in _KPI_LABEL_KEYS:
+                v = item.get(k)
+                if isinstance(v, str) and v.strip():
+                    label = v.strip()
+                    break
+            if label is None:
+                # No known label key — take the first non-empty string value,
+                # else compact-JSON the dict so the layer still has *something*.
+                for v in item.values():
+                    if isinstance(v, str) and v.strip():
+                        label = v.strip()
+                        break
+            if label is None:
+                try:
+                    label = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                except Exception:
+                    label = str(item)
+            out.append(label)
+        else:
+            s = str(item).strip()
+            if s:
+                out.append(s)
+    return out
+
+
+def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
+                             department_id: str, cc: dict, paths: dict) -> dict:
+    """Keyword-hit baseline (SCORING_MODE=heuristic). Cheap, no LLM calls."""
+    kws = _persona_keywords(persona_id)
+
+    mission_text = (cc.get("mission") or "").lower()
+    soul_md = paths.get("soul_md")
+    if soul_md and soul_md.exists():
+        mission_text += " " + soul_md.read_text(encoding="utf-8", errors="replace").lower()
+    if mission_text:
+        hits = sum(1 for kw in kws if kw in mission_text)
+        mission_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        mission_score = 0.6
+
+    values_text = " ".join(_kpi_labels(cc.get("owner_values"))).lower()
+    if owner_profile:
+        values_text += " " + owner_profile.lower()
+    if values_text:
+        hits = sum(1 for kw in kws if kw in values_text)
+        values_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        values_score = 0.6
+
+    company_kpis = _kpi_labels(cc.get("company_kpis"))
+    if company_kpis:
+        kpi_text = " ".join(company_kpis).lower()
+        hits = sum(1 for kw in kws if kw in kpi_text)
+        company_kpi_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        company_kpi_score = 0.6
+
+    dept_kpis_map = cc.get("dept_kpis") or {}
+    dept_kpis = _kpi_labels(dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}"))
+    if dept_kpis:
+        dept_kpi_text = " ".join(dept_kpis).lower()
+        hits = sum(1 for kw in kws if kw in dept_kpi_text)
+        dept_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        dept_score = 0.6
+
+    # Layer 5 (Task Fit) — semantic similarity via Gemini Embedding 2,
+    # falling back to keyword overlap, falling back to neutral 0.6.
+    # The pre-v10.8.0 text-length heuristic (0.7 + len/1000) was the gap
+    # the v2.0 audit flagged. Replaced with semantic_task_fit module.
+    tf = semantic_task_fit(persona_id, task_text, paths)
+    task_fit = tf["score"]
+
+    return {
+        "mission":      round(mission_score, 4),
+        "owner_values": round(values_score, 4),
+        "company_kpis": round(company_kpi_score, 4),
+        "dept_kpis":    round(dept_score, 4),
+        "task_fit":     round(task_fit, 4),
+        "_task_fit_method": tf["method"],
+    }
+
+
+def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
+                       department_id: str, cc: dict, paths: dict) -> dict:
+    """
+    LLM-backed scoring for Layers 1-4 (Wave 3). Each layer is one cached LLM
+    call to DeepSeek V4 Pro (Ollama Cloud primary, OpenRouter fallback,
+    Gemini 3.1 Flash Lite last resort — see llm_score.py).
+    """
+    persona_summary = summarize_persona_blueprint(persona_id, max_chars=2000)
+
+    soul_excerpt = "(missing)"
+    if paths.get("soul_md") and paths["soul_md"].exists():
+        soul_excerpt = paths["soul_md"].read_text(encoding="utf-8", errors="replace")[:800]
+    mission_ctx = (
+        f"Company mission: {cc.get('mission') or '(none stated)'}\n"
+        f"Workspace SOUL.md excerpt: {soul_excerpt}"
+    )
+    mission_res = score_layer(persona_id, "mission", persona_summary, mission_ctx)
+
+    values_list = _kpi_labels(cc.get("owner_values"))
+    values_ctx = (
+        f"Stated owner values: {', '.join(values_list) if values_list else '(none stated)'}\n\n"
+        f"Owner behavioral profile (USER.md excerpt):\n{owner_profile[:1500] if owner_profile else '(no profile)'}"
+    )
+    values_res = score_layer(persona_id, "owner_values", persona_summary, values_ctx)
+
+    company_kpis = _kpi_labels(cc.get("company_kpis"))
+    company_kpi_ctx = (
+        f"Company-level KPIs: {', '.join(company_kpis) if company_kpis else '(none defined)'}\n"
+        f"Company industry: {cc.get('industry') or '(unspecified)'}"
+    )
+    company_kpi_res = score_layer(persona_id, "company_kpis", persona_summary, company_kpi_ctx)
+
+    dept_kpis_map = cc.get("dept_kpis") or {}
+    dept_kpis = _kpi_labels(dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}"))
+    dept_kpi_ctx = (
+        f"Department: {department_id}\n"
+        f"Department KPIs: {', '.join(dept_kpis) if dept_kpis else '(none defined)'}"
+    )
+    dept_kpi_res = score_layer(persona_id, "dept_kpis", persona_summary, dept_kpi_ctx)
+
+    # Layer 5 (Task Fit) — semantic similarity via Gemini Embedding 2.
+    # Replaces the v10.7.0 text-length heuristic per v2.0 audit Phase 16 PM1.
+    tf = semantic_task_fit(persona_id, task_text, paths, persona_summary)
+    task_fit = tf["score"]
+
+    return {
+        "mission":      round(mission_res["score"], 4),
+        "owner_values": round(values_res["score"], 4),
+        "company_kpis": round(company_kpi_res["score"], 4),
+        "dept_kpis":    round(dept_kpi_res["score"], 4),
+        "task_fit":     round(task_fit, 4),
+        "_task_fit_method": tf["method"],
+        "_llm_reasoning": {
+            "mission":      mission_res.get("reasoning", "")[:200],
+            "owner_values": values_res.get("reasoning", "")[:200],
+            "company_kpis": company_kpi_res.get("reasoning", "")[:200],
+            "dept_kpis":    dept_kpi_res.get("reasoning", "")[:200],
+        },
+        "_llm_meta": {
+            "model": mission_res.get("model", "?"),
+            "any_fallback": any(r.get("fallback") for r in (
+                mission_res, values_res, company_kpi_res, dept_kpi_res
+            )),
+        },
+    }
+
+
+def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
+                          department_id: str, paths: dict,
+                          scoring_mode: str = None) -> dict:
+    """
+    Dispatch to heuristic or LLM-based scoring depending on the EFFECTIVE mode.
+    Default mode: 'llm' when llm_score module is importable, else 'heuristic'.
+    Override globally with the `SCORING_MODE=heuristic` env var.
+
+    G13: `scoring_mode` lets select_persona() force the cheap heuristic path for
+    a SINGLE selection (the LLM fan-out gate) WITHOUT mutating the process-global
+    SCORING_MODE. None → fall back to the global SCORING_MODE (unchanged default).
+    """
+    effective = (scoring_mode or SCORING_MODE)
+    cc = load_company_config(paths)
+    if effective == "llm" and LLM_AVAILABLE:
+        return _llm_layer_scores(persona_id, task_text, owner_profile,
+                                   department_id, cc, paths)
+    return _heuristic_layer_scores(persona_id, task_text, owner_profile,
+                                     department_id, cc, paths)
+
+
+def score_persona(persona_id: str, task_text: str, owner_profile: str,
+                  department_id: str, weights: dict, paths: dict, db_path: Path,
+                  scoring_mode: str = None) -> dict:
+    """Compute total weighted score with override applied.
+
+    G13: `scoring_mode` is threaded to compute_layer_scores so the caller can
+    bound LLM fan-out per selection (None → process-global SCORING_MODE).
+    """
+    layers = compute_layer_scores(persona_id, task_text, owner_profile,
+                                   department_id, paths, scoring_mode=scoring_mode)
+    base = (
+        layers["mission"]      * weights["mission"] +
+        layers["owner_values"] * weights["owner_values"] +
+        layers["company_kpis"] * weights["company_kpis"] +
+        layers["dept_kpis"]    * weights["dept_kpis"] +
+        layers["task_fit"]     * weights["task_fit"]
+    )
+    task_category = infer_task_category(task_text)
+    adjusted, factor = apply_weight_overrides(persona_id, base, department_id, task_category, db_path)
+    return {
+        "persona_id": persona_id,
+        "base_score": round(base, 4),
+        "score": round(adjusted, 4),
+        "override_factor": factor,
+        "layers": layers,
+    }
+
+
+def select_persona(task: str, department: str, mode: str, weights: dict,
+                   paths: dict, db_path: Path, variety: bool = True,
+                   match_text: str = None, sop_hints: list = None) -> dict:
+    """Run the pre-scoring funnel then score survivors and return one.
+
+    SOP-AWARE MATCHING (F3.4 / F4.2):
+      match_text — the task+SOP composite query (task text folded with the
+        governing SOP name + step names, see _build_sop_match_text). When given,
+        it is the string used for infer_task_category, Stage-C semantic retrieval,
+        and the Layer-5 task_fit embed — passing the SAME string to Stage-C and
+        Layer-5 keeps the shared cache to ONE embed per selection. Defaults to
+        `task` (byte-identical no-SOP behavior).
+      sop_hints — canonical persona ids from sops.persona_hints. UNIONed into the
+        pool (never-to-zero) and granted a bounded, task_fit-coupled sop_hint_bonus.
+
+    PRE-SCORING FUNNEL (PRD item 1.1 — ported from v1, native in v2):
+      Stage A: governing-personas.md pool (or all personas if absent).
+      Stage B: DEPT_DOMAIN_TAGS keyword filter — narrows to domain-relevant.
+      Stage C: gemini-search semantic retrieval — intersect top-10 hits.
+      Each stage falls back to the previous stage output on empty intersection
+      (never filters to zero). funnel counts appear in output JSON.
+
+    Stage D — 5-layer scoring (existing logic):
+    With `variety=True` (default), apply the v10.14.28 anti-repetition logic:
+      1. Compute base 5-layer scores for funnel survivors only.
+      2. Read recent-use counts from persona_selection_log scoped to
+         (department, task_category) within a look-back span that is itself
+         scoped to the department's own recent task velocity (P9-2; see
+         variety_window_hours_for_department() — falls back to the global
+         VARIETY_WINDOW_HOURS when department is unknown).
+      3. Multiply each persona's score by variety_penalty_factor(uses).
+      4. If top-1's adjusted score dominates top-3 by ≥VARIETY_DOMINANCE_RATIO
+         pick top-1 (clear winner). Otherwise weighted-sample from top-N.
+
+    With `variety=False`, behave as the pre-v10.14.28 selector — pure top-1
+    by base score, no penalty, no sampling. Used by `--no-variety` for
+    deterministic debugging / regression testing.
+    """
+    all_personas = list_available_personas(paths)
+    owner_profile = read_owner_profile(paths)
+
+    if not all_personas:
+        # F3.1 invariant: SELECT mode never emits persona_id:null. The empty
+        # universe (A1) is the ONLY path that reached this branch with a naked
+        # result; attach the guaranteed default fallback persona instead (still
+        # loudly warned, still logged) so downstream dispatch always has a
+        # persona to deliver.
+        return _fallback_persona(paths, department, mode)
+
+    # SOP-aware composite query (F3.4). `mt` drives category inference, Stage-C
+    # semantic retrieval, and the Layer-5 embed — the SAME string everywhere so
+    # the shared embedding cache pays for exactly ONE embed. Defaults to `task`.
+    mt = match_text if (match_text is not None and str(match_text).strip()) else task
+    hinted_ids = [h for h in (sop_hints or []) if h]
+
+    # Stages A-C: build candidate pool via funnel (SOP hints UNIONed in)
+    personas, funnel, semantic_order = build_candidate_pool(mt, department, all_personas,
+                                                            paths, sop_hints=hinted_ids)
+
+    # ─── G13: bound LLM fan-out BEFORE Stage-D scoring (token-furnace guard) ──
+    # Enforced here at the scoring gate (a rule not enforced does not exist):
+    #   • LLM GATE — when SCORING_MODE='llm' but the candidate set cannot be
+    #     bounded (no governing pool AND no semantic ranking), force the cheap
+    #     heuristic path for THIS selection. A fresh, unbounded box therefore
+    #     cannot fan out to ~160 LLM calls. No cron, no resume — the burn never
+    #     starts. Bounded boxes are unaffected (full quality preserved).
+    #   • FINALIST CAP — when bounded but the survivor set still exceeds
+    #     STAGE_D_LLM_FINALIST_CAP, LLM-score only the top-cap survivors by
+    #     semantic rank (most task-relevant first).
+    effective_scoring_mode = SCORING_MODE
+    governing_pool_exists = funnel.get("pool_source") == "governing-personas.md"
+    have_semantic_rank = bool(semantic_order)
+    funnel["scoring_mode_requested"] = SCORING_MODE
+    if SCORING_MODE == "llm" and LLM_AVAILABLE:
+        if not (governing_pool_exists or have_semantic_rank):
+            effective_scoring_mode = "heuristic"
+            funnel["llm_gate"] = "downgraded-heuristic:unbounded-fresh-box"
+        elif len(personas) > STAGE_D_LLM_FINALIST_CAP:
+            if semantic_order:
+                personas_set = set(personas)
+                ranked = [p for p in semantic_order if p in personas_set]
+                tail = [p for p in personas if p not in set(ranked)]
+                personas = (ranked + tail)[:STAGE_D_LLM_FINALIST_CAP]
+            else:
+                # Bounded by a governing pool but no semantic order to rank by;
+                # keep the governing-curated head (deterministic, bounded).
+                personas = personas[:STAGE_D_LLM_FINALIST_CAP]
+            funnel["llm_gate"] = "capped"
+            funnel["llm_finalists"] = len(personas)
+        else:
+            funnel["llm_gate"] = "ok"
+    funnel["scoring_mode_effective"] = effective_scoring_mode
+
+    # Stage D: 5-layer scoring on funnel survivors only. Layer-5 embeds `mt` —
+    # the SAME string Stage-C embedded — so the shared cache stays at one embed.
+    scored = [score_persona(p, mt, owner_profile, department, weights, paths,
+                            db_path, scoring_mode=effective_scoring_mode)
+              for p in personas]
+
+    task_category = infer_task_category(mt)
+
+    # ── Perspective bonus (additive-only, never-to-zero) ──────────────────────
+    # Nudge a persona UP when the task EXPLICITLY invokes the lived-experience lens
+    # its source genuinely carries. Empty/absent perspective[] -> 0.0 bonus, so this
+    # can never eliminate, penalize, or zero-score any persona. Generic tasks invoke
+    # no lens -> task_perspectives is empty -> the whole block is skipped (no-op).
+    task_perspectives = infer_task_perspectives(mt)
+    if task_perspectives:
+        pc_file = paths.get("persona_categories")
+        personas_meta: dict = {}
+        if pc_file and Path(pc_file).exists():
+            try:
+                _cd = json.loads(Path(pc_file).read_text(encoding="utf-8"))
+                personas_meta = _cd.get("personas", {}) or {}
+            except Exception:
+                personas_meta = {}
+        if personas_meta:
+            for s in scored:
+                pinfo = personas_meta.get(s["persona_id"], {})
+                bonus = perspective_bonus(pinfo.get("perspective") or [], task_perspectives)
+                if bonus > 0.0:
+                    s["perspective_bonus"] = round(bonus, 4)
+                    s["base_score"] = round(s["base_score"] + bonus, 4)
+                    s["score"] = round(s["score"] + bonus, 4)
+
+    # ── Craft domain-primary-match bonus (additive-only, never-to-zero) ───────
+    # For CRAFT/SPECIALIST task categories ONLY, reward the persona whose declared
+    # `domain` IS the task's craft-defining (primary) domain, so the true
+    # specialist is distinguished from generalists and domain peers that merely
+    # tie on semantic task_fit. CRAFT_PRIMARY_DOMAINS gates this: a strategic /
+    # marketing category has no entry → craft_primary is empty → the entire block
+    # is skipped → provably zero behaviour change on non-craft tasks (mission
+    # still dominates there). See craft_domain_bonus() for the bounded, graded,
+    # relevance-coupled formula.
+    craft_primary = CRAFT_PRIMARY_DOMAINS.get(task_category, set())
+    if craft_primary:
+        pc_file_cd = paths.get("persona_categories")
+        personas_meta_cd: dict = {}
+        if pc_file_cd and Path(pc_file_cd).exists():
+            try:
+                _cd_cd = json.loads(Path(pc_file_cd).read_text(encoding="utf-8"))
+                personas_meta_cd = _cd_cd.get("personas", {}) or {}
+            except Exception:
+                personas_meta_cd = {}
+        if personas_meta_cd:
+            for s in scored:
+                pinfo = personas_meta_cd.get(s["persona_id"], {})
+                cbonus = craft_domain_bonus(pinfo.get("domain") or [],
+                                            craft_primary, s["layers"]["task_fit"])
+                if cbonus > 0.0:
+                    s["craft_domain_bonus"] = round(cbonus, 4)
+                    s["base_score"] = round(s["base_score"] + cbonus, 4)
+                    s["score"] = round(s["score"] + cbonus, 4)
+
+            # P13-1: appendix-completeness preference (same personas_meta_cd
+            # already loaded above for craft_domain_bonus — no extra file
+            # read). Asset-heavy categories only; additive, never-to-zero.
+            for s in scored:
+                pinfo = personas_meta_cd.get(s["persona_id"], {})
+                abonus = appendix_completeness_bonus(pinfo.get("appendixStatus"), task_category)
+                if abonus > 0.0:
+                    s["appendix_completeness_bonus"] = round(abonus, 4)
+                    s["base_score"] = round(s["base_score"] + abonus, 4)
+                    s["score"] = round(s["score"] + abonus, 4)
+
+    # ── Specialty (custom-tag) specialist bonus — DEPARTMENT-AGNOSTIC, additive-only ──
+    # Reward the persona whose DISTINCTIVE custom[] specialty tags the task explicitly
+    # names (brunson-network-marketing-secrets: mlm/network-marketing/recruiting/
+    # duplication; rohde-the-sketchnote-workbook: sketchnoting/visual-thinking) so the
+    # true specialist beats a generic on-brand persona REGARDLESS of department. A task
+    # that names no custom tag yields an empty hit set -> +0.0 for everyone (inert on
+    # ordinary tasks). Never reduces, eliminates, or zero-scores any persona.
+    pc_file_sp = paths.get("persona_categories")
+    personas_meta_sp: dict = {}
+    if pc_file_sp and Path(pc_file_sp).exists():
+        try:
+            _cd_sp = json.loads(Path(pc_file_sp).read_text(encoding="utf-8"))
+            personas_meta_sp = _cd_sp.get("personas", {}) or {}
+        except Exception:
+            personas_meta_sp = {}
+    if personas_meta_sp:
+        for s in scored:
+            pinfo = personas_meta_sp.get(s["persona_id"], {})
+            hits = specialty_tag_hits(mt, pinfo.get("custom") or [])
+            if hits:
+                sbonus = specialty_domain_bonus(len(hits), s["layers"]["task_fit"])
+                if sbonus > 0.0:
+                    s["specialty_tag_bonus"] = round(sbonus, 4)
+                    s["specialty_tags_matched"] = sorted(hits)
+                    s["base_score"] = round(s["base_score"] + sbonus, 4)
+                    s["score"] = round(s["score"] + sbonus, 4)
+
+    # ── SOP persona-hint bonus (F3.4 / F4.2) — additive-only, never-to-zero ────
+    # Reward a persona the governing SOP explicitly hinted (sops.persona_hints).
+    # BOUNDED (cap 0.30 < specialty cap 0.40) and task_fit-coupled: a relevant
+    # hinted persona is nudged toward winning, while a stale / off-topic hint
+    # earns only a small bump and cannot overturn a strong semantic or specialty
+    # signal. Empty hint set -> inert (no persona touched). Never reduces a score.
+    hinted_set = set(hinted_ids)
+    if hinted_set:
+        for s in scored:
+            if s["persona_id"] in hinted_set:
+                hbonus = sop_hint_bonus(s["layers"]["task_fit"])
+                if hbonus > 0.0:
+                    s["sop_hint_bonus"] = round(hbonus, 4)
+                    s["base_score"] = round(s["base_score"] + hbonus, 4)
+                    s["score"] = round(s["score"] + hbonus, 4)
+
+    if variety:
+        # P9-2: scope the look-back SPAN to this department's own recent task
+        # velocity (falls back to the unchanged global VARIETY_WINDOW_HOURS
+        # when department is falsy/unknown or the DB is unreadable).
+        _variety_window = variety_window_hours_for_department(department, db_path)
+        recent_uses = read_recent_use_counts(department, task_category,
+                                              _variety_window, db_path)
+        # ── Craft/specialty specialist protection (v14.23.3) ──────────────────
+        # On a GENUINE craft/specialty task the true specialist must win, every
+        # time — that is the entire purpose of the v14.15 craft-domain bonus and
+        # the v14.22 specialty-tag bonus. Anti-repetition variety must NOT demote
+        # (penalty) or sample-away that specialist below a generalist, because the
+        # next call's stickiness would then LOCK the generalist in (this is how a
+        # sketchnote task could end up served by an offers/why persona). We protect
+        # ONLY the specialist that is already the top candidate by PRE-variety base
+        # score AND earned a craft_domain_bonus / specialty_tag_bonus for THIS task.
+        # Gated on bonus presence => provably inert on non-craft tasks (sales,
+        # strategy, general): no bonus is awarded there, so protected_id stays None
+        # and variety behaves exactly as before.
+        protected_id = None
+        if scored:
+            top_base = max(scored, key=lambda x: x["base_score"])
+            if top_base.get("craft_domain_bonus", 0) or top_base.get("specialty_tag_bonus", 0):
+                protected_id = top_base["persona_id"]
+        for s in scored:
+            uses = recent_uses.get(s["persona_id"], 0)
+            factor = variety_penalty_factor(uses)
+            if s["persona_id"] == protected_id:
+                factor = 1.0  # craft/specialty specialist exempt from variety penalty
+            s["base_score_pre_variety"] = s["score"]
+            s["recent_use_count"]      = uses
+            s["variety_factor"]        = round(factor, 4)
+            s["score"]                 = round(s["score"] * factor, 4)
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        if protected_id is not None and scored and scored[0]["persona_id"] == protected_id:
+            # Specialist is the rightful top after exemption — pick it
+            # deterministically, bypassing variety sampling.
+            picked, picked_idx, was_sampled = scored[0], 0, False
+        else:
+            picked, picked_idx, was_sampled = pick_with_variety(scored)
+        variety_applied = True
+    else:
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        picked = scored[0]
+        picked_idx = 0
+        was_sampled = False
+        variety_applied = False
+        _variety_window = VARIETY_WINDOW_HOURS  # variety disabled — report the global default
+
+    top = picked  # selected persona (may not be score-rank #1 if sampled)
+
+    result = {
+        "persona_id": top["persona_id"],
+        "persona_name": top["persona_id"].replace("-", " ").title(),
+        "persona_version": 1,
+        "score": top["score"],
+        "base_score": top["base_score"],
+        "override_factor": top["override_factor"],
+        "interaction_mode": mode,
+        "task_category": task_category,
+        "weights_used": weights,
+        "layers": top["layers"],
+        "funnel": funnel,
+        "variety_applied": variety_applied,
+        "variety": {
+            "enabled": variety_applied,
+            "was_sampled": was_sampled,
+            "picked_rank": picked_idx + 1,
+            "window_hours": _variety_window,
+            "window_hours_global_default": VARIETY_WINDOW_HOURS,
+            "penalty_per_use": VARIETY_PENALTY_PER_USE,
+            "dominance_ratio": VARIETY_DOMINANCE_RATIO,
+            "sample_top_n": VARIETY_SAMPLE_TOP_N,
+            "recent_use_count": top.get("recent_use_count", 0),
+            "variety_factor": top.get("variety_factor", 1.0),
+        },
+        "breakdown": {"top_3": scored[:3]},
+    }
+    if top["score"] < 0.5:
+        result["warning"] = "LOW_CONFIDENCE_SELECTION"
+        result["message"] = f"Best persona scored {top['score']:.2f}. Consider adding more personas via Skill 22."
+    return result
+
+
+_DECOMPOSE_MOD_CACHE = None
+
+
+def _load_decompose_module():
+    """Lazily load decompose-task.py (hyphenated → importlib by path).
+
+    Returns the module or None if it isn't found. Loaded ONLY when --combined is
+    requested. The module imports THIS selector read-only, so eager import would
+    be a self-import; lazy-loading avoids that. Honors DECOMPOSE_TASK_PATH for
+    tests / relocation. Cached so a repeat call is free."""
+    global _DECOMPOSE_MOD_CACHE
+    if _DECOMPOSE_MOD_CACHE is not None:
+        return _DECOMPOSE_MOD_CACHE
+    import importlib.util as _ilu
+    override = os.environ.get("DECOMPOSE_TASK_PATH")
+    here = Path(__file__).resolve().parent
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    candidates += [here / "decompose-task.py", here / "scripts" / "decompose-task.py"]
+    for c in candidates:
+        if c.is_file():
+            spec = _ilu.spec_from_file_location("decompose_task_mod", str(c))
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            _DECOMPOSE_MOD_CACHE = mod
+            return mod
+    return None
+
+
+_BLEND_MOD_CACHE = None
+
+
+def _load_blend_module():
+    """Lazily load persona_blend.py (the voice-first AUDIENCE+TOPIC blend engine).
+
+    Loaded ONLY when --blend is requested. persona_blend imports THIS selector
+    read-only (by path), so eager import would be a self-import; lazy-loading
+    avoids that and keeps the default single-persona / --combined paths zero-cost.
+    persona_blend is a NORMAL (underscored) module name so a plain import works;
+    kept path-based for symmetry + relocation via PERSONA_BLEND_PATH. Cached."""
+    global _BLEND_MOD_CACHE
+    if _BLEND_MOD_CACHE is not None:
+        return _BLEND_MOD_CACHE
+    import importlib.util as _ilu
+    override = os.environ.get("PERSONA_BLEND_PATH")
+    here = Path(__file__).resolve().parent
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    candidates += [here / "persona_blend.py", here / "scripts" / "persona_blend.py"]
+    for c in candidates:
+        if c.is_file():
+            spec = _ilu.spec_from_file_location("persona_blend_mod", str(c))
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            _BLEND_MOD_CACHE = mod
+            return mod
+    return None
+
+
+def _blend_is_degraded(result) -> bool:
+    """True iff a --blend BUNDLE is a DEGRADED outcome a --strict consumer should
+    treat as non-zero. A mechanical (no_persona_required) bundle and a normal
+    confirm_required=True gate are NOT degradation. Degraded when: no catalog /
+    empty universe, the mirrored VOICE persona is a fallback tier, or a NAKED
+    task-persona part (a real part with no persona)."""
+    if not isinstance(result, dict):
+        return False
+    if result.get("no_persona_required"):
+        return False
+    if result.get("warning") in ("NO_CATALOG", "NO_PERSONAS_AVAILABLE"):
+        return True
+    if result.get("persona_id") is None:
+        return True
+    for part in result.get("task_personas") or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("persona_id") is None and not part.get("no_persona_required"):
+            return True
+    return False
+
+
+def _blend_human(bundle: dict) -> str:
+    """Compact human-readable rendering of a --blend bundle (--format human)."""
+    if not isinstance(bundle, dict):
+        return str(bundle)
+    if bundle.get("no_persona_required"):
+        return bundle.get("message", "Mechanical task — no persona required.")
+    v = bundle.get("voice", {}) or {}
+    ra = bundle.get("resolved_audience", {}) or {}
+    lines = [
+        f"BLEND — topic={bundle.get('topic')!r}  content_task={bundle.get('content_task')}",
+        f"  voice persona (mirror): {bundle.get('persona_id')} "
+        f"(score {bundle.get('score')})",
+        f"  audience: source={ra.get('source')} confidence={ra.get('confidence')} "
+        f"label={ra.get('label')!r}  confirm_required={bundle.get('confirm_required')}",
+    ]
+    if ra.get("ask") and bundle.get("confirm_required"):
+        lines.append(f"    ASK: {ra['ask']}")
+    ap = v.get("audience_persona")
+    tp = v.get("topic_persona")
+    lines.append(f"  audience_persona: {ap.get('id') if ap else '(pending/none)'}")
+    lines.append(f"  topic_persona:    {tp.get('id') if tp else '(none)'}")
+    lines.append(f"  collapsed: {v.get('collapsed')} -> {v.get('collapsed_persona_id')}")
+    if bundle.get("content_task"):
+        lines.append(
+            f"  conversion_goal: {bundle.get('conversion_goal') or '(unresolved)'!r} "
+            f"source={bundle.get('goal_source')} "
+            f"goal_confirm_required={bundle.get('goal_confirm_required')}")
+    lines.append(f"  task_personas ({len(bundle.get('task_personas', []))}):")
+    for tpp in bundle.get("task_personas", []):
+        lines.append(f"    {tpp.get('seq')}. {tpp.get('persona_id')} "
+                     f"— {tpp.get('part')}")
+    lines.append(f"  blend_directive: {bundle.get('blend_directive')}")
+    return "\n".join(lines)
+
+
+def _assert_persona_categories_canonical(paths: dict) -> None:
+    """P9-1 (FINAL-REVIEW-2026-07-01 Point 9 fix 1): canonical-path assertion.
+
+    persona-categories.json has two candidate locations: the WORKSPACE
+    canonical copy (paths["coaching_personas"]/persona-categories.json —
+    PRD 2.7, the only write target) and the shipped, READ-ONLY skill-folder
+    seed (paths["skills"]/22-book-to-persona-coaching-leadership-system/
+    persona-categories.json — copied into the canonical dir on first Skill-22
+    run / reconcile_persona_assets in shared-utils/provision-persona-index.sh).
+    detect_platform.resolve_persona_categories() falls back to the seed when
+    the canonical copy is missing (e.g. install/update Step 6b/U6b never ran
+    or the reconcile step failed) — the selector would then silently score
+    every task against a possibly-stale, un-reconciled seed instead of the
+    box's live categories, with no signal to the operator.
+
+    Logs the resolved path on every run (startup visibility), and WARNs
+    loudly — matching this file's existing "[persona-selector] WARN:"
+    convention (see e.g. line ~250, ~1388) — when it resolved to the seed
+    instead of the canonical copy. Never raises; the selector still runs
+    (a stale-but-present seed is strictly better than no file at all).
+    """
+    _pc_resolved = paths.get("persona_categories")
+    try:
+        _pc_canonical = paths["coaching_personas"] / "persona-categories.json"
+        _pc_seed = (paths["skills"] / "22-book-to-persona-coaching-leadership-system"
+                    / "persona-categories.json")
+    except KeyError:
+        return  # paths dict shape unexpected — nothing to assert against.
+
+    print(f"[persona-selector] persona-categories.json resolved -> {_pc_resolved}",
+          file=sys.stderr)
+
+    if _pc_resolved is None:
+        return
+    _pc_resolved = Path(_pc_resolved)
+    if _pc_resolved == _pc_seed and _pc_resolved != _pc_canonical:
+        print(
+            f"[persona-selector] WARN: persona-categories.json resolved to the "
+            f"READ-ONLY skill-folder seed ({_pc_seed}) instead of the workspace "
+            f"canonical copy ({_pc_canonical}) — reconcile_persona_assets likely "
+            f"never ran on this box (install.sh Step 6b / update-skills.sh Step "
+            f"U6b). Stage-B category filtering may be scoring against a stale, "
+            f"un-reconciled seed. Re-run install.sh or update-skills.sh to "
+            f"reconcile.",
+            file=sys.stderr,
+        )
+
+
+# ─── F3.2: --strict degradation signalling (exit code contract) ──────────────
+# Shell consumers (QC gates, fleet heartbeat probes) need to distinguish a
+# genuine task-matched persona from a DEGRADED outcome without parsing JSON.
+# The Command Center spawns this selector and reads JSON only, so the DEFAULT
+# (non-strict) behaviour MUST stay exit 0 for every successful/mechanical
+# result — back-compat is load-bearing. `--strict` opts a caller into a
+# non-zero signal (STRICT_DEGRADED_EXIT) purely for monitoring.
+STRICT_DEGRADED_EXIT = 3
+
+
+def _selection_is_degraded(result) -> bool:
+    """True iff a SELECT-mode result signals persona degradation that a
+    ``--strict`` consumer should treat as a non-zero (alertable) outcome.
+
+    Degradation signals (any one):
+      • ``warning == "NO_PERSONAS_AVAILABLE"`` — empty persona universe (A1;
+        fresh box, or categories clobbered per F2.1).
+      • a fallback tier was used — F3.1 tags the last-resort default persona
+        with a top-level ``fallback`` value and/or ``persona_mode == "fallback"``.
+        (The nested LLM-scoring provider fallback in ``layers._llm_meta`` is a
+        DIFFERENT concept — a healthy match may score via OpenRouter/Gemini —
+        and is deliberately NOT consulted here.)
+
+    NOT degraded (stay exit 0 by design):
+      • ``no_persona_required`` mechanical tasks — a truthful contract, not a
+        failure.
+      • ``LOW_CONFIDENCE_SELECTION`` — a real, if weak, task match.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("warning") == "NO_PERSONAS_AVAILABLE":
+        return True
+    if result.get("fallback"):
+        return True
+    if result.get("persona_mode") == "fallback":
+        return True
+    return False
+
+
+def _combined_is_degraded(result) -> bool:
+    """True iff a COMBINED (``--combined``) result contains a NAKED sub-task —
+    a real (non-mechanical) sub-task that resolved to no persona — or the
+    top-level result itself carries a select-mode degradation signal.
+    A per-sub-task ``no_persona_required`` part is NOT naked (mechanical steps
+    legitimately need no persona)."""
+    if not isinstance(result, dict):
+        return False
+    if _selection_is_degraded(result):
+        return True
+    for part in result.get("plan") or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("persona_id") is None and not part.get("no_persona_required"):
+            return True
+    return False
+
+
+def _strict_exit(strict: bool, degraded: bool) -> int:
+    """Map a degradation verdict to a process exit code under the --strict
+    contract. Non-strict callers ALWAYS get 0 (back-compat)."""
+    return STRICT_DEGRADED_EXIT if (strict and degraded) else 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="v2.1-aware persona selector (stickiness + adaptive weights + behavioral profile)")
+    parser.add_argument("--mode", default="select",
+                        choices=["select", "record-completion", "bust-stickiness"],
+                        help="select = pick a persona for a task (default). "
+                             "record-completion = invoke verify-persona-adherence "
+                             "for an already-completed task (v10.8.0 P0-2 wiring). "
+                             "bust-stickiness = flag every persona_assignment row "
+                             "needs_review=1 so no stale sticky pick is served "
+                             "(called on a persona-SET change; FIX 4 re-wire).")
+    parser.add_argument("--task", required=False)
+    parser.add_argument("--department", required=False)
+    parser.add_argument("--format", default="json", choices=["json", "human"])
+    parser.add_argument("--skip-stickiness", action="store_true", help="Force fresh selection even if a sticky assignment exists")
+    parser.add_argument("--no-variety", action="store_true",
+                        help="Disable v10.14.28 anti-repetition variety logic "
+                             "(recency penalty + top-N weighted sampling). "
+                             "Use for deterministic debugging / regression tests.")
+    # ── SOP-aware matching (F3.4 / F4.2) ─────────────────────────────────────
+    # The governing SOP informs the match. --sop-name/--sop-steps/--sop-slug are
+    # FOLDED into the task text to form one composite query (category inference +
+    # a SINGLE shared Stage-C/Layer-5 embed); --sop-hints (sops.persona_hints,
+    # comma-separated canonical persona ids) are UNIONed into the pool and granted
+    # a bounded, task_fit-coupled bonus. All optional — omitting them is a no-op.
+    parser.add_argument("--sop-slug", default=None,
+                        help="(SOP-aware) governing SOP slug (e.g. build-a-website); "
+                             "its tokens are folded into the match query.")
+    parser.add_argument("--sop-name", default=None,
+                        help="(SOP-aware) governing SOP human name; folded into the "
+                             "match query used for category + semantic matching.")
+    parser.add_argument("--sop-steps", default=None,
+                        help="(SOP-aware) comma-separated SOP step names; folded into "
+                             "the match query (task+SOP composite, one shared embed).")
+    parser.add_argument("--sop-hints", default=None,
+                        help="(SOP-aware) comma-separated canonical persona ids from "
+                             "sops.persona_hints. UNIONed into the candidate pool "
+                             "(never-to-zero, department-agnostic) and given a bounded "
+                             "additive bonus. Non-installed ids are ignored.")
+    # ── F3.2: strict degradation exit code ───────────────────────────────────
+    parser.add_argument("--strict", action="store_true",
+                        help="Select mode only: exit "
+                             f"{STRICT_DEGRADED_EXIT} (instead of 0) when the "
+                             "selection is DEGRADED — NO_PERSONAS_AVAILABLE or a "
+                             "fallback persona was used (and, under --combined, "
+                             "any non-mechanical sub-task got no persona). The "
+                             "JSON on stdout is UNCHANGED; only the exit code "
+                             "differs. Default (non-strict) always exits 0 for a "
+                             "successful/mechanical result (Command Center "
+                             "back-compat). For QC gates & fleet heartbeat probes.")
+    # ── W6 combined / per-subtask personas (spec §6, item 8) ─────────────────
+    # When --combined is set, the task is DECOMPOSED into ordered sub-tasks and
+    # EACH sub-task gets its OWN best-fit persona, with the specialist-surfacing
+    # re-weighting tweak applied per sub-task so the best-fit SPECIALIST surfaces
+    # (not just the obvious on-brand persona). The single-persona default path
+    # below is UNCHANGED — full backward compatibility.
+    parser.add_argument("--combined", "--decompose", dest="combined",
+                        action="store_true",
+                        help="Combined personas: decompose the task into ordered "
+                             "sub-tasks and pick a best-fit persona PER sub-task "
+                             "(spec §6 'the key build'). Applies the specialist-"
+                             "surfacing re-weighting. Records which persona did "
+                             "which sub-task (task_subtask_persona).")
+    parser.add_argument("--max-subtasks", type=int, default=None,
+                        help="(--combined / --blend) hard cap on sub-tasks / task "
+                             "personas (token-furnace budget). --combined defaults "
+                             "to DECOMP_MAX_SUBTASKS; --blend caps at 10.")
+    # ── W7 voice-first AUDIENCE+TOPIC blend (approved design 2026-07-08) ──────
+    # --blend decides the VOICE first: resolve the audience from the client ICP
+    # (ALWAYS-confirm / ASK-when-unsure), pick an AUDIENCE persona + a TOPIC
+    # persona and BLEND (write in audience voice, carry topic expertise),
+    # COLLAPSE to one persona when it covers both, decompose the job into up to
+    # 10 TASK personas, and emit the persona-bundle SUPERSET (a strict superset
+    # of the single-persona result — existing consumers keep working). The
+    # audience comes from company-config.json via ENV OPENCLAW_COMPANY_CONFIG /
+    # OPENCLAW_COMPANY_SLUG (+ SOUL.md); an operator confirmation is passed via
+    # ENV OPENCLAW_AUDIENCE (re-scores the voice, clears confirm_required). NOT a
+    # CLI flag — the strict-argparse contract keeps company-config out of argv.
+    parser.add_argument("--blend", action="store_true",
+                        help="Voice-first audience+topic blend: emit the persona-"
+                             "bundle SUPERSET (resolved_audience + confirm gate, "
+                             "voice{audience+topic, collapse}, blend_directive with "
+                             "the mandatory style-inspired/NEVER-impersonation "
+                             "guardrail, up to 10 task_personas, rationale, "
+                             "fallbacks). Backward-compatible for non-content / "
+                             "mechanical tasks.")
+    parser.add_argument("--topic", default=None,
+                        help="(--blend) optional explicit topic hint for the job "
+                             "(otherwise inferred from the task text). Folds into "
+                             "topic matching + the emitted `topic`.")
+    # A-U4 — conversion_goal as a first-class input (master-spec v2 §A.5). Unlike
+    # OPENCLAW_AUDIENCE (env-only), the goal is accepted BOTH as an explicit CLI
+    # flag and as an env passthrough (mirrors the audience pattern otherwise):
+    # an argv value wins when both are supplied. Either transport resolves
+    # goal_source='operator_confirmed' (rung 1 of the source ladder — an
+    # explicit operator/task field); the Skill 6 intake / funnel-template rungs
+    # are walked by the CALLER before invoking --blend (this selector has no
+    # intake/template data of its own to reason over).
+    parser.add_argument("--conversion-goal", default=None,
+                        help="(--blend) the resolved conversion goal for this "
+                             "content task (\"what must this page make the "
+                             "reader DO\"). Populates directive slot 5. Also "
+                             "settable via OPENCLAW_CONVERSION_GOAL env "
+                             "(argv wins when both are set).")
+    parser.add_argument("--sop-slots", default=None,
+                        help="(--combined) JSON array of SOP persona_slot objects "
+                             "({slot, task_category, domains, audience_from, "
+                             "required}). When supplied, text decomposition is "
+                             "SKIPPED and the slots are the authoritative sub-task "
+                             "list (F3.9) — one persona per slot, task_category "
+                             "forced. Accepts an inline JSON string or a @path to "
+                             "a JSON file.")
+    parser.add_argument("--no-llm", action="store_true",
+                        help="(--combined) force deterministic heuristic "
+                             "decomposition (no LLM call).")
+    parser.add_argument("--no-record", action="store_true",
+                        help="Dry-run / no-persist: skip ALL DB + selection-log writes "
+                             "(persona_assignment, persona_selection_log, and the "
+                             "selection-log .md) for this run. Applies to the single-"
+                             "select (fresh/sticky/hybrid) paths AND --combined. Use for "
+                             "hermetic QC so a test run never mutates a live persona DB.")
+    # record-completion mode args
+    parser.add_argument("--task-id", help="(record-completion) task identifier")
+    parser.add_argument("--persona-id", help="(record-completion) persona that governed the task")
+    parser.add_argument("--task-category", default="general", help="(record-completion)")
+    parser.add_argument("--task-output-file", help="(record-completion) path to task output file")
+    parser.add_argument("--task-output", help="(record-completion) inline task output")
+    args = parser.parse_args()
+
+    # PRD 1.5: normalise --department to the canonical slug form immediately after
+    # parsing, before ANY DB write, stickiness key, or dir lookup.  This ensures
+    # department_id in every DB row is the bare slug (e.g. "marketing", not
+    # "dept-marketing" or "Marketing") regardless of what the caller passed.
+    if args.department:
+        _raw_dept = args.department
+        args.department = canonical_dept_slug(_raw_dept)
+        if not args.department:
+            print(json.dumps({"error": f"Invalid --department value {_raw_dept!r}: normalises to empty string"}))
+            return 1
+
+    paths = get_openclaw_paths()
+    _assert_persona_categories_canonical(paths)
+    db_path = find_dashboard_db()
+    # PRD 1.3: expose resolved DB path in every JSON response so a missing DB
+    # is visible on every selection, never a silent no-op.
+    db_field = str(db_path) if is_db_found(db_path) else "none"
+
+    # ─── record-completion mode (P0-2 wiring) ────────────────────────────
+    if args.mode == "record-completion":
+        if not (args.task_id and args.persona_id and args.department):
+            parser.error("--mode record-completion requires --task-id, --persona-id, --department")
+        # Read task output from file or inline
+        if args.task_output:
+            task_output = args.task_output
+        elif args.task_output_file:
+            try:
+                task_output = Path(args.task_output_file).read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                print(json.dumps({"ok": False, "error": f"could not read output file: {e}"}, indent=2))
+                return 2
+        else:
+            parser.error("--mode record-completion requires --task-output or --task-output-file")
+        task_text = args.task or "(no task text supplied)"
+        result = record_task_completion(
+            task_id=args.task_id,
+            persona_id=args.persona_id,
+            department=args.department,
+            task_category=args.task_category,
+            task_text=task_text,
+            task_output=task_output,
+            db_path=db_path,
+        )
+        print(json.dumps(result, indent=2) if args.format == "json"
+              else f"adherence: {result.get('adherence_score', 'n/a')}")
+        return 0 if result.get("ok") else 1
+
+    # ─── bust-stickiness mode (FIX 4 — persona-SET-change re-wire) ─────────
+    # When the persona SET grows, every sticky persona_assignment row may be
+    # serving a persona that was picked from the OLD candidate universe. Flag them
+    # all needs_review=1 so check_sticky_assignment cannot serve a stale pick (it
+    # only TRUSTS rows with needs_review != 1). Non-destructive: rows are kept,
+    # just un-trusted, so the next dispatch makes a fresh selection over the new
+    # SET and re-pins. Idempotent; zero embeddings.
+    if args.mode == "bust-stickiness":
+        flagged = 0
+        if is_db_found(db_path):
+            try:
+                conn = sqlite3.connect(str(db_path))
+                _ensure_persona_assignment_columns(conn)
+                cur = conn.execute("UPDATE persona_assignment SET needs_review = 1")
+                flagged = cur.rowcount if cur.rowcount is not None else 0
+                conn.commit()
+                conn.close()
+            except sqlite3.Error as e:
+                print(json.dumps({"ok": False, "mode": "bust-stickiness",
+                                  "error": f"bust-stickiness failed: {e}",
+                                  "db": db_field}, indent=2))
+                return 1
+        print(json.dumps({"ok": True, "mode": "bust-stickiness",
+                          "rows_flagged_needs_review": flagged,
+                          "db": db_field}, indent=2))
+        return 0
+
+    # ─── select mode (default) ────────────────────────────────────────────
+    if not (args.task and args.department):
+        parser.error("--task and --department are required for select mode")
+
+    # ─── W6 combined / per-subtask personas (spec §6, item 8) ─────────────
+    # Decompose → per-sub-task best-fit persona (specialist-surfacing re-weight
+    # applied per part) → record which persona did which sub-task. Loaded by
+    # PATH only when requested (the module imports THIS selector read-only, so
+    # importing it eagerly would be a self-import; lazy load avoids that and
+    # keeps the default single-persona path zero-cost).
+    if getattr(args, "combined", False):
+        _dt = _load_decompose_module()
+        if _dt is None:
+            print(json.dumps({"error": "decompose-task.py not found next to "
+                                       "persona-selector-v2.py (set "
+                                       "DECOMPOSE_TASK_PATH to override)."}, indent=2))
+            return 2
+        kwargs = dict(
+            use_llm=not args.no_llm,
+            record=not args.no_record,
+            variety=not args.no_variety,
+        )
+        if args.max_subtasks is not None:
+            kwargs["max_subtasks"] = args.max_subtasks
+        # F3.9: SOP persona_slots (if provided) drive an authoritative,
+        # slot-per-persona plan instead of text decomposition. Accept inline
+        # JSON or @path. A malformed value FAILS LOUD (a bad slot contract must
+        # not silently fall back to text-inference and hide the wiring bug).
+        _slots_arg = getattr(args, "sop_slots", None)
+        if _slots_arg:
+            try:
+                if _slots_arg.startswith("@"):
+                    _slots_arg = Path(_slots_arg[1:]).read_text(encoding="utf-8")
+                _slots = json.loads(_slots_arg)
+                if not isinstance(_slots, list):
+                    raise ValueError("--sop-slots must be a JSON array of slot objects")
+                kwargs["slots"] = _slots
+            except Exception as e:
+                print(json.dumps({"error": f"invalid --sop-slots: {e}"}, indent=2))
+                return 2
+        result = _dt.combined_select(args.task, args.department, **kwargs)
+        result.setdefault("db", db_field)
+        print(json.dumps(result, indent=2) if args.format == "json"
+              else _dt._format_human(result))
+        return _strict_exit(args.strict, _combined_is_degraded(result))
+
+    # ─── W7 voice-first AUDIENCE+TOPIC blend (approved design 2026-07-08) ───
+    # Decide the VOICE first (audience from ICP with ALWAYS-confirm), pick an
+    # audience + a topic persona and BLEND (collapse when one covers both),
+    # decompose into up to 10 task personas, emit the persona-bundle SUPERSET.
+    # build_bundle handles the mechanical / non-content / empty-catalog paths
+    # internally (never-naked), so this branch is a single call. The audience
+    # confirmation is read from ENV (OPENCLAW_AUDIENCE) — never argv.
+    if getattr(args, "blend", False):
+        _pb = _load_blend_module()
+        if _pb is None:
+            print(json.dumps({"error": "persona_blend.py not found next to "
+                                       "persona-selector-v2.py (set "
+                                       "PERSONA_BLEND_PATH to override)."}, indent=2))
+            return 2
+        # A-U4: argv --conversion-goal wins over OPENCLAW_CONVERSION_GOAL when both
+        # are set; either resolves goal_source='operator_confirmed' (build_bundle
+        # default when no goal_source is passed) — an explicit rung-1 value.
+        _conversion_goal = resolve_conversion_goal_arg(
+            args.conversion_goal, os.environ.get("OPENCLAW_CONVERSION_GOAL", ""))
+        bundle = _pb.build_bundle(
+            args.task, args.department,
+            paths=paths, db_path=db_path,
+            use_llm=not args.no_llm,
+            record=not args.no_record,
+            max_task_personas=(args.max_subtasks if args.max_subtasks is not None else 10),
+            variety=not args.no_variety,
+            topic_hint=(args.topic or ""),
+            audience_override=os.environ.get("OPENCLAW_AUDIENCE", ""),
+            conversion_goal=(_conversion_goal or ""),
+        )
+        bundle.setdefault("db", db_field)
+        print(json.dumps(bundle, indent=2) if args.format == "json"
+              else _blend_human(bundle))
+        return _strict_exit(args.strict, _blend_is_degraded(bundle))
+
+    # SOP-aware composite query (F3.4 / F4.2). Fold the governing SOP name/steps/
+    # slug into the task text and parse the persona_hints list. When no --sop-*
+    # flags are supplied `match_text` == args.task and `sop_hints` == [] — the
+    # whole selection is byte-identical to the pre-SOP behavior (inertness).
+    def _split_csv(v):
+        return [x.strip() for x in str(v).split(",") if x and x.strip()] if v else []
+    sop_steps = _split_csv(args.sop_steps)
+    sop_hints = _split_csv(args.sop_hints)
+    match_text = _build_sop_match_text(args.task, args.sop_name, sop_steps, args.sop_slug)
+    sop_active = bool(args.sop_slug or args.sop_name or sop_steps or sop_hints)
+    sop_diag = {
+        "slug": args.sop_slug,
+        "name": args.sop_name,
+        "steps": sop_steps,
+        "hints": sop_hints,
+    }
+
+    # Mode detection (on the literal task — SOP context must not flip
+    # coaching<->leadership). Category IS SOP-aware (spec: fold SOP into
+    # infer_task_category) so a SOP shifts stickiness/reporting appropriately.
+    mode = detect_interaction_mode(args.task)
+    task_category = infer_task_category(match_text)
+
+    # Mechanical task check — SINGLE SOURCE via shared-utils/mechanical-gate.py
+    # (is_mechanical_task). The word-boundary/multi-word contract lives there now
+    # (BUG-FIX v11.6.0 rationale preserved in that module). Whole-task gate passes
+    # NO delivery_verbs — a whole task that merely mentions "deploy" is not
+    # automatically persona-free; only decompose's per-subtask gate adds those.
+    if is_mechanical_task(args.task):
+        # F3.1 / Q1: a mechanical task keeps the TRUTHFUL no_persona_required
+        # flag (it feeds reporting and never pretends a chmod needs coaching) but
+        # ALSO carries a governance_persona_id oversight pointer — client-sovereignty
+        # resolved (company-config.governance_persona_id -> pinned constant) — so the
+        # dispatch gate has a persona for EVERY task: never naked, never over-coached.
+        gov_pid, gov_source = _resolve_governance_persona_id(paths)
+        out = {
+            "persona_id": None,
+            "no_persona_required": True,
+            "governance_persona_id": gov_pid,
+            "governance_persona_source": gov_source,
+            "message": ("Operational/mechanical task — no persona required "
+                        f"(governance persona '{gov_pid}' attached for oversight)."),
+            "task_category": task_category,
+            "db": db_field,  # PRD 1.3: visible on every response
+        }
+        print(json.dumps(out, indent=2) if args.format == "json" else out["message"])
+        return 0
+
+    # Stickiness check (unless skipped)
+    sticky = None
+    sticky_bypassed = None
+    if not args.skip_stickiness:
+        sticky = check_sticky_assignment(args.department, task_category, db_path)
+        # F3.5 — task-signal bypass: before serving a coarse (department,
+        # task_category) sticky row, run two CHEAP detectors (perspective regex +
+        # custom-tag specialty probe, NO embedding). If the task EXPLICITLY invokes
+        # a lens or a named specialty, the cached category-level pick is too coarse —
+        # skip stickiness for THIS task and fall through to a fresh full-funnel
+        # selection so perspective/specialty routing gets its chance. Generic tasks
+        # fire neither detector → the trusted fast path is unchanged.
+        if sticky and task_signal_bypasses_stickiness(args.task, paths):
+            sticky = None
+            sticky_bypassed = "task-signal"
+
+    if sticky:
+        out = {
+            "persona_id": sticky["persona_id"],
+            "persona_name": sticky["persona_name"],
+            "persona_version": sticky["persona_version"],
+            "score": sticky["last_score"],
+            "interaction_mode": sticky["persona_mode"] or mode,
+            "task_category": task_category,
+            # OUTPUT CONTRACT (PRD 1.2 §3): every selection path MUST emit "funnel"
+            # with the canonical pool/category/semantic keys. A sticky pick bypasses
+            # the pre-scoring funnel entirely (the assignment was resolved from the
+            # persona_assignment table, not re-scored), so the three stage counts are
+            # 0 and "sticky": True marks WHY they are zero. Without this key the
+            # sticky path violated the documented contract and turned test-persona-
+            # selector.sh RED (A6 FAIL: "Non-numeric funnel count") on every live box.
+            "funnel": {"pool": 0, "category": 0, "semantic": 0, "sticky": True},
+            "sticky": True,
+            "breakdown": {"stickiness": True},
+            "db": db_field,  # PRD 1.3: visible on every response
+        }
+        if not args.no_record:
+            record_selection(out, args.task, args.department, db_path)
+        print(json.dumps(out, indent=2) if args.format == "json" else f"STICKY: {out['persona_name']} ({out['score']:.2f})")
+        return 0
+
+    # Fresh selection
+    weights = get_weights_for_task(args.task, mode)
+
+    variety_enabled = not args.no_variety
+
+    if mode == "hybrid":
+        leader = select_persona(args.task, args.department, "leadership", weights, paths, db_path,
+                                variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
+        coach = select_persona(args.task, args.department, "coaching",
+                                get_weights_for_task(args.task, "coaching"), paths, db_path,
+                                variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
+        out = {
+            "mode": "hybrid",
+            "task_category": task_category,
+            "persona_id": leader["persona_id"],
+            "persona_name": leader.get("persona_name"),
+            "score": leader["score"],
+            "interaction_mode": "leadership",
+            "secondary_persona_id": coach["persona_id"],
+            "secondary_persona_name": coach.get("persona_name"),
+            "secondary_persona_score": coach["score"],
+            "weights_used": weights,
+            "layers": leader.get("layers", {}),
+            # OUTPUT CONTRACT (PRD 1.2 §3): the hybrid path assembles its own dict
+            # from TWO select_persona() calls, so it must forward the funnel too.
+            # We surface the LEADER's funnel (the primary persona the hybrid pick
+            # leads with); select_persona() always emits "funnel", so the fallback
+            # here is defensive only. Without this key the hybrid path violated the
+            # documented contract exactly like the sticky path.
+            "funnel": leader.get("funnel", {"pool": 0, "category": 0, "semantic": 0}),
+        }
+        # F3.2: the hybrid dict is assembled by hand from the LEADER's result,
+        # which drops the leader's degradation `warning` (e.g. NO_PERSONAS_AVAILABLE
+        # on an empty box). Forward it so `--strict` sees the same signal the
+        # non-hybrid path already carries.
+        if leader.get("warning") and "warning" not in out:
+            out["warning"] = leader["warning"]
+    else:
+        out = select_persona(args.task, args.department, mode, weights, paths, db_path,
+                             variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
+
+    # PRD 1.3: inject db path so every selection response shows whether the DB was found.
+    out["db"] = db_field
+
+    # F3.5: mark WHY this fresh selection ran despite a trusted sticky row existing,
+    # so the CC / logs can see task-signal deference happened (audit + not-a-bug).
+    if sticky_bypassed:
+        out["sticky_bypassed"] = sticky_bypassed
+
+    # F3.4 / F4.2: surface the consumed SOP context (observability). funnel.hinted
+    # (present in the non-sticky/non-hybrid funnel) reports how many hinted personas
+    # were actually UNIONed into the pool on this box.
+    if sop_active:
+        out["sop"] = sop_diag
+
+    if not args.no_record:
+        record_selection(out, args.task, args.department, db_path)
+    print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")
+    return _strict_exit(args.strict, _selection_is_degraded(out))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
