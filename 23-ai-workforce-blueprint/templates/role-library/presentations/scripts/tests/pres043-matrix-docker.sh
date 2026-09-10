@@ -51,6 +51,10 @@ run_profile() {
   log "image identity"
   if [ -n "$EVIDENCE_DIR" ]; then
     docker inspect "$tag" --format '{{.RepoDigests}} {{.Architecture}} {{.Os}}' | tee "$EVIDENCE_DIR/image-$profile.txt"
+    # Real digests, ONE image per invocation (docker images takes at most 1
+    # argument — the old evidence file captured that usage error verbatim).
+    docker images --digests "$tag" 2>&1 | tee -a "$EVIDENCE_DIR/docker-images-digests.txt"
+    docker inspect "$tag" --format '{{json .RepoDigests}}' | tee -a "$EVIDENCE_DIR/docker-images-digests.txt"
     docker run --rm "$tag" bash -lc 'cat /etc/os-release | head -3; python3 --version; soffice --version | head -1; pdftoppm -v 2>&1 | head -1; tesseract --version 2>&1 | head -1; echo "fonts-dejavu-liberation=$(fc-list | grep -ciE "dejavu|liberation")"; pip freeze | grep -iE "reportlab|python-pptx|pypdf|pytesseract|pillow"' | tee "$EVIDENCE_DIR/versions-$profile.txt"
   else
     docker inspect "$tag" --format '{{.RepoDigests}} {{.Architecture}} {{.Os}}'

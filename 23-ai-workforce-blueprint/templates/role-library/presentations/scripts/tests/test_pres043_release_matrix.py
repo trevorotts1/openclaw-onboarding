@@ -606,3 +606,92 @@ def test_mocked_ghl_path_never_claims_remote_id(tmp_path):
         note="mock opener shape check; live GHL remains NOT VERIFIED until sandbox execution",
     )
     assert "NOT VERIFIED" in json.loads(receipt.read_text(encoding="utf-8"))["note"]
+
+
+# ---------------------------------------------------------------------------
+# Leg 6 — GHL sandbox via FIXTURE SERVER through the AUTHORIZED smoke path
+# (TODO step 4, real provider/GHL smoke separated from mocked CI).
+# ---------------------------------------------------------------------------
+# The live smoke calls the canonical ghl_media.list_media and would hit
+# production services.leadconnectorhq.com. The authorized-sandbox seam is
+# GHL_SANDBOX_BASE_URL: pres043_live_smoke._SandboxOpener rewrites ONLY the
+# origin to that base. This leg runs the FULL authorized path (real opener,
+# real headers, real list_media code) against a local fixture server as the
+# sandbox base, so a sandbox run is provable and produces REAL fixture IDs —
+# never a fabricated remote id. The refusal legs (test_live_ghl_smoke_...)
+# still prove the module refuses without authorization; by design an
+# operator-authorization (a deploy-time `PRES043_LIVE_SMOKE=1` run against a
+# hosted sandbox) remains SEPARATE and is recorded NOT VERIFIED until run.
+
+def test_ghl_sandbox_fixture_server_readback(tmp_path):
+    """Authorized smoke path against a fixture server: real IDs + readback.
+
+    Raises LiveSmokeRefused if the origin rewrite seam does not work — i.e.
+    no authorized sandbox run is EVER possible without this leg being green.
+    """
+    import http.server
+    import socketserver  # noqa: F401
+    import threading  # noqa: F401
+
+    import pres043_live_smoke  # noqa: E402
+
+    FIXTURE_RECORDS = [
+        {"_id": "fx-file-0001", "name": "pres043-deck-01-page-1.png", "type": "file",
+         "parentId": "", "url": "https://storage.example/fx-file-0001"},
+        {"_id": "fx-file-0002", "name": "pres043-deck-01-FINAL.pdf", "type": "file",
+         "parentId": "", "url": "https://storage.example/fx-file-0002"},
+    ]
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):  # silence server logs
+            return
+
+        def _send(self, code, obj):
+            body = json.dumps(obj).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path.startswith("/medias/files"):
+                # The canonical list_media reads data OR files; serve real shape.
+                return self._send(200, {"files": FIXTURE_RECORDS})
+            return self._send(404, {"error": "unexpected path " + self.path})
+
+        def do_POST(self):  # smoke is read-only; a POST means a bug
+            return self._send(405, {"error": "smoke must not POST"})
+
+    srv = socketserver.TCPServer(("127.0.0.1", 0), _Handler)
+    port = srv.server_address[1]
+    thr = threading.Thread(target=srv.serve_forever, daemon=True)
+    thr.start()
+    try:
+        env = {
+            "PRES043_LIVE_SMOKE": "1",
+            "GHL_SANDBOX_LOCATION_ID": "fx-location-0001",
+            "GHL_SANDBOX_PIT": "fx-pit-0001",
+            "GHL_SANDBOX_BASE_URL": f"http://127.0.0.1:{port}",
+        }
+        out = pres043_live_smoke.ghl_list_back({}, env=env)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        thr.join(timeout=5)
+
+    assert out["http"] == 200
+    assert out["count"] == 2, out
+    assert out["remote_ids"] == ["fx-file-0001", "fx-file-0002"], out
+    assert "fx-file-0001" in str(out)  # readback carried the real fixture ids
+    assert out["sandbox_base"] == f"http://127.0.0.1:{port}"
+    receipt = _write_receipt(
+        _make_run(tmp_path, DECK_IDS[0], RUN_ID_01),
+        deck_id=DECK_IDS[0], leg="ghl-sandbox-fixture-server",
+        state="SANDBOX_FIXTURE_READBACK",
+        fixture_ids=out["remote_ids"], count=out["count"],
+        note="authorized smoke path against fixture server; an operator "
+             "sandbox deployment run remains NOT VERIFIED until executed",
+    )
+    back = json.loads(receipt.read_text(encoding="utf-8"))
+    assert back["fixture_ids"] == ["fx-file-0001", "fx-file-0002"]
