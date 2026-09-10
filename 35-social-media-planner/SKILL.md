@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: "3.6.4"
+version: "3.6.5"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -255,31 +255,32 @@ All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered
 
    The response body contains a `url` field with a permanent public CDN link of the form `https://assets.cdn.filesafe.space/[LOCATION_ID]/media/[filename]`. This is the authoritative GHL media URL — confirmed from Skill 28 (cinematic-forge) which documents the same endpoint and CDN format.
 3. **Extract the `url` field** from the response JSON.
-4. **Log a row** in the content sheet by calling the `social-planner-row-append` webhook:
-   ```bash
-   curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-row-append" \
-     -H "Content-Type: application/json" \
-     -d "{
-       \"sheetId\": \"[from memory.md: content_sheet_id]\",
-       \"row\": {
-         \"Week Of\": \"[current week string e.g. Week of Jun 9 - Jun 15, 2026]\",
-         \"Theme of the Week\": \"[theme]\",
-         \"Core Content\": \"[title]\",
-         \"[platform column]\": \"[status e.g. published|scheduled|draft]\",
-         \"Blog\": \"[blog status if applicable]\",
-         \"Scheduled\": \"[YYYY-MM-DD publish date]\",
-         \"Overall\": \"published\",
-         \"Notes\": \"[CDN link from step 3]\"
-       }
-     }"
-   ```
-   The webhook appends directly to the **Weekly Overview** tab of the client's Google Sheet using the operator service account (no client credentials required). If the webhook call fails: log to `~/.openclaw/data/skill35/content-log.jsonl` and retry on next cycle. **Do NOT call `social-planner-sheet-create` here** — that webhook is for first-time sheet creation only.
-
-   **CRITICAL: Image URLs must use =IMAGE() formula, not raw text.** When logging image URLs to any tab (Day tabs, platform tabs, Images tab, Blog/Podcast cover images), the value MUST be wrapped as `=IMAGE("https://...", 1)` so Google Sheets renders the image inline. Raw URLs display as unclickable text. Example:
+4. **Log the content revision** through this deployment's verified, active versioned `social-planner/v1.1.0/social-planner-row-append` webhook. Resolve the deployment's configured base URL and authentication; do not use the legacy unversioned endpoint or a nested `row` object. The canonical contract is `config/n8n/social-planner-row-append.json`:
    ```json
-   "Image URL": "=IMAGE(\"https://assets.cdn.filesafe.space/.../image.png\", 1)"
+   {
+     "sheetId": "<verified client sheet ID>",
+     "schema_version": "1.1.0",
+     "company_id": "<this client's company ID>",
+     "cycle_id": "<existing weekly cycle ID>",
+     "content_revision": "<stable content revision>",
+     "account_id": "<verified destination account ID>",
+     "platform": "<destination platform>",
+     "account_name": "<destination account name>",
+     "format": "<content format>",
+     "scheduled_local": "<planned local date and time>",
+     "scheduled_utc": "<matching UTC date and time>",
+     "state": "draft",
+     "qc_state": "pending",
+     "preview_url": "<permanent CDN URL from step 3>"
+   }
    ```
-   The webhook writes this formula directly to the cell. Mode 1 fits the image within the cell while maintaining aspect ratio.
+   All required fields above are nonempty strings. Optional fields are `theme`, `week_of`, `title`, `notes`, `preview_url`, and `remote_url`. Set state and QC values from verified evidence; a planned schedule is not proof of publication. Supply `remote_url` only when the destination URL is verified. Use only this client's verified sheet/company binding and destination account; never substitute an operator or another client's identity.
+
+   Before sending, persist the payload and `row_key = cycle_id::content_revision::account_id` in the durable client-scoped ledger at `~/.openclaw/data/skill35/content-log.jsonl`, including the sheet/company identity and attempt state. `content_revision` must uniquely identify each distinct content item and its revision within the cycle; never reuse the questionnaire revision (for example, `12`) for multiple posts to the same account, because their identical row keys would overwrite one another. Serialize writes for that key. The workflow upserts **Posts** by this key and updates **Weekly Overview**; it does not append a legacy overview-only row. Save the receipt, then use authenticated Google readback to reconcile the expected Posts row, summary and any asset writes. A timeout or lost response is an **unknown write outcome**: reconcile the same key before any retry, and stop for repair if duplicate rows or an unresolved outcome remain. Retry only after confirming what is missing, preserving the same key and payload; never blindly retry next cycle or create a replacement sheet.
+
+   Google writes and readback require the deployment's configured, authorized Google connection. For private sheets, the client must open the link while signed into the explicitly granted Google account. Do not claim that no credentials are required, change sharing to make a write work, or call `social-planner-sheet-create` during content logging. Existing public-sharing compatibility does not authorize converting a private sheet to public.
+
+   **Send URL strings, not formulas.** Posts stores `preview_url` and `remote_url` as RAW values. For inline media previews, supply the supported `asset` manifest described in the canonical export; the workflow validates URLs and generates trusted formulas in designated preview cells (Images previews, or Videos posters/watch links). Do not wrap arbitrary URL fields in `=IMAGE()`. An asset repair/partial receipt means the Posts row may already exist while its preview is incomplete; reconcile that row and repair the asset without duplicating content.
 5. **Reply to owner** with the CDN link only — never attach the raw file to Telegram.
 
 **Size threshold:** Any file over 10 MB MUST go through GHL CDN delivery. Files under 10 MB MAY be attached directly only if the operator explicitly configures `direct_attach_under_10mb=true` in MEMORY.md; default is always link delivery.
