@@ -1,0 +1,29 @@
+# PRES-043 Hostinger VPS profile image.
+# Base pinned by DIGEST (upgrade policy: release-matrix/pins.yaml).
+# Build context: repository root.
+#   docker build -f 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/Dockerfile.hostinger -t pres043-hostinger .
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    OPENCLAW_PLATFORM=vps \
+    PIP_NO_CACHE_DIR=1
+
+# Load-bearing render deps (versions: pins.yaml apt_packages) + fonts.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libreoffice-impress=4:25.2.3-2+deb13u6 \
+      poppler-utils=25.03.0-5+deb13u4 \
+      tesseract-ocr=5.5.0-1+b1 \
+      ffmpeg=7:7.1.5-0+deb13u1 \
+      fonts-dejavu-core=2.37-8 \
+      fonts-liberation=1:2.1.5-3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Exact Python pins for this profile.
+COPY 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/requirements-hostinger.txt /tmp/requirements-hostinger.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-hostinger.txt
+
+# Engine checkout mounted at /opt/engine at run time (or COPY'd by the
+# release build); the matrix job bind-mounts the repo, so no COPY here.
+WORKDIR /work
+
+CMD ["bash"]

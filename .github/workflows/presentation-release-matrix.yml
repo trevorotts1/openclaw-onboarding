@@ -1,0 +1,178 @@
+name: presentation-release-matrix
+
+# PRES-043 — end-to-end release matrix: real macOS runner acceptance plus
+# Linux Docker legs for the Hostinger and Contabo image profiles.
+#
+# WHY THIS EXISTS. The drift-gates matrix comment says it plainly: both legs
+# run on ubuntu-latest and "macOS runners cost 10x and prove nothing extra
+# here". That is TRUE for static gates — and exactly why those gates cannot
+# certify launchd, macOS paths, LibreOffice fonts, or Docker CPU/memory/volume
+# behavior. Passing static checks alone cannot prove new clients can finish a
+# deck. This job is the piece that proves it: install, scheduler tick, small
+# deck render, PNG extract, OCR, manifest readback — on a REAL Mac and in REAL
+# containers built from the pinned Dockerfiles.
+#
+# PINS. Image digests, apt versions, pip pins, font packages and the upgrade
+# policy live in
+# 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/pins.yaml.
+# The Docker legs build the Dockerfiles beside those pins (digest-pinned
+# base). Native legs install Homebrew formulae + the profile requirements
+# file. A pin bump without a green matrix is not an upgrade.
+
+on:
+  push:
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presenter_guide.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/ocr_verify.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/auto_resume.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/cc_board.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pres043_release_matrix.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/pres043_live_smoke.py"
+      - "lib-presentation-schedules.sh"
+      - ".github/workflows/presentation-release-matrix.yml"
+  pull_request:
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presenter_guide.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/ocr_verify.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/auto_resume.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/cc_board.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pres043_release_matrix.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/pres043_live_smoke.py"
+      - "lib-presentation-schedules.sh"
+      - ".github/workflows/presentation-release-matrix.yml"
+
+jobs:
+  macos-acceptance:
+    name: macOS runner acceptance (native render + OCR + tick)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install native render deps (Homebrew)
+        run: |
+          set -euo pipefail
+          brew install --cask libreoffice || brew install libreoffice
+          brew install poppler tesseract ffmpeg
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/requirements-hostinger.txt
+
+      - name: Record host identity receipt
+        run: |
+          set -euo pipefail
+          {
+            echo "os=$(sw_vers -productName) $(sw_vers -productVersion) $(uname -m)"
+            echo "python=$(python3 --version)"
+            echo "soffice=$(soffice --version | head -1)"
+            echo "pdftoppm=$(pdftoppm -v 2>&1 | head -1)"
+            echo "tesseract=$(tesseract --version 2>&1 | head -1)"
+            echo "ffmpeg=$(ffmpeg -version 2>&1 | head -1)"
+            echo "fonts=$(fc-list | grep -ciE 'dejavu|liberation')"
+          } | tee release-matrix-macos-identity.txt
+
+      - name: Run PRES-043 battery (native Mac leg)
+        run: |
+          set -euo pipefail
+          cd 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests
+          python3 -m pytest test_pres043_release_matrix.py -q
+
+      - name: Scheduler install render (sandboxed HOME, stub launchctl)
+        run: |
+          set -euo pipefail
+          chmod +x tests/unit/presentation-schedules-installed.test.sh
+          bash tests/unit/presentation-schedules-installed.test.sh
+
+  docker-hostinger:
+    name: Docker leg — Hostinger profile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build pinned Hostinger image
+        run: |
+          set -euo pipefail
+          docker build -f 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/Dockerfile.hostinger -t pres043-hostinger .
+
+      - name: Record image identity receipt
+        run: |
+          set -euo pipefail
+          docker inspect pres043-hostinger --format '{{.RepoDigests}} {{.Architecture}} {{.Os}}' | tee release-matrix-hostinger-image.txt
+          docker run --rm pres043-hostinger bash -lc 'cat /etc/os-release | head -3; python3 --version; soffice --version | head -1; pdftoppm -v 2>&1 | head -1; tesseract --version 2>&1 | head -1; fc-list | grep -ciE "dejavu|liberation"; pip freeze | grep -iE "reportlab|python-pptx|pypdf|pytesseract|pillow"' | tee release-matrix-hostinger-versions.txt
+
+      - name: Run PRES-043 battery (Hostinger container leg)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests pres043-hostinger bash -lc 'python3 -m pytest test_pres043_release_matrix.py -q -p no:cacheprovider'
+
+      - name: Scheduler tick inside container (watchdog scan)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/opt/engine:ro" pres043-hostinger bash -lc 'cd /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts && PRESENTATION_NOTIFY_CMD="python3 presentation-notify.py" python3 presentation_job.py --watchdog --scan-root /tmp --scan-depth 1; test $? -eq 13'
+
+      - name: Restart-resume inside container (kill mid-render, resume)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/opt/engine:ro" pres043-hostinger bash -lc 'cd /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests && python3 -m pytest test_pres043_release_matrix.py::test_restart_resume_only_incomplete_units -q -p no:cacheprovider'
+
+  docker-contabo:
+    name: Docker leg — Contabo profile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build pinned Contabo image
+        run: |
+          set -euo pipefail
+          docker build -f 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/Dockerfile.contabo -t pres043-contabo .
+
+      - name: Record image identity receipt
+        run: |
+          set -euo pipefail
+          docker inspect pres043-contabo --format '{{.RepoDigests}} {{.Architecture}} {{.Os}}' | tee release-matrix-contabo-image.txt
+          docker run --rm pres043-contabo bash -lc 'cat /etc/os-release | head -3; python3 --version; soffice --version | head -1; pdftoppm -v 2>&1 | head -1; tesseract --version 2>&1 | head -1; fc-list | grep -ciE "dejavu|liberation"; pip freeze | grep -iE "reportlab|python-pptx|pypdf|pytesseract|pillow"' | tee release-matrix-contabo-versions.txt
+
+      - name: Run PRES-043 battery (Contabo container leg)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests pres043-contabo bash -lc 'python3 -m pytest test_pres043_release_matrix.py -q -p no:cacheprovider'
+
+      - name: Memory-bounded render (cgroup pressure path)
+        run: |
+          set -euo pipefail
+          docker run --rm --memory 2g --memory-swap 2g -v "$PWD:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests pres043-contabo bash -lc 'python3 -m pytest test_pres043_release_matrix.py::test_fault_cgroup_memory_pressure_named test_pres043_release_matrix.py::test_restart_resume_only_incomplete_units -q -p no:cacheprovider'
+
+      - name: Read-only output volume (bounded failure path)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests pres043-contabo bash -lc 'python3 -m pytest test_pres043_release_matrix.py::test_fault_readonly_output_volume -q -p no:cacheprovider'
+
+  # Real provider/GHL smoke is a SEPARATE job that NEVER runs in CI: it
+  # requires PRES043_LIVE_SMOKE=1 plus sandbox credentials plus an authorized
+  # sandbox run. Its only CI presence is the refusal leg (proving the module
+  # refuses without authorization). Record NOT VERIFIED until authorized
+  # sandbox execution produces actual remote IDs and readback.
+  live-smoke-refusal:
+    name: Live GHL smoke stays refused in CI (NOT VERIFIED)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prove live smoke refuses without sandbox authorization
+        run: |
+          set -euo pipefail
+          cd 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests
+          python3 -m pytest test_pres043_release_matrix.py::test_live_ghl_smoke_requires_sandbox_credentials -q
