@@ -6442,6 +6442,6 @@ MEMORY.md - Note that KIE.ai is configured and working
 AGENTS.md - Add rule: use KIE.ai for ALL image generation, NEVER use DALL-E 3
 
 NEVER use DALL-E 3 for image generation. It is banned permanently.
-ALWAYS use KIE.ai with Nano Banana Pro or GPT Image 1.5.
+ALWAYS use KIE.ai with GPT-Image-2.5 sunburst (`gpt-image-2-5-sunburst-*`; legacy `gpt-image-2-*` for 3:1/1:3/9:21 only, routing per Skill 66).
 ALWAYS check KIE.ai credit balance before starting any production job.
 
