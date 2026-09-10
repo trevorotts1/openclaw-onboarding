@@ -1,0 +1,68 @@
+name: rescue-rangers-rr025-rr026-gates
+
+# RR-025 — claim envelope identity. A claim is a TYPED envelope over the SPEC's
+# canonical tuple (company, runtime, incident, attempt); mistyped / missing /
+# colliding members are refused with a structured record naming member, reason
+# and taxonomy, and an invalid claim makes ZERO agent calls. The identity hash
+# is length-prefixed so delimiter-containing values cannot alias each other.
+#
+# RR-026 — process and lock supervision. The supervised turn runs in its own
+# process group under ONE monotonic lease-derived budget (TERM the group, grace,
+# KILL the group, reap, VERIFY gone); the lock is a RECORD carrying an owner
+# token and the owning process's START identity, so a recycled PID is
+# reconciled as reused and a stale owner can never release a newer holder's
+# lock. Age is never consulted. Runs on Linux here and is exercised on macOS
+# locally — the process-group and PID-reuse behaviour differ per kernel, which
+# is exactly why both are covered.
+#
+# Triggered whenever any guarded file changes.
+
+on:
+  push:
+    paths:
+      - "65-rescue-receiver/rescue-poll.sh"
+      - "shared-utils/rescue-supervise.py"
+      - "tests/rescue/RR-025/**"
+      - "tests/rescue/RR-026/**"
+      - ".github/workflows/rescue-rangers-rr025-rr026-gates.yml"
+  pull_request:
+    paths:
+      - "65-rescue-receiver/rescue-poll.sh"
+      - "shared-utils/rescue-supervise.py"
+      - "tests/rescue/RR-025/**"
+      - "tests/rescue/RR-026/**"
+      - ".github/workflows/rescue-rangers-rr025-rr026-gates.yml"
+
+jobs:
+  rescue-rangers-rr025-rr026-gates:
+    name: RR-025/RR-026 gates (envelope identity + supervision)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax gates
+        run: |
+          sh -n 65-rescue-receiver/rescue-poll.sh
+          bash -n 65-rescue-receiver/rescue-poll.sh
+          bash -n tests/rescue/RR-025/test_claim_envelope.sh
+          bash -n tests/rescue/RR-025/lib-envelope-harness.sh
+          bash -n tests/rescue/RR-026/test_process_supervision.sh
+
+      - name: Python syntax gate (stdlib-only supervisor)
+        run: |
+          python3 -m py_compile shared-utils/rescue-supervise.py
+          python3 -c "import ast,sys; ast.parse(open('shared-utils/rescue-supervise.py').read())"
+
+      - name: RR-025 claim envelope identity (typed members, canonical tuple, ZERO calls on invalid input)
+        run: |
+          bash tests/rescue/RR-025/test_claim_envelope.sh
+
+      - name: RR-026 process-group supervision, lock fencing, lease budget
+        run: |
+          bash tests/rescue/RR-026/test_process_supervision.sh
+
+      - name: RR-025/RR-026 must not regress the delivery path they sit inside
+        run: |
+          bash tests/rescue/RR-004/test_receiver_additive_fields.sh
+          bash tests/unit/rr027-no-credential-in-child-env.test.sh
