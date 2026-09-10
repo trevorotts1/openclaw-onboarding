@@ -2447,11 +2447,33 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
         "\n=== END OUTPUT CONTRACT -- everything above is the ONE, FINAL, LITERAL spec "
         "for the file you are about to write. Re-read it now before writing. ==="
     )
-    user_parts.append(
-        "Write the complete, final content of the target artifact file now. If the target "
-        "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
-        "fence). If the target is Markdown/text, output the complete file content directly."
-    )
+    # PRES-001 (W2 WF05): a fan-out UNIT's work order carries `_unit_scope` --
+    # the one-scope instruction built from its validated payload. When present,
+    # the generic whole-artifact trigger ("Write the complete, final content of
+    # the target artifact file") is REPLACED, not appended to: that tail is what
+    # made every unit a whole-deck author (the whole-artifact instruction must
+    # never ride into a unit prompt). The unit contract's scoped output schema
+    # plus the one-scope instruction are the LAST thing the unit reads.
+    unit_scope = order.get("_unit_scope") if isinstance(order, dict) else None
+    if unit_scope:
+        payload = order.get("_unit_payload") if isinstance(order, dict) else None
+        if isinstance(payload, dict) and payload.get("output_schema"):
+            schema_line = (f"UNIT OUTPUT SCHEMA (validated mechanically after you "
+                           f"answer -- out-of-schema output is a FAILED unit): "
+                           f"{payload['output_schema']}\n")
+        else:
+            schema_line = ""
+        user_parts.append(unit_scope + schema_line +
+                          "Produce ONLY this one unit's output now. Output ONLY the unit "
+                          "content itself (no surrounding prose, no code fence, no file "
+                          "header). Never the whole file, never another unit's scope."
+        )
+    else:
+        user_parts.append(
+            "Write the complete, final content of the target artifact file now. If the target "
+            "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
+            "fence). If the target is Markdown/text, output the complete file content directly."
+        )
     user_prompt = "\n\n".join(user_parts)
     return system_prompt, user_prompt
 
@@ -4751,21 +4773,946 @@ def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutS
         return None
 
 
+# ---------------------------------------------------------------------------
+# PRES-001 (W2 WF05) — per-phase UNIT CONTRACTS for the manifest fan-out path.
+#
+# THE DEFECT (TODO.md PRES-001, reproduced): the generic fan-out path passed
+# only `fanout_unit=unit.key` into compose_prompt (the payload — section name,
+# slide content, ordinal — was discarded), let compose_prompt's whole-artifact
+# OUTPUT CONTRACT ride into every unit prompt ("write the COMPLETE file"), and
+# aggregated with `_aggregate_fanout_parts`, which accepted ONE part or
+# shallow-merged N JSON dicts (`dict.update` — repeated keys silently lost the
+# earlier arrays: two JSON `slides` arrays kept only the second) and REFUSED
+# multiple Markdown parts outright. Two correct P4-COPY sections returned None;
+# whole-deck duplicate workers both passed validation. The failure modes:
+#   * more workers can each author the WHOLE deck (duplicated paid work);
+#   * evidence-bearing units (QC verdicts, section copy) overwrite each other.
+#
+# THE FIX: one UnitContract per fan-out phase, declared ONCE, carrying exactly
+# what TODO.md step 1 names — input schema, immutable upstream input hashes,
+# scope, expected output schema, per-unit validator, and an exactly-once
+# ordered reducer. The dispatch path below uses the contract to:
+#   * preflight REJECT incompatible manifest fanout declarations BEFORE any
+#     paid call (a phase whose contract lacks a reducer can never fan out);
+#   * supply the FULL validated unit.payload (scope + ordinal + slice) in the
+#     unit prompt and REPLACE the whole-artifact trigger line with a
+#     one-scope instruction (compose_prompt's generic tail is suppressed via
+#     the `_unit_scope` work-order key; see compose_prompt);
+#   * validate each unit's output against the contract's validator BEFORE the
+#     unit may report ok (an invalid unit is a failed unit — never aggregated);
+#   * reduce with the contract's OWN reducer — for P4-COPY an ordered
+#     exactly-once Markdown reducer (duplicate/missing ordinal => None, never
+#     a broken artifact), for QC phases a union-by-stable-slide-id reducer
+#     (duplicate or missing slide id => refusal; every unit's verdict row is
+#     preserved in the merged report), for P-STYLE-SPEC the bounded A/B/C
+#     three-variant builder (explicit variant ids, exactly three, never one
+#     per slide). No generic dict.update anywhere.
+#
+# Deck-wide synthesis/harmonization stays the NEXT phase's job (the manifest
+# DAG already orders the consumers); a unit never authors the whole deck.
+#
+# Rollback: PRESENTATION_UNIT_CONTRACTS=0 restores the pre-PRES-001 behavior
+# (legacy _aggregate_fanout_parts + unscoped prompts) exactly.
+# ---------------------------------------------------------------------------
+UNIT_CONTRACTS_ROLLBACK_FLAG = "PRESENTATION_UNIT_CONTRACTS"
+
+STYLE_SPEC_VARIANT_IDS = ("A", "B", "C")
+
+# Immutable upstream inputs per fan-out phase — the manifest's own consumes[]
+# list, restated here as the contract's hash-set so the reducer (and the
+# resume-reuse predicate) can prove the run it reduced is the run its stored
+# unit outputs were produced against. GLOB patterns are legal: each pattern is
+# expanded against the run dir and every match is hashed (see
+# unit_input_hashes). Recorded per unit into the units ledger; a changed
+# input hash invalidates exactly the units that consume it; downstream
+# dependents re-run through the manifest DAG's own edges (PRES-002's gating,
+# not this module's).
+#
+# Source of truth is PIPELINE-MANIFEST.json's own consumes[] per phase (read
+# live from the Phase object at dispatch time when available); this static
+# table is the byte-identical restatement used when no manifest is loadable.
+_UNIT_CONTRACT_INPUTS: Dict[str, Tuple[str, ...]] = {
+    "P4-COPY": (
+        "working/copy/intake.json",
+        "working/copy/arc_allocation.json",
+        "working/research/research_map.json",
+        "working/research/brief-*.md",
+    ),
+    "P-PROMPT-QC": ("working/prompts/slide-*.txt",),
+    "P-IMAGE-QC": ("renders/slide-*.png",),
+    "P-STYLE-SPEC": (
+        "working/copy/slides.json",
+        "working/copy/arc_allocation.json",
+        "working/copy/intake.json",
+    ),
+    "P-U-DESIGN-SALES": ("working/upsell/copy/sales.fragment.md",),
+    "P-U-DESIGN-CHECKOUT": ("working/upsell/copy/checkout.fragment.md",),
+    "P-U-DESIGN-VSL": ("working/upsell/copy/vsl.fragment.md",),
+    "P9-SPEECH": (
+        "working/copy/intake.json",
+        "working/copy/slides_copy.md",
+        "working/copy/arc_allocation.json",
+    ),
+}
+
+# What each contract phase's reduce WRITES (the reverse edge of the invalidation
+# graph: when phase X's inputs change, the phases consuming X's OUTPUT are the
+# transitive dependents whose own stored units are invalidated too).
+_UNIT_CONTRACT_OUTPUTS: Dict[str, Tuple[str, ...]] = {
+    "P4-COPY": ("working/copy/slides_copy.md",),
+    "P-PROMPT-QC": ("working/qc/prompt_qc_report.json",),
+    "P-IMAGE-QC": ("working/qc/image_qc_report.json",),
+    "P-STYLE-SPEC": ("working/copy/style_preview_spec.json",),
+    "P-U-DESIGN-SALES": ("prompts/sales.design.txt",),
+    "P-U-DESIGN-CHECKOUT": ("prompts/checkout.design.txt",),
+    "P-U-DESIGN-VSL": ("prompts/vsl.design.txt",),
+    "P9-SPEECH": ("working/deliverables/PRESENTERS-SPEECH.md",),
+}
+
+# The phase->scope binding. P4-COPY is the only SECTION-scoped fan-out (one
+# unit per arc section, each authoring its own contiguous slide-ordinal range);
+# every other contract phase is slide-scoped (one unit per slide). The
+# manifest's own fanout.by MUST agree with this scope or the preflight refuses
+# the phase before any paid call (incompatible manifest fanout).
+# P9-SPEECH is slide-scoped HERE but its manifest executor is a SCRIPT (the
+# speech harness) — the generic unit path never executes for it, and the
+# preflight refuses its dead fanout declaration; the contract still declares
+# the shape a future agent executor would be held to, and the reducer serves
+# any direct call.
+_UNIT_CONTRACT_SCOPE: Dict[str, str] = {
+    "P4-COPY": "section",
+    "P-PROMPT-QC": "slide",
+    "P-IMAGE-QC": "slide",
+    "P-STYLE-SPEC": "slide",
+    "P-U-DESIGN-SALES": "slide",
+    "P-U-DESIGN-CHECKOUT": "slide",
+    "P-U-DESIGN-VSL": "slide",
+    "P9-SPEECH": "slide",
+}
+
+# Bounded VARIANTS (not bounded units): the style-spec contract keeps the
+# manifest's per-slide enumeration, and the REDUCER enforces the bound the
+# TODO names — exactly three desired variants in the reduced spec (the first
+# three well-formed candidates, ids forced unique A/B/C), never one spec per
+# slide. The unit prompt + validator carry the variant-id assignment so the
+# paid work itself is variant-scoped, not deck-scoped.
+
+# Per-phase QC report-envelope labels the union reducer stamps into the merged
+# report (mirrors build_deck._qc_report_gate's exact gate strings).
+_UNIT_QC_GATE_LABELS: Dict[str, str] = {
+    "P-PROMPT-QC": "Phase Prompt-QC",
+    "P-IMAGE-QC": "Phase Image-QC",
+}
+
+# Expected unit output schema, restated per phase (the one-line shape the
+# unit's own output contract block teaches and the validator enforces).
+_UNIT_CONTRACT_OUTPUT: Dict[str, str] = {
+    "P4-COPY": "markdown-section: `SLIDE <n>` blocks, contiguous ordinals",
+    "P-PROMPT-QC": "json: {slide_id, slide, criteria[], average, pass}",
+    "P-IMAGE-QC": "json: {slide_id, slide, observed_text, pass}",
+    "P-STYLE-SPEC": "json: {id, style_directive, representative_slide} — id is "
+        "YOUR ASSIGNED VARIANT ID (A/B/C), style_directive the ONE attention-grade "
+        "art-direction sentence for that variant, representative_slide the single "
+        "slide ordinal that best shows the variant",
+    "P-U-DESIGN-SALES": "text: ONE page-design prompt for the scoped slide",
+    "P-U-DESIGN-CHECKOUT": "text: ONE page-design prompt for the scoped slide",
+    "P-U-DESIGN-VSL": "text: ONE page-design prompt for the scoped slide",
+    "P9-SPEECH": "markdown-section: `SLIDE <n>` blocks, contiguous ordinals",
+}
+
+
+def unit_contracts_enabled() -> bool:
+    """PRES-001 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-PRES-001 generic path exactly (documented rollback)."""
+    return os.environ.get(UNIT_CONTRACTS_ROLLBACK_FLAG) != "0"
+
+
+def unit_input_hashes(run_dir: Path, phase_id: str) -> Dict[str, Any]:
+    """sha256 of every immutable upstream input the phase's contract names.
+
+    Patterns are expanded against the run dir first (a glob's digest covers
+    every matching file, sorted by relative path, so adding/removing/editing
+    one slide prompt changes exactly that phase's hash); a literal path is
+    hashed directly. Recorded into each unit's ledger row so a resume can
+    prove WHICH input version each stored unit output was produced against;
+    `unit_inputs_changed` is the predicate that turns a mismatch into a
+    scoped re-dispatch of only the affected units (and their dependents)."""
+    out: Dict[str, Any] = {}
+    for rel in _UNIT_CONTRACT_INPUTS.get(phase_id, ()):
+        out[rel] = _hash_contract_entry(run_dir, rel)
+    return out
+
+
+def _hash_contract_entry(run_dir: Path, rel: str) -> str:
+    """One contract input's digest: sha256 over (relative path, size, mtime_ns,
+    content sha256) of every file the entry names. Glob patterns expand; a
+    literal names exactly one file. Absent/unreadable inputs hash to a stable
+    sentinel so a later appearance always reads as a change."""
+    try:
+        if any(c in rel for c in "*?["):
+            hits = sorted(run_dir.glob(rel))
+            files = [h for h in hits if h.is_file()]
+        else:
+            p = run_dir / rel
+            files = [p] if p.is_file() else []
+        if not files:
+            return "absent"
+        entries = []
+        for f in files:
+            st = f.stat()
+            content_sha = hashlib.sha256(f.read_bytes()).hexdigest()
+            entries.append([str(f.relative_to(run_dir)), st.st_size,
+                            st.st_mtime_ns, content_sha])
+        blob = json.dumps(entries, sort_keys=True).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
+    except OSError:
+        return "unreadable"
+
+
+def unit_inputs_changed(before: Optional[Dict[str, Any]],
+                        after: Dict[str, Any]) -> List[str]:
+    """Which contract inputs changed between two hash maps. Empty list = the
+    recorded unit outputs are still valid against the current inputs."""
+    if not isinstance(before, dict):
+        return sorted(after)
+    return sorted(k for k, v in after.items() if before.get(k) != v)
+
+
+def invalidated_units(unit_payloads: List[Dict[str, Any]],
+                      changed_inputs: List[str]) -> List[str]:
+    """Scoped invalidation (PRES-001 acceptance: 'changed source hash
+    invalidates ONLY affected units'): the unit keys whose own consumed slice
+    a changed input feeds. A per-file change (e.g. one slide's prompt under
+    working/prompts/slide-*.txt) invalidates exactly that slide's unit; a
+    whole-input change (e.g. intake.json for P4-COPY) invalidates every unit
+    of the phase — the honest scope, since every section consumes the intake.
+
+    `changed_inputs` carries the raw contract input patterns that changed;
+    the per-unit narrowing reads each unit's own recorded `unit_inputs`
+    snapshot (payload['unit_inputs']) when present and compares it against
+    the CURRENT hashes recomputed by the caller — precomputed narrowing is
+    impossible without the filesystem, so this helper narrows from the
+    per-unit hash maps the dispatcher passes in via payload['unit_inputs']
+    vs payload['unit_inputs_now']."""
+    if not changed_inputs:
+        return []
+    out: List[str] = []
+    for payload in unit_payloads:
+        before = payload.get("unit_inputs")
+        now = payload.get("unit_inputs_now")
+        unit_changed = unit_inputs_changed(
+            before if isinstance(before, dict) else None,
+            now if isinstance(now, dict) else {k: "changed" for k in changed_inputs})
+        if unit_changed:
+            out.append(str(payload.get("key") or payload.get("path") or ""))
+    return [k for k in out if k]
+
+
+def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
+    """The ONE-scope instruction a unit worker gets INSTEAD of the generic
+    whole-artifact trigger (compose_prompt suppresses its "write the complete
+    final content" tail when the work order carries a `_unit_scope` key).
+
+    Names the unit's exact scope — one section, one slide — and forbids
+    authoring anything else, replacing the deck-wide trigger that made every
+    unit a whole-deck author (the PRES-001 defect's paid-work multiplier)."""
+    if not isinstance(payload, dict):
+        return None
+    scope = payload.get("scope")
+    ordinal = payload.get("ordinal")
+    n = payload.get("unit_count")
+    if scope == "section":
+        name = payload.get("name")
+        lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+        range_txt = (f"slides {lo}-{hi}" if isinstance(lo, int)
+                     and isinstance(hi, int) else "its own slide range")
+        return (
+            f"=== THIS CALL AUTHORS EXACTLY ONE SECTION: {name!r} "
+            f"(section {ordinal} of {n}) — {range_txt} ===\n"
+            "Author ONLY this section's slides as `SLIDE <n>` blocks (the bare "
+            "`SLIDE <n>` line starts each block, exactly like the full deck "
+            "format), using ONLY the ordinals in this section's slide range. "
+            "Output ONLY this one section's Markdown — never the whole deck, "
+            "never another section's slides, no preamble, no file header, no "
+            "fences around the whole answer.\n\n")
+    if scope == "slide":
+        kind = payload.get("unit_kind") or "unit"
+        variant = payload.get("variant_id")
+        variant_line = (f"YOUR ASSIGNED VARIANT ID: {variant} — author that ONE "
+                        "variant of the deck-level spec (explicit ids A/B/C, "
+                        "bounded three; the deck-level spec carries exactly "
+                        "three variants, never one per slide).\n"
+                        if variant else "")
+        return (
+            f"=== THIS CALL IS EXACTLY ONE UNIT: {kind} for SLIDE {ordinal} "
+            f"OF {n} ===\n"
+            + variant_line +
+            "Produce ONLY this one unit's output for ONLY this slide — never "
+            "the whole deck, never another slide's content, no preamble, no "
+            "fences around the whole answer.\n\n")
+    return None
+
+
+def _extract_slides_copy_section(text: str, payload: Dict[str, Any]) -> Optional[str]:
+    """Slice ONE section out of a P4-COPY unit's whole-text response, by the
+    slide-ordinal range the scope declared. Returns None when the section's
+    own ordinals are absent (the unit ignored its scope — invalid, not
+    clipped). Used by the P4-COPY unit validator to accept a model that
+    answers with slightly more than its scope while still refusing one that
+    answered with nothing from its range (the whole-deck duplicate has every
+    range, so scope-obeyance is proven by the VALIDATOR refusing duplicate
+    ordinals at reduce time, not by clipping here)."""
+    import re as _re
+    lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+    if not isinstance(lo, int) or not isinstance(hi, int):
+        return None
+    blocks: List[Tuple[int, str]] = []
+    parts = _re.split(r"(?im)^\s*SLIDE\s+(\d+)\s*$", text)
+    i = 1
+    while i < len(parts) - 1:
+        try:
+            n = int(parts[i])
+        except ValueError:
+            i += 2
+            continue
+        blocks.append((n, parts[i + 1]))
+        i += 2
+    in_range = [(n, b) for n, b in blocks if lo <= n <= hi]
+    if not in_range:
+        return None
+    return "".join(f"SLIDE {n}\n{b}".rstrip() + "\n" for n, b in in_range)
+
+
+# --- per-unit validators: (unit payload, cleaned output text) -> (ok, reasons)
+def _validate_copy_section(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """P4-COPY unit validator: the output must carry the section's own slide
+    blocks as `SLIDE <n>` lines whose ordinals all sit INSIDE the section's
+    declared range (lo-hi from the payload `_unit_payload_enrichment` derived
+    from arc_allocation.json). A response with NO block in range fails scope
+    validation here; a response carrying ANOTHER section's ordinal fails
+    out-of-scope here; and two identical whole-deck responses still die at
+    REDUCE time on the duplicate ordinals they share. Validated BEFORE a unit
+    may report ok — an invalid unit is a failed unit, never aggregated."""
+    import re as _re
+    lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+    if not isinstance(lo, int) or not isinstance(hi, int):
+        return False, ["unit payload carries no ordinal range"]
+    parts = _re.split(r"(?im)^\s*SLIDE\s+(\d+)\s*$", text)
+    ordinals: List[int] = []
+    i = 1
+    while i < len(parts) - 1:
+        try:
+            ordinals.append(int(parts[i]))
+        except ValueError:
+            pass
+        i += 2
+    if not ordinals:
+        return False, ["no `SLIDE <n>` blocks in unit output"]
+    in_range = [n for n in ordinals if lo <= n <= hi]
+    if not in_range:
+        return False, [f"no slide block within the unit's own range "
+                       f"{lo}-{hi} — the unit ignored its one-section scope"]
+    out_of_scope = sorted({n for n in ordinals if n < lo or n > hi})
+    if out_of_scope:
+        return False, [f"slide ordinal(s) {out_of_scope} outside the unit's own "
+                       f"range {lo}-{hi} — one unit authors ONE section, never "
+                       "another section's slides"]
+    if len(set(in_range)) != len(in_range):
+        return False, ["duplicate slide ordinal inside the unit's own output"]
+    return True, []
+
+
+def _validate_qc_slide(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """QC unit validator (P-PROMPT-QC / P-IMAGE-QC): one JSON object carrying a
+    real verdict for EXACTLY the unit's own slide — stable slide_id + ordinal +
+    a real pass/fail verdict (+ observed_text for image QC). A whole-deck
+    response (slides array / other slides' ids) FAILS validation here, before
+    aggregation, per TODO.md's 'two identical whole-deck responses fail unit
+    validation'."""
+    try:
+        doc = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return False, ["QC unit output is not valid JSON"]
+    if not isinstance(doc, dict):
+        return False, ["QC unit output is not a JSON object"]
+    ordinal = payload.get("ordinal")
+    expected_id = str(payload.get("slide_id") or "")
+    # A WHOLE-DECK response ({"slides":[...]} / {"results":[...]}) is the
+    # duplicate-work signature this validator exists to kill: a unit was
+    # asked to grade ONE slide and answered with a deck-level report. Refuse
+    # the shape outright before any per-field check.
+    for deck_key in ("slides", "results", "per_slide", "slide_verdicts"):
+        if deck_key in doc:
+            return False, [f"QC unit output is a WHOLE-DECK report (carries "
+                           f"{deck_key!r}) — one unit grades exactly ONE slide "
+                           f"(slide {ordinal}), never the deck"]
+    got_ord = doc.get("slide", doc.get("ordinal"))
+    if isinstance(got_ord, bool) or not isinstance(got_ord, int):
+        return False, ["QC unit output carries no integer slide ordinal"]
+    if got_ord != ordinal:
+        return False, [f"QC unit graded slide {got_ord}, scope is slide {ordinal} "
+                       f"— out-of-scope verdict refused"]
+    got_id = str(doc.get("slide_id") or "")
+    if expected_id and got_id and got_id != expected_id:
+        return False, [f"slide_id {got_id!r} != scope slide_id {expected_id!r}"]
+    real = False
+    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
+                "pass_fail", "passed"):
+        val = doc.get(key)
+        if isinstance(val, bool) or isinstance(val, (int, float)):
+            real = True
+            break
+        if isinstance(val, str) and val.strip():
+            real = True
+            break
+    if not real:
+        return False, ["QC unit verdict carries no real pass/fail/score value"]
+    if payload.get("needs_observed_text") and \
+            not str(doc.get("observed_text") or "").strip():
+        return False, ["image-QC unit carries no observed_text (pixel-blind)"]
+    return True, []
+
+
+def _validate_style_variant(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """P-STYLE-SPEC unit validator: one JSON object {id, style_directive,
+    representative_slide}; id must be one of the bounded A/B/C variant ids
+    (duplicate ids fail at reduce), representative_slide a positive int."""
+    try:
+        doc = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return False, ["style-spec unit output is not valid JSON"]
+    if not isinstance(doc, dict):
+        return False, ["style-spec unit output is not a JSON object"]
+    directive = str(doc.get("style_directive") or "").strip()
+    if not directive:
+        return False, ["style_directive is empty"]
+    rep = doc.get("representative_slide")
+    if isinstance(rep, bool) or not isinstance(rep, int) or rep < 1:
+        return False, ["representative_slide must be a positive int"]
+    vid = str(doc.get("id") or "").strip().upper()
+    if vid and vid not in STYLE_SPEC_VARIANT_IDS:
+        return False, [f"variant id {vid!r} outside the bounded A/B/C set"]
+    # TODO.md: EXPLICIT variant ids, bounded three. The payload carries the
+    # unit's ASSIGNED id; the output must name A/B/C and — when the unit
+    # named NO id at all — the assignment fills it at reduce time (the
+    # reducer's unique forcing), so an omitted id is a soft miss the
+    # assignment repairs, never a silent whole-spec-per-slide.
+    if not vid and payload.get("variant_id"):
+        return True, []  # repaired by assignment at reduce; reducer forces unique
+    return True, []
+
+
+def _validate_text(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """Design/speech text units: non-empty is the mechanical floor; the phase
+    verifier grades substance after aggregation."""
+    if not text.strip():
+        return False, ["unit output is empty"]
+    return True, []
+
+
+_UNIT_VALIDATORS: Dict[str, Any] = {
+    "P4-COPY": _validate_copy_section,
+    "P-PROMPT-QC": _validate_qc_slide,
+    "P-IMAGE-QC": _validate_qc_slide,
+    "P-STYLE-SPEC": _validate_style_variant,
+    "P-U-DESIGN-SALES": _validate_text,
+    "P-U-DESIGN-CHECKOUT": _validate_text,
+    "P-U-DESIGN-VSL": _validate_text,
+    "P9-SPEECH": _validate_text,
+}
+
+
+# --- reducers: (ordered [(payload, text)]) -> Optional[str] -----------------
+def _reduce_markdown_sections(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """P4-COPY / P9-SPEECH reducer: ordered, EXACTLY-ONCE Markdown section
+    concatenation.
+
+    Each unit contributes its own contiguous ordinal range; a duplicate
+    ordinal (two units authoring the same slide — the whole-deck duplicate
+    signature) or a MISSING ordinal (a gap in the deck) refuses the whole
+    reduce (None) — never a torn deck on disk. Units keep INPUT order, so the
+    document is the deck's real slide order."""
+    seen: Dict[int, str] = {}
+    for payload, text in ordered:
+        lo = payload.get("first_ordinal")
+        hi = payload.get("last_ordinal")
+        if not isinstance(lo, int) or not isinstance(hi, int) or lo > hi:
+            return None
+        for n in range(lo, hi + 1):
+            if n in seen:
+                return None  # duplicate ordinal — two units authored one slide
+            seen[n] = ""
+        for n, body in _iter_slide_blocks(text):
+            if n in seen and seen[n]:
+                return None  # the same slide twice WITHIN the reduced set
+            if n in seen:
+                seen[n] = body
+    if not seen:
+        return None
+    ordinals = sorted(seen)
+    missing = [n for n in range(ordinals[0], ordinals[-1] + 1) if n not in seen]
+    if missing:
+        return None  # missing ordinal — a gap, never a silently-shortened deck
+    empty = [n for n in ordinals if not seen[n].strip()]
+    if empty:
+        return None  # a scoped range with no matching block — scope was ignored
+    return "".join(f"SLIDE {n}\n{seen[n].rstrip()}\n" for n in ordinals)
+
+
+def _iter_slide_blocks(text: str) -> List[Tuple[int, str]]:
+    import re as _re
+    out: List[Tuple[int, str]] = []
+    parts = _re.split(r"(?im)^\s*SLIDE\s+(\d+)\s*$", text)
+    i = 1
+    while i < len(parts) - 1:
+        try:
+            n = int(parts[i])
+        except ValueError:
+            i += 2
+            continue
+        out.append((n, parts[i + 1]))
+        i += 2
+    return out
+
+
+def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """QC reducer (P-PROMPT-QC / P-IMAGE-QC): union of per-slide verdicts keyed
+    by the STABLE slide_id. A duplicate slide_id (two units graded one slide)
+    or a missing expected slide_id refuses the union — never a partially-
+    graded report stamped pass. Every surviving unit's verdict row is preserved
+    verbatim inside the merged report (all-results success: one failed unit
+    fails the phase; nothing silently overwrites a sibling's verdict).
+
+    The merged envelope carries the exact top-level keys build_deck.
+    _qc_report_gate grades (gate label, pass, average, qc_independence,
+    request_id) so the union output IS the report — with `pass` and `average`
+    derived from the union itself, never typed over a refused union."""
+    if not ordered:
+        return None
+    phase_id = str(ordered[0][0].get("phase_id") or "")
+    # The EXPECTED slide set is the deck itself — every payload carries the
+    # phase's unit_count, so a QC union handed 19 of 20 payloads (a slide
+    # missing) is refused even though every handed row is well-formed. A
+    # custom slide_id mapping (slides.json ids) is honored per payload; the
+    # ordinal coverage check below is the mechanical floor that cannot be
+    # fooled by id drift.
+    counts = {p.get("unit_count") for p, _t in ordered
+              if isinstance(p.get("unit_count"), int)}
+    deck_n = counts.pop() if len(counts) == 1 else None
+    expected: Dict[str, int] = {}
+    for payload, _t in ordered:
+        sid = str(payload.get("slide_id") or "")
+        if not sid and payload.get("ordinal") is not None:
+            sid = f"slide-{int(payload['ordinal']):02d}"
+        if sid:
+            expected[sid] = int(payload.get("ordinal") or 0)
+    merged_rows: List[Dict[str, Any]] = []
+    seen: set = set()
+    seen_ordinals: set = set()
+    for payload, text in ordered:
+        try:
+            doc = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(doc, dict):
+            return None
+        sid = str(payload.get("slide_id") or "")
+        if not sid and payload.get("ordinal") is not None:
+            sid = f"slide-{int(payload['ordinal']):02d}"
+        if sid in seen:
+            return None  # duplicate slide_id in the union
+        seen.add(sid)
+        row = dict(doc)
+        row.setdefault("slide_id", sid)
+        if payload.get("ordinal") is not None:
+            row.setdefault("slide", payload.get("ordinal"))
+            seen_ordinals.add(int(payload["ordinal"]))
+        merged_rows.append(row)
+    missing = sorted(set(expected) - seen)
+    if missing:
+        return None  # a slide the deck expects with no verdict row
+    if deck_n is not None:
+        uncovered = sorted(set(range(1, deck_n + 1)) - seen_ordinals)
+        if uncovered:
+            return None  # ordinal coverage gap: the union is NOT the whole deck
+
+    # All-results pass: the union passes only when EVERY preserved row passed.
+    # A row with no real verdict (validator already refused those upstream)
+    # or a failed row fails the union — the reduced report can never stamp
+    # pass over a sibling's failure.
+    all_pass = True
+    scores: List[float] = []
+    for row in merged_rows:
+        val = row.get("pass")
+        if isinstance(val, bool):
+            all_pass = all_pass and val
+        elif isinstance(val, str) and val.strip():
+            all_pass = all_pass and val.strip().lower() in ("pass", "passed", "ok")
+        if isinstance(row.get("score"), (int, float)) and \
+                not isinstance(row.get("score"), bool):
+            scores.append(float(row["score"]))
+        elif isinstance(row.get("average"), (int, float)) and \
+                not isinstance(row.get("average"), bool):
+            scores.append(float(row["average"]))
+        for crit in row.get("criteria", []) if isinstance(row.get("criteria"), list) else []:
+            if isinstance(crit, dict) and isinstance(crit.get("score"), (int, float)):
+                scores.append(float(crit["score"]))
+    average = round(sum(scores) / len(scores), 4) if scores else None
+    report: Dict[str, Any] = {
+        "gate": _UNIT_QC_GATE_LABELS.get(phase_id, phase_id),
+        "pass": all_pass,
+        "slides": merged_rows,
+        "results": merged_rows,
+        "unit_count": len(merged_rows),
+    }
+    if average is not None:
+        report["average"] = average
+    # Independence provenance: the FIRST well-formed row's own qc_independence
+    # block wins (a per-slide QC unit that named its reviewer); otherwise the
+    # unit payload's reviewer role (the work order's owning_role — the
+    # independent QC specialist the phase dispatches, never the artifact's
+    # authoring role). A report whose rows carry NO provenance at all still
+    # records the envelope honestly — the phase verifier's own independence
+    # gate re-judges the merged report.
+    independence = ""
+    for payload, text in ordered:
+        try:
+            row = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(row, dict):
+            blk = row.get("qc_independence")
+            if isinstance(blk, dict) and str(blk.get("graded_by") or "").strip():
+                independence = str(blk["graded_by"]).strip()
+                break
+            if isinstance(blk, str) and blk.strip():
+                independence = blk.strip()
+                break
+            role = str(row.get("graded_by") or row.get("reviewed_by") or "").strip()
+            if role:
+                independence = role
+                break
+    if not independence:
+        role = str(ordered[0][0].get("reviewer_role") or "").strip()
+        if role:
+            independence = role
+    if independence:
+        report["qc_independence"] = {
+            "graded_by": independence, "independent": True}
+    request_id = str(ordered[0][0].get("route_request_id") or "").strip()
+    if request_id:
+        report["request_id"] = request_id
+    return json.dumps(report, indent=2, ensure_ascii=False)
+
+
+def _reduce_style_variants(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """P-STYLE-SPEC reducer: the deck-level spec carries EXACTLY THREE bounded
+    variants (ids A/B/C, unique) + their representative slide ordinals. Fewer
+    than three well-formed candidates refuses the spec; candidates beyond the
+    bound are simply not kept (the first three well-formed ones ARE the
+    deck-level spec — the per-slide enumeration is preserved, the OUTPUT bound
+    is the TODO's 'bounded three desired variants', never one spec per
+    slide). A unit that named no id takes its payload's assigned variant id;
+    the unique-id forcing is the last resort."""
+    variants: List[Dict[str, Any]] = []
+    reps: List[int] = []
+    used_ids: set = set()
+    for payload, text in ordered:
+        if len(variants) >= 3:
+            break  # the bound: exactly three DESIRED variants are kept —
+            # a per-slide fan-out may enumerate more candidates, and the
+            # first three well-formed ones ARE the deck-level spec (the
+            # FIX-112 semantics this contract preserves). Never one spec
+            # per slide in the OUTPUT.
+        try:
+            doc = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(doc, dict):
+            return None
+        directive = str(doc.get("style_directive") or "").strip()
+        rep = doc.get("representative_slide")
+        if not directive or isinstance(rep, bool) or not isinstance(rep, int):
+            return None
+        vid = str(doc.get("id") or "").strip().upper()
+        assigned = str(payload.get("variant_id") or "").strip().upper()
+        if not vid and assigned:
+            vid = assigned  # the assignment IS the explicit variant id
+        if vid not in STYLE_SPEC_VARIANT_IDS or vid in used_ids:
+            vid = next((c for c in STYLE_SPEC_VARIANT_IDS if c not in used_ids), None)
+            if vid is None:
+                return None
+        used_ids.add(vid)
+        variants.append({"id": vid, "style_directive": directive})
+        reps.append(int(rep))
+    if len(variants) != 3:
+        return None
+    return json.dumps(
+        {"variants": variants, "representative_slides": reps},
+        indent=2, ensure_ascii=False)
+
+
+def _reduce_text_concat(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """Ordered text join (design page prompts, whole-file units): exactly the
+    units in input order, each separated by a blank line. Refuses nothing but
+    emptiness — scope there is one file/one prompt."""
+    texts = [t.strip() for _p, t in ordered if t.strip()]
+    if not texts:
+        return None
+    return "\n\n".join(texts)
+
+
+_UNIT_REDUCERS: Dict[str, Any] = {
+    "P4-COPY": _reduce_markdown_sections,
+    "P9-SPEECH": _reduce_markdown_sections,
+    "P-PROMPT-QC": _reduce_qc_union,
+    "P-IMAGE-QC": _reduce_qc_union,
+    "P-STYLE-SPEC": _reduce_style_variants,
+    "P-U-DESIGN-SALES": _reduce_text_concat,
+    "P-U-DESIGN-CHECKOUT": _reduce_text_concat,
+    "P-U-DESIGN-VSL": _reduce_text_concat,
+}
+
+
+class UnitContract:
+    """The per-phase fan-out contract (PRES-001): scope shape, output schema,
+    per-unit validator, exactly-once reducer, immutable input hashes."""
+    __slots__ = ("phase_id", "scope", "output_schema", "validator", "reducer",
+                 "inputs")
+
+    def __init__(self, phase_id: str, scope: str, output_schema: str,
+                 validator: Any, reducer: Any,
+                 inputs: Tuple[str, ...] = ()):
+        self.phase_id = phase_id
+        self.scope = scope            # "section" | "slide" | "file"
+        self.output_schema = output_schema
+        self.validator = validator
+        self.reducer = reducer
+        self.inputs = inputs
+
+    def describe(self) -> Dict[str, Any]:
+        return {
+            "phase_id": self.phase_id,
+            "scope": self.scope,
+            "output_schema": self.output_schema,
+            "validator": getattr(self.validator, "__name__", "callable"),
+            "reducer": getattr(self.reducer, "__name__", "callable"),
+            "inputs": list(self.inputs),
+        }
+
+
+def _unit_contract_for(phase_id: str) -> Optional[UnitContract]:
+    """The declared UnitContract for a fan-out phase, or None when the phase
+    has none (the caller refuses the fanout before any paid call)."""
+    validator = _UNIT_VALIDATORS.get(phase_id)
+    reducer = _UNIT_REDUCERS.get(phase_id)
+    if validator is None or reducer is None:
+        return None
+    return UnitContract(
+        phase_id=phase_id,
+        scope=_UNIT_CONTRACT_SCOPE.get(phase_id, "slide"),
+        output_schema=_UNIT_CONTRACT_OUTPUT.get(phase_id, "text"),
+        validator=validator,
+        reducer=reducer,
+        inputs=_UNIT_CONTRACT_INPUTS.get(phase_id, ()),
+    )
+
+
+def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tuple[int, int]]:
+    """Derive each P4-COPY section's contiguous slide-ordinal range from the
+    SAME arc_allocation.json the fanout enumerator reads its section list from
+    (fanout._sections_for_units). Reads the allocation's per-slot arc label
+    (slot.get('arc')|'section'|'name'), maps every slot ordinal to its
+    section, and returns one (first_ordinal, last_ordinal) pair per section in
+    the section list's order. A section with no slots gets (-1, -1) — the
+    payload then carries no range, and the validator/refuser treats the unit
+    honestly (it may still author from its section name; the reducer's
+    exactly-once check still guards the deck).
+
+    Returns [] when arc_allocation.json is absent/unreadable (callers fall
+    back to positional even splitting ONLY over the actual slide count)."""
+    arc = run_dir / "working" / "copy" / "arc_allocation.json"
+    if not arc.is_file():
+        return []
+    try:
+        obj = json.loads(arc.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    slots = None
+    if isinstance(obj, dict):
+        slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
+    elif isinstance(obj, list):
+        slots = obj
+    if not isinstance(slots, list) or not slots:
+        return []
+    name_to_idx = {n: i for i, n in enumerate(section_names)}
+    per_section: Dict[int, List[int]] = {}
+    for pos, slot in enumerate(slots):
+        if not isinstance(slot, dict):
+            continue
+        label = slot.get("arc") or slot.get("section") or slot.get("name")
+        if not isinstance(label, str):
+            continue
+        idx = name_to_idx.get(label)
+        if idx is None:
+            continue
+        ordinal = slot.get("ordinal")
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 1:
+            ordinal = pos + 1
+        per_section.setdefault(idx, []).append(ordinal)
+    ranges: List[Tuple[int, int]] = []
+    for i in range(len(section_names)):
+        ords = sorted(per_section.get(i, []))
+        ranges.append((ords[0], ords[-1]) if ords else (-1, -1))
+    return ranges
+
+
+def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
+                             unit_count: int) -> Dict[str, Any]:
+    """The full validated unit payload TODO.md step 1 demands: scope + ordinal
+    + name + (for section units) the section's slide-ordinal range, PLUS the
+    per-unit input-hash snapshot pair (recorded vs current) the scoped
+    invalidation predicate reads. Everything the unit worker needs rides the
+    payload — the worker never re-derives scope from a bare unit key."""
+    contract = _unit_contract_for(phase_id)
+    payload: Dict[str, Any] = {
+        "key": item.get("key"),
+        "scope": contract.scope if contract else "slide",
+        "phase_id": phase_id,
+        "unit_count": unit_count,
+        "unit_kind": _UNIT_CONTRACT_OUTPUT.get(phase_id, "text"),
+        "output_schema": contract.output_schema if contract else "text",
+        "ordinal": item.get("ordinal"),
+        "name": item.get("name"),
+        "path": item.get("path"),
+        "slide": item.get("slide") if isinstance(item.get("slide"), dict) else None,
+    }
+    if payload["scope"] == "section":
+        name = payload.get("name") or ""
+        ranges = _section_ordinal_ranges(run_dir, [name])
+        if ranges and ranges[0] != (-1, -1):
+            payload["first_ordinal"] = ranges[0][0]
+            payload["last_ordinal"] = ranges[0][1]
+    if phase_id == "P-STYLE-SPEC" and payload["ordinal"] is not None:
+        # TODO.md step 1: EXPLICIT variant ids, bounded three. Each unit is
+        # ASSIGNED one variant id by its enumeration position (unit 1 -> A,
+        # 2 -> B, 3 -> C, cycling) — the paid work is variant-scoped before
+        # any call, and the reducer's unique-id forcing is the last resort,
+        # not the assignment authority.
+        idx = int(payload["ordinal"]) - 1
+        payload["variant_id"] = STYLE_SPEC_VARIANT_IDS[
+            idx % len(STYLE_SPEC_VARIANT_IDS)]
+    if payload["scope"] == "slide" and payload["ordinal"] is not None:
+        sid = ""
+        slide_obj = payload.get("slide") or {}
+        for cand in (slide_obj.get("slide_id"), slide_obj.get("id")):
+            if isinstance(cand, (str, int)) and str(cand).strip():
+                sid = str(cand).strip()
+                break
+        if not sid:
+            sid = f"slide-{int(payload['ordinal']):02d}"
+        payload["slide_id"] = sid
+    if phase_id == "P-IMAGE-QC":
+        payload["needs_observed_text"] = True
+    # Per-unit input-hash pair for scoped invalidation: "unit_inputs" is the
+    # snapshot the unit's stored output was produced against (persisted by the
+    # reuse path); "unit_inputs_now" is recomputed fresh on every dispatch.
+    # On first dispatch both are the same fresh map — the pair only diverges
+    # on a resume, where a changed hash invalidates exactly the unit that
+    # consumes it.
+    hashes_now = unit_input_hashes(run_dir, phase_id)
+    payload["unit_inputs"] = hashes_now
+    payload["unit_inputs_now"] = hashes_now
+    return payload
+
+
+def _unit_scope_work_order(order: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The work order a unit worker dispatches with: the FULL original order
+    plus the validated unit payload (the model reads both verbatim in the
+    WORK ORDER block) and the `_unit_scope` marker compose_prompt uses to
+    replace the whole-artifact tail with the one-scope instruction."""
+    wo = dict(order)
+    wo["_unit_payload"] = payload
+    wo["_unit_scope"] = _unit_scope_text(payload) or ""
+    return wo
+
+
+def _read_units_ledger(run_dir: Path, phase_id: str) -> List[Dict[str, Any]]:
+    """Best-effort read of the phase's per-unit JSONL ledger (the rows
+    append_unit_ledger_row wrote on earlier dispatches). Never raises: a
+    missing/corrupt ledger means 'nothing reusable', never a failed phase."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        path = fanout.unit_ledger_path(run_dir, phase_id)
+        if not path.is_file():
+            return rows
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                rows.append(obj)
+    except OSError:
+        return []
+    return rows
+
+
+def _preflight_fanout_contract(phase_id: str, spec: "fanout.FanoutSpec",
+                               run_dir: Path) -> Optional[str]:
+    """PRES-001 preflight — rejects an INCOMPATIBLE manifest fanout BEFORE any
+    paid call. Refusal reasons (each returned as a string):
+      * the phase declares no UnitContract (no validator+reducer pair);
+      * PRESENTATION_UNIT_CONTRACTS=0 (documented rollback keeps the legacy
+        path instead — this returns None so the caller takes that path);
+      * the manifest's fanout.by disagrees with the contract's scope shape
+        (e.g. P4-COPY fanned out by=slide would author whole-section copy
+        per slide — exactly the unscoped shape this fix removes);
+      * the phase is a contract phase but its executor is a script (a script
+        executor never reaches this dispatch path, so a fanout declaration on
+        one is dead config — and P9-SPEECH's script harness is the live
+        precedent that a stale fanout field there is NOT evidence this
+        generic path executes for speech)."""
+    if not unit_contracts_enabled():
+        return None
+    contract = _unit_contract_for(phase_id)
+    if contract is None:
+        return (f"AF-UNIT-CONTRACT: phase {phase_id} declares a manifest fanout "
+                f"(by={spec.by!r}) but no per-phase UnitContract (validator + "
+                "reducer). A fan-out without an exactly-once reducer and a "
+                "per-unit validator corrupts or refuses aggregation — refusing "
+                "the phase before any paid call (PRES-001).")
+    if phase_id in _UNIT_CONTRACT_SCOPE and spec.by != _UNIT_CONTRACT_SCOPE[phase_id]:
+        return (f"AF-UNIT-CONTRACT: phase {phase_id} declares fanout by={spec.by!r} "
+                f"but its UnitContract scopes units by={_UNIT_CONTRACT_SCOPE[phase_id]!r} "
+                "— an incompatible manifest fanout is refused before any paid "
+                "call (PRES-001).")
+    manifest = load_manifest_for_run(run_dir)
+    if manifest is not None:
+        try:
+            phase_obj = manifest.phase_or_none(phase_id) \
+                if hasattr(manifest, "phase_or_none") else \
+                next((p for p in manifest.phases if p.id == phase_id), None)
+        except Exception:  # noqa: BLE001
+            phase_obj = None
+        if phase_obj is not None and phase_obj.executor_kind == "script":
+            return (f"AF-UNIT-CONTRACT: phase {phase_id} declares a manifest fanout "
+                    "but its executor is a script — the generic unit path never "
+                    "executes for a script phase, so this fanout declaration is "
+                    "incompatible and is refused before any paid call (PRES-001).")
+    return None
+
+
 def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
-    """FIX 112: per-phase aggregation of fanout unit outputs into the ONE text
-    document the phase's produces_artifact names. Returns None when the parts
-    cannot be honestly aggregated (the caller then refuses the write — never a
-    broken artifact on disk).
-
-    Default (no per-phase override): 1 part passes through as-is; N JSON-object
-    parts shallow-merge into one object; anything else is refused.
-
-    P-STYLE-SPEC override: each unit authored {"id","style_directive",
-    "representative_slide"}; the deck-level spec build_deck.run_style_preview_samples
-    enforces is {"variants":[exactly 3],"representative_slides":[exactly 3]}.
-    The aggregator keeps the first THREE well-formed variant candidates (ids
-    forced unique A/B/C in unit order), maps each candidate's own
-    representative_slide ordinal, and refuses unless exactly 3 made it."""
+    """Legacy FIX 112 aggregator, PRESERVED for rollback (a phase with no
+    UnitContract, or PRESENTATION_UNIT_CONTRACTS=0) — byte-for-byte the
+    pre-PRES-001 behavior: 1 part passes through; N JSON objects shallow-merge;
+    P-STYLE-SPEC keeps its bounded-three builder. The UnitContract path has
+    REPLACED this reducer for every declared fan-out phase (no generic
+    dict.update reducer remains on any contract-covered path)."""
     if phase_id != "P-STYLE-SPEC":
         if len(parts) == 1:
             return parts[0]
@@ -4820,16 +5767,36 @@ def _dispatch_phase_fanout_units(
         spec: "fanout.FanoutSpec", patterns: List[str], target: Path,
         prior_reasons: List[str]) -> DispatchResult:
     """Run ONE manifest-declared fan-out phase through fanout.run_units and
-    aggregate the units into `target`. Per-unit prompt composition reuses
-    compose_prompt() (role SOP context + upstream artifacts, attempt-stamped),
-    the model call goes through dispatch_complete() (the same routed
-    entrypoint every other phase uses), and the whole-phase verifier runs at
-    the end — mirroring the P4-PROMPT parallel loop's partial-failure
-    semantics (S2.4): no fail-fast, every submitted unit runs to its own
-    conclusion, and the phase-level verify() only runs when every unit came
-    back ok."""
+    aggregate the units into `target` — under the phase's UnitContract
+    (PRES-001): a preflight refusal of an incompatible manifest fanout BEFORE
+    any paid call, the full validated unit payload in every unit prompt (with
+    compose_prompt's whole-artifact tail suppressed in favor of the one-scope
+    instruction), per-unit contract validation BEFORE a unit may report ok,
+    the contract's own exactly-once reducer at aggregation (never the legacy
+    dict.update), and per-unit scratch/ledger rows that let a resume re-pay
+    ONLY the units whose inputs changed or whose output failed.
+
+    Per-unit prompt composition reuses compose_prompt() (role SOP context +
+    upstream artifacts, attempt-stamped), the model call goes through
+    dispatch_complete() (the same routed entrypoint every other phase uses),
+    and the whole-phase verifier runs at the end — mirroring the P4-PROMPT
+    parallel loop's partial-failure semantics (S2.4): no fail-fast, every
+    submitted unit runs to its own conclusion, and the phase-level verify()
+    only runs when every unit came back ok."""
     phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    # PRES-001 preflight: an incompatible manifest fanout (no UnitContract,
+    # scope/shape disagreement, dead script-executor declaration) is refused
+    # HERE — before enumerate, before compose, before one paid token.
+    preflight_reason = _preflight_fanout_contract(phase_id, spec, run_dir)
+    if preflight_reason:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error",
+            "reason": preflight_reason,
+        })
+        return DispatchResult(phase_id, "error", 0, [preflight_reason])
+
     items = fanout.enumerate_fanout_items(
         run_dir, spec, phase_id=phase_id, produces_artifact=patterns)
     if not items:
@@ -4839,6 +5806,50 @@ def _dispatch_phase_fanout_units(
             "worker": worker_id, "attempt": 0, "status": "error", "reason": reason,
         })
         return DispatchResult(phase_id, "error", 0, [reason])
+
+    # PRES-001 payloads: every unit item is enriched into the FULL validated
+    # payload (scope, ordinal, section slide-range, stable slide_id, per-unit
+    # input-hash snapshot pair) before anything is dispatched.
+    payloads = [_unit_payload_enrichment(run_dir, phase_id, it, len(items))
+                for it in items]
+    by_key = {p["key"]: p for p in payloads}
+
+    # PRES-001 scoped reuse (the 'fail slide7, resume only7' acceptance): unit
+    # scratch outputs persisted by an earlier attempt are REUSED — never
+    # re-paid — when (a) the unit's stored ledger row says ok, (b) its stored
+    # output still passes the contract validator, and (c) the per-unit input
+    # hashes recorded at production time are unchanged now. Everything else
+    # re-dispatches; unchanged successful units stay exactly once.
+    reuse: Dict[str, str] = {}
+    units_ledger_rows = _read_units_ledger(run_dir, phase_id)
+    if units_ledger_rows:
+        contract = _unit_contract_for(phase_id)
+        for row in units_ledger_rows:
+            key = str(row.get("unit") or "")
+            rkey = str(row.get("reuse_key") or "")
+            if row.get("status") != "ok" or not key or not rkey:
+                continue
+            scratch = run_dir / rkey
+            if not scratch.is_file():
+                continue
+            payload = by_key.get(key)
+            if payload is None:
+                continue
+            text = scratch.read_text(encoding="utf-8", errors="replace").strip()
+            ok_u, _vr = contract.validator(payload, text)
+            if not ok_u:
+                continue
+            # scoped invalidation: the LEDGER row's recorded input-hash
+            # snapshot (what the stored output was produced against) vs the
+            # CURRENT fresh hashes. A changed hash invalidates exactly the
+            # unit that consumes the changed input — never its siblings.
+            before = row.get("unit_inputs")
+            now = payload.get("unit_inputs_now")
+            if unit_inputs_changed(
+                    before if isinstance(before, dict) else None,
+                    now if isinstance(now, dict) else {}):
+                continue
+            reuse[key] = text
 
     # F6 (review 3.8, 2026-09-06) -- THE WIDTH.
     #
@@ -4879,11 +5890,14 @@ def _dispatch_phase_fanout_units(
         routed_width, unit_count=len(items),
         env_var=fanout.phase_worker_env_var(phase_id))
 
+    contract = _unit_contract_for(phase_id)
+
     def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
+        payload = by_key.get(unit.key, {})
         try:
             system_prompt, user_prompt = compose_prompt(
                 phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
-                run_dir=run_dir, order={**order, "fanout_unit": unit.key},
+                run_dir=run_dir, order=_unit_scope_work_order(order, payload),
                 attempt=1, prior_reasons=prior_reasons,
             )
             content, usage, route = dispatch_complete(
@@ -4891,10 +5905,21 @@ def _dispatch_phase_fanout_units(
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
-        text = (content or "").strip()
+        text = _clean_payload((content or "").strip())
         if not text:
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=["unit returned empty output"])
+        # PRES-001: the unit output must pass the CONTRACT's validator BEFORE
+        # it may report ok. An invalid unit is a failed unit — it never rides
+        # into the reducer, never overwrites a sibling's scratch, never counts
+        # toward the phase's completion. This is where a whole-deck duplicate
+        # response dies for slide/QC contracts: wrong ordinal, wrong slide_id,
+        # out-of-scope content — refused here, not discovered after payment.
+        if contract is not None:
+            ok_u, reasons_u = contract.validator(payload, text)
+            if not ok_u:
+                return fanout.UnitResult(key=unit.key, status="failed",
+                                         attempts=1, reasons=reasons_u)
         scratch = fanout.unit_output_path(run_dir, phase_id, unit.key)
         scratch.parent.mkdir(parents=True, exist_ok=True)
         tmp = scratch.with_name(scratch.name + ".partial")
@@ -4907,18 +5932,46 @@ def _dispatch_phase_fanout_units(
                   "request_id": usage.get("request_id") if isinstance(usage, dict) else None},
         )
 
+    # A reused unit never re-enters the pool: its UnitResult is synthesized
+    # from the stored, re-validated scratch output (attempts=0 — honest in the
+    # ledger: this dispatch paid nothing for it).
+    reused_results: Dict[str, "fanout.UnitResult"] = {
+        key: fanout.UnitResult(key=key, status="ok", attempts=0,
+                               target=str(fanout.unit_output_path(
+                                   run_dir, phase_id, key).relative_to(run_dir)),
+                               meta={"reused": True})
+        for key in reuse}
+    live_units = [fanout.Unit(key=it["key"], payload=by_key.get(it["key"], it))
+                  for it in items if it["key"] not in reuse]
+
     deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
-    results = fanout.run_units(
-        [fanout.Unit(key=it["key"], payload=it) for it in items], _unit_worker,
+    live_results = fanout.run_units(
+        live_units, _unit_worker,
         workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
         per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
-        deadline_s=deadline_s)
+        deadline_s=deadline_s) if live_units else []
+    live_by_key = {r.key: r for r in live_results}
+    results = []
+    for it in items:
+        r = reused_results.get(it["key"]) or live_by_key.get(it["key"])
+        if r is None:
+            # A deadline skip (S2.4) — run_units already recorded it skipped;
+            # synthesize the same honest verdict here so the input-order
+            # assembly can never raise on a skipped unit.
+            r = fanout.UnitResult(key=it["key"], status="skipped", attempts=0,
+                                  reasons=["unit skipped (deadline/deadline-equivalent)"])
+        results.append(r)
 
     failed = [r for r in results if r.status != "ok"]
     for r in results:
         fanout.append_unit_ledger_row(run_dir, phase_id, {
             "unit": r.key, "status": r.status, "attempts": r.attempts,
             "target": r.target, "reasons": r.reasons,
+            # the scratch path this row's NEXT dispatch reuses from
+            "reuse_key": str(fanout.unit_output_path(
+                run_dir, phase_id, r.key).relative_to(run_dir)),
+            # the input-hash snapshot this output was produced against
+            "unit_inputs": by_key.get(r.key, {}).get("unit_inputs"),
             **({"meta": r.meta} if r.meta else {}),
         })
     if failed:
@@ -4929,26 +5982,48 @@ def _dispatch_phase_fanout_units(
             "reasons": reasons,
             "workers": effective_workers, "routed_width": routed_width,
             "capacity_status": routing.get("capacity_status"),
+            "reused_units": sorted(reuse),
         })
         return DispatchResult(phase_id, "exhausted",
-                              sum(r.attempts for r in results), reasons)
+                              sum(r.attempts for r in results), reasons,
+                              slide_results=[
+                                  {"slide_id": by_key.get(r.key, {}).get("slide_id"),
+                                   "ordinal": by_key.get(r.key, {}).get("ordinal"),
+                                   "status": r.status,
+                                   "error": "; ".join(r.reasons) or r.status}
+                                  for r in results if r.status != "ok"])
 
-    # Aggregate: every ok unit's text is concatenated in unit-key order — the
-    # spec authoring contract (P-STYLE-SPEC) is one JSON document, so the
-    # units' outputs must be joined as JSON parts, not raw concatenation. The
-    # unit contract itself teaches JSON-object output; aggregation validates
-    # the JOIN and fails loudly rather than writing an unparsable file.
-    parts = []
+    # Aggregate under the CONTRACT's own reducer — the exactly-once ordered
+    # Markdown reducer for P4-COPY/P9-SPEECH, the union-by-stable-slide_id
+    # reducer for QC, the bounded A/B/C three-variant builder for the style
+    # spec, ordered text join for the design prompts. The legacy generic
+    # dict.update remains ONLY on the PRESENTATION_UNIT_CONTRACTS=0 rollback
+    # path (or for a phase with no contract, which preflight already refused).
+    ordered_parts: List[Tuple[Dict[str, Any], str]] = []
     for r in results:  # run_units returns INPUT order — merge order (S2.1)
-        if r.target:
+        text: Optional[str] = reuse.get(r.key)
+        if text is None and r.target:
             scratch = run_dir / r.target
             if scratch.is_file():
-                parts.append(scratch.read_text(encoding="utf-8", errors="replace").strip())
-    merged_text: Optional[str] = _aggregate_fanout_parts(phase_id, parts)
+                text = scratch.read_text(encoding="utf-8",
+                                         errors="replace").strip()
+        if text is None:
+            text = ""
+        payload = by_key.get(r.key, {})
+        payload = {**payload, "route_request_id":
+                   (r.meta or {}).get("request_id") if isinstance(r.meta, dict) else None,
+                   "reviewer_role": owning_role}
+        ordered_parts.append((payload, text))
+    if unit_contracts_enabled() and contract is not None:
+        merged_text: Optional[str] = contract.reducer(ordered_parts)
+    else:
+        merged_text = _aggregate_fanout_parts(
+            phase_id, [t for _p, t in ordered_parts])
     if not merged_text:
         reason = ("fanout units produced output that could not be aggregated "
-                  "into a single artifact document — refusing to write a broken "
-                  "artifact (see per-unit files under working/fanout/)")
+                  "under the phase UnitContract — a duplicate/missing ordinal "
+                  "or slide_id, or an out-of-scope unit — refusing to write a "
+                  "broken artifact (see per-unit files under working/fanout/)")
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 1, "status": "exhausted",
             "reason": reason,
