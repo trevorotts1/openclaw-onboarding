@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -671,28 +672,156 @@ class TestFix17FrozenArchiveRunner:
         assert "5 failed, 2 passed" in cand_tail, cand_tail
 
 
-class TestLiveAdapterDeferralsFailClosed:
-    """Repair item (b), seam half: every live seam refuses without a
-    designated test location / sandbox path -- exact owner + action, never a
-    silent pass, never a real write."""
+# ---------------------------------------------------------------------------
+# PRES-025 prep (W6 WF23 unblock prep, PREP-NOT-FINAL): fixture constants
+# ---------------------------------------------------------------------------
+class TestPrepFixtureConstants:
+    """One synthetic GHL test location + one sandbox merchant path are
+    designated as fixture constants -- synthetic, offline, no credentials."""
 
-    def test_all_seven_live_seams_raise_deferral(self):
+    def test_fixture_constants_present_and_synthetic(self):
+        loc = cfb.FIXTURE_GHL_TEST_LOCATION_ID
+        merch = cfb.FIXTURE_SANDBOX_MERCHANT_PATH
+        assert isinstance(loc, str) and loc, "fixture location constant"
+        assert isinstance(merch, str) and merch, "fixture merchant constant"
+        assert "fixture" in loc or "synthetic" in loc or "pres025" in loc, loc
+        assert "fixture" in merch or "synthetic" in merch or "pres025" in merch, merch
+        for real in ("prod", "live", "client", "pit", "token", "secret", "key"):
+            assert real not in loc.lower(), f"fixture location smells real: {loc!r}"
+        assert "PREP-NOT-FINAL" in cfb.FIXTURE_DESIGNATION
+
+    def test_same_signatures_as_prior_stubs(self):
+        # The prep bodies keep the repair's method signatures exactly: a W6
+        # final run can replace bodies without touching callers.
+        import inspect
+        assert str(inspect.signature(cfb.Skill44LiveAdapter.create_form)) == "(self, contract: 'dict') -> 'str'"
+        assert str(inspect.signature(cfb.Skill44LiveAdapter.create_workflow)) == "(self, contract: 'dict', form_id: 'str') -> 'str'"
+        assert str(inspect.signature(cfb.Skill44LiveAdapter.submit_lead)) == "(self, form_id: 'str', payload: 'dict') -> 'dict'"
+        assert str(inspect.signature(cfb.Skill44LiveAdapter.readback)) == "(self, form_id: 'str') -> 'dict'"
+        assert str(inspect.signature(cfb.Skill06LiveTaskRunner.run)) == "(self, task: 'dict', evidence_root: 'str') -> 'dict'"
+        assert str(inspect.signature(cfb.ProviderSandboxLiveAdapter.create_product)) == "(self, offer: 'dict') -> 'dict'"
+        assert str(inspect.signature(cfb.ProviderSandboxLiveAdapter.checkout_session)) == "(self, product: 'dict', success_url: 'str', cancel_url: 'str') -> 'dict'"
+        assert issubclass(cfb.DeferralRequired, RuntimeError)
+
+
+class TestFixtureAcceptanceProof:
+    """QC-PRES-025 checks 2/3 against the designated synthetic fixtures:
+    lead-form submit + validation + duplicates (check 2); payment-mode
+    product/amount/currency mapping + success/cancel routes, zero real
+    charge (check 3). Every ID is fixture-namespace; nothing real."""
+
+    def test_check2_lead_submit_validation_duplicates(self):
+        proof = cfb.fixture_acceptance_proof()
+        lp = proof["lead_proof"]
+        assert lp["kind"] == "lead_submit"
+        assert lp["location_id"] == cfb.FIXTURE_GHL_TEST_LOCATION_ID
+        assert lp["contacts"] == 1 and lp["enrollments"] == 1
+        assert lp["validation_exercised"] and lp["duplicate_exercised"]
+        assert proof["lead_validation_errors"], "invalid payload must error"
+        assert re.fullmatch(r"fix_(form|wf|contact)_\d{4}",
+                            lp["form_id"] or "fix_form_0000"), lp["form_id"]
+        assert re.fullmatch(r"fix_(form|wf|contact)_\d{4}",
+                            lp["workflow_id"] or "fix_wf_0000"), lp["workflow_id"]
+        assert re.fullmatch(r"fix_(form|wf|contact)_\d{4}",
+                            lp["contact_id"] or "fix_contact_0000"), lp["contact_id"]
+        for fid in (lp["form_id"], lp["workflow_id"], lp["contact_id"]):
+            assert "mem_" not in fid and not fid.startswith(("form_", "wf_", "contact_")), fid
+
+    def test_check3_sandbox_mapping_routes_zero_charge(self):
+        proof = cfb.fixture_acceptance_proof()
+        sp = proof["sandbox_proof"]
+        assert sp["kind"] == "sandbox_session" and sp["mode"] == "sandbox"
+        assert (sp["amount_minor"], sp["currency"]) == (99700, "USD")
+        assert sp["success_url"] == "https://shop.example.test/success"
+        assert sp["cancel_url"] == "https://shop.example.test/cancel"
+        assert sp["real_charge"] is False
+        assert proof["merchant_path"] == cfb.FIXTURE_SANDBOX_MERCHANT_PATH
+        assert sp["product_id"].startswith("sbx_fix_product_"), sp["product_id"]
+        assert sp["session_id"].startswith("sbx_fix_session_"), sp["session_id"]
+
+    def test_skill06_fixture_task_accepted_by_real_builder_dry_run(self, tmp_path):
+        # Same task shape the runner executes: the REAL Skill 06 dry-run
+        # plan path accepts it (preflight pass). Live browser never runs.
+        proof = cfb.fixture_acceptance_proof()
+        assert proof["skill06"]["preflight_pass"] is True
+        assert proof["skill06"]["dry_run"] is True
+
+    def test_verifier_accepts_both_fixture_proofs(self, tmp_path):
+        # Wire BOTH fixture proofs into a real receipt through the real
+        # producers, then verify each mode with the REAL phase verifier.
+        # Lead mode.
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        assert _build_sales_checkout(rd) == scb.EXIT_OK
+        assert cfb.main(["--run-dir", str(rd)]) == cfb.EXIT_OK
+        proof = cfb.fixture_acceptance_proof()
+        rp = rd / "working" / "sales-checkout" / "checkout_form.json"
+        receipt = json.loads(rp.read_text(encoding="utf-8"))
+        receipt["location_id"] = proof["location_id"]
+        receipt["scope"] = proof["scope"]
+        receipt["form"]["form_id"] = proof["lead_form_id"]
+        receipt["form"]["action"] = "/acme-widget-checkout"
+        receipt["workflow"]["workflow_id"] = proof["lead_workflow_id"]
+        receipt["status"] = "complete"
+        receipt["proof"] = proof["lead_proof"]
+        rp.write_text(json.dumps(receipt), encoding="utf-8")
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is True, reasons
+        # Sandbox mode (fresh run dir: intake CHECKOUT_MODE=payment_sandbox).
+        rd2 = _intake(tmp_path / "sbx", {"WANT_SALES_CHECKOUT": "yes"})
+        ip2 = rd2 / "working" / "copy" / "intake.json"
+        intake2 = json.loads(ip2.read_text(encoding="utf-8"))
+        intake2["deck_brief"]["FINAL_PRICE"] = "$997"
+        intake2["deck_brief"]["CHECKOUT_MODE"] = "payment_sandbox"
+        ip2.write_text(json.dumps(intake2), encoding="utf-8")
+        assert _build_sales_checkout(rd2) == scb.EXIT_OK
+        assert cfb.main(["--run-dir", str(rd2)]) == cfb.EXIT_OK
+        sbx_proof = cfb.fixture_acceptance_proof()
+        rp2 = rd2 / "working" / "sales-checkout" / "checkout_form.json"
+        receipt2 = json.loads(rp2.read_text(encoding="utf-8"))
+        assert receipt2["intent"] == cfb.INTENT_PAYMENT_SANDBOX
+        receipt2["location_id"] = sbx_proof["location_id"]
+        receipt2["scope"] = sbx_proof["scope"]
+        receipt2["form"]["form_id"] = "sbx_fix_checkout_form"
+        receipt2["status"] = "complete"
+        receipt2["proof"] = sbx_proof["sandbox_proof"]
+        rp2.write_text(json.dumps(receipt2), encoding="utf-8")
+        ok2, reasons2 = pv.verify("P-U-FORM-CHECKOUT", rd2)
+        assert ok2 is True, reasons2
+
+
+class TestLiveAdapterDeferralsFailClosed:
+    """Refusal proofs: every seam refuses NON-designated resources -- exact
+    owner + action, never a silent pass, never a real write."""
+
+    def test_non_designated_locations_raise_deferral(self):
         messages = cfb.live_adapter_deferrals()
-        assert len(messages) == 7, messages
+        assert len(messages) == 3, messages
         for msg in messages:
             assert "NO-RAISE (BAD)" not in msg, msg
             assert "W3 WF10 wave owner" in msg, msg
             assert "designate" in msg, msg
 
+    def test_wrong_location_and_merchant_refuse(self):
+        import pytest as _pt
+        with _pt.raises(cfb.DeferralRequired):
+            cfb.Skill44LiveAdapter("loc_REAL")
+        with _pt.raises(cfb.DeferralRequired):
+            cfb.Skill06LiveTaskRunner("loc_REAL")
+        with _pt.raises(cfb.DeferralRequired):
+            cfb.ProviderSandboxLiveAdapter("loc_REAL")
+        with _pt.raises(cfb.DeferralRequired):
+            cfb.ProviderSandboxLiveAdapter(
+                cfb.FIXTURE_GHL_TEST_LOCATION_ID,
+                merchant_path="real-merchant-path")
+
     def test_deferral_error_type_is_distinct(self):
         assert issubclass(cfb.DeferralRequired, RuntimeError)
         try:
-            cfb.Skill44LiveAdapter("loc_probe").submit_lead(
-                "form_probe", {"email": "probe@example.com"})
+            cfb.Skill44LiveAdapter("loc_probe")
         except cfb.DeferralRequired as exc:
-            assert "designated test location" in str(exc)
+            assert "synthetic test location" in str(exc)
         else:
-            raise AssertionError("Skill44LiveAdapter.submit_lead must defer")
+            raise AssertionError("Skill44LiveAdapter(wrong-loc) must defer")
 
 
 class TestSkill06DryRunCompatibility:
