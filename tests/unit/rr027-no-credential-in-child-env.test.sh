@@ -36,6 +36,7 @@ WIRE="$REPO/65-rescue-receiver/wire.sh"
 POLL="$REPO/65-rescue-receiver/rescue-poll.sh"
 SEED="$REPO/scripts/seed-rr-agent-map.sh"
 HELPER="$REPO/shared-utils/rescue-env.sh"
+SUPERVISE="$REPO/shared-utils/rescue-supervise.py"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok $1"; }
@@ -64,6 +65,10 @@ make_box() {  # make_box <dir> <store-lines-file>
   cp "$POLL" "$root/.openclaw/skills/65-rescue-receiver/rescue-poll.sh"
   cp "$WIRE" "$root/.openclaw/skills/65-rescue-receiver/wire.sh"
   cp "$HELPER" "$root/.openclaw/skills/shared-utils/rescue-env.sh"
+  # The receiver poll's lock/process supervisor ships in this SAME shared-utils
+  # bundle as rescue-env.sh (both are required for a delivery to start), so the
+  # synthetic box must carry it too or the poll correctly fails closed.
+  [ -n "${SUPERVISE:-}" ] && cp "$SUPERVISE" "$root/.openclaw/skills/shared-utils/rescue-supervise.py"
   cp "$store" "$root/.openclaw/secrets/.env"
   # Synthetic hermetic fixture only (sentinel values, never real credentials):
   # the repo chmod-600 invariant requires every .sh that writes secrets/.env
