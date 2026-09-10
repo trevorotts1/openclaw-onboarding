@@ -132,6 +132,16 @@ def _build_harness(tmp_path: Path, resolver: str = "") -> Path:
     )
     lib_end = next(i for i, line in enumerate(lib_lines) if i > last_fn and line == "}")
     functions = "\n".join(lib_lines[lib_begin : lib_end + 1])
+    # PRES-035: the sliced block resolves the pipeline interpreter through two
+    # lib helpers that sit ABOVE the slice (_pres35_module_scripts_dir and
+    # _pres35_resolve_interpreter predate the FIX 61 installers). The harness
+    # must carry them verbatim, exactly as install.sh's source of the lib
+    # does — an undefined name inside `$(_pres35_resolve_interpreter ...
+    # 2>/dev/null || true)` dies with rc 127, the `|| true` swallows it, the
+    # variable comes back EMPTY, and every render leg refuses with
+    # "interpreter UNRESOLVED" for a reason the installer can never exhibit.
+    functions += "\n" + _extract_bash_function(lib_src, "_pres35_module_scripts_dir")
+    functions += "\n" + _extract_bash_function(lib_src, "_pres35_resolve_interpreter")
     begin = next(
         i for i, line in enumerate(lines)
         if line.startswith('PRESENTATIONS_SCRIPTS_SRC="$(_fix61_resolve_scripts_src')
@@ -235,6 +245,13 @@ def test_materialized_department_is_a_fallback_source(tmp_path):
         "presentation-intake-poll.plist.template",
     ):
         (dept / name).write_bytes((_SCRIPTS_DIR / name).read_bytes())
+    # PRES-035: a materialized department carries the interpreter module (see
+    # _materialize_scripts); the pin resolves through it.
+    (dept / "presentation_job").mkdir()
+    for name in ("__init__.py", "pipeline_interp.py", "oc_paths.py"):
+        (dept / "presentation_job" / name).write_bytes(
+            (_SCRIPTS_DIR / "presentation_job" / name).read_bytes()
+        )
 
     proc = _run(tmp_path, script_dir=empty_root, home=home)
     assert proc.returncode == 0, f"department fallback did not resolve:\n{proc.stdout}{proc.stderr}"
@@ -330,6 +347,16 @@ def _materialize_scripts(workspace):
     dept.mkdir(parents=True)
     for name in ("presentation-intake-poll.sh", "presentation-intake-poll.plist.template"):
         (dept / name).write_bytes((_SCRIPTS_DIR / name).read_bytes())
+    # PRES-035: the real materialized department carries the pipeline
+    # interpreter module (refresh-dept-scripts.py copies the full
+    # presentation_job/ tree); the interpreter pin resolves THROUGH it, so
+    # a dept fixture that omits the module mismodels the field — and the
+    # missing module is exactly what made the pre-repair resolver return 1.
+    (dept / "presentation_job").mkdir()
+    for name in ("__init__.py", "pipeline_interp.py", "oc_paths.py"):
+        (dept / "presentation_job" / name).write_bytes(
+            (_SCRIPTS_DIR / "presentation_job" / name).read_bytes()
+        )
     return dept
 
 

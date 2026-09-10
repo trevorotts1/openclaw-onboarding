@@ -82,10 +82,43 @@ __PRESENTATION_SCHEDULES_LIB_SOURCED=1
 # (update-skills.sh preserves the box's existing explicit pin; the plist
 # render preserves an installed explicit pin the same way OWNER_CHAT_ID is
 # preserved.)
+# WHERE THE MODULE IS LOOKED UP (PRES-035 repair, 2026-09-09): the scripts dir
+# an installer points at is the SCHEDULED scripts dir (the materialized
+# department), which on a box mid-remediation can hold only the poll/watchdog
+# entry files — no presentation_job/ tree at all. The MODULE is part of the
+# canonical checkout, not of the department's data, so when the given dir
+# lacks it the resolver re-locates it beside this lib (the repo checkout:
+# lib root -> 23-ai-workforce-blueprint/.../presentations/scripts) and runs it
+# from there. That changes WHERE the authority is imported from, never WHAT it
+# resolves: every layer (override pin -> client venv -> PATH python3) is the
+# module's own untouched precedence, and the venv pin is not weakened — the
+# module still prefers the client venv over PATH and still refuses a set-but-
+# unusable pin. A dir that holds the module keeps exact behavior (no second
+# candidate is consulted), so the update-skills.sh materialized-department pin
+# is unchanged in the ordinary case and the module never silently borrows a
+# DIFFERENT client's data — it reads only env/config for resolution.
+_pres35_module_scripts_dir() {
+    local _dir="${1:-}"
+    [ -f "$_dir/presentation_job/pipeline_interp.py" ] && { printf '%s\n' "$_dir"; return 0; }
+    # Fallback 1: the canonical checkout beside THIS lib (repo root layout).
+    local _lib_root
+    _lib_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+    _dir="$_lib_root/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+    [ -f "$_dir/presentation_job/pipeline_interp.py" ] && { printf '%s\n' "$_dir"; return 0; }
+    # Fallback 2: the selected client's materialized department, when the
+    # CALLER'S scripts dir was never materialized but a selected workspace has
+    # the full module tree. Never another client's root: only the root
+    # _fix61_selected_workspace already selected for this install.
+    _dir="$(_fix61_selected_workspace 2>/dev/null)/departments/Presentations/scripts" || return 1
+    [ -f "$_dir/presentation_job/pipeline_interp.py" ] && { printf '%s\n' "$_dir"; return 0; }
+    return 1
+}
+
 _pres35_resolve_interpreter() {
-    local _scripts_dir="${1:-}" _mod_out="" _rc=0
+    local _scripts_dir="${1:-}" _mod_dir="" _mod_out="" _rc=0
     [ -n "$_scripts_dir" ] || return 1
     [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ] && return 1
+    [ -f "$_scripts_dir/presentation_job/pipeline_interp.py" ] || _scripts_dir="$(_pres35_module_scripts_dir "${1:-}" || true)"
     [ -f "$_scripts_dir/presentation_job/pipeline_interp.py" ] || return 1
     _mod_out="$(cd "$_scripts_dir" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null)" || _rc=$?
     [ "$_rc" -eq 0 ] || return 1
