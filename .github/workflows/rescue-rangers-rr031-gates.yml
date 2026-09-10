@@ -78,10 +78,13 @@ jobs:
       - name: Anti-vacuity — mutation drills (each mutant MUST turn the gate red)
         run: |
           set -euo pipefail
-          # A green that cannot go red is not a check. Four mutants, one per
-          # load-bearing behaviour, each must produce a non-zero exit.
+          # A green that cannot go red is not a check. Five mutants, one per
+          # load-bearing behaviour, each must produce a non-zero exit:
+          #   A single-page reader      B insert-only (never repair)
+          #   C continue past an incomplete source
+          #   D no scoped lock          E wrapper reports a non-zero as ok
           rm -rf /tmp/rr031-mut && mkdir -p /tmp/rr031-mut
-          for m in A B C D; do
+          for m in A B C D E; do
             mkdir -p "/tmp/rr031-mut/$m"
             cp -R scripts shared-utils tests "/tmp/rr031-mut/$m/"
           done
@@ -110,9 +113,15 @@ jobs:
           s = s.replace('  printf \'%s\\n\' "$OWN_PID" > "$LOCK_PATH/pid"\n}',
                         '  printf \'%s\\n\' "$OWN_PID" > "$LOCK_PATH/pid"\nNOLOCK\n}', 1)
           open("/tmp/rr031-mut/D/scripts/reconcile-rr-agent-map.sh", "w").write(s)
+          # E: the wrapper reverts to the old fail-open (a skip reported as ok)
+          s = open("/tmp/rr031-mut/E/scripts/apply-fleet-standards.sh").read()
+          i = s.index("        3)")
+          j = s.index("      esac", i)
+          s = s[:i] + '        3|*) echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE ok (changed=0 verified=0 pending=0)" ;;\n' + s[j:]
+          open("/tmp/rr031-mut/E/scripts/apply-fleet-standards.sh", "w").write(s)
           PY
           fail=0
-          for m in A B C D; do
+          for m in A B C D E; do
             if (cd "/tmp/rr031-mut/$m" && bash tests/unit/rr031-reconcile-agent-map.test.sh >/dev/null 2>&1); then
               echo "MUTANT $m PASSED the gate — the gate cannot detect it (vacuous)"
               fail=1
