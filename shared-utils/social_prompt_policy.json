@@ -2,8 +2,8 @@
   "policy_id": "social-prompt-policy",
   "policy_version": "1.0.0",
   "effective_date": "2026-09-08",
-  "owner_requirement": "Every final social-planner image prompt for Kie GPT Image 2 and Agnes contains 9,000-19,000 meaningful stripped Unicode characters. This is a production house policy, not a claim that longer prompts automatically create better images.",
-  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2 + Agnes adapters). Unrelated skills keep their own bands (Graphics GIP bands in 45-design-intelligence-library, Agnes general guidance). This file is the single source of truth for the scoped override.",
+  "owner_requirement": "Every final social-planner image prompt for Kie GPT Image 2.5 and Agnes contains 9,000-19,000 meaningful stripped Unicode characters. This is a production house policy, not a claim that longer prompts automatically create better images.",
+  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2.5 + Agnes adapters). Unrelated skills keep their own bands (Graphics GIP bands in 45-design-intelligence-library, Agnes general guidance). This file is the single source of truth for the scoped override.",
   "house_band": {
     "min_chars": 9000,
     "max_chars": 19000,
@@ -34,9 +34,9 @@
     "5. recheck after every regeneration"
   ],
   "providers": {
-    "kie-gpt-image-2": {
+    "kie-gpt-image-2-5": {
       "provider_id": "kie",
-      "model_id": "gpt-image-2-text-to-image",
+      "model_id": "gpt-image-2-5-sunburst-text-to-image",
       "vendor_cap_chars": 20000,
       "vendor_cap_source": "published text-to-image schema maxLength 20000 (verified 2026-09-08)",
       "headroom_chars": 1000,

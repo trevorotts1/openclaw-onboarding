@@ -18,7 +18,7 @@ Guarantee that when a logo asset exists, the SAME mark appears at the SAME size 
 ## 2. The Hard Rule
 
 1. The Brand Steward locks ONE canonical logo asset (a single file URL) for the client and records it in the STYLE BLOCK as `LOGO_URL`. No other variant, monogram, icon, mountain mark, sprout, or tagline lockup is ever used. If the client supplied multiple lockups, the Brand Steward picks ONE and forbids the rest in the STYLE BLOCK.
-2. When `LOGO_ON_SLIDES = true`, the logo is placed via IMAGE-TO-IMAGE: the locked `LOGO_URL` is passed as a reference image in `input.input_urls` to gpt-image-2-image-to-image, so the model COMPOSITES the real asset rather than DRAWING a new mark. Text-to-image generation of the logo mark is banned.
+2. When `LOGO_ON_SLIDES = true`, the logo is placed via IMAGE-TO-IMAGE: the locked `LOGO_URL` is passed as a reference image in `input.input_urls` to gpt-image-2-5-sunburst-image-to-image, so the model COMPOSITES the real asset rather than DRAWING a new mark. Text-to-image generation of the logo mark is banned.
 3. The logo placement is fixed and identical on every slide: bottom-right corner, approximately 9% of slide width, on a clean white chip with a subtle 1px gold border, minimum 40px (about 5%) from any edge, never recolored, never distorted, never clipped. (Hero placement, bottom-center ~10 to 11%, is reserved for the few pivotal/close slides and is the ONLY permitted deviation; it is declared in the treatment table.)
 4. Any TEXT inside the logo (the brand name/tagline) must render correctly spelled. If the logo carries text and the render misspells or garbles it, that is a logo failure (and a text-render failure).
 
@@ -77,5 +77,5 @@ This is the gold-standard design system the whole design-system cluster ports to
 ## 7. Research Base
 
 - The gold-standard reference design proof (the locked logo spec, the image-to-image composite path, the bottom-right ~9% placement).
-- Master SOP Section 7.2 (logo chip device), 7.3 element 10 (logo placement + contrast plate), Appendix A (the Kie.ai gpt-image-2-image-to-image path and `input.input_urls` reference-image mechanics).
+- Master SOP Section 7.2 (logo chip device), 7.3 element 10 (logo placement + contrast plate), Appendix A (the Kie.ai gpt-image-2-5-sunburst-image-to-image path and `input.input_urls` reference-image mechanics).
 - The reference-case forensic Dimension F (logo mutation root-caused to text-to-image-per-slide generation; this SOP forces image-to-image and adds the drift auto-fail).

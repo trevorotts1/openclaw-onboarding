@@ -152,7 +152,7 @@ The engine is the PRD Section 4 four-layer system. This section fixes the runtim
         pdf_render.py                deterministic HTML-to-PDF (WeasyPrint-class)
         caf_delivery.py              Convert and Flow media upload plus exact-key
                                      custom-field writes plus byte-for-byte read-back
-        cover_render.py              Kie.ai GPT-image-2 via Skills 07/46 callback
+        cover_render.py              Kie.ai GPT-Image-2.5 via Skills 07/46 callback
         qc-tier1-anthology.py        Gate B Tier 1 (per-piece and assembly modes)
         qc-strike-gate.py            both counters: rewrite budget 2, QC attempts 3
         judge_harness.py             Tier 1 semantic checks 13 to 15 plus Tier 2
@@ -208,7 +208,7 @@ The engine is the PRD Section 4 four-layer system. This section fixes the runtim
 | 10 | drive-tree-provision.py | Idempotent Producer/Anthology/Participant tree under the EXISTING configured root; never creates a new root | 0 tree verified or created; 2 configured root unreachable; 3 API unreachable |
 | 11 | pdf_render.py | Deterministic WeasyPrint-class HTML-to-PDF from the house templates, all font tokens at or above 14 point | 0 rendered; 1 render error; 2 template token below floor |
 | 12 | caf_delivery.py | Convert and Flow media upload, exact-key field writes by contact_id, byte-for-byte read-back, control fields | 0 delivered and verified; 2 tenant mismatch; 3 API unreachable; 5 read-back mismatch |
-| 13 | cover_render.py | Kie.ai GPT-image-2 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive | 0 PNG landed; 3 callback lost after re-poll (held) |
+| 13 | cover_render.py | Kie.ai GPT-Image-2.5 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive | 0 PNG landed; 3 callback lost after re-poll (held) |
 | 14 | qc-tier1-anthology.py | Gate B Tier 1 deterministic checks, per-piece and assembly modes | 0 all pass; 2 bad invocation; 4 one or more failures (list emitted) |
 | 15 | qc-strike-gate.py | Both counters: participant rewrite budget 2 with gate re-entry, internal QC attempts 3, hold-and-alert | 0 within budgets; 4 budget or attempt exhaustion (hold path) |
 | 16 | judge_harness.py | Tier 1 semantic checks 13 to 15 plus the Tier 2 ten-dimension rubric on the JUDGE tier | 0 pass; 2 judge tier equals writer tier (independence violation); 4 any dimension below 8 |
@@ -283,7 +283,7 @@ S6 CHAPTER REWRITE (optional, budget 2, re-enters the S5 gate)
 
 S7 COVER IMAGE
 - INPUTS: locked title and subtitle, author name, blurb.
-- PROCESS: pin aw-11 (cover prompt generator, structured output: an image prompt object) on MID-WRITER; render via the client's own Kie.ai account, model GPT-image-2, PORTRAIT 1024x1536, through Skill 07 setup and Skill 46 callback relay, against the Kie TEXT-TO-IMAGE portrait endpoint VERIFIED at Wave 0 (the 16:9 presentation image recipe is a different endpoint shape and is NEVER reused here); bounded re-poll on a lost callback, then hold plus alert.
+- PROCESS: pin aw-11 (cover prompt generator, structured output: an image prompt object) on MID-WRITER; render via the client's own Kie.ai account, model GPT-Image-2.5, PORTRAIT 1024x1536, through Skill 07 setup and Skill 46 callback relay, against the Kie TEXT-TO-IMAGE portrait endpoint VERIFIED at Wave 0 (the 16:9 presentation image recipe is a different endpoint shape and is NEVER reused here); bounded re-poll on a lost callback, then hold plus alert.
 - ARTIFACTS: cover PNG in the participant's Drive folder; both link fields captured.
 
 S8 PACKAGE AND DELIVER (runs per deliverable as each stage completes, and as a full sweep at participant completion)
@@ -407,7 +407,7 @@ Every meaningful node or node cluster of the eight live workflows, mapped to its
 | V1 | When Executed by Another Workflow + Edit Fields2 (cover prompt generator: system 2,135, assistant 11,904; Wave 0 rescue target) | Entry plus prompt staging | stage_s7_cover.py with pin aw-11 | HARVEST then REPLACE |
 | V2 | Prompt Writer 2 (chainLlm, legacy gpt-4.1) + Structured Output Parser + OpenRouter Chat Model, OpenRouter Chat Model21 | Image-prompt generation, structured | MID-WRITER with structured output contract (image prompt object) | REPLACE |
 | V3 | HTTP Write Tone Style 3 (raw key-in-payload path) | Second model path | model_router.py only | DELETE |
-| V4 | Image Generation (OpenAI Image 1) (httpRequest to the legacy image API with a LITERAL authorization header, the Gap 3 exposed key; legacy gpt-image-1 portrait 1024x1536) | Cover render | Client's own Kie.ai, GPT-image-2, portrait, via Skills 07 and 46 callback pattern; the exposed key ROTATED at Wave 0; caf_credential_gate.py forbids literal headers | DELETE (node and key) then REPLACE |
+| V4 | Image Generation (OpenAI Image 1) (httpRequest to the legacy image API with a LITERAL authorization header, the Gap 3 exposed key; legacy gpt-image-1 portrait 1024x1536) | Cover render | Client's own Kie.ai, GPT-Image-2.5, portrait, via Skills 07 and 46 callback pattern; the exposed key ROTATED at Wave 0; caf_credential_gate.py forbids literal headers | DELETE (node and key) then REPLACE |
 | V5 | Convert to File + Google Drive1 | PNG to Drive | drive_adapter.py PNG landing in the participant folder | REPLACE |
 | V6 | Edit Fields (image_prompt, image_file) | Return | Artifact row (type cover), both link fields | REPLACE |
 
@@ -509,7 +509,7 @@ EXCEPTIONS: exception_id [primary], raw_submission [multilineText json], reason 
 | LIGHT | Extraction (aw-12), classification, routing-adjacent text chores | Minimax V3 on Ollama Cloud, then its OpenRouter counterpart, then Gemini 3.5 Flash | defaults |
 | JUDGE | Gate B semantic checks and the Tier 2 rubric | Minimax V3 or Gemini 3.5 Flash, ALWAYS a different resolution than the tier that drafted the piece | temperature 0 |
 | LONGCTX (optional) | S9 whole-manuscript compile | DeepSeek V4 Pro or Kimi 2.6 (about 1M context), ONLY when the client has configured a key; otherwise S9 chunks on HEAVY-WRITER | thinking high |
-| IMAGE | S7 cover | Client's own Kie.ai, GPT-image-2, portrait 1024x1536 via the Wave-0-verified text-to-image portrait endpoint (never the 16:9 presentation recipe), via Skills 07 and 46 | per Skill 07 |
+| IMAGE | S7 cover | Client's own Kie.ai, GPT-Image-2.5, portrait 1024x1536 via the Wave-0-verified text-to-image portrait endpoint (never the 16:9 presentation recipe), via Skills 07 and 46 | per Skill 07 |
 
 8.2 ROUTER SEMANTICS (model_router.py): one call site for every model turn; per-call pre-meter and post-meter through anthology-cost-ledger.py (per-deliverable token budgets shared across QC attempts); typed error classification (insufficient_credits, auth, rate_limit, timeout, refusal) with chain advance on retryable classes and durable hold on credits; DENY PATTERNS refuse any request whose resolved model matches Anthropic identifier shapes (claude-*, anthropic/*, and vendor-prefixed variants) at call time, mirroring Skill 54's AF-AW-ANTHROPIC ledger gate; the model actually used is recorded honestly on the Artifact row and the run ledger. guard-no-anthropic-runtime.py enforces the same law statically over every shipped file including the dashboard at merge. Prompts never name models (pipeline-design.md Section 2); tiers are the only vocabulary above the router.
 
@@ -611,7 +611,7 @@ The twelve-chapter full-book prompts and the 4x3x3 tables (Skill 53 territory); 
 | google/gemini-2.5-pro, google/gemini-3.1-pro-preview | The five HTML formatters | RETIRED (deterministic rendering) |
 | openai/gpt-4.1 | Primary Goal extraction, cover Prompt Writer | LIGHT / MID work on the GLM chain and Minimax V3 |
 | gpt-4o-search-preview | Avatar Questions 31 to 32 | Detection-ladder search tool step |
-| gpt-image-1 (legacy image API, hardcoded key) | Cover render | Client Kie.ai GPT-image-2 via Skills 07 and 46 |
+| gpt-image-1 (legacy image API, hardcoded key) | Cover render | Client Kie.ai GPT-Image-2.5 via Skills 07 and 46 |
 
 ## APPENDIX B: CANONICAL PARTICIPANT DATA DICTIONARY (the single vocabulary every prompt slot, ledger column, form field, and dashboard label resolves to)
 

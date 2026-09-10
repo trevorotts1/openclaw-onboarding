@@ -20,7 +20,7 @@ The Photo Shoot Director executes targeted, client-requested corrections on real
 | File | Sections used | What it governs |
 |---|---|---|
 | `_system/PHOTO-SHOOT-SOP.md` | §6 (Retouch Mode — detailed protocol, catalog, rules of the craft, prompt skeleton, endpoint assignment) | Authoritative retouch workflow: one-change-per-pass rule, subtlety scale, preserve-first phrasing, natural-result guardrails, full catalog of legitimate edits, quality settings |
-| `_system/MODEL-SPECS.md` | §2 (routing table row: surgical edits → Seedream 4.5 Edit; THE EDITING HIERARCHY note), §4 (Seedream 4.5 Edit endpoint notes: 3,000-char ceiling, `image_urls` required, quality settings) | Endpoint selection authority; fallback to GPT-Image 2 I2I only when instruction exceeds 3,000 chars; no other endpoint performs true surgical editing |
+| `_system/MODEL-SPECS.md` | §2 (routing table row: surgical edits → Seedream 4.5 Edit; THE EDITING HIERARCHY note), §4 (Seedream 4.5 Edit endpoint notes: 3,000-char ceiling, `image_urls` required, quality settings) | Endpoint selection authority; fallback to GPT-Image-2.5 I2I only when instruction exceeds 3,000 chars; no other endpoint performs true surgical editing |
 | `_system/NEGATIVE-PROMPTING-SOP.md` | §§1–3 (layer merge) | Negative layer assembly for any retouch prompt that requires avoid-list terms |
 | `personal-photo-shoot/{client-slug}/IDENTITY.md` | Identity description + Standing Retouch Preferences | Defines what must never change and which edits are pre-approved without additional producer loop |
 | `personal-photo-shoot/{client-slug}/CONSENT.md` | `retouch_boundaries` scope field | Authorizes which retouch catalog entries are in scope for this client; out-of-scope requests halt before any prompt is assembled |
@@ -37,7 +37,7 @@ Do not copy catalog entries, prompt skeletons, or endpoint specs from these file
 
 3. **Confirm identity-drift risk.** Check IDENTITY.md Standing Retouch Preferences. If the requested change is so extreme the person would no longer be recognizable, flag to the producer as a deliverability risk (identity drift breaks the output's purpose), not as a judgment call. Halt pending producer guidance if flagged.
 
-4. **Apply the MODEL-SPECS Editing Hierarchy.** Open MODEL-SPECS §2 Editing Hierarchy. Route to Seedream 4.5 Edit unless the instruction cannot fit within the 3,000-character ceiling — in that case, route to GPT-Image 2 I2I (expect more drift in untouched areas; note this in the shoot record). No other endpoint performs true surgical editing and must not be substituted.
+4. **Apply the MODEL-SPECS Editing Hierarchy.** Open MODEL-SPECS §2 Editing Hierarchy. Route to Seedream 4.5 Edit unless the instruction cannot fit within the 3,000-character ceiling — in that case, route to GPT-Image-2.5 I2I (expect more drift in untouched areas; note this in the shoot record). No other endpoint performs true surgical editing and must not be substituted.
 
 5. **Assemble the prompt using PHOTO-SHOOT-SOP §6 rules of the craft.** Follow all five rules without exception:
    - One change per pass — chain passes for multiple edits; each pass prompt: "Keep everything unchanged except: {single edit}."
@@ -104,7 +104,7 @@ Do not copy catalog entries, prompt skeletons, or endpoint specs from these file
 | Seedream 4.5 Edit rejects `image_urls` (URL not reachable or format unsupported) | Hard stop. Resolve hosting per SOP-DIU-609 before resubmitting. |
 | Retouched output has lightened skin tone | HARD FAIL. Quarantine + SOP-DIU-604 + CDO incident notification. Never deliver. |
 | Retouched output has identity drift beyond the named edit | Quarantine. Notify CDO. Do not deliver until a passing output is produced. |
-| Instruction exceeds 3,000-char ceiling on Seedream Edit | Route to GPT-Image 2 I2I per MODEL-SPECS §2 Editing Hierarchy. Document in shoot record that drift risk is higher; note for CDO review. |
+| Instruction exceeds 3,000-char ceiling on Seedream Edit | Route to GPT-Image-2.5 I2I per MODEL-SPECS §2 Editing Hierarchy. Document in shoot record that drift risk is higher; note for CDO review. |
 | SOP-DIU-601 preflight fails | Do not submit. Return itemized failure list to requestor. |
 | API key missing from all env stores | Hard stop. Escalate to CDO. Do not attempt generation. |
 

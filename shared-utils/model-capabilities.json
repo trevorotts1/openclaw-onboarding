@@ -112,7 +112,7 @@
     },
     {
       "family": "gpt-image",
-      "match": "gpt-image[0-9.-]*",
+      "match": "gpt-image[0-9a-z.-]*",
       "capabilities": ["image_generation"],
       "default_tier": "mid"
     },

@@ -103,7 +103,7 @@ above is used.
 
 ### MODEL RESOLUTION RULE (do NOT hardcode a model string)
 
-Skill 07 documents GPT Image 1.5 today and the operator refers to GPT-Image 2. At build time, QUERY
+Skill 07 documents GPT Image 1.5 today and the operator refers to GPT-Image 2.5. At build time, QUERY
 the Kie.ai model catalog per Skill 07's INSTRUCTIONS, SELECT the newest available GPT-Image family
 model, and RECORD the exact model id used in the run manifest and in `registry.md`. If the GPT-Image
 family is unavailable, FALL BACK to the cheapest quality tier in Skill 07's image list (the Flux

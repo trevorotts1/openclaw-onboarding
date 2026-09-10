@@ -502,7 +502,7 @@ class KieProvider(MediaProvider):
         slug = self.registry.slug_for(request.model_id)
         prompt = request.prompt
         if request.negative_prompt:
-            # gpt-image-2 has no dedicated negative-prompt field (mirrors
+            # GPT-image-2.5 has no dedicated negative-prompt field (mirrors
             # kie_image.py's FIX-IMG-09 in-prompt exclusion clause).
             prompt = f"{prompt} Do not include: {request.negative_prompt}"
         task_input: Dict[str, Any] = {

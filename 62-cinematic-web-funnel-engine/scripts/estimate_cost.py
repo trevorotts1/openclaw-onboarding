@@ -225,7 +225,7 @@ def estimate_scene_plan(
 ) -> BudgetForecast:
     """Forecast every scene in a scene-plan.json document. `resolutions` is an
     optional {scene_id: resolution} override map for models that price
-    per-resolution (e.g. gpt-image-2's amount_by_resolution) — a scene with no
+    per-resolution (e.g. gpt-image-2-5's amount_by_resolution) — a scene with no
     entry there is estimated with resolution=None, which ModelRegistry.estimate
     only resolves automatically when exactly one resolution tier exists."""
     resolutions = resolutions or {}

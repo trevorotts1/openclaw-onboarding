@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # generate-visual-intelligence.sh -- Produce the full visual intelligence image set
 # for the ZHC closeout. PRD-FINAL-PACKAGE step 3: min 3, up to 30 images, each
-# from its own written GPT-Image-2 prompt via Kie.ai createTask.
+# from its own written GPT-Image-2.5 prompt via Kie.ai createTask.
 #
 # The mandatory set (always generated):
-#   1. Org flow chart          -- templates/infographic-1-prompt.md  (GPT-Image-2)
+#   1. Org flow chart          -- templates/infographic-1-prompt.md  (GPT-Image-2.5)
 #   2. What Is a ZHC           -- templates/img-what-is-zhc-prompt.md
 #   3. How Your ZHC Works      -- templates/img-how-your-zhc-works-prompt.md
 #
@@ -13,7 +13,7 @@
 #   5. SOP system              -- templates/img-sop-system-prompt.md
 #   6. Lean Six Sigma          -- templates/img-six-sigma-prompt.md
 #
-# Model: gpt-image-2-text-to-image (PRIMARY per PRD fork decision).
+# Model: gpt-image-2-5-sunburst-text-to-image (PRIMARY per PRD fork decision).
 # Fallback: nano-banana-2.
 # Override primary via ZHC_IMAGE_MODEL env var.
 #
@@ -123,7 +123,7 @@ fill_prompt() {
 }
 
 # ---- KIE API helpers ----
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-text-to-image}"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
 FALLBACK_MODEL="nano-banana-2"
 
 submit_job() {

@@ -869,8 +869,8 @@ def build_verified_image_registry_copy(dest_dir: Path, *, source_registry_path: 
     """TEST-SUPPORT ONLY. Writes a copy of providers/model-registry.json to
     dest_dir/model-registry-verified-images.json with price.verified flipped
     true on the two candidate models for 'concept_image'/
-    'production_scene_image' (kie-gpt-image-2-text-to-image /
-    kie-gpt-image-2-image-to-image) — both are genuinely unverified in the
+    'production_scene_image' (kie-gpt-image-2-5-sunburst-text-to-image /
+    kie-gpt-image-2-5-sunburst-image-to-image) — both are genuinely unverified in the
     real registry as of this snapshot (see model-registry.json's own
     price.note), so no real end-to-end happy-path exercise of the paid-call
     chain is otherwise possible without a live Kie.ai pricing confirmation.
@@ -882,7 +882,7 @@ def build_verified_image_registry_copy(dest_dir: Path, *, source_registry_path: 
     source_path = Path(source_registry_path or providers_base.DEFAULT_REGISTRY_PATH)
     data = json.loads(source_path.read_text(encoding="utf-8"))
     for entry in data["models"]:
-        if entry["model_id"] in ("kie-gpt-image-2-text-to-image", "kie-gpt-image-2-image-to-image"):
+        if entry["model_id"] in ("kie-gpt-image-2-5-sunburst-text-to-image", "kie-gpt-image-2-5-sunburst-image-to-image"):
             entry["price"]["verified"] = True
             entry["price"]["note"] = (
                 "TEST FIXTURE ONLY — verified flipped true for an offline self-test; NOT a real "
@@ -933,7 +933,7 @@ def self_test() -> int:
             provider = kie_provider.KieProvider(transport=FixtureKieTransport())
             passed, detail = run_concept_board(tmp, style_contract=style_contract, provider=provider)
             check(
-                f"run_concept_board fails-closed against the REAL registry's unverified gpt-image-2 "
+                f"run_concept_board fails-closed against the REAL registry's unverified gpt-image-2-5 "
                 f"pricing ({detail})",
                 not passed,
             )

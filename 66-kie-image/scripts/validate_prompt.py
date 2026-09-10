@@ -245,6 +245,19 @@ def selftest():
          "x" * 300, "gpt-image-2-text-to-image", True, "A", None, "thin", False),
         ("gpt 9500 target ok",
          "x" * 9500, "gpt-image-2-text-to-image", True, "A", None, None, False),
+        # GPT Image 2.5 Sunburst: operator ruling 2026-09-09 (Ruling 2). The
+        # 20,000-char cap is a DOCS figure (NOT the GPT Image 2 25,000
+        # owner-confirmed figure, which does not carry forward to 2.5) but is
+        # still >= 20000 so it takes the same rule-A house-band treatment.
+        ("gpt-2.5 20000 exact ok (at the DOCS cap)",
+         "x" * 20000, "gpt-image-2-5-sunburst-text-to-image", True, "A", None, None, False),
+        ("gpt-2.5 20001 exceeds DOCS cap",
+         "x" * 20001, "gpt-image-2-5-sunburst-text-to-image", False, "A",
+         "exceeds the cap 20000", None, False),
+        ("gpt-2.5 9500 target ok",
+         "x" * 9500, "gpt-image-2-5-sunburst-text-to-image", True, "A", None, None, False),
+        ("gpt-2.5 thin 300 chars warn",
+         "x" * 300, "gpt-image-2-5-sunburst-text-to-image", True, "A", None, "thin", False),
         ("qwen token cap estimate warn",
          "x" * 20000, "qwen3/text-to-image", True, "D", None, "token cap", False),
         ("qwen short ok",

@@ -28,7 +28,7 @@ Top-level shape:
   "mode": "A | B",
   "source_slide_count": 0,
   "slide_count_final": 0,
-  "model_manifest": "gpt-image-2 (per CLIENT-WEBINAR-DECK-SOP §9.0)",
+  "model_manifest": "gpt-image-2-5-sunburst (per CLIENT-WEBINAR-DECK-SOP §9.0)",
   "phases": [ /* one PHASE ENTRY per phase that ran, in order */ ],
   "finalized": false,
   "finalized_at": null

@@ -79,7 +79,10 @@ Run the normalizer before anything else:
   python3 scripts/normalize_alias.py "<model mention from the request>"
 
 Mappings (spec 13): Cling->Kling, Quinn->Qwen, C Dream/Seed Dream->Seedream,
-Idiogram->Ideogram, Imagine 4->Imagen 4, GPT-img2 / GPT-image 2.0->GPT Image 2,
+Idiogram->Ideogram, Imagine 4->Imagen 4, GPT-img2 / GPT-image 2.0->GPT Image
+2.5 (operator ruling 2026-09-09 — short aliases now resolve to the 2.5
+default; the retained legacy GPT Image 2 route stays reachable via its
+explicit canonical model id or an explicit "legacy" phrase),
 Nano Banana Light->Nano Banana 2 Lite. Z-Image is its OWN family and is NEVER
 merged into Qwen (even when the user says "Z Image by Quinn" — the two are
 different providers' models on the same market).
@@ -99,10 +102,15 @@ Exit 0: prints the selected canonical model + task id. Exit 1: no good match
 
 Routing policy (spec 7.5), in order:
 1. Explicit user pick wins — capability match, never "fixed" into something else.
-2. Else GPT Image 2 is the preferred default (high-fidelity general generation/
-   editing, product/brand, detailed long-form creative) when compatible — mind
-   the ratio/resolution exclusions (2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21;
-   "auto" -> 1K only; 1:1 cannot convert to 4K).
+2. Else GPT Image 2.5 is the preferred default (operator ruling 2026-09-09,
+   supersedes GPT Image 2; high-fidelity general generation/editing,
+   product/brand, detailed long-form creative) when compatible — mind the
+   ratio/resolution exclusions (2K/4K exclude 27:16, 16:27, 9:8, 8:9 — 1K
+   only). GPT Image 2 (legacy) is RETAINED, not retired: the selector routes
+   aspect ratios 3:1, 1:3, 9:21 to it automatically (it does not serve those
+   on 2.5), and applies its OWN separate, unchanged exclusion rules (2K/4K
+   exclude 5:4, 4:5, 3:1, 1:3, 9:21; "auto" -> 1K only; 1:1 cannot convert to
+   4K) whenever that legacy route is used.
 3. Else by capability: Nano Banana Pro / 2 (general, multi-ref), Seedream 5.0 Pro
    (complex/controlled), Ideogram V3 (typography/design), Qwen 3.0 (structured
    layouts, multilingual), Wan 2.7 (bbox control, gallery), Lite/Fast (volume).
@@ -114,8 +122,12 @@ STEP 3: SIZE THE PROMPT (BEFORE VALIDATION)
 House band (spec 5.1): min 5,000 chars / target ~9,000 / max 19,000 — but the
 LEGAL band is per-model:
 
-- GPT Image 2: owner-observed ~25K; house band legal, 19K+ warns, never
-  hard-fails on the observed cap.
+- GPT Image 2 (legacy): owner-observed ~25K; house band legal, 19K+ warns,
+  never hard-fails on the observed cap.
+- GPT Image 2.5 (default, operator ruling 2026-09-09): 20K per KIE docs dated
+  2026-09-09 (DOCS, NOT owner-confirmed — the GPT Image 2 25K confirmation
+  does not carry forward); house band legal, 19K+ warns, hard-fails only
+  past 20,000.
 - Wan 2.7 Image (5,000 chars VERIFIED), Ideogram V3 (5,000 VERIFIED),
   Imagen 4 family (5,000 VERIFIED): target 4,500–4,900; >5,000 HARD REJECTED.
 - Qwen Image 3.0/Pro: 4.5K TOKENS advertised (rule D — never convert to fake
@@ -138,10 +150,12 @@ STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
 - validate_prompt: exit 0 acceptable; exit 1 soft-fail (house band/status;
   --strict promotes to error); exit 2 hard-fail (VERIFIED cap exceeded).
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
-  per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules;
-  Wan n 1–4 / gallery 1–12 with enable_sequential, bbox <=2 per image, inputs
-  min 240px and max 10MB; Qwen max 3 refs; legacy NB 10MB not 30MB; Z-Image
-  T2I-only; Ideogram strength 0.01–1; Seedream 4.5 has no output_format).
+  per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
+  for the retained legacy route; GPT Image 2.5's own separate, NOT merged,
+  1K-only exclusion list for the default route; Wan n 1–4 / gallery 1–12
+  with enable_sequential, bbox <=2 per image, inputs min 240px and max 10MB;
+  Qwen max 3 refs; legacy NB 10MB not 30MB; Z-Image T2I-only; Ideogram
+  strength 0.01–1; Seedream 4.5 has no output_format).
 
 Bad payloads NEVER reach the API. Validation happens before charging provider
 credits (spec 14).
@@ -167,8 +181,10 @@ STEP 6: QC — LOOK AT THE IMAGE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 state == "success" is proof the provider returned bytes, nothing more. Download
-resultUrls and INSPECT: dimensions match requested enum (GPT Image 2 auto->1K
-only, 1:1 cannot be 4K, excluded ratios never silently returned); reference
+resultUrls and INSPECT: dimensions match requested enum (on the retained
+legacy GPT Image 2 route: auto->1K only, 1:1 cannot be 4K; on the GPT Image
+2.5 default route: 27:16/16:27/9:8/8:9 are 1K only — either way, excluded
+ratios never silently returned); reference
 fidelity (faces, product geometry, logo exactness); edit preservation; colors/
 lighting/typography; anatomy and subject count; ratio per family enum.
 
@@ -189,7 +205,8 @@ PRACTICAL NUMBERS (from models.json, verified 2026-08-26)
 
 - Rate: 20 new generation requests / 10 seconds; 100+ concurrent per account.
 - Result URLs expire ~24h; media deleted after 14 days.
-- GPT Image 2 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG; resolution 1K/2K/4K.
+- GPT Image 2 / GPT Image 2.5 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG (carried
+  forward unchanged on 2.5); resolution 1K/2K/4K.
 - Qwen refs: max 3, 10MB each, six formats; resolution 1K/2K only.
 - Wan refs: max 9, 10MB, min 240px per side; resolution 1K/2K (Pro +4K, T2I only).
 - Legacy nano-banana refs: 10MB (not 30MB).

@@ -595,7 +595,7 @@ else
 fi
 
 # ============================================================
-# T15 (v12.6.0): Visual intelligence set -- min 3 prompts, GPT-Image-2, generator exists
+# T15 (v12.6.0): Visual intelligence set -- min 3 prompts, GPT-Image-2.5, generator exists
 # ============================================================
 printf '\n--- T15 (v12.6.0): visual intelligence set generator ---\n'
 vi_script="$SCRIPT_DIR/generate-visual-intelligence.sh"
@@ -618,11 +618,11 @@ else
     fail "T15b: generate-visual-intelligence.sh references only $prompt_count prompt templates (need >= 3)"
   fi
 
-  # Check GPT-Image-2 is the primary model
+  # Check GPT-Image-2.5 is the primary model
   if grep -qE 'gpt-image-2|GPT_IMAGE_2|PRIMARY_MODEL.*gpt' "$vi_script"; then
-    pass "T15c: generate-visual-intelligence.sh uses gpt-image-2 as primary model"
+    pass "T15c: generate-visual-intelligence.sh uses gpt-image-2.5 as primary model"
   else
-    fail "T15c: generate-visual-intelligence.sh does not use gpt-image-2 as primary"
+    fail "T15c: generate-visual-intelligence.sh does not use gpt-image-2.5 as primary"
   fi
 
   # Check cap enforcement (max 30)

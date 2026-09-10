@@ -76,7 +76,7 @@ Write the registry row to `.kie/registry/<submitId>.json` BEFORE sending the
 createTask request. The human-readable `deckId`/`slideId` live in a `label` field
 for resume; the KV key is the random `submitId`, not the label.
 
-> **MODEL NOTE:** The model in these examples is `gpt-image-2-text-to-image` -- the canonical primary for all client presentations. The producing role ALWAYS sources the model from the client's pinned config (intake.json / MODEL MANIFEST), NEVER copies it from example code. `nano-banana-pro` is a FALLBACK-ONLY model and may only appear in a registry row after a logged hard API failure of the primary.
+> **MODEL NOTE:** The model in these examples is `gpt-image-2-5-sunburst-text-to-image` -- the canonical primary for all client presentations. The producing role ALWAYS sources the model from the client's pinned config (intake.json / MODEL MANIFEST), NEVER copies it from example code. `nano-banana-pro` is a FALLBACK-ONLY model and may only appear in a registry row after a logged hard API failure of the primary.
 
 Callback-mode registry row:
 
@@ -87,7 +87,7 @@ Callback-mode registry row:
   "clientSlug": "<clientSlug>",
   "deckId": "<deckId>",
   "slideId": "<slideId>",
-  "model": "gpt-image-2-text-to-image",
+  "model": "gpt-image-2-5-sunburst-text-to-image",
   "targetPath": "/abs/path/to/output.png",
   "perTaskSecret": "<64 hex chars, local only>",
   "callBackUrl": "https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
@@ -115,7 +115,7 @@ callback mode:
 
 ```json
 {
-  "model": "gpt-image-2-text-to-image",
+  "model": "gpt-image-2-5-sunburst-text-to-image",
   "callBackUrl": "https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
   "input": {
     "prompt": "<slide image prompt>",
@@ -125,6 +125,12 @@ callback mode:
   }
 }
 ```
+
+> **LEGACY ROUTE (operator ruling 2026-09-09):** aspect ratios 3:1, 1:3, and
+> 9:21 are not served by GPT Image 2.5 Sunburst. For those three ratios only,
+> submit with `"model": "gpt-image-2-text-to-image"` (or
+> `gpt-image-2-image-to-image` for a reference-bearing render) instead --
+> GPT Image 2 is retained specifically for this case, not retired.
 
 The URL carries `s=` (the callback validator) and `h=` (the per-task-secret HMAC).
 It NEVER carries the raw `perTaskSecret`.
@@ -188,8 +194,10 @@ Per-model callback timeouts (ms), from `kie-slide-submitter.js` MODEL_TIMEOUTS:
 
 | Model | Timeout |
 |-------|---------|
-| `gpt-image-2-text-to-image` (primary) | 300000 (5 min) |
-| `gpt-image-2-image-to-image` (primary, reference images) | 300000 (5 min) |
+| `gpt-image-2-5-sunburst-text-to-image` (default) | 300000 (5 min) |
+| `gpt-image-2-5-sunburst-image-to-image` (default, reference images) | 300000 (5 min) |
+| `gpt-image-2-text-to-image` (legacy, 3:1/1:3/9:21 only) | 300000 (5 min) |
+| `gpt-image-2-image-to-image` (legacy, reference images, 3:1/1:3/9:21 only) | 300000 (5 min) |
 | `nano-banana-pro` (FALLBACK-ONLY) | 120000 (2 min) |
 | default | 180000 (3 min) |
 

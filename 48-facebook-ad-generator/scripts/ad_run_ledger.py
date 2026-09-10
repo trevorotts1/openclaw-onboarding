@@ -26,7 +26,7 @@ grader_session_id against it so a self-attested grade the ledger never saw fails
 CLI:
     python3 ad_run_ledger.py --run-dir DIR init --run-id ID --ceiling 5.0
     python3 ad_run_ledger.py --run-dir DIR record --kind image --key img-3 --usd 0.05 \
-        --result '{"kie_task_id":"abc","width":1500,"height":1500,"model":"gpt-image-2-text-to-image"}'
+        --result '{"kie_task_id":"abc","width":1500,"height":1500,"model":"gpt-image-2-5-sunburst-text-to-image"}'
     python3 ad_run_ledger.py --run-dir DIR done --key img-3      # -> "DONE" or "PENDING"
     python3 ad_run_ledger.py --run-dir DIR can-spend --usd 0.05  # -> "OK" / "WOULD_CROSS"
     python3 ad_run_ledger.py --run-dir DIR qc-session --gate copy \

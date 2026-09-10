@@ -89,7 +89,7 @@
     "not_this_unit": "The W1.2 avatar-handoff unit added ONLY the reference-by-path delegation to aa-01..aa-03. Primary-goal extraction (aw-12) is the SEPARATE W1.3 prompt-completion extension and is NOW WIRED as the LIGHT-tier final step of P0A-AVATAR (see phase P0A-AVATAR.authoring_sequence and the aw-12 source_prompt_pins entry, checked at P1-FIDELITY); the optional intake fields ideal_avatar / niche / primary_goal remain the SEPARATE W1.4 (intake fields) extension."
   },
   "cover_prompt": {
-    "$note": "W1.3 prompt-completion. aw-11 (assets/prompts/11-cover-image-prompt.md) is Skill 54's OWN baked cover-image PROMPT-authoring IP, sha256-pinned in source_prompt_pins and fidelity-checked at P1-FIDELITY. It is AUTHORED on the client's MID-WRITER tier from the LOCKED title/subtitle (aw-06, carried byte-exact), the author name (intake), and the blurb (aw-07), and emits a single JSON cover-prompt object. The RENDER is engine-orchestrated downstream (SPEC S7): the engine's stage_s7_cover.py (W1.14) passes the emitted prompt to the CLIENT's own Kie.ai GPT-image-2 TEXT-TO-IMAGE PORTRAIT endpoint at 2:3 / 1024x1536 via Skills 07 (setup) and 46 (callback relay). Skill 54's own P0-P7 walk does NOT gate the cover (parallel to how aw-10 rewrite is a baked/pinned asset used in the P6 rework loop, not a standalone walked phase); the cover is an engine-side, IMAGE-tier-OPTIONAL stage that degrades to a cover PROMPT doc (degraded:image receipt) when the client configures no image provider.",
+    "$note": "W1.3 prompt-completion. aw-11 (assets/prompts/11-cover-image-prompt.md) is Skill 54's OWN baked cover-image PROMPT-authoring IP, sha256-pinned in source_prompt_pins and fidelity-checked at P1-FIDELITY. It is AUTHORED on the client's MID-WRITER tier from the LOCKED title/subtitle (aw-06, carried byte-exact), the author name (intake), and the blurb (aw-07), and emits a single JSON cover-prompt object. The RENDER is engine-orchestrated downstream (SPEC S7): the engine's stage_s7_cover.py (W1.14) passes the emitted prompt to the CLIENT's own Kie.ai GPT-image-2.5 TEXT-TO-IMAGE PORTRAIT endpoint at 2:3 / 1024x1536 via Skills 07 (setup) and 46 (callback relay). Skill 54's own P0-P7 walk does NOT gate the cover (parallel to how aw-10 rewrite is a baked/pinned asset used in the P6 rework loop, not a standalone walked phase); the cover is an engine-side, IMAGE-tier-OPTIONAL stage that degrades to a cover PROMPT doc (degraded:image receipt) when the client configures no image provider.",
     "pin_id": "aw-11",
     "baked_asset": "assets/prompts/11-cover-image-prompt.md",
     "prompt_tier": "MID-WRITER",
@@ -105,7 +105,7 @@
       "aspect_ratio": "2:3",
       "dimensions": "1024x1536",
       "orientation": "portrait",
-      "model_family": "Kie GPT-image-2 text-to-image (portrait endpoint)",
+      "model_family": "Kie GPT-image-2.5 text-to-image (portrait endpoint)",
       "forbids": "the 16:9 presentation/deck recipe (Skill 46 default overridden per W0.6)",
       "source_ref": "W0.6.json a_kie_portrait_text_to_image"
     },

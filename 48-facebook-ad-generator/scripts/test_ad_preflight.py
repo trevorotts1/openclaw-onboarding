@@ -147,7 +147,7 @@ def _good(rd: Path) -> None:
         "image_count": 10,
         "images": [{"kie_task_id": f"a27542cb60343417e562afc2be65da{i:02d}",
                     "width": 1500, "height": 1500,
-                    "model": "gpt-image-2-text-to-image", "would_cross": False}
+                    "model": "gpt-image-2-5-sunburst-text-to-image", "would_cross": False}
                    for i in range(10)],
         "_pad": _PAD * 2,
     })

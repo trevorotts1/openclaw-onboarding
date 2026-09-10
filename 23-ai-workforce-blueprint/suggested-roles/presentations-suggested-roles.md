@@ -82,7 +82,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 6. Slide Submitter
 **Slug:** slide-submitter
-**What it does:** Submits all prompts to Kie.ai GPT Image 2 (owns_phase null at manifest v68; unreconciled). P4-RENDER is owned by slide-image-creator. Uses model gpt-image-2-image-to-image (with refs) or gpt-image-2-text-to-image (without refs) per the MODEL MANIFEST. Enforces the documented rate cap of 20 requests / 10 seconds (20 slides/wave + 10s sleep; source docs.kie.ai Section 8, verified 2026-06-14). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. MUST call the canonical render module, not a per-deck renderer. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
+**What it does:** Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled). P4-RENDER is owned by slide-image-creator. Uses model gpt-image-2-5-sunburst-image-to-image (with refs) or gpt-image-2-5-sunburst-text-to-image (without refs) per the MODEL MANIFEST. Enforces the documented rate cap of 20 requests / 10 seconds (20 slides/wave + 10s sleep; source docs.kie.ai Section 8, verified 2026-06-14). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. MUST call the canonical render module, not a per-deck renderer. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
 **Core SOPs to build:**
 - 01-Model-Manifest-and-Variant-Selection.md
 - 02-KIE-Submit-and-Rate-Cap-20-requests-10-seconds.md
@@ -101,7 +101,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 8. PPTX Assembly Specialist
 **Slug:** pptx-assembly-specialist
-**What it does:** Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). Each slide is a SINGLE composed gpt-image-2 image (text baked in by the model); the only PPTX text part is the off-slide speaker-notes pane (from presenter_notes.json). Native text overlays are ELIMINATED (Decision 5C) — no pptx_text_overlays.json, no native on-slide text runs (AF-OVERLAY-DELIVERED). Renders to PDF via soffice --headless --convert-to pdf, then to PNG pages via pdftoppm -png -r 100 for Phase 6 QC.
+**What it does:** Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). Each slide is a SINGLE composed gpt-image-2.5 image (text baked in by the model); the only PPTX text part is the off-slide speaker-notes pane (from presenter_notes.json). Native text overlays are ELIMINATED (Decision 5C) — no pptx_text_overlays.json, no native on-slide text runs (AF-OVERLAY-DELIVERED). Renders to PDF via soffice --headless --convert-to pdf, then to PNG pages via pdftoppm -png -r 100 for Phase 6 QC.
 **Core SOPs to build:**
 - 01-PPTX-Build-with-Embedded-Speaker-Notes.md
 - 02-Render-to-PDF-for-Final-QC.md
@@ -166,7 +166,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 15. Healer - Presentations
 **Slug:** healer-presentations
-**What it does:** Department immune system. Receives second-consecutive-stall handoffs from the Capacity and Reliability Engineer, loop-4 escalations from the QC Specialist, and Phase-4 API failCode events from the Slide Submitter. Diagnoses root cause using five-whys on evidence (dispatches the Deep Research Specialist for provider docs). Fixes the run (Tier 1: mechanical hot-patch, resume from last good checkpoint). Patches the SOP that allowed the failure so it never recurs (Tier 2: SOP surgery, mirror regeneration, regression entry). Proposes model manifest changes and new specialists to the operator and holds until approved (Tier 3). Reports every heal to the Director, CEO orchestrator, and operator before closing the incident. Runs monthly model currency census on GPT Image 2 / Minimax m3 / DeepSeek models in this department.
+**What it does:** Department immune system. Receives second-consecutive-stall handoffs from the Capacity and Reliability Engineer, loop-4 escalations from the QC Specialist, and Phase-4 API failCode events from the Slide Submitter. Diagnoses root cause using five-whys on evidence (dispatches the Deep Research Specialist for provider docs). Fixes the run (Tier 1: mechanical hot-patch, resume from last good checkpoint). Patches the SOP that allowed the failure so it never recurs (Tier 2: SOP surgery, mirror regeneration, regression entry). Proposes model manifest changes and new specialists to the operator and holds until approved (Tier 3). Reports every heal to the Director, CEO orchestrator, and operator before closing the incident. Runs monthly model currency census on GPT-Image-2.5 / Minimax m3 / DeepSeek models in this department.
 **Core SOPs to build:**
 - 01-Intake-and-Triage.md
 - 02-Root-Cause-Diagnosis.md

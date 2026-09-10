@@ -80,7 +80,7 @@ independent.
 ### B1. The engine (reused as-is)
 
 Generate via the reused Kie adapter `kie_image.py` with the **client's own KIE_API_KEY**.
-The model id is `gpt-image-2-*` today and **auto-adopts any future gpt-image version**
+The model id is `gpt-image-2-5-sunburst-*` today and **auto-adopts any future gpt-image version**
 — the gate accepts any model id beginning `gpt-image-` (AF-FBAD-IMAGE-MODEL), so a bump
 to gpt-image-3 needs no code change. Render **1500×1500, 1:1** (AF-FBAD-IMAGE-SIZE).
 
@@ -112,7 +112,7 @@ model is least predictable); every redo costs money and counts against the ceili
   "image_count": 10,
   "images": [
     { "kie_task_id": "a27542cb60343417e562afc2be65da5c", "width": 1500, "height": 1500,
-      "model": "gpt-image-2-text-to-image", "would_cross": false },
+      "model": "gpt-image-2-5-sunburst-text-to-image", "would_cross": false },
     "... one object per image ..."
   ]
 }

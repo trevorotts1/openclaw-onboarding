@@ -128,7 +128,7 @@ content panel behind the checklist. Ink: {INK_HEX} — all text ink. White base 
 throughout. No dark or navy backgrounds.
 
 === 10. LOGO (ONE locked mark, image-to-image) ===
-The first reference image is the company logo (Mode B, `gpt-image-2-image-to-image`,
+The first reference image is the company logo (Mode B, `gpt-image-2-5-sunburst-image-to-image`,
 LOGO_URL as the first entry of `input_urls`): place it {LOGO_PLACEMENT}; do not redraw,
 recolor, restyle, reinterpret, or invent it — reproduce the supplied mark pixel-for-pixel.
 The only mark on the page is the supplied reference logo. NEVER describe the logo in words

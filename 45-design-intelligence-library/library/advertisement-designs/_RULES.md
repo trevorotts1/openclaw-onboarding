@@ -19,5 +19,5 @@
 - Clutter ceiling: max 5 distinct elements (subject, headline, subhead, offer, CTA+logo counted together).
 
 ## Model routing
-- Default: GPT-Image 2 (layout + multiple text strings).
+- Default: GPT-Image 2.5 (layout + multiple text strings).
 - People-led brand ads → Nano Banana 2. Offer/typography-led → Ideogram V3 DESIGN.

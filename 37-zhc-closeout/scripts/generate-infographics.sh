@@ -13,8 +13,8 @@
 #
 #   workflow  (Infographic #2 - How Work Flows)
 #     -> KIE.AI Nano Banana 2 (Gemini 3.1 Flash Image). Much better text
-#        rendering than GPT Image 2, and the workflow diagram is stylized
-#        enough that AI image gen is fine. Fallback: gpt-image-2-text-to-image.
+#        rendering than GPT Image 2.5, and the workflow diagram is stylized
+#        enough that AI image gen is fine. Fallback: gpt-image-2-5-sunburst-text-to-image.
 #        Override the primary with env var ZHC_IMAGE_MODEL.
 #        v10.X.4: corrected slug from gemini-3-1-flash-image (KIE 422,
 #        not supported) to nano-banana-2. Confirmed accepted by
@@ -23,7 +23,7 @@
 #        KIE. It returned 422 "model name not supported" on a client's
 #        KIE account on 2026-05-27 even though it worked on other accounts.
 #        This is expected. nano-banana-2 stays the PRIMARY; the retry loop
-#        falls back to gpt-image-2-text-to-image (the proven safety net) on
+#        falls back to gpt-image-2-5-sunburst-text-to-image (the proven safety net) on
 #        attempt 3, which succeeded. Do NOT change
 #        the primary slug; the fallback chain is the fix. See KNOWN-ISSUES.md.
 #
@@ -215,7 +215,7 @@ fi
 # ----------------------------------------------------------------------
 # Workflow infographic = KIE.AI (stylized diagram, less text density).
 # Primary model: nano-banana-2 (Gemini 3.1 Flash Image / Nano Banana 2).
-# Fallback:      gpt-image-2-text-to-image (older but reliable).
+# Fallback:      gpt-image-2-5-sunburst-text-to-image (older but reliable).
 # ----------------------------------------------------------------------
 if [[ ! -f "$TEMPLATE" ]]; then
   log "ERROR" "prompt template not found: $TEMPLATE"
@@ -285,7 +285,7 @@ PROMPT="$(_literal_replace "$PROMPT" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER
 PROMPT="$(_literal_replace "$PROMPT" '{{EXAMPLE_TASK}}'     "$EXAMPLE_TASK")"
 
 PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"
-FALLBACK_MODEL="gpt-image-2-text-to-image"
+FALLBACK_MODEL="gpt-image-2-5-sunburst-text-to-image"
 
 submit_job() {
   local model="$1"
@@ -355,7 +355,7 @@ while (( attempt < 3 )); do
     # nano-banana-2 availability is account/region-dependent on KIE. If the
     # primary slug is rejected as not-supported (422 "model name not
     # supported"), do not waste a second primary attempt; jump straight to the
-    # gpt-image-2-text-to-image safety net. (Added for a client launch, 2026-05-27.)
+    # gpt-image-2-5-sunburst-text-to-image safety net. (Added for a client launch, 2026-05-27.)
     if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
        && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
       log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"

@@ -5,7 +5,7 @@
   "connection_points": [
     {
       "name": "kie-api-key",
-      "description": "Kie.ai API key required for the Slide Submitter role to generate images via GPT Image 2. Without this key the presentation pipeline cannot produce slides.",
+      "description": "Kie.ai API key required for the Slide Submitter role to generate images via GPT-Image-2.5. Without this key the presentation pipeline cannot produce slides.",
       "cfg_key": "env.vars.KIE_API_KEY",
       "required": true
     },

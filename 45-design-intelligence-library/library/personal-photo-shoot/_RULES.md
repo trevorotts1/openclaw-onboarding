@@ -23,7 +23,7 @@ personal photo shoot/
 - Drafts 1K → deliverables 2K → print/retouch finals 4K. Client choice governs; default 2K.
 
 ## Model routing
-- New scenes with identity refs → Nano Banana 2 (multi-ref) or GPT-Image 2 I2I (ref + LONG spec).
+- New scenes with identity refs → Nano Banana 2 (multi-ref) or GPT-Image 2.5 I2I (ref + LONG spec).
 - Surgical edits on real photos → Seedream 4.5 Edit.
-- Style-card-driven editorial shoots → GPT-Image 2 I2I.
+- Style-card-driven editorial shoots → GPT-Image 2.5 I2I.
 - Concept drafts without identity → Wan 2.7 n=4.

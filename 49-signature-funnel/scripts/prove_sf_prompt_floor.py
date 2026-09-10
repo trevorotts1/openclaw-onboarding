@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """prove_sf_prompt_floor.py — fail-closed two-floor gate for Signature Funnel image
-prompts (Kie.ai gpt-image-2). EXACT clone of the presentations two-floor prompt gate
+prompts (Kie.ai gpt-image-2.5). EXACT clone of the presentations two-floor prompt gate
 (build_deck.py PROMPT_CHAR_FLOOR / PROMPT_CHAR_CEILING / structural-block / density),
 with the constants changed to the funnel band 5,000 / 19,000.
 

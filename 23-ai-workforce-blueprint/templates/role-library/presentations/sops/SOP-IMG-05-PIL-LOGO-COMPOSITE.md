@@ -39,7 +39,7 @@ Why: the image model cannot guarantee pixel-perfect logo reproduction. Even imag
 
 ### Rule B -- ELIMINATED: Native Text Overlay for Hero Strings (Decision 5C, AF-OVERLAY-DELIVERED)
 
-The former native-text overlay rule is REMOVED. ALL text — hero price numbers, callout strings, headlines, gradient-risk strings, struck prices — is baked into the SINGLE composed gpt-image-2 image by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
+The former native-text overlay rule is REMOVED. ALL text — hero price numbers, callout strings, headlines, gradient-risk strings, struck prices — is baked into the SINGLE composed gpt-image-2.5 image by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
 
 When a critical verbatim string garbles or mis-styles at render (including the gradient-risk strings the gradient ban in Section 2 targets), the remedy is the Slide Image Creator's RE-PROMPT / RE-SEED loop (tighten the spelling-lock + negative block, new seed, re-render the composed image), then HUMAN ESCALATION if it persists. A native PPTX text box is never the remedy.
 
@@ -57,7 +57,7 @@ Pillow/PIL is authorized in the entire Presentations pipeline for **exactly one 
 
 - `Image.new('RGB', (2048,1152), ...)` / `Image.new('RGB', (2560,1440), ...)` / any `Image.new` that fabricates a full-slide canvas (a flat cream card, a color wash, a "typography" card, a background plate).
 - `ImageDraw`-drawn headlines, hook lines, body text, or any slide text — drawing words with PIL is the local-render defect, never a remedy.
-- Using PIL to produce a "pure-typography hook slide" because it "has no photo." Pure-typography hook slides are kie.ai gpt-image-2 renders (SOP-DESIGN-02 §2.0; SOP-IMG-01 §1A) and carry a real kie `taskId`. PIL does not render them; PIL only composites their logo afterward.
+- Using PIL to produce a "pure-typography hook slide" because it "has no photo." Pure-typography hook slides are kie.ai gpt-image-2.5 renders (SOP-DESIGN-02 §2.0; SOP-IMG-01 §1A) and carry a real kie `taskId`. PIL does not render them; PIL only composites their logo afterward.
 - Any PIL/Pillow call that runs **before** kie.ai has returned a PNG for that slide. Rule A is strictly *post*-render (it overwrites `working/renders/slide-NN.png`); there is no PIL path that *creates* a `slide-NN.png` from nothing.
 
 The QC cross-check reads, for every slide, a real kie `taskId` and a PNG above the 51,200-byte kie-bake floor; a slide whose PNG was born from `Image.new` (the ~26–30 KB flat-card signature, no kie `taskId`) is the exact defect this rule kills. The only legitimate PIL writes to `slide-NN.png` are the logo-composite overwrite (Rule A) logged in `logo_composite_log.json`; PIL aside from that is forbidden.

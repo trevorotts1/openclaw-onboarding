@@ -13,7 +13,7 @@
 
 The Graphics department had MAX-only prompt caps (`diu_validator.py prompt-caps`, SHORT ≤500 /
 MEDIUM ≤2,800 / LONG ≤19,000) and **no minimum floor anywhere** — a one-line prompt could reach
-the paid Kie.ai / GPT-Image 2 API unchallenged (diagnosis G1). This SOP is the graphics analogue
+the paid Kie.ai / GPT-Image-2.5 API unchallenged (diagnosis G1). This SOP is the graphics analogue
 of the Presentations 9,000-character prompt floor + quality gate: every production image prompt is
 authored to a TEN-ELEMENT anatomy and validated by `diu_validator.py prompt-band` **before**
 submission. SOP-DIU-601 preflight step 2 now runs the **BAND** check (floor + cap + quality), not
@@ -34,7 +34,7 @@ Band floors/caps live in `45-design-intelligence-library/library/_system/prompt-
 | `medium` | MEDIUM | 800 | 2,800 | 60 | no |
 | `short_draft` | SHORT | 200 | 500 | 25 | no (NEVER a client deliverable) |
 
-**GK-20 (2026-07-15, band<->routing reconciliation):** `text_bearing_long` targets GPT-Image 2
+**GK-20 (2026-07-15, band<->routing reconciliation):** `text_bearing_long` targets GPT-Image-2.5
 T2I/I2I only — `nano-banana-2` was removed from its endpoints (Nano Banana is refused for ANY
 text-overlay deliverable everywhere else in the fleet). The fleet's mandatory text-rendering
 route, Ideogram V3 DESIGN (`social-media-designs/_RULES.md` — every quote-card/text-led post),
@@ -65,7 +65,7 @@ every quote-card/text-led social asset.
    the Likeness Rights Officer (existing DIU law); **no demographic default** (a hardcoded split such
    as "60/30/10" is a hard AF-R3 fail — representation comes from the client's captured audience).
 8. **LOGO / REFERENCE DIRECTIVE:** image-to-image `input_urls` handling; the STYLE-REFERENCE-ONLY
-   sentence whenever refs are stylistic (MODEL-SPECS §4 — MANDATORY for GPT-Image 2 I2I and
+   sentence whenever refs are stylistic (MODEL-SPECS §4 — MANDATORY for GPT-Image-2.5 I2I and
    Nano Banana 2): *"Use the attached images only as style reference for color grading, lighting, and
    composition — do not copy their subjects, faces, or text."*
 9. **TECHNICAL:** endpoint id, aspect ratio (REQUIRED on Seedream), resolution, `output_format`

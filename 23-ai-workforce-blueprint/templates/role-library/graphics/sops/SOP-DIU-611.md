@@ -13,7 +13,7 @@
 
 The Deck Systems Specialist runs this SOP on every deck request before any other action — manifest assembly, style analysis, or generation. Its purpose is to resolve which pipeline owns a given deck and what the only legal crossings between the two pipelines are.
 
-This seam is the highest-risk boundary the DIU creates. The Presentations department owns CLIENT-WEBINAR-DECK-SOP, which carries five contracted archetypes, white-base doctrine, and a GPT-Image-2-only model manifest. The DIU owns PPT-ANALYSIS-SOP, which routes across seven endpoints and produces dark, brand-matched foundations. Both pipelines can plausibly claim a client deck at intake. An incorrectly routed deck means wasted metered generation spend, contradictory client deliverables, and a department-level conflict at the company's most visible output type.
+This seam is the highest-risk boundary the DIU creates. The Presentations department owns CLIENT-WEBINAR-DECK-SOP, which carries five contracted archetypes, white-base doctrine, and a GPT-Image-2.5-only model manifest. The DIU owns PPT-ANALYSIS-SOP, which routes across seven endpoints and produces dark, brand-matched foundations. Both pipelines can plausibly claim a client deck at intake. An incorrectly routed deck means wasted metered generation spend, contradictory client deliverables, and a department-level conflict at the company's most visible output type.
 
 This SOP is never skipped for deck requests. It takes two minutes on clear cases. It saves regenerations, budget overruns, and client trust on ambiguous ones.
 
@@ -25,7 +25,7 @@ This SOP is never skipped for deck requests. It takes two minutes on clear cases
 |---|---|---|
 | `_system/PPT-ANALYSIS-SOP.md` | §§3B–3C (Slide Manifest as interface artifact; strategy-(b) background-only handoff; re-route, don't downgrade) | The DIU deck pipeline's Slide Manifest contract; strategy-(a) vs strategy-(b) text handling; fallback routing rules |
 | `powerpoint-designs/_RULES.md` | Full file (format table, text strategy, Rotation Engine parameters, resolution tiers) | All PPT-category card constraints; the Rotation Engine's domain — runs only on DIU-routed decks |
-| `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Full file (five archetypes, white-base doctrine, GPT-Image-2-only model manifest, editable text contract) | The Presentations pipeline's exclusive scope; the model manifest that the DIU routing table never overrides |
+| `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Full file (five archetypes, white-base doctrine, GPT-Image-2.5-only model manifest, editable text contract) | The Presentations pipeline's exclusive scope; the model manifest that the DIU routing table never overrides |
 | `presentations/00-START-HERE.md` | Mirror paragraph T7b (boundary contract counterpart — the Presentations-side view of this seam) | Confirms the Presentations department's view of the legal crossings; must agree with this SOP |
 
 All routing verdicts, archetype definitions, pipeline scope, and model-manifest rules are read from the library files above at runtime. Do not reproduce archetype lists, pipeline ownership rules, or model manifests in this SOP.
@@ -72,7 +72,7 @@ The following rules have no exception path:
 
 1. **ROUTING INTERLOCK (coded hard stop):** An audience deck, webinar deck, funnel deck, or virtual event deck CANNOT proceed on the DIU strategy-(b) pipeline. This is not a preference - it is a mechanical gate. Any deck matching a CLIENT-WEBINAR-DECK-SOP archetype routes to Presentations regardless of the client's personal brand style, any existing DIU style card, or CDO convenience. The Deck Systems Specialist must halt the DIU workflow the moment a deck is identified as audience/webinar and route to CDO for forwarding to the Presentations Director. Proceeding past this gate on the wrong pipeline is an architecture violation; the deck would be assembled primarily from bare backgrounds with overlay text boxes, which is an AUTO-FAIL at final QC.
 
-2. **ARCHITECTURE LOCK:** Text-in-image is THE rule for webinar and audience decks. The DIU strategy-(b) background-only approach is a per-element fallback only for non-audience DIU-routed decks. For audience/webinar decks, the Presentations pipeline's GPT-Image-2 text-in-image approach is the only legal architecture. The DIU's seven-endpoint routing table never overrides the CLIENT-WEBINAR-DECK-SOP model manifest.
+2. **ARCHITECTURE LOCK:** Text-in-image is THE rule for webinar and audience decks. The DIU strategy-(b) background-only approach is a per-element fallback only for non-audience DIU-routed decks. For audience/webinar decks, the Presentations pipeline's GPT-Image-2.5 text-in-image approach is the only legal architecture. The DIU's seven-endpoint routing table never overrides the CLIENT-WEBINAR-DECK-SOP model manifest.
 
 3. **Slide Image Creator prompts in the Presentations pipeline may not silently override a contracted PPT-category foundation block.** If Presentations requests imagery using an analyzed client style, the style card governs — Presentations sources the style via SOP-DIU-612, not by writing style directly into Slide Image Creator prompts.
 

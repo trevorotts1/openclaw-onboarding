@@ -1,8 +1,8 @@
 """KIE.ai image generation adapter for OpenMontage.
 
 Provides capability "image_generation" via the KIE.ai API using the
-gpt-image-2-image-to-image model (for edit/reference jobs) or the
-gpt-image-2-text-to-image model (for text-to-image jobs when no source
+gpt-image-2-5-sunburst-image-to-image model (for edit/reference jobs) or the
+gpt-image-2-5-sunburst-text-to-image model (for text-to-image jobs when no source
 image is supplied).
 
 INSTALL NOTE (Skill 47 INSTALL.md):
@@ -19,8 +19,8 @@ INSTALL NOTE (Skill 47 INSTALL.md):
 API references (do NOT modify without verifying against fleet receipts):
   - Endpoint shape:  07-kie-setup/EXAMPLES.md (Examples 1, 3, 10)
   - Model id:        46-kie-callback-relay/kie-slide-submitter.js
-                       MODEL_TIMEOUTS gpt-image-2-image-to-image /
-                       gpt-image-2-text-to-image
+                       MODEL_TIMEOUTS gpt-image-2-5-sunburst-image-to-image /
+                       gpt-image-2-5-sunburst-text-to-image
   - createTask body: same kie-slide-submitter.js _kiePost / body block
                        (model, input.prompt, input.image_input,
                         input.aspect_ratio, input.resolution,
@@ -70,8 +70,8 @@ _RECORD_INFO_URL = f"{_KIE_API_BASE}/api/v1/jobs/recordInfo"
 
 # Model ids verified in 46-kie-callback-relay/kie-slide-submitter.js
 # MODEL_TIMEOUTS block (2026-06-14).
-_MODEL_EDIT = "gpt-image-2-image-to-image"   # when source image(s) provided
-_MODEL_TEXT = "gpt-image-2-text-to-image"    # when no source image
+_MODEL_EDIT = "gpt-image-2-5-sunburst-image-to-image"   # when source image(s) provided
+_MODEL_TEXT = "gpt-image-2-5-sunburst-text-to-image"    # when no source image
 
 # Poll config (stay within 10 req/s status-query limit)
 _POLL_INTERVAL_SECONDS = 5
@@ -117,8 +117,8 @@ class KieImage(BaseTool):
     this tool and prefers it when KIE_API_KEY is set and other paid providers
     are UNAVAILABLE (their keys are absent).
 
-    Supports both text-to-image (gpt-image-2-text-to-image) and
-    image-edit/reference jobs (gpt-image-2-image-to-image) with up to 8
+    Supports both text-to-image (gpt-image-2-5-sunburst-text-to-image) and
+    image-edit/reference jobs (gpt-image-2-5-sunburst-image-to-image) with up to 8
     source images at 2K resolution, 16:9 aspect ratio.
     """
 
@@ -184,7 +184,7 @@ class KieImage(BaseTool):
                 "items": {"type": "string"},
                 "description": (
                     "Up to 8 reference image URLs.  When provided, the adapter "
-                    "uses gpt-image-2-image-to-image (edit/reference mode).  "
+                    "uses gpt-image-2-5-sunburst-image-to-image (edit/reference mode).  "
                     "Each URL must be publicly reachable by KIE servers; "
                     "upload local files first via the KIE base64-upload API."
                 ),
@@ -501,7 +501,7 @@ class KieImage(BaseTool):
         block and 07-kie-setup/EXAMPLES.md):
 
           {
-            "model": "gpt-image-2-image-to-image" | "gpt-image-2-text-to-image",
+            "model": "gpt-image-2-5-sunburst-image-to-image" | "gpt-image-2-5-sunburst-text-to-image",
             "input": {
               "prompt": <str>,
               "image_input": [<url>, ...],   # only when source images provided
@@ -531,7 +531,7 @@ class KieImage(BaseTool):
         prompt = inputs.get("prompt", "")
         # FIX-IMG-09 (i): the adapter accepted `negative_prompt` in its input
         # schema but silently dropped it — it never reached the createTask body.
-        # gpt-image-2 has no dedicated negative-prompt field, so forward it
+        # gpt-image-2.5 has no dedicated negative-prompt field, so forward it
         # in-prompt (the documented way to steer it away from unwanted content):
         # append a "Do not include:" clause so the exclusion is actually honored
         # instead of being silently ignored.

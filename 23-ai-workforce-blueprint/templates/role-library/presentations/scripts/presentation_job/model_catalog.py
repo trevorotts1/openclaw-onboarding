@@ -4,7 +4,7 @@ THE ONE-SENTENCE PROBLEM THIS FIXES: literal image/text/vision model IDs were
 hardcoded in pipeline code paths (build_deck.py MODEL_T2I/MODEL_I2I, the retired
 render_deck.py APPROVED_MODELS/FALLBACK_MODEL with its dead `nano-banana-2`,
 dispatcher.py DEEPSEEK_MODEL, and the image-path siblings prompt_gate.py /
-kie_generate.py / workbook_builder.py), so a provider shipping a newer GPT-Image
+kie_generate.py / workbook_builder.py), so a provider shipping a newer GPT-Image-2
 version — or retiring a fallback — required editing pipeline code, and the three
 copies had already begun to drift.
 
@@ -30,7 +30,7 @@ CONTRACT:
     a wrong model id spends real money on real client jobs.
   * `prefer_latest` on an image alias + a `candidates` list: the resolver picks the
     candidate with the highest embedded version token (and refuses retired ones),
-    so "prefer latest GPT-Image version" is catalog data, not code.
+    so "prefer latest GPT-Image-2 version" is catalog data, not code.
   * Rollback: PRESENTATION_MODEL_CATALOG=0 restores the exact pre-FIX-13 literals
     from the pinned ROLLBACK table below (single documented location; the ONLY
     remaining literal place, and it is dead unless the flag is set to 0).

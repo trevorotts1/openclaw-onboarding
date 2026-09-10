@@ -1010,7 +1010,7 @@ def build_verified_media_registry_copy(dest_dir: Path, *, source_registry_path: 
     """TEST-SUPPORT ONLY. Writes a copy of providers/model-registry.json to
     dest_dir/model-registry-verified-media.json with price.verified flipped
     true (and, for Seedance, a concrete test amount set) on every model this
-    module's own pipeline touches: the two gpt-image-2 image models (needed
+    module's own pipeline touches: the two gpt-image-2-5 image models (needed
     to drive the real P6/P7 pipeline that must precede P8/P9 in an end-to-end
     self-test) plus kie-bytedance-seedance-1.5-pro (the draft_motion /
     final_connected_motion tier this module itself calls) -- all three are
@@ -1024,7 +1024,7 @@ def build_verified_media_registry_copy(dest_dir: Path, *, source_registry_path: 
     source_path = Path(source_registry_path or providers_base.DEFAULT_REGISTRY_PATH)
     data = json.loads(source_path.read_text(encoding="utf-8"))
     for entry in data["models"]:
-        if entry["model_id"] in ("kie-gpt-image-2-text-to-image", "kie-gpt-image-2-image-to-image"):
+        if entry["model_id"] in ("kie-gpt-image-2-5-sunburst-text-to-image", "kie-gpt-image-2-5-sunburst-image-to-image"):
             entry["price"]["verified"] = True
             entry["price"]["note"] = (
                 "TEST FIXTURE ONLY — verified flipped true for an offline self-test; NOT a real "

@@ -1,7 +1,7 @@
 # SOP-IMG-01 - KIE.AI Call Mechanics (the three call modes, made exact)
 
 **Cluster:** Image-Gen Mechanics + Design-Library (skill 45) Integration
-**Status:** Reference SOP - extends the live Presentations pipeline; does not replace it. The logo-on-every-slide image-to-image path this SOP teaches is already mandated in the live slide-image-creator.md (the gpt-image-2-image-to-image path with LOGO_URL in input.input_urls) and the rendered-logo-identity check is the live AF-F7 (logo drift) auto-fail; this SOP is the authored mode-selection reference behind them.
+**Status:** Reference SOP - extends the live Presentations pipeline; does not replace it. The logo-on-every-slide image-to-image path this SOP teaches is already mandated in the live slide-image-creator.md (the gpt-image-2-5-sunburst-image-to-image path with LOGO_URL in input.input_urls) and the rendered-logo-identity check is the live AF-F7 (logo drift) auto-fail; this SOP is the authored mode-selection reference behind them.
 **Owner role (Presentations):** Slide Submitter (primary), Slide Image Creator (secondary, for which-mode declaration)
 **Master authority extended:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §9 (Phase 4) and Appendix A; `45-design-intelligence-library/library/_system/MODEL-SPECS.md` (the single source of truth for model IDs and limits)
 **Library-version pin:** CLIENT-WEBINAR-DECK-SOP §9.0 model manifest; MODEL-SPECS v1.2
@@ -14,9 +14,9 @@ Concern 20 (verbatim): "Kie.ai text-to-image vs image-to-image vs image-to-text/
 
 The forensic reference deck (Dimension F) proved the consequence of guessing the mode: the logomark mutated into at least four different marks across the deck (ringed leaf, bare leaf, a generic monogram, mountain peak) because the slides were generated text-to-image per slide instead of composited image-to-image with one locked logo asset passed as a reference. An agent that does not know the exact call structure for each mode WILL default to text-to-image and WILL reinvent the logo.
 
-This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
+This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
 
-**Why GPT-Image-2 is the pinned model (the WORLD INTELLIGENCE rationale, SOP-ENGINE-00 Engine 5).** The pin is not arbitrary. GPT-Image-2 is mandated specifically because of its strong REAL-WORLD GROUNDING: it knows what an actual office, kitchen table, empty classroom at 6am, or a roughly 15-year-old's normal bedroom actually looks like, and it renders believable people, props, and scale for THIS character rather than a generic studio fantasy. That grounding is exactly what the WORLD ENGINE depends on (slide-image-creator-sops.md element 11 / SOP 9.3, the "would this exact person actually be in this exact room?" believability rule). A model with weaker real-world grounding would force the World Intelligence gate to fight the renderer; GPT-Image-2 makes grounded, believable scenes the default. This is the load-bearing reason the model is pinned, stated here so the pin is a defensible doctrine, not a bare config value.
+**Why GPT-Image-2.5 is the pinned model (the WORLD INTELLIGENCE rationale, SOP-ENGINE-00 Engine 5).** The pin is not arbitrary. GPT-Image-2.5 is mandated specifically because of its strong REAL-WORLD GROUNDING: it knows what an actual office, kitchen table, empty classroom at 6am, or a roughly 15-year-old's normal bedroom actually looks like, and it renders believable people, props, and scale for THIS character rather than a generic studio fantasy. That grounding is exactly what the WORLD ENGINE depends on (slide-image-creator-sops.md element 11 / SOP 9.3, the "would this exact person actually be in this exact room?" believability rule). A model with weaker real-world grounding would force the World Intelligence gate to fight the renderer; GPT-Image-2.5 makes grounded, believable scenes the default. This is the load-bearing reason the model is pinned, stated here so the pin is a defensible doctrine, not a bare config value.
 
 This is a build-mechanics reference. NONE of its content is ever printed on a slide. (Cross-ref the Audience-Facing battery in the slide-craft cluster.)
 
@@ -32,12 +32,12 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 
 Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (installed into the client's Presentations scripts directory on a materialized box):
 
-- **`build_deck.py`** — the single-command deterministic path. The builder writes `slides.json` (its only creative output) and runs the script; the script composes each prompt MECHANICALLY (scene + the agent's EXACT copy verbatim + optional logo wordmark + layout hint + the mandatory English/Latin-only pin), submits `gpt-image-2-text-to-image`, polls, downloads + verifies each PNG, and assembles the `.pptx`. No model decides wording at runtime.
+- **`build_deck.py`** — the single-command deterministic path. The builder writes `slides.json` (its only creative output) and runs the script; the script composes each prompt MECHANICALLY (scene + the agent's EXACT copy verbatim + optional logo wordmark + layout hint + the mandatory English/Latin-only pin), submits `gpt-image-2-5-sunburst-text-to-image`, polls, downloads + verifies each PNG, and assembles the `.pptx`. No model decides wording at runtime.
 - **`kie_generate.py`** — the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below).
 
 **The mandated flow is:** the builder writes `slides.json` → runs `build_deck.py` → KIE.ai (createTask → recordInfo → `resultUrls[0]`) is the ONLY render call → register the `.pptx` the script produced. **FORBIDDEN, each an auto-fail (AF-I14 / AF-RENDERER / AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS):** generating any image with a native/built-in tool (`image_generate`, `openai`, etc.); writing an inline hand-typed KIE.ai HTTP call instead of the script; the dead endpoint `/api/v1/image/gpt-image`; hand-editing PNGs or substituting stock/placeholder images; **fabricating any slide canvas locally with Pillow/PIL `Image.new` / `ImageDraw` (a flat cream or color typography card) or a PowerPoint-rendered card**; running any per-deck/hand-rolled renderer or assembler in `working/*.py` instead of the canonical `build_deck.py` / `run_signature_deck.py` path. A non-zero exit means the deck is NOT built — never fake a deliverable.
 
-**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai gpt-image-2 like every other slide — Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) — never a slide canvas, never any text.
+**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai gpt-image-2.5 like every other slide — Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) — never a slide canvas, never any text.
 
 **MANDATORY ENGLISH / LATIN-ONLY PIN — every image prompt carries this verbatim (every slide, every mode):**
 
@@ -51,8 +51,8 @@ Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an
 
 | Mode | Kie.ai endpoint family | What it does | When the Presentations pipeline uses it |
 |---|---|---|---|
-| **A. Text-to-Image (T2I)** | model `gpt-image-2-text-to-image` | Generates a slide image from words ONLY. No reference images. The model invents every pixel, including any logo or face described in words. | ONLY when the deck has NO logo asset AND no founder portrait for this slide (`LOGO_ON_SLIDES = false` AND archetype is not A5). Rare. |
-| **B. Image-to-Image (I2I)** | model `gpt-image-2-image-to-image` | Generates a slide image from words PLUS up to 16 reference image URLs passed in `input_urls`. The references anchor real assets (the locked logo, the founder's real face, an optional style-reference frame) so they are composited rather than reinvented. | THE DEFAULT for every slide that carries the logo (i.e. almost every slide), and for every A5 founder-portrait slide. |
+| **A. Text-to-Image (T2I)** | model `gpt-image-2-5-sunburst-text-to-image` | Generates a slide image from words ONLY. No reference images. The model invents every pixel, including any logo or face described in words. | ONLY when the deck has NO logo asset AND no founder portrait for this slide (`LOGO_ON_SLIDES = false` AND archetype is not A5). Rare. |
+| **B. Image-to-Image (I2I)** | model `gpt-image-2-5-sunburst-image-to-image` | Generates a slide image from words PLUS up to 16 reference image URLs passed in `input_urls`. The references anchor real assets (the locked logo, the founder's real face, an optional style-reference frame) so they are composited rather than reinvented. | THE DEFAULT for every slide that carries the logo (i.e. almost every slide), and for every A5 founder-portrait slide. |
 | **C. Image-to-Text / JSON (analysis)** | NOT a Kie.ai generation endpoint | "Read this image and return structured findings" (e.g. analyze a reference deck into named style families; QC-read a rendered slide for defects). | Done by the multimodal LLM agent READING the image directly. There is no Kie.ai HTTP call for this. See §6. |
 
 **The hard mode-selection rule (this is the gate):**
@@ -90,7 +90,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gpt-image-2-text-to-image",
+    "model": "gpt-image-2-5-sunburst-text-to-image",
     "input": {
       "prompt": "<the slide-NN QC-passed prompt, up to 20000 chars>",
       "aspect_ratio": "16:9",
@@ -102,7 +102,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 **JSON body (the shape):**
 ```json
 {
-  "model": "gpt-image-2-text-to-image",
+  "model": "gpt-image-2-5-sunburst-text-to-image",
   "input": {
     "prompt": "<full QC-passed prompt>",
     "aspect_ratio": "16:9",
@@ -128,7 +128,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gpt-image-2-image-to-image",
+    "model": "gpt-image-2-5-sunburst-image-to-image",
     "input": {
       "prompt": "<the slide-NN QC-passed prompt>. The first reference image is the company logo: place it exactly as specified, do not redraw, recolor, or restyle it.",
       "input_urls": ["<LOGO_URL>"],
@@ -144,7 +144,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gpt-image-2-image-to-image",
+    "model": "gpt-image-2-5-sunburst-image-to-image",
     "input": {
       "prompt": "<the slide-NN QC-passed prompt>. The first reference image is the company logo (place as specified, do not redraw). The second reference image is the founder; her likeness drives the portrait.",
       "input_urls": ["<LOGO_URL>", "<FOUNDER_PORTRAIT_URL>"],
@@ -157,7 +157,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 **JSON body (the shape):**
 ```json
 {
-  "model": "gpt-image-2-image-to-image",
+  "model": "gpt-image-2-5-sunburst-image-to-image",
   "input": {
     "prompt": "<full QC-passed prompt + the reference-naming sentence(s)>",
     "input_urls": ["<LOGO_URL>", "<FOUNDER_PORTRAIT_URL if A5>", "<STYLE_FRAME_URL if used>"],
@@ -194,7 +194,7 @@ The Slide Submitter (at submit time) and the QC Specialist (at image QC) enforce
 
 | # | Check (trigger) | PASS | AUTO-FAIL |
 |---|---|---|---|
-| 1 | **Mode matches assets.** If `LOGO_URL` exists OR slide is A5 OR a style frame is passed, the submitted body's `model` is `gpt-image-2-image-to-image` and `input_urls` is non-empty. | I2I used, refs present | T2I used on a slide that has a logo/portrait/style frame, OR I2I with an empty `input_urls` |
+| 1 | **Mode matches assets.** If `LOGO_URL` exists OR slide is A5 OR a style frame is passed, the submitted body's `model` is `gpt-image-2-5-sunburst-image-to-image` and `input_urls` is non-empty. | I2I used, refs present | T2I used on a slide that has a logo/portrait/style frame, OR I2I with an empty `input_urls` |
 | 2 | **Reference naming.** Every URL in `input_urls` is named, in order, in the prompt ("first reference is the logo...", "second is the founder..."). | All refs named in order | A ref URL present with no naming sentence |
 | 3 | **Logo "place, do not redraw."** The logo reference sentence forbids redrawing/recoloring/restyling the logo. | Sentence present | Logo described only in words with no "do not redraw" instruction (the mutation path) |
 | 4 | **Style-frame directive.** If a STYLE reference frame is in `input_urls`, the style-reference-only directive sentence is present verbatim. | Directive present | Style frame attached, directive missing |
@@ -236,7 +236,7 @@ SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling
 | I1 | 100% English / zero CJK | AF-I-ENGLISH (= SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) check 10 read-half) | Every rendered glyph is English Latin-alphabet | ANY Chinese / CJK / non-Latin character anywhere | Regenerate as-is (render noise, Section 10.1 of master SOP) |
 | I2 | No garbled / misspelled text | AF-I1 | Every word correct, no duplicated word, no garbled glyph | Any misspelling / duplicated word / garbled glyph in any text element | Re-prompt + RE-SEED (new prompt + new seed) and re-render the single composed image; persistent garble -> HUMAN ESCALATION. NEVER a native-text overlay (Decision 5C; AF-OVERLAY-DELIVERED). |
 | I3 | Rendered text MATCHES intended copy | AF-F9 (OCR readback) | OCR of every text element diffs clean against the intended verbatim string | Any baked typo, garble, missing connector, or leaked stage-direction string vs intended copy | Re-prompt + RE-SEED and re-render; persistent -> HUMAN ESCALATION. NEVER a native-text overlay (AF-OVERLAY-DELIVERED). |
-| I4 | Real KIE gpt-image-2 (NOT native) | AF-BAKED / AF-RENDERER / AF-LOCAL-CANVAS / AF-CANONICAL-RENDER-BYPASS (= Section 1A FORBIDDEN list) | Genuine Kie.ai `gpt-image-2` raster, typography baked in by the model, from the canonical render path; EVERY slide (incl. PURE_TYPE_HOOK) maps to a real kie `taskId` and a PNG >= 51,200 bytes | Native / built-in tool render; Pillow/PPTX/ImageDraw overlay; **a locally fabricated flat cream/color typography card (`Image.new`, the ~26–30 KB sub-floor signature)**; flat placeholder fill; stock/hand-edited substitute; per-deck renderer; any slide with no kie `taskId` | HARD STOP deck: rebuild via canonical path; never fake the deliverable |
+| I4 | Real KIE gpt-image-2.5 (NOT native) | AF-BAKED / AF-RENDERER / AF-LOCAL-CANVAS / AF-CANONICAL-RENDER-BYPASS (= Section 1A FORBIDDEN list) | Genuine Kie.ai `gpt-image-2.5` raster, typography baked in by the model, from the canonical render path; EVERY slide (incl. PURE_TYPE_HOOK) maps to a real kie `taskId` and a PNG >= 51,200 bytes | Native / built-in tool render; Pillow/PPTX/ImageDraw overlay; **a locally fabricated flat cream/color typography card (`Image.new`, the ~26–30 KB sub-floor signature)**; flat placeholder fill; stock/hand-edited substitute; per-deck renderer; any slide with no kie `taskId` | HARD STOP deck: rebuild via canonical path; never fake the deliverable |
 | I5 | Full-bleed 2560x1440 | AF-I-DIMS | Full-bleed 16:9 at 2K, nominal **2560x1440**, fills the canvas edge to edge, no letterbox / pillarbox / border / margin | Wrong aspect ratio; sub-2K; any non-full-bleed framing | Regenerate with 16:9 / 2K confirmed in the createTask body |
 | I6 | Logo correct (cross-slide identity) | AF-I4 (slide) + AF-F7 (deck) (= Section 7 check 9) | `LOGO_ON_SLIDES = true`: SAME locked mark on every slide, identical to `LOGO_URL` (lockup, color, scale, crop, chip, corner) | Logo absent/illegible/distorted/recolored/clipped (AF-I4); a different lockup / monogram / variant on any slide (AF-F7) | Re-submit via Mode B with locked `LOGO_URL` + "place, do not redraw"; after 2 fails -> composite the REAL logo IMAGE onto the PNG via the PIL image-composite path (SOP-IMG-05), baked into the image before assembly. This is an IMAGE composite, NOT native text — never a `pptx_text_overlays.json` text box (AF-OVERLAY-DELIVERED). |
 | I7 | Currency $ rendered correctly | AF-I-CURRENCY | Every rendered price shows the client's currency symbol (default `$`), matching intended copy | Wrong symbol; missing symbol where required; localized/auto-translated currency | Re-prompt + RE-SEED and re-render; persistent -> HUMAN ESCALATION. NEVER a native-text overlay for the price (AF-OVERLAY-DELIVERED). |
@@ -261,9 +261,9 @@ SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling
 
 ## 9. PASS vs FAIL EXAMPLES (drawn from the actual forensic reference deck defects)
 
-**FAIL (the forensic reference deck defect):** A content slide with a logo on file was submitted with body `{"model":"gpt-image-2-text-to-image","input":{"prompt":"...with a brand ringed-leaf logo described in words in the lower right..."}}`. No `input_urls`. Result: the model invented a logo, and across the deck it drew a ringed leaf on one slide, a bare leaf on another, a generic monogram on a third, a mountain peak on a fourth. Fails check 1 (T2I on a logo slide) and check 9 (logo not identical to a locked asset).
+**FAIL (the forensic reference deck defect):** A content slide with a logo on file was submitted with body `{"model":"gpt-image-2-5-sunburst-text-to-image","input":{"prompt":"...with a brand ringed-leaf logo described in words in the lower right..."}}`. No `input_urls`. Result: the model invented a logo, and across the deck it drew a ringed leaf on one slide, a bare leaf on another, a generic monogram on a third, a mountain peak on a fourth. Fails check 1 (T2I on a logo slide) and check 9 (logo not identical to a locked asset).
 
-**PASS:** The same slide submitted as `{"model":"gpt-image-2-image-to-image","input":{"prompt":"... The first reference image is the company logo: place it on a white chip in the lower-right corner at ~9% slide width, do not redraw, recolor, or restyle it. ...","input_urls":["https://media.../brand-logo.png"],"aspect_ratio":"16:9","resolution":"2K"}}`. One locked logo asset, named as the first reference, with the "do not redraw" instruction. Passes checks 1-3; the rendered logo is the same mark on every slide (check 9).
+**PASS:** The same slide submitted as `{"model":"gpt-image-2-5-sunburst-image-to-image","input":{"prompt":"... The first reference image is the company logo: place it on a white chip in the lower-right corner at ~9% slide width, do not redraw, recolor, or restyle it. ...","input_urls":["https://media.../brand-logo.png"],"aspect_ratio":"16:9","resolution":"2K"}}`. One locked logo asset, named as the first reference, with the "do not redraw" instruction. Passes checks 1-3; the rendered logo is the same mark on every slide (check 9).
 
 **FAIL:** An A5 founder slide submitted I2I with `input_urls:["<LOGO_URL>","<FOUNDER_URL>"]` but the prompt never said which reference was which. The model painted the logo's colors onto the founder's blazer. Fails check 2 (references not named in order).
 

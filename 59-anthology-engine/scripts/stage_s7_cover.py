@@ -9,7 +9,7 @@ the exit-code classification contract are FIXED here.
 
 S7 cover (U8 / B8): the cover prompt generator (one structured BASE prompt), then FOUR
 distinctly-styled portrait covers -- the config-pinned named styles in cover_render.COVER_STYLES
-(exactly one strictly typography-driven) rendered on the SAME Kie.ai GPT-image-2 PORTRAIT
+(exactly one strictly typography-driven) rendered on the SAME Kie.ai GPT-image-2.5 PORTRAIT
 1024x1536 text-to-image endpoint (NEVER the 16:9 presentation recipe). Each style PNG is landed
 in the participant Drive folder AND uploaded to Convert and Flow media storage; the four
 anthology_cover_sample{1..4}_url fields are written (read-back). S7 then HOLDS: the producer
@@ -54,7 +54,7 @@ EX_OK, EX_ERR, EX_PROVER, EX_HELD, EX_SLOT = 0, 1, 2, 3, 5
 WIRING = [
     ("scripts/anthology_state.py", "load the participant row (locked title/subtitle, author name, blurb, drive folder)"),
     ("54-anthology-writer/anthology-entry.sh", "Layer 1 authoring core (Skill 54): the cover prompt generator pin aw-11 on MID-WRITER, one structured BASE image-prompt"),
-    ("scripts/cover_render.py", "render the FOUR named cover styles (>=1 strictly typography-driven) on the SAME Kie.ai GPT-image-2 PORTRAIT endpoint; bounded re-poll then hold plus alert"),
+    ("scripts/cover_render.py", "render the FOUR named cover styles (>=1 strictly typography-driven) on the SAME Kie.ai GPT-image-2.5 PORTRAIT endpoint; bounded re-poll then hold plus alert"),
     ("scripts/drive_adapter.py", "land each of the four style PNGs in the participant Drive folder"),
     ("scripts/caf_delivery.py", "upload each style PNG to Convert and Flow media storage; write the four anthology_cover_sample{1..4}_url fields (read-back); on the client pick, stamp the chosen art into the existing cover image/drive fields"),
     ("scripts/anthology_state.py", "on the client pick: record-artifact (cover) with both link fields and advance to s8_deliver"),
@@ -288,7 +288,7 @@ def _guard(key):
 
 def _invoke_wiring(key, run_dir=None):
     """PHASE A (render the SET). Renders the FOUR config-pinned named cover styles
-    (>=1 strictly typography-driven) on the SAME Kie.ai GPT-image-2 portrait
+    (>=1 strictly typography-driven) on the SAME Kie.ai GPT-image-2.5 portrait
     endpoint, lands each in Drive + Convert and Flow media storage, writes the four
     anthology_cover_sample{1..4}_url fields with byte-for-byte read-back, persists
     the durable pick manifest, and syncs the board. It then HOLDS at s7_cover for the

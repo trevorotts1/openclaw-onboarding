@@ -47,7 +47,7 @@ Exit codes for every subcommand (SPEC Section 3.4 row 1, identical across the fi
 | S4 blurb and outline | Book Blurb then single-chapter Create Outline placing every personal story; Docs plus PDFs | producer, then participant outline approval |
 | S5 chapter | one complete chapter, 2,000 to 3,500 measured stripped words, title locked, every story placed; the full Gate B battery runs BEFORE the gate opens | participant: Approve as-is OR Request rewrite with notes |
 | S6 chapter rewrite | optional, budget 2; notes become chapter_updates verbatim; the Thornfield persona rewrites inside the band; re-enters the S5 gate | re-enters S5 |
-| S7 cover image | the cover prompt generator, then Kie.ai GPT-image-2 PORTRAIT 1024x1536 via Skills 07 and 46; PNG to Drive | none |
+| S7 cover image | the cover prompt generator, then Kie.ai GPT-Image-2.5 PORTRAIT 1024x1536 via Skills 07 and 46; PNG to Drive | none |
 | S8 package and deliver | Google Doc plus 14-point-floor PDF; Convert and Flow media upload; exact-key field writes by contact_id read back byte-for-byte; control fields; per-gate pipeline-stage update; signed process certificate; card to review | card to review, the QC scorer owns review to done |
 | S9 anthology assembly | fired ONLY by the producer ready-to-assemble trigger; order curation, editor's introduction in the producer's voice, front and back matter, contributor bios; compile from FROZEN approved chapters byte-identical; full manuscript Doc plus PDF; producer sign-off closes it | s9_ready then s9_producer |
 

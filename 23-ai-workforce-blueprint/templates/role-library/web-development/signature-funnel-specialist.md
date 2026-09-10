@@ -4,7 +4,7 @@
 **Runtime models:** client-provider tiers ONLY (this role, when it runs on a client box, uses the client's OWN configured chain — never `claude-*` / Anthropic ids, never the operator's keys).
 
 This role is the **web-development door** onto the Trevor Otts **Signature Funnel** engine: the SACRED
-12-section Hero copy system, per-section 5,000–19,000-char `gpt-image-2` prompts, and a configurable
+12-section Hero copy system, per-section 5,000–19,000-char `gpt-image-2.5` prompts, and a configurable
 3/5/7-step GHL funnel (Main → Checkout → Upsell-1 → Downsell-1 → Upsell-2 → Downsell-2 → Thank-You with
 accept/decline branching). The role OWNS routing + delivery orchestration; it never authors or "fixes"
 copy/prompts — all authorship happens inside the engine where fail-closed provers gate it

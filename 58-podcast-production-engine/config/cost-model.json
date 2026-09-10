@@ -13,7 +13,8 @@
         "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40, "note": "Final fallback and qc_judge tier; cheapest content model."}
       },
       "image_per_task": {
-        "kie.ai/gpt-image-2": {"per_1k_square": 0.04, "note": "One 1024 square cover per episode. Kie.ai GPT-image-2; a smoke image runs roughly 0.04 to 0.10 dollars. Restamp from current Kie.ai pricing."}
+        "kie.ai/gpt-image-2": {"per_1k_square": 0.04, "note": "One 1024 square cover per episode. Kie.ai GPT-image-2; a smoke image runs roughly 0.04 to 0.10 dollars. Restamp from current Kie.ai pricing."},
+        "kie.ai/gpt-image-2.5": {"per_1k_square": 0.04, "note": "One 1024 square cover per episode. Kie.ai GPT-Image-2.5; a smoke image runs roughly 0.04 to 0.10 dollars. Restamp from current Kie.ai pricing."}
       },
       "tts_fish_audio": {
         "fish-audio/s2.1-pro": {"per_utf8_byte": 0.000015, "per_1m_utf8_bytes": 15.00, "note": "Model s2.1-pro via header, client reference_id. Roughly 14,000 bytes for a 10-minute episode (about 0.21 dollars); roughly 42,000 bytes for a 30-minute episode (about 0.63 dollars). The free tier s2.1-pro-free is FORBIDDEN for client content and is never priced or used here."}

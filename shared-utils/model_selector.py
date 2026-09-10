@@ -57,12 +57,12 @@ CLASS_TO_TIER = {
 
 # Generation roles → fixed pipeline targets (no LLM resolution)
 GENERATION_PIPELINE = {
-    "ai-image-generator-specialist":    "kie-ai/gpt-image-2-image-to-image",
+    "ai-image-generator-specialist":    "kie-ai/gpt-image-2-5-sunburst-image-to-image",
     "ai-video-generator-specialist":    "video-pipeline/ai-video-generator",
     "music-and-audio-producer":         "fish-audio/text-to-audio",
-    "generation-operator":              "kie-ai/gpt-image-2-image-to-image",
-    "role--generation-operator":        "kie-ai/gpt-image-2-image-to-image",
-    "slide-image-creator":              "kie-ai/gpt-image-2-image-to-image",
+    "generation-operator":              "kie-ai/gpt-image-2-5-sunburst-image-to-image",
+    "role--generation-operator":        "kie-ai/gpt-image-2-5-sunburst-image-to-image",
+    "slide-image-creator":              "kie-ai/gpt-image-2-5-sunburst-image-to-image",
     "sound-design-sfx-specialist":      "fish-audio/text-to-audio",
     "audiobook-production-specialist":  "fish-audio/text-to-audio",
     "ai-voice-specialist-11-labs-play.ht": "fish-audio/elevenlabs-passthrough",

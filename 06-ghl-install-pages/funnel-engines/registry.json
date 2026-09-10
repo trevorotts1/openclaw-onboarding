@@ -9,7 +9,7 @@
       "id": "signature-funnel",
       "skill": "49-signature-funnel",
       "name": "Trevor Otts Signature Funnel",
-      "summary": "The SACRED 12-section Hero copy system + 5,000-19,000-char gpt-image-2 prompts, built as a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching).",
+      "summary": "The SACRED 12-section Hero copy system + 5,000-19,000-char gpt-image-2.5 prompts, built as a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching).",
       "entry": "49-signature-funnel/signature-funnel-entry.sh",
       "entry_contract": "NOTHING generates copy/prompts, calls Kie, touches GHL, or mints a certificate except THROUGH signature-funnel-entry.sh (deps -> version -> hash-pin -> bypass-scan -> run-scoped 0600 nonce). A direct orchestrator call without the front-door nonce dies AF-FUN-FRONT-DOOR.",
       "delivery_rail": "06-ghl-install-pages",

@@ -107,7 +107,7 @@ ENGLISH_LATIN_PIN = (
 # The NO-TEXT pin — appended VERBATIM to every prompt whose spec is NOT
 # ``text_bearing``. FIX-IMG-09 (ii): the English/Latin pin was previously
 # appended to EVERY prompt, including photographic no-text scenes, which
-# ironically INVITES gpt-image-2 to render (correctly-spelled) text where none
+# ironically INVITES gpt-image-2.5 to render (correctly-spelled) text where none
 # was wanted. A no-text section must instead be told, unambiguously, to render
 # no lettering at all; only text-bearing sections carry the spelling pin.
 TEXT_ABSENT_PIN = (
@@ -485,7 +485,7 @@ def build_prompts_json(
     ``ENGLISH_LATIN_PIN`` spelling pin when the spec is ``text_bearing``, else the
     ``TEXT_ABSENT_PIN`` (a photographic section is told to render NO text at all
     rather than being invited to spell nonexistent copy).
-    ``t2i`` (``gpt-image-2-text-to-image``) is the default because the fictional
+    ``t2i`` (``gpt-image-2-5-sunburst-text-to-image``) is the default because the fictional
     brand has no logo to seed image-to-image; an ``i2i`` entry MUST carry
     ``input_urls`` (the generator enforces this too).
 

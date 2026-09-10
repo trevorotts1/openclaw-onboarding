@@ -170,7 +170,7 @@ const slides = Array.from({ length: 6 }, (_, i) => ({
   slideId:    `slide-${i+1}`,
   prompt:     'A professional blue gradient background, no text, clean and minimal',
   // PRIMARY model for all client presentations. Sourced from client's pinned config in production, never hard-coded.
-  model:      'gpt-image-2-text-to-image',
+  model:      'gpt-image-2-5-sunburst-text-to-image',
   targetPath: `/tmp/kie-test/slide-${i+1}.png`
 }));
 

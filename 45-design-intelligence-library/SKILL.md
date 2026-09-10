@@ -1,6 +1,6 @@
 ---
 name: design-intelligence-library
-description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
+description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2.5 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
 version: 2.1.0
 ---
 
@@ -27,7 +27,7 @@ Skill 45 ships a **Design Intelligence Unit (DIU) library** — a knowledge syst
 1. **Analyze images** across 12 style dimensions (render, composition, subject, color, grading, lighting, typography, layering, subject-background, negative space, workflow, unity).
 2. **Extract transferable style** — separate content from aesthetic DNA so the style card works for any new subject.
 3. **Write style cards** in three tiers (SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤19,000 chars), calibrated to real API limits.
-4. **Generate style-faithful images** via 7 endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7), routed per category and model-fitness rules.
+4. **Generate style-faithful images** via 7 endpoints (GPT-Image 2.5, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7), routed per category and model-fitness rules.
 5. **Analyze decks** as systems (not slides) and run **Style Rotation Engine** — deterministic multi-slide generation with rhythm constraints and cohesion.
 6. **Execute identity-locked personal photo shoots** — real-person imagery with consent gates, identity preservation, and surgical retouching (Seedream 4.5 Edit).
 7. **Test fidelity** across 12 dimensions (≥4.0 avg, no <3, zero hard-rule violations), patch failures in a 3-strike loop, escalate to producer on the third failure.
@@ -75,7 +75,7 @@ All five roles report to **Chief Design Officer** (producer / gatekeeper). No DI
 
 ## Prerequisite: Skill 07 (Kie.ai)
 
-This skill requires **Skill 07 (kie-setup)** to be completed on the box. The DIU routes style-based generation and photo shoots through Kie.ai endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7). 
+This skill requires **Skill 07 (kie-setup)** to be completed on the box. The DIU routes style-based generation and photo shoots through Kie.ai endpoints (GPT-Image 2.5, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7). 
 
 - **If Skill 07 is installed:** the KIE_API_KEY is available; DIU generation proceeds normally.
 - **If Skill 07 is absent:** `INSTALL.md` step 3 will flag the missing prerequisite and provide the satisfy path.
@@ -190,7 +190,7 @@ Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never delet
 
 MODEL-SPECS.md (repo-owned, vendor-asserted) specifies API limits, character tiers (SHORT/MEDIUM/LONG), and per-category routing rules:
 
-- **GPT-Image 2** — T2I (layout adherence) / I2I (precise edits). Default general-purpose.
+- **GPT-Image 2.5** — T2I (layout adherence) / I2I (precise edits). Default general-purpose.
 - **Nano Banana 2** — people-led creative, faster, great for lifestyle/portrait.
 - **Seedream 4.5** — identity-locked personal photo shoots; surgical retouch (Mode G).
 - **Ideogram V3** — design/typography-heavy; clean graphic elements.

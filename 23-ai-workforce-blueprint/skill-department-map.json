@@ -748,7 +748,7 @@
    "slug": "kie-image",
    "name": "kie-image",
    "client_facing": false,
-   "description": "Setup/reference: KIE image generation via the KIE.ai Market API; owns model selection across 14 image families (GPT Image 2, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5, Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3, Imagen 4), payload validation against a machine-readable registry, prompt sizing against published limits, async task dispatch, and real visual QC.",
+   "description": "Setup/reference: KIE image generation via the KIE.ai Market API; owns model selection across 14 image families (GPT-Image-2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5, Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3, Imagen 4), payload validation against a machine-readable registry, prompt sizing against published limits, async task dispatch, and real visual QC.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []

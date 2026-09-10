@@ -225,7 +225,7 @@ def leg1_pregen_gate_and_qc() -> dict:
                                    "pixels": "1080x1350"},
         "scene_notes": prompt_text,
     }
-    compiled = _spc.compile_prompt(_brief, "kie", "gpt-image-2-text-to-image")
+    compiled = _spc.compile_prompt(_brief, "kie", "gpt-image-2-5-sunburst-text-to-image")
     if not compiled.get("ok"):
         return {"pass": False,
                 "pregen_gate_ok": False,

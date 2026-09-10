@@ -25,7 +25,7 @@ This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json
 
 **Archival reference -- decommissioned overlay subsystem specification (preserved by U003 rescue):**
 
-The eliminated subsystem included: a strike-capable overlay support mechanism with `{"strike": true}` property on any run, requiring OOXML `<a:rPr>` with `strike="sngStrike"` set via `run.font._rPr.set("strike", "sngStrike")` (python-pptx direct XML manipulation); and a Typography-Safe Assembler Spec (former SOP 9.4) with six non-optional rules: (1) autofit banned (`noAutofit`), (2) fixed-box sizing from pptx_text_overlays.json, (3) rendered-text-height measurement with collision assert, (4) bottom-anchoring for price/hook entries, (5) build-time collision assert across all slide overlays, and (6) a bottom-up gradient scrim (rgba 0,0,0,0.65) behind overlay text boxes on photographic backgrounds. The full specification is preserved in the U003 rescue backup archive. Every slide ships as a SINGLE composed gpt-image-2 image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
+The eliminated subsystem included: a strike-capable overlay support mechanism with `{"strike": true}` property on any run, requiring OOXML `<a:rPr>` with `strike="sngStrike"` set via `run.font._rPr.set("strike", "sngStrike")` (python-pptx direct XML manipulation); and a Typography-Safe Assembler Spec (former SOP 9.4) with six non-optional rules: (1) autofit banned (`noAutofit`), (2) fixed-box sizing from pptx_text_overlays.json, (3) rendered-text-height measurement with collision assert, (4) bottom-anchoring for price/hook entries, (5) build-time collision assert across all slide overlays, and (6) a bottom-up gradient scrim (rgba 0,0,0,0.65) behind overlay text boxes on photographic backgrounds. The full specification is preserved in the U003 rescue backup archive. Every slide ships as a SINGLE composed gpt-image-2.5 image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
 
 - If a slide's verbatim text garbles, misspells, or duplicates at image QC, the remedy is NEVER a native overlay. The Slide Image Creator RE-PROMPTS and RE-SEEDS the slide (new prompt, new seed) and re-renders. If the garble PERSISTS after the re-prompt/re-seed loop, it ESCALATES TO A HUMAN — it is never papered over with a native text box.
 - The mere PRESENCE of a `pptx_text_overlays.json` file in the run dir at assembly is a hard auto-fail (AF-OVERLAY-DELIVERED). If you find one, HALT, delete it, and route the affected slide back to the re-prompt/re-seed loop.
@@ -35,7 +35,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
 **Steps:**
 1. Verify slide count: `ls working/media-library/*.png | wc -l` must equal slide_count_final from mission_prd.json. If it does not, halt and notify the Director.
 2. Verify presenter_notes.json has exactly slide_count_final entries. If fewer entries than slides: flag missing notes to the Director. Do not assemble with missing notes.
-3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single gpt-image-2 image per slide (plus the off-slide speaker-notes pane and, where required, the PIL-composited logo image baked into the PNG per SOP-IMG-05).
+3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single gpt-image-2.5 image per slide (plus the off-slide speaker-notes pane and, where required, the PIL-composited logo image baked into the PNG per SOP-IMG-05).
 3a. **Canonical assembler only (AF-CANONICAL-RENDER-BYPASS).** The deck is assembled by the canonical renderer `scripts/build_deck.py` `assemble_pptx()`, invoked ONLY through `scripts/run_signature_deck.py`. That function adds ONLY `add_picture` (full-bleed kie.ai image) + `add_picture` (PIL-baked logo when used) + the off-slide notes pane, and emits ZERO `add_textbox`. You do NOT hand-write or run a parallel per-deck assembler (no `working/phase*_assemble.py`, no improvised renderer). A hand-rolled per-deck assembler/renderer is AF-CANONICAL-RENDER-BYPASS (and AF-RENDERER); a locally fabricated slide canvas (`Image.new(...)` for a 2048×1152 card, or a PowerPoint-drawn typography card) is AF-LOCAL-CANVAS. The python in step 4 is the REFERENCE SPEC of the canonical assembler's image-only behavior, not a license to author a separate assembler. A gate is skippable ONLY via an explicit, LOGGED owner/founder `owner_skip_approval` token in `process_manifest.json`.
 3b. **Workspace discipline (AF-DH1 prevention):** All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembler must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
 4. Write the assembly script at working/scripts/assemble_pptx.py:
@@ -61,7 +61,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
        notes = {item["slide_number"]: item["presenter_note"] for item in json.load(f)}
 
    # AF-OVERLAY-DELIVERED: native text overlays are ELIMINATED. The assembler
-   # composites ONLY the single composed gpt-image-2 image per slide (all text is
+   # composites ONLY the single composed gpt-image-2.5 image per slide (all text is
    # baked into the image by the model) plus the off-slide speaker-notes pane. If a
    # pptx_text_overlays.json exists, HALT (do not read it) — it is an auto-fail.
    if os.path.exists(OVERLAYS_FILE):
@@ -80,7 +80,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
        slide = prs.slides.add_slide(blank_layout)
 
        # Full-bleed composed image (the ONLY visual on the slide; all text baked in
-       # by gpt-image-2, plus the PIL-composited logo image per SOP-IMG-05 when used).
+       # by gpt-image-2.5, plus the PIL-composited logo image per SOP-IMG-05 when used).
        # ONLY add_picture is permitted -- there is NO add_textbox / add_shape /
        # placeholder-text call anywhere in this assembler. Text-on-slide is absent
        # by construction, not by discipline.
@@ -102,7 +102,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
                    raise SystemExit(
                        f"AF-OVERLAY-DELIVERED: slide {i} has a native on-slide text "
                        f"run. The deck is image-only (text baked into the single "
-                       f"gpt-image-2 image). Re-prompt/re-seed the slide; never overlay.")
+                       f"gpt-image-2.5 image). Re-prompt/re-seed the slide; never overlay.")
 
    assert_image_only(prs)  # structural ban on text-on-slide, enforced in code
    os.makedirs("output", exist_ok=True)
@@ -196,7 +196,7 @@ The full specification is archived in the U003 rescue backup.
 The native PPTX text/element-overlay path no
 longer exists: there is no `pptx_text_overlays.json`, no `add_textbox` loop, no
 strike support, no rendered-height/collision asserts, and no gradient scrim. Every
-slide is a SINGLE composed gpt-image-2 image with its text baked in by the model;
+slide is a SINGLE composed gpt-image-2.5 image with its text baked in by the model;
 the only legitimate PPTX text part is the off-slide speaker-notes pane.
 
 - Garbled / misspelled text is fixed ONLY by the Slide Image Creator's re-prompt /

@@ -34,7 +34,7 @@ end-load the negative block.
 
 ## 3. GENERATION (P3 — DELEGATED to Skill 47)
 
-Images are generated ONLY through the Skill 47 Kie adapter (`kie_image.py`): `gpt-image-2`,
+Images are generated ONLY through the Skill 47 Kie adapter (`kie_image.py`): `GPT-Image-2.5`,
 text-to-image by default, 16:9 & 2K defaults (Sec 4 → 16:9, Sec 12 → 3:4). The optional
 `reference_images` hook maps to the adapter's `image_input` (≤8 refs; auto image-to-image) with the
 mandatory style-only guard appended. NEVER hand-roll a Kie `createTask` — that is AF-FUN-CANONICAL-BYPASS.

@@ -191,7 +191,7 @@ assembler, and it is the script.
   build failure to report — never something the builder patches around.
 - The deliverable registered + reported is the EXACT `.pptx` `build_deck.py` produced, and
   ONLY when the script exited 0.
-- 16:9, 2K, `gpt-image-2-text-to-image` — all enforced INSIDE the script; the builder does
+- 16:9, 2K, `gpt-image-2-5-sunburst-text-to-image` — all enforced INSIDE the script; the builder does
   not choose or pass any of them.
 - Client's OWN `KIE_API_KEY` — the script reads it from the client/dept env stores itself;
   the builder never handles the key.
@@ -209,7 +209,7 @@ source material  ──▶  STEP 1: builder writes slides.json
                               │   (the script does ALL of this — the builder does none of it:)
                               │     • mechanically composes the KIE prompt per slide
                               │       (scene + verbatim copy + logo + layout + English pin)
-                              │     • POST /api/v1/jobs/createTask  (gpt-image-2-text-to-image, 16:9, 2K)
+                              │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-text-to-image, 16:9, 2K)
                               │     • GET  /api/v1/jobs/recordInfo?taskId=…  until state=success
                               │     • parse data.resultJson → resultUrls[0] → download PNG (unauth)
                               │     • verify PNG magic bytes + size; retry a slide up to 3×
@@ -280,7 +280,7 @@ Rules:
 
 The builder does **NOT** write KIE prompts, pick a model, set aspect ratio/resolution, or
 call any API. The script composes the prompt mechanically from `slides.json` and pins
-`gpt-image-2-text-to-image` / 16:9 / 2K / English-Latin-only itself.
+`gpt-image-2-5-sunburst-text-to-image` / 16:9 / 2K / English-Latin-only itself.
 
 **Control.** Confirm `slides.json` is a single valid JSON array, ordinals are unique and
 contiguous from 1, and every `copy[0]` is the intended headline with correct spelling.

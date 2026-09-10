@@ -61,7 +61,7 @@ These controls are organized around DMAIC (Define, Measure, Analyze, Improve, Co
 
 **Steps:**
 
-1. For each planned Kie image call (`gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`), multiply count by the current per-task price.
+1. For each planned Kie image call (`gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`), multiply count by the current per-task price.
 2. For each planned Kie video call (`gemini-omni-video` / `veo3` / `veo3_fast`), multiply count by the current per-task price.
 3. Sum to a single `estimated_cost_usd`. Free `documentary-montage.yaml` paths estimate `$0.00` and skip the rest of this multi-SOP's paid gates.
 4. Compute `remaining_usd = budget.total_usd - cumulative_spend_to_date - estimated_cost_usd`. If `remaining_usd < 0`, the job over-spends the cap: HARD STOP, escalate to the approval authority per SOP RZ-1 step 4.

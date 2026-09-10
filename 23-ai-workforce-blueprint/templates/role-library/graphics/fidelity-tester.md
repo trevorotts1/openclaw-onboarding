@@ -402,7 +402,7 @@ The Typography dimension (score target: ≥4.0; current: 2.3 on third attempt) h
 
 ATTACHED: Test images (all 3 attempts, labeled attempt 1/2/3), Per-attempt scores (12-dimension table per attempt), Patch briefs issued and Analyst changes applied (v1.0 → v1.1 → v1.2 → v1.3 → v1.4 Changelog documented in card), Root-cause diagnosis.
 
-DIAGNOSIS: The card's source material uses a distinctive condensed display typeface. All current models in the routing table render condensed type inconsistently across far-transfer subjects (model-level behavior, not card-prompt-addressable). Ideogram V3 DESIGN mode (routed for typography-heavy cards per MODEL-SPECS §3) scores 2.1–2.5 on typography for this card; the backup column (GPT-Image 2 Text) scores 2.8–3.1 but still below the 4.0 threshold.
+DIAGNOSIS: The card's source material uses a distinctive condensed display typeface. All current models in the routing table render condensed type inconsistently across far-transfer subjects (model-level behavior, not card-prompt-addressable). Ideogram V3 DESIGN mode (routed for typography-heavy cards per MODEL-SPECS §3) scores 2.1–2.5 on typography for this card; the backup column (GPT-Image-2.5 Text) scores 2.8–3.1 but still below the 4.0 threshold.
 
 RECOMMENDATION: Option A — Re-analyze the source style using a source image with less typographically distinctive masthead treatment (the condensed typeface may be the irreducible constraint); this card may be over-fitted to a specific print type treatment that generative models cannot reliably reproduce. Option B — Accept production status with a documented Typography exception (score: 2.3, documented in Test Log with client notification) if the Chief Design Officer judges the other 11 dimensions (avg: 4.6) sufficient for the use case. Option C — Retire draft MAG-009 and commission a new analysis.
 
@@ -490,7 +490,7 @@ For this role, the authoritative sources are:
 - Kie.ai official API documentation — verified model capabilities, known behavioral limitations, endpoint parameters; the only source for what a model does and does not support (no guessing from memory)
 - Ideogram API documentation (ideogram.ai/api) — seed support, preset mappings, DESIGN mode behavior
 - Wan 2.7 / Stability API documentation — seed behavior, n= parameter economics, watermark flag
-- GPT-Image 2 documentation — I2I parameters, identity-lock behavior, no-seed architecture
+- GPT-Image-2.5 documentation — I2I parameters, identity-lock behavior, no-seed architecture
 
 **Tier 3 — Style and perception research:**
 - Perplexity Sonar Pro Search — real-time queries on model provider updates, silent model changes, emerging generative AI quality research

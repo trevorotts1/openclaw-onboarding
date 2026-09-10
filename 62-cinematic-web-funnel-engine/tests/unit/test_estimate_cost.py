@@ -183,7 +183,7 @@ class EstimateScenePlanAggregationTests(unittest.TestCase):
 
     def test_unverified_but_resolved_scene_marks_all_verified_false(self) -> None:
         plan = _scene_plan(
-            [_scene(scene_id="s1", generation_model="kie-gpt-image-2-text-to-image", duration_seconds=None)]
+            [_scene(scene_id="s1", generation_model="kie-gpt-image-2-5-sunburst-text-to-image", duration_seconds=None)]
         )
         forecast = ec.estimate_scene_plan(plan, self.registry, resolutions={"s1": "2K"}, strict=False)
         self.assertTrue(forecast.complete)

@@ -32,7 +32,7 @@ Per decision GK-D2 (the Presentation-mirror, Option A phased), you do NOT self-a
 
 For GPT-image-2 and Agnes Image (skills 63/64), the full band is **5,000–19,000** stripped characters (the same 5,000 floor, but extended to 19,000 ceiling per Agnes skill 63). The Agnes-specific gate is `63-agnes-image/prove_agnes_image_prompt_floor.py`.
 
-**Logo-to-I2I rule:** When your brief involves the client's LOGO or existing brand image, you MUST flag it for image-to-image generation (GPT-Image 2 I2I or Agnes I2I). Text-to-image logo generation produces inaccurate lookalikes — it is PROHIBITED. Note "I2I required: logo" in the brief so the Prompt Author routes it correctly.
+**Logo-to-I2I rule:** When your brief involves the client's LOGO or existing brand image, you MUST flag it for image-to-image generation (GPT-Image-2.5 I2I or Agnes I2I). Text-to-image logo generation produces inaccurate lookalikes — it is PROHIBITED. Note "I2I required: logo" in the brief so the Prompt Author routes it correctly.
 
 ---
 

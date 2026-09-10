@@ -7588,7 +7588,7 @@ install_skill_48_facebook_ad_generator
 # deterministic model-free provers, the no-skip orchestrator, and the canonical
 # fail-closed entry). NO external clone. Skill 49 owns the IP + the gates: it
 # AUTHORS the SACRED 12-section Hero copy + the per-section 5,000-19,000-char
-# gpt-image-2 prompts inside its own fail-closed pipeline, then DELEGATES image
+# gpt-image-2.5 prompts inside its own fail-closed pipeline, then DELEGATES image
 # generation to Skill 47 (kie_image.py) and ALL GoHighLevel media + funnel/page
 # build to Skill 6 (the ONE GHL delivery rail). It never forks a Kie call or a GHL
 # REST call. A "signature funnel" request routes here through the shared STEP-0
@@ -7615,7 +7615,7 @@ install_skill_49_signature_funnel() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 49 (Signature Funnel) installed -> $SKILL_DEST"
-    note "Skill 49 is the methodology + enforcement layer for the Trevor fixture-client-e Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
+    note "Skill 49 is the methodology + enforcement layer for the Trevor fixture-client-e Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2.5 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
     note "It runs P0..P10 through one canonical entry (signature-funnel-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail). A 'signature funnel' request routes here via the shared STEP-0 funnel-engine selector in Skill 6. Nothing is published without explicit human approval. Skill 6, Skill 47, and Skill 07 (Kie.ai) are prerequisites."
     return 0
 }

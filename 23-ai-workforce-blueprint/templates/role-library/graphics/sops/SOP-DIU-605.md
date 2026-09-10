@@ -47,7 +47,7 @@ All scoring rubrics, pass/fail thresholds, seed-support tables, and rollback ver
    - `banked_at` (ISO 8601 timestamp)
    - `test_log_row_ref` (date + run ID from the Test Log)
 
-3. **Bank the baseline for no-seed endpoints.** For endpoints that do not support seeds (GPT-Image-2, Seedream-3, or any MODEL-SPECS entry without seed support): write the same registry file with `seed: null` and record the full assembled prompt + model + tier + baseline scores. Re-runs on no-seed endpoints use the same prompt/model/tier and compare score distributions rather than exact output reproducibility.
+3. **Bank the baseline for no-seed endpoints.** For endpoints that do not support seeds (GPT-Image-2.5, Seedream-3, or any MODEL-SPECS entry without seed support): write the same registry file with `seed: null` and record the full assembled prompt + model + tier + baseline scores. Re-runs on no-seed endpoints use the same prompt/model/tier and compare score distributions rather than exact output reproducibility.
 
 4. **Confirm golden file written before closing promotion.** The golden-seed registry file must exist on disk before the card status is set to `production`. A promotion that completes without banking a golden is an incomplete promotion — SOP-DIU-615 (Healer) will flag the gap.
 

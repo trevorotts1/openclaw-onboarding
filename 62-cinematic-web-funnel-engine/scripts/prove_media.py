@@ -517,7 +517,7 @@ def _write_fixture_file(path: Path, content: bytes) -> str:
 
 
 def _fixture_asset(
-    *, local_path: Path, content: bytes, model_id: str = "kie-gpt-image-2-image-to-image",
+    *, local_path: Path, content: bytes, model_id: str = "kie-gpt-image-2-5-sunburst-image-to-image",
     provider_task_id: str = "fixture-task-0001", prompt: str = "fixture prompt",
 ) -> Dict[str, Any]:
     hash_sha256 = _write_fixture_file(local_path, content)
@@ -589,7 +589,7 @@ def self_test() -> int:
         media_dir = tmp / "media" / "stills" / "anchor"
         candidate = _fixture_asset(
             local_path=media_dir / "concept-01.png", content=b"FIXTURE-CONCEPT-01",
-            model_id="kie-gpt-image-2-text-to-image", provider_task_id="fixture-concept-task-01",
+            model_id="kie-gpt-image-2-5-sunburst-text-to-image", provider_task_id="fixture-concept-task-01",
         )
         candidate["candidate_id"] = "concept-01"
         final_anchor = _fixture_asset(

@@ -2,7 +2,7 @@
 name: kie-image
 description: >
   KIE Image generation via the KIE.ai Market API. Owns model selection across
-  14 image families (GPT Image 2, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+  14 image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
   Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
@@ -25,10 +25,13 @@ wait (callback or poll), and visually QC the result.
 1. **Explicit wins.** If the user names a model/family and it can satisfy the
    request, use it — capability match and user preference win. Never "fix" an
    explicit pick.
-2. **Else GPT Image 2 is the preferred default** for high-fidelity general KIE
+2. **Else GPT Image 2.5 is the preferred default** for high-fidelity general KIE
    image generation/editing, product/brand images, and detailed long-form
-   creative instructions (owner's preference, spec 7.4), when compatible
-   (respecting its ratio/resolution exclusions).
+   creative instructions (owner's preference, operator ruling 2026-09-09,
+   supersedes GPT Image 2), when compatible (respecting its ratio/resolution
+   exclusions). GPT Image 2 (legacy) is RETAINED, not retired, and is the
+   required route for aspect ratios 3:1, 1:3, 9:21 only — the selector routes
+   those three there automatically.
 3. Else by capability match:
    - Nano Banana Pro / Nano Banana 2 — strong general/multi-reference
      alternatives.
@@ -56,10 +59,10 @@ wait (callback or poll), and visually QC the result.
    check against the registry cap (rules A–E). Verified caps hard-fail
    (exit 2); owner-observed and NOT_PUBLISHED only warn.
 4. **Validate the payload** (`scripts/validate_payload.py`) — reference counts,
-   MB/format, ratio/resolution enums, per-family rules (GPT Image 2
-   per-resolution exclusions, Wan n/bbox, Ideogram strength, seedream
-   output_format gaps). Validation happens BEFORE dispatching so bad payloads
-   never burn credits.
+   MB/format, ratio/resolution enums, per-family rules (GPT Image 2 / GPT
+   Image 2.5 per-resolution exclusions — two separate rule sets, never
+   merged, Wan n/bbox, Ideogram strength, seedream output_format gaps).
+   Validation happens BEFORE dispatching so bad payloads never burn credits.
 5. **Dispatch** — POST createTask; then callBackUrl (Skill 46 relay) or
    recordInfo polling (2–3s initial, stepped backoff, respect 429, stop
    ~10–15 min), OR both (callbacks preferred, polling as fallback).
@@ -77,9 +80,13 @@ NOT_PUBLISHED/UNDETERMINED values are `null` — nothing is invented.
 
 Key cap facts (full matrix: `references/models.md`):
 
-- GPT Image 2: operator-confirmed 25,000 chars (`OWNER_CONFIRMED`, 2026-08-27 —
-  authoritative; docs page's "maximum 20,000 characters" is stale; warn-only,
-  never hard-fail; house band 5,000–19,000 with ~9,000 target is legal).
+- GPT Image 2 (legacy): operator-confirmed 25,000 chars (`OWNER_CONFIRMED`,
+  2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
+  20,000 characters" is stale; warn-only, never hard-fail; house band
+  5,000–19,000 with ~9,000 target is legal).
+- GPT Image 2.5 (default, operator ruling 2026-09-09): 20,000 chars per KIE
+  docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
+  confirmation does not carry forward and has not been retested on 2.5).
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
   converted to a fake char cap (rule D). Docs schemas: maxLength 5000 chars.
 - Wan 2.7 Image: 5,000 chars VERIFIED — do NOT force 5,000 as a minimum;
@@ -119,7 +126,7 @@ Key cap facts (full matrix: `references/models.md`):
 6. **references/qc.md** — real visual QC checklist + retry ladder.
 7. **INSTRUCTIONS.md** — daily usage walkthrough.
 8. **INSTALL.md** — credential check + connect verification.
-9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2 t2i/i2i, Wan bbox,
+9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.5 t2i/i2i, Wan bbox,
    Seedream i2i, NB2 i2i).
 10. **CORE_UPDATES.md** — core-file wiring (performed by `wire.sh`).
 11. **QC.md** — verification checklist.
@@ -134,9 +141,16 @@ Key cap facts (full matrix: `references/models.md`):
 - **Validators run before dispatch.** Never send too many refs, an illegal
   ratio/resolution for the model, an over-limit prompt, or an unsupported mode
   combination.
-- **GPT Image 2 ratio rules are hard:** 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21;
-  `auto` yields 1K only; 1:1 cannot convert to 4K. `validate_payload.py`
-  enforces all three.
+- **GPT Image 2 / GPT Image 2.5 ratio rules are hard, and are SEPARATE rule
+  sets (operator ruling 2026-09-09, never merged):**
+  - GPT Image 2 (legacy, 3:1/1:3/9:21 route only): 2K/4K exclude 5:4, 4:5,
+    3:1, 1:3, 9:21; `auto` yields 1K only; 1:1 cannot convert to 4K.
+  - GPT Image 2.5 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
+    The legacy `auto`-1K-only and `1:1`-never-4K rules are RETIRED here —
+    not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
+    operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
+    3:1, 1:3, 9:21 are not served at all and route to the legacy model instead.
+  `validate_payload.py` enforces both rule sets, keyed by exact model id.
 - **Wan bbox/n rules:** each input image supports up to 2 boxes; `n` 1–4
   (1–12 with `enable_sequential`); input images min 240 px per side, max 10 MB.
 - **Credential:** `KIE_API_KEY` env var; never echo/cat/log the value.

@@ -66,7 +66,7 @@ component is absent.
 `CLIENT-WEBINAR-DECK-SOP.md` (the "Slate" contract). Once Layer A's artifacts exist, the
 render is invoked deterministically: `build_deck.py` reads the pre-authored rich prompts
 **verbatim** (it does **not** compose prompts and has **no** image tool of its own),
-renders every image on kie.ai (`gpt-image-2-text-to-image` / `-image-to-image`, 16:9, 2K —
+renders every image on kie.ai (`gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`, 16:9, 2K —
 all pinned inside the script), verifies each PNG, assembles the full-bleed `.pptx`, and then
 runs two distinct gates over two distinct bundles — not a contradiction, but two different
 audiences for two different file sets:

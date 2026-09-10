@@ -8447,7 +8447,7 @@ def resolve_role_model(
 
     # GENERATION class: fixed pipeline, no LLM
     if cls_info.get("capability_class") == "GENERATION":
-        pipeline = cls_info.get("generation_pipeline") or "kie-ai/gpt-image-2-image-to-image"
+        pipeline = cls_info.get("generation_pipeline") or "kie-ai/gpt-image-2-5-sunburst-image-to-image"
         return {
             "model_id": pipeline,
             "capability_class": "GENERATION",
