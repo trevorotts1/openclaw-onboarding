@@ -179,6 +179,10 @@ def ensure_workspace(path, explicit, flavors):
         return "invalid-file", False
     if state == "missing":
         os.makedirs(path, mode=0o700, exist_ok=True)
+        # Report what the directory IS NOW, not what it was before the write.
+        # Reporting "missing" for a directory this run just created is exactly
+        # the class of untruthful state RR-032 exists to remove.
+        return "created", True
     return state, True
 
 
@@ -428,6 +432,7 @@ def run(req):
         "at": now_iso(),
         "cfg": req["cfg"],
         "mode": req["mode"],
+        "check_only": bool(req.get("check_only")),
         "repair": bool(req["repair"]),
         "noninteractive": bool(req["noninteractive"]),
         "requested_raw": req["requested_raw"],
@@ -477,10 +482,14 @@ def run(req):
         return report
     t.append({"from": "start", "to": "root-resolved", "cause": "resolve_oc_root:" + root_source})
 
+    check_only = bool(req.get("check_only"))
     ws_explicit = bool(req.get("workspace_explicit")) and bool(req.get("workspace"))
     ws = req["workspace"] if req.get("workspace") else default_workspace(root)
     report["workspace"] = ws
-    ws_state, ws_created = ensure_workspace(ws, ws_explicit, req["flavors"])
+    if check_only:
+        ws_state, ws_created = classify_mount(ws, ws_explicit, req["flavors"]), False
+    else:
+        ws_state, ws_created = ensure_workspace(ws, ws_explicit, req["flavors"])
     report["mount_state"] = ws_state
     if ws_state == "invalid-file":
         t.append({"from": "root-resolved", "to": "refused", "cause": "workspace-path-is-not-a-directory"})
@@ -587,6 +596,15 @@ def run(req):
         report["cas"] = "unnamed-revision:read-then-single-atomic-rename"
 
     # ---- candidate / validate / promote ----------------------------------
+    if check_only:
+        t.append({"from": outcome, "to": "check-only",
+                  "cause": "read-only inspection; no candidate written, nothing promoted"})
+        report["state"] = outcome
+        report["promote"] = "not-attempted"
+        report["rollback"] = "not-needed:check-only"
+        report["rc"] = 0
+        return report
+
     if write_action is None:
         candidate = obj
         removed = []
@@ -742,6 +760,7 @@ def main():
     ap.add_argument("--workspace-explicit", action="store_true")
     ap.add_argument("--flavor", action="append", default=[])
     ap.add_argument("--operator-id", action="append", default=[])
+    ap.add_argument("--check", dest="check_only", action="store_true")
     ap.add_argument("--reconcile-operators", action="store_true")
     ap.add_argument("--reconcile-routing", action="store_true")
     ap.add_argument("--owner-agent-id", default="main")
@@ -783,6 +802,7 @@ def main():
         "workspace_explicit": args.workspace_explicit,
         "flavors": flavors,
         "operator_ids": [str(x) for x in args.operator_id],
+        "check_only": bool(args.check_only),
         "reconcile_operators": bool(args.reconcile_operators),
         "reconcile_routing": bool(args.reconcile_routing),
         "owner_agent_id": args.owner_agent_id,
