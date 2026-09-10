@@ -647,6 +647,132 @@ def self_control(tmp):
           "control: the emptiness assertion used by case 3 can distinguish set from unset")
 
 
+# ---------------------------------------------------------------------------
+# 15 — the workspace the report NAMES is the workspace the box USES
+#
+# A mount the config already declares is the one the operator's session storage
+# actually lives in. Reporting a root-derived path instead is a false statement
+# about the box, and creating a root-derived directory the box never uses leaves
+# a stray mount behind. Both are the untruthful-state class RR-032 removes.
+# ---------------------------------------------------------------------------
+def case_workspace_truthfulness(tmp):
+    base = os.path.join(tmp, "ws15")
+    os.makedirs(base, exist_ok=True)
+
+    # (a) the config DECLARES a custom mount -> that mount wins, nothing created
+    declared = os.path.join(base, "declared-custom-rr")
+    os.makedirs(declared, exist_ok=True)
+    cfg = os.path.join(base, "config.json")
+    write_cfg(cfg, "enabled")
+    doc = json.load(open(cfg))
+    doc["agents"]["entries"]["remote-rescue"]["workspace"] = declared
+    doc["agents"]["entries"]["main"]["workspace"] = os.path.join(base, "owner")
+    json.dump(doc, open(cfg, "w"), indent=2)
+    osha = sha(cfg)
+
+    # No --workspace and no --workspace-explicit: the engine must adopt what the
+    # config itself declares rather than derive a path from the root.
+    report = cfg + ".rep15a"
+    default_path = os.path.join(tmp, "root", "workspaces", "remote-rescue")
+    subprocess.run(
+        [sys.executable, ENGINE, "--cfg", cfg, "--repair", "--requested", "",
+         "--source-revision", "sha256:" + osha, "--expect-sha", osha,
+         "--oc-root", os.path.join(tmp, "root"),
+         "--reconcile-operators", "--reconcile-routing",
+         "--promote-program", os.path.join(tmp, "promote_ok.sh"),
+         "--report", report]
+        + sum([["--operator-id", op] for op in OPS], []),
+        capture_output=True, text=True)
+    rep = json.load(open(report))
+
+    check(rep.get("workspace") == declared,
+          "15a report names the CONFIG-DECLARED mount, not a root-derived one (got %r)"
+          % rep.get("workspace"))
+    check(rep.get("workspace_source") == "declared-by-config",
+          "15a the report says WHERE the workspace came from (got %r)"
+          % rep.get("workspace_source"))
+    check(not os.path.exists(default_path),
+          "15a no stray root-derived workspace was created beside the declared one")
+    after = json.load(open(cfg))
+    check(after["agents"]["entries"]["remote-rescue"].get("workspace") == declared,
+          "15a the config still declares its own mount after the repair")
+    causes = " ".join(c.get("cause", "") for c in (rep.get("transitions") or []))
+    check("declared-by-config" in causes,
+          "15a the workspace transition names the declared mount as its source")
+
+    # (b) the config declares NO mount -> creating one is correct AND reported so
+    cfg2 = os.path.join(base, "config2.json")
+    write_cfg(cfg2, "enabled")
+    doc2 = json.load(open(cfg2))
+    doc2["agents"]["entries"]["remote-rescue"].pop("workspace", None)
+    json.dump(doc2, open(cfg2, "w"), indent=2)
+    osha2 = sha(cfg2)
+    report2 = cfg2 + ".rep15b"
+    subprocess.run(
+        [sys.executable, ENGINE, "--cfg", cfg2, "--repair", "--requested", "",
+         "--source-revision", "sha256:" + osha2, "--expect-sha", osha2,
+         "--oc-root", os.path.join(tmp, "root"),
+         "--reconcile-operators", "--reconcile-routing",
+         "--promote-program", os.path.join(tmp, "promote_ok.sh"),
+         "--report", report2]
+        + sum([["--operator-id", op] for op in OPS], []),
+        capture_output=True, text=True)
+    rep2 = json.load(open(report2))
+    check(rep2.get("workspace") == default_path,
+          "15b with no declared mount the resolved workspace is reported (got %r)"
+          % rep2.get("workspace"))
+    check(rep2.get("workspace_source") == "resolved-from-root",
+          "15b 15b workspace_source says resolved-from-root (got %r)"
+          % rep2.get("workspace_source"))
+    check(rep2.get("mount_state") == "created",
+          "15b a mount this run created is reported as created (got %r)"
+          % rep2.get("mount_state"))
+    check(os.path.isdir(default_path),
+          "15b the reported workspace directory actually exists after the run")
+    tnames2 = " ".join(c.get("to", "") for c in (rep2.get("transitions") or []))
+    check("workspace-created" in tnames2,
+          "15b the NAMED transition for a mount this run created is workspace-created "
+          "(transitions: %s)" % tnames2)
+    after2 = json.load(open(cfg2))
+    check(after2["agents"]["entries"]["remote-rescue"].get("workspace") == default_path,
+          "15b the created mount was wired into the config it was created for")
+
+    # (c) idempotence: a second run over the same box reports the mount as
+    #     existing, never as freshly created
+    cfg = os.path.join(base, "config3.json")
+    write_cfg(cfg, "enabled")
+    doc3 = json.load(open(cfg))
+    doc3["agents"]["entries"]["remote-rescue"]["workspace"] = os.path.join(base, "owner")
+    json.dump(doc3, open(cfg, "w"), indent=2)
+    osha3 = sha(cfg)
+    for tag in ("first", "second"):
+        rp = cfg + "." + tag
+        subprocess.run(
+            [sys.executable, ENGINE, "--cfg", cfg, "--repair", "--requested", "",
+             "--source-revision", "sha256:" + osha3, "--expect-sha", osha3,
+             "--oc-root", os.path.join(tmp, "root"),
+             "--reconcile-operators", "--reconcile-routing",
+             "--promote-program", os.path.join(tmp, "promote_ok.sh"),
+             "--report", rp]
+            + sum([["--operator-id", op] for op in OPS], []),
+            capture_output=True, text=True)
+        r = json.load(open(rp))
+        osha3 = sha(cfg)
+        if tag == "first":
+            check(r.get("mount_state") == "created",
+                  "15c first run on a box with no mount creates it (got %r)"
+                  % r.get("mount_state"))
+        else:
+            check(r.get("mount_state") != "created",
+                  "15c second run does NOT re-report an existing mount as created (got %r)"
+                  % r.get("mount_state"))
+            tnames = " ".join(c.get("to", "") for c in (r.get("transitions") or []))
+            check("workspace-created" not in tnames,
+                  "15c second run does not NAME a transition workspace-created for a mount "
+                  "that already existed (transitions: %s)" % tnames)
+            check("workspace-present" in tnames or "workspace-custom-retained" in tnames,
+                  "15c second run names the mount as already present (transitions: %s)" % tnames)
+
 def main():
     check(os.path.isfile(ENGINE), "engine present at %s" % ENGINE)
     errors = 0
@@ -679,6 +805,7 @@ def main():
         case_field_presence_is_not_routing(tmp)
         case_repair_wires_real_routing(tmp)
         case_check_mode_is_read_only(tmp)
+        case_workspace_truthfulness(tmp)
         self_control(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
