@@ -1423,8 +1423,20 @@ class Engine:
             start_msg = self._render_client_report_msg(phase, "start")
             self.report.to_requester("progress", start_msg)
 
+        # PRES-031: build the canonical scoped persona context (client /
+        # company / presentation IDs, audience, topic, offer, owner voice,
+        # framework) from sealed intake and pass it explicitly to the shared
+        # seam -- never generic phase text alone. Context build never blocks:
+        # resolve_for_phase rebuilds it when None arrives here.
         try:
-            persona.resolve_for_phase(self.run_dir, phase.id)
+            from presentation_job import persona_context as _persona_context
+            _scoped_context = _persona_context.build_persona_context(
+                self.run_dir, phase.id)
+        except Exception:  # noqa: BLE001 -- context build never blocks
+            _scoped_context = None
+        try:
+            persona.resolve_for_phase(self.run_dir, phase.id,
+                                      persona_context=_scoped_context)
         except (RuntimeError, TimeoutError) as exc:
             return self._fail_unit(phase, f"persona governance: {exc}")
 
