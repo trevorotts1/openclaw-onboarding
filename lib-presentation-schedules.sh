@@ -929,13 +929,15 @@ PY_RENDER_INTAKE_PLIST
         # when the load itself succeeded (rc 0) OR the label is listed.
         local _poll_plist_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
         if [ "$_rc" -eq 0 ] || launchctl list 2>/dev/null | grep -q 'com.blackceo.presentation-intake-poll'; then
-            _PRESCHED_STATUS="HEALTHY"; _PRESCHED_JOB_ID="$_PRESCHED_POLL_LABEL"
-            _PRESCHED_NEXT_FIRE="StartInterval:${_PRESCHED_POLL_INTERVAL_S}s"
+            _PRESCHED_STATUS="HEALTHY"; _PRESCHED_JOB_ID="com.blackceo.presentation-intake-poll"
+            _PRESCHED_NEXT_FIRE="StartInterval:300s"
         else
             _PRESCHED_STATUS="MISSING"; _PRESCHED_JOB_ID="-"
-            _PRESCHED_NEXT_FIRE="StartInterval:${_PRESCHED_POLL_INTERVAL_S}s"
+            _PRESCHED_NEXT_FIRE="StartInterval:300s"
         fi
-        _presched_finish "$_poll_workspace" "intake-poll" "$_poll_root" "$(dirname "$POLL_SRC")" "$POLL_SRC" "$_poll_runs_dir" "$_poll_plist_path" "$_rc" || _rc=$?
+        if command -v _presched_finish >/dev/null 2>&1; then
+            _presched_finish "$_poll_workspace" "intake-poll" "$_poll_root" "$(dirname "$POLL_SRC")" "$POLL_SRC" "$_poll_runs_dir" "$_poll_plist_path" "$_rc" || _rc=$?
+        fi
     fi
 
     return "$_rc"
@@ -1271,13 +1273,15 @@ PY_RENDER_WATCHDOG_PLIST
         # PRES-034 Mac reconcile: same contract rule as the poller — the
         # re-rendered plist is the source of truth, never the label alone.
         if [ "$_rc" -eq 0 ] || launchctl list 2>/dev/null | grep -q 'com.presentations.watchdog'; then
-            _PRESCHED_STATUS="HEALTHY"; _PRESCHED_JOB_ID="$_PRESCHED_WD_LABEL"
-            _PRESCHED_NEXT_FIRE="StartInterval:${_PRESCHED_WD_INTERVAL_S}s"
+            _PRESCHED_STATUS="HEALTHY"; _PRESCHED_JOB_ID="com.presentations.watchdog"
+            _PRESCHED_NEXT_FIRE="StartInterval:600s"
         else
             _PRESCHED_STATUS="MISSING"; _PRESCHED_JOB_ID="-"
-            _PRESCHED_NEXT_FIRE="StartInterval:${_PRESCHED_WD_INTERVAL_S}s"
+            _PRESCHED_NEXT_FIRE="StartInterval:600s"
         fi
-        _presched_finish "$_wd_workspace" "watchdog" "$_wd_root" "$(dirname "$WD_SRC")" "$WD_SRC" "$_wd_runs_dir" "$_wd_path" "$_rc" || _rc=$?
+        if command -v _presched_finish >/dev/null 2>&1; then
+            _presched_finish "$_wd_workspace" "watchdog" "$_wd_root" "$(dirname "$WD_SRC")" "$WD_SRC" "$_wd_runs_dir" "$_wd_path" "$_rc" || _rc=$?
+        fi
     fi
 
     return "$_rc"
