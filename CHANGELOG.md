@@ -1,3 +1,94 @@
+## [v25.0.36]  -  2026-09-10  -  Presentation department batch ONB-20260910-201420: docs follow-up summarizing merged slices
+
+Release bookkeeping only. No product changes ship in this fold — no code, no
+skill content, no scripts are modified; this entry plus the README version
+line are the only changes.
+
+Why this fold exists:
+
+- Batch ONB-20260910-201420 (branch `batch-onb-20260910-201420`, head
+  a421749a663eff4b9c296904e99d188e3e93252f, base
+  f97a8c8b8e630dc13c491fe9a4b2d98ca7110f53) was assembled and tested but its
+  content PR #1091 (https://github.com/trevorotts1/openclaw-onboarding/pull/1091)
+  is OPEN with merge BLOCKED by base branch policy (failing Live-GHL-smoke
+  check plus pending checks). Main remains at
+  f97a8c8b8e630dc13c491fe9a4b2d98ca7110f53; the batch head is NOT merged.
+- This docs follow-up records the merged-slice summary on main now, so the
+  v25.0.36 tag and GitHub release name the exact candidate SHAs, quarantine
+  record, and artifact hashes for the batch when its content PR later clears
+  policy and merges. No unrun-live-check claims are made by this entry.
+
+Merged slices (26 candidate SHAs, from PROMOTION-RECEIPT.json):
+
+- 8c121047c932a4b1734a811fbb7e4c4502e577da PRES-007 QC repair: drop stale
+  CC_DEPT_START_TOKEN->INTAKE_ADMIN_TOKEN fallback line in deployed-r2
+  wrangler deploy steps.
+- 5a838d0c9453a5b776c1202f8eb0038d7dbc1c47 PRES-009 QC repair 2: box_id
+  attribution, cold-start legacy migration, tenant-scoped bridge/worker
+  intake reads.
+- aa329673f312559c9a88171bc48901ef873d979b PRES-042 opus QC repair:
+  dispatcher manifest resolution matches aggregate resolver.
+- 97fa597e2170839bbbbbb81c092752b9955652be Fold
+  qc-repair-governor-daycount into wf01a.
+- d9acdd018a19161e0c6c0bd8f5ea686f4e8054d3 WF02-A repairs: CAS steal fix
+  plus fence plus redact plus progress lock.
+- 91bcf58114eef0ec58acb254b501799b0c113b8a PRES-012: strict
+  schema-specific P-U-* verifiers.
+- 148d8cd4f2ec958a9fe0d7d937a6b34a926aa789 PRES-001 (W2 WF05): per-phase
+  UnitContracts on the manifest fanout path.
+- baaabdb7126085cb83b171324170b93d70761f46 PRES-015: hardware-aware
+  effective admission + account split + zero-discovery width paths.
+- ffd95b16a074442104a9179d3e1a5d68c592f5a5 PRES-005: canonical
+  capability-token session UI + transactional completion outbox.
+- 1d45e80b40bade48d7533a2d00be426e8d39559f PRES-019 repair:
+  known-plan-not-reasked (QC4).
+- 6282b8d54e1cd21936c3a46cb1db3d6956fee4cf PRES-036 repair: deterministic
+  benchmark + 0.1s exec join slice.
+- 3db84ef1852f4f4c3f2ffd390f90127c11f59f7b PRES-002-R2 (QC repair): one
+  failed_units row per withheld phase.
+- 3e17e8a242f3614673f48c6648b65ee6f52908be PRES-029/030/031 (W3 WF09-B):
+  immutable retrieval snapshots + entailment gate + scoped persona context.
+- f5bdb0f6b658533a0b48e8805e8fa0ad9e706bbf PRES-054: prime persona tokens
+  on every acquire, never poll-sleep for a token.
+- 9d8465cc34dea24c4fa9e69855e5c63b85f767f9 PRES-026 (W3 WF11-A):
+  content-addressed resumable GHL media upload ledger.
+- 7fe7fbf2d98f8d5721a18540d54397e015b9ad34 PRES-053: drop stray
+  match-score log from packaged resources + ignore.
+- 2fee09863fd701abe43f1172441a3898e573f103 PRES-032 repair: opt-in
+  governor leases + always-on wave spacing.
+- 3bad5012aa7a217c1467c22e7bb78b24a10e461f PRES-051: supported plugin hook
+  registration + bounded scripts for Skill 51.
+- 16ff7ce1f6f581f7e45d26daf0413d25e0b043fb PRES-033: dependency
+  convergence reports nonzero readiness when required deps missing.
+- 48d3acd77b33924f88d3ef4f0eae369eee32b822 PRES-050: typed standalone CLI
+  + argv-safe wrapper + explicit credential context.
+- 0ff4b615bbb5ce671b7d5f1cfcc30323187795ef fix(PRES-034): Mac readiness
+  block standalone-safe for extracted-function tests.
+- d86ad2b14065c31a518f1d6238c913737397a53a fix(PRES-052): supervised
+  acknowledged relay replaces finish-only outbox queue.
+- 16313110d8baaa2019e123ebcdac63f10fb9c3db PRES-043 repair 7: checked-in
+  receipt lists all six repair commits.
+- f09e987527d98141268898e04050c3213e9a4c71 PRES-056 persistence:
+  progressive intake store, brief metrics, persistence tests.
+- e99e0a00a4a1a466aac20f68b1b2746362be2a6f PRES-027/028/041 (WF09-A):
+  dependency-driven context pack, versioned required resources,
+  diversity-aware research selection.
+- 0e48888140bf19b8b1fbbd74edbb21ca289ce7dc PRES-011 repair (Sonnet): pin
+  total 192 -> 195, regen parity appendix.
+
+Quarantined by record (content in tree but excluded from promotion):
+46c5747a, ce18c2f6, 6fa7bd7e, a08bfc06, 0e21a810, 352bfee6, 5a686287,
+8556d1c3, d86ad2b1, 0e488881, 1d45e80b, 6282b8d5, 3db84ef1 (per-batch
+QUARANTINE-*.md records). Excluded: 7a595192 (PRES-025, REPAIR_REQUIRED),
+2244b00f (PRES-048, merge_excluded).
+
+Batch artifacts: wheel
+d02e50855a47e2672766970f7142940fc16311efc1891f3edd3fc131daa8e206, sdist
+2d696d48c726321325fd87de9c5d3d7477e4023e635b30cce8ede114af9dc2a4, plugin
+9f2843d0886165e3ed6038ee1d10d4017ebe078c1bf5f9c15cf9b17013b01487,
+manifest
+cab872039b2dac96bc78300a2158487ee7093e84d55a71069285789ca369f5de.
+
 ## [v25.0.35]  -  2026-09-10  -  RR-013 resources + RR-014 monitoring + RR-015 EWS aggregate batch
 
 ## [v25.0.34]  -  2026-09-10  -  Sunburst default sweep: slide-submitter SOP + example to GPT-image-2-5, prompt-bands endpoint order sunburst-first
