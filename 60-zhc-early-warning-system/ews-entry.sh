@@ -14,7 +14,8 @@
 #   baseline {pin|diff|show} baseline management
 #   cadence {show|recommend|set ...}   weekly-pinned cadence (D8)
 #   fleet {ingest|cycle|digest}        operator-box aggregator (operator box only)
-#   escalate                 push unacked P1s to Rescue Rangers
+#   escalate                 route unacked P1s through rescue ADMISSION (durable
+#                            ticket receipt; the group message is supplemental)
 #   notices [--peek]         read (and consume) the box's own pending D5 self-notices
 #   prune                    enforce snapshot retention (D7)
 #   --self-test              run EVERY script's --self-test (the aggregate gate)

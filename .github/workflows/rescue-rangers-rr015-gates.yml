@@ -1,0 +1,68 @@
+name: rescue-rangers-rr015-gates
+
+# RR-015 — EWS rescue admission gates: the shared versioned admission client
+# (scripts/lib/rescue_admission.py) and the two wired EWS paths
+# (ews_alert.py escalate, ews_fleet.py dead-man). Proves a stale P1 and a
+# dead-man each create ONE canonical ticket with a validated receipt through a
+# mocked admission endpoint; a gateway failure never blocks the outbound
+# admission path; replays preserve identity; failure classes never consume the
+# alert; dry-run changes no state; credential values never reach payload or
+# journal. Triggered whenever any guarded file changes.
+
+on:
+  push:
+    paths:
+      - "scripts/lib/rescue_admission.py"
+      - "60-zhc-early-warning-system/scripts/ews_alert.py"
+      - "60-zhc-early-warning-system/scripts/ews_common.py"
+      - "60-zhc-early-warning-system/scripts/ews_fleet.py"
+      - "60-zhc-early-warning-system/scripts/ews_ledger.py"
+      - "tests/rescue/RR-015/**"
+      - ".github/workflows/rescue-rangers-rr015-gates.yml"
+  pull_request:
+    paths:
+      - "scripts/lib/rescue_admission.py"
+      - "60-zhc-early-warning-system/scripts/ews_alert.py"
+      - "60-zhc-early-warning-system/scripts/ews_common.py"
+      - "60-zhc-early-warning-system/scripts/ews_fleet.py"
+      - "60-zhc-early-warning-system/scripts/ews_ledger.py"
+      - "tests/rescue/RR-015/**"
+      - ".github/workflows/rescue-rangers-rr015-gates.yml"
+
+jobs:
+  rescue-rangers-rr015-gates:
+    name: RR-015 gates (shared admission client + EWS escalation paths)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python syntax + import hygiene
+        run: |
+          python3 -m py_compile scripts/lib/rescue_admission.py
+          python3 -m py_compile 60-zhc-early-warning-system/scripts/ews_alert.py
+          python3 -m py_compile 60-zhc-early-warning-system/scripts/ews_common.py
+          python3 -m py_compile 60-zhc-early-warning-system/scripts/ews_fleet.py
+          python3 -m py_compile 60-zhc-early-warning-system/scripts/ews_ledger.py
+
+      - name: Admission client self-test (offline, injected transport)
+        run: |
+          python3 scripts/lib/rescue_admission.py --self-test
+
+      - name: RR-015 battery (stale P1 + dead-man, mocked admission endpoint)
+        run: |
+          python3 tests/rescue/RR-015/test_rescue_admission_client.py
+
+      - name: EWS aggregate self-tests (escalate + dead-man rewiring)
+        run: |
+          python3 60-zhc-early-warning-system/scripts/ews_alert.py --self-test
+          python3 60-zhc-early-warning-system/scripts/ews_fleet.py --self-test
+          python3 60-zhc-early-warning-system/scripts/ews_ledger.py --self-test
+
+      - name: Dependency regressions (RR-017 / RR-003 / RR-006 / RR-021 batteries)
+        run: |
+          python3 tests/unit/rescue-contract-rr017.test.py
+          python3 tests/unit/rescue-contract-rr003.test.py
+          python3 tests/rescue/RR-006/test_legacy_writer_retired.py
+          python3 tests/rescue/RR-021/test_receiver_work_preserved.py
+          bash tests/rescue/RR-004/test_receiver_additive_fields.sh

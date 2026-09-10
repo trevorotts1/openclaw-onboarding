@@ -93,7 +93,13 @@ Every line in that shape is load-bearing:
 
 - **Severity** — P1 (act now), P2 (drift worth a look), P3 (informational, e.g. a
   snapshot-pruning note). Only P1 bypasses the daily alert batch and only P1
-  escalates to Rescue Rangers if it sits unacknowledged for 30 minutes.
+  escalates if it sits unacknowledged for 30 minutes. Escalation is a rescue
+  ADMISSION (a durable ticket via the shared client `scripts/lib/rescue_admission.py`);
+  the Rescue Rangers group message is supplemental visibility only. An escalation
+  whose admission is refused, times out, or cannot find the client leaves the P1
+  event open and retryable — nothing about the send can consume it. A box with
+  no accepted enrollment is reported as a PENDING REPAIR with an owner and a
+  next action, and is never called admitted.
 - **Box name + signal + key path** — which box, which of the ten signals (S1-S10, see
   `docs/SIGNAL-CATALOG.md`), and the exact dot-path into `openclaw.json` that moved,
   when the signal is config-shaped.
