@@ -69,10 +69,40 @@ alive() { kill -0 "$1" 2>/dev/null; }
 
 # Detector: `pgrep -f` is NOT reliable on macOS for long argv (proven by the
 # section-3 control failing while a planted process was demonstrably alive —
-# see the ps output). Use `ps -Ao pid=,command=` plus an exact token, which the
-# control below proves can see a live process.
+# see the ps output). Use `ps -Ao pid=,command=` plus an exact token where ps
+# exists; on procps-less Linux (slim containers) fall back to /proc/*/cmdline,
+# which is the kernel's own record and needs no tooling. The control in
+# section 3 proves whichever detector this host answers with can actually
+# FIND a planted survivor.
 seen_token() {  # seen_token <token> -> 0 if any live process has it in argv
-    ps -Ao pid=,command= 2>/dev/null | grep -F -- "$1" | grep -v 'grep' >/dev/null 2>&1
+    if command -v ps >/dev/null 2>&1 && ps -Ao pid=,command= </dev/null >/dev/null 2>&1; then
+        ps -Ao pid=,command= 2>/dev/null | grep -F -- "$1" | grep -v 'grep' >/dev/null 2>&1
+        return $?
+    fi
+    # /proc fallback: the token was planted as part of `python3 -c '...token...'`,
+    # so the argv is visible in the NULL-separated cmdline. A short python loop
+    # (there is no portable shell reader for NUL-separated files). The detector
+    # EXCLUDES ITSELF: its own argv carries the token (`python3 - <token>`), and
+    # a self-match would make every survivor check vacuously true.
+    python3 - "$1" <<'PYEOF' 2>/dev/null
+import glob, os, sys
+tok = sys.argv[1].encode()
+me = os.getpid()
+for f in glob.glob("/proc/[0-9]*/cmdline"):
+    try:
+        pid = int(f.split("/")[2])
+    except (ValueError, IndexError):
+        continue
+    if pid == me:
+        continue
+    try:
+        with open(f, "rb") as fh:
+            if tok in fh.read():
+                sys.exit(0)
+    except OSError:
+        continue
+sys.exit(1)
+PYEOF
 }
 
 # A marker file the child/grandchild writes on exit proves the process actually
@@ -201,8 +231,12 @@ rc=$?
 [ -f "$WORK/termproof" ] && ok "the child really installed SIG_IGN before the kill (not a race)" \
   || bad "child never reached SIG_IGN — this case did not test escalation"
 sleep 0.5
-pgrep -f "SIG_IGN" >/dev/null 2>&1 && { bad "the SIGTERM-ignoring child SURVIVED"; pkill -9 -f "SIG_IGN" 2>/dev/null; } \
-  || ok "SIGTERM-ignoring child was escalated to KILL and is gone"
+if seen_token "SIG_IGN"; then
+    bad "the SIGTERM-ignoring child SURVIVED"
+    pkill -9 -f "SIG_IGN" 2>/dev/null || true
+else
+    ok "SIGTERM-ignoring child was escalated to KILL and is gone"
+fi
 S4=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("outcome"),d.get("signal_killed"))' "$R4" 2>/dev/null)
 case "$S4" in
   "timeout True") ok "receipt records the ESCALATION to KILL (signal_killed=true) — TERM alone was not enough" ;;

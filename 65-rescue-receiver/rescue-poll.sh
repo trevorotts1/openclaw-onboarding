@@ -1785,9 +1785,15 @@ _write_done() {
     # tr-normalization ALIASED distinct keys (a/b and a_b both -> key-a_b),
     # so one ticket's cached verdict could satisfy another's dedup check.
     # The exact key is hashed instead; no lossy normalization anywhere.
-    _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | shasum -a 256 2>/dev/null | cut -d' ' -f1) \
-        || _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | sha256sum 2>/dev/null | cut -d' ' -f1) \
-        || _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | tr -c 'A-Za-z0-9._-' '_')
+    # NOTE: this must go through _rr_hash, NOT a bare `a | shasum || a | sha256sum`
+    # chain: without pipefail, a missing shasum leaves the pipeline's rc at
+    # cut's 0 with EMPTY output, so the || fallback never fires and the
+    # done-file identity is the empty string (the file lands as a dot-tmp and
+    # dedup never matches — the exact double-execution RR-026 forbids). On a
+    # box with NO hasher at all, _rr_hash fails and the write is refused
+    # (return 1) rather than degraded to the old lossy tr key.
+    _safe=$(printf '%s' "$IDEMPOTENCY_KEY" | _rr_hash) || { _log "write_done refused: no collision-resistant hasher on this box"; return 1; }
+    [ -n "$_safe" ] || { _log "write_done refused: empty hash identity"; return 1; }
     _tmp=$(mktemp "$_DONE/.tmp-XXXXXX" 2>/dev/null) || return 1
     chmod 600 "$_tmp" 2>/dev/null
     printf '{"verdict":"%s","exit_code":%s,"reply_chars":%s,"fail_reason":%s,"elapsed_s":%s%s%s%s%s,"written_at":"%s"}\n' \
@@ -1825,10 +1831,10 @@ f=open(sys.argv[1],"rb"); os.fsync(f.fileno()); f.close()' "$_tmp" 2>/dev/null |
 # ---------------------------------------------------------------------------
 _reack_cached() {
     [ -n "${RR_CACHE_KEY:-}" ] && IDEMPOTENCY_KEY="$RR_CACHE_KEY"
-    # same collision-resistant identity as _write_done (must agree exactly)
-    _rc_safe=$(printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -d' ' -f1) \
-        || _rc_safe=$(printf '%s' "$1" | sha256sum 2>/dev/null | cut -d' ' -f1) \
-        || _rc_safe=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')
+    # Same hasher as _write_done (must agree exactly); same NOT-a-||-chain
+    # reasoning — see the comment there.
+    _rc_safe=$(printf '%s' "$1" | _rr_hash) || return 1
+    [ -n "$_rc_safe" ] || return 1
     [ -f "$_DONE/$_rc_safe" ] || return 1
     _rc_body=$(cat "$_DONE/$_rc_safe" 2>/dev/null)
     [ -n "$_rc_body" ] || return 1
