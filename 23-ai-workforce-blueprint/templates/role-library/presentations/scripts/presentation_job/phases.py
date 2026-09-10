@@ -2222,12 +2222,23 @@ class Engine:
         after it burned its FULL budget producing nothing, one phase at a time,
         and to an operator that is indistinguishable from slow progress.
 
+        PRES-017 (2026-09-08) repair on top of F11: a MISSING owner lock is no
+        longer read as "never armed / user disabled". A clean dispatcher
+        retirement (max lifetime, FIX 9 exit) DELETES its lock while desired
+        state (working/dispatcher-desired-state.json, written by autospawn)
+        stays enabled -- so a missing lock with desired-enabled triggers a
+        fresh respawn with a new owner lease and readiness handshake exactly
+        like a dead holder does. Desired-DISABLED (or a legacy tree with no
+        desired-state record at all, meaning an operator may run one by hand)
+        still leaves a missing lock alone, preserving F11's original
+        never-arm-uninvited guarantee.
+
         The check is the same one __main__ makes before its own spawn -- the
         pid recorded in working/dispatcher-autospawn.lock, tested for liveness
-        with os.kill(pid, 0). A live pid (or no lock file at all, meaning
-        auto-dispatch was never armed for this run) is left completely alone;
-        only a lock whose holder is GONE triggers a respawn, so this can never
-        create a second dispatcher racing a healthy one.
+        with os.kill(pid, 0). A live pid is left completely alone; only a lock
+        whose holder is GONE (or a desired-enabled missing lock, above)
+        triggers a respawn, so this can never create a second dispatcher
+        racing a healthy one.
 
         Fail-soft in every direction: auto-dispatch disabled by flag/env, an
         unresolvable scripts_dir, a spawn refusal -- all return False and the
@@ -2242,15 +2253,30 @@ class Engine:
         lock_path = _autospawn._auto_dispatch_lock_path(self.run_dir)
         try:
             if not lock_path.is_file():
-                # No lock: this run was never armed with an auto-spawned
-                # dispatcher (--no-auto-dispatch, --dry-run, or an operator
-                # running one by hand). Not our business to arm it now.
-                return False
-            recorded = json.loads(lock_path.read_text(encoding="utf-8"))
-            pid = int(recorded.get("pid") or 0)
+                # PRES-017: a missing lock is ONLY "not our business" when
+                # dispatch is not DESIRED. A clean retirement deletes its
+                # lock while desired state stays enabled -- that case must
+                # re-arm, or the six-hour lifetime leaves later orders
+                # without a consumer (the exact PRES-017 defect).
+                try:
+                    if not _autospawn._desired_enabled(self.run_dir):
+                        return False
+                except Exception:  # noqa: BLE001 -- unreadable desired-state
+                    return False
+                recorded_pid = 0
+            else:
+                recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+                pid = int(recorded.get("pid") or 0)
+                recorded_pid = pid
+                if _autospawn._pid_is_alive(pid):
+                    # PRES-017: alive but possibly not consuming -- the
+                    # readiness heartbeat says whether it is. A stale
+                    # heartbeat on a live pid is a progress alarm, reported
+                    # once per phase wait; the respawn decision stays with
+                    # the supervisor (PRES-019), not a kill from here.
+                    self._report_nonconsuming_alarm(phase_id, pid, recorded)
+                    return False
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            return False
-        if _autospawn._pid_is_alive(pid):
             return False
         try:
             from . import dispatcher as _dispatcher
@@ -2258,7 +2284,8 @@ class Engine:
         except Exception:  # noqa: BLE001
             return False
         try:
-            lock_path.unlink()
+            if lock_path.is_file():
+                lock_path.unlink()
         except OSError:
             pass
         proc = _autospawn._spawn_dispatcher_if_available(self.run_dir, scripts_dir)
@@ -2267,11 +2294,41 @@ class Engine:
         with self._state_lock:
             self.report.event(
                 "phase.dispatcher_respawned",
-                f"{phase_id}: the dispatcher that was servicing this run (pid {pid}) is "
-                f"gone -- respawned work_order_dispatcher.py --watch (pid {proc.pid}). "
+                f"{phase_id}: the dispatcher that was servicing this run "
+                f"(pid {recorded_pid}) is "
+                f"gone -- respawned work_order_dispatcher.py --watch (pid {proc.pid}) "
+                "with a fresh owner lease and readiness handshake. "
                 "Without this the phase would have waited out its whole budget for a "
                 "process that had already exited (F11).")
         return True
+
+    _DISPATCHER_NONCONSUMING_HEARTBEAT_MAX_AGE_S = 300.0
+
+    def _report_nonconsuming_alarm(self, phase_id: str, pid: int,
+                                   recorded: Dict[str, Any]) -> None:
+        """PRES-017: a live dispatcher whose readiness heartbeat is stale is
+        an ALIVE-NOT-CONSUMING alarm -- reported once per wait through the
+        phase checkpoint (best-effort; never fails the wait)."""
+        try:
+            ready_path = self.run_dir / "working" / "dispatcher-ready.json"
+            obj = json.loads(ready_path.read_text(encoding="utf-8"))
+            hb = obj.get("heartbeat_at")
+            if not hb:
+                return
+            from datetime import datetime as _dt, timezone as _tz
+            hb_dt = _dt.fromisoformat(str(hb).replace("Z", "+00:00"))
+            age = (_dt.now(_tz.utc) - hb_dt).total_seconds()
+            if age <= self._DISPATCHER_NONCONSUMING_HEARTBEAT_MAX_AGE_S:
+                return
+            with self._state_lock:
+                self.report.event(
+                    "phase.dispatcher_not_consuming",
+                    f"{phase_id}: dispatcher pid {pid} is alive but its readiness "
+                    f"heartbeat is {int(age)}s stale (last claim "
+                    f"{obj.get('last_claim_phase')}, outstanding orders "
+                    f"{obj.get('outstanding_orders')}) -- progress alarm.")
+        except Exception:  # noqa: BLE001 -- the alarm must never fail the wait
+            return
 
     def _heal_or_fail_agent_phase(self, phase: Phase, reason: str) -> int:
         """F10 (2026-09-06): run the REAL heal ladder for an agent phase before
