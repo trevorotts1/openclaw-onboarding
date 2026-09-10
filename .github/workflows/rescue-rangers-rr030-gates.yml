@@ -13,6 +13,9 @@ on:
       - scripts/rr-triage.sh
       - tests/unit/rr030-*.test.sh
       - tests/unit/rr030-*.test.py
+      - tests/unit/rr029-*.test.sh
+      - tests/unit/rr029-*.test.py
+      - shared-utils/oc-env-descriptor.sh
       - .github/workflows/rescue-rangers-rr030-gates.yml
   pull_request:
     paths:
@@ -21,6 +24,9 @@ on:
       - scripts/rr-triage.sh
       - tests/unit/rr030-*.test.sh
       - tests/unit/rr030-*.test.py
+      - tests/unit/rr029-*.test.sh
+      - tests/unit/rr029-*.test.py
+      - shared-utils/oc-env-descriptor.sh
       - .github/workflows/rescue-rangers-rr030-gates.yml
 
 jobs:
@@ -35,6 +41,7 @@ jobs:
         run: |
           bash -n scripts/rescue-rangers-harness.sh
           bash -n scripts/rr-triage.sh
+          bash -n shared-utils/oc-env-descriptor.sh
           bash -n "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/verify.sh"
 
       - name: Python syntax gates
@@ -57,6 +64,14 @@ jobs:
       - name: Triage self-test fail-only proofs
         run: |
           bash tests/unit/rr030-triage-selftest-failsonly.test.sh
+
+      - name: RR-029 QC cases (absent table, permissions, history, polls, retry loop, providers, targets, identity)
+        run: |
+          bash tests/unit/rr029-triage-qc-cases.test.sh
+
+      - name: RR-029 descriptor resolves one exact target and app readiness
+        run: |
+          bash tests/unit/rr029-descriptor-target.test.sh
 
       - name: Staging persistence concurrency gate
         run: |
