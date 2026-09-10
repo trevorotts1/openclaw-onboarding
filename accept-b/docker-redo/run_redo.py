@@ -42,6 +42,7 @@ BASE_SHA = "984b3522d46309d1e063b823ed36089479f3c57c"
 BRANCH = "pres055-wf23-b-redo"
 MODEL = "opus-chain (W6 WF23 leg B Docker-matrix REDO R2)"
 WORKTREE_REL = "run/worktrees/wf23-onb-accept"
+LOCK_REL = "run/locks/pres055-wf23.lock"
 
 
 def _utcnow() -> str:
@@ -254,11 +255,12 @@ def summarize(dm: dict) -> tuple[str, bool]:
     md = [
         "# PRES-055 leg B Docker-matrix REDO R2 summary (W6 WF23, NOT self-approval)",
         "",
-        f"- generated_at: {_utcnow()}",
+        f"- generated_at: {dm.get('generated_at') or _utcnow()}",
         f"- worktree branch: {BRANCH} from {BASE_SHA}",
         f"- routed model: {MODEL}",
         f"- docker daemon reachable: {reachable}",
-        f"- base image digest matches pin: {img.get('matches_pin')} ({img.get('id')})",
+        f"- base image digest matches pin: {img.get('matches_pin')} "
+        f"({img.get('image_id')})",
         "",
         "## Docker matrix legs (real containers, live engine)",
         "",
@@ -283,7 +285,7 @@ def summarize(dm: dict) -> tuple[str, bool]:
         (f"- leg B adapter probes discriminate (standalone READY rc 0 vs "
          f"missing-marker NOT-READY rc 2): {ap.get('ok')}"),
         f"- python-version runtime control discriminates: {pv.get('discriminates')} "
-        f"({pv.get('question')})",
+        f"({pv.get('note') or 'Thread._stop shadowing on python <=3.12 vs 3.14'})",
         f"- pid-1 reaping runtime control discriminates: {rp.get('discriminates')} "
         f"({rp.get('question')})",
         "",
@@ -317,6 +319,14 @@ def summarize(dm: dict) -> tuple[str, bool]:
         "No receipt here self-approves anything. QC-PRES-055 stays OPEN pending",
         "INDEPENDENT QC.",
         "",
+        "## Provenance of these documents",
+        "",
+        "docker-matrix.json is written by the leg driver itself as the six legs",
+        "run. HOST.txt / COMMANDS.txt / REDO-SUMMARY.md are DERIVED from that",
+        "same receipt (no leg is re-run to regenerate them); with",
+        "`--reuse-matrix` the receipt is left byte-identical unless a derived",
+        "key actually changed.",
+        "",
     ]
     return "\n".join(md), okay
 
@@ -341,6 +351,7 @@ def write_candidate(candidate_dir: Path, worktree_sha: str, dm: dict,
         "proposed_sha": worktree_sha,
         "proposed_kind": "worktree commit (NOT pushed, NOT merged, NOT released)",
         "author_model": MODEL,
+        "ordered_lock": LOCK_REL,
         "carriers_verified": dict(pins),
         "owned_paths": [
             "run/worktrees/wf23-onb-accept/accept-b/docker-redo/",
@@ -353,10 +364,14 @@ def write_candidate(candidate_dir: Path, worktree_sha: str, dm: dict,
             "run/evidence/PRES-055/b-docker-redo/docker-matrix.json",
             "run/evidence/PRES-055/b-docker-redo/REDO-SUMMARY.md",
             "run/evidence/PRES-055/b-docker-redo/SHA.txt",
-            "run/evidence/PRES-055/b-docker-redo/logs/ (per-step rc + stdout/stderr)",
-            "run/evidence/PRES-055/b-docker-redo/containers/ (per-leg leg.json, "
-            "inspect/logs, export readback)",
-            "run/evidence/PRES-055/b-docker-redo/renders/ (PNG + PPTX read back)",
+            "run/evidence/PRES-055/b-docker-redo/containers/<profile>__<op>/logs/ "
+            "(per-step argv + rc + expected + ok + stdout/stderr)",
+            "run/evidence/PRES-055/b-docker-redo/containers/<profile>__<op>/leg.json "
+            "(per-leg receipt: steps, controls, defects, state readback, cleanup)",
+            "run/evidence/PRES-055/b-docker-redo/containers/<profile>__<op>/"
+            "export-out/ (docker cp readback of the container export dir)",
+            "run/evidence/PRES-055/b-docker-redo/containers/<profile>__<op>/renders/ "
+            "(slide-01.png + deck.pptx copied out of the container)",
         ],
         "tests": {
             "docker_matrix_legs": {k: v for k, v in sorted(by_status.items())},
@@ -365,8 +380,10 @@ def write_candidate(candidate_dir: Path, worktree_sha: str, dm: dict,
                                    "(controls_leg_b_rerun.matrix_stub_contract)",
             "leg_b_adapter_probes": "rerun in docker-matrix.json "
                                     "(controls_leg_b_rerun.adapter_probes)",
-            "runtime_control_python_version": dm.get(
-                "runtime_control_python_version", {}).get("status"),
+            "runtime_control_python_version": (
+                "DISCRIMINATES" if (dm.get("runtime_control_python_version")
+                                    or {}).get("discriminates")
+                else "DOES-NOT-DISCRIMINATE (control broken, not the target)"),
             "runtime_control_pid1_reaping": dm.get(
                 "runtime_control_pid1_reaping", {}).get("status"),
             "recorded_artifact_defects": defects,
@@ -397,20 +414,39 @@ def main(argv=None) -> int:
     ap.add_argument("--candidate-dir", type=Path, default=None)
     ap.add_argument("--worktree-sha", default=None)
     ap.add_argument("--keep-containers", action="store_true")
+    ap.add_argument("--reuse-matrix", action="store_true",
+                    help="write the candidate/SHA from the docker-matrix.json "
+                         "already on disk instead of re-running the 6 legs "
+                         "(rerunning would overwrite the receipt the candidate "
+                         "describes); the matrix is never edited by this path")
     args = ap.parse_args(argv)
     ev: Path = args.evidence_dir
     ev.mkdir(parents=True, exist_ok=True)
     dm_out = ev / "docker-matrix.json"
-    rc = docker_redo.main(["--out", str(dm_out)]
-                          + (["--keep-containers"] if args.keep_containers else []))
+    if args.reuse_matrix:
+        if not dm_out.is_file():
+            print(f"--reuse-matrix: no receipt at {dm_out}", file=sys.stderr)
+            return 2
+        rc = 0
+        print(f"--reuse-matrix: using existing receipt {dm_out}")
+    else:
+        rc = docker_redo.main(["--out", str(dm_out)]
+                              + (["--keep-containers"] if args.keep_containers else []))
     dm = json.loads(dm_out.read_text(encoding="utf-8"))
     (ev / "HOST.txt").write_text(_host_txt(dm), encoding="utf-8")
     (ev / "COMMANDS.txt").write_text(_commands_txt(), encoding="utf-8")
     md, okay = summarize(dm)
     # summarize() asserts the adapter-probe discrimination and stores the
     # derived `ok` back on the control dict; persist it so the evidence JSON
-    # carries the verdict and not just the two raw arms.
-    dm_out.write_text(json.dumps(dm, indent=2), encoding="utf-8")
+    # carries the verdict and not just the two raw arms. Under --reuse-matrix
+    # the receipt is the artifact the candidate describes, so it is written
+    # back ONLY if this derived key actually changed; otherwise it stays
+    # byte-stable.
+    new_dm = json.dumps(dm, indent=2)
+    if args.reuse_matrix and new_dm == dm_out.read_text(encoding="utf-8"):
+        print("--reuse-matrix: receipt unchanged, left as-is")
+    else:
+        dm_out.write_text(new_dm, encoding="utf-8")
     (ev / "REDO-SUMMARY.md").write_text(md, encoding="utf-8")
     print(md)
     if args.candidate_dir is not None:
@@ -423,6 +459,7 @@ def main(argv=None) -> int:
             f"base: {BASE_SHA}\n"
             f"branch: {BRANCH}\n"
             f"worktree: {WORKTREE_REL}\n"
+            f"ordered lock: {LOCK_REL}\n"
             "docker-matrix generated_at: " + str(dm.get("generated_at")) + "\n",
             encoding="utf-8")
         print(f"candidate: {c}")
