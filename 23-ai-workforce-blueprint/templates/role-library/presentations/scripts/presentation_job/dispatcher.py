@@ -3302,6 +3302,15 @@ def _probe_routed_capacity(cap_mod: Any, *, provider: str,
         # tier for that provider -- capacity._plan_from_model_slug). Sending it
         # without a provider would ask a question nobody asked.
         kwargs["model"] = model
+    # PRES-015 (H-P1): the width path carries ZERO discovery. A stamp that
+    # used to run probe() would, pre-split, fire GET /models for every
+    # probeable provider as a side effect. probe() itself no longer does
+    # (include_inventory defaults False); passing include_inventory=False
+    # here would be redundant on a build that knows the kwarg, but the
+    # explicit kwarg keeps the invariant legible at the ONE call site a
+    # future edit could "fix" back into a discovery burst.
+    if _probe_accepts(probe_fn, "include_inventory"):
+        kwargs["include_inventory"] = False
     return probe_fn(**kwargs), kwargs
 
 
@@ -3687,8 +3696,149 @@ def _routing_stamp(run_dir: Optional[Path] = None,
     except Exception as cap_exc:  # noqa: BLE001 -- a ceiling that cannot be
         # computed never widens the wave: the measured width stands, labelled.
         stamp["mode_cap_error"] = f"{type(cap_exc).__name__}: {cap_exc}"
+
+    # ------------------------------------------------------------------
+    # PRES-015 EFFECTIVE ADMISSION -- the hardware/warmup fold.
+    #
+    # Spec step 1: "Effective new admissions = min(ready work, requested
+    # ceiling minus total active, account free permits, rate/token budget,
+    # cost allocation, class-specific hardware budget)". The mode cap above
+    # is the human-ratified axis; THIS fold adds the terms the engine never
+    # had -- the account ceiling the reserve/allocation split produced
+    # (capacity.account_factors), the class-specific LOCAL hardware budget
+    # (hardware_budget.py: Mac RAM/CPU vs Linux cgroup v1/v2 so a 2GB
+    # Hostinger container never inherits the host's RAM) and the warmup ramp
+    # (admission.py: conservative start, grow on healthy windows, shrink on
+    # 429/pressure). Every term is optional: an unmeasured term does not
+    # bind, so a box where hardware cannot be read answers exactly what the
+    # pre-PRES-015 stamp answered -- the rollback is a flag
+    # (PRESENTATION_ADMISSION=0), never a behaviour change by accident.
+    #
+    # THE TEXT-CLASS GUARANTEE: cheap cloud text I/O is class "text" here
+    # unless the phase is known local-heavy, and the text class carries NO
+    # RAM term -- so an Ultra 100-unit text fan-out still reaches 100 where
+    # host resources allow, and render/browser/local-model routes get their
+    # own (smaller) budget without a hidden global 8 ever coming back.
+    try:
+        _stamp_admission_fold(stamp, phase_id=phase_id, mode=_mode,
+                              run_dir=run_dir)
+    except Exception as adm_exc:  # noqa: BLE001 -- admission never breaks dispatch
+        stamp["admission_error"] = f"{type(adm_exc).__name__}: {adm_exc}"
     return stamp
 
+
+# ---------------------------------------------------------------------------
+# PRES-015 -- the per-phase work class and the admission fold itself.
+# ---------------------------------------------------------------------------
+#: Phase -> local work class. The names follow hardware_budget.CLASSES:
+#: "text" (cheap cloud I/O), "image" (decode/generation), "browser"
+#: (headless sessions), "render" (FFmpeg/renderer), "local_model"
+#: (local inference resident in RAM). Anything not named is "text" -- the
+#: least-harmful default, and the cloud routes are the majority.
+PHASE_WORK_CLASS: Dict[str, str] = {
+    # Manifest script-executor phases: LOCAL bytes on this box (Kie image
+    # download/decode, reportlab/FFmpeg assembly, headless OCR sessions).
+    "P-STYLE-PREVIEW": "image",
+    "P4-RENDER": "render",
+    "P8-ASSEMBLE": "render",
+    "P8.1-PDF-EXPORT": "render",
+    "P9.6-WEBINAR-VIDEO": "render",
+    # P-IMAGE-QC / P-TYPO-QC are deliberately NOT here: the engine runs them
+    # as cloud vision/OCR model calls (model_router capability vision_ocr ->
+    # glm-ocr over HTTPS) -- cheap text I/O locally, class "text" by default.
+    # A phase that gains a LOCAL headless-browser or render step joins this
+    # map when that step exists, never before.
+}
+
+def _phase_work_class(phase_id: str) -> str:
+    return PHASE_WORK_CLASS.get(phase_id, "text")
+
+def _stamp_admission_fold(stamp, *, phase_id: str,
+                          mode: str, run_dir=None) -> None:
+    """Fold admission.effective_width() into the stamp's measured_capacity.
+
+    Never raises on its own paths (the caller also guards). Zero discovery:
+    the ONLY capacity read is resolve_capacity() -- no probe_one_provider,
+    no GET /models -- and the hardware read is the cached snapshot (at most
+    one measurement per TTL, shared by every phase's stamp in this
+    process)."""
+    try:
+        from presentation_job import admission as _adm
+    except ImportError:  # pragma: no cover - direct-file run
+        try:
+            import admission as _adm  # type: ignore[no-redef]
+        except ImportError:
+            return
+    if not _adm.flag_enabled():
+        return
+    provider = str(stamp.get("provider") or "")
+    if not provider:
+        return
+    width = stamp.get("measured_capacity")
+    try:
+        width = int(width)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return
+    if width < 1:
+        return
+
+    # The account factors resolve_capacity computes for THIS route -- a
+    # probe about a different provider was refused before this point, so
+    # the factors that matter are the routed provider's.
+    factors = {}
+    account_ceiling = None
+    _cap_mod = None
+    try:
+        from presentation_job import capacity as _cap_mod_p
+        _cap_mod = _cap_mod_p
+    except ImportError:  # pragma: no cover - direct-file run
+        try:
+            import capacity as _cap_mod_p  # type: ignore[no-redef]
+            _cap_mod = _cap_mod_p
+        except ImportError:
+            _cap_mod = None
+    if _cap_mod is not None:
+        try:
+            resolved = _cap_mod.resolve_capacity(
+                provider=provider, model=str(stamp.get("model") or ""))
+            factors = resolved.get("account_factors") or {}
+            account_ceiling = factors.get("account_ceiling")
+            stamp["account_factors"] = factors
+            stamp["capacity_raw_available"] = resolved.get("available")
+        except Exception:  # noqa: BLE001 -- an unresolvable account never blocks
+            factors, account_ceiling = {}, None
+
+    work_class = _phase_work_class(phase_id)
+    # UNBOUNDED accounts (BYOK): no account term binds; the mode ceiling and
+    # the class hardware budget are the only local bounds.
+    try:
+        _unbounded = bool(_cap_mod is not None
+                          and _cap_mod.is_unbounded(
+                              stamp.get("capacity_raw_available")))
+    except Exception:  # noqa: BLE001
+        _unbounded = False
+    adm = _adm.effective_width(
+        width,
+        provider=provider,
+        ready_work=None,  # the caller (fanout) bounds by the ready unit count
+        mode_ceiling=width if _unbounded else None,
+        account_ceiling=account_ceiling,
+        work_class=work_class,
+    )
+    stamp["admission"] = {
+        "width": adm.get("width"),
+        "static_width": adm.get("static_width"),
+        "binding": adm.get("binding"),
+        "terms": adm.get("terms"),
+        "ramp": adm.get("ramp"),
+        "work_class": work_class,
+        "discovery_requests": 0,
+    }
+    if isinstance(adm.get("width"), int) and 1 <= int(adm["width"]) <= width:
+        stamp["measured_capacity"] = int(adm["width"])
+        if int(adm["width"]) < width:
+            stamp["capacity_status"] = \
+                f"{stamp.get('capacity_status')}+admission-folded"
 
 # F6 back-compat: `_prompt_routing_stamp` was the pre-rename name and is what
 # tests/test_defect5_routing_stamp_provider_identity.py,
