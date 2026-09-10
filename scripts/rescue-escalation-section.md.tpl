@@ -1,4 +1,4 @@
-<!-- RESCUE_ESCALATION_BOXNAME_V2 -->
+<!-- RESCUE_ESCALATION_BOXNAME_V3 -->
 ## Escalate to Rescue Rangers (when you are stuck)
 
 When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound.
@@ -39,11 +39,22 @@ cat > /tmp/rr-escalation.json <<JSON
   "returnTo":        "{{RETURN_TO}}"
 }
 JSON
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+_RR_RESP="$(curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-escalation.json
+  --data-binary @/tmp/rr-escalation.json)"
 rm -f /tmp/rr-escalation.json
+# RR-002: KEEP THE ADMISSION TICKET ID. The response carries `ticketId`; that
+# id IS the canonical `incident_id` for this incident and it is the ONLY thing
+# that lets your later resolution name the exact ticket it closes. Record it in
+# your task journal (and anywhere you keep this incident's state) as
+# `incident_id`. A resolution that does not carry it cannot be correlated and
+# will NOT close anything automatically.
+printf '%s\n' "$_RR_RESP"
+_RR_TICKET="$(printf '%s' "$_RR_RESP" | sed -n 's/.*"ticketId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+if [ -n "$_RR_TICKET" ]; then
+  printf 'incident_id=%s\n' "$_RR_TICKET"   # <-- journal this against the incident
+fi
 ```
 
 The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$_RR_BOX` expands to the real slug. Do not quote it. Do not inline the JSON into `-d '...'` single quotes -- the variable would not expand and you would send the literal text `$_RR_BOX`.
@@ -71,13 +82,22 @@ The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$
 
 ```
 _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
+_RR_INCIDENT="<the incident_id you journalled from the escalation response>"
+_RR_ATTEMPT="<the attempt id that produced this fix>"
+_RR_OP="res-$_RR_INCIDENT-$(date -u +%Y%m%dT%H%M%SZ)"
+_RR_DIGEST="sha256-$(printf '%s' "RESOLVED: <one-line what fixed it>" | shasum -a 256 | cut -d' ' -f1)"
 cat > /tmp/rr-resolved.json <<JSON
 {
-  "action":     "escalate",
-  "clientName": "{{CLIENT}}",
-  "agentName":  "{{AGENT}}",
-  "boxName":    "$_RR_BOX",
-  "problem":    "RESOLVED: <one-line what fixed it>"
+  "action":        "escalate",
+  "clientName":    "{{CLIENT}}",
+  "agentName":     "{{AGENT}}",
+  "boxName":       "$_RR_BOX",
+  "runtime_id":    "$_RR_BOX",
+  "incident_id":   "$_RR_INCIDENT",
+  "operation_id":  "$_RR_OP",
+  "attempt_id":    "$_RR_ATTEMPT",
+  "result_digest": "$_RR_DIGEST",
+  "problem":       "RESOLVED: <one-line what fixed it>"
 }
 JSON
 curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
@@ -86,6 +106,17 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   --data-binary @/tmp/rr-resolved.json
 rm -f /tmp/rr-resolved.json
 ```
+
+**A resolution MUST name the incident it closes.** `incident_id` is the ticket
+id the escalation response returned (journalled as `incident_id` above).
+`operation_id` is unique to THIS resolution attempt and is what makes a replayed
+post an idempotent receipt instead of a second close. Without `incident_id` the
+resolution is treated as LEGACY: it can never guess which ticket to close, so
+nothing is closed and you get a visible correlation error naming same-box
+candidates instead. Re-posting a resolution whose `operation_id` you already
+sent is a no-op receipt -- never a second close, and never a different ticket.
+If you did not journal the `incident_id`, say so and ask the operator; do NOT
+substitute a different ticket id or invent one.
 
 **You MUST tell the end user the outcome** in clear language. State which of these three it was:
 - **(a) We solved it** -- describe what was fixed and confirm normal operation is restored.
@@ -96,7 +127,7 @@ Never leave the end user in the dark about what happened or what comes next. Thi
 **Hard cap: 25 exchanges per client per day.** Do not loop endlessly; if unresolved after several exchanges, ping Trevor's chat `5252140759` directly.
 
 > DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
-<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->
+<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->
 
 ## What Rescue Rangers IS + your own wiring (READ BEFORE ANSWERING)
 

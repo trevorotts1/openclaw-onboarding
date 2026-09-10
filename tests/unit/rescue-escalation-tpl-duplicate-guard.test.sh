@@ -44,11 +44,25 @@ fi
 
 # The role-library copy must carry the V2 marker pair and the LOOP: line --
 # otherwise a box materialized from the role-library learns a stale shape.
-if grep -q "RESCUE_ESCALATION_BOXNAME_V2" "$ROLE_LIB"; then
-  ok "role-library copy carries the V2 marker pair"
+if grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$ROLE_LIB"; then
+  ok "role-library copy carries the V3 marker pair (RR-002 correlation version)"
 else
-  bad "role-library copy is missing the V2 marker"
+  bad "role-library copy is missing the V3 marker"
 fi
+# RR-002: the resolution protocol must carry the canonical correlation fields
+# in BOTH copies, or a box materialized from the role-library learns a
+# resolution shape the intake cannot correlate.
+for _f in "$CANONICAL" "$ROLE_LIB"; do
+  _miss=""
+  for _k in incident_id operation_id attempt_id result_digest runtime_id; do
+    grep -q "\"$_k\"" "$_f" || _miss="$_miss $_k"
+  done
+  if [ -z "$_miss" ]; then
+    ok "carries the RR-002 correlation fields: $(basename "$(dirname "$(dirname "$_f")")")/$_k-set"
+  else
+    bad "MISSING RR-002 correlation fields in $_f:$_miss"
+  fi
+done
 if grep -q "LOOP:" "$ROLE_LIB"; then
   ok "role-library copy carries the LOOP: routing line"
 else
