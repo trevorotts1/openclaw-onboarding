@@ -556,16 +556,21 @@ def run(req):
         report["notes"].append("workspace path exists and is not a directory; refused, nothing created")
         report["rc"] = 2
         return report
+    # The transition NAME is the report, so it must match the state it names.
+    # Calling a mount that does not exist "workspace-present" (with a cause that
+    # reads "missing") is the same untruthful report RR-032 removes.
+    ws_cause = ws_state + (":" + ws_source if ws_source == "declared-by-config" else "")
     if ws_state == "path-resolved-and-created-space-safe":
-        t.append({"from": state, "to": "workspace-path-space-safe",
-                  "cause": "path contains spaces; resolved and created without word splitting"})
+        ws_to = "workspace-path-space-safe"
     elif ws_state == "existing-valid-custom":
-        t.append({"from": state, "to": "workspace-custom-retained",
-                  "cause": "the config's own declared mount is used and retained"})
+        ws_to = "workspace-custom-retained"
+    elif ws_created:
+        ws_to = "workspace-created"
+    elif ws_state in ("missing",):
+        ws_to = "workspace-absent"
     else:
-        t.append({"from": state,
-                  "to": "workspace-created" if ws_created else "workspace-present",
-                  "cause": ws_state + (":" + ws_source if ws_source == "declared-by-config" else "")})
+        ws_to = "workspace-present"
+    t.append({"from": state, "to": ws_to, "cause": ws_cause})
 
 
     # ---- decide -----------------------------------------------------------

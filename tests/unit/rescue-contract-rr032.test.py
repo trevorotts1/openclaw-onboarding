@@ -773,6 +773,37 @@ def case_workspace_truthfulness(tmp):
             check("workspace-present" in tnames or "workspace-custom-retained" in tnames,
                   "15c second run names the mount as already present (transitions: %s)" % tnames)
 
+    # (d) a mount that does NOT exist must never be named "workspace-present".
+    #     This is the read-only path a check run takes, and the report of what a
+    #     box HAS is the whole deliverable of a check run.
+    missing = os.path.join(base, "not-there-rr")
+    cfg4 = os.path.join(base, "config4.json")
+    write_cfg(cfg4, "enabled")
+    doc4 = json.load(open(cfg4))
+    doc4["agents"]["entries"]["remote-rescue"]["workspace"] = missing
+    json.dump(doc4, open(cfg4, "w"), indent=2)
+    osha4 = sha(cfg4)
+    rp4 = cfg4 + ".rep15d"
+    subprocess.run(
+        [sys.executable, ENGINE, "--cfg", cfg4, "--check", "--requested", "",
+         "--source-revision", "sha256:" + osha4, "--expect-sha", osha4,
+         "--oc-root", os.path.join(tmp, "root"),
+         "--reconcile-operators", "--reconcile-routing",
+         "--promote-program", os.path.join(tmp, "promote_ok.sh"),
+         "--report", rp4]
+        + sum([["--operator-id", op] for op in OPS], []),
+        capture_output=True, text=True)
+    r4 = json.load(open(rp4))
+    tnames4 = " ".join(c.get("to", "") for c in (r4.get("transitions") or []))
+    check(not os.path.exists(missing),
+          "15d check mode did not create the mount it was inspecting")
+    check(r4.get("mount_state") == "missing",
+          "15d an absent mount is reported as missing (got %r)" % r4.get("mount_state"))
+    check("workspace-present" not in tnames4,
+          "15d an ABSENT mount is never NAMED workspace-present (transitions: %s)" % tnames4)
+    check("workspace-absent" in tnames4 or "workspace-created" in tnames4,
+          "15d an absent mount is named workspace-absent (transitions: %s)" % tnames4)
+
 def main():
     check(os.path.isfile(ENGINE), "engine present at %s" % ENGINE)
     errors = 0
