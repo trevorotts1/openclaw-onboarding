@@ -10,10 +10,26 @@
 //   GET  /api/sessions/:token                     -> payload + progress  (capability)
 //   POST /api/sessions/:token/answers             -> record ONE answer   (capability)
 //   GET  /api/sessions/:token/answers?since=      -> poll new answers    (capability)
-//   POST /api/sessions/:token/complete            -> mark complete       (capability)
+//   POST /api/sessions/:token/complete            -> mark complete + enqueue the
+//                                                    completion outbox     (capability)
+//   GET  /api/sessions/:token/outbox              -> outbox status        (capability)
 //   POST /api/intake                              -> store finished intake JSON (box auth)
-//   GET  /api/intake?id=<session>                 -> fetch stored intake (box auth)
+//   GET  /api/intake?id=<session>                 -> fetch stored intake (box auth;
+//                                                    the fetch IS the worker-accepted
+//                                                    signal for the outbox)
+//   GET  /api/intake/list                         -> enumerate stored intakes (box auth)
 //   POST /api/dept-start                          -> trigger presentation dept (box auth)
+//
+// PRES-005: the hosted UI is the canonical capability-token session UI. It
+// never mints identity client-side, never POSTs /api/intake itself, and never
+// sees the admin token. Completion assembles the validated intake SERVER-SIDE
+// from the answers the server already validated (ordering + value shape at
+// POST /answers time) into a durable completion outbox (outboxes/<token>.json,
+// status queued) plus the intakes/<session>.json record the box bridge
+// discovers via /api/intake/list. When the bridge fetches the intake, the
+// outbox flips to worker_accepted — the only "accepted" the UI may show. A
+// download from the UI is a backup labeled NOT SUBMITTED; download/deferred
+// never renders as started/success.
 //
 // Bindings: STORE (R2 bucket). Secret: INTAKE_ADMIN_TOKEN (box auth),
 // COMMAND_CENTER_URL (CC board base URL), CC_HANDOFF_SECRET (PRES-007: scoped
@@ -34,6 +50,7 @@ const SESSION_PREFIX = "sessions/";
 const ANSWER_PREFIX = "answers/";
 const INTAKE_PREFIX = "intakes/";
 const RUN_PREFIX = "runs/";
+const OUTBOX_PREFIX = "outboxes/";
 
 export default {
   async fetch(request, env, ctx) {
@@ -71,6 +88,7 @@ async function routeSessions(request, env, parts, method, url) {
   if (parts.length === 4 && parts[3] === "answers" && method === "POST") return postAnswer(request, env, token);
   if (parts.length === 4 && parts[3] === "answers" && method === "GET") return pollAnswers(request, env, token);
   if (parts.length === 4 && parts[3] === "complete" && method === "POST") return completeSession(env, token);
+  if (parts.length === 4 && parts[3] === "outbox" && method === "GET") return outboxStatus(env, token);
   return errorResponse("not found", 404);
 }
 
@@ -191,9 +209,17 @@ async function pollAnswers(request, env, token) {
   return jsonResponse({ status: "ok", session_status: session.status, cursor: rows.length ? Number(rows[rows.length - 1].id) : since, answers: fresh.map((r) => ({ id: Number(r.id), question_id: r.question_id, value: r.value, created_at: Number(r.created_at) })), progress: progress(payload, answeredIds, answeredValues) });
 }
 
+/**
+ * POST /api/sessions/:token/complete — PRES-005 transactional completion.
+ *
+ * Idempotent: re-POST returns the same durable outbox (never a second intake).
+ * When required answers are still missing the session stays open and NOTHING
+ * is queued (409 with the missing ids) — zero false start.
+ */
 async function completeSession(env, token) {
   const row = await loadOpenSession(env, token, true); if (row.error) return row.error;
   const { session, payload } = row;
+  const existingOutbox = await loadOutbox(env, token);
   const answeredRows = await loadAnswers(env, token);
   const answeredIds = answeredRows.map((r) => r.question_id);
   const answeredValues = {}; for (const r of answeredRows) answeredValues[r.question_id] = r.value;
@@ -205,7 +231,11 @@ async function completeSession(env, token) {
     if (active === false) return false;
     return q.block_gate !== false;
   }).map((q) => q.id);
-  if (requiredUnanswered.length) return jsonResponse({ status: "blocked", missing: requiredUnanswered, progress: prog }, 409);
+  if (requiredUnanswered.length) {
+    return jsonResponse({ status: "blocked", missing: requiredUnanswered, progress: prog,
+      outbox: { status: existingOutbox ? existingOutbox.status : "none", job_ref: existingOutbox ? existingOutbox.job_ref : "" } }, 409);
+  }
+
   if (session.status !== "complete") {
     session.status = "complete";
     session.completed_at = nowSeconds();
@@ -214,7 +244,176 @@ async function completeSession(env, token) {
     const updatedRun = runRows.map((r) => (r.token === token ? { ...r, status: "complete" } : r));
     await saveRunIndex(env, session.company_id, session.installation_id, session.presentation_id, session.display_run_id, updatedRun);
   }
-  return jsonResponse({ status: "complete", run_id: session.run_id, progress: prog });
+
+  // Transactional completion outbox: assemble the validated intake server-side
+  // from the server-stored answers and write it durably. The assembly carries
+  // its own fail-closed gate (assembleValidatedIntake) so an ungrounded deck
+  // type NEVER queues — the caller gets action_needed instead.
+  let outbox = existingOutbox;
+  if (!outbox) {
+    const session_id = "sess-" + token;
+    const built = assembleValidatedIntake(payload, answeredRows, session);
+    if (built.error) {
+      return jsonResponse({
+        status: "complete",
+        run_id: session.run_id,
+        progress: prog,
+        outbox: { status: "action_needed", job_ref: "", error: built.error },
+      }, 200);
+    }
+    outbox = {
+      token, session_id, run_id: session.run_id, question_set: session.question_set,
+      status: "queued", job_ref: "job-" + token.slice(0, 8) + "-" + nowSeconds().toString(36),
+      file_name: "intake-sess-" + token + ".json",
+      intake: built.intake,
+      enqueued_at: nowSeconds(), fetched_at: null,
+    };
+    // One durable transaction (single-key R2 write): the outbox record AND the
+    // intake record the box bridge discovers. The outbox key is written LAST
+    // so a torn write can only ever leave "not yet queued" — never "queued"
+    // without an intake to fetch.
+    await storePutJson(env, intakeKey(outbox.session_id), {
+      session_id: outbox.session_id, file_name: outbox.file_name,
+      intake: outbox.intake, stored_at: nowSeconds(),
+    });
+    await saveOutbox(env, outbox);
+  }
+  return jsonResponse({ status: "complete", run_id: session.run_id, progress: prog,
+    outbox: outboxStatusPayload(outbox) }, 200);
+}
+
+/**
+ * GET /api/sessions/:token/outbox — capability-gated outbox status. The UI
+ * polls this to show Queued vs Worker accepted vs Action needed. Status is
+ * always real server state — never a client-side claim.
+ */
+async function outboxStatus(env, token) {
+  const row = await loadOpenSession(env, token, true); if (row.error) return row.error;
+  const outbox = await loadOutbox(env, token);
+  if (!outbox) return jsonResponse({ status: "none", job_ref: "" });
+  return jsonResponse(outboxStatusPayload(outbox));
+}
+
+function outboxStatusPayload(outbox) {
+  return { status: outbox.status, job_ref: outbox.job_ref || "", session_id: outbox.session_id,
+    enqueued_at: outbox.enqueued_at || null, worker_accepted_at: outbox.worker_accepted_at || null,
+    error: outbox.error || "" };
+}
+
+function outboxKey(token) { return OUTBOX_PREFIX + token + ".json"; }
+
+async function loadOutbox(env, token) {
+  return storeGetJson(env, outboxKey(token));
+}
+
+async function saveOutbox(env, outbox) {
+  await storePutJson(env, outboxKey(outbox.token), outbox);
+}
+
+/**
+ * Mark the outbox worker_accepted when the box bridge fetches the intake.
+ * Called from fetchIntake(); best-effort — a race just means the next fetch
+ * flips it.
+ */
+async function markOutboxAccepted(env, sessionId) {
+  try {
+    const token = sessionId.replace(/^sess-/, "");
+    const outbox = await loadOutbox(env, token);
+    if (!outbox || outbox.status === "worker_accepted") return;
+    outbox.status = "worker_accepted";
+    outbox.worker_accepted_at = nowSeconds();
+    await saveOutbox(env, outbox);
+  } catch { /* non-fatal */ }
+}
+
+// ---- PRES-005 server-side validated intake assembly -------------------------
+// The intake record is built HERE from the answers the SERVER validated
+// (ordering + value shape enforced at POST /answers) — never from a client
+// POST. storeOn routing mirrors interview-app/pages questions + the bank's
+// storeTarget so the box-side intake_writer.py / bridge consume it unchanged.
+
+const ANSWER_STORE_TARGETS = {
+  presentation_type: "pre_presentation_capture.PRESENTATION_TYPE",
+  offer_name: "deck_brief.OFFER_NAME",
+  named_methodology: "deck_brief.NAMED_METHODOLOGY",
+  transformation_promise: "deck_brief.TRANSFORMATION_PROMISE",
+  time_to_result: "deck_brief.TIME_TO_RESULT",
+  audience: "deck_brief.AUDIENCE",
+  cta_action: "deck_brief.CTA_ACTION",
+  brand_primary: "deck_brief.BRAND_PRIMARY",
+  image_links: "deck_brief.IMAGE_LINKS",
+  tone: "deck_brief.TONE",
+  final_price: "deck_brief.FINAL_PRICE",
+  speech_speed_preference: "intake.speech_speed_preference",
+  want_sales_checkout: "pre_presentation_capture.WANT_SALES_CHECKOUT",
+  want_vsl_page: "pre_presentation_capture.WANT_VSL_PAGE",
+  run_mode: "pre_presentation_capture.RUN_MODE",
+  client_notes: "deck_brief.CLIENT_NOTES",
+};
+
+const DECK_TYPE_BY_PRESENTATION_TYPE = {
+  from_scratch: { deck_type: "webinar", creation_mode: "from_scratch", presentation_mode: "general", audience_mode: "STANDARD" },
+  content_personal: { deck_type: "webinar", creation_mode: "content_personal", presentation_mode: "one-person", audience_mode: "PERSONAL" },
+  content_general: { deck_type: "webinar", creation_mode: "content_general", presentation_mode: "general", audience_mode: "GENERAL" },
+  signature: { deck_type: "signature_presentation", creation_mode: "from_scratch", presentation_mode: "general", audience_mode: "STANDARD" },
+};
+
+/**
+ * Assemble the dept-format intake from server-validated answers. FAIL-CLOSED:
+ * a presentation_type answer that is missing or unrecognized returns
+ * { error } and NOTHING is queued — the same grounding rule the box-side
+ * intake_writer.py enforces, applied before the record ever leaves this
+ * worker. Question prompts/labels come from the session's own questions
+ * payload (the server-issued identity), never invented.
+ */
+export function assembleValidatedIntake(payload, answeredRows, session) {
+  const brief = {};
+  const pre = {};
+  const intakeFlat = {};
+  const answers = {};
+  for (const r of answeredRows) {
+    const qid = r.question_id;
+    const q = (payload.questions || []).find((x) => x.id === qid);
+    const storeOn = (q && (q.storeOn || ANSWER_STORE_TARGETS[qid])) || ANSWER_STORE_TARGETS[qid] || ("deck_brief." + qid.toUpperCase());
+    const value = r.value;
+    answers[qid] = value;
+    const parts = String(storeOn).split(".");
+    const section = parts.length > 1 ? parts[0] : "deck_brief";
+    const key = parts.length > 1 ? parts[1] : qid.toUpperCase();
+    if (section === "pre_presentation_capture") pre[key] = value;
+    else if (section === "intake") intakeFlat[key] = value;
+    else brief[key] = value;
+  }
+
+  const ptype = answers.presentation_type;
+  const mapping = DECK_TYPE_BY_PRESENTATION_TYPE[ptype];
+  if (!mapping) {
+    return { error: "deck type not grounded: presentation_type answer " + JSON.stringify(ptype == null ? null : String(ptype)) + " is missing or unrecognized — nothing was queued. Ask the client to complete the type question and resend." };
+  }
+
+  const intake = {
+    interview_confirmed: true,
+    created_at: new Date().toISOString(),
+    source: "presentation-interview-app",
+    intake_session_id: "sess-" + session.token,
+    run_id: session.run_id,
+    question_set: session.question_set || "standard",
+    presentation_type: ptype,
+    ...mapping,
+    pre_presentation_capture: {
+      REPRESENTATION_MIX: brief.AUDIENCE ? "100% of the stated audience" : "",
+      AUDIENCE_COMPOSITION_NOTE: brief.AUDIENCE || "",
+      GROUNDED_CONTENT: brief.OFFER_NAME || "",
+      VISUAL_MIX: "mix",
+      DARK_OK: false,
+      HOOK_SEED: brief.TRANSFORMATION_PROMISE || "",
+      ...pre,
+    },
+    deck_brief: brief,
+    intake: intakeFlat,
+    answers,
+  };
+  return { intake };
 }
 
 // ---- intake storage + dept-start trigger (R2-backed) ------------------------
@@ -313,6 +512,8 @@ async function storeIntake(request, env) {
 
 /**
  * GET /api/intake?id=<session> — fetch a stored intake for the box bridge.
+ * This fetch is the worker-accepted signal: it flips the session's completion
+ * outbox to worker_accepted (best-effort, non-fatal on miss).
  */
 async function fetchIntake(request, env) {
   if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
@@ -357,6 +558,7 @@ async function fetchIntake(request, env) {
   if (!key) return jsonResponse({ status: "error", error: "invalid id: must be an opaque id (3-64 chars, [A-Za-z0-9._-], no '/', '\\', '..')" }, 400);
   const obj = await storeGetJson(env, key);
   if (!obj) return errorResponse("intake not found", 404);
+  await markOutboxAccepted(env, id);
   return jsonResponse(obj, 200);
 }
 
@@ -588,17 +790,20 @@ async function triggerDeptStart(request, env) {
 }
 
 // ---- handoff outbox (PRES-007, R2-backed) -----------------------------------
-// Durable delivery intent per intake session at outbox/<session>.json. Same
-// states and idempotency contract as the D1 worker's handoff_outbox table.
+// Durable delivery intent per intake session at handoff-outbox/<session>.json.
+// Same states and idempotency contract as the D1 worker's handoff_outbox
+// table. Distinct prefix from the PRES-005 session completion outbox
+// (outboxes/<token>.json) above: that one tracks session completion per
+// capability token; this one tracks worker->CC delivery per intake session.
 
-const OUTBOX_PREFIX = "outbox/";
-function outboxKey(sessionId) { return OUTBOX_PREFIX + sessionId + ".json"; }
+const HANDOFF_OUTBOX_PREFIX = "handoff-outbox/";
+function handoffOutboxKey(sessionId) { return HANDOFF_OUTBOX_PREFIX + sessionId + ".json"; }
 
 async function outboxGet(env, sessionId) {
-  return storeGetJson(env, outboxKey(sessionId));
+  return storeGetJson(env, handoffOutboxKey(sessionId));
 }
 
-async function outboxRecord(env, sessionId, status, deptTaskId, lastError, destBox) {
+async function outboxRecord(env, sessionId, status, deptTaskId, lastError, destBox) { // PRES-007 handoff record (keyed under HANDOFF_OUTBOX_PREFIX)
   const existing = await outboxGet(env, sessionId);
   const record = Object.assign({}, existing || {}, {
     session_id: sessionId,
@@ -609,7 +814,7 @@ async function outboxRecord(env, sessionId, status, deptTaskId, lastError, destB
     last_error: lastError !== undefined && lastError !== null ? lastError : (existing && existing.last_error) || null,
     updated_at: nowSeconds(),
   });
-  try { await storePutJson(env, outboxKey(sessionId), record); } catch { /* observability, never fatal */ }
+  try { await storePutJson(env, handoffOutboxKey(sessionId), record); } catch { /* observability, never fatal */ }
 }
 
 async function sha256Hex(text) {
