@@ -81,6 +81,7 @@ from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 
 from presentation_job.state import StateStore, utcnow  # noqa: E402
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
+from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
 from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
 
 # Defensive import of build_deck (top-level scripts_dir module) -- mirrors
@@ -2384,6 +2385,178 @@ def _append_sidecar(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> Non
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _stamp_author(run_dir: Path, phase_id: str, target: Path, *,
+                  model: Optional[str], provider: Optional[str]) -> None:
+    """PRES-042 — mint the AUTHOR execution stamp for one produced artifact
+    revision. Called by the dispatcher (the TRUSTED writer) at the exact
+    moment the artifact lands; never by the model. Best-effort: a stamp
+    failure must never block a dispatch (the gate reads its absence as
+    UNPROVEN, which is the fail-closed posture, not a crash)."""
+    try:
+        if _estamp.stamps_enabled():
+            _estamp.author_stamp(run_dir, phase_id, target, model=model, provider=provider)
+    except Exception as exc:  # noqa: BLE001 — stamping must never block dispatch
+        try:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": "stamp", "attempt": 0, "status": "stamp_failed",
+                "reason": f"author stamp for {target.name} failed: {exc!r}",
+            })
+        except Exception:
+            pass
+
+
+# Phases whose produced artifact IS a QC review record (the manifest's
+# *-QC / P-U-QC ids and their owning roles). Kept as an explicit tuple, not a
+# regex, so a reviewer can read the exact set that gets reviewer-stamped.
+_QC_PHASE_ID_TOKENS = ("QC",)
+_QC_ROLE_TOKENS = ("qc-specialist", "qc_specialist")
+
+
+def _is_qc_phase(owning_role: str, phase_id: str) -> bool:
+    role = (owning_role or "").lower()
+    pid = (phase_id or "").upper()
+    if any(tok in role for tok in _QC_ROLE_TOKENS):
+        return True
+    return pid.endswith(tuple(f"-{tok}" for tok in _QC_PHASE_ID_TOKENS)) or pid in (
+        "P-U-QC", "P-SHIFT-QC", "P-QC-AGGREGATE",
+    )
+
+
+def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
+                       model: Optional[str], provider: Optional[str]) -> None:
+    """PRES-042 — mint the REVIEWER execution stamp for a QC phase's produced
+    report, binding the review to the artifacts the phase CONSUMED (the
+    manifest's consumes list / the report's own grading targets) at their
+    CURRENT sha. The reviewed-artifact binding is what makes 'mutate a
+    reviewed file after pass => its QC is stale' mechanical.
+
+    QC-SONNET-R4 (PRES-042 repair): the SAME reviewer execution ALSO stamps
+    the produced REPORT itself. Without this, the aggregate's report-level
+    gate (author+reviewer stamps covering the report's CURRENT bytes) could
+    never pass on a production-dispatched run — every domain would block, and
+    the stamp surface would be undeployable with its default-ON flag. One
+    reviewer id binds both levels: 'this QC execution reviewed these inputs
+    (at these shas) and attests these report bytes under this rubric'.
+    Honest limits (documented, not hidden): the report-level pair proves
+    dispatch integrity + sha currency, NOT cross-execution independence on its
+    own — the author/review execution ids are dispatch-minted, so the
+    exec-inequality leg passes trivially in production. The teeth against a
+    same-worker forgery are the consumed-upstream coverage the aggregate ALSO
+    verifies (reviewer stamp from THIS phase on each consumed input at its
+    current sha, with the producer's author stamp and model classes on record)
+    plus the legacy graded_by text provenance that still runs alongside."""
+    consumed: List[Path] = []
+    try:
+        from presentation_job.manifest import Manifest
+        # QC-OPUS seam repair: resolve via the run's pinned manifest / dept
+        # sops / walk-up — the SAME resolution the aggregate's consumed-
+        # coverage check uses, so stamps minted here always match what the
+        # aggregate verifies (the old hand-rolled candidates missed in BOTH
+        # layouts and silently downgraded to report-stamp-only).
+        cand = _qc_manifest_for_run(run_dir)
+        if cand is not None:
+            man = Manifest(cand)
+            ph = man.phase_or_none(phase_id)
+            import glob as _glob
+            for pat in (ph.consumes if ph else []) or []:
+                for hit in _glob.glob(str(run_dir / pat)):
+                    hp = Path(hit)
+                    if hp.is_file():
+                        consumed.append(hp)
+    except Exception:
+        consumed = []
+    reviewer_execution_id = f"qc-{phase_id}-{os.getpid()}-{utcnow()}"
+    rubric_version = _qc_rubric_version()
+    for artifact in consumed:
+        _estamp.qc_stamp(
+            run_dir, phase_id, artifact,
+            reviewer_execution_id=reviewer_execution_id,
+            model=model, provider=provider,
+            rubric_version=rubric_version,
+        )
+    # The report attestation itself (QC-SONNET-R4): best-effort like the rest —
+    # a failure here must never block the dispatch that just succeeded.
+    try:
+        if report_artifact.is_file():
+            _estamp.qc_stamp(
+                run_dir, phase_id, report_artifact,
+                reviewer_execution_id=reviewer_execution_id,
+                model=model, provider=provider,
+                rubric_version=rubric_version,
+            )
+    except Exception as exc:  # noqa: BLE001 — best-effort, never blocks
+        try:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": "stamp", "attempt": 0, "status": "qc_stamp_failed",
+                "reason": f"report reviewer stamp failed: {exc!r}",
+            })
+        except Exception:
+            pass
+
+
+def _qc_manifest_for_run(run_dir: Optional[Path] = None) -> Optional[Path]:
+    """PRES-042 (QC-OPUS seam repair): resolve the PIPELINE-MANIFEST.json the
+    SAME way the rest of the engine and the aggregate do, so the reviewer
+    stamps the dispatcher mints and the consumed-coverage the aggregate
+    verifies always agree. Resolution order (never guesses past this list):
+      1. the run's own pinned state.json manifest_path (authoritative per-run
+         — the exact file the engine was launched with);
+      2. <scripts_dir's parent>/sops/PIPELINE-MANIFEST.json (deployed
+         department layout: manifest lives at <dept_root>/sops/, NOT
+         scripts/sops/);
+      3. manifest_source.find_repo_root() walk-up to the repo cluster copy
+         (the canonical resolver qc_aggregate/_resolve_domain_paths uses).
+    Returns None only when nothing resolves — the callers then degrade to the
+    documented best-effort behavior (report-level stamp only / renderer-pin
+    rubric), which the aggregate's own manifest-unresolvable branch mirrors."""
+    if run_dir is not None:
+        try:
+            state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+            mp = state.get("manifest_path")
+            if mp and Path(mp).is_file():
+                return Path(mp).resolve()
+        except (OSError, json.JSONDecodeError):
+            pass
+    scripts_dir = Path(__file__).resolve().parent  # .../scripts/presentation_job
+    cand = (scripts_dir.parent.parent / "sops" / "PIPELINE-MANIFEST.json").resolve()
+    if cand.is_file():
+        return cand
+    try:
+        from manifest_source import find_repo_root
+        root = find_repo_root(scripts_dir)
+        if root is not None:
+            cand = (root / "universal-sops" / "presentation-slide-craft"
+                    / "PIPELINE-MANIFEST.json")
+            if cand.is_file():
+                return cand
+    except Exception:  # noqa: BLE001 — resolver unavailability is not a stamp crash
+        pass
+    return None
+
+
+def _qc_rubric_version() -> str:
+    """The rubric version a QC phase graded against: the manifest revision
+    when resolvable, else the scripts dir's CANONICAL-RENDERER-PIN hash
+    (deterministic, reproducible)."""
+    try:
+        from presentation_job.manifest import Manifest
+        cand = _qc_manifest_for_run()
+        if cand is not None:
+            man = Manifest(cand)
+            version = getattr(man, "version", None)
+            if version:
+                return f"manifest-{version}"
+    except Exception:
+        pass
+    pin = Path(__file__).resolve().parent.parent / "CANONICAL-RENDERER-PIN.sha256"
+    try:
+        if pin.is_file():
+            return f"renderer-pin-{pin.read_text(encoding='utf-8').strip()[:16]}"
+    except OSError:
+        pass
+    return "unknown"
+
+
 def _verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     import phase_verifiers  # top-level module in scripts_dir; see path bootstrap above
     return phase_verifiers.verify(phase_id, run_dir)
@@ -2699,6 +2872,10 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                 "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
+                # PRES-042: stamp the AUTHOR execution on the verified artifact.
+                _stamp_author(run_dir, phase_id, target,
+                              model=route_dict.get("model") or DEEPSEEK_MODEL,
+                              provider=route_dict.get("provider") or "deepseek-direct")
                 slide_ok = True
                 break
             last_reasons = v_reasons
@@ -3851,6 +4028,10 @@ def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
             "network_fetches": retrieval.get("network_fetches", 0),
         })
         if verifier_ok:
+            # PRES-042: stamp the AUTHOR execution on the verified artifact.
+            _stamp_author(run_dir, phase_id, target,
+                          model=route_dict.get("model") or DEEPSEEK_MODEL,
+                          provider=route_dict.get("provider") or "deepseek-direct")
             return DispatchResult(phase_id, "ok", attempt, [],
                                   str(target.relative_to(run_dir)))
         last_reasons = verifier_reasons
@@ -3971,6 +4152,10 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
                 "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
+                # PRES-042: stamp the AUTHOR execution on the verified artifact.
+                _stamp_author(run_dir, phase_id, target,
+                              model=route_dict.get("model") or DEEPSEEK_MODEL,
+                              provider=route_dict.get("provider") or "deepseek-direct")
                 return fanout.UnitResult(key=unit.key, status="ok", attempts=attempts_used,
                                          target=str(target.relative_to(run_dir)))
             last_reasons = v_reasons
@@ -4284,6 +4469,29 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             "usage": usage,
         })
         if verifier_ok:
+            # PRES-042: stamp the AUTHOR execution on the verified artifact.
+            # For a QC phase the produced artifact IS the review record: the
+            # same stamp doubles as the REVIEWER execution stamp (separate
+            # execution identity, actual model/provider, the reviewed
+            # artifact's sha via the QC report's own consumes, rubric
+            # version) — identity from the dispatch record, never the
+            # report's graded_by prose.
+            _stamp_author(run_dir, phase_id, target,
+                          model=route_dict2.get("model") or DEEPSEEK_MODEL,
+                          provider=route_dict2.get("provider") or "deepseek-direct")
+            if _estamp.stamps_enabled() and _is_qc_phase(owning_role, phase_id):
+                try:
+                    _stamp_qc_reviewer(run_dir, phase_id, target,
+                                       model=route_dict2.get("model") or DEEPSEEK_MODEL,
+                                       provider=route_dict2.get("provider") or "deepseek-direct")
+                except Exception as exc:  # noqa: BLE001 — best-effort, never blocks
+                    try:
+                        _append_sidecar(run_dir, phase_id, {
+                            "worker": "stamp", "attempt": 0, "status": "qc_stamp_failed",
+                            "reason": f"reviewer stamp failed: {exc!r}",
+                        })
+                    except Exception:
+                        pass
             return DispatchResult(phase_id, "ok", attempt, [], str(target.relative_to(run_dir)))
 
         last_reasons = verifier_reasons

@@ -224,6 +224,17 @@ _DOMAINS = (
     ("speech_qc_report.json", "AF-SPEECH-QC"),
 )
 
+# PRES-042: report filename -> the producing QC phase id (the stamp store is
+# keyed by phase; the manifest's real ids keep the fixture honest).
+_DOMAIN_PHASE = {
+    "copy_qc_report.json": "P1Q-COPY-QC",
+    "typography_qc_report.json": "P-TYPO-QC",
+    "prompt_qc_report.json": "P-PROMPT-QC",
+    "image_qc_report.json": "P-IMAGE-QC",
+    "speech_qc_report.json": "P-SPEECH-QC",
+    "priority_shift_report.json": "P-SHIFT-QC",
+}
+
 
 def fixture_qc_reports(*, same_model_judge: bool = True,
                        self_graded: bool = False,
@@ -254,6 +265,7 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
     reviewer = WPM_STAMP if same_model_judge else QC_SPECIALIST_STAMP
     pairs = _DOMAINS if full_set else ([("image_qc_report.json", "AF-IMAGE-QC")]
                                        if image_only else [])
+    report_paths: list = []
     for name, gate in pairs:
         if gate == "AF-IMAGE-QC":
             # The image domain carries the FIX 33 vision-UNIT provenance:
@@ -270,7 +282,8 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
             obj["self_graded"] = True
         if omit_provenance:
             obj.pop("qc_independence")
-        _write_json(qc / name, obj)
+        p = _write_json(qc / name, obj)
+        report_paths.append(p)
     # The FIX 33 per-slide coverage check counts rendered PNGs: stage a
     # matching render set so the honest control's row count covers the run.
     if pairs:
@@ -279,9 +292,91 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
         for n in range(1, 5):
             (renders / f"slide-{n:02d}.png").write_bytes(PNG_MAGIC + PNG_PAYLOAD)
     if full_set:
-        _write_json(qc / "priority_shift_report.json", {
+        report_paths.append(_write_json(qc / "priority_shift_report.json", {
             "schema": "priority_shift_report/v1",
-            "gate": "AF-PRIORITY-SHIFT", "pass": True, "items": []})
+            "gate": "AF-PRIORITY-SHIFT", "pass": True, "items": []}))
+    # PRES-042 — trusted execution stamps behind every report. The trusted
+    # dispatcher stamps the AUTHOR (the qc phase's own report author) and the
+    # REVIEWER (the grading route) per domain:
+    #   same_model_judge=True  — reviewer execution IS the author execution
+    #     (same-execution self-review: AF-EXEC-STAMP must BLOCK).
+    #   same_model_judge=False — a separate QC execution graded (identity,
+    #     opposite model class, rubric version): the trusted shape the gate
+    #     accepts.
+    try:
+        from presentation_job import execution_stamp as _es
+        if _es.stamps_enabled():
+            author_model = WPM_STAMP
+            reviewer_model = author_model if same_model_judge else QC_SPECIALIST_STAMP
+            author_exec = "exec-fixture-author"
+            reviewer_exec = author_exec if same_model_judge else "exec-fixture-reviewer"
+            # QC-SONNET-R5: the aggregate ALSO verifies consumed-upstream
+            # coverage (producer author stamp + this phase's reviewer stamp at
+            # the input's current sha). Stage each domain's manifest consumes
+            # the way a production dispatch leaves them: producer-authored
+            # (a DIFFERENT execution from the reviewer) + reviewed by this
+            # QC phase's execution.
+            _CONSUMED_STAGING = {
+                "P1Q-COPY-QC": ["working/copy/slides_copy.md"],
+                "P-TYPO-QC": ["working/research/design-brief-fixture.md"],
+                "P-PROMPT-QC": ["working/prompts/slide-01.txt"],
+                # The manifest glob is renders/slide-*.png and this fixture
+                # stages slide-01..04 above — stamp ALL of them, or the
+                # unstamped siblings read as unproven consumed inputs.
+                "P-IMAGE-QC": [f"renders/slide-{n:02d}.png" for n in range(1, 5)],
+                "P-SPEECH-QC": ["working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"],
+                "P-SHIFT-QC": ["working/copy/priority_shift_spec.json",
+                               "working/copy/slides_copy.md"],
+            }
+            for p in report_paths:
+                rel = str(p.relative_to(rd))
+                ph_id = _DOMAIN_PHASE.get(p.name, "P-QC-FIXTURE")
+                rows = [
+                    {"kind": "author", "execution_id": author_exec,
+                     "phase_id": ph_id, "artifact": rel,
+                     "artifact_sha256": _es.sha256_file(p),
+                     "model": author_model, "provider": "fixture",
+                     "model_class": _es.model_class_of(author_model),
+                     "stamped_at": _es.utcnow()},
+                    {"kind": "reviewer", "execution_id": reviewer_exec,
+                     "phase_id": ph_id,
+                     "reviewed_artifact": rel,
+                     "reviewed_artifact_sha256": _es.sha256_file(p),
+                     "model": reviewer_model, "provider": "fixture",
+                     "model_class": _es.model_class_of(reviewer_model),
+                     "rubric_version": "manifest-fixture",
+                     "stamped_at": _es.utcnow()},
+                ]
+                for crel in _CONSUMED_STAGING.get(ph_id, []):
+                    cp = rd / crel
+                    cp.parent.mkdir(parents=True, exist_ok=True)
+                    if not cp.is_file():
+                        cp.write_bytes((PNG_MAGIC + PNG_PAYLOAD) if cp.suffix == ".png"
+                                       else f"# fixture input for {ph_id}\n".encode())
+                    csha = _es.sha256_file(cp)
+                    rows.append(
+                        {"kind": "author", "execution_id": "exec-fixture-producer",
+                         "phase_id": "P-PRODUCER-FIXTURE", "artifact": crel,
+                         "artifact_sha256": csha,
+                         "model": author_model, "provider": "fixture",
+                         "model_class": _es.model_class_of(author_model),
+                         "stamped_at": _es.utcnow()})
+                    rows.append(
+                        {"kind": "reviewer", "execution_id": reviewer_exec,
+                         "phase_id": ph_id,
+                         "reviewed_artifact": crel,
+                         "reviewed_artifact_sha256": csha,
+                         "model": reviewer_model, "provider": "fixture",
+                         "model_class": _es.model_class_of(reviewer_model),
+                         "rubric_version": "manifest-fixture",
+                         "stamped_at": _es.utcnow()})
+                rows_obj = {"schema_version": 1, "phase_id": ph_id, "rows": rows}
+                stamps_dir = rd / "working" / "execution-stamps"
+                stamps_dir.mkdir(parents=True, exist_ok=True)
+                (stamps_dir / f"{ph_id}.stamp.json").write_text(
+                    json.dumps(rows_obj, indent=2), encoding="utf-8")
+    except ImportError:
+        pass  # pre-PRES-042 tree: the text-only contract governs alone
     return rd
 
 
