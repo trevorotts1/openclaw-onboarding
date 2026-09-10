@@ -1,5 +1,5 @@
 # MODEL SPECS — API Limits, Routing & Request Templates
-**Version:** 1.4 | **Last Updated:** 2026-06-14 | **Source:** Verified Kie.ai API documentation (not blog estimates)
+**Version:** 1.5 | **Last Updated:** 2026-09-10 | **Source:** Verified Kie.ai API documentation (not blog estimates)
 **Audience:** AI agents. This is the ONLY file that changes when models update. Style cards never reference model versions directly — they reference tiers and capabilities defined here.
 
 ---
@@ -10,8 +10,8 @@
 |---|---|---|---|---|---|---|---|
 | 1a | **GPT-Image 2.5 — Text-to-Image** | `gpt-image-2-5-sunburst-text-to-image` | **20,000 chars** | No (inline only) | None | 1K / 2K / 4K | Layout king, longest prompts |
 | 1b | **GPT-Image 2.5 — Image-to-Image** | `gpt-image-2-5-sunburst-image-to-image` | **20,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Long prompts + refs combined |
-| 1a-legacy | **GPT-Image 2 — Text-to-Image (LEGACY, retained)** | `gpt-image-2-text-to-image` | **20,000 chars** | No (inline only) | None | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 — dispatch target for 3:1 / 1:3 / 9:21 only, not for new general work |
-| 1b-legacy | **GPT-Image 2 — Image-to-Image (LEGACY, retained)** | `gpt-image-2-image-to-image` | **20,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 — dispatch target for 3:1 / 1:3 / 9:21 only, not for new general work |
+| 1a-legacy | **GPT-Image 2 — Text-to-Image (LEGACY, retained)** | `gpt-image-2-text-to-image` | **25,000 chars** (`OWNER_CONFIRMED`, operator-confirmed 2026-08-27) | No (inline only) | None | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 — dispatch target for 3:1 / 1:3 / 9:21 only, not for new general work |
+| 1b-legacy | **GPT-Image 2 — Image-to-Image (LEGACY, retained)** | `gpt-image-2-image-to-image` | **25,000 chars** (`OWNER_CONFIRMED`, operator-confirmed 2026-08-27) | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 — dispatch target for 3:1 / 1:3 / 9:21 only, not for new general work |
 | 2 | **Nano Banana 2** (Gemini 3.1 Flash Image) | `nano-banana-2` | **20,000 chars** | No (inline only) | `image_input`, optional, **up to 14**, 30MB each | 1K / 2K / 4K | jpg/png output; ultra-wide ratios |
 | 3a | **Seedream 4.5 — Text-to-Image** | `seedream/4.5-text-to-image` | **3,000 chars** | No (inline only) | None | basic = 2K, high = 4K | `aspect_ratio` REQUIRED |
 | 3b | **Seedream 4.5 — Edit** | `seedream/4.5-edit` | **3,000 chars** | No (inline only) | `image_urls` **REQUIRED**, multiple, 10MB each | basic = 2K, high = 4K | Edit-instruction phrasing |
@@ -94,6 +94,8 @@ Choose by task. Category `_RULES.md` files may override.
 | SHORT | ≤500 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | MEDIUM | ≤2,800 | ✅ | ✅ | ✅ (3,000 cap) | ✅ (5,000 cap) | ✅ (5,000 cap) |
 | LONG | ≤19,000 | ✅ (20,000 cap) | ✅ (20,000 cap) | ❌ | ❌ | ❌ |
+
+> **Legacy GPT-Image 2 cap (rows `1a-legacy` / `1b-legacy`):** **25,000**, `OWNER_CONFIRMED` (operator-confirmed 2026-08-27) — NOT 2.5's 20,000. The 19,000 house ceiling above still governs; the 25,000 is the endpoint's own cap. Applying 2.5's cap to the legacy route is a defect (it silently truncates prompts). See AGENTS.md N43.
 
 **Rule:** If a LONG-tier generation is requested on an endpoint that can't take it, automatically fall back to MEDIUM and tell the operator.
 
@@ -313,3 +315,4 @@ When a new model or endpoint becomes available (e.g., GPT-Image 3, Nano Banana 3
 | 2026-06-12 | v1.2 | Added Editing Hierarchy (Seedream 4.5 Edit = only true surgical editor) and Personal Photo Shoot routing rows. |
 | 2026-06-14 | v1.3 | Documented the THIRD mode: image-to-JSON / vision analysis (Section 1B + template 5.8). Synchronous chat-completions endpoint `POST https://api.kie.ai/gpt-5-2/v1/chat/completions`, model `gpt-5-2`, image via `messages[].content[].image_url`, answer at `choices[0].message.content`. Verified against live `docs.kie.ai/market/chat/gpt-5-2`; no `response_format`/`json_schema` documented (JSON by instruction). Powers Workflow A image-to-style-card. No style cards touched. |
 | 2026-06-14 | v1.4 | Added CLIENT SOVEREIGNTY note to MODEL ROUTING TABLE: presentations always use gpt-image-2-text-to-image or gpt-image-2-image-to-image as primary. nano-banana-2 is FALLBACK-ONLY for presentations (logs required). Added AF-MODEL-SOVEREIGNTY auto-fail reference. |
+| 2026-09-10 | v1.5 | Legacy GPT-Image 2 rows (`1a-legacy`/`1b-legacy`) corrected to their own **25,000** `OWNER_CONFIRMED` cap (operator-confirmed 2026-08-27) — they had carried 2.5's 20,000, which silently truncates prompts on the legacy route (AGENTS.md N43). Added the cap note under the tier table. No style cards touched. |
