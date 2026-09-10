@@ -195,16 +195,30 @@ def ensure_workspace(path, explicit, flavors):
     A pre-existing mount is `existing`/`existing-valid-custom` with created=False
     — reporting "created" for a directory that was already there is the same
     class of untruthful state as reporting "missing" for one that now exists.
+    That rule holds for path-with-spaces mounts too: the space-safe label is only
+    ever returned for a directory THIS RUN created, and a creation that cannot
+    be performed (a file occupies the path, or the parent refuses) returns
+    `invalid-file` so the caller reports a NAMED refusal instead of dying with a
+    traceback and no report at all.
     """
     if path_has_spaces(path):
-        existed = os.path.isdir(path)
-        os.makedirs(path, mode=0o700, exist_ok=True)
-        return "path-resolved-and-created-space-safe", (not existed)
+        if not os.path.isdir(path):
+            if os.path.lexists(path):
+                return "invalid-file", False
+            try:
+                os.makedirs(path, mode=0o700, exist_ok=True)
+            except OSError:
+                return "invalid-file", False
+            return "path-resolved-and-created-space-safe", True
+        return ("existing-valid-custom" if explicit else "existing"), False
     state = classify_mount(path, explicit, flavors)
     if state == "invalid-file":
         return "invalid-file", False
     if state == "missing":
-        os.makedirs(path, mode=0o700, exist_ok=True)
+        try:
+            os.makedirs(path, mode=0o700, exist_ok=True)
+        except OSError:
+            return "invalid-file", False
         return "created", True
     return state, False
 
@@ -561,7 +575,7 @@ def run(req):
     # reads "missing") is the same untruthful report RR-032 removes.
     ws_cause = ws_state + (":" + ws_source if ws_source == "declared-by-config" else "")
     if ws_state == "path-resolved-and-created-space-safe":
-        ws_to = "workspace-path-space-safe"
+        ws_to = "workspace-created-space-safe"
     elif ws_state == "existing-valid-custom":
         ws_to = "workspace-custom-retained"
     elif ws_created:

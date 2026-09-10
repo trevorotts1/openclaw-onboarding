@@ -386,11 +386,41 @@ def case_docker_root_wins(tmp):
     write_cfg(cfg, "enabled")
     rep, _ = run_engine(tmp, cfg, "", sha(cfg), extra=["--workspace", spaced,
                                                       "--workspace-explicit"])
-    check(rep.get("mount_state") in ("path-resolved-and-created-space-safe", "missing"),
+    check(rep.get("mount_state") == "path-resolved-and-created-space-safe",
           "8d a workspace path containing spaces resolves without word splitting (%r)"
           % rep.get("mount_state"))
     check(os.path.isdir(spaced),
           "8e the space-containing workspace was created at the exact path")
+
+    # The same rule as everywhere else: a mount that already existed is NOT
+    # reported as created, spaces or not. Re-running against the directory the
+    # run above just made must report the pre-existing state, not "created".
+    rep2, _ = run_engine(tmp, cfg, "", sha(cfg), extra=["--workspace", spaced,
+                                                       "--workspace-explicit"])
+    check(rep2.get("mount_state") != "path-resolved-and-created-space-safe",
+          "8f a PRE-EXISTING space-containing mount is not reported as created (%r)"
+          % rep2.get("mount_state"))
+    causes = " ".join(c.get("cause", "") for c in (rep2.get("transitions") or []))
+    check("workspace-created-space-safe" not in causes,
+          "8f the named transition does not claim a creation that did not happen")
+
+    # A space-containing path that cannot be a directory (a FILE sits there)
+    # must produce a NAMED refusal and a report — never an unhandled traceback
+    # with no report at all, which tells the operator nothing.
+    occupied = os.path.join(tmp, "occupied with spaces")
+    with open(occupied, "w") as fh:
+        fh.write("not a directory")
+    cfg3 = os.path.join(tmp, "c9b.json")
+    write_cfg(cfg3, "enabled")
+    rep3, proc3 = run_engine(tmp, cfg3, "", sha(cfg3),
+                             extra=["--workspace", occupied, "--workspace-explicit"])
+    check(rep3.get("state") == "refused" and rep3.get("mount_state") == "invalid-file",
+          "8g an occupied space-containing path is a NAMED refusal, not a crash (state=%r mount=%r)"
+          % (rep3.get("state"), rep3.get("mount_state")))
+    check("Traceback" not in (proc3.stderr or ""),
+          "8g the refusal did not die with an unhandled traceback")
+    check(sha(cfg3) == rep3.get("source_sha256") and os.path.isfile(occupied),
+          "8g the refused run changed nothing and left the occupying file alone")
 
 
 # ---------------------------------------------------------------------------
