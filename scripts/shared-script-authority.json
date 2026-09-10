@@ -34,11 +34,11 @@
       "file": "kie_generate.py",
       "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
       "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
-      "canonical_sha256": "a0e52e0de377d34a9b01700619938f20ffb746056f8f131e694122bc4ca4001c",
+      "canonical_sha256": "5638f9f0784a41f3abcfa931ae5b280d5459fbafb96a2522c149da775623d46a",
       "mirror_sha256": "610dc4d533ccb928ccc8c0d9b7ad1f0a49c95aeb16ce7f35c4dba7ef6cf7104b",
       "canonical_side": "role-library-scripts",
       "reason": "Pre-existing divergence recorded, not reconciled (694 vs 613 lines). The mirror twin still owes the FIX 68/67 port the role-library docstring names: the oc_paths _secrets_candidates seam, _import_secret_helper, _kie_alias_names, _is_placeholder_value and the _load_api_key canon loop. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
-      "recorded_at": "2026-09-07"
+      "recorded_at": "2026-09-10"
     },
     {
       "file": "slides.schema.json",
