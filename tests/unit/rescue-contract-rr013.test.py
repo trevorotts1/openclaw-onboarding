@@ -132,13 +132,15 @@ for path in scan_files:
     except (OSError, UnicodeDecodeError):
         continue
     checked += 1
-    # a bare concurrency/parallel-call claim worded as a provider fact
+    # a bare concurrency/parallel-call claim worded as a provider fact.
+    # The conditional-wording exemption is SENTENCE-LOCAL: a "never" anywhere
+    # in the preceding 120 characters (e.g. a bare "never by value" clause on
+    # an unrelated line) must not license an unsourced concurrency fact.
     for m in re.finditer(
         r"(?:provider|account|api)[^\n]{0,80}\b(?:allows?|permits?|supports?|cap(?:acity)?\s+of)\b[^\n]{0,40}\b\d+\s*concurrent",
         body, re.IGNORECASE):
-        # allow the explicitly-conditional wording ("verified ... for that account")
-        window = max(0, m.start() - 120)
-        ctx = body[window:m.end()]
+        start = max(body.rfind("\n", 0, m.start()), body.rfind(". ", 0, m.start()))
+        ctx = body[start + 1:m.end()]
         if not re.search(r"verif|measured|source|account-scoped|do not|never", ctx, re.IGNORECASE):
             violations.append((os.path.relpath(path, REPO), m.group(0)[:90]))
 if not violations:
