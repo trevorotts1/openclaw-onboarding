@@ -51,7 +51,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // <app>/test
 const APP = path.dirname(HERE); // interview-app/
 export const CC_ROOT = process.env.CC_ROOT
-  || '/Users/blackceomacmini/blackceo-command-center';
+  || process.env.COMMAND_CENTER_ROOT
+  || path.join(APP, 'test', 'fixtures', 'command-center-stub');
+if (!process.env.CC_ROOT && !process.env.COMMAND_CENTER_ROOT) {
+  throw new Error('CC_ROOT (or COMMAND_CENTER_ROOT) must point at a local Command Center checkout');
+}
 const CC_DB_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pres007-cc-db-'));
 
 // ── CC process env: isolated DB + fixture webhook secret (BEFORE CC import) ──

@@ -21,13 +21,16 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 // better-sqlite3 is not a dependency of the skill template; resolve it from
-// the CC checkout's node_modules when present (the same engine production D1
-// semantics are validated against in the CC test suites).
-const CC_BSQLITE = "/Users/blackceomacmini/blackceo-command-center/node_modules/better-sqlite3";
+// the Command Center checkout's node_modules when present (set CC_ROOT to a
+// local Command Center checkout; the same engine production D1 semantics are
+// validated against in the Command Center test suites).
+const CC_ROOT = process.env.CC_ROOT || process.env.COMMAND_CENTER_ROOT || null;
+const CC_BSQLITE = CC_ROOT ? `${CC_ROOT}/node_modules/better-sqlite3` : "better-sqlite3";
 let Database;
 try {
   Database = require("better-sqlite3");
 } catch {
+  if (!CC_ROOT) throw new Error("better-sqlite3 unavailable: install it or set CC_ROOT to a Command Center checkout");
   Database = require(CC_BSQLITE);
 }
 

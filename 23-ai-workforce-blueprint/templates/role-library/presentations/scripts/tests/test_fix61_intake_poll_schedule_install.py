@@ -122,10 +122,21 @@ def _build_harness(tmp_path: Path, resolver: str = "") -> Path:
     # contiguous in the lib and runs from the poll installer to the closing
     # brace of the last resolver.
     lib_lines = lib_src.split("\n")
+    # Top-level `_PRESCHED_*` schedule-contract constants live above every
+    # function in the lib (set -u aborts without them); the extracted block
+    # runs them verbatim, exactly as the installer sources them.
+    const_lines = [
+        line for line in lib_lines
+        if line.startswith("_PRESCHED_") and "=" in line
+    ]
     lib_begin = next(
         i for i, line in enumerate(lib_lines)
-        if line.startswith("install_intake_poll_schedule() {")
+        if line.startswith("_presched_lock() {")
     )
+    # install_intake_poll_schedule() calls _presched_reconcile_cron and
+    # _presched_finish plus the whole _presched_* reconcile family, which all
+    # live above it in the lib; the slice runs from the first helper so the
+    # harness executes the same code path as the installer.
     last_fn = next(
         i for i, line in enumerate(lib_lines)
         if line.startswith("_fix61_resolve_scripts_src() {")
@@ -151,7 +162,7 @@ def _build_harness(tmp_path: Path, resolver: str = "") -> Path:
         'send_telegram_progress() { echo "[stub telegram] $*" >&2; }',
     ]
     harness = tmp_path / "harness.sh"
-    harness.write_text("\n".join(preamble) + "\n" + resolver + "\n" + block + "\n", encoding="utf-8")
+    harness.write_text("\n".join(preamble) + "\n" + "\n".join(const_lines) + "\n" + resolver + "\n" + block + "\n", encoding="utf-8")
     harness.chmod(0o755)
     return harness
 

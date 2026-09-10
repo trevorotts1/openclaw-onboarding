@@ -174,5 +174,6 @@ jobs:
       - name: Prove live smoke refuses without sandbox authorization
         run: |
           set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pytest==8.3.4
           cd 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests
           python3 -m pytest test_pres043_release_matrix.py::test_live_ghl_smoke_requires_sandbox_credentials -q

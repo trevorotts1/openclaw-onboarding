@@ -130,7 +130,7 @@ store, argv = sys.argv[1], sys.argv[2:]
 if argv and argv[0] == "--help":
     print("  --agent <id>"); print("  --cron <expr>"); print("  --session <target>")
     print("  --system-event <text>"); print("  --tz <iana>"); print("  --no-deliver")
-    print("  --clear-to"); exit 0
+    print("  --clear-to"); sys.exit(0)
 jid = argv[0]; flags = argv[1:]
 d = json.load(open(store)); jobs = d.get("jobs", [])
 job = next((j for j in jobs if j.get("id") == jid), None)
