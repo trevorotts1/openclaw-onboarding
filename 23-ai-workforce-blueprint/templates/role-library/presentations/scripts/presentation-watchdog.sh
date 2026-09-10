@@ -211,10 +211,7 @@ python3 "${SCRIPT_DIR}/presentation_job.py" \
     --supervisor-backoff "${SUPERVISOR_BACKOFF_SECONDS:-60}" \
     >> "${LOG}" 2>&1 || SUPERVISE_RC=$?
 if [ "${SUPERVISE_RC}" -ne 0 ]; then
-    # PRES-019 adds 16: a HELD-but-stalled run alarmed -- the lock is alive
-    # but the run is past its own progress deadline (phase budget x 1.5).
-    # Distinct from 15 so the log names WHICH alarm fired.
-    echo "WARNING: supervise exited ${SUPERVISE_RC} (0=pass; 14=zero state.json found/UNDETERMINED; 15=restart budget exhausted/ALARM; 16=held-but-stalled run past its progress deadline/ALARM) -- NOT necessarily a failure, see supervisor lines above" >> "${LOG}" 2>&1
+    echo "WARNING: supervise exited ${SUPERVISE_RC} (0=pass; 14=zero state.json found/UNDETERMINED; 15=restart budget exhausted/ALARM) -- NOT necessarily a failure, see supervisor lines above" >> "${LOG}" 2>&1
 fi
 
 # Run-discovery pass: optional component. Guarded with || true so a missing

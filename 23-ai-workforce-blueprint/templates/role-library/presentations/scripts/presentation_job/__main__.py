@@ -196,10 +196,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "supervisor.DEFAULT_BACKOFF_SECONDS)")
     p.add_argument("--max-idle-hours", type=float, default=72.0,
                    help="with --supervise: a dead run whose state.json is older "
-                        "than this is ESCALATED (named in a notified event with "
-                        "its age and phase) but never restarted and never "
-                        "cancelled (default 72, the same ceiling reconcile-board "
-                        "uses)")
+                        "than this is reported but never restarted (default 72, "
+                        "the same ceiling reconcile-board uses)")
     # F07: the auto-spawn closes the fault where an agent-authored phase
     # (phases.py:_run_agent_phase) writes working/work-orders/<phase>.json and
     # then blocks polling for the artifact with NOTHING servicing that file --
@@ -386,16 +384,6 @@ def cmd_status(args) -> int:
     print(f"run dir  : {st['run_dir']}")
     print(f"manifest : v{st.get('manifest_version')} @ {str(st.get('manifest_sha256'))[:12]}")
     print(f"terminal : {st.get('terminal') or 'in progress'}")
-    # PRES-019 (step 4): a CONFIGURATION-PENDING park is reported as PENDING
-    # -- owner and next action named -- never as working. The stamp is
-    # written by auto_resume._configuration_pending_decision and read here so
-    # the visibility survives detached execution (an unattended box's poller
-    # may have no notify transport; state.json is read by every pass).
-    cfg = st.get("configuration_pending")
-    if isinstance(cfg, dict):
-        print(f"configuration : PENDING -- {cfg.get('reason', '')[:120]}")
-        print(f"  owner       : {cfg.get('owner', '(unrecorded)')}")
-        print(f"  next action : {cfg.get('next_action', '(unrecorded)')}")
     done = [p for p in st.get("phases", []) if p.get("status") == "done"]
     print(f"phases   : {len(done)} done")
     for p in st.get("phases", []):
