@@ -5,7 +5,7 @@
 | Placement | Ratio | Model ratio param |
 |---|---|---|
 | Feed (default) | 1:1 | `1:1` |
-| Feed alternate | 4:5 | `4:5` (GPT-Image 2, Nano Banana 2) |
+| Feed alternate | 4:5 | `4:5` (Nano Banana 2); on GPT-Image 2.5 substitute `3:4` |
 | Stories / Reels | 9:16 | `9:16` |
 | Link/landscape | 16:9 (1.91:1 cropped) | `16:9`, design center-weighted |
 

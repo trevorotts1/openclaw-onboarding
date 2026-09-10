@@ -5,7 +5,7 @@
 | Use | Ratio | Model ratio param |
 |---|---|---|
 | Display rectangle (300×250 class) | ~4:3 | `4:3` |
-| Display half-page (300×600 class) | 1:2 | `1:2` (GPT-Image 2) |
+| Display half-page (300×600 class) | 1:2 | `1:2` (GPT-Image 2 **legacy** — 2.5 substitutes `9:16`) |
 | Print full page | 3:4 | `3:4` |
 | Print spread | 3:2 | `3:2` |
 | Flyer/one-sheet | 3:4 portrait | `3:4` |
