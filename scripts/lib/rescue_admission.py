@@ -624,7 +624,7 @@ def admit(state_dir=None, box="", problem_text="", *,
                 pass
             ticket = _ticket_id(doc)
             # A duplicate fold is an ACCEPTED admission whose identity already
-            # existed -- reported as replay, journaled as its own status, and
+            # existed -- reported as replay, journaled under its own status, and
             # ack-eligible exactly like admitted (a durable ticket provably
             # exists either way).
             replay = is_replay_answer(resp_text)
@@ -634,6 +634,23 @@ def admit(state_dir=None, box="", problem_text="", *,
             receipt["detail"] = ("%s%s" % (
                 "replay (folded onto an existing ticket)" if replay else "admitted",
                 " ticket_id=" + str(ticket) if ticket else ""))
+            # RR-015: the intake answers an ACCEPTED admission with
+            # boxEnrolled:false + a reason when the resolved box has no usable
+            # rr_box_auth row (RR-01 mints the ticket ANYWAY and RR-02 will fail
+            # closed NEEDS_HUMAN). A durable ticket exists -- the receipt stays
+            # ack-eligible -- but the caller is OBLIGED not to read
+            # accepted:true as "a fix is coming" (RR-01's own contract). Surface
+            # the enrollment verdict in the receipt and journal so the operator
+            # sees the owned repair without breaking ack semantics (the ledger
+            # fold means a re-escalation would only re-find the SAME ticket).
+            enrolled = doc.get("boxEnrolled")
+            reason = doc.get("boxEnrollmentReason")
+            if enrolled is False:
+                receipt["box_enrolled"] = False
+                receipt["box_enrollment_reason"] = str(reason or "not_enrolled")
+                receipt["detail"] += (
+                    " box_enrolled=false reason=%s (pending repair: %s)"
+                    % (str(reason or "not_enrolled"), REPAIR_ACTION_ENROLLMENT))
             journal(receipt["status"], receipt["detail"], ticket, digest)
             return receipt
         if verdict is False:
@@ -687,10 +704,12 @@ def self_test():
         n += 1
         print("  ok %s" % name)
 
+    _FAIL_LINES = []
     def fail(name, detail=""):
         nonlocal n
         n += 1
         print("  FAIL %s %s" % (name, detail))
+        _FAIL_LINES.append("%s %s" % (name, detail))
 
     def check(cond, name, detail=""):
         if cond:
@@ -740,6 +759,45 @@ def self_test():
           "a first admission is not a replay")
     check(not is_replay_answer("<html>502</html>"),
           "unparseable answer is never a replay")
+
+    # the intake's enrollment verdict rides EVERY accepted body: boxEnrolled
+    # false must be SURFACED (never swallowed). A ticket still exists, so the
+    # receipt stays ack-eligible; the journal detail must carry the reason.
+    def _enrolled_transport(body):
+        def tx(url, payload_bytes, timeout=None):
+            return body
+        return tx
+    _r_no_enroll = admit(box="rr015-enroll-box",
+                         problem_text="enrollment surface fixture",
+                         source="skill-60-ews", dedup_key="rr015|enroll",
+                         event_id=7, signal="S1", dry_run=False,
+                         transport=_enrolled_transport(
+                             '{"accepted":true,"ticketId":"T-ENR",'
+                             '"status":"accepted","boxEnrolled":false,'
+                             '"boxEnrollmentReason":"not_enrolled"}'),
+                         ledger=None)
+    check(_r_no_enroll["status"] == "admitted",
+          "an enrolled-miss body with a durable ticket stays admitted",
+          _r_no_enroll.get("status"))
+    check(_r_no_enroll.get("box_enrolled") is False
+          and _r_no_enroll.get("box_enrollment_reason") == "not_enrolled",
+          "boxEnrolled:false is surfaced in the receipt",
+          _r_no_enroll.get("box_enrolled"))
+    check("box_enrolled=false" in _r_no_enroll.get("detail", ""),
+          "enrollment repair action lands in the journal detail",
+          _r_no_enroll.get("detail"))
+    _r_enrolled = admit(box="rr015-enroll-box-ok",
+                        problem_text="enrollment surface fixture (enrolled)",
+                        source="skill-60-ews", dedup_key="rr015|enroll-ok",
+                        event_id=8, signal="S1", dry_run=False,
+                        transport=_enrolled_transport(
+                            '{"accepted":true,"ticketId":"T-ENR2",'
+                            '"status":"accepted","boxEnrolled":true,'
+                            '"boxEnrollmentReason":"ok"}'),
+                        ledger=None)
+    check("box_enrolled=false" not in _r_enrolled.get("detail", ""),
+          "a true boxEnrolled verdict adds no repair note",
+          _r_enrolled.get("detail"))
 
     # auth refusals are an OWNED ENROLLMENT REPAIR, not a policy refusal
     check(is_auth_refusal("intake HTTP 403: unauthorized"),
@@ -885,7 +943,9 @@ def self_test():
                 os.environ["EWS_STATE_DIR"] = prev
 
     print("[rescue_admission] self-test: %s checks done" % n)
-    return 0
+    # A failed check MUST fail the gate (exit 1), or a mutant passes the
+    # aggregate gate green. fail() recorded every failure above.
+    return 1 if _FAIL_LINES else 0
 
 
 def _cli(argv=None):
