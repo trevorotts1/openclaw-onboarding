@@ -20,10 +20,12 @@
 Skill 35's Google Sheet integration runs through two n8n webhooks hosted on the
 BlackCEO Automations hub (`main.blackceoautomations.com`):
 
-| Webhook | When called | Purpose |
+| Logical webhook name | When called | Purpose |
 |---------|-------------|---------|
-| `social-planner-sheet-create` | ONCE, at install (INSTALL.md Step 7) | Copy the fleet template into a new client Google Sheet, grant anyone-with-the-link edit access, return the receipt `{status, deduped, sheetId, sheetUrl, sheetName, sharedWith, provisioning_key, schema_version}`. |
+| `social-planner-sheet-create` | ONCE, at install (INSTALL.md Step 7) | Copy the fleet template into a new client Google Sheet, apply the requested sharing policy (public by default; explicit private mode supported), return the receipt `{status, deduped, sheetId, sheetUrl, sheetName, sharedWith, provisioning_key, schema_version}`. |
 | `social-planner-row-append` | EVERY publish cycle (SKILL.md Media Delivery Contract step 4) | **Upsert** one keyed row per content revision and destination account into the client sheet's **Posts** tab, then derive/update the Weekly Overview summary row, then resize preview columns/rows via a real `spreadsheet.batchUpdate`. |
+
+The table names are logical contracts, not complete deployment URLs. Use the deployment's verified active webhook path and authentication. The current versioned routes are `/webhook/social-planner/v1.1.0/social-planner-sheet-create` and `/webhook/social-planner/v1.1.0/social-planner-row-append`; the compiler applies the configured prefix. Unversioned paths are legacy compatibility routes, not substitutes for the modern contract.
 
 ## Status of these files — deployable versioned contracts (F16)
 
@@ -71,15 +73,27 @@ python3 35-social-media-planner/config/n8n/verify-exports.py   # exit 0 = valid
 After importing into a sandbox, export again and compare the semantic workflow
 definition against these files before promoting (QC-F16).
 
-## Sharing contract (F02 — preserve, never migrate)
+## Sharing contract (F02 — preserve the selected policy)
 
-The `Set Anyone Can Edit` node (Drive permission `type=anyone`, `role=writer`)
-is **intentional**. A person with the planner link can edit without an
-individual invitation; provisioning must create planners with this setting and
-must **never** migrate existing planners to named-user-only sharing. The
-sharing setting does not change GHL account ownership or weekly mini-app
-identity requirements, and it does not authorize API access to another
-company's data (server-side API calls stay company-bound).
+Provisioning defaults to the existing public compatibility policy: Drive
+`type=anyone`, `role=writer`. Existing public planners must not be silently
+converted to named-user-only sharing.
+
+An explicit `sharing: "private"` request instead requires `clientEmail` and
+uses a named-user writer grant. The workflow records the sticky Drive
+appProperty `skill35_sharing=private`; retries and ready replays preserve that
+policy even if a later request omits `sharing`. They must never widen a private
+sheet to anyone-with-link or domain access to recover a failed operation.
+The client opens a private sheet while signed into the granted Google account;
+Google writes and readback use the deployment's authorized Google connection.
+
+After permission writes, the workflow reads actual Drive permissions before
+reporting success. Private-mode verification rejects public/domain grants,
+a missing owner, a mismatched client or an unconfirmed writer grant. Surface a
+repair when the intended policy cannot be verified; do not claim success from
+an accepted permission request alone. Sharing policy does not change GHL
+account ownership or weekly mini-app identity requirements, and server-side
+API calls remain company-bound.
 
 ## Idempotency contract (F15)
 
