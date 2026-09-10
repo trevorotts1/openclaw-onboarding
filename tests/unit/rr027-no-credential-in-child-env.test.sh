@@ -11,9 +11,13 @@
 #      agent turn runs through rescue_env_scrub — every rescue alias is
 #      removed from the child env while necessary authorized model/tool
 #      credentials pass through.
-#   C. seed-rr-agent-map.sh put the n8n API key on curl's ARGV. Now: the key
+#   C. the agent-map path put the n8n API key on curl's ARGV. Now: the key
 #      rides in a 0600 header file under a 0700 private temp dir; the token
-#      never appears in any argv, any child env, or any log.
+#      never appears in any argv, any child env, or any log. RR-031 moved that
+#      path from seed-rr-agent-map.sh (now a delegating deprecation shim, which
+#      is also exercised here so a stale caller cannot resurrect the old
+#      behaviour) to scripts/reconcile-rr-agent-map.sh — this gate follows the
+#      key to its current consumer.
 #
 # Evidence standard (SPEC RR-027 required QC): synthetic exported, inherited
 # and unexported secrets never appear in child env/argv/logs; the necessary
@@ -35,6 +39,8 @@ REPO="$(cd "$HERE/../.." && pwd)"
 WIRE="$REPO/65-rescue-receiver/wire.sh"
 POLL="$REPO/65-rescue-receiver/rescue-poll.sh"
 SEED="$REPO/scripts/seed-rr-agent-map.sh"
+RECONCILE="$REPO/scripts/reconcile-rr-agent-map.sh"
+RR_LIB="$REPO/scripts/_rr_registry_lib.py"
 HELPER="$REPO/shared-utils/rescue-env.sh"
 SUPERVISE="$REPO/shared-utils/rescue-supervise.py"
 
@@ -46,7 +52,7 @@ TOK='ZZRR027BOX-T0K3N-s3nt1n3l'
 ESC='ZZRR027ESC-s3cr3t-9a8b7c'
 NEC='ZZRR027NEC3SSARY-cr3d'
 N8NK='ZZRR027N8N-k3y-5ynth3t1c'
-for f in "$WIRE" "$POLL" "$SEED" "$HELPER"; do
+for f in "$WIRE" "$POLL" "$SEED" "$RECONCILE" "$RR_LIB" "$HELPER"; do
   [ -f "$f" ] || { echo "FATAL: missing $f"; exit 2; }
 done
 
@@ -265,45 +271,85 @@ grep -qF "$TOK" "$SPB/claim-body.txt" 2>/dev/null && bad "claim body carries a t
 rm -rf "$SPB"
 
 # ---------------------------------------------------------------------------
-# C. seed-rr-agent-map.sh: key never on argv
+# C. agent-map reconciliation: key never on argv (RR-031 moved this path)
 # ---------------------------------------------------------------------------
-echo "--- C. seed-rr-agent-map.sh: API key rides in a header file, never argv ---"
+echo "--- C. reconcile-rr-agent-map.sh: API key rides in a header file, never argv ---"
 SB="$(mktemp -d "${TMPDIR:-/tmp}/rr027-seed.XXXXXX")"
-mkdir -p "$SB/scripts" "$SB/shared-utils" "$SB/bin"
+mkdir -p "$SB/scripts" "$SB/shared-utils" "$SB/bin" "$SB/state"
 cp "$SEED" "$SB/scripts/seed-rr-agent-map.sh"
+cp "$RECONCILE" "$SB/scripts/reconcile-rr-agent-map.sh"
+chmod +x "$SB/scripts/reconcile-rr-agent-map.sh" "$SB/scripts/seed-rr-agent-map.sh"
+cp "$RR_LIB" "$SB/scripts/_rr_registry_lib.py"
 cp "$HELPER" "$SB/shared-utils/rescue-env.sh"
+cat > "$SB/roster.json" <<J
+{"_doc": "synthetic", "boxes": {"box-a": {"platform": "vps"}}}
+J
+cat > "$SB/box-registry.json" <<J
+{"_doc": "synthetic", "boxes": {"box-a": {"kind": "vps", "ssh_target": "root@10.0.0.1", "container": "openclaw-box-a-openclaw-1"}}}
+J
+printf 'box-a\n' > "$SB/roster.txt"
+# stub curl: records its argv, honours -o/-w the way the reconciler uses them,
+# then answers the data-table contract. The seed row maps box-a to the WRONG
+# agent, so the reconcile MUST issue a PATCH — the write path (and therefore
+# the payload transport) is really exercised.
 cat > "$SB/bin/curl" <<STUB
 #!/bin/bash
 printf '%s\n' "\$*" >> "\$CURL_ARGV_LOG"
-for a in "\$@"; do [ "\$a" = "POST" ] && { touch "$SB/posted"; printf '200'; exit 0; }; done
-if [ -f "$SB/posted" ]; then
-  printf '{"data":[{"box_slug":"box-a","local_agent_id":"dept-main"}]}'
-else
-  printf '{"data":[]}'
-fi
+out=""; wr=""; method="GET"; url=""
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -o) out="\$2"; shift 2 ;;
+    -w) wr="\$2"; shift 2 ;;
+    -X) method="\$2"; shift 2 ;;
+    -H|-G|--data-binary|--max-time|--connect-timeout) shift 2 ;;
+    -sS|-s|-S) shift ;;
+    *) url="\$1"; shift ;;
+  esac
+done
+case "\$method\$url" in
+  PATCH*rows/update) body='true'; code=200 ;;
+  POST*rows)         body='{"success":true,"insertedRows":1}'; code=200 ;;
+  *)                 body='{"data":[{"box_slug":"box-a","local_agent_id":"dept-WRONG"}]}'; code=200 ;;
+esac
+if [ -n "\$out" ]; then printf '%s' "\$body" > "\$out"; else printf '%s' "\$body"; fi
+[ -n "\$wr" ] && printf '%s' "\${wr//\\%{http_code\}/\$code}"
 exit 0
 STUB
 chmod +x "$SB/bin/curl"
 cat > "$SB/bin/ssh" <<'STUB'
 #!/bin/bash
+echo '__RR_AGENTS_BEGIN__'
 echo '[{"id":"dept-main","isDefault":true}]'
+echo '__RR_AGENTS_END__'
 STUB
 chmod +x "$SB/bin/ssh"
-printf 'box-a\n' > "$SB/roster.txt"
 CURL_ARGV_LOG="$SB/curl-argv.log" \
-PATH="$SB/bin:$PATH" N8N_API_KEY="$N8NK" \
-bash "$SB/scripts/seed-rr-agent-map.sh" "$SB/roster.txt" >/dev/null 2>&1
+N8N_API_KEY="$N8NK" N8N_HOST="http://127.0.0.1:1" PATH="$SB/bin:$PATH" \
+bash "$SB/scripts/reconcile-rr-agent-map.sh" \
+  --roster "$SB/roster.json" --boxes "$SB/box-registry.json" \
+  --lock-dir "$SB/state/lock" --state-dir "$SB/state" --no-deadline --apply >"$SB/out" 2>&1
 src=$?
-[ "$src" = 0 ] && ok "seed script completes (rc=0)" || bad "seed rc=$src"
+[ "$src" = 0 ] && ok "reconcile completes (rc=0)" || bad "reconcile rc=$src" "$(tail -3 "$SB/out")"
 if [ -f "$SB/curl-argv.log" ]; then
   grep -qF "$N8NK" "$SB/curl-argv.log" && bad "API key ON CURL ARGV (defect C still live)" || ok "API key absent from every curl argv"
-  grep -q '\-H @' "$SB/curl-argv.log" && ok "auth rides via -H @header-file" || bad "no header-file flag seen"
-  grep -q 'data-binary' "$SB/curl-argv.log" && ok "payload rides via --data-binary @file" || ok "GET-only run (no POST payload)"
+  grep -q -- '-H @' "$SB/curl-argv.log" && ok "auth rides via -H @header-file" || bad "no header-file flag seen"
+  grep -q -- 'data-binary @' "$SB/curl-argv.log" && ok "payload rides via --data-binary @file" || bad "payload not on a file"
 else
-  bad "seed made no curl call"
+  bad "reconcile made no curl call"
 fi
-# header files cleaned up
-ls "${TMPDIR:-/tmp}"/rr-seed-hdr.* >/dev/null 2>&1 && bad "seed header temp dir LEFT BEHIND" || ok "seed header temp dirs removed on exit"
+grep -qF "$N8NK" "$SB/out" && bad "API key printed into the reconcile output" || ok "API key absent from the reconcile output"
+# the deprecated seeder must DELEGATE, not run the retired insert-only logic
+CURL_ARGV_LOG="$SB/shim-argv.log" \
+N8N_API_KEY="$N8NK" N8N_HOST="http://127.0.0.1:1" PATH="$SB/bin:$PATH" \
+bash "$SB/scripts/seed-rr-agent-map.sh" "$SB/roster.txt" --boxes "$SB/box-registry.json" >"$SB/shim.out" 2>&1
+shimrc=$?
+[ "$shimrc" = 0 ] && ok "deprecated seeder delegates successfully (rc=0)" || bad "seeder shim rc=$shimrc" "$(tail -2 "$SB/shim.out")"
+grep -q 'DEPRECATED' "$SB/shim.out" && ok "deprecated seeder announces the supersession" || bad "seeder shim gave no deprecation notice"
+grep -qF "$N8NK" "$SB/shim-argv.log" 2>/dev/null && bad "seeder shim leaked the key onto argv" || ok "seeder shim keeps the key off argv too"
+grep -q 'seed_map\|seed-skip' "$SB/shim.out" && bad "shim ran the RETIRED seeder logic" || ok "shim runs no retired seeder logic of its own"
+# header files cleaned up (both prefixes: the retired and the RC-031 layout)
+ls "${TMPDIR:-/tmp}"/rr-seed-hdr.* "${TMPDIR:-/tmp}"/rr-registry.* "${TMPDIR:-/tmp}"/rr-seed-shim.* >/dev/null 2>&1 \
+  && bad "agent-map temp dir LEFT BEHIND" || ok "agent-map private temp dirs removed on exit"
 
 # negative control: a KEY-BEARING argv IS caught by this test's own detector
 cat > "$SB/leaky-curl" <<STUB
