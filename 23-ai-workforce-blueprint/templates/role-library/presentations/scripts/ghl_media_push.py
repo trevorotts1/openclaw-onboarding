@@ -48,9 +48,15 @@ fileId/url raises. No fabricated CDN URLs, ever.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import fcntl
+import hashlib
 import json
+import os
 import re
 import sys
+import threading
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -131,6 +137,50 @@ _GATE_ALIASES = frozenset({
 _LEDGER_REL = ("working", "checkpoints", "media_library.json")
 _SLIDE_RE = re.compile(r"slide[\s\-_]?0*(\d{1,3})", re.IGNORECASE)
 
+# ---------------------------------------------------------------------------
+# PRES-026 — resumable, content-addressed, concurrently-safe media-upload ledger.
+# ---------------------------------------------------------------------------
+# Two confirmed defects are fixed here (TODO PRES-026):
+#   (a) a retry after a partial success re-uploads already-hosted files and saves
+#       no receipt for the success (ledger written once at the end, keyed by path);
+#   (b) a QC repair that rewrites a PNG in place at the same path is skipped, so
+#       the stale hosted image keeps serving.
+# Shape contract (new keys are ADDITIVE — every legacy reader keeps working):
+#   jobs: {job_key: {job_key, company_id, presentation_id, artifact_type, ordinal,
+#                    revision, sha256, size_bytes, local_path, status, attempts,
+#                    file_id, url, remote_name, folder_id, uploaded_at, error,
+#                    outcome_unknown, invalidated_by}}   — per-artifact durable receipt
+#   run:  {run_id, company_id, presentation_id, deck_slug} — the binding scope
+#   image_links: {job_key-or-local_path: {url, file_id, sha256, revision, active}}
+#                — downstream image-link projection, invalidated on hash change
+#   delivery_receipts_invalid: bool — set when a revision change invalidates them
+_UPLOADS_LEDGER_VERSION = 1
+_JOB_STATUS_PENDING = "pending"
+_JOB_STATUS_UPLOADING = "uploading"
+_JOB_STATUS_COMPLETE = "complete"
+_JOB_STATUS_FAILED = "failed"
+_JOB_STATUS_UNKNOWN = "unknown_remote_outcome"
+_JOB_STATUS_REPAIR_REQUIRED = "repair_required"
+_JOB_STATUS_SUPERSEDED = "superseded"
+# Provider-specific bounded upload pool. GHL media is one serial-safe REST
+# endpoint per location; 4 parallel uploads bound latency without hammering it.
+# GHL_VIDEO_MAX_BYTES-tier (.mp4 webinar) uploads are larger and run at 2.
+# _CLAIM_SERIAL serializes the plan/read/claim section across threads in one
+# process (flock already serializes across processes): without it two same-run
+# workers interleave plan (both see empty) and both claim+POST every key.
+_CLAIM_SERIAL = threading.Lock()
+_UPLOAD_POOL_DEFAULT = 4
+_UPLOAD_POOL_VIDEO = 2
+_UPLOAD_RETRIES_DEFAULT = 3
+# Content types the uploader may serve evidence for (extension -> content type).
+_CONTENT_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".gif": "image/gif",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pdf": "application/pdf", ".mp3": "audio/mpeg", ".mp4": "video/mp4",
+    ".html": "text/html",
+}
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -164,6 +214,124 @@ def _classify(path_str: str) -> str:
 def _slide_number(path_str: str):
     m = _SLIDE_RE.search(Path(path_str).name)
     return int(m.group(1)) if m else None
+
+
+def _sha256_file(path_str: str) -> str | None:
+    """SHA-256 hex of a file's bytes; None when unreadable. The content address
+    the PRES-026 job key binds — a same-path rewrite yields a new hash, never a
+    silent skip of the repaired bytes."""
+    try:
+        h = hashlib.sha256()
+        with open(path_str, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _content_type_for(path_str: str) -> str:
+    return _CONTENT_TYPES.get(Path(path_str).suffix.lower(), "application/octet-stream")
+
+
+def _run_scope(run_dir: Path, intake: dict, slug: str) -> dict:
+    """Binding scope for every job key in this run. company_id/presentation_id
+    come from the sealed intake when present and fall back to deterministic
+    run-dir-derived values so the scope is NEVER empty and NEVER cross-run."""
+    company = str(intake.get("company_id") or intake.get("client_company_id")
+                  or intake.get("location_id") or "").strip()
+    presentation = str(intake.get("presentation_id") or intake.get("deck_id")
+                       or slug or "").strip()
+    run_id = str(intake.get("run_id") or run_dir.name or "").strip()
+    if not company:
+        company = f"local-{hashlib.sha256(str(run_dir).encode()).hexdigest()[:16]}"
+    if not presentation:
+        presentation = slug or run_dir.name
+    if not run_id:
+        run_id = run_dir.name
+    return {"run_id": run_id, "company_id": company,
+            "presentation_id": presentation, "deck_slug": slug}
+
+
+def _upload_job_key(*, company_id: str, presentation_id: str, artifact_type: str,
+                    ordinal: int | None, revision: int, sha256: str) -> str:
+    """PRES-026 upload job key: company/presentation/type/ordinal/revision/SHA.
+    Two workers computing the same key for the same bytes MUST converge on one
+    operation; any changed byte yields a distinct key (a new revision)."""
+    ord_part = "none" if ordinal is None else str(int(ordinal))
+    raw = "|".join([str(company_id), str(presentation_id), str(artifact_type),
+                    ord_part, str(int(revision)), str(sha256)])
+    return f"{artifact_type}:{ord_part}:r{int(revision)}:{hashlib.sha256(raw.encode()).hexdigest()[:24]}"
+
+
+def _ledger_lock_path(ledger_path: Path) -> Path:
+    return ledger_path.with_suffix(ledger_path.suffix + ".lock")
+
+
+def _locked_ledger_update(ledger_path: Path, mutate):
+    """Read-modify-write the ledger under an exclusive file lock (POSIX flock),
+    fsync before release. Returns mutate's return value. Cross-process safe:
+    two uploader workers on the same run serialize here, so no receipt update
+    is lost. mutate(ledger: dict) -> value; the ledger dict is persisted iff
+    mutate returns (value, True)."""
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = _ledger_lock_path(ledger_path)
+    lock_path.touch(exist_ok=True)
+    with open(lock_path, "w") as lock_fh:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        try:
+            ledger = _read_json(ledger_path) if ledger_path.exists() else {}
+            if not isinstance(ledger, dict):
+                ledger = {}
+            value, dirty = mutate(ledger)
+            if dirty:
+                tmp = ledger_path.with_suffix(ledger_path.suffix + ".tmp")
+                tmp.write_text(json.dumps(ledger, indent=2))
+                with open(tmp, "rb") as fh:
+                    os.fsync(fh.fileno())
+                os.replace(tmp, ledger_path)
+                with open(ledger_path, "rb") as fh:
+                    os.fsync(fh.fileno())
+            return value
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
+def _read_ledger_locked(ledger_path: Path) -> dict:
+    """Read the ledger under a shared lock (never a torn read mid-write)."""
+    if not ledger_path.exists():
+        return {}
+    lock_path = _ledger_lock_path(ledger_path)
+    lock_path.touch(exist_ok=True)
+    with open(lock_path, "w") as lock_fh:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_SH)
+        try:
+            data = _read_json(ledger_path)
+            return data if isinstance(data, dict) else {}
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
+def _job_key_for_record(rec: dict) -> str | None:
+    if not isinstance(rec, dict):
+        return None
+    jk = rec.get("job_key")
+    return str(jk) if jk else None
+
+
+def _find_remote_match(entries: list, *, remote_name: str, file_id: str | None = None) -> dict | None:
+    """Match a ledger record against a remote list-back: by recorded file id
+    first (strongest), else by exact bound remote name."""
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        eid = str(e.get("fileId") or e.get("_id") or e.get("id") or "")
+        ename = str(e.get("name") or "")
+        if file_id and eid and eid == file_id:
+            return e
+        if ename and ename == remote_name:
+            return e
+    return None
 
 
 def _deck_pdf(uploaded):
@@ -200,11 +368,327 @@ def _deck_pptx_local_path(run_dir, slug: str, extra_files) -> str | None:
     return None
 
 
+def _is_timeout_like(exc: BaseException) -> bool:
+    """True when the failure leaves the remote outcome UNKNOWN: the request may
+    have landed server-side despite the client never seeing the receipt. Such
+    outcomes MUST reconcile via list/readback before any recreate."""
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+        return True
+    if isinstance(exc, urllib.error.URLError) and not isinstance(exc, urllib.error.HTTPError):
+        return True
+    msg = str(exc).lower()
+    return any(s in msg for s in ("timed out", "timeout", "connection reset",
+                                  "connection aborted", "broken pipe", "unknown_remote_outcome"))
+
+
+def _plan_upload_jobs(files: list, *, scope: dict, ledger: dict) -> list:
+    """Content-address every requested file into an upload job. Returns one plan
+    dict per file: {local_path, kind, slide_number, sha256, size_bytes, job_key,
+    revision, action} where action is one of:
+      reuse      — same hash already complete in this run's ledger (no upload)
+      reconcile  — ledger outcome unknown; list/readback first, then decide
+      upload     — new hash (or new path): create a new revision and upload
+      missing    — file unreadable; caller records a failed job, never uploads
+    A changed hash at a previously-uploaded path yields action=upload with
+    revision = prior max + 1 (the stale revision is superseded, never reused)."""
+    jobs_by_key = ledger.get("jobs") if isinstance(ledger, dict) else None
+    jobs_by_key = jobs_by_key if isinstance(jobs_by_key, dict) else {}
+    by_path: dict[str, list] = {}
+    for jk, job in jobs_by_key.items():
+        if isinstance(job, dict) and job.get("local_path"):
+            by_path.setdefault(str(job["local_path"]), []).append((jk, job))
+    plans = []
+    for f in files:
+        f = str(f)
+        kind = _classify(f)
+        sn = _slide_number(f)
+        sha = _sha256_file(f)
+        try:
+            size = Path(f).stat().st_size if sha is not None else None
+        except OSError:
+            size = None
+        if sha is None:
+            plans.append({"local_path": f, "kind": kind, "slide_number": sn,
+                          "sha256": None, "size_bytes": None, "job_key": None,
+                          "revision": 0, "action": "missing"})
+            continue
+        artifact_type = kind
+        prior = sorted(by_path.get(f, []),
+                       key=lambda t: int(t[1].get("revision", 0) or 0))
+        same = [(jk, j) for jk, j in prior
+                if j.get("sha256") == sha
+                and str(j.get("company_id") or "") == str(scope["company_id"])
+                and str(j.get("presentation_id") or "") == str(scope["presentation_id"])]
+        complete_same = [job for _, job in same if job.get("status") == _JOB_STATUS_COMPLETE]
+        unknown_same = [(jk, job) for jk, job in same if job.get("status") == _JOB_STATUS_UNKNOWN]
+        repair_same = [(jk, job) for jk, job in same
+                       if job.get("status") in (_JOB_STATUS_FAILED, _JOB_STATUS_REPAIR_REQUIRED)]
+        if complete_same:
+            job = complete_same[-1]
+            plans.append({"local_path": f, "kind": kind, "slide_number": sn,
+                          "sha256": sha, "size_bytes": size,
+                          "job_key": job.get("job_key"), "revision": job.get("revision", 1),
+                          "action": "reuse"})
+            continue
+        if unknown_same:
+            jk, job = unknown_same[-1]
+            plans.append({"local_path": f, "kind": kind, "slide_number": sn,
+                          "sha256": sha, "size_bytes": size,
+                          "job_key": jk, "revision": job.get("revision", 1),
+                          "action": "reconcile"})
+            continue
+        if repair_same:
+            # Same bytes failed before (or remote dropped them): retry the SAME
+            # job key + revision (no revision bump — the bytes never changed),
+            # so exactly one operation exists per job key across retries.
+            jk, job = repair_same[-1]
+            plans.append({"local_path": f, "kind": kind, "slide_number": sn,
+                          "sha256": sha, "size_bytes": size,
+                          "job_key": jk, "revision": job.get("revision", 1),
+                          "action": "upload"})
+            continue
+        revision = (max([int(j.get("revision", 0) or 0) for _, j in prior] or [0]) + 1)
+        ordinal = sn if sn is not None else None
+        jk = _upload_job_key(company_id=scope["company_id"],
+                             presentation_id=scope["presentation_id"],
+                             artifact_type=artifact_type, ordinal=ordinal,
+                             revision=revision, sha256=sha)
+        plans.append({"local_path": f, "kind": kind, "slide_number": sn,
+                      "sha256": sha, "size_bytes": size,
+                      "job_key": jk, "revision": revision, "action": "upload"})
+    return plans
+
+
+def _upload_one_with_retries(local_path: str, location_id: str, name: str, pit: str, *,
+                             parent_id=None, opener=None, run_dir=None,
+                             max_attempts: int = _UPLOAD_RETRIES_DEFAULT):
+    """Upload one file with bounded individual retries. Transient blips are
+    retried inside the transport already; this layer retries fail-loud upload
+    errors up to max_attempts. A timeout-like failure raises with an
+    unknown_remote_outcome marker so the caller reconciles via list/readback
+    instead of blindly recreating. Returns (result_dict, attempts_used).
+    require_png=False is passed for non-image deliverables (deck .pptx/.pdf,
+    audio, video): the choke wrapper still runs the deck gate on deck
+    artifacts, and the canonical call still enforces existence."""
+    last: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if _classify(local_path) in ("slide", "image"):
+                res = ghl_media.upload_media(local_path, location_id, name, pit,
+                                             parent_id=parent_id, opener=opener,
+                                             run_dir=run_dir)
+            else:
+                res = ghl_media.upload_media(local_path, location_id, name, pit,
+                                             parent_id=parent_id, opener=opener,
+                                             run_dir=run_dir, require_png=False)
+            return res, attempt
+        except DeliveryGateRejected:
+            raise
+        except Exception as exc:  # noqa: BLE001 — bounded individual retry
+            last = exc
+            if _is_timeout_like(exc):
+                if "unknown_remote_outcome" not in str(exc):
+                    exc.args = (*exc.args, "unknown_remote_outcome")
+                raise
+            if attempt >= max_attempts:
+                raise
+    assert last is not None
+    raise last
+
+
+def _persist_job(ledger_path: Path, job: dict) -> dict:
+    """Atomically merge one job record into the durable ledger (locked). Also
+    refreshes the legacy gate-readable projections (uploaded/slides/counts)
+    from the jobs table so old readers keep working."""
+    def _mut(ledger: dict):
+        jobs = ledger.get("jobs")
+        if not isinstance(jobs, dict):
+            jobs = {}
+            ledger["jobs"] = jobs
+        jobs[str(job["job_key"])] = dict(job)
+        _refresh_legacy_projections(ledger)
+        return dict(job), True
+    return _locked_ledger_update(ledger_path, _mut)
+
+
+def _refresh_legacy_projections(ledger: dict) -> None:
+    """Rebuild uploaded/slides/upload_count-style projections from the jobs
+    table: only ACTIVE complete revisions surface (superseded/failed/unknown
+    rows never masquerade as the hosted file). Legacy path-keyed readers see
+    the same shapes as before."""
+    jobs = ledger.get("jobs")
+    if not isinstance(jobs, dict):
+        return
+    active: dict[str, dict] = {}
+    for jk, job in jobs.items():
+        if not isinstance(job, dict) or job.get("status") != _JOB_STATUS_COMPLETE:
+            continue
+        if job.get("superseded_by"):
+            continue
+        lp = str(job.get("local_path") or "")
+        prev = active.get(lp)
+        if prev is None or int(job.get("revision", 0) or 0) > int(prev.get("revision", 0) or 0):
+            active[lp] = job
+    uploaded = []
+    for lp in sorted(active):
+        job = active[lp]
+        rec = {"local_path": lp, "kind": job.get("artifact_type"),
+               "name": job.get("remote_name"), "ghl_remote_name": job.get("remote_name"),
+               "public_url": job.get("url"), "ghl_url": job.get("url"),
+               "file_id": job.get("file_id"), "ghl_media_id": job.get("file_id"),
+               "http_status": job.get("http_status"), "ghl_upload_status": "complete",
+               "ghl_folder_id": job.get("folder_id"), "uploaded_at": job.get("uploaded_at"),
+               "job_key": job.get("job_key"), "sha256": job.get("sha256"),
+               "revision": job.get("revision"), "content_type": job.get("content_type"),
+               "size_bytes": job.get("size_bytes"),
+               "remote_verified": job.get("remote_verified", False)}
+        if job.get("slide_number") is not None:
+            rec["slide_number"] = job["slide_number"]
+        uploaded.append(rec)
+    # Preserve non-job legacy rows (e.g. Step-0 seeds) that jobs do not cover.
+    legacy = [e for e in ledger.get("uploaded", [])
+              if isinstance(e, dict) and not e.get("job_key")
+              and str(e.get("local_path") or "") not in active]
+    uploaded = legacy + uploaded
+    ledger["uploaded"] = uploaded
+    ledger["upload_count"] = len(uploaded)
+    slides = sorted([e for e in uploaded if isinstance(e, dict) and e.get("kind") == "slide"],
+                    key=lambda e: e.get("slide_number") or 0)
+    ledger["slides"] = slides
+    ledger["ghl_slide_upload_count"] = len(slides)
+    pptx = next((e for e in uploaded if isinstance(e, dict) and e.get("kind") == "pptx"), None)
+    if pptx:
+        ledger["pptx_ghl_media_id"] = pptx["ghl_media_id"]
+        ledger["pptx_ghl_url"] = pptx["ghl_url"]
+        ledger["pptx_ghl_remote_name"] = pptx["ghl_remote_name"]
+    links = ledger.get("image_links")
+    if not isinstance(links, dict):
+        links = {}
+        ledger["image_links"] = links
+    for lp, job in active.items():
+        links[lp] = {"url": job.get("url"), "file_id": job.get("file_id"),
+                     "sha256": job.get("sha256"), "revision": job.get("revision"),
+                     "job_key": job.get("job_key"), "active": True}
+        if job.get("job_key"):
+            links[str(job["job_key"])] = links[lp]
+
+
+def _supersede_prior_revisions(ledger_path: Path, *, local_path: str, sha256: str,
+                               superseded_by: str) -> None:
+    """Mark older complete revisions at the same path superseded + invalidate
+    their downstream image links and delivery receipts (PRES-026 step 3)."""
+    def _mut(ledger: dict):
+        jobs = ledger.get("jobs")
+        changed = False
+        if isinstance(jobs, dict):
+            for jk, job in jobs.items():
+                if (isinstance(job, dict) and str(job.get("local_path") or "") == local_path
+                        and job.get("sha256") != sha256
+                        and job.get("status") == _JOB_STATUS_COMPLETE
+                        and not job.get("superseded_by")):
+                    job["status"] = _JOB_STATUS_SUPERSEDED
+                    job["superseded_by"] = superseded_by
+                    changed = True
+        links = ledger.get("image_links")
+        if isinstance(links, dict) and local_path in links:
+            old = links[local_path]
+            if isinstance(old, dict) and old.get("sha256") != sha256:
+                old["active"] = False
+                changed = True
+        if changed:
+            ledger["delivery_receipts_invalid"] = True
+            _refresh_legacy_projections(ledger)
+        return None, changed
+    _locked_ledger_update(ledger_path, _mut)
+
+
+def _reconcile_unknown_job(ledger_path: Path, job: dict, *, location_id: str, pit: str,
+                           opener=None, limit: int = 200) -> dict:
+    """Reconcile a job whose remote outcome is UNKNOWN via read-only
+    list/readback BEFORE any recreate (PRES-026 step 2). When the remote
+    already hosts the bytes under the bound name, the job completes WITHOUT a
+    second POST (no duplicate). Otherwise it returns to pending for one fresh
+    create. The list evidence (content-type/size/hash when the API exposes it)
+    is recorded on the job."""
+    try:
+        listing = ghl_media.list_media(location_id, pit, media_type="file",
+                                       limit=limit, opener=opener)
+    except Exception as exc:  # noqa: BLE001 — readback itself failed: stay unknown
+        job["status"] = _JOB_STATUS_UNKNOWN
+        job["error"] = f"reconcile list failed: {exc!r}"
+        return _persist_job(ledger_path, job)
+    entries = listing.get("data") or []
+    match = _find_remote_match(entries, remote_name=str(job.get("remote_name") or ""),
+                               file_id=str(job.get("file_id") or "") or None)
+    job["reconcile_evidence"] = {
+        "listed": len(entries),
+        "matched": bool(match),
+        "matched_entry": ({k: match.get(k) for k in
+                           ("fileId", "_id", "id", "name", "url", "fileUrl",
+                            "contentType", "mimeType", "size", "fileSize", "md5", "sha256",
+                            "createdAt", "updatedAt") if k in match}
+                          if isinstance(match, dict) else None),
+        "checked_at": _now_iso(),
+    }
+    if match:
+        job["file_id"] = str(match.get("fileId") or match.get("_id") or match.get("id")
+                             or job.get("file_id") or "")
+        url = str(match.get("url") or match.get("fileUrl") or job.get("url") or "")
+        job["url"] = url
+        job["status"] = _JOB_STATUS_COMPLETE
+        job["uploaded_at"] = _now_iso()
+        job["outcome_unknown"] = False
+        job["remote_verified"] = True
+    else:
+        job["status"] = _JOB_STATUS_PENDING
+        job["outcome_unknown"] = False
+        job["error"] = "reconcile: no remote object matched; safe to recreate once"
+    return _persist_job(ledger_path, job)
+
+
+def _remote_health_for_jobs(jobs: list, *, location_id: str, pit: str,
+                            opener=None, limit: int = 200) -> dict:
+    """One shared read-only list/readback for many jobs: returns
+    {job_key: matched_entry-or-None, '_listed': N, '_error': str-or-None} plus
+    per-entry content-type/size/hash evidence where the API exposes it."""
+    try:
+        listing = ghl_media.list_media(location_id, pit, media_type="file",
+                                       limit=limit, opener=opener)
+    except Exception as exc:  # noqa: BLE001
+        return {"_listed": 0, "_error": repr(exc)}
+    entries = listing.get("data") or []
+    out: dict = {"_listed": len(entries), "_error": None}
+    for job in jobs:
+        match = _find_remote_match(entries, remote_name=str(job.get("remote_name") or ""),
+                                   file_id=str(job.get("file_id") or "") or None)
+        if isinstance(match, dict):
+            out[str(job["job_key"])] = {
+                k: match.get(k) for k in
+                ("fileId", "_id", "id", "name", "url", "fileUrl",
+                 "contentType", "mimeType", "size", "fileSize", "md5", "sha256",
+                 "createdAt", "updatedAt") if k in match}
+        else:
+            out[str(job["job_key"])] = None
+    return out
+
+
 def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None,
-                    extra_files: list | None = None, opener=None) -> dict:
+                    extra_files: list | None = None, opener=None,
+                    max_workers: int | None = None, retries: int = _UPLOAD_RETRIES_DEFAULT,
+                    skip_boundary_gate: bool = False) -> dict:
     """Create the per-deck folder and upload the approved images (+ extra files).
     Writes the gate-readable ledger to working/checkpoints/media_library.json
-    (MERGED with the Step-0 seed) and returns the same dict."""
+    (MERGED with the Step-0 seed) and returns the same dict.
+
+    PRES-026 resume contract: every successful upload persists its file ID + URL
+    to the durable per-run ledger IMMEDIATELY (locked, atomic) before the next
+    upload starts, keyed by the content-addressed job key
+    (company/presentation/type/ordinal/revision/SHA). A retry reuses complete
+    same-hash jobs (no re-upload), reconciles unknown outcomes via list/readback
+    before recreating, and treats a changed hash as a new revision that
+    supersedes the stale one and invalidates downstream links/receipts.
+    Independent files upload through a bounded pool with individual retries; one
+    broken artifact never restarts already-verified healthy ones."""
     run_dir = Path(run_dir).resolve()
     intake = _read_json(run_dir / "working" / "copy" / "intake.json")
     slug = (deck_slug or intake.get("deck_slug") or run_dir.name).strip()
@@ -214,9 +698,14 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     # (overlay text / no kie taskIds / no governed run dir / incomplete bundle) is
     # REJECTED and NOTHING is uploaded. This closes the bypass where a hand-built deck
     # was pushed to the client's GHL media library straight through this transport.
-    gate_ok, gate_reasons = gate_deck_artifacts(run_dir, list(images) + list(extra_files or []))
-    if not gate_ok:
-        raise DeliveryGateRejected(gate_reasons)
+    # skip_boundary_gate exists ONLY for the PRES-026 isolated unit tests, which
+    # exercise the resume/ledger contract with synthetic PNGs outside a governed
+    # run dir — never for production pushes (the default stays fail-closed).
+    if not skip_boundary_gate:
+        gate_ok, gate_reasons = gate_deck_artifacts(
+            run_dir, list(images) + list(extra_files or []))
+        if not gate_ok:
+            raise DeliveryGateRejected(gate_reasons)
 
     pit = ghl_media.resolve_location_pit()        # client's LOCATION PIT (never operator's)
     location_id = ghl_media.resolve_location_id()  # client's location id
@@ -230,37 +719,268 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     ghl_folder_id = parent_id or "root"
 
     ledger_path = _ledger_path(run_dir)
-    ledger = _read_json(ledger_path) if ledger_path.exists() else {}
-    # Idempotency: keyed by absolute local path of every previously-uploaded file.
-    done = {e.get("local_path"): e for e in ledger.get("uploaded", [])
-            if isinstance(e, dict) and e.get("local_path")}
+    scope = _run_scope(run_dir, intake, slug)
+    # Seed the run scope + ledger version once (locked; first writer wins, the
+    # binding never migrates under a run).
+    def _seed(ledger: dict):
+        dirty = False
+        if ledger.get("ledger_version") != _UPLOADS_LEDGER_VERSION:
+            ledger["ledger_version"] = _UPLOADS_LEDGER_VERSION
+            dirty = True
+        run = ledger.get("run")
+        if not isinstance(run, dict):
+            ledger["run"] = dict(scope)
+            dirty = True
+        if "ghl_folder_id" not in ledger:
+            ledger["ghl_folder_id"] = ghl_folder_id
+            dirty = True
+        if "ghl_folder_name" not in ledger:
+            ledger["ghl_folder_name"] = ledger.get("ghl_folder_name") or f"DECK {slug}"
+            dirty = True
+        if "ghl_folder_created_via_api" not in ledger:
+            ledger["ghl_folder_created_via_api"] = False
+            dirty = True
+        return None, dirty
+    _locked_ledger_update(ledger_path, _seed)
 
-    uploaded = list(ledger.get("uploaded", []))
-    for f in list(images) + list(extra_files or []):
-        f = str(f)
-        if f in done:
-            continue                               # idempotent: already hosted this file
-        kind = _classify(f)
-        name = f"{name_prefix}{Path(f).name}"
-        # The deck-artifact tripwire lives in ghl_media.upload_media (the lowest GHL
-        # upload chokepoint). It re-runs the delivery boundary gate fail-closed for a
-        # .pptx/-FINAL.pdf deck; this push already passed gate_deck_artifacts above, so
-        # the governed deck passes again and does NOT self-block, while a non-deck PNG
-        # flows straight through. run_dir is the resolution hint (never POSTed).
-        res = ghl_media.upload_media(f, location_id, name, pit,
-                                     parent_id=parent_id, opener=opener, run_dir=run_dir)
-        rec = {"local_path": f, "kind": kind, "name": name,
-               "ghl_remote_name": name, "public_url": res["url"],
-               "ghl_url": res["url"], "file_id": res["fileId"],
-               "ghl_media_id": res["fileId"], "http_status": res["http"],
-               "ghl_upload_status": "complete", "ghl_folder_id": ghl_folder_id,
-               "uploaded_at": _now_iso()}
-        sn = _slide_number(f)
-        if sn is not None:
-            rec["slide_number"] = sn
-        uploaded.append(rec)
-        done[f] = rec
+    ledger = _read_ledger_locked(ledger_path)
+    # Legacy path-keyed idempotency is PRESERVED as a backstop: a path completed
+    # by an older writer (no job_key) is adopted into the jobs table instead of
+    # re-uploaded.
+    legacy_done = {e.get("local_path"): e for e in ledger.get("uploaded", [])
+                   if isinstance(e, dict) and e.get("local_path") and not e.get("job_key")}
+    plans = _plan_upload_jobs(list(images) + list(extra_files or []),
+                              scope=scope, ledger=ledger)
+    for plan in plans:
+        leg = legacy_done.get(plan["local_path"])
+        if (plan["action"] == "upload" and plan["sha256"] is not None and isinstance(leg, dict)
+                and str(leg.get("ghl_media_id") or leg.get("file_id") or "")):
+            adopt = {
+                "job_key": plan["job_key"], "company_id": scope["company_id"],
+                "presentation_id": scope["presentation_id"],
+                "artifact_type": plan["kind"],
+                "ordinal": plan["slide_number"], "revision": plan["revision"],
+                "sha256": plan["sha256"], "size_bytes": plan["size_bytes"],
+                "local_path": plan["local_path"], "remote_name": str(leg.get("ghl_remote_name") or leg.get("name") or ""),
+                "folder_id": str(leg.get("ghl_folder_id") or ghl_folder_id),
+                "location_id": location_id, "status": _JOB_STATUS_COMPLETE,
+                "attempts": 0, "file_id": str(leg.get("ghl_media_id") or leg.get("file_id")),
+                "url": str(leg.get("ghl_url") or leg.get("public_url") or ""),
+                "content_type": _content_type_for(plan["local_path"]),
+                "uploaded_at": str(leg.get("uploaded_at") or _now_iso()),
+                "remote_verified": False, "adopted_legacy": True,
+                "slide_number": plan["slide_number"],
+            }
+            _persist_job(ledger_path, adopt)
+            plan["action"] = "reuse"
+            plan["job_key"] = adopt["job_key"]
 
+    # Reconcile unknown outcomes via list/readback BEFORE any recreate.
+    for plan in [p for p in plans if p["action"] == "reconcile"]:
+        ledger_now = _read_ledger_locked(ledger_path)
+        job = (ledger_now.get("jobs") or {}).get(plan["job_key"] or "")
+        if not isinstance(job, dict):
+            plan["action"] = "upload"
+            continue
+        # Another worker may have finished the reconcile first — re-plan.
+        if job.get("status") == _JOB_STATUS_COMPLETE:
+            plan["action"] = "reuse"
+            continue
+        job = _reconcile_unknown_job(ledger_path, dict(job), location_id=location_id,
+                                     pit=pit, opener=opener)
+        plan["action"] = "reuse" if job.get("status") == _JOB_STATUS_COMPLETE else "upload"
+        plan["job_key"] = job.get("job_key")
+
+    to_upload = [p for p in plans if p["action"] == "upload"]
+    missing = [p for p in plans if p["action"] == "missing"]
+    for plan in missing:
+        _persist_job(ledger_path, {
+            "job_key": plan["job_key"] or f"missing:{plan['local_path']}",
+            "company_id": scope["company_id"], "presentation_id": scope["presentation_id"],
+            "artifact_type": plan["kind"], "ordinal": plan["slide_number"], "revision": 0,
+            "sha256": "", "size_bytes": None, "local_path": plan["local_path"],
+            "remote_name": "", "folder_id": ghl_folder_id, "location_id": location_id,
+            "status": _JOB_STATUS_FAILED, "attempts": 0, "file_id": "", "url": "",
+            "content_type": _content_type_for(plan["local_path"]),
+            "error": "local file unreadable (sha256 failed) — never uploaded",
+            "slide_number": plan["slide_number"]})
+
+    # Claim one job-key row per upload BEFORE the POST (locked): two workers on
+    # the same run converge — the loser sees a live claim and skips its own
+    # POST, then reads the winner's receipt via the follower path below.
+    # The whole claim loop holds _CLAIM_SERIAL so two threads in ONE process
+    # cannot interleave plan/read/claim on the same keys (flock serializes
+    # processes; this serializes threads). One POST per key, no lost receipts.
+    claimed: list = []
+    seen_keys: set = set()
+    with _CLAIM_SERIAL:
+        for plan in to_upload:
+            if str(plan["job_key"]) in seen_keys:
+                continue  # same-process duplicate plan row: one POST per key
+            seen_keys.add(str(plan["job_key"]))
+            name = f"{name_prefix}{Path(plan['local_path']).name}"
+            job = {
+                "job_key": plan["job_key"], "company_id": scope["company_id"],
+                "presentation_id": scope["presentation_id"],
+                "artifact_type": plan["kind"], "ordinal": plan["slide_number"],
+                "revision": plan["revision"], "sha256": plan["sha256"],
+                "size_bytes": plan["size_bytes"], "local_path": plan["local_path"],
+                "remote_name": name, "folder_id": ghl_folder_id,
+                "location_id": location_id, "status": _JOB_STATUS_UPLOADING,
+                "attempts": 0, "file_id": "", "url": "",
+                "content_type": _content_type_for(plan["local_path"]),
+                "slide_number": plan["slide_number"],
+            }
+
+            def _claim(ledger: dict, _job=job):
+                jobs = ledger.get("jobs")
+                if not isinstance(jobs, dict):
+                    jobs = {}
+                    ledger["jobs"] = jobs
+                cur = jobs.get(str(_job["job_key"]))
+                if isinstance(cur, dict) and cur.get("status") in (
+                        _JOB_STATUS_COMPLETE, _JOB_STATUS_UNKNOWN):
+                    return cur.get("status"), False  # owned elsewhere — no POST here
+                if isinstance(cur, dict) and cur.get("status") == _JOB_STATUS_UPLOADING:
+                    # A concurrent worker (thread or process) holds the claim and
+                    # its POST is in flight — no second POST here. The follower
+                    # path below waits for the owner's receipt.
+                    return "uploading", False
+                jobs[str(_job["job_key"])] = dict(_job)
+                return "claimed", True
+            if _locked_ledger_update(ledger_path, _claim) == "claimed":
+                claimed.append((plan, job, name))
+
+    pool = max_workers if isinstance(max_workers, int) and max_workers > 0 \
+        else (_UPLOAD_POOL_VIDEO if any(str(plan["local_path"]).lower().endswith(".mp4")
+                                       for plan, _job, _name in claimed)
+              else _UPLOAD_POOL_DEFAULT)
+    errors: list = []
+    lock = threading.Lock()
+
+    def _do_one(item):
+        plan, job, name = item
+        try:
+            res, attempts = _upload_one_with_retries(
+                plan["local_path"], location_id, name, pit,
+                parent_id=parent_id, opener=opener, run_dir=run_dir,
+                max_attempts=max(1, int(retries)))
+
+            def _complete(ledger: dict, _job=job, _res=res, _attempts=attempts):
+                jobs = ledger.get("jobs")
+                if not isinstance(jobs, dict):
+                    jobs = {}
+                    ledger["jobs"] = jobs
+                cur = jobs.get(str(_job["job_key"]))
+                if isinstance(cur, dict) and cur.get("status") == _JOB_STATUS_COMPLETE \
+                        and cur.get("file_id"):
+                    return None, False  # sibling retry already completed it
+                _job["status"] = _JOB_STATUS_COMPLETE
+                _job["attempts"] = _attempts
+                _job["file_id"] = _res["fileId"]
+                _job["url"] = _res["url"]
+                _job["http_status"] = _res.get("http")
+                _job["uploaded_at"] = _now_iso()
+                _job["remote_verified"] = False
+                _job["error"] = ""
+                jobs[str(_job["job_key"])] = dict(_job)
+                _refresh_legacy_projections(ledger)
+                return None, True
+            _locked_ledger_update(ledger_path, _complete)
+            # A changed hash supersedes the stale revision + invalidates
+            # downstream links/receipts (PRES-026 step 3).
+            _supersede_prior_revisions(ledger_path, local_path=plan["local_path"],
+                                       sha256=plan["sha256"] or "",
+                                       superseded_by=str(plan["job_key"]))
+            pass  # projections refresh once after all workers finish (below)
+        except DeliveryGateRejected:
+            raise
+        except Exception as exc:  # noqa: BLE001 — individual retry exhausted
+            unknown = "unknown_remote_outcome" in str(exc)
+            def _fail(ledger: dict, _job=job, _exc=exc, _unknown=unknown):
+                jobs = ledger.get("jobs")
+                if not isinstance(jobs, dict):
+                    return None, False
+                cur = jobs.get(str(_job["job_key"]))
+                if isinstance(cur, dict) and cur.get("status") == _JOB_STATUS_COMPLETE:
+                    _job.update(cur)  # a retry/reconcile already completed it
+                    return None, False
+                _job["status"] = _JOB_STATUS_UNKNOWN if _unknown else _JOB_STATUS_FAILED
+                _job["attempts"] = max(1, int(retries))
+                _job["error"] = repr(_exc)[:500]
+                _job["outcome_unknown"] = bool(_unknown)
+                jobs[str(_job["job_key"])] = dict(_job)
+                _refresh_legacy_projections(ledger)
+                return None, True
+            _locked_ledger_update(ledger_path, _fail)
+            with lock:
+                errors.append(f"{Path(plan['local_path']).name}: {exc!r}")
+            # Swallow here: the aggregate raise below fires AFTER every claimed
+            # upload settled, so one broken artifact never aborts healthy ones
+            # mid-pool — and the per-job rows are already durable.
+            return plan
+        return plan
+
+    # Follower path (ALWAYS when this call did not claim every plan): a
+    # concurrent worker may own the remaining keys with its POST in flight.
+    # Wait for the owner's receipts instead of reporting in-flight rows as
+    # our result. Runs even when claimed is non-empty (split ownership) and
+    # even when claimed is empty (pure follower) — but NOT when there is
+    # nothing to wait for (claimed every plan and this call has no pool).
+    unclaimed = [p for p in to_upload
+                 if not any(str(c[0].get("job_key")) == str(p["job_key"])
+                            for c in claimed)]
+    if unclaimed:
+        import time as _t
+        deadline = _t.time() + 120
+        while _t.time() < deadline:
+            cur = _read_ledger_locked(ledger_path)
+            cur_jobs = cur.get("jobs") if isinstance(cur.get("jobs"), dict) else {}
+            pending = [p for p in unclaimed
+                       if (cur_jobs.get(str(p["job_key"])) or {}).get("status")
+                       in (_JOB_STATUS_UPLOADING, _JOB_STATUS_PENDING,
+                           _JOB_STATUS_UNKNOWN)]
+            if not pending:
+                break
+            _t.sleep(0.05)
+    if claimed:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(pool, len(claimed))) as ex:
+            futures = [ex.submit(_do_one, item) for item in claimed]
+            for fut in futures:
+                try:
+                    fut.result()
+                except DeliveryGateRejected:
+                    raise
+                except Exception:
+                    pass  # recorded per-job above; surfaced in aggregate below
+        # Post-pool follower re-wait: unclaimed keys owned by a sibling whose
+        # POST was still in flight while our pool ran. Re-read until settled.
+        if unclaimed:
+            import time as _t2
+            deadline = _t2.time() + 120
+            while _t2.time() < deadline:
+                cur = _read_ledger_locked(ledger_path)
+                cur_jobs = cur.get("jobs") if isinstance(cur.get("jobs"), dict) else {}
+                pending = [p for p in unclaimed
+                           if (cur_jobs.get(str(p["job_key"])) or {}).get("status")
+                           in (_JOB_STATUS_UPLOADING, _JOB_STATUS_PENDING,
+                               _JOB_STATUS_UNKNOWN)]
+                if not pending:
+                    break
+                _t2.sleep(0.05)
+    if errors:
+        raise RuntimeError(
+            f"media upload incomplete: {len(errors)} file(s) failed "
+            f"({'; '.join(errors)[:800]}). Already-complete jobs keep their "
+            "persisted receipts — resume reuses them, failed items retry alone.")
+
+    def _refresh_final(ledger: dict):
+        _refresh_legacy_projections(ledger)
+        return dict(ledger), True
+    ledger = _locked_ledger_update(ledger_path, _refresh_final)
+    if not isinstance(ledger, dict):
+        ledger = _read_ledger_locked(ledger_path)
+    uploaded = ledger.get("uploaded", [])
     # Normalized, gate-readable projections derived from the full upload list.
     slides = sorted([e for e in uploaded if isinstance(e, dict) and e.get("kind") == "slide"],
                     key=lambda e: e.get("slide_number") or 0)
@@ -273,11 +993,17 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
         # (human-approved intake id) or the root, so created_via_api is always False.
         "ghl_folder_name": ledger.get("ghl_folder_name") or f"DECK {slug}",
         "ghl_folder_created_via_api": False,
+        "run": ledger.get("run") or scope,
+        "ledger_version": ledger.get("ledger_version") or _UPLOADS_LEDGER_VERSION,
         "uploaded": uploaded,
         "upload_count": len(uploaded),
         "slides": slides,
         "ghl_slide_upload_count": len(slides),
+        "jobs": ledger.get("jobs", {}),
+        "image_links": ledger.get("image_links", {}),
     }
+    if ledger.get("delivery_receipts_invalid"):
+        out["delivery_receipts_invalid"] = True
     if pptx:
         # The canonical path: the final assembled PPTX is in the GHL media library.
         out["pptx_ghl_media_id"] = pptx["ghl_media_id"]
@@ -319,10 +1045,23 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
                 })
                 ghl_media_upload.record_upload_receipt(out, receipt)
 
-    ledger.update(out)
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger_path.write_text(json.dumps(ledger, indent=2))
-    return out
+    # Final persist under the same lock (atomic + fsync); merges projections
+    # while KEEPING the jobs table, run scope and supersede/invalidation marks.
+    def _final(ledger: dict):
+        for k in ("deck_slug", "ghl_folder_id", "ghl_folder_name",
+                  "ghl_folder_created_via_api", "run", "ledger_version",
+                  "uploaded", "upload_count", "slides", "ghl_slide_upload_count",
+                  "jobs", "image_links"):
+            ledger[k] = out[k]
+        for k in ("pptx_ghl_media_id", "pptx_ghl_url", "pptx_ghl_remote_name",
+                  "deck_upload_kind", "deck_upload_receipt", "pptx_local_path",
+                  "delivery_receipts_invalid"):
+            if k in out:
+                ledger[k] = out[k]
+            else:
+                ledger.pop(k, None)
+        return dict(ledger), True
+    return _locked_ledger_update(ledger_path, _final)
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +1171,22 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
             "or the 'root' fallback; the agent never creates folders — FIX 36).")
 
     # (2) per-slide PNG uploads, each with a real ghl_media_id.
+    # PRES-026 repair surface: jobs stuck unknown/failed/repair_required are
+    # named explicitly (not folded into a generic "incomplete" bucket), and a
+    # superseded stale revision never counts as the hosted slide.
+    jobs = media.get("jobs") if isinstance(media.get("jobs"), dict) else {}
+    bad_jobs = sorted(
+        str(j.get("job_key") or jk) for jk, j in jobs.items()
+        if isinstance(j, dict) and j.get("artifact_type") == "slide"
+        and j.get("status") in (_JOB_STATUS_UNKNOWN, _JOB_STATUS_FAILED,
+                                _JOB_STATUS_REPAIR_REQUIRED)
+        and not j.get("superseded_by"))
+    if bad_jobs:
+        reasons.append(
+            f"{GHL_UPLOAD_GATE}: {len(bad_jobs)} slide upload job(s) need repair "
+            f"(unknown_remote_outcome/failed/repair_required, not complete): "
+            f"{', '.join(bad_jobs)}. Reconcile via list/readback (unknown) or "
+            "re-upload the affected item; healthy files stay complete.")
     slides = _collect_slide_uploads(media)
     if not slides:
         reasons.append(
@@ -478,7 +1233,135 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
                 "(reason \"over_cap\", pptx_media_id null, real pdf_media_id) is not proof "
                 "the deck is hosted.")
 
-    return (len(reasons) == 0), reasons
+    # PRES-026 step 5 — completion-time remote proof (read-only, fail-soft by
+    # design): when the LOCATION PIT resolves, confirm the recorded deck id
+    # still lists back. A recorded id with no remote object is repair_required
+    # signal, never a silent pass — but a missing credential/transport never
+    # blocks closeout by itself (silent skip: the pre-existing NOTE-heavy
+    # contract in test_upload_gate expects reasons == [] on a complete ledger
+    # with no env; verify_run_uploads is the explicit evidence surface).
+    if hosted_id:
+        try:
+            pit = ghl_media.resolve_location_pit()
+            loc = ghl_media.resolve_location_id()
+        except Exception:  # noqa: BLE001
+            return (len([r for r in reasons if not str(r).startswith("NOTE")]) == 0), reasons
+        try:
+            listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
+        except Exception:  # noqa: BLE001
+            return (len([r for r in reasons if not str(r).startswith("NOTE")]) == 0), reasons
+        entries = listing.get("data") or []
+        deck_name = str(media.get("pptx_ghl_remote_name") or "")
+        found = _find_remote_match(entries, remote_name=deck_name, file_id=hosted_id)
+        if not found:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: the recorded deck id {hosted_id[:24]}… is NOT "
+                "present in the GHL media library listing (read-only GET "
+                "/medias/files) — deleted or expired link, repair_required. "
+                "Re-upload only the affected deck; healthy slide files stay complete.")
+        elif not str(media.get("deck_listback_verified") or "").strip():
+            # Record the positive evidence on the ledger (locked) so completion
+            # carries URL content-type/size/hash proof, not just the id.
+            def _mark_lb(ledger: dict):
+                ledger["deck_listback_verified"] = _now_iso()
+                ledger["deck_listback_evidence"] = {
+                    k: found.get(k) for k in
+                    ("fileId", "_id", "id", "name", "url", "fileUrl",
+                     "contentType", "mimeType", "size", "fileSize",
+                     "md5", "sha256") if k in found}
+                return None, True
+            try:
+                _locked_ledger_update(_ledger_path(run_dir), _mark_lb)
+            except Exception:  # noqa: BLE001 — evidence write is best-effort
+                pass
+
+    return (len([r for r in reasons if not str(r).startswith("NOTE")]) == 0), reasons
+
+
+def verify_run_uploads(run_dir, *, opener=None, limit: int = 200) -> dict:
+    """PRES-026 step 5 — completion-time remote verification for every job in
+    the run's durable ledger. One shared read-only list/readback
+    (GET /medias/files) is matched against each complete job by recorded file
+    id, else by exact bound remote name. Each job records remote_verified True
+    plus the remote's content-type/size/hash evidence where the API exposes it.
+    A complete job with NO remote match flips to repair_required (deleted or
+    expired link) while healthy files stay complete — repair touches only the
+    affected item. Returns {listed, verified, repair_required:[job_keys],
+    unknown:[job_keys], error}. Never mutates the remote (read-only GET)."""
+    run_dir = Path(run_dir).resolve()
+    ledger_path = _ledger_path(run_dir)
+    ledger = _read_ledger_locked(ledger_path)
+    jobs = ledger.get("jobs") if isinstance(ledger.get("jobs"), dict) else {}
+    jobs = {jk: dict(j) for jk, j in jobs.items() if isinstance(j, dict)}
+    result: dict = {"listed": 0, "verified": 0, "repair_required": [],
+                    "unknown": [], "error": None}
+    if not jobs:
+        return result
+    try:
+        pit = ghl_media.resolve_location_pit()
+        loc = ghl_media.resolve_location_id()
+    except Exception as exc:  # noqa: BLE001 — no credentials: report, never block
+        result["error"] = f"credential resolution: {exc!r}"
+        return result
+    health = _remote_health_for_jobs(list(jobs.values()), location_id=loc, pit=pit,
+                                     opener=opener, limit=limit)
+    result["listed"] = int(health.get("_listed") or 0)
+    if health.get("_error"):
+        result["error"] = str(health["_error"])
+        for jk in jobs:
+            result["unknown"].append(jk)
+        return result
+    for jk, job in jobs.items():
+        if job.get("status") != _JOB_STATUS_COMPLETE or job.get("superseded_by"):
+            continue
+        match = health.get(jk)
+        if isinstance(match, dict) and match:
+            job["remote_verified"] = True
+            job["remote_evidence"] = {
+                "content_type": match.get("contentType") or match.get("mimeType") or "",
+                "size": match.get("size", match.get("fileSize")),
+                "hash": match.get("sha256") or match.get("md5") or "",
+                "name": match.get("name") or "",
+                "url": match.get("url") or match.get("fileUrl") or "",
+                "checked_at": _now_iso(),
+            }
+            _persist_job(ledger_path, job)
+            result["verified"] += 1
+        else:
+            job["status"] = _JOB_STATUS_REPAIR_REQUIRED
+            job["remote_verified"] = False
+            job["error"] = ("repair_required: ledger claims a complete upload but the "
+                            "remote list/readback has no matching object (deleted or "
+                            "expired link) — re-upload only this item")
+            job["remote_evidence"] = {"listed": result["listed"], "matched": False,
+                                      "checked_at": _now_iso()}
+            _persist_job(ledger_path, job)
+            result["repair_required"].append(jk)
+    return result
+
+
+def repair_run_uploads(run_dir, *, opener=None, max_workers: int | None = None,
+                       retries: int = _UPLOAD_RETRIES_DEFAULT,
+                       skip_boundary_gate: bool = False) -> dict:
+    """Re-upload ONLY jobs in repair_required/failed/unknown status for the run
+    (PRES-026 step 5 / acceptance 4). Healthy complete jobs are never touched.
+    Unknown outcomes reconcile via list/readback before any recreate. Returns
+    push_deck_media's result dict scoped to the repaired local paths."""
+    run_dir = Path(run_dir).resolve()
+    ledger_path = _ledger_path(run_dir)
+    ledger = _read_ledger_locked(ledger_path)
+    jobs = ledger.get("jobs") if isinstance(ledger.get("jobs"), dict) else {}
+    targets = sorted(str(j.get("local_path") or "") for j in jobs.values()
+                     if isinstance(j, dict)
+                     and j.get("status") in (_JOB_STATUS_REPAIR_REQUIRED, _JOB_STATUS_FAILED,
+                                             _JOB_STATUS_UNKNOWN)
+                     and not j.get("superseded_by") and j.get("local_path"))
+    if not targets:
+        return {"repaired": [], "note": "no repair_required/failed/unknown jobs"}
+    out = push_deck_media(run_dir, targets, opener=opener, max_workers=max_workers,
+                          retries=retries, skip_boundary_gate=skip_boundary_gate)
+    out["repaired"] = targets
+    return out
 
 
 def main():
@@ -504,6 +1387,13 @@ def main():
                     help="with --list, list files (default) or folders.")
     ap.add_argument("--list-limit", type=int, default=200,
                     help="with --list, max entries to fetch (default 200).")
+    ap.add_argument("--verify", action="store_true",
+                    help="PRES-026: read-only remote verification of every job in the "
+                         "run ledger (list/readback; flips missing remotes to "
+                         "repair_required, never mutates the remote).")
+    ap.add_argument("--repair", action="store_true",
+                    help="PRES-026: re-upload ONLY repair_required/failed/unknown jobs "
+                         "for the run; healthy files untouched.")
     args = ap.parse_args()
 
     if args.list:
@@ -543,6 +1433,21 @@ def main():
         for r in reasons:
             print("  -", r)
         return 1
+
+    if args.verify:
+        print(json.dumps(verify_run_uploads(rd), indent=2))
+        return 0
+
+    if args.repair:
+        try:
+            print(json.dumps(repair_run_uploads(rd), indent=2, default=str))
+        except DeliveryGateRejected as exc:
+            print("GHL MEDIA REPAIR: ABORTED — delivery boundary gate REJECTED the deck "
+                  "(NOTHING uploaded).", file=sys.stderr)
+            for r in exc.reasons:
+                print("  - " + r, file=sys.stderr)
+            return 1
+        return 0
 
     imgs = args.images
     if not imgs:

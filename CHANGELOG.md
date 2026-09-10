@@ -35,6 +35,16 @@
 - Existing planners require verified registry ownership migration before global append-route cutover; release is not evidence that every client installation or provider publication has been accepted.
 
 
+## [v25.0.31]  -  2026-09-09  -  Hotfix: 1.1.0 sheet-create export SCHEMA-1.1.0-DEFECT-01 (live cutover find)
+
+PR #1079 (merged at 1c226c2bd94ce1db66ed06ea5f3de672647813e0) — single-expression fix plus skill-35 patch bump.
+
+### Fixed
+- **HIGH — Drive Readback read `readbackQuery` from the wrong item (live cutover B find, execution 1084283).** In the 1.1.0 sheet-create export, `Verify Template Access (F14)` sits between `Validate + Build Provisioning Key` and `Drive Readback (find existing)`; its HTTP response replaces `$json`, so the Drive query went out as `q=undefined` → Google Drive 400 Invalid Value. Fixed: Drive Readback sources the query from the Validate node's output directly. No connection changes; F14 verify/repair path byte-identical. Verified: verify-exports.py 246/0, independent Sonnet QC PASS 6/6, distinct Opus review APPROVE, CI 50/50 on the merged commit. Skill 35 v3.6.0 → v3.6.1 (G3, frontmatter synced).
+
+### Deployment
+- Live cutover history: cutover B attempted (ruling 11:31:19Z), defect found live, rolled back per plan, legacy serving re-proven 200/200, packet run/deployment/n8n.json cutover_b block. Re-cutover against the fixed export follows the same GO sequence in the next deployment window.
+
 ## [v25.0.30]  -  2026-09-09  -  Social media planner W4+W5: portable deployment health, resumable setup, measured outcomes, final regression coverage
 
 Batch content: PR #1076 (W4 batch, F21/F34/F40, merged at 1d6402b5504409c33806c1098b305c338d13e310)
