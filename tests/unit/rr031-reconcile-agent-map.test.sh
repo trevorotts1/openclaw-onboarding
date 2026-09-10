@@ -628,6 +628,58 @@ rc=$?
 grep -qE 'http-404|snapshot INCOMPLETE' "$WORK/I2.out" && ok "control: the abort names the HTTP failure" || bad "control: no HTTP reason in the abort" "$(head -3 "$WORK/I2.out")"
 rm -rf "$MOCK_DIR"
 
+# ===========================================================================
+# J. THE WRAPPER CANNOT REPORT A SKIP AS SUCCESS (apply-fleet-standards 5k)
+# ===========================================================================
+echo "--- J. wrapper: a non-zero reconcile is never printed as ok ---"
+# The block under test is EXTRACTED from the shipped wrapper, never retyped, so
+# the assertions cannot drift from the real code path.
+APPLY="$REPO/scripts/apply-fleet-standards.sh"
+JSTART="$(grep -n '^# ─── 5k\.' "$APPLY" | head -1 | cut -d: -f1)"
+JEND="$(grep -n '^echo "\[apply-fleet-standards\] DONE"' "$APPLY" | head -1 | cut -d: -f1)"
+[ -n "$JSTART" ] && [ -n "$JEND" ] && [ "$JEND" -gt "$JSTART" ] \
+  && ok "wrapper: the 5k reconcile block is locatable in the shipped file" \
+  || bad "wrapper: 5k block markers not found (start=$JSTART end=$JEND)"
+mkdir -p "$WORK/J/scripts"
+sed -n "${JSTART},$((JEND-1))p" "$APPLY" > "$WORK/J/scripts/apply-5k.sh"
+bash -n "$WORK/J/scripts/apply-5k.sh" && ok "wrapper: the extracted 5k block parses standalone" || bad "wrapper: extracted block does not parse"
+# the retired shared fixed path must not come back
+grep -q 'rr-seed-apply.log' "$WORK/J/scripts/apply-5k.sh" \
+  && bad "wrapper: the shared fixed /tmp log name is back" \
+  || ok "wrapper: the shared fixed /tmp log name is gone (per-run 0700 dir instead)"
+run_wrapper() {   # run_wrapper <reconcile-rc> <stdout-lines> -> wrapper output
+  local rc="$1" out="$2"
+  cat > "$WORK/J/scripts/reconcile-rr-agent-map.sh" <<STUB
+#!/bin/bash
+printf '%s\n' "$out"
+exit $rc
+STUB
+  chmod +x "$WORK/J/scripts/reconcile-rr-agent-map.sh"
+  N8N_API_KEY="ZZsentinel" bash "$WORK/J/scripts/apply-5k.sh" 2>&1
+}
+OUT0="$(run_wrapper 0 'reconcile-rr-agent-map: changed=2 verified=1 pending=0')"
+printf '%s' "$OUT0" | grep -q 'RR_AGENT_MAP_RECONCILE ok' && ok "wrapper: rc=0 is reported ok and carries the ACTUAL counts" || bad "wrapper: rc=0 not reported ok" "$OUT0"
+printf '%s' "$OUT0" | grep -q 'changed=2' && printf '%s' "$OUT0" | grep -q 'verified=1' && printf '%s' "$OUT0" | grep -q 'pending=0' \
+  && ok "wrapper: the ok line states changed/verified/pending from the run" || bad "wrapper: ok line lacks the counts" "$OUT0"
+OUT3="$(run_wrapper 3 '')"
+printf '%s' "$OUT3" | grep -q 'deferred' && ok "wrapper: rc=3 (lock held) is reported as a DEFERRAL, not ok" || bad "wrapper: rc=3 not reported as deferral" "$OUT3"
+printf '%s' "$OUT3" | grep -qE 'RR_AGENT_MAP_RECONCILE ok' && bad "wrapper: a lock deferral was printed as ok" || ok "wrapper: a lock deferral is never printed as ok"
+OUT1="$(run_wrapper 1 'reconcile-rr-agent-map: changed=0 verified=0 pending=2
+  pending box-alice owner=operator reason=runtime-agent-unresolved
+reconcile-rr-agent-map: changed=0 verified=0 pending=2 complete=0')"
+printf '%s' "$OUT1" | grep -q 'INCOMPLETE' && ok "wrapper: rc=1 is reported INCOMPLETE (never a silent skip)" || bad "wrapper: rc=1 not reported INCOMPLETE" "$OUT1"
+printf '%s' "$OUT1" | grep -q 'pending box-alice owner=operator' && ok "wrapper: the INCOMPLETE report carries the pending entries" || bad "wrapper: INCOMPLETE report drops the pending entries" "$OUT1"
+printf '%s' "$OUT1" | grep -qE 'RR_AGENT_MAP_RECONCILE ok' && bad "wrapper: an INCOMPLETE run was printed as ok (the old exit-0-skip defect)" || ok "wrapper: an INCOMPLETE run is never printed as ok"
+# negative control on this detector: a wrapper that DID print ok on rc=1 must be caught
+cat > "$WORK/J/bad-wrapper.sh" <<'STUB'
+#!/bin/bash
+echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE ok (changed=0 verified=0 pending=2)"
+STUB
+printf '%s' "$(bash "$WORK/J/bad-wrapper.sh")" | grep -qE 'RR_AGENT_MAP_RECONCILE ok' \
+  && ok "control: the wrapper detector can fail (a skip reported as ok is recognised)" \
+  || bad "control: the wrapper detector cannot see an ok-on-pending line"
+
+
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
