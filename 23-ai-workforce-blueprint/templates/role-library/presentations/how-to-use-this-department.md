@@ -181,7 +181,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 **Slide Submitter**
 
 - *What it is for:* Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled).
-- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled)."
+- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68."
 
 **Typography Architect**
 
