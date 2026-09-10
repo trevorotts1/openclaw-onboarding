@@ -412,7 +412,7 @@ Only the correct API state strings are used: `waiting` (in progress), `success` 
 ## 13. Good Output Examples
 
 ### Example A -- Phase 4 Checkpoint (mid-run)
-phase4_checkpoint.json: model_variant = "gpt-image-2-image-to-image", smoke_test = "passed", logo_on_slides = true, slides_submitted = 60, slides_success = 45, slides_pending = 15, poll_iterations = 6, estimated_cost = $1.35, budget_ceiling = $4.50, budget_pct = 30%. No rate limit errors. No truncations.
+phase4_checkpoint.json: model_variant = "gpt-image-2-5-sunburst-image-to-image", smoke_test = "passed", logo_on_slides = true, slides_submitted = 60, slides_success = 45, slides_pending = 15, poll_iterations = 6, estimated_cost = $1.35, budget_ceiling = $4.50, budget_pct = 30%. No rate limit errors. No truncations.
 
 ### Example B -- Clean Download Log
 Slide 23: task_id = "kie-task-abc123", submitted_at = "2026-06-11T10:15:00Z", status = "success", downloaded_at = "2026-06-11T10:22:45Z", local_path = "working/renders/slide-23.png", file_size_bytes = 3847291, valid_png = true.

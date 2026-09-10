@@ -21,7 +21,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Read the MODEL MANIFEST from the master SOP. It specifies exactly two models:
-   - `gpt-image-2-image-to-image` (i2i): the DEFAULT whenever LOGO_ON_SLIDES = true in intake.json. Every call passes input_urls beginning with LOGO_URL (from media_library.json). Slides assigned archetype A5 (founder portrait) append FOUNDER_PORTRAIT_URL. Maximum 16 URLs; all public https. This is also used any time reference images are available.
+   - `gpt-image-2-5-sunburst-image-to-image` (i2i): the DEFAULT whenever LOGO_ON_SLIDES = true in intake.json. Every call passes input_urls beginning with LOGO_URL (from media_library.json). Slides assigned archetype A5 (founder portrait) append FOUNDER_PORTRAIT_URL. Maximum 16 URLs; all public https. This is also used any time reference images are available.
    - `gpt-image-2-5-sunburst-text-to-image` (t2i): used ONLY when there are no reference images at all (LOGO_ON_SLIDES = false AND no founder portrait URL and no other reference images).
 2. Read `LOGO_ON_SLIDES` from intake.json.
 3. Set `model_variant`:

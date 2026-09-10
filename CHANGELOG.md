@@ -1,3 +1,9 @@
+## [v25.0.34]  -  2026-09-10  -  Sunburst default sweep: slide-submitter SOP + example to GPT-image-2-5, prompt-bands endpoint order sunburst-first
+
+- Fix slide-submitter-sops.md:24 + slide-submitter.md:415 model_variant to gpt-image-2-5-sunburst-image-to-image (was legacy DEFAULT/example, contradicted own manifest).
+- Reorder prompt-bands.json endpoints sunburst-first in text_bearing_long, visual_long, social-planner override (legacy last, none removed); Skill 45 v2.1.1 -> v2.1.2.
+- Roll all 10 version markers v25.0.33 -> v25.0.34 (G3 repo-marker lock).
+
 ## [v25.0.33]  -  2026-09-10  -  GPT-image-2.5 migration: Kie.ai default to GPT-image-2.5 sunburst, legacy GPT-image-2 kept for 3:1/1:3/9:21
 
 - Migrate the Kie.ai text-to-image and image-to-image default to gpt-image-2-5-sunburst: default selection, registry restamps, and role-library guidance now resolve to the 2.5 sunburst canonical model IDs.
