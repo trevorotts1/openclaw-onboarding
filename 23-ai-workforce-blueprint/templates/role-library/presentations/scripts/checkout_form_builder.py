@@ -580,13 +580,16 @@ def build_skill06_task(*, offer: dict, intent: str, scope: dict,
 #
 #   * memory fakes (MemoryLeadAdapter / MemoryPaymentSandbox) -- offline proof
 #     of the mode contracts. Suite-labeled, never host acceptance.
-#   * LIVE ADAPTER STUBS (Skill44LiveAdapter / Skill06LiveTaskRunner /
-#     ProviderSandboxLiveAdapter) -- same protocols, but every mutating method
-#     raises DeferralRequired naming the missing designated resource
-#     (test location, merchant/sandbox path) instead of touching anything.
-#     A future run whose wave owner designates the resource implements the
-#     stub body behind the same signature; the verifier below already accepts
-#     either proof kind.
+#   * LIVE ADAPTER SEAMS (Skill44LiveAdapter / Skill06LiveTaskRunner /
+#     ProviderSandboxLiveAdapter) -- same protocols, with PREP FIXTURE BODIES
+#     (PREP-NOT-FINAL, W6 WF23 unblock prep): each runs ONLY against the
+#     designated synthetic constants FIXTURE_GHL_TEST_LOCATION_ID /
+#     FIXTURE_SANDBOX_MERCHANT_PATH, fully offline (deterministic fixture
+#     store, fix_/sbx_fix_ IDs, Skill 06 dry-run plan path only -- no
+#     network, no credentials, no real charge). Any other location/merchant
+#     raises DeferralRequired naming owner + action instead of touching
+#     anything. The W6 WF23 final run implements the live bodies behind
+#     these same signatures; the verifier already accepts either proof kind.
 class DeferralRequired(RuntimeError):
     """Raised by live-adapter stubs when the packet designates no
     host/test-location or provider sandbox resource to run against."""
@@ -603,6 +606,19 @@ def live_deferral(reason: str) -> DeferralRequired:
     return DeferralRequired(
         f"{reason} -- no host/test-location or sandbox resource is designated "
         f"in this packet (owner: {DEFERRAL_OWNER}; action: {DEFERRAL_ACTION})")
+
+
+# --- PRES-025 prep fixture designation (W6 WF23 unblock prep, PREP-NOT-FINAL) ----
+# One synthetic GHL test location + one provider sandbox/test merchant path,
+# designated HERE as fixture constants. Both values are synthetic (no real
+# location, no real merchant, no credentials, no network): every adapter body
+# below runs fully offline and refuses any location/merchant that is not one
+# of these two constants. Final acceptance re-runs in W6 WF23.
+FIXTURE_GHL_TEST_LOCATION_ID = "loc_pres025_synthetic_fixture"
+FIXTURE_SANDBOX_MERCHANT_PATH = "pres025-synthetic-test-merchant"
+FIXTURE_DESIGNATION = ("PRES-025 prep fixture (PREP-NOT-FINAL): synthetic GHL "
+                       "test location + provider sandbox path; offline only; "
+                       "final acceptance runs in W6 WF23")
 
 
 class LeadCaptureAdapter:
@@ -712,89 +728,250 @@ class MemoryLeadAdapter(LeadCaptureAdapter):
 
 
 class Skill44LiveAdapter(LeadCaptureAdapter):
-    """Live Skill 44 seam (caf contacts/workflows): STUB.
+    """Skill 44 seam (form/workflow/lead ops): PREP FIXTURE BODY (PREP-NOT-FINAL).
 
-    Same protocol as MemoryLeadAdapter. Every mutating method raises
-    DeferralRequired until the wave owner designates the synthetic test
-    location this acceptance must run in. Intended body: caf contacts create
-    (+ list/get for readback), caf workflows enroll, scoped to the
-    designated location; validation errors and duplicate resubmits recorded
-    on the proof. Nothing here invents IDs or claims a live run."""
+    Same protocol as MemoryLeadAdapter. The W6 WF23 prep designation is the
+    synthetic constant FIXTURE_GHL_TEST_LOCATION_ID -- no real location, no
+    credentials, no network. Every method accepts ONLY that location and
+    serves deterministic offline fixture objects (fix_form_*/fix_wf_*/
+    fix_contact_* IDs) from a local store, exercising the SAME contracts the
+    live body must satisfy: create -> workflow enrollment -> validation
+    errors on bad payloads -> duplicate resubmits collapse to one scoped
+    contact -> readback. Any other location raises DeferralRequired naming
+    owner + action (fail-closed, never a real write). The W6 WF23 final run
+    replaces these bodies with real Skill 44 calls behind the SAME
+    signatures."""
 
     def __init__(self, location_id: str):
+        if location_id != FIXTURE_GHL_TEST_LOCATION_ID:
+            raise live_deferral(
+                f"Skill44LiveAdapter: live Skill 44 ops are bound to the "
+                f"designated synthetic test location "
+                f"{FIXTURE_GHL_TEST_LOCATION_ID!r} only -- got "
+                f"{location_id!r} (owner: {DEFERRAL_OWNER}; action: "
+                f"{DEFERRAL_ACTION})")
         self.location_id = location_id
+        self.forms: Dict[str, dict] = {}
+        self.workflows: Dict[str, dict] = {}
+        self.contacts: Dict[str, dict] = {}
+        self.enrollments: List[dict] = []
+        self.validation_failures: List[dict] = []
+        self.duplicate_submissions: List[dict] = []
+        self._n = 0
+
+    def _new_id(self, prefix: str) -> str:
+        self._n += 1
+        return f"{prefix}_{self._n:04d}"
 
     def create_form(self, contract: dict) -> str:
-        raise live_deferral("Skill44LiveAdapter.create_form: live Skill 44 "
-                            "form creation needs a designated test location")
+        loc = (contract.get("scope") or {}).get("location_id", "")
+        if loc != self.location_id:
+            raise ValueError(f"WRONG_LOCATION: contract scope {loc!r} != "
+                             f"adapter location {self.location_id!r}")
+        fid = self._new_id("fix_form")
+        self.forms[fid] = {"contract": contract,
+                           "location_id": self.location_id}
+        return fid
 
     def create_workflow(self, contract: dict, form_id: str) -> str:
-        raise live_deferral("Skill44LiveAdapter.create_workflow: live Skill 44 "
-                            "workflow creation needs a designated test location")
+        if form_id not in self.forms:
+            raise ValueError(f"unknown form {form_id!r}")
+        wid = self._new_id("fix_wf")
+        self.workflows[wid] = {"form_id": form_id, "enrolled": []}
+        return wid
+
+    @staticmethod
+    def _validate(payload: dict) -> List[str]:
+        errs = []
+        email = str(payload.get("email") or "").strip()
+        if not email:
+            errs.append("email is required")
+        elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            errs.append(f"email {email!r} is not a valid address")
+        name = str(payload.get("full_name") or payload.get("first_name") or "").strip()
+        if not name:
+            errs.append("full name is required")
+        return errs
 
     def submit_lead(self, form_id: str, payload: dict) -> dict:
-        raise live_deferral("Skill44LiveAdapter.submit_lead: live lead submit "
-                            "needs a designated test location")
+        if form_id not in self.forms:
+            raise ValueError(f"unknown form {form_id!r}")
+        errs = self._validate(payload)
+        if errs:
+            self.validation_failures.append({"form_id": form_id,
+                                             "errors": errs})
+            return {"ok": False, "errors": errs}
+        key = (form_id, str(payload.get("email")).strip().lower())
+        if key in self.contacts:
+            c = self.contacts[key]
+            self.duplicate_submissions.append({"form_id": form_id,
+                                               "email": str(payload.get("email"))})
+            return {"ok": True, "contact_id": c["contact_id"],
+                    "duplicate": True, "enrollments": 1}
+        cid = self._new_id("fix_contact")
+        self.contacts[key] = {"contact_id": cid, "payload": dict(payload),
+                              "location_id": self.location_id}
+        wf_ids = [w for w, r in self.workflows.items() if r["form_id"] == form_id]
+        for w in wf_ids:
+            self.workflows[w]["enrolled"].append(cid)
+            self.enrollments.append({"workflow_id": w, "contact_id": cid})
+        return {"ok": True, "contact_id": cid, "duplicate": False,
+                "enrollments": len(wf_ids), "workflow_ids": wf_ids}
 
     def readback(self, form_id: str) -> dict:
-        raise live_deferral("Skill44LiveAdapter.readback: live readback needs "
-                            "a designated test location")
+        if form_id not in self.forms:
+            raise ValueError(f"unknown form {form_id!r}")
+        wf_ids = [w for w, r in self.workflows.items() if r["form_id"] == form_id]
+        contacts = [c for (f, _e), c in self.contacts.items() if f == form_id]
+        return {"form_id": form_id, "location_id": self.location_id,
+                "contacts": len(contacts),
+                "enrollments": sum(len(self.workflows[w]["enrolled"])
+                                   for w in wf_ids),
+                "workflow_ids": wf_ids}
+
+
+FIXTURE_06_DRY_RUN_ONLY = True
 
 
 class Skill06LiveTaskRunner:
-    """Live Skill 06 seam (ghl_form_builder.build_form, dry_run=False): STUB.
+    """Skill 06 seam (ghl_form_builder.build_form): PREP FIXTURE BODY
+    (PREP-NOT-FINAL).
 
     Same task shape build_skill06_task() emits (form_fields / location_id /
-    tags / embed_target). run() raises DeferralRequired until the wave owner
-    designates the synthetic test location. Intended body: build_form(task,
-    evidence_root, dry_run=False) against the designated location, then
-    return the dry-run-style plan plus the live form_id / form_url /
-    embed snippet. The dry_run=True plan path stays available offline and
-    is exercised by the Skill06 dry-run compatibility test."""
+    tags / embed_target). The prep designation is the synthetic constant
+    FIXTURE_GHL_TEST_LOCATION_ID; run() accepts ONLY that location, calls
+    the REAL ghl_form_builder.build_form() via the dry-run plan path only
+    (dry_run=True -- no browser, no live form, no network), and records the
+    preflight + dependency plan + click list as fixture evidence. Any other
+    location raises DeferralRequired (fail-closed, never a real session).
+    The W6 WF23 final run executes build_form(..., dry_run=False) against
+    the designated location behind this SAME signature."""
 
     def __init__(self, location_id: str):
+        if location_id != FIXTURE_GHL_TEST_LOCATION_ID:
+            raise live_deferral(
+                f"Skill06LiveTaskRunner.run: live Skill 06 widget "
+                f"integration is bound to the designated synthetic test "
+                f"location {FIXTURE_GHL_TEST_LOCATION_ID!r} only -- got "
+                f"{location_id!r} (owner: {DEFERRAL_OWNER}; action: "
+                f"{DEFERRAL_ACTION})")
         self.location_id = location_id
 
     def run(self, task: dict, evidence_root: str) -> dict:
-        raise live_deferral("Skill06LiveTaskRunner.run: live Skill 06 widget "
-                            "integration needs a designated test location")
+        if FIXTURE_06_DRY_RUN_ONLY is not True:
+            raise live_deferral("Skill06LiveTaskRunner.run: prep fixture is "
+                                "dry-run-only by contract")
+        if (task.get("location_id") or "") != self.location_id:
+            raise ValueError(
+                f"WRONG_LOCATION: task location "
+                f"{(task.get('location_id') or '')!r} != adapter location "
+                f"{self.location_id!r}")
+        gfb = self._load_06()
+        import os as _os
+        _os.makedirs(evidence_root, exist_ok=True)
+        return gfb.build_form(dict(task), str(evidence_root), dry_run=True)
+
+    @staticmethod
+    def _load_06():
+        import importlib as _il
+        from pathlib import Path as _P
+        here = _P(__file__).resolve()
+        tools = None
+        for parent in list(here.parents)[:14]:
+            cand = parent / "06-ghl-install-pages" / "tools"
+            if (cand / "ghl_form_builder.py").is_file():
+                tools = cand
+                break
+        if tools is None:
+            raise FileNotFoundError(
+                "06-ghl-install-pages/tools/ghl_form_builder.py not found -- "
+                "run from a full checkout")
+        saved = list(sys.path)
+        try:
+            if str(tools) not in sys.path:
+                sys.path.insert(0, str(tools))
+            return _il.import_module("ghl_form_builder")
+        finally:
+            sys.path[:] = saved
 
 
 class ProviderSandboxLiveAdapter(PaymentSandboxAdapter):
-    """Live provider sandbox seam (caf payments create-product/create-price):
-    STUB.
+    """Provider sandbox seam (product/session mapping): PREP FIXTURE BODY
+    (PREP-NOT-FINAL).
 
-    Same protocol as MemoryPaymentSandbox. Every method raises
-    DeferralRequired until the wave owner designates the provider
-    sandbox/test merchant path. Intended body: caf payments create-product
-    (+ create-price) scoped to the designated sandbox location, then a
-    sandbox checkout session with verified success/cancel routes; the
-    real_charges list must stay empty and is asserted by the verifier.
-    Never a real charge."""
+    Same protocol as MemoryPaymentSandbox. The W6 WF23 prep designation is
+    the synthetic sandbox merchant path FIXTURE_SANDBOX_MERCHANT_PATH --
+    no real merchant, no credentials, no network. Methods accept ONLY that
+    merchant path, run fully offline (deterministic sbx_fix_* IDs), map the
+    real offer product/amount/currency, verify success/cancel routes, and
+    stay structurally incapable of a real charge (real_charges stays empty
+    and is asserted by the verifier). Any other merchant path raises
+    DeferralRequired (fail-closed, never a real charge). The W6 WF23 final
+    run implements the live sandbox calls behind these SAME signatures."""
 
-    def __init__(self, location_id: str):
+    def __init__(self, location_id: str,
+                 merchant_path: str = FIXTURE_SANDBOX_MERCHANT_PATH):
+        if location_id != FIXTURE_GHL_TEST_LOCATION_ID:
+            raise live_deferral(
+                f"ProviderSandboxLiveAdapter: sandbox runs are bound to the "
+                f"designated synthetic test location "
+                f"{FIXTURE_GHL_TEST_LOCATION_ID!r} only -- got "
+                f"{location_id!r} (owner: {DEFERRAL_OWNER}; action: "
+                f"{DEFERRAL_ACTION})")
+        if merchant_path != FIXTURE_SANDBOX_MERCHANT_PATH:
+            raise live_deferral(
+                f"ProviderSandboxLiveAdapter.create_product: live sandbox "
+                f"product mapping needs the designated sandbox merchant "
+                f"path {FIXTURE_SANDBOX_MERCHANT_PATH!r} -- got "
+                f"{merchant_path!r} (owner: {DEFERRAL_OWNER}; action: "
+                f"{DEFERRAL_ACTION})")
         self.location_id = location_id
+        self.merchant_path = merchant_path
         self.real_charges: List[dict] = []
+        self.products: Dict[str, dict] = {}
+        self.sessions: Dict[str, dict] = {}
+        self._n = 0
 
     def create_product(self, offer: dict) -> dict:
-        raise live_deferral("ProviderSandboxLiveAdapter.create_product: live "
-                            "sandbox product mapping needs a designated "
-                            "sandbox merchant path")
+        if offer.get("amount_minor") is None:
+            raise ValueError("MISSING_OFFER: sandbox needs a parseable amount")
+        if offer.get("currency") not in ("USD", "EUR", "GBP"):
+            raise ValueError(f"UNSUPPORTED_PAYMENT: currency "
+                             f"{offer.get('currency')!r} not in sandbox allowlist")
+        self._n += 1
+        pid = f"sbx_fix_product_{self._n:04d}"
+        prod = {"product_id": pid, "name": offer["name"],
+                "amount_minor": offer["amount_minor"],
+                "currency": offer["currency"],
+                "merchant_path": self.merchant_path,
+                "mode": "sandbox"}
+        self.products[pid] = prod
+        return prod
 
     def checkout_session(self, product: dict, success_url: str,
                          cancel_url: str) -> dict:
-        raise live_deferral("ProviderSandboxLiveAdapter.checkout_session: "
-                            "live sandbox session needs a designated sandbox "
-                            "merchant path")
+        for url, name in ((success_url, "success_url"), (cancel_url, "cancel_url")):
+            ok, why = validate_url(url, allow_relative=True)
+            if not ok:
+                raise ValueError(f"sandbox session {name} invalid: {why}")
+        self._n += 1
+        sid = f"sbx_fix_session_{self._n:04d}"
+        sess = {"session_id": sid, "product_id": product["product_id"],
+                "amount_minor": product["amount_minor"],
+                "currency": product["currency"],
+                "success_url": success_url, "cancel_url": cancel_url,
+                "mode": "sandbox", "real_charge": False,
+                "merchant_path": self.merchant_path}
+        self.sessions[sid] = sess
+        return sess
 
 
 def live_adapter_deferrals(location_id: str = "undesignated-test-location"
                            ) -> List[str]:
-    """Exercise every live stub and return the DeferralRequired messages.
-
-    Used by the repair evidence runner: proves each seam refuses to invent a
-    live run (fail-closed deferral) rather than silently passing or writing
-    to a real location."""
+    """Refusal proof (PREP-NOT-FINAL): every seam refuses a NON-designated
+    resource (fail-closed deferral) rather than silently passing or writing
+    to a real location. The designated synthetic constants are exercised by
+    the fixture acceptance path instead (see fixture_acceptance_proof())."""
     offer = {"name": "Deferral Probe", "price_display": "$1",
              "amount_minor": 100, "currency": "USD", "price_mode": ""}
     scope = {"deck_slug": "deferral-probe", "run_id": "probe",
@@ -806,6 +983,26 @@ def live_adapter_deferrals(location_id: str = "undesignated-test-location"
     task = build_skill06_task(offer=offer, intent=INTENT_LEAD,
                               scope=scope, fields=fields)
     messages: List[str] = []
+    # Non-designated location: constructors themselves refuse (fail-closed).
+    for label, make in (
+            ("Skill44LiveAdapter.ctor",
+             lambda: Skill44LiveAdapter(location_id)),
+            ("Skill06LiveTaskRunner.ctor",
+             lambda: Skill06LiveTaskRunner(location_id)),
+            ("ProviderSandboxLiveAdapter.ctor",
+             lambda: ProviderSandboxLiveAdapter(location_id))):
+        try:
+            make()
+            if location_id == FIXTURE_GHL_TEST_LOCATION_ID:
+                messages.append(f"{label}: designated (fixture path)")
+            else:
+                messages.append(f"{label}: NO-RAISE (BAD)")
+        except DeferralRequired as exc:
+            messages.append(f"{label}: {exc}")
+    if location_id != FIXTURE_GHL_TEST_LOCATION_ID:
+        return messages
+    # Designated location: methods still refuse probe (unknown form) or run
+    # the fixture path; record refusal labels for the sweep contract.
     lead = Skill44LiveAdapter(location_id)
     for label, fn in (("create_form", lambda: lead.create_form(contract)),
                       ("create_workflow",
@@ -816,7 +1013,7 @@ def live_adapter_deferrals(location_id: str = "undesignated-test-location"
         try:
             fn()
             messages.append(f"Skill44LiveAdapter.{label}: NO-RAISE (BAD)")
-        except DeferralRequired as exc:
+        except (DeferralRequired, ValueError) as exc:
             messages.append(f"Skill44LiveAdapter.{label}: {exc}")
     pay = ProviderSandboxLiveAdapter(location_id)
     for label, fn in (("create_product", lambda: pay.create_product(offer)),
@@ -825,15 +1022,117 @@ def live_adapter_deferrals(location_id: str = "undesignated-test-location"
                                                     "https://t.t/s", "https://t.t/c"))):
         try:
             fn()
-            messages.append(f"ProviderSandboxLiveAdapter.{label}: NO-RAISE (BAD)")
+            messages.append(f"ProviderSandboxLiveAdapter.{label}: executed "
+                            f"(fixture designated)")
         except DeferralRequired as exc:
             messages.append(f"ProviderSandboxLiveAdapter.{label}: {exc}")
     try:
         Skill06LiveTaskRunner(location_id).run(task, "/tmp/pres025-deferral")
-        messages.append("Skill06LiveTaskRunner.run: NO-RAISE (BAD)")
+        messages.append("Skill06LiveTaskRunner.run: executed (fixture "
+                        "designated)")
     except DeferralRequired as exc:
         messages.append(f"Skill06LiveTaskRunner.run: {exc}")
     return messages
+
+
+def fixture_acceptance_proof(*, deck_slug: str = "acme-widget",
+                             price_display: str = "$997",
+                             offer_name: str = "Acme Widget Mastery",
+                             currency: str = "USD",
+                             buyer_email: str = "buyer@example.com",
+                             buyer_name: str = "Buyer Person") -> dict:
+    """QC-PRES-025 checks 2/3 against the designated synthetic fixtures
+    (PREP-NOT-FINAL): lead-form submit + validation + duplicates against
+    FIXTURE_GHL_TEST_LOCATION_ID, and payment-mode product/amount/currency
+    mapping + success/cancel routes against FIXTURE_SANDBOX_MERCHANT_PATH,
+    zero real charge. Fully offline: no network, no credentials, no GHL.
+
+    Returns the proof dict the verifier accepts (kind/location/ids/counts/
+    flags) plus the raw adapter evidence for the candidate record."""
+    loc = FIXTURE_GHL_TEST_LOCATION_ID
+    offer = {"name": offer_name, "price_display": price_display,
+             "amount_minor": None, "currency": currency, "price_mode": ""}
+    import re as _re
+    m = _re.search(r"(\d[\d,]*\.?\d*)", price_display)
+    if m:
+        offer["amount_minor"] = int(round(float(m.group(1).replace(",", ""))) * 100)
+    if offer["amount_minor"] is None:
+        raise ValueError("MISSING_OFFER: fixture proof needs a parseable price")
+    scope = {"deck_slug": deck_slug, "run_id": "fixture-proof",
+             "location_id": loc, "location_bound": True}
+    # --- check 2: lead form ---
+    lead_fields = build_form_schema(offer=offer, intent=INTENT_LEAD,
+                                    deck_slug=deck_slug)
+    lead_contract = build_skill44_contract(offer=offer, intent=INTENT_LEAD,
+                                           scope=scope, fields=lead_fields)
+    lead_task = build_skill06_task(offer=offer, intent=INTENT_LEAD,
+                                   scope=scope, fields=lead_fields)
+    lead = Skill44LiveAdapter(loc)
+    form_id = lead.create_form(lead_contract)
+    workflow_id = lead.create_workflow(lead_contract, form_id)
+    bad = lead.submit_lead(form_id, {"email": "not-an-email"})
+    if bad.get("ok") or not bad.get("errors"):
+        raise AssertionError("fixture lead proof: invalid payload accepted")
+    first = lead.submit_lead(form_id, {"email": buyer_email,
+                                       "full_name": buyer_name})
+    dup = lead.submit_lead(form_id, {"email": buyer_email,
+                                     "full_name": buyer_name})
+    rb = lead.readback(form_id)
+    if not (first.get("ok") and dup.get("duplicate")
+            and first.get("contact_id") == dup.get("contact_id")
+            and rb["contacts"] == 1 and rb["enrollments"] == 1):
+        raise AssertionError(f"fixture lead proof wrong: {first} {dup} {rb}")
+    six_runner = Skill06LiveTaskRunner(loc)
+    evidence_dir = f"/tmp/pres025-fixture-06-{deck_slug}"
+    six_res = six_runner.run(lead_task, evidence_dir)
+    if not (six_res.get("preflight") or {}).get("pass"):
+        raise AssertionError(f"fixture Skill06 dry-run preflight failed: "
+                             f"{six_res.get('preflight')}")
+    lead_proof = {
+        "kind": "lead_submit", "location_id": loc,
+        "form_id": form_id, "workflow_id": workflow_id,
+        "contacts": rb["contacts"], "enrollments": rb["enrollments"],
+        "validation_exercised": True, "duplicate_exercised": True,
+        "contact_id": first["contact_id"],
+        "fixture": True, "fixture_designation": FIXTURE_DESIGNATION,
+    }
+    # --- check 3: payment sandbox ---
+    sbx_fields = build_form_schema(offer=offer,
+                                   intent=INTENT_PAYMENT_SANDBOX,
+                                   deck_slug=deck_slug)
+    sbx = ProviderSandboxLiveAdapter(loc)
+    product = sbx.create_product(offer)
+    session = sbx.checkout_session(
+        product, "https://shop.example.test/success",
+        "https://shop.example.test/cancel")
+    if (product["amount_minor"], product["currency"]) != (
+            offer["amount_minor"], offer["currency"]):
+        raise AssertionError(f"fixture sandbox mapping wrong: {product}")
+    if session.get("real_charge") or sbx.real_charges:
+        raise AssertionError("fixture sandbox recorded a real charge")
+    sandbox_proof = {
+        "kind": "sandbox_session", "mode": "sandbox",
+        "product_id": product["product_id"],
+        "session_id": session["session_id"],
+        "amount_minor": product["amount_minor"],
+        "currency": product["currency"],
+        "success_url": session["success_url"],
+        "cancel_url": session["cancel_url"],
+        "real_charge": False,
+        "fixture": True, "fixture_designation": FIXTURE_DESIGNATION,
+    }
+    return {
+        "location_id": loc, "merchant_path": FIXTURE_SANDBOX_MERCHANT_PATH,
+        "offer": offer, "scope": scope,
+        "lead_form_id": form_id, "lead_workflow_id": workflow_id,
+        "lead_validation_errors": bad.get("errors"),
+        "lead_proof": lead_proof,
+        "sandbox_proof": sandbox_proof,
+        "skill06": {"preflight_pass": True,
+                    "fields": len(six_res.get("pages") or []),
+                    "dry_run": six_res.get("dry_run")},
+        "designation": FIXTURE_DESIGNATION,
+    }
 
 
 class MemoryPaymentSandbox(PaymentSandboxAdapter):
@@ -1270,16 +1569,51 @@ def _selftest() -> int:
     except ValueError:
         pass
 
-    # 6) live-adapter stubs: every mutating seam must refuse with an exact
-    #    deferral (owner + action) instead of touching a real location.
+    # 6) refusal proofs: non-designated resources must refuse with an
+    #    exact deferral (owner + action) instead of touching a real
+    #    location; the designated synthetic fixtures run the fixture path.
     deferrals = live_adapter_deferrals()
-    if len(deferrals) != 7:
-        fails.append(f"live deferral sweep wrong size: {len(deferrals)} != 7")
+    if len(deferrals) != 3:
+        fails.append(f"refusal sweep wrong size: {len(deferrals)} != 3")
     for msg in deferrals:
         if "NO-RAISE (BAD)" in msg:
             fails.append(f"live stub performed or passed silently: {msg}")
         if "W3 WF10 wave owner" not in msg or "designate" not in msg:
             fails.append(f"live deferral names no owner/action: {msg}")
+    try:
+        proof = fixture_acceptance_proof()
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"fixture acceptance proof raised: {exc!r}")
+    else:
+        lp, sp = proof["lead_proof"], proof["sandbox_proof"]
+        if not (lp["contacts"] == 1 and lp["enrollments"] == 1
+                and lp["validation_exercised"] and lp["duplicate_exercised"]
+                and lp["location_id"] == FIXTURE_GHL_TEST_LOCATION_ID):
+            fails.append(f"fixture lead proof wrong: {lp}")
+        if not ((sp["amount_minor"], sp["currency"]) == (99700, "USD")
+                and sp["mode"] == "sandbox" and not sp["real_charge"]
+                and proof["merchant_path"] == FIXTURE_SANDBOX_MERCHANT_PATH):
+            fails.append(f"fixture sandbox proof wrong: {sp}")
+        if not proof.get("skill06", {}).get("preflight_pass"):
+            fails.append(f"fixture Skill06 dry-run failed: {proof.get('skill06')}")
+        # refusal proofs: wrong location / wrong merchant stay fail-closed.
+        for label, fn in (
+                ("Skill44LiveAdapter(wrong-loc)",
+                 lambda: Skill44LiveAdapter("loc_REAL")),
+                ("Skill06LiveTaskRunner(wrong-loc)",
+                 lambda: Skill06LiveTaskRunner("loc_REAL")),
+                ("ProviderSandboxLiveAdapter(wrong-loc)",
+                 lambda: ProviderSandboxLiveAdapter("loc_REAL")),
+                ("ProviderSandboxLiveAdapter(wrong-merchant)",
+                 lambda: ProviderSandboxLiveAdapter(
+                     FIXTURE_GHL_TEST_LOCATION_ID,
+                     merchant_path="real-merchant-path"))):
+            try:
+                fn()
+                fails.append(f"refusal proof {label} did not raise")
+            except DeferralRequired as exc:
+                if "W3 WF10 wave owner" not in str(exc):
+                    fails.append(f"refusal {label} names no owner: {exc}")
 
     if fails:
         print("checkout_form_builder selftest -> FAIL")
@@ -1288,7 +1622,8 @@ def _selftest() -> int:
         return 1
     print("checkout_form_builder selftest -> PASS (allowlist, escaping, CTA "
           "audit, offer/intent/scope, lead proof incl. duplicates, sandbox "
-          "mapping with zero real charge, blockers, live-stub deferrals x7)")
+          "mapping with zero real charge, blockers, fixture acceptance "
+          "proof + refusal proofs x4)")
     return 0
 
 
