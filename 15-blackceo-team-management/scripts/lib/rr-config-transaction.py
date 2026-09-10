@@ -143,6 +143,25 @@ def default_workspace(root):
     return os.path.join(home, ".openclaw", "workspaces", "remote-rescue")
 
 
+def existing_agent_workspace(obj, agent_id="remote-rescue"):
+    """The workspace the CONFIG already declares, if any. This is the mount the
+    box is actually using, so it outranks a path derived from the root."""
+    agents = obj.get("agents")
+    if not isinstance(agents, dict):
+        return None
+    entries = agents.get("entries")
+    if isinstance(entries, dict):
+        e = entries.get(agent_id)
+        if isinstance(e, dict) and e.get("workspace"):
+            return str(e["workspace"])
+    lst = agents.get("list")
+    if isinstance(lst, list):
+        for e in lst:
+            if isinstance(e, dict) and e.get("id") == agent_id and e.get("workspace"):
+                return str(e["workspace"])
+    return None
+
+
 def path_has_spaces(path):
     return any(" " in part for part in path.split(os.sep))
 
@@ -170,20 +189,24 @@ def classify_mount(path, explicit, flavors):
 
 
 def ensure_workspace(path, explicit, flavors):
-    """Create when missing. Never joins, never mirrors, the owner workspace."""
+    """Create when missing. Never joins, never mirrors, the owner workspace.
+
+    Returns (state, created) where `created` means THIS RUN made the directory.
+    A pre-existing mount is `existing`/`existing-valid-custom` with created=False
+    — reporting "created" for a directory that was already there is the same
+    class of untruthful state as reporting "missing" for one that now exists.
+    """
     if path_has_spaces(path):
+        existed = os.path.isdir(path)
         os.makedirs(path, mode=0o700, exist_ok=True)
-        return "path-resolved-and-created-space-safe", True
+        return "path-resolved-and-created-space-safe", (not existed)
     state = classify_mount(path, explicit, flavors)
     if state == "invalid-file":
         return "invalid-file", False
     if state == "missing":
         os.makedirs(path, mode=0o700, exist_ok=True)
-        # Report what the directory IS NOW, not what it was before the write.
-        # Reporting "missing" for a directory this run just created is exactly
-        # the class of untruthful state RR-032 exists to remove.
         return "created", True
-    return state, True
+    return state, False
 
 
 def apply_keys(obj, action, destination):
@@ -482,32 +505,6 @@ def run(req):
         return report
     t.append({"from": "start", "to": "root-resolved", "cause": "resolve_oc_root:" + root_source})
 
-    check_only = bool(req.get("check_only"))
-    ws_explicit = bool(req.get("workspace_explicit")) and bool(req.get("workspace"))
-    ws = req["workspace"] if req.get("workspace") else default_workspace(root)
-    report["workspace"] = ws
-    if check_only:
-        ws_state, ws_created = classify_mount(ws, ws_explicit, req["flavors"]), False
-    else:
-        ws_state, ws_created = ensure_workspace(ws, ws_explicit, req["flavors"])
-    report["mount_state"] = ws_state
-    if ws_state == "invalid-file":
-        t.append({"from": "root-resolved", "to": "refused", "cause": "workspace-path-is-not-a-directory"})
-        report["state"] = "refused"
-        report["notes"].append("workspace path exists and is not a directory; refused, nothing created")
-        report["rc"] = 2
-        return report
-    if ws_state == "path-resolved-and-created-space-safe":
-        t.append({"from": "root-resolved", "to": "workspace-path-space-safe",
-                  "cause": "path contains spaces; resolved and created without word splitting"})
-    elif ws_state == "existing-valid-custom":
-        t.append({"from": "root-resolved", "to": "workspace-custom-retained",
-                  "cause": "valid custom mount retained, not overwritten"})
-    else:
-        t.append({"from": "root-resolved",
-                  "to": "workspace-created" if ws_created else "workspace-present",
-                  "cause": ws_state})
-
     # ---- read destination -------------------------------------------------
     cfg = req["cfg"]
     if not os.path.exists(cfg):
@@ -526,6 +523,50 @@ def run(req):
     report["destination"] = destination
     report["alias"] = destination
     t.append({"from": "root-resolved", "to": state, "cause": note})
+
+    # ---- workspace --------------------------------------------------------
+    # Resolved AFTER the config is read: a mount the config already declares is
+    # the one the box is using, and outranks a path derived from the root. The
+    # report must name the workspace this run actually used.
+    check_only = bool(req.get("check_only"))
+    ws_explicit = bool(req.get("workspace_explicit")) and bool(req.get("workspace"))
+    declared_ws = None if ws_explicit else existing_agent_workspace(obj)
+    if ws_explicit:
+        ws = req["workspace"]
+        ws_source = "explicit-argument"
+    elif declared_ws:
+        ws = declared_ws
+        ws_source = "declared-by-config"
+    elif req.get("workspace"):
+        ws = req["workspace"]
+        ws_source = "resolved-from-root"
+    else:
+        ws = default_workspace(root)
+        ws_source = "resolved-from-root"
+    report["workspace"] = ws
+    report["workspace_source"] = ws_source
+    if check_only:
+        ws_state, ws_created = classify_mount(ws, ws_explicit, req["flavors"]), False
+    else:
+        ws_state, ws_created = ensure_workspace(ws, ws_explicit, req["flavors"])
+    report["mount_state"] = ws_state
+    if ws_state == "invalid-file":
+        t.append({"from": state, "to": "refused", "cause": "workspace-path-is-not-a-directory"})
+        report["state"] = "refused"
+        report["notes"].append("workspace path exists and is not a directory; refused, nothing created")
+        report["rc"] = 2
+        return report
+    if ws_state == "path-resolved-and-created-space-safe":
+        t.append({"from": state, "to": "workspace-path-space-safe",
+                  "cause": "path contains spaces; resolved and created without word splitting"})
+    elif ws_state == "existing-valid-custom":
+        t.append({"from": state, "to": "workspace-custom-retained",
+                  "cause": "the config's own declared mount is used and retained"})
+    else:
+        t.append({"from": state,
+                  "to": "workspace-created" if ws_created else "workspace-present",
+                  "cause": ws_state + (":" + ws_source if ws_source == "declared-by-config" else "")})
+
 
     # ---- decide -----------------------------------------------------------
     explicit_dest = str(request).strip()
@@ -625,10 +666,10 @@ def run(req):
         candidate, route_changes, refusal = reconcile_routing(
             candidate,
             "remote-rescue",
-            req.get("workspace"),
+            ws,
             [str(x) for x in (req.get("operator_ids") or [])],
             owner_agent_id=req.get("owner_agent_id") or "main",
-            workspace_explicit=bool(req.get("workspace_explicit")),
+            workspace_explicit=bool(ws_explicit),
         )
         if refusal:
             t.append({"from": outcome, "to": "refused", "cause": refusal})
