@@ -72,11 +72,16 @@ command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required" >&2; exit
 _OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
 [ -d "/data/.openclaw" ] && _OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
 if [ -f "$_OC_SECRETS_ENV" ]; then
+    # Snapshot the currently-exported vars so the secrets file can only ADD
+    # credentials, never overwrite an already-set value (an explicit env value --
+    # e.g. a caller's KIE_API_KEY="" presence probe -- must win over the file).
+    _OC_PREV_EXPORTS="$(export -p)"
     set -a; # shellcheck disable=SC1090
     source "$_OC_SECRETS_ENV" 2>/dev/null || true
     set +a
+    eval "$_OC_PREV_EXPORTS"
 fi
-unset _OC_SECRETS_ENV
+unset _OC_SECRETS_ENV _OC_PREV_EXPORTS
 
 if [ "$MODE" = "gate_credential" ]; then
     CAF_CRED="$SELF_DIR/scripts/caf_credential_gate.py"
@@ -348,19 +353,23 @@ for name, t in tiers_tmpl.items():
         # S7 covers route through cover_render.py / Kie (never model_router).
         # Gate on KIE_API_KEY only: the IMAGE tier is a Kie PORTRAIT route that does
         # NOT consume an inventory image_generation model. Resolve whenever KIE_API_KEY
-        # is set; hold with a WARNING + absent_behavior when it is not.
+        # is set; FAIL CLOSED (exit 2) when it is not -- IMAGE is a REQUIRED tier and
+        # the header contract is fail-closed on an unresolved REQUIRED tier, so the
+        # S7 cover HOLD is surfaced now (at resolve / GATE 1b), never as a silently
+        # degraded map.
         kie_configured = os.environ.get("KIE_API_KEY", "").strip() != ""
         if not kie_configured:
-            # Degrade, never fail: the S7 cover HOLDS (as this comment documents);
-            # the rest of the pipeline is unaffected. IMAGE goes to
-            # unresolved_optional so the box resolves with a warning instead of
-            # exiting 2 on a missing image key.
-            unresolved_optional.append(name)
+            # The absent_behavior WARNING documents what would hold (S7 cover),
+            # then the resolver fails closed BEFORE any map is written.
             print("WARNING: IMAGE tier unresolved -- KIE_API_KEY not set. "
                   "S7 cover generation will HOLD: %s"
                   % t.get("absent_behavior", "cover ships as a prompt doc."),
                   file=sys.stderr)
-            continue
+            print("AF-AE-UNRESOLVED-MODELMAP: REQUIRED tier IMAGE unresolved -- "
+                  "KIE_API_KEY not set. The engine never resolves a REQUIRED tier "
+                  "to a substituted default; set the client's OWN Kie key and re-run.",
+                  file=sys.stderr)
+            sys.exit(2)
         # Derive the native model label from the client's image-generation inventory
         # model if present; otherwise use the Kie provider label (the IMAGE tier is a
         # Kie PORTRAIT route that does not consume an LLM model).
