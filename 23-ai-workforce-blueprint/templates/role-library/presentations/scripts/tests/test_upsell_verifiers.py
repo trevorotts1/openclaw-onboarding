@@ -672,27 +672,64 @@ class TestFix17FrozenArchiveRunner:
 
 
 class TestLiveAdapterDeferralsFailClosed:
-    """Repair item (b), seam half: every live seam refuses without a
-    designated test location / sandbox path -- exact owner + action, never a
-    silent pass, never a real write."""
+    """Live-seam fail-closed contract: every one of the seven seams now carries
+    a REAL body, so the property re-proven here is that those bodies still
+    REFUSE -- never invent an id, never silently pass, never write -- when no
+    credential is bound and no resource is designated.
+
+    This block is SUITE-ONLY and OFFLINE: it must never open a browser, never
+    touch the network, and never stand in for host acceptance. Host proof for
+    acceptance 2/3 lives in the PRES-025 host receipts, not here."""
 
     def test_all_seven_live_seams_raise_deferral(self):
         messages = cfb.live_adapter_deferrals()
         assert len(messages) == 7, messages
         for msg in messages:
             assert "NO-RAISE (BAD)" not in msg, msg
-            assert "W3 WF10 wave owner" in msg, msg
-            assert "designate" in msg, msg
+            low = msg.lower()
+            assert "refus" in low or "no pit is bound" in low, msg
 
-    def test_deferral_error_type_is_distinct(self):
+    def test_all_seven_seams_now_carry_live_bodies(self):
+        seams = cfb.live_adapter_seam_status()
+        assert len(seams) == 7, seams
+        assert all(s["implemented_live"] for s in seams), seams
+        assert {s["seam"] for s in seams} == {
+            "Skill44LiveAdapter.create_form",
+            "Skill44LiveAdapter.create_workflow",
+            "Skill44LiveAdapter.submit_lead",
+            "Skill44LiveAdapter.readback",
+            "Skill06LiveTaskRunner.run",
+            "ProviderSandboxLiveAdapter.create_product",
+            "ProviderSandboxLiveAdapter.checkout_session",
+        }, seams
+
+    def test_live_refusal_type_is_distinct(self):
         assert issubclass(cfb.DeferralRequired, RuntimeError)
+        # LiveRefused must remain catchable AS the fail-closed deferral type, so
+        # adding a live body can never relax a caller's refusal handling.
+        assert issubclass(cfb.LiveRefused, cfb.DeferralRequired)
+        unbound = cfb.LiveTransport(cfb.resolve_pit({}))
         try:
-            cfb.Skill44LiveAdapter("loc_probe").submit_lead(
-                "form_probe", {"email": "probe@example.com"})
+            cfb.Skill44LiveAdapter("loc_probe", transport=unbound,
+                                   driver=cfb._RefusingDriver()).submit_lead(
+                "form_probe", {"email": "probe@example.com",
+                               "full_name": "probe"})
         except cfb.DeferralRequired as exc:
-            assert "designated test location" in str(exc)
+            assert "refus" in str(exc).lower(), str(exc)
         else:
             raise AssertionError("Skill44LiveAdapter.submit_lead must defer")
+
+    def test_no_credential_is_never_assumed(self):
+        """An unbound credential resolves to '' -- never to a hardcoded default."""
+        assert cfb.resolve_pit({}) == ""
+
+    def test_synthetic_prefix_is_forced_on_every_live_name(self):
+        for raw in ("ZHC acme Checkout", "checkout", "PRES025-SYNTHETIC-TEST-x"):
+            name = cfb.synthetic_name(raw)
+            assert name.startswith(cfb.SYNTHETIC_PREFIX), name
+        # idempotent: an already-prefixed name is not double-prefixed
+        once = cfb.synthetic_name("checkout")
+        assert cfb.synthetic_name(once) == once
 
 
 class TestSkill06DryRunCompatibility:
