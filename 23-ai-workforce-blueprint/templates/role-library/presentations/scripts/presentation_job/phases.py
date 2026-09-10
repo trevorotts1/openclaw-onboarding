@@ -747,37 +747,6 @@ class Engine:
             except Exception:  # noqa: BLE001
                 pass
 
-    # -- PRES-052: supervised relay helper ----------------------------------
-    def _relay_emit(self, kind: str, text: str, stage: str = "") -> None:
-        """PRES-052: emit one supervised-relay row under the state lock.
-
-        Best-effort by contract: the relay module never raises, and this
-        wrapper swallows even an import failure so an old/new module skew
-        keeps the pre-fix engine behavior byte-for-byte.
-        """
-        try:
-            with self._state_lock:
-                try:
-                    from . import relay as _relay
-                except ImportError:
-                    import relay as _relay  # type: ignore[no-redef]
-                _relay.emit(self.state, self.run_dir, kind, text,
-                            stage=stage, store=self.store)
-        except Exception:  # noqa: BLE001 — never let the relay break a phase
-            pass
-
-    def _relay_session_open(self) -> None:
-        """PRES-052: open the supervised relay session at job start."""
-        try:
-            with self._state_lock:
-                try:
-                    from . import relay as _relay
-                except ImportError:
-                    import relay as _relay  # type: ignore[no-redef]
-                _relay.session_open(self.state, self.run_dir, store=self.store)
-        except Exception:  # noqa: BLE001 — never let the relay break a run
-            pass
-
     # -- FIX 30: engine-written attestations --------------------------------
     def _engine_attest(self, phase: Phase, substance_verified: bool,
                        shas: Dict[str, str], method: str,
@@ -1453,10 +1422,6 @@ class Engine:
 
             start_msg = self._render_client_report_msg(phase, "start")
             self.report.to_requester("progress", start_msg)
-            # PRES-052: supervised relay emits at stage time, from job start —
-            # stage/waiting/retrying/progress visible before final output.
-            self._relay_emit("stage_start", f"{phase.id} starting — {start_msg}",
-                             stage=phase.id)
 
         # PRES-031: build the canonical scoped persona context (client /
         # company / presentation IDs, audience, topic, offer, owner voice,
@@ -1679,10 +1644,6 @@ class Engine:
             done_msg = self._render_client_report_msg(phase, "done")
             with self._state_lock:
                 self.report.to_requester("progress", done_msg)
-                # PRES-052: stage completion visible in the supervised view.
-                self._relay_emit("stage_done",
-                                 f"{phase.id} complete — {done_msg}",
-                                 stage=phase.id)
                 if self.board:
                     self.board.phase_progress(phase.id, done_msg)
                     # Option B: the phase's verifier has already passed by this point
@@ -2116,11 +2077,6 @@ class Engine:
                     f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
                     f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
                     phase_id=phase.id, reason=reason)
-                # PRES-052: retrying state visible in the supervised view.
-                self._relay_emit("retrying",
-                                 f"{phase.id} retrying — attempt {attempt} of "
-                                 f"{heal.HEAL_CAP_TRANSIENT} ({reason}).",
-                                 stage=phase.id)
             if attempt < heal.HEAL_CAP_TRANSIENT:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
 
@@ -2888,12 +2844,6 @@ class Engine:
                         "progress",
                         f"Still waiting on {phase.id} ({phase.owning_role}). "
                         f"About {int(remaining/60)} minutes before I flag it.")
-                    # PRES-052: active progress before final output.
-                    self._relay_emit("progress",
-                                     f"Still waiting on {phase.id} "
-                                     f"({phase.owning_role}) — about "
-                                     f"{int(remaining/60)} minutes before it is flagged.",
-                                     stage=phase.id)
             if now - last_cp >= checkpoint_every:
                 last_cp = now
                 self._checkpoint(phase.id, status=PHASE_STATUS_RUNNING,
@@ -3153,11 +3103,6 @@ class Engine:
             # throttle unconditionally, so the ask is always on the wire exactly
             # once per run (the pick_request_sent_at stamp guards re-entry).
             self.report.to_requester("ack", msg)
-            self._relay_emit("waiting_configuration",
-                             f"{phase.id} waiting on configuration — style pick "
-                             f"requested ({len(variants) or 3} variants). "
-                             "Deck renders only after the owner pick.",
-                             stage=phase.id)
             self._checkpoint(phase.id, pick_request_sent_at=utcnow())
             self.report.event(
                 "phase.style_pick.request_delivered",
@@ -3719,9 +3664,6 @@ class Engine:
                 "ack",
                 f"Got it. Building your presentation in {n} steps. "
                 "I will tell you as each step finishes, and immediately if anything stops.")
-            # PRES-052: supervised session opens at job start — the viewer is
-            # live from here, not at finish.
-            self._relay_session_open()
 
         if self.board:
             deck_slug = self.run_dir.name

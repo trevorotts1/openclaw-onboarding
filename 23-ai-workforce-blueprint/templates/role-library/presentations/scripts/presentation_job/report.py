@@ -194,22 +194,13 @@ class Reporter:
     def to_requester(self, kind: str, message: str, *,
                      phase_id: Optional[str] = None,
                      reason: Optional[str] = None) -> None:
-        """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours.
-
-        PRES-052: every dispatch outcome is ALSO observed into the supervised
-        relay ledger (presentation_job.relay.observe_dispatch) with the
-        phase as the stage — the relay is the live, acknowledged view active
-        from job start; state["undeliverable"] remains the sweeper's retry
-        queue. The relay call is best-effort and never changes the
-        dispatch/retry semantics below.
-        """
+        """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours."""
         req = self.state.get("requester") or {}
         chat_id = req.get("chat_id")
         self.event(f"report.{kind}", message, requester=bool(chat_id))
         if not chat_id:
             self.event("report.undeliverable",
                        f"no requester chat_id on this job -- {kind} message not sent")
-            self._relay_observe(kind, message, "fail", phase_id)
             return
 
         should_send = self._throttle_decision(kind, message, phase_id, reason)
@@ -220,7 +211,6 @@ class Reporter:
             return
 
         result = self._dispatch3(chat_id, kind, message)
-        self._relay_observe(kind, message, result.value, phase_id)
         if result is CheckResult.PASS:
             self._stamp_sent(kind)
             if kind == "blocked" and phase_id and reason:
@@ -328,29 +318,6 @@ class Reporter:
             if m in message:
                 return True
         return False
-
-    def _relay_observe(self, kind: str, message: str, outcome: str,
-                       phase_id: Optional[str]) -> None:
-        """PRES-052: mirror one dispatch outcome into the supervised relay.
-
-        Best-effort by contract: the relay module never raises, and this
-        wrapper swallows even an import failure (a deployment carrying an
-        old report.py beside a new relay.py, or vice versa, keeps its
-        pre-fix notify behavior byte-for-byte).
-        """
-        try:
-            try:
-                from . import relay as _relay
-            except ImportError:
-                import relay as _relay  # type: ignore[no-redef]
-            run_dir = self.state.get("run_dir") or ""
-            if not run_dir:
-                return
-            _relay.observe_dispatch(self.state, run_dir, kind, message,
-                                    outcome, stage=phase_id or "",
-                                    store=self.store)
-        except Exception:  # noqa: BLE001 — never let the relay break notify
-            pass
 
     def _dispatch3(self, chat_id: str, kind: str, message: str) -> CheckResult:
         # U069: delegates to the module-level dispatch3() -- do not re-derive

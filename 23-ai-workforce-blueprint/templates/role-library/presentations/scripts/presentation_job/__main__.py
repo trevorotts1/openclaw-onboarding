@@ -140,12 +140,6 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--capacity", action="store_true",
                    help="WORK-ITEM-12: run the 9Router capacity probe and print the report; "
                         "exit 0. Read-only measurement, never simulated.")
-    m.add_argument("--relay-status", action="store_true",
-                   help="PRES-052: print the supervised relay view for --run-dir "
-                        "(per-stage delivery state, transport readiness by "
-                        "probe, and the honest client-notified verdict). "
-                        "Read-only: reads files only, takes no lock — safe to "
-                        "poll from job start.")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
@@ -436,20 +430,6 @@ def cmd_status(args) -> int:
     if undelivered:
         print(f"UNDELIVERABLE messages: {len(undelivered)} "
               "(the requester was NOT told — see F2)")
-    return EXIT_OK
-
-
-def cmd_relay_status(args) -> int:
-    """PRES-052: print the supervised relay view. Read-only: no lock, no
-    lease, no state mutation — safe to poll from job start while the engine
-    runs. Exit 0 always (a viewer that errors on an empty/new run would be
-    useless as a supervisor)."""
-    from . import relay as _relay
-    run_dir = args.run_dir.expanduser().resolve()
-    try:
-        print(_relay.render_status(run_dir), flush=True)
-    except Exception as exc:  # noqa: BLE001 — viewer never fails loudly
-        print(f"relay-status unavailable for {run_dir}: {exc}", flush=True)
     return EXIT_OK
 
 
@@ -910,8 +890,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_workingset(args, scripts_dir)
     if args.status:
         return cmd_status(args)
-    if getattr(args, "relay_status", False):
-        return cmd_relay_status(args)
     if args.sweep_undeliverable:
         return cmd_sweep_undeliverable(args)
     # FIX 20: repin BEFORE the RunLock block — that block verify_pin()s against
@@ -938,8 +916,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     lease_hb = None
     _signal_handlers_prev = []  # FIX 105: armed only on the run path below
     if args.new or args.status or args.capacity or args.workingset is not None \
-            or args.sweep_undeliverable or args.diagnose_only \
-            or getattr(args, "relay_status", False):
+            or args.sweep_undeliverable or args.diagnose_only:
         pass  # read-only / creation / diagnosis modes do not need the run lease
     else:
         # FIX 105: arm the SIGTERM/SIGINT handlers for the run about to start.
@@ -1060,26 +1037,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                     (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}"
                      if prior else ""),
                     phase_id=(prior or {}).get("phase"))
-
-        # PRES-052 — reconcile pending relay events on resume BEFORE the
-        # engine runs: acknowledged rows stay acknowledged (never re-queued,
-        # never duplicated in the logical display), pending rows whose retry
-        # deadline passed get one retry row each. Best-effort: a relay
-        # failure never blocks the resume.
-        try:
-            from . import relay as _relay
-        except ImportError:
-            import relay as _relay  # type: ignore[no-redef]
-        try:
-            summary = _relay.reconcile(state, run_dir, store=None)
-            engine.report.event(
-                "relay.reconciled",
-                f"resume reconcile: {summary['requeued']} re-queued, "
-                f"{summary['skipped_acked']} acknowledged (kept), "
-                f"{summary['timed_out']} timed-out (retained), "
-                f"{summary['logical_events']} logical events total.")
-        except Exception:  # noqa: BLE001 — relay must never block resume
-            pass
 
         # F07 -- auto-spawn the Work-Order Dispatcher for this run, CONCURRENTLY
         # with the engine (spawned before engine.run(), never after -- see the

@@ -273,28 +273,6 @@ def watchdog(
         )
         from .report import dispatch
         dispatch("watchdog", "stall", msg)
-        # PRES-052: stalled state visible per run in the supervised relay,
-        # even when the transport cannot deliver (dispatch is best-effort).
-        # Never raises out of the watchdog.
-        try:
-            try:
-                from . import relay as _relay
-            except ImportError:
-                import relay as _relay  # type: ignore[no-redef]
-            from .state import StateStore
-            for run_dir, pid, age, interval, threshold, source, job_id in findings:
-                try:
-                    _rd = Path(run_dir)
-                    _store = StateStore(_rd)
-                    _state = _store.load()
-                    _relay.emit(_state, _rd, _relay.KIND_STALLED,
-                                f"{pid} stalled — last checkpoint {age} min ago "
-                                f"(threshold {threshold} min).",
-                                stage=pid, store=_store)
-                except Exception:  # noqa: BLE001 — one bad run never stops scan
-                    continue
-        except Exception:  # noqa: BLE001 — relay must never break watchdog
-            pass
 
     # WI-04a fix: when --enforce is on, mark each stalled job's CC card as blocked.
     # Resolve the task_id from state.json (board.task_id) first, then fall back to
