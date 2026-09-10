@@ -62,10 +62,10 @@ EXIT_QUALITY = 6
 KNOWN_RATIOS = {"4:5", "2:3", "9:16", "16:9", "1:1"}
 
 # F32 social-planner house band (shared-utils/social_prompt_policy.json): every
-# social-planner image prompt for GPT Image 2 (Kie) and Agnes carries 9,000-19,000
+# social-planner image prompt for GPT Image 2.5 (Kie) and Agnes carries 9,000-19,000
 # stripped Unicode chars (NFC, trimmed) on the FINAL payload. 8,999 FAILS, 9,000
 # passes length (semantic QC still required), 19,000 passes, 19,001 FAILS. This is a
-# production house policy DISTINCT from vendor caps (Kie GPT Image 2 published
+# production house policy DISTINCT from vendor caps (Kie GPT Image 2.5 published
 # maxLength 20000; Agnes NOT_PUBLISHED).
 SOCIAL_MIN_CHARS = 9000
 SOCIAL_MAX_CHARS = 19000
@@ -75,13 +75,13 @@ SOCIAL_MAX_CHARS = 19000
 # A model is text-capable when its resolved capability set includes
 # "text_rendering" (declared) or its image-generation family is verified through a
 # social-planner adapter. Known text-bearing social assets route by capability:
-# Ideogram V3 DESIGN remains a text specialist; GPT Image 2 and Agnes are ELIGIBLE
+# Ideogram V3 DESIGN remains a text specialist; GPT Image 2.5 and Agnes are ELIGIBLE
 # through verified adapters; Nano Banana 2/Pro remain non-text.
 TEXT_RENDERING_CAPABILITY = "text_rendering"
 
 # Legacy name-based knowledge, now ONLY a fallback when no capability metadata
 # resolves (e.g. capability file missing). Kept in sync with 45's GK-20 rule.
-_FALLBACK_TEXT_CAPABLE = {"ideogram-v3-design", "ideogram/v3-text-to-image", "ideogram-v3", "gpt-image-2", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "agnes-image-2.1-flash"}
+_FALLBACK_TEXT_CAPABLE = {"ideogram-v3-design", "ideogram/v3-text-to-image", "ideogram-v3", "gpt-image-2", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "gpt-image-2-5-sunburst", "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image", "agnes-image-2.1-flash"}
 _FALLBACK_NON_TEXT = {"nano-banana-2", "nano-banana-pro"}
 
 
@@ -101,7 +101,7 @@ def _capability_map():
 def model_is_text_capable(model: str, cap_map: Optional[dict] = None) -> bool:
     """Capability-metadata routing: True iff `model` can reliably render baked
     text, decided by model-capabilities.json (family regex or verified slug)
-    with a name-based fallback ONLY when the map is unavailable. GPT Image 2 and
+    with a name-based fallback ONLY when the map is unavailable. GPT Image 2.5 and
     Agnes are eligible here through their verified social-planner adapters."""
     m = (model or "").strip().lower()
     if not m:
@@ -274,14 +274,14 @@ def check_prompt(
                 "without losing required meaning — never truncate silently.")
 
     # --- QUALITY / ROUTING (exit 6): correct once FORM is complete ----------------------
-    # F32: capability-metadata routing via model-capabilities.json. GPT Image 2 and
+    # F32: capability-metadata routing via model-capabilities.json. GPT Image 2.5 and
     # Agnes are ELIGIBLE through verified adapters; the Ideogram-only allowlist is gone.
     if text_overlay and not model_is_text_capable(model_norm):
         res.quality_problems.append(
             f"AF-SM-MODEL-ROUTING: this prompt carries baked on-image text but is routed to "
             f"{model!r}, which does not declare the text-rendering capability "
             f"(shared-utils/model-capabilities.json). Text-bearing social assets route by "
-            "capability: Ideogram V3 DESIGN or GPT Image 2 (Kie) or Agnes through their "
+            "capability: Ideogram V3 DESIGN or GPT Image 2.5 (Kie) or Agnes through their "
             "verified adapters — never Nano Banana 2/Pro, which stay reserved for non-text "
             "imagery (GK-20).")
 
