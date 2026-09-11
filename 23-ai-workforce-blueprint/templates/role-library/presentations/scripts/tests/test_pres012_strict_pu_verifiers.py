@@ -365,10 +365,10 @@ class TestCanonicalManifestResolver:
         assert any("AF-U-CONFIG" in r and "declares no" in r for r in reasons)
 
     def test_deferred_branch_still_notes_not_config_error(self, tmp_path):
-        rd = _intake(tmp_path / "run", {"WANT_VSL_PAGE": "no"})
+        rd = _intake(tmp_path / "run", {"WANT_VSL_PAGE": "no", "VSL_PAGE_DECLINED_REASON": "Client does not need a VSL page."})
         ok, reasons = pv.verify("P-U-FORM-GATE", rd)
         assert ok is True
-        assert any("deferred" in r for r in reasons)
+        assert any("waived" in r for r in reasons)
 
 # ---------------------------------------------------------------------------
 # 4. the registry stays total (every manifest phase id has a verifier)
