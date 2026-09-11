@@ -1,0 +1,240 @@
+{
+  "contract": "presentation-intake-field-paths",
+  "version": 2,
+  "description": "One canonical field-path schema for the Presentation Interview intake: form (generated UI questions), Workers (schema-driven completeness gate + version-aware migration), intake_writer, resolver, page/VSL stage and tests all derive from this object.",
+  "required_fields": [
+    "deck_brief.OFFER_NAME",
+    "deck_brief.NAMED_METHODOLOGY",
+    "deck_brief.TRANSFORMATION_PROMISE",
+    "deck_brief.TIME_TO_RESULT",
+    "deck_brief.AUDIENCE",
+    "deck_brief.CTA_ACTION",
+    "deck_brief.TONE",
+    "deck_brief.FINAL_PRICE",
+    "pre_presentation_capture.PRESENTATION_TYPE",
+    "pre_presentation_capture.WANT_SALES_CHECKOUT",
+    "pre_presentation_capture.WANT_VSL_PAGE"
+  ],
+  "migration": {
+    "from_version": 1,
+    "to_version": 2,
+    "boolean_normalization": {
+      "true": "yes",
+      "false": "no"
+    }
+  },
+  "fields": [
+    {
+      "id": "presentation_type",
+      "canonical_path": "pre_presentation_capture.PRESENTATION_TYPE",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": [
+        "from_scratch",
+        "content_personal",
+        "content_general",
+        "signature"
+      ],
+      "legacy_aliases": [
+        "deck_brief.PRESENTATION_TYPE",
+        "PRESENTATION_TYPE"
+      ]
+    },
+    {
+      "id": "offer_name",
+      "canonical_path": "deck_brief.OFFER_NAME",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "named_methodology",
+      "canonical_path": "deck_brief.NAMED_METHODOLOGY",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "transformation_promise",
+      "canonical_path": "deck_brief.TRANSFORMATION_PROMISE",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "time_to_result",
+      "canonical_path": "deck_brief.TIME_TO_RESULT",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "audience",
+      "canonical_path": "deck_brief.AUDIENCE",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "cta_action",
+      "canonical_path": "deck_brief.CTA_ACTION",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "brand_primary",
+      "canonical_path": "deck_brief.BRAND_PRIMARY",
+      "section": "deck_brief",
+      "kind": "logo",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "image_links",
+      "canonical_path": "deck_brief.IMAGE_LINKS",
+      "section": "deck_brief",
+      "kind": "image_links",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "tone",
+      "canonical_path": "deck_brief.TONE",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "final_price",
+      "canonical_path": "deck_brief.FINAL_PRICE",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "speech_speed_preference",
+      "canonical_path": "intake.json.speech_speed_preference",
+      "section": "intake_root",
+      "kind": "enum",
+      "required": true,
+      "block_gate": false,
+      "allowed_values": [
+        "default",
+        "medium",
+        "fast"
+      ],
+      "legacy_aliases": []
+    },
+    {
+      "id": "want_sales_checkout",
+      "canonical_path": "pre_presentation_capture.WANT_SALES_CHECKOUT",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "legacy_aliases": [
+        "deck_brief.WANT_SALES_CHECKOUT",
+        "WANT_SALES_CHECKOUT"
+      ]
+    },
+    {
+      "id": "sales_checkout_declined_reason",
+      "canonical_path": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "want_vsl_page",
+      "canonical_path": "pre_presentation_capture.WANT_VSL_PAGE",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "legacy_aliases": [
+        "deck_brief.WANT_VSL_PAGE",
+        "WANT_VSL_PAGE"
+      ]
+    },
+    {
+      "id": "vsl_page_declined_reason",
+      "canonical_path": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "run_mode",
+      "canonical_path": "pre_presentation_capture.RUN_MODE",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": [
+        "ultra",
+        "standard",
+        "economy"
+      ],
+      "legacy_aliases": [
+        "deck_brief.RUN_MODE",
+        "RUN_MODE",
+        "run_mode"
+      ]
+    },
+    {
+      "id": "client_notes",
+      "canonical_path": "deck_brief.CLIENT_NOTES",
+      "section": "deck_brief",
+      "kind": "text",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": null,
+      "legacy_aliases": []
+    }
+  ]
+}
