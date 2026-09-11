@@ -9869,8 +9869,45 @@ PY
         # added after this roll is installed here without editing the hardcoded
         # block above).
         pres_deps_check_and_install
-        export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_VENV_PY"
-        echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_VENV_PY (exported for this update; qc-completeness consumes it)"
+        # PRES-035 — PRESERVE a per-client executable override. The roll must
+        # never clobber an operator's explicit PRESENTATION_PIPELINE_INTERPRETER
+        # pin (a custom venv/path for THIS box) with the default
+        # $_PRES_VENV_PY. Sources, in order: this process env (explicit export
+        # before the roll), then the box secrets env. A value is honored only
+        # when it is absolute, executable and actually runs; anything else is
+        # reported and the default wins. The venv is still converged either
+        # way — an override that points at a different interpreter does not
+        # excuse an empty default venv.
+        _PRES_EXISTING_INTERP="${PRESENTATION_PIPELINE_INTERPRETER:-}"
+        if [ -z "$_PRES_EXISTING_INTERP" ]; then
+          _PRES_PERSIST_ENV="${OC_SECRETS_ENV:-}"
+          [ -z "$_PRES_PERSIST_ENV" ] && [ "${OC_PLATFORM:-}" = "vps" ] && _PRES_PERSIST_ENV="/data/.openclaw/secrets/.env"
+          [ -z "$_PRES_PERSIST_ENV" ] && _PRES_PERSIST_ENV="$HOME/.openclaw/secrets/.env"
+          if [ -f "$_PRES_PERSIST_ENV" ]; then
+            _PRES_EXISTING_INTERP="$(sed -n 's/^export PRESENTATION_PIPELINE_INTERPRETER=//p' "$_PRES_PERSIST_ENV" 2>/dev/null | head -n 1 | tr -d '"' )"
+          fi
+        fi
+        _PRES_INTERP_KEEP=""
+        if [ -n "$_PRES_EXISTING_INTERP" ]; then
+          case "$_PRES_EXISTING_INTERP" in /*)
+            if [ -x "$_PRES_EXISTING_INTERP" ] && "$_PRES_EXISTING_INTERP" -c 'import sys' >/dev/null 2>&1; then
+              if [ "$_PRES_EXISTING_INTERP" != "$_PRES_VENV_PY" ]; then
+                _PRES_INTERP_KEEP="$_PRES_EXISTING_INTERP"
+              fi
+            else
+              echo "    ⚠ existing PRESENTATION_PIPELINE_INTERPRETER=$_PRES_EXISTING_INTERP is not a usable executable — replacing with the default $_PRES_VENV_PY"
+            fi ;;
+          *) echo "    ⚠ existing PRESENTATION_PIPELINE_INTERPRETER=$_PRES_EXISTING_INTERP is not absolute — replacing with the default $_PRES_VENV_PY" ;;
+          esac
+        fi
+        if [ -n "$_PRES_INTERP_KEEP" ]; then
+          export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_INTERP_KEEP"
+          echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_INTERP_KEEP (per-client override PRESERVED; default venv is $_PRES_VENV_PY)"
+        else
+          export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_VENV_PY"
+          echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_VENV_PY (exported for this update; qc-completeness consumes it)"
+        fi
+        unset _PRES_EXISTING_INTERP _PRES_INTERP_KEEP _PRES_PERSIST_ENV
       fi
     fi
     # Hard end-of-converge verdict when any canon dep is STILL missing (FIX 70:

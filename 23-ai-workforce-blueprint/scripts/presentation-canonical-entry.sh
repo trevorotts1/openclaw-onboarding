@@ -86,8 +86,8 @@ note() { echo "=== [$PROG] $* ==="; }
 # next line fails this way. One definition, used by both the engine path and
 # the legacy-fallback path below.
 _mint_nonce() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
+    if [ -n "${PRESENTATION_PY:-}" ] || command -v python3 >/dev/null 2>&1; then
+        "${PRESENTATION_PY:-python3}" -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
     fi
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -hex 32 2>/dev/null && return 0
@@ -139,6 +139,10 @@ EOF
 # Arg parsing
 # ---------------------------------------------------------------------------
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
+# PRES-035: declared here so `set -u` is safe for every pre-resolver use
+# (stamp_intake_depth, owner_skip_*). The PRES-035 resolver block below
+# replaces it with the validated pin before any gate runs.
+PRESENTATION_PY="${PRESENTATION_PY:-python3}"
 SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
 PLAN=0 ADHOC=0 RESUME=0
 # FIX 36(3) — intake-depth axis, deliberately SEPARATE from the run-mode axis.
@@ -201,7 +205,7 @@ esac
 stamp_intake_depth() {
     local depth="$1"
     command -v python3 >/dev/null 2>&1 || { note "intake-depth not stamped (no python3)"; return 0; }
-    DEPTH="$depth" INTAKE_COPY="$RUN_DIR/working/copy/intake.json" python3 - <<'PY' || note "intake-depth stamp: non-fatal write failure (logged, build continues)"
+    DEPTH="$depth" INTAKE_COPY="$RUN_DIR/working/copy/intake.json" "$PRESENTATION_PY" - <<'PY' || note "intake-depth stamp: non-fatal write failure (logged, build continues)"
 import json, os, time
 p = os.environ["INTAKE_COPY"]
 depth = os.environ["DEPTH"]
@@ -346,7 +350,7 @@ owner_skip_approved() {
     local gate="$1"
     [ -f "$PROC_MANIFEST" ] || return 1
     command -v python3 >/dev/null 2>&1 || return 1
-    GATE="$gate" PM="$PROC_MANIFEST" python3 - <<'PY'
+    GATE="$gate" PM="$PROC_MANIFEST" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 gate = os.environ["GATE"]
 try:
@@ -384,7 +388,7 @@ PY
 _record_dep_gate_bypassed() {
     local via="$1" reason="${2:-}"
     command -v python3 >/dev/null 2>&1 || return 0
-    VIA="$via" REASON="$reason" PM="$PROC_MANIFEST" python3 - <<'PY' || true
+    VIA="$via" REASON="$reason" PM="$PROC_MANIFEST" "$PRESENTATION_PY" - <<'PY' || true
 import json, os, time
 pm = os.environ["PM"]
 rec = {
@@ -476,7 +480,7 @@ owner_skip_intake() {
     local pm="$run_dir/working/checkpoints/process_manifest.json"
     [ -f "$pm" ] || return 1
     command -v python3 >/dev/null 2>&1 || return 1
-    PM="$pm" python3 - <<'PY'
+    PM="$pm" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
     obj = json.load(open(os.environ["PM"]))
@@ -526,7 +530,7 @@ check_intake_ledger() {
     fi
     if command -v python3 >/dev/null 2>&1; then
         local complete
-        complete="$(python3 -c "
+        complete="$("$PRESENTATION_PY" -c "
 import json, sys
 try:
     d = json.load(open('$_INTAKE_LEDGER'))
@@ -593,7 +597,7 @@ check_intake_trace() {
     fi
     if command -v python3 >/dev/null 2>&1; then
         local _trace_bytes
-        _trace_bytes="$(python3 -c "
+        _trace_bytes="$("$PRESENTATION_PY" -c "
 import json, sys
 p = '$run_dir/working/interview/intake_transcript.json'
 try:
@@ -632,6 +636,43 @@ note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)
 # drops in the run dir — and every honored bypass is recorded as a
 # dep_gate_bypassed entry in process_manifest.json so no skip is ever silent.
 _TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
+# PRES-035 — resolve ONE pipeline interpreter BEFORE any gate runs python.
+# Precedence: PRESENTATION_PIPELINE_INTERPRETER when non-blank, absolute
+# and executable (the selected client config / per-client override — a
+# set-but-unusable value is REPORTED and falls through, never silently
+# skipped); else the client venv via pipeline_interp.py; else PATH python3
+# last-resort. Validated (must actually execute) before the gates; every
+# python below runs through $PRESENTATION_PY. Rollback:
+# PRESENTATION_PIPELINE_PIN=0 restores bare `python3` everywhere.
+PRESENTATION_PY="python3"
+_pres35_resolve_entry_interpreter() {
+    local _pin="${PRESENTATION_PIPELINE_INTERPRETER:-}" _resolved=""
+    if [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ]; then
+        PRESENTATION_PY="python3"; export PRESENTATION_PY; return 0
+    fi
+    if [ -n "$_pin" ]; then
+        case "$_pin" in /*)
+            if [ -x "$_pin" ]; then _resolved="$_pin"; fi ;;
+        esac
+        if [ -z "$_resolved" ]; then
+            echo "  [interp] PRESENTATION_PIPELINE_INTERPRETER=$_pin unusable (missing or not executable) — resolving the client venv instead; fix the pin or re-run update-skills.sh" >&2
+        fi
+    fi
+    if [ -z "$_resolved" ] && [ -f "$SCRIPTS_DIR/presentation_job/pipeline_interp.py" ]; then
+        _resolved="$(cd "$SCRIPTS_DIR" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null || true)"
+    fi
+    [ -n "$_resolved" ] || _resolved="python3"
+    if ! "$_resolved" -c 'import sys' >/dev/null 2>&1; then
+        echo "PRESENTATION_INTERPRETER_INVALID: $_resolved does not execute — refusing before any gate runs" >&2
+        return 1
+    fi
+    PRESENTATION_PY="$_resolved"
+    export PRESENTATION_PY PRESENTATION_PIPELINE_INTERPRETER="$_resolved"
+    _PRES35_VER="$("$_resolved" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
+    echo "  [interp] pipeline interpreter: $PRESENTATION_PY (Python $_PRES35_VER)"
+    return 0
+}
+_pres35_resolve_entry_interpreter || exit 2
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
         if [ -f "$_TEST_CONTEXT_MARKER" ]; then
@@ -644,6 +685,10 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
+    # Record resolved native tools while retaining video-only optional dependencies.
+    for _t in soffice pdftoppm ffmpeg ffprobe tesseract; do
+        echo "  [tools] $_t: $(command -v "$_t" 2>/dev/null || echo ABSENT)"
+    done
     local video_missing=()
     # PRES-033: the pipeline python deps live in the DEPARTMENT VENV (FIX 71),
     # never the system interpreter. Resolve the SAME interpreter
@@ -758,10 +803,10 @@ deps_check || {
 note "GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable)"
 ghl_module_check() {
     command -v python3 >/dev/null 2>&1 || {
-        echo "  (python3 absent; GHL module check skipped)"; return 0; }
+        echo "  (pipeline interpreter absent; GHL module check skipped)"; return 0; }
     local _ghl_err
     _ghl_err="$(PYTHONPATH="$SCRIPTS_DIR${PYTHONPATH:+:$PYTHONPATH}" \
-        python3 -c "import ghl_media" 2>&1)" && {
+        "$PRESENTATION_PY" -c "import ghl_media" 2>&1)" && {
         echo "  OK: ghl_media importable from $SCRIPTS_DIR"
         return 0
     }
@@ -794,7 +839,7 @@ ghl_module_check || {
 note "GATE 2/3 — BYPASS-SCAN (hand-rolled renderer detection in $RUN_DIR)"
 bypass_scan() {
     command -v python3 >/dev/null 2>&1 || { echo "  (python3 absent; scan skipped)"; return 0; }
-    RUN_DIR="$RUN_DIR" SCRIPTS_DIR="$SCRIPTS_DIR" python3 - <<'PY'
+    RUN_DIR="$RUN_DIR" SCRIPTS_DIR="$SCRIPTS_DIR" "$PRESENTATION_PY" - <<'PY'
 import os, re, sys
 run_dir = os.path.realpath(os.environ["RUN_DIR"])
 scripts_dir = os.path.realpath(os.environ["SCRIPTS_DIR"])
@@ -895,14 +940,14 @@ version_hash_pin() {
     #     it means the actual renderer has drifted from the manifest/ruleset and
     #     the door FAILS CLOSED exactly as before.
     if [ -f "$SCRIPTS_DIR/sync_check.py" ] && command -v python3 >/dev/null 2>&1; then
-        if python3 "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
+        if "$PRESENTATION_PY" "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
             echo "  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack"
             rm -f /tmp/_pce_sync.$$
         else
             # sync_check exited 4 (drift). Classify: only A5/A6 (library-only) -> proceed evented.
             # NOTE: the temp path is passed via env var because the heredoc is
             # QUOTED ('PY') and bash does not expand $$ inside it.
-            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" python3 - <<'PY'
+            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
     d = json.load(open(os.environ["_PCE_SYNC_TMP"]))
@@ -920,7 +965,7 @@ PY
             then
                 sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
                 echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
-                python3 - <<'PY' || true
+                "$PRESENTATION_PY" - <<'PY' || true
 # write a CC event so the drift debt is surfaced, not hidden
 import json, os, urllib.request
 try:
@@ -1056,7 +1101,7 @@ for _mc in "$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json" \
            "$(cd "$SCRIPTS_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"; do
     [ -n "$_mc" ] || continue
     [ -f "$_mc" ] || continue
-    _PHASE_COUNT="$(python3 -c "
+    _PHASE_COUNT="$("$PRESENTATION_PY" -c "
 import json
 m = json.load(open('$_mc'))
 print(len(m.get('phases', [])))
@@ -1067,7 +1112,7 @@ if [ -z "$_PHASE_COUNT" ]; then
     # FIX 36(5): last resort — the canonical resolver (manifest_source.py),
     # same resolution order sync_check documents (sops/ sibling first, then
     # the cluster copy), so a partial install never shows a stale count.
-    _PHASE_COUNT="$(python3 - "$SCRIPTS_DIR" <<'PY' 2>/dev/null || true
+    _PHASE_COUNT="$("$PRESENTATION_PY" - "$SCRIPTS_DIR" <<'PY' 2>/dev/null || true
 import sys
 from pathlib import Path
 here = Path(sys.argv[1]).resolve()
@@ -1079,7 +1124,7 @@ except Exception:
     pass
 PY
 )"
-    [ -n "$_PHASE_COUNT" ] && _PHASE_COUNT="$(python3 -c "
+    [ -n "$_PHASE_COUNT" ] && _PHASE_COUNT="$("$PRESENTATION_PY" -c "
 import json
 m = json.load(open('$_PHASE_COUNT'))
 print(len(m.get('phases', [])))
@@ -1094,14 +1139,14 @@ if [ "$PLAN" -eq 1 ]; then
     # hardcoded number.
     echo "  Manifest phases: $_PHASE_COUNT"
     if [ "$RESUME" -eq 0 ]; then
-    echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
+    echo "  Would run:  $PRESENTATION_PY $ENGINE_ENTRY --new --run-dir $RUN_DIR"
     fi
-    echo "  Then:       python3 $ENGINE_ENTRY --run --run-dir $RUN_DIR"
+    echo "  Then:       $PRESENTATION_PY $ENGINE_ENTRY --run --run-dir $RUN_DIR"
     echo "  All phases walked mechanically. 6 fail-closed gates at close()."
     exit 0
 fi
 
-if [ -f "$ENGINE_ENTRY" ] && command -v python3 >/dev/null 2>&1; then
+if [ -f "$ENGINE_ENTRY" ] && { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }; then
     note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
 
     # Step 1: Resolve the intake ledger into the engine's --new intake JSON
@@ -1126,7 +1171,7 @@ run_signature_deck.py. Re-sync the Presentations department."
         # AF-DECK-TYPE-UNKNOWN. Lowercase for the resolver call only.
         _RESOLVE_DEPTH_ARGS="--intake-depth $(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')"
     fi
-    _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
+    _RESOLVE_OUT="$("$PRESENTATION_PY" "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
         --out "$_ENGINE_INTAKE_TMP" --source canonical-entry $_RESOLVE_DEPTH_ARGS 2>&1)"
     _RESOLVE_RC=$?
     if [ "$_RESOLVE_RC" -eq 5 ]; then
@@ -1140,7 +1185,7 @@ presentation_type: $_RESOLVE_OUT"
 
     # Step 2: Create the engine job (state.json).
     # This is idempotent -- if state.json already exists, the engine refuses to overwrite.
-    _CREATE_OUT="$(python3 "$ENGINE_ENTRY" --new --run-dir "$RUN_DIR" --intake "$_ENGINE_INTAKE_TMP" 2>&1)"
+    _CREATE_OUT="$("$PRESENTATION_PY" "$ENGINE_ENTRY" --new --run-dir "$RUN_DIR" --intake "$_ENGINE_INTAKE_TMP" 2>&1)"
     _CREATE_RC=$?
     if [ "$_CREATE_RC" -ne 0 ]; then
         # state.json may already exist from a prior run -- that's OK, reuse it.
@@ -1160,7 +1205,7 @@ $_CREATE_OUT"
     # runs 6 fail-closed gates in close(), and posts progress to the CC board.
     # Returns the engine's exit code directly to the caller.
     note "Engine run starting -- $_PHASE_COUNT manifest phases, all mechanically enforced"
-    _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
+    _ENGINE_RUN_CMD=("$PRESENTATION_PY" "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
 
     # Re-apply the front-door nonce + env so the render phases still gate correctly
     # FIX 106 (MASTER Part 8): the nonce is keyed by run id AND phase id. Two
@@ -1228,7 +1273,7 @@ fi
 # FALLBACK: the old 2-of-20 path. Runs only when the engine is unavailable.
 # ===========================================================================
 note "FALLBACK: dispatching the legacy orchestrator (run_signature_deck.py -- 2 of ~20 phases)"
-cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
+cmd=("$PRESENTATION_PY" "$RUNNER" --run-dir "$RUN_DIR")
 cmd+=(--slides "$SLIDES" --out "$OUT" --phase "$PHASE")
 [ -n "$PLATFORM" ] && cmd+=(--platform "$PLATFORM")
 [ "$ADHOC" -eq 1 ] && cmd+=(--adhoc)

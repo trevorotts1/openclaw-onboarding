@@ -180,6 +180,27 @@ def _desired_enabled(run_dir: Path) -> bool:
     except (OSError, ValueError, json.JSONDecodeError):
         return False
 
+def _spawn_python() -> str:
+    """PRES-035: the interpreter supervised/spawned children run under.
+
+    Same contract as launcher._spawn_python: this process was started by
+    the pinned scheduler entry point, so sys.executable already IS the
+    validated pin on the live path. An explicit
+    PRESENTATION_PIPELINE_INTERPRETER wins only when it names a usable
+    executable; a set-but-unusable pin is reported, never silently
+    skipped, never used.
+    """
+    pin = (os.environ.get("PRESENTATION_PIPELINE_INTERPRETER") or "").strip()
+    if pin:
+        if os.path.isabs(pin) and os.path.isfile(pin) and os.access(pin, os.X_OK):
+            return pin
+        print(f"autospawn: PRESENTATION_PIPELINE_INTERPRETER={pin} is set "
+              f"but not an executable file — spawning under this process's "
+              f"interpreter ({sys.executable}); fix the pin or re-run "
+              f"update-skills.sh", file=sys.stderr)
+    return sys.executable or "python3"
+
+
 
 # ---------------------------------------------------------------------------
 # F07 -- Work-Order Dispatcher auto-spawn.
@@ -331,7 +352,7 @@ def _spawn_dispatcher_if_available(run_dir: Path, scripts_dir: Path,
         print(f"[auto-dispatch] START FAILED: {reason}", file=sys.stderr, flush=True)
         return None
 
-    argv = [sys.executable, str(dispatcher_entry), "--run-dir", str(run_dir), "--watch"]
+    argv = [_spawn_python(), str(dispatcher_entry), "--run-dir", str(run_dir), "--watch"]
     log_path = None
     try:
         # PRES-017: the child's stdout/stderr land in a redacted rotating

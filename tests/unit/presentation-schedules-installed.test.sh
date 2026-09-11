@@ -176,6 +176,14 @@ printf '#!/bin/sh\nexit 0\n' > "$DEPT/presentation-watchdog.sh"
 printf '#!/bin/sh\nexit 0\n' > "$DEPT/presentation-intake-poll.sh"
 printf '#!/usr/bin/env python3\n' > "$DEPT/presentation-notify.py"
 chmod +x "$DEPT/presentation-watchdog.sh" "$DEPT/presentation-intake-poll.sh"
+# PRES-035: the installer resolves the pipeline interpreter through
+# presentation_job/pipeline_interp.py (stdlib-only); stage the real module
+# so the pin resolves in this sandbox exactly as it does on a box.
+mkdir -p "$DEPT/presentation_job" 2>/dev/null || true
+for _m in __init__.py pipeline_interp.py oc_paths.py; do
+  cp "$DEPT_SRC/presentation_job/$_m" "$DEPT/presentation_job/$_m" 2>/dev/null || true
+done
+unset _m
 
 STUB="$SANDBOX/bin"; mkdir -p "$STUB"
 LAUNCHCTL_LOG="$SANDBOX/launchctl.log"
@@ -253,6 +261,16 @@ else
     case "$(plist_get env/PRESENTATION_NOTIFY_CMD)" in
       *presentation-notify.py*) pass "E7: PRESENTATION_NOTIFY_CMD points at the co-located transport" ;;
       *) fail "E7: PRESENTATION_NOTIFY_CMD is $(plist_get env/PRESENTATION_NOTIFY_CMD)" ;;
+    esac
+    # PRES-035: the rendered job carries the validated pipeline interpreter
+    # as an explicit pin (absolute, executable), never an empty value — an
+    # unpinned job would resolve python from a bare PATH lookup again.
+    _rendered_interp="$(plist_get env/PRESENTATION_PIPELINE_INTERPRETER)"
+    case "$_rendered_interp" in
+      /*) [ -x "$_rendered_interp" ] \
+            && pass "E10: PRESENTATION_PIPELINE_INTERPRETER pin rendered as an absolute executable ($_rendered_interp)" \
+            || fail "E10: pin rendered but not executable: $_rendered_interp" ;;
+      *) fail "E10: PRESENTATION_PIPELINE_INTERPRETER is '$_rendered_interp' (expected an absolute interpreter path)" ;;
     esac
     [ "$(plist_get env/OPENCLAW_WORKSPACE_PATH)" = "$WS" ] \
       && pass "E8: workspace pin carried into launchd's empty environment" \
