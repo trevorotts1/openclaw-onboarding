@@ -121,3 +121,31 @@ test("progress reports k of N and completion", () => {
 test("expiryFrom adds the TTL window in seconds", () => {
   assert.equal(expiryFrom(1000, 7), 1000 + 7 * 86400);
 });
+
+// ---- PRES-024: stable session identity vs renewable grants (lib level) ----
+import { randomSessionId, isValidSessionIdShape, firstUnmetQuestionId } from "../worker/src/lib.js";
+
+test("PRES-024: randomSessionId is 32 lowercase-hex chars and unique", () => {
+  const a = randomSessionId();
+  const b = randomSessionId();
+  assert.match(a, /^[0-9a-f]{32}$/);
+  assert.ok(isValidSessionIdShape(a));
+  assert.notEqual(a, b);
+});
+
+test("PRES-024: firstUnmetQuestionId returns the exact first unmet active question", () => {
+  // This file's PAYLOAD starts at deck_type (order 0).
+  assert.equal(firstUnmetQuestionId(PAYLOAD, [], {}), "deck_type");
+  assert.equal(firstUnmetQuestionId(PAYLOAD, ["deck_type", "grounded"], { deck_type: "webinar", grounded: "g" }), "dark_ok");
+  const ids = PAYLOAD.questions.map((q) => q.id);
+  assert.equal(firstUnmetQuestionId(PAYLOAD, ids, Object.fromEntries(PAYLOAD.questions.map((q) => [q.id, q.default != null ? String(q.default) : "x"]))), null);
+  // A conditionally-inactive question never counts as unmet.
+  const cond = {
+    question_set: "standard",
+    questions: [
+      { id: "want_vsl", order: 1, prompt: "VSL?", kind: "enum", allowed_values: ["yes", "no"] },
+      { id: "vsl_details", order: 2, prompt: "Details?", kind: "text", ask_if: { question_id: "want_vsl", equals: "yes" } },
+    ],
+  };
+  assert.equal(firstUnmetQuestionId(cond, ["want_vsl"], { want_vsl: "no" }), null);
+});
