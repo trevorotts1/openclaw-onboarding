@@ -96,11 +96,22 @@ extract_fn() {  # extract_fn <file> <fn-name>
 {
   extract_fn "$POLL" _json_field
   extract_fn "$POLL" _json_str
+  extract_fn "$POLL" _json_get
+  extract_fn "$POLL" _sha
+  extract_fn "$POLL" _rr_hash
+  extract_fn "$POLL" _now_iso
+  extract_fn "$POLL" _op_id_for
+  extract_fn "$POLL" _journal_put
+  extract_fn "$POLL" _journal_phase
+  extract_fn "$POLL" _pending_put
+  extract_fn "$POLL" _receipt_match
+  extract_fn "$POLL" _ack_send
   extract_fn "$POLL" _parse_claim
   extract_fn "$POLL" _ack
   echo '_log() { :; }'
   echo "_ack_capture=\"$FIX/captured-body.txt\""
   echo '_post() { printf '"'"'%s'"'"' "$_ack_body" >> "$_ack_capture"; return 0; }'
+  echo '_ack_send() { printf '"'"'%s'"'"' "$1" >> "$_ack_capture"; printf "confirmed:synthetic-rev"; return 0; }'
 } > "$FIX/funcs.sh"
 
 bash -n "$FIX/funcs.sh" && say_ok "extracted functions parse" || say_fail "extracted functions syntax"
@@ -129,6 +140,8 @@ echo "$OUT" | grep -q 'LEGACY attempt_id=\[\] gen=\[\] lease=\[\] rc_ok' \
 ACK_SCRIPT="$FIX/ack.sh"
 cat > "$ACK_SCRIPT" <<OUTER3
 source "$FIX/funcs.sh"
+_JOURNAL="$FIX/journal"; _PENDING="$FIX/ack-pending"; _RECONCILE="$FIX/reconcile"; _TMP="$FIX/tmp"; export _JOURNAL _PENDING _RECONCILE _TMP
+mkdir -p "\$_JOURNAL" "\$_PENDING" "\$_RECONCILE" "\$_TMP" 2>/dev/null || true
 INSTRUCTION_ID="ins-syn-1"
 IDEMPOTENCY_KEY="idem-syn-1"
 ATTEMPT_ID="tok-syn-123"
