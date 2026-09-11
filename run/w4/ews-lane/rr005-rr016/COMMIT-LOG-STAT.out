@@ -1,9 +1,9 @@
-commit c11572f91fbc94a75f62a1412e1e2152bf446b60
+commit ff29e7b6630885ff249b4369388223edf4cb830d
 Author: Trevor Otts <trevor@blackceo.com>
-Date:   Fri Sep 11 12:18:00 2026 -0400
+Date:   Fri Sep 11 12:18:43 2026 -0400
 
-    RR-005 + RR-016: freeze SHA + commit log stat (frozen evidence)
+    RR-005 + RR-016: point FROZEN-SHA at tip (frozen evidence)
 
- run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 25 +++++++++++++++++++++++++
- run/w4/ews-lane/rr005-rr016/FROZEN-SHA.txt      |  1 +
- 2 files changed, 26 insertions(+)
+ run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 28 ++++++-------------------
+ run/w4/ews-lane/rr005-rr016/FROZEN-SHA.txt      |  2 +-
+ 2 files changed, 7 insertions(+), 23 deletions(-)
