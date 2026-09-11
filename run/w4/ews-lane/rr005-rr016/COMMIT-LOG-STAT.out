@@ -1,3 +1,13 @@
+commit 2572e60274070ebafec1c0c25ce9f0a7e5fd6f83
+Author: Trevor Otts <trevor@blackceo.com>
+Date:   Fri Sep 11 12:19:25 2026 -0400
+
+    RR-005 + RR-016: FROZEN-SHA = code-freeze 4c1d097 (later commits freeze-metadata only)
+
+ run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 10 ++++++++++
+ run/w4/ews-lane/rr005-rr016/FROZEN-SHA.txt      |  2 +-
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
 commit 32e518ab4a8ca98691bf86cc75d406cd34151178
 Author: Trevor Otts <trevor@blackceo.com>
 Date:   Fri Sep 11 12:19:01 2026 -0400
