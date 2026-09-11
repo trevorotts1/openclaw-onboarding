@@ -245,9 +245,25 @@ report of landed code. The real producer is
 - Separate completion contracts: lead-capture (one scoped contact + one
   workflow enrollment on test submit) vs sandbox payment (product/amount/
   currency + success/cancel routes, zero real charge). MISSING_OFFER /
-  MISSING_MERCHANT / WRONG_LOCATION / UNSUPPORTED_PAYMENT block THIS phase
-  only (soft NOTE; deck + notifications continue). Live charges are never
-  invented -- no live-charge SDK is wired in this pipeline by design.
+  MISSING_MERCHANT / MISSING_CREDS / MISSING_SKILL / WRONG_LOCATION /
+  UNSUPPORTED_PAYMENT block THIS phase only (soft NOTE; deck +
+  notifications continue). Live charges are never invented -- no
+  live-charge SDK is wired in this pipeline by design.
+- Existing-link reuse (PRES-025 repair): when `deck_brief` carries
+  `APPROVED_CHECKOUT_URL` (alias `CHECKOUT_URL`), the stage reuses that
+  client-approved link instead of creating a new page -- allowed only as an
+  absolute http(s) URL on a non-placeholder host that binds to this
+  company/presentation (deck/company slug in host+path). A foreign approved
+  URL is refused fail-closed, never silently dropped. Receipts record
+  `reuse: {approved_url, created: false}` with an `approved_url_reuse`
+  proof; the sales/checkout CTAs wire the same approved URL.
+- Retry reuse (PRES-025 repair): sandbox product/price IDs persist to
+  `working/sales-checkout/checkout_product.json` BEFORE any session
+  attempt, so a retry reuses the same product instead of minting
+  duplicates. Delegated execution readiness (PIT alias
+  `GOHIGHLEVEL_API_KEY` / `GHL_API_KEY` present + `caf` CLI visible) is
+  reported as a `readiness` note on the plan receipt -- `MISSING_CREDS` /
+  `MISSING_SKILL` when absent -- and never blocks the deck.
 
 The checkout **page** (layout, copy, visual design) is still built by the
 COPY -> DESIGN -> HTML -> PUSH pipeline (§3). The paragraph below records the

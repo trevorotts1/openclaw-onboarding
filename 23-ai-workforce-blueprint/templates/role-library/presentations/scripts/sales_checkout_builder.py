@@ -724,26 +724,34 @@ def _cta_escape_text(s: Any) -> str:
 
 
 def _resolve_page_cta_href(*, page_role: str, fields: Dict[str, str],
-                           deck_slug: str = "") -> str:
+                           deck_slug: str = "",
+                           form_receipt: Optional[dict] = None) -> str:
     """Verified CTA route for an assembled page. PRES-025: no production CTA
     may resolve to #/empty/javascript: -- a caller-supplied cta_href wins when
-    it passes the protocol allowlist, else the sales page routes to the
-    checkout funnel route and the checkout page to its own relative route."""
+    it passes the protocol allowlist (approved-URL reuse, binding-checked by
+    checkout_form_builder), else the form receipt's verified action, else the
+    sales page routes to the checkout funnel route and the checkout page to
+    its own relative route."""
     try:
         import checkout_form_builder as _cfb
     except ImportError:
         _cfb = None  # type: ignore[assignment]
     candidate = str(fields.get("cta_href") or "").strip()
     if candidate and _cfb is not None:
-        ok, _ = _cfb.validate_url(candidate)
-        if ok:
+        try:
+            return _cfb.resolve_cta_href(page_role=page_role,
+                                         deck_slug=deck_slug or "checkout",
+                                         form_receipt=form_receipt,
+                                         approved_url=candidate)
+        except ValueError:
+            candidate = ""
+        if candidate:
             return candidate
-        candidate = ""
     if _cfb is not None:
         try:
             return _cfb.resolve_cta_href(page_role=page_role,
                                          deck_slug=deck_slug or "checkout",
-                                         form_receipt=None)
+                                         form_receipt=form_receipt)
         except ValueError:
             pass
     slug = (deck_slug or "checkout").strip() or "checkout"
@@ -752,7 +760,8 @@ def _resolve_page_cta_href(*, page_role: str, fields: Dict[str, str],
 
 def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
                     fields: Dict[str, str], hero_image_src: Optional[str],
-                    marker: str, deck_slug: str = "") -> str:
+                    marker: str, deck_slug: str = "",
+                    form_receipt: Optional[dict] = None) -> str:
     prim, sec, acc, base, ink = (
         brand["primary"], brand["secondary"], brand["accent"], brand["base"], brand["ink"]
     )
@@ -764,7 +773,8 @@ def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
     safe_hero = _cta_escape_attr(hero_image_src) if hero_image_src else ""
     cta_href = _cta_escape_attr(
         _resolve_page_cta_href(page_role=page_role, fields=fields,
-                               deck_slug=deck_slug))
+                               deck_slug=deck_slug,
+                               form_receipt=form_receipt))
     hero_img_tag = (
         f'<img src="{safe_hero}" alt="{safe_client} {page_role} hero" '
         f'style="width:100%;max-width:100%;display:block;border-radius:12px;margin:0 0 24px;">'

@@ -33,10 +33,23 @@ notifications continue):
   * MISSING_OFFER       — no client-approved offer name (or no parseable
                           price when payment mode needs one).
   * MISSING_MERCHANT    — payment elected but no merchant/provider config.
+  * MISSING_CREDS       — execution readiness required but no PIT alias
+                          (GOHIGHLEVEL_API_KEY / GHL_API_KEY) is present.
+  * MISSING_SKILL       — execution readiness required but the Skill 44
+                          seam (caf CLI) is not installed/visible.
   * WRONG_LOCATION      — intake-declared location disagrees with the bound
                           location, or no location is bound for live ops.
   * UNSUPPORTED_PAYMENT — payment elected but no supported provider path
                           (live charge destinations are never invented).
+
+Approved-URL reuse: when deck_brief carries a client-approved checkout URL
+(APPROVED_CHECKOUT_URL, alias CHECKOUT_URL), the builders reuse it instead
+of creating a new page -- the URL must be an absolute http(s) URL on a
+non-placeholder host AND bind to this company/presentation (host+path
+carries the deck slug or company slug). A present-but-unbound approved URL
+is refused fail-closed, never silently dropped. Sandbox product/price IDs
+persist to working/sales-checkout/checkout_product.json BEFORE any session
+attempt so a retry reuses the same product instead of minting duplicates.
 
 HTML safety: every client string is escaped before insertion (element text
 with quote=False so prose apostrophes survive; attribute values with
@@ -60,8 +73,9 @@ EXIT CODES
     2 — usage error.
     3 — GATE BLOCKED (same fail_closed as sales_checkout_builder).
     4 — VERIFY FAILED (bad receipt / bad HTML / stale inputs).
-    5 — BLOCKED (MISSING_OFFER / MISSING_MERCHANT / WRONG_LOCATION /
-        UNSUPPORTED_PAYMENT — checkout phase only, actionable detail).
+    5 — BLOCKED (MISSING_OFFER / MISSING_MERCHANT / MISSING_CREDS /
+        MISSING_SKILL / WRONG_LOCATION / UNSUPPORTED_PAYMENT — checkout
+        phase only, actionable detail).
 """
 from __future__ import annotations
 
@@ -91,8 +105,14 @@ INTAKE_REL = Path("working") / "copy" / "intake.json"
 # Blockers — each blocks ONLY P-U-FORM-CHECKOUT (actionable, phase-scoped).
 BLOCK_MISSING_OFFER = "MISSING_OFFER"
 BLOCK_MISSING_MERCHANT = "MISSING_MERCHANT"
+BLOCK_MISSING_CREDS = "MISSING_CREDS"
+BLOCK_MISSING_SKILL = "MISSING_SKILL"
 BLOCK_WRONG_LOCATION = "WRONG_LOCATION"
 BLOCK_UNSUPPORTED_PAYMENT = "UNSUPPORTED_PAYMENT"
+
+# Approved-URL reuse — client-approved checkout page bound to this run.
+APPROVED_URL_KEYS = ("APPROVED_CHECKOUT_URL", "CHECKOUT_URL")
+PRODUCT_LEDGER_REL = Path("working") / "sales-checkout" / "checkout_product.json"
 
 INTENT_LEAD = "lead_capture"
 INTENT_PAYMENT_SANDBOX = "payment_sandbox"
@@ -205,17 +225,99 @@ def audit_cta_hrefs(html: str, *, page_role: str = "checkout") -> List[str]:
     return fails
 
 
+def approved_checkout_url(brief: Dict[str, Any]) -> str:
+    """First non-blank client-approved checkout URL (APPROVED_CHECKOUT_URL,
+    alias CHECKOUT_URL). Empty when intake carries no approved link."""
+    if not isinstance(brief, dict):
+        return ""
+    for key in APPROVED_URL_KEYS:
+        v = brief.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _bind_slugs(deck_slug: str, company: str = "") -> List[str]:
+    slugs: List[str] = []
+    for raw in (deck_slug, company):
+        s = re.sub(r"[^a-z0-9]+", "-", str(raw or "").lower()).strip("-")
+        if s and s not in slugs:
+            slugs.append(s)
+    return slugs
+
+
+def check_approved_url_binding(url: str, *, deck_slug: str,
+                               company: str = "") -> Tuple[bool, str]:
+    """Binding gate for an approved checkout URL: absolute http(s), allowed
+    host, and the host+path must carry the deck slug or company slug so one
+    client's approved link can never wire another client's page."""
+    ok, why = validate_url(url, allow_relative=False)
+    if not ok:
+        return False, why
+    from urllib.parse import urlparse
+    try:
+        parts = urlparse(url.strip())
+    except (ValueError, TypeError):
+        return False, f"{url!r} does not parse as a URL"
+    haystack = f"{(parts.hostname or '').lower()} {parts.path or ''}".lower()
+    slugs = _bind_slugs(deck_slug, company)
+    if not slugs:
+        return False, "no deck/company slug to bind the approved URL against"
+    if not any(s and s in haystack for s in slugs):
+        return False, (f"{url!r} does not bind to this company/presentation "
+                       f"(need one of {slugs} in host+path) -- refusing to "
+                       f"reuse a foreign checkout link")
+    return True, "approved-url"
+
+
+def resolve_approved_url(brief: Dict[str, Any], *, deck_slug: str,
+                         company: str = "") -> Tuple[str, Optional[dict]]:
+    """Resolve the reuse path: ('', None) when no approved URL is supplied;
+    (url, None) when the supplied URL validates AND binds; ('', blocker)
+    when a URL is supplied but refused (fail closed, never silently dropped).
+    Blocker code is MISSING_OFFER with an approved-url detail (no approved
+    offer link exists), so the deck continues while checkout waits."""
+    url = approved_checkout_url(brief)
+    if not url:
+        return "", None
+    ok, why = check_approved_url_binding(url, deck_slug=deck_slug,
+                                         company=company)
+    if ok:
+        return url, None
+    return "", {
+        "code": BLOCK_MISSING_OFFER,
+        "detail": (f"client-supplied checkout URL refused: {why}. Supply a "
+                   f"https checkout link for this presentation or clear "
+                   f"{'/'.join(APPROVED_URL_KEYS)} to build fresh."),
+        "action": "fix or clear the approved checkout URL, re-run this phase",
+    }
+
+
 def resolve_cta_href(*, page_role: str, deck_slug: str,
                      checkout_slug: Optional[str] = None,
-                     form_receipt: Optional[dict] = None) -> str:
+                     form_receipt: Optional[dict] = None,
+                     approved_url: str = "") -> str:
     """The verified route for a page CTA. Never returns a dead href.
 
-    * sales    -> the checkout page's site-relative funnel route;
-    * checkout -> the order-form action (verified http(s) route when a live
-                  form receipt binds one, else the checkout page's own
-                  relative route as the form post target).
+    * an allowlisted, binding-approved URL wins for BOTH roles (reuse path);
+    * else sales -> the checkout page's site-relative funnel route;
+    * else checkout -> the order-form action (verified http(s) route when a
+      live form receipt binds one, else the checkout page's own relative
+      route as the form post target).
     Raises ValueError when no verified route can be resolved (fail closed)."""
     slug = (checkout_slug or f"{deck_slug}-checkout").strip() or "checkout"
+    if approved_url and str(approved_url).strip():
+        ok, why = validate_url(str(approved_url).strip(), allow_relative=False)
+        if not ok:
+            raise ValueError(f"approved checkout URL {approved_url!r} refused: "
+                             f"{why}")
+        ok, why = check_approved_url_binding(str(approved_url).strip(),
+                                             deck_slug=deck_slug)
+        if not ok:
+            raise ValueError(f"approved checkout URL {approved_url!r} refused: "
+                             f"{why}")
+        href = str(approved_url).strip()
+        return href
     if page_role == "sales":
         href = f"/{slug}"
     else:
@@ -368,6 +470,42 @@ def resolve_intent(brief: Dict[str, Any], offer: dict) -> Tuple[str, Optional[di
                   "(lead_capture | payment_sandbox | payment).",
         "action": "set CHECKOUT_MODE explicitly, re-run this phase",
     }
+
+
+def check_execution_readiness(env: Optional[dict] = None) -> Optional[dict]:
+    """Execution-readiness gate (plan-emit does NOT require it; the delegated
+    Skill 44/06 execution does). Returns None when ready, else a phase-scoped
+    blocker: MISSING_CREDS when no PIT alias is present, MISSING_SKILL when
+    the Skill 44 seam (caf CLI) is not installed/visible. Deck continues."""
+    import shutil
+    env = env if env is not None else os.environ
+    pit = ""
+    for key in ("GOHIGHLEVEL_API_KEY", "GHL_API_KEY"):
+        v = str(env.get(key, "") or "").strip().strip("'\"")
+        if v:
+            pit = key
+            break
+    if not pit:
+        return {
+            "code": BLOCK_MISSING_CREDS,
+            "detail": ("delegated checkout-form execution needs a Private "
+                       "Integration Token, but neither GOHIGHLEVEL_API_KEY "
+                       "nor GHL_API_KEY is present. Plan contracts are "
+                       "emitted; live execution waits."),
+            "action": ("set GOHIGHLEVEL_API_KEY (alias GHL_API_KEY), "
+                       "re-run delegated execution"),
+        }
+    if shutil.which("caf") is None:
+        return {
+            "code": BLOCK_MISSING_SKILL,
+            "detail": ("delegated checkout-form execution needs the Skill 44 "
+                       "seam (caf CLI) and it is not installed/visible on "
+                       "PATH. Plan contracts are emitted; live execution "
+                       "waits."),
+            "action": ("install/expose the caf CLI for 44-convert-and-flow-"
+                       "operator, re-run delegated execution"),
+        }
+    return None
 
 
 def resolve_scope(run_dir: Path, intake: dict,
@@ -836,16 +974,76 @@ def live_adapter_deferrals(location_id: str = "undesignated-test-location"
     return messages
 
 
+def _product_key(offer: dict) -> str:
+    """Stable idempotency key for a sandbox product: name + amount + currency."""
+    return "|".join(str(offer.get(k) or "") for k in
+                    ("name", "amount_minor", "currency"))
+
+
+def load_product_ledger(run_dir: Path) -> dict:
+    """Read the persisted sandbox product ledger ({} when absent/corrupt)."""
+    try:
+        data = json.loads((run_dir / PRODUCT_LEDGER_REL).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def persist_product_ledger(run_dir: Path, product: dict, offer: dict,
+                           price_id: str = "") -> Path:
+    """Persist product/price IDs BEFORE any session attempt so a retry reuses
+    the same product instead of minting duplicates. price_id is the provider
+    price (caf payments create-price) when known, else '' for the memory fake."""
+    p = run_dir / PRODUCT_LEDGER_REL
+    p.parent.mkdir(parents=True, exist_ok=True)
+    ledger = load_product_ledger(run_dir)
+    ledger[_product_key(offer)] = {
+        "product_id": product.get("product_id"),
+        "price_id": price_id,
+        "name": offer.get("name"),
+        "amount_minor": offer.get("amount_minor"),
+        "currency": offer.get("currency"),
+    }
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+    tmp.replace(p)
+    return p
+
+
+def lookup_persisted_product(run_dir: Path, offer: dict) -> Optional[dict]:
+    """Retry-reuse path: return the persisted {product_id, price_id, ...} for
+    this exact offer key, or None when this offer has no persisted product."""
+    entry = load_product_ledger(run_dir).get(_product_key(offer))
+    if isinstance(entry, dict) and entry.get("product_id"):
+        return entry
+    return None
+
+
 class MemoryPaymentSandbox(PaymentSandboxAdapter):
     """In-memory provider sandbox: product/amount/currency mapping + routes,
-    structurally incapable of a real charge (real_charges stays empty)."""
+    structurally incapable of a real charge (real_charges stays empty).
 
-    def __init__(self, currency_allow: Tuple[str, ...] = ("USD", "EUR", "GBP")):
+    Persist-before-retry: when constructed with a run_dir, create_product()
+    writes the product to checkout_product.json BEFORE returning, and reuses
+    the persisted row when the same offer key is created again."""
+
+    def __init__(self, currency_allow: Tuple[str, ...] = ("USD", "EUR", "GBP"),
+                 run_dir: Optional[Path] = None):
         self.real_charges: List[dict] = []
         self.products: Dict[str, dict] = {}
         self.sessions: Dict[str, dict] = {}
         self.currency_allow = tuple(currency_allow)
-        self._n = 0
+        self.run_dir = Path(run_dir) if run_dir else None
+        if self.run_dir is not None:
+            for entry in load_product_ledger(self.run_dir).values():
+                if isinstance(entry, dict) and entry.get("product_id"):
+                    self.products[str(entry["product_id"])] = {
+                        "product_id": str(entry["product_id"]),
+                        "name": entry.get("name"),
+                        "amount_minor": entry.get("amount_minor"),
+                        "currency": entry.get("currency"),
+                    }
+        self._n = len(self.products)
 
     def create_product(self, offer: dict) -> dict:
         if offer.get("amount_minor") is None:
@@ -853,12 +1051,25 @@ class MemoryPaymentSandbox(PaymentSandboxAdapter):
         if offer.get("currency") not in self.currency_allow:
             raise ValueError(f"UNSUPPORTED_PAYMENT: currency "
                              f"{offer.get('currency')!r} not in sandbox allowlist")
+        if self.run_dir is not None:
+            persisted = lookup_persisted_product(self.run_dir, offer)
+            if persisted is not None:
+                pid = str(persisted["product_id"])
+                prod = {"product_id": pid, "name": offer["name"],
+                        "amount_minor": offer["amount_minor"],
+                        "currency": offer["currency"],
+                        "reused": True}
+                self.products[pid] = {k: v for k, v in prod.items()
+                                      if k != "reused"}
+                return prod
         self._n += 1
         pid = f"prod_mem_{self._n:04d}"
         prod = {"product_id": pid, "name": offer["name"],
                 "amount_minor": offer["amount_minor"],
                 "currency": offer["currency"]}
         self.products[pid] = prod
+        if self.run_dir is not None:
+            persist_product_ledger(self.run_dir, prod, offer)
         return prod
 
     def checkout_session(self, product: dict, success_url: str,
@@ -1080,6 +1291,82 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"ACTION: {blocker['action']}", file=sys.stderr)
         return EXIT_BLOCKED
 
+    # Approved-URL reuse path: a binding, validated approved link skips
+    # creation (receipt records reuse instead of IDs-to-come).
+    company = ""
+    if isinstance(intake.get("company"), str):
+        company = intake["company"]
+    elif isinstance(brief.get("COMPANY"), str):
+        company = brief["COMPANY"]
+    approved_url, url_blocker = resolve_approved_url(
+        brief, deck_slug=scope["deck_slug"], company=company)
+    if url_blocker is not None:
+        receipt = {
+            "schema_version": FORM_RECEIPT_SCHEMA,
+            "phase": "P-U-FORM-CHECKOUT",
+            "deck_slug": str(intake.get("deck_slug") or run_dir.name),
+            "run_id": run_dir.name,
+            "location_id": scope.get("location_id"),
+            "offer": None, "intent": None,
+            "form": {"form_id": None}, "workflow": {"workflow_id": None},
+            "status": "blocked", "blocker": url_blocker,
+            "proof": None, "built_at": _now_iso(),
+        }
+        write_form_receipt(run_dir, receipt)
+        _record_ledger(run_dir, {"status": "blocked", "blocker": url_blocker,
+                                 "gate": gate, "built_at": _now_iso()})
+        print(f"BLOCKED [{url_blocker['code']}]: {url_blocker['detail']}",
+              file=sys.stderr)
+        print(f"ACTION: {url_blocker['action']}", file=sys.stderr)
+        return EXIT_BLOCKED
+    if approved_url:
+        cta_href = resolve_cta_href(page_role="checkout",
+                                    deck_slug=scope["deck_slug"],
+                                    approved_url=approved_url)
+        checkout_html_path = run_dir / CHECKOUT_HTML_REL
+        receipt = {
+            "schema_version": FORM_RECEIPT_SCHEMA,
+            "phase": "P-U-FORM-CHECKOUT",
+            "deck_slug": scope["deck_slug"],
+            "run_id": scope["run_id"],
+            "location_id": scope["location_id"],
+            "location_bound": scope["location_bound"],
+            "offer": {k: offer.get(k) for k in
+                      ("name", "price_display", "amount_minor",
+                       "currency", "price_mode")},
+            "intent": intent,
+            "mode_contract": "reuse: client-approved checkout URL, no new form",
+            "form": {"name": None, "form_id": "reuse:approved-url",
+                     "action": cta_href},
+            "workflow": {"name": None, "workflow_id": "reuse:approved-url",
+                         "draft_only": True},
+            "reuse": {"approved_url": approved_url, "created": False},
+            "input_hashes": {
+                "intake": _sha256_file(intake_path),
+                "checkout_html": _sha256_file(checkout_html_path),
+            },
+            "status": "complete",
+            "blocker": None,
+            "proof": {"kind": "approved_url_reuse",
+                      "approved_url": approved_url},
+            "built_at": _now_iso(),
+        }
+        write_form_receipt(run_dir, receipt)
+        _record_ledger(run_dir, {"status": "complete", "gate": gate,
+                                 "intent": intent, "reuse": True,
+                                 "built_at": _now_iso()})
+        print(f"\nCHECKOUT FORM: REUSE approved URL {approved_url} "
+              f"(no new form created)")
+        return EXIT_OK
+
+    readiness = check_execution_readiness()
+    readiness_note = None
+    if readiness is not None:
+        readiness_note = readiness
+        print(f"READINESS [{readiness['code']}]: {readiness['detail']}",
+              file=sys.stderr)
+        print(f"ACTION: {readiness['action']}", file=sys.stderr)
+
     fields = build_form_schema(offer=offer, intent=intent,
                                deck_slug=scope["deck_slug"])
     contract44 = build_skill44_contract(offer=offer, intent=intent,
@@ -1125,6 +1412,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "status": "plan_emitted",
         "blocker": None,
         "proof": None,
+        "readiness": readiness_note,
         "built_at": _now_iso(),
     }
     write_form_receipt(run_dir, receipt)
@@ -1270,7 +1558,81 @@ def _selftest() -> int:
     except ValueError:
         pass
 
-    # 6) live-adapter stubs: every mutating seam must refuse with an exact
+    # 6) approved-URL reuse: absent -> ("", None); binding URL reuses for
+    #    both roles and into resolve_cta_href; foreign URL blocks fail-closed;
+    #    relative/placeholder approved URLs are refused, never silently built.
+    url, ub = resolve_approved_url({}, deck_slug="acme-reuse")
+    if url or ub is not None:
+        fails.append(f"reuse must be empty when no approved URL: {url!r} {ub}")
+    url, ub = resolve_approved_url(
+        {"APPROVED_CHECKOUT_URL": "https://pay.acme-reuse.shop/acme-reuse/checkout"},
+        deck_slug="acme-reuse")
+    if ub is not None or not url:
+        fails.append(f"binding approved URL must reuse: {url!r} {ub}")
+    else:
+        for role in ("sales", "checkout"):
+            try:
+                href = resolve_cta_href(page_role=role, deck_slug="acme-reuse",
+                                        approved_url=url)
+            except ValueError as exc:  # noqa: BLE001
+                fails.append(f"reuse CTA refused for {role}: {exc}")
+                href = ""
+            if href != url:
+                fails.append(f"reuse CTA for {role} must be the approved URL: {href!r}")
+    _u, ub = resolve_approved_url(
+        {"CHECKOUT_URL": "https://pay.other.shop/other/checkout"},
+        deck_slug="acme-reuse")
+    if ub is None or ub["code"] != BLOCK_MISSING_OFFER:
+        fails.append(f"foreign approved URL must block, not reuse: {_u!r} {ub}")
+    _u, ub = resolve_approved_url({"APPROVED_CHECKOUT_URL": "/acme-reuse/checkout"},
+                                  deck_slug="acme-reuse")
+    if ub is None:
+        fails.append("relative approved URL must be refused (absolute only)")
+    _u, ub = resolve_approved_url(
+        {"APPROVED_CHECKOUT_URL": "https://example.com/acme-reuse/checkout"},
+        deck_slug="acme-reuse")
+    if ub is None:
+        fails.append("placeholder-host approved URL must be refused")
+    try:
+        resolve_cta_href(page_role="checkout", deck_slug="acme-reuse",
+                         approved_url="https://pay.other.shop/other/x")
+        fails.append("resolve_cta_href ACCEPTED a foreign approved URL")
+    except ValueError:
+        pass
+
+    # 7) persist-before-retry: product ledger written before any session;
+    #    a second sandbox on the same run_dir reuses the persisted product.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as td2:
+        rd2 = Path(td2) / "run"
+        sb1 = MemoryPaymentSandbox(run_dir=rd2)
+        prod1 = sb1.create_product(offer)
+        ledger_path = rd2 / PRODUCT_LEDGER_REL
+        if not ledger_path.is_file():
+            fails.append("product ledger not persisted before retry window")
+        persisted = lookup_persisted_product(rd2, offer)
+        if not persisted or persisted.get("product_id") != prod1["product_id"]:
+            fails.append(f"persisted product lookup wrong: {persisted}")
+        sb2 = MemoryPaymentSandbox(run_dir=rd2)
+        prod2 = sb2.create_product(offer)
+        if prod2.get("product_id") != prod1["product_id"] or not prod2.get("reused"):
+            fails.append(f"retry did not reuse persisted product: {prod1} {prod2}")
+        other_offer = dict(offer, name="Different Offer")
+        prod3 = sb2.create_product(other_offer)
+        if prod3.get("product_id") == prod1["product_id"] or prod3.get("reused"):
+            fails.append("different offer must mint a new product, not reuse")
+
+    # 8) execution readiness: PIT-alias presence + caf visibility, deck-neutral.
+    ready = check_execution_readiness(
+        env={"GOHIGHLEVEL_API_KEY": "pit_probe"})
+    if ready is not None and ready.get("code") != BLOCK_MISSING_SKILL:
+        fails.append(f"readiness with PIT but no caf must be MISSING_SKILL or "
+                     f"ready: {ready}")
+    creds = check_execution_readiness(env={})
+    if not creds or creds.get("code") != BLOCK_MISSING_CREDS:
+        fails.append(f"readiness without PIT must block MISSING_CREDS: {creds}")
+
+    # 9) live-adapter stubs: every mutating seam must refuse with an exact
     #    deferral (owner + action) instead of touching a real location.
     deferrals = live_adapter_deferrals()
     if len(deferrals) != 7:
@@ -1288,7 +1650,8 @@ def _selftest() -> int:
         return 1
     print("checkout_form_builder selftest -> PASS (allowlist, escaping, CTA "
           "audit, offer/intent/scope, lead proof incl. duplicates, sandbox "
-          "mapping with zero real charge, blockers, live-stub deferrals x7)")
+          "mapping with zero real charge, blockers, approved-URL reuse, "
+          "product persist-before-retry, readiness, live-stub deferrals x7)")
     return 0
 
 
