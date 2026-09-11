@@ -270,6 +270,29 @@ class BoardMirror:
                 self.run_dir, deck_slug, title, description,
                 priority="normal", env=os.environ,
                 run_id=self._run_slug())
+            # PRES-052: local and CC destinations acknowledge SEPARATELY. A
+            # successful card ingest acknowledges the matching logical relay
+            # event on the CC destination only; a CC failure (None) leaves
+            # local progress untouched and emits a queued CC row instead.
+            try:
+                try:
+                    from . import relay as _relay
+                except ImportError:
+                    import relay as _relay  # type: ignore[no-redef]
+                if task_id:
+                    for _eid, _vis in list(
+                            _relay.read_display(self.run_dir).items()):
+                        if _vis.get("state") == _relay.STATE_QUEUED:
+                            _relay.ack_cc(self.state, self.run_dir, str(_eid),
+                                          store=self.store)
+                            break
+                else:
+                    _relay.emit(self.state, self.run_dir, "progress",
+                                "CC card ingest pending — local progress "
+                                "continues (CC failure does not suppress local).",
+                                store=self.store)
+            except Exception:  # noqa: BLE001 — never let relay break board
+                pass
             if task_id:
                 board_state["task_id"] = task_id
                 board_state.pop("task_id_missing_at", None)
@@ -303,8 +326,42 @@ class BoardMirror:
                     f"or check board.no_task_id for root cause"
                 )
                 return None
-            return cc.post_activity(self.run_dir, task_id, phase_id, note,
-                                    activity_type="updated", scores=None, env=os.environ)
+            ok = cc.post_activity(self.run_dir, task_id, phase_id, note,
+                                      activity_type="updated", scores=None, env=os.environ)
+            # PRES-052: a confirmed CC activity acknowledges the matching
+            # logical relay event on the CC destination only. A CC failure
+            # (False) never touches the local ack — local progress survives
+            # a CC outage by construction.
+            try:
+                try:
+                    from . import relay as _relay
+                except ImportError:
+                    import relay as _relay  # type: ignore[no-redef]
+                if ok:
+                    for _eid, _vis in list(
+                            _relay.read_display(self.run_dir).items()):
+                        if (_vis.get("stage") == phase_id
+                                and _vis.get("state") in (
+                                    _relay.STATE_QUEUED,
+                                    _relay.STATE_ACKED_LOCAL)):
+                            _relay.ack_cc(self.state, self.run_dir, str(_eid),
+                                          store=self.store)
+                            break
+                else:
+                    _relay.note_attempt(
+                        self.state, self.run_dir,
+                        next((str(_eid) for _eid, _vis in
+                              _relay.read_display(self.run_dir).items()
+                              if _vis.get("stage") == phase_id
+                              and _vis.get("state") not in (
+                                  _relay.STATE_ACKED_LOCAL,
+                                  _relay.STATE_ACKED_CC,
+                                  _relay.STATE_ACKED_BOTH,
+                                  _relay.STATE_TIMEOUT)),
+                             ""), "cc", store=self.store)
+            except Exception:  # noqa: BLE001 — never let relay break board
+                pass
+            return ok
 
         return self._wrap(_do)
 
