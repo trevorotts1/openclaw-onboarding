@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-09-10T23:00:34.049773+00:00",
-  "source_ref": "a421749a663eff4b9c296904e99d188e3e93252f",
+  "generated_at": "2026-09-11T21:17:40.427405+00:00",
+  "source_ref": "e90ba152303d3e552b1388dab8c0ec8ab846635d",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -9,8 +9,8 @@
     "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
   },
   "counts": {
-    "artifacts": 42,
-    "sops": 9,
+    "artifacts": 41,
+    "sops": 8,
     "roles": 33,
     "departments": 11
   },
@@ -505,18 +505,6 @@
       ],
       "retired_in": "8c77c86c83c184eecb3b4ff5e9fbaeba4074e0cf",
       "retired_at": "2026-09-04T06:20:48-04:00"
-    },
-    {
-      "lib_path": "templates/role-library/presentations/sops/GHL-EXTERNAL-INSTALLER-SOP.md",
-      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/GHL-EXTERNAL-INSTALLER-SOP.md",
-      "dept": "presentations",
-      "file": "GHL-EXTERNAL-INSTALLER-SOP.md",
-      "kind": "sop",
-      "content_shas": [
-        "sha256:a5933333929714e766f5d4881ed6315bb26d182eeda4335c65daa68d53a264b5"
-      ],
-      "retired_in": "4cede3d5e18c03e44cee1e1789c4e081bc7d17c3",
-      "retired_at": "2026-09-10T17:23:19-04:00"
     },
     {
       "lib_path": "templates/role-library/presentations/sops/deck-discovery-strategist-sops.md",

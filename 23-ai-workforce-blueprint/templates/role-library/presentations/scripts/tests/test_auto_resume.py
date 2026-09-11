@@ -130,13 +130,23 @@ def cli(run_dir: Path, *extra: str) -> int:
 
 
 @pytest.fixture(autouse=True)
-def _no_rollback_no_transport(monkeypatch):
+def _no_rollback_no_transport(monkeypatch, tmp_path):
     """Every leg runs with the rollback OFF and no notify transport, unless
     the leg itself sets one. Inheriting an operator's env into a test is how a
     suite passes on one box and fails on another."""
     monkeypatch.delenv(ar.AUTO_RESUME_ENV, raising=False)
     monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
     monkeypatch.delenv("PRESENTATION_MANIFEST", raising=False)
+    # PRES-019 QC4: the known-plan recovery path reads the resource profile
+    # (the ask-once store). A test must never read the OPERATOR's live
+    # profile -- on the operator box that profile has ollama-cloud locked,
+    # which would flip every plan-park leg to KNOWN-PLAN -- so both profile
+    # store envs are pointed at an empty per-test directory. A leg that
+    # wants a KNOWN-PLAN state writes its own profile there.
+    cfg = tmp_path / "profile-store"
+    cfg.mkdir(exist_ok=True)
+    monkeypatch.setenv("PRESENTATION_RESOURCE_PROFILE_DIR", str(cfg))
+    monkeypatch.setenv("PRESENTATION_CAPACITY_CONFIG_DIR", str(cfg))
 
 
 # ===========================================================================
@@ -1140,3 +1150,106 @@ def test_poll_script_is_valid_bash():
     result = subprocess.run(["bash", "-n", str(POLL_SCRIPT)],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+# ===========================================================================
+# PRES-019 (step 4) -- CONFIGURATION-PENDING: a missing provider credential
+# or an unanswered one-time resource-plan question is not a retryable
+# failure. Never auto-resumed, never silent: the stamp names the owner and
+# the next action, and it lands in state.json so the visibility survives
+# detached execution.
+# ===========================================================================
+
+#: model_router FIX 114's exact park phrasing -- "parks with the key gate
+#: named" -- the vocabulary the key-gate match rides on.
+NO_RESOLVABLE_KEY_REASON = ("provider kie has no resolvable key "
+                            "(FIX 114: no store carries a plausible "
+                            "credential)")
+
+#: A resource-plan question the client has not answered yet (resource_
+#: profile's ask-once contract).
+RESOURCE_PLAN_REASON = ("resource plan pending for provider "
+                        "ollama-cloud: the client has not chosen a plan "
+                        "tier")
+
+
+def _stamp_pending(run_dir: Path) -> dict:
+    doc = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+    return doc.get("configuration_pending") or {}
+
+
+def test_missing_credential_park_never_resumes(tmp_path):
+    run_dir = make_run(tmp_path, phase="P6-SLIDES",
+                       reason=NO_RESOLVABLE_KEY_REASON, name="nokey")
+    d = ar.evaluate(run_dir)
+    assert d.resume is False
+    assert d.code == ar.DECISION_CONFIGURATION_PENDING
+
+
+def test_resource_plan_park_never_resumes(tmp_path):
+    run_dir = make_run(tmp_path, phase="P0A-INTAKE",
+                       reason=RESOURCE_PLAN_REASON, name="plan")
+    d = ar.evaluate(run_dir)
+    assert d.resume is False
+    assert d.code == ar.DECISION_CONFIGURATION_PENDING
+
+
+def test_configuration_park_spends_no_attempt(tmp_path):
+    """The cap must come out untouched: a retry into a missing answer is a
+    bound WASTED, not spent."""
+    run_dir = make_run(tmp_path, phase="P6-SLIDES",
+                       reason=NO_RESOLVABLE_KEY_REASON, attempts=2,
+                       attempt_age_minutes=600, name="nokey-cap")
+    cli(run_dir)
+    assert len(rows(run_dir)) == 2  # the two pre-loaded rows only
+
+
+def test_credential_stamp_names_owner_and_action(tmp_path):
+    run_dir = make_run(tmp_path, phase="P6-SLIDES",
+                       reason=NO_RESOLVABLE_KEY_REASON, name="nokey-stamp")
+    cli(run_dir)
+    stamp = _stamp_pending(run_dir)
+    assert stamp.get("owner"), stamp
+    assert "env store" in stamp["owner"]
+    assert stamp.get("next_action"), stamp
+    assert stamp.get("phase") == "P6-SLIDES"
+    assert stamp.get("by") == "presentation_job.auto_resume"
+
+
+def test_resource_plan_stamp_names_client_owner(tmp_path):
+    run_dir = make_run(tmp_path, phase="P0A-INTAKE",
+                       reason=RESOURCE_PLAN_REASON, name="plan-stamp")
+    cli(run_dir)
+    stamp = _stamp_pending(run_dir)
+    assert "client" in stamp.get("owner", "")
+    assert stamp.get("next_action"), stamp
+
+
+def test_configuration_stamp_visible_in_status(tmp_path):
+    """cmd_status reports the pending configuration as PENDING with owner and
+    next action -- never as working. This is the detached-execution leg: a
+    status pass with no notify transport still sees the stamp."""
+    run_dir = make_run(tmp_path, phase="P6-SLIDES",
+                       reason=NO_RESOLVABLE_KEY_REASON, name="nokey-status")
+    cli(run_dir)
+    from presentation_job import __main__ as pj_main
+    parser = pj_main.build_parser()
+    ns = parser.parse_args(["--status", "--run-dir", str(run_dir)])
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pj_main.cmd_status(ns)
+    out = buf.getvalue()
+    assert "configuration : PENDING" in out
+    assert "owner       :" in out
+    assert "next action :" in out
+
+
+def test_transient_park_writes_no_configuration_stamp(tmp_path):
+    """Control: an ordinary retryable park must not gain the stamp -- the
+    class exists to name MISSING ANSWERS, not every park."""
+    run_dir = make_run(tmp_path, reason=TRANSIENT_REASON,
+                       name="transient-control")
+    cli(run_dir)
+    assert _stamp_pending(run_dir) == {}

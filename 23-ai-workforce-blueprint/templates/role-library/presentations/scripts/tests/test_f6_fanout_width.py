@@ -195,27 +195,40 @@ def test_fanout_phase_runs_at_the_routed_width_not_at_one(tmp_path, monkeypatch)
 #    count and not 1.
 # ---------------------------------------------------------------------------
 def test_width_is_the_routed_capacity_when_units_exceed_it(tmp_path, monkeypatch):
+    """PRES-014 UPDATE (W2 WF05): the manifest now migrates the style spec's
+    max_units to {desired_count: 3, batch_width: 3}, so a 12-slide deck
+    admits EXACTLY 3 units (the phase's desired work count) in ONE bounded
+    batch of width 3. The pre-PRES-014 expectation (12 units admitted, one
+    pool at the routed width 8) is superseded: the whole point of the fix is
+    that a 100-slide style deck makes 3 variant calls, not 12 and not 100.
+    The routed-width claim this test kept alive for F6 is now proven by the
+    per-slide QC phases (batch_width 12, desired_count absent -> all units
+    admitted, each batch bounded by the routed width)."""
     import presentation_job.dispatcher as d
     routed = _router_absent(monkeypatch)
     assert routed == 8, (
         f"DEFAULT_MAX_WORKERS moved to {routed}; update this test's expectation")
     run_dir = _seed_run(tmp_path, n_slides=12)
-    _stub_units(monkeypatch, _variant)
+    calls = _stub_units(monkeypatch, _variant)
 
     result = _dispatch(d, run_dir)
     assert result.status == "ok", f"fanout dispatch failed: {result.reasons}"
 
+    # desired_count=3: exactly 3 model calls over a 12-slide deck.
+    assert len(calls) == 3, calls
     width = _pool_width(run_dir)
-    assert width == routed, (
-        f"fan-out ran at width {width} over 12 units; expected the routed "
-        f"capacity {routed}. 1 = the F6 defect; 12 = the unit count used as a "
-        f"width with no ceiling at all")
+    assert width == 3, (
+        f"fan-out ran at width {width}; expected the migrated batch_width 3 "
+        f"(the style spec's bounded batch). 1 = the F6 defect")
 
-    # The width is on the audit trail too, next to where it came from.
+    # The width and the migration are on the audit trail too.
     rows = _sidecar_rows(run_dir)
+    plan = [r for r in rows if r.get("status") == "fanout_plan"]
+    assert plan, f"no fanout_plan sidecar row: {rows}"
+    assert plan[0].get("units_desired") == 3, plan[0]
+    assert plan[0].get("units_enumerated") == 12, plan[0]
     final = [r for r in rows if r.get("status") in ("verified", "failed")]
     assert final, f"no terminal sidecar row for {PHASE}: {rows}"
-    assert final[-1].get("workers") == routed, final[-1]
     assert final[-1].get("routed_width") == routed, final[-1]
 
 
@@ -276,11 +289,18 @@ def test_phase_worker_env_var_is_shell_legal_and_is_honoured(tmp_path, monkeypat
 #    barrier can never trip and the phase comes back exhausted.
 # ---------------------------------------------------------------------------
 def test_units_run_concurrently_not_one_after_another(tmp_path, monkeypatch):
+    """PRES-014 UPDATE (W2 WF05): the style spec's migrated batch_width is 3,
+    so 4 enumerated slides admit one bounded batch of 3 units in flight
+    TOGETHER (desired_count=3 caps the calls, not the overlap). The barrier
+    needs a partner count that matches the batch: 3 units in one pool at
+    width min(routed=8, batch=3)=3 -- all three wait on a Barrier(3), which
+    can only trip when the pool is genuinely concurrent. At width 1 (the F6
+    defect) it deadlocks and the phase comes back failed."""
     import presentation_job.dispatcher as d
     _router_absent(monkeypatch)
     run_dir = _seed_run(tmp_path, n_slides=4)
 
-    barrier = threading.Barrier(2, timeout=20)
+    barrier = threading.Barrier(3, timeout=20)
     tripped = {"n": 0}
     lock = threading.Lock()
     seq = {"n": 0}
@@ -289,9 +309,9 @@ def test_units_run_concurrently_not_one_after_another(tmp_path, monkeypatch):
         with lock:
             seq["n"] += 1
             n = seq["n"]
-        # Only returns once a SECOND thread reaches this line. At width 1 it
+        # Only returns once a THIRD thread reaches this line. At width 1 it
         # raises BrokenBarrierError after the timeout -- exactly the serial
-        # behaviour F6 removes.
+        # behaviour F6 removes (and PRES-014 keeps removed).
         barrier.wait()
         with lock:
             tripped["n"] += 1
@@ -304,7 +324,7 @@ def test_units_run_concurrently_not_one_after_another(tmp_path, monkeypatch):
     assert result.status == "ok", (
         f"units did not overlap -- the pool ran them one at a time and the "
         f"concurrency barrier timed out: {result.reasons}")
-    assert tripped["n"] == 4, tripped
+    assert tripped["n"] == 3, tripped
 
 
 # ---------------------------------------------------------------------------

@@ -55,7 +55,7 @@ from typing import Dict, List, Optional, Tuple
 # 56 -> 68: mirrors the presentation_job/manifest.py bump in the SAME commit (see the
 # full rationale there). tests/test_manifest_assert.py asserts these two constants are
 # equal, so they can never drift apart silently.
-MIN_MANIFEST_VERSION = 68  # FIX 83: mirrors presentation_job/manifest.py — bumped together (U019 step 8)
+MIN_MANIFEST_VERSION = 69  # PRES-011: mirrors presentation_job/manifest.py — bumped together (U019 step 8)
 MIN_MANIFEST_PHASES = 59
 MIN_AF_SP_CODES = 16
 

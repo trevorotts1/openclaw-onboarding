@@ -47,8 +47,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
+from datetime import datetime, timezone
 
 # The six mandatory pre_presentation_capture fields build_deck.py's
 # _intake_provenance_gate requires (mirrored here for the non-driver path).
@@ -219,6 +221,410 @@ ID_TO_FIELD = {
 # a location presentation-intake-poll.sh's read_run_mode() already reads
 # (candidate 2), so this routing costs the poller no change.
 PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE", "RUN_MODE"}
+
+
+# ===========================================================================
+# PRES-006 — THE CANONICAL FIELD-PATH CONTRACT (box-side mirror)
+# ===========================================================================
+# schema/intake_fields.js is the SOURCE OF TRUTH for where every intake answer
+# lives; tools/gen_ui_questions.mjs regenerates the UI and
+# schema/intake_fields.json (the JSON projection) from it in one pass, and
+# test_pres006_canonical_paths.py fails if THIS mirror stops matching that
+# projection. The pre-contract defect: the hosted form stored the upsell flags
+# under pre_presentation_capture.* (the storeTarget home every engine consumer
+# — defers.py, resolve_intake.py, sales_checkout_builder.py, vsl_builder.py —
+# reads) while both Workers' hand-copied REQUIRED_BRIEF_FIELDS arrays required
+# them inside deck_brief, so every complete form payload was rejected 422 by
+# its own backend. The canonical location is pre_presentation_capture.*
+# (engine-consumer need), declared ONCE here and pinned to the contract.
+INTAKE_CONTRACT_VERSION = 2
+_CONTRACT_PROJECTION_RELPATH = (
+    "schema/intake_fields.json")
+
+#: canonical_path -> the field's own id (the answers{} key the app records).
+CANONICAL_FIELD_PATHS = {
+    "presentation_type": "pre_presentation_capture.PRESENTATION_TYPE",
+    "offer_name": "deck_brief.OFFER_NAME",
+    "named_methodology": "deck_brief.NAMED_METHODOLOGY",
+    "transformation_promise": "deck_brief.TRANSFORMATION_PROMISE",
+    "time_to_result": "deck_brief.TIME_TO_RESULT",
+    "audience": "deck_brief.AUDIENCE",
+    "cta_action": "deck_brief.CTA_ACTION",
+    "brand_primary": "deck_brief.BRAND_PRIMARY",
+    "image_links": "deck_brief.IMAGE_LINKS",
+    "tone": "deck_brief.TONE",
+    "final_price": "deck_brief.FINAL_PRICE",
+    "speech_speed_preference": "intake.json.speech_speed_preference",
+    "want_sales_checkout": "pre_presentation_capture.WANT_SALES_CHECKOUT",
+    "sales_checkout_declined_reason":
+        "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
+    "want_vsl_page": "pre_presentation_capture.WANT_VSL_PAGE",
+    "vsl_page_declined_reason":
+        "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+    "run_mode": "pre_presentation_capture.RUN_MODE",
+    "client_notes": "deck_brief.CLIENT_NOTES",
+}
+
+#: The canonical REQUIRED set. A "no"/"false" value is a REAL answer (a client
+#: decline the engine gates on) and never counts as missing — only
+#: absent/None/blank does. This mirrors schema/intake_fields.js's
+#: required_fields; the mirror is pinned by test_pres006_canonical_paths.py.
+REQUIRED_CANONICAL_FIELDS = (
+    "deck_brief.OFFER_NAME",
+    "deck_brief.NAMED_METHODOLOGY",
+    "deck_brief.TRANSFORMATION_PROMISE",
+    "deck_brief.TIME_TO_RESULT",
+    "deck_brief.AUDIENCE",
+    "deck_brief.CTA_ACTION",
+    "deck_brief.TONE",
+    "deck_brief.FINAL_PRICE",
+    "pre_presentation_capture.PRESENTATION_TYPE",
+    "pre_presentation_capture.WANT_SALES_CHECKOUT",
+    "pre_presentation_capture.WANT_VSL_PAGE",
+)
+
+#: Version-aware legacy migration: version-1 records stored the upsell flags
+#: (and RUN_MODE) in inconsistent locations. Each canonical field's aliases,
+#: in the order the JS contract declares them. A legacy alias is moved to the
+#: canonical path when the canonical path is empty; a legacy value that
+#: CONTRADICTS a present canonical value refuses the migration (never
+#: arbitrarily chosen). Pinned to schema/intake_fields.js's legacy_aliases.
+LEGACY_ALIASES = {
+    "want_sales_checkout": ("deck_brief.WANT_SALES_CHECKOUT", "WANT_SALES_CHECKOUT"),
+    "want_vsl_page": ("deck_brief.WANT_VSL_PAGE", "WANT_VSL_PAGE"),
+    "run_mode": ("deck_brief.RUN_MODE", "RUN_MODE", "run_mode"),
+    "presentation_type": ("deck_brief.PRESENTATION_TYPE", "PRESENTATION_TYPE"),
+}
+
+#: booleanish strings legacy records used, normalized during migration.
+_LEGACY_BOOLEAN_NORMALIZATION = {"true": "yes", "false": "no"}
+
+
+class ContractMigrationError(RuntimeError):
+    """Raised when a legacy intake record carries CONTRADICTORY values for one
+    canonical field — the same answer recorded in two places with different
+    values. FAIL CLOSED, the module's standing discipline: the record is not
+    migrated, nothing is written, and the error names BOTH values so a human
+    resolves the record rather than the code guessing which one wins."""
+
+
+class IntakeIncompleteError(RuntimeError):
+    """Raised when a migrated intake still misses canonical REQUIRED fields.
+
+    Distinguishes missing from answered-no: WANT_SALES_CHECKOUT="no" is a real
+    answer (the engine's waiver gate needs it); WANT_SALES_CHECKOUT absent is
+    missing. The error names the missing canonical paths."""
+
+
+def _split_path(path: str) -> tuple:
+    """'deck_brief.OFFER_NAME' -> ('deck_brief', 'OFFER_NAME');
+    'intake.json.speech_speed_preference' -> ('intake',
+    'speech_speed_preference') — the flat intake.json section is stored under
+    the record key 'intake', so its canonical path maps to
+    record['intake'][key]. A single-segment alias ('WANT_SALES_CHECKOUT',
+    'run_mode') names a FLAT top-level key on the record."""
+    if path.startswith("intake.json."):
+        return ("intake", path[len("intake.json."):])
+    parts = tuple(p for p in path.split(".") if p)
+    if not parts:
+        raise ValueError(f"malformed canonical path: {path!r}")
+    return parts
+
+
+def read_canonical(intake: dict, path: str):
+    """Read one canonical field path. Returns the value, or None when absent.
+    Absence and answered-no are DIFFERENT results here: an answered-no reads
+    back as the string 'no'."""
+    if not isinstance(intake, dict):
+        return None
+    parts = _split_path(path)
+    obj = intake
+    for part in parts:
+        if not isinstance(obj, dict) or part not in obj:
+            return None
+        obj = obj[part]
+    if obj is None:
+        return None
+    if isinstance(obj, str) and not obj.strip():
+        return None
+    return obj
+
+
+def _write_canonical(intake: dict, path: str, value) -> None:
+    parts = _split_path(path)
+    obj = intake
+    for part in parts[:-1]:
+        nxt = obj.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            obj[part] = nxt
+        obj = nxt
+    obj[parts[-1]] = value
+
+
+def _delete_alias(intake: dict, alias: str) -> None:
+    parts = _split_path(alias)
+    obj = intake
+    for part in parts[:-1]:
+        if not isinstance(obj, dict):
+            return
+        obj = obj.get(part) or {}
+    if isinstance(obj, dict):
+        obj.pop(parts[-1], None)
+
+
+def _same_answer(a, b) -> bool:
+    """Normalize both sides (booleanish, case, surrounding whitespace) and
+    compare — 'True' and 'yes' are the same answer; 'yes' and 'no' are not."""
+    def norm(v):
+        if isinstance(v, bool):
+            return "yes" if v else "no"
+        s = str(v).strip().lower()
+        return _LEGACY_BOOLEAN_NORMALIZATION.get(s, s)
+    return norm(a) == norm(b)
+
+
+def migrate_intake(intake: dict) -> dict:
+    """Migrate a legacy (pre-contract / version-1) intake record IN PLACE.
+
+    Returns the record. Every canonical field with declared LEGACY_ALIASES is
+    reconciled: an empty canonical path adopts the first present alias
+    (booleanish-normalized for the flag fields) and the alias copies are
+    removed; an alias that AGREES with the canonical value is dropped as
+    redundant; an alias that CONTRADICTS the canonical value raises
+    ContractMigrationError naming both — never an arbitrary choice.
+
+    A record already stamped with the current schema_version passes through
+    untouched. A record stamped with a NEWER version refuses (refusing to
+    downgrade)."""
+    if not isinstance(intake, dict):
+        raise ContractMigrationError(
+            "migration refused: intake is not an object")
+    version = intake.get("schema_version")
+    if version == INTAKE_CONTRACT_VERSION:
+        return intake
+    if version is not None:
+        try:
+            v = int(version)
+        except (TypeError, ValueError):
+            v = None
+        if v is not None and v > INTAKE_CONTRACT_VERSION:
+            raise ContractMigrationError(
+                f"migration refused: record declares schema_version {v}, newer "
+                f"than this build's contract version {INTAKE_CONTRACT_VERSION} "
+                "-- refusing to downgrade")
+
+    conflicts = []
+    for qid, aliases in LEGACY_ALIASES.items():
+        canonical = CANONICAL_FIELD_PATHS[qid]
+        canon_value = read_canonical(intake, canonical)
+        for alias in aliases:
+            legacy_value = read_canonical(intake, alias)
+            if legacy_value is None:
+                continue
+            if canon_value is None:
+                moved = legacy_value
+                if isinstance(moved, bool):
+                    moved = "yes" if moved else "no"
+                _write_canonical(intake, canonical, moved)
+                canon_value = moved
+                _delete_alias(intake, alias)
+            elif not _same_answer(canon_value, legacy_value):
+                conflicts.append((canonical, canon_value, alias, legacy_value))
+            else:
+                _delete_alias(intake, alias)
+
+    if conflicts:
+        details = "; ".join(
+            f"{alias}={legacy!r} vs {canonical}={canon!r}"
+            for canonical, canon, alias, legacy in conflicts)
+        raise ContractMigrationError(
+            f"migration refused: contradictory legacy values cannot be "
+            f"migrated (contract v{INTAKE_CONTRACT_VERSION}) -- {details}. "
+            f"Both locations were read; they disagree, so neither was chosen. "
+            f"Resolve the record and re-submit.")
+
+    intake["schema_version"] = INTAKE_CONTRACT_VERSION
+    return intake
+
+
+def validate_intake_completeness(intake: dict) -> list:
+    """The canonical REQUIRED check — false/no distinguished from missing.
+
+    Returns the list of missing canonical paths (empty = complete). A present
+    but falsy-LOOKING answer ('no', 'false', 0, False) is a REAL answer and is
+    never reported missing; only absent/None/blank is."""
+    missing = []
+    for path in REQUIRED_CANONICAL_FIELDS:
+        if read_canonical(intake, path) is None:
+            missing.append(path)
+    return missing
+
+
+def validate_and_migrate(intake: dict) -> dict:
+    """The Workers' POST /api/intake contract, box-side: migrate first, then
+    the completeness gate. Raises ContractMigrationError on a contradictory
+    legacy record and IntakeIncompleteError (naming the missing canonical
+    paths) on an incomplete one — never writes a hollow intake."""
+    migrate_intake(intake)
+    missing = validate_intake_completeness(intake)
+    if missing:
+        raise IntakeIncompleteError(
+            "intake incomplete -- required canonical fields missing or empty "
+            f"(contract v{INTAKE_CONTRACT_VERSION}): {', '.join(missing)}")
+    return intake
+
+
+# ===========================================================================
+# PRES-006 — configuration_pending (missing optional resource-plan subfields)
+# ===========================================================================
+# The resource_plan turn is OPTIONAL (required:false, block_gate:false): its
+# model/mode subfields ride along, and its PLAN-TIER half is asked only when
+# the capacity probe leaves a provider pending. An intake that answered the
+# interview but left a plan tier (or the whole plan turn) unstated is NOT
+# declined and NOT answered — it is configuration_pending. Before this fix the
+# writer treated the empty tier as absence and said nothing, so a dispatched
+# build PARKed on AF-CAPACITY-UNMEASURED with no durable record of WHY, no
+# owner, and no next action. The durable event (below) carries the missing
+# field, the provider, a scoped resume link and the next action; already
+# configured independent routes proceed — the pending configuration never
+# blocks the run, it stays VISIBLE.
+
+#: The durable event's kind, as intake-poll/supervisor integrations read it.
+CONFIGURATION_PENDING_EVENT = "configuration_pending"
+
+#: Where the durable events live in the run dir (JSONL — appended, never
+#: rewritten, so concurrent writers cannot clobber each other).
+CONFIG_EVENTS_RELPATH = "working/events/configuration_events.jsonl"
+
+#: The resource-plan canonical subfields whose absence is configuration-pending
+#: (never "declined", never "answered"). Mirrors deck-intake-questions.json's
+#: resource_plan subfields + LEGACY_ALIASES's canonical homes.
+_RESOURCE_PLAN_CONFIG_FIELDS = (
+    ("resource_plan", "pre_presentation_capture.RESOURCE_PLAN",
+     "plan tier for the provider whose concurrency could not be detected"),
+    ("workhorse_model", "pre_presentation_capture.WORKHORSE_MODEL",
+     "workhorse model (model@provider)"),
+    ("reasoning_model", "pre_presentation_capture.REASONING_MODEL",
+     "reasoning model (model@provider)"),
+    ("qc_model", "pre_presentation_capture.QC_MODEL",
+     "qc judge model (model@provider)"),
+    ("thinking_mode", "pre_presentation_capture.THINKING_MODE",
+     "thinking mode (max/high/medium/low/off)"),
+    ("run_mode", "pre_presentation_capture.RUN_MODE",
+     "run mode (ultra/standard/economy)"),
+)
+
+#: Where pending providers are read from, BEFORE the empty-tier return —
+#: resource_profile.pending_questions()'s shape ({id, provider, ...}).
+_PENDING_PROVIDER_KEY = "pending_providers"
+
+
+def _resume_url(session_id: str) -> str:
+    """The client's scoped resume link for a pending configuration. The base
+    comes from the PRESENTATION_INTAKE_BASE_URL env (the hosted app's own
+    origin); without it the link is relative and the poller/supervisor renders
+    it against the deployment it knows. NEVER an admin URL — this is the
+    client's own capability surface."""
+    base = os.environ.get("PRESENTATION_INTAKE_BASE_URL", "").rstrip("/")
+    if base:
+        return f"{base}/s/{session_id}"
+    return f"/s/{session_id}"
+
+
+def pending_configurations(intake: dict, pending_providers: "list | None" = None) -> list:
+    """The optional resource-plan subfields this intake left unstated.
+
+    Inspects the pending providers FIRST (the ask-gate the bank documents:
+    'asked only when the capacity probe leaves a pending question') and pairs
+    each still-unstated subfield with the provider(s) it is owed for. Returns
+    one record per pending configuration:
+
+        {field, missing_field, provider, next_action, state}
+
+    state is always "configuration_pending" — NEVER "declined" and NEVER
+    "answered". Absence here is absence; silence is not consent. An intake
+    that stated every subfield returns [] — nothing is invented."""
+    if not isinstance(intake, dict):
+        return []
+    providers = pending_providers
+    if providers is None:
+        providers = intake.get(_PENDING_PROVIDER_KEY) or []
+    if not isinstance(providers, list):
+        providers = []
+    provider_ids = []
+    for p in providers:
+        if isinstance(p, dict) and p.get("provider"):
+            provider_ids.append(str(p["provider"]))
+        elif isinstance(p, str) and p.strip():
+            provider_ids.append(p.strip())
+    if not provider_ids:
+        # No probe left any provider pending (or none was recorded): nothing
+        # is OWED, so nothing is pending — never a placeholder record for an
+        # unstated subfield nobody is waiting on.
+        return []
+
+    out = []
+    for sub_id, canonical, human in _RESOURCE_PLAN_CONFIG_FIELDS:
+        if read_canonical(intake, canonical) is not None:
+            continue  # stated — nothing pending for this subfield
+        for provider in provider_ids:
+            out.append({
+                "field": canonical,
+                "missing_field": sub_id,
+                "provider": provider,
+                "state": CONFIGURATION_PENDING_EVENT,
+                "next_action": (
+                    f"answer the resource-plan {sub_id} for {provider} ({human}); "
+                    "the run is NOT blocked — already configured routes proceed"),
+            })
+    return out
+
+
+def emit_configuration_pending_events(run_dir: pathlib.Path, intake: dict,
+                                      session_id: str = "") -> list:
+    """Write the configuration_pending durable events for `intake`'s unstated
+    optional resource-plan subfields.
+
+    Durable = appended (one JSON line each) to
+    working/events/configuration_events.jsonl — never rewritten, so a
+    concurrent reader (intake-poll, the supervisor, the engine) sees every
+    event ever emitted. Each record carries the missing field, the provider,
+    the SCOPED RESUME LINK (the client's own /s/<session> capability URL, never
+    an admin surface) and the next action. Returns the records written.
+
+    The pending-provider list is read from the intake record's own
+    pending_providers key (stamped by the caller from the capacity probe's
+    resource_profile.pending_questions BEFORE any empty-tier return) — this
+    function never runs the probe itself (read-only caller contract, no
+    network). Independent already-configured routes are NOT touched: this
+    writes visibility, never a block."""
+    pending = pending_configurations(intake)
+    if not pending:
+        return []
+    events = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for rec in pending:
+        events.append({
+            "event": CONFIGURATION_PENDING_EVENT,
+            "at": now_iso,
+            "session_id": session_id or str(intake.get("intake_session_id") or ""),
+            "run_dir": str(run_dir),
+            "field": rec["field"],
+            "missing_field": rec["missing_field"],
+            "provider": rec["provider"],
+            "resume_url": _resume_url(session_id or str(intake.get("intake_session_id") or "")),
+            "next_action": rec["next_action"],
+            "state": CONFIGURATION_PENDING_EVENT,
+            "owner": "presentation-intake",
+            "source": "intake_writer",
+        })
+    out = run_dir / CONFIG_EVENTS_RELPATH
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("a", encoding="utf-8") as fh:
+        for ev in events:
+            fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    return events
 
 
 # ===========================================================================
@@ -579,6 +985,11 @@ def write_intake_file(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     cmd_ingest() calls this directly with a raw Worker payload. See
     _require_grounded_deck_type().
 
+    PRES-006: migrates any legacy (pre-contract) record forward FIRST
+    (ContractMigrationError refuses a contradictory one, writing nothing) and
+    then runs the canonical completeness gate (IntakeIncompleteError names the
+    missing canonical paths -- a real "no" answer never counts as missing).
+
     Also runs _promote_anti_fabrication_fields() (FIX-PITCH-ANTI-FAB) for the
     same reason -- so named_methodology/time_to_result land at intake.json's
     TRUE ROOT no matter which caller built `intake`.
@@ -586,6 +997,12 @@ def write_intake_file(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     _require_grounded_deck_type(intake)
     _require_grounded_run_mode(intake)
     _promote_anti_fabrication_fields(intake)
+    migrate_intake(intake)
+    missing = validate_intake_completeness(intake)
+    if missing:
+        raise IntakeIncompleteError(
+            "intake incomplete -- required canonical fields missing or empty "
+            f"(contract v{INTAKE_CONTRACT_VERSION}): {', '.join(missing)}")
     out = run_dir / "working" / "copy" / "intake.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -602,9 +1019,19 @@ def write_ledger(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
 
     FAIL CLOSED: raises UngroundedDeckTypeError -- writing nothing, never
     "complete": true -- if `intake`'s deck-type axis cannot be grounded in
-    its own `answers`. See _require_grounded_deck_type().
+    its own `answers`. See _require_grounded_deck_type(). PRES-006: also runs
+    the contract migration + canonical completeness gate first, so a
+    contradictory legacy record or an incomplete one never reaches a
+    "complete" ledger.
     """
     _require_grounded_deck_type(intake)
+    _require_grounded_run_mode(intake)
+    migrate_intake(intake)
+    missing = validate_intake_completeness(intake)
+    if missing:
+        raise IntakeIncompleteError(
+            "intake incomplete -- required canonical fields missing or empty "
+            f"(contract v{INTAKE_CONTRACT_VERSION}): {', '.join(missing)}")
     run_mode = _require_grounded_run_mode(intake)
     ledger_path = run_dir / "working" / "interview" / "intake_ledger.json"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)

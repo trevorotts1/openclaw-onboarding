@@ -92,6 +92,29 @@ try:
 except ImportError:  # pragma: no cover - pre-FIX-14 trees limit nothing new
     _governor = None  # type: ignore[assignment]
 
+# [PRES-003 / PRES-004] ADMISSION DELEGATION. fanout no longer acquires the
+# governor through its own raw `_gov.acquire` call -- the raw call is exactly
+# the nested-double-acquisition defect PRES-003 names ("consolidate fanout's
+# raw governor call with dispatcher reentrant admission to avoid nested double
+# acquisition"). The dispatcher's `_govern_acquire` is the ONE reentrant
+# admission seam: it counts depth per (thread, folded provider), takes ONE
+# real lease for the outermost frame, and returns that same lease to nested
+# frames. A fanout worker whose unit runs inside a dispatch_complete already
+# holds the outer lease for this logical call; a standalone worker's first
+# _govern_acquire takes the lease itself. Either way: ONE logical HTTP
+# request, ONE lease.
+#
+# Refusal contract: _govern_acquire either returns a live lease (admitted) or
+# None (the governor refused -- daily cap exhausted raises GovernorTimeout,
+# the module is absent, or acquire failed). None means NO WORKER RUNS. The
+# old code caught the exception and called worker_fn anyway -- the confirmed
+# fail-open defect. A refused unit now ends as a VISIBLE "blocked" unit
+# result, never a transport call.
+try:
+    from presentation_job import dispatcher as _dispatcher_mod  # noqa: E402
+except ImportError:  # pragma: no cover - standalone import of fanout only
+    _dispatcher_mod = None  # type: ignore[assignment]
+
 # Reused, never re-invented (spec S2.3): the one retry budget the serial path
 # already uses at dispatcher.py:1815 (`for attempt in range(1, DISPATCH_RETRY_CAP + 1)`).
 DEFAULT_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3
@@ -388,6 +411,7 @@ def run_units(
             "verified": sum(1 for v in vals if v == "verified"),
             "failed": sum(1 for v in vals if v == "failed"),
             "skipped": sum(1 for v in vals if v == "skipped"),
+            "blocked": sum(1 for v in vals if v == "blocked"),
             "pending": sum(1 for v in vals if v == "pending"),
         }
 
@@ -467,6 +491,14 @@ def run_units(
         _gov_provider = unit.payload.get("provider") or "deepseek-direct"
         _gov_enabled = bool(unit.payload.get("provider")) or \
             bool(unit.payload.get("govern"))
+        # [PRES-003/004] ADMISSION: the dispatcher's reentrant seam, never the
+        # raw governor. _admit is None only on a pre-FIX-14 tree (no governor
+        # module at all) and then behaves byte-for-byte like the old no-op.
+        _admit = getattr(_dispatcher_mod, "_govern_acquire", None) \
+            if (_gov_enabled and _dispatcher_mod is not None) else None
+        _report_ok = getattr(_dispatcher_mod, "_govern_ok", None)
+        _report_429 = getattr(_dispatcher_mod, "_govern_429", None)
+        _release = getattr(_dispatcher_mod, "_govern_release", None)
         _gov = _governor if _gov_enabled else None
         is_subprocess = bool(unit.payload.get("subprocess_argv"))
         while attempts < cap:
@@ -492,24 +524,30 @@ def run_units(
             if payload_stamps:
                 unit.payload.setdefault("fanout_deadline", payload_stamps)
             _lease = None
-            if _gov is not None:
-                try:
-                    # FIX 14 named call site: fanout acquires one governor
-                    # lease per attempt so a 40-unit wave can never exceed the
-                    # provider's max_inflight or rps/burst window.
-                    _lease = _gov.acquire(_gov_provider)
-                except Exception:  # noqa: BLE001 -- gating never kills a unit
-                    _lease = None
+            if _admit is not None:
+                # [PRES-003/004] ADMISSION IS REQUIRED: a refusal (None --
+                # daily cap exhausted, acquire failed, or provider
+                # unresolvable) means NO TRANSPORT CALL. The old code
+                # swallowed the exception and ran worker_fn anyway; that
+                # fail-open is the defect this replaces. The refused unit
+                # becomes a VISIBLE blocked state in the progress artifact
+                # and a typed failed result.
+                _lease = _admit(_gov_provider)
+                if _lease is None:
+                    _emit(unit.key, "blocked")
+                    return UnitResult(
+                        key=unit.key, status="failed", attempts=attempts,
+                        reasons=[f"admission refused for provider "
+                                 f"{_gov_provider!r}: governor denied the "
+                                 f"lease (budget/capacity exhausted or "
+                                 f"unavailable) -- no outbound call was made"])
             try:
                 if is_subprocess:
                     result = _run_subprocess_unit(unit)
                 else:
                     result = worker_fn(unit)
-                if _gov is not None:
-                    try:
-                        _gov.report_ok(_gov_provider)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if _report_ok is not None:
+                    _report_ok(_gov_provider)
                 _emit(unit.key, "verified" if result.status == "ok" else "failed")
                 return result
             except ProviderTaskPending as ptp:
@@ -529,12 +567,9 @@ def run_units(
             except Exception as exc:  # noqa: BLE001 -- transient-fault safety net (S2.3)
                 last_exc = exc
                 text = f"{type(exc).__name__}: {exc}"
-                if _gov is not None and ("429" in text or
-                                         "rate limit" in text.lower()):
-                    try:
-                        _gov.report_429(_gov_provider)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if _report_429 is not None and ("429" in text or
+                                                "rate limit" in text.lower()):
+                    _report_429(_gov_provider)
                 if attempts >= cap:
                     break
                 _emit(unit.key, "retrying")
@@ -556,11 +591,8 @@ def run_units(
                 else:
                     time.sleep(min(30, 5 * attempts))
             finally:
-                if _gov is not None and _lease is not None:
-                    try:
-                        _gov.release(_lease)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if _release is not None and _lease is not None:
+                    _release(_gov_provider, _lease)
         # PRES-013: the worker raised on every attempt with no result and
         # no provider task id. The DURABLE async-pending marker keeps the
         # phase surface showing a resumable failure (append_unit_ledger_row
@@ -745,16 +777,35 @@ class FanoutSpecError(ValueError):
 
 @dataclass(frozen=True)
 class FanoutSpec:
+    # PRES-014 (W2 WF05): max_units was AMBIGUOUS between the phase's desired
+    # work count (style variants: 3) and the submission batching width. Two
+    # separate fields now; `max_units` stays as the legacy constructor alias
+    # and is MIGRATED by parse_fanout_field (see migrate note there) -- a
+    # directly-constructed FanoutSpec(by=..., max_units=N) keeps working with
+    # N landing in BOTH fields, which preserves the shipped behavior exactly.
     by: str                      # "slide" | "section" | "file"
-    max_units: Optional[int] = None   # submission-batch cap; None = all units at once
+    max_units: Optional[int] = None   # LEGACY alias -- migrated, see above
+    desired_count: Optional[int] = None  # how many units this phase WANTS done
+    batch_width: Optional[int] = None    # how many units IN FLIGHT per admission batch
+
+    def __post_init__(self) -> None:
+        # Legacy construction (FanoutSpec(by=..., max_units=3)) migrates in
+        # place: frozen dataclass, so object.__setattr__ is the only writer.
+        # Explicit new fields win; the alias never overrides them.
+        if self.desired_count is None and self.max_units and self.max_units > 0:
+            object.__setattr__(self, "desired_count", int(self.max_units))
+        if self.batch_width is None and self.max_units and self.max_units > 0:
+            object.__setattr__(self, "batch_width", int(self.max_units))
 
     def batches(self, units: List["Unit"]) -> List[List["Unit"]]:
-        """Split `units` into submission batches of at most `max_units`.
-        max_units=None (or <= 0, refused at parse) => one batch."""
-        if not self.max_units or self.max_units >= len(units):
+        """Split `units` into submission batches of at most `batch_width`.
+        batch_width None (or <= 0) => one batch. COVERAGE, not concurrency:
+        every unit lands in exactly one batch, in order."""
+        width = self.batch_width
+        if not width or width < 1 or width >= len(units):
             return [units]
-        return [units[i:i + self.max_units]
-                for i in range(0, len(units), self.max_units)]
+        return [units[i:i + width]
+                for i in range(0, len(units), width)]
 
 
 def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
@@ -765,6 +816,15 @@ def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
     FanoutSpecError -- a typo'd "by": "Slide" or a string "max_units": "12"
     must never silently degrade to serial dispatch (same refusal rule as
     manifest.py's _parse_workers_field).
+
+    PRES-014 MIGRATION: legacy {"by", "max_units"} parses through unchanged
+    and FanoutSpec migrates max_units into BOTH desired_count and batch_width
+    (every shipped declaration names a desired work count; a bounded batch of
+    that width still covers every slide). A manifest declaring the new
+    unambiguous fields uses them directly; max_units is then ignored -- the
+    ambiguous name must not win when its successors are present. A NEGATIVE
+    or non-int value for ANY of the three numeric fields is refused at parse
+    time -- a silent coercion would corrupt the admission plan.
     """
     if raw is None:
         return None
@@ -777,13 +837,18 @@ def parse_fanout_field(raw: Any) -> Optional[FanoutSpec]:
     if not isinstance(by, str) or by.strip().lower() not in FANOUT_BY_VALUES:
         raise FanoutSpecError(
             f"fanout.by must be one of {FANOUT_BY_VALUES}, got {by!r}")
-    max_units = raw.get("max_units")
-    if max_units is not None:
-        if isinstance(max_units, bool) or not isinstance(max_units, int) \
-                or max_units < 1:
-            raise FanoutSpecError(
-                f"fanout.max_units must be a positive int, got {max_units!r}")
-    return FanoutSpec(by=by.strip().lower(), max_units=max_units)
+    for fname in ("max_units", "desired_count", "batch_width"):
+        val = raw.get(fname)
+        if val is not None:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 1:
+                raise FanoutSpecError(
+                    f"fanout.{fname} must be a positive int, got {val!r}")
+    return FanoutSpec(
+        by=by.strip().lower(),
+        max_units=raw.get("max_units"),
+        desired_count=raw.get("desired_count"),
+        batch_width=raw.get("batch_width"),
+    )
 
 
 def unit_output_dir(run_dir: Path, phase_id: str) -> Path:

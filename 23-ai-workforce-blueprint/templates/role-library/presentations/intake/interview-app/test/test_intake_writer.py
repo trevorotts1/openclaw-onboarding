@@ -49,8 +49,16 @@ class TestIntakeWriter(unittest.TestCase):
             self.assertIn(f, intake["pre_presentation_capture"], f"missing {f}")
 
     def test_writes_intake_and_ledger(self):
+        # PRES-006: write_intake_file()/write_ledger() gate on the canonical
+        # REQUIRED set, so this fixture is now a COMPLETE answer set — an
+        # intentionally incomplete one is expected to fail closed (see
+        # test_writes_intake_file_refuses_an_incomplete_record below).
         raw = {"answers": {"presentation_type": "from_scratch", "offer_name": "X",
-                           "tone": "Teacher", "want_sales_checkout": "yes"}}
+                           "named_methodology": "M", "transformation_promise": "T",
+                           "time_to_result": "8w", "audience": "A",
+                           "cta_action": "book a call", "tone": "Teacher",
+                           "final_price": "$1", "speech_speed_preference": "default",
+                           "want_sales_checkout": "yes", "want_vsl_page": "no"}}
         intake = iw.assemble_intake(raw, run_id="R2")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R2"
@@ -176,12 +184,29 @@ class TestIntakeWriter(unittest.TestCase):
         """A legitimate, fully-answered intake still writes successfully
         (the fix must not break the working path) -- and a stale/wrong
         caller-supplied deck_type is corrected to match the real answer
-        rather than trusted."""
+        rather than trusted. (PRES-006: the fixture is a COMPLETE canonical
+        answer set because the writes gate on the REQUIRED set.)"""
         grounded_intake = {
             "interview_confirmed": True,
             "deck_type": "webinar",                # stale caller claim
             "presentation_type": "from_scratch",    # stale caller claim
-            "answers": {"offer_name": "X", "presentation_type": "signature"},
+            "answers": {"offer_name": "X", "presentation_type": "signature",
+                        "named_methodology": "M", "transformation_promise": "T",
+                        "time_to_result": "8w", "audience": "A",
+                        "cta_action": "book a call", "tone": "Teacher",
+                        "final_price": "$1", "speech_speed_preference": "default",
+                        "want_sales_checkout": "yes", "want_vsl_page": "no"},
+            # PRES-006: the completeness gate reads the canonical paths, so the
+            # record itself must be a COMPLETE production-shape intake (the
+            # browser always sends deck_brief + pre_presentation_capture). The
+            # answers map above is what grounds the STALE deck_type claim.
+            "deck_brief": {"OFFER_NAME": "X", "NAMED_METHODOLOGY": "M",
+                           "TRANSFORMATION_PROMISE": "T", "TIME_TO_RESULT": "8w",
+                           "AUDIENCE": "A", "CTA_ACTION": "book a call",
+                           "TONE": "Teacher", "FINAL_PRICE": "$1"},
+            "pre_presentation_capture": {"PRESENTATION_TYPE": "signature",
+                                         "WANT_SALES_CHECKOUT": "yes",
+                                         "WANT_VSL_PAGE": "no"},
         }
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R7"

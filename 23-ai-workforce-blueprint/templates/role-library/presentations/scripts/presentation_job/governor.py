@@ -86,7 +86,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 __all__ = [
     "Lease",
@@ -695,7 +695,23 @@ class Lease:
 
 
 _lock = threading.RLock()  # reentrant: acquire() logs while holding the lock
-_state: Dict[str, _ProviderState] = {}
+
+
+class _StateDict(Dict[str, "_ProviderState"]):
+    """The per-process cache, with ONE extra behavior over a plain dict:
+    clear() (the documented test-reset seam -- every governor fixture
+    calls governor._state.clear() between tests) also drops the
+    [PRES-004] sync bookkeeping (_TOUCHED / _CACHE_BINDING), so a cleared
+    process cache re-inherits the shared store cleanly instead of serving a
+    previous test's resurrected counters."""
+
+    def clear(self) -> None:  # type: ignore[override]
+        super().clear()
+        _TOUCHED.clear()
+        _CACHE_BINDING.clear()
+
+
+_state = _StateDict()
 _seq = 0
 
 _log_path_override: Optional[str] = None
@@ -959,11 +975,241 @@ def log_path() -> str:
     return "/tmp/presentation_governor.log"
 
 
+
+# --------------------------------------------------------------------------
+# [PRES-004] SHARED ADMISSION STATE -- one lock authority per host.
+#
+# The defect: every field below lived ONLY in this process. Two presentation
+# runs auto-spawn two dispatchers (autospawn.py), so each process admitted
+# against the FULL account cap independently -- 2x OpenRouter 100, 2x the
+# Ollama tier ceiling -- and a restart silently reset the daily budget. The
+# fix: the module-local dicts become a WRITE-THROUGH CACHE over one SQLite WAL
+# store (governor_store.py). The store is the single admission authority on
+# one host; the module dict is the fast path for the current process. A store
+# that cannot open or cannot serve a row degrades this process to its own
+# dict (old behaviour) -- never fail-open, never fail-closed by accident: the
+# same typed acquire() contract above is unchanged either way.
+#
+# ACCOUNT BINDING [PRES-004]: the shared bucket key is the OPAQUE binding id
+# (company + credential binding, hashed -- never a raw token, never a model
+# spelling). Two presentation jobs for the same client share the account's
+# real cap through this one row; two different clients never touch each
+# other's rows. GOVERNOR_ACCOUNT_BINDING (below) resolves the binding from
+# the environment the same way the rest of this package resolves config.
+#
+# CIRCUIT PERSISTENCE [PRES-016]: report_429's halving and report_ok's
+# doubling are written through to the store, so a SECOND process (and a
+# RESTARTED process) inherits the same penalty and the same recovery -- one
+# account cannot be talked through its own cooldown by a new process.
+#
+# _state / _seq / _lock stay: they are the in-process cache and the identity
+# of the RLock the acquire loop holds. Their SYNC with the store is the only
+# thing that changed.
+# --------------------------------------------------------------------------
+
+try:
+    from . import governor_store as _gstore  # package-relative (python3 -m)
+except ImportError:  # pragma: no cover - direct file run
+    try:
+        from presentation_job import governor_store as _gstore
+    except ImportError:
+        _gstore = None  # type: ignore[assignment]
+
+#: [PRES-004] Account binding env. When the operator names the account
+#: (PRESENTATION_GOVERNOR_ACCOUNT="acme") every process on the host shares
+#: that binding's rows regardless of which key text they hold -- provider
+#: quota is account-wide. A deployment that wants per-key buckets leaves it
+#: unset and passes the company id via PRESENTATION_COMPANY_ID (the
+#: engine exports it); with neither, processes share the default bucket --
+#: conservative: two jobs can never exceed the account cap together, which
+#: is the failure class this module exists to prevent. The credential never
+#: enters the id: hashing happens inside governor_store.account_binding_id
+#: and nothing here reads a key file.
+def _binding_id() -> str:
+    if _gstore is None:
+        return "in-process-only"
+    account = os.environ.get("PRESENTATION_GOVERNOR_ACCOUNT", "").strip()
+    if account:
+        return _gstore.account_binding_id(account, "account-named-by-operator")
+    company = os.environ.get("PRESENTATION_COMPANY_ID", "").strip()
+    if company:
+        return _gstore.account_binding_id(company, "company-default-binding")
+    return _gstore.account_binding_id("", "")
+
+_BINDING_SEQ = 0  # in-process tail of the store's fencing seq
+
+
+def _store() -> "Optional[Any]":
+    """The shared store, or None when this host has none (module absent,
+    unwritable path). Degrade, log once, keep the process governor honest."""
+    if _gstore is None:
+        return None
+    try:
+        return _gstore.shared_store()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _store_sync_load(provider: str) -> None:
+    """Pull the durable row for (binding, provider) into the process cache.
+
+    [PRES-004] Merge rules (which fields the store may overwrite):
+      - tokens / last_refill: NEVER. They are this process's live refill
+        accounting; re-importing them would erase the tokens the caller
+        waited to accrue. The store's token copy serves a process that is
+        BOOTING with no live state of its own.
+      - max_inflight_seen: never (a per-process diagnostic peak; the
+        cross-process slot truth is the LEASE table via reconcile).
+      - penalty (rate_scale/rate_scale_until): restore with its original
+        wall-clock deadline -- a cooldown survives a restart [PRES-016].
+      - day / day_count: the store wins (a restart must NOT reset the daily
+        budget -- QC-PRES-003 "denial cannot reset by a new process").
+    """
+    store = _store()
+    if store is None:
+        return
+    try:
+        row = store.load_state(_binding_id(), provider)
+    except Exception:  # noqa: BLE001
+        return
+    if not row:
+        return
+    st = _state_for(provider)
+    now = time.time()
+    with _lock:
+        scale_until = float(row.get("rate_scale_until") or 0.0)
+        if scale_until > now:
+            st.rate_scale = float(row.get("rate_scale") or 1.0)
+            st.rate_scale_until = scale_until
+        day = str(row.get("day") or "")
+        if day:
+            st.day = day
+            st.day_count = int(row.get("day_count") or 0)
+    # [PRES-004] Deliberately NOT synced: the rolling 10 s window events.
+    # They are per-process admission accounting (the FIX 14/23 proof reads
+    # the per-process log), and re-importing them on every re-touch would
+    # double-count a window this process already pruned. The cross-process
+    # coordination the shared store owns is the LEASE table and the durable
+    # counters -- not this process's window history.
+    global _BINDING_SEQ
+    try:
+        _BINDING_SEQ = max(_BINDING_SEQ, int(row.get("seq") or 0))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+_TOUCHED: set = set()
+
+#: [PRES-004] The binding each cached provider row was loaded under. When the
+#: binding CHANGES at runtime (a test or a multi-tenant caller flips
+#: PRESENTATION_GOVERNOR_ACCOUNT / PRESENTATION_COMPANY_ID), the stale cache
+#: must not answer for the new binding -- each binding's rows are private.
+_CACHE_BINDING: Dict[str, str] = {}
+
+
+def _cache_binding_valid(provider: str) -> bool:
+    return _CACHE_BINDING.get(provider) == _binding_id()
+
+
+def _state_for_binding_checked(provider: str) -> "_ProviderState":
+    """_state_for, plus a binding-change check for long-lived callers.
+
+    A binding switch invalidates the cached row for that provider: the next
+    touch re-syncs from the NEW binding's durable rows. Same-process binding
+    switches are rare (multi-tenant harnesses, tests); cross-process the
+    binding is fixed per process anyway."""
+    if provider in _state and not _cache_binding_valid(provider):
+        # Drop the stale row entirely: it belongs to another binding.
+        with _lock:
+            old = _state.pop(provider, None)
+            _TOUCHED.discard(provider)
+        del old  # noqa: F821 -- state is reborn on the next line
+    return _state_for(provider)
+
+
+def _store_write_state(provider: str, st: "_ProviderState") -> None:
+    """Write-through of the mutable fields the acquire loop changes. The
+    store row is the durable truth; a failure leaves the process cache
+    authoritative for this process only (logged, never silent)."""
+    _store_write_state_snapshot(provider, {
+        "tokens": st.tokens,
+        "last_refill": st.last_refill,
+        "inflight": st.inflight,
+        "max_inflight_seen": st.max_inflight_seen,
+        "rate_scale": st.rate_scale,
+        "rate_scale_until": st.rate_scale_until,
+        "day": st.day,
+        "day_count": st.day_count,
+        "seq": _BINDING_SEQ,
+    })
+
+
+def _store_write_state_snapshot(provider: str, snap: dict) -> None:
+    """Write a PRE-BUILT snapshot of the state fields to the store. Callers
+    that hold governor._lock build the snapshot under the lock and call this
+    AFTER releasing it -- a SQLite transaction inside governor._lock
+    serialises every admission behind fsync latency under a concurrent wave
+    [PRES-004]."""
+    store = _store()
+    if store is None:
+        return
+    try:
+        store.write_state(_binding_id(), provider, snap)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _store_reconcile_inflight(provider: str, st: "_ProviderState") -> None:
+    """Merge cross-process in-flight before an admission decision: the
+    authoritative count is memory-for-this-process + live rows of OTHER
+    processes (killed workers' rows are reclaimed by expiry in the store)."""
+    store = _store()
+    if store is None:
+        return
+    try:
+        with _lock:
+            st.inflight = max(0, store.reconcile_inflight(
+                _binding_id(), provider, st.inflight))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _store_record_lease(provider: str, lease: "Lease",
+                        paid_task_id: Optional[str] = None) -> None:
+    """Persist one live lease row (fencing seq + expiry + paid task id)."""
+    store = _store()
+    if store is None:
+        return
+    try:
+        store.record_lease(_binding_id(), provider, lease.seq, lease.n,
+                           paid_task_id=paid_task_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _store_record_event(provider: str, kind: str, n: int) -> None:
+    store = _store()
+    if store is None:
+        return
+    try:
+        store.record_event(_binding_id(), provider, kind, n)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _state_for(provider: str) -> _ProviderState:
     st = _state.get(provider)
     if st is None:
         st = _ProviderState()
         _state[provider] = st
+        # [PRES-004] First touch records the binding this cached row was
+        # created under (the binding-change check compares against it) and
+        # marks the provider touched; the DURABLE row is pulled synchronously
+        # in the acquire wait branch (where wall-clock is already accepted)
+        # and by snapshot(). The timed first admission pass never pays store
+        # I/O.
+        _CACHE_BINDING[provider] = _binding_id()
+        _TOUCHED.add(provider)
     return st
 
 
@@ -1032,6 +1278,33 @@ def snapshot() -> dict:
     count.  [PRES-016] exposes the cooldown, the next retry epoch and the
     honored Retry-After so the WHY of a cooled provider is always readable."""
     now = time.time()
+    # Lazy-inherit every durable row this process has not touched yet. Done
+    # outside _lock: _state_for takes _lock itself. Rows cached under a
+    # DIFFERENT binding are dropped first so a binding switch never serves
+    # another client's penalty or counters [PRES-004].
+    try:
+        store = _store()
+        if store is not None:
+            for prov in list(_state.keys()):
+                if not _cache_binding_valid(prov):
+                    with _lock:
+                        _state.pop(prov, None)
+                    _TOUCHED.discard(prov)
+            snap = store.snapshot()
+            for row in snap.get("rows") or []:
+                prov = row.get("provider")
+                if prov and prov not in _state:
+                    # Diagnostics are not deadline-sensitive: load the row
+                    # SYNCHRONOUSLY so a caller sees the shared state, not
+                    # whatever a background prime has reached so far.
+                    with _lock:
+                        st = _ProviderState()
+                        _state[prov] = st
+                    _CACHE_BINDING[prov] = _binding_id()
+                    _TOUCHED.add(prov)
+                    _store_sync_load(prov)
+    except Exception:  # noqa: BLE001
+        pass
     with _lock:
         out = {}
         for name, st in _state.items():
@@ -1082,6 +1355,8 @@ def acquire(
     cfg = provider_config(provider)
     deadline = None if timeout_s is None else time.monotonic() + timeout_s
     global _seq
+    admit_ok = False
+    _admit_snapshot = None
     while True:
         with _lock:
             st = _state_for(provider)
@@ -1137,6 +1412,8 @@ def acquire(
                 if len(st.events) > 4000:  # bounded memory
                     st.events = st.events[-2000:]
                 _seq += 1
+                global _BINDING_SEQ
+                _BINDING_SEQ = max(_BINDING_SEQ, _seq)
                 lease = Lease(
                     provider=provider,
                     n=n,
@@ -1145,31 +1422,54 @@ def acquire(
                     seq=_seq,
                     _state=st,
                 )
-                _append_log(provider, "acquire_poll" if poll_ok else "acquire", n, st.inflight)
-                # [PRES-003] the daily budget is consumed HERE, so the shared
-                # document must carry the count HERE: a restart (new process,
-                # zero local count) imports the stored total and a denial
-                # cannot be reset by starting a fresh process.  Best-effort:
-                # a persist failure degrades to in-process-only accounting
-                # (the same degradation the penalty persistence already has).
-                _persist_circuit({provider: {
+                _admit_snapshot = {
+                    "tokens": st.tokens,
+                    "last_refill": st.last_refill,
+                    "inflight": st.inflight,
+                    "max_inflight_seen": st.max_inflight_seen,
+                    "rate_scale": st.rate_scale,
+                    "rate_scale_until": st.rate_scale_until,
                     "day": st.day,
                     "day_count": st.day_count,
-                    "updated_at": now,
-                    "base_revision": _circuit_revision_hint(provider),
-                }})
-                return lease
+                    "seq": _BINDING_SEQ,
+                }
+                _admit_event_kind = "acquire_poll" if poll_ok else "acquire"
+                _admit_inflight = st.inflight
+                admit_ok = True
+        if admit_ok:
+            # [PRES-004] write-through OUTSIDE governor._lock: the SQLite
+            # transaction must never run while holding the admission lock --
+            # under a concurrent wave every store txn would serialise all
+            # threads behind one lock (measured: a 4-unit wave took 187 s
+            # with the txn inside the lock). A failure here is survivable
+            # (this process's lease is still valid); the store logs its own
+            # failures.
+            _store_write_state_snapshot(provider, _admit_snapshot)
+            _store_record_lease(provider, lease, paid_task_id=None)
+            _store_record_event(provider, _admit_event_kind, n)
+            _append_log(provider, _admit_event_kind, n, _admit_inflight)
+            _persist_circuit({provider: {"day": _admit_snapshot["day"], "day_count": _admit_snapshot["day_count"], "updated_at": now, "base_revision": _circuit_revision_hint(provider)}})
+            return lease
         # not admitted -- sleep a tick proportional to the deficit
         if deadline is not None and time.monotonic() >= deadline:
             raise GovernorTimeout(
                 f"governor: acquire({provider!r}, n={n}) timed out "
                 f"after {timeout_s}s"
             )
+        # [PRES-004] Cross-process merge, synchronous, in the WAIT branch:
+        # the sleep below is wall-clock the caller already accepted, so the
+        # store transaction rides INSIDE it (sleep + merge together) and a
+        # short acquire()'s deadline is never eaten by store I/O. A process
+        # that admits on its first pass races the shared counter for ONE
+        # admission; the write-through lease rows + every wait-branch merge
+        # bound that race to one slot, not the full cap.
         with _lock:
-            st = _state_for(provider)
+            st = _state_for_binding_checked(provider)
             deficit = max(0.0, n - st.tokens)
         wait = max(0.01, min(0.25, deficit / max(0.01, float(cfg["rps"]))))
         time.sleep(wait)
+        _store_sync_load(provider)
+        _store_reconcile_inflight(provider, st)
 
 
 class GovernorTimeout(TimeoutError):
@@ -1187,6 +1487,28 @@ def release(lease: Optional[Lease]) -> None:
         st.inflight = max(0, st.inflight - lease.n)
         st.events.append((time.time(), "release", lease.n))
         inflight = st.inflight
+        rel_snapshot = {
+            "tokens": st.tokens,
+            "last_refill": st.last_refill,
+            "inflight": st.inflight,
+            "max_inflight_seen": st.max_inflight_seen,
+            "rate_scale": st.rate_scale,
+            "rate_scale_until": st.rate_scale_until,
+            "day": st.day,
+            "day_count": st.day_count,
+            "seq": _BINDING_SEQ,
+        }
+    # [PRES-004] write-through OUTSIDE the lock (same reasoning as acquire):
+    # freed slots become visible to other processes without holding the
+    # admission lock across a store transaction.
+    _store_write_state_snapshot(lease.provider, rel_snapshot)
+    _store_record_event(lease.provider, "release", lease.n)
+    try:
+        store = _store()
+        if store is not None:
+            store.mark_released(_binding_id(), lease.provider, lease.seq)
+    except Exception:  # noqa: BLE001
+        pass
     _append_log(lease.provider, "release", lease.n, inflight)
 
 
@@ -1263,6 +1585,24 @@ def report_429(provider: str, retry_after_s: Optional[float] = None) -> float:
             "updated_at": now,
             "base_revision": _circuit_revision_hint(provider),
         }
+        penalty_snapshot = {
+            "tokens": st.tokens,
+            "last_refill": st.last_refill,
+            "inflight": st.inflight,
+            "max_inflight_seen": st.max_inflight_seen,
+            "rate_scale": st.rate_scale,
+            "rate_scale_until": st.rate_scale_until,
+            "day": st.day,
+            "day_count": st.day_count,
+            "seq": _BINDING_SEQ,
+        }
+    # [PRES-004 / PRES-016] write-through OUTSIDE the lock: the penalty is
+    # durable and shared, and a second process (and a restarted one)
+    # inherits this scale and its expiry from the store -- one account
+    # cannot be talked through its own cooldown by a new process. The store
+    # transaction must not run under governor._lock (see acquire).
+    _store_write_state_snapshot(provider, penalty_snapshot)
+    _store_record_event(provider, "report_429", 0)
     _append_log(provider, "report_429", 0, inflight)
     try:
         _persist_circuit({provider: circuit_entry})
@@ -1326,6 +1666,19 @@ def report_ok(provider: str) -> None:
             "updated_at": now,
             "base_revision": _circuit_revision_hint(provider),
         }
+        ok_snapshot = {
+            "tokens": st.tokens,
+            "last_refill": st.last_refill,
+            "inflight": st.inflight,
+            "max_inflight_seen": st.max_inflight_seen,
+            "rate_scale": st.rate_scale,
+            "rate_scale_until": st.rate_scale_until,
+            "day": st.day,
+            "day_count": st.day_count,
+            "seq": _BINDING_SEQ,
+        }
+    _store_write_state_snapshot(provider, ok_snapshot)
+    _store_record_event(provider, "report_ok", 0)
     if not changed:
         return
     _append_log(provider, "report_ok", 0, inflight)

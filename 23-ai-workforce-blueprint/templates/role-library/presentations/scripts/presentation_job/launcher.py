@@ -61,6 +61,33 @@ from typing import Any, Dict, Optional, Tuple
 
 from .vocab import normalize_presentation_type, UnknownPresentationType
 
+
+def _spawn_python() -> str:
+    """PRES-035: the interpreter child processes must run under.
+
+    The launcher itself was started by the pinned scheduler entry point
+    (poller/canonical-entry shim or an explicit PRESENTATION_PIPELINE_
+    INTERPRETER), so sys.executable already IS the validated pin on the
+    live path — inherit it. Only when the pin env is set AND names a
+    different executable does the pin win (an operator re-pointed the
+    pipeline for this box and this launcher predates it). A set-but-
+    unusable pin is reported, never silently skipped, and never used.
+    """
+    pin = (os.environ.get("PRESENTATION_PIPELINE_INTERPRETER") or "").strip()
+    if pin:
+        if os.path.isabs(pin) and os.path.isfile(pin) and os.access(pin, os.X_OK):
+            if os.path.realpath(pin) != os.path.realpath(sys.executable or ""):
+                print(f"launcher: PRESENTATION_PIPELINE_INTERPRETER={pin} "
+                      f"differs from this launcher's interpreter "
+                      f"({sys.executable}) — spawning children under the pin",
+                      file=sys.stderr)
+            return pin
+        print(f"launcher: PRESENTATION_PIPELINE_INTERPRETER={pin} is set but "
+              f"not an executable file — children spawn under this "
+              f"launcher's interpreter ({sys.executable}); fix the pin or "
+              f"re-run update-skills.sh", file=sys.stderr)
+    return sys.executable or "python3"
+
 # ---------------------------------------------------------------------------
 # FIX 34 — intake immutable after job creation
 # ---------------------------------------------------------------------------
@@ -944,7 +971,7 @@ def ocr_launch_gate(run_path: Path) -> bool:
     # RECEIPT BINDING: the green receipt is only valid for the interpreter it
     # measured. A different interpreter about to run the pipeline must not
     # borrow it (spec, Branch A last sentence).
-    spawn_interp = sys.executable or "python3"
+    spawn_interp = _spawn_python()
     if not ocr_verify.interpreter_binding_ok(receipt, interpreter=spawn_interp):
         print(f"launcher: REFUSING to dispatch {run_path} -- "
               f"{OCR_AUTOFAIL_CODE}: the Step 0 green receipt was measured under "
@@ -1353,7 +1380,7 @@ def auto_repin_gate(run_path: Path, engine_entry: Path,
           f"{pinned[:12]}, on disk {on_disk[:12]} ({manifest_path}). "
           f"Re-pinning before resume (FIX 20 --repin).", flush=True)
 
-    repin_argv = [sys.executable or "python3", str(engine_entry),
+    repin_argv = [_spawn_python(), str(engine_entry),
                   "--repin", "--run-dir", str(run_path)]
     try:
         proc = subprocess.run(repin_argv, shell=False, cwd=str(scripts_dir),
@@ -1716,7 +1743,7 @@ def dispatch(
             return _repin_refusal
 
     argv = [
-        sys.executable or "python3",
+        _spawn_python(),
         str(engine_entry),
     ]
     if resume:

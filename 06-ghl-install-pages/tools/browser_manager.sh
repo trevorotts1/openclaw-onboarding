@@ -58,7 +58,7 @@
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v25.0.40"
+BROWSER_MANAGER_VERSION="v25.0.41"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,

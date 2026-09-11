@@ -80,6 +80,8 @@ async function startCcServer() {
   // Import the REAL CC ingest route through tsx (resolves @/lib aliases).
   const routeUrl = pathToFileURL(path.join(CC_ROOT, 'src/app/api/tasks/ingest/route.ts')).href;
   const route = await import(routeUrl);
+  const { getDb } = await import(pathToFileURL(path.join(CC_ROOT, "src/lib/db/index.ts")).href);
+  getDb().prepare("INSERT OR IGNORE INTO companies (id, name, slug) VALUES (?, ?, ?)").run("pres007-company", "Test company", "pres007-company");
   const { NextRequest } = await import(path.join(CC_ROOT, 'node_modules/next/server.js'));
 
   ccServer = createServer(async (req, res) => {
@@ -498,7 +500,7 @@ test('PRES-007: deployed-r2 handler signs the same contract (serialize-then-sign
   assert.equal(seenRequests.length, 1);
   const expectedSig = createHmac('sha256', HANDOFF_SECRET).update(seenRequests[0].rawBody, 'utf8').digest('hex');
   assert.equal(seenRequests[0].headers['x-webhook-signature'], expectedSig, 'r2 signature verifies over the exact serialized bytes');
-  const outboxRecord = JSON.parse(store._store.get(`outbox/${sid}.json`));
+  const outboxRecord = JSON.parse(store._store.get(`handoff-outbox/${sid}.json`));
   assert.equal(outboxRecord.status, 'fired', 'R2 outbox records fired');
   assert.equal(outboxRecord.dept_task_id, okJson.task_id);
 
