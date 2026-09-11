@@ -1,3 +1,5 @@
+## [v25.0.40]  -  2026-09-11  -  RR batch ONB-20260911: protocol RR-001/002/007/008 + RR-023 migration + RR-015 EWS carry + RR-022 recovery + RR-025/026 receiver + RR-029 diagnostics + RR-031 registry + RR-032 config + RR-034 personas + RR-035 quality
+
 ## [v25.0.39]  -  2026-09-11  -  PRES-025 checkout repair integrate (WF10): approved-URL reuse, persist-retry, readiness
 
 - PRES-025 (PR #1094): integrate checkout repair commits 900132e23 plus 430c7cb08 onto origin/main 7f1d6814 via merge, no rebase. QC PASS wf_a710e2bb-c6e builder a53097942ad04e66f plus QC ab9cbd140d9e94ed5. Simulated-transport proofs only: checkout selftest PASS, sales selftest PASS, pytest 51 passed, Skill06 dry-run lead 5 pages sandbox 6 pages preflight pass, manifest v68 62 phases P-U-FORM-CHECKOUT 8.77. No live GHL, no real money, no secrets.
