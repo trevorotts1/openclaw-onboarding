@@ -1,38 +1,20 @@
-commit db1b06683ebf15de098ec80e9de726edb6865b1b
-Author: Trevor Otts <trevor@blackceo.com>
-Date:   Fri Sep 11 12:20:16 2026 -0400
+=== LOG ===
+ae3fa0fc2 RR-005 + RR-016: finalize frozen evidence at tip
+db1b06683 RR-005 + RR-016: refresh COMMIT-LOG-STAT for frozen tip
+2572e6027 RR-005 + RR-016: FROZEN-SHA = code-freeze 4c1d097 (later commits freeze-metadata only)
+32e518ab4 RR-005 + RR-016: FROZEN-SHA matches tip
+ff29e7b66 RR-005 + RR-016: point FROZEN-SHA at tip (frozen evidence)
+c11572f91 RR-005 + RR-016: freeze SHA + commit log stat (frozen evidence)
+4c1d09711 RR-005 + RR-016 (ONB Skill 60): pending escalations; tick-age sentinel health
 
-    RR-005 + RR-016: refresh COMMIT-LOG-STAT for frozen tip
-
- run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 10 ++++++++++
- 1 file changed, 10 insertions(+)
-
-commit 2572e60274070ebafec1c0c25ce9f0a7e5fd6f83
-Author: Trevor Otts <trevor@blackceo.com>
-Date:   Fri Sep 11 12:19:25 2026 -0400
-
-    RR-005 + RR-016: FROZEN-SHA = code-freeze 4c1d097 (later commits freeze-metadata only)
-
- run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 10 ++++++++++
- run/w4/ews-lane/rr005-rr016/FROZEN-SHA.txt      |  2 +-
- 2 files changed, 11 insertions(+), 1 deletion(-)
-
-commit 32e518ab4a8ca98691bf86cc75d406cd34151178
-Author: Trevor Otts <trevor@blackceo.com>
-Date:   Fri Sep 11 12:19:01 2026 -0400
-
-    RR-005 + RR-016: FROZEN-SHA matches tip
-
- run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 12 ++++++------
- run/w4/ews-lane/rr005-rr016/FROZEN-SHA.txt      |  2 +-
- 2 files changed, 7 insertions(+), 7 deletions(-)
-
-commit ff29e7b6630885ff249b4369388223edf4cb830d
-Author: Trevor Otts <trevor@blackceo.com>
-Date:   Fri Sep 11 12:18:43 2026 -0400
-
-    RR-005 + RR-016: point FROZEN-SHA at tip (frozen evidence)
-
- run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 28 ++++++-------------------
- run/w4/ews-lane/rr005-rr016/FROZEN-SHA.txt      |  2 +-
- 2 files changed, 7 insertions(+), 23 deletions(-)
+=== STAT (code-freeze 4c1d09711) ===
+4c1d09711 RR-005 + RR-016 (ONB Skill 60): pending escalations; tick-age sentinel health
+ 60-zhc-early-warning-system/scripts/ews_alert.py   |  98 ++++++++-
+ .../scripts/ews_companion.sh                       |   4 +
+ 60-zhc-early-warning-system/scripts/ews_fleet.py   | 242 +++++++++++++++++++--
+ 60-zhc-early-warning-system/scripts/ews_ledger.py  |  87 ++++++++
+ run/w4/ews-lane/rr005-rr016/EVIDENCE-REPAIR.md     |  43 ++++
+ run/w4/ews-lane/rr005-rr016/QC-BATTERY.out         |  56 +++++
+ tests/unit/rr005_escalation_pending.test.py        | 162 ++++++++++++++
+ tests/unit/rr016_tick_health.test.py               | 147 +++++++++++++
+ 8 files changed, 806 insertions(+), 33 deletions(-)
