@@ -60,7 +60,8 @@ def _intake(session_id: str) -> dict:
         "presentation_type": "signature",
         "requester_chat_id": "12345",
         "answers": {"presentation_type": "signature", "offer_name": "X"},
-        "deck_brief": {"OFFER_NAME": "X"},
+        "deck_brief": {"OFFER_NAME": "X", "NAMED_METHODOLOGY": "Method", "TRANSFORMATION_PROMISE": "Improve", "TIME_TO_RESULT": "8 weeks", "AUDIENCE": "Founders", "CTA_ACTION": "Book", "TONE": "Clear", "FINAL_PRICE": "$10"},
+        "pre_presentation_capture": {"PRESENTATION_TYPE": "signature", "WANT_SALES_CHECKOUT": "no", "WANT_VSL_PAGE": "no"},
     }
 
 
