@@ -1060,7 +1060,7 @@ def _remember_stored_at(args, sid: str, stored_at) -> None:
 
 
 def _checkpoint_path(args) -> pathlib.Path:
-    return pathlib.Path(getattr(args, "poll_ledger", "") or str(pathlib.Path(args.run_dir) / "poll-checkpoint.jsonl")).expanduser()
+    return pathlib.Path(getattr(args, "poll_ledger", "") or str(pathlib.Path(getattr(args, "run_dir", ".")) / "poll-checkpoint.jsonl")).expanduser()
 
 
 def _checkpoint_exists(args) -> bool:
@@ -1123,6 +1123,7 @@ def _mark_processed(args, session_id: str) -> None:
         "session_id": session_id,
         "version": 0,  # folded by readers; monotonic per line order
         "recorded_at": int(time.time()),
+        "durable_complete": True,
     }])
 
 
@@ -1178,8 +1179,18 @@ def cmd_poll(args) -> int:
     blocked = 0
     crashes = 0
     rejected = 0
+    completed_ids = set()
+    try:
+        for line in _checkpoint_path(args).read_text().splitlines():
+            try:
+                row = json.loads(line)
+                if row.get("durable_complete") is True: completed_ids.add(row["session_id"])
+            except (ValueError, AttributeError, KeyError): pass
+    except OSError: pass
     for it in intakes:
         sid = it.get("session_id")
+        if sid in completed_ids:
+            continue
         if not _valid_session_id(sid):
             # PRES-009: a malformed/traversal-shaped sid is never appended to
             # any path and never added to the ledger — it is reported and

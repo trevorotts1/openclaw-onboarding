@@ -141,7 +141,7 @@ def _args(worker_url: str, ledger: pathlib.Path, **kw) -> object:
     ns.max_pages = kw.get("max_pages", 10)
     ns.verbose = kw.get("verbose", False)
     ns.run_dir = kw.get("run_dir", str(pathlib.Path(ledger).parent / "run"))
-    ns.per_session_dirs = False
+    ns.per_session_dirs = True
     return ns
 
 
