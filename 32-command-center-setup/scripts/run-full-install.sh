@@ -952,8 +952,19 @@ cc_ensure_fresh_build() {
     log "WARN" "cc-build: $dir missing — cannot build"
     return 2
   fi
-  # Build inputs whose change must invalidate the bundle.
-  local inputs=( src public config next.config.mjs next.config.js next.config.ts \
+  # Build inputs whose change must invalidate the bundle. Must stay in agreement
+  # with the Command Center's _CCBI_TOPLEVEL_INPUTS (scripts/lib/build-inventory.sh);
+  # CC's tests/unit/pres046-content-inventory.test.sh T12b asserts that agreement.
+  #
+  # `config/` is DELIBERATELY ABSENT (2026-09-11, paired with CC v7.3.2). It is
+  # runtime data, not a compile input: nothing under the dashboard's src/ imports
+  # a config/ file. It IS rewritten in normal operation — by the app itself (logo
+  # save, company config, department edits) and by THIS script's own phase=6c
+  # department sync, which runs AFTER the build/deploy phase. While config/ counted
+  # as a build input, that post-deploy sync made the served bundle look stale to
+  # every later check, and the CC's boot-time freshness guard then refused to start
+  # the dashboard on its next pm2 restart. Keep runtime data out of this list.
+  local inputs=( src public next.config.mjs next.config.js next.config.ts \
                  package.json package-lock.json tsconfig.json tailwind.config.ts \
                  postcss.config.mjs middleware.ts )
   local present=() p
