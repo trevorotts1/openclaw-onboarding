@@ -1,0 +1,28 @@
+{
+  "$id": "presentation-department/consumer-pin-v1",
+  "artifacts": {
+    "wheel_sha256": "0388e47b48644eea62c57ac18256d0618273ebc51dd3d735c84452dff1b28f2b",
+    "sdist_sha256": "dd481aca8e5f971f79281c5d566a9e29b061ce47e91aa572879fd5f07e70e484",
+    "skill_plugin_zip_sha256": "7283233e8efb02d7bf8c723d9ad147c742e8e5f834f1516826244de99bde31d3"
+  },
+  "console_entrypoint": "presentation = presentation_department.cli:main",
+  "doc": "WF21 frozen-package consumer pin (ONB side). PIN-STAGED-NOT-CUTOVER: production installs stay on the source checkout until W6 installed acceptance authorizes cutover (STANDALONE-SKILL-REPO.md step 5).",
+  "engine": {
+    "manifest_sha256": "cab872039b2dac96bc78300a2158487ee7093e84d55a71069285789ca369f5de",
+    "manifest_version": 68,
+    "phases": 62
+  },
+  "install": {
+    "lock": "pip hash-checking install from the pinned wheel digest; record `pip freeze` at W6 acceptance",
+    "rollback": "revert this pin file; reinstall prior source checkout; verify `presentation --version` absent and engine flags unchanged",
+    "upgrade": "`pip install --upgrade` against the NEXT pinned digest only; never an unminted branch"
+  },
+  "package": "presentation-department",
+  "package_version": "0.1.0",
+  "source": {
+    "onb_base": "e43ba34118cf3b83d31571abfc2824636fb0d451",
+    "pres_remote_main": "10d14c33e03e72ccf46f3fe1eefde8b79faac1d2",
+    "pres_candidate_commit": "aa602ea6d8c97f79ee7c5625186544dc071e60a9"
+  },
+  "status": "candidate-not-production-accepted"
+}

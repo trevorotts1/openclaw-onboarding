@@ -1,3 +1,5 @@
+## [v25.0.38]  -  2026-09-11  -  Stage standalone presentation package artifact references; retain acceptance-gated activation
+
 ## [v25.0.37]  -  2026-09-10  -  Batch ONB-20260910-201420 PR #1091 unblock: 8 CI failures repaired
 
 - G3 skill-version bump: branch touches 222 files under 23-ai-workforce-blueprint/ without a version bump, so bump 23-ai-workforce-blueprint/skill-version.txt 25.0.36 -> 25.0.37 (51-signature-presentation/skill-version.txt v2.0.3 -> v2.1.0 already rides in the batch). Roll all 10 repo markers v25.0.36 -> v25.0.37 via scripts/bump-version.sh; `bump-version.sh --check` reports all 10 agree.
