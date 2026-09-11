@@ -1,3 +1,9 @@
+## [v25.0.39]  -  2026-09-11  -  PRES-025 checkout repair integrate (WF10): approved-URL reuse, persist-retry, readiness
+
+- PRES-025 (PR #1094): integrate checkout repair commits 900132e23 plus 430c7cb08 onto origin/main 7f1d6814 via merge, no rebase. QC PASS wf_a710e2bb-c6e builder a53097942ad04e66f plus QC ab9cbd140d9e94ed5. Simulated-transport proofs only: checkout selftest PASS, sales selftest PASS, pytest 51 passed, Skill06 dry-run lead 5 pages sandbox 6 pages preflight pass, manifest v68 62 phases P-U-FORM-CHECKOUT 8.77. No live GHL, no real money, no secrets.
+- CI restamps same branch: universal-sops _content-manifest.json restamp (3 changed files), SALES-CHECKOUT-BUILDER-SOP content_sha 1.0.1->1.0.2, MANIFEST-SOURCE.txt restamp, phase_doc_sync --write (P-U-FORM-CHECKOUT now checkout_form_builder.py).
+- G3 skill-version bump: branch touches 23-ai-workforce-blueprint/ without a version bump, so roll all 10 repo markers v25.0.38 -> v25.0.39 via scripts/bump-version.sh; `bump-version.sh --check` reports all 10 agree.
+
 ## [v25.0.38]  -  2026-09-11  -  Stage standalone presentation package artifact references; retain acceptance-gated activation
 
 ## [v25.0.37]  -  2026-09-10  -  Batch ONB-20260910-201420 PR #1091 unblock: 8 CI failures repaired
