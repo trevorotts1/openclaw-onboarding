@@ -222,20 +222,20 @@ row = st.load_state(GS.account_binding_id(
 check("NEG4 penalty written through to shared store (recoverable by any process)",
       row is not None and "rate_scale" in row, row)
 
-# Deep penalty (two 429s = 0.25): one success must NOT restore full speed.
+# A stale success cannot erase the existing 0.5 penalty. Two further 429s
+# deepen it to 0.125; recovery requires a full healthy observation window.
 G2_scale = G.report_429("openrouter")
 G2_scale = G.report_429("openrouter")
-check("NEG4b repeated 429s deepen the penalty to 0.25", G2_scale == 0.25, G2_scale)
+check("NEG4b repeated 429s preserve the prior penalty", G2_scale == 0.125, G2_scale)
 G.report_ok("openrouter")
 snap = G.snapshot()["openrouter"]
-check("NEG4b one success does not restore full speed from a deep penalty",
-      snap["rate_scale"] == 0.5 and snap["rate_scale"] < 1.0, snap["rate_scale"])
-
-# Full healthy observation window (consecutive oks) permits gradual increase:
-G.report_ok("openrouter")  # 0.5 -> 1.0
+check("NEG4b stale success does not recover the penalty", snap["rate_scale"] == 0.125, snap["rate_scale"])
+from unittest.mock import patch
+clock_now = time.time()
+with patch.object(G.time, "time", return_value=clock_now + G.HEALTHY_WINDOW_S + 1):
+    for _ in range(G.HEALTHY_MIN_SAMPLES): G.report_ok("openrouter")
 snap = G.snapshot()["openrouter"]
-check("NEG4b sustained healthy window restores full rate gradually",
-      snap["rate_scale"] == 1.0, snap["rate_scale"])
+check("NEG4b healthy window permits one gradual step", snap["rate_scale"] == 0.125 + G.SCALE_STEP, snap["rate_scale"])
 
 # ===========================================================================
 # POSITIVE 5: cross-process penalty sharing (PRES-016 item 3: "persist and
