@@ -538,6 +538,81 @@ class TestFormCheckoutVerifier:
         assert ok is True, reasons
         assert any("MISSING_MERCHANT" in r for r in reasons)
 
+    def test_approved_url_reuse_completes_without_creation(self, tmp_path):
+        """A binding client-approved checkout URL reuses the existing link:
+        status=complete with an approved_url_reuse proof, no new form IDs."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"]["APPROVED_CHECKOUT_URL"] = (
+            "https://pay.acme-widget.shop/acme-widget/checkout")
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_OK
+        receipt = json.loads(
+            (rd / "working" / "sales-checkout" / "checkout_form.json")
+            .read_text(encoding="utf-8"))
+        assert receipt["status"] == "complete"
+        assert receipt["proof"]["kind"] == "approved_url_reuse"
+        assert receipt["form"]["action"] == receipt["proof"]["approved_url"]
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is True, reasons
+
+    def test_foreign_approved_url_blocks_not_reuses(self, tmp_path):
+        """An approved URL bound to another presentation is refused
+        fail-closed (blocked, never silently reused, never built fresh)."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        intake_path = rd / "working" / "copy" / "intake.json"
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+        intake["deck_brief"]["CHECKOUT_URL"] = (
+            "https://pay.other.shop/other-client/checkout")
+        intake_path.write_text(json.dumps(intake), encoding="utf-8")
+        rc = _build_sales_checkout(rd)
+        assert rc == scb.EXIT_OK
+        rc2 = cfb.main(["--run-dir", str(rd)])
+        assert rc2 == cfb.EXIT_BLOCKED
+        ok, reasons = pv.verify("P-U-FORM-CHECKOUT", rd)
+        assert ok is True, reasons
+        assert any("MISSING_OFFER" in r for r in reasons)
+
+    def test_sandbox_retry_reuses_persisted_product(self, tmp_path):
+        """The sandbox product ledger persists before any session attempt:
+        a retry (new sandbox on the same run dir) reuses the same product."""
+        rd = _intake(tmp_path, {"WANT_SALES_CHECKOUT": "yes"})
+        offer = {"name": "Momentum", "price_display": "$997",
+                 "amount_minor": 99700, "currency": "USD", "price_mode": ""}
+        sb1 = cfb.MemoryPaymentSandbox(run_dir=rd)
+        prod1 = sb1.create_product(offer)
+        assert (rd / "working" / "sales-checkout" / "checkout_product.json").is_file()
+        sb2 = cfb.MemoryPaymentSandbox(run_dir=rd)
+        prod2 = sb2.create_product(offer)
+        assert prod2["product_id"] == prod1["product_id"]
+        assert prod2.get("reused") is True
+
+    def test_execution_readiness_missing_creds_blocks(self):
+        """No PIT alias present: the readiness gate reports MISSING_CREDS
+        (presence check only -- no value is read or printed)."""
+        blk = cfb.check_execution_readiness(env={})
+        assert blk is not None and blk["code"] == cfb.BLOCK_MISSING_CREDS
+
+    def test_resolve_cta_href_prefers_approved_url(self):
+        """Approved-URL reuse wins for both roles; foreign links raise."""
+        url = "https://pay.acme-reuse.shop/acme-reuse/checkout"
+        for role in ("sales", "checkout"):
+            assert cfb.resolve_cta_href(
+                page_role=role, deck_slug="acme-reuse",
+                approved_url=url) == url
+        try:
+            cfb.resolve_cta_href(
+                page_role="checkout", deck_slug="acme-reuse",
+                approved_url="https://pay.other.shop/other/x")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("foreign approved URL must raise")
+
 
 # ---------------------------------------------------------------------------
 # PRES-025 repair: frozen-archive runner + live-stub + Skill06 seams

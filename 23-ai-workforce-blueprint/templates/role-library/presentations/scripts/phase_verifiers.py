@@ -2935,8 +2935,9 @@ def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
     elected:
 
       * blocked  -> soft checkpoint, NOT a FAIL: a phase-scoped blocker
-        (MISSING_OFFER / MISSING_MERCHANT / WRONG_LOCATION /
-        UNSUPPORTED_PAYMENT) is returned as (True, [NOTE ...]) naming the
+        (MISSING_OFFER / MISSING_MERCHANT / MISSING_CREDS / MISSING_SKILL /
+        WRONG_LOCATION / UNSUPPORTED_PAYMENT) is returned as (True,
+        [NOTE ...]) naming the
         code + action, so deck production and notifications continue while
         checkout alone waits. Deck-stage gates must never read this as deck
         failure.
@@ -3006,6 +3007,7 @@ def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
         blocker = receipt.get("blocker") or {}
         code = str(blocker.get("code") or "BLOCKED")
         if code not in (_cfb.BLOCK_MISSING_OFFER, _cfb.BLOCK_MISSING_MERCHANT,
+                        _cfb.BLOCK_MISSING_CREDS, _cfb.BLOCK_MISSING_SKILL,
                         _cfb.BLOCK_WRONG_LOCATION, _cfb.BLOCK_UNSUPPORTED_PAYMENT):
             return False, [f"AF-U-FORM-CHECKOUT: unknown blocker code {code!r} -- "
                            f"refusing to treat it as a soft block"]
@@ -3063,6 +3065,25 @@ def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
     workflow_id = workflow.get("workflow_id")
     proof = receipt.get("proof") if isinstance(receipt.get("proof"), dict) else {}
     status = receipt.get("status")
+
+    if status == "complete" and proof and proof.get("kind") == "approved_url_reuse":
+        reuse = receipt.get("reuse") if isinstance(receipt.get("reuse"), dict) else {}
+        form_d = form if isinstance(form, dict) else {}
+        brief_now = intake.get("deck_brief") if isinstance(intake, dict) and isinstance(
+            intake.get("deck_brief"), dict) else {}
+        deck_now = ((scope_now or {}).get("deck_slug")
+                    or (intake.get("deck_slug") if isinstance(intake, dict) else "")
+                    or run_dir.name)
+        company_now = ((intake.get("company") if isinstance(intake, dict) else "")
+                       or brief_now.get("COMPANY") or "")
+        ok, why = _cfb.check_approved_url_binding(
+            str(proof.get("approved_url") or form_d.get("action") or
+                reuse.get("approved_url") or ""),
+            deck_slug=str(deck_now), company=str(company_now))
+        if not ok:
+            return False, [f"AF-U-FORM-CHECKOUT: approved-URL reuse proof "
+                           f"no longer binds: {why}"]
+        return True, []
 
     if intent == _cfb.INTENT_LEAD:
         if status != "complete" or not form_id or not workflow_id or not proof:
