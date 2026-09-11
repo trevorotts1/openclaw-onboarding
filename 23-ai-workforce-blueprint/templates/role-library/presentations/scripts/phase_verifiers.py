@@ -127,6 +127,15 @@ try:
 except ImportError:
     _vb = None  # type: ignore[assignment]
 
+# PRES-025: the elected checkout form stage's real producer. Same delegated-
+# to-source discipline as _scb/_vb above: the verifier resolves the gate,
+# the form receipt and the CTA audit from the producer's own functions, so
+# the check can never drift from what the executor actually built.
+try:
+    import checkout_form_builder as _cfb
+except ImportError:
+    _cfb = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # FIX 109 — intake provenance pre-phase refusal.
 #
@@ -240,6 +249,21 @@ _VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
         "verify_video_dependency",
         "VslBuildError",
     ),
+    "checkout_form_builder": (
+        "load_form_receipt",
+        "resolve_offer",
+        "resolve_intent",
+        "resolve_scope",
+        "validate_url",
+        "audit_cta_hrefs",
+        "FORM_RECEIPT_SCHEMA",
+        "BLOCK_MISSING_OFFER",
+        "BLOCK_MISSING_MERCHANT",
+        "BLOCK_WRONG_LOCATION",
+        "BLOCK_UNSUPPORTED_PAYMENT",
+        "INTENT_LEAD",
+        "INTENT_PAYMENT_SANDBOX",
+    ),
 }
 
 _MODULE_TABLE = {
@@ -249,6 +273,7 @@ _MODULE_TABLE = {
     "pitch_engines_check": lambda: _pec,
     "sales_checkout_builder": lambda: _scb,
     "vsl_builder": lambda: _vb,
+    "checkout_form_builder": lambda: _cfb,
 }
 
 
@@ -2901,26 +2926,41 @@ def _verify_upsell_checkout_build(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P-U-FORM-CHECKOUT (order 8.77): per PIPELINE-MANIFEST.json's own
-    routing_note this phase has no dedicated payment/lead-capture-form
-    implementation yet -- it re-invokes sales_checkout_builder.py --skip-design
-    as an interim placeholder that re-verifies the SAME build_receipt.json
-    P-U-SALES-BUILD produces, so its own gate/AF-code/step-count entry is
-    honest rather than silently absent.
+    """P-U-FORM-CHECKOUT (order 8.77, PRES-025 real producer): the elected
+    checkout form stage -- offer-derived form schema, Skill 44 form/workflow
+    contract, Skill 06 widget task, persisted IDs, verified CTA route.
 
-    produces_artifact (manifest): working/sales-checkout/build_receipt.json.
+    produces_artifact (manifest): working/sales-checkout/checkout_form.json.
     Same WANT_SALES_CHECKOUT gate as the other two upsell phases. When
-    elected, delegates straight to sales_checkout_builder.verify_push_receipt()
-    (the SAME function the executor's own main() calls) -- absent or
-    fabricated (no real preview_urls / no funnel_id) is a hard FAIL: the
-    executor's exit code treats "not yet pushed" as non-fatal (it re-runs
-    until the delegated agent-browser session lands the receipt), but this
-    verifier is the PRIMARY substance gate for the phase's own
-    produces_artifact and must not rubber-stamp an artifact that was never
-    written."""
+    elected:
+
+      * blocked  -> soft checkpoint, NOT a FAIL: a phase-scoped blocker
+        (MISSING_OFFER / MISSING_MERCHANT / MISSING_CREDS / MISSING_SKILL /
+        WRONG_LOCATION / UNSUPPORTED_PAYMENT) is returned as (True,
+        [NOTE ...]) naming the
+        code + action, so deck production and notifications continue while
+        checkout alone waits. Deck-stage gates must never read this as deck
+        failure.
+      * plan_emitted -> FAIL until the delegated Skill 44/06 execution lands
+        real form/workflow IDs + a mode proof (the executor's exit code
+        treats "not yet executed" as non-fatal; this verifier is the PRIMARY
+        substance gate for the phase's own produces_artifact and must not
+        rubber-stamp an artifact nothing proved).
+      * the checkout page's own CTAs must pass the protocol audit (never
+        #/empty/javascript:) and the page must carry the real order form;
+      * the receipt must be fresh (input hashes match current intake +
+        checkout.html) -- a stale receipt after an offer edit is a hard FAIL;
+      * lead_capture completes only on a test-location proof (one scoped
+        contact + one workflow enrollment); payment_sandbox completes only on
+        a sandbox mapping proof (product/amount/currency + success/cancel
+        routes, zero real charge)."""
     if _scb is None:
         return False, ["AF-U-FORM-CHECKOUT: sales_checkout_builder module "
                        "unavailable -- cannot resolve the WANT_SALES_CHECKOUT gate; "
+                       "fail-closed, not a pass"]
+    if _cfb is None:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form_builder module "
+                       "unavailable -- the phase's real producer is missing; "
                        "fail-closed, not a pass"]
 
     intake = _scb.load_intake(run_dir)
@@ -2934,18 +2974,189 @@ def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
     if decision != "build":
         return False, [f"AF-U-FORM-CHECKOUT: unrecognized gate decision {decision!r}"]
 
+    # 0) The page this phase wires must itself be real (P-U-CHECKOUT-BUILD's
+    #    contract, re-asserted here so a form can never "complete" on a stub).
+    checkout_html_path = Path(run_dir) / "working" / "sales-checkout" / "html" / "checkout.html"
+    if not checkout_html_path.is_file():
+        return False, ["AF-U-FORM-CHECKOUT: working/sales-checkout/html/checkout.html "
+                       "not found -- the checkout page must exist before its form is wired"]
     try:
-        status, detail, _data = _scb.verify_push_receipt(run_dir)
+        page_text = checkout_html_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-CHECKOUT: checkout.html unreadable: {exc!r}"]
+    cta_fails = _cfb.audit_cta_hrefs(page_text, page_role="checkout")
+    if cta_fails:
+        return False, [f"AF-U-FORM-CHECKOUT: {f}" for f in cta_fails]
+
+    # 1) The phase's own receipt.
+    try:
+        receipt = _cfb.load_form_receipt(Path(run_dir))
     except Exception as exc:  # noqa: BLE001
-        return False, [f"AF-U-FORM-CHECKOUT: verify_push_receipt raised {exc!r}"]
-    if status is True:
+        return False, [f"AF-U-FORM-CHECKOUT: load_form_receipt raised {exc!r}"]
+    if not receipt:
+        return False, ["AF-U-FORM-CHECKOUT: working/sales-checkout/checkout_form.json "
+                       "absent -- the form stage has not run (plan not yet emitted)"]
+    if receipt.get("phase") != "P-U-FORM-CHECKOUT":
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json names phase "
+                       f"{receipt.get('phase')!r} -- a foreign receipt is not this run's form proof"]
+    if not isinstance(receipt.get("schema_version"), str) or not receipt["schema_version"]:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json carries no schema_version"]
+
+    # 2) Phase-scoped blockers: explicit, actionable, deck-neutral.
+    if receipt.get("status") == "blocked":
+        blocker = receipt.get("blocker") or {}
+        code = str(blocker.get("code") or "BLOCKED")
+        if code not in (_cfb.BLOCK_MISSING_OFFER, _cfb.BLOCK_MISSING_MERCHANT,
+                        _cfb.BLOCK_MISSING_CREDS, _cfb.BLOCK_MISSING_SKILL,
+                        _cfb.BLOCK_WRONG_LOCATION, _cfb.BLOCK_UNSUPPORTED_PAYMENT):
+            return False, [f"AF-U-FORM-CHECKOUT: unknown blocker code {code!r} -- "
+                           f"refusing to treat it as a soft block"]
+        return True, [f"NOTE: P-U-FORM-CHECKOUT blocked [{code}] -- "
+                      f"{blocker.get('detail', '')} ACTION: {blocker.get('action', '')} "
+                      f"(checkout only; deck production and notifications continue)"]
+
+    # 3) Freshness: the receipt must describe THIS intake + THIS page.
+    try:
+        import hashlib as _hl
+        intake_bytes = (Path(run_dir) / "working" / "copy" / "intake.json").read_bytes()
+        intake_sha = _hl.sha256(intake_bytes).hexdigest()
+    except OSError:
+        intake_sha = ""
+    try:
+        import hashlib as _hl2
+        page_sha = _hl2.sha256(checkout_html_path.read_bytes()).hexdigest()
+    except OSError:
+        page_sha = ""
+    recorded = receipt.get("input_hashes") or {}
+    if recorded.get("intake") and intake_sha and recorded["intake"] != intake_sha:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json is STALE -- intake.json "
+                       "changed since the form plan was emitted (offer edit?). Re-run the "
+                       "form stage before completing it."]
+    if recorded.get("checkout_html") and page_sha and recorded["checkout_html"] != page_sha:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json is STALE -- checkout.html "
+                       "changed since the form plan was emitted. Re-run the form stage."]
+
+    # 4) Scope binding: wrong-location receipts never complete.
+    scope = receipt.get("scope") if isinstance(receipt.get("scope"), dict) else None
+    form_loc = (receipt.get("location_id") or
+                (scope.get("location_id") if scope else ""))
+    try:
+        scope_now, scope_blocker = _cfb.resolve_scope(
+            Path(run_dir), intake if isinstance(intake, dict) else {})
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-CHECKOUT: scope re-resolution raised {exc!r}"]
+    if scope_blocker is not None:
+        code = str(scope_blocker.get("code") or "BLOCKED")
+        return True, [f"NOTE: P-U-FORM-CHECKOUT blocked [{code}] -- "
+                      f"{scope_blocker.get('detail', '')} ACTION: "
+                      f"{scope_blocker.get('action', '')} (checkout only)"]
+    if scope_now and form_loc and scope_now.get("location_id") not in ("unbound-test",) \
+            and form_loc not in ("unbound-test",) \
+            and form_loc != scope_now.get("location_id"):
+        return False, [f"AF-U-FORM-CHECKOUT: receipt location {form_loc!r} != bound "
+                       f"location {scope_now.get('location_id')!r} -- wrong-location "
+                       f"form proof is refused"]
+
+    # 5) Mode contracts.
+    intent = receipt.get("intent")
+    form = receipt.get("form") if isinstance(receipt.get("form"), dict) else {}
+    workflow = receipt.get("workflow") if isinstance(receipt.get("workflow"), dict) else {}
+    form_id = form.get("form_id")
+    workflow_id = workflow.get("workflow_id")
+    proof = receipt.get("proof") if isinstance(receipt.get("proof"), dict) else {}
+    status = receipt.get("status")
+
+    if status == "complete" and proof and proof.get("kind") == "approved_url_reuse":
+        reuse = receipt.get("reuse") if isinstance(receipt.get("reuse"), dict) else {}
+        form_d = form if isinstance(form, dict) else {}
+        brief_now = intake.get("deck_brief") if isinstance(intake, dict) and isinstance(
+            intake.get("deck_brief"), dict) else {}
+        deck_now = ((scope_now or {}).get("deck_slug")
+                    or (intake.get("deck_slug") if isinstance(intake, dict) else "")
+                    or run_dir.name)
+        company_now = ((intake.get("company") if isinstance(intake, dict) else "")
+                       or brief_now.get("COMPANY") or "")
+        ok, why = _cfb.check_approved_url_binding(
+            str(proof.get("approved_url") or form_d.get("action") or
+                reuse.get("approved_url") or ""),
+            deck_slug=str(deck_now), company=str(company_now))
+        if not ok:
+            return False, [f"AF-U-FORM-CHECKOUT: approved-URL reuse proof "
+                           f"no longer binds: {why}"]
         return True, []
-    # status is False (present-but-fabricated) OR None (build_receipt.json
-    # absent) -- either way the phase's own produces_artifact is not a real,
-    # verified receipt yet. FAIL-HARD (mirrors this module's own
-    # file-not-found doctrine): the vacuous-pass this unit must not
-    # reintroduce is exactly "the phase said done and nothing was checked".
-    return False, [f"AF-U-FORM-CHECKOUT: {detail}"]
+
+    if intent == _cfb.INTENT_LEAD:
+        if status != "complete" or not form_id or not workflow_id or not proof:
+            return False, ["AF-U-FORM-CHECKOUT: lead-capture form not complete -- "
+                           "need status=complete with form_id + workflow_id + proof "
+                           "(plan emitted, awaiting delegated Skill 44/06 execution)"]
+        return _verify_lead_proof(proof, form_id, workflow_id, form_loc)
+    if intent == _cfb.INTENT_PAYMENT_SANDBOX:
+        if status != "complete" or not form_id or not proof:
+            return False, ["AF-U-FORM-CHECKOUT: sandbox payment not complete -- "
+                           "need status=complete with form_id + proof "
+                           "(plan emitted, awaiting delegated sandbox run)"]
+        return _verify_sandbox_proof(proof, form, receipt)
+    return False, [f"AF-U-FORM-CHECKOUT: unknown intent {intent!r} -- refusing to guess"]
+
+
+def _verify_lead_proof(proof: dict, form_id: Any, workflow_id: Any,
+                       location_id: Any) -> Tuple[bool, List[str]]:
+    """Lead-capture completion contract: one scoped contact + one workflow
+    enrollment in the TEST location (submission proof recorded at execution)."""
+    if proof.get("kind") != "lead_submit":
+        return False, ["AF-U-FORM-CHECKOUT: lead proof kind "
+                       f"{proof.get('kind')!r} != 'lead_submit'"]
+    if proof.get("location_id") not in (location_id, "test-location", "unbound-test") \
+            and location_id not in ("unbound-test",):
+        return False, [f"AF-U-FORM-CHECKOUT: lead proof location "
+                       f"{proof.get('location_id')!r} is not the bound location "
+                       f"{location_id!r}"]
+    if proof.get("form_id") != form_id:
+        return False, ["AF-U-FORM-CHECKOUT: lead proof form_id does not match "
+                       "the receipt's form_id"]
+    if proof.get("workflow_id") != workflow_id:
+        return False, ["AF-U-FORM-CHECKOUT: lead proof workflow_id does not match "
+                       "the receipt's workflow_id"]
+    if int(proof.get("contacts") or 0) != 1:
+        return False, [f"AF-U-FORM-CHECKOUT: lead proof contacts="
+                       f"{proof.get('contacts')!r} -- exactly one scoped contact required"]
+    if int(proof.get("enrollments") or 0) < 1:
+        return False, ["AF-U-FORM-CHECKOUT: lead proof shows zero workflow "
+                       "enrollments -- one scoped enrollment required"]
+    if not proof.get("validation_exercised") or not proof.get("duplicate_exercised"):
+        return False, ["AF-U-FORM-CHECKOUT: lead proof must record validation + "
+                       "duplicate-submission exercise"]
+    if proof.get("real_charge"):
+        return False, ["AF-U-FORM-CHECKOUT: lead-capture proof records a charge -- "
+                       "lead mode must never charge"]
+    return True, []
+
+
+def _verify_sandbox_proof(proof: dict, form: dict, receipt: dict) -> Tuple[bool, List[str]]:
+    """Sandbox payment completion contract: product/amount/currency mapping +
+    success/cancel routes verified, zero real charge."""
+    if proof.get("kind") != "sandbox_session":
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof kind "
+                       f"{proof.get('kind')!r} != 'sandbox_session'"]
+    if proof.get("mode") != "sandbox":
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof mode "
+                       f"{proof.get('mode')!r} != 'sandbox' -- live charges never complete here"]
+    if proof.get("real_charge"):
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof records a real charge -- refused"]
+    offer = receipt.get("offer") if isinstance(receipt.get("offer"), dict) else {}
+    for key in ("amount_minor", "currency"):
+        if proof.get(key) != offer.get(key):
+            return False, [f"AF-U-FORM-CHECKOUT: sandbox proof {key}="
+                           f"{proof.get(key)!r} != offer {key}={offer.get(key)!r} -- "
+                           f"product mapping mismatch"]
+    if not proof.get("product_id") or not proof.get("session_id"):
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof needs product_id + session_id"]
+    for key in ("success_url", "cancel_url"):
+        ok, why = _cfb.validate_url(proof.get(key), allow_relative=True)
+        if not ok:
+            return False, [f"AF-U-FORM-CHECKOUT: sandbox proof {key} invalid: {why}"]
+    return True, []
 
 
 def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
