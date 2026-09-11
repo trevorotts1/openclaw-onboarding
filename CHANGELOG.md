@@ -1,3 +1,14 @@
+## [v25.0.37]  -  2026-09-10  -  Batch ONB-20260910-201420 PR #1091 unblock: 8 CI failures repaired
+
+- G3 skill-version bump: branch touches 222 files under 23-ai-workforce-blueprint/ without a version bump, so bump 23-ai-workforce-blueprint/skill-version.txt 25.0.36 -> 25.0.37 (51-signature-presentation/skill-version.txt v2.0.3 -> v2.1.0 already rides in the batch). Roll all 10 repo markers v25.0.36 -> v25.0.37 via scripts/bump-version.sh; `bump-version.sh --check` reports all 10 agree.
+- GHL Tier-2 auth-fallback: remove hardcoded operator-checkout absolute paths from test_pres009_worker_isolation.mjs and test_dept_start_handoff.mjs (CC_ROOT / COMMAND_CENTER_ROOT env with loud failure instead). guard-ghl-auth-fallback.sh PASS.
+- Live smoke x2: live-smoke-refusal leg in presentation-release-matrix.yml now pip-installs pytest==8.3.4 before invoking pytest (CI root cause was `python3: No module named pytest`). Refusal pair passes (2 passed) with `-p no:cacheprovider` from the tests directory.
+- ONB-STATE-001 compile: pres034-docker-acceptance.sh embedded heredoc `print("  --clear-to"); exit 0` -> `sys.exit(0)` (`exit` is undefined at module scope, a SyntaxError that died silently at runtime). check-embedded-python-syntax.py PASS, 0 bodies failed.
+- QC invariants (PRD 1.8): packaged persona_service resources/helpers/embedding_engine.py was a second 1331-line GEMINI_MODEL definition; replaced with a 50-line re-export shim of shared-utils/embedding_engine.py (no model constant of its own). GEMINI_MODEL now defined exactly once; all 6 gemini wrappers <= 6 lines; pres053 suite 18 passed.
+- _retired.json: regenerated (artifacts 41 -> 42, sops 8 -> 9; records retired GHL-EXTERNAL-INSTALLER-SOP.md). gen-retired-artifacts-ledger.py --check OK.
+- isolated-launch: test_fix61 harness now extracts top-level _PRESCHED_* schedule-contract constants and slices the lib from _presched_lock() so `set -u` sees _PRESCHED_POLL_NAME. 16 passed.
+- Merge origin/main d9c4a9797 (v25.0.36 docs follow-up) with zero conflict markers: CHANGELOG keeps the v25.0.36 entry and adds this one; update-skills.sh carries both hunks (ONBOARDING_VERSION v25.0.37 plus the branch _pres_deps_rows 6-column / _pres_video_missing_add canon hunks). pres034 docker acceptance ALL LEGS DONE; pres043 matrix 12 passed; repo-consistency gate 10 OK, 0 DRIFT.
+
 ## [v25.0.36]  -  2026-09-10  -  Presentation department batch ONB-20260910-201420: docs follow-up summarizing merged slices
 
 Release bookkeeping only. No product changes ship in this fold — no code, no
@@ -125,6 +136,16 @@ cab872039b2dac96bc78300a2158487ee7093e84d55a71069285789ca369f5de.
 - Enable actual external image fetching, keep weekly counts correct after inserted rows, and prevent new data rows inheriting header colors. Register publication inventories for independent per-account readback verification.
 - Existing planners require verified registry ownership migration before global append-route cutover; release is not evidence that every client installation or provider publication has been accepted.
 
+
+## [v25.0.31]  -  2026-09-09  -  Hotfix: 1.1.0 sheet-create export SCHEMA-1.1.0-DEFECT-01 (live cutover find)
+
+PR #1079 (merged at 1c226c2bd94ce1db66ed06ea5f3de672647813e0) — single-expression fix plus skill-35 patch bump.
+
+### Fixed
+- **HIGH — Drive Readback read `readbackQuery` from the wrong item (live cutover B find, execution 1084283).** In the 1.1.0 sheet-create export, `Verify Template Access (F14)` sits between `Validate + Build Provisioning Key` and `Drive Readback (find existing)`; its HTTP response replaces `$json`, so the Drive query went out as `q=undefined` → Google Drive 400 Invalid Value. Fixed: Drive Readback sources the query from the Validate node's output directly. No connection changes; F14 verify/repair path byte-identical. Verified: verify-exports.py 246/0, independent Sonnet QC PASS 6/6, distinct Opus review APPROVE, CI 50/50 on the merged commit. Skill 35 v3.6.0 → v3.6.1 (G3, frontmatter synced).
+
+### Deployment
+- Live cutover history: cutover B attempted (ruling 11:31:19Z), defect found live, rolled back per plan, legacy serving re-proven 200/200, packet run/deployment/n8n.json cutover_b block. Re-cutover against the fixed export follows the same GO sequence in the next deployment window.
 
 ## [v25.0.30]  -  2026-09-09  -  Social media planner W4+W5: portable deployment health, resumable setup, measured outcomes, final regression coverage
 

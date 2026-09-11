@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
-version: v2.0.3
+version: v2.1.0
 ---
 
 # Signature Presentation (Skill 51)
@@ -183,6 +183,47 @@ the phase bands, and the per-quadrant "Tone:" craft notes baked into MASTERDOC.m
 only WHO governs the actual written voice changes. Flag-guarded: `SKILL51_BLEND_GOVERNS=0` reverts
 to intake-tone-only governance (director-of-presentations-sops.md's pre-existing rule — nothing to
 re-implement, it was never removed).
+
+## Host hooks (PRES-051): bounded lifecycle feedback, never a gate
+
+The skill ships a **supported plugin hook package** — `.claude-plugin/plugin.json` plus
+`hooks/hooks.json` and bounded handlers in `scripts/hooks/` (`sp-hook.sh` dispatcher,
+`sp_session_start.py`, `sp_pre_tool_use.py`, `sp_post_tool_use.py`, `sp_stop.py`,
+`sp_hook_common.py`, `sp_doctor.py`). Contract, one line each:
+
+- **Registration** — hooks.json uses install-relative `"${CLAUDE_PLUGIN_ROOT}"` paths and
+  supported events only (SessionStart / PreToolUse / PostToolUse / Stop). `sp_doctor.py
+  --install/--uninstall` records owned registrations plus a settings backup, never touches a
+  user's global settings or hooksPath, preserves unrelated hooks, and removes only owned
+  entries (deduplicated, idempotent).
+- **SessionStart** — bounded local-only readiness: reads stdin JSON, validates the schema,
+  resolves the selected session's explicit runtime context
+  (`PRESENTATION_COMPANY_ID` + `PRESENTATION_ID` + `PRESENTATION_RUN_DIR`, or a
+  `.presentation-session.json` with schema `sp-session-context-v1` in the cwd). Missing context
+  yields a setup instruction, never default operator identity. Never installs dependencies,
+  starts paid work, restarts a gateway, or merges code because Claude started. Reattachment
+  validates lease + pinned manifest revision before claiming any worker.
+- **PreToolUse** — for the relevant supported entry tools only (Bash containing
+  `presentation_job.py --close/--resume/--run` or `presentation-canonical-entry.sh`), delegates
+  to the engine validator and surfaces state. Unknown/malformed relevant requests are never
+  certified; unrelated tools and sessions pass without being trapped. The hook itself never
+  blocks — blocking stays in engine transactions.
+- **PostToolUse** — records observed tool_use_id/status digests locally; a successful shell
+  exit is never a fabricated uploaded/complete receipt.
+- **Stop** — bounded corrective feedback with `stop_hook_active` guard plus a persisted reentry
+  budget (3) and a state-hash reentry guard; persisting resumable blocked state and next action.
+  Never an endless loop, never ignores cancellation, never retries a missing credential. If the
+  supervisor is not configured to outlive the host, the hook says suspended — no background work
+  is claimed.
+- **Enforcement** — prerequisite, lease, persona, artifact/QC and completion gates stay in
+  engine transactions (`presentation_job.py` `Gates` / `close()`). Hooks delegate read-only
+  (`--status --json`, `--resume --diagnose-only` are the only engine invocations allowed) and
+  surface state; direct CLI or disabled hooks cannot waive a gate. Async hook output never
+  approves a transition.
+- **Doctor** — `python3 scripts/hooks/sp_doctor.py --skill-dir <skill> --handshake` classifies
+  files-present, registered, event-observed and engine-gate-tested separately on each actual
+  host; `--check-registration --settings <path>` proves owned registrations; tests live in
+  `scripts/tests/test_pres051_hooks.py` (27 hermetic checks).
 
 ## Install / Wire / Verify
 

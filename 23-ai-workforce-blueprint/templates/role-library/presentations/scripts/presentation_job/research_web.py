@@ -515,10 +515,64 @@ class BoundedFetcher:
         self.fetched: Dict[str, Dict[str, Any]] = {} # canonical -> row (network hit)
         self.rows: List[Dict[str, Any]] = []         # ledger rows, in order
         self.refusals: List[str] = []
+        # PRES-029: restart recovery -- reload the durable ledger + snapshot
+        # store instead of starting empty. A fresh BoundedFetcher on an
+        # existing run dir reuses grounded evidence (no refetch, no lost
+        # provenance); only genuinely new URLs cost network.
+        self._recover_durable_state()
 
     # -- ledger -------------------------------------------------------------
     def ledger_path(self) -> Path:
         return self.run_dir / "working" / "research" / LEDGER_NAME
+
+    def _recover_durable_state(self) -> None:
+        """PRES-029 restart recovery: reload durable rows into memory.
+
+        Reads the on-disk FIX 19 ledger (if any) into self.rows WITHOUT
+        clearing it, rebuilds the fetch cache from network-fetch rows so
+        repeats reuse grounded evidence with zero new network, and
+        reconciles the immutable snapshot store (legacy ledger rows gain
+        snapshots; existing snapshots are untouched). Never raises: a
+        corrupt/unreadable ledger degrades to empty memory, never a crash.
+        """
+        try:
+            ledger = self.ledger_path()
+            if ledger.is_file():
+                obj = json.loads(
+                    ledger.read_text(encoding="utf-8", errors="replace"))
+                rows = (obj or {}).get("rows") or []
+                for row in rows:
+                    if isinstance(row, dict):
+                        self.rows.append(dict(row))
+                        canon = str(row.get("canonical_url") or "")
+                        # Only COMPLETE rows (real hash + real extract) seed
+                        # the cache. A legacy/foreign ledger row with a bare
+                        # hash but no extract (e.g. the audit's
+                        # 'old-source-hash' placeholder) must NOT become a
+                        # cached "fetch": the validator still needs the real
+                        # bytes, and a hash-only row can neither support nor
+                        # contradict any claim.
+                        if row.get("network_fetch") and canon \
+                                and row.get("content_sha256") \
+                                and (row.get("extracted")
+                                     or row.get("extracted_chars")):
+                            cached = dict(row)
+                            cached.setdefault("ok",
+                                              int(row.get("status") or 0)
+                                              == 200)
+                            if not cached.get("extracted"):
+                                cached["extracted"] = str(
+                                    row.get("extracted_chars") or "")
+                            self.cache[canon] = cached
+                            self.cache[str(row.get("url") or canon)] = cached
+                            self.fetched[canon] = cached
+        except (OSError, ValueError):
+            pass
+        try:
+            from presentation_job import retrieval_store as _rs
+            _rs.recover_snapshots(self.run_dir)
+        except Exception:  # noqa: BLE001 -- recovery is best-effort
+            pass
 
     def _ledger_view(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """The on-disk ledger view of a row: the spec's fields (query, canonical
@@ -531,14 +585,43 @@ class BoundedFetcher:
         return view
 
     def _record(self, row: Dict[str, Any]) -> None:
+        # PRES-029: atomic durable writes. A denied/failed ledger write is a
+        # loud persistence failure (ResearchWebError), never a silent
+        # best-effort skip -- the phase must fail rather than claim success
+        # without durable grounded evidence.
+        from presentation_job.checkpoint import atomic_write_text
+        from presentation_job import retrieval_store as _rs
         self.rows.append(self._ledger_view(row))
         try:
             self.ledger_path().parent.mkdir(parents=True, exist_ok=True)
-            self.ledger_path().write_text(
-                json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False),
-                encoding="utf-8")
-        except OSError:
-            pass  # ledger write is best-effort; the in-memory rows still bind
+            atomic_write_text(
+                self.ledger_path(),
+                json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False))
+        except OSError as exc:
+            self.rows.pop()
+            raise ResearchWebError(
+                f"AF-RESEARCH-PERSIST: could not persist the retrieval "
+                f"ledger ({type(exc).__name__}: {exc}). Required research "
+                f"evidence was NOT saved -- the phase must fail, never "
+                f"report success without durable grounded evidence.") from exc
+        # Immutable snapshot alongside the ledger row (network fetches only;
+        # refusals carry no evidence body). The snapshot's content hash must
+        # be the fetch row's RAW-BODY hash (not a re-hash of the excerpt) so
+        # the validator's changed-source comparison is same-level. The raw
+        # body is not retained in memory here post-extraction, so the row's
+        # own content_sha256 is passed through verbatim (see the
+        # _snapshot_content_passthrough note in retrieval_store).
+        if row.get("network_fetch") and row.get("content_sha256"):
+            canon = str(row.get("canonical_url") or "")
+            _rs.save_snapshot(
+                self.run_dir, query=row.get("query"),
+                url=str(row.get("url") or canon), canonical_url=canon,
+                status=int(row.get("status") or 0),
+                body_or_excerpt=str(row.get("extracted") or ""),
+                is_body=False,
+                fetch_ordinal=row.get("fetch_ordinal"),
+                _content_sha_passthrough=str(
+                    row.get("content_sha256") or ""))
 
     def _record_ledger_row(self, row: Dict[str, Any]) -> None:
         # alias kept distinct from cache-side row mutation; both end at _record
@@ -636,7 +719,13 @@ class BoundedFetcher:
             self._record(row)
             return row
         extracted = extract_text(body)
-        content_hash = hashlib.sha256(body.encode("utf-8", errors="replace")).hexdigest()
+        # PRES-029: content_sha256 hashes the RAW body (byte-identity of the
+        # fetched evidence), never the extraction. Hashing the extraction
+        # would alias distinct bodies with identical extracts AND collide
+        # with retrieval_store snapshots (which hash the excerpt) -- the
+        # validator's changed-source comparison needs both levels distinct.
+        content_hash = hashlib.sha256(
+            body.encode("utf-8", errors="replace")).hexdigest()
         row = {
             "url": url,
             "canonical_url": final_canon or canon,
@@ -737,13 +826,19 @@ class BoundedFetcher:
             self.rows[existing] = view
         else:
             self.rows.append(view)
+        # PRES-029: anchor notes refresh the row's EXISTING ledger view in
+        # place (never duplicate rows per citation) via the same atomic,
+        # fail-closed write as _record. Anchor metadata is not new evidence,
+        # so no new snapshot -- but losing the note must still fail loudly.
+        from presentation_job.checkpoint import atomic_write_text as _awt
         try:
             self.ledger_path().parent.mkdir(parents=True, exist_ok=True)
-            self.ledger_path().write_text(
-                json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False),
-                encoding="utf-8")
-        except OSError:
-            pass
+            _awt(self.ledger_path(),
+                 json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False))
+        except OSError as exc:
+            raise ResearchWebError(
+                f"AF-RESEARCH-PERSIST: could not persist anchor support "
+                f"note for {canon} ({type(exc).__name__}: {exc}).") from exc
         return verdict
 
 

@@ -101,6 +101,20 @@ so they are tracked here.
 | `shared-utils/api_key_utils.py` | list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — kept as single canonical secrets lookup |
 | `shared-utils/llm_score.py`     | candidate list with `Path.home() / "clawd" / "data" / ...` and `Path.home() / "clawd" / "coaching-personas" / ...` items | TRACKED — remove after fleet migration |
 
+#### PRES-053 packaged persona closure (byte-identical vendored copies)
+
+PRES-053 vendors byte-identical copies of `shared-utils/llm_score.py` and
+`23-ai-workforce-blueprint/scripts/persona-selector-v2.py` into the packaged
+`persona_service/resources/` tree so the presentation PersonaService loads its
+persona closure by explicit resource-root path. The vendored copies carry the
+same `~/clawd` legacy loops as their canonicals and MUST be retired in
+lockstep with them (re-vendor or delete together) after fleet migration.
+
+| File | Local loop location | Status |
+|------|---------------------|--------|
+| `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py` | candidate lists with `Path.home() / "clawd" / "data" / ...` and `Path.home() / "clawd" / "coaching-personas" / ...` items (byte-identical to `shared-utils/llm_score.py`) | TRACKED — retire in lockstep with `shared-utils/llm_score.py` |
+| `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py` | single-path list `[Path.home() / "clawd" / "skills" / ..., ...]` (byte-identical to `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`) | TRACKED — retire in lockstep with `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` |
+
 ---
 
 ## Retirement trigger (automated — deterministic, not vibes)

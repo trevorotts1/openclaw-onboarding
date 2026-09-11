@@ -7,18 +7,24 @@ Contract (published for W01/W07/W09 concurrent build):
     lease = governor.acquire("kie", n=1, timeout_s=30.0)   # blocks until admitted
     try:
         ...outbound call...
-        governor.report_ok("kie")                          # success telemetry
+        governor.report_ok("kie")                          # healthy-sample telemetry
     finally:
         governor.release(lease)                            # frees the in-flight slot
-    # on HTTP 429:
-    governor.report_429("kie")                             # halves rate for 60 s
+    # on HTTP 429 (pass the response's Retry-After when the provider sent one):
+    governor.report_429("kie", retry_after_s=float(hdr))
+    # -> multiplicative decrease of the start-rate, penalty for the Retry-After
+    #    (default 60 s), recovered only GRADUALLY after a full healthy
+    #    observation window with a minimum number of clean samples [PRES-016].
+    #    Penalty state persists to a shared circuit document so other
+    #    dispatcher processes honor the same cooldown.
 
 Per provider config lives in ``presentation_job/providers.yaml``::
 
     kie:
-      rps: 2.0                 # sustained submits per second
-      burst: 20                # token-bucket capacity (rolling 10 s window cap)
-      max_inflight: 100        # concurrent acquisitions ceiling
+      rps: 2.0                 # sustained request-START rate (token refill)
+      burst: 20                # start-rate window: max STARTS in a rolling 10 s
+      max_inflight: 100        # concurrent in-flight ceiling -- a SEPARATE axis,
+                               # never lifts burst [PRES-016]
       daily_cap: 2000          # acquisitions per UTC day (0 = unlimited)
       poll_counts_toward_rps: false   # poll GETs may bypass the rate bucket
     defaults:                  # fallback for unknown providers
@@ -46,6 +52,27 @@ report_429 so a stored surplus cannot pay for a pre-penalty burst.  The plan
 tier comes from the resource profile via PLAN_TIER_RPS; the profile also
 provides max_inflight when it records a concurrency_ceiling.
 
+[PRES-016] ADAPTIVE RECOVERY -- the three axes are separate facts:
+  * concurrent-request axis  -> ``max_inflight`` (and capacity.CAP_TABLE)
+  * request-START axis       -> ``rps`` + ``burst`` (the rolling-10s window)
+  * spend axis               -> ``daily_cap``
+A concurrency ceiling NEVER lifts the start-rate window: provider_config no
+longer raises ``burst`` to ``max_inflight`` or the tier rate, so "100
+concurrent" can no longer fabricate "100 starts per 10 s".  On a 429 the
+start-rate falls MULTIPLICATIVELY (halving, floor 1/32) for the Retry-After
+the provider asked for (default 60 s); ``report_ok`` records a healthy sample
+but moves the scale by at most ONE ADDITIVE STEP per full healthy observation
+window (HEALTHY_WINDOW_S) that carries at least HEALTHY_MIN_SAMPLES clean
+responses -- so an old in-flight success arriving right after a 429 cannot
+erase the penalty, and mixed 200/429 traffic cannot bounce back to full
+speed.  The penalty lives in the shared circuit document
+(``governor_circuit.json`` next to the resource profile store) with a
+monotonic revision, written under an exclusive file lock; a writer whose
+cached base revision is stale is rejected VISIBLY (a ``circuit-stale-revision``
+row in the acquisition log) and re-merges from the live document, so every
+dispatcher process on the host sees -- and honors -- the same cooldown while
+unrelated providers continue unaffected.
+
 Thread-safe: one module-level lock guards all state.  100% stdlib, yaml parsed
 by a tiny built-in loader so the module never imports PyYAML.
 """
@@ -69,6 +96,7 @@ __all__ = [
     "report_429",
     "report_ok",
     "snapshot",
+    "circuit_snapshot",
     "window_counts",
     "max_inflight_seen",
     "provider_config",
@@ -76,6 +104,11 @@ __all__ = [
     "set_log_path",
     "log_path",
     "PLAN_TIER_RPS",
+    "HEALTHY_WINDOW_S",
+    "HEALTHY_MIN_SAMPLES",
+    "SCALE_STEP",
+    "SCALE_FLOOR",
+    "RETRY_AFTER_CAP_S",
 ]
 
 # --------------------------------------------------------------------------
@@ -97,6 +130,43 @@ _DEFAULTS = {
     "daily_cap": 0,
     "poll_counts_toward_rps": True,
 }
+
+# --------------------------------------------------------------------------
+# [PRES-016] adaptive-recovery constants
+# --------------------------------------------------------------------------
+
+#: A 429 penalty decays only by TIME while nothing healthy is observed; a
+#: success may speed recovery by at most ONE additive step per full healthy
+#: observation window of this many seconds (measured from the 429 that opened
+#: the penalty).
+HEALTHY_WINDOW_S: float = 30.0
+
+#: Clean responses required inside one healthy observation window before the
+#: additive step is granted.  A single (possibly stale in-flight) success can
+#: never satisfy this.
+HEALTHY_MIN_SAMPLES: int = 10
+
+#: One additive recovery step.  From the first 429 (scale 0.5) a FULL healthy
+#: recovery to 1.0 therefore takes 4 windows -- never one lucky response.
+SCALE_STEP: float = 0.125
+
+#: Multiplicative-decrease floor (repeated 429s re-halve, never below this).
+SCALE_FLOOR: float = 1.0 / 32.0
+
+#: Default penalty when the provider sent no Retry-After header [W09-B2].
+DEFAULT_PENALTY_S: float = 60.0
+
+#: A Retry-After is honored but capped -- a hostile or broken header must not
+#: wedge an account's start-rate for a day.
+RETRY_AFTER_CAP_S: float = 3600.0
+
+#: Shared circuit document (persisted penalty state), read at most this often
+#: by the acquire path so cross-process penalties propagate without turning
+#: every admission into an IO round-trip.
+_CIRCUIT_SYNC_INTERVAL_S: float = 2.0
+
+#: Bounded CAS retries when persisting the shared circuit document.
+_CIRCUIT_PERSIST_RETRIES: int = 5
 
 _config_lock = threading.Lock()
 _config_cache: Dict[str, dict] = {}
@@ -324,7 +394,15 @@ def _plan_tier_inflight(provider: str) -> Optional[int]:
     [U5] Any positive recorded ceiling is honored, not just the two the
     cap table happened to hold when FIX 14 was written.  A profile that
     records the operator's reserved 8 gets 8; a profile that records a
-    measured 47 gets 47.  Previously both fell through to the tier map."""
+    measured 47 gets 47.  Previously both fell through to the tier map.
+
+    PRES-015: the ceiling read honours the account-split reserve. When the
+    profile entry names a structural cap-table (provider, plan) pair, the
+    ceiling applied is the CURRENT account_factors ceiling (raw account
+    limit minus the live reserve, allocation folded) -- so a client whose
+    reserve is 0 gets the full 10 in flight, and one who declared
+    max_concurrent 4 gets 4 -- without any hand edit to this file. Reads
+    only local declaration stores; never raises; never a credential."""
     try:
         path = _resource_profile_path()
         if path is None:
@@ -334,6 +412,30 @@ def _plan_tier_inflight(provider: str) -> Optional[int]:
         entry = _profile_provider_entry(data, provider)
         if not entry:
             return None
+        # PRES-015 first: a locked structural pair resolves through the
+        # account split so the live reserve/allocation govern the ceiling.
+        try:
+            from . import capacity as _cap  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            try:
+                from presentation_job import capacity as _cap
+            except ImportError:
+                _cap = None
+        if _cap is not None:
+            norm_p = _cap.normalize_provider(provider)
+            norm_plan = _cap.normalize_plan(
+                entry.get("plan_tier") or entry.get("plan"), norm_p)
+            if norm_p and norm_plan \
+                    and (norm_p, norm_plan) in _cap.ACCOUNT_LIMITS:
+                factors = _cap._account_factors(
+                    norm_p, norm_plan,
+                    entry.get("max_concurrent")
+                    if isinstance(entry.get("max_concurrent"), int)
+                    and not isinstance(entry.get("max_concurrent"), bool)
+                    else None)
+                ceiling = factors.get("account_ceiling")
+                if isinstance(ceiling, int) and ceiling > 0:
+                    return ceiling
         ceiling = entry.get("concurrency_ceiling")
         if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool):
             if 0 < float(ceiling) < float("inf"):
@@ -467,11 +569,26 @@ def provider_config(provider: str) -> dict:
     [FIX 14 / W09-B2] The plan-tier read comes from THE resource profile
     (resource_profile.py's store, providers.<id>.plan_tier): an ollama-cloud
     $20/month account gets rps 3, $100/month gets rps 8 -- the Part 7
-    ceilings minus the operator's 2-slot reserve [U5], via PLAN_TIER_RPS.  The tier also sets max_inflight to the
-    same number when the profile records a concurrency_ceiling, so the
+    ceilings minus the operator's 2-slot reserve [U5], via PLAN_TIER_RPS.  The
+    profile's concurrency ceiling also sets max_inflight, so the
     concurrent-agent ceiling and the governor's in-flight cap never disagree.
     A profile that is absent, flag-disabled, unreadable or silent about the
-    provider changes nothing (the YAML values stand)."""
+    provider changes nothing (the YAML values stand).
+
+    [PRES-016] THE AXES ARE SEPARATE.  Earlier this function ALSO lifted
+    ``burst`` -- first to the tier rate, then to the concurrency ceiling
+    ("a width the governor will not admit is not a width", U5) -- which
+    conflated the CONCURRENT-REQUEST axis (max_inflight) with the
+    REQUEST-START axis (rps + the burst rolling-10s window): a profile that
+    recorded 100 concurrent slots silently granted permission to START 100
+    requests in one 10-second window.  Concurrency is how many requests may
+    be in flight at once; the start-rate is how quickly new ones may begin.
+    They are different limits and only the provider's real published or
+    measured START rate may widen ``burst`` -- so neither lift remains.  The
+    OpenRouter row keeps its operator-declared burst 100 (an explicit
+    start-rate declaration, 2026-09-07); every other provider keeps its own
+    yaml burst.  ``max_inflight`` and the plan-tier ``rps`` mapping (the
+    ollama 3/8-with-2-reserve ruling) are unchanged."""
     cfg = dict(_DEFAULTS)
     cfg.update(_load_config().get("defaults") or {})
     body = _config_for(provider)
@@ -480,23 +597,9 @@ def provider_config(provider: str) -> dict:
     tier_rps = _plan_tier_rps(provider)
     if tier_rps is not None:
         cfg["rps"] = tier_rps
-        # keep burst >= the tier rate so a full window is still possible
-        cfg["burst"] = max(int(cfg.get("burst") or 0), int(tier_rps))
     tier_inflight = _plan_tier_inflight(provider)
     if tier_inflight is not None:
         cfg["max_inflight"] = tier_inflight
-        # [U5] ...and the ADMISSION window has to be wide enough to fill it.
-        # `burst` is not only the token-bucket capacity: acquire() enforces it
-        # as a HARD rolling-10s ceiling on admissions.  With deepseek's
-        # burst 20 a 100-wide ultra wave admitted 20 workers and made the
-        # other 80 queue -- measured on the operator box, 20/100 for
-        # deepseek-direct and 0/100 for openrouter.  A width the governor
-        # will not admit is not a width, so the same "never disagree" rule
-        # that binds max_inflight to the ceiling binds burst to it too.
-        # Only the burst moves: `rps` is untouched, so the SUSTAINED rate
-        # stays exactly where providers.yaml set it.  This raises, never
-        # lowers -- a yaml row already wider than the ceiling keeps its value.
-        cfg["burst"] = max(int(cfg.get("burst") or 0), int(tier_inflight))
     return cfg
 
 
@@ -524,10 +627,15 @@ class _ProviderState:
     last_refill: float = 0.0
     inflight: int = 0
     max_inflight_seen: int = 0
-    rate_scale: float = 1.0          # report_429 halves this for 60 s
-    rate_scale_until: float = 0.0    # wall-clock epoch
+    rate_scale: float = 1.0          # multiplicative start-rate decrease (429)
+    rate_scale_until: float = 0.0    # wall-clock epoch the penalty expires
+    last_429_ts: float = 0.0         # epoch of the most recent 429 [PRES-016]
+    penalty_started: float = 0.0     # epoch the CURRENT penalty opened [PRES-016]
+    retry_after_s: float = 0.0       # honored Retry-After, if any [PRES-016]
+    ok_samples: list = field(default_factory=list)  # healthy-sample epochs
     day: str = ""
     day_count: int = 0
+    day_count_imported: bool = False  # a restart merged the shared count in
     events: list = field(default_factory=list)  # (ts, kind, n) acquisitions
 
 
@@ -591,6 +699,246 @@ _state: Dict[str, _ProviderState] = {}
 _seq = 0
 
 _log_path_override: Optional[str] = None
+
+
+# --------------------------------------------------------------------------
+# [PRES-016] shared circuit document -- penalty state that survives the
+# process.  Every dispatcher process on the host (each auto-spawned run owns
+# its own process) reads and writes ONE document next to the resource-profile
+# store, so a 429 penalty earned by one job cools the SAME account bucket in
+# every other job, while unrelated providers are untouched.  Shape:
+#
+#   {"revision": <monotonic int>, "updated_at": <epoch>,
+#    "providers": {"<provider>": {"rate_scale": float, "penalty_until": epoch,
+#                                 "penalty_started": epoch, "last_429_ts": epoch,
+#                                 "retry_after_s": float, "updated_at": epoch}}}
+#
+# Writers take an exclusive flock on a sibling .lock file, re-read the live
+# document, merge per provider, bump the revision and atomically replace the
+# file.  A writer whose cached base revision is behind the live revision is a
+# STALE REVISION: its write is rejected VISIBLY (a "circuit-stale-revision"
+# row in the acquisition log) and only re-applied when its own event is
+# strictly newer than the stored one -- a newer in-flight write from another
+# process always wins.  Best-effort end to end: any error degrades to
+# in-process-only state and is logged, never raised.
+# --------------------------------------------------------------------------
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    _fcntl = None  # type: ignore[assignment]
+
+_CIRCUIT_FILENAME = "governor_circuit.json"
+_circuit_lock = threading.Lock()
+_circuit_cache: Dict[str, dict] = {}
+_circuit_loaded_at: float = 0.0
+
+
+def _circuit_dir(create: bool) -> Optional[Path]:
+    """Where the shared circuit document lives: the resource-profile store's
+    directory when it resolves, else the capacity-config env dirs, else the
+    documented state defaults.  ``create`` only ever makes the ENV-REDIRECTED
+    directory (a test/explicit operator path); the default on-disk homes are
+    only created when a write actually needs them."""
+    path = _resource_profile_path()
+    if path is not None:
+        return path.parent
+    for env in ("PRESENTATION_CAPACITY_CONFIG_DIR",
+                "PRESENTATION_RESOURCE_PROFILE_DIR"):
+        val = os.environ.get(env)
+        if val:
+            d = Path(val).expanduser()
+            if create:
+                try:
+                    d.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    return None
+            return d
+    home = Path(os.path.expanduser("~"))
+    for d in (home / ".openclaw" / "state" / "presentation",
+              Path("/data/.openclaw/state/presentation")):
+        if create:
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                return d
+            except OSError:
+                continue
+        elif d.is_dir():
+            return d
+    return None
+
+
+def _circuit_path(create: bool = False) -> Optional[Path]:
+    d = _circuit_dir(create)
+    if d is None:
+        return None
+    return d / _CIRCUIT_FILENAME
+
+
+def _circuit_revision_hint(provider: str) -> int:
+    """The revision the caller's knowledge of *provider* is based on: the
+    document revision when this process last read/merged that provider's
+    entry.  0 when nothing was ever read (never stale)."""
+    with _circuit_lock:
+        entry = (_circuit_cache.get("providers") or {}).get(provider)
+        if isinstance(entry, dict) and entry.get("_base_revision") is not None:
+            return int(entry["_base_revision"])
+        return int(_circuit_cache.get("revision") or 0)
+
+
+def _load_circuit() -> dict:
+    """The live shared document, or an empty one.  Callers that already hold
+    the file lock pass it in; reads are always fresh (never the cache) so a
+    merge decision is made against the real current state."""
+    path = _circuit_path(create=False)
+    if path is None or not path.is_file():
+        return {"revision": 0, "providers": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"revision": 0, "providers": {}}
+    if not isinstance(data, dict) or not isinstance(data.get("providers"), dict):
+        return {"revision": 0, "providers": {}}
+    return data
+
+
+def _persist_circuit(updates: Dict[str, dict]) -> Dict[str, dict]:
+    """Merge *updates* (provider -> entry fields, optional "base_revision")
+    into the shared document under the file lock.  A provider entry whose
+    base_revision is behind the live revision AND whose event is not newer
+    than the stored one is REJECTED VISIBLY (logged) and left out; everything
+    else merges.  Returns the final document, or {} when nothing could be
+    written.  Never raises."""
+    path = _circuit_path(create=True)
+    if path is None:
+        return {}
+    lock_path = path.with_suffix(".lock")
+    holder = None
+    try:
+        holder = open(lock_path, "a", encoding="utf-8")  # noqa: SIM115 - held for the critical section
+        if _fcntl is not None:
+            _fcntl.flock(holder.fileno(), _fcntl.LOCK_EX)
+    except OSError:
+        if holder is not None:
+            try:
+                holder.close()
+            except OSError:
+                pass
+        holder = None  # unlocked best-effort: the retry loop still bounds us
+    try:
+        for _attempt in range(_CIRCUIT_PERSIST_RETRIES):
+            current = _load_circuit()
+            providers = dict(current.get("providers") or {})
+            revision = int(current.get("revision") or 0)
+            for pid, upd in dict(updates).items():
+                base = int(upd.get("base_revision") or 0)
+                stored = providers.get(pid) if isinstance(providers.get(pid), dict) else None
+                if (base and revision > base and stored is not None
+                        and float(stored.get("updated_at") or 0)
+                        >= float(upd.get("updated_at") or 0)):
+                    _append_log(pid, "circuit-stale-revision", 0, 0, ok=False,
+                                note=(f"stale circuit write rejected: base "
+                                      f"revision {base} behind live {revision} "
+                                      f"and the stored event is newer -- kept "
+                                      f"the live entry"))
+                    continue
+                entry = {k: v for k, v in upd.items() if k != "base_revision"}
+                entry["_base_revision"] = revision + 1
+                providers[pid] = entry
+            doc = {"revision": revision + 1, "providers": providers,
+                   "updated_at": time.time()}
+            try:
+                tmp = path.with_suffix(f".json.tmp-{os.getpid()}")
+                tmp.write_text(json.dumps(doc), encoding="utf-8")
+                os.replace(tmp, path)
+            except OSError:
+                time.sleep(0.02 * (_attempt + 1))
+                continue
+            with _circuit_lock:
+                global _circuit_cache, _circuit_loaded_at
+                _circuit_cache = doc
+                _circuit_loaded_at = time.time()
+            return doc
+        _append_log("circuit", "circuit-persist-failed", 0, 0, ok=False,
+                    note=f"shared circuit document not written after "
+                         f"{_CIRCUIT_PERSIST_RETRIES} attempts: {lock_path}")
+        return {}
+    finally:
+        if holder is not None:
+            try:
+                if _fcntl is not None:
+                    _fcntl.flock(holder.fileno(), _fcntl.LOCK_UN)
+                holder.close()
+            except OSError:
+                pass
+
+
+def _sync_circuit_locked(st: _ProviderState, provider: str, now: float) -> None:
+    """Import another process's persisted penalty into *this* process's live
+    state.  Caller holds ``_lock``.  Throttled to one file read per
+    _CIRCUIT_SYNC_INTERVAL_S; a stored entry wins only when its 429 is
+    strictly newer than anything this process saw (stale-revision rule)."""
+    global _circuit_loaded_at
+    if now - _circuit_loaded_at < _CIRCUIT_SYNC_INTERVAL_S:
+        return
+    _circuit_loaded_at = now
+    doc = _load_circuit()
+    with _circuit_lock:
+        _circuit_cache.update(doc if isinstance(doc, dict) else {})
+    entry = (doc.get("providers") or {}).get(provider)
+    if not isinstance(entry, dict):
+        return
+    # [PRES-003] RESTART RETAINS THE DAILY BUDGET: the shared document carries
+    # the UTC day and its acquisition count.  A process that has counted
+    # nothing today (a restart, a respawned dispatcher) imports the stored
+    # count so a denial cannot be reset by starting a new process; a process
+    # whose OWN count for the same day is already higher keeps its larger
+    # number (monotonic, never regresses).  A stored count for a PREVIOUS day
+    # is a stale row -- today's count starts at zero as before.
+    stored_day = str(entry.get("day") or "")
+    stored_count = entry.get("day_count")
+    if stored_day == _utc_day() and isinstance(stored_count, (int, float)) \
+            and not isinstance(stored_count, bool):
+        stored_count = int(stored_count)
+        if stored_count > st.day_count and not st.day_count_imported:
+            st.day = stored_day
+            st.day_count = stored_count
+            st.day_count_imported = True
+        elif st.day_count > 0 and not st.day_count_imported:
+            # this process already counted today; merge upward only
+            st.day_count_imported = True
+            if stored_count > st.day_count:
+                st.day_count = stored_count
+    entry_ts = float(entry.get("last_429_ts") or 0)
+    if entry_ts > st.last_429_ts:
+        st.last_429_ts = entry_ts
+        st.rate_scale = min(1.0, max(SCALE_FLOOR,
+                                     float(entry.get("rate_scale") or 1.0)))
+        st.rate_scale_until = float(entry.get("penalty_until") or 0)
+        st.penalty_started = float(entry.get("penalty_started") or 0)
+        st.retry_after_s = float(entry.get("retry_after_s") or 0)
+
+
+def circuit_snapshot() -> dict:
+    """[PRES-016] The persisted/shared penalty view: cooldown, next retry and
+    the affected account per provider -- the surface another job (or the
+    operator) reads to see WHY a provider is cooled down while others run."""
+    now = time.time()
+    doc = _load_circuit()
+    out: Dict[str, dict] = {}
+    for pid, entry in (doc.get("providers") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        until = float(entry.get("penalty_until") or 0)
+        out[pid] = {
+            "rate_scale": float(entry.get("rate_scale") or 1.0),
+            "penalty_remaining_s": max(0.0, until - now),
+            "next_retry_at_epoch": until,
+            "retry_after_s": float(entry.get("retry_after_s") or 0.0),
+            "last_429_ts": float(entry.get("last_429_ts") or 0.0),
+            "updated_at": float(entry.get("updated_at") or 0.0),
+        }
+    return out
 
 
 def set_log_path(path: str) -> None:
@@ -680,7 +1028,9 @@ def max_inflight_seen(provider: Optional[str] = None) -> int:
 
 
 def snapshot() -> dict:
-    """Diagnostics: per-provider tokens, inflight, scale, day count."""
+    """Diagnostics: per-provider tokens, inflight, scale, penalty state, day
+    count.  [PRES-016] exposes the cooldown, the next retry epoch and the
+    honored Retry-After so the WHY of a cooled provider is always readable."""
     now = time.time()
     with _lock:
         out = {}
@@ -693,6 +1043,11 @@ def snapshot() -> dict:
                 "rate_scale_remaining_s": max(
                     0.0, st.rate_scale_until - now
                 ),
+                "penalty_remaining_s": max(0.0, st.rate_scale_until - now),
+                "penalty_started": st.penalty_started,
+                "last_429_ts": st.last_429_ts,
+                "retry_after_s": st.retry_after_s,
+                "next_retry_at_epoch": st.rate_scale_until,
                 "day": st.day,
                 "day_count": st.day_count,
                 "window_10s": sum(
@@ -730,6 +1085,11 @@ def acquire(
     while True:
         with _lock:
             st = _state_for(provider)
+            now = time.time()
+            # [PRES-016] import another process's persisted penalty first, so
+            # a cooldown earned in a sibling dispatcher cools THIS bucket too
+            # (throttled; a stale entry never beats a newer local 429).
+            _sync_circuit_locked(st, provider, now)
             now = time.time()
             # daily cap reset
             today = _utc_day()
@@ -786,6 +1146,18 @@ def acquire(
                     _state=st,
                 )
                 _append_log(provider, "acquire_poll" if poll_ok else "acquire", n, st.inflight)
+                # [PRES-003] the daily budget is consumed HERE, so the shared
+                # document must carry the count HERE: a restart (new process,
+                # zero local count) imports the stored total and a denial
+                # cannot be reset by starting a fresh process.  Best-effort:
+                # a persist failure degrades to in-process-only accounting
+                # (the same degradation the penalty persistence already has).
+                _persist_circuit({provider: {
+                    "day": st.day,
+                    "day_count": st.day_count,
+                    "updated_at": now,
+                    "base_revision": _circuit_revision_hint(provider),
+                }})
                 return lease
         # not admitted -- sleep a tick proportional to the deficit
         if deadline is not None and time.monotonic() >= deadline:
@@ -823,24 +1195,50 @@ def release(lease: Optional[Lease]) -> None:
 # --------------------------------------------------------------------------
 
 
-def report_429(provider: str) -> float:
-    """Provider answered 429: halve the refill rate for the next 60 s.
+def report_429(provider: str, retry_after_s: Optional[float] = None) -> float:
+    """Provider answered 429: MULTIPLICATIVELY decrease the start-rate and
+    hold the penalty for the provider's own Retry-After (default 60 s).
 
     [FIX 14 / W09-B2] "a forced 429 halves the next minute's rate."  The
     halving applies to the REFILL RATE from this instant: the accumulated
-    token balance decays to the halved burst so a stored backlog cannot pay
-    for a burst of submissions at the old pace inside the penalty minute.
-    Repeated 429s inside the window re-halve (floor 1/32 of base).  Returns
-    the applied scale so callers/tests can assert it.
+    token balance decays to the scaled burst so a stored surplus cannot pay
+    for a burst of submissions at the old pace inside the penalty window.
+    Repeated 429s re-halve (floor 1/32 of base).
+
+    [PRES-016] The penalty duration is the provider's own Retry-After when it
+    sent one (capped at RETRY_AFTER_CAP_S so a broken header cannot wedge the
+    account for a day, floor 1 s), else the 60 s default.  An OLD IN-FLIGHT
+    SUCCESS arriving right after this call can no longer erase the penalty:
+    report_ok only ADDS recovery after a full healthy observation window with
+    the minimum sample count.  The penalty is persisted to the shared circuit
+    document so every other dispatcher process on the host honors the same
+    cooldown (unrelated providers are never touched).  Returns the applied
+    scale so callers/tests can assert it.
     """
     with _lock:
         st = _state_for(provider)
         now = time.time()
-        if now < st.rate_scale_until:
-            st.rate_scale = max(1.0 / 32.0, st.rate_scale / 2.0)
+        penalty_s = DEFAULT_PENALTY_S
+        if retry_after_s is not None:
+            try:
+                penalty_s = min(RETRY_AFTER_CAP_S, max(1.0, float(retry_after_s)))
+            except (TypeError, ValueError):
+                penalty_s = DEFAULT_PENALTY_S
+        # Multiplicative decrease: a fresh 429 sets 0.5; another 429 inside
+        # the still-open penalty window (or inside a Retry-After longer than
+        # the default) halves again -- exactly the W09-B2 re-halving, with the
+        # "inside the window" test measured from the last 429 rather than the
+        # scale expiry so a long Retry-After cannot look like recovery.
+        window = max(DEFAULT_PENALTY_S, st.retry_after_s)
+        if st.last_429_ts and (now - st.last_429_ts) <= window:
+            st.rate_scale = max(SCALE_FLOOR, st.rate_scale / 2.0)
         else:
-            st.rate_scale = 0.5
-        st.rate_scale_until = now + 60.0
+            st.rate_scale = max(SCALE_FLOOR, min(st.rate_scale, 0.5))
+        st.rate_scale_until = now + penalty_s
+        st.last_429_ts = now
+        st.penalty_started = now
+        st.retry_after_s = penalty_s
+        st.ok_samples.clear()
         # Token backlog decays under the penalty: a 429 must not leave the
         # bucket able to admit a full burst at the pre-429 pace.
         try:
@@ -852,23 +1250,89 @@ def report_429(provider: str) -> float:
         scale = st.rate_scale
         st.events.append((now, "report_429", 0))
         inflight = st.inflight
+        circuit_entry = {
+            "rate_scale": scale,
+            "penalty_until": st.rate_scale_until,
+            "penalty_started": st.penalty_started,
+            "last_429_ts": st.last_429_ts,
+            "retry_after_s": st.retry_after_s,
+            # [PRES-003] the daily budget travels with the penalty so a
+            # restart cannot reset the cap by starting a fresh process.
+            "day": st.day,
+            "day_count": st.day_count,
+            "updated_at": now,
+            "base_revision": _circuit_revision_hint(provider),
+        }
     _append_log(provider, "report_429", 0, inflight)
+    try:
+        _persist_circuit({provider: circuit_entry})
+    except Exception:  # noqa: BLE001 -- persistence must never break telemetry
+        pass
     return scale
 
 
 def report_ok(provider: str) -> None:
-    """Call succeeded; recover the rate scale faster than the 60 s expiry.
+    """Call succeeded: record ONE healthy sample; recovery is graduated.
 
-    [FIX 14 / W09-B2] The scaled rate and the scaled window ceiling recover
-    together so recovery is observable in the same place the penalty is."""
+    [PRES-016] A success no longer doubles the scale.  A success that arrives
+    right after a 429 is usually an ALREADY-IN-FLIGHT request that started
+    before the penalty opened -- counting it as recovery would let one stale
+    response erase the penalty, which is exactly the defect.  So every clean
+    response only APPENDS a sample; the scale moves by at most ONE ADDITIVE
+    STEP (SCALE_STEP) and only when a full healthy observation window
+    (HEALTHY_WINDOW_S, measured from the 429 that opened the penalty) carries
+    at least HEALTHY_MIN_SAMPLES clean responses.  Each granted step starts a
+    NEW window, so recovery to full rate is gradual even under sustained
+    healthy traffic.  When no 429 ever set a scale below 1.0 this is a no-op
+    telemetry row, as before."""
     with _lock:
         st = _state_for(provider)
         now = time.time()
-        if st.rate_scale < 1.0:
-            st.rate_scale = min(1.0, st.rate_scale * 2.0)
-            if st.rate_scale >= 1.0:
-                st.rate_scale_until = 0.0
-        st.events.append((now, "report_ok", 0))
+        changed = False
+        if st.rate_scale >= 1.0:
+            st.events.append((now, "report_ok", 0))
+            return
+        if not st.last_429_ts:
+            # Below full rate with no known 429 (an imported/legacy state):
+            # nothing explains the throttle, restore it.
+            st.rate_scale = 1.0
+            st.rate_scale_until = 0.0
+            st.events.append((now, "report_ok", 0))
+            changed = True
+        else:
+            st.ok_samples.append(now)
+            elapsed = now - st.penalty_started
+            if elapsed >= HEALTHY_WINDOW_S and \
+                    len(st.ok_samples) >= HEALTHY_MIN_SAMPLES:
+                st.rate_scale = min(1.0, st.rate_scale + SCALE_STEP)
+                st.penalty_started = now  # the next window needs fresh evidence
+                st.ok_samples.clear()
+                if st.rate_scale >= 1.0:
+                    st.rate_scale_until = 0.0
+                changed = True
+            st.events.append((now, "report_ok", 0))
+        scale = st.rate_scale
+        inflight = st.inflight
+        circuit_entry = {
+            "rate_scale": scale,
+            "penalty_until": st.rate_scale_until,
+            "penalty_started": st.penalty_started,
+            "last_429_ts": st.last_429_ts,
+            "retry_after_s": st.retry_after_s,
+            # [PRES-003] keep the daily-budget row current on every persisted
+            # write so the newest process's count is what a restart imports.
+            "day": st.day,
+            "day_count": st.day_count,
+            "updated_at": now,
+            "base_revision": _circuit_revision_hint(provider),
+        }
+    if not changed:
+        return
+    _append_log(provider, "report_ok", 0, inflight)
+    try:
+        _persist_circuit({provider: circuit_entry})
+    except Exception:  # noqa: BLE001 -- persistence must never break telemetry
+        pass
 
 
 # --------------------------------------------------------------------------

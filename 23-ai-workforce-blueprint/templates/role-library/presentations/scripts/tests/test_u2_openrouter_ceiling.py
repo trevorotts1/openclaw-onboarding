@@ -258,18 +258,28 @@ def test_a_provider_with_no_row_still_falls_to_defaults():
 # ---------------------------------------------------------------------------
 # 3. THE RAMP -- implemented, and wired to the OpenRouter transport
 # ---------------------------------------------------------------------------
-def test_report_429_really_halves_the_rate_and_report_ok_recovers_it():
+def test_report_429_really_halves_the_rate_and_recovery_is_gradual():
     """Part of the justification for 100 is that a miss is absorbed. That is
     only true if the ramp is real code, so assert the behaviour, not the
-    comment. Passes on pristine main too -- the ramp predates this fix."""
+    comment. [PRES-016] RECOVERY IS NO LONGER PER-SUCCESS DOUBLING: the old
+    `report_ok` doubled the scale on EVERY success, so one already-in-flight
+    success right after a 429 erased the first penalty. Now a success only
+    records a healthy sample; the scale moves by one ADDITIVE step per full
+    healthy observation window (governor.HEALTHY_WINDOW_S with at least
+    governor.HEALTHY_MIN_SAMPLES clean responses) -- asserted end-to-end in
+    test_wf01a_pres003_016.py. Here: the multiplicative decrease is real and
+    a couple of successes do not bounce the rate back to full speed."""
     assert governor.report_429("openrouter") == 0.5
     assert governor._state_for("openrouter").rate_scale == 0.5
     # repeated 429s inside the penalty window re-halve
     assert governor.report_429("openrouter") == 0.25
+    # a success (even two) no longer doubles the scale back
     governor.report_ok("openrouter")
-    assert governor._state_for("openrouter").rate_scale == 0.5
+    assert governor._state_for("openrouter").rate_scale == 0.25, (
+        "report_ok doubled the scale again: one success cannot erase a "
+        "penalty (PRES-016)")
     governor.report_ok("openrouter")
-    assert governor._state_for("openrouter").rate_scale == 1.0
+    assert governor._state_for("openrouter").rate_scale == 0.25
 
 
 def test_the_429_penalty_also_halves_the_ten_second_window_ceiling():
@@ -316,18 +326,20 @@ def test_the_openrouter_transport_feeds_the_ramp():
         return "\n".join(lines[start:end])
 
     compat = body_of("def _openai_compat_complete(")
-    assert "_govern_429(provider)" in compat
+    assert "_govern_429(provider" in compat
     assert "_govern_ok(provider)" in compat
-    assert "_lease = _govern_acquire(provider)" in compat
+    assert "_admission = _govern_admit(provider)" in compat, (
+        "the transport must gate through the required typed admission "
+        "(PRES-003), not a best-effort acquire")
     # the routed provider reaches that transport at all
     dispatch = body_of("def dispatch_complete(")
     assert "_openai_compat_complete(" in dispatch
-    assert "_govern_acquire(_dispatch_provider)" in dispatch
+    assert "_dispatch_admission = _govern_admit(_dispatch_provider)" in dispatch
     # KNOWN-GOOD CONTROL on the same instrument: the sibling transport is
     # found and wired too, so an empty result above would be absence, not a
     # broken slicer.
     deepseek = body_of("def deepseek_complete(")
-    assert '_govern_429("deepseek-direct")' in deepseek
+    assert '_govern_429("deepseek-direct"' in deepseek
 
 
 def test_the_ramp_does_not_protect_the_concurrency_axis():

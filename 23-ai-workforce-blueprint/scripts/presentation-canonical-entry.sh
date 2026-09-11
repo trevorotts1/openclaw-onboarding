@@ -644,11 +644,27 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
+    local video_missing=()
+    # PRES-033: the pipeline python deps live in the DEPARTMENT VENV (FIX 71),
+    # never the system interpreter. Resolve the SAME interpreter
+    # qc-completeness.sh resolves: PRESENTATION_PIPELINE_INTERPRETER first, else
+    # <root>/.venv-presentations/bin/python, else bare python3 (last fallback,
+    # reported honestly). A wrong-interpreter box (system python without the
+    # modules) is therefore caught HERE, not only in the update-time gate.
+    local _gate_py=""
+    if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+        _gate_py="${PRESENTATION_PIPELINE_INTERPRETER}"
+    else
+        for _cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+            if [ -x "$_cand" ]; then _gate_py="$_cand"; break; fi
+        done
+    fi
+    [ -n "$_gate_py" ] || _gate_py="python3"
     command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
     command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
-            || missing+=("python(reportlab+python-pptx)")
+    if command -v "$_gate_py" >/dev/null 2>&1; then
+        "$_gate_py" -c "import reportlab, pptx" >/dev/null 2>&1 \
+            || missing+=("python(reportlab+python-pptx under $_gate_py)")
         # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
         # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
         # the AcroForm fields + /NeedAppearances survived before it may upload). It is
@@ -656,25 +672,42 @@ deps_check() {
         # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
         # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
         # deps).
-        python3 -c "import pypdf" >/dev/null 2>&1 \
-            || missing+=("python(pypdf)")
+        "$_gate_py" -c "import pypdf" >/dev/null 2>&1 \
+            || missing+=("python(pypdf under $_gate_py)")
     else
-        missing+=("python3")
+        missing+=("$_gate_py (interpreter not executable)")
     fi
-    # Feature L2-G (P9.6-WEBINAR-VIDEO): ffmpeg is a REAL runtime dep of the webinar
-    # phase (build_webinar_video.py -> webinar_ffmpeg.py renders the Ken Burns + xfade
-    # slideshow + muxes the audio). It is NOT gated by the audio phase's own check, so
-    # it must be gated here so a box without ffmpeg fails the dep gate BEFORE the
-    # webinar phase runs (owner-token skippable via PRESENTATION_DEPS_MISSING exactly
-    # like the other deps).
-    command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
-    command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    # PRES-033: ffmpeg/ffprobe are classified OPTIONAL (video-only) in
+    # presentation-deps.json. A missing optional video dep must NOT block
+    # independent deck work — it lands in the video-only set and disables only
+    # the P9.6-WEBINAR-VIDEO branch. It can never hide a required gap either:
+    # required deps are checked above and stay in `missing`.
+    command -v ffmpeg >/dev/null 2>&1 || video_missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
+    command -v ffprobe >/dev/null 2>&1 || video_missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    if [ "${#video_missing[@]}" -gt 0 ]; then
+        echo "  ℹ PRESENTATION_VIDEO_DEPS_MISSING (optional branch): ${video_missing[*]} — deck, presenter guide, workbook and QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled until these resolve." >&2
+    fi
     if [ "${#missing[@]}" -gt 0 ]; then
         # FIX-PRES-09(iv): event-shaped reassert. On a VPS the runtime deps do not
         # survive a Docker force-recreate; rather than lean solely on a periodic
         # cron, self-heal HERE on the GATE-1 failure path — run the idempotent
         # reassert script ONCE, then re-check, before failing the run.
-        local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+        # PRES-033: the reassert path is resolved from the CANONICAL OpenClaw root
+        # (resolve_oc_root: /data/.openclaw on VPS else $HOME/.openclaw), never a
+        # hardcoded /data/.openclaw path that can point at a different box's root
+        # inside a custom-mount container.
+        local _pres_root=""
+        # NOTE the [ -n ] guard: an assignment of an EMPTY string still exits 0,
+        # so a resolver that ran but found no root must not count as a resolution.
+        if declare -F resolve_oc_root >/dev/null 2>&1 \
+           && _pres_root="$(resolve_oc_root 2>/dev/null || true)" \
+           && [ -n "$_pres_root" ]; then
+            :
+        else
+            _pres_root="$HOME/.openclaw"
+            [ -d "/data/.openclaw" ] && _pres_root="/data/.openclaw"
+        fi
+        local _reassert="$_pres_root/scripts/reassert-presentation-deps.sh"
         if [ "${OPENCLAW_PLATFORM:-}" = "vps" ] && [ -x "$_reassert" ] \
            && [ "${_DEPS_REASSERT_TRIED:-0}" != "1" ]; then
             _DEPS_REASSERT_TRIED=1

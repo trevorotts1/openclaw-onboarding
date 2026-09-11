@@ -65,6 +65,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +103,36 @@ def _default_selector_timeout(fallback: int = 600) -> int:
 
 
 DEFAULT_SELECTOR_TIMEOUT = _default_selector_timeout()
+
+# (PRES-054, 2026-09-09) One absolute deadline propagated from the caller.
+# The presentation engine's persona resolver (persona_deadline.Deadline)
+# exports PERSONA_FOR_JOB_DEADLINE — a WALL-CLOCK epoch seconds instant that
+# bounds the WHOLE resolution (every retry attempt included). When present it
+# CLAMPS this module's effective spawn ceiling to the remaining time, so the
+# old mismatch (90 s outer wall vs 600 s subprocess ceiling — timed-out
+# expensive work still alive while a retry starts) cannot recur: the
+# subprocess can never outlive the caller's deadline. The engine also kills
+# and reaps the owned process group on timeout (see
+# presentation_job/persona_deadline.py) — the clamp makes the child exit on
+# its own in the common case; the group reap is the guarantee when it will
+# not.
+def _deadline_clamped_timeout() -> int:
+    raw = os.environ.get("PERSONA_FOR_JOB_DEADLINE", "").strip()
+    if not raw:
+        return DEFAULT_SELECTOR_TIMEOUT
+    try:
+        wall_deadline = float(raw)
+    except ValueError:
+        return DEFAULT_SELECTOR_TIMEOUT
+    if wall_deadline <= 0:
+        return DEFAULT_SELECTOR_TIMEOUT
+    remaining = wall_deadline - time.time()
+    if remaining <= 0:
+        # deadline already gone: a 1 s token ceiling so the spawn fails fast
+        return 1
+    # whole seconds, floored, with a small margin so the child exits BEFORE
+    # the caller's wall fires
+    return max(1, int(remaining - 0.5))
 
 # persona_source values that mean "the client named this persona explicitly" —
 # FINAL, never overridden, selector never consulted.
@@ -344,6 +375,132 @@ def _compose_query(job_text: str, sop_slug: "str | None", sop_hints) -> str:
     return ". ".join(p.strip() for p in parts if p and p.strip())[:1800]
 
 
+def _spawn_selector(cmd: list, timeout: int) -> "subprocess.Popen | None":
+    """Spawn the selector in its OWN process group, registered under the
+    active persona resolution id when one is set (PRES-054).
+
+    Own process group: the caller (persona_deadline.terminate_owned_tree) can
+    SIGTERM/SIGKILL the whole tree on timeout — including grandchildren the
+    selector itself spawns — and reap it before admitting a replacement.
+    Returns the Popen, or None on spawn failure (never raises)."""
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            start_new_session=True)
+    except OSError:
+        return None
+    rid = os.environ.get("PERSONA_RESOLUTION_ID", "").strip()
+    if rid:
+        _register_child(rid, proc)
+    else:
+        _track_orphan(proc)
+    return proc
+
+
+def _communicate_selector(proc: "subprocess.Popen",
+                          timeout: int) -> "str | None":
+    """Wait for the registered selector with the timeout, reaping on expiry.
+
+    subprocess.run's TimeoutExpired kills ONLY the direct child in the same
+    group here (start_new_session puts the child in its own group, so run()'s
+    internal kill cannot reach grandchildren either) and returns no stdout.
+    This helper: on timeout, SIGTERM the whole group, then SIGKILL survivors,
+    reap, and return None (fail-closed — a partial stdout is not a selection).
+    A child that finishes in time is unregistered and its stdout returned."""
+    try:
+        out, err = proc.communicate(timeout=max(1, int(timeout)))
+        _unregister_child(proc)
+        return (out or "").strip()
+    except subprocess.TimeoutExpired:
+        _kill_and_reap_group(proc)
+        return None
+    except (OSError, ValueError):
+        _kill_and_reap_group(proc)
+        return None
+
+
+def _register_child(resolution_id: str, proc: "subprocess.Popen") -> None:
+    """Best-effort registration of a live child under a resolution id.
+
+    The engine's registry lives in presentation_job.persona_deadline, which
+    is not importable from this seam on every box — so a same-named file
+    lock-free sidecar is used: one JSON file per resolution under
+    PERSONA_PROC_DIR (default <tmp>/persona-preso-<uid>/). terminate_owned_tree
+    sweeps this directory for group ids still alive and kills them. Failure
+    to record never blocks the spawn (best effort; the engine's in-process
+    registry is the primary ownership proof)."""
+    try:
+        base = os.environ.get("PERSONA_PROC_DIR", "").strip()
+        if not base:
+            base = os.path.join(
+                "/tmp", "persona-preso-%d" % (os.getuid() if hasattr(os, "getuid") else 0))
+        os.makedirs(base, exist_ok=True)
+        marker = os.path.join(base, "%s.json" % re.sub(r"[^A-Za-z0-9_.:-]", "_", resolution_id))
+        with open(marker, "w", encoding="utf-8") as fh:
+            json.dump({"pgid": proc.pid, "pid": proc.pid,
+                       "recorded_at": time.time()}, fh)
+        proc._persona_marker_path = marker  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
+def _unregister_child(proc: "subprocess.Popen") -> None:
+    """Remove the sidecar marker of a cleanly-finished child."""
+    try:
+        marker = getattr(proc, "_persona_marker_path", None)
+        if marker and os.path.exists(marker):
+            os.unlink(marker)
+    except Exception:
+        pass
+
+
+def _orphan_dir() -> str:
+    base = os.environ.get("PERSONA_PROC_DIR", "").strip()
+    if not base:
+        base = os.path.join(
+            "/tmp", "persona-preso-%d" % (os.getuid() if hasattr(os, "getuid") else 0))
+    return base
+
+
+def _track_orphan(proc: "subprocess.Popen") -> None:
+    """Register a child spawned with NO active resolution id (e.g. the
+    self-test, or a bare persona_for_job call) under the reserved
+    ``__orphan__`` key so terminate_owned_tree can still find and reap it —
+    an unregistered group is invisible to the reaper (the exact defect this
+    unit closes)."""
+    try:
+        _register_child("__orphan__", proc)
+    except Exception:
+        pass
+
+
+def _kill_and_reap_group(proc: "subprocess.Popen") -> None:
+    """SIGTERM the child's whole group, SIGKILL survivors, reap the child."""
+    import signal as _signal
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, PermissionError, OSError):
+        pgid = None
+    if pgid is not None:
+        try:
+            os.killpg(pgid, _signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        if pgid is not None:
+            try:
+                os.killpg(pgid, _signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+    _unregister_child(proc)
+
+
 def _run_selector(query: str, department: str, record: bool, timeout: int, *,
                   blend: bool = False, topic_hint: "str | None" = None) -> "dict | None":
     """Spawn the canonical selector and parse its JSON. A ``PERSONA_FOR_JOB_FIXTURE``
@@ -356,9 +513,17 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
     (``persona-selector-v2.py``'s W7 branch, ``persona_blend.build_bundle``)
     instead of the single-persona selection. Audience confirmation and any
     other goal/context signalling travel as ENV (``OPENCLAW_AUDIENCE`` etc.) —
-    ``subprocess.run`` inherits the parent process environment unmodified, so
+    ``subprocess`` inherits the parent process environment unmodified, so
     that passthrough needs no code here; this function only adds the argv
-    flags the blend branch itself requires."""
+    flags the blend branch itself requires.
+
+    (PRES-054) ``timeout`` is the effective spawn ceiling: the caller's
+    ``timeout=`` kwarg CLAMPED by the propagated absolute deadline
+    (``PERSONA_FOR_JOB_DEADLINE``) via :func:`_deadline_clamped_timeout` at
+    the ``persona_for_job`` entry. The child runs in its OWN process group,
+    registered under the active resolution id, so a caller timeout reaps the
+    whole tree — a timed-out Future no longer leaves expensive selector work
+    alive under a retry."""
     fixture = os.environ.get("PERSONA_FOR_JOB_FIXTURE", "").strip()
     if fixture:
         try:
@@ -378,11 +543,12 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
             cmd += ["--topic", topic_hint]
     if not record:
         cmd.append("--no-record")
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    proc = _spawn_selector(cmd, timeout)
+    if proc is None:
         return None
-    out = (proc.stdout or "").strip()
+    out = _communicate_selector(proc, timeout)
+    if out is None:
+        return None
     if not out:
         return None
     # selector prints diagnostics to stderr and the JSON object to stdout; be
@@ -464,9 +630,15 @@ def persona_for_job(job_text: str, department: str, *,
     text). Single-persona mode (``blend=False``, the default) is completely
     untouched — same code path, same return shape, as before this parameter
     existed.
+
+    (PRES-054) the effective selector ceiling is ``min(timeout, time left on
+    the propagated absolute deadline PERSONA_FOR_JOB_DEADLINE)`` — the
+    subprocess can never outlive the caller's budget.
     """
     department = (department or "general").strip() or "general"
     warnings: list = []
+    timeout = _deadline_clamped_timeout() if timeout == DEFAULT_SELECTOR_TIMEOUT \
+        else min(int(timeout), _deadline_clamped_timeout())
 
     # 1) CLIENT SOVEREIGNTY — an express choice is FINAL; selector never runs,
     #    blend or not (a client-named voice is never blended or judged).

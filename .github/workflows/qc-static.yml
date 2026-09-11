@@ -2247,6 +2247,8 @@ jobs:
       #   shared-utils/key_resolver.py
       #   shared-utils/api_key_utils.py
       #   shared-utils/llm_score.py
+      #   .../persona_service/resources/helpers/llm_score.py   [PRES-053 vendored copy]
+      #   .../persona_service/resources/scripts/persona-selector-v2.py   [PRES-053 vendored copy]
       #
       # A planted new candidate-loop outside this allowlist FAILS the build.
       - name: "AF3: local-candidate-loop guard (32-command-center-setup + repo-wide)"
@@ -2298,6 +2300,13 @@ jobs:
               "shared-utils/key_resolver.py",
               "shared-utils/api_key_utils.py",
               "shared-utils/llm_score.py",
+              # PRES-053 packaged persona closure: byte-identical vendored
+              # copies of shared-utils/llm_score.py and
+              # 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+              # (same ~/clawd legacy loops; retire in lockstep with the
+              # canonicals after fleet migration).
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py",
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py",
           }
 
           # Pattern: a list-item line (trailing comma) containing a local ~/clawd path.
@@ -2408,10 +2417,19 @@ jobs:
               "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
+              "58-podcast-production-engine/scripts/caf/field_layer/resolver.py",
+              "58-podcast-production-engine/scripts/ghl_credential_gate.py",
               "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
               "shared-utils/key_resolver.py",
               "shared-utils/api_key_utils.py",
               "shared-utils/llm_score.py",
+              # PRES-053 packaged persona closure: byte-identical vendored
+              # copies of shared-utils/llm_score.py and
+              # 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+              # (same ~/clawd legacy loops; retire in lockstep with the
+              # canonicals after fleet migration).
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py",
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py",
           }
 
           CANDIDATE_LOOP_PAT = re.compile(

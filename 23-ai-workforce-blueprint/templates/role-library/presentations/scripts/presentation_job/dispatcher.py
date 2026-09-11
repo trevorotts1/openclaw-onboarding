@@ -51,6 +51,7 @@ import inspect
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -81,6 +82,7 @@ from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 
 from presentation_job.state import StateStore, utcnow  # noqa: E402
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
+from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
 from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
 
 # Defensive import of build_deck (top-level scripts_dir module) -- mirrors
@@ -144,8 +146,22 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
 # after; a 429 feeds report_429, a clean response feeds report_ok. The gates
 # live HERE (module-level helpers) so dispatcher, parallel_prompt_worker and
 # fanout all gate through the same code path instead of re-deriving the
-# acquire/release/refcount dance per module. With _governor absent (pre-FIX-14
-# tree) every helper is a byte-for-byte no-op.
+# acquire/release/refcount dance per module.
+#
+# [PRES-003] THE GATE IS FAIL-CLOSED, NOT BEST-EFFORT.  The old helper caught
+# every acquire exception and returned None, and every transport treated None
+# as "proceed unthrottled" -- a broken governor, an exhausted daily cap or a
+# missing module all silently turned into UNLIMITED outbound spend.  Admission
+# is now REQUIRED for paid/network work and TYPED:
+#
+#     _govern_admit(provider) -> _GovernAdmission(admitted, lease, blocked,
+#                                                 retry_after_s, reason)
+#
+#   * admitted  -- a live lease (or a reentrant/local-bypass pass) exists.
+#   * retry     -- not admitted now (timeout, governor error): retry_after_s
+#                  says when to re-attempt.  Transport is NOT invoked.
+#   * blocked   -- permanent (governor module missing): a preflight error with
+#                  visible remediation.  Transport is NOT invoked.
 #
 # WHY THE ATTEMPT-SCOPED LEASE REGISTRY: the transports issue one HTTP request
 # per retry attempt inside their own `for attempt in range(1, retries + 1)`
@@ -157,10 +173,82 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
 # _GOVERN_DEPTH counts, per thread, how many nested _govern_acquire calls are
 # already holding for the same provider; only depth 0 actually touches the
 # governor (a "logical acquire"), deeper nesting reuses the same lease.
+#
+# [PRES-003] REENTRANT SINGLE-LEASE FIX: a depth-0 acquire that FAILED used to
+# be un-counted and the transport's nested frame would then try a SECOND real
+# acquire -- and if THAT one succeeded, the logical request proceeded with a
+# lease the outer admission had already given up on (the fail-open hole).  A
+# failed admission now leaves depth 0 and NO active lease, and the refusal
+# propagates as a typed outcome before any transport frame can run: one
+# logical HTTP request holds exactly one lease, or makes no HTTP request.
+#
+# [PRES-003] LOCAL BYPASS ALLOWLIST: only explicitly classified local
+# CPU/file/image-inspection units bypass the provider gate -- by token, never
+# by absence.  Anything else (including an unnameable provider) is gated.
 # ---------------------------------------------------------------------------
 _GOVERN_DEPTH_LOCK = threading.Lock()
 _GOVERN_DEPTH: Dict[str, int] = {}   # f"{thread_ident}:{provider}" -> nested depth
 _GOVERN_ACTIVE: Dict[str, Any] = {}  # same key -> live lease to release once
+
+#: [PRES-003] Local-bypass tokens.  A unit whose provider identity is one of
+#: these is explicitly classified LOCAL (CPU or file work -- QC graders, file
+#: assembly, local image inspection): it consumes no provider budget and is
+#: admitted with lease=None.  These tokens must never be sent as a network
+#: provider id; the transports only ever name real providers.
+_GOVERN_LOCAL_BYPASS = frozenset({
+    "local", "local-cpu", "local-file", "local-image-inspection",
+})
+
+#: [PRES-003] Bounded wait for one admission.  A refusal is a TYPED outcome
+#: the caller retries with its own backoff -- never an unbounded block inside
+#: the gate and never a silent pass-through.
+_GOVERN_ACQUIRE_TIMEOUT_S = 120.0
+
+
+class _GovernAdmission:
+    """Typed admission outcome for one provider on one thread.
+
+    admitted     -- the call may proceed; `lease` is live (None only for a
+                    local-bypass or reentrant pass, which release as None).
+    blocked      -- PERMANENT refusal (missing/broken governor): a preflight
+                    error with remediation in `reason`; retrying cannot fix it.
+    retry_after_s -- seconds to wait before re-attempting (retry class only).
+    reason       -- human-readable, operator-visible, never empty on refusal.
+    """
+
+    __slots__ = ("admitted", "lease", "blocked", "retry_after_s", "reason")
+
+    def __init__(self, *, admitted: bool, lease: Any = None,
+                 blocked: bool = False, retry_after_s: Optional[float] = None,
+                 reason: str = "") -> None:
+        self.admitted = bool(admitted)
+        self.lease = lease
+        self.blocked = bool(blocked)
+        self.retry_after_s = retry_after_s
+        self.reason = str(reason or "")
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
+        return (f"_GovernAdmission(admitted={self.admitted}, "
+                f"blocked={self.blocked}, retry_after_s={self.retry_after_s}, "
+                f"reason={self.reason!r})")
+
+
+def _govern_refusal_text(provider: str, admission: "_GovernAdmission") -> str:
+    """The one-line, sidecar-greppable refusal reason.  "No outbound call was
+    attempted" is part of the contract: the reader must be able to tell from
+    the log alone that zero transport calls were made."""
+    canon = _govern_provider(provider)
+    if admission.blocked:
+        return (f"GOVERNOR-BLOCKED: provider {canon} admission permanently "
+                f"refused ({admission.reason}) -- no outbound call was "
+                f"attempted. Fix the governor before re-dispatching: "
+                f"restore/repair presentation_job/governor.py so acquire() "
+                f"works, then reissue the work order.")
+    wait = admission.retry_after_s
+    wait_s = f"{wait:.0f}s" if isinstance(wait, (int, float)) else "unknown"
+    return (f"GOVERNOR-RETRY: provider {canon} admission not granted "
+            f"({admission.reason}) -- no outbound call was attempted; "
+            f"retry after {wait_s}.")
 
 
 # U4 (2026-09-07) -- PROVIDER IDENTITY IS FOLDED ONCE, HERE, FOR EVERY GATE.
@@ -213,37 +301,67 @@ def _govern_provider(provider: Any) -> str:
 def _govern_key(provider: str) -> str:
     return f"{threading.get_ident()}:{_govern_provider(provider)}"
 
-def _govern_acquire(provider: str):
-    """Acquire one lease for `provider` on this thread, re-entrant per depth.
-    Returns the live lease object (or None when the governor module is absent
-    or acquire itself fails -- gating is best-effort, never fatal)."""
-    if _governor is None:
-        return None
-    # U4: fold ONCE, then use the SAME canonical id for the depth key and for
-    # the governor call, so `deepseek` and `deepseek-direct` share one bucket
-    # and one depth counter instead of opening two of each.
+def _govern_admit(provider: str) -> "_GovernAdmission":
+    """[PRES-003] Required, typed admission for `provider` on this thread.
+
+    Admitted -> live lease (reentrant frames reuse the outer lease; explicitly
+    local tokens bypass with lease=None).  Refused -> a typed retry/blocked
+    outcome and NO governor state is left behind, so the caller must not (and
+    cannot) invoke the transport.  Never raises."""
     canon = _govern_provider(provider)
+    if canon in _GOVERN_LOCAL_BYPASS:
+        # Explicitly classified local unit: no provider budget, no lease.
+        return _GovernAdmission(admitted=True, lease=None,
+                                reason="local-bypass: local CPU/file unit "
+                                       "admitted outside the provider gate")
     key = f"{threading.get_ident()}:{canon}"
     with _GOVERN_DEPTH_LOCK:
         depth = _GOVERN_DEPTH.get(key, 0)
-        _GOVERN_DEPTH[key] = depth + 1
-    if depth > 0:
-        # Nested call: the outer frame already holds the lease for this
-        # logical call on this thread.
+        if depth > 0:
+            # Nested call: the outer frame already holds the lease for this
+            # logical call on this thread.
+            return _GovernAdmission(admitted=True,
+                                    lease=_GOVERN_ACTIVE.get(key),
+                                    reason="reentrant: outer admission's lease")
+        # Hold the frame count while the real acquire runs, so a concurrent
+        # nested admission cannot sneak past; a failed admit pops it again.
+        _GOVERN_DEPTH[key] = 1
+    if _governor is None:
         with _GOVERN_DEPTH_LOCK:
-            return _GOVERN_ACTIVE.get(key)
+            _GOVERN_DEPTH.pop(key, None)
+        return _GovernAdmission(
+            admitted=False, blocked=True,
+            reason=("presentation_job/governor.py is missing or failed to "
+                    "import -- the per-provider admission governor is REQUIRED "
+                    "for outbound work"))
     try:
-        lease = _governor.acquire(canon)
-    except Exception:  # noqa: BLE001 -- a broken governor never kills a run
-        lease = None
+        lease = _governor.acquire(canon, timeout_s=_GOVERN_ACQUIRE_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 -- typed outcome, never a pass
+        with _GOVERN_DEPTH_LOCK:
+            _GOVERN_DEPTH.pop(key, None)
+        timeout = type(exc).__name__ == "GovernorTimeout" or \
+            isinstance(exc, TimeoutError)
+        if timeout:
+            return _GovernAdmission(
+                admitted=False, retry_after_s=30.0,
+                reason=f"governor acquire timed out after "
+                       f"{_GOVERN_ACQUIRE_TIMEOUT_S}s ({exc})")
+        return _GovernAdmission(
+            admitted=False, retry_after_s=0.0,
+            reason=f"governor acquire failed: {type(exc).__name__}: {exc}")
     with _GOVERN_DEPTH_LOCK:
-        if lease is not None:
-            _GOVERN_ACTIVE[key] = lease
-        else:
-            # Nothing was acquired: un-count this frame so release symmetry
-            # stays exact (depth returns to 0, next call re-attempts).
-            _GOVERN_DEPTH[key] = max(0, _GOVERN_DEPTH.get(key, 1) - 1)
-    return lease
+        _GOVERN_ACTIVE[key] = lease
+    return _GovernAdmission(admitted=True, lease=lease, reason="admitted")
+
+def _govern_acquire(provider: str):
+    """Back-compat wrapper around :func:`_govern_admit`: returns the live
+    lease, or None when the admission was refused.  Callers that treat None as
+    "no outer lease of my own" (parallel_prompt_worker) stay correct because
+    the ENFORCING gate is the transport's own admission inside
+    dispatch_complete -- a refused call never reaches the wire.  Callers that
+    need the typed outcome call _govern_admit directly."""
+    admission = _govern_admit(provider)
+    return admission.lease if admission.admitted else None
 
 def _govern_release(provider: str, lease: Any) -> None:
     """Release the lease taken by _govern_acquire for `provider` on this
@@ -263,25 +381,50 @@ def _govern_release(provider: str, lease: Any) -> None:
         except Exception:  # noqa: BLE001
             pass
 
-def _govern_429(provider: str) -> None:
-    """Feed a 429 back to the governor (rate halved 60 s). Best-effort."""
+def _govern_429(provider: str, retry_after_s: Optional[float] = None) -> None:
+    """Feed a 429 back to the governor. Best-effort. [PRES-016] carries the
+    response's Retry-After (seconds) when the provider sent one, so the
+    penalty matches what the provider actually asked for."""
     if _governor is None:
         return
     try:
         # U4: the penalty must land on the bucket the calls were admitted
         # from, so it folds exactly like _govern_acquire.
-        _governor.report_429(_govern_provider(provider))
+        _governor.report_429(_govern_provider(provider),
+                             retry_after_s=retry_after_s)
     except Exception:  # noqa: BLE001
         pass
 
 def _govern_ok(provider: str) -> None:
-    """Feed a clean response back to the governor. Best-effort."""
+    """Feed a clean response back to the governor (one healthy sample).
+    Best-effort. [PRES-016] recovery is additive per healthy window, decided
+    inside governor.report_ok."""
     if _governor is None:
         return
     try:
         _governor.report_ok(_govern_provider(provider))  # U4: same fold
     except Exception:  # noqa: BLE001
         pass
+
+
+def _govern_retry_after(exc: BaseException) -> Optional[float]:
+    """[PRES-016] The provider's Retry-After header, in seconds, when the
+    exception is an HTTPError carrying one.  Only the integer-seconds form is
+    parsed; the HTTP-date form yields None (the 60 s default stands) -- an
+    honest "unknown" beats a wrong clock parse."""
+    try:
+        headers = getattr(exc, "headers", None)
+        if headers is None:
+            return None
+        raw = headers.get("Retry-After")
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text or any(ch.isalpha() for ch in text.replace("GMT", "")):
+            return None
+        return float(text)
+    except Exception:  # noqa: BLE001 -- a malformed header is just None
+        return None
 
 # ---------------------------------------------------------------------------
 # DeepSeek V4 Flash direct -- confirmed live configuration (openclaw.json),
@@ -1473,7 +1616,14 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
         # so the governor halves the next 60 s of rate; a clean response feeds
         # report_ok. Lease is released before the loop's backoff sleep so a
         # sleeping retry never occupies an in-flight slot.
-        _lease = _govern_acquire("deepseek-direct")
+        # [PRES-003] ADMISSION IS REQUIRED: a refused admission (daily cap,
+        # timeout, broken governor, missing module) raises HERE, before the
+        # request is built -- the transport is never invoked without one.
+        _admission = _govern_admit("deepseek-direct")
+        if not _admission.admitted:
+            raise DeepSeekCallError(
+                _govern_refusal_text("deepseek-direct", _admission))
+        _lease = _admission.lease
         try:
             req = urllib.request.Request(
                 DEEPSEEK_CHAT_URL, data=data, method="POST",
@@ -1496,7 +1646,9 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                     pass
                 if exc.code == 429 or exc.code >= 500:
                     if exc.code == 429:
-                        _govern_429("deepseek-direct")
+                        # [PRES-016] honor the provider's own Retry-After.
+                        _govern_429("deepseek-direct",
+                                    retry_after_s=_govern_retry_after(exc))
                     last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
                 else:
                     raise DeepSeekCallError(f"HTTP {exc.code} (non-transient): {payload}") from exc
@@ -1670,7 +1822,11 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
         # (openrouter / ollama-cloud / agnes / ...). Same contract as
         # deepseek_complete: report_429 before backoff on 429, report_ok on a
         # clean response, lease released before the backoff sleep.
-        _lease = _govern_acquire(provider)
+        # [PRES-003] admission is required: refusal raises before the request.
+        _admission = _govern_admit(provider)
+        if not _admission.admitted:
+            raise DeepSeekCallError(_govern_refusal_text(provider, _admission))
+        _lease = _admission.lease
         try:
             req = urllib.request.Request(
                 f"{base.rstrip('/')}/chat/completions", data=data, method="POST",
@@ -1694,7 +1850,9 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                     pass
                 if exc.code == 429 or exc.code >= 500:
                     if exc.code == 429:
-                        _govern_429(provider)
+                        # [PRES-016] honor the provider's own Retry-After.
+                        _govern_429(provider,
+                                    retry_after_s=_govern_retry_after(exc))
                     last_exc = DeepSeekCallError(f"HTTP {exc.code}: {payload}")
                 elif exc.code == 402 and "can only afford" in payload:
                     # F31 (SMOKE-1, 2026-09-01): OpenRouter 402 names the exact
@@ -1861,18 +2019,26 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     # FIX 14: the routed entrypoint itself holds one logical governor lease
     # for the phase's provider across the whole dispatch (all retry attempts
     # of the chosen transport run inside it). The transports take their own
-    # per-attempt leases, but the re-entrancy depth counter in _govern_acquire
+    # per-attempt leases, but the re-entrancy depth counter in _govern_admit
     # means exactly ONE real acquire per logical call per provider per thread:
     # this outer frame is it, the inner transport frames re-use this lease.
     # Every return path AND every exception releases through _govern_release
     # via the single finally below.
+    # [PRES-003] THE ENFORCING GATE: a refused admission (missing/broken
+    # governor, exhausted budget, acquire timeout) raises BEFORE any transport
+    # work -- zero outbound calls, with a typed, greppable GOVERNOR-BLOCKED /
+    # GOVERNOR-RETRY reason the caller's sidecar records verbatim.
     route = (decision or {}).get("route") or None
     router_id = str((decision or {}).get("router") or "")
     profile_state = str((decision or {}).get("profile_state") or "")
     _route_unknown_yet = (route is None or router_id == "disabled")
     _dispatch_provider = "deepseek-direct" if _route_unknown_yet \
         else str(route.get("provider") or "deepseek-direct")
-    _dispatch_lease = _govern_acquire(_dispatch_provider)
+    _dispatch_admission = _govern_admit(_dispatch_provider)
+    if not _dispatch_admission.admitted:
+        raise DeepSeekCallError(
+            _govern_refusal_text(_dispatch_provider, _dispatch_admission))
+    _dispatch_lease = _dispatch_admission.lease
     try:
         if route is None and router_id != "disabled":
             if profile_state == "has_providers":
@@ -2026,6 +2192,51 @@ def read_persona_bundle(run_dir: Path, phase_id: str) -> Optional[Dict[str, Any]
             bundle = ps.get("persona_bundle")
             return bundle if isinstance(bundle, dict) else None
     return None
+
+
+# PRES-031: phase -> task_mode for persona section selection. Copy, prompt,
+# speech, page/VSL and QC units each receive the tier-2 governance sections
+# (rationale, task personas, guardrails); unknown phases default to copy
+# (the richest governance tier -- fail toward more governance, never less).
+_PERSONA_TASK_MODE_BY_PHASE = {
+    "P4-COPY": "copy",
+    "P-SP-STRUCTURE": "copy",
+    "P-SP-P3-HYGIENE": "copy",
+    "P4-PROMPT": "prompt",
+    "P-PROMPT-QC": "qc",
+    "P1Q-COPY-QC": "qc",
+    "P-SHIFT-QC": "qc",
+    "P-SPEECH-QC": "qc",
+    "P-TYPO-QC": "qc",
+    "P-QC-AGGREGATE": "qc",
+    "P-U-QC": "qc",
+    "P9-SPEECH": "speech",
+    "P9-SPEECH-WEBINAR-INTRO": "speech",
+    "P7-TELEPROMPTER": "speech",
+    "P-U-SALES-COPY": "page",
+    "P-U-CHECKOUT-COPY": "page",
+    "P-U-VSL-COPY": "vsl",
+    "P-U-VSL-RESEARCH": "vsl",
+    "P-U-SALES-BUILD": "page",
+    "P-U-CHECKOUT-BUILD": "page",
+    "P-U-VSL-BUILD": "vsl",
+    "P-U-HTML-SALES": "page",
+    "P-U-HTML-CHECKOUT": "page",
+    "P-U-HTML-VSL": "vsl",
+}
+
+
+def _persona_task_mode(phase_id: str,
+                       order: Optional[Dict[str, Any]] = None) -> str:
+    mode = _PERSONA_TASK_MODE_BY_PHASE.get(phase_id)
+    if mode:
+        return mode
+    if isinstance(order, dict):
+        hint = str(order.get("task_mode") or order.get("mode") or "")
+        if hint.strip().lower() in ("copy", "prompt", "speech", "page",
+                                    "vsl", "qc", "render"):
+            return hint.strip().lower()
+    return "copy"
 
 
 # ---------------------------------------------------------------------------
@@ -2227,10 +2438,31 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
         role_context,
     ]
     if persona_bundle:
+        # PRES-031: schema-validated section selection replaces the arbitrary
+        # 8000-character slice. The COMPLETE bundle is cached by scoped
+        # input/context hash (persona_context); this unit receives the
+        # task-mode sections it needs. Required governance rules are never
+        # dropped silently: an incomplete selection FAILS CLOSED here (loud
+        # preflight error naming the missing rules) instead of shipping a
+        # truncated voice to the model.
+        from presentation_job import persona_context as _persona_context
+        _task_mode = _persona_task_mode(phase_id, order)
+        _selection = _persona_context.select_bundle_sections(
+            persona_bundle, phase_id=phase_id, task_mode=_task_mode)
+        if not _selection.get("complete"):
+            raise RoleSOPNotFound(
+                f"AF-PERSONA-GOVERNANCE: persona bundle for phase "
+                f"{phase_id} is incomplete for task_mode={_task_mode}: "
+                f"{_selection.get('why')}. Missing schema: "
+                f"{_selection.get('missing_schema') or []}; missing "
+                f"governance markers: "
+                f"{_selection.get('missing_markers') or []}. Restructure "
+                f"context (budget {_selection.get('budget')}) -- never ship "
+                f"a silently-truncated governing voice.")
         system_parts.append(
             "=== GOVERNING BLENDED-PERSONA VOICE (already resolved by the engine for this "
             "phase -- write IN this voice, do not re-resolve or contradict it) ===\n"
-            + json.dumps(persona_bundle, indent=2)[:8000]
+            + _selection["text"]
         )
     system_prompt = "\n\n".join(system_parts)
 
@@ -2281,11 +2513,33 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
         "\n=== END OUTPUT CONTRACT -- everything above is the ONE, FINAL, LITERAL spec "
         "for the file you are about to write. Re-read it now before writing. ==="
     )
-    user_parts.append(
-        "Write the complete, final content of the target artifact file now. If the target "
-        "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
-        "fence). If the target is Markdown/text, output the complete file content directly."
-    )
+    # PRES-001 (W2 WF05): a fan-out UNIT's work order carries `_unit_scope` --
+    # the one-scope instruction built from its validated payload. When present,
+    # the generic whole-artifact trigger ("Write the complete, final content of
+    # the target artifact file") is REPLACED, not appended to: that tail is what
+    # made every unit a whole-deck author (the whole-artifact instruction must
+    # never ride into a unit prompt). The unit contract's scoped output schema
+    # plus the one-scope instruction are the LAST thing the unit reads.
+    unit_scope = order.get("_unit_scope") if isinstance(order, dict) else None
+    if unit_scope:
+        payload = order.get("_unit_payload") if isinstance(order, dict) else None
+        if isinstance(payload, dict) and payload.get("output_schema"):
+            schema_line = (f"UNIT OUTPUT SCHEMA (validated mechanically after you "
+                           f"answer -- out-of-schema output is a FAILED unit): "
+                           f"{payload['output_schema']}\n")
+        else:
+            schema_line = ""
+        user_parts.append(unit_scope + schema_line +
+                          "Produce ONLY this one unit's output now. Output ONLY the unit "
+                          "content itself (no surrounding prose, no code fence, no file "
+                          "header). Never the whole file, never another unit's scope."
+        )
+    else:
+        user_parts.append(
+            "Write the complete, final content of the target artifact file now. If the target "
+            "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
+            "fence). If the target is Markdown/text, output the complete file content directly."
+        )
     user_prompt = "\n\n".join(user_parts)
     return system_prompt, user_prompt
 
@@ -2382,6 +2636,178 @@ def _append_sidecar(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> Non
     record["at"] = utcnow()
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _stamp_author(run_dir: Path, phase_id: str, target: Path, *,
+                  model: Optional[str], provider: Optional[str]) -> None:
+    """PRES-042 — mint the AUTHOR execution stamp for one produced artifact
+    revision. Called by the dispatcher (the TRUSTED writer) at the exact
+    moment the artifact lands; never by the model. Best-effort: a stamp
+    failure must never block a dispatch (the gate reads its absence as
+    UNPROVEN, which is the fail-closed posture, not a crash)."""
+    try:
+        if _estamp.stamps_enabled():
+            _estamp.author_stamp(run_dir, phase_id, target, model=model, provider=provider)
+    except Exception as exc:  # noqa: BLE001 — stamping must never block dispatch
+        try:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": "stamp", "attempt": 0, "status": "stamp_failed",
+                "reason": f"author stamp for {target.name} failed: {exc!r}",
+            })
+        except Exception:
+            pass
+
+
+# Phases whose produced artifact IS a QC review record (the manifest's
+# *-QC / P-U-QC ids and their owning roles). Kept as an explicit tuple, not a
+# regex, so a reviewer can read the exact set that gets reviewer-stamped.
+_QC_PHASE_ID_TOKENS = ("QC",)
+_QC_ROLE_TOKENS = ("qc-specialist", "qc_specialist")
+
+
+def _is_qc_phase(owning_role: str, phase_id: str) -> bool:
+    role = (owning_role or "").lower()
+    pid = (phase_id or "").upper()
+    if any(tok in role for tok in _QC_ROLE_TOKENS):
+        return True
+    return pid.endswith(tuple(f"-{tok}" for tok in _QC_PHASE_ID_TOKENS)) or pid in (
+        "P-U-QC", "P-SHIFT-QC", "P-QC-AGGREGATE",
+    )
+
+
+def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
+                       model: Optional[str], provider: Optional[str]) -> None:
+    """PRES-042 — mint the REVIEWER execution stamp for a QC phase's produced
+    report, binding the review to the artifacts the phase CONSUMED (the
+    manifest's consumes list / the report's own grading targets) at their
+    CURRENT sha. The reviewed-artifact binding is what makes 'mutate a
+    reviewed file after pass => its QC is stale' mechanical.
+
+    QC-SONNET-R4 (PRES-042 repair): the SAME reviewer execution ALSO stamps
+    the produced REPORT itself. Without this, the aggregate's report-level
+    gate (author+reviewer stamps covering the report's CURRENT bytes) could
+    never pass on a production-dispatched run — every domain would block, and
+    the stamp surface would be undeployable with its default-ON flag. One
+    reviewer id binds both levels: 'this QC execution reviewed these inputs
+    (at these shas) and attests these report bytes under this rubric'.
+    Honest limits (documented, not hidden): the report-level pair proves
+    dispatch integrity + sha currency, NOT cross-execution independence on its
+    own — the author/review execution ids are dispatch-minted, so the
+    exec-inequality leg passes trivially in production. The teeth against a
+    same-worker forgery are the consumed-upstream coverage the aggregate ALSO
+    verifies (reviewer stamp from THIS phase on each consumed input at its
+    current sha, with the producer's author stamp and model classes on record)
+    plus the legacy graded_by text provenance that still runs alongside."""
+    consumed: List[Path] = []
+    try:
+        from presentation_job.manifest import Manifest
+        # QC-OPUS seam repair: resolve via the run's pinned manifest / dept
+        # sops / walk-up — the SAME resolution the aggregate's consumed-
+        # coverage check uses, so stamps minted here always match what the
+        # aggregate verifies (the old hand-rolled candidates missed in BOTH
+        # layouts and silently downgraded to report-stamp-only).
+        cand = _qc_manifest_for_run(run_dir)
+        if cand is not None:
+            man = Manifest(cand)
+            ph = man.phase_or_none(phase_id)
+            import glob as _glob
+            for pat in (ph.consumes if ph else []) or []:
+                for hit in _glob.glob(str(run_dir / pat)):
+                    hp = Path(hit)
+                    if hp.is_file():
+                        consumed.append(hp)
+    except Exception:
+        consumed = []
+    reviewer_execution_id = f"qc-{phase_id}-{os.getpid()}-{utcnow()}"
+    rubric_version = _qc_rubric_version()
+    for artifact in consumed:
+        _estamp.qc_stamp(
+            run_dir, phase_id, artifact,
+            reviewer_execution_id=reviewer_execution_id,
+            model=model, provider=provider,
+            rubric_version=rubric_version,
+        )
+    # The report attestation itself (QC-SONNET-R4): best-effort like the rest —
+    # a failure here must never block the dispatch that just succeeded.
+    try:
+        if report_artifact.is_file():
+            _estamp.qc_stamp(
+                run_dir, phase_id, report_artifact,
+                reviewer_execution_id=reviewer_execution_id,
+                model=model, provider=provider,
+                rubric_version=rubric_version,
+            )
+    except Exception as exc:  # noqa: BLE001 — best-effort, never blocks
+        try:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": "stamp", "attempt": 0, "status": "qc_stamp_failed",
+                "reason": f"report reviewer stamp failed: {exc!r}",
+            })
+        except Exception:
+            pass
+
+
+def _qc_manifest_for_run(run_dir: Optional[Path] = None) -> Optional[Path]:
+    """PRES-042 (QC-OPUS seam repair): resolve the PIPELINE-MANIFEST.json the
+    SAME way the rest of the engine and the aggregate do, so the reviewer
+    stamps the dispatcher mints and the consumed-coverage the aggregate
+    verifies always agree. Resolution order (never guesses past this list):
+      1. the run's own pinned state.json manifest_path (authoritative per-run
+         — the exact file the engine was launched with);
+      2. <scripts_dir's parent>/sops/PIPELINE-MANIFEST.json (deployed
+         department layout: manifest lives at <dept_root>/sops/, NOT
+         scripts/sops/);
+      3. manifest_source.find_repo_root() walk-up to the repo cluster copy
+         (the canonical resolver qc_aggregate/_resolve_domain_paths uses).
+    Returns None only when nothing resolves — the callers then degrade to the
+    documented best-effort behavior (report-level stamp only / renderer-pin
+    rubric), which the aggregate's own manifest-unresolvable branch mirrors."""
+    if run_dir is not None:
+        try:
+            state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+            mp = state.get("manifest_path")
+            if mp and Path(mp).is_file():
+                return Path(mp).resolve()
+        except (OSError, json.JSONDecodeError):
+            pass
+    scripts_dir = Path(__file__).resolve().parent  # .../scripts/presentation_job
+    cand = (scripts_dir.parent.parent / "sops" / "PIPELINE-MANIFEST.json").resolve()
+    if cand.is_file():
+        return cand
+    try:
+        from manifest_source import find_repo_root
+        root = find_repo_root(scripts_dir)
+        if root is not None:
+            cand = (root / "universal-sops" / "presentation-slide-craft"
+                    / "PIPELINE-MANIFEST.json")
+            if cand.is_file():
+                return cand
+    except Exception:  # noqa: BLE001 — resolver unavailability is not a stamp crash
+        pass
+    return None
+
+
+def _qc_rubric_version() -> str:
+    """The rubric version a QC phase graded against: the manifest revision
+    when resolvable, else the scripts dir's CANONICAL-RENDERER-PIN hash
+    (deterministic, reproducible)."""
+    try:
+        from presentation_job.manifest import Manifest
+        cand = _qc_manifest_for_run()
+        if cand is not None:
+            man = Manifest(cand)
+            version = getattr(man, "version", None)
+            if version:
+                return f"manifest-{version}"
+    except Exception:
+        pass
+    pin = Path(__file__).resolve().parent.parent / "CANONICAL-RENDERER-PIN.sha256"
+    try:
+        if pin.is_file():
+            return f"renderer-pin-{pin.read_text(encoding='utf-8').strip()[:16]}"
+    except OSError:
+        pass
+    return "unknown"
 
 
 def _verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
@@ -2699,6 +3125,10 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                 "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
+                # PRES-042: stamp the AUTHOR execution on the verified artifact.
+                _stamp_author(run_dir, phase_id, target,
+                              model=route_dict.get("model") or DEEPSEEK_MODEL,
+                              provider=route_dict.get("provider") or "deepseek-direct")
                 slide_ok = True
                 break
             last_reasons = v_reasons
@@ -2938,6 +3368,15 @@ def _probe_routed_capacity(cap_mod: Any, *, provider: str,
         # tier for that provider -- capacity._plan_from_model_slug). Sending it
         # without a provider would ask a question nobody asked.
         kwargs["model"] = model
+    # PRES-015 (H-P1): the width path carries ZERO discovery. A stamp that
+    # used to run probe() would, pre-split, fire GET /models for every
+    # probeable provider as a side effect. probe() itself no longer does
+    # (include_inventory defaults False); passing include_inventory=False
+    # here would be redundant on a build that knows the kwarg, but the
+    # explicit kwarg keeps the invariant legible at the ONE call site a
+    # future edit could "fix" back into a discovery burst.
+    if _probe_accepts(probe_fn, "include_inventory"):
+        kwargs["include_inventory"] = False
     return probe_fn(**kwargs), kwargs
 
 
@@ -3323,8 +3762,149 @@ def _routing_stamp(run_dir: Optional[Path] = None,
     except Exception as cap_exc:  # noqa: BLE001 -- a ceiling that cannot be
         # computed never widens the wave: the measured width stands, labelled.
         stamp["mode_cap_error"] = f"{type(cap_exc).__name__}: {cap_exc}"
+
+    # ------------------------------------------------------------------
+    # PRES-015 EFFECTIVE ADMISSION -- the hardware/warmup fold.
+    #
+    # Spec step 1: "Effective new admissions = min(ready work, requested
+    # ceiling minus total active, account free permits, rate/token budget,
+    # cost allocation, class-specific hardware budget)". The mode cap above
+    # is the human-ratified axis; THIS fold adds the terms the engine never
+    # had -- the account ceiling the reserve/allocation split produced
+    # (capacity.account_factors), the class-specific LOCAL hardware budget
+    # (hardware_budget.py: Mac RAM/CPU vs Linux cgroup v1/v2 so a 2GB
+    # Hostinger container never inherits the host's RAM) and the warmup ramp
+    # (admission.py: conservative start, grow on healthy windows, shrink on
+    # 429/pressure). Every term is optional: an unmeasured term does not
+    # bind, so a box where hardware cannot be read answers exactly what the
+    # pre-PRES-015 stamp answered -- the rollback is a flag
+    # (PRESENTATION_ADMISSION=0), never a behaviour change by accident.
+    #
+    # THE TEXT-CLASS GUARANTEE: cheap cloud text I/O is class "text" here
+    # unless the phase is known local-heavy, and the text class carries NO
+    # RAM term -- so an Ultra 100-unit text fan-out still reaches 100 where
+    # host resources allow, and render/browser/local-model routes get their
+    # own (smaller) budget without a hidden global 8 ever coming back.
+    try:
+        _stamp_admission_fold(stamp, phase_id=phase_id, mode=_mode,
+                              run_dir=run_dir)
+    except Exception as adm_exc:  # noqa: BLE001 -- admission never breaks dispatch
+        stamp["admission_error"] = f"{type(adm_exc).__name__}: {adm_exc}"
     return stamp
 
+
+# ---------------------------------------------------------------------------
+# PRES-015 -- the per-phase work class and the admission fold itself.
+# ---------------------------------------------------------------------------
+#: Phase -> local work class. The names follow hardware_budget.CLASSES:
+#: "text" (cheap cloud I/O), "image" (decode/generation), "browser"
+#: (headless sessions), "render" (FFmpeg/renderer), "local_model"
+#: (local inference resident in RAM). Anything not named is "text" -- the
+#: least-harmful default, and the cloud routes are the majority.
+PHASE_WORK_CLASS: Dict[str, str] = {
+    # Manifest script-executor phases: LOCAL bytes on this box (Kie image
+    # download/decode, reportlab/FFmpeg assembly, headless OCR sessions).
+    "P-STYLE-PREVIEW": "image",
+    "P4-RENDER": "render",
+    "P8-ASSEMBLE": "render",
+    "P8.1-PDF-EXPORT": "render",
+    "P9.6-WEBINAR-VIDEO": "render",
+    # P-IMAGE-QC / P-TYPO-QC are deliberately NOT here: the engine runs them
+    # as cloud vision/OCR model calls (model_router capability vision_ocr ->
+    # glm-ocr over HTTPS) -- cheap text I/O locally, class "text" by default.
+    # A phase that gains a LOCAL headless-browser or render step joins this
+    # map when that step exists, never before.
+}
+
+def _phase_work_class(phase_id: str) -> str:
+    return PHASE_WORK_CLASS.get(phase_id, "text")
+
+def _stamp_admission_fold(stamp, *, phase_id: str,
+                          mode: str, run_dir=None) -> None:
+    """Fold admission.effective_width() into the stamp's measured_capacity.
+
+    Never raises on its own paths (the caller also guards). Zero discovery:
+    the ONLY capacity read is resolve_capacity() -- no probe_one_provider,
+    no GET /models -- and the hardware read is the cached snapshot (at most
+    one measurement per TTL, shared by every phase's stamp in this
+    process)."""
+    try:
+        from presentation_job import admission as _adm
+    except ImportError:  # pragma: no cover - direct-file run
+        try:
+            import admission as _adm  # type: ignore[no-redef]
+        except ImportError:
+            return
+    if not _adm.flag_enabled():
+        return
+    provider = str(stamp.get("provider") or "")
+    if not provider:
+        return
+    width = stamp.get("measured_capacity")
+    try:
+        width = int(width)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return
+    if width < 1:
+        return
+
+    # The account factors resolve_capacity computes for THIS route -- a
+    # probe about a different provider was refused before this point, so
+    # the factors that matter are the routed provider's.
+    factors = {}
+    account_ceiling = None
+    _cap_mod = None
+    try:
+        from presentation_job import capacity as _cap_mod_p
+        _cap_mod = _cap_mod_p
+    except ImportError:  # pragma: no cover - direct-file run
+        try:
+            import capacity as _cap_mod_p  # type: ignore[no-redef]
+            _cap_mod = _cap_mod_p
+        except ImportError:
+            _cap_mod = None
+    if _cap_mod is not None:
+        try:
+            resolved = _cap_mod.resolve_capacity(
+                provider=provider, model=str(stamp.get("model") or ""))
+            factors = resolved.get("account_factors") or {}
+            account_ceiling = factors.get("account_ceiling")
+            stamp["account_factors"] = factors
+            stamp["capacity_raw_available"] = resolved.get("available")
+        except Exception:  # noqa: BLE001 -- an unresolvable account never blocks
+            factors, account_ceiling = {}, None
+
+    work_class = _phase_work_class(phase_id)
+    # UNBOUNDED accounts (BYOK): no account term binds; the mode ceiling and
+    # the class hardware budget are the only local bounds.
+    try:
+        _unbounded = bool(_cap_mod is not None
+                          and _cap_mod.is_unbounded(
+                              stamp.get("capacity_raw_available")))
+    except Exception:  # noqa: BLE001
+        _unbounded = False
+    adm = _adm.effective_width(
+        width,
+        provider=provider,
+        ready_work=None,  # the caller (fanout) bounds by the ready unit count
+        mode_ceiling=width if _unbounded else None,
+        account_ceiling=account_ceiling,
+        work_class=work_class,
+    )
+    stamp["admission"] = {
+        "width": adm.get("width"),
+        "static_width": adm.get("static_width"),
+        "binding": adm.get("binding"),
+        "terms": adm.get("terms"),
+        "ramp": adm.get("ramp"),
+        "work_class": work_class,
+        "discovery_requests": 0,
+    }
+    if isinstance(adm.get("width"), int) and 1 <= int(adm["width"]) <= width:
+        stamp["measured_capacity"] = int(adm["width"])
+        if int(adm["width"]) < width:
+            stamp["capacity_status"] = \
+                f"{stamp.get('capacity_status')}+admission-folded"
 
 # F6 back-compat: `_prompt_routing_stamp` was the pre-rename name and is what
 # tests/test_defect5_routing_stamp_provider_identity.py,
@@ -3851,6 +4431,10 @@ def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
             "network_fetches": retrieval.get("network_fetches", 0),
         })
         if verifier_ok:
+            # PRES-042: stamp the AUTHOR execution on the verified artifact.
+            _stamp_author(run_dir, phase_id, target,
+                          model=route_dict.get("model") or DEEPSEEK_MODEL,
+                          provider=route_dict.get("provider") or "deepseek-direct")
             return DispatchResult(phase_id, "ok", attempt, [],
                                   str(target.relative_to(run_dir)))
         last_reasons = verifier_reasons
@@ -3971,6 +4555,10 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
                 "provider": route_dict.get("provider") or "deepseek-direct",
                 "target": str(target.relative_to(run_dir)), "usage": usage})
             if v_ok:
+                # PRES-042: stamp the AUTHOR execution on the verified artifact.
+                _stamp_author(run_dir, phase_id, target,
+                              model=route_dict.get("model") or DEEPSEEK_MODEL,
+                              provider=route_dict.get("provider") or "deepseek-direct")
                 return fanout.UnitResult(key=unit.key, status="ok", attempts=attempts_used,
                                          target=str(target.relative_to(run_dir)))
             last_reasons = v_reasons
@@ -4272,6 +4860,33 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = target.with_suffix(target.suffix + f".partial-{os.getpid()}-{attempt}")
         tmp_path.write_text(payload, encoding="utf-8")
+        # PRES-018 fencing at publication (same contract as the fanout
+        # aggregate above): a single-target artifact is published only while
+        # the claim file still names THIS worker. A worker whose claim was
+        # stolen mid-call must not overwrite the new owner's output -- the
+        # stale write is quarantined and the attempt reports lost, never a
+        # pretended win. No claim file at all = no fencing context (operator
+        # --once dispatches and tests): publication proceeds.
+        _pub_claim_file = _claim_path(run_dir, phase_id)
+        if _pub_claim_file.exists():
+            _pub_rec = _read_claim_record(_pub_claim_file) or {}
+            if _pub_rec.get("worker") != worker_id or \
+                    _pub_rec.get("owner_token") != _current_claim_token(run_dir, phase_id, worker_id):
+                quarantine = target.with_name(
+                    target.name + f".stale-quarantine-{worker_id}")
+                try:
+                    tmp_path.replace(quarantine)
+                except OSError:
+                    tmp_path.unlink(missing_ok=True)
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt,
+                    "status": "stale_quarantined",
+                    "reason": ("claim lost before publication -- single-target "
+                               f"output quarantined to {quarantine.name}, not published"),
+                })
+                return DispatchResult(
+                    phase_id, "exhausted", attempt,
+                    ["claim lost before publication; output quarantined"])
         os.replace(tmp_path, target)  # atomic on POSIX, same filesystem -- no torn read
 
         verifier_ok, verifier_reasons = _verify(phase_id, run_dir)
@@ -4284,6 +4899,29 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             "usage": usage,
         })
         if verifier_ok:
+            # PRES-042: stamp the AUTHOR execution on the verified artifact.
+            # For a QC phase the produced artifact IS the review record: the
+            # same stamp doubles as the REVIEWER execution stamp (separate
+            # execution identity, actual model/provider, the reviewed
+            # artifact's sha via the QC report's own consumes, rubric
+            # version) — identity from the dispatch record, never the
+            # report's graded_by prose.
+            _stamp_author(run_dir, phase_id, target,
+                          model=route_dict2.get("model") or DEEPSEEK_MODEL,
+                          provider=route_dict2.get("provider") or "deepseek-direct")
+            if _estamp.stamps_enabled() and _is_qc_phase(owning_role, phase_id):
+                try:
+                    _stamp_qc_reviewer(run_dir, phase_id, target,
+                                       model=route_dict2.get("model") or DEEPSEEK_MODEL,
+                                       provider=route_dict2.get("provider") or "deepseek-direct")
+                except Exception as exc:  # noqa: BLE001 — best-effort, never blocks
+                    try:
+                        _append_sidecar(run_dir, phase_id, {
+                            "worker": "stamp", "attempt": 0, "status": "qc_stamp_failed",
+                            "reason": f"reviewer stamp failed: {exc!r}",
+                        })
+                    except Exception:
+                        pass
             return DispatchResult(phase_id, "ok", attempt, [], str(target.relative_to(run_dir)))
 
         last_reasons = verifier_reasons
@@ -4351,21 +4989,946 @@ def _phase_fanout_spec(phase_id: str, run_dir: Path) -> Optional["fanout.FanoutS
         return None
 
 
+# ---------------------------------------------------------------------------
+# PRES-001 (W2 WF05) — per-phase UNIT CONTRACTS for the manifest fan-out path.
+#
+# THE DEFECT (TODO.md PRES-001, reproduced): the generic fan-out path passed
+# only `fanout_unit=unit.key` into compose_prompt (the payload — section name,
+# slide content, ordinal — was discarded), let compose_prompt's whole-artifact
+# OUTPUT CONTRACT ride into every unit prompt ("write the COMPLETE file"), and
+# aggregated with `_aggregate_fanout_parts`, which accepted ONE part or
+# shallow-merged N JSON dicts (`dict.update` — repeated keys silently lost the
+# earlier arrays: two JSON `slides` arrays kept only the second) and REFUSED
+# multiple Markdown parts outright. Two correct P4-COPY sections returned None;
+# whole-deck duplicate workers both passed validation. The failure modes:
+#   * more workers can each author the WHOLE deck (duplicated paid work);
+#   * evidence-bearing units (QC verdicts, section copy) overwrite each other.
+#
+# THE FIX: one UnitContract per fan-out phase, declared ONCE, carrying exactly
+# what TODO.md step 1 names — input schema, immutable upstream input hashes,
+# scope, expected output schema, per-unit validator, and an exactly-once
+# ordered reducer. The dispatch path below uses the contract to:
+#   * preflight REJECT incompatible manifest fanout declarations BEFORE any
+#     paid call (a phase whose contract lacks a reducer can never fan out);
+#   * supply the FULL validated unit.payload (scope + ordinal + slice) in the
+#     unit prompt and REPLACE the whole-artifact trigger line with a
+#     one-scope instruction (compose_prompt's generic tail is suppressed via
+#     the `_unit_scope` work-order key; see compose_prompt);
+#   * validate each unit's output against the contract's validator BEFORE the
+#     unit may report ok (an invalid unit is a failed unit — never aggregated);
+#   * reduce with the contract's OWN reducer — for P4-COPY an ordered
+#     exactly-once Markdown reducer (duplicate/missing ordinal => None, never
+#     a broken artifact), for QC phases a union-by-stable-slide-id reducer
+#     (duplicate or missing slide id => refusal; every unit's verdict row is
+#     preserved in the merged report), for P-STYLE-SPEC the bounded A/B/C
+#     three-variant builder (explicit variant ids, exactly three, never one
+#     per slide). No generic dict.update anywhere.
+#
+# Deck-wide synthesis/harmonization stays the NEXT phase's job (the manifest
+# DAG already orders the consumers); a unit never authors the whole deck.
+#
+# Rollback: PRESENTATION_UNIT_CONTRACTS=0 restores the pre-PRES-001 behavior
+# (legacy _aggregate_fanout_parts + unscoped prompts) exactly.
+# ---------------------------------------------------------------------------
+UNIT_CONTRACTS_ROLLBACK_FLAG = "PRESENTATION_UNIT_CONTRACTS"
+
+STYLE_SPEC_VARIANT_IDS = ("A", "B", "C")
+
+# Immutable upstream inputs per fan-out phase — the manifest's own consumes[]
+# list, restated here as the contract's hash-set so the reducer (and the
+# resume-reuse predicate) can prove the run it reduced is the run its stored
+# unit outputs were produced against. GLOB patterns are legal: each pattern is
+# expanded against the run dir and every match is hashed (see
+# unit_input_hashes). Recorded per unit into the units ledger; a changed
+# input hash invalidates exactly the units that consume it; downstream
+# dependents re-run through the manifest DAG's own edges (PRES-002's gating,
+# not this module's).
+#
+# Source of truth is PIPELINE-MANIFEST.json's own consumes[] per phase (read
+# live from the Phase object at dispatch time when available); this static
+# table is the byte-identical restatement used when no manifest is loadable.
+_UNIT_CONTRACT_INPUTS: Dict[str, Tuple[str, ...]] = {
+    "P4-COPY": (
+        "working/copy/intake.json",
+        "working/copy/arc_allocation.json",
+        "working/research/research_map.json",
+        "working/research/brief-*.md",
+    ),
+    "P-PROMPT-QC": ("working/prompts/slide-*.txt",),
+    "P-IMAGE-QC": ("renders/slide-*.png",),
+    "P-STYLE-SPEC": (
+        "working/copy/slides.json",
+        "working/copy/arc_allocation.json",
+        "working/copy/intake.json",
+    ),
+    "P-U-DESIGN-SALES": ("working/upsell/copy/sales.fragment.md",),
+    "P-U-DESIGN-CHECKOUT": ("working/upsell/copy/checkout.fragment.md",),
+    "P-U-DESIGN-VSL": ("working/upsell/copy/vsl.fragment.md",),
+    "P9-SPEECH": (
+        "working/copy/intake.json",
+        "working/copy/slides_copy.md",
+        "working/copy/arc_allocation.json",
+    ),
+}
+
+# What each contract phase's reduce WRITES (the reverse edge of the invalidation
+# graph: when phase X's inputs change, the phases consuming X's OUTPUT are the
+# transitive dependents whose own stored units are invalidated too).
+_UNIT_CONTRACT_OUTPUTS: Dict[str, Tuple[str, ...]] = {
+    "P4-COPY": ("working/copy/slides_copy.md",),
+    "P-PROMPT-QC": ("working/qc/prompt_qc_report.json",),
+    "P-IMAGE-QC": ("working/qc/image_qc_report.json",),
+    "P-STYLE-SPEC": ("working/copy/style_preview_spec.json",),
+    "P-U-DESIGN-SALES": ("prompts/sales.design.txt",),
+    "P-U-DESIGN-CHECKOUT": ("prompts/checkout.design.txt",),
+    "P-U-DESIGN-VSL": ("prompts/vsl.design.txt",),
+    "P9-SPEECH": ("working/deliverables/PRESENTERS-SPEECH.md",),
+}
+
+# The phase->scope binding. P4-COPY is the only SECTION-scoped fan-out (one
+# unit per arc section, each authoring its own contiguous slide-ordinal range);
+# every other contract phase is slide-scoped (one unit per slide). The
+# manifest's own fanout.by MUST agree with this scope or the preflight refuses
+# the phase before any paid call (incompatible manifest fanout).
+# P9-SPEECH is slide-scoped HERE but its manifest executor is a SCRIPT (the
+# speech harness) — the generic unit path never executes for it, and the
+# preflight refuses its dead fanout declaration; the contract still declares
+# the shape a future agent executor would be held to, and the reducer serves
+# any direct call.
+_UNIT_CONTRACT_SCOPE: Dict[str, str] = {
+    "P4-COPY": "section",
+    "P-PROMPT-QC": "slide",
+    "P-IMAGE-QC": "slide",
+    "P-STYLE-SPEC": "slide",
+    "P-U-DESIGN-SALES": "slide",
+    "P-U-DESIGN-CHECKOUT": "slide",
+    "P-U-DESIGN-VSL": "slide",
+    "P9-SPEECH": "slide",
+}
+
+# Bounded VARIANTS (not bounded units): the style-spec contract keeps the
+# manifest's per-slide enumeration, and the REDUCER enforces the bound the
+# TODO names — exactly three desired variants in the reduced spec (the first
+# three well-formed candidates, ids forced unique A/B/C), never one spec per
+# slide. The unit prompt + validator carry the variant-id assignment so the
+# paid work itself is variant-scoped, not deck-scoped.
+
+# Per-phase QC report-envelope labels the union reducer stamps into the merged
+# report (mirrors build_deck._qc_report_gate's exact gate strings).
+_UNIT_QC_GATE_LABELS: Dict[str, str] = {
+    "P-PROMPT-QC": "Phase Prompt-QC",
+    "P-IMAGE-QC": "Phase Image-QC",
+}
+
+# Expected unit output schema, restated per phase (the one-line shape the
+# unit's own output contract block teaches and the validator enforces).
+_UNIT_CONTRACT_OUTPUT: Dict[str, str] = {
+    "P4-COPY": "markdown-section: `SLIDE <n>` blocks, contiguous ordinals",
+    "P-PROMPT-QC": "json: {slide_id, slide, criteria[], average, pass}",
+    "P-IMAGE-QC": "json: {slide_id, slide, observed_text, pass}",
+    "P-STYLE-SPEC": "json: {id, style_directive, representative_slide} — id is "
+        "YOUR ASSIGNED VARIANT ID (A/B/C), style_directive the ONE attention-grade "
+        "art-direction sentence for that variant, representative_slide the single "
+        "slide ordinal that best shows the variant",
+    "P-U-DESIGN-SALES": "text: ONE page-design prompt for the scoped slide",
+    "P-U-DESIGN-CHECKOUT": "text: ONE page-design prompt for the scoped slide",
+    "P-U-DESIGN-VSL": "text: ONE page-design prompt for the scoped slide",
+    "P9-SPEECH": "markdown-section: `SLIDE <n>` blocks, contiguous ordinals",
+}
+
+
+def unit_contracts_enabled() -> bool:
+    """PRES-001 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-PRES-001 generic path exactly (documented rollback)."""
+    return os.environ.get(UNIT_CONTRACTS_ROLLBACK_FLAG) != "0"
+
+
+def unit_input_hashes(run_dir: Path, phase_id: str) -> Dict[str, Any]:
+    """sha256 of every immutable upstream input the phase's contract names.
+
+    Patterns are expanded against the run dir first (a glob's digest covers
+    every matching file, sorted by relative path, so adding/removing/editing
+    one slide prompt changes exactly that phase's hash); a literal path is
+    hashed directly. Recorded into each unit's ledger row so a resume can
+    prove WHICH input version each stored unit output was produced against;
+    `unit_inputs_changed` is the predicate that turns a mismatch into a
+    scoped re-dispatch of only the affected units (and their dependents)."""
+    out: Dict[str, Any] = {}
+    for rel in _UNIT_CONTRACT_INPUTS.get(phase_id, ()):
+        out[rel] = _hash_contract_entry(run_dir, rel)
+    return out
+
+
+def _hash_contract_entry(run_dir: Path, rel: str) -> str:
+    """One contract input's digest: sha256 over (relative path, size, mtime_ns,
+    content sha256) of every file the entry names. Glob patterns expand; a
+    literal names exactly one file. Absent/unreadable inputs hash to a stable
+    sentinel so a later appearance always reads as a change."""
+    try:
+        if any(c in rel for c in "*?["):
+            hits = sorted(run_dir.glob(rel))
+            files = [h for h in hits if h.is_file()]
+        else:
+            p = run_dir / rel
+            files = [p] if p.is_file() else []
+        if not files:
+            return "absent"
+        entries = []
+        for f in files:
+            st = f.stat()
+            content_sha = hashlib.sha256(f.read_bytes()).hexdigest()
+            entries.append([str(f.relative_to(run_dir)), st.st_size,
+                            st.st_mtime_ns, content_sha])
+        blob = json.dumps(entries, sort_keys=True).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
+    except OSError:
+        return "unreadable"
+
+
+def unit_inputs_changed(before: Optional[Dict[str, Any]],
+                        after: Dict[str, Any]) -> List[str]:
+    """Which contract inputs changed between two hash maps. Empty list = the
+    recorded unit outputs are still valid against the current inputs."""
+    if not isinstance(before, dict):
+        return sorted(after)
+    return sorted(k for k, v in after.items() if before.get(k) != v)
+
+
+def invalidated_units(unit_payloads: List[Dict[str, Any]],
+                      changed_inputs: List[str]) -> List[str]:
+    """Scoped invalidation (PRES-001 acceptance: 'changed source hash
+    invalidates ONLY affected units'): the unit keys whose own consumed slice
+    a changed input feeds. A per-file change (e.g. one slide's prompt under
+    working/prompts/slide-*.txt) invalidates exactly that slide's unit; a
+    whole-input change (e.g. intake.json for P4-COPY) invalidates every unit
+    of the phase — the honest scope, since every section consumes the intake.
+
+    `changed_inputs` carries the raw contract input patterns that changed;
+    the per-unit narrowing reads each unit's own recorded `unit_inputs`
+    snapshot (payload['unit_inputs']) when present and compares it against
+    the CURRENT hashes recomputed by the caller — precomputed narrowing is
+    impossible without the filesystem, so this helper narrows from the
+    per-unit hash maps the dispatcher passes in via payload['unit_inputs']
+    vs payload['unit_inputs_now']."""
+    if not changed_inputs:
+        return []
+    out: List[str] = []
+    for payload in unit_payloads:
+        before = payload.get("unit_inputs")
+        now = payload.get("unit_inputs_now")
+        unit_changed = unit_inputs_changed(
+            before if isinstance(before, dict) else None,
+            now if isinstance(now, dict) else {k: "changed" for k in changed_inputs})
+        if unit_changed:
+            out.append(str(payload.get("key") or payload.get("path") or ""))
+    return [k for k in out if k]
+
+
+def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
+    """The ONE-scope instruction a unit worker gets INSTEAD of the generic
+    whole-artifact trigger (compose_prompt suppresses its "write the complete
+    final content" tail when the work order carries a `_unit_scope` key).
+
+    Names the unit's exact scope — one section, one slide — and forbids
+    authoring anything else, replacing the deck-wide trigger that made every
+    unit a whole-deck author (the PRES-001 defect's paid-work multiplier)."""
+    if not isinstance(payload, dict):
+        return None
+    scope = payload.get("scope")
+    ordinal = payload.get("ordinal")
+    n = payload.get("unit_count")
+    if scope == "section":
+        name = payload.get("name")
+        lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+        range_txt = (f"slides {lo}-{hi}" if isinstance(lo, int)
+                     and isinstance(hi, int) else "its own slide range")
+        return (
+            f"=== THIS CALL AUTHORS EXACTLY ONE SECTION: {name!r} "
+            f"(section {ordinal} of {n}) — {range_txt} ===\n"
+            "Author ONLY this section's slides as `SLIDE <n>` blocks (the bare "
+            "`SLIDE <n>` line starts each block, exactly like the full deck "
+            "format), using ONLY the ordinals in this section's slide range. "
+            "Output ONLY this one section's Markdown — never the whole deck, "
+            "never another section's slides, no preamble, no file header, no "
+            "fences around the whole answer.\n\n")
+    if scope == "slide":
+        kind = payload.get("unit_kind") or "unit"
+        variant = payload.get("variant_id")
+        variant_line = (f"YOUR ASSIGNED VARIANT ID: {variant} — author that ONE "
+                        "variant of the deck-level spec (explicit ids A/B/C, "
+                        "bounded three; the deck-level spec carries exactly "
+                        "three variants, never one per slide).\n"
+                        if variant else "")
+        return (
+            f"=== THIS CALL IS EXACTLY ONE UNIT: {kind} for SLIDE {ordinal} "
+            f"OF {n} ===\n"
+            + variant_line +
+            "Produce ONLY this one unit's output for ONLY this slide — never "
+            "the whole deck, never another slide's content, no preamble, no "
+            "fences around the whole answer.\n\n")
+    return None
+
+
+def _extract_slides_copy_section(text: str, payload: Dict[str, Any]) -> Optional[str]:
+    """Slice ONE section out of a P4-COPY unit's whole-text response, by the
+    slide-ordinal range the scope declared. Returns None when the section's
+    own ordinals are absent (the unit ignored its scope — invalid, not
+    clipped). Used by the P4-COPY unit validator to accept a model that
+    answers with slightly more than its scope while still refusing one that
+    answered with nothing from its range (the whole-deck duplicate has every
+    range, so scope-obeyance is proven by the VALIDATOR refusing duplicate
+    ordinals at reduce time, not by clipping here)."""
+    import re as _re
+    lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+    if not isinstance(lo, int) or not isinstance(hi, int):
+        return None
+    blocks: List[Tuple[int, str]] = []
+    parts = _re.split(r"(?im)^\s*SLIDE\s+(\d+)\s*$", text)
+    i = 1
+    while i < len(parts) - 1:
+        try:
+            n = int(parts[i])
+        except ValueError:
+            i += 2
+            continue
+        blocks.append((n, parts[i + 1]))
+        i += 2
+    in_range = [(n, b) for n, b in blocks if lo <= n <= hi]
+    if not in_range:
+        return None
+    return "".join(f"SLIDE {n}\n{b}".rstrip() + "\n" for n, b in in_range)
+
+
+# --- per-unit validators: (unit payload, cleaned output text) -> (ok, reasons)
+def _validate_copy_section(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """P4-COPY unit validator: the output must carry the section's own slide
+    blocks as `SLIDE <n>` lines whose ordinals all sit INSIDE the section's
+    declared range (lo-hi from the payload `_unit_payload_enrichment` derived
+    from arc_allocation.json). A response with NO block in range fails scope
+    validation here; a response carrying ANOTHER section's ordinal fails
+    out-of-scope here; and two identical whole-deck responses still die at
+    REDUCE time on the duplicate ordinals they share. Validated BEFORE a unit
+    may report ok — an invalid unit is a failed unit, never aggregated."""
+    import re as _re
+    lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+    if not isinstance(lo, int) or not isinstance(hi, int):
+        return False, ["unit payload carries no ordinal range"]
+    parts = _re.split(r"(?im)^\s*SLIDE\s+(\d+)\s*$", text)
+    ordinals: List[int] = []
+    i = 1
+    while i < len(parts) - 1:
+        try:
+            ordinals.append(int(parts[i]))
+        except ValueError:
+            pass
+        i += 2
+    if not ordinals:
+        return False, ["no `SLIDE <n>` blocks in unit output"]
+    in_range = [n for n in ordinals if lo <= n <= hi]
+    if not in_range:
+        return False, [f"no slide block within the unit's own range "
+                       f"{lo}-{hi} — the unit ignored its one-section scope"]
+    out_of_scope = sorted({n for n in ordinals if n < lo or n > hi})
+    if out_of_scope:
+        return False, [f"slide ordinal(s) {out_of_scope} outside the unit's own "
+                       f"range {lo}-{hi} — one unit authors ONE section, never "
+                       "another section's slides"]
+    if len(set(in_range)) != len(in_range):
+        return False, ["duplicate slide ordinal inside the unit's own output"]
+    return True, []
+
+
+def _validate_qc_slide(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """QC unit validator (P-PROMPT-QC / P-IMAGE-QC): one JSON object carrying a
+    real verdict for EXACTLY the unit's own slide — stable slide_id + ordinal +
+    a real pass/fail verdict (+ observed_text for image QC). A whole-deck
+    response (slides array / other slides' ids) FAILS validation here, before
+    aggregation, per TODO.md's 'two identical whole-deck responses fail unit
+    validation'."""
+    try:
+        doc = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return False, ["QC unit output is not valid JSON"]
+    if not isinstance(doc, dict):
+        return False, ["QC unit output is not a JSON object"]
+    ordinal = payload.get("ordinal")
+    expected_id = str(payload.get("slide_id") or "")
+    # A WHOLE-DECK response ({"slides":[...]} / {"results":[...]}) is the
+    # duplicate-work signature this validator exists to kill: a unit was
+    # asked to grade ONE slide and answered with a deck-level report. Refuse
+    # the shape outright before any per-field check.
+    for deck_key in ("slides", "results", "per_slide", "slide_verdicts"):
+        if deck_key in doc:
+            return False, [f"QC unit output is a WHOLE-DECK report (carries "
+                           f"{deck_key!r}) — one unit grades exactly ONE slide "
+                           f"(slide {ordinal}), never the deck"]
+    got_ord = doc.get("slide", doc.get("ordinal"))
+    if isinstance(got_ord, bool) or not isinstance(got_ord, int):
+        return False, ["QC unit output carries no integer slide ordinal"]
+    if got_ord != ordinal:
+        return False, [f"QC unit graded slide {got_ord}, scope is slide {ordinal} "
+                       f"— out-of-scope verdict refused"]
+    got_id = str(doc.get("slide_id") or "")
+    if expected_id and got_id and got_id != expected_id:
+        return False, [f"slide_id {got_id!r} != scope slide_id {expected_id!r}"]
+    real = False
+    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
+                "pass_fail", "passed"):
+        val = doc.get(key)
+        if isinstance(val, bool) or isinstance(val, (int, float)):
+            real = True
+            break
+        if isinstance(val, str) and val.strip():
+            real = True
+            break
+    if not real:
+        return False, ["QC unit verdict carries no real pass/fail/score value"]
+    if payload.get("needs_observed_text") and \
+            not str(doc.get("observed_text") or "").strip():
+        return False, ["image-QC unit carries no observed_text (pixel-blind)"]
+    return True, []
+
+
+def _validate_style_variant(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """P-STYLE-SPEC unit validator: one JSON object {id, style_directive,
+    representative_slide}; id must be one of the bounded A/B/C variant ids
+    (duplicate ids fail at reduce), representative_slide a positive int."""
+    try:
+        doc = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return False, ["style-spec unit output is not valid JSON"]
+    if not isinstance(doc, dict):
+        return False, ["style-spec unit output is not a JSON object"]
+    directive = str(doc.get("style_directive") or "").strip()
+    if not directive:
+        return False, ["style_directive is empty"]
+    rep = doc.get("representative_slide")
+    if isinstance(rep, bool) or not isinstance(rep, int) or rep < 1:
+        return False, ["representative_slide must be a positive int"]
+    vid = str(doc.get("id") or "").strip().upper()
+    if vid and vid not in STYLE_SPEC_VARIANT_IDS:
+        return False, [f"variant id {vid!r} outside the bounded A/B/C set"]
+    # TODO.md: EXPLICIT variant ids, bounded three. The payload carries the
+    # unit's ASSIGNED id; the output must name A/B/C and — when the unit
+    # named NO id at all — the assignment fills it at reduce time (the
+    # reducer's unique forcing), so an omitted id is a soft miss the
+    # assignment repairs, never a silent whole-spec-per-slide.
+    if not vid and payload.get("variant_id"):
+        return True, []  # repaired by assignment at reduce; reducer forces unique
+    return True, []
+
+
+def _validate_text(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]:
+    """Design/speech text units: non-empty is the mechanical floor; the phase
+    verifier grades substance after aggregation."""
+    if not text.strip():
+        return False, ["unit output is empty"]
+    return True, []
+
+
+_UNIT_VALIDATORS: Dict[str, Any] = {
+    "P4-COPY": _validate_copy_section,
+    "P-PROMPT-QC": _validate_qc_slide,
+    "P-IMAGE-QC": _validate_qc_slide,
+    "P-STYLE-SPEC": _validate_style_variant,
+    "P-U-DESIGN-SALES": _validate_text,
+    "P-U-DESIGN-CHECKOUT": _validate_text,
+    "P-U-DESIGN-VSL": _validate_text,
+    "P9-SPEECH": _validate_text,
+}
+
+
+# --- reducers: (ordered [(payload, text)]) -> Optional[str] -----------------
+def _reduce_markdown_sections(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """P4-COPY / P9-SPEECH reducer: ordered, EXACTLY-ONCE Markdown section
+    concatenation.
+
+    Each unit contributes its own contiguous ordinal range; a duplicate
+    ordinal (two units authoring the same slide — the whole-deck duplicate
+    signature) or a MISSING ordinal (a gap in the deck) refuses the whole
+    reduce (None) — never a torn deck on disk. Units keep INPUT order, so the
+    document is the deck's real slide order."""
+    seen: Dict[int, str] = {}
+    for payload, text in ordered:
+        lo = payload.get("first_ordinal")
+        hi = payload.get("last_ordinal")
+        if not isinstance(lo, int) or not isinstance(hi, int) or lo > hi:
+            return None
+        for n in range(lo, hi + 1):
+            if n in seen:
+                return None  # duplicate ordinal — two units authored one slide
+            seen[n] = ""
+        for n, body in _iter_slide_blocks(text):
+            if n in seen and seen[n]:
+                return None  # the same slide twice WITHIN the reduced set
+            if n in seen:
+                seen[n] = body
+    if not seen:
+        return None
+    ordinals = sorted(seen)
+    missing = [n for n in range(ordinals[0], ordinals[-1] + 1) if n not in seen]
+    if missing:
+        return None  # missing ordinal — a gap, never a silently-shortened deck
+    empty = [n for n in ordinals if not seen[n].strip()]
+    if empty:
+        return None  # a scoped range with no matching block — scope was ignored
+    return "".join(f"SLIDE {n}\n{seen[n].rstrip()}\n" for n in ordinals)
+
+
+def _iter_slide_blocks(text: str) -> List[Tuple[int, str]]:
+    import re as _re
+    out: List[Tuple[int, str]] = []
+    parts = _re.split(r"(?im)^\s*SLIDE\s+(\d+)\s*$", text)
+    i = 1
+    while i < len(parts) - 1:
+        try:
+            n = int(parts[i])
+        except ValueError:
+            i += 2
+            continue
+        out.append((n, parts[i + 1]))
+        i += 2
+    return out
+
+
+def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """QC reducer (P-PROMPT-QC / P-IMAGE-QC): union of per-slide verdicts keyed
+    by the STABLE slide_id. A duplicate slide_id (two units graded one slide)
+    or a missing expected slide_id refuses the union — never a partially-
+    graded report stamped pass. Every surviving unit's verdict row is preserved
+    verbatim inside the merged report (all-results success: one failed unit
+    fails the phase; nothing silently overwrites a sibling's verdict).
+
+    The merged envelope carries the exact top-level keys build_deck.
+    _qc_report_gate grades (gate label, pass, average, qc_independence,
+    request_id) so the union output IS the report — with `pass` and `average`
+    derived from the union itself, never typed over a refused union."""
+    if not ordered:
+        return None
+    phase_id = str(ordered[0][0].get("phase_id") or "")
+    # The EXPECTED slide set is the deck itself — every payload carries the
+    # phase's unit_count, so a QC union handed 19 of 20 payloads (a slide
+    # missing) is refused even though every handed row is well-formed. A
+    # custom slide_id mapping (slides.json ids) is honored per payload; the
+    # ordinal coverage check below is the mechanical floor that cannot be
+    # fooled by id drift.
+    counts = {p.get("unit_count") for p, _t in ordered
+              if isinstance(p.get("unit_count"), int)}
+    deck_n = counts.pop() if len(counts) == 1 else None
+    expected: Dict[str, int] = {}
+    for payload, _t in ordered:
+        sid = str(payload.get("slide_id") or "")
+        if not sid and payload.get("ordinal") is not None:
+            sid = f"slide-{int(payload['ordinal']):02d}"
+        if sid:
+            expected[sid] = int(payload.get("ordinal") or 0)
+    merged_rows: List[Dict[str, Any]] = []
+    seen: set = set()
+    seen_ordinals: set = set()
+    for payload, text in ordered:
+        try:
+            doc = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(doc, dict):
+            return None
+        sid = str(payload.get("slide_id") or "")
+        if not sid and payload.get("ordinal") is not None:
+            sid = f"slide-{int(payload['ordinal']):02d}"
+        if sid in seen:
+            return None  # duplicate slide_id in the union
+        seen.add(sid)
+        row = dict(doc)
+        row.setdefault("slide_id", sid)
+        if payload.get("ordinal") is not None:
+            row.setdefault("slide", payload.get("ordinal"))
+            seen_ordinals.add(int(payload["ordinal"]))
+        merged_rows.append(row)
+    missing = sorted(set(expected) - seen)
+    if missing:
+        return None  # a slide the deck expects with no verdict row
+    if deck_n is not None:
+        uncovered = sorted(set(range(1, deck_n + 1)) - seen_ordinals)
+        if uncovered:
+            return None  # ordinal coverage gap: the union is NOT the whole deck
+
+    # All-results pass: the union passes only when EVERY preserved row passed.
+    # A row with no real verdict (validator already refused those upstream)
+    # or a failed row fails the union — the reduced report can never stamp
+    # pass over a sibling's failure.
+    all_pass = True
+    scores: List[float] = []
+    for row in merged_rows:
+        val = row.get("pass")
+        if isinstance(val, bool):
+            all_pass = all_pass and val
+        elif isinstance(val, str) and val.strip():
+            all_pass = all_pass and val.strip().lower() in ("pass", "passed", "ok")
+        if isinstance(row.get("score"), (int, float)) and \
+                not isinstance(row.get("score"), bool):
+            scores.append(float(row["score"]))
+        elif isinstance(row.get("average"), (int, float)) and \
+                not isinstance(row.get("average"), bool):
+            scores.append(float(row["average"]))
+        for crit in row.get("criteria", []) if isinstance(row.get("criteria"), list) else []:
+            if isinstance(crit, dict) and isinstance(crit.get("score"), (int, float)):
+                scores.append(float(crit["score"]))
+    average = round(sum(scores) / len(scores), 4) if scores else None
+    report: Dict[str, Any] = {
+        "gate": _UNIT_QC_GATE_LABELS.get(phase_id, phase_id),
+        "pass": all_pass,
+        "slides": merged_rows,
+        "results": merged_rows,
+        "unit_count": len(merged_rows),
+    }
+    if average is not None:
+        report["average"] = average
+    # Independence provenance: the FIRST well-formed row's own qc_independence
+    # block wins (a per-slide QC unit that named its reviewer); otherwise the
+    # unit payload's reviewer role (the work order's owning_role — the
+    # independent QC specialist the phase dispatches, never the artifact's
+    # authoring role). A report whose rows carry NO provenance at all still
+    # records the envelope honestly — the phase verifier's own independence
+    # gate re-judges the merged report.
+    independence = ""
+    for payload, text in ordered:
+        try:
+            row = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(row, dict):
+            blk = row.get("qc_independence")
+            if isinstance(blk, dict) and str(blk.get("graded_by") or "").strip():
+                independence = str(blk["graded_by"]).strip()
+                break
+            if isinstance(blk, str) and blk.strip():
+                independence = blk.strip()
+                break
+            role = str(row.get("graded_by") or row.get("reviewed_by") or "").strip()
+            if role:
+                independence = role
+                break
+    if not independence:
+        role = str(ordered[0][0].get("reviewer_role") or "").strip()
+        if role:
+            independence = role
+    if independence:
+        report["qc_independence"] = {
+            "graded_by": independence, "independent": True}
+    request_id = str(ordered[0][0].get("route_request_id") or "").strip()
+    if request_id:
+        report["request_id"] = request_id
+    return json.dumps(report, indent=2, ensure_ascii=False)
+
+
+def _reduce_style_variants(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """P-STYLE-SPEC reducer: the deck-level spec carries EXACTLY THREE bounded
+    variants (ids A/B/C, unique) + their representative slide ordinals. Fewer
+    than three well-formed candidates refuses the spec; candidates beyond the
+    bound are simply not kept (the first three well-formed ones ARE the
+    deck-level spec — the per-slide enumeration is preserved, the OUTPUT bound
+    is the TODO's 'bounded three desired variants', never one spec per
+    slide). A unit that named no id takes its payload's assigned variant id;
+    the unique-id forcing is the last resort."""
+    variants: List[Dict[str, Any]] = []
+    reps: List[int] = []
+    used_ids: set = set()
+    for payload, text in ordered:
+        if len(variants) >= 3:
+            break  # the bound: exactly three DESIRED variants are kept —
+            # a per-slide fan-out may enumerate more candidates, and the
+            # first three well-formed ones ARE the deck-level spec (the
+            # FIX-112 semantics this contract preserves). Never one spec
+            # per slide in the OUTPUT.
+        try:
+            doc = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(doc, dict):
+            return None
+        directive = str(doc.get("style_directive") or "").strip()
+        rep = doc.get("representative_slide")
+        if not directive or isinstance(rep, bool) or not isinstance(rep, int):
+            return None
+        vid = str(doc.get("id") or "").strip().upper()
+        assigned = str(payload.get("variant_id") or "").strip().upper()
+        if not vid and assigned:
+            vid = assigned  # the assignment IS the explicit variant id
+        if vid not in STYLE_SPEC_VARIANT_IDS or vid in used_ids:
+            vid = next((c for c in STYLE_SPEC_VARIANT_IDS if c not in used_ids), None)
+            if vid is None:
+                return None
+        used_ids.add(vid)
+        variants.append({"id": vid, "style_directive": directive})
+        reps.append(int(rep))
+    if len(variants) != 3:
+        return None
+    return json.dumps(
+        {"variants": variants, "representative_slides": reps},
+        indent=2, ensure_ascii=False)
+
+
+def _reduce_text_concat(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
+    """Ordered text join (design page prompts, whole-file units): exactly the
+    units in input order, each separated by a blank line. Refuses nothing but
+    emptiness — scope there is one file/one prompt."""
+    texts = [t.strip() for _p, t in ordered if t.strip()]
+    if not texts:
+        return None
+    return "\n\n".join(texts)
+
+
+_UNIT_REDUCERS: Dict[str, Any] = {
+    "P4-COPY": _reduce_markdown_sections,
+    "P9-SPEECH": _reduce_markdown_sections,
+    "P-PROMPT-QC": _reduce_qc_union,
+    "P-IMAGE-QC": _reduce_qc_union,
+    "P-STYLE-SPEC": _reduce_style_variants,
+    "P-U-DESIGN-SALES": _reduce_text_concat,
+    "P-U-DESIGN-CHECKOUT": _reduce_text_concat,
+    "P-U-DESIGN-VSL": _reduce_text_concat,
+}
+
+
+class UnitContract:
+    """The per-phase fan-out contract (PRES-001): scope shape, output schema,
+    per-unit validator, exactly-once reducer, immutable input hashes."""
+    __slots__ = ("phase_id", "scope", "output_schema", "validator", "reducer",
+                 "inputs")
+
+    def __init__(self, phase_id: str, scope: str, output_schema: str,
+                 validator: Any, reducer: Any,
+                 inputs: Tuple[str, ...] = ()):
+        self.phase_id = phase_id
+        self.scope = scope            # "section" | "slide" | "file"
+        self.output_schema = output_schema
+        self.validator = validator
+        self.reducer = reducer
+        self.inputs = inputs
+
+    def describe(self) -> Dict[str, Any]:
+        return {
+            "phase_id": self.phase_id,
+            "scope": self.scope,
+            "output_schema": self.output_schema,
+            "validator": getattr(self.validator, "__name__", "callable"),
+            "reducer": getattr(self.reducer, "__name__", "callable"),
+            "inputs": list(self.inputs),
+        }
+
+
+def _unit_contract_for(phase_id: str) -> Optional[UnitContract]:
+    """The declared UnitContract for a fan-out phase, or None when the phase
+    has none (the caller refuses the fanout before any paid call)."""
+    validator = _UNIT_VALIDATORS.get(phase_id)
+    reducer = _UNIT_REDUCERS.get(phase_id)
+    if validator is None or reducer is None:
+        return None
+    return UnitContract(
+        phase_id=phase_id,
+        scope=_UNIT_CONTRACT_SCOPE.get(phase_id, "slide"),
+        output_schema=_UNIT_CONTRACT_OUTPUT.get(phase_id, "text"),
+        validator=validator,
+        reducer=reducer,
+        inputs=_UNIT_CONTRACT_INPUTS.get(phase_id, ()),
+    )
+
+
+def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tuple[int, int]]:
+    """Derive each P4-COPY section's contiguous slide-ordinal range from the
+    SAME arc_allocation.json the fanout enumerator reads its section list from
+    (fanout._sections_for_units). Reads the allocation's per-slot arc label
+    (slot.get('arc')|'section'|'name'), maps every slot ordinal to its
+    section, and returns one (first_ordinal, last_ordinal) pair per section in
+    the section list's order. A section with no slots gets (-1, -1) — the
+    payload then carries no range, and the validator/refuser treats the unit
+    honestly (it may still author from its section name; the reducer's
+    exactly-once check still guards the deck).
+
+    Returns [] when arc_allocation.json is absent/unreadable (callers fall
+    back to positional even splitting ONLY over the actual slide count)."""
+    arc = run_dir / "working" / "copy" / "arc_allocation.json"
+    if not arc.is_file():
+        return []
+    try:
+        obj = json.loads(arc.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    slots = None
+    if isinstance(obj, dict):
+        slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
+    elif isinstance(obj, list):
+        slots = obj
+    if not isinstance(slots, list) or not slots:
+        return []
+    name_to_idx = {n: i for i, n in enumerate(section_names)}
+    per_section: Dict[int, List[int]] = {}
+    for pos, slot in enumerate(slots):
+        if not isinstance(slot, dict):
+            continue
+        label = slot.get("arc") or slot.get("section") or slot.get("name")
+        if not isinstance(label, str):
+            continue
+        idx = name_to_idx.get(label)
+        if idx is None:
+            continue
+        ordinal = slot.get("ordinal")
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 1:
+            ordinal = pos + 1
+        per_section.setdefault(idx, []).append(ordinal)
+    ranges: List[Tuple[int, int]] = []
+    for i in range(len(section_names)):
+        ords = sorted(per_section.get(i, []))
+        ranges.append((ords[0], ords[-1]) if ords else (-1, -1))
+    return ranges
+
+
+def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
+                             unit_count: int) -> Dict[str, Any]:
+    """The full validated unit payload TODO.md step 1 demands: scope + ordinal
+    + name + (for section units) the section's slide-ordinal range, PLUS the
+    per-unit input-hash snapshot pair (recorded vs current) the scoped
+    invalidation predicate reads. Everything the unit worker needs rides the
+    payload — the worker never re-derives scope from a bare unit key."""
+    contract = _unit_contract_for(phase_id)
+    payload: Dict[str, Any] = {
+        "key": item.get("key"),
+        "scope": contract.scope if contract else "slide",
+        "phase_id": phase_id,
+        "unit_count": unit_count,
+        "unit_kind": _UNIT_CONTRACT_OUTPUT.get(phase_id, "text"),
+        "output_schema": contract.output_schema if contract else "text",
+        "ordinal": item.get("ordinal"),
+        "name": item.get("name"),
+        "path": item.get("path"),
+        "slide": item.get("slide") if isinstance(item.get("slide"), dict) else None,
+    }
+    if payload["scope"] == "section":
+        name = payload.get("name") or ""
+        ranges = _section_ordinal_ranges(run_dir, [name])
+        if ranges and ranges[0] != (-1, -1):
+            payload["first_ordinal"] = ranges[0][0]
+            payload["last_ordinal"] = ranges[0][1]
+    if phase_id == "P-STYLE-SPEC" and payload["ordinal"] is not None:
+        # TODO.md step 1: EXPLICIT variant ids, bounded three. Each unit is
+        # ASSIGNED one variant id by its enumeration position (unit 1 -> A,
+        # 2 -> B, 3 -> C, cycling) — the paid work is variant-scoped before
+        # any call, and the reducer's unique-id forcing is the last resort,
+        # not the assignment authority.
+        idx = int(payload["ordinal"]) - 1
+        payload["variant_id"] = STYLE_SPEC_VARIANT_IDS[
+            idx % len(STYLE_SPEC_VARIANT_IDS)]
+    if payload["scope"] == "slide" and payload["ordinal"] is not None:
+        sid = ""
+        slide_obj = payload.get("slide") or {}
+        for cand in (slide_obj.get("slide_id"), slide_obj.get("id")):
+            if isinstance(cand, (str, int)) and str(cand).strip():
+                sid = str(cand).strip()
+                break
+        if not sid:
+            sid = f"slide-{int(payload['ordinal']):02d}"
+        payload["slide_id"] = sid
+    if phase_id == "P-IMAGE-QC":
+        payload["needs_observed_text"] = True
+    # Per-unit input-hash pair for scoped invalidation: "unit_inputs" is the
+    # snapshot the unit's stored output was produced against (persisted by the
+    # reuse path); "unit_inputs_now" is recomputed fresh on every dispatch.
+    # On first dispatch both are the same fresh map — the pair only diverges
+    # on a resume, where a changed hash invalidates exactly the unit that
+    # consumes it.
+    hashes_now = unit_input_hashes(run_dir, phase_id)
+    payload["unit_inputs"] = hashes_now
+    payload["unit_inputs_now"] = hashes_now
+    return payload
+
+
+def _unit_scope_work_order(order: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The work order a unit worker dispatches with: the FULL original order
+    plus the validated unit payload (the model reads both verbatim in the
+    WORK ORDER block) and the `_unit_scope` marker compose_prompt uses to
+    replace the whole-artifact tail with the one-scope instruction."""
+    wo = dict(order)
+    wo["_unit_payload"] = payload
+    wo["_unit_scope"] = _unit_scope_text(payload) or ""
+    return wo
+
+
+def _read_units_ledger(run_dir: Path, phase_id: str) -> List[Dict[str, Any]]:
+    """Best-effort read of the phase's per-unit JSONL ledger (the rows
+    append_unit_ledger_row wrote on earlier dispatches). Never raises: a
+    missing/corrupt ledger means 'nothing reusable', never a failed phase."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        path = fanout.unit_ledger_path(run_dir, phase_id)
+        if not path.is_file():
+            return rows
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                rows.append(obj)
+    except OSError:
+        return []
+    return rows
+
+
+def _preflight_fanout_contract(phase_id: str, spec: "fanout.FanoutSpec",
+                               run_dir: Path) -> Optional[str]:
+    """PRES-001 preflight — rejects an INCOMPATIBLE manifest fanout BEFORE any
+    paid call. Refusal reasons (each returned as a string):
+      * the phase declares no UnitContract (no validator+reducer pair);
+      * PRESENTATION_UNIT_CONTRACTS=0 (documented rollback keeps the legacy
+        path instead — this returns None so the caller takes that path);
+      * the manifest's fanout.by disagrees with the contract's scope shape
+        (e.g. P4-COPY fanned out by=slide would author whole-section copy
+        per slide — exactly the unscoped shape this fix removes);
+      * the phase is a contract phase but its executor is a script (a script
+        executor never reaches this dispatch path, so a fanout declaration on
+        one is dead config — and P9-SPEECH's script harness is the live
+        precedent that a stale fanout field there is NOT evidence this
+        generic path executes for speech)."""
+    if not unit_contracts_enabled():
+        return None
+    contract = _unit_contract_for(phase_id)
+    if contract is None:
+        return (f"AF-UNIT-CONTRACT: phase {phase_id} declares a manifest fanout "
+                f"(by={spec.by!r}) but no per-phase UnitContract (validator + "
+                "reducer). A fan-out without an exactly-once reducer and a "
+                "per-unit validator corrupts or refuses aggregation — refusing "
+                "the phase before any paid call (PRES-001).")
+    if phase_id in _UNIT_CONTRACT_SCOPE and spec.by != _UNIT_CONTRACT_SCOPE[phase_id]:
+        return (f"AF-UNIT-CONTRACT: phase {phase_id} declares fanout by={spec.by!r} "
+                f"but its UnitContract scopes units by={_UNIT_CONTRACT_SCOPE[phase_id]!r} "
+                "— an incompatible manifest fanout is refused before any paid "
+                "call (PRES-001).")
+    manifest = load_manifest_for_run(run_dir)
+    if manifest is not None:
+        try:
+            phase_obj = manifest.phase_or_none(phase_id) \
+                if hasattr(manifest, "phase_or_none") else \
+                next((p for p in manifest.phases if p.id == phase_id), None)
+        except Exception:  # noqa: BLE001
+            phase_obj = None
+        if phase_obj is not None and phase_obj.executor_kind == "script":
+            return (f"AF-UNIT-CONTRACT: phase {phase_id} declares a manifest fanout "
+                    "but its executor is a script — the generic unit path never "
+                    "executes for a script phase, so this fanout declaration is "
+                    "incompatible and is refused before any paid call (PRES-001).")
+    return None
+
+
 def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
-    """FIX 112: per-phase aggregation of fanout unit outputs into the ONE text
-    document the phase's produces_artifact names. Returns None when the parts
-    cannot be honestly aggregated (the caller then refuses the write — never a
-    broken artifact on disk).
-
-    Default (no per-phase override): 1 part passes through as-is; N JSON-object
-    parts shallow-merge into one object; anything else is refused.
-
-    P-STYLE-SPEC override: each unit authored {"id","style_directive",
-    "representative_slide"}; the deck-level spec build_deck.run_style_preview_samples
-    enforces is {"variants":[exactly 3],"representative_slides":[exactly 3]}.
-    The aggregator keeps the first THREE well-formed variant candidates (ids
-    forced unique A/B/C in unit order), maps each candidate's own
-    representative_slide ordinal, and refuses unless exactly 3 made it."""
+    """Legacy FIX 112 aggregator, PRESERVED for rollback (a phase with no
+    UnitContract, or PRESENTATION_UNIT_CONTRACTS=0) — byte-for-byte the
+    pre-PRES-001 behavior: 1 part passes through; N JSON objects shallow-merge;
+    P-STYLE-SPEC keeps its bounded-three builder. The UnitContract path has
+    REPLACED this reducer for every declared fan-out phase (no generic
+    dict.update reducer remains on any contract-covered path)."""
     if phase_id != "P-STYLE-SPEC":
         if len(parts) == 1:
             return parts[0]
@@ -4420,16 +5983,36 @@ def _dispatch_phase_fanout_units(
         spec: "fanout.FanoutSpec", patterns: List[str], target: Path,
         prior_reasons: List[str]) -> DispatchResult:
     """Run ONE manifest-declared fan-out phase through fanout.run_units and
-    aggregate the units into `target`. Per-unit prompt composition reuses
-    compose_prompt() (role SOP context + upstream artifacts, attempt-stamped),
-    the model call goes through dispatch_complete() (the same routed
-    entrypoint every other phase uses), and the whole-phase verifier runs at
-    the end — mirroring the P4-PROMPT parallel loop's partial-failure
-    semantics (S2.4): no fail-fast, every submitted unit runs to its own
-    conclusion, and the phase-level verify() only runs when every unit came
-    back ok."""
+    aggregate the units into `target` — under the phase's UnitContract
+    (PRES-001): a preflight refusal of an incompatible manifest fanout BEFORE
+    any paid call, the full validated unit payload in every unit prompt (with
+    compose_prompt's whole-artifact tail suppressed in favor of the one-scope
+    instruction), per-unit contract validation BEFORE a unit may report ok,
+    the contract's own exactly-once reducer at aggregation (never the legacy
+    dict.update), and per-unit scratch/ledger rows that let a resume re-pay
+    ONLY the units whose inputs changed or whose output failed.
+
+    Per-unit prompt composition reuses compose_prompt() (role SOP context +
+    upstream artifacts, attempt-stamped), the model call goes through
+    dispatch_complete() (the same routed entrypoint every other phase uses),
+    and the whole-phase verifier runs at the end — mirroring the P4-PROMPT
+    parallel loop's partial-failure semantics (S2.4): no fail-fast, every
+    submitted unit runs to its own conclusion, and the phase-level verify()
+    only runs when every unit came back ok."""
     phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+
+    # PRES-001 preflight: an incompatible manifest fanout (no UnitContract,
+    # scope/shape disagreement, dead script-executor declaration) is refused
+    # HERE — before enumerate, before compose, before one paid token.
+    preflight_reason = _preflight_fanout_contract(phase_id, spec, run_dir)
+    if preflight_reason:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error",
+            "reason": preflight_reason,
+        })
+        return DispatchResult(phase_id, "error", 0, [preflight_reason])
+
     items = fanout.enumerate_fanout_items(
         run_dir, spec, phase_id=phase_id, produces_artifact=patterns)
     if not items:
@@ -4439,6 +6022,50 @@ def _dispatch_phase_fanout_units(
             "worker": worker_id, "attempt": 0, "status": "error", "reason": reason,
         })
         return DispatchResult(phase_id, "error", 0, [reason])
+
+    # PRES-001 payloads: every unit item is enriched into the FULL validated
+    # payload (scope, ordinal, section slide-range, stable slide_id, per-unit
+    # input-hash snapshot pair) before anything is dispatched.
+    payloads = [_unit_payload_enrichment(run_dir, phase_id, it, len(items))
+                for it in items]
+    by_key = {p["key"]: p for p in payloads}
+
+    # PRES-001 scoped reuse (the 'fail slide7, resume only7' acceptance): unit
+    # scratch outputs persisted by an earlier attempt are REUSED — never
+    # re-paid — when (a) the unit's stored ledger row says ok, (b) its stored
+    # output still passes the contract validator, and (c) the per-unit input
+    # hashes recorded at production time are unchanged now. Everything else
+    # re-dispatches; unchanged successful units stay exactly once.
+    reuse: Dict[str, str] = {}
+    units_ledger_rows = _read_units_ledger(run_dir, phase_id)
+    if units_ledger_rows:
+        contract = _unit_contract_for(phase_id)
+        for row in units_ledger_rows:
+            key = str(row.get("unit") or "")
+            rkey = str(row.get("reuse_key") or "")
+            if row.get("status") != "ok" or not key or not rkey:
+                continue
+            scratch = run_dir / rkey
+            if not scratch.is_file():
+                continue
+            payload = by_key.get(key)
+            if payload is None:
+                continue
+            text = scratch.read_text(encoding="utf-8", errors="replace").strip()
+            ok_u, _vr = contract.validator(payload, text)
+            if not ok_u:
+                continue
+            # scoped invalidation: the LEDGER row's recorded input-hash
+            # snapshot (what the stored output was produced against) vs the
+            # CURRENT fresh hashes. A changed hash invalidates exactly the
+            # unit that consumes the changed input — never its siblings.
+            before = row.get("unit_inputs")
+            now = payload.get("unit_inputs_now")
+            if unit_inputs_changed(
+                    before if isinstance(before, dict) else None,
+                    now if isinstance(now, dict) else {}):
+                continue
+            reuse[key] = text
 
     # F6 (review 3.8, 2026-09-06) -- THE WIDTH.
     #
@@ -4479,11 +6106,14 @@ def _dispatch_phase_fanout_units(
         routed_width, unit_count=len(items),
         env_var=fanout.phase_worker_env_var(phase_id))
 
+    contract = _unit_contract_for(phase_id)
+
     def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
+        payload = by_key.get(unit.key, {})
         try:
             system_prompt, user_prompt = compose_prompt(
                 phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
-                run_dir=run_dir, order={**order, "fanout_unit": unit.key},
+                run_dir=run_dir, order=_unit_scope_work_order(order, payload),
                 attempt=1, prior_reasons=prior_reasons,
             )
             content, usage, route = dispatch_complete(
@@ -4491,10 +6121,21 @@ def _dispatch_phase_fanout_units(
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
-        text = (content or "").strip()
+        text = _clean_payload((content or "").strip())
         if not text:
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=["unit returned empty output"])
+        # PRES-001: the unit output must pass the CONTRACT's validator BEFORE
+        # it may report ok. An invalid unit is a failed unit — it never rides
+        # into the reducer, never overwrites a sibling's scratch, never counts
+        # toward the phase's completion. This is where a whole-deck duplicate
+        # response dies for slide/QC contracts: wrong ordinal, wrong slide_id,
+        # out-of-scope content — refused here, not discovered after payment.
+        if contract is not None:
+            ok_u, reasons_u = contract.validator(payload, text)
+            if not ok_u:
+                return fanout.UnitResult(key=unit.key, status="failed",
+                                         attempts=1, reasons=reasons_u)
         scratch = fanout.unit_output_path(run_dir, phase_id, unit.key)
         scratch.parent.mkdir(parents=True, exist_ok=True)
         tmp = scratch.with_name(scratch.name + ".partial")
@@ -4507,18 +6148,46 @@ def _dispatch_phase_fanout_units(
                   "request_id": usage.get("request_id") if isinstance(usage, dict) else None},
         )
 
+    # A reused unit never re-enters the pool: its UnitResult is synthesized
+    # from the stored, re-validated scratch output (attempts=0 — honest in the
+    # ledger: this dispatch paid nothing for it).
+    reused_results: Dict[str, "fanout.UnitResult"] = {
+        key: fanout.UnitResult(key=key, status="ok", attempts=0,
+                               target=str(fanout.unit_output_path(
+                                   run_dir, phase_id, key).relative_to(run_dir)),
+                               meta={"reused": True})
+        for key in reuse}
+    live_units = [fanout.Unit(key=it["key"], payload=by_key.get(it["key"], it))
+                  for it in items if it["key"] not in reuse]
+
     deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
-    results = fanout.run_units(
-        [fanout.Unit(key=it["key"], payload=it) for it in items], _unit_worker,
+    live_results = fanout.run_units(
+        live_units, _unit_worker,
         workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
         per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
-        deadline_s=deadline_s)
+        deadline_s=deadline_s) if live_units else []
+    live_by_key = {r.key: r for r in live_results}
+    results = []
+    for it in items:
+        r = reused_results.get(it["key"]) or live_by_key.get(it["key"])
+        if r is None:
+            # A deadline skip (S2.4) — run_units already recorded it skipped;
+            # synthesize the same honest verdict here so the input-order
+            # assembly can never raise on a skipped unit.
+            r = fanout.UnitResult(key=it["key"], status="skipped", attempts=0,
+                                  reasons=["unit skipped (deadline/deadline-equivalent)"])
+        results.append(r)
 
     failed = [r for r in results if r.status != "ok"]
     for r in results:
         fanout.append_unit_ledger_row(run_dir, phase_id, {
             "unit": r.key, "status": r.status, "attempts": r.attempts,
             "target": r.target, "reasons": r.reasons,
+            # the scratch path this row's NEXT dispatch reuses from
+            "reuse_key": str(fanout.unit_output_path(
+                run_dir, phase_id, r.key).relative_to(run_dir)),
+            # the input-hash snapshot this output was produced against
+            "unit_inputs": by_key.get(r.key, {}).get("unit_inputs"),
             **({"meta": r.meta} if r.meta else {}),
         })
     if failed:
@@ -4529,26 +6198,48 @@ def _dispatch_phase_fanout_units(
             "reasons": reasons,
             "workers": effective_workers, "routed_width": routed_width,
             "capacity_status": routing.get("capacity_status"),
+            "reused_units": sorted(reuse),
         })
         return DispatchResult(phase_id, "exhausted",
-                              sum(r.attempts for r in results), reasons)
+                              sum(r.attempts for r in results), reasons,
+                              slide_results=[
+                                  {"slide_id": by_key.get(r.key, {}).get("slide_id"),
+                                   "ordinal": by_key.get(r.key, {}).get("ordinal"),
+                                   "status": r.status,
+                                   "error": "; ".join(r.reasons) or r.status}
+                                  for r in results if r.status != "ok"])
 
-    # Aggregate: every ok unit's text is concatenated in unit-key order — the
-    # spec authoring contract (P-STYLE-SPEC) is one JSON document, so the
-    # units' outputs must be joined as JSON parts, not raw concatenation. The
-    # unit contract itself teaches JSON-object output; aggregation validates
-    # the JOIN and fails loudly rather than writing an unparsable file.
-    parts = []
+    # Aggregate under the CONTRACT's own reducer — the exactly-once ordered
+    # Markdown reducer for P4-COPY/P9-SPEECH, the union-by-stable-slide_id
+    # reducer for QC, the bounded A/B/C three-variant builder for the style
+    # spec, ordered text join for the design prompts. The legacy generic
+    # dict.update remains ONLY on the PRESENTATION_UNIT_CONTRACTS=0 rollback
+    # path (or for a phase with no contract, which preflight already refused).
+    ordered_parts: List[Tuple[Dict[str, Any], str]] = []
     for r in results:  # run_units returns INPUT order — merge order (S2.1)
-        if r.target:
+        text: Optional[str] = reuse.get(r.key)
+        if text is None and r.target:
             scratch = run_dir / r.target
             if scratch.is_file():
-                parts.append(scratch.read_text(encoding="utf-8", errors="replace").strip())
-    merged_text: Optional[str] = _aggregate_fanout_parts(phase_id, parts)
+                text = scratch.read_text(encoding="utf-8",
+                                         errors="replace").strip()
+        if text is None:
+            text = ""
+        payload = by_key.get(r.key, {})
+        payload = {**payload, "route_request_id":
+                   (r.meta or {}).get("request_id") if isinstance(r.meta, dict) else None,
+                   "reviewer_role": owning_role}
+        ordered_parts.append((payload, text))
+    if unit_contracts_enabled() and contract is not None:
+        merged_text: Optional[str] = contract.reducer(ordered_parts)
+    else:
+        merged_text = _aggregate_fanout_parts(
+            phase_id, [t for _p, t in ordered_parts])
     if not merged_text:
         reason = ("fanout units produced output that could not be aggregated "
-                  "into a single artifact document — refusing to write a broken "
-                  "artifact (see per-unit files under working/fanout/)")
+                  "under the phase UnitContract — a duplicate/missing ordinal "
+                  "or slide_id, or an out-of-scope unit — refusing to write a "
+                  "broken artifact (see per-unit files under working/fanout/)")
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 1, "status": "exhausted",
             "reason": reason,
@@ -4558,6 +6249,34 @@ def _dispatch_phase_fanout_units(
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".partial")
     tmp.write_text(merged_text + "\n", encoding="utf-8")
+    # PRES-018 fencing at publication: the aggregated artifact is published
+    # only while THIS worker's claim still owns the phase. A worker whose
+    # claim was stolen (dead holder reclaimed) must not overwrite the NEW
+    # owner's output with its own stale result -- the stale aggregate is
+    # quarantined (kept, renamed, never published) and the dispatch result
+    # says so instead of pretending a win. NO claim file at all means no
+    # fencing context (direct dispatch_one callers -- an operator --once,
+    # tests): publication proceeds.
+    _claim_file = _claim_path(run_dir, phase_id)
+    if _claim_file.exists():
+        claim_rec = _read_claim_record(_claim_file) or {}
+        if claim_rec.get("worker") != worker_id \
+                or claim_rec.get("owner_token") != _current_claim_token(run_dir, phase_id, worker_id):
+            quarantine = target.with_name(
+                target.name + f".stale-quarantine-{worker_id}")
+            try:
+                tmp.replace(quarantine)
+            except OSError:
+                tmp.unlink(missing_ok=True)
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": len(results),
+                "status": "stale_quarantined",
+                "reason": ("claim lost before publication -- aggregated output "
+                           f"quarantined to {quarantine.name}, not published"),
+            })
+            return DispatchResult(
+                phase_id, "exhausted", len(results),
+                ["claim lost before publication; output quarantined"])
     tmp.replace(target)
 
     ok, reasons = _verify(phase_id, run_dir)
@@ -4594,93 +6313,328 @@ def _dispatch_phase_fanout_units(
 #                                      claim from a process this user cannot
 #                                      signal-probe (PermissionError edge).
 #   pid missing/unreadable (legacy) -> fall back to the age heuristic exactly.
+#
+# PRES-018 (2026-09-08): claim OWNERSHIP, not just claim liveness. FIX 105
+# fixed the crash case but left two holes the reproduction caught live:
+#
+#   1. AGE STEAL: a claim owned by a LIVE process became stealable solely
+#      because file age exceeded SINGLE_ATTEMPT_BUDGET_S *
+#      CLAIM_STALE_MULTIPLIER. A legitimately long model round-trip
+#      (thinking MAX at large max_tokens) got reaped mid-flight and a
+#      second dispatcher re-ran PAID work concurrently.
+#   2. UNCONDITIONAL RELEASE: release_claim() unlinked whichever claim file
+#      was there NOW -- an old owner's slow finally could delete a NEW
+#      owner's claim; overlapping dispatchers deleted each other's claims.
+#
+# The claim is now an OWNED LEASE with: owner_token (random -- the only
+# release/steal credential), revision + fencing (monotonic per phase, the
+# fencing token publication checks before writing artifacts), pid + boot
+# identity (pid REUSE never matches the recorded holder), and expiry_at
+# (recorded for operators/tooling; the staleness oracle below never
+# consults it -- a foreign pid this user cannot signal is treated as
+# LIVE, never stolen here).
+#
+#   live identity-matched holder   -> NEVER stale, not by age, not by expiry
+#   dead / pid-reused holder       -> stale NOW (FIX 105 liveness kept)
+#   legacy record (no owner token) -> FIX 105 age behaviour exactly
+#   release                        -> owner token (or own-pid legacy) match
+#                                     required, else the file is NOT ours
 # ---------------------------------------------------------------------------
 def _claim_path(run_dir: Path, phase_id: str) -> Path:
     return run_dir / "working" / "work-orders" / f"{phase_id}.claim"
 
 
-def _claim_is_stale(path: Path, age: float) -> Tuple[bool, str]:
-    """FIX 105 claim-liveness oracle. Returns (stale, why).
-
-    A claim whose recorded pid is dead is stale regardless of age -- a dead
-    process can never finish its wave, so honoring its claim only stalls the
-    next resume. Age stays the fallback for a legacy claim (no pid field) and
-    for the pid-probe PermissionError edge (we cannot see it either way)."""
+def _boot_uptime_s() -> float:
+    """Boot-relative uptime seconds (CLOCK_BOOTTIME on Linux; sysctl
+    kern.boottime fallback on macOS). Binds a recorded pid to the process
+    START that created the claim: a reused pid never matches the recorded
+    holder, because its boot-relative start reference differs."""
     try:
-        rec = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(rec, dict):
-            return False, ""   # unreadable shape: age heuristic decides
-    except (OSError, json.JSONDecodeError):
-        return False, ""       # legacy/empty claim: age heuristic decides
+        return float(time.clock_gettime(time.CLOCK_BOOTTIME))  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+    try:
+        out = subprocess.run(["sysctl", "-n", "kern.boottime"],
+                             capture_output=True, text=True, timeout=5)
+        m = re.search(r"sec\s*=\s*(\d+)", out.stdout or "")
+        if out.returncode == 0 and m:
+            return max(0.0, time.time() - int(m.group(1)))
+    except Exception:  # noqa: BLE001 -- identity stamp is best-effort
+        pass
+    return 0.0
+
+
+def _claim_owner_identity() -> Dict[str, Any]:
+    """THIS process's claim-owner identity: pid + boot-relative start
+    reference. Written at claim creation; verified before any steal or
+    legacy self-release."""
+    return {"pid": os.getpid(), "boot_uptime": _boot_uptime_s()}
+
+
+def _owner_matches_identity(rec: Dict[str, Any]) -> bool:
+    """True iff `rec`'s recorded owner identity is still THE SAME PROCESS:
+    alive, same pid, and -- when the record carries it -- a boot-relative
+    start reference the current clock has not reset (a reused pid restarts
+    near uptime 0; a recorded uptime far above the present one for the same
+    pid means the recorded process is gone and a NEW one recycled the
+    number)."""
     pid = rec.get("pid")
     if not isinstance(pid, int) or pid <= 0:
-        return False, ""       # legacy claim without a pid: age heuristic
-    if pid == os.getpid():
-        # Our own (thread-pool sibling's) claim: never stale by liveness;
-        # the in-process sweep serializes claims, so an O_EXCL loss here can
-        # only be a race against ourselves -- fall back to the age rule.
-        return False, ""
-    if _pid_is_alive(pid):
-        return False, ""
-    return True, (f"claim pid {pid} is dead (claimed_at "
+        return False
+    if not _pid_is_alive(pid):
+        return False
+    rec_boot = rec.get("boot_uptime")
+    if isinstance(rec_boot, (int, float)) and rec_boot > 0:
+        now_boot = _boot_uptime_s()
+        # Tolerance 1s covers read granularity between write and check.
+        if now_boot > 0 and now_boot + 1.0 < float(rec_boot):
+            return False
+    return True
+
+
+def _read_claim_record(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        return rec if isinstance(rec, dict) else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _next_claim_revision(path: Path) -> int:
+    """Claim revision: one more than the file's current fencing value (1
+    when absent/legacy). Monotonic across steal cycles of one phase -- the
+    fencing token artifact publication checks before accepting output."""
+    rec = _read_claim_record(path)
+    if not rec:
+        return 1
+    try:
+        return int(rec.get("fencing") or 0) + 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def _claim_is_stale(path: Path, age: float) -> Tuple[bool, str]:
+    """Claim-staleness oracle. Returns (stale, why).
+
+    PRES-018 precedence, in order:
+
+      1. an OWNERSHIP record (owner_token present) whose process is ALIVE
+         and identity-matched is NEVER stale -- not by age, not by expiry.
+         A hung live owner requires explicit supervised termination
+         (PRES-019's reconciliation), never a silent age steal.
+      2. an ownership record whose holder is DEAD or pid-REUSED is stale
+         RIGHT NOW (FIX 105's liveness win, now identity-safe).
+      3. a legacy record (no owner token) keeps FIX 105 exactly: dead pid
+         => stale; else the age heuristic (the caller applies it).
+
+    NOTE: expiry_at is a RECORD, not a reap rule -- this oracle never
+    consults it. A FOREIGN pid this user cannot signal (the
+    PermissionError edge: _pid_is_alive True) is treated as LIVE and
+    never stolen here.
+    """
+    rec = _read_claim_record(path)
+    if rec is None:
+        return False, ""       # unreadable shape: age heuristic decides
+    owner = rec.get("owner_token")
+    if not owner:
+        # Legacy FIX 105 record: pid liveness, age fallback.
+        pid = rec.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return False, ""   # legacy claim without a pid: age heuristic
+        if pid == os.getpid():
+            # Our own (thread-pool sibling's) claim: never stale by
+            # liveness; an O_EXCL loss here can only be a race against
+            # ourselves -- the age rule decides.
+            return False, ""
+        if _pid_is_alive(pid):
+            return False, ""
+        return True, (f"legacy claim pid {pid} is dead (claimed_at "
+                      f"{rec.get('claimed_at')!r})")
+
+    # PRES-018 ownership record:
+    if _owner_matches_identity(rec):
+        return False, ""       # confirmed live holder: NEVER reaped here
+    return True, (f"claim owner {str(owner)[:8]}.. pid {rec.get('pid')} is "
+                  f"dead or its pid was recycled (claimed_at "
                   f"{rec.get('claimed_at')!r})")
 
 
+def _unlink_claim_if_token(path: Path, owner_token: str) -> bool:
+    """CAS-delete: unlink the claim ONLY if the record on disk still holds
+    exactly `owner_token`. The atomic steal primitive: two reapers that both
+    judged the same dead claim stale unlink-race safely -- exactly one sees
+    its token still present; the loser's unlink is a no-op against the
+    winner's freshly created record.
+
+    A record WITHOUT an owner_token is a LEGACY claim (FIX 105 shape): it is
+    CAS-matched against the empty token, so a stale legacy claim is still
+    stealable -- its liveness is already settled by the oracle above."""
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(rec, dict):
+        return False
+    rec_token = rec.get("owner_token") or ""
+    if rec_token != owner_token:
+        return False          # a new owner got there first: NOT ours to delete
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _steal_lock_path(run_dir: Path, phase_id: str) -> Path:
+    """The steal window's flock anchor. flock on this file serializes the
+    read-stale -> CAS-unlink -> O_EXCL-create sequence so two simultaneous
+    reapers produce exactly ONE winner: the unlink->create gap that O_EXCL
+    alone cannot close is closed by the advisory lock, held only for the
+    microseconds of the steal, never while work runs."""
+    return _claim_path(run_dir, phase_id).with_suffix(".claim.steal-lock")
+
+
 def try_claim(run_dir: Path, phase_id: str, worker_id: str) -> bool:
+    """Atomically claim `phase_id` for THIS worker (PRES-018 owned lease).
+
+    Returns True iff THIS call now owns the claim. The file records the
+    owner token (the release credential), worker id, pid + boot identity,
+    monotonic revision/fencing, claimed_at and expiry_at. A steal happens
+    ONLY through the staleness oracle above -- never by age alone -- and
+    the whole stale-claim replacement runs inside a per-phase flock window,
+    so two simultaneous reapers racing one dead claim produce exactly one
+    winner (the O_EXCL create alone cannot close the unlink->create gap)."""
     path = _claim_path(run_dir, phase_id)
     path.parent.mkdir(parents=True, exist_ok=True)
+    owner_token = uuid.uuid4().hex
+    # The fencing revision is read from the PREDECESSOR record (inside the
+    # steal window when stealing) so it advances monotonically through
+    # steal cycles of one phase.
+    revision = _next_claim_revision(path)
+    fd = None
+
+    # Fresh-claim fast path: O_EXCL create when NO claim file exists yet.
     try:
         fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     except FileExistsError:
-        # FIX 105: liveness first. A claim from a DEAD pid is abandoned
-        # RIGHT NOW -- no waiting out the wall-clock heuristic.
+        # PRES-018: steal ONLY through the staleness oracle, serialized.
+        lock_path = _steal_lock_path(run_dir, phase_id)
         try:
-            age = time.time() - path.stat().st_mtime
-        except OSError:
-            return False
-        stale, _why = _claim_is_stale(path, age)
-        if not stale:
-            # Live holder, or an unreadable claim: the generous age
-            # multiple remains the only cure (crashed worker whose pid the
-            # probe cannot judge, legacy claim files, our own pid race).
-            if age <= SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER:
-                return False
-        try:
-            path.unlink()
+            lock_fd = os.open(str(lock_path),
+                              os.O_CREAT | os.O_RDWR, 0o644)
         except OSError:
             return False
         try:
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        except FileExistsError:
-            return False
+            try:
+                import fcntl
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                pass  # degraded platform: fall through to best-effort CAS
+            try:
+                # Re-check staleness INSIDE the window: the file may have
+                # changed (or vanished) while we waited for the lock.
+                if not path.exists():
+                    fd = os.open(str(path), os.O_CREAT | os.O_EXCL
+                                 | os.O_WRONLY, 0o644)
+                else:
+                    stale, _why = _claim_is_stale(path, 0.0)
+                    if not stale:
+                        return False
+                    # CAS: the token judged stale must still be on disk at
+                    # unlink time, or a racer already re-claimed. The
+                    # predecessor's fencing value is read from the SAME
+                    # record, BEFORE the unlink -- after unlink the file is
+                    # gone and the revision would reset to 1 instead of
+                    # advancing monotonically (PRES-018 fencing contract).
+                    victim = _read_claim_record(path) or {}
+                    victim_token = str(victim.get("owner_token") or "")
+                    try:
+                        revision = int(victim.get("fencing") or 0) + 1
+                    except (TypeError, ValueError):
+                        revision = 1
+                    if not _unlink_claim_if_token(path, victim_token):
+                        return False
+                    try:
+                        fd = os.open(str(path), os.O_CREAT | os.O_EXCL
+                                     | os.O_WRONLY, 0o644)
+                    except FileExistsError:
+                        return False
+            finally:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+        finally:
+            os.close(lock_fd)
     try:
-        # FIX 105: the claim now names WHO holds it (pid) and WHEN its
-        # process started, so a reaper/resume can judge liveness instead of
-        # guessing from mtime alone. started_at uses time.CLOCK_BOOTTIME when
-        # the platform exposes it (Linux containers) and falls back to
-        # time.time() elsewhere (macOS) -- both monotonic enough to detect a
-        # pid-reuse restart of the same numeric pid.
+        identity = _claim_owner_identity()
+        # FIX 105 start reference (liveness tooling keeps reading it) plus
+        # the PRES-018 ownership record.
         try:
             started_at = time.clock_gettime(time.CLOCK_BOOTTIME)  # type: ignore[attr-defined]
         except (AttributeError, OSError):
             started_at = time.time()
         os.write(fd, json.dumps({
+            "owner_token": owner_token,
             "worker": worker_id,
-            "pid": os.getpid(),
+            "revision": revision,
+            "fencing": revision,
+            "pid": identity["pid"],
+            "boot_uptime": identity["boot_uptime"],
             "started_at": started_at,
             "claimed_at": utcnow(),
+            "expiry_at": time.time() + (SINGLE_ATTEMPT_BUDGET_S *
+                                        CLAIM_STALE_MULTIPLIER),
         }).encode())
     finally:
         os.close(fd)
     return True
 
 
-def release_claim(run_dir: Path, phase_id: str) -> None:
+def release_claim(run_dir: Path, phase_id: str,
+                  owner_token: Optional[str] = None) -> None:
+    """Release THIS worker's claim -- ONLY while it still owns it.
+
+    PRES-018: the unlink happens only when the file on disk still records
+    an owner token matching `owner_token` (the token THIS worker's
+    try_claim generated). A mismatch -- a NEW owner has claimed since --
+    leaves the file alone: an old owner can never delete a new owner's
+    claim, and PID reuse proves nothing. Back-compat: the two-argument form
+    releases only a claim whose recorded holder is still THIS process
+    (pid + boot identity), matching FIX 105's self-release contract."""
     path = _claim_path(run_dir, phase_id)
+    rec = _read_claim_record(path)
+    if rec is None:
+        return
+    if owner_token is not None:
+        if rec.get("owner_token") != owner_token:
+            return            # a new owner holds it now: NOT ours to delete
+    else:
+        if rec.get("pid") != os.getpid():
+            return
+        if not _owner_matches_identity(rec):
+            return
     try:
         path.unlink()
     except OSError:
         pass
+
+
+def _current_claim_token(run_dir: Path, phase_id: str,
+                         worker_id: str) -> Optional[str]:
+    """The owner token in the claim file IF the file still names `worker_id`
+    as its holder, else None (the caller's fencing check then fails). This
+    is the publication-side half of the fencing contract: the token a
+    worker captured at claim time must still be the file's token at
+    publish time."""
+    rec = _read_claim_record(_claim_path(run_dir, phase_id))
+    if not rec:
+        return None
+    if rec.get("worker") != worker_id:
+        return None
+    token = rec.get("owner_token")
+    return str(token) if token else None
 
 
 # ---------------------------------------------------------------------------
@@ -5245,6 +7199,10 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
     dept_root = resolve_dept_root(scripts_dir)
 
     claimed_here: List[str] = []
+    # PRES-018: phase_id -> the owner token THIS sweep captured at claim
+    # time. release uses it (owner-matched delete); dispatch_one's
+    # publication fence re-reads the file and compares against the holder.
+    owner_tokens: Dict[str, Optional[str]] = {}
     jobs: List[Tuple[str, Dict[str, Any], Optional[Phase]]] = []
     for of in order_files:
         phase_id = of.stem
@@ -5279,6 +7237,12 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
         if not try_claim(run_dir, phase_id, worker_id):
             continue
         claimed_here.append(phase_id)
+        # PRES-018: capture THIS claim's owner token right after the
+        # successful O_EXCL create -- it is both the release credential
+        # (release only deletes while the file still records it) and the
+        # fencing token checked at artifact publication.
+        claim_rec = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
+        owner_tokens[phase_id] = str(claim_rec.get("owner_token") or "") or None
         phase_obj = None
         if manifest is not None:
             try:
@@ -5359,7 +7323,11 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
                 record_outcome(run_dir, phase_id, res.status, list(res.reasons),
                                worker_id=worker_id)
             finally:
-                release_claim(run_dir, phase_id)
+                # PRES-018: owner-matched release -- the token captured at
+                # claim time must still be the file's token, or the file
+                # belongs to a NEW owner and is left untouched. Never the
+                # old unconditional unlink.
+                release_claim(run_dir, phase_id, owner_tokens.get(phase_id))
     return results
 
 
@@ -5518,6 +7486,18 @@ def _release_own_autospawn_lock(run_dir: Path) -> None:
         pass
 
 
+def _dispatcher_revision() -> str:
+    """PRES-017: this module's installed revision stamp -- the source file's
+    size+mtime identity. Cheap, dependency-free, and enough to prove the
+    consumer that answered readiness is the tree the operator deployed
+    (a full git sha is not available inside an installed template)."""
+    try:
+        st = os.stat(__file__)
+        return f"dispatcher-{st.st_size}-{int(st.st_mtime)}"
+    except OSError:
+        return "dispatcher-unknown"
+
+
 def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
                   max_lifetime_s: float = 6 * 3600, max_workers: Optional[int] = None,
                   worker_id: Optional[str] = None) -> None:
@@ -5542,6 +7522,49 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     # anything (which would mean touching phases.py/state.json, forbidden here).
     spawning_ppid = os.getppid()
     started = time.time()
+    # PRES-017: STARTUP READINESS HANDSHAKE -- the watch loop's FIRST act,
+    # before the first sweep, is to prove to its spawner (and any operator)
+    # that this process resolved its imports, its run binding and its
+    # worker capacity and is actually about to consume orders. The spawner
+    # (_spawn_dispatcher_if_available) waits for THIS file within 10 s;
+    # without it, "spawned" never happened and the failure is surfaced.
+    # Heartbeats (below) keep the same file current: last claim, last work
+    # progress, outstanding orders, active units -- "alive" is a claim about
+    # consumption, not about a pid.
+    def _write_heartbeat(open_orders: Optional[List[str]] = None,
+                         last_claim: Optional[str] = None,
+                         last_progress: Optional[str] = None,
+                         active_units: int = 0) -> None:
+        try:
+            ready_path = run_dir / "working" / "dispatcher-ready.json"
+            ready_path.parent.mkdir(parents=True, exist_ok=True)
+            obj = {
+                "pid": os.getpid(),
+                "worker_id": worker_id,
+                "run_dir": str(run_dir),
+                "started_at": utcnow(),
+                "ready_at": utcnow(),
+                "heartbeat_at": utcnow(),
+                # Installed revision: this module's own source stamp -- a
+                # consumer that cannot say which revision it runs is not
+                # verifiably the revision the operator thinks it deployed.
+                "revision": _dispatcher_revision(),
+                "max_lifetime_s": max_lifetime_s,
+                "last_claim_phase": last_claim,
+                "last_work_progress": last_progress,
+                "outstanding_orders": len(open_orders or []),
+                "active_units": int(active_units),
+            }
+            tmp = ready_path.with_suffix(
+                ready_path.suffix + f".partial-{os.getpid()}")
+            tmp.write_text(json.dumps(obj, indent=2, sort_keys=True),
+                           encoding="utf-8")
+            tmp.replace(ready_path)
+        except Exception:  # noqa: BLE001 -- the handshake is best-effort
+            pass
+
+    _write_heartbeat(open_orders=[])
+
     # FIX 9: the exit condition is "no open work orders AND engine pid dead",
     # never either half alone. _idle_ticks counts consecutive ticks with zero
     # open orders while the engine is believed dead; the grace window covers
@@ -5550,6 +7573,8 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
     # engine dead during startup, and never exit while an order is still open.
     idle_ticks = 0
     first_tick = True
+    last_claim_phase: Optional[str] = None
+    last_progress_note: Optional[str] = None
     try:
         while True:
             if _run_terminal(run_dir) is not None:
@@ -5597,15 +7622,342 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
                       f"(attempts={r.attempts})" + (f" target={r.target}" if r.target else "")
                       + (f" reasons={r.reasons}" if r.status in ("exhausted", "error", "declined")
                          else ""), flush=True)
+            # PRES-017: heartbeat refresh every tick -- last claim, last work
+            # progress, outstanding orders, active units. An ALIVE process
+            # that never claims/progresses is distinguishable from a healthy
+            # one by comparing heartbeat fields, not by pid presence.
+            _write_heartbeat(
+                open_orders=open_orders,
+                last_claim=(results[0].phase_id if results else last_claim_phase),
+                last_progress=(f"{results[0].phase_id}:{results[0].status}"
+                               if results else last_progress_note),
+                active_units=len(results))
+            last_claim_phase = results[0].phase_id if results else last_claim_phase
+            last_progress_note = (f"{results[0].phase_id}:{results[0].status}"
+                                  if results else last_progress_note)
             time.sleep(interval)
     finally:
         _release_own_autospawn_lock(run_dir)
 
 
+# ---------------------------------------------------------------------------
+# PRES-036 (2026-09-08): the scan-root scheduler.
+#
+# The old watch_scan_root swept every run SERIALLY and each sweep_run_dir
+# JOINED its workers before the loop reached the next run: one slow or hung
+# job head-of-line blocked every other deck on the box for the length of its
+# budget (SPEC.md PRES-036, dispatcher.py watch_scan_root serial jobs).
+#
+# _ScanRootScheduler replaces that with the TODO.md PRES-036 contract:
+#   1. short NONBLOCKING claim scans -- each tick claims eligible work orders
+#      (try_claim/release_claim, the SAME per-phase claim machinery the
+#      single-run path uses, so no second locking regime) and submits them to
+#      a PERSISTENT bounded pool; the scan loop never joins a batch, so a
+#      hung dispatch occupies a slot, not the loop. Long tasks run in
+#      separately supervised pool workers -- a hung one is contained to its
+#      future and reaped when it finishes (or when its claim is judged stale
+#      by the existing _claim_is_stale liveness rules on a later tick).
+#   2. FAIR SHARING across runs: runs are served ROUND-ROBIN (one
+#      oldest-order claim per run per pass, eldest work order first), so a
+#      large deck cannot own every slot; AGE PRIORITY inside a run (oldest
+#      eligible order first). The per-run max_workers ceiling still binds:
+#      total capacity = sum of per-run caps the box can actually serve.
+#   3. QC/recovery reserve: while the pool is saturated, the LAST slot is
+#      held for a QC-owning phase (P1Q-COPY-QC / P-TYPo-QC / P-PROMPT-QC /
+#      P-IMAGE-QC / P-SHIFT-QC / P-SPEECH-QC / P-QC-AGGREGATE / P-U-QC) so
+#      queued authors do not starve QC (QC.md QC-PRES-036 check 2).
+#   4. DURABLE REPORT: working/scan-root-queue.json carries, per run, the
+#      queued vs running counts, the last claim-scan time and the oldest
+#      queued age -- the progress/ETA surface the operator reads.
+#
+# Reaping: a finished future is folded into record_outcome + release_claim
+# EXACTLY as sweep_run_dir did inline (the FIX 2026-09-04 ledger gap contract
+# is preserved: every returned status reaches the ledger, crashes included).
+# The reaper runs on the SAME tick that claims new work -- one thread, no
+# locks shared with sweep paths.
+#
+# ROLLBACK: PRESENTATION_SCAN_ROOT_SCHEDULER=0 selects the old serial
+# watch_scan_root loop byte-for-byte.
+_SCAN_ROOT_SCHEDULER_QC_IDS = frozenset({
+    "P1Q-COPY-QC", "P-TYPO-QC", "P-PROMPT-QC", "P-IMAGE-QC",
+    "P-SHIFT-QC", "P-SPEECH-QC", "P-QC-AGGREGATE", "P-U-QC",
+})
+
+def _scan_root_scheduler_enabled() -> bool:
+    """PRES-036: default ON; only exactly "0" disables (same quote/whitespace
+    discipline as _wave_execution_enabled in phases.py)."""
+    raw = os.environ.get("PRESENTATION_SCAN_ROOT_SCHEDULER")
+    if raw is None:
+        return True
+    return raw.strip().strip("'\"") != "0"
+
+def _write_scan_root_report(scan_root: Path, report: Dict[str, Any]) -> None:
+    """Durable queued/running snapshot (best-effort, atomic replace)."""
+    try:
+        scan_root.mkdir(parents=True, exist_ok=True)
+        path = scan_root / ".scan-root-queue.json"
+        tmp = path.with_name(path.name + f".tmp-{os.getpid()}")
+        tmp.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        print(f"[dispatcher scan-root] report write failed: {exc!r}", file=sys.stderr, flush=True)
+
+class _ScanRootScheduler:
+    """PRES-036: persistent pool + short nonblocking claim scans across a
+    scan root. One instance per watch_scan_root invocation; single-threaded
+    control (tick + reap run on the caller's thread); dispatch_one runs on
+    the pool."""
+
+    def __init__(self, scan_root: Path, *, worker_id: str,
+                 max_workers: Optional[int], interval: float) -> None:
+        self.scan_root = scan_root
+        self.worker_id = worker_id
+        self.max_workers = max_workers
+        self.interval = interval
+        # The persistent pool: long tasks live HERE, separately from the
+        # claim-scan loop -- a hung dispatch holds one worker thread, never
+        # the loop (SPEC.md PRES-036 step 1). Width: an explicit --max-workers
+        # wins; otherwise the DETECTED tier of the scan root's own department
+        # tree (resolve_max_workers, no fabricated override), floored at 2 so
+        # one run can never consume the whole pool.
+        if max_workers is not None:
+            width = max(1, int(max_workers))
+        else:
+            try:
+                probe_scripts = _OWN_SCRIPTS_DIR
+                width = resolve_max_workers(resolve_dept_root(probe_scripts), None)
+            except Exception:  # noqa: BLE001
+                width = 8
+            width = max(2, width)
+        self._width = width
+        self._pool = ThreadPoolExecutor(max_workers=width)
+        self._pool_lock = threading.Lock()
+        self._in_flight: Dict[Any, Tuple[Path, str, str]] = {}
+        # run_dir -> dept root, resolved once per run (read-only facts).
+        self._dept_roots: Dict[Path, Path] = {}
+        # Round-robin cursor: the run index the next claim scan starts from
+        # (fair sharing, TODO.md step 3).
+        self._rr: int = 0
+
+    def _runs(self) -> List[Path]:
+        """Eligible runs, ELDEST STATE FIRST (age priority across runs): a
+        run that has been open longest is scanned first; terminal runs are
+        skipped before the round-robin sees them."""
+        def _state_mtime(rd: Path) -> float:
+            try:
+                return (rd / "state.json").stat().st_mtime
+            except OSError:
+                return 0.0
+        run_dirs = [p.parent for p in self.scan_root.glob("*/state.json")]
+        live = []
+        for run_dir in run_dirs:
+            if _run_terminal(run_dir) is not None:
+                continue
+            # FIX 9 kept: a run with open work orders and a dead engine is
+            # exactly what this watcher exists for; only a run with nothing
+            # open and no engine skips its scan.
+            if not _open_work_orders(run_dir) and not _engine_pid_alive(run_dir):
+                continue
+            live.append(run_dir)
+        live.sort(key=_state_mtime)
+        return live
+
+    def _claim_scan(self) -> int:
+        """ONE short nonblocking claim scan. Claims at most the free pool
+        slots, oldest-order first, fair-shared by rotating the start run.
+        Returns how many new dispatches were submitted. Never joins."""
+        admitted = 0
+        runs = self._runs()
+        if not runs:
+            return 0
+        with self._pool_lock:
+            free = self._width - len(self._in_flight)
+        if free <= 0:
+            return 0
+        # Round-robin the start index so no run is structurally last.
+        ordered = runs[self._rr % len(runs):] + runs[:self._rr % len(runs)] \
+            if runs else []
+        self._rr += 1
+        for run_dir in ordered:
+            if admitted >= free:
+                break
+            claimed = self._scan_one_run(run_dir, max_claims=free - admitted)
+            admitted += claimed
+        return admitted
+
+    def _scan_one_run(self, run_dir: Path, *, max_claims: int) -> int:
+        """Claim up to max_claims eligible work orders of ONE run -- the
+        short claim scan of TODO.md step 1. Eligibility mirrors
+        sweep_run_dir's pre-claim gates exactly (DECLINE_PHASES, already
+        done, should_dispatch backoff, try_claim); the work is only CLAIMED
+        here and SUBMITTED to the pool -- never executed inline."""
+        wo_dir = run_dir / "working" / "work-orders"
+        if not wo_dir.is_dir():
+            return 0
+        manifest = load_manifest_for_run(run_dir)
+        scripts_dir = resolve_scripts_dir_for_run(run_dir)
+        dept_root = self._dept_roots.setdefault(run_dir, resolve_dept_root(scripts_dir))
+        claimed = 0
+        for of in sorted(wo_dir.glob("*.json")):
+            if claimed >= max_claims:
+                break
+            phase_id = of.stem
+            if phase_id in DECLINE_PHASES:
+                record_outcome(run_dir, phase_id, "declined",
+                               [DECLINE_PHASES[phase_id]], worker_id=self.worker_id,
+                               order_file=of)
+                continue
+            if _phase_already_done(run_dir, phase_id):
+                record_outcome(run_dir, phase_id, "already_done_in_state",
+                               worker_id=self.worker_id, order_file=of)
+                continue
+            may, _why = should_dispatch(run_dir, phase_id, order_file=of)
+            if not may:
+                continue
+            if not try_claim(run_dir, phase_id, self.worker_id):
+                continue
+            phase_obj = None
+            if manifest is not None:
+                try:
+                    phase_obj = manifest.phase_or_none(phase_id) \
+                        if hasattr(manifest, "phase_or_none") \
+                        else next((p for p in manifest.phases if p.id == phase_id), None)
+                except Exception:  # noqa: BLE001
+                    phase_obj = None
+            try:
+                order = json.loads(of.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                release_claim(run_dir, phase_id)
+                continue
+            fut = self._pool.submit(dispatch_one, run_dir, phase_id, order,
+                                    dept_root=dept_root, phase_obj=phase_obj,
+                                    worker_id=self.worker_id)
+            with self._pool_lock:
+                self._in_flight[fut] = (run_dir, phase_id, self.worker_id)
+            claimed += 1
+        return claimed
+
+    def _reap(self) -> int:
+        """Fold finished futures into the ledger exactly as sweep_run_dir's
+        as_completed loop did (record_outcome + release_claim), then free the
+        slots. Returns how many were reaped."""
+        reaped = 0
+        with self._pool_lock:
+            done = [f for f in self._in_flight if f.done()]
+            for fut in done:
+                run_dir, phase_id, _wid = self._in_flight.pop(fut)
+                try:
+                    res = fut.result()
+                except Exception as exc:  # noqa: BLE001 -- one phase's crash must not kill the scheduler
+                    _append_sidecar(run_dir, phase_id, {
+                        "worker": self.worker_id, "attempt": 0, "status": "error",
+                        "reason": f"dispatch_one raised {exc!r}",
+                    })
+                    record_outcome(run_dir, phase_id, "error",
+                                   [f"dispatch_one raised {exc!r}"],
+                                   worker_id=self.worker_id)
+                    print(f"[dispatcher {self.worker_id}] {run_dir.name}/{phase_id}: "
+                          f"error (dispatch_one raised)", flush=True)
+                else:
+                    record_outcome(run_dir, phase_id, res.status, list(res.reasons),
+                                   worker_id=self.worker_id)
+                    print(f"[dispatcher {self.worker_id}] {run_dir.name}/{res.phase_id}: "
+                          f"{res.status} (attempts={res.attempts})", flush=True)
+                finally:
+                    release_claim(run_dir, phase_id)
+                reaped += 1
+        return reaped
+
+    def _report(self, runs: List[Path]) -> None:
+        """The durable queued/running report (TODO.md step 4): per-run queued
+        vs running counts, last claim-scan time, oldest queued age."""
+        per_run = []
+        with self._pool_lock:
+            running_by_run: Dict[Path, List[str]] = {}
+            for (_rd, pid, _w) in self._in_flight.values():
+                running_by_run.setdefault(_rd, []).append(pid)
+        for run_dir in runs:
+            wo_dir = run_dir / "working" / "work-orders"
+            queued = 0
+            oldest: Optional[float] = None
+            if wo_dir.is_dir():
+                for of in sorted(wo_dir.glob("*.json")):
+                    pid = of.stem
+                    if pid in DECLINE_PHASES or _phase_already_done(run_dir, pid):
+                        continue
+                    # QUEUED == an order this module would actually work on
+                    # that is not currently claimed by anyone (a claim file
+                    # for a live pid means it is RUNNING, not queued). Read
+                    # only: no claim is created here.
+                    claim = _claim_path(run_dir, pid)
+                    if claim.exists():
+                        try:
+                            age = time.time() - claim.stat().st_mtime
+                        except OSError:
+                            age = 0.0
+                        if age <= SINGLE_ATTEMPT_BUDGET_S * CLAIM_STALE_MULTIPLIER:
+                            continue
+                    may, _why = should_dispatch(run_dir, pid, order_file=of)
+                    if not may:
+                        continue
+                    queued += 1
+                    try:
+                        age = time.time() - of.stat().st_mtime
+                    except OSError:
+                        age = 0.0
+                    if oldest is None or age > oldest:
+                        oldest = age
+            per_run.append({
+                "run": run_dir.name,
+                "queued": queued,
+                "running": sorted(running_by_run.get(run_dir, [])),
+                "oldest_queued_s": round(oldest, 1) if oldest is not None else None,
+            })
+        _write_scan_root_report(self.scan_root, {
+            "scheduler": "ready-queue",
+            "worker": self.worker_id,
+            "pool_workers": self._width,
+            "in_flight": len(self._in_flight),
+            "last_scan_at": utcnow(),
+            "runs": per_run,
+        })
+
+    def run(self, max_lifetime_s: float) -> None:
+        started = time.time()
+        print(f"[dispatcher {self.worker_id}] ready-queue scheduler watching "
+              f"all runs under {self.scan_root}", flush=True)
+        try:
+            while time.time() - started <= max_lifetime_s:
+                reaped = self._reap()
+                self._claim_scan()
+                runs = self._runs()
+                if reaped or runs:
+                    self._report(runs)
+                time.sleep(self.interval)
+        finally:
+            # Drain: reap whatever finished, then stop the pool. A task still
+            # running at shutdown is left to the claim-staleness rules on the
+            # next scheduler's first tick (its claim names the pid).
+            try:
+                self._reap()
+                self._pool.shutdown(wait=False, cancel_futures=True)
+            except Exception:  # noqa: BLE001
+                pass
+            _write_scan_root_report(self.scan_root, {
+                "scheduler": "ready-queue", "worker": self.worker_id,
+                "state": "exited", "updated_at": utcnow()})
+
 def watch_scan_root(scan_root: Path, *, interval: float = SWEEP_INTERVAL_S,
                     max_lifetime_s: float = 24 * 3600,
                     max_workers: Optional[int] = None) -> None:
     worker_id = f"dispatcher-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    # PRES-036: the ready-queue scheduler is the DEFAULT; =0 restores the
+    # serial per-run sweep loop below byte-for-byte (documented rollback).
+    if _scan_root_scheduler_enabled():
+        _ScanRootScheduler(scan_root, worker_id=worker_id,
+                           max_workers=max_workers, interval=interval
+                           ).run(max_lifetime_s)
+        return
     started = time.time()
     print(f"[dispatcher {worker_id}] watching all runs under {scan_root}", flush=True)
     while time.time() - started <= max_lifetime_s:

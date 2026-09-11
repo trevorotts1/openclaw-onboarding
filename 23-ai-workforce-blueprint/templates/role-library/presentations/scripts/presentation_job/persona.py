@@ -25,6 +25,11 @@ BLEND_TIMEOUT_S = 90          # (Fix 28, 2026-09-02) raised from 30 s: the 30 s 
                                # "timeout: int = 60"); 90 s gives one full seam
                                # budget plus headroom, and the retry below gives
                                # one second attempt before the phase blocks.
+                               # (PRES-054, 2026-09-09) this is now the WHOLE
+                               # resolution budget: one absolute deadline for
+                               # ALL attempts AND the selector subprocess below
+                               # it — see persona_deadline.Deadline. A fresh
+                               # wall per retry no longer exists.
 BLEND_PHASE_FOR = {           # pipeline phase id -> Skill-51 narrative phase
     "P-SP-STRUCTURE":  "avatar-section",
     "P4-COPY":         "signature-story",
@@ -146,12 +151,24 @@ def _try_record_bundle(run_dir: Path, phase_id: str,
 # Resolver — once per pipeline phase
 # ---------------------------------------------------------------------------
 def resolve_for_phase(run_dir: Path, phase_id: str,
-                       avatar_context: str = "") -> Optional[Dict[str, Any]]:
+                       avatar_context: str = "",
+                       persona_context: Optional[Dict[str, Any]] = None
+                       ) -> Optional[Dict[str, Any]]:
     """Resolve the blended-persona governance bundle for one pipeline phase.
 
     Returns None immediately for any phase_id not in BLEND_PHASE_FOR (22 of
     26 phases — keep the critical path clean). On match: imports
     blend_voice_governance, calls governed_phase_voice under a hard timeout.
+
+    PRES-031: the caller (Engine._run_phase) builds the canonical scoped
+    persona context (presentation_job.persona_context.build_persona_context:
+    client/company/presentation IDs, audience, topic, offer, approved owner
+    voice, sales framework) and passes it as `persona_context`. The
+    avatar_context string is DERIVED from that context when the caller does
+    not supply one explicitly -- the seam never receives generic phase text
+    alone. The COMPLETE bundle caches by scoped input/context hash
+    (persona_context cache key: client+presentation+context -- never shared
+    across runs); the dual-persona algorithm itself is untouched.
 
     Failure modes:
     - LegacyIntakeVoiceRequired -> continue, record persona_governance marker
@@ -160,6 +177,21 @@ def resolve_for_phase(run_dir: Path, phase_id: str,
     narrative = BLEND_PHASE_FOR.get(phase_id)
     if narrative is None:
         return None
+
+    from presentation_job import persona_context as _pc
+    if persona_context is None:
+        try:
+            persona_context = _pc.build_persona_context(run_dir, phase_id)
+        except Exception:  # noqa: BLE001 -- context build never blocks
+            persona_context = None
+    cached_bundle = None
+    if persona_context is not None:
+        cached_bundle = _pc.lookup_bundle(run_dir, persona_context)
+        if cached_bundle is not None:
+            _try_record_bundle(run_dir, phase_id, narrative, cached_bundle)
+            return cached_bundle
+        if not avatar_context:
+            avatar_context = _avatar_text_from_context(persona_context)
 
     mod = load_blend_module()
     if mod is None:
@@ -180,41 +212,116 @@ def resolve_for_phase(run_dir: Path, phase_id: str,
         return {"persona_governance": "legacy-intake-tone",
                 "phase_id": phase_id}
 
-    # Normal path: call governed_phase_voice under a hard timeout.
-    # (Fix 28, 2026-09-02) One retry: a single timed-out attempt no longer
-    # blocks the phase immediately. Attempt 1 gets BLEND_TIMEOUT_S; if it
-    # times out, exactly one fresh attempt (a new executor thread, so a wedged
-    # first call cannot poison the retry) gets the same wall; only a second
-    # timeout raises TimeoutError and blocks the phase.
-    import concurrent.futures
-    bundle = None
-    attempts = 2
-    for attempt in range(1, attempts + 1):
-        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        try:
-            fut = ex.submit(
-                mod.governed_phase_voice,
-                narrative, avatar_context,
-                department="presentations", record=True)
-            try:
-                bundle = fut.result(timeout=BLEND_TIMEOUT_S)
-                break
-            except concurrent.futures.TimeoutError:
-                if attempt >= attempts:
-                    raise TimeoutError(
-                        f"blend_voice_governance.governed_phase_voice('{narrative}') "
-                        f"timed out after {BLEND_TIMEOUT_S}s on attempt {attempt} "
-                        f"of {attempts} for phase {phase_id}. The persona "
-                        "resolution seam (persona_for_job.py) did not respond "
-                        "within the governance wall; one retry was spent.") from None
-                import time as _time
-                _time.sleep(1.0)
-        finally:
-            ex.shutdown(wait=False)
+    # Normal path: call governed_phase_voice under ONE absolute deadline.
+    #
+    # (PRES-054, 2026-09-09) Replaces the Fix-28 shape. The defect: a timed-out
+    # Future did not stop the selector subprocess the seam had spawned (its own
+    # default spawn ceiling was 600 s vs this module's 90 s wall), and
+    # ``shutdown(wait=False)`` left the wedge running while the retry started —
+    # expensive work alive under a fresh attempt, unaccounted capacity.
+    #
+    # Now: ONE absolute monotonic deadline (persona_deadline.Deadline) bounds
+    # every retry; each attempt runs on its own executor thread; the executor
+    # holds ONE governor lease for the whole attempt and releases it exactly
+    # once; a timed-out attempt has its OWNED child process tree SIGTERM'd,
+    # SIGKILL'd and reaped BEFORE the next attempt is admitted (a Future cancel
+    # is never treated as proof the subprocess stopped — the reap proof is).
+    # Attempts stay bounded (MAX_RESOLVE_ATTEMPTS); TimeoutError/PersonaCancelled
+    # still block the phase (callers' existing except handling unchanged), and
+    # persona_deadline.record_event emits visible persona_timeout /
+    # persona_cancelled state into THIS run's own state.json only.
+    from .persona_deadline import (
+        PersonaCancelled,
+        PersonaExecutor,
+        PersonaTimeout,
+        current_budget_s,
+        record_event,
+    )
+
+    executor = PersonaExecutor(job_id="presentation-job", phase_id=phase_id,
+                               run_dir=Path(run_dir),
+                               budget_s=current_budget_s())
+    try:
+        bundle = executor.run(mod.governed_phase_voice, narrative,
+                              avatar_context, department="presentations",
+                              record=True)
+    except PersonaTimeout as exc:
+        record_event(run_dir, "persona_timeout",
+                     f"persona resolution for {phase_id} exceeded the "
+                     f"absolute deadline ({exc}); owned child tree terminated "
+                     "and reaped before this state was recorded",
+                     phase_id=phase_id, proof=exc.proof)
+        raise TimeoutError(str(exc)) from None
+    except PersonaCancelled as exc:
+        record_event(run_dir, "persona_cancelled",
+                     f"persona resolution for {phase_id} was cancelled; "
+                     "owned child tree terminated and reaped",
+                     phase_id=phase_id, proof=exc.proof)
+        raise RuntimeError(str(exc)) from None
 
     # Write the bundle to state.json and record the event.
     _try_record_bundle(run_dir, phase_id, narrative, bundle)
+    # PRES-031: cache the COMPLETE bundle under the scoped key (no-op when
+    # no context was built). The owner-selected voice is asserted intact
+    # before caching: a bundle that dropped it is a seam fault, not a cache
+    # entry.
+    if persona_context is not None and isinstance(bundle, dict):
+        try:
+            from presentation_job import persona_context as _pc2
+            _assert_owner_voice_intact(persona_context, bundle)
+            _pc2.store_bundle(run_dir, persona_context, bundle)
+        except Exception:  # noqa: BLE001 -- cache/voice-assert never blocks
+            pass
     return bundle
+
+
+def _avatar_text_from_context(
+        persona_context: Dict[str, Any]) -> str:
+    """Derive the seam's avatar_context string from the scoped context
+    (PRES-031 step 1). Audience + topic + offer + owner voice + framework --
+    never generic phase text alone."""
+    parts = []
+    for label, section in (("audience", (persona_context.get("audience")
+                                        or {}).get("value")),
+                           ("topic", (persona_context.get("topic")
+                                      or {}).get("value")),
+                           ("offer", (persona_context.get("offer")
+                                      or {}).get("value")),
+                           ("owner voice", (persona_context.get("owner_voice")
+                                            or {}).get("value")),
+                           ("frame", (persona_context.get("signature_frame")
+                                      or {}).get("value"))):
+        if section:
+            parts.append(f"{label}: {section}")
+    framework = persona_context.get("framework")
+    if framework:
+        parts.append(f"framework: {framework}")
+    return "; ".join(parts)
+
+
+def _assert_owner_voice_intact(persona_context: Dict[str, Any],
+                               bundle: Dict[str, Any]) -> None:
+    """PRES-031 QC3: the owner-named voice survives into the bundle.
+
+    The bundle carries execution persona and audience voice as separate
+    fields with recorded IDs/hashes (persona_context); the seam's bundle
+    must not silently replace an owner-selected voice with a default. When
+    the context names an owner voice, the bundle text must reference it
+    (case-insensitive substring of the voice's leading significant words)
+    or carry it in a dedicated owner_voice field -- else ValueError.
+    """
+    voice = str((persona_context.get("owner_voice") or {}).get("value")
+                or "").strip()
+    if not voice:
+        return
+    blob = json.dumps(bundle, ensure_ascii=False).lower()
+    import re as _re
+    words = [w for w in _re.findall(r"[a-z]{4,}", voice.lower())][:6]
+    if words and not any(w in blob for w in words):
+        if "owner_voice" not in blob:
+            raise ValueError(
+                "owner-selected voice dropped by the persona seam: "
+                f"{voice[:80]!r} has no trace in the resolved bundle")
 
 
 # ---------------------------------------------------------------------------

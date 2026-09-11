@@ -972,6 +972,28 @@ def _html_content_strings_present(html: str, fields: Dict[str, str]) -> List[str
 # kie.ai design — reuse kie_generate.py verbatim (subprocess), never a new
 # implementation of the KIE call (task rule: reuse the canonical helper).
 # ---------------------------------------------------------------------------
+def _kie_tasks_module():
+    """Import the shared PRES-032 lifecycle (kie_tasks.py beside this file)."""
+    here = _here()
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    import kie_tasks  # noqa: E402
+    return kie_tasks
+
+
+def _kie_spec_for(kie_tasks, prompt_entry: Dict[str, Any]) -> dict:
+    return kie_tasks.build_spec(
+        prompt=prompt_entry.get("prompt", ""),
+        mode=prompt_entry.get("mode", "t2i"),
+        model=None,  # builders pin model via kie_generate catalog, not here
+        aspect_ratio=prompt_entry.get("aspect_ratio", ASPECT_RATIO),
+        resolution=prompt_entry.get("resolution", RESOLUTION),
+        copy=prompt_entry.get("copy"),
+        input_urls=(prompt_entry.get("input_urls", [])
+                    if str(prompt_entry.get("mode", "t2i")).lower() == "i2i" else []),
+    )
+
+
 def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[bool, str]:
     kie_script = _here() / "kie_generate.py"
     if not kie_script.is_file():
@@ -986,6 +1008,21 @@ def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
+        # PRES-032: reuse is bound to the CURRENT prompt revision. The
+        # lifecycle sidecar (.qc.json) records the exact spec hash + sha256,
+        # so a changed hero prompt NEVER accepts the old PNG merely because
+        # it exists — only a byte-current render with matching QC counts.
+        try:
+            kie_tasks = _kie_tasks_module()
+        except Exception as exc:  # noqa: BLE001 — no lifecycle, no reuse claim
+            return False, f"kie_generate.py exited {proc.returncode} ({exc})"
+        reused = [p.get("slide") for p in prompts
+                  if kie_tasks.render_reuse_ok(
+                      renders_dir / f"{p.get('slide')}.png",
+                      kie_tasks.spec_hash(_kie_spec_for(kie_tasks, p)))]
+        if reused and len(reused) == len(prompts):
+            return True, ("kie_generate.py: reused spec-matched verified "
+                          f"hero renders ({', '.join(str(r) for r in reused)})")
         return False, f"kie_generate.py exited {proc.returncode}"
     return True, "kie_generate.py: all slides downloaded"
 

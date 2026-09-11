@@ -39,5 +39,16 @@ enabled = true
 #                            on the box as env INTAKE_ADMIN_TOKEN.
 #   COMMAND_CENTER_URL     -- the Command Center board base URL (used by
 #                            /api/dept-start to POST /api/tasks/ingest).
-#   CC_DEPT_START_TOKEN    -- bearer the CC board expects for ingest (optional;
-#                            falls back to INTAKE_ADMIN_TOKEN).
+#   CC_HANDOFF_SECRET      -- PRES-007: REQUIRED for /api/dept-start. Scoped
+#                            server-only HMAC secret; /api/dept-start signs the
+#                            exact serialized ingest body with
+#                            x-webhook-signature = HMAC-SHA256(CC_HANDOFF_SECRET,
+#                            rawBody) — the same contract CC's ingest route
+#                            verifies under its WEBHOOK_SECRET. Set it to the
+#                            destination box's WEBHOOK_SECRET value. No bearer
+#                            fallback: the old CC_DEPT_START_TOKEN ->
+#                            INTAKE_ADMIN_TOKEN fallback combined unrelated
+#                            privileges and is removed.
+#   CC_DEPT_START_TOKEN    -- optional bearer the CC board expects alongside the
+#                            HMAC (the box's MC_API_TOKEN when distinct); no
+#                            INTAKE_ADMIN_TOKEN fallback.

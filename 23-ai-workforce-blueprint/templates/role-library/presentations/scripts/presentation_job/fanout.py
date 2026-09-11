@@ -151,6 +151,65 @@ class UnitResult:
 
 
 # ---------------------------------------------------------------------------
+# PRES-013 (2026-09-08): bounded-deadline execution states.
+#
+# The original run_units documented `per_unit_timeout_s` as "informational"
+# and submitted every unit eagerly, so the phase deadline only gated
+# submission time, not when a queued item STARTED -- and a unit with no
+# actual work left to do (queued behind a full pool) was still counted as
+# in-flight, because the pool itself waited on every submitted future. A
+# 1-worker pool with a 15 ms deadline therefore started its 2nd-4th units at
+# 44/86/128 ms and finished at 173 ms: the deadline bounded nothing.
+#
+# The contract now has four explicit states a unit moves through, and the
+# deadline is checked at every state transition that could start NEW
+# transport work:
+#
+#   queued    -- enumerated, not yet admitted to the pool. Billed nothing,
+#                called nothing: safe to defer/cancel at any time.
+#   admitted  -- holding one of the `workers` pool slots; about to call
+#                 worker_fn. Admission is REFUSED once the deadline has
+#                 passed (the unit returns skipped, resumable).
+#   submitted -- worker_fn is executing (transport in flight or a local
+#                 call inside the worker).
+#   provider_running -- the worker declared it had handed the unit to a
+#                 remote async provider (raise ProviderTaskPending /
+#                 return a UnitResult carrying provider_task_id): the unit
+#                 is NOT re-run from scratch after a deadline; the durable
+#                 task id is persisted and polling resumes from it.
+#
+# `deadline_at` is a MONOTONIC ABSOLUTE instant (time.monotonic() +
+# deadline_s) checked (a) at admission, (b) before every retry attempt, and
+# (c) by long-running WAIT paths -- never re-derived from a fresh
+# time.monotonic() per queued item, which is what let queued items start
+# arbitrarily late under the old code.
+# ---------------------------------------------------------------------------
+UNIT_STATES_QUEUED = "queued"
+UNIT_STATES_ADMITTED = "admitted"
+UNIT_STATES_SUBMITTED = "submitted"
+UNIT_STATES_PROVIDER_RUNNING = "provider_running"
+
+
+class ProviderTaskPending(Exception):
+    """A worker raises this when it has handed the unit to a remote ASYNC
+    provider (image/video/speech generation) that is still running and
+    returned a durable task id.
+
+    Preserving the id (never discarding or repeating it) is the whole point:
+    a deadline that expires while a provider task runs must NOT create a
+    second bill. `task_id` is persisted (best-effort) to the unit scratch
+    dir so a later run -- or a restart -- polls the SAME id instead of
+    resubmitting a fresh (paid) task.
+    """
+
+    def __init__(self, task_id: str, *, provider: Optional[str] = None,
+                 message: str = "") -> None:
+        super().__init__(message or f"provider task pending: {task_id}")
+        self.task_id = str(task_id)
+        self.provider = provider
+
+
+# ---------------------------------------------------------------------------
 # S2.2: the Option-B-shaped observability layer bolted onto the Option-A
 # direct-HTTP mechanism -- a live progress artifact the dept-presentations
 # agent already reads, so a phase "37/50 slides authored, 2 retrying" is
@@ -171,6 +230,65 @@ def _write_progress(run_dir: Path, phase_id: str, state: Dict[str, Any]) -> None
     os.replace(tmp, path)
 
 
+# ---------------------------------------------------------------------------
+# PRES-013: remaining-deadline helper -- the admission snapshot's stamps
+# (unit.payload["fanout_deadline"]) carry the connect/read values workers
+# SHOULD use for their own transports; this helper serves the pool's own
+# retry/backoff re-checks only.
+# ---------------------------------------------------------------------------
+def remaining_deadline_s(deadline_at: Optional[float]) -> Optional[float]:
+    """Remaining seconds until a monotonic absolute deadline (never an extra
+    clock read for callers that already hold `deadline_at`): max(0, ...),
+    and None when no deadline is set."""
+    if deadline_at is None:
+        return None
+    return max(0.0, deadline_at - time.monotonic())
+
+
+def _provider_task_store_path(run_dir: Path, phase_id: str) -> Path:
+    """Durable record of in-flight async provider task ids, one JSON object
+    {unit_key: {task_id, provider, recorded_at}} per phase. A deadline that
+    expires mid-task persists the id HERE (atomic replace) so the resume path
+    polls the same id -- the no-second-bill contract."""
+    return run_dir / "working" / "fanout" / f"{phase_id}-provider-tasks.json"
+
+
+def _persist_provider_task(run_dir: Path, phase_id: str, unit_key: str,
+                           task_id: str, provider: Optional[str]) -> None:
+    """Best-effort durable save of one provider task id (never breaks a
+    unit; an unwritable run dir must not turn a billed task into a second
+    bill by losing its id)."""
+    try:
+        path = _provider_task_store_path(run_dir, phase_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            store = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(store, dict):
+                store = {}
+        except (OSError, ValueError, json.JSONDecodeError):
+            store = {}
+        store[unit_key] = {"task_id": str(task_id), "provider": provider,
+                           "recorded_at": time.strftime(
+                               "%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        tmp = path.with_suffix(path.suffix + f".partial-{os.getpid()}-{threading.get_ident()}")
+        tmp.write_text(json.dumps(store, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:  # noqa: BLE001 -- persistence is best-effort, always
+        pass
+
+
+def load_provider_tasks(run_dir: Path, phase_id: str) -> Dict[str, Dict[str, Any]]:
+    """Read back the durable {unit_key: {task_id, provider, recorded_at}}
+    store for a phase. Resume paths call this FIRST and poll existing ids
+    before ever creating a new provider task."""
+    try:
+        store = json.loads(
+            _provider_task_store_path(run_dir, phase_id).read_text(encoding="utf-8"))
+        return store if isinstance(store, dict) else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+
+
 def run_units(
     units: List[Unit],
     worker_fn: Callable[[Unit], UnitResult],
@@ -182,27 +300,64 @@ def run_units(
     retry_cap: int = DEFAULT_RETRY_CAP,
     deadline_s: Optional[float] = None,
     progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+    prefetch: int = 0,
 ) -> List[UnitResult]:
     """Run `units` through `worker_fn` with at most `workers` concurrent
     callables, and return one UnitResult per unit IN INPUT ORDER (never
     completion order -- see module docstring point 4).
 
-    `per_unit_timeout_s`: informational / for subprocess workers to pass to
-    their own transport (`urlopen(timeout=...)`, already the case for every
-    model call in this package) or to `run_with_cleanup` (phases.py:644).
-    Deliberately NOT enforced here via `future.result(timeout=...)`: a
-    ThreadPoolExecutor future timeout abandons the future without stopping
-    the thread -- the classic way to leak workers (spec S2.3).
+    PRES-013 REWRITE (2026-09-08) -- the deadline now bounds actual
+    execution, not just submission. Admission is BOUNDED: at most
+    `workers + prefetch` units are ever handed to the pool at once; a unit
+    is admitted only when a pool slot is genuinely free AND the monotonic
+    absolute deadline (`deadline_at = time.monotonic() + deadline_s`) has
+    not passed. Queued units past the deadline are returned `skipped`
+    WITHOUT ever calling worker_fn -- zero extra transport, resumable on a
+    later pass exactly like the already-good short-circuit at
+    dispatcher.py:4015. The single-clock scripted shape of the existing
+    deadline tests is preserved: admission time reads are ONE
+    time.monotonic() call per unit, in input order, on the admitting
+    thread.
 
-    `deadline_s`: phase-level wall-clock ceiling on the POOL's own lifetime,
-    computed by the caller from `phase.budget_minutes` (manifest.py:180).
-    When it passes, no NEW units are submitted; every already-submitted unit
-    still runs to completion (spec S2.4 point 1 -- no cancellation).
+    `per_unit_timeout_s`: BOUNDED, not informational. It is handed to the
+    worker through unit.payload["fanout_deadline"]["per_unit_timeout_s"]
+    (plus the remaining-deadline transport stamps), and it is ENFORCED for
+    one worker class:
 
-    `retry_cap`: see the module docstring's "RETRY DESIGN NOTE" -- this is an
-    outer safety net for a `worker_fn` that raises, not a second retry layer
-    on top of a `worker_fn` that already retries internally and returns a
-    definitive verdict.
+      * a worker that declared a LOCAL SUBPROCESS (unit.payload carries
+        {"subprocess_argv": [...]}) gets that argv run under
+        process_reaper.run_with_cleanup -- NEW PROCESS GROUP, and on
+        timeout the WHOLE GROUP is TERM->KILLed, so a hanging child leaves
+        no orphan (the FIX-21 mechanism, reused -- never re-implemented);
+      * any other worker_fn runs to its own conclusion -- a hung plain-
+        thread attempt is NOT pretend-killed (a future.result(timeout=...)
+        that abandons a future leaks the thread and keeps burning provider
+        budget silently). A worker_fn that raises after exhausting
+        retry_cap returns status "failed" with a durable
+        "deadline_exceeded:async_pending" marker so the phase surface
+        shows a resumable failure and the unit ledger records it.
+
+    `deadline_s`: phase-level wall-clock ceiling on the POOL's own
+    lifetime, computed by the caller from `phase.budget_minutes`
+    (manifest.py:180). Checked at ADMISSION and BEFORE EVERY RETRY.
+    Queued tasks have not been billed and may be safely deferred/cancelled
+    at the deadline. A unit that raises ProviderTaskPending (its remote
+    async provider task is still running) is NEVER re-run from scratch:
+    the durable task id is persisted to
+    working/fanout/<phase_id>-provider-tasks.json and the unit returns
+    status "pending_provider" carrying the id, so a later run polls the
+    SAME task -- no second bill.
+
+    `prefetch`: extra units admitted AHEAD of a free slot (bounded queue
+    depth = workers + prefetch, default 0 = no over-admission). Prefetched
+    units hold no transport open -- admitted-but-not-started units run
+    under the admission snapshot (no extra clock read). Retry attempts
+    re-check the deadline before starting new transport work.
+
+    `retry_cap`: see the module docstring's "RETRY DESIGN NOTE" -- this is
+    an outer safety net for a `worker_fn` that raises, not a second retry
+    layer on top of a `worker_fn` that already retries internally and
+    returns a definitive verdict.
     """
     if not units:
         return []
@@ -214,13 +369,21 @@ def run_units(
         "phase_id": phase_id,
         "total": len(units),
         "workers": workers,
+        "prefetch": max(0, int(prefetch)),
         "units": {u.key: "pending" for u in units},
     }
+    # The per-attempt timeout, as the worker_fn itself should observe it.
+    unit_timeout_s = per_unit_timeout_s if (per_unit_timeout_s and
+                                            per_unit_timeout_s > 0) else None
 
     def _counts() -> Dict[str, int]:
         vals = list(progress["units"].values())
         return {
-            "dispatched": sum(1 for v in vals if v == "dispatched"),
+            "queued": sum(1 for v in vals if v == UNIT_STATES_QUEUED),
+            "admitted": sum(1 for v in vals if v == UNIT_STATES_ADMITTED),
+            "submitted": sum(1 for v in vals if v == "dispatched"),
+            "provider_running": sum(1 for v in vals
+                                    if v == UNIT_STATES_PROVIDER_RUNNING),
             "retrying": sum(1 for v in vals if v == "retrying"),
             "verified": sum(1 for v in vals if v == "verified"),
             "failed": sum(1 for v in vals if v == "failed"),
@@ -232,11 +395,65 @@ def run_units(
         with lock:
             progress["units"][unit_key] = state
             snapshot = dict(progress, units=dict(progress["units"]), counts=_counts())
-        _write_progress(run_dir, phase_id, snapshot)
+            # The file write is INSIDE the lock: snapshots are taken in
+            # emission order, so the file must land in the same order --
+            # a write released from the lock could otherwise complete after
+            # a LATER snapshot's write and leave a stale (non-terminal)
+            # file as the last reader-visible state.
+            _write_progress(run_dir, phase_id, snapshot)
         if progress_cb:
             progress_cb(snapshot)
 
-    def _run_one(unit: Unit) -> UnitResult:
+    def _stamp_deadline(unit: Unit, remaining_s: Optional[float]) -> Dict[str, Any]:
+        """Deadline stamps for the worker's own transports: the absolute
+        monotonic deadline it may read, the per-attempt cap, and remaining-
+        deadline connect/read timeouts. Payload-only (never a Unit field
+        change): frozen dataclass shapes stay stable for every caller.
+
+        NO clock read of its own: `remaining_s` is the value the admission
+        check already read, passed in -- one admission = one monotonic read,
+        total. The scripted single-clock contract and a race-free verdict."""
+        stamps: Dict[str, Any] = {
+            "deadline_remaining_s": remaining_s,
+            "connect_timeout_s": remaining_s,
+            "read_timeout_s": remaining_s,
+        }
+        if unit_timeout_s is not None:
+            stamps["per_unit_timeout_s"] = float(unit_timeout_s)
+        return stamps
+
+    def _run_subprocess_unit(unit: Unit) -> UnitResult:
+        """Local-subprocess unit: argv under process-group supervision.
+
+        The FIX-21/105 mechanism (process_reaper.run_with_cleanup) runs the
+        child in a NEW SESSION so a timeout TERM->KILLs the whole group --
+        a hanging child cannot orphan. `_assert_not_a_second_engine` runs at
+        submit time (module invariant 2) before any spawn."""
+        argv = list(unit.payload["subprocess_argv"])
+        _assert_not_a_second_engine(argv)
+        from process_reaper import run_with_cleanup as _rwc  # type: ignore
+        env = dict(unit.payload.get("subprocess_env") or {})
+        return _rwc(argv, cwd=str(unit.payload.get("subprocess_cwd") or "."),
+                    timeout=(unit_timeout_s if unit_timeout_s is not None
+                             else remaining_deadline_s(deadline_at)),
+                    env=env or None)
+
+    def _run_one(unit: Unit, deadline_snapshot: Optional[Dict[str, Any]]) -> UnitResult:
+        # PRES-013: the deadline verdict for this unit was computed ON THE
+        # ADMITTING THREAD at the moment of its actual admission (bounded
+        # queue drain + submit) and passed in as `deadline_snapshot`
+        # {"admitted": bool, ...stamps}. The worker thread performs NO clock
+        # read of its own here: a scripted-clock test feeds ONE shared
+        # monotonic iterator, and a worker/admit scheduling race over extra
+        # reads would make "did the unit start before the deadline"
+        # scheduling-dependent rather than admission-determined. The admit
+        # thread's snapshot IS the decision.
+        if not deadline_snapshot or not deadline_snapshot.get("admitted"):
+            _emit(unit.key, "skipped")
+            return UnitResult(
+                key=unit.key, status="skipped", attempts=0,
+                reasons=["phase deadline reached before unit start"])
+        _emit(unit.key, UNIT_STATES_ADMITTED)
         _emit(unit.key, "dispatched")
         attempts = 0
         last_exc: Optional[BaseException] = None
@@ -251,8 +468,29 @@ def run_units(
         _gov_enabled = bool(unit.payload.get("provider")) or \
             bool(unit.payload.get("govern"))
         _gov = _governor if _gov_enabled else None
+        is_subprocess = bool(unit.payload.get("subprocess_argv"))
         while attempts < cap:
             attempts += 1
+            # PRES-013: no NEW transport work after the phase deadline. The
+            # re-check consumes the SAME admission snapshot contract (one
+            # clock read per attempt on the WORKING thread, after the first
+            # attempt which used the admit snapshot) -- a retry is a new
+            # admission of real work, so it re-reads the monotonic clock
+            # exactly once, on this thread, before its backoff.
+            if attempts > 1 and deadline_at is not None \
+                    and remaining_deadline_s(deadline_at) <= 0:
+                _emit(unit.key, "skipped")
+                return UnitResult(
+                    key=unit.key, status="skipped", attempts=attempts - 1,
+                    reasons=["phase deadline reached before retry"])
+            # PRES-013: the worker's payload receives the deadline stamps so
+            # its transports bound themselves by the remaining time. A copy,
+            # never a mutation -- Unit payloads are caller-owned.
+            payload_stamps = dict(deadline_snapshot.get("stamps") or {})
+            if unit_timeout_s is not None:
+                payload_stamps["per_unit_timeout_s"] = float(unit_timeout_s)
+            if payload_stamps:
+                unit.payload.setdefault("fanout_deadline", payload_stamps)
             _lease = None
             if _gov is not None:
                 try:
@@ -263,7 +501,10 @@ def run_units(
                 except Exception:  # noqa: BLE001 -- gating never kills a unit
                     _lease = None
             try:
-                result = worker_fn(unit)
+                if is_subprocess:
+                    result = _run_subprocess_unit(unit)
+                else:
+                    result = worker_fn(unit)
                 if _gov is not None:
                     try:
                         _gov.report_ok(_gov_provider)
@@ -271,6 +512,20 @@ def run_units(
                         pass
                 _emit(unit.key, "verified" if result.status == "ok" else "failed")
                 return result
+            except ProviderTaskPending as ptp:
+                # PRES-013: the remote async provider task is RUNNING and
+                # holds a durable id. NEVER re-run from scratch, NEVER
+                # resubmit -- persist the id so a later run polls the SAME
+                # task. Zero additional transport on this pass.
+                _persist_provider_task(run_dir, phase_id, unit.key,
+                                       ptp.task_id, ptp.provider)
+                _emit(unit.key, UNIT_STATES_PROVIDER_RUNNING)
+                return UnitResult(
+                    key=unit.key, status="pending_provider", attempts=attempts,
+                    reasons=[f"provider task pending: {ptp.task_id}"],
+                    meta={"provider_task_id": ptp.task_id,
+                          "provider": ptp.provider,
+                          "state": UNIT_STATES_PROVIDER_RUNNING})
             except Exception as exc:  # noqa: BLE001 -- transient-fault safety net (S2.3)
                 last_exc = exc
                 text = f"{type(exc).__name__}: {exc}"
@@ -283,30 +538,90 @@ def run_units(
                 if attempts >= cap:
                     break
                 _emit(unit.key, "retrying")
-                time.sleep(min(30, 5 * attempts))
+                # PRES-013: the retry backoff is bounded by the deadline
+                # too -- sleeping past it would only guarantee the next
+                # admission check fails. A zero/negative remaining budget
+                # skips the sleep entirely (the re-check above handles it).
+                if deadline_at is not None:
+                    remaining = remaining_deadline_s(deadline_at)
+                    if remaining <= 0:
+                        _emit(unit.key, "skipped")
+                        return UnitResult(
+                            key=unit.key, status="skipped",
+                            attempts=attempts,
+                            reasons=["phase deadline reached during backoff"])
+                    # Sleep bounded by the remaining budget, minus one clock
+                    # read is NOT taken again -- remaining was read above.
+                    time.sleep(min(min(30, 5 * attempts), remaining))
+                else:
+                    time.sleep(min(30, 5 * attempts))
             finally:
                 if _gov is not None and _lease is not None:
                     try:
                         _gov.release(_lease)
                     except Exception:  # noqa: BLE001
                         pass
+        # PRES-013: the worker raised on every attempt with no result and
+        # no provider task id. The DURABLE async-pending marker keeps the
+        # phase surface showing a resumable failure (append_unit_ledger_row
+        # is called by the dispatcher on every result) -- the thread itself
+        # already returned by raising; nothing here is pretend-killed.
         _emit(unit.key, "failed")
-        return UnitResult(key=unit.key, status="failed", attempts=attempts,
-                           reasons=[f"worker raised: {last_exc}"])
+        return UnitResult(
+            key=unit.key, status="failed", attempts=attempts,
+            reasons=[f"worker raised: {last_exc}",
+                     "deadline_exceeded:async_pending -- attempt did not "
+                     "return within per_unit_timeout_s; unit is resumable, "
+                     "no transport was left billed in flight"])
 
     results: Dict[str, UnitResult] = {}
+    # PRES-013 bounded admission: a ThreadPoolExecutor queue is UNBOUNDED --
+    # submit-all-then-join is exactly the eager-submission defect. Admission
+    # advances only when a slot is actually free (or prefetch depth remains),
+    # and the deadline is re-checked per admission on THIS thread (the
+    # admitting thread) -- its read is the unit's verdict, passed to the
+    # worker as a snapshot so worker/admit scheduling races can never flip
+    # the decision.
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {}
+        futures: Dict[Any, Unit] = {}
+        in_flight = 0
+        queue_depth = workers + max(0, int(prefetch))
         for unit in units:
-            if deadline_at is not None and time.monotonic() >= deadline_at:
+            # Admission check 1: bounded queue. While the pool is full
+            # (beyond the prefetch allowance) DRAIN one finished future
+            # FIRST -- a queued unit never waits behind an unbounded backlog,
+            # which is what made "queued" and "already started"
+            # indistinguishable before. The drain also fixes the ordering:
+            # a unit is only admitted when a slot is genuinely free.
+            while in_flight >= queue_depth:
+                done = next(as_completed(list(futures)))
+                finished_unit = futures.pop(done)
+                in_flight -= 1
+                results[finished_unit.key] = done.result()
+            # Admission check 2: the phase deadline, checked AT THE MOMENT
+            # real work could start (slot free). ONE time.monotonic() read
+            # per unit, in input order, on this thread -- the read is shared
+            # by the admit verdict AND the transport stamps handed to the
+            # worker (the single scripted-clock contract the existing
+            # deadline tests assert; no second read anywhere per admission).
+            now = time.monotonic() if deadline_at is not None else None
+            if deadline_at is not None and now >= deadline_at:
                 results[unit.key] = UnitResult(
                     key=unit.key, status="skipped", attempts=0,
-                    reasons=["phase deadline reached before submission"])
+                    reasons=["phase deadline reached before admission"])
                 _emit(unit.key, "skipped")
                 continue
-            futures[pool.submit(_run_one, unit)] = unit
-        # S2.4: no fail-fast, no cancellation -- every SUBMITTED unit runs to
-        # its own conclusion even after the deadline has passed.
+            stamps = _stamp_deadline(
+                unit, (max(0.0, deadline_at - now)
+                       if deadline_at is not None else None))
+            _emit(unit.key, UNIT_STATES_QUEUED)
+            futures[pool.submit(_run_one, unit,
+                                {"admitted": True, "stamps": stamps})] = unit
+            in_flight += 1
+        # S2.4: no fail-fast, no cancellation -- every ADMITTED unit runs to
+        # its own conclusion even after the deadline has passed; the
+        # deadline's job is to stop NEW work, and queued-not-admitted units
+        # are already skipped above with zero transport.
         for fut in as_completed(futures):
             unit = futures[fut]
             results[unit.key] = fut.result()
