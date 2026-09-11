@@ -26,7 +26,9 @@ class Compatibility(unittest.TestCase):
     def test_security_floor_and_resolver(self):
         compat=load_cc_compat(ROOT)
         self.assertEqual(compat['commandCenter']['minVersion'],'v7.3.1')
-        self.assertEqual(resolve_cc_tag(compat),'v7.3.1')
+        # pinnedTag moved to v7.3.2 (CC deploy-guard repair); the floor stays
+        # permissive at v7.3.1 so a roll does not block boxes mid-update.
+        self.assertEqual(resolve_cc_tag(compat),'v7.3.2')
         self.assertEqual(guard.SECURITY_MIN_VERSION, guard.stable_version(compat['commandCenter']['minVersion']))
         for version in ['6.1.0','7.0.0','7.1.0','7.1.1','7.1.2','7.1.3','7.1.4','7.1.5','7.2.0','7.3.0']:
             with self.assertRaises(ValueError): assert_min_version(version,compat)
