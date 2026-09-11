@@ -120,11 +120,17 @@ the existing capacity probe, exactly as before this fix.
 
 from __future__ import annotations
 
+import threading  # noqa: F401 -- [PRES-044] unique tmp naming in save_profile
+
+import contextlib
+import errno
 import fnmatch
 import json
 import os
 import re
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -230,6 +236,20 @@ def new_profile() -> Dict[str, Any]:
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+#: [PRES-044] Monotonic suffix for profile_version tokens: two saves inside
+#: the same wall-clock second must never mint the same token (the token IS
+#: the store revision -- see save_profile's expected_profile_version lock).
+_PROFILE_VERSION_SEQ = 0
+
+def _profile_version_token() -> str:
+    """A distinct-per-write optimistic-lock token: UTC timestamp (the
+    pre-existing format, kept for operator readability) plus a monotonic
+    sequence counter so two writes in one second still differ."""
+    global _PROFILE_VERSION_SEQ
+    _PROFILE_VERSION_SEQ += 1
+    return (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            + f"Z{_PROFILE_VERSION_SEQ:04d}")
+
 
 # ---------------------------------------------------------------------------
 # Redaction contract (per-section, on every write and every read-export)
@@ -316,22 +336,191 @@ def load_profile(config_dir: Optional[Path] = None) -> Dict[str, Any]:
     return redact_record(raw)
 
 
+class StoreRevisionConflict(RuntimeError):
+    """[PRES-044] A caller's expected_profile_version no longer matches the
+    store -- another writer's update is on disk and is preserved. Raised
+    instead of silently overwriting their fields; the caller may re-read,
+    re-merge and retry."""
+
+
+class StoreWriteError(RuntimeError):
+    """[PRES-044] The profile could not be written durably (disk full,
+    un-renameable tmp, ...). The previous file is untouched and the failure
+    is VISIBLE -- never a success claim over a lost write."""
+
+
+def _store_lock(path: Path):
+    """[PRES-044] One lock per store path spanning the whole
+    read -> validate -> merge -> write transaction: a re-entrant
+    process-local mutex layered under a cross-process fcntl.flock on
+    `<name>.lock`. flock() is per-open-file-description, so two threads of
+    one process do NOT exclude each other without the mutex; a crashed
+    writer never wedges the advisory lock (the OS drops it with the
+    process)."""
+    from . import capacity as _cap_locks
+    try:
+        return _cap_locks._store_lock(path)
+    except Exception:  # noqa: BLE001 -- standalone module, no capacity
+        with threading.Lock():
+            pass
+
+        @contextlib.contextmanager
+        def _locked():
+            yield
+        return _locked
+
+
+def _atomic_write_locked(path: Path, payload: dict) -> None:
+    """[PRES-044] The durable profile write, called WITH the store lock held.
+
+    Unique tmp (pid + thread + monotonic counter), fsync of the file, atomic
+    os.replace, fsync of the directory. Any failure removes the tmp and
+    re-raises as StoreWriteError with the previous file intact -- the old
+    data stays recoverable on disk and no success is ever claimed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(
+        f".json.tmp-{os.getpid()}-{threading.get_ident()}-{time.monotonic_ns()}")
+    try:
+        with open(str(tmp), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, indent=2) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:  # pragma: no cover - best effort on exotic filesystems
+            pass
+    except OSError as exc:
+        try:
+            tmp.unlink()
+        except OSError:  # pragma: no cover
+            pass
+        raise StoreWriteError(
+            f"{path}: durable profile write failed: {exc.__class__.__name__}: "
+            f"{exc}") from exc
+
+
 def save_profile(profile: Dict[str, Any],
-                 config_dir: Optional[Path] = None) -> Optional[Path]:
-    """Redact, then atomically write the profile. Returns the written path.
+                 config_dir: Optional[Path] = None,
+                 expected_profile_version: Optional[Any] = None) -> Optional[Path]:
+    """Redact, then transactionally write the profile. Returns the written path.
 
     Refused (returns None) when the flag is off -- the documented rollback
-    selects the no-persistence safe path."""
+    selects the no-persistence safe path.
+
+    [PRES-044] TRANSACTIONAL: the write is a unique tmp (pid+thread) +
+    fsync + atomic os.replace + directory fsync, all inside ONE lock
+    (`resource_profile.json.lock`, process-local mutex + cross-process
+    flock) that every load-modify-save caller must hold across its read
+    AND write -- use `with profile_transaction(config_dir) as prof:` so
+    concurrent writers for different providers serialise and BOTH persist
+    instead of last-write-wins. A write failure raises StoreWriteError with
+    the old file intact -- a visible, durable configuration error, never a
+    silent success over a lost write. Pass `expected_profile_version` (the
+    `profile_version` string read earlier) to have a stale writer REJECTED
+    with StoreRevisionConflict instead of clobbering a concurrent update.
+
+    `read of legacy state must not rewrite it` holds unchanged: load_profile
+    never writes; only save_profile does, under the lock."""
     if not flag_enabled():
         return None
     cleaned = redact_record(profile)
     cleaned["updated_at"] = _now()
     cleaned.setdefault(".schema_version", SCHEMA_VERSION)
+    # [PRES-044] ROTATE the optimistic-lock token on every successful save.
+    # The token is the store's revision (save_profile's
+    # expected_profile_version compares against it); a token that never
+    # moved would make every stale writer's expectation match forever and
+    # the conflict would never fire. Monotonic within the second so two
+    # writes inside the same wall-clock second still get distinct tokens.
+    cleaned["profile_version"] = _profile_version_token()
     path = profile_path(config_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cleaned, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    with _store_lock(path):
+        if expected_profile_version is not None:
+            current_version = None
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    current_version = raw.get("profile_version")
+            except (OSError, ValueError):
+                pass
+            if current_version != expected_profile_version:
+                raise StoreRevisionConflict(
+                    f"{path} changed under us: expected profile_version "
+                    f"{expected_profile_version!r}, found "
+                    f"{current_version!r} -- another writer's update is on "
+                    f"disk and is preserved; re-load, re-merge, retry. "
+                    f"Refusing to clobber their fields.")
+        _atomic_write_locked(path, cleaned)
+    return path
+
+
+@contextlib.contextmanager
+def profile_transaction(config_dir: Optional[Path] = None):
+    """[PRES-044] The one sanctioned read-modify-write shape for callers that
+    need read-merge-write atomicity on the profile:
+
+        with resource_profile.profile_transaction() as prof:
+            resource_profile.upsert_provider(prof, "ollama-cloud", plan_tier="$100/month")
+        # released: saved under the lock automatically
+
+    The lock (`resource_profile.json.lock`: process-local mutex +
+    cross-process flock) spans the whole read -> modify -> write, so two
+    simultaneous transactions serialise and BOTH persist. The profile dict
+    handed out is redacted-on-save as always; a StoreWriteError propagates
+    with the old file intact. Read-only consumers (load_profile, get_provider)
+    need no lock: the atomic replace guarantees they see either the old or
+    the new complete document, never a torn one."""
+    if not flag_enabled():
+        yield load_profile(config_dir)
+        return
+    path = profile_path(config_dir)
+    with _store_lock(path):
+        prof = load_profile(config_dir)
+        yield prof
+        save_profile(prof, config_dir)
+
+
+def migrate_profile_schema(profile: Dict[str, Any],
+                           target_version: int = SCHEMA_VERSION,
+                           config_dir: Optional[Path] = None) -> Path:
+    """[PRES-044] Explicit, backup-first schema migration.
+
+    A profile written by an OLDER `.schema_version` is migrated to
+    `target_version` ONLY through this function: it copies the current bytes
+    to `resource_profile.json.pre-schema<m>.bak` BEFORE writing, refuses the
+    migration when the backup cannot be written, and stamps the migration in
+    the document (`schema_migration_history`). load_profile never rewrites
+    legacy state -- the read of an old file must stay a read."""
+    path = profile_path(config_dir)
+    with _store_lock(path):
+        current_version = None
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                current_version = raw.get(".schema_version")
+        except (OSError, ValueError):
+            pass
+        if current_version is None or current_version >= target_version:
+            # nothing to migrate (absent / current / newer-than-code)
+            return path
+        backup = path.with_suffix(f".json.pre-schema{current_version}.bak")
+        try:
+            backup.write_bytes(path.read_bytes())
+        except OSError as exc:
+            raise StoreWriteError(
+                f"{path}: refusing .schema_version {current_version} -> "
+                f"{target_version} migration: pre-migration backup "
+                f"{backup} could not be written: {exc}") from exc
+        history = profile.setdefault("schema_migration_history", [])
+        history.append({"from": current_version, "to": target_version,
+                        "backup": str(backup), "migrated_at": _now()})
+        profile[".schema_version"] = target_version
+        _atomic_write_locked(path, redact_record(profile))
     return path
 
 
