@@ -215,6 +215,7 @@ async function mintSession(request, env) {
     await bucket.delete(sessionKey(newToken));
     return jsonResponse({ status: "exists", token: claimed.value.token, capability_url: capabilityUrl(request, claimed.value.token), reused: true });
   }
+  await saveRunIndex(env, session.run_id, [{ token: newToken, session_id: sessionId, status: "open", expires_at: expires }]);
   return jsonResponse({ status: "created", token: newToken, session_id: sessionId, capability_url: capabilityUrl(request, newToken), confirm_code: confirmCode, expires_at: expires, run_id: session.run_id, intake_session_id: session.intake_session_id, company_id: companyId, installation_id: installationId, presentation_id: presentationId }, 201);
 }
 

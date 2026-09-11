@@ -177,3 +177,13 @@ test("PRES-024 [deployed-r2]: legacy contract intact — reuse, ordered answers,
   const intakes = await h.handle("GET", "/api/intake/list", { token: "admin-tok" });
   assert.equal(intakes.status, 200);
 });
+
+test("renew by server-minted run id preserves answers", async () => {
+  const env = makeEnv(); const h = new WorkerHarness(worker, env);
+  const s = await mint(h, "renew-by-run");
+  await answer(h, s.token, "offer_name", "Offer");
+  const r = await h.handle("POST", "/api/sessions/renew", { token: "admin-tok", body: { run_id: s.run_id, company_id: "acme" } });
+  assert.equal(r.status, 201, JSON.stringify(r));
+  assert.equal(r.body.session_id, s.session_id);
+  assert.equal(r.body.answered_count, 1);
+});
