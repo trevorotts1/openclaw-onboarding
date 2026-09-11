@@ -1,0 +1,56 @@
+RR-W4-EWS-RR005-RR016 QC battery log
+branch: rr/w4-ews-rr005-rr016
+date: 2026-09-11T16:17:37Z
+
+######## FIXED BRANCH ########
+===== ews_ledger --self-test (exit=0) =====
+  durability case: PASS (state survives close/reopen)
+[ews_ledger] self-test: PASS
+===== ews_common --self-test (exit=0) =====
+  subtractive case: PASS (ceiling arithmetic; broken when threshold>=window)
+[ews_common] self-test: PASS
+===== ews_alert --self-test (exit=0) =====
+  escalation-dryrun case: PASS (dry run changes no state)
+[ews_alert] self-test: PASS
+===== ews_fleet --self-test (exit=0) =====
+  digest case: PASS (dark box renders RED)
+  severity case: PASS (a reported P1 renders RED)
+[ews_fleet] self-test: PASS
+===== rescue_admission --self-test (exit=0) =====
+  ok dry-run writes no journal row
+[rescue_admission] self-test: 39 checks done
+===== ews_companion --self-test (exit=0) =====
+  digest case: PASS (--json digest has the box name, aggregator-ready)
+[ews-companion] self-test: PASS
+===== RR-015 battery (exit=1; 1 known key-format assertion, see EVIDENCE) =====
+  ok v2 header emission is opt-in via env
+  ok opt-in emits the v2 per-enrollment headers
+  ok v2 header emission is OFF by default (live intake reads only x-rescue-secret)
+RR-015 FAILURES: ['dead-man event escalated on receipt']
+  FAIL dead-man event escalated on receipt 
+===== rr005 battery (exit=0) =====
+  ok 7 nonzero exit on refusal
+RR-005 FAILS=0
+===== rr016 battery (exit=0) =====
+  ok 9 missing tick dark/unknown
+RR-016 FAILS=0
+
+######## CLEAN BASE 15d6178890e0012c92768829f487fd454e93e03c (must FAIL) ########
+===== base rr005 (exit=1) =====
+    ops=[dict(r) for r in led.conn.execute("SELECT * FROM escalation_state").fetchall()]
+                          ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: escalation_state
+===== base rr016 (exit=1) =====
+  FAIL 3 collector outage dark :: {'ok': True, 'cycle': 1, 'boxes': 1, 'sentinel_dark': []}
+  ok 4 sentinel-only outage dark
+  FAIL 4 collector vs tick separated :: 
+  FAIL 5 reboot degraded, not healthy :: 
+  FAIL 6 malformed dark/unknown :: 
+  ok 6 recovery needs new verified tick
+  FAIL 7 future skew dark/degraded :: 
+  FAIL 8 rapid cycles one incident :: 5
+  ok 8 recoverable with new tick
+  FAIL 9 missing tick dark/unknown :: 
+RR-016 FAILS=10
+
+DISCRIMINATION: rr005-base-exit=1 rr005-fix-exit=0 rr016-base-exit=1 rr016-fix-exit=0
