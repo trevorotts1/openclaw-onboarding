@@ -87,6 +87,102 @@ def _box_file(box):
     return fleet_dir() / ("%s.json" % safe)
 
 
+def _parse_tick_ts(value):
+    """RR-016: strict UTC timestamp validation. Returns an aware datetime or
+    None. Missing/malformed/naive values are not ticks -- they become
+    UNKNOWN/DEGRADED downstream, never healthy."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        s = value.strip().replace("Z", "+00:00")
+        dt = __import__("datetime").datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        return None
+    return dt.astimezone(__import__("datetime").timezone.utc)
+
+
+def _tick_freshness_seconds(tick_ts, now=None):
+    """Age of a validated sentinel tick in seconds, or None when unvalidated."""
+    import datetime as _dt
+    dt = _parse_tick_ts(tick_ts)
+    if dt is None:
+        return None
+    base = now or _dt.datetime.now(_dt.timezone.utc)
+    return (base - dt).total_seconds()
+
+
+def _tick_thresholds():
+    th = C.load_skill_config("thresholds.json")
+    tick_min = th.get("tick", {}).get("cadence_minutes", 15)
+    agg_min = th.get("aggregator", {}).get("cycle_minutes", 60)
+    dead_cycles = th.get("aggregator", {}).get("dead_man_cycles", 2)
+    return tick_min, agg_min, dead_cycles
+
+
+def _sentinel_health(rec, now=None):
+    """RR-016 health from TICK AGE + PROGRESS, never from collection time.
+
+    Returns (status, age_seconds, reason) where status is one of
+    HEALTHY / STALE / UNKNOWN / DEGRADED:
+      UNKNOWN  -- no usable sentinel_tick_at at all (missing/malformed/naive)
+      DEGRADED -- tick parses but is unusable (future beyond skew allowance,
+                  clock skew, boot/sequence regression where supported)
+      STALE    -- tick valid but older than the dead-man horizon
+      HEALTHY  -- fresh tick inside the horizon
+    collector_seen_at NEVER feeds this decision: successful file/SSH reads
+    cannot reset the timer."""
+    import datetime as _dt
+    tick_min, agg_min, dead_cycles = _tick_thresholds()
+    horizon = dead_cycles * agg_min * 60
+    skew_allow = 5 * 60
+    base = now or _dt.datetime.now(_dt.timezone.utc)
+    tick_ts = rec.get("sentinel_tick_at", rec.get("last_tick_ts"))
+    dt = _parse_tick_ts(tick_ts)
+    if dt is None:
+        return "UNKNOWN", None, "missing or malformed sentinel_tick_at"
+    # Collector outage: no successful collection for a full dead-man horizon
+    # also means no verified progress -- tick age alone would call a freshly
+    # ingested box healthy on cycle 1 even when the collector then dies.
+    import datetime as _dt2
+    now2 = now or _dt2.datetime.now(_dt2.timezone.utc)
+    saw = _parse_tick_ts(rec.get("collector_seen_at"))
+    if saw is not None and (now2 - saw).total_seconds() > horizon:
+        return "STALE", (now2 - dt).total_seconds(), "collector silent for a full horizon"
+    age = (base - dt).total_seconds()
+    if age < -skew_allow:
+        return "DEGRADED", age, "sentinel_tick_at is in the future beyond skew allowance"
+    prev_verified = rec.get("last_verified_progress_at")
+    if prev_verified:
+        pdt = _parse_tick_ts(prev_verified)
+        if pdt is not None and dt < pdt:
+            return "DEGRADED", age, "tick regressed before last verified progress"
+    prev_seq = rec.get("last_tick_seq")
+    seq = rec.get("tick_seq")
+    if isinstance(prev_seq, int) and isinstance(seq, int) and seq < prev_seq:
+        return "DEGRADED", age, "monotonic tick sequence regressed"
+    prev_boot = rec.get("last_boot_id")
+    boot = rec.get("boot_id")
+    if prev_boot and boot and boot != prev_boot:
+        # A reboot is a fresh epoch, not continuity: keep the new tick but do
+        # not treat it as progress over the old epoch.
+        return "DEGRADED", age, "boot id changed (reboot): verify one more fresh tick"
+    if age > horizon:
+        return "STALE", age, "tick older than %d dead-man cycles" % dead_cycles
+    return "HEALTHY", age, "fresh advancing tick"
+
+
+def _stale_episode_key(box, tick_ts):
+    # RR-016 "deduplicate by box and stale episode": the episode pins the
+    # tick the box went dark on. A MISSING tick has no episode identity, so
+    # it keeps the legacy box-only key -- which is also what the RR-015
+    # battery asserts for its no-tick fixture path.
+    if not tick_ts:
+        return "deadman|%s" % box
+    return "deadman|%s|%s" % (box, tick_ts)
+
+
 def cmd_ingest(box, digest):
     """Record one box's digest and stamp it with the current cycle (fresh)."""
     st = _read_state()
@@ -99,12 +195,46 @@ def cmd_ingest(box, digest):
         except ValueError:
             rec = {}
     rec["box"] = box
-    rec["last_tick_ts"] = digest.get("last_tick_ts")
+    # RR-016: collector_seen_at (this successful read) is stored SEPARATELY
+    # from sentinel_tick_at (what the sentinel itself last proved) and from
+    # last_verified_progress_at (the newest tick that advanced the timer). A
+    # successful file/SSH read stamps ONLY the collector field -- it MUST NOT
+    # reset tick health.
+    now = now_utc()
+    rec["collector_seen_at"] = now
+    incoming_tick = digest.get("sentinel_tick_at", digest.get("last_tick_ts"))
+    if incoming_tick is not None:
+        prev_tick = rec.get("sentinel_tick_at")
+        prev_verified = rec.get("last_verified_progress_at")
+        incoming_boot = digest.get("boot_id")
+        incoming_seq = digest.get("tick_seq")
+        rec["sentinel_tick_at"] = incoming_tick
+        # Snapshot provenance BEFORE overwriting, so health can compare the
+        # new sample against the last verified epoch (boot/sequence where
+        # supported). last_* fields only advance on verified progress.
+        if incoming_boot is not None:
+            if rec.get("boot_id") is not None and rec.get("last_boot_id") is None:
+                rec["last_boot_id"] = rec.get("boot_id")
+            rec["boot_id"] = incoming_boot
+        if incoming_seq is not None:
+            if rec.get("tick_seq") is not None and rec.get("last_tick_seq") is None:
+                rec["last_tick_seq"] = rec.get("tick_seq")
+            rec["tick_seq"] = incoming_seq
+        if _parse_tick_ts(incoming_tick) is not None:
+            if incoming_tick != prev_tick and incoming_tick != prev_verified:
+                # New VERIFIED tick: monotonic advance (or first sample).
+                if prev_verified is None or str(incoming_tick) > str(prev_verified):
+                    rec["last_verified_progress_at"] = incoming_tick
+                    if incoming_boot is not None:
+                        rec["last_boot_id"] = incoming_boot
+                    if isinstance(incoming_seq, int):
+                        rec["last_tick_seq"] = incoming_seq
+    rec["last_tick_ts"] = rec.get("sentinel_tick_at", digest.get("last_tick_ts"))
     rec["red_flags"] = digest.get("red_flags", 0)
     rec["counts"] = digest.get("counts", {})
     rec["by_severity"] = digest.get("by_severity", {})
     rec["last_report_cycle"] = cycle
-    rec["updated_at"] = now_utc()
+    rec["updated_at"] = now
     hist = rec.get("history", [])
     hist.append({"cycle": cycle, "ts": now_utc(), "red_flags": rec["red_flags"]})
     rec["history"] = hist[-50:]
@@ -132,20 +262,63 @@ def cmd_cycle(state_dir=None, sender=None, dry_run=False, admission=None):
         if not bf.is_file():
             continue
         rec = json.loads(bf.read_text(encoding="utf-8"))
-        last = rec.get("last_report_cycle", 0)
-        if (cycle - last) >= dead_man:
+        # RR-016: health from TICK AGE + PROGRESS, never from collection time.
+        # last_report_cycle (collector success) is informational only here.
+        status, age, reason = _sentinel_health(rec)
+        tick_min, _agg_min, dead_cycles = _tick_thresholds()
+        horizon = dead_cycles * _agg_min * 60
+        silent_intervals = int(age // (tick_min * 60)) if age is not None and age > 0 else 0
+        if status in ("STALE", "UNKNOWN", "DEGRADED"):
             dark.append(box)
             rec["sentinel_dark"] = True
+            rec["sentinel_health"] = status
+            rec["sentinel_health_reason"] = reason
             _write_json(bf, rec)
-            _fire_dead_man(box, cycle - last, state_dir, sender, dry_run, admission)
+            # Dedup by box + stale episode: one incident per stale episode.
+            # The episode key pins the tick the box went dark on; cycles that
+            # re-collect the SAME ancient digest must not mint new episodes.
+            ep_key = _stale_episode_key(box, rec.get("sentinel_tick_at"))
+            if rec.get("dark_episode_key") != ep_key:
+                rec["dark_episode_key"] = ep_key
+                _write_json(bf, rec)
+                _fire_dead_man(box, max(silent_intervals, dead_cycles),
+                               state_dir, sender, dry_run, admission,
+                               tick_ts=rec.get("sentinel_tick_at"),
+                               health=status, episode=ep_key)
+            elif not dry_run:
+                # Same episode re-observed: keep it owned without a new post.
+                try:
+                    from ews_ledger import Ledger as _Led
+                    with _Led(state_dir) as _led:
+                        _led.record_digest("deadman_episode_seen", ep_key,
+                                           payload="box=%s health=%s" % (box, status))
+                except Exception:
+                    pass
         else:
+            # HEALTHY: recovery requires a NEW VERIFIED tick -- clearing dark
+            # only when the tick advanced past the recorded episode. The
+            # verified epoch snapshot advances with it (recovery work itself
+            # goes through canonical admission with durable receipts).
             if rec.get("sentinel_dark"):
                 rec["sentinel_dark"] = False
+                rec["dark_episode_key"] = None
+                rec["sentinel_health"] = status
+                rec["sentinel_health_reason"] = reason
+                if rec.get("sentinel_tick_at"):
+                    rec["last_verified_progress_at"] = rec["sentinel_tick_at"]
+                if rec.get("boot_id") is not None:
+                    rec["last_boot_id"] = rec.get("boot_id")
+                if isinstance(rec.get("tick_seq"), int):
+                    rec["last_tick_seq"] = rec.get("tick_seq")
+                _write_json(bf, rec)
+            else:
+                rec["sentinel_health"] = status
+                rec["sentinel_health_reason"] = reason
                 _write_json(bf, rec)
     return {"ok": True, "cycle": cycle, "boxes": len(st.get("boxes", [])), "sentinel_dark": dark}
 
 
-def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=None):
+def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=None, tick_ts=None, health=None, episode=None):
     """Record a P1 'sentinel dark' on the OPERATOR box ledger, alert the
     operator, and route the dead-man through RESCUE ADMISSION immediately (D4:
     dead-man escalates immediately -- the box cannot speak for itself).
@@ -164,14 +337,15 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
     detail = ("SENTINEL DARK: box '%s' has not reported a fresh tick for %d aggregator "
               "cycle(s) - frozen gateway, dead container, or killed cron. The box cannot "
               "self-report; investigate now." % (box, silent_cycles))
+    dedup = episode or ("deadman|%s" % box)
     finding = F("S7", "P1", "fleet:%s" % box, "deadman", detail,
-                dedup_key="deadman|%s" % box)
+                dedup_key=dedup)
     reason = "admission status unknown (dry run)"
     admitted = False
     ticket_id = None
     with Ledger(state_dir) as led:
         eid = led.record_event("S7", "P1", key_path="fleet:%s" % box, klass="deadman",
-                               detail=detail, dedup_key="deadman|%s" % box)
+                               detail=detail, dedup_key=dedup)
         if dry_run:
             reason = "dry run: no admission attempted"
         else:
@@ -184,7 +358,7 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
                 # the escalate() sweep retries it after the next unacked window.
                 reason = "admission client unavailable (shared client missing)"
                 led.record_digest("rescue_admission_client_unavailable",
-                                  "deadman|%s" % box,
+                                  dedup,
                                   payload="box=%s" % box)
             else:
                 receipt = admit_fn(
@@ -199,7 +373,7 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
                 if admitted:
                     led.ack_event(eid, "escalated")
                     if ticket_id:
-                        led.record_digest("rescue_admission_ticket", "deadman|%s" % box,
+                        led.record_digest("rescue_admission_ticket", dedup,
                                           payload="ticket_id=%s box=%s" % (ticket_id, box))
                 elif ews_common.admission_is_pending_repair(reason):
                     # RR-015: missing enrollment is a PENDING REPAIR with an
@@ -207,14 +381,14 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
                     # never a generic refusal. The dead-man event stays OPEN so
                     # the escalate sweep owns the retry.
                     led.record_digest(
-                        "rescue_admission_pending_repair", "deadman|%s" % box,
+                        "rescue_admission_pending_repair", dedup,
                         payload=("box=%s reason=%s owner=%s action=%s" % (
                             box, reason,
                             receipt.get("repair_owner") or "operator-seeder-D08",
                             receipt.get("repair_action") or "enroll this box")))
                 else:
                     led.record_digest("rescue_admission_%s" % reason,
-                                      "deadman|%s" % box,
+                                      dedup,
                                       payload="box=%s" % box)
     # operator alert (deduped; unchanged)
     try:
@@ -233,7 +407,7 @@ def _fire_dead_man(box, silent_cycles, state_dir, sender, dry_run, admission=Non
                 with Ledger(state_dir) as led:
                     led.record_digest(
                         "rescue_group_visibility" if ok else "rescue_group_visibility_failed",
-                        "deadman|%s" % box, payload="box=%s" % box)
+                        dedup, payload="box=%s" % box)
             except Exception:  # noqa: BLE001
                 pass
     return {"status": reason, "ticket_id": ticket_id, "admitted": admitted}
@@ -260,6 +434,10 @@ def cmd_digest():
             color = "GREEN"
             greens += 1
         lines.append({"box": box, "color": color, "last_tick_ts": rec.get("last_tick_ts"),
+                      "sentinel_tick_at": rec.get("sentinel_tick_at"),
+                      "collector_seen_at": rec.get("collector_seen_at"),
+                      "last_verified_progress_at": rec.get("last_verified_progress_at"),
+                      "sentinel_health": rec.get("sentinel_health"),
                       "sentinel_dark": bool(rec.get("sentinel_dark")), "by_severity": sev})
     return {"cycle": st.get("cycle", 0), "red": reds, "yellow": yellows, "green": greens,
             "boxes": lines}
@@ -322,7 +500,7 @@ def self_test():
         os.environ["EWS_RESCUE_CHAT"] = "8888rescue"
         os.environ["EWS_OPERATOR_CHAT"] = "9999op"
 
-        # two boxes report clean
+        # two boxes report clean (fresh advancing ticks stay HEALTHY)
         cmd_ingest("box-alpha-example", {"last_tick_ts": now_utc(), "red_flags": 0,
                                          "by_severity": {}, "counts": {}})
         cmd_ingest("box-bravo-example", {"last_tick_ts": now_utc(), "red_flags": 0,
@@ -331,14 +509,23 @@ def self_test():
         assert d0["green"] == 2 and d0["red"] == 0
         print("  ingest case: PASS (2 boxes green)")
 
-        # cycle 1: alpha re-reports, bravo goes silent
+        # RR-016: bravo's sentinel goes dark -- its digest keeps arriving
+        # (successful collections) but the TICK inside stays ancient. Collector
+        # reads must not reset the timer, so bravo is STALE by tick age even
+        # though the collector just saw it. Alpha keeps advancing: HEALTHY.
+        ancient = "2000-01-01T00:00:00+00:00"
+        cmd_ingest("box-bravo-example", {"last_tick_ts": ancient, "red_flags": 0,
+                                         "by_severity": {}})
+        # cycle 1: alpha re-reports fresh, bravo re-collected with same ancient tick
         cmd_cycle(sender=fake_sender, admission=fake_admission)  # cycle -> 1
         cmd_ingest("box-alpha-example", {"last_tick_ts": now_utc(), "red_flags": 0, "by_severity": {}})
-        # cycle 2: bravo still silent (last_report_cycle=0, now cycle 2 => 2 cycles => dark)
+        cmd_ingest("box-bravo-example", {"last_tick_ts": ancient, "red_flags": 0,
+                                         "by_severity": {}})
+        # cycle 2: bravo's tick still ancient despite successful collections
         res = cmd_cycle(sender=fake_sender, admission=fake_admission)
         assert "box-bravo-example" in res["sentinel_dark"], res
         assert "box-alpha-example" not in res["sentinel_dark"]
-        print("  dead-man case: PASS (silent box dark after 2 cycles; reporting box healthy)")
+        print("  dead-man case: PASS (ancient tick STALE through successful collections; fresh box healthy)")
 
         # dead-man fired an operator alert, a RESCUE ADMISSION (RR-015) and the
         # supplemental group visibility message
@@ -349,12 +536,17 @@ def self_test():
         with Ledger() as led:
             # the dead-man event was acked ONLY because the receipt admitted
             evs = [dict(r) for r in led.conn.execute(
-                "SELECT * FROM events WHERE dedup_key=?",
-                ("deadman|box-bravo-example",)).fetchall()]
+                "SELECT * FROM events WHERE dedup_key LIKE ?",
+                ("deadman|box-bravo-example%",)).fetchall()]
             assert evs and evs[0]["ack_state"] == "escalated", evs
         print("  escalation case: PASS (dead-man admission given once; event escalated on receipt)")
 
-        # a FAILED dead-man admission leaves the event OPEN (RR-005 contract)
+        # a FAILED dead-man admission leaves the event OPEN (RR-005 contract).
+        # Same stale episode: no NEW admission post is made for the same
+        # episode (dedup by box + stale episode), so drive a NEW episode with
+        # an older tick to prove the failure path stays OPEN and retryable.
+        cmd_ingest("box-bravo-example", {"last_tick_ts": "1999-01-01T00:00:00+00:00",
+                                         "red_flags": 0, "by_severity": {}})
         def failing_admission(state_dir=None, box="", problem_text="", **kw):
             return {"status": "failed", "operation_id": "op-deadman-fail",
                     "ticket_id": None, "admission_schema": "v1",
@@ -362,8 +554,8 @@ def self_test():
         cmd_cycle(sender=fake_sender, admission=failing_admission)  # cycle -> 3
         with Ledger() as led:
             evs2 = [dict(r) for r in led.conn.execute(
-                "SELECT * FROM events WHERE dedup_key=? ORDER BY event_id",
-                ("deadman|box-bravo-example",)).fetchall()]
+                "SELECT * FROM events WHERE dedup_key LIKE ? ORDER BY event_id",
+                ("deadman|box-bravo-example%",)).fetchall()]
             # the first event is escalated; the new cycle event stays OPEN
             assert evs2[0]["ack_state"] == "escalated", evs2
             assert any(e["ack_state"] == "open" for e in evs2), evs2
@@ -381,11 +573,13 @@ def self_test():
                     "repair_owner": "operator-seeder-D08",
                     "repair_action": "enroll this box in rr_box_auth with an "
                                      "accepted admission credential"}
+        cmd_ingest("box-bravo-example", {"last_tick_ts": "1998-01-01T00:00:00+00:00",
+                                         "red_flags": 0, "by_severity": {}})
         cmd_cycle(sender=fake_sender, admission=unenrolled_admission)  # cycle -> 4
         with Ledger() as led:
             evs3 = [dict(r) for r in led.conn.execute(
-                "SELECT * FROM events WHERE dedup_key=? ORDER BY event_id",
-                ("deadman|box-bravo-example",)).fetchall()]
+                "SELECT * FROM events WHERE dedup_key LIKE ? ORDER BY event_id",
+                ("deadman|box-bravo-example%",)).fetchall()]
             rows = [dict(r) for r in led.conn.execute(
                 "SELECT kind,payload FROM digests WHERE kind=?",
                 ("rescue_admission_pending_repair",)).fetchall()]

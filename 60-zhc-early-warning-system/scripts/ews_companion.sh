@@ -94,7 +94,11 @@ report["finding_list"] = [{"key": k, "note": v} for k, v in findings]
 
 if as_json:
     # the tiny digest the aggregator consumes (NO config contents, NO secrets)
+    # RR-016: carries sentinel_tick_at (+ boot/sequence where supported) apart
+    # from collector time; last_tick_ts stays as the compat alias so older
+    # aggregators keep working.
     digest = {"box": report.get("box"), "last_tick_ts": report.get("last_tick_ts"),
+              "sentinel_tick_at": report.get("last_tick_ts"),
               "red_flags": len(findings), "by_severity": report.get("by_severity", {}),
               "counts": report.get("counts", {})}
     print(json.dumps(digest, sort_keys=True))

@@ -320,6 +320,50 @@ def route_finding(finding, state_dir=None, sender=None, dry_run=False):
 # (failed/dry-run sends consumed the P1) stays fixed by construction. dry_run
 # performs no ledger mutation (the event ack) and no network action.
 # --------------------------------------------------------------------------- #
+def _stable_operation_id(box, source, signal, dedup_key, event_id):
+    """Stable operation identity WITHOUT trusting the admission client's
+    import: same event identity in, same operation out, so a lost response
+    reconciles onto the SAME row (RR-005) and the intake folds the replay."""
+    import hashlib
+    return hashlib.sha256("|".join([
+        "ews-rescue-admission-v1", str(box), str(source), str(signal),
+        str(dedup_key or ""), str(event_id or ""),
+    ]).encode("utf-8")).hexdigest()[:32]
+
+
+def _escalation_outcome(admission_status):
+    """RR-005 outcome vocabulary for one escalation item.
+
+    accepted: a validated durable admission receipt (admitted/replay).
+    dry_run: branched before every mutation and network action.
+    deferred: an owned recoverable setup fault (no_enrollment,
+      client_unavailable) -- visible, retryable after repair, not a process
+      failure.
+    attempted: the POST was tried but the receipt is uncertain (transport
+      failure, timeout, 429/5xx, undetermined answer) -- retry eligible.
+    failed: the intake was reached and terminally refused this attempt."""
+    if admission_status == "dry_run":
+        return "dry_run"
+    if admission_status in ("admitted", "replay"):
+        return "accepted"
+    if admission_status in ("no_enrollment", "client_unavailable"):
+        return "deferred"
+    if admission_status == "refused":
+        return "failed"
+    return "attempted"
+
+
+def escalate_exit_code(items):
+    """Nonzero operational failure where appropriate: 1 when any item is
+    retryably uncertain (attempted) or terminally refused (failed).
+    Accepted/deferred/dry_run outcomes are owned states, not process
+    failures."""
+    for it in items or []:
+        if it.get("outcome") in ("attempted", "failed"):
+            return 1
+    return 0
+
+
 def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
     sender = sender or _gateway_sender
     th = C.load_skill_config("thresholds.json").get("alert", {}).get("escalation", {})
@@ -333,19 +377,25 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
         box = os.environ.get("FLEET_STANDING_BOX_SLUG", "").strip() or box
         rescue = _first_env(_RESCUE_TARGET_ENV)
         stale = led.unacked_p1_older_than(minutes)
-        for ev in stale:
-            text = ("[EWS ESCALATION] box=%s: unacknowledged P1 for >%d min\nsignal=%s key=%s\n%s"
-                    % (box, minutes, ev["signal"], ev.get("key_path") or "-", ev.get("detail") or ""))
-            # --- 0. DRY RUN: branch BEFORE every ledger mutation and every
-            # network action (RR-005 contract inherited by RR-015: dry-run
-            # changes no state -- no ack, no digest, no admission attempt).
-            if dry_run:
+        if not stale:
+            return []
+        # RR-005: DRY-RUN branches BEFORE every ledger mutation and every
+        # network action -- including the unacked-P1 READ above being the
+        # only state touched. From here on a dry run performs zero writes
+        # (no ack, no digest, no admission attempt, no escalation row) and
+        # zero network (no admission POST, no group message).
+        if dry_run:
+            for ev in stale:
                 escalated.append({"event_id": ev["event_id"],
                                   "signal": ev["signal"],
                                   "admission_status": "dry_run",
+                                  "outcome": "dry_run",
                                   "ticket_id": None,
                                   "supplemental_msg": False})
-                continue
+            return escalated
+        for ev in stale:
+            text = ("[EWS ESCALATION] box=%s: unacknowledged P1 for >%d min\nsignal=%s key=%s\n%s"
+                    % (box, minutes, ev["signal"], ev.get("key_path") or "-", ev.get("detail") or ""))
             # --- 1. attempt a REAL admission (durable ticket, receipt-based).
             admission_ok = False
             admission_status = "client_unavailable"
@@ -403,6 +453,35 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
                     payload=("box=%s attempt=%.20s" % (
                         box, (ev["signal"] + "|" + (ev.get("key_path") or ""))[:20])),
                 )
+            # --- 2b. RR-005 reconcile + persist: the STABLE operation row is
+            # reconciled BEFORE any resend decision and persisted SEPARATELY
+            # from incident resolution. An already-accepted operation is never
+            # resent: the stored receipt (same ticket) is returned instead, so
+            # a response lost after a real admission recovers the same ticket.
+            op_id = _stable_operation_id(
+                box, "skill-60-ews", ev["signal"], ev.get("dedup_key") or "",
+                ev["event_id"])
+            prior = led.reconcile_escalation(op_id)
+            if prior and prior.get("outcome") == "accepted" and prior.get("receipt_ticket_id"):
+                admission_status = prior["receipt_status"]
+                admission_ticket = prior["receipt_ticket_id"]
+                admission_ok = True
+            else:
+                last_err = None
+                if not admission_ok:
+                    last_err = (receipt.get("detail")
+                                if isinstance(receipt, dict) else None) or admission_status
+                row = led.record_escalation_attempt(
+                    op_id, "skill-60-ews", box=box, signal=ev["signal"],
+                    event_id=ev["event_id"], dedup_key=ev.get("dedup_key") or "",
+                    receipt_status=admission_status,
+                    receipt_ticket_id=admission_ticket,
+                    receipt_digest=(receipt.get("reply_digest")
+                                    if isinstance(receipt, dict) else None),
+                    last_error=last_err)
+                # next_attempt_at/last_error/attempt live on the row above;
+                # incident resolution below still depends ONLY on the receipt.
+            outcome = _escalation_outcome(admission_status)
             # --- 3. Telegram group visibility is SUPPLEMENTAL ONLY. A message
             # send succeeding proves nothing about the ticket; it is recorded
             # separately and a failure of it (a dead gateway included) must
@@ -423,6 +502,7 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
                 "event_id": ev["event_id"],
                 "signal": ev["signal"],
                 "admission_status": admission_status,
+                "outcome": outcome,
                 "ticket_id": admission_ticket,
                 "supplemental_msg": msg_ok,
             })
@@ -459,7 +539,7 @@ def _cli(argv=None):
     if args.cmd == "escalate":
         out = escalate(sd, dry_run=args.dry_run)
         _emit({"ok": True, "escalated": out})
-        return EX_OK
+        return EX_ERR if escalate_exit_code(out) else EX_OK
     if args.cmd == "notices":
         out = read_box_agent_notices(sd, mark_read=not args.peek)
         _emit({"ok": True, "notices": out})
