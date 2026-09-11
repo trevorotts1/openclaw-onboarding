@@ -713,47 +713,110 @@ page they just left, never a different site.
 # <!DOCTYPE>/<html>/<head>/<body> wrapper). Inline <style> is fine inside a bare
 # fragment (lint_ghl_fragment explicitly allows it, confirmed render-surviving).
 # ---------------------------------------------------------------------------
+def _cta_escape_attr(s: Any) -> str:
+    import html as _h
+    return _h.escape(str(s or ""), quote=True)
+
+
+def _cta_escape_text(s: Any) -> str:
+    import html as _h
+    return _h.escape(str(s or ""), quote=False)
+
+
+def _resolve_page_cta_href(*, page_role: str, fields: Dict[str, str],
+                           deck_slug: str = "") -> str:
+    """Verified CTA route for an assembled page. PRES-025: no production CTA
+    may resolve to #/empty/javascript: -- a caller-supplied cta_href wins when
+    it passes the protocol allowlist, else the sales page routes to the
+    checkout funnel route and the checkout page to its own relative route."""
+    try:
+        import checkout_form_builder as _cfb
+    except ImportError:
+        _cfb = None  # type: ignore[assignment]
+    candidate = str(fields.get("cta_href") or "").strip()
+    if candidate and _cfb is not None:
+        ok, _ = _cfb.validate_url(candidate)
+        if ok:
+            return candidate
+        candidate = ""
+    if _cfb is not None:
+        try:
+            return _cfb.resolve_cta_href(page_role=page_role,
+                                         deck_slug=deck_slug or "checkout",
+                                         form_receipt=None)
+        except ValueError:
+            pass
+    slug = (deck_slug or "checkout").strip() or "checkout"
+    return f"/{slug}-checkout" if page_role == "sales" else f"/{slug}"
+
+
 def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
                     fields: Dict[str, str], hero_image_src: Optional[str],
-                    marker: str) -> str:
+                    marker: str, deck_slug: str = "") -> str:
     prim, sec, acc, base, ink = (
         brand["primary"], brand["secondary"], brand["accent"], brand["base"], brand["ink"]
     )
-    headline = fields.get("headline", "")
-    subhead = fields.get("subhead", "")
-    cta = fields.get("cta", "")
+    headline = _cta_escape_text(fields.get("headline", ""))
+    subhead = _cta_escape_text(fields.get("subhead", ""))
+    cta = _cta_escape_text(fields.get("cta", ""))
+    safe_client = _cta_escape_text(client_name)
+    safe_marker = _cta_escape_attr(marker)
+    safe_hero = _cta_escape_attr(hero_image_src) if hero_image_src else ""
+    cta_href = _cta_escape_attr(
+        _resolve_page_cta_href(page_role=page_role, fields=fields,
+                               deck_slug=deck_slug))
     hero_img_tag = (
-        f'<img src="{hero_image_src}" alt="{client_name} {page_role} hero" '
+        f'<img src="{safe_hero}" alt="{safe_client} {page_role} hero" '
         f'style="width:100%;max-width:100%;display:block;border-radius:12px;margin:0 0 24px;">'
         if hero_image_src else
         '<!-- hero image not yet hosted in GHL media (offline/no-push build) -->'
     )
+    # PRES-025: the checkout page carries the REAL order form (Skill 44
+    # field contract, standards-shaped until the Skill 06 widget embed lands),
+    # so the page never looks like a checkout while its button does nothing.
+    # The order-summary / reassurance copy rides inside the same section so
+    # the offline content-string gate keeps passing unchanged.
     body_extra = ""
+    cta_block = f"""
+  <a class="cta-button" href="{cta_href}">{cta}</a>"""
     if page_role == "sales":
         body_extra = f"""
     <div class="proof">
-      <p>{fields.get('proof', '')}</p>
+      <p>{_cta_escape_text(fields.get('proof', ''))}</p>
     </div>"""
     else:
         body_extra = f"""
     <div class="order-summary">
-      <p>{fields.get('order_line', '')}</p>
-      <p class="reassurance">{fields.get('reassurance', '')}</p>
+      <p>{_cta_escape_text(fields.get('order_line', ''))}</p>
+      <p class="reassurance">{_cta_escape_text(fields.get('reassurance', ''))}</p>
+    </div>
+    <div class="order-form">
+      <!-- SKILL44_WIDGET seam: the live GHL native form embed replaces this
+           standards-shaped form at Skill 06 integration time (verbatim snippet,
+           no SRI). Field names/keys are the contract: email + full_name. -->
+      <form id="checkout-order-form" action="{cta_href}" method="post">
+        <label>Email Address <input type="email" name="email" required /></label>
+        <label>Full Name <input type="text" name="full_name" required /></label>
+        <label>Cell Phone <input type="tel" name="phone" /></label>
+        <button type="submit" class="cta-button">{cta} — Complete Order</button>
+      </form>
     </div>"""
-    return f"""<!-- ZHC-SALES-CHECKOUT-BUILDER marker={marker} page_role={page_role} -->
+        cta_block = ""
+    return f"""<!-- ZHC-SALES-CHECKOUT-BUILDER marker={safe_marker} page_role={page_role} -->
 <style>
   .zhc-{page_role}-page {{ font-family: 'Montserrat', Arial, sans-serif; background:{base}; color:{ink}; padding:32px 24px; }}
   .zhc-{page_role}-page h1 {{ color:{ink}; font-size:2.4em; font-weight:800; margin:0 0 12px; }}
   .zhc-{page_role}-page h2 {{ color:{sec}; font-size:1.3em; font-weight:600; margin:0 0 24px; }}
-  .zhc-{page_role}-page .cta-button {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; padding:16px 32px; border-radius:8px; text-decoration:none; font-size:1.1em; }}
+  .zhc-{page_role}-page .cta-button {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; padding:16px 32px; border:0; border-radius:8px; text-decoration:none; font-size:1.1em; cursor:pointer; }}
   .zhc-{page_role}-page .proof, .zhc-{page_role}-page .order-summary {{ background:#fff; border:1px solid {sec}; border-radius:10px; padding:18px; margin:24px 0; }}
+  .zhc-{page_role}-page .order-form label {{ display:block; margin:0 0 12px; }}
+  .zhc-{page_role}-page .order-form input {{ display:block; width:100%; box-sizing:border-box; margin:4px 0 0; padding:10px; border:1px solid {sec}; border-radius:6px; }}
   .zhc-{page_role}-page .reassurance {{ color:{sec}; font-size:0.95em; }}
 </style>
 <div class="zhc-{page_role}-page">
   {hero_img_tag}
   <h1>{headline}</h1>
-  <h2>{subhead}</h2>{body_extra}
-  <a class="cta-button" href="#">{cta}</a>
+  <h2>{subhead}</h2>{body_extra}{cta_block}
 </div>
 """
 
@@ -1205,9 +1268,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         reassurance=brief.get("PRIMARY_OBJECTION") or "Secure checkout. Your information is protected.",
     )
     sales_html = build_page_html(page_role="sales", brand=brand, client_name=client_name,
-                                 fields=sales_fields_html, hero_image_src=sales_img_src, marker=marker)
+                                 fields=sales_fields_html, hero_image_src=sales_img_src, marker=marker,
+                                 deck_slug=deck_slug)
     checkout_html = build_page_html(page_role="checkout", brand=brand, client_name=client_name,
-                                    fields=checkout_fields_html, hero_image_src=checkout_img_src, marker=marker)
+                                    fields=checkout_fields_html, hero_image_src=checkout_img_src, marker=marker,
+                                    deck_slug=deck_slug)
     (html_dir / "sales.html").write_text(sales_html, encoding="utf-8")
     (html_dir / "checkout.html").write_text(checkout_html, encoding="utf-8")
     print(f"\n=== HTML written -> {html_dir}/{{sales,checkout}}.html ===")

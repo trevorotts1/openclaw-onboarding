@@ -219,35 +219,39 @@ check). This SOP's author read the script to write the above; it has not been ex
 sample run dir with a matching `intake.json` was built for this unit) -- treat the description as
 verified-by-reading, not verified-by-running.
 
-## 4. THE CHECKOUT FORM -- `P-U-FORM-CHECKOUT`
+## 4. THE CHECKOUT FORM -- `P-U-FORM-CHECKOUT` (PRES-025: IMPLEMENTED)
 
-`upsell-questions.json`'s promise names `P-U-FORM-CHECKOUT` as its own id family, distinct from
-`P-U-CHECKOUT-*` -- there is no further design note anywhere in this worktree or the Downloads working
-copy beyond that one string (verified: searched both trees, the only two hits are the resolverHint
-text quoted in §1 and this department's own `DEPARTMENT-COUNTS-CANONICAL.md`). This SOP's proposal,
-stated as a proposal and not a fact:
+STATUS UPDATE (PRES-025): this section was a design proposal; it is now a status
+report of landed code. The real producer is
+`DEPT/scripts/checkout_form_builder.py` (manifest executor
+`python3 scripts/checkout_form_builder.py --run-dir {run_dir}`, order 8.77,
+`produces_artifact: working/sales-checkout/checkout_form.json`):
 
-**Verified as of this revision: `sales_checkout_builder.py` (Unit C2's landed script) contains no
-form/payment-field logic at all** -- searched the full 1,377-line file for "form"/"checkout_form" and
-found none. `P-U-FORM-CHECKOUT`'s manifest entry (`working/upsell/checkout_form.json`,
-`AF-U-FORM-CHECKOUT`) currently names no real implementation anywhere in this worktree. Everything
-below remains this SOP's design proposal, not a status report:
+- Offer-derived form schema from the client-approved `deck_brief` (OFFER_NAME
+  required; FINAL_PRICE/CURRENCY parsed, never invented) plus CHECKOUT_MODE
+  intent (default `lead_capture`; `payment_sandbox` for the provider test path;
+  `payment` for live).
+- Skill 44 contract (`working/sales-checkout/checkout_form_skill44.json`:
+  live FORM + custom fields + Form-Submitted workflow, DRAFT only) and Skill 06
+  widget task (`working/sales-checkout/checkout_form_skill06_task.json` for
+  `ghl_form_builder.build_form`), following this section's original
+  cross-department reasoning (PAGE visual ours, FORM transactional theirs).
+- Persisted IDs (form/workflow/product) in `checkout_form.json` with input
+  hashes (intake + checkout.html) for staleness refusal.
+- The checkout page carries the real order form (email + full name + submit)
+  via the SKILL44_WIDGET seam; sales CTAs route to the verified checkout
+  funnel route. No production CTA resolves to `#`/empty/`javascript:` (CTA
+  audit, protocol allowlist; all client strings escaped).
+- Separate completion contracts: lead-capture (one scoped contact + one
+  workflow enrollment on test submit) vs sandbox payment (product/amount/
+  currency + success/cancel routes, zero real charge). MISSING_OFFER /
+  MISSING_MERCHANT / WRONG_LOCATION / UNSUPPORTED_PAYMENT block THIS phase
+  only (soft NOTE; deck + notifications continue). Live charges are never
+  invented -- no live-charge SDK is wired in this pipeline by design.
 
-The checkout **page** (its layout, copy, and visual design) is built by the same COPY -> DESIGN ->
-HTML -> PUSH pipeline as the sales page (§3). The checkout **form** -- the payment/lead-capture fields
-embedded on that page -- is a different capability with its own existing, already-built,
-cross-department engine: `universal-sops/form-craft/` (`06-ghl-install-pages/tools/
-ghl_form_builder.py`, the GHL native FORM engine; `06-ghl-install-pages/qc-built-form.sh` its
-independent QC gate). That cluster's own README describes itself as "the SHARED, cross-department
-procedure for how any department discovers and drives the GHL native FORM engine ... end to end."
-
-**Proposed:** `P-U-FORM-CHECKOUT` hands the field spec (fields needed: name, email, phone, payment --
-whatever the offer requires, resolved from `intake.json`, never invented) to the form-craft cluster
-via the department's own `universal-sops/cross-dept-request-template.md` mechanism, rather than
-Presentations re-implementing native-form construction. This keeps the checkout PAGE (visual, ours)
-and the checkout FORM (transactional, form-craft's) as two gates with two different failure surfaces
--- exactly why the promise names them as two separate id families. Unit C1/C2 may choose differently;
-this SOP records the design reasoning so that choice is made deliberately, not by omission.
+The checkout **page** (layout, copy, visual design) is still built by the
+COPY -> DESIGN -> HTML -> PUSH pipeline (§3). The paragraph below records the
+pre-PRES-025 state for provenance and is no longer operative.
 
 ## 5. RULES
 
