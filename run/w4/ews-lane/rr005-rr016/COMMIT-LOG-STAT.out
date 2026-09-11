@@ -1,3 +1,12 @@
+commit db1b06683ebf15de098ec80e9de726edb6865b1b
+Author: Trevor Otts <trevor@blackceo.com>
+Date:   Fri Sep 11 12:20:16 2026 -0400
+
+    RR-005 + RR-016: refresh COMMIT-LOG-STAT for frozen tip
+
+ run/w4/ews-lane/rr005-rr016/COMMIT-LOG-STAT.out | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
 commit 2572e60274070ebafec1c0c25ce9f0a7e5fd6f83
 Author: Trevor Otts <trevor@blackceo.com>
 Date:   Fri Sep 11 12:19:25 2026 -0400
