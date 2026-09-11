@@ -1,0 +1,25 @@
+commit 4c1d097117a84d1e1573fac6523489a927f0fb63
+Author: Trevor Otts <trevor@blackceo.com>
+Date:   Fri Sep 11 12:17:55 2026 -0400
+
+    RR-005 + RR-016 (ONB Skill 60): pending escalations; tick-age sentinel health
+    
+    RR-005: escalation_state (operation/attempt/next_attempt_at/last_error/
+    receipt apart from incident resolution); stable-op reconcile before resend;
+    dry-run before all mutations/network; attempted/accepted/deferred/failed/
+    dry_run + nonzero exit on operational failure; canonical admission reused.
+    RR-016: collector_seen_at vs sentinel_tick_at vs last_verified_progress_at;
+    UTC/skew/boot/sequence validation; tick-age health (UNKNOWN/DEGRADED/STALE/
+    HEALTHY); episode dedup; recovery on new verified tick via admission.
+    Batteries: tests/unit/rr005 (31) + rr016 (15); discrim FAIL-on-base/PASS-on-fix.
+    Evidence: run/w4/ews-lane/rr005-rr016/.
+
+ 60-zhc-early-warning-system/scripts/ews_alert.py   |  98 ++++++++-
+ .../scripts/ews_companion.sh                       |   4 +
+ 60-zhc-early-warning-system/scripts/ews_fleet.py   | 242 +++++++++++++++++++--
+ 60-zhc-early-warning-system/scripts/ews_ledger.py  |  87 ++++++++
+ run/w4/ews-lane/rr005-rr016/EVIDENCE-REPAIR.md     |  43 ++++
+ run/w4/ews-lane/rr005-rr016/QC-BATTERY.out         |  56 +++++
+ tests/unit/rr005_escalation_pending.test.py        | 162 ++++++++++++++
+ tests/unit/rr016_tick_health.test.py               | 147 +++++++++++++
+ 8 files changed, 806 insertions(+), 33 deletions(-)
