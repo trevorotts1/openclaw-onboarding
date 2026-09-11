@@ -673,7 +673,7 @@
       "owning_role": "slide-copywriter",
       "fanout": {
         "by": "section",
-        "max_units": 5
+        "batch_width": 5
       },
       "sop_refs": [
         "slide-copywriter-sops.md"
@@ -793,7 +793,8 @@
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
-        "max_units": 3
+        "desired_count": 3,
+        "batch_width": 3
       },
       "produces_artifact": [
         "prompts/sales.design.txt"
@@ -898,7 +899,8 @@
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
-        "max_units": 3
+        "desired_count": 3,
+        "batch_width": 3
       },
       "produces_artifact": [
         "prompts/checkout.design.txt"
@@ -949,7 +951,8 @@
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
-        "max_units": 3
+        "desired_count": 3,
+        "batch_width": 3
       },
       "produces_artifact": [
         "prompts/vsl.design.txt"
@@ -1060,7 +1063,7 @@
       "owning_role": "prompt-author-presentations",
       "fanout": {
         "by": "slide",
-        "max_units": 12
+        "batch_width": 12
       },
       "sop_refs": [
         "prompt-author-presentations-sops.md"
@@ -1099,7 +1102,7 @@
       "owning_role": "qc-specialist-prompt-presentations",
       "fanout": {
         "by": "slide",
-        "max_units": 12
+        "batch_width": 12
       },
       "sop_refs": [
         "qc-specialist-prompt-presentations-sops.md"
@@ -1167,7 +1170,8 @@
       "owning_role": "brand-steward",
       "fanout": {
         "by": "slide",
-        "max_units": 3
+        "desired_count": 3,
+        "batch_width": 3
       },
       "sop_refs": [
         "brand-steward-sops.md"
@@ -1270,7 +1274,7 @@
       "owning_role": "qc-specialist-image-presentations",
       "fanout": {
         "by": "slide",
-        "max_units": 12
+        "batch_width": 12
       },
       "sop_refs": [
         "qc-specialist-image-presentations-sops.md"
@@ -1633,7 +1637,7 @@
       "owning_role": "presenters-speech-writer",
       "fanout": {
         "by": "slide",
-        "max_units": 12
+        "batch_width": 12
       },
       "sop_refs": [
         "presenters-speech-writer-sops.md"
