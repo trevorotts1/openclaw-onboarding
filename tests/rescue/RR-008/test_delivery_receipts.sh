@@ -110,7 +110,7 @@ extract_fn() {  # extract_fn <file> <fn-name>
 }
 
 {
-  for fn in _json_str _json_field _json_get _post_class _sha _now_iso _op_id_for \
+  for fn in _json_str _json_field _json_get _post_class _sha _rr_hash _now_iso _op_id_for \
             _journal_put _journal_phase _pending_put _receipt_match _ack_send \
             _resend_pending _gc_journal _post _ack _write_done _reack_cached; do
     extract_fn "$POLL" "$fn" || echo "echo 'EXTRACT FAILED: $fn' >&2"
