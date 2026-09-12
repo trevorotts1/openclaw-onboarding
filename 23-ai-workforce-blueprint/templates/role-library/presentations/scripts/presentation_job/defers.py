@@ -63,6 +63,24 @@ _YES_VALUES = {"yes", "true", "1", "y", "on"}
 _NO_VALUES = {"no", "false", "0", "n", "off"}
 
 
+def _canon_boolish(value: str) -> str:
+    """Canonicalize an explicit booleanish selection to yes/no.
+
+    The manifest ``defers_unless`` gates compare against the literal "yes",
+    so an explicit all-extras selection stored as a boolean or booleanish
+    string (True / "true" / "1" / "y" / "on") must normalize to "yes" —
+    otherwise an opted-in branch silently defers even though the client
+    selected it. Only the unambiguous _YES_VALUES / _NO_VALUES spellings
+    map; every other value passes through byte-identical (unknown values
+    stay fail-closed downstream, exactly as before).
+    """
+    if value in _YES_VALUES:
+        return "yes"
+    if value in _NO_VALUES:
+        return "no"
+    return value
+
+
 def _truthy(v: Any) -> bool:
     """Coerce an intake answer to a boolean yes/no decision."""
     if v is True:
@@ -108,12 +126,12 @@ def resolve_intake_value(intake: Dict[str, Any], key: str) -> Optional[str]:
                 if cand in cap and cap[cand] is not None:
                     v = str(cap[cand]).strip().lower()
                     if v:
-                        return v
+                        return _canon_boolish(v)
         # Top-level fallback.
         if key in intake and intake[key] is not None:
             v = str(intake[key]).strip().lower()
             if v:
-                return v
+                return _canon_boolish(v)
         # A recorded client waiver for this branch IS the decline.
         if spec["waiver_rule"] in _waiver_rules(intake):
             return "no"

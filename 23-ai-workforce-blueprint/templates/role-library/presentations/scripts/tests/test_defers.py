@@ -110,6 +110,19 @@ class TestEvaluator:
         assert evaluate_defers_unless(
             'intake.want_sales_checkout == "yes" or __import__("os")', {}) is False
 
+    def test_explicit_boolean_extras_survive_normalization(self):
+        """Explicit all-extras selections stored as booleans/booleanish
+        strings must normalize to yes (the manifest gate's literal), never
+        silently defer an opted-in branch."""
+        for truthy in (True, "true", "1", "y", "on"):
+            intake = {"pre_presentation_capture": {"WANT_SALES_CHECKOUT": truthy}}
+            assert resolve_intake_value(intake, "want_sales_checkout") == "yes", truthy
+            assert evaluate_defers_unless(G_SALES, intake) is True, truthy
+        for falsy in (False, "false", "0", "n", "off"):
+            intake = {"pre_presentation_capture": {"WANT_VSL_PAGE": falsy}}
+            assert resolve_intake_value(intake, "want_vsl_page") == "no", falsy
+            assert evaluate_defers_unless(G_VSL, intake) is False, falsy
+
 
 class TestPhaseIsDeferred:
     def test_phase_dict_deferred(self):
