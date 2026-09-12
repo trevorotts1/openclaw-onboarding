@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.0.43"
+ONBOARDING_VERSION="v25.0.44"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1358,7 +1358,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.0.43 - safe_json_edit
+# v25.0.44 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4270,7 +4270,8 @@ except Exception:
         local _slp_emb_table=0 _slp_emb_rows=0
         _slp_emb_table="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
         if [ "${_slp_emb_table:-0}" = "1" ]; then
-          _slp_emb_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+          # COVERAGE, not raw rows -- an all-orphan embeddings table must not read as "current".
+          _slp_emb_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id);" 2>/dev/null || echo 0)"
         fi
         if [ "${_slp_emb_rows:-0}" -lt "${_slp_emb_count:-0}" ] 2>/dev/null; then
           echo "  ✗ [SOP LIBRARY] state=embeddings-under-populated rows=$_slp_emb_rows manifest_count=$_slp_emb_count db=$_slp_db"
@@ -4796,7 +4797,8 @@ print(state + " " + str(len(headers)))
         if [ -n "$_fast_emb_db" ] && [ -f "$_fast_emb_db" ]; then
           _fast_emb_canon="${_U6C_EMB_CANON:-0}"
           if [ "${_fast_emb_canon:-0}" -gt 0 ] 2>/dev/null; then
-            _fast_emb_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_emb_db" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+            # COVERAGE, not raw rows (see U6c2).
+            _fast_emb_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_emb_db" "SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id);" 2>/dev/null || echo 0)"
             _fast_emb_rows="${_fast_emb_rows:-0}"
             if [ "${_fast_emb_rows:-0}" -lt "${_fast_emb_canon}" ] 2>/dev/null; then
               _fast_emb_ingest="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/sop-embed-once/embed-sops.sh"
@@ -5872,7 +5874,13 @@ except Exception:
     _U6C2_EMB_TABLE="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';")"
     _U6C2_EMB_ROWS=0
     if [ "${_U6C2_EMB_TABLE:-0}" = "1" ]; then
-      _U6C2_EMB_ROWS="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sop_embeddings;")"
+      # COVERAGE, not raw rows. A box whose sops.id is a content hash can hold a
+      # FULL 2555-row sop_embeddings table in which every row is an ORPHAN keyed
+      # to the asset's slug-derived ids -- nothing joins. Counting rows, that box
+      # reads 2555 >= 2555 and this gate SKIPs it on every roll, forever. Counting
+      # coverage it correctly reads 0 and gets provisioned. Fleet sweep 2026-09-12
+      # found 6 boxes permanently stuck this way.
+      _U6C2_EMB_ROWS="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id);")"
     fi
     echo "  → SOP embeddings: db=$_U6C_DB  rows=$_U6C2_EMB_ROWS  manifest sop_count=$_U6C2_SOP_COUNT"
     if [ "${_U6C2_SOP_COUNT:-0}" -le 0 ] 2>/dev/null; then
