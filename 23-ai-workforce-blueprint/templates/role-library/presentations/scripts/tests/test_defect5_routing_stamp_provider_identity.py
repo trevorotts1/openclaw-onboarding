@@ -72,7 +72,7 @@ def _env(monkeypatch, tmp_path):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4-pro"]),
             "openrouter": _wired("openrouter",
                                  ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
         },

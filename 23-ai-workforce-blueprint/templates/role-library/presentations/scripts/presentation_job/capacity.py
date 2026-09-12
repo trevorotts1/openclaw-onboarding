@@ -73,7 +73,7 @@ declared_plan_providers() / is_no_cap_provider(); rollback env
 PRESENTATION_DECLARED_PROVIDER_UNCAP=0.
 
 ollama-cloud and deepseek-direct both have real, plan-dependent ceilings the
-account itself enforces (ollama $20 -> 3, $100 -> 8; deepseek Flash -> 25,
+account itself enforces (ollama $20 -> 3, $100 -> 8; deepseek Flash -> 2500,
 Pro -> 500), so both live in CAP_TABLE and both PARK behind the one-time plan
 interview when the plan is unknown. OpenRouter has no such observable
 structural ceiling, so this module stops pretending one exists: `available` for those providers is the UNBOUNDED
@@ -1772,7 +1772,7 @@ def _combo_models(alias: str, db_path: Path) -> Optional[list]:
 
 
 def _split_route_entry(entry: str) -> Tuple[Optional[str], str]:
-    """'ds-max/deepseek-v4-flash(max)' -> ('ds-max', 'deepseek-v4-flash')."""
+    """'ds-max/deepseek-flash(max)' -> ('ds-max', 'deepseek-flash')."""
     if not isinstance(entry, str) or "/" not in entry:
         return None, str(entry or "")
     namespace, remainder = entry.split("/", 1)

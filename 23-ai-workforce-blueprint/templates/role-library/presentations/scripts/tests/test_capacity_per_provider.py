@@ -90,7 +90,7 @@ def _openclaw_routing_to(monkeypatch, tmp_path, namespace, model, base_url):
 
 def _deepseek_box(monkeypatch, tmp_path):
     return _openclaw_routing_to(monkeypatch, tmp_path, "deepseek",
-                                "deepseek-v4-flash", "https://api.deepseek.com/v1")
+                                "deepseek-flash", "https://api.deepseek.com/v1")
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def test_plan_answer_for_one_provider_never_caps_another(monkeypatch, tmp_path):
     # ...and each provider still answers for ITSELF.
     assert capacity.probe(cfg, provider="ollama-cloud")["available"] == 8
     assert capacity.probe(
-        cfg, provider="deepseek-direct", model="deepseek-v4-flash"
+        cfg, provider="deepseek-direct", model="deepseek-flash"
     )["available"] == 2500
 
 
@@ -217,7 +217,7 @@ def test_a_legacy_v1_record_is_never_rewritten_on_read(monkeypatch, tmp_path):
 
     capacity.probe(cfg)
     capacity.probe(cfg, provider="ollama-cloud")
-    capacity.probe(cfg, provider="deepseek-direct", model="deepseek-v4-flash")
+    capacity.probe(cfg, provider="deepseek-direct", model="deepseek-flash")
 
     assert path.read_text(encoding="utf-8") == raw
 
@@ -270,7 +270,7 @@ def test_declare_capacity_merges_and_never_clobbers_another_provider(
     assert set(doc["providers"]) == {"ollama-cloud", "deepseek-direct"}, doc
     assert capacity.probe(cfg, provider="ollama-cloud")["available"] == 8
     assert capacity.probe(
-        cfg, provider="deepseek-direct", model="deepseek-v4-flash"
+        cfg, provider="deepseek-direct", model="deepseek-flash"
     )["available"] == 9
 
 

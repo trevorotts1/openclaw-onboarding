@@ -526,9 +526,9 @@ def test_f10_provider_failover_pins_route_override_on_the_reissued_order(
     from presentation_job import model_router
     monkeypatch.setattr(model_router, "resolve_route", lambda *a, **k: {
         "router": "model_router",
-        "route": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "route": {"provider": "deepseek-direct", "model": "deepseek-flash"},
         "candidates": [
-            {"provider": "deepseek-direct", "model": "deepseek-v4-flash",
+            {"provider": "deepseek-direct", "model": "deepseek-flash",
              "eligible": True},
             {"provider": "ollama-cloud", "model": "qwen3-coder:480b",
              "eligible": True},
@@ -585,9 +585,9 @@ def test_f10_route_override_is_honoured_only_for_an_eligible_candidate():
 
     decision = {
         "router": "model_router",
-        "route": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "route": {"provider": "deepseek-direct", "model": "deepseek-flash"},
         "candidates": [
-            {"provider": "deepseek-direct", "model": "deepseek-v4-flash",
+            {"provider": "deepseek-direct", "model": "deepseek-flash",
              "eligible": True},
             {"provider": "ollama-cloud", "model": "qwen3-coder:480b",
              "eligible": True},

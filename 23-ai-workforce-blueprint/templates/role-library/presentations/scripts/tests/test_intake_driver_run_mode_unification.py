@@ -46,8 +46,8 @@ _RUN_MODE_TURN = "resource_plan"
 _RUN_MODE_KEY = "RUN_MODE"
 # A full answer for that turn: a model slot plus the mode declaration, phrased
 # the way the bank's own labels accept it.
-_ANSWER_ULTRA = "workhorse: deepseek-v4-flash@deepseek-direct; mode: ultra"
-_ANSWER_NO_MODE = "workhorse: deepseek-v4-flash@deepseek-direct"
+_ANSWER_ULTRA = "workhorse: deepseek-flash@deepseek-direct; mode: ultra"
+_ANSWER_NO_MODE = "workhorse: deepseek-flash@deepseek-direct"
 
 
 def _is_intake_driver(path: Path) -> bool:

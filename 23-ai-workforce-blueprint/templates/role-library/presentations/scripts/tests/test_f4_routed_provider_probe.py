@@ -107,7 +107,7 @@ def _two_provider_profile():
     return {
         ".schema_version": 1,
         "providers": {
-            "deepseek-direct": _wired("deepseek-direct", ["deepseek-v4-flash"]),
+            "deepseek-direct": _wired("deepseek-direct", ["deepseek-flash"]),
             "ollama-cloud": _wired("ollama-cloud", ["glm-ocr"]),
         },
         "creative_prefs": {}, "consent": {}, "interview": {},
@@ -239,7 +239,7 @@ def test_the_stamp_asks_capacity_about_the_provider_it_will_dispatch_to(
         capacity.PROVIDER_DEEPSEEK_DIRECT, (
         "F4: the stamp must probe the ROUTED provider, not the whole client. "
         f"It asked {asked!r} while routing to {stamp.get('routed_provider')!r}")
-    assert asked["model"] == "deepseek-v4-flash", (
+    assert asked["model"] == "deepseek-flash", (
         "the route's model resolves the plan tier for that provider "
         f"(capacity._plan_from_model_slug); it must be handed over: {asked!r}")
     assert stamp["probe_scope"] == "routed-provider", stamp
@@ -461,7 +461,7 @@ def test_declare_capacity_for_a_named_provider_never_parks(monkeypatch,
 
     path = dispatcher.ensure_capacity_override(
         _dept(tmp_path), max_concurrent=100,
-        provider="deepseek-direct", model="deepseek-v4-flash")
+        provider="deepseek-direct", model="deepseek-flash")
 
     assert path is not None and path.is_file(), path
     record = json.loads(path.read_text(encoding="utf-8"))
@@ -572,7 +572,7 @@ def test_declare_capacity_is_still_idempotent(monkeypatch, tmp_path):
 
     dispatcher.ensure_capacity_override(_dept(tmp_path), max_concurrent=100,
                                         provider="deepseek-direct",
-                                        model="deepseek-v4-flash")
+                                        model="deepseek-flash")
 
     assert json.loads((cfg / capacity.OVERRIDE_FILENAME).read_text(
         encoding="utf-8")) == existing
@@ -598,7 +598,7 @@ def test_declare_capacity_uses_capacity_declare_capacity_when_it_exists(
 
     dispatcher.ensure_capacity_override(_dept(tmp_path), max_concurrent=100,
                                         provider="deepseek-direct",
-                                        model="deepseek-v4-flash")
+                                        model="deepseek-flash")
 
     assert seen == {"provider": capacity.PROVIDER_DEEPSEEK_DIRECT,
                     "plan": "v4-flash", "max_concurrent": 100}, seen

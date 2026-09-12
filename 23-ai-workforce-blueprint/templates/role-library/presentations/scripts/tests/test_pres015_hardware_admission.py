@@ -522,7 +522,7 @@ def _mixed_profile():
             DEEPSEEK: {"provider": DEEPSEEK, "plan_tier": FLASH,
                        "plan_known": True, "consented": True, "locked": True,
                        "detected": True,
-                       "wired_models": ["deepseek-v4-flash"],
+                       "wired_models": ["deepseek-flash"],
                        "ceiling_source": "cap-table",
                        "concurrency_ceiling": 2500},
             BYOK: {"provider": BYOK, "plan_tier": None, "plan_known": False,
@@ -533,7 +533,7 @@ def _mixed_profile():
                    "max_concurrent": 100},
         },
         "model_plan": {
-            "workhorse": {"provider": DEEPSEEK, "model": "deepseek-v4-flash"},
+            "workhorse": {"provider": DEEPSEEK, "model": "deepseek-flash"},
             "reasoning": None, "judge": None, "thinking": None,
             "floor_waivers": ["authoring", "prompt_authoring", "cheap_text",
                               "creative_cheap", "speech_text",

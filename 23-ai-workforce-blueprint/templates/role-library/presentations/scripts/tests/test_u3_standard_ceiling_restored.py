@@ -81,7 +81,7 @@ def _profile(ceiling=None):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4-pro"]),
             "openrouter": _wired("openrouter",
                                  ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
         },
@@ -111,7 +111,7 @@ def _env(monkeypatch, tmp_path, profile=None, mode=None):
     return cfg
 
 
-_DS_PROVIDER = model_router.resolve_alias("deepseek-v4-flash")["provider"]
+_DS_PROVIDER = model_router.resolve_alias("deepseek-flash")["provider"]
 
 
 def _stamp(monkeypatch, tmp_path, *, mode, probe_available, ceiling=None):

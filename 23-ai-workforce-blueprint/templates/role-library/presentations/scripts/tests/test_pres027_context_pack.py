@@ -64,7 +64,7 @@ def test_pack_includes_required_research_or_raises_overflow():
     run = _run_dir(intake_chars=120_000)
     try:
         pack = cp.build_pack(
-            run, "P4-COPY", model="deepseek-v4-flash",
+            run, "P4-COPY", model="deepseek-flash",
             extra_required=["working/copy/intake.json",
                             "working/research/research_map.json",
                             "working/research/brief-*.md"])
@@ -97,7 +97,7 @@ def test_optional_json_never_truncated_mid_value():
     run = _run_dir(intake_chars=100)
     (run / "working" / "copy" / "sp_claims.json").write_text(
         '{"big": "' + "z" * 500_000 + '"}')
-    pack = cp.build_pack(run, "P4-COPY", model="deepseek-v4-flash")
+    pack = cp.build_pack(run, "P4-COPY", model="deepseek-flash")
     row = next(r for r in pack.inclusion_manifest
                if r["path"] == "working/copy/sp_claims.json")
     assert row["included"] is False
@@ -111,7 +111,7 @@ def test_research_protected_before_transcript():
     (run / "working" / "interview").mkdir(parents=True, exist_ok=True)
     (run / "working" / "interview" / "intake_transcript.json").write_text(
         "T" * 300_000)
-    pack = cp.build_pack(run, "P4-COPY", model="deepseek-v4-flash")
+    pack = cp.build_pack(run, "P4-COPY", model="deepseek-flash")
     by_path = {r["path"]: r for r in pack.inclusion_manifest}
     assert by_path["working/research/research_map.json"]["included"] is True
     assert by_path["working/research/brief-test.md"]["included"] is True
@@ -125,7 +125,7 @@ def test_per_slide_anchor_scoping():
             {"claim": "aurora fact", "slides": [7]},
             {"claim": "other fact", "slides": [9]},
         ]}))
-    pack = cp.build_pack(run, "P4-PROMPT", model="deepseek-v4-flash",
+    pack = cp.build_pack(run, "P4-PROMPT", model="deepseek-flash",
                          slide_ordinal=7)
     assert "aurora fact" in pack.text
     head, sep, tail = pack.text.partition("### slide-7-research-anchor")
@@ -140,7 +140,7 @@ def test_model_aware_budget_small_model_shards_first():
     request (QC row 4): same inputs fit flash but overflow glm-flash."""
     run = _run_dir(intake_chars=150_000)
     ok_pack = cp.build_pack(
-        run, "P4-COPY", model="deepseek-v4-flash",
+        run, "P4-COPY", model="deepseek-flash",
         extra_required=["working/copy/intake.json"])
     assert ok_pack.overflow is None
     with pytest.raises(cp.ContextOverflow):
@@ -158,7 +158,7 @@ def test_shard_units_deterministic_with_complete_inputs():
 def test_inclusion_manifest_hashes_prove_agent_view():
     """QC proves what the agent saw: every row carries path + sha256."""
     run = _run_dir(intake_chars=100)
-    pack = cp.build_pack(run, "P4-COPY", model="deepseek-v4-flash")
+    pack = cp.build_pack(run, "P4-COPY", model="deepseek-flash")
     assert pack.inclusion_manifest
     for row in pack.inclusion_manifest:
         assert row["path"] and len(row["sha256"]) == 64
@@ -174,9 +174,9 @@ def test_design_brief_change_rehashes_only_dependent_view():
     content hash (dependent units rerun) while the intake row is untouched."""
     run = _run_dir(intake_chars=100)
     brief = run / "working" / "research" / "brief-test.md"
-    before = cp.build_pack(run, "P4-COPY", model="deepseek-v4-flash")
+    before = cp.build_pack(run, "P4-COPY", model="deepseek-flash")
     brief.write_text(f"{SENTINEL} revised direction. " + "new fact. " * 400)
-    after = cp.build_pack(run, "P4-COPY", model="deepseek-v4-flash")
+    after = cp.build_pack(run, "P4-COPY", model="deepseek-flash")
     assert before.content_hash != after.content_hash
     intake_before = next(r["sha256"] for r in before.inclusion_manifest
                          if r["path"] == "working/copy/intake.json")

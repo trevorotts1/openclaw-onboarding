@@ -44,7 +44,7 @@ SCHEMA (version 1)
       "concurrency_ceiling": 8 | "UNBOUNDED" | null,   # 8, not 10: see below
       "ceiling_source": "cap-table" | "declared" | "interview" | "probe",
       "consented":      true/false,
-      "wired_models":   ["deepseek-v4-flash", ...],   # probed (FIX 9)
+      "wired_models":   ["deepseek-flash", ...],   # probed (FIX 9)
       "detected":       true/false,
       "plan_known":     true/false,
       "creative_prefs": {...},                        # free-form, redacted
@@ -796,10 +796,10 @@ RECOMMENDED_PRESENTATION_MODELS: List[Dict[str, Any]] = [
                  "slide batch at typical pricing)"),
     },
     {
-        "alias": "deepseek-v4-flash-0731",
-        "label": "DeepSeek V4 Flash (0731)",
+        "alias": "deepseek-flash",
+        "label": "DeepSeek V4.1 Flash",
         "providers": ("deepseek-direct", "openrouter", "ollama-cloud"),
-        "patterns": ("deepseek-v4-flash", "deepseekv4flash"),
+        "patterns": ("deepseek-flash", "deepseekflash", "deepseek-v4-flash", "deepseekv4flash"),
         "excludes": ("pro", "reasoner"),
         "unlocks": ("the department's workhorse authoring tier -- parallel "
                     "slide waves and QC passes run fastest and cheapest on "
@@ -897,7 +897,7 @@ def parse_model_spec(text: Any) -> Optional[Dict[str, str]]:
         raise ValueError(
             f"model choice {raw!r} is not in the required 'model@provider' "
             f"shape (exactly one '@'), for example "
-            f"'deepseek-v4-flash@deepseek-direct'")
+            f"'deepseek-flash@deepseek-direct' (legacy deepseek-v4-flash still accepted via the catalog compat shim)")
     model, provider = raw.rsplit("@", 1)
     model = model.strip().strip(";,.").strip()
     provider = provider.strip().strip(";,.").strip()
@@ -1059,6 +1059,25 @@ def record_model_plan(plan: Dict[str, Any], *,
             spec = parse_model_spec(raw)
         if spec is None:
             continue
+        # Saved-config compat: an older stored Flash id folds to the live id
+        # at the door, so a client plan saved before the V4.1 rename validates
+        # against the CURRENT probe inventory instead of breaking. The stored
+        # plan keeps what the client declared; only the check folds.
+        try:
+            from . import model_catalog as _mc_compat  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            try:
+                import model_catalog as _mc_compat  # type: ignore[no-redef]
+            except ImportError:
+                _mc_compat = None  # type: ignore[assignment]
+        if _mc_compat is not None:
+            fold = getattr(_mc_compat, "fold_legacy_flash_model_id", None)
+            if callable(fold):
+                try:
+                    spec = dict(spec)
+                    spec["model"] = fold(spec.get("model"))
+                except Exception:  # noqa: BLE001 -- a fold failure never records
+                    pass
         declared[slot] = spec
 
     unknown_slots = [s for s in (plan or {})
@@ -1124,7 +1143,26 @@ def record_model_plan(plan: Dict[str, Any], *,
             # the alias would refuse a declaration that routes perfectly.
             served = (mr._served_model(alias_def, provider)
                       if (mr is not None and alias_def) else "")
-            if not _wired_match(model, wired) and not (
+            # Saved-config compat: the live Flash id is accepted when the
+            # inventory still carries the older id, and vice versa -- a probe
+            # inventory taken before the V4.1 rename must not refuse the live
+            # id the router now sends, and an older saved plan must not break
+            # against a refreshed inventory. Both spellings name one model.
+            compat_ids = [model]
+            if _mc_compat is not None:
+                fold = getattr(_mc_compat, "fold_legacy_flash_model_id", None)
+                legacy = getattr(_mc_compat, "LEGACY_FLASH_MODEL_IDS", ())
+                if callable(fold):
+                    try:
+                        compat_ids.append(fold(model))
+                    except Exception:  # noqa: BLE001 -- fold never validates
+                        pass
+                try:
+                    if model == fold(model) if callable(fold) else False:
+                        compat_ids.extend(str(m) for m in (legacy or ()))
+                except Exception:  # noqa: BLE001 -- compat never validates
+                    pass
+            if not any(_wired_match(m, wired) for m in compat_ids) and not (
                     served and _wired_match(served, wired)):
                 raise ValueError(
                     f"refusing to record the {slot!r} slot: model {model!r} is "

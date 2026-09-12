@@ -1,7 +1,13 @@
 {
-  "catalog_version": "1.2.0",
-  "updated": "2026-09-02",
-  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs priced from [R12] provider rate limits (web, sourced; master plan Part 4 table): deepseek-v4-flash $0.22/$0.66 per M (peak), deepseek-v4-pro $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, gpt-image-2.5 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
+  "catalog_version": "1.3.0",
+  "updated": "2026-09-11",
+  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs: deepseek-flash $0.15/$0.60 per M + $0.003 cache-read (live openclaw.json models.providers.deepseek, 2026-09-11; supersedes R12 deepseek-v4-flash $0.22/$0.66 peak), deepseek-v4-pro $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, gpt-image-2.5 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
+  "compat": {
+    "legacy_aliases": {
+      "deepseek-v4-flash": "deepseek-flash"
+    },
+    "note": "Saved configs naming deepseek-v4-flash resolve to deepseek-flash via model_catalog.resolve_alias_compat; the legacy id is never sent on the wire."
+  },
   "aliases": {
     "image.t2i": {
       "provider": "kie",
@@ -66,32 +72,34 @@
     },
     "text.fast": {
       "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "note": "Cheap/fast mechanical text and independent judge (FIX 7).",
+      "model": "deepseek-flash",
+      "note": "Cheap/fast mechanical text and independent judge (FIX 7). Selected route DeepSeek Direct V4.1 Flash; live openclaw.json id deepseek-flash (native endpoint, 2026-09-11).",
       "unit_costs": {
-        "per_million_tokens_in_usd": 0.22,
-        "per_million_tokens_out_usd": 0.66,
+        "per_million_tokens_in_usd": 0.15,
+        "per_million_tokens_out_usd": 0.6,
+        "per_million_tokens_cache_read_usd": 0.003,
         "status": "priced",
-        "basis": "R12: deepseek-v4-flash $0.22 in / $0.66 out per M (peak pricing; half off-peak)"
+        "basis": "live openclaw.json models.providers.deepseek deepseek-flash $0.15 in / $0.60 out / $0.003 cache-read per M (2026-09-11; supersedes R12 v4-flash peak)"
       },
       "served_ids": {
-        "deepseek-direct": "deepseek-v4-flash",
-        "deepseek": "deepseek-v4-flash"
+        "deepseek-direct": "deepseek-flash",
+        "deepseek": "deepseek-flash"
       }
     },
     "text.judge": {
       "provider": "deepseek",
-      "model": "deepseek-v4-flash",
+      "model": "deepseek-flash",
       "note": "Independent cheap text judge class; router may re-point to a profile-owned model (FIX 7/FIX 14).",
       "unit_costs": {
-        "per_million_tokens_in_usd": 0.22,
-        "per_million_tokens_out_usd": 0.66,
+        "per_million_tokens_in_usd": 0.15,
+        "per_million_tokens_out_usd": 0.6,
+        "per_million_tokens_cache_read_usd": 0.003,
         "status": "priced",
-        "basis": "R12: priced at its default served model deepseek-v4-flash $0.22/$0.66 per M (peak); OpenRouter re-points re-price at z-ai/glm-5.3-flash $0.075/$0.25"
+        "basis": "live openclaw.json deepseek-flash $0.15/$0.60 per M (2026-09-11); OpenRouter re-points re-price at z-ai/glm-5.3-flash $0.075/$0.25"
       },
       "served_ids": {
-        "deepseek-direct": "deepseek-v4-flash",
-        "deepseek": "deepseek-v4-flash",
+        "deepseek-direct": "deepseek-flash",
+        "deepseek": "deepseek-flash",
         "openrouter": "z-ai/glm-5.3-flash",
         "ollama-cloud": "glm-5.3-flash"
       }

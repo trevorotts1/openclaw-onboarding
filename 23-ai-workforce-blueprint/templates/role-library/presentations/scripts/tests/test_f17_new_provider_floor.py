@@ -357,7 +357,7 @@ _SEED_PROFILE = {
     ".schema_version": 1,
     "providers": {
         "deepseek-direct": {"provider": "deepseek-direct", "presence": True,
-                            "wired_models": ["deepseek-v4-flash"]},
+                            "wired_models": ["deepseek-flash"]},
     },
     "creative_prefs": {}, "consent": {}, "interview": {},
 }
@@ -405,5 +405,5 @@ def test_record_model_plan_still_refuses_a_provider_less_profile(
     _plan_env(monkeypatch, tmp_path, {".schema_version": 1, "providers": {}})
     with pytest.raises(ValueError) as exc:
         resource_profile.record_model_plan(
-            {"workhorse": "deepseek-v4-flash@deepseek-direct"}, source="cli")
+            {"workhorse": "deepseek-flash@deepseek-direct"}, source="cli")
     assert "NO providers" in str(exc.value)

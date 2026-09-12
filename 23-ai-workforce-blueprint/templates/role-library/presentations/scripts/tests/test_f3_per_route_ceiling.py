@@ -96,7 +96,7 @@ def _two_provider_profile(deepseek_ceiling=100, ollama_ceiling=8):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired(
-                "deepseek-direct", ["deepseek-v4-flash", "deepseek-v4-pro"],
+                "deepseek-direct", ["deepseek-flash", "deepseek-v4-pro"],
                 concurrency_ceiling=deepseek_ceiling,
                 ceiling_source="declared"),
             "ollama-cloud": _wired(
@@ -188,7 +188,7 @@ def test_a_malformed_ceiling_reads_as_unmeasured_never_as_a_higher_width():
 #    FAILS on pristine eaedc0633 (no `provider` keyword).
 # ===========================================================================
 def test_the_catalogs_short_spelling_finds_the_stores_long_row():
-    """`resolve_alias('deepseek-v4-flash')` may hand back `deepseek`; the
+    """`resolve_alias('deepseek-flash')` may hand back `deepseek`; the
     profile writes `deepseek-direct`. If the lookup did not fold, this would
     answer None -- 'unmeasured' -- and the ceiling would silently become the
     operator's 100 for a reason that has nothing to do with the client."""

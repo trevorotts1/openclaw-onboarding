@@ -251,7 +251,7 @@ def test_a_deepseek_route_stamped_by_the_catalog_lands_in_the_canonical_bucket(
     _routing_stamp writes) and the lease must land on 'deepseek-direct' (what
     providers.yaml + the transports govern)."""
     seen = _drive_worker(monkeypatch, gov_env, {
-        "provider": CATALOG_DEEPSEEK, "model": "deepseek-v4-flash",
+        "provider": CATALOG_DEEPSEEK, "model": "deepseek-flash",
         "mode": "standard", "measured_capacity": 4})
     assert list(seen) == [CANON_DEEPSEEK], (
         f"U4: a catalog-spelled DeepSeek route touched {sorted(seen)} instead "
