@@ -262,5 +262,87 @@ class TestLongSlugTruncation(unittest.TestCase):
         self.assertEqual(rows_in(db), 1, "60-char truncation must be applied identically")
 
 
+class TestOrphanTableIsNotCoverage(unittest.TestCase):
+    """The idempotency gate must measure COVERAGE, not raw row count.
+
+    The defect leaves a box holding a FULL sop_embeddings table whose every row
+    is an orphan — keyed to the asset's slug-derived ids while sops.id is a
+    content hash, so not one row joins to a SOP. Counting rows, such a box reads
+    `2555 >= 2555` and the gate SKIPs it on every roll, FOREVER; the repair can
+    never reach it. Fleet sweep 2026-09-12 found 6 boxes stuck exactly here,
+    each showing a "full" table with 82-100% of its SOPs unembedded.
+    """
+
+    def _orphaned_box(self):
+        """A box whose embeddings are all orphans + a marker claiming success."""
+        db = make_client_db(SLUGS, id_style="hashed")
+        conn = sqlite3.connect(db)
+        # Rows keyed to the ASSET's ids, which join to nothing on a hashed box.
+        conn.execute("PRAGMA foreign_keys=OFF")
+        blob = b"\x00\x00\x00\x00" * 3072
+        for s in SLUGS:
+            conn.execute(
+                "INSERT INTO sop_embeddings VALUES (?,?,?,?,datetime('now'))",
+                (asset_id_for(s), blob, "gemini-embedding-2", 3072))
+        # The buggy run also stamped the marker despite importing nothing.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sop_embeddings_shipped_asset ("
+            "id INTEGER PRIMARY KEY CHECK (id=1), release_tag TEXT NOT NULL, "
+            "sop_count INTEGER NOT NULL, sha256 TEXT NOT NULL, "
+            "imported_at TEXT NOT NULL DEFAULT (datetime('now')))")
+        conn.execute(
+            "INSERT OR REPLACE INTO sop_embeddings_shipped_asset "
+            "(id, release_tag, sop_count, sha256) VALUES (1,'sop-embeddings-v1.0.0',?,'x')",
+            (len(SLUGS),))
+        conn.commit()
+        conn.close()
+        return db
+
+    def test_full_but_orphaned_table_is_not_skipped(self):
+        db = self._orphaned_box()
+        # Sanity: rows exist, but coverage is zero.
+        c = sqlite3.connect(db)
+        self.assertEqual(c.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0], len(SLUGS))
+        covered = c.execute(
+            "SELECT COUNT(*) FROM sops s WHERE EXISTS "
+            "(SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)").fetchone()[0]
+        c.close()
+        self.assertEqual(covered, 0, "fixture must start fully orphaned")
+
+        gz, sha = make_asset([asset_id_for(s) for s in SLUGS])
+        man = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        make_manifest(man, gz, sha, len(SLUGS))
+
+        res = provision_sop_embeddings(man, db)
+        self.assertNotEqual(
+            res["status"], "SKIP",
+            "PRE-FIX FAILURE MODE: the gate counted raw rows, saw a full table, and "
+            f"SKIPped a box where 100% of SOPs are unembedded — permanently. Got: {res}",
+        )
+        self.assertEqual(res["status"], "IMPORTED", f"got {res}")
+
+        c = sqlite3.connect(db)
+        covered = c.execute(
+            "SELECT COUNT(*) FROM sops s WHERE EXISTS "
+            "(SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)").fetchone()[0]
+        c.close()
+        self.assertEqual(covered, len(SLUGS), "every SOP must be covered after the repair")
+
+    def test_genuinely_covered_box_still_skips(self):
+        """No new noise: a properly covered box must still SKIP (no re-download)."""
+        db = make_client_db(SLUGS, id_style="hashed")
+        gz, sha = make_asset([asset_id_for(s) for s in SLUGS])
+        man = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        make_manifest(man, gz, sha, len(SLUGS))
+
+        first = provision_sop_embeddings(man, db)
+        self.assertEqual(first["status"], "IMPORTED", f"setup import failed: {first}")
+
+        second = provision_sop_embeddings(man, db)
+        self.assertEqual(second["status"], "SKIP",
+                         f"a covered box must skip rather than re-download: {second}")
+        self.assertIn("covered", second["reason"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

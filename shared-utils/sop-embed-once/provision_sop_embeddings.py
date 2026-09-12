@@ -130,9 +130,20 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
         installed_rows = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings'"
         ).fetchone()[0]
+        # COVERAGE, not raw row count. A box can hold a full 2555-row
+        # sop_embeddings table in which EVERY row is an ORPHAN — keyed to the
+        # asset's slug-derived ids while this box's sops.id is a content hash,
+        # so not one row joins to a SOP. Counting rows, that box looks finished
+        # (2555 >= 2555) and this gate SKIPped it forever; counting coverage, it
+        # correctly reads as 0 and gets provisioned. Measured across the fleet
+        # 2026-09-12: 6 boxes were permanently stuck this way, each showing a
+        # "full" embeddings table with 82–100% of its SOPs unembedded.
         installed_count = 0
         if installed_rows:
-            installed_count = conn.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0]
+            installed_count = conn.execute(
+                "SELECT COUNT(*) FROM sops s WHERE EXISTS "
+                "(SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)"
+            ).fetchone()[0]
         conn.close()
     except sqlite3.Error as exc:
         return {"status": "WARN", "reason": f"could not read target DB: {exc}"}
@@ -140,7 +151,8 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
     if marker and marker["release_tag"] == release_tag and installed_count >= sop_count:
         return {
             "status": "SKIP",
-            "reason": f"already canonical (release={release_tag}, {installed_count} rows >= manifest {sop_count})",
+            "reason": f"already canonical (release={release_tag}, {installed_count} SOPs covered "
+                      f">= manifest {sop_count})",
         }
 
     if dry_run:
