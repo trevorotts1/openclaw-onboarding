@@ -1,14 +1,14 @@
-// Presentation Interview app — pure, side-effect-free helpers.
+// Presentation intake mini-app — pure, side-effect-free helpers.
 //
 // Everything here is unit-testable with plain `node --test` (no Cloudflare
 // runtime, no network). The Worker (index.js) composes these with D1 + the
-// request/response plumbing. This is the SAME contract the repo's
-// intake-miniapp uses, so the box-side intake_bridge.py / deck-intake-driver.py
-// replay path works unchanged.
+// request/response plumbing. Keeping the logic here is what lets the offline
+// gate exercise the one-question-at-a-time guarantee.
 //
-// SINGLE SOURCE OF TRUTH: the questions come from the box, which generates the
-// payload from deck-intake-questions.json (+ upsell-questions.json). This module
-// only enforces ordering + shape — it never hardcodes a question.
+// SINGLE SOURCE OF TRUTH: the questions themselves come from the box, which
+// generates the payload from deck-intake-questions.json + sp-8-questions.json
+// (see ../payload/build_questions_payload.py). This module never hardcodes a
+// question — it only enforces ordering + shape.
 
 export const TOKEN_BYTES = 16; // 128-bit capability token
 export const DEFAULT_TTL_DAYS = 7;
@@ -18,6 +18,14 @@ export function randomToken(getRandomValues = globalThis.crypto.getRandomValues.
   const buf = new Uint8Array(TOKEN_BYTES);
   getRandomValues(buf);
   return [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Optional 6-digit confirmation code (spoken in chat for high-trust clients). */
+export function sixDigitCode(getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)) {
+  const buf = new Uint8Array(4);
+  getRandomValues(buf);
+  const n = ((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]) >>> 0;
+  return String(n % 1000000).padStart(6, "0");
 }
 
 export function nowSeconds() {
@@ -33,9 +41,47 @@ export function isValidTokenShape(token) {
   return typeof token === "string" && /^[0-9a-f]{32}$/.test(token);
 }
 
+// ---------------------------------------------------------------------------
+// PRES-024 — stable session identity vs renewable access-token grants.
+// ---------------------------------------------------------------------------
+// The token is the CAPABILITY (what you hold in the link); the session_id is
+// the IDENTITY (where the answers live). A renewal mints a fresh token bound
+// to the SAME session_id / company / presentation run and revokes the old
+// token; expiry of a token never erases the session's data.
+
+/** Stable 128-bit session identity (hex), generated once per intake session. */
+export function randomSessionId(getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)) {
+  const buf = new Uint8Array(16);
+  getRandomValues(buf);
+  return [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** A session id is well-formed if it is 32 lowercase-hex chars. */
+export function isValidSessionIdShape(id) {
+  return typeof id === "string" && /^[0-9a-f]{32}$/.test(id);
+}
+
 /**
- * Validate a questions_payload handed to /api/sessions.
- * Permissive about extra fields, strict about the load-bearing shape.
+ * First unmet active question id — the exact question a resumed session must
+ * present. Optional-but-unanswered questions are still "met" only when an
+ * answer exists on record; conditionally-inactive questions never count as
+ * unmet (same rule completeSession enforces). Returns null when complete.
+ */
+export function firstUnmetQuestionId(payload, answeredIds, answers) {
+  const answered = new Set(answeredIds);
+  const qs = orderedQuestions(payload, answers);
+  for (const q of qs) {
+    if (answered.has(q.id)) continue;
+    if (isQuestionActive(q, answers) === false) continue;
+    return q.id;
+  }
+  return null;
+}
+
+/**
+ * Validate a questions_payload handed to /api/sessions. Returns {ok, error}.
+ * We keep this permissive about extra fields (the JSONs carry help/labels we
+ * pass straight through) but strict about the load-bearing shape.
  */
 export function validateQuestionsPayload(payload) {
   if (!payload || typeof payload !== "object") return { ok: false, error: "payload must be an object" };
@@ -55,10 +101,9 @@ export function validateQuestionsPayload(payload) {
   }
   return { ok: true };
 }
-
 // ---------------------------------------------------------------------------
-// Conditional-question evaluator, ported from deck-intake-driver.py
-// auto_skip_all_conditionals() — covers BOTH conditional schemas.
+// U058: Conditional-question evaluator, ported from deck-intake-driver.py
+// auto_skip_all_conditionals() at :208. Covers BOTH conditional schemas.
 // ---------------------------------------------------------------------------
 
 function _askIfSatisfied(cond, answers) {
@@ -96,7 +141,12 @@ export function isQuestionActive(question, answers) {
   return null;
 }
 
-/** Ordered question list, sorted by `order` when present. */
+
+/**
+ * The ordered question list, sorted by `order` when present, else array order.
+ * Order is what makes batching impossible: the client can only ever be served,
+ * and can only ever answer, the current question.
+ */
 export function orderedQuestions(payload, answers) {
   const qs = [...(payload.questions || [])];
   let filtered = qs;
@@ -106,18 +156,28 @@ export function orderedQuestions(payload, answers) {
   return filtered;
 }
 
-/** Index of the first still-unanswered question in canonical order. Returns -1 when done. */
+/**
+ * Index of the first still-unanswered question in canonical order — the only
+ * question the client may answer next. Optional questions are still presented
+ * here (the UI offers a Skip that submits their default); they are not silently
+ * dropped. Returns -1 when every question has an answer on record.
+ */
 export function nextQuestionIndex(payload, answeredIds, answers) {
   const answered = new Set(answeredIds);
   const qs = orderedQuestions(payload, answers);
   for (let i = 0; i < qs.length; i++) {
     if (answered.has(qs[i].id)) continue;
-    return i;
+    return i; // first unanswered question in canonical order
   }
   return -1;
 }
 
-/** Enforce one-at-a-time at the API layer. */
+/**
+ * Enforce the one-at-a-time contract at the API layer: the only question a
+ * client may answer is the current expected one. Returns {ok, error, question}.
+ * `expectedId` is the id at nextQuestionIndex; answering anything else — the
+ * mechanism a batcher would need — is rejected.
+ */
 export function checkAnswerOrder(payload, answeredIds, questionId, answers) {
   const qs = orderedQuestions(payload, answers);
   const q = qs.find((x) => x.id === questionId);
@@ -135,7 +195,12 @@ export function checkAnswerOrder(payload, answeredIds, questionId, answers) {
   return { ok: true, question: q };
 }
 
-/** Coerce + validate a single answer value against its question kind. */
+/**
+ * Coerce + validate a single answer value against its question kind. Mirrors
+ * (a subset of) the box-side deck-intake-driver validation so the client gets
+ * immediate feedback; the Python driver remains the authoritative gate when the
+ * bridge replays the answer. Returns {ok, error, value}.
+ */
 export function validateAnswerValue(question, rawValue) {
   const kind = question.kind || "text";
   const required = question.required !== false;
@@ -176,6 +241,12 @@ export function validateAnswerValue(question, rawValue) {
   return { ok: true, value }; // text
 }
 
+/** Answers with a monotonic id strictly greater than `since` (poll cursor). */
+export function answersSince(rows, since) {
+  const cur = Number.isFinite(since) ? since : 0;
+  return rows.filter((r) => Number(r.id) > cur).sort((a, b) => Number(a.id) - Number(b.id));
+}
+
 /** Progress summary the UI renders ("Question k of N"). */
 export function progress(payload, answeredIds, answers) {
   const qs = orderedQuestions(payload, answers);
@@ -190,12 +261,6 @@ export function progress(payload, answeredIds, answers) {
     current_index: idx === -1 ? null : idx,
     complete: idx === -1,
   };
-}
-
-/** Answers with a monotonic id strictly greater than `since` (poll cursor). */
-export function answersSince(rows, since) {
-  const cur = Number.isFinite(since) ? since : 0;
-  return rows.filter((r) => Number(r.id) > cur).sort((a, b) => Number(a.id) - Number(b.id));
 }
 
 export function jsonResponse(obj, status = 200, extraHeaders = {}) {

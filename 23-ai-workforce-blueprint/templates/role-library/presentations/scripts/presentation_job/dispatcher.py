@@ -84,6 +84,14 @@ from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
 from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
 from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
+# PRES-014 (W2 WF05): durable fan-out unit records. Banked results are read
+# and validated BEFORE any model call; only failed/changed units resubmit;
+# the attempt/budget ledger survives restarts (append-only transitions +
+# atomic state.json, never truncated by any code path here).
+try:
+    from presentation_job import unit_store  # noqa: E402
+except ImportError:  # pragma: no cover - pre-PRES-014 trees keep old behavior
+    unit_store = None  # type: ignore[assignment]
 
 # Defensive import of build_deck (top-level scripts_dir module) -- mirrors
 # phase_verifiers.py's own `try: import build_deck as _bd` pattern exactly (same
@@ -640,7 +648,8 @@ ARTIFACT_TARGET_OVERRIDE: Dict[str, List[str]] = {
 # declines for P-SP-INTAKE in one run -- re-logging that forever is not a
 # decision, it is a stuck record). Parking it writes a VISIBLE marker file and
 # still auto-un-parks the moment the work order is reissued or state changes.
-_FAILING_STATUSES = frozenset({"error", "exhausted", "declined"})
+_FAILING_STATUSES = frozenset({"error", "exhausted", "declined",
+                               "partial_failure"})  # PRES-014: some-units-failed
 
 # ---------------------------------------------------------------------------
 # Per-phase artifact contracts -- the EXACT, mechanical requirements each
@@ -6066,6 +6075,134 @@ def _dispatch_phase_fanout_units(
                     now if isinstance(now, dict) else {}):
                 continue
             reuse[key] = text
+    # ------------------------------------------------------------------
+    # PRES-014 (W2 WF05) -- THE ADMISSION PLAN.
+    #
+    # Before this block, EVERY enumerated unit was submitted on EVERY tick;
+    # the per-unit scratch files were written but never read. The admission
+    # pass below is the fix's whole spine:
+    #
+    #   1. enumerate ALL units (per-slide QC coverage is never narrowed);
+    #   2. desired_count bounds the phase's DESIRED WORK COUNT only for
+    #      phases whose reducer consumes a fixed number of whole-deck units
+    #      (style variants: 3) -- the dispatcher passes desired_count=None
+    #      for QC phases, whose obligation is EVERY slide exactly once;
+    #   3. batch_width bounds each admission batch (bounded concurrent
+    #      batches -- QC still covers 100 slides exactly once across its
+    #      ceil(100/12)=9 batches);
+    #   4. banked results are read AND VALIDATED per unit before admission:
+    #      prior ok + matching input hash + existing, hash-verified output
+    #      file => banked (attempts 0 this call, no model call). A corrupt
+    #      or stale banked output re-runs EXACTLY that one unit;
+    #   5. every unit transition appends one durable row; the state map is
+    #      atomic-replace only. No restart resets attempts/budget.
+    # ------------------------------------------------------------------
+    _us = unit_store
+    _banked_keys: set = set()
+    _store_state: Dict[str, Dict[str, Any]] = {}
+    _company_id = ""
+    _presentation_id = ""
+    _unit_input_hashes: Dict[str, str] = {}
+    if _us is not None:
+        _company_id = _us.resolve_company_id(run_dir)
+        _presentation_id = _us.resolve_presentation_id(run_dir)
+        _store_state = _us.load_state(run_dir, phase_id)
+        for it in items:
+            _unit_input_hashes[it["key"]] = _us.input_hash_for_unit(
+                {"inputs": by_key.get(it["key"], {}).get("unit_inputs_now", {}),
+                 "payload": it.get("payload", it)})
+
+    reuse = {k: v for k, v in reuse.items() if k not in _store_state}
+    desired_count = getattr(spec, "desired_count", None)
+    batch_width = getattr(spec, "batch_width", None)
+
+    # Step 4 -- validate banked results BEFORE admission. A validated unit is
+    # admitted as already-done; a stale/corrupt one falls through to a real
+    # (re)submission with its transition recorded.
+    if _us is not None:
+        for it in items:
+            ukey = it["key"]
+            rec = _store_state.get(ukey)
+            cur_ih = _unit_input_hashes.get(ukey, "")
+            admits, why = _us.validate_banked(
+                rec, run_dir=run_dir, current_input_hash=cur_ih)
+            if admits:
+                _saved = run_dir / str(rec.get("output_path") or "")
+                _contract = _unit_contract_for(phase_id)
+                admits = bool(_saved.is_file() and _contract.validator(
+                    by_key.get(ukey, it), _saved.read_text(encoding="utf-8"))[0])
+            if admits:
+                _banked_keys.add(ukey)
+                prior = rec if isinstance(rec, dict) else {}
+                rec_next = dict(prior)
+                rec_next["status"] = "banked"
+                rec_next["revision"] = int(rec.get("revision") or 0)
+                rec_next["input_hash"] = cur_ih
+                _us.stamp_identity(rec_next, company_id=_company_id,
+                                   presentation_id=_presentation_id,
+                                   phase_id=phase_id)
+                _store_state[ukey] = rec_next
+                _us.append_transition(
+                    run_dir, phase_id, ukey,
+                    from_status=str(prior.get("status")),
+                    to_status="banked",
+                    reason=why, company_id=_company_id,
+                    presentation_id=_presentation_id,
+                    revision=rec_next["revision"], input_hash=cur_ih,
+                    output_hash=str(rec.get("output_hash") or ""),
+                    route=rec.get("author_route") if isinstance(rec, dict) else None,
+                    attempts_total=int(rec.get("attempts_total") or 0))
+            elif rec is not None:
+                # A prior record exists but does not validate: append the
+                # refusal transition so the resume trail shows WHY this unit
+                # re-runs (corrupt output / changed inputs / not-banked).
+                prior = rec if isinstance(rec, dict) else {}
+                _us.append_transition(
+                    run_dir, phase_id, ukey,
+                    from_status=str(prior.get("status")),
+                    to_status="invalidated",
+                    reason=why, company_id=_company_id,
+                    presentation_id=_presentation_id,
+                    revision=int(prior.get("revision") or 0),
+                    input_hash=cur_ih,
+                    attempts_total=int(prior.get("attempts_total") or 0))
+
+    # Step 2 -- the DESIRED WORK COUNT reduces the enumerated list only for
+    # whole-deck-unit phases. Per-slide QC phases (desired_count is None on
+    # them, enforced by the caller's plan) never drop a slide here.
+    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+
+    pending_items = [it for it in wanted_items if it["key"] not in _banked_keys and it["key"] not in reuse]
+    _append_sidecar(run_dir, phase_id, {
+        "worker": worker_id, "attempt": 0, "status": "fanout_plan",
+        "units_enumerated": len(items), "units_desired": len(wanted_items),
+        "banked_reused": sorted(_banked_keys),
+        "units_pending": len(pending_items),
+        "desired_count": desired_count, "batch_width": batch_width,
+    })
+
+    results: List[fanout.UnitResult] = []
+    # Banked units first, in input order, with attempts=0 -- they are real
+    # results from real prior calls, validated above.
+    banked_by_key: Dict[str, Dict[str, Any]] = {
+        k: v for k, v in _store_state.items() if k in _banked_keys}
+    for it in wanted_items:
+        if it["key"] not in _banked_keys:
+            continue
+        rec = banked_by_key.get(it["key"], {})
+        results.append(fanout.UnitResult(
+            key=it["key"], status="ok", attempts=0,
+            target=rec.get("output_path"),
+            meta=rec.get("author_route") if isinstance(rec.get("author_route"), dict)
+            else None))
+
+    if _us is not None and _banked_keys:
+        # Persist the banked-stamped state even when nothing is pending: the
+        # on-disk record must say "banked" (validated THIS call), not just the
+        # in-memory copy. Append-only transitions already carry the row; this
+        # is the atomic current-state pointer.
+        _us.save_state(run_dir, phase_id, _store_state,
+                       company_id=_company_id, presentation_id=_presentation_id)
 
     # F6 (review 3.8, 2026-09-06) -- THE WIDTH.
     #
@@ -6161,22 +6298,105 @@ def _dispatch_phase_fanout_units(
                   for it in items if it["key"] not in reuse]
 
     deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
-    live_results = fanout.run_units(
-        live_units, _unit_worker,
-        workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
-        per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
-        deadline_s=deadline_s) if live_units else []
-    live_by_key = {r.key: r for r in live_results}
-    results = []
-    for it in items:
-        r = reused_results.get(it["key"]) or live_by_key.get(it["key"])
-        if r is None:
-            # A deadline skip (S2.4) — run_units already recorded it skipped;
-            # synthesize the same honest verdict here so the input-order
-            # assembly can never raise on a skipped unit.
-            r = fanout.UnitResult(key=it["key"], status="skipped", attempts=0,
-                                  reasons=["unit skipped (deadline/deadline-equivalent)"])
-        results.append(r)
+    results.extend(r for k, r in reused_results.items() if k not in _banked_keys)
+    # ------------------------------------------------------------------
+    # PRES-014: bounded admission BATCHES. The enumerated unit list is split
+    # into batches of at most `batch_width` (migrated from the legacy
+    # max_units; a manifest that declares batch_width directly wins). Each
+    # batch is one fanout.run_units call, so per-slide QC still covers EVERY
+    # slide exactly once across ceil(N/width) batches -- the width bounds
+    # CONCURRENCY, never coverage. retry_cap stays 1 (the phase-level
+    # sweep/verify loop owns retries; a unit-level inner retry would double-
+    # bill on a deadline the sweep already governs).
+    # ------------------------------------------------------------------
+    batch_widths = [b for b in (batch_width, len(pending_items)) if b]
+    all_pending_units = [fanout.Unit(key=it["key"], payload=by_key.get(it["key"], it))
+                         for it in pending_items]
+    admission_batches = _us.plan_batches(all_pending_units, batch_width) if _us \
+        else [all_pending_units]
+    for _b_i, _batch in enumerate(admission_batches, 1):
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "fanout_batch_admit",
+            "batch": _b_i, "batch_size": len(_batch),
+            "batches_total": len(admission_batches),
+        })
+        if _us is not None:
+            for _u in _batch:
+                _rec = _store_state.get(_u.key)
+                _prior = _rec if isinstance(_rec, dict) else {}
+                _next = dict(_prior)
+                _next["status"] = "admitted"
+                _next["revision"] = int(_prior.get("revision") or 0) + 1
+                _next["input_hash"] = _unit_input_hashes.get(_u.key, "")
+                # attempts_total counts ACTUAL author calls only -- it is
+                # incremented at RESULT time by r.attempts (admission alone
+                # spends nothing; PRES-014: no restart resets this ledger).
+                _us.stamp_identity(_next, company_id=_company_id,
+                                   presentation_id=_presentation_id,
+                                   phase_id=phase_id)
+                _store_state[_u.key] = _next
+                _us.append_transition(
+                    run_dir, phase_id, _u.key,
+                    from_status=str(_prior.get("status")),
+                    to_status="admitted",
+                    reason=f"batch {_b_i}/{len(admission_batches)} admitted",
+                    company_id=_company_id, presentation_id=_presentation_id,
+                    revision=_next["revision"],
+                    input_hash=_next["input_hash"],
+                    attempts_total=int(_prior.get("attempts_total") or 0))
+            _us.save_state(run_dir, phase_id, _store_state,
+                           company_id=_company_id, presentation_id=_presentation_id)
+        batch_results = fanout.run_units(
+            _batch, _unit_worker,
+            workers=effective_workers, run_dir=run_dir, phase_id=phase_id,
+            per_unit_timeout_s=SINGLE_ATTEMPT_BUDGET_S, retry_cap=1,
+            deadline_s=deadline_s)
+        # Durable per-unit records: append one transition per result, then
+        # atomically update the state map. The scratch output is hash-stamped
+        # at RECORD time (banked validation re-hashes at ADMISSION time) --
+        # a restart between the two reads sees the honest file on disk.
+        if _us is not None:
+            for r in batch_results:
+                _rec = _store_state.get(r.key)
+                _prior = _rec if isinstance(_rec, dict) else {}
+                _next = dict(_prior)
+                _next["revision"] = int(_prior.get("revision") or 0) + 1
+                _next["input_hash"] = _unit_input_hashes.get(r.key, "")
+                _next["attempts_total"] = int(_prior.get("attempts_total") or 0) \
+                    + int(r.attempts or 0)
+                _next["status"] = "ok" if r.status == "ok" else "failed"
+                _next["updated_at"] = _heal.utcnow() if hasattr(_heal, "utcnow") \
+                    else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                if r.target:
+                    _next["output_path"] = r.target
+                    _out = run_dir / r.target
+                    if r.status == "ok" and _out.is_file():
+                        _next["output_hash"] = _us.file_sha256(_out)
+                if r.meta and isinstance(r.meta, dict):
+                    _next["author_route"] = r.meta
+                if r.status != "ok" and r.reasons:
+                    _next["last_error"] = "; ".join(r.reasons)[:500]
+                _us.stamp_identity(_next, company_id=_company_id,
+                                   presentation_id=_presentation_id,
+                                   phase_id=phase_id)
+                _store_state[r.key] = _next
+                _us.append_transition(
+                    run_dir, phase_id, r.key,
+                    from_status="admitted",
+                    to_status=_next["status"],
+                    reason=("; ".join(r.reasons)[:300] if r.status != "ok"
+                            else f"unit ok (attempt {r.attempts})"),
+                    company_id=_company_id, presentation_id=_presentation_id,
+                    revision=_next["revision"], input_hash=_next["input_hash"],
+                    output_hash=str(_next.get("output_hash") or ""),
+                    route=r.meta if isinstance(r.meta, dict) else None,
+                    attempts_total=_next["attempts_total"])
+            _us.save_state(run_dir, phase_id, _store_state,
+                           company_id=_company_id,
+                           presentation_id=_presentation_id)
+        results.extend(batch_results)
+    _ordered = {r.key: r for r in results}
+    results = [_ordered[it["key"]] for it in wanted_items if it["key"] in _ordered]
 
     failed = [r for r in results if r.status != "ok"]
     for r in results:
@@ -6188,19 +6408,33 @@ def _dispatch_phase_fanout_units(
                 run_dir, phase_id, r.key).relative_to(run_dir)),
             # the input-hash snapshot this output was produced against
             "unit_inputs": by_key.get(r.key, {}).get("unit_inputs"),
+            "banked": r.key in _banked_keys,
             **({"meta": r.meta} if r.meta else {}),
         })
     if failed:
+        # PRES-014: a phase sweep where SOME units are ok (banked or authored
+        # this call) and SOME failed is a PARTIAL FAILURE, not an exhaustion
+        # of the whole phase. The phase-level sweep/verify loop may retry the
+        # phase; on that retry the ok units validate as banked (no re-bill)
+        # and only the failed ones resubmit -- the exact "first run 20 units
+        # with 1 failure -> retry exactly 1, not 20" acceptance. Returning
+        # status "ok" would let the Engine mark the phase done over failing
+        # units, so the honest intermediate status is "partial": a real
+        # failure signal that also records the attempt trail.
         reasons = [f"{r.key}: {'; '.join(r.reasons) or 'failed'}" for r in failed]
+        _ok_part = [r for r in results if r.status == "ok"]
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": sum(r.attempts for r in results),
-            "status": "exhausted", "failed_units": [r.key for r in failed],
+            "status": "partial_failure", "failed_units": [r.key for r in failed],
+            "ok_units": [r.key for r in _ok_part],
+            "banked_units": sorted(_banked_keys),
             "reasons": reasons,
             "workers": effective_workers, "routed_width": routed_width,
             "capacity_status": routing.get("capacity_status"),
             "reused_units": sorted(reuse),
+            "batches": len(admission_batches),
         })
-        return DispatchResult(phase_id, "exhausted",
+        return DispatchResult(phase_id, "partial_failure" if _ok_part else "exhausted",
                               sum(r.attempts for r in results), reasons,
                               slide_results=[
                                   {"slide_id": by_key.get(r.key, {}).get("slide_id"),

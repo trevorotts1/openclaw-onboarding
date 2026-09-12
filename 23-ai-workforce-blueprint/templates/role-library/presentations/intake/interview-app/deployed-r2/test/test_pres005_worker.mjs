@@ -41,7 +41,7 @@ const PAYLOAD = {
 };
 
 function session() {
-  return { token: randomToken(), run_id: "RUN-PRES005", question_set: "standard" };
+  return { token: randomToken(), intake_session_id: "intake-test", company_id: "company-test", installation_id: "install-test", presentation_id: "presentation-test", run_id: "RUN-PRES005", question_set: "standard" };
 }
 
 // Drive the REAL lib ordering so the answer rows mirror what the server
@@ -95,7 +95,7 @@ test("full grounded submission assembles a complete dept-format intake", () => {
   const i = built.intake;
   assert.equal(i.presentation_type, "signature");
   assert.equal(i.deck_type, "signature_presentation");
-  assert.equal(i.intake_session_id, "sess-" + s.token);
+  assert.equal(i.intake_session_id, s.intake_session_id);
   assert.equal(i.deck_brief.OFFER_NAME, "The Momentum Method");
   assert.equal(i.pre_presentation_capture.PRESENTATION_TYPE, "signature");
   assert.equal(i.pre_presentation_capture.WANT_SALES_CHECKOUT, "yes");

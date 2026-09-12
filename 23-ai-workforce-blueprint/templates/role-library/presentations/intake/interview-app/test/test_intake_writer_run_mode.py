@@ -113,12 +113,25 @@ def _submit(run_mode=None, *, frontend_shaped=False):
                "HOOK_SEED": answers["transformation_promise"]}
         if run_mode is not None:
             pre["RUN_MODE"] = run_mode
+        # PRES-006: the writers gate on the canonical REQUIRED set, so the
+        # browser-shaped payload below is now a COMPLETE production record
+        # (the real buildIntakePayload() always sends every answered field).
         intake = {"interview_confirmed": True, "presentation_type": "from_scratch",
-                  "source": "presentation-interview-app",
-                  "pre_presentation_capture": pre,
+                  "source": "presentation-interview-app", "schema_version": 2,
+                  "pre_presentation_capture": dict(
+                      {"PRESENTATION_TYPE": "from_scratch",
+                       "WANT_SALES_CHECKOUT": answers["want_sales_checkout"],
+                       "WANT_VSL_PAGE": answers["want_vsl_page"]}, **pre),
                   "deck_brief": {"OFFER_NAME": answers["offer_name"],
-                                 "AUDIENCE": answers["audience"]},
-                  "intake": {}, "answers": answers}
+                                 "NAMED_METHODOLOGY": answers["named_methodology"],
+                                 "TRANSFORMATION_PROMISE": answers["transformation_promise"],
+                                 "TIME_TO_RESULT": answers["time_to_result"],
+                                 "AUDIENCE": answers["audience"],
+                                 "CTA_ACTION": answers["cta_action"],
+                                 "TONE": answers["tone"],
+                                 "FINAL_PRICE": answers["final_price"]},
+                  "intake": {"speech_speed_preference": "default"},
+                  "answers": answers}
     else:
         intake = iw.assemble_intake({"answers": answers}, run_id="RM-TEST")
     iw.write_intake_file(run_dir, intake)
@@ -174,12 +187,16 @@ class TestTheAppActuallyAsks(unittest.TestCase):
         self.assertNotIn("deck_brief", q["storeOn"])  # execution axis
 
     def test_the_question_stays_inside_the_documented_cap(self):
-        """questions.json's own contract: "Cap 20; this set is 16." The cap is
+        """questions.json's own contract: "Cap 20; this set is N." The cap is
         enforced twice -- build_questions_payload's selftest/test_payload
-        (len(ids) <= 20) and index.html's MAX_QUESTIONS -- and 16 clears both."""
+        (len(ids) <= 20) and index.html's MAX_QUESTIONS -- and the generated
+        set stays under it. (PRES-006: the count is now read from the file --
+        the description line names the true count -- instead of a hardcoded
+        16, which drifted when the contract added the declined-reason
+        follow-ups.)"""
         qj = json.loads((APP / "pages" / "questions.json").read_text(encoding="utf-8"))
         self.assertLessEqual(len(qj["questions"]), 20)
-        self.assertIn("Cap 20; this set is 16.", qj["description"])
+        self.assertIn(f"Cap 20; this set is {len(qj['questions'])}.", qj["description"])
         html = (APP / "pages" / "index.html").read_text(encoding="utf-8")
         self.assertIn("var MAX_QUESTIONS = 20;", html)
         self.assertIn('{ id: "run_mode", order: 11.5, kind: "enum",', html)

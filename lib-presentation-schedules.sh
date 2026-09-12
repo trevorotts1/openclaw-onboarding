@@ -60,11 +60,257 @@
 #   optional and all read with `${...:-}` so `set -u` in either caller is safe.
 #
 # GUARDED BY tests/unit/presentation-schedules-installed.test.sh.
+#
+# PRES-019 (W2 WF06) — HEALTH-GATED RECOVERY ACTIVATION, explicitly parsed.
+#
+# THE DEFECT THIS CLOSES. F12c armed the supervisor's --apply (restart) mode
+# ONLY when the operator exported PRESENTATION_SUPERVISE_APPLY in the
+# installer's own environment, and report-only was the default forever. That
+# meant a brand-new box — install.sh run fresh, or any box where the operator
+# never set the variable — installed the watchdog with the supervisor pinned
+# in report-only: deaths detected, restarts announced, NOTHING restarted.
+# A live flock proves process ownership, not useful work; detection without
+# recovery is not recovery. At the same time the ONLY consumer of the value
+# (presentation-watchdog.sh's ${PRESENTATION_SUPERVISE_APPLY:+--apply})
+# treats ANY nonempty string as "armed" — including "0" and "false". So an
+# operator who read the docs, set PRESENTATION_SUPERVISE_APPLY=0 to spell out
+# what they wanted, got the OPPOSITE of what they asked for, silently.
+#
+# THE FIX, two halves, both here (the single place every install/roll passes
+# through):
+#
+#   1. EXPLICIT TRUTHINESS. _pres_parse_bool answers exactly one of three
+#      things about a value: true (1/true/yes/on, case-insensitive), false
+#      (0/false/no/off), or UNPARSEABLE (anything else). The watchdog
+#      installer then:
+#        - true   -> renders PRESENTATION_SUPERVISE_APPLY=1 into the plist;
+#        - false  -> renders NOTHING (and STRIPS a previously rendered
+#                    value, so "0" never rides into the launchd environment
+#                    to be misread as armed);
+#        - absent -> PRES-019's health gate decides (see 2);
+#        - garbage-> preserved verbatim and passed through UNCHANGED, with a
+#                    warning — an operator's hand-tuned value is never
+#                    silently rewritten, and the existing render-time
+#                    preservation already carries it across re-runs. The
+#                    consumer-side +:- expansion still misreads garbage as
+#                    armed; that legacy wart is documented, never worsened:
+#                    the installer WARNS that the value is not one it
+#                    understands.
+#
+#   2. HEALTH-GATED DEFAULT. When the operator said nothing, the installer
+#      asks the box one question: is RECOVERY READY? The gate is
+#      presentation_job/recovery_gate.py beside the materialized scripts —
+#      the same module the renderer's shell-branch checks. It proves, in
+#      order, the things a restart actually needs:
+#        - the entry script exists (presentation_job.py) and is readable;
+#        - python3 exists (the restart spawns sys.executable via the entry
+#          script's shebang; without python3 every restart is a corpse);
+#        - supervisor.py + auto_resume.py + lease.py exist in the package
+#          (the recovery machinery itself);
+#        - a notify transport resolves (PRESENTATION_NOTIFY_CMD in this
+#          process env, or renderable beside the scripts, or the box env
+#          store names one) — fail-closed by default exactly as the
+#          watchdog's own FIX 22 gate is: a restart nobody can be told
+#          about must not fire;
+#        - launchd/launchctl on Mac (the schedule is being installed right
+#          here — a plist without a working loader arms nothing); cron on
+#          VPS is implied by the openclaw CLI the same branch requires.
+#      ALL gates pass -> arm PRESENTATION_SUPERVISE_APPLY=1 (recovery is
+#      READY, and install is the moment it becomes armed); ANY gate fails ->
+#      stay report-only and NAME THE EXACT FAILED GATE in the installer's
+#      output, so a box that cannot recover says why instead of failing
+#      silently. This is the spec's "proves recovery ready or exposes the
+#      exact failed gate".
+#
+#      The gate is ADVICE to the installer, never a bypass of the operator:
+#      an explicit true wins over a failed gate, an explicit false wins over
+#      a ready one, and a value already rendered into an installed plist is
+#      still preserved across re-runs exactly as F12c built it. Kill
+#      switches (PRESENTATION_AUTO_RESUME=0, PRESENTATION_NOTIFY_FAIL_CLOSED,
+#      PRESENTATION_SUPERVISE_APPLY=0/false) are env-parsed downstream and
+#      untouched here; budget/approval constraints live in supervisor.py's
+#      ledger and auto_resume.py's bounds and are never installer business.
+#
+# PRES-019 ALSO RULES the old comment below wrong in one sentence: with the
+# health gate, "report-only is the default" holds only while the box is NOT
+# proven recovery-ready — the default on a healthy install is ARMED.
 # ============================================================
 
 # Re-source guard.
 [ -n "${__PRESENTATION_SCHEDULES_LIB_SOURCED:-}" ] && return 0
 __PRESENTATION_SCHEDULES_LIB_SOURCED=1
+
+# ── PRES-019: explicit boolean parsing. No defaults inside the parser: the
+#    caller owns "absent" (it is a distinct state — the health gate's call).
+#    Only these exact spellings, case-insensitive, are legal: 1 true yes on;
+#    0 false no off. Anything else returns rc=2 and echoes the value back —
+#    never silently normalized, never silently dropped.
+_pres_parse_bool() {
+    # $1 = raw value; echoes "1" (true), "0" (false); rc 2 = unparseable
+    # (value echoed for the warning), rc 3 = absent (caller decides).
+    local _v="${1-}"
+    if [ -z "$_v" ]; then
+        return 3
+    fi
+    local _lower
+    _lower="$(printf '%s' "$_v" | tr '[:upper:]' '[:lower:]')"
+    case "$_lower" in
+        1|true|yes|on)  echo "1"; return 0 ;;
+        0|false|no|off) echo "0"; return 0 ;;
+        *)              echo "$_v"; return 2 ;;
+    esac
+}
+
+# ── PRES-019: the recovery-readiness health gate. Shell half.
+#    Decides whether a FRESH arm (no operator decision, no carried plist
+#    value) is safe. Prints one line per failed gate (the exact failed gate,
+#    never a bare "not ready") and echoes "1" when every gate passes, "0"
+#    otherwise. Read-only: runs no python beyond the gate module itself, and
+#    the module is a pure checker (see its docstring) that never spawns,
+#    never writes, never loads a credential value.
+_pres_recovery_health_gate() {
+    # $1 = scripts dir (must hold presentation_job/); $2 = platform
+    # ("vps" selects the cron prerequisites, anything else launchd's).
+    local _scripts="$1" _platform="${2:-mac}"
+    local _ok=1
+    local _gate _gate_err _gate_rc _tmperr
+    _tmperr="$(mktemp "${TMPDIR:-/tmp}/pres019-gate-err.XXXXXX")" || return 1
+    # The module's verdict comes back as JSON on stdout ("ready": true/false)
+    # and its failed-gate NAMES go to stderr. The shell needs exactly one
+    # word -- "1" or "0" -- so: run the module once with --json, pipe stdout
+    # through python3 -c to collapse ready->1/not-ready->0, capture stderr in
+    # the temp file for re-emission, and take the PIPELINE's rc via
+    # `|| _gate_rc=$?` (a bash pipe's rc is the LAST command's, so the
+    # normalizer's failure -- a verdict that is not JSON -- is what surfaces;
+    # the module's own NOT-READY rc=1 is harmless because its VERDICT is the
+    # "0" it printed, not its exit code). The `|| rc=$?` is the same set -e
+    # discipline as the _pres_parse_bool call in install_watchdog_schedule: a
+    # bare capture would abort this installer on any non-zero rc, killing
+    # install_watchdog_schedule before it renders any plist.
+    _gate_rc=0
+    _gate="$( { python3 "$_scripts/presentation_job/recovery_gate.py" \
+        --scripts-dir "$_scripts" --platform "$_platform" --json \
+        2>"$_tmperr" | python3 -c 'import json,sys
+try:
+    print("1" if json.load(sys.stdin).get("ready") else "0")
+except Exception:
+    sys.exit(3)'; } 2>/dev/null )" || { _gate_rc=$?; _gate=""; }
+    _gate_err="$(cat "$_tmperr" 2>/dev/null)"
+    rm -f "$_tmperr"
+    if [ -n "$_gate_err" ]; then
+        printf '%s\n' "$_gate_err"
+    fi
+    if [ "$_gate" = "1" ]; then
+        # The module RAN and answered READY (rc 0 through the normalizer).
+        echo "1"
+        return 0
+    fi
+    if [ "$_gate" = "0" ]; then
+        # The module RAN and answered NOT-READY; its failed-gate lines were
+        # re-emitted above. Verdict: not ready. (The module's own exit code
+        # is 1 here -- its VERDICT is the printed "0", not its rc.)
+        echo "0"
+        return 0
+    fi
+    if [ "$_gate_rc" -ne 0 ] || [ -z "$_gate" ]; then
+        # The gate module or its normalizer could not produce a verdict --
+        # that IS the failed gate. Degrade to the shell checks below rather
+        # than fail the whole installer, and say that is what happened.
+        # (Anything the module printed before failing was already re-emitted
+        # above.)
+        echo "PRES-019: recovery_gate.py unavailable or failed (rc=$_gate_rc) -- falling back to shell checks"
+        _gate=""
+    fi
+    # ---- shell fallback (gate module missing): the minimal, order-stable
+    #      version of the same question. Each failure NAMES its gate. ----
+    if [ ! -f "$_scripts/presentation_job.py" ]; then
+        echo "PRES-019 GATE entry-script: $_scripts/presentation_job.py not found"; _ok=0
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "PRES-019 GATE python3: not on PATH"; _ok=0
+    fi
+    for _req in supervisor auto_resume lease; do
+        if [ ! -f "$_scripts/presentation_job/$_req.py" ]; then
+            echo "PRES-019 GATE recovery-module: presentation_job/$_req.py not found"; _ok=0
+        fi
+    done
+    unset _req
+    if [ ! -f "$_scripts/presentation-notify.py" ] \
+       && [ -z "${PRESENTATION_NOTIFY_CMD:-}" ]; then
+        echo "PRES-019 GATE notify-transport: no PRESENTATION_NOTIFY_CMD in this environment and no presentation-notify.py beside the scripts -- a restart nobody can be told about must not fire (fail-closed, same rule as the watchdog's own FIX 22 gate)"
+        _ok=0
+    fi
+    if [ "$_platform" = "vps" ]; then
+        if ! command -v openclaw >/dev/null 2>&1; then
+            echo "PRES-019 GATE openclaw: not on PATH -- the VPS cron branch needs it"; _ok=0
+        fi
+    else
+        if ! command -v launchctl >/dev/null 2>&1; then
+            echo "PRES-019 GATE launchctl: not on PATH -- a rendered plist arms nothing without it"; _ok=0
+        fi
+    fi
+    echo "$_ok"
+    [ "$_ok" = "1" ]
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# PRES-035 — resolve ONE absolute pipeline interpreter for the schedules.
+# ════════════════════════════════════════════════════════════════════════════
+# Single shell front for presentation_job/pipeline_interp.py (the authority):
+# selected client config + PRESENTATION_PIPELINE_INTERPRETER, validated
+# BEFORE anything renders, passed explicitly into the poller/watchdog
+# schedules. Prints the absolute path or nothing; exit nonzero = unresolved.
+# A set-but-unusable override is reported on stderr, never silently skipped
+# (the module says why and continues to the client venv — that note is the
+# evidence the pin went stale, not a silent substitution).
+#
+# Rollback: PRESENTATION_PIPELINE_PIN=0 restores the pre-fix unpinned render.
+# Per-client overrides are never clobbered here: this function only READS.
+# (update-skills.sh preserves the box's existing explicit pin; the plist
+# render preserves an installed explicit pin the same way OWNER_CHAT_ID is
+# preserved.)
+# WHERE THE MODULE IS LOOKED UP (PRES-035 repair, 2026-09-09): the scripts dir
+# an installer points at is the SCHEDULED scripts dir (the materialized
+# department), which on a box mid-remediation can hold only the poll/watchdog
+# entry files — no presentation_job/ tree at all. The MODULE is part of the
+# canonical checkout, not of the department's data, so when the given dir
+# lacks it the resolver re-locates it beside this lib (the repo checkout:
+# lib root -> 23-ai-workforce-blueprint/.../presentations/scripts) and runs it
+# from there. That changes WHERE the authority is imported from, never WHAT it
+# resolves: every layer (override pin -> client venv -> PATH python3) is the
+# module's own untouched precedence, and the venv pin is not weakened — the
+# module still prefers the client venv over PATH and still refuses a set-but-
+# unusable pin. A dir that holds the module keeps exact behavior (no second
+# candidate is consulted), so the update-skills.sh materialized-department pin
+# is unchanged in the ordinary case and the module never silently borrows a
+# DIFFERENT client's data — it reads only env/config for resolution.
+_pres35_module_scripts_dir() {
+    local _dir="${1:-}"
+    [ -f "$_dir/presentation_job/pipeline_interp.py" ] && { printf '%s\n' "$_dir"; return 0; }
+    # Fallback 1: the canonical checkout beside THIS lib (repo root layout).
+    local _lib_root
+    _lib_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+    _dir="$_lib_root/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+    [ -f "$_dir/presentation_job/pipeline_interp.py" ] && { printf '%s\n' "$_dir"; return 0; }
+    # Fallback 2: the selected client's materialized department, when the
+    # CALLER'S scripts dir was never materialized but a selected workspace has
+    # the full module tree. Never another client's root: only the root
+    # _fix61_selected_workspace already selected for this install.
+    _dir="$(_fix61_selected_workspace 2>/dev/null)/departments/Presentations/scripts" || return 1
+    [ -f "$_dir/presentation_job/pipeline_interp.py" ] && { printf '%s\n' "$_dir"; return 0; }
+    return 1
+}
+
+_pres35_resolve_interpreter() {
+    local _scripts_dir="${1:-}" _mod_dir="" _mod_out="" _rc=0
+    [ -n "$_scripts_dir" ] || return 1
+    [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ] && return 1
+    [ -f "$_scripts_dir/presentation_job/pipeline_interp.py" ] || _scripts_dir="$(_pres35_module_scripts_dir "${1:-}" || true)"
+    [ -f "$_scripts_dir/presentation_job/pipeline_interp.py" ] || return 1
+    _mod_out="$(cd "$_scripts_dir" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null)" || _rc=$?
+    [ "$_rc" -eq 0 ] || return 1
+    case "$_mod_out" in /*) printf '%s\n' "$_mod_out"; return 0 ;; *) return 1 ;; esac
+}
 
 # ── Minimal UI-helper fallbacks (install.sh already defines richer ones; these
 #    only fill in for update-skills.sh, which logs with plain echo). Guarded so
@@ -824,18 +1070,38 @@ install_intake_poll_schedule() {
         #            is SAFE here: the poller loads the box's env store itself
         #            and its precedence only lets a NON-BLANK process value
         #            win, so an empty string cannot shadow the store.
+        #   INTERPRETER (PRES-035) — the ONE absolute pipeline interpreter,
+        #            resolved via presentation_job/pipeline_interp.py from the
+        #            selected client config + PRESENTATION_PIPELINE_INTERPRETER
+        #            and VALIDATED before anything renders. A set-but-unusable
+        #            override is reported, never silently skipped; per-client
+        #            overrides are preserved (see the update-skills.sh guard).
         local _dept_scripts_dir; _dept_scripts_dir="$(dirname "$POLL_SRC")"
-        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
+        # PRES-035: PATH carries BOTH Homebrew prefixes (Apple Silicon
+        # /opt/homebrew/bin AND Intel /usr/local/bin) behind the system
+        # prefix, so native-tool discovery survives on either arch. The
+        # poller script itself prepends the same two prefixes at runtime;
+        # the launchd value must agree with it, never narrow it.
+        local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin"
+        local _pres35_interp=""; _pres35_interp="$(_pres35_resolve_interpreter "$_dept_scripts_dir" 2>/dev/null || true)"
         local _poll_notify_cmd=""
         if [ -f "$_dept_scripts_dir/presentation-notify.py" ]; then
             _poll_notify_cmd="$_dept_scripts_dir/presentation-notify.py"
         else
             warn "FIX 61: notify transport not found at $_dept_scripts_dir/presentation-notify.py — PRESENTATION_NOTIFY_CMD rendered EMPTY in the LaunchAgent. The poller will fall back to the box env store; if that has no transport either, dispatch stays refused (AF-NOTIFY-UNCONFIGURED)."
         fi
+        # PRES-035: the resolved interpreter is REQUIRED, not advisory. A
+        # schedule rendered without it would run every python under a bare
+        # PATH lookup again — the defect this unit closes — so refuse and
+        # keep the prior plist rather than ship an unpinned job.
+        if [ -z "$_pres35_interp" ]; then
+            warn "PRES-035: pipeline interpreter UNRESOLVED (client config + PRESENTATION_PIPELINE_INTERPRETER + PATH all refused) — intake poll NOT scheduled; prior plist and running job preserved."
+            return 1
+        fi
         # Parse the actual template, substitute values as plist strings (never
         # sed/XML/shell fragments), validate, then atomically promote beside the
         # destination. Failed rendering leaves the old plist and job untouched.
-        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" <<'PY_RENDER_INTAKE_PLIST'
+        if ! python3 - "$TPL_SRC" "$PLIST_DST" "$POLL_SRC" "$LOG_PATH" "$_poll_path" "$_poll_runs_dir" "$_poll_notify_cmd" "$_poll_root" "$_poll_workspace" "$_pres35_interp" <<'PY_RENDER_INTAKE_PLIST'
 import os
 from pathlib import Path
 import plistlib
@@ -844,12 +1110,14 @@ import shlex
 import sys
 import tempfile
 
-template, destination, poll, log, runtime_path, runs, notify, client_root, workspace = sys.argv[1:]
+template, destination, poll, log, runtime_path, runs, notify, client_root, workspace, pipeline_interp = sys.argv[1:]
 text = Path(template).read_text()
 # The repository template has a documentation comment before its XML declaration.
 start = text.find('<?xml')
 if start < 0:
     raise ValueError('Intake poll template has no XML declaration')
+if not pipeline_interp or not pipeline_interp.startswith('/'):
+    raise ValueError('PRES-035: rendered pipeline interpreter is not absolute')
 data = plistlib.loads(text[start:].encode())
 values = {
     '<POLL_SCRIPT_PATH>': poll, '<LOG_PATH>': log, '<POLL_PATH>': runtime_path,
@@ -885,10 +1153,13 @@ if (result.get('Label') != 'com.blackceo.presentation-intake-poll'
     raise ValueError('Intake poll template does not satisfy the scheduler contract')
 # Carry client context into launchd's otherwise empty environment, even when
 # scripts themselves were sourced from a shared installer checkout.
+# PRES-035: the validated interpreter rides as an explicit pin — a scheduled
+# tick never re-resolves it from a bare PATH lookup.
 result['EnvironmentVariables'].update({
     'OPENCLAW_ROOT': client_root,
     'OPENCLAW_WORKSPACE_PATH': workspace,
     'OPENCLAW_WORKSPACE_ROOT': workspace,
+    'PRESENTATION_PIPELINE_INTERPRETER': pipeline_interp,
 })
 encoded = plistlib.dumps(result)
 if plistlib.loads(encoded) != result:
@@ -909,7 +1180,7 @@ PY_RENDER_INTAKE_PLIST
             warn "FIX 61: intake poll render/validation failed — prior plist and running job preserved; no launchctl changes made."
             return 1
         fi
-        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>})"
+        success "FIX 61: validated $PLIST_DST (poll script: $POLL_SRC, log: $LOG_PATH, runs: $_poll_runs_dir, notify transport: ${_poll_notify_cmd:-<EMPTY — env store must supply it>}, pipeline interpreter: $_pres35_interp)"
         # Reload semantics: if already loaded, unload first so a re-run picks up
         # a re-rendered copy. 'launchctl load' on an already-loaded job is the
         # documented "Load failed: 5: Input/output error" — treat it as loaded.
@@ -1071,17 +1342,96 @@ install_watchdog_schedule() {
         *[!0-9]*) _wd_owner_chat="" ;;
     esac
 
-    # ── PRESENTATION_SUPERVISE_APPLY — F12c, NOT armed by this installer. ──
-    # Passed through ONLY when the operator set it in this process's
-    # environment. The renderer additionally PRESERVES a value already present
-    # in an installed plist, so a roll can neither arm what an operator did
-    # not, nor disarm what they did.
-    local _wd_supervise_apply="${PRESENTATION_SUPERVISE_APPLY:-}"
-    # A plain word for the log lines. `${x:+A}${x:-B}` would print "A1" when x=1
-    # (the :- branch yields the VALUE, not B) — a log that misreports the very
-    # setting this whole section exists to be careful about.
-    local _wd_supervise_note="report-only (F12c not armed here)"
-    [ -n "$_wd_supervise_apply" ] && _wd_supervise_note="APPLY (operator-armed: PRESENTATION_SUPERVISE_APPLY=$_wd_supervise_apply)"
+    # ── PRESENTATION_SUPERVISE_APPLY — F12c + PRES-019. ───────────────────
+    # Three sources, resolved in order, each with its own rule:
+    #   1. the operator's environment (explicit true/false/1/0, parsed —
+    #      "0"/"false" are now genuinely OFF instead of being misread as
+    #      armed by the consumer's nonempty-means-on expansion);
+    #   2. a value already rendered into an installed plist (PRESERVED across
+    #      re-runs — a roll must neither arm what an operator did not nor
+    #      disarm what they did; unchanged F12c behaviour, enforced in the
+    #      renderer's carry-forward block below);
+    #   3. NOBODY said anything -> the PRES-019 health gate decides: a box
+    #      that proves recovery-ready is armed (=1) at install time; a box
+    #      with any failed gate stays report-only AND NAMES THE FAILED GATE.
+    local _wd_supervise_apply=""
+    local _wd_supervise_note=""
+    local _wd_bool _wd_bool_rc
+    # `|| _wd_bool_rc=$?` and NOT a bare capture: under `set -e` (both callers
+    # run with it) a command substitution whose exit status is non-zero inside
+    # a plain local assignment ABORTS THE FUNCTION -- the unparseable (2) and
+    # absent (3) verdicts would kill install_watchdog_schedule with the
+    # PARSER's rc as the installer's rc, before any plist is rendered. This
+    # shape keeps set -e disarmed for the substitution's rc while still
+    # capturing it.
+    _wd_bool_rc=0
+    _wd_bool="$( _pres_parse_bool "${PRESENTATION_SUPERVISE_APPLY:-}" )" || _wd_bool_rc=$?
+    case "$_wd_bool_rc" in
+        0)
+            # Explicit true or false from the environment WINS over everything.
+            _wd_supervise_apply="$_wd_bool"
+            ;;
+        2)
+            # Unparseable: never silently rewritten, never silently dropped.
+            # Keep the value verbatim (the consumer's expansion treats any
+            # nonempty as armed — legacy wart, warned about, not worsened)
+            # and say so.
+            _wd_supervise_apply="${PRESENTATION_SUPERVISE_APPLY:-}"
+            warn "PRES-019: PRESENTATION_SUPERVISE_APPLY='$_wd_supervise_apply' is not one of 1/true/yes/on or 0/false/no/off — passed through VERBATIM. Note: presentation-watchdog.sh treats any nonempty value as APPLY, so this value arms the supervisor."
+            ;;
+        3)
+            # Absent. Carried plist value first (F12c preservation), then the
+            # health gate. The carry-forward is enforced again in the render
+            # block below; checking it HERE too means the log line states the
+            # real source instead of "gate decided".
+            local _wd_carried=""
+            if [ "${OPENCLAW_PLATFORM:-mac}" != "vps" ]; then
+                local _wd_prior_plist="$HOME/Library/LaunchAgents/com.blackceo.presentation-watchdog.plist"
+                if [ -f "$_wd_prior_plist" ]; then
+                    _wd_carried="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PRESENTATION_SUPERVISE_APPLY' "$_wd_prior_plist" 2>/dev/null)" || _wd_carried=""
+                fi
+            fi
+            if [ -n "$_wd_carried" ]; then
+                _wd_supervise_apply="$_wd_carried"
+                _wd_supervise_note="carried from the installed plist (PRES-019: $_wd_supervise_apply)"
+            else
+                # THE HEALTH GATE. Armed only when every recovery prerequisite
+                # proves out; otherwise report-only with the failed gate named.
+                local _gate_scripts="$PRESENTATIONS_SCRIPTS_SRC"
+                local _gate_platform="${OPENCLAW_PLATFORM:-mac}"
+                local _gate_out _gate_rc
+                # Same set -e discipline as the _pres_parse_bool call above:
+                # _pres_recovery_health_gate returns non-zero when the gate
+                # says NOT-READY (that is its verdict, not a crash) -- the
+                # `|| _gate_rc=$?` keeps that verdict from aborting the
+                # installer before it can say WHICH gate failed.
+                _gate_rc=0
+                _gate_out="$( _pres_recovery_health_gate "$_gate_scripts" "$_gate_platform" )" || _gate_rc=$?
+                if [ "$_gate_out" = "1" ]; then
+                    _wd_supervise_apply="1"
+                    _wd_supervise_note="ARMED by the PRES-019 recovery health gate (all gates passed)"
+                else
+                    _wd_supervise_apply=""
+                    _wd_supervise_note="report-only -- PRES-019 recovery health gate FAILED; the exact failed gate(s) are named above"
+                    warn "PRES-019: supervisor stays REPORT-ONLY on this box -- the recovery health gate failed. The failed gate(s) are named above. Fix them and re-run install/update-skills.sh, or set PRESENTATION_SUPERVISE_APPLY=1 explicitly to override."
+                fi
+            fi
+            ;;
+    esac
+    # Normalize the log note for the explicit-true/false paths.
+    if [ -z "$_wd_supervise_note" ]; then
+        case "$_wd_supervise_apply" in
+            1) _wd_supervise_note="APPLY (operator-armed: PRESENTATION_SUPERVISE_APPLY=1)" ;;
+            0) _wd_supervise_note="OFF (operator-set: PRESENTATION_SUPERVISE_APPLY=0/false -- supervisor stays report-only)" ;;
+            *) _wd_supervise_note="APPLY (operator-armed, verbatim: PRESENTATION_SUPERVISE_APPLY=$_wd_supervise_apply)" ;;
+        esac
+    fi
+    # A false verdict renders NOTHING: "0" must never ride into launchd's
+    # environment, where the watchdog's ${...:+--apply} would misread it as
+    # armed. The renderer below also strips an armed key when the verdict is
+    # empty, so a box the operator explicitly turned OFF stays off.
+    local _wd_apply_off=0
+    [ "$_wd_supervise_apply" = "0" ] && { _wd_apply_off=1; _wd_supervise_apply=""; }
 
     # ── The notify transport, co-located with the watchdog. Same rule as the
     #    poller's: rendered ONLY if the file actually exists; otherwise EMPTY
@@ -1091,6 +1441,13 @@ install_watchdog_schedule() {
     #    whole pass — so an empty here is only safe because the script loads
     #    the box env store before that gate runs.
     local _wd_scripts_dir; _wd_scripts_dir="$(dirname "$WD_SRC")"
+    # PRES-035: the watchdog's interpreter pin. Same resolver as the poller,
+    # validated before either branch renders; a re-render never proceeds on
+    # an unpinned job. Per-client overrides are preserved — see PRESERVE
+    # below: an installed plist's explicit pin wins over no pin here, exactly
+    # like OWNER_CHAT_ID (an override the operator set for this box is live
+    # configuration, not drift to re-render away).
+    local _pres35_wd_interp=""; _pres35_wd_interp="$(_pres35_resolve_interpreter "$_wd_scripts_dir" 2>/dev/null || true)"
     local _wd_notify_cmd=""
     if [ -f "$_wd_scripts_dir/presentation-notify.py" ]; then
         _wd_notify_cmd="$_wd_scripts_dir/presentation-notify.py"
@@ -1110,11 +1467,18 @@ install_watchdog_schedule() {
         # Every value is %q-quoted into an `env` prefix — never interpolated
         # into the prompt as a bare word. An EMPTY notify/owner/apply renders
         # as an empty assignment, which env_store.py treats as absence (a
-        # blank never wins over a store value).
+        # blank never wins over a store value). The interpreter pin is the
+        # exception: PRES-035 renders an env assignment ONLY when a validated
+        # interpreter resolved; an empty pin would let the scheduled tick
+        # fall back to a bare PATH lookup — the defect.
         local _wd_command
-        printf -v _wd_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q SCAN_ROOT=%q GRACE=1.5 SCAN_DEPTH=3 PRESENTATION_NOTIFY_CMD=%q OWNER_CHAT_ID=%q PRESENTATION_SUPERVISE_APPLY=%q sh %q %q' \
+        if [ -z "$_pres35_wd_interp" ]; then
+            warn "PRES-035: pipeline interpreter UNRESOLVED (client config + PRESENTATION_PIPELINE_INTERPRETER + PATH all refused) — watchdog cron NOT registered; prior schedule preserved."
+            return 1
+        fi
+        printf -v _wd_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q SCAN_ROOT=%q GRACE=1.5 SCAN_DEPTH=3 PRESENTATION_NOTIFY_CMD=%q OWNER_CHAT_ID=%q PRESENTATION_SUPERVISE_APPLY=%q PRESENTATION_PIPELINE_INTERPRETER=%q sh %q %q' \
             "$_wd_root" "$_wd_workspace" "$_wd_workspace" "$_wd_runs_dir" \
-            "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$WD_SRC" "$_wd_log"
+            "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$_pres35_wd_interp" "$WD_SRC" "$_wd_log"
         local WD_PROMPT="[PRESENTATION-WATCHDOG] Run the presentation watchdog pass: $_wd_command . This is an idempotent maintenance scan; it detects stalled deck runs, reconciles the board, supervises engine liveness (report-only unless PRESENTATION_SUPERVISE_APPLY is set) and discovers run dirs."
         local _wd_sched_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
         if ! _presched_reconcile_cron "$_PRESCHED_WD_NAME" "$_PRESCHED_WD_EXPR" "$_PRESCHED_TZ" "$WD_CHANNEL_AGENT" "$WD_PROMPT" --light-context; then
@@ -1148,9 +1512,16 @@ install_watchdog_schedule() {
         # PATH: launchd supplies none, and this script needs python3, and
         # `timeout`/`gtimeout` (it explicitly warns and runs unbounded without
         # one), and the openclaw CLI the notify transport execs. Same prefix
-        # list, and same reasoning, as the intake-poll render.
-        local _wd_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.npm-global/bin"
-        if ! python3 - "$WD_TPL" "$WD_PLIST_DST" "$WD_SRC" "$WD_LOG_PATH" "$_wd_path" "$_wd_runs_dir" "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$_wd_root" "$_wd_workspace" <<'PY_RENDER_WATCHDOG_PLIST'
+        # list, and same reasoning, as the intake-poll render. PRES-035: BOTH
+        # Homebrew prefixes ride (Apple Silicon + Intel), never one alone.
+        local _wd_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin"
+        # PRES-035: unpinned watchdog job is not rendered. The prior plist
+        # (with its preserved operator pins) stays loaded instead.
+        if [ -z "$_pres35_wd_interp" ]; then
+            warn "PRES-035: pipeline interpreter UNRESOLVED (client config + PRESENTATION_PIPELINE_INTERPRETER + PATH all refused) — watchdog NOT scheduled; prior plist and running job preserved."
+            return 1
+        fi
+        if ! python3 - "$WD_TPL" "$WD_PLIST_DST" "$WD_SRC" "$WD_LOG_PATH" "$_wd_path" "$_wd_runs_dir" "$_wd_notify_cmd" "$_wd_owner_chat" "$_wd_supervise_apply" "$_wd_apply_off" "$_wd_root" "$_wd_workspace" "$_pres35_wd_interp" <<'PY_RENDER_WATCHDOG_PLIST'
 import os
 from pathlib import Path
 import plistlib
@@ -1160,12 +1531,18 @@ import sys
 import tempfile
 
 (template, destination, script, log, runtime_path, scan_root, notify,
- owner_chat, supervise_apply, client_root, workspace) = sys.argv[1:]
+ owner_chat, supervise_apply, apply_off, client_root, workspace, pipeline_interp) = sys.argv[1:]
+apply_off = (apply_off == '1')
 text = Path(template).read_text()
 # The repository template has a documentation comment before its XML declaration.
 start = text.find('<?xml')
 if start < 0:
     raise ValueError('Watchdog template has no XML declaration')
+# PRES-035: the validated interpreter is a required render input, never an
+# empty pin — an empty pin would schedule a tick that resolves python from a
+# bare PATH lookup again.
+if not pipeline_interp or not pipeline_interp.startswith('/'):
+    raise ValueError('PRES-035: rendered pipeline interpreter is not absolute')
 data = plistlib.loads(text[start:].encode())
 values = {
     '<WATCHDOG_SCRIPT_PATH>': script,
@@ -1211,15 +1588,29 @@ env.update({
     'OPENCLAW_WORKSPACE_PATH': workspace,
     'OPENCLAW_WORKSPACE_ROOT': workspace,
 })
+# PRES-035: the validated interpreter rides as an explicit pin — a scheduled
+# tick never re-resolves it from a bare PATH lookup. (Set again below from
+# the preserved/installed value; kept out of the bulk update so the preserve
+# block owns exactly one writer for this key.)
+if pipeline_interp:
+    env['PRESENTATION_PIPELINE_INTERPRETER'] = pipeline_interp
 # This value is parsed by shlex.split in the notification transport.
 env['PRESENTATION_NOTIFY_CMD'] = shlex.quote(notify) if notify else ''
 
-# PRESERVE, NEVER STRIP. An operator arming the supervisor (F12c) or pinning
-# an owner chat id edits the INSTALLED plist. A roll that re-rendered from the
-# template alone would silently drop both on the next update -- the installer
-# would be undoing the operator's live configuration. So a value this run did
-# not resolve is carried forward from the plist already on disk, and only an
-# explicit value in THIS process's environment overrides it.
+# PRESERVE, NEVER STRIP — with one PRES-019 exception. An operator arming the
+# supervisor (F12c) or pinning an owner chat id edits the INSTALLED plist. A
+# roll that re-rendered from the template alone would silently drop both on
+# the next update -- the installer would be undoing the operator's live
+# configuration. So a value this run did not resolve is carried forward from
+# the plist already on disk, and only an explicit value in THIS process's
+# environment overrides it.
+# PRES-019 exception: the shell passed an EXPLICIT FALSE as an empty string
+# marker (apply_off=True). A value the operator explicitly turned OFF —
+# "0"/"false" parsed by _pres_parse_bool — must STRIP an armed key, not
+# preserve it: preserving would resurrect exactly the value the operator
+# killed, and the consumer's nonempty-means-on expansion would then misread
+# any surviving "0" as armed. An explicit off beats a carried on.
+# Preserve a usable per-client interpreter pin as well.
 previous = {}
 try:
     with open(destination, 'rb') as stream:
@@ -1227,15 +1618,30 @@ try:
 except (FileNotFoundError, ValueError, OSError):
     previous = {}
 
-for name, resolved in (('OWNER_CHAT_ID', owner_chat),
-                       ('PRESENTATION_SUPERVISE_APPLY', supervise_apply)):
-    carried = str(previous.get(name, '') or '')
-    if resolved:
-        env[name] = resolved
+carried_interp = str(previous.get('PRESENTATION_PIPELINE_INTERPRETER', '') or '')
+if pipeline_interp:
+    env['PRESENTATION_PIPELINE_INTERPRETER'] = pipeline_interp
+elif carried_interp:
+    env['PRESENTATION_PIPELINE_INTERPRETER'] = carried_interp
+
+if apply_off:
+    env.pop('PRESENTATION_SUPERVISE_APPLY', None)
+else:
+    carried = str(previous.get('PRESENTATION_SUPERVISE_APPLY', '') or '')
+    if supervise_apply:
+        env['PRESENTATION_SUPERVISE_APPLY'] = supervise_apply
     elif carried:
-        env[name] = carried
+        env['PRESENTATION_SUPERVISE_APPLY'] = carried
     else:
-        env.pop(name, None)
+        env.pop('PRESENTATION_SUPERVISE_APPLY', None)
+
+carried_owner = str(previous.get('OWNER_CHAT_ID', '') or '')
+if owner_chat:
+    env['OWNER_CHAT_ID'] = owner_chat
+elif carried_owner:
+    env['OWNER_CHAT_ID'] = carried_owner
+else:
+    env.pop('OWNER_CHAT_ID', None)
 
 encoded = plistlib.dumps(result)
 if plistlib.loads(encoded) != result:
@@ -1257,7 +1663,7 @@ PY_RENDER_WATCHDOG_PLIST
             warn "F12: watchdog plist render/validation failed — prior plist and running job preserved; no launchctl changes made."
             return 1
         fi
-        success "F12: validated $WD_PLIST_DST (watchdog: $WD_SRC, log: $WD_LOG_PATH, scan root: $_wd_runs_dir, notify transport: ${_wd_notify_cmd:-<EMPTY — env store must supply it>}, owner chat: ${_wd_owner_chat:-<EMPTY — env store or a prior plist must supply it>}, supervisor: ${_wd_supervise_note})"
+        success "F12: validated $WD_PLIST_DST (watchdog: $WD_SRC, log: $WD_LOG_PATH, scan root: $_wd_runs_dir, notify transport: ${_wd_notify_cmd:-<EMPTY — env store must supply it>}, owner chat: ${_wd_owner_chat:-<EMPTY — env store or a prior plist must supply it>}, pipeline interpreter: $_pres35_wd_interp, supervisor: ${_wd_supervise_note})"
         # Reload semantics, identical to the intake poll's: 'launchctl load' on
         # an already-loaded job is the documented "Load failed: 5: Input/output
         # error", so unload first and treat an already-listed label as loaded.

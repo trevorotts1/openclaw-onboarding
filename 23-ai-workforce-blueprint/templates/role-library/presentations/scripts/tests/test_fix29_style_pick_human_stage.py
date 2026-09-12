@@ -172,7 +172,9 @@ class TestManifestWiring:
         assert ph.executor_kind == "agent"
         assert ph.owning_role == "brand-steward"
         assert ph.produces_artifact == ["working/copy/style_preview_spec.json"]
-        assert ph.fanout == {"by": "slide", "max_units": 3}
+        # PRES-014 (W2 WF05): max_units migrated to the unambiguous pair
+        # {desired_count, batch_width} on this variant phase.
+        assert ph.fanout == {"by": "slide", "desired_count": 3, "batch_width": 3}
         assert "working/copy/slides.json" in ph.consumes
         assert "working/copy/intake.json" in ph.consumes
 

@@ -43,7 +43,65 @@ set -uo pipefail
 # would otherwise reject).
 export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 
+# PRES-035 native-tool fallback PATH. The launchd plist renders BOTH Homebrew
+# prefixes (Apple Silicon /opt/homebrew/bin + Intel /usr/local/bin) behind
+# the system prefix; this runtime prepend is the belt to those braces — a
+# tick whose plist predates the PRES-035 render (or a hand invocation under
+# a bare cron PATH) still discovers the same native tools. Nothing is
+# removed; the rendered launchd PATH and any operator PATH survive intact.
+case ":$PATH:" in
+    *":/opt/homebrew/bin:"*) ;;
+    *) PATH="/opt/homebrew/bin:$PATH" ;;
+esac
+case ":$PATH:" in
+    *":/usr/local/bin:"*) ;;
+    *) PATH="/usr/local/bin:$PATH" ;;
+esac
+export PATH
+
 PROG="presentation-intake-poll.sh"
+
+# ---------------------------------------------------------------------------
+# PRES-035 — ONE pipeline interpreter for this whole tick.
+#
+# The updater validates and persists a department venv
+# (PRESENTATION_PIPELINE_INTERPRETER), but this script used to invoke bare
+# `python3` — which, under a launchd/cron PATH, silently resolves to a
+# DIFFERENT interpreter (Apple's /usr/bin/python3 stub) than the validated
+# engine. Every python below therefore runs through $PRESENTATION_PY: the
+# validated pin when set+usable, else the client venv, else PATH python3 —
+# with the choice logged once per tick, so a cron run can never again
+# behave differently from an interactive run with nothing in the log.
+#
+# Order matters: defined BEFORE _resolve_scripts_dir (helpers below need
+# it), but the LOG_FILE-twins note above still holds — log() is defined
+# further down, so this block reports through its own tick-header lines
+# once log() exists, and stays silent before that.
+#
+# Precedence: the SCHEDULE's explicit pin wins (rendered by
+# lib-presentation-schedules.sh, validated before render); a NON-BLANK
+# process value from a hand invocation wins over nothing — it IS the pin;
+# the client venv is next; PATH python3 is the last resort. Rollback:
+# PRESENTATION_PIPELINE_PIN=0 restores bare `python3` everywhere.
+# ---------------------------------------------------------------------------
+PRESENTATION_PY=""
+_pres35_init_interpreter() {
+    local _pin="${PRESENTATION_PIPELINE_INTERPRETER:-}"
+    if [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ]; then
+        PRESENTATION_PY="python3"
+        return 0
+    fi
+    if [ -n "$_pin" ]; then
+        case "$_pin" in /*)
+            if [ -x "$_pin" ]; then
+                PRESENTATION_PY="$_pin"
+                return 0
+            fi
+            ;;
+        esac
+    fi
+    return 1
+}
 # Resolve SCRIPTS_DIR relative to this script, via the canonical OC workspace
 _resolve_scripts_dir() {
     local candidate
@@ -135,6 +193,9 @@ load_env_store() {
     fi
     # `-m` needs the package's PARENT dir as cwd; a subshell keeps this
     # script's own cwd untouched (same reason the dispatch lines below do it).
+    # PRES-035: the env-store loader runs under the pinned interpreter when
+    # already known, else PATH python3 — it must measure the same interpreter
+    # the dispatch below will use, never a different host python.
     _ENV_SH="$( cd "$SCRIPTS_DIR" && python3 -m presentation_job.env_store --emit-shell 2>/dev/null )"
     _ENV_RC=$?
     if [ "$_ENV_RC" -ne 0 ]; then
@@ -152,7 +213,69 @@ load_env_store() {
     done
     return 0
 }
-load_env_store || true
+
+# PRES-035 — finish the interpreter pin AFTER the env store loads (a store
+# may legitimately supply PRESENTATION_PIPELINE_INTERPRETER for this box)
+# and BEFORE anything else runs python. Resolution: schedule pin first
+# (validated before render, _pres35_init_interpreter already took it when
+# usable), else the client venv via pipeline_interp.py, else PATH python3
+# last-resort. The tick header names the interpreter, its version and the
+# source. A set-but-unusable pin is reported here and falls through to the
+# venv rather than silently substituting a host interpreter.
+#
+# HOW THE PIN REACHES EVERY HELPER. The dispatch lines below keep their
+# shipped `python3 ...` shape VERBATIM (tests/test_f03_poll_resume_invocation.py
+# extracts the --resume line by regex and EXECUTES it; tests/test_fix37_*
+# and tests/test_auto_resume.py extract the walk body and the
+# POLLER-LAUNCH-VERIFY block the same way — rewording those lines breaks the
+# guards). Instead this function installs a shim directory at the FRONT of
+# PATH containing an executable `python3` that execs the pinned interpreter.
+# PATH lookup then resolves every bare `python3` below — helpers, dispatch,
+# engine spawns — to the validated pin, with zero line changes and a full
+# audit trail in the log.
+_pres35_finish_interpreter() {
+    local _resolved="" _src="unknown"
+    if [ -n "${PRESENTATION_PY:-}" ]; then
+        _resolved="$PRESENTATION_PY"; _src="schedule-pin"
+    elif [ -f "$SCRIPTS_DIR/presentation_job/pipeline_interp.py" ]; then
+        _resolved="$(cd "$SCRIPTS_DIR" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null || true)"
+        if [ -n "$_resolved" ]; then _src="pipeline_interp(client-venv-or-path)"; fi
+    fi
+    if [ -z "$_resolved" ]; then
+        _resolved="python3"; _src="PATH-last-resort"
+    fi
+    if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ "$_src" != "schedule-pin" ]; then
+        log "  [interp] schedule pin ${PRESENTATION_PIPELINE_INTERPRETER} unusable (missing or not executable) — fell through to $_resolved ($_src); fix the pin or re-run update-skills.sh"
+    fi
+    # Validate before use: the pin must actually run, not just resolve as a
+    # name. A NAME resolving is never proof the program runs.
+    if ! "$_resolved" -c 'import sys' >/dev/null 2>&1; then
+        log "  [interp] VALIDATION FAILED: $_resolved does not execute — refusing this tick rather than running helpers under an unknown interpreter"
+        return 1
+    fi
+    PRESENTATION_PY="$_resolved"
+    export PRESENTATION_PY PRESENTATION_PIPELINE_INTERPRETER="$_resolved"
+    _PRES35_VER="$("$_resolved" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
+    log "  [interp] pipeline interpreter: $PRESENTATION_PY (Python $_PRES35_VER; source: $_src)"
+    # The shim: every bare `python3` below resolves to the pin. Kept under
+    # the run's own working dir (never /tmp-shared): one tick's shim can
+    # never redirect another run's python.
+    _PRES35_SHIM="$RUNS_ROOT/working/.interp-shim-$$"
+    if mkdir -p "$_PRES35_SHIM" 2>/dev/null; then
+        printf '#!/bin/sh\nexec "%s" "$@"\n' "$_resolved" > "$_PRES35_SHIM/python3" 2>/dev/null             && chmod +x "$_PRES35_SHIM/python3" 2>/dev/null             && PATH="$_PRES35_SHIM:$PATH" && export PATH             && log "  [interp] shim installed: python3 -> $PRESENTATION_PY"             || log "  [interp] WARNING: shim install failed — bare python3 below resolves via PATH (tick continues, pin exported)"
+    else
+        log "  [interp] WARNING: shim dir unwritable — bare python3 below resolves via PATH (tick continues, pin exported)"
+    fi
+    # Scheduler readiness receipt: actual sys.executable/version + required
+    # import proof, compared against the rendered pin; mismatch degrades
+    # with bounded remediation instead of reusing stale proof.
+    if [ -f "$SCRIPTS_DIR/presentation_job/pipeline_interp.py" ]; then
+        ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.pipeline_interp --check-readiness --scheduler intake-poll --recorded "${PRESENTATION_PIPELINE_INTERPRETER:-}" --runs-root "$RUNS_ROOT" 2>&1 ) | while IFS= read -r _rline; do
+            if [ -n "$_rline" ]; then log "  $_rline"; fi
+        done
+    fi
+    return 0
+}
 
 # Resolve the runs root
 RUNS_ROOT="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations/runs}"
@@ -169,6 +292,13 @@ if [ ! -f "$LAUNCHER" ]; then
     log "engine launcher not found at $LAUNCHER -- cannot dispatch jobs"
     exit 2
 fi
+
+# PRES-035: pin the interpreter now that SCRIPTS_DIR, the env store and
+# RUNS_ROOT all exist. Refusing the tick here (rather than running helpers
+# under an unknown python) is the fail-closed choice: a schedule that
+# cannot prove its interpreter proves nothing else either.
+_pres35_init_interpreter || true
+_pres35_finish_interpreter || { log "scan aborted: no validated pipeline interpreter"; exit 2; }
 
 # ---------------------------------------------------------------------------
 # LAUNCH ACCOUNTING -- the counters must report what HAPPENED, not what was

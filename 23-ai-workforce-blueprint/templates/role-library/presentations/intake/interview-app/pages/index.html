@@ -250,97 +250,113 @@
       { id: "presentation_type", order: 0, kind: "enum",
         prompt: "What <span class=\"emph\">kind of presentation</span> do you need?",
         help: "This is the first thing we need to know — it decides how we build everything else in your brief, from structure to length.",
-        label: "Presentation type", required: true, storeOn: "pre_presentation_capture.PRESENTATION_TYPE",
-        allowed_values: ["from_scratch", "content_personal", "content_general", "signature"],
-        value_labels: {
-          "from_scratch": "From scratch — brainstorm and build a brand-new presentation",
-          "content_personal": "From something I already have, for ONE specific person",
-          "content_general": "From something I already have, for a room or wider audience",
-          "signature": "The full Signature Presentation (100+ slides, multi-part keynote)"
-        } },
+        label: "Presentation type",
+        required: true, storeOn: "pre_presentation_capture.PRESENTATION_TYPE",
+        allowed_values: ["from_scratch", "content_personal", "content_general", "signature"], value_labels: { "from_scratch": "From scratch — brainstorm and build a brand-new presentation", "content_personal": "From something I already have, for ONE specific person", "content_general": "From something I already have, for a room or wider audience", "signature": "The full Signature Presentation (100+ slides, multi-part keynote)" } },
       { id: "offer_name", order: 1, kind: "text",
         prompt: "What are you selling at the end — the exact name of your product or offer?",
         help: "The offer sold at the end of the presentation — never invented.",
-        label: "Offer name", placeholder: "e.g. The Momentum Method", required: true, storeOn: "deck_brief.OFFER_NAME" },
+        label: "Offer name",
+        placeholder: "e.g. The Momentum Method",
+        required: true, storeOn: "deck_brief.OFFER_NAME" },
       { id: "named_methodology", order: 1.5, kind: "text",
         prompt: "Do you have a named methodology, framework, or system you deliver this through — what is it called, in your own words?",
         help: "The branded method name — client-supplied only, never invented for you. If you don&rsquo;t have a named method, say so plainly (e.g. &lsquo;no formal name, we just do X&rsquo;) rather than inventing one — an honest &lsquo;no&rsquo; is still a real answer.",
-        label: "Named methodology", placeholder: "e.g. The Three-Move Pipeline System, or 'no formal name'", required: true, storeOn: "deck_brief.NAMED_METHODOLOGY" },
+        label: "Named methodology",
+        placeholder: "e.g. The Three-Move Pipeline System, or 'no formal name'",
+        required: true, storeOn: "deck_brief.NAMED_METHODOLOGY" },
       { id: "transformation_promise", order: 2, kind: "text",
         prompt: "What&rsquo;s the before-and-after this offer delivers — who are they before, and who are they after?",
         help: "The transformation promise drives the whole arc.",
-        label: "Transformation promise", placeholder: "e.g. stuck and overwhelmed → clear, confident, closing", required: true, storeOn: "deck_brief.TRANSFORMATION_PROMISE" },
+        label: "Transformation promise",
+        placeholder: "e.g. stuck and overwhelmed → clear, confident, closing",
+        required: true, storeOn: "deck_brief.TRANSFORMATION_PROMISE" },
       { id: "time_to_result", order: 2.5, kind: "text",
         prompt: "How long does it typically take a client to see this result once they start — the real, honest timeframe?",
         help: "State the true delivery timeframe in your own words (e.g. &lsquo;8 weeks&rsquo;, &lsquo;about 3 sessions&rsquo;, or &lsquo;it varies, typically N weeks&rsquo;) — never a faster number to sound more impressive.",
-        label: "Time to result", placeholder: "e.g. 8 weeks to final, a shift in 2", required: true, storeOn: "deck_brief.TIME_TO_RESULT" },
+        label: "Time to result",
+        placeholder: "e.g. 8 weeks to final, a shift in 2",
+        required: true, storeOn: "deck_brief.TIME_TO_RESULT" },
       { id: "audience", order: 3, kind: "text",
         prompt: "Who is this presentation for?",
         help: "Industry, income level, and the pain point that brought them here. This seeds the audience-engine.",
-        label: "Audience", placeholder: "e.g. women entrepreneurs, 35-55, tired of inconsistent clients", required: true, storeOn: "deck_brief.AUDIENCE" },
+        label: "Audience",
+        placeholder: "e.g. women entrepreneurs, 35-55, tired of inconsistent clients",
+        required: true, storeOn: "deck_brief.AUDIENCE" },
       { id: "cta_action", order: 4, kind: "text",
         prompt: "What is the exact call-to-action — the verb and next step you want them to take?",
         help: "This drives the closing slide&rsquo;s action language.",
-        label: "Call to action", placeholder: "e.g. book a call, buy the program, join the waitlist", required: true, storeOn: "deck_brief.CTA_ACTION" },
+        label: "Call to action",
+        placeholder: "e.g. book a call, buy the program, join the waitlist",
+        required: true, storeOn: "deck_brief.CTA_ACTION" },
       { id: "brand_primary", order: 5, kind: "logo",
         prompt: "Do you have a <span class=\"emph\">logo</span> or brand colors for the slides?",
         help: "If no logo is on file, provide one here — or we build without one and stay on-brand to the presentation system.",
-        label: "Logo", required: false, storeOn: "deck_brief.BRAND_PRIMARY", logo_on_slides: "deck_brief.LOGO_ON_SLIDES" },
+        label: "Logo",
+        required: false, storeOn: "deck_brief.BRAND_PRIMARY",
+        logo_on_slides: "deck_brief.LOGO_ON_SLIDES" },
       { id: "image_links", order: 6, kind: "image_links",
         prompt: "Paste any <span class=\"emph\">image links</span> you want used in the deck.",
         help: "Product photos, headshots, brand imagery. Optional — add up to 5.",
-        label: "Image links", required: false, storeOn: "deck_brief.IMAGE_LINKS" },
+        label: "Image links",
+        required: false, storeOn: "deck_brief.IMAGE_LINKS" },
       { id: "tone", order: 7, kind: "text",
         prompt: "Pick a <span class=\"emph\">tone</span> — Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium.",
         help: "One of the seven named styles, or blend two.",
-        label: "Tone", placeholder: "e.g. Inspirational + Teacher", required: true, storeOn: "deck_brief.TONE" },
+        label: "Tone",
+        placeholder: "e.g. Inspirational + Teacher",
+        required: true, storeOn: "deck_brief.TONE" },
       { id: "final_price", order: 8, kind: "text",
         prompt: "What is the <span class=\"emph\">final price</span> of the offer?",
         help: "The offer price only — what a buyer pays at the end. Set 0 if this is a free-only close.",
-        label: "Final price", placeholder: "e.g. $497", required: true, storeOn: "deck_brief.FINAL_PRICE" },
+        label: "Final price",
+        placeholder: "e.g. $497",
+        required: true, storeOn: "deck_brief.FINAL_PRICE" },
       { id: "speech_speed_preference", order: 9, kind: "enum",
         prompt: "At what <span class=\"emph\">pace</span> should we record the audio narration?",
         help: "default = recommended setting, medium = slightly faster, fast = high energy.",
-        label: "Speech speed", required: true, storeOn: "intake.json", key: "speech_speed_preference",
-        allowed_values: ["default", "medium", "fast"],
-        value_labels: { "default": "Default pace (recommended)", "medium": "Medium pace", "fast": "Fast pace" } },
+        label: "Speech speed",
+        required: true, storeOn: "intake.json",
+        key: "speech_speed_preference", allowed_values: ["default", "medium", "fast"], value_labels: { "default": "Default pace (recommended)", "medium": "Medium pace", "fast": "Fast pace" } },
       { id: "want_sales_checkout", order: 10, kind: "enum",
         prompt: "Do you need a <span class=\"emph\">sales page and checkout page</span> along with the presentation?",
         help: "Default yes. A no records a client waiver — you keep the deck and optionally a VSL page.",
-        label: "Sales page + checkout", required: true, storeOn: "pre_presentation_capture.WANT_SALES_CHECKOUT",
-        allowed_values: ["yes", "no"],
-        value_labels: { "yes": "Yes, build the sales page and checkout page", "no": "No thank you" } },
+        label: "Sales page + checkout",
+        required: true, storeOn: "pre_presentation_capture.WANT_SALES_CHECKOUT",
+        allowed_values: ["yes", "no"], value_labels: { "yes": "Yes, build the sales page and checkout page", "no": "No thank you" } },
+      { id: "sales_checkout_declined_reason", order: 10.1, kind: "text",
+        prompt: "Understood — no sales page or checkout page. In your own words, why don&rsquo;t you want it? (I record this verbatim so nobody later has to guess.)",
+        help: "Asked only when you declined the sales + checkout pages. Stored word-for-word as your waiver — an empty answer cannot be accepted.",
+        label: "Why no sales/checkout page",
+        placeholder: "e.g. we only need the deck for this launch",
+        required: true, storeOn: "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
+        conditional_on: { id: "want_sales_checkout", equals: "no" } },
       { id: "want_vsl_page", order: 11, kind: "enum",
         prompt: "Would you like a <span class=\"emph\">VSL page</span> — a video sales letter — along with this?",
         help: "Default no — a VSL page needs the video to exist first.",
-        label: "VSL page", required: true, storeOn: "pre_presentation_capture.WANT_VSL_PAGE",
-        allowed_values: ["yes", "no"],
-        value_labels: { "yes": "Yes, build the VSL page", "no": "No thank you" } },
-      /* FIX 11 — the client's RUN MODE. The hosted app is a third intake path
-         and had no run-mode handling at all, so a client here could not reach
-         Ultra: every hosted run executed standard while every surface reported
-         success. kind "enum" is load-bearing — it renders a pick-one group, so
-         the interview-depth words (quick / in-depth) cannot be typed into this
-         slot at all; bridge/intake_writer.py refuses them server-side for the
-         API path, naming BOTH axes. required:false + default "" means Skip
-         declares nothing, and nothing resolves to standard downstream — never
-         ultra by default. storeOn is pre_presentation_capture, NOT deck_brief:
-         a run mode is an execution axis, not deck content. */
+        label: "VSL page",
+        required: true, storeOn: "pre_presentation_capture.WANT_VSL_PAGE",
+        allowed_values: ["yes", "no"], value_labels: { "yes": "Yes, build the VSL page", "no": "No thank you" } },
+      { id: "vsl_page_declined_reason", order: 11.1, kind: "text",
+        prompt: "No VSL page, understood. In your own words, why not? (Recorded verbatim as your waiver.)",
+        help: "Asked only when you declined the VSL page. Stored word-for-word — an empty answer cannot be accepted.",
+        label: "Why no VSL page",
+        placeholder: "e.g. we have no hosted video yet",
+        required: true, storeOn: "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+        conditional_on: { id: "want_vsl_page", equals: "no" } },
       { id: "run_mode", order: 11.5, kind: "enum",
         prompt: "How hard should we run the <span class=\"emph\">build</span> of this deck?",
         help: "This is about the BUILD, not this interview. Skip it and you get Standard — we never put a run on Ultra unless you asked for it.",
-        label: "Run mode", required: false, storeOn: "pre_presentation_capture.RUN_MODE",
+        label: "Run mode",
         default: "",
-        allowed_values: ["ultra", "standard", "economy"],
-        value_labels: {
-          "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
-          "standard": "Standard — the department default",
-          "economy": "Economy — leaner and cheaper"
-        } },
+        required: false, storeOn: "pre_presentation_capture.RUN_MODE",
+        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
       { id: "client_notes", order: 12, kind: "text",
         prompt: "Anything else important we should <span class=\"emph\">know</span> before we start?",
         help: "Extras: target slide count, deadline, proof assets, anything else. Optional.",
-        label: "Notes", placeholder: "Anything else we should know?", required: false, storeOn: "deck_brief.CLIENT_NOTES" }
+        label: "Notes",
+        placeholder: "Anything else we should know?",
+        required: false, storeOn: "deck_brief.CLIENT_NOTES" }
     ];
 
     var MAX_QUESTIONS = 20;
@@ -608,16 +624,36 @@
     }
 
     /* ---- advance / review / submit ---- */
+    /* PRES-006: a question with conditional_on is only ever ASKED when its
+       condition is met by the answers already given (the declined-reason
+       waivers appear only after their yes/no question was answered "no").
+       The generated QUESTIONS carry the condition; the flow honors it. */
+    function conditionMet(q) {
+      var c = q.conditional_on;
+      if (!c) return true;
+      var a = answers[c.id];
+      if (!a) return false;
+      return String(a.value == null ? "" : a.value).trim().toLowerCase()
+        === String(c.equals).trim().toLowerCase();
+    }
+
     function advance(v, skipped) {
       var q = QUESTIONS[currentIndex];
-      var s = serialize(q, v);
-      answers[q.id] = {
-        raw: v, value: s.value,
-        extra: s, kind: q.kind, label: q.label || q.prompt,
-        storeOn: q.storeOn, order: q.order,
-        skipped: !!skipped
-      };
+      if (q) {
+        var s = serialize(q, v);
+        answers[q.id] = {
+          raw: v, value: s.value,
+          extra: s, kind: q.kind, label: q.label || q.prompt,
+          storeOn: q.storeOn, order: q.order,
+          skipped: !!skipped
+        };
+      }
       currentIndex++;
+      /* skip conditional questions whose condition is not met — they are not
+         asked and carry no answer (never "(skipped)": they were never asked) */
+      while (currentIndex < QUESTIONS.length && !conditionMet(QUESTIONS[currentIndex])) {
+        currentIndex++;
+      }
       if (currentIndex >= QUESTIONS.length) { renderReview(); scrollTop(); }
       else { render(); scrollTop(); }
     }
@@ -706,13 +742,14 @@
 
       var payload = {
         interview_confirmed: true,
-        deck_type: "webinar",
-        presentation_mode: "general",
-        audience_mode: "STANDARD",
         target_talk_minutes: 20,
         created_at: new Date().toISOString(),
         source: "presentation-interview-app",
         intake_session_id: qid,
+        /* PRES-006: schema_version declares the record under contract v2 —
+           the canonical field paths below. A legacy reader migrates it
+           forward; a current reader validates it directly. */
+        schema_version: 2,
         pre_presentation_capture: Object.assign(
           { REPRESENTATION_MIX: "100% of the stated audience", AUDIENCE_COMPOSITION_NOTE: brief.AUDIENCE || "", GROUNDED_CONTENT: brief.OFFER_NAME || "", VISUAL_MIX: "mix", DARK_OK: false, HOOK_SEED: brief.TRANSFORMATION_PROMISE || "" },
           pre

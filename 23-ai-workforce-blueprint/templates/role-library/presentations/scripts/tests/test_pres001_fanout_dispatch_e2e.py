@@ -142,7 +142,7 @@ def test_fail_unit_then_resume_repays_only_it(p4_env, monkeypatch):
 
     monkeypatch.setattr(D, "dispatch_complete", failing_dispatch)
     res2 = _dispatch(p4_env)
-    assert res2.status == "exhausted"
+    assert res2.status == "partial_failure"
     assert any("section-02" in r for r in res2.reasons)
     # the failed reduce must never tear the on-disk artifact
     assert p4_env["target"].read_text() == artifact
