@@ -1,3 +1,9 @@
+## [v25.0.42]  -  2026-09-12  -  PR 1097 CI repair: G1 version bumps plus SOP-RR-05 restamp
+
+- G3: roll all 10 repo markers v25.0.41 -> v25.0.42 via scripts/bump-version.sh (covers 23-ai-workforce-blueprint content changes incl DeepSeek commit 1b2a38f9 files with zero version bumps); bump 60-zhc-early-warning-system skill-version.txt plus SKILL.md frontmatter v1.1.0 -> v1.1.1 (covers scripts/ews_alert.py, scripts/ews_fleet.py changes).
+- Restamp universal-sops _content-manifest.json via 23-ai-workforce-blueprint/scripts/hash-content-manifest.py (fixes SOP-RR-05 stale content_sha for lockstep plus QC-static T1).
+- No behaviour change. No fleet rollout.
+
 ## [v25.0.41]  -  2026-09-11  -  Restore completed presentation intake, selective retry, capacity, recovery, and relay work as one batch
 
 ## [v25.0.40]  -  2026-09-11  -  Skill 32 CC build-freshness input list drops config/ (pairs with Command Center v7.3.2)
