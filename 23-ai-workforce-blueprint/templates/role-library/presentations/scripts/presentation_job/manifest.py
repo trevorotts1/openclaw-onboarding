@@ -100,6 +100,11 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-U-DESIGN-SALES": 60,
     "P-U-DESIGN-CHECKOUT": 60,
     "P-U-DESIGN-VSL": 60,
+    # FIX-28: RENDER phases are mechanical Kie image renders (poll + download + ledger);
+    # budget 30 matches P8.3-INFOGRAPHIC (same Kie render class), not DESIGN 60.
+    "P-U-DESIGN-RENDER-SALES": 30,
+    "P-U-DESIGN-RENDER-CHECKOUT": 30,
+    "P-U-DESIGN-RENDER-VSL": 30,
     "P-U-HTML-SALES": 30,
     "P-U-HTML-CHECKOUT": 30,
     "P-U-HTML-VSL": 30,
