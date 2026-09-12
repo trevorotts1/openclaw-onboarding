@@ -5,7 +5,7 @@ const w=JSON.parse(fs.readFileSync(req.workflow,'utf8')), nodes=Object.fromEntri
 const state=req.state || {files:[],sheets:{}};const runs=[],writes=[];let failed=false;
 function execute(body){
  const prior={};let input={body},current='Webhook: Create Sheet';const trace=[];
- const get=name=>{if(!Object.hasOwn(prior,name))throw Error('UNEXECUTED NODE '+name);return {first:()=>({json:prior[name]})}};
+ const get=name=>({isExecuted:Object.hasOwn(prior,name),first:()=>{if(!Object.hasOwn(prior,name))throw Error('UNEXECUTED NODE '+name);return {json:prior[name]}}});
  const evaluate=expr=>vm.runInNewContext(expr,{$json:input,$:get,JSON,encodeURIComponent,Intl});
  const expression=value=>{
   if(typeof value!=='string' || !value.startsWith('='))return value;
@@ -16,7 +16,7 @@ function execute(body){
   const url=new URL(p.url);if(url.href.includes('undefined'))throw Error('undefined URL');
   if(req.failAt===name && !failed){failed=true;throw Object.assign(Error('injected upstream failure'),{statusCode:req.statusCode||503})}
   if(url.hostname==='www.googleapis.com'){
-   if(url.pathname.endsWith('/permissions')){const f=state.files.find(x=>x.id===url.pathname.split('/').at(-2));return {permissions:f.shared?[{id:'anyone',role:'writer',type:'anyone'}]:[]};}
+   if(url.pathname.endsWith('/permissions')){const f=state.files.find(x=>x.id===url.pathname.split('/').at(-2));if(p.method==='POST'){f.permissions=[...(f.permissions||[]),b];f.shared=b.type==='anyone';writes.push({name,id:f.id,body:b});return {id:'permission-123',...b};}return {permissions:[{id:'owner',type:'user',role:'owner',emailAddress:'management@example.com'},...(f.permissions||(f.shared?[{id:'anyone',role:'writer',type:'anyone'}]:[]))]};}
    if(url.pathname==='/drive/v3/files'){
     const q=url.searchParams.get('q');if(!q || q==='undefined')throw Error('invalid query');
     const key=q.match(/value='([^']+)'/)[1];return {files:state.files.filter(f=>f.appProperties.skill35_provisioning_key===key)};
