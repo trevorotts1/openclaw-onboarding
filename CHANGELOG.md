@@ -1,3 +1,37 @@
+## [v25.0.44]  -  2026-09-12  -  SOP-embeddings gates measured raw rows, so an all-orphan table SKIPped repair forever
+
+- **An all-orphan `sop_embeddings` table read as "already provisioned", so six client boxes could never be repaired by any roll.** Both the provisioner's idempotency gate and `update-skills.sh`'s U6c2 trigger (plus the SOP-LIBRARY status reporter and the fast-path embedder) measured `SELECT COUNT(*) FROM sop_embeddings` — RAW ROWS. A box hit by the v25.0.43 hashed-id defect holds a full 2555-row table in which every row is an orphan, keyed to the asset's slug-derived ids while its own `sops.id` is a content hash, so not one row joins to a SOP. Counting rows, such a box reads `2555 >= 2555` and is SKIPped on every roll, permanently; counting coverage it correctly reads `0` and gets provisioned. **The v25.0.43 fix alone would not have reached these boxes.**
+- **All four call sites now measure coverage** — `SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)` — i.e. how many SOPs actually have an embedding, not how many rows sit in the table. The predicate deliberately does not reference `sops.deleted_at`: an older/minimal `sops` schema has no such column, and referencing it makes the whole query error out and silently read `0`, which the existing independent-gate battery caught.
+- SKIP messaging now reads `N SOPs covered >= manifest M` instead of `N rows >= manifest M`, so the log states what was actually measured.
+
+### Fleet evidence (read-only sweep, 2026-09-12)
+- 18 reachable Mac boxes probed. **7 affected**: `aurelia-gardner` (82% of SOPs unembedded), `er-spaulding` (100%), `maria-anderson` (76%), `sheila-reynolds` (99%), `star-bobatoon` (100%), `stephanie-wall` (77%), `talaya-kelley` (100%).
+- **6 of those 7 were permanently stuck** behind the raw-row gate — only `maria-anderson` (835 rows < 2555) would ever have re-triggered. This release is what makes the other six repairable.
+- 9 boxes healthy, 1 without a Command Center, 1 unreachable at sweep time (`teresa-pelham`).
+
+### Tests
+- `tests/unit/provision-sop-embeddings-hashed-id.test.py` grows to 9 checks: a full-but-orphaned table plus a success-claiming marker must NOT be skipped and must end fully covered; and a genuinely covered box must still SKIP, so the stricter gate adds no re-download noise. **Fail-first verified** — the orphan case returns `SKIP` against the raw-row gate.
+- Full suite green: hashed-id 9/9, idempotency 10/10, hash-skip 16/16, independent-gate 12/12.
+
+
+## [v25.0.43]  -  2026-09-12  -  SOP-embeddings import matched nothing on hashed-id boxes and reported it as success
+
+- **The shared SOP-embeddings import matched ZERO rows on any box whose `sops.id` is a content hash — and reported it as a success.** `shared-utils/sop-embed-once/provision_sop_embeddings.py` imported with a single `WHERE sop_id IN (SELECT id FROM main.sops)`, which assumes the box's `sops.id` IS the slug-derived spelling the shipped asset ships (`sop_app_development_ux_ui_specialist_morning_routine`). On a box where `sops.id` is a content hash (`sop_<64 hex>`) the intersection is empty. Measured on a live client Mac mini: **0 of 2555 asset rows matched 3415 local SOPs**, nothing was written, and the function still returned `status: "IMPORTED"` with a message quoting the MANIFEST's row count — so `update-skills.sh` logged a green `imported ... 2555 manifest rows, sha256 verified` line over an embeddings table that never grew past its pre-existing rows. The only visible symptom was semantic SOP search silently degrading to keyword matching (`skill semantic match failed, keyword fallback`), with nothing in any log tying it to the import.
+- **Fix — two disjoint passes, in priority order.** Pass 1 keeps exact id equality (correct for a box whose ids already are the slug form). Pass 2 applies the manifest's OWN documented derivation, `sop_id = "sop_" + slug.replace("-","_")[:60]`, recomputed from `main.sops.slug` in SQL, and writes the asset embedding against the LOCAL id so it joins back to `sops`. Pass 2 excludes ids the asset carries directly, so the two passes can never both write the same row and the outcome does not depend on table order. The 60-character truncation is applied identically on both sides.
+- **Fix — a zero-row import is now a WARN, never a success.** The idempotency gate already returns `SKIP` for an already-provisioned box, so reaching the import and writing nothing is a genuine failure. It now returns `status: "WARN"` naming the asset row count, the local SOP count and how many carry a slug, and **does not stamp the provisioned marker**. Success messages report the number of rows ACTUALLY written (split by which pass matched them) instead of the manifest's count — quoting the manifest is what let a zero-row import read as a green line.
+- **Fix — row accounting.** `imported` was read from `conn.total_changes`, which is the connection-cumulative change count rather than the statement's. It now uses each statement's own `cur.rowcount`.
+
+### Tests
+- New `tests/unit/provision-sop-embeddings-hashed-id.test.py` (7 checks): a hashed-id box actually imports; imported rows join back to `sops.id`; the reported count is the real count and not the manifest's; a zero-match asset returns WARN and leaves the marker unwritten; the slug-form path is unregressed; the two passes never double-write; a >60-char slug still matches. **Fail-first verified** — 5 of the 7 fail against the pre-fix module, one of them printing the exact defect: `{'status': 'IMPORTED', ..., 'imported_rows': 0}`.
+- Why the existing battery missed this: `provision-sop-embeddings-idempotency.test.py`'s `_make_client_db` fixture builds `sop_id = "sop_" + slug.replace("-","_")`, i.e. only ever the slug form, so no case exercised the hashed shape real boxes carry.
+- Existing batteries all still pass: idempotency 10/10, hash-skip 16/16, independent-gate 12/12.
+
+### Fleet impact
+- Any client box already rolled where `sops.id` is hashed has an unpopulated `sop_embeddings` table behind a green log line. Re-running provisioning on the fixed code repairs it; no re-embedding and no API spend is involved (the import stays a sha256-verified download plus a sqlite `ATTACH`/`INSERT`, zero embedding API calls).
+- SOPs that exist only on a box (a client's own, not in the shared library) are still legitimately un-embedded — the shared asset cannot cover them.
+- Shell/Python only: no migrations, no dependency changes, no schema change, no API surface change.
+
+
 ## [v25.0.42]  -  2026-09-12  -  PR 1097 CI repair: G1 version bumps plus SOP-RR-05 restamp
 
 - G3: roll all 10 repo markers v25.0.41 -> v25.0.42 via scripts/bump-version.sh (covers 23-ai-workforce-blueprint content changes incl DeepSeek commit 1b2a38f9 files with zero version bumps); bump 60-zhc-early-warning-system skill-version.txt plus SKILL.md frontmatter v1.1.0 -> v1.1.1 (covers scripts/ews_alert.py, scripts/ews_fleet.py changes).

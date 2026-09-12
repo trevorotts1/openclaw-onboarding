@@ -1,5 +1,15 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.5] - 2026-09-12 - CRITICAL Fix: live preflight reported 0 connected accounts on every box (engine never ran)
+
+### Fixed
+- **CRITICAL — every publishing cycle hard-failed at the live preflight with `exit 3`.** The connected-accounts probe parsed the GHL response as `d['accounts']` at the TOP level, but `GET /social-media-posting/{locationId}/accounts` returns the documented wrapper `{"success":true,"results":{"accounts":[...]}}`. The top-level key does not exist, so the count was always `0`, and the script aborted with "GHL returned 0 connected social accounts for this location — there is nothing to publish to." plus a CLIENT-FACING message telling the client to go connect a channel they had **already connected**. Found live on a box with **22 active, unexpired connected accounts** (Facebook x3, Instagram x2, LinkedIn x3, TikTok, YouTube x2, Pinterest, Threads, Bluesky, Google x2, 6 community) where the parse returned 0.
+- **A parser failure can no longer masquerade as "zero accounts."** The probe now mirrors the contract already proven in `57-social-media-in-a-box/scripts/ghl_contracts.py` (`parse_accounts_payload`): it accepts `results.accounts`, a bare `results` array, a top-level array, and the legacy unwrapped `accounts` shape. An UNRECOGNISED envelope now returns `-1` = "inconclusive, do not block" and only a genuinely empty list blocks the cycle. Previously any shape the parser did not understand collapsed to `0` and hard-failed the run.
+
+### Verified
+- Live box re-test after the patch: same command went from `DRY_RUN_EXIT=3` ("0 connected social accounts") to `DRY_RUN_EXIT=0` / `live preflight OK: connected account count = 22`, roster OK, cycle manifest written.
+- Parser unit-proved against 8 envelope shapes: real GHL wrapper (22) / genuinely empty (0, still blocks) / bare results array (2) / legacy unwrapped (3) / unknown envelope (-1) / `results` a string (-1) / malformed JSON (-1) / top-level array (5). 8/8 pass; the old parser returns 0 on the real shape.
+
 ## [3.0.1] - 2026-09-08 - Fix: publishing engine rc=3 on every run + silent Command Center board skip (found live on the Talaya box)
 
 Two defects in `run-publishing-cycle.sh` that made the entire weekly engine inert on every fleet box running Skill 35, found while diagnosing why a client's weekly theme question had gone unanswered for three weeks (the cron fired; the engine it queued never produced anything).

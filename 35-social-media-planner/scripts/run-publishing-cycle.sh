@@ -1027,11 +1027,34 @@ if [ -n "$GOHIGHLEVEL_API_KEY" ] && [ -n "$GOHIGHLEVEL_LOCATION_ID" ] && command
         err "CLIENT MESSAGE: \"Your GoHighLevel token works but belongs to a different location than the one configured. Send me the Private Integration Token created inside THIS location's Settings > Integrations > Private Integrations. I will not post until this is fixed.\""
         exit 3
       fi
+      # GHL wraps the account list: {"success":true,"results":{"accounts":[...]}}.
+      # Reading d['accounts'] at the TOP level always yielded None -> 0, so a
+      # location with connected channels hard-failed at exit 3 and no cycle ever
+      # ran. Parse the documented wrapper (results.accounts, or a bare results
+      # array), and keep the legacy unwrapped shape as a fallback.
+      #
+      # CONTRACT (mirrors 57-social-media-in-a-box/scripts/ghl_contracts.py
+      # parse_accounts_payload): an UNRECOGNISED envelope is -1 "inconclusive",
+      # never 0. A parser failure must never be misreported as zero accounts —
+      # only a genuinely empty list blocks the cycle.
       _acct_count="$(printf '%s' "$_pbody" | python3 -c "import sys,json
 try:
     d=json.load(sys.stdin)
-    a=d.get('accounts') if isinstance(d,dict) else d
-    print(len(a) if isinstance(a,list) else 0)
+    if isinstance(d,list):
+        a=d
+    elif isinstance(d,dict):
+        r=d.get('results')
+        if isinstance(r,list):
+            a=r
+        elif isinstance(r,dict):
+            a=r.get('accounts')
+        elif r is None and isinstance(d.get('accounts'),list):
+            a=d.get('accounts')
+        else:
+            a=None
+    else:
+        a=None
+    print(len(a) if isinstance(a,list) else -1)
 except Exception:
     print(-1)" 2>/dev/null || echo -1)"
       if [ "$_acct_count" = "0" ]; then
@@ -1039,7 +1062,11 @@ except Exception:
         err "CLIENT MESSAGE: \"I could not find any social accounts connected in your GoHighLevel Social Planner. Please connect at least one channel (Settings > Social Planner) and tell me when it is done. I will not post until a channel is connected.\""
         exit 3
       fi
-      log "live preflight OK: connected account count = $_acct_count"
+      if [ "$_acct_count" = "-1" ]; then
+        warn "live preflight inconclusive: could not parse the GHL accounts envelope (unrecognised shape) — NOT blocking, and NOT reporting zero. Posting step will retry per playbook."
+      else
+        log "live preflight OK: connected account count = $_acct_count"
+      fi
       ;;
     *)
       warn "live preflight inconclusive (HTTP '$_phttp') — transient/unknown; NOT blocking. Posting step will retry per playbook."
