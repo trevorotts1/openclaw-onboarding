@@ -1,3 +1,5 @@
+## [v25.0.46]  -  2026-09-12  -  Intake-route canonicalizes booleanish WANT selections to yes/no
+
 ## [v25.0.44]  -  2026-09-12  -  SOP-embeddings gates measured raw rows, so an all-orphan table SKIPped repair forever
 
 - **An all-orphan `sop_embeddings` table read as "already provisioned", so six client boxes could never be repaired by any roll.** Both the provisioner's idempotency gate and `update-skills.sh`'s U6c2 trigger (plus the SOP-LIBRARY status reporter and the fast-path embedder) measured `SELECT COUNT(*) FROM sop_embeddings` — RAW ROWS. A box hit by the v25.0.43 hashed-id defect holds a full 2555-row table in which every row is an orphan, keyed to the asset's slug-derived ids while its own `sops.id` is a content hash, so not one row joins to a SOP. Counting rows, such a box reads `2555 >= 2555` and is SKIPped on every roll, permanently; counting coverage it correctly reads `0` and gets provisioned. **The v25.0.43 fix alone would not have reached these boxes.**
