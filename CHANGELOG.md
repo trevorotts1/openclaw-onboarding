@@ -1,3 +1,5 @@
+## [v25.0.47]  -  2026-09-12  -  FIX-28 render-phase budget 30 for DESIGN-RENDER SALES/CHECKOUT/VSL (Kie render class)
+
 ## [v25.0.46]  -  2026-09-12  -  Intake-route canonicalizes booleanish WANT selections to yes/no
 
 ## [v25.0.44]  -  2026-09-12  -  SOP-embeddings gates measured raw rows, so an all-orphan table SKIPped repair forever
