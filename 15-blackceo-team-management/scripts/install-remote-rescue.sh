@@ -1,186 +1,258 @@
 #!/usr/bin/env bash
-# install-remote-rescue.sh - Skill 15 step that wires up the operator-side
+# install-remote-rescue.sh — Skill 15 step that wires up the operator-side
 # Remote Rescue agent (operator INBOUND access) + an OPT-IN operator escalation
-# chat key.
+# destination.
 #
-# ISOLATION MODEL (v2.0.0+)
-# --------------------------
-# OpenClaw keys every conversation as agent:<agentId>:telegram:<chatId>.
-# Operators (Trevor / Spaulding / LeAnne) must land in a session keyed to
-# "remote-rescue", NEVER to "main" (the owner's agent).
+# RR-032 CONTRACT (v7.1.0)
+# ------------------------
+# 1. ENABLE / DISABLE / PRESERVE are three explicit, distinguishable outcomes.
+#      enable   an operator chat id is supplied (prompt answer or env)     -> write
+#      disable  the operator answered/exported the literal disable token   -> remove
+#      preserve empty input on a box that already has an approved          -> keep
+#               destination OR a valid custom workspace, and REPORT it
+#    Empty input is NEVER treated as disable. That was the RR-032 defect: the
+#    old else-branch PRINTED "operator escalation DISABLED (opt-in)" while
+#    leaving a previously written OPERATOR_ESCALATION_CHAT_ID in the file, so a
+#    repair run reported a state the config did not hold. A report must name a
+#    state the file actually holds.
+# 2. WORKSPACE comes from the VERIFIED OpenClaw root (resolve-oc-root.sh), not a
+#    hardcoded $HOME/.openclaw — a Docker box resolves /data/.openclaw. An
+#    existing valid custom mount (RR_WORKSPACE) is retained, never overwritten.
+# 3. The source revision is LOCKED and verified by sha256 (CAS). A candidate is
+#    written to a temporary file, validated, then ATOMICALLY promoted with a
+#    rollback snapshot. The pre-RR-032 script wrote json.dump() straight onto
+#    the live config and validated afterwards — so a validation failure left a
+#    broken live config behind.
+# 4. OPERATOR ROUTING is VERIFIED against the actual resolver shipped with the
+#    installed OpenClaw, with isolated sessions per operator identity. Field
+#    presence is not evidence: channels.telegram.allowFrom and a per-agent
+#    workspace have ZERO routing effect, and agents.<id>.telegram is not even a
+#    valid key. Routing requires a top-level bindings entry.
+# 5. Authorized operator identities are preserved; owner and operator sessions
+#    stay separate (agent:remote-rescue:direct:<id> vs agent:main:main).
 #
-# OPERATOR INBOUND (always applied — this is the desired "we can still reach the
-# client agent" behavior): operator IDs are added to channels.telegram.allowFrom,
-# stripped from groupAllowFrom, and bound to the remote-rescue agent.
-#
-# OPERATOR ESCALATION DESTINATION (OPT-IN — v12.4.0 co-mingling guard): the
-# PROACTIVE-SEND chat (env.vars.OPERATOR_ESCALATION_CHAT_ID) is written ONLY when
-# an operator chat id is explicitly provided (interactive prompt answer or
-# OPERATOR_ESCALATION_CHAT_ID / OPERATOR_TELEGRAM_CHAT_ID env). There is NO
-# hardcoded personal-chat default: a client box installed without one ships with
-# operator escalation DISABLED and will never proactively message an operator.
-#
-# Idempotent. Safe to re-run. Backs up openclaw.json before any write.
-# Modes: (default) interactive; --repair non-interactive re-apply.
+# Modes: (default) interactive; --repair non-interactive re-apply; --check
+# read-only, writes nothing and reports the state it found.
 
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(cd "$HERE/.." && pwd)"
+REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
+ENGINE="$HERE/lib/rr-config-transaction.py"
+ROUTING_VERIFIER="$HERE/lib/rr-verify-routing.mjs"
+LOCK_LIB="$HERE/lib/rr-config-lock.sh"
+
 REPAIR_MODE=0
+CHECK_MODE=0
 for arg in "$@"; do
-  [[ "$arg" == "--repair" ]] && REPAIR_MODE=1
+  case "$arg" in
+    --repair) REPAIR_MODE=1 ;;
+    --check) CHECK_MODE=1 ;;
+    *) echo "usage: $0 [--repair] [--check]" >&2; exit 2 ;;
+  esac
 done
 
-# OPT-IN escalation chat — NO hardcoded default. Empty == escalation disabled.
-DEFAULT_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
-TS="$(date -u +%Y%m%d-%H%M%S)"
-RR_WORKSPACE_PATH="${RR_WORKSPACE:-$HOME/.openclaw/workspaces/remote-rescue}"
+# OPT-IN escalation destination. NO hardcoded personal-chat default.
+REQUESTED_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
 
-resolve_config_path() {
-  if openclaw config file >/dev/null 2>&1; then
-    openclaw config file 2>/dev/null | tail -1
-  elif [[ -f "$HOME/.openclaw/openclaw.json" ]]; then
-    echo "$HOME/.openclaw/openclaw.json"
-  elif [[ -f /data/.openclaw/openclaw.json ]]; then
-    echo /data/.openclaw/openclaw.json
-  else
-    echo "Cannot locate openclaw.json" >&2
-    exit 1
+# Authorized operator identities. Preserved by every run, never removed.
+OPERATOR_IDS="${RR_OPERATOR_IDS:-5252140759 6663821679 6771245262}"
+
+# ---------------------------------------------------------------------------
+# Resolve the VERIFIED OpenClaw root (Docker /data/.openclaw first, then HOME).
+# Falls back to the in-tree helper, then to the engine's own resolution, so the
+# script works both from a checkout and from a copied skill dir.
+# ---------------------------------------------------------------------------
+resolve_root() {
+  if [ -f "$REPO_ROOT/shared-utils/resolve-oc-root.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/shared-utils/resolve-oc-root.sh"
+    if resolve_oc_root 2>/dev/null; then
+      return 0
+    fi
+    return 1
   fi
+  if [ -d /data/.openclaw ]; then printf '%s\n' /data/.openclaw; return 0; fi
+  if [ -d "$HOME/.openclaw" ]; then printf '%s\n' "$HOME/.openclaw"; return 0; fi
+  return 1
 }
 
-CFG="$(resolve_config_path)"
-echo "Config file: $CFG"
-
-cp -a "$CFG" "${CFG}.bak-pre-remote-rescue-${TS}"
-echo "Backup: ${CFG}.bak-pre-remote-rescue-${TS}"
-
-CHAT_ID="$DEFAULT_CHAT_ID"
-if [[ "$REPAIR_MODE" != "1" && "${NONINTERACTIVE:-0}" != "1" ]]; then
-  if [[ -t 0 ]]; then
-    echo "Operator escalation routes PROACTIVE messages (maintenance/escalation) to a"
-    echo "chat. This is OPT-IN. Leave BLANK to DISABLE operator escalation on this box"
-    echo "(operator inbound access is configured either way)."
-    read -r -p "Operator escalation Telegram chat ID [blank = disabled]${DEFAULT_CHAT_ID:+ [$DEFAULT_CHAT_ID]}: " input || true
-    CHAT_ID="${input:-$DEFAULT_CHAT_ID}"
-  fi
+if ! OC_ROOT="$(resolve_root)"; then
+  echo "Cannot resolve a verified OpenClaw root: neither /data/.openclaw nor \$HOME/.openclaw exists." >&2
+  echo "Nothing was written." >&2
+  exit 2
 fi
 
-# CO-MINGLING GUARD (v12.4.0): only persist the escalation destination if one was
-# explicitly provided. Empty => operator escalation stays DISABLED (no proactive
-# send). We write BOTH the canonical key and the back-compat key.
-if [[ -n "$CHAT_ID" ]]; then
-  echo "Using operator escalation chat ID: $CHAT_ID"
-  openclaw config set env.vars.OPERATOR_ESCALATION_CHAT_ID "\"$CHAT_ID\"" --strict-json >/dev/null
-  openclaw config set env.vars.OPERATOR_TELEGRAM_CHAT_ID  "\"$CHAT_ID\"" --strict-json >/dev/null
-  echo "Set env.vars.OPERATOR_ESCALATION_CHAT_ID = $CHAT_ID (and back-compat OPERATOR_TELEGRAM_CHAT_ID)"
+# An explicit config path is authoritative for WHERE THE ROOT IS. Deriving the
+# workspace from a different root than the config would put the operator's
+# session storage outside the tree the config lives in — and on a Docker box
+# that is outside the mount entirely.
+CFG_PATH="${OPENCLAW_CONFIG_PATH:-$OC_ROOT/openclaw.json}"
+CFG_DIR="$(cd "$(dirname "$CFG_PATH")" && pwd)"
+if [ "$CFG_DIR" != "$OC_ROOT" ]; then
+  echo "Config path override: root taken from the config's own directory ($CFG_DIR)"
+  OC_ROOT="$CFG_DIR"
+fi
+echo "OpenClaw root: $OC_ROOT"
+if [ ! -f "$CFG_PATH" ]; then
+  echo "No config at $CFG_PATH — nothing to repair, nothing written." >&2
+  exit 2
+fi
+
+# Workspace: an explicit RR_WORKSPACE is a valid custom mount and is retained.
+if [ -n "${RR_WORKSPACE:-}" ]; then
+  WS="$RR_WORKSPACE"
+  WS_EXPLICIT=1
 else
-  echo "No operator escalation chat provided — operator escalation DISABLED (opt-in)."
-  echo "Operator INBOUND access is still configured below (allowFrom + remote-rescue binding)."
+  WS="$OC_ROOT/workspaces/remote-rescue"
+  WS_EXPLICIT=0
 fi
 
-# The three operator IDs always get INBOUND access (allowFrom + remote-rescue
-# binding). This is the desired "operators can still message the client agent"
-# behavior and is independent of the (opt-in) escalation destination above.
-OPERATOR_IDS_JSON='["5252140759","6663821679","6771245262"]'
+# ---------------------------------------------------------------------------
+# Prompt (interactive only). The answer distinguishes all three outcomes:
+# blank on an enabled box == preserve, `disable` == explicit removal.
+# ---------------------------------------------------------------------------
+if [ "$REPAIR_MODE" != "1" ] && [ "${NONINTERACTIVE:-0}" != "1" ] && [ "$CHECK_MODE" != "1" ]; then
+  if [ -t 0 ]; then
+    echo "Operator escalation routes PROACTIVE messages (maintenance/escalation) to a chat."
+    echo "  blank    = keep the destination this box already has (preserved)"
+    echo "  an id    = set that destination"
+    echo "  disable  = remove operator escalation from this box"
+    read -r -p "Operator escalation Telegram chat ID [blank = preserve]${REQUESTED_CHAT_ID:+ [$REQUESTED_CHAT_ID]}: " input || true
+    if [ -n "${input:-}" ]; then
+      REQUESTED_CHAT_ID="$input"
+    fi
+  fi
+fi
 
-python3 - "$CFG" "$CHAT_ID" "$OPERATOR_IDS_JSON" "$RR_WORKSPACE_PATH" <<'PYEOF'
+# ---------------------------------------------------------------------------
+# Serialize with a lock, then run the transaction engine.
+# ---------------------------------------------------------------------------
+# shellcheck source=/dev/null
+source "$LOCK_LIB"
+LOCK_DIR="$CFG_PATH.rr032-lock"
+if ! rr_config_lock "$LOCK_DIR" 30; then
+  echo "Another Remote Rescue run holds the config lock; nothing was written." >&2
+  exit 4
+fi
+trap 'rr_config_unlock "$LOCK_DIR"' EXIT
+
+SOURCE_SHA="$(python3 - "$CFG_PATH" <<'PYEOF'
+import hashlib, sys
+print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
+PYEOF
+)"
+
+ROLLBACK_SRC=""
+if [ "$CHECK_MODE" != "1" ]; then
+  ROLLBACK_SRC="$CFG_PATH.rr032-rollback-$(date -u +%Y%m%d-%H%M%S)"
+fi
+
+OPENCLAW_BIN="$(command -v openclaw || true)"
+
+# Candidate validation runner: the INSTALLED openclaw validates the candidate.
+# Fails closed — if openclaw is absent the candidate is not promoted on the
+# strength of a structural check alone.
+REPORT_JSON="$(mktemp -t rr032-report)"
+set +e
+python3 "$ENGINE" \
+  --cfg "$CFG_PATH" \
+  --mode "$([ "$REPAIR_MODE" = 1 ] && echo repair || echo interactive)" \
+  $( [ "$REPAIR_MODE" = 1 ] && echo --repair ) \
+  $( [ "${NONINTERACTIVE:-0}" = 1 ] && echo --noninteractive ) \
+  --requested "$REQUESTED_CHAT_ID" \
+  $( [ "$CHECK_MODE" = 1 ] && echo --check ) \
+  --source-revision "sha256:$SOURCE_SHA" \
+  --expect-sha "$SOURCE_SHA" \
+  --oc-root "$OC_ROOT" \
+  --workspace "$WS" \
+  $( [ "$WS_EXPLICIT" = 1 ] && echo --workspace-explicit ) \
+  --reconcile-operators \
+  --reconcile-routing \
+  --owner-agent-id "${RR_OWNER_AGENT_ID:-main}" \
+  $( for id in $OPERATOR_IDS; do echo --operator-id "$id"; done ) \
+  $( [ -n "$ROLLBACK_SRC" ] && printf '%s\n' --rollback-src "$ROLLBACK_SRC" ) \
+  --validator-program "$HERE/lib/rr-validate-candidate.sh" \
+  --promote-program "$HERE/lib/rr-promote-atomic.sh" \
+  --report "$REPORT_JSON" >/dev/null
+ENGINE_RC=$?
+set -e
+
+python3 - "$REPORT_JSON" "$CFG_PATH" <<'PYEOF'
 import json, sys
-
-cfg_path   = sys.argv[1]
-extra_id   = sys.argv[2]
-op_ids_raw = json.loads(sys.argv[3])
-rr_ws      = sys.argv[4]
-
-with open(cfg_path) as f:
-    cfg = json.load(f)
-
-# Operator INBOUND access set: the three operator IDs, plus the explicit escalation
-# chat id ONLY if one was provided (never add an empty string to allowFrom).
-team_ids = list(op_ids_raw)
-if extra_id and extra_id.strip():
-    team_ids.append(extra_id.strip())
-team_ids = list(dict.fromkeys(team_ids))
-
-tg = cfg.setdefault("channels", {}).setdefault("telegram", {})
-
-existing_allow = tg.get("allowFrom") or []
-if not isinstance(existing_allow, list):
-    existing_allow = []
-tg["allowFrom"] = list(dict.fromkeys([*existing_allow, *sorted(team_ids)]))
-
-existing_group = tg.get("groupAllowFrom") or []
-if isinstance(existing_group, list):
-    cleaned = [x for x in existing_group if x not in set(team_ids)]
-    tg["groupAllowFrom"] = cleaned
-    removed = len(existing_group) - len(cleaned)
-    if removed:
-        print(f"  Removed {removed} operator ID(s) from groupAllowFrom (isolation fix)")
-
-agents = cfg.setdefault("agents", {}).setdefault("list", [])
-rr_index = next((i for i, a in enumerate(agents) if a.get("id") == "remote-rescue"), None)
-
-rr_entry = {
-    "id": "remote-rescue",
-    "name": "Remote Rescue by T Otts",
-    "description": (
-        "Operator-side management agent. Bound exclusively to operator chat IDs. "
-        "Messages from these IDs resolve here NEVER to the owner's main agent."
-    ),
-    "workspace": rr_ws,
-    "subagents": {"allowAgents": ["*"]},
-    "telegram": {
-        "allowFrom": sorted(team_ids)
-    },
-}
-
-if rr_index is not None:
-    existing = agents[rr_index]
-    existing["description"] = rr_entry["description"]
-    existing["workspace"]   = rr_entry["workspace"]
-    existing.setdefault("subagents", {})["allowAgents"] = ["*"]
-    existing.setdefault("telegram", {})["allowFrom"] = sorted(team_ids)
-    print("  Updated existing remote-rescue agent (workspace + telegram.allowFrom)")
-else:
-    agents.append(rr_entry)
-    print("  Appended new remote-rescue agent")
-
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-    f.write("\n")
-
-print("Patched openclaw.json:")
-print(f"  allowFrom      <- operator IDs added: {sorted(team_ids)}")
-print(f"  groupAllowFrom <- operator IDs stripped (owner group stays clean)")
-print(f"  remote-rescue  <- bound to operator IDs, workspace={rr_ws}")
+rep = json.load(open(sys.argv[1]))
+print("Remote Rescue state: %s" % rep.get("state"))
+print("  destination     : %s" % (rep.get("destination") or "(none)"))
+print("  source revision : %s" % (rep.get("source_revision") or "unnamed"))
+print("  cas             : %s" % rep.get("cas"))
+print("  candidate       : %s (%s)" % (rep.get("validation"), rep.get("validation_detail") or "ok"))
+print("  promote         : %s" % rep.get("promote"))
+print("  rollback        : %s" % rep.get("rollback"))
+print("  workspace       : %s [%s]" % (rep.get("workspace"), rep.get("mount_state")))
+for note in rep.get("notes") or []:
+    print("  note            : %s" % note)
+for tr in rep.get("transitions") or []:
+    print("  transition      : %s -> %s (%s)" % (tr.get("from"), tr.get("to"), tr.get("cause")))
 PYEOF
 
-openclaw config validate >/dev/null
-echo "Config validated."
+STATE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("state"))' "$REPORT_JSON")"
 
-mkdir -p "$RR_WORKSPACE_PATH"
-echo "Remote Rescue workspace: $RR_WORKSPACE_PATH"
+# ---------------------------------------------------------------------------
+# Routing acceptance: the REAL resolver, per operator identity, on the config
+# that is now live. Field presence is not evidence — this resolves the route.
+# ---------------------------------------------------------------------------
+RESOLVER=""
+for cand in \
+  "${OPENCLAW_ROUTING_MODULE:-}" \
+  "$(npm root -g 2>/dev/null || true)/openclaw/dist/plugin-sdk/routing.js" \
+  "$HOME/.npm-global/lib/node_modules/openclaw/dist/plugin-sdk/routing.js" \
+  "/usr/lib/node_modules/openclaw/dist/plugin-sdk/routing.js" \
+  "/usr/local/lib/node_modules/openclaw/dist/plugin-sdk/routing.js"; do
+  if [ -n "$cand" ] && [ -f "$cand" ]; then RESOLVER="$cand"; break; fi
+done
 
-if [[ "${SKIP_BOOTSTRAP_MSG:-0}" != "1" && -n "$CHAT_ID" ]]; then
-  CLIENT_NAME_S="${CLIENT_NAME:-<client>}"
-  BOT_S="${CLIENT_BOT_USERNAME:-<bot>}"
-  PERSONA_S="${PERSONA:-<persona>}"
-  HOST_S="${HOST_NAME:-$(hostname)}"
-
-  MSG="Remote Rescue by T Otts is now active on ${CLIENT_NAME_S}'s OpenClaw setup.
-
-ISOLATION: Your DMs to @${BOT_S} are automatically routed to the remote-rescue agent (isolated from the owner's session). No /agent switch needed -- routing is config-driven and permanent.
-
-- Client persona: ${PERSONA_S}
-- Host: ${HOST_S}
-- Your session key: agent:remote-rescue:telegram:<your-chat-id>
-- Owner session key: agent:main:telegram:<owner-chat-id>"
-
-  if openclaw message send --channel telegram --target "$CHAT_ID" --message "$MSG" 2>/dev/null; then
-    echo "Bootstrap message sent to $CHAT_ID"
+ROUTING_ACCEPTED=0
+if [ -n "$RESOLVER" ]; then
+  ROUTE_ARGS=()
+  for id in $OPERATOR_IDS; do ROUTE_ARGS+=(--operator-id "$id"); done
+  if [ -n "${RR_OWNER_CHAT_ID:-}" ]; then ROUTE_ARGS+=(--owner-id "$RR_OWNER_CHAT_ID"); fi
+  set +e
+  node "$ROUTING_VERIFIER" --config "$CFG_PATH" --module "$RESOLVER" \
+       "${ROUTE_ARGS[@]}" > "$REPORT_JSON.routing" 2>&1
+  ROUTE_RC=$?
+  set -e
+  python3 - "$REPORT_JSON.routing" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+raw = open(path).read()
+try:
+    d = json.loads(raw)
+except Exception as exc:
+    print("routing verdict: BLOCKED (unreadable verifier output: %s)" % exc)
+    sys.exit(0)
+print("routing verdict: %s" % d.get("verdict"))
+for c in d.get("checks") or []:
+    actual = c.get("actual") or {}
+    print("  %-8s %s -> agent=%s session=%s matchedBy=%s" % (
+        "ok" if c.get("ok") else "MISMATCH", c.get("subject"),
+        actual.get("agentId", "-"), actual.get("sessionKey", "-"),
+        actual.get("matchedBy", c.get("detail", "-"))))
+PYEOF
+  if [ "$ROUTE_RC" = "0" ]; then
+    ROUTING_ACCEPTED=1
   else
-    echo "Warning: bootstrap message send failed." >&2
+    echo "Routing acceptance did NOT pass for every operator identity (verifier rc=$ROUTE_RC)." >&2
   fi
+else
+  echo "Routing acceptance BLOCKED: no installed OpenClaw resolver found." >&2
+  echo "  Set OPENCLAW_ROUTING_MODULE to <openclaw>/dist/plugin-sdk/routing.js for the target version." >&2
 fi
 
-echo "Remote Rescue install complete."
-echo "Verify: openclaw config get agents.list | grep -A10 remote-rescue"
+if [ "$CHECK_MODE" = "1" ]; then
+  echo "Check mode: state reported, nothing written."
+fi
+
+echo "Remote Rescue install complete (state: $STATE)."
+echo "Verify: python3 -c 'import json;print(json.load(open(\"$CFG_PATH\"))[\"bindings\"])'"
+exit "$ENGINE_RC"

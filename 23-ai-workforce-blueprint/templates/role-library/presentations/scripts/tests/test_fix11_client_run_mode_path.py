@@ -123,7 +123,7 @@ def _answer(tmp_path, text):
     (cfg / "resource_profile.json").write_text(json.dumps(
         {".schema_version": 1, "providers": {"deepseek-direct": {
             "provider": "deepseek-direct", "consented": True, "detected": True,
-            "presence": True, "wired_models": ["deepseek-v4-flash"]}}}),
+            "presence": True, "wired_models": ["deepseek-flash"]}}}),
         encoding="utf-8")
     run_dir = tmp_path / "run"
     run_dir.mkdir(exist_ok=True)
@@ -146,7 +146,7 @@ def _answer(tmp_path, text):
     ("mode: Economy", "economy"),
     ("mode: standard", "standard"),
     ("run mode: ultra", "ultra"),        # the client's other spelling
-    ("workhorse: deepseek-v4-flash@deepseek-direct; mode: ultra", "ultra"),
+    ("workhorse: deepseek-flash@deepseek-direct; mode: ultra", "ultra"),
 ])
 def test_driver_records_a_declared_run_mode(tmp_path, text, expected):
     proc, entries, _ = _answer(tmp_path, text)
@@ -188,7 +188,7 @@ def test_reanswering_without_a_mode_keeps_the_earlier_declaration(tmp_path):
     can ever escalate TO ultra."""
     _answer(tmp_path, "mode: ultra")
     proc, entries, _ = _answer(
-        tmp_path, "workhorse: deepseek-v4-flash@deepseek-direct")
+        tmp_path, "workhorse: deepseek-flash@deepseek-direct")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert entries["RUN_MODE"]["value"] == "ultra"
     # ... and an explicit new mode DOES change it.
@@ -201,8 +201,8 @@ def test_a_later_answer_can_never_silently_escalate_to_ultra(tmp_path):
     """The one direction that must never happen by accident."""
     _answer(tmp_path, "mode: economy")
     for follow_up in ("use conservative default",
-                      "workhorse: deepseek-v4-flash@deepseek-direct",
-                      "qc: deepseek-v4-flash@deepseek-direct; thinking: max"):
+                      "workhorse: deepseek-flash@deepseek-direct",
+                      "qc: deepseek-flash@deepseek-direct; thinking: max"):
         proc, entries, _ = _answer(tmp_path, follow_up)
         assert proc.returncode == 0, proc.stdout + proc.stderr
         assert entries["RUN_MODE"]["value"] != "ultra", follow_up
@@ -441,12 +441,12 @@ _PROFILE_WITH_PLAN = {
     ".schema_version": 1,
     "providers": {
         "deepseek-direct": _wired("deepseek-direct",
-                                  ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                  ["deepseek-flash", "deepseek-v4-pro"]),
         "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
     },
     "creative_prefs": {}, "consent": {}, "interview": {},
     "model_plan": {
-        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
         "reasoning": {"provider": "deepseek-direct", "model": "deepseek-v4-pro"},
         "judge": {"provider": "ollama-cloud", "model": "glm-5.3-flash"},
         "thinking": "max",
@@ -498,7 +498,7 @@ def test_routing_stamp_carries_both_models_and_the_thinking_level(monkeypatch,
         (run_dir / launch_plan.MODEL_PLAN_SIDECAR).read_text(encoding="utf-8"))
     slots = stamp["plan"]["slots"]
     assert slots["workhorse"] == {"provider": "deepseek-direct",
-                                  "model": "deepseek-v4-flash"}
+                                  "model": "deepseek-flash"}
     assert slots["judge"] == {"provider": "ollama-cloud",
                               "model": "glm-5.3-flash"}
     assert stamp["plan"]["thinking"] == "max"

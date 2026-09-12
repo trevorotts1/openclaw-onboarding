@@ -71,7 +71,7 @@ TWO_PROVIDER_PROFILE = {
     ".schema_version": 1,
     "providers": {
         "deepseek-direct": _wired("deepseek-direct",
-                                  ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                  ["deepseek-flash", "deepseek-v4-pro"]),
         "openrouter": _wired("openrouter",
                              ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
     },
@@ -182,7 +182,7 @@ def test_the_workhorse_never_spills_into_the_judge_class(monkeypatch, tmp_path):
 def test_a_standard_workhorse_falls_back_visibly_on_a_long_context_class(
         monkeypatch, tmp_path):
     _profile_env(monkeypatch, tmp_path, _with_plan({
-        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
         "floor_waivers": [],
     }))
     decision = model_router.resolve_route("P3-ARC")
@@ -191,7 +191,7 @@ def test_a_standard_workhorse_falls_back_visibly_on_a_long_context_class(
     assert "client_plan" not in decision
     floor = decision["client_plan_floor"]
     assert floor["via"] == "workhorse-spill"
-    assert floor["declared"]["model"] == "deepseek-v4-flash"
+    assert floor["declared"]["model"] == "deepseek-flash"
     assert floor["floor"]["ok"] is False
     assert "long" in floor["floor"]["reason"]
     assert floor["fallback_alias"] == "deepseek-v4-pro"
@@ -201,13 +201,13 @@ def test_an_explicitly_waived_reasoning_slot_is_honoured(monkeypatch, tmp_path):
     """Trevor: not forced. A client who NAMES a standard-context model for the
     reasoning slot and waives the class GETS that model."""
     _profile_env(monkeypatch, tmp_path, _with_plan({
-        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
-        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
+        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-flash"},
         "floor_waivers": ["reasoning_long"],
     }))
     decision = model_router.resolve_route("P3-ARC")
     assert decision["route"] == {"provider": "deepseek-direct",
-                                 "model": "deepseek-v4-flash"}, decision
+                                 "model": "deepseek-flash"}, decision
     assert decision["client_plan"]["floor"] == "waived"
     assert decision["client_plan"]["slot"] == "reasoning"
     assert decision["client_plan"]["applied"] is True
@@ -216,10 +216,10 @@ def test_an_explicitly_waived_reasoning_slot_is_honoured(monkeypatch, tmp_path):
 def test_a_waiver_does_not_leak_to_an_unwaived_class(monkeypatch, tmp_path):
     """reasoning_long waived does not silently waive long_synthesis."""
     _profile_env(monkeypatch, tmp_path, _with_plan({
-        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-flash"},
         "floor_waivers": ["reasoning_long"],
     }))
-    assert model_router.resolve_route("P3-ARC")["route"]["model"] == "deepseek-v4-flash"
+    assert model_router.resolve_route("P3-ARC")["route"]["model"] == "deepseek-flash"
     other = model_router.resolve_route("P-CONVERTER")
     assert other["capability"] == "long_synthesis"
     assert other["route"]["model"] == "deepseek-v4-pro", other
@@ -247,10 +247,10 @@ def test_an_unknown_wired_id_never_clears_a_long_floor(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 def test_judge_can_be_pointed_at_ollama_cloud(monkeypatch, tmp_path):
     """Impossible on unmodified main: the judge class's candidates are
-    deepseek-v4-flash / glm-flash / glm-5.3, none of them on ollama-cloud."""
+    deepseek-flash / glm-flash / glm-5.3, none of them on ollama-cloud."""
     providers = {
         "deepseek-direct": _wired("deepseek-direct",
-                                  ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                  ["deepseek-flash", "deepseek-v4-pro"]),
         "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
     }
     _profile_env(monkeypatch, tmp_path, _with_plan({
@@ -316,7 +316,7 @@ def test_a_plan_on_a_provider_less_profile_cannot_be_recorded(monkeypatch, tmp_p
     _profile_env(monkeypatch, tmp_path, {".schema_version": 1, "providers": {}})
     with pytest.raises(ValueError) as exc:
         resource_profile.record_model_plan(
-            {"workhorse": "deepseek-v4-flash@deepseek-direct"}, source="cli")
+            {"workhorse": "deepseek-flash@deepseek-direct"}, source="cli")
     assert "NO providers" in str(exc.value)
     assert "--capacity" in str(exc.value)
     decision = model_router.resolve_route("P4-COPY")
@@ -373,7 +373,7 @@ def test_record_model_plan_names_the_wired_inventory_it_checked(monkeypatch, tmp
             {"workhorse": "nope@deepseek-direct"}, source="cli")
     msg = str(exc.value)
     assert "not in deepseek-direct's wired inventory" in msg
-    assert "deepseek-v4-flash" in msg and "deepseek-v4-pro" in msg
+    assert "deepseek-flash" in msg and "deepseek-v4-pro" in msg
 
 
 def test_record_model_plan_names_the_providers_that_do_exist(monkeypatch, tmp_path):
@@ -393,7 +393,7 @@ def test_a_context_shortfall_is_waived_but_a_modality_shortfall_is_refused(
     a text slot is REFUSED, because no waiver makes it able to do the job."""
     cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
     prof = resource_profile.record_model_plan(
-        {"reasoning": "deepseek-v4-flash@deepseek-direct"}, source="cli")
+        {"reasoning": "deepseek-flash@deepseek-direct"}, source="cli")
     assert "reasoning_long" in prof["model_plan"]["floor_waivers"]
     assert "long_synthesis" in prof["model_plan"]["floor_waivers"]
     assert prof["interview"]["model_plan"][-1]["waiver_reasons"]
@@ -428,7 +428,7 @@ def test_a_later_answer_updates_the_plan_and_appends_an_audit_row(
     """A client changing their workhorse must never need an operator."""
     cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
     resource_profile.record_model_plan(
-        {"workhorse": "deepseek-v4-flash@deepseek-direct"}, source="interview")
+        {"workhorse": "deepseek-flash@deepseek-direct"}, source="interview")
     prof = resource_profile.record_model_plan(
         {"workhorse": "z-ai/glm-5.3-flash@openrouter"}, source="interview")
     assert prof["model_plan"]["workhorse"] == {"provider": "openrouter",
@@ -457,20 +457,20 @@ def test_the_real_driver_records_a_model_plan_from_one_merged_turn(tmp_path):
     (cfg / resource_profile.PROFILE_FILENAME).write_text(
         json.dumps({".schema_version": 1, "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4-pro"]),
             "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
         }}, indent=2), encoding="utf-8")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     proc = _driver(run_dir, cfg, "resource_plan",
-                   "plan: v4-flash; workhorse: deepseek-v4-flash@deepseek-direct; "
+                   "plan: v4-flash; workhorse: deepseek-flash@deepseek-direct; "
                    "qc: glm-5.3-flash@ollama-cloud; thinking: max")
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
     plan = json.loads((cfg / resource_profile.PROFILE_FILENAME)
                       .read_text(encoding="utf-8"))["model_plan"]
     assert plan["workhorse"] == {"provider": "deepseek-direct",
-                                 "model": "deepseek-v4-flash"}
+                                 "model": "deepseek-flash"}
     assert plan["judge"] == {"provider": "ollama-cloud", "model": "glm-5.3-flash"}
     assert plan["thinking"] == "max"
     assert plan["source"] == "interview"
@@ -478,7 +478,7 @@ def test_the_real_driver_records_a_model_plan_from_one_merged_turn(tmp_path):
     ledger = json.loads((run_dir / "working" / "interview" /
                          "intake_ledger.json").read_text(encoding="utf-8"))
     entries = ledger["entries"]
-    for key, expected in (("WORKHORSE_MODEL", "deepseek-v4-flash@deepseek-direct"),
+    for key, expected in (("WORKHORSE_MODEL", "deepseek-flash@deepseek-direct"),
                           ("QC_MODEL", "glm-5.3-flash@ollama-cloud"),
                           ("THINKING_MODE", "max")):
         assert key in entries, sorted(entries)
@@ -492,7 +492,7 @@ def test_the_real_driver_refuses_an_unwired_model_at_intake(tmp_path):
     (cfg / resource_profile.PROFILE_FILENAME).write_text(
         json.dumps({".schema_version": 1, "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4-pro"]),
         }}, indent=2), encoding="utf-8")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -501,7 +501,7 @@ def test_the_real_driver_refuses_an_unwired_model_at_intake(tmp_path):
     assert proc.returncode == 1, proc.stdout + proc.stderr
     err = json.loads(proc.stdout.strip().splitlines()[-1])["error"]
     assert "not in deepseek-direct's wired inventory" in err
-    assert "deepseek-v4-flash" in err
+    assert "deepseek-flash" in err
     stored = json.loads((cfg / resource_profile.PROFILE_FILENAME)
                         .read_text(encoding="utf-8"))
     assert "model_plan" not in stored, "a refused answer must not half-land"

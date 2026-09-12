@@ -195,7 +195,7 @@ def test_opposite_model_policy_enforced_when_demanded(tmp_path):
     rd = _rd(tmp_path)
     _report(rd)
     _stamp(rd, author_exec="exec-A", reviewer_exec="exec-B",
-           author_model="deepseek-v4-pro", reviewer_model="deepseek-v4-flash")
+           author_model="deepseek-v4-pro", reviewer_model="deepseek-flash")
     assert es.qc_independence_reason(rd, PHASE, None, rd / ARTIFACT_REL) == "", \
         "default policy does not demand opposite models"
     reason = es.qc_independence_reason(rd, PHASE, None, rd / ARTIFACT_REL,

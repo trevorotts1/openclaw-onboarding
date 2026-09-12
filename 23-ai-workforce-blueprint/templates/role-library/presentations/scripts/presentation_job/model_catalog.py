@@ -65,8 +65,8 @@ ROLLBACK_MODELS: Dict[str, str] = {
     # =0 rollback restores the old string verbatim for parity, nothing else.
     "image.fallback": "nano-banana-2",
     "text.strong": "deepseek-v4-pro",
-    "text.fast": "deepseek-v4-flash",
-    "text.judge": "deepseek-v4-flash",
+    "text.fast": "deepseek-flash",
+    "text.judge": "deepseek-flash",
     "vision.ocr": "glm-ocr",
 }
 
@@ -182,6 +182,71 @@ def resolve_alias(alias: str) -> Dict[str, Any]:
     return resolve(alias)
 
 
+#: Saved-config compat: older Flash aliases that resolve to the live
+#: deepseek-flash id through DeepSeek Direct. A legacy id is NEVER sent on
+#: the wire; callers that accept a stored model id fold it here first so a
+#: config saved before the V4.1 rename keeps routing instead of breaking.
+LEGACY_FLASH_MODEL_IDS = frozenset({"deepseek-v4-flash"})
+
+LIVE_FLASH_MODEL_ID = "deepseek-flash"
+
+
+def resolve_alias_compat(alias_or_model: str) -> Dict[str, Any]:
+    """resolve() plus the legacy-Flash shim: a stored model id naming an
+    older Flash alias resolves to the same entry as the live id.
+
+    Lookup order: catalog alias -> compat.legacy_aliases table in the loaded
+    catalog -> LEGACY_FLASH_MODEL_IDS fallback. Fail-closed on anything else,
+    exactly like resolve()."""
+    try:
+        return resolve(alias_or_model)
+    except CatalogError:
+        pass
+    doc: Optional[Dict[str, Any]] = None
+    try:
+        doc = load_catalog()
+    except CatalogError:
+        doc = None
+    mapped: Optional[str] = None
+    if doc is not None:
+        compat = doc.get("compat") or {}
+        legacy = (compat.get("legacy_aliases") or {}) if isinstance(compat, dict) else {}
+        if isinstance(legacy, dict):
+            hit = legacy.get(alias_or_model)
+            if isinstance(hit, str) and hit.strip():
+                mapped = hit.strip()
+    if mapped is None and alias_or_model in LEGACY_FLASH_MODEL_IDS:
+        mapped = LIVE_FLASH_MODEL_ID
+    if mapped is None:
+        raise CatalogError(
+            f"model alias {alias_or_model!r} not present in catalog "
+            f"({catalog_path()}); refusing to guess a model id")
+    # Resolve the catalog alias that serves the live id on deepseek-direct.
+    doc = doc or load_catalog()
+    for alias, entry in (doc.get("aliases") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        served = entry.get("served_ids") or {}
+        if isinstance(served, dict) and any(
+                str(v).strip() == mapped for v in served.values()):
+            return resolve(alias)
+        if entry.get("model") == mapped:
+            return resolve(alias)
+    raise CatalogError(
+        f"legacy model id {alias_or_model!r} maps to {mapped!r} with no "
+        f"catalog alias serving it; refusing to guess")
+
+
+def fold_legacy_flash_model_id(model: Any) -> str:
+    """A stored model id -> the live id the wire accepts. Legacy Flash ids
+    fold to deepseek-flash; every other value passes through unchanged (never
+    evidence of anything, just spelling)."""
+    text = str(model or "").strip()
+    if text in LEGACY_FLASH_MODEL_IDS:
+        return LIVE_FLASH_MODEL_ID
+    return text
+
+
 # ---------------------------------------------------------------------------
 # FIX 17a: served-id table + provider-id normalisation
 # ---------------------------------------------------------------------------
@@ -242,7 +307,7 @@ def served_id(alias: str, provider: Any, *,
     """The provider's served id for one alias -- the literal id that
     provider's endpoint actually accepts (e.g. text.judge on openrouter ->
     'z-ai/glm-5.3-flash'; the same alias on deepseek-direct ->
-    'deepseek-v4-flash'). None when that provider has no row: a missing
+    'deepseek-flash'). None when that provider has no row: a missing
     mapping is a miss, never the bare alias model id guessed as served."""
     return served_ids_for(alias, catalog=catalog).get(normalize_provider_id(provider))
 

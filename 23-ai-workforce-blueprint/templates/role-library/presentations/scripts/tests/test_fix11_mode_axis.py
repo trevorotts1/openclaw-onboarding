@@ -74,7 +74,7 @@ def _profile(ceiling=None, plan=None):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-v4-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4-pro"]),
             "openrouter": _wired("openrouter",
                                  ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
         },
@@ -122,13 +122,13 @@ def _models(decision):
 #: ("deepseek", which _norm_provider folds to "deepseek-direct"). Derived, not
 #: hardcoded, so a catalog respelling cannot make these fixtures quietly stop
 #: matching the routed provider the stamp compares against.
-_DS_PROVIDER = model_router.resolve_alias("deepseek-v4-flash")["provider"]
+_DS_PROVIDER = model_router.resolve_alias("deepseek-flash")["provider"]
 
 
 #: A default table whose primary for the Economy-covered classes is NOT the
 #: cheap model, so the re-point is OBSERVABLE. See
 #: test_shipped_table_makes_the_economy_repoint_a_noop for why this is needed:
-#: on the shipped table deepseek-v4-flash is ALREADY first for both covered
+#: on the shipped table deepseek-flash is ALREADY first for both covered
 #: classes, so Economy's re-point changes nothing there. These tests pin the
 #: MECHANISM; that test pins the shipped-table fact beside it, so neither is
 #: ever mistaken for the other.
@@ -206,25 +206,25 @@ def test_economy_repoints_only_under_economy(monkeypatch, tmp_path):
         _pro_first_table(monkeypatch)
         decision = model_router.resolve_route("P4-COPY")
         seen[want] = (decision["route"], _models(decision))
-    assert seen["economy"][1][0] == "deepseek-v4-flash", seen["economy"]
-    assert seen["economy"][0]["model"] == "deepseek-v4-flash", seen["economy"]
+    assert seen["economy"][1][0] == "deepseek-flash", seen["economy"]
+    assert seen["economy"][0]["model"] == "deepseek-flash", seen["economy"]
     for other in ("ultra", "standard"):
         assert seen[other][1][0] == "deepseek-v4-pro", seen[other]
         assert seen[other][0]["model"] == "deepseek-v4-pro", seen[other]
-    assert "deepseek-v4-flash" not in seen["ultra"][1], seen["ultra"]
+    assert "deepseek-flash" not in seen["ultra"][1], seen["ultra"]
 
 
 def test_shipped_table_makes_the_economy_repoint_a_noop():
     """THE HONEST FACT beside the mechanism test above: on the table this repo
     actually ships, ECONOMY_FLASH_REPOINT changes NOTHING, because
-    deepseek-v4-flash is already the primary candidate of both classes it
+    deepseek-flash is already the primary candidate of both classes it
     covers. Economy's real teeth today are its concurrency/cost width, not a
     model swap. If a later table change makes the re-point bite, the mechanism
     test above already pins it -- and this assertion will fail loudly rather
     than let the no-op be discovered in production."""
     for cls in model_router.ECONOMY_FLASH_REPOINT:
         base = [c["alias"] for c in model_router.CAPABILITY_CANDIDATES[cls]]
-        assert base[0] == "deepseek-v4-flash", (
+        assert base[0] == "deepseek-flash", (
             f"{cls}'s primary is no longer the cheap model ({base}); the "
             "Economy re-point now changes the shipped route -- update this "
             "test deliberately, do not delete it")
@@ -390,7 +390,7 @@ def test_a_declared_workhorse_is_not_overridden_by_economy(monkeypatch,
     assert decision["client_plan"]["applied"] is True
     # and Economy did not reorder the fallbacks behind the client's row either
     assert _models(decision)[:2] == ["z-ai/glm-5.3", "deepseek-v4-pro"], decision
-    assert "deepseek-v4-flash" not in _models(decision), decision
+    assert "deepseek-flash" not in _models(decision), decision
     assert "suppressed" in decision["client_plan"]["economy_repoint"]
 
 
@@ -405,8 +405,8 @@ def test_an_undeclared_class_still_repoints_under_economy(monkeypatch,
     _pro_first_table(monkeypatch)
     decision = model_router.resolve_route("P4-COPY")   # authoring: undeclared
     assert decision.get("client_plan") is None, decision
-    assert _models(decision)[0] == "deepseek-v4-flash", decision
-    assert decision["route"]["model"] == "deepseek-v4-flash", decision
+    assert _models(decision)[0] == "deepseek-flash", decision
+    assert decision["route"]["model"] == "deepseek-flash", decision
 
 
 def test_a_floor_failed_declaration_does_not_govern_the_class(monkeypatch,
@@ -418,7 +418,7 @@ def test_a_floor_failed_declaration_does_not_govern_the_class(monkeypatch,
     _env(monkeypatch, tmp_path,
          _profile(plan={"workhorse": None,
                         "reasoning": {"provider": "deepseek-direct",
-                                      "model": "deepseek-v4-flash"},
+                                      "model": "deepseek-flash"},
                         "judge": None, "floor_waivers": []}),
          mode="economy")
     decision = model_router.resolve_route("P3-ARC")   # reasoning_long

@@ -63,7 +63,7 @@ from typing import Any, Dict, List, Optional
 CHARACTERS_PER_TOKEN = 4
 
 # Context-window cap in tokens. The fleet presentations model is
-# deepseek-v4-flash:0731-cloud; its documented context window is 131072 tokens
+# deepseek-flash (DeepSeek Direct V4.1 Flash); live openclaw.json contextWindow 1048576, maxTokens 393216 (2026-09-11). Phase-fit bar stays 131072 (FIX-20 compaction bar, unchanged)
 # (128K). A phase whose measured working set is below this cap can complete
 # within one context window without compaction. This is the FIX-20 "fits one
 # context window" bar.

@@ -33,7 +33,7 @@ call sites (fix spec). Resolution order:
        exposes resolve_alias() -- FIX 13 is authoritative and this module
        defers to it;
     2. the built-in DEFAULT_ALIAS_REGISTRY here, which pins only the ids
-       this box has LIVE-CONFIRMED (deepseek-v4-pro / deepseek-v4-flash on
+       this box has LIVE-CONFIRMED (deepseek-v4-pro / deepseek-flash on
        the native DeepSeek endpoint) plus the GLM/Ollama/Kie labels from the
        fix-spec table, to be superseded by FIX 13's live catalog the moment
        that module lands.
@@ -114,10 +114,10 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
                         "model": "deepseek-v4-pro",
                         "modality": "text", "context_class": "long",
                         "live_confirmed": True},
-    "deepseek-v4-flash": {"provider": "deepseek-direct",
-                          "model": "deepseek-v4-flash",
-                          "modality": "text", "context_class": "standard",
-                          "live_confirmed": True},
+    "deepseek-flash": {"provider": "deepseek-direct",
+                      "model": "deepseek-flash",
+                      "modality": "text", "context_class": "standard",
+                      "live_confirmed": True},
     "glm-5.3": {"provider": "openrouter",
                 # F30 (SMOKE-1): served id is z-ai/glm-5.3; bare "glm-5.3" is
                 # not in OpenRouter's wired inventory (419 probed 2026-09-01),
@@ -150,7 +150,7 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
 # labels), never a second source of truth for the ones it does.
 ROUTER_CATALOG_ALIAS: Dict[str, str] = {
     "deepseek-v4-pro": "text.strong",
-    "deepseek-v4-flash": "text.fast",
+    "deepseek-flash": "text.fast",
     "gpt-image-2": "image.t2i",
     "gpt-image-2-5": "image.t2i",
 }
@@ -166,7 +166,7 @@ def resolve_alias(alias: str) -> Dict[str, Any]:
     rides through on the resolved definition so the router can name the id
     each provider's endpoint actually accepts (openrouter serves
     z-ai/glm-5.3-flash for the judge class; deepseek-direct serves
-    deepseek-v4-flash for the same alias).
+    deepseek-flash for the same alias).
     FIX 17b: the router READS THE CATALOG -- the alias is first mapped into
     the catalog's own vocabulary (ROUTER_CATALOG_ALIAS) and resolved through
     presentation_job.model_catalog, so provider, model and served_ids all
@@ -213,6 +213,20 @@ def resolve_alias(alias: str) -> Dict[str, Any]:
                                 }
                         return out
     except Exception:  # noqa: BLE001 -- catalog absence never breaks routing
+        pass
+    # Saved-config compat: an older Flash alias stored in a client plan folds
+    # to the live id. The legacy id is never sent; _eligible judges the live
+    # served id, so the fold happens before the registry fallback too.
+    try:  # catalog shim is authoritative for the legacy mapping when present
+        from presentation_job import model_catalog as _compat_catalog  # type: ignore
+        fold = getattr(_compat_catalog, "fold_legacy_flash_model_id", None)
+        if callable(fold):
+            folded = fold(alias)
+            if folded != alias:
+                if folded in DEFAULT_ALIAS_REGISTRY:
+                    return dict(DEFAULT_ALIAS_REGISTRY.get(folded) or {})
+                alias = folded
+    except Exception:  # noqa: BLE001 -- shim absence never breaks routing
         pass
     return dict(DEFAULT_ALIAS_REGISTRY.get(alias) or {})
 
@@ -349,12 +363,12 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
     # order of this list, and a class refuses Flash only by omitting it.
     # Do not trust this key to gate anything.
     "authoring": [
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
         {"alias": "glm-5.3"},
     ],
     "prompt_authoring": [  # P4-PROMPT: flash -> pro -> GLM
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
         {"alias": "glm-5.3"},
     ],
@@ -372,17 +386,17 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "glm-5.3"},
     ],
     "cheap_text": [
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
     "creative_cheap": [  # PF-DESIGN cheap creative text
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
     "judge": [  # independent cheap text judge
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
@@ -428,7 +442,7 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 #
 # The declaration is data, not code:
 #   profile["model_plan"] = {
-#     "workhorse": {"provider": "deepseek-direct", "model": "deepseek-v4-flash"},
+#     "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
 #     "reasoning": {...} | null,
 #     "judge":     {...} | null,
 #     "thinking":  "max"|"high"|"medium"|"low"|"off"|null,
@@ -875,8 +889,8 @@ DEFAULT_MODE = "standard"
 #: drop to Flash) holds by construction: those classes simply do not appear
 #: in this map.
 ECONOMY_FLASH_REPOINT: Dict[str, List[Dict[str, Any]]] = {
-    "authoring": [{"alias": "deepseek-v4-flash"}],
-    "prompt_authoring": [{"alias": "deepseek-v4-flash"}],
+    "authoring": [{"alias": "deepseek-flash"}],
+    "prompt_authoring": [{"alias": "deepseek-flash"}],
 }
 
 

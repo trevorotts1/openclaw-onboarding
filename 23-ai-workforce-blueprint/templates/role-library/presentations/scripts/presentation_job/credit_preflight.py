@@ -687,9 +687,9 @@ def launcher_gate(run_dir: Optional[Path], mode: Optional[str], *,
                     from presentation_job import dispatcher as _dsp
                 except ImportError:
                     import dispatcher as _dsp  # type: ignore[no-redef]
-                model = getattr(_dsp, "DEEPSEEK_MODEL", None) or "deepseek-v4-flash"
+                model = getattr(_dsp, "DEEPSEEK_MODEL", None) or "deepseek-flash"
             except Exception:  # noqa: BLE001 -- no dispatcher default known
-                model = "deepseek-v4-flash"
+                model = "deepseek-flash"
             decision = dict(decision)
             decision["route"] = {"provider": "deepseek-direct", "model": model}
             decision["reason"] = str(decision.get("reason")

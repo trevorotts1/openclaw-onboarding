@@ -19,10 +19,20 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  PASS -- $1"; PASS=$((PA
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${CLIENT_ID:=}"
 
+# RR-032: resolve the VERIFIED root (Docker /data/.openclaw wins over HOME) so a
+# container box is not inspected through a stale HOME copy of the config.
 CFG_PATH=""
-for p in "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
-  [ -f "$p" ] && { CFG_PATH="$p"; break; }
-done
+if [ -f "$SKILL_DIR/../shared-utils/resolve-oc-root.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$SKILL_DIR/../shared-utils/resolve-oc-root.sh"
+  _root="$(resolve_oc_root 2>/dev/null || true)"
+  [ -n "$_root" ] && [ -f "$_root/openclaw.json" ] && CFG_PATH="$_root/openclaw.json"
+fi
+if [ -z "$CFG_PATH" ]; then
+  for p in /data/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json"; do
+    [ -f "$p" ] && { CFG_PATH="$p"; break; }
+  done
+fi
 
 echo ""
 echo "=== Skill 15 - BlackCEO Team Management - Install QC ==="
@@ -46,22 +56,47 @@ if [ -z "$CFG_PATH" ]; then
   FAIL=$((FAIL+1))
 else
 
-assert "remote-rescue agent present in agents.list" \
-  "python3 -c \"import json; cfg=json.load(open('$CFG_PATH')); next(a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue')\""
-
-assert "remote-rescue has telegram.allowFrom binding (operator DMs isolated)" \
+assert "remote-rescue agent present in the roster (entries or list form)" \
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-rr = next((a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue'), None)
-assert rr and rr.get('telegram',{}).get('allowFrom'), 'no binding'
+ag = cfg.get('agents', {})
+entries = ag.get('entries') if isinstance(ag.get('entries'), dict) else None
+if entries is not None:
+    assert 'remote-rescue' in entries, 'no remote-rescue entry'
+else:
+    next(a for a in ag.get('list', []) if a.get('id') == 'remote-rescue')
+\""
+
+# RR-032: a per-agent telegram.allowFrom and a per-agent workspace have NO
+# routing effect (verified against the resolver: agents.<id>.telegram is not
+# even a schema key). The routing mechanism is a top-level bindings entry.
+assert "every operator DM has a real bindings route to remote-rescue (not field presence)" \
+  "python3 -c \"
+import json
+cfg = json.load(open('$CFG_PATH'))
+op_ids = {'5252140759', '6663821679', '6771245262'}
+routed = set()
+for b in (cfg.get('bindings') or []):
+    if not isinstance(b, dict) or b.get('agentId') != 'remote-rescue':
+        continue
+    peer = ((b.get('match') or {}).get('peer') or {})
+    if str(peer.get('id') or '') in op_ids:
+        routed.add(str(peer.get('id')))
+missing = op_ids - routed
+assert not missing, f'operator DMs with no binding route: {sorted(missing)}'
 \""
 
 assert "remote-rescue has workspace field (session storage isolated from main)" \
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-rr = next((a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue'), None)
+ag = cfg.get('agents', {})
+entries = ag.get('entries') if isinstance(ag.get('entries'), dict) else None
+if entries is not None:
+    rr = entries.get('remote-rescue')
+else:
+    rr = next((a for a in ag.get('list', []) if a.get('id') == 'remote-rescue'), None)
 assert rr and rr.get('workspace'), 'no workspace'
 \""
 
@@ -90,12 +125,20 @@ GATE5_RESULT=$(python3 - "$CFG_PATH" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
 op_ids = {"5252140759", "6663821679", "6771245262"}
-agents = cfg.get("agents", {}).get("list", [])
-main = next((a for a in agents if a.get("id") == "main"), None)
-main_allow = set((main or {}).get("telegram", {}).get("allowFrom") or [])
-collision = op_ids & main_allow
+# RR-032: the previous version of this gate read main["telegram"]["allowFrom"],
+# a key that does not exist — so the set was always empty and the gate passed
+# vacuously. What actually routes an operator DM is a top-level bindings entry.
+collision = set()
+for b in (cfg.get("bindings") or []):
+    if not isinstance(b, dict):
+        continue
+    peer = ((b.get("match") or {}).get("peer") or {})
+    peer_id = str(peer.get("id") or "")
+    agent_id = b.get("agentId")
+    if peer_id in op_ids and agent_id != "remote-rescue":
+        collision.add(f"{peer_id}->{agent_id}")
 if collision:
-    print("FAIL: " + str(sorted(collision)))
+    print("FAIL: " + ", ".join(sorted(collision)))
     sys.exit(1)
 print("PASS")
 PYEOF

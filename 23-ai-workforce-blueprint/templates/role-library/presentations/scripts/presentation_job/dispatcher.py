@@ -435,13 +435,13 @@ def _govern_retry_after(exc: BaseException) -> Optional[float]:
         return None
 
 # ---------------------------------------------------------------------------
-# DeepSeek V4 Flash direct -- confirmed live configuration (openclaw.json),
+# DeepSeek Direct V4.1 Flash -- confirmed live configuration (openclaw.json models.providers.deepseek id deepseek-flash),
 # never hardcoded from documentation guesswork. Base URL / model id / api
 # shape read from models.providers.deepseek; "thinking MAX" request fields
 # (`thinking.type=enabled` + `reasoning_effort=max`) are the EXACT fields
 # deepseek-v4-pro already carries in this box's own agents.defaults.models
 # params block for the sibling model on the SAME native endpoint -- proven
-# live (not guessed) with a real smoketest call against deepseek-v4-flash
+# live (not guessed) with a real smoketest call against deepseek-flash
 # before this module was wired in: HTTP 200, a populated `reasoning_content`
 # field, and usage.completion_tokens_details.reasoning_tokens > 0, proving
 # thinking is genuinely engaged and not silently dropped.
@@ -469,7 +469,7 @@ DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 # the Engine on a substance-check failure. Same bug class the 8000->32000 raise
 # already fixed once (see the comment above this constant's history), recurring
 # at a higher artifact size. Raised again to 64,000 -- still well inside
-# deepseek-v4-flash's real 393,216-token output ceiling (confirmed live), and
+# deepseek-flash's real 393,216-token output ceiling (live openclaw.json maxTokens, 2026-09-11), and
 # gives a large structured artifact (deep choreography JSON, 60+ slides of copy)
 # room to complete even after thinking-MAX spends heavily on reasoning first.
 DEEPSEEK_MAX_OUTPUT_TOKENS = 64_000
@@ -2071,7 +2071,7 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             ctx.provider = "deepseek-direct"
             ctx.model = DEEPSEEK_MODEL
             ctx.requested_alias = (decision or {}).get("requested_alias") \
-                or "deepseek-v4-flash"
+                or "deepseek-flash"
             ctx.reason = str((decision or {}).get("reason")
                              or "no profile route; dispatcher default DeepSeek-direct")
             content, usage = deepseek_complete(system_prompt, user_prompt,
@@ -3227,7 +3227,7 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
 # ---------------------------------------------------------------------------
 # FIX 2: parallel P4-PROMPT dispatch. The dispatcher branch REMAINS the owner of
 # the phase: it selects the slides, stamps the routing (Phase A stub:
-# deepseek-direct / deepseek-v4-flash / measured capacity 8 until FIX 7/8/11
+# deepseek-direct / deepseek-flash / measured capacity 8 until FIX 7/8/11
 # provide real profiles), builds prompt-wave-input.json, invokes the worker ONCE,
 # ingests the result file, emits FIX 5-style per-slide telemetry rows, and
 # advances only when every required ordinal succeeded with an on-disk SHA match
@@ -3563,7 +3563,7 @@ def _routing_stamp(run_dir: Optional[Path] = None,
             routed_provider = str(route.get("provider") or "")
             # F4: the route's MODEL, not just its provider. capacity resolves a
             # plan tier from the model slug (_plan_from_model_slug), so handing
-            # it over is what lets a deepseek-v4-flash route be answered
+            # it over is what lets a deepseek-flash route be answered
             # `v4-flash / 2500` instead of PARKing on "provider known, plan
             # unknown".
             routed_model = str(route.get("model") or "")

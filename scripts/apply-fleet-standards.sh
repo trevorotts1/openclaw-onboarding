@@ -2840,7 +2840,7 @@ fi
 # strictly required for THIS change to propagate -- it is done anyway so the
 # faster "replace" path (rather than the heading-regex "upgrade" fallback)
 # stays the steady-state path on every future roll, not a permanent detour.
-RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
+RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
 RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -2882,8 +2882,14 @@ path = sys.argv[1]
 slug = os.environ["RESCUE_BOX_SLUG"]
 tpl_path = os.environ["RESCUE_TPL"]
 
-START = "<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
-END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->"
+# RR-002 compatibility versioning: V2 -> V3 adds the canonical correlation
+# fields (incident_id / operation_id / attempt_id / result_digest / runtime_id)
+# to the resolution protocol. A box still carrying V2 is NOT matched by this
+# START/END pair, so it takes the `upgrade` branch below -- whose stale-marker
+# regex consumes the V2 opening tag (any V\d+) and re-renders the section, so
+# the migration is one roll and leaves no orphaned older marker behind.
+START = "<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
+END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->"
 # R7: a box still carrying the V1 marker pair falls through to the "upgrade"
 # (bare heading) branch below on its first V2 roll -- it is not matched by
 # the V2 START/END pair above, so `si == -1`, and the code takes the
@@ -2907,6 +2913,20 @@ ei = txt.find(END)
 if si != -1 and ei != -1 and ei > si:
     cur_start, cur_end = si, ei + len(END)
     mode = "replace"
+    # IDEMPOTENCY DEFECT (found by tests/unit/rescue-escalation-v2-marker-bump
+    # .test.sh SCENARIO 3, reproducible on origin/main before the RR-002 bump):
+    # the template renders content BEYOND the END marker (the
+    # "## What Rescue Rangers IS + your own wiring" section). The replace
+    # branch above only covered START..END, so every re-stamp spliced the whole
+    # template back in while leaving the PREVIOUS render's tail in place --
+    # duplicating that section on every roll. The re-stamp runs unconditionally
+    # on every fleet roll, so this accumulated silently per box. Consume the
+    # tail we ourselves rendered last time, if it is sitting right there.
+    _tpl_ei = tpl.find(END)
+    if _tpl_ei != -1:
+        _tail = tpl[_tpl_ei + len(END):]
+        if _tail and txt[cur_end:cur_end + len(_tail)] == _tail:
+            cur_end += len(_tail)
 else:
     # R7: also consume a STALE marker-comment line of ANY version number
     # immediately above the heading (e.g. a lingering V1 opening tag left
@@ -2995,7 +3015,7 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
-# ─── 5k. Seed the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─────
+# ─── 5k. Reconcile the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─
 # WHY. RR-02-coach reads rr_agent_map (box_slug -> local_agent_id) before
 # diagnosing an escalation. A receiver-covered box with no row is routed to
 # agent_id_unmapped and pages a human instead of running the diagnosis chain
@@ -3003,25 +3023,58 @@ fi
 # the table at enrollment). The map lives in n8n; only the operator box carries
 # the n8n key, so this step is operator-only and self-skips everywhere else.
 #
-# WHAT. Run scripts/seed-rr-agent-map.sh (shipped beside this script): idempotent
-# upsert of local_agent_id=main per fleet slug, backup-before-write, read-back
-# verify. RR-02-coach additionally auto-seeds (source=auto_seed_rr02) when a box
-# somehow still arrives unmapped, so a missing row can never page a human again.
+# WHAT. Run scripts/reconcile-rr-agent-map.sh (shipped beside this script),
+# which SUPERSEDES the old insert-only seed-rr-agent-map.sh. RR-031: the old
+# step read ONE page and only filled ABSENT slugs, so an existing WRONG mapping
+# survived forever; it resolved the default agent on the operator HOST, so a
+# Docker-installed box could never resolve its own container; it used shared
+# fixed /tmp paths; and its calls were unbounded. The reconciler fetches every
+# page with checked status and schema and aborts writes on an incomplete
+# source, repairs existing wrong mappings through the supported filter-addressed
+# PATCH, resolves each box's runtime INSIDE its exact container via the
+# fleet-prover box descriptor, enforces a unique tenant+box mapping, records
+# unreachable/default-less boxes as pending with an owner instead of inventing
+# `main`, and finishes with ACTUAL changed/verified/pending counts.
 #
-# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open: key absent, roster
-# absent, or script error => log and skip; this step can never fail a roll.
+# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open for a ROLL — a
+# mapping problem must never abort a fleet roll — but NEVER SILENT: the exit
+# code is surfaced in the log line, a pending entry can never be reported as
+# `ok`, and the per-run log is private (0700) instead of a shared /tmp name
+# that two concurrent rolls would clobber. `ok` is printed only for exit 0,
+# which the reconciler returns only when changed/verified are complete with
+# zero pending entries.
 if [ -n "${N8N_API_KEY:-}" ]; then
-  _RR_SEED_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/seed-rr-agent-map.sh"
-  if [ ! -f "$_RR_SEED_SH" ]; then
-    echo "[apply-fleet-standards] RR_AGENT_MAP_SEED skipped — seed-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
+  _RR_RECON_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/reconcile-rr-agent-map.sh"
+  if [ ! -f "$_RR_RECON_SH" ]; then
+    echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE skipped — reconcile-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
   else
-    if "$_RR_SEED_SH" >/tmp/rr-seed-apply.log 2>&1; then
-      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED ok ($(grep -o 'VERIFY.*' /tmp/rr-seed-apply.log | head -1))"
+    _RR_LOG_DIR="$( (umask 077; mktemp -d "${TMPDIR:-/tmp}/rr-reconcile-apply.XXXXXX") 2>/dev/null || echo "")"
+    if [ -z "$_RR_LOG_DIR" ]; then
+      echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE skipped — cannot create a private log dir (fail-open)"
     else
-      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED error — see /tmp/rr-seed-apply.log (fail-open)"
+      chmod 700 "$_RR_LOG_DIR" 2>/dev/null || true
+      _RR_LOG="$_RR_LOG_DIR/reconcile.log"
+      _RR_RC=0
+      "$_RR_RECON_SH" --apply --verify >"$_RR_LOG" 2>&1 || _RR_RC=$?
+      case "$_RR_RC" in
+        0)
+          _RR_COUNTS="$(grep -o 'changed=[0-9]*' "$_RR_LOG" | tail -1)"
+          _RR_COUNTS="$_RR_COUNTS $(grep -o 'verified=[0-9]*' "$_RR_LOG" | tail -1)"
+          _RR_COUNTS="$_RR_COUNTS $(grep -o 'pending=[0-9]*' "$_RR_LOG" | tail -1)"
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE ok ($(echo "$_RR_COUNTS" | tr -s ' '))"
+          ;;
+        3)
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE deferred — another reconcile run holds the scoped lock; this roll made no mapping writes (next roll retries)"
+          ;;
+        *)
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE INCOMPLETE (rc=$_RR_RC) — mappings were NOT fully reconciled; pending entries and counts:"
+          grep -E 'pending |changed=|INCOMPLETE|ABORTING' "$_RR_LOG" 2>/dev/null | tail -12 | sed 's/^/    /'
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE log: $_RR_LOG"
+          ;;
+      esac
     fi
+    unset _RR_RECON_SH _RR_RC _RR_COUNTS
   fi
-  unset _RR_SEED_SH
 fi
 
 echo ""

@@ -411,12 +411,39 @@ def post_activity(task_id: str, message: str, *, ticket_id: str = "",
 # ---------------------------------------------------------------------------
 # AGING SWEEP — the durable view the CC/cron uses to page on aging tickets.
 # ---------------------------------------------------------------------------
+# RR-022 recovery counterpart: structured bridge that cannot collapse the
+# queue. Prefers ledger.aging_sweep_structured() (per-row quarantine, naive =
+# UTC, incomplete included); falls back to the legacy path only when the
+# structured method is absent. Returns {"ok","scanned","due","invalid",
+# "error"} — never a bare [] on error: error is a monitor failure, never zero
+# overdue. The legacy bare-list aging_sweep() below is retained for the
+# drill self-test callers; live coverage claims must use
+# aging_sweep_structured().
+def aging_sweep_structured(ledger, older_than_minutes: int,
+                           statuses=("open", "in_progress", "answered", "blocked", "incomplete")):
+    """Structured aging view: valid overdue stay visible, bad rows quarantine
+    per-row with an owned reason, naive timestamps read as UTC."""
+    try:
+        fn = getattr(ledger, "aging_sweep_structured", None)
+        if callable(fn):
+            return fn(older_than_minutes, statuses=statuses)
+        rows = ledger.aging(older_than_minutes, statuses=statuses)
+        return {"ok": True, "scanned": len(rows), "due": rows, "invalid": [], "error": None}
+    except Exception as exc:  # noqa: BLE001 — a view reports, never empties
+        _log(f"structured aging sweep read failed ({exc}) — monitor failure.")
+        return {"ok": False, "scanned": 0, "due": [], "invalid": [],
+                "error": "monitor_failure"}
+
 def aging_sweep(ledger, older_than_minutes: int,
                 statuses=("open", "in_progress", "answered", "blocked")):
     """Return the tickets in `statuses` older than the cutoff, read straight from
     the durable ledger (kills R6). Pure read — never raises, never pages. The
     operator aging cron decides whether to page the Fixer topic (deduped). Returns
-    [] on any error / empty ledger."""
+    [] on any error / empty ledger.
+    LEGACY (RR-022): bare-list return, defaults omit "incomplete", one naive
+    timestamp collapses the whole queue to [] via the except path, malformed
+    rows skip silently. Retained for drill self-test callers only; live
+    coverage claims must use aging_sweep_structured()."""
     try:
         return ledger.aging(older_than_minutes, statuses=statuses)
     except Exception as exc:  # noqa: BLE001 — a view must never raise

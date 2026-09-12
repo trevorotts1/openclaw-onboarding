@@ -433,10 +433,42 @@ class Ledger:
         incomplete / blocked)."""
         return self.tickets_by_status("open", "in_progress", "incomplete", "blocked")
 
+    # RR-022 recovery counterpart (FLEET RR-022 service contract): structured
+    # aging sweep with per-row quarantine. Default statuses include
+    # "incomplete" (open_tickets parity: incomplete work is operator-visible
+    # and must age). Naive wall-clock ts_open is interpreted as UTC (never
+    # local, never a TypeError); malformed/missing timestamps are quarantined
+    # per-row with an owned reason while valid overdue rows stay visible.
+    # Returns {"ok","scanned","due","invalid","error"}; error is a monitor
+    # failure, never zero overdue. The legacy bare-list aging() below is
+    # retained only for the drill self-test callers; live coverage claims must
+    # use aging_sweep_structured().
+    def aging_sweep_structured(self, older_than_minutes, statuses=("open", "in_progress", "answered", "blocked", "incomplete")):
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+        due = []
+        invalid = []
+        rows = self.tickets_by_status(*statuses)
+        for r in rows:
+            raw = r.get("ts_open")
+            ts = _parse_iso(raw)
+            if ts is None:
+                invalid.append({"ticket_id": r.get("ticket_id"), "owner": "operator",
+                                "reason": "malformed_timestamp", "got": str(raw)[:120]})
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts <= cutoff:
+                due.append(r)
+        return {"ok": True, "scanned": len(rows), "due": due, "invalid": invalid, "error": None}
+
     def aging(self, older_than_minutes, statuses=("open", "in_progress", "answered", "blocked")):
         """Tickets in `statuses` whose ts_open is older than the cutoff. This is
         the durable feed for the aging/SLA sweep (kills R6) — nothing else in the
-        old design swept the PENDING queue for tickets aging unanswered."""
+        old design swept the PENDING queue for tickets aging unanswered.
+        LEGACY (RR-022): bare-list return, defaults omit "incomplete", naive
+        timestamps raise TypeError at the caller, malformed rows skip silently.
+        Retained for drill self-test callers only; live coverage claims must
+        use aging_sweep_structured()."""
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
         out = []
         rows = self.tickets_by_status(*statuses)
@@ -546,6 +578,11 @@ def _cli(argv=None):
     sub.add_parser("open-tickets")
     sp = sub.add_parser("aging")
     sp.add_argument("--older-than-minutes", type=int, required=True)
+    # RR-022: structured counterpart (per-row quarantine, incomplete included,
+    # naive = UTC, monitor-failure error instead of bare []). Live coverage
+    # claims must use aging-structured; "aging" stays for drill callers.
+    sp = sub.add_parser("aging-structured")
+    sp.add_argument("--older-than-minutes", type=int, required=True)
 
     sp = sub.add_parser("count-today", help="exit 0 if under cap, exit 3 if AT/over cap")
     sp.add_argument("--client", required=True); sp.add_argument("--cap", type=int, default=25)
@@ -629,6 +666,8 @@ def _cli(argv=None):
             _emit({"tickets": led.open_tickets()})
         elif c == "aging":
             _emit({"aging": led.aging(getattr(args, "older_than_minutes"))})
+        elif c == "aging-structured":
+            _emit(led.aging_sweep_structured(getattr(args, "older_than_minutes")))
         elif c == "count-today":
             n = led.count_exchanges_today(args.client)
             over = n >= args.cap
@@ -751,6 +790,23 @@ def _self_test_body():
         aged = {t["ticket_id"] for t in led.aging(120)}
         assert "tkt-3" in aged and "tkt-4" not in aged
         print("  aging case: PASS (SLA sweep surfaces tickets past the cutoff)")
+        # RR-022: structured counterpart — incomplete included, one bad row
+        # quarantined while valid overdue stay visible, naive read as UTC.
+        led.open_ticket("tkt-5", client="beta", problem="partial",
+                        incomplete=True, ts_open=old_ts)
+        led.open_ticket("tkt-6", client="beta", problem="bad-ts",
+                        ts_open="not-a-date")
+        led.open_ticket("tkt-7", client="beta", problem="naive-ts",
+                        ts_open="2020-01-01 00:00:00")
+        st = led.aging_sweep_structured(120)
+        assert st["ok"] is True and st["error"] is None
+        got = {t["ticket_id"] for t in st["due"]}
+        assert "tkt-3" in got and "tkt-5" in got and "tkt-7" in got, got
+        assert "tkt-4" not in got
+        bad = {b["ticket_id"]: b for b in st["invalid"]}
+        assert "tkt-6" in bad and bad["tkt-6"]["owner"] == "operator"
+        assert bad["tkt-6"]["reason"] == "malformed_timestamp"
+        print("  aging-structured case: PASS (incomplete+naive due, bad row quarantined)")
 
         # digest
         dg = led.digest()

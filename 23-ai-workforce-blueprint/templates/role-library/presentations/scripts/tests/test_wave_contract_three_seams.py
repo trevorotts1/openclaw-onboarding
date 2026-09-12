@@ -83,12 +83,12 @@ def _routed_stamp() -> Dict[str, Any]:
     present: the FIX 7 keys PLUS the probe-derived capacity truthtell keys."""
     return {
         "provider": "deepseek-direct",
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-flash",
         "router": "model_router",
         "mode": "standard",
         "measured_capacity": 8,
         "route_reason": "profile route: primary alias eligible",
-        "requested_alias": "deepseek-v4-flash",
+        "requested_alias": "deepseek-flash",
         "capacity_status": "unbounded-byok",
         "capacity_source": "capacity-probe",
     }
@@ -169,7 +169,7 @@ def test_seam3_validate_no_field_lost_profile_present():
     assert validated["owning_role"] == "prompt-author-presentations"
     assert validated["routing"]["route_reason"] == stamp["route_reason"]
     assert validated["routing"]["capacity_status"] == "unbounded-byok"
-    assert validated["routing"]["requested_alias"] == "deepseek-v4-flash"
+    assert validated["routing"]["requested_alias"] == "deepseek-flash"
     assert validated["routing"]["measured_capacity"] == 8
     assert validated["slides"] == doc["slides"]
 

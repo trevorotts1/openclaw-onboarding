@@ -576,6 +576,71 @@ with tempfile.TemporaryDirectory(prefix="rr015-c9-") as td:
         urllib.request.urlopen = _real_urlopen
 
 # --------------------------------------------------------------------------
+# CASE 10: the intake's boxEnrolled verdict rides EVERY accepted body and must
+# be SURFACED, never swallowed. RR-01 mints the ticket anyway when the resolved
+# box has no usable rr_box_auth row, and RR-01's own contract says a caller must
+# not read accepted:true as "a fix is coming" when boxEnrolled is false (RR-02
+# then fails closed NEEDS_HUMAN). A durable ticket still exists, so the receipt
+# stays ack-eligible (status admitted) -- but the enrollment miss and the owned
+# repair action must land in the receipt and the journal detail.
+# --------------------------------------------------------------------------
+with tempfile.TemporaryDirectory(prefix="rr015-c10-") as td:
+    creds("v1")
+    posts = []
+    cl = admission_client(
+        posts,
+        body='{"accepted":true,"ticketId":"T-RR015-NOENR","status":"accepted",'
+             '"boxEnrolled":false,"boxEnrollmentReason":"not_enrolled"}')
+    with Ledger(td) as led:
+        eid = led.record_event("S6", "P1", "c", "config", "drill-n",
+                               tick_ts="2000-01-01T00:00:00+00:00", dedup_key="drill-n")
+    esc = A.escalate(td, sender=lambda *a: (True, "x"), admission=cl["admit"])
+    with Ledger(td) as led:
+        st = led.conn.execute("SELECT ack_state FROM events WHERE event_id=?", (eid,)).fetchone()[0]
+        rows = [dict(r) for r in led.conn.execute(
+            "SELECT status,ticket_id,detail FROM rescue_admissions WHERE event_id=? "
+            "ORDER BY admission_id", (eid,)).fetchall()]
+    rec = [e for e in esc if e["event_id"] == eid]
+    check(any(e["admission_status"] == "admitted" for e in rec),
+          "an enrollment miss with a durable ticket is still admitted", esc)
+    check(any(e.get("box_enrolled") is False for e in rec),
+          "boxEnrolled:false is surfaced on the receipt", esc)
+    check(any(e.get("box_enrollment_reason") == "not_enrolled" for e in rec),
+          "the intake's enrollment reason is surfaced on the receipt", esc)
+    check(any(e["ticket_id"] == "T-RR015-NOENR" for e in rec),
+          "the durable ticket id survives the enrollment miss", esc)
+    check(st == "escalated",
+          "an enrollment miss with a durable ticket stays ack-eligible", st)
+    check("box_enrolled=false" in (rows[0]["detail"] if rows else ""),
+          "the enrollment repair action lands in the journal detail", rows)
+    clear_state()
+
+# CASE 10b: the dead-man -> admission path must surface the same verdict.
+with tempfile.TemporaryDirectory(prefix="rr015-c10b-") as td:
+    creds("v1")
+    posts = []
+    cl = admission_client(
+        posts,
+        body='{"accepted":true,"ticketId":"T-RR015-DM-NOENR","status":"accepted",'
+             '"boxEnrolled":false,"boxEnrollmentReason":"not_enrolled"}')
+    os.environ["EWS_STATE_DIR"] = td
+    os.environ["EWS_FLEET_DIR"] = os.path.join(td, "ews-fleet")
+    os.environ["EWS_RESCUE_CHAT"] = "8888rescue-drill"
+    os.environ["EWS_OPERATOR_CHAT"] = "9999op-drill"
+    os.environ["FLEET_STANDING_BOX_SLUG"] = "box-rr015-operator-aggregator"
+    F.cmd_ingest("box-dm-enroll", {"last_tick_ts": "2000-01-01T00:00:00+00:00", "by_severity": {}})
+    F.cmd_cycle(sender=lambda *a: (True, "fake"), admission=cl["admit"])
+    F.cmd_cycle(sender=lambda *a: (True, "fake"), admission=cl["admit"])
+    check(len(posts) == 1, "dead-man enrollment miss posts exactly once", len(posts))
+    with Ledger(td) as led:
+        evs = [dict(r) for r in led.conn.execute(
+            "SELECT * FROM events WHERE dedup_key='deadman|box-dm-enroll'").fetchall()]
+    check(evs and evs[0]["ack_state"] == "escalated",
+          "dead-man enrollment miss with a durable ticket stays ack-eligible",
+          evs)
+    clear_state()
+
+# --------------------------------------------------------------------------
 # clean up env and summarize
 # --------------------------------------------------------------------------
 clear_state()
