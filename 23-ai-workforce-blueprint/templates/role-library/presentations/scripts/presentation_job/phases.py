@@ -3559,6 +3559,22 @@ class Engine:
                 wave_of[pid] = wno
         pending = {p.id: p for p in phases}
         by_id = pending
+        # R-READYQUEUE: production resume re-admits repaired quarantined
+        # units. A unit quarantined on a PRIOR run re-enters as pending here
+        # (quarantined_reason/quarantined_at stay on the record for audit),
+        # mirroring the wave path which queues every phase regardless of
+        # status. Without this the tick below skips quarantined forever and
+        # a repair pass stalls (nothing re-runs). Quarantines recorded AFTER
+        # this point (within this run) still park -- no retry loop.
+        with self._state_lock:
+            _requeued = False
+            for _ps in self.state.get("phases", []):
+                if isinstance(_ps, dict) and _ps.get("status") == PHASE_STATUS_QUARANTINED:
+                    _ps["status"] = PHASE_STATUS_PENDING
+                    _ps["resume_requeued"] = True
+                    _requeued = True
+            if _requeued:
+                self.store.save(self.state)
         in_flight: Dict[Any, Phase] = {}
 
         def _width() -> int:
@@ -3578,16 +3594,40 @@ class Engine:
                         rc = getattr(exc, "exit_code", EXIT_GATE_BLOCKED)
                     if rc != EXIT_OK:
                         failed_rcs.append((ph.id, rc))
-                # Parked-blocked descendants: record + skip, never transport.
+                # R-READYQUEUE: parked-blocked descendants keep the durable
+                # waiting_dependency record (phase, blocked_by, pred_status,
+                # reason) with a matching terminal-event row, then a state
+                # save -- mirroring the runtime gate's row. Gate semantics
+                # stay authoritative (run_phase re-validates); this branch
+                # only preserves the record for dependents the tick parks
+                # here. Never transport for a parked phase.
                 for pid, blocked_by in tick["waiting"]:
                     ps = self._phase_state(pid)
                     if ps.get("status") == PHASE_STATUS_PENDING and blocked_by \
                             and _phase_terminal_bad(self._phase_state(blocked_by).get("status")):
+                        blocker_status = self._phase_state(blocked_by).get("status")
                         # Not admitted, never re-queued for transport this run.
                         self.report.event(
                             "phase.waiting_dependency",
                             f"{pid} waits on {blocked_by} "
-                            f"({self._phase_state(blocked_by).get('status')}) -- not admitted")
+                            f"({blocker_status}) -- not admitted")
+                        with self._state_lock:
+                            ps["waiting_dependency"] = [{
+                                "phase": pid, "blocked_by": blocked_by,
+                                "pred_status": blocker_status,
+                                "reason": f"{blocked_by} ended in {blocker_status} -- "
+                                          f"the blocking edge {blocked_by} -> {pid} "
+                                          f"stops this phase",
+                            }]
+                            self.store.save(self.state)
+                        # Ledger parity with the dynamic scheduler: the parked
+                        # descendant lands in failed_rcs ONCE per phase (never
+                        # per tick), so the end-of-run park carries one
+                        # failed_units row per blocked phase. A later success
+                        # in this run cannot happen (terminal-bad never
+                        # clears), so no removal path is needed here.
+                        if not any(p == pid for p, _ in failed_rcs):
+                            failed_rcs.append((pid, EXIT_GATE_BLOCKED))
                 # Admit from the ready set while slots exist. While the pool
                 # is saturated, hold exactly ONE slot for a QC phase if any
                 # ready phase is QC (the QC reserve, TODO.md step 3): the
