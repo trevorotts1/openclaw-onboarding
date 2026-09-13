@@ -1,0 +1,142 @@
+=== ONB RR-024 QC BATTERY (fixed bridge 22 checks) ===
+  ok 1-contained
+  ok 1-hashed
+  ok 1-validate
+  ok 2-noescape
+  ok 2-hashed
+  ok 3-validate
+  ok 3-hashed
+  ok 3-huge-refused
+  ok 4-100events
+  ok 4-distinct
+  ok 4-transitions
+  ok 5-one
+  ok 5b-stable-retry
+  ok 6-listed
+  ok 6-owner-due
+  ok 6-nopurge-unreconciled
+  ok 7-trans1
+  ok 7-alias1
+  ok 7-events3
+  ok 8-0600
+  ok 8-0700
+  ok 8-bounded
+RESULT 22 passed, 0 failed
+
+=== ONB BASE CONTROLS (must FAIL on base) ===
+[rescue_cc_board] movement receipt write failed ([Errno 63] File name too long: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b3/cc-board/tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt.json.tmp').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+  base 1-traversal: FAIL-as-required
+  base 2-absolute: FAIL-as-required
+  base 3-oversized: UNEXPECTED-PASS
+  base 4-concurrent-loss: FAIL-as-required
+    retained 5/20
+  base 5-no-dedupe: FAIL-as-required
+  base 7-activity-counted: FAIL-as-required
+    count=2
+{
+ "1-traversal": "FAIL-as-required",
+ "2-absolute": "FAIL-as-required",
+ "3-oversized": "UNEXPECTED-PASS",
+ "4-concurrent-loss": "FAIL-as-required",
+ "5-no-dedupe": "FAIL-as-required",
+ "7-activity-counted": "FAIL-as-required"
+}
+
+=== ONB NEIGHBORS ===
+--- RR-017 ---
+== RR-017: public client contract ==
+  ok PUBLIC-CLIENT-CONTRACT.md exists in role-library
+  ok contract publishes the nine-field escalation table
+  ok no hex credential/table-ID shapes
+  ok no 14-char n8n workflow IDs
+  ok contract names the retired relay path only as retired text
+  ok no redacted-placeholder or key prefixes
+== RR-017: posture manifest ==
+  ok connection-manifest.json exists
+  ok manifest bumped to 2.0.0 with RR-017 authority block
+  ok manifest records RR-04 Data Tables as persistence authority
+  ok manifest demotes Python ledger to compatibility-only
+  ok legacy paths carry exactly the three labels
+  ok manifest carries no credential-shaped value
+== RR-017: retired paths cannot start a second ledger from ONB ==
+  ok installer header classifies itself compatibility-only
+  ok installer prohibits production use
+  ok SOP-RR-02 names RR-04 Data Tables the system of record
+  ok SOP-RR-02 carries the compatibility-only label
+  ok SOP-RR-02 pins RR-04 as the sole production writer
+  ok no shipped doc promises the Python ledger as the live writer
+  ok drill sections using rescue_ledger.py carry a drill-only label
+  ok no shipped script defaults to the retired relay path
+== RR-017: nine-field contract matches enforcement code ==
+  ok relay_brain_validation.js NINE_FIELDS matches the published contract
+  ok rescue_ledger.py NINE_FIELDS matches the published contract
+  ok the two enforcement copies agree with each other
+
+RESULT: 23 passed, 0 failed
+--- RR-030 ---
+  ✓ mutation setup applied
+  ✓ broken sweep: self-test nonzero
+  ✓ broken sweep: named assertion in output
+  ✓ missing ledger: self-test nonzero
+  ✓ missing ledger: explicit FAIL (no SKIP)
+  ✓ healthy board self-test green
+  ✓ healthy aging-sweep case PASS present
+  ✓ no SKIP anywhere on the healthy run
+  ✓ no blanket except around the required sweep case
+
+[rr030-board-selftest-failsonly] PASS (9/9)
+--- RR-004 ---
+== RR-004 ONB: receiver additive claim/ack fields ==
+  ok rescue-poll.sh exists
+  ok RECEIVER_VERSION carries the additive floor (>=1.4.0): 1.5.0
+  ok skill package bumped past v23.1.0: v23.2.0
+  ok _parse_claim extracts attempt_id
+  ok _parse_claim extracts attempt_generation
+  ok _parse_claim extracts lease_expires_at
+  ok ack body carries the attempt-echo block
+  ok extracted functions parse
+  ok modern claim parses attempt fields
+  ok legacy claim parses with EMPTY attempt fields (no gating)
+  ok ack echoes attempt identity verbatim when present
+  ok legacy ack omits attempt fields entirely (old-server compatible)
+RESULT: 12 passed, 0 failed
+--- SELFTEST ---
+[rescue_cc_board] COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — CC board disabled (no-op); ticket handled ungrouped.
+[rescue_cc_board] patch_status refused — 'delivered' not in the CC TaskStatus enum.
+[rescue_cc_board] self-test: payload build, enum guard, fail-soft no-op, receipts, aging sweep
+  payload case: PASS (rescue-rangers dept, ticket_id is idempotency key)
+  status-map case: PASS (every mapped status is a real CC column)
+  signature case: PASS (HMAC parity; empty secret => no signature)
+  fail-soft case: PASS (disabled board no-ops + records receipts)
+  enum-guard case: PASS ('delivered' rejected — not a CC status)
+  aging-sweep case: PASS (durable ledger drives the SLA view)
+[rescue_cc_board] self-test: PASS
+
+=== FLEET RR-024 QC (companion reference 10/10) ===
+✔ RR-024(1): traversal IDs fail or stay inside the fixture root (70.674375ms)
+✔ RR-024(2): absolute-path IDs fail or stay inside the fixture root (22.63725ms)
+✔ RR-024(3): oversized IDs fail or stay inside the fixture root (13.026291ms)
+✔ RR-024(4): 100 concurrent writes retain 100 distinct events (813.23425ms)
+✔ RR-024(5): retries dedupe by operation ID (7.569417ms)
+✔ RR-024(6): disk error becomes an outstanding owned intent with owner/due (9.791208ms)
+✔ RR-024(7): activity does not increase the transition count (23.245209ms)
+✔ RR-024: export files carry private permissions and fsync (8.024667ms)
+✔ RR-024: response detail is redacted and bounded (9.083416ms)
+✔ RR-024: transition without observed resulting state is refused (0.5135ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1037.799959
