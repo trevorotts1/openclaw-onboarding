@@ -3,8 +3,8 @@
 Lane owner: Opus. RR-024 ONLY. No merge. No PR. No publish. Private packet.
 Bases pinned: FLEET origin/main 3bedab785f1490139e095da2a6b525ba4ff71ef1,
 ONB origin/main 15d6178890e0012c92768829f487fd454e93e03c.
-Worktrees: /tmp/w4-rr024-fleet branch rr/w4-data-rr024,
-/tmp/w4-rr024-onb branch rr/w4-data-rr024-onb.
+Worktrees: <WORKTREE> branch rr/w4-data-rr024,
+<WORKTREE> branch rr/w4-data-rr024-onb.
 Origin HEAD drift noted at freeze time (FLEET 967e03ed, ONB 5f0e82bb);
 work stays on pinned bases per unit brief — NOT rebased onto drift.
 
@@ -94,16 +94,16 @@ RESULT 22 passed, 0 failed
 ## CONTROLS — each case FAILs on base, PASSes fixed
 
 ONB base (origin/main bridge, /tmp worktree HEAD copy) results:
-[rescue_cc_board] movement receipt write failed ([Errno 63] File name too long: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b3/cc-board/tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt.json.tmp').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
-[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '/Users/blackceomacmini/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 63] File name too long: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b3/cc-board/tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt.json.tmp').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
+[rescue_cc_board] movement receipt write failed ([Errno 2] No such file or directory: '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json.tmp' -> '<LOCAL_STATE_DIR>/.claude-nine/tasks/rr024probe/rr024base/b4/cc-board/conc.json').
   base 1-traversal: FAIL-as-required
   base 2-absolute: FAIL-as-required
   base 3-oversized: UNEXPECTED-PASS
