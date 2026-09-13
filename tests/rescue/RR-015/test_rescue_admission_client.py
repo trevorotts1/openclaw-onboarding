@@ -38,6 +38,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 SCRIPTS = os.path.join(REPO, "60-zhc-early-warning-system", "scripts")
 sys.path.insert(0, SCRIPTS)
+# Hermeticity: EWS resolves the admission client from <openclaw_root> FIRST
+# (ews_common.load_rescue_admission), so a populated host tree would otherwise
+# shadow the source copy under test and make this gate depend on host state.
+os.environ["EWS_OPENCLAW_ROOT"] = REPO
 
 import ews_alert as A          # noqa: E402
 import ews_common as C        # noqa: E402
