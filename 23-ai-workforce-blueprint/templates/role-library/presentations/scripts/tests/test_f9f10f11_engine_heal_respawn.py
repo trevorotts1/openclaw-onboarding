@@ -484,11 +484,9 @@ def test_f10_regenerate_reissues_the_work_order_carrying_the_real_reason(
         "the reissue must remain a complete, valid work order")
 
 
-def test_f10_regenerate_clears_the_park_marker_so_the_dispatcher_resumes(
+def test_f10_regenerate_preserves_the_paid_budget_park_marker(
         tmp_path, monkeypatch):
-    """The dispatcher's marker says re-dispatch resumes "if the Engine reissues
-    the work order". A reissue that leaves the marker in place contradicts the
-    very message the dispatcher wrote."""
+    """A heal reissue adds verifier context but cannot buy paid retries."""
     eng = _engine(tmp_path)
     phase = _agent_phase(eng)
     _install_clock(monkeypatch)
@@ -502,7 +500,7 @@ def test_f10_regenerate_clears_the_park_marker_so_the_dispatcher_resumes(
 
     heal.rung2_regenerate(eng, phase, "transient failure")
 
-    assert not marker.exists(), "reissuing the order must clear the park marker"
+    assert marker.exists(), "reissuing the same inputs must preserve the paid-budget park"
 
 
 def test_f10_provider_failover_pins_route_override_on_the_reissued_order(

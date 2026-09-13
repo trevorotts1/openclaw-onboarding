@@ -174,9 +174,11 @@ def record_heal_event(state, phase_id, store, phase_data, rung, attempt, reason,
 #     dispatcher._dispatch_revision witnesses -- so should_dispatch's
 #     ANTI-STARVATION branch fires and the phase dispatches on the very next
 #     tick no matter how deep its backoff had grown;
-#   * clear the .dispatch-blocked.txt park marker, because the marker's own
-#     text says re-dispatch "resumes automatically if the Engine reissues the
-#     work order" -- this IS the Engine reissuing it;
+#   * preserve the .dispatch-blocked.txt park marker. A rewrite carries
+#     verifier feedback but is not new approved input, so it must not reset
+#     the dispatcher's durable paid-attempt budget. The dispatcher clears a
+#     prior-generation marker only after it verifies a sanctioned owner input
+#     amendment;
 #   * then wait on the artifact with the SAME loop _run_agent_phase uses
 #     (engine._await_agent_artifact -- one implementation, not a second,
 #     drifting copy) on a SHORTER deadline: min(phase budget, 30 min). A heal
@@ -283,7 +285,6 @@ def reissue_agent_work_order(engine, phase, *, heal_reason, attempt_hint,
         _os.utime(path, None)
     except OSError:
         return False
-    _clear_blocked_marker(engine.run_dir, phase.id)
     return True
 
 
