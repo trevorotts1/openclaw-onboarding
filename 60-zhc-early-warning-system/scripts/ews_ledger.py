@@ -242,6 +242,23 @@ class Ledger:
             CREATE INDEX IF NOT EXISTS ix_stamps_key   ON baseline_stamps(key_path);
             CREATE INDEX IF NOT EXISTS ix_digests_key  ON digests(dedup_key, sent_ts);
             CREATE INDEX IF NOT EXISTS ix_admissions_op ON rescue_admissions(operation_id, admission_id);
+            CREATE TABLE IF NOT EXISTS escalation_state (
+                operation_id     TEXT PRIMARY KEY,
+                source           TEXT NOT NULL,
+                box              TEXT,
+                signal           TEXT,
+                event_id         INTEGER,
+                dedup_key        TEXT,
+                attempt          INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at  TEXT,
+                last_error       TEXT,
+                receipt_status   TEXT,
+                receipt_ticket_id TEXT,
+                receipt_digest   TEXT,
+                outcome          TEXT,
+                updated_at       TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_escalation_next ON escalation_state(next_attempt_at);
             """
         )
         self.conn.execute(
@@ -459,6 +476,76 @@ class Ledger:
             "SELECT * FROM rescue_admissions WHERE operation_id=? "
             "ORDER BY admission_id DESC LIMIT 1", (str(operation_id),)).fetchone()
         return dict(row) if row else None
+    # ---- escalation state (RR-005) -----------------------------------------
+    # One row per stable escalation operation, SEPARATE from incident
+    # resolution (events.ack_state). Only a validated durable admission
+    # receipt flips the operation to accepted; every failed or uncertain send
+    # keeps retry eligibility via next_attempt_at + last_error. The receipt
+    # fields (status/ticket/digest) live here apart from the incident row so
+    # reconciling the operation never rewrites incident state by itself.
+    def get_escalation(self, operation_id):
+        row = self.conn.execute(
+            "SELECT * FROM escalation_state WHERE operation_id=?",
+            (str(operation_id),)).fetchone()
+        return dict(row) if row else None
+
+    def record_escalation_attempt(self, operation_id, source, box=None,
+                                  signal=None, event_id=None, dedup_key=None,
+                                  receipt_status=None, receipt_ticket_id=None,
+                                  receipt_digest=None, last_error=None,
+                                  retry_seconds=1800):
+        op = str(operation_id)
+        cur = self.get_escalation(op)
+        attempt = int(cur["attempt"] or 0) + 1 if cur else 1
+        now = now_utc()
+        if receipt_status in ("admitted", "replay"):
+            outcome = "accepted"
+            nxt = None
+            err = None
+        elif receipt_status == "dry_run":
+            outcome = "dry_run"
+            nxt = None
+            err = last_error
+        elif receipt_status in ("no_enrollment", "client_unavailable"):
+            outcome = "deferred"
+            nxt = None
+            err = last_error
+        elif receipt_status == "refused":
+            outcome = "failed"
+            nxt = None
+            err = last_error
+        else:
+            outcome = "attempted"
+            try:
+                base = datetime.now(timezone.utc) + timedelta(seconds=retry_seconds)
+                nxt = base.replace(microsecond=0).isoformat()
+            except Exception:
+                nxt = None
+            err = last_error
+        self.conn.execute(
+            "INSERT INTO escalation_state(operation_id,source,box,signal,"
+            "event_id,dedup_key,attempt,next_attempt_at,last_error,"
+            "receipt_status,receipt_ticket_id,receipt_digest,outcome,"
+            "updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(operation_id) DO UPDATE SET source=excluded.source,"
+            "box=excluded.box,signal=excluded.signal,event_id=excluded.event_id,"
+            "dedup_key=excluded.dedup_key,attempt=excluded.attempt,"
+            "next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,"
+            "receipt_status=excluded.receipt_status,"
+            "receipt_ticket_id=excluded.receipt_ticket_id,"
+            "receipt_digest=excluded.receipt_digest,outcome=excluded.outcome,"
+            "updated_at=excluded.updated_at",
+            (op, str(source), box, signal, event_id, dedup_key, attempt, nxt,
+             err, receipt_status, receipt_ticket_id, receipt_digest, outcome,
+             now))
+        self.conn.commit()
+        return self.get_escalation(op)
+
+    def reconcile_escalation(self, operation_id):
+        """Re-read the stable operation row before any resend: returns the
+        stored row (or None). A stored accepted receipt means the caller must
+        NOT resend -- the ticket already exists."""
+        return self.get_escalation(str(operation_id))
 
     def count_admissions(self, status=None):
         if status:
