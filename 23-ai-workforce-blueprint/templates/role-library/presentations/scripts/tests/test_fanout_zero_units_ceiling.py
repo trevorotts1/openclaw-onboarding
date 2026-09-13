@@ -73,6 +73,7 @@ sys.path.insert(0, str(_scripts_dir))
 
 from presentation_job import dispatcher as dj  # noqa: E402
 from presentation_job import fanout as fo  # noqa: E402
+from presentation_job import launcher as pl  # noqa: E402
 
 PHASE = "P-STYLE-SPEC"
 SPEC_ARTIFACT = "working/copy/style_preview_spec.json"
@@ -339,6 +340,67 @@ def test_unparked_phase_really_dispatches_again(tmp_path, clock, monkeypatch):
     led = _ledger(run_dir)
     assert led["consecutive"] == 1, "the counter must restart on a new revision"
     assert led["blocked"] is False
+
+
+def test_paid_retry_budget_survives_reissued_order_and_worker_restart(
+        tmp_path, clock):
+    """A rewrite is retry context, never a new provider budget generation.
+
+    This is the live-sales failure shape: a deterministic exhausted response
+    consumed the full paid cap, then the engine rewrote the order and a new
+    dispatcher process started.  Neither event may buy another paid call.
+    """
+    run_dir = _seed_run(tmp_path)
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    for _ in range(dj.DISPATCH_RETRY_CAP):
+        dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic failure"],
+                          worker_id="first-worker", order_file=order,
+                          paid_attempts=1, now=clock.time())
+        clock.advance(1)
+
+    assert _ledger(run_dir)["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    assert _ledger(run_dir)["blocked"] is True
+    assert _marker(run_dir).is_file()
+
+    # A heal/restart rewrite changes mtime and bytes, but not approved inputs.
+    order.write_text(order.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    may, why = dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())
+    assert may is False
+    assert "paid retry budget exhausted" in why
+    assert _marker(run_dir).is_file(), "a reissue must not erase the paid-budget park"
+
+
+def test_verified_intake_amendment_explicitly_rearms_paid_budget(
+        tmp_path, clock, monkeypatch):
+    """Only the sanctioned, approval-verified input path starts a new budget."""
+    run_dir = _seed_run(tmp_path)
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    for _ in range(dj.DISPATCH_RETRY_CAP):
+        dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic failure"],
+                          worker_id="worker", order_file=order, paid_attempts=1,
+                          now=clock.time())
+        clock.advance(1)
+
+    intake = run_dir / "working" / "copy" / "intake.json"
+    intake.parent.mkdir(parents=True, exist_ok=True)
+    intake.write_text('{"topic":"changed with owner approval"}\n', encoding="utf-8")
+    digest = __import__("hashlib").sha256(intake.read_bytes()).hexdigest()
+    amendments = intake.with_name("intake_amendments.jsonl")
+    amendments.write_text(json.dumps({
+        "kind": "intake_amendment", "intake_sha256": digest,
+        "approval": {"owner_msg_id": "real-owner-message"},
+    }) + "\n", encoding="utf-8")
+
+    # An amendment-shaped file alone is not an authority.
+    monkeypatch.setattr(pl, "verify_amendment_approval", lambda *_a, **_k: (False, "refused"))
+    assert dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())[0] is False
+
+    # The launcher oracle is the authority; a verified record re-arms exactly
+    # this phase and clears the prior-generation marker before dispatch.
+    monkeypatch.setattr(pl, "verify_amendment_approval", lambda *_a, **_k: (True, "verified"))
+    may, why = dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())
+    assert may is True and why == "approved input revision changed"
+    assert not _marker(run_dir).exists()
 
 
 # ---------------------------------------------------------------------------

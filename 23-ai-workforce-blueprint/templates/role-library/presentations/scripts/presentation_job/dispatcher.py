@@ -7436,6 +7436,43 @@ def _dispatch_revision(run_dir: Path, phase_id: str,
     return f"wo={wo}|state={status}"
 
 
+def _approved_input_revision(run_dir: Path) -> str:
+    """Return the durable budget-reset witness for this run.
+
+    Rewriting a work order is a request to retry, not evidence that the model
+    now has different approved inputs.  The one sanctioned mutable input after
+    launch is an intake amendment.  It may reset a paid phase's budget only
+    when the replacement intake still matches an amendment row and that row
+    passes the same owner-approval oracle used by launcher.apply_intake_amendment.
+
+    An unreadable, hand-written, or unverified row deliberately has no power
+    here: it remains the original budget generation.  This is best-effort and
+    fail-closed; a broken approval oracle cannot buy more provider attempts.
+    """
+    intake = run_dir / "working" / "copy" / "intake.json"
+    amendments = run_dir / "working" / "copy" / "intake_amendments.jsonl"
+    try:
+        digest = hashlib.sha256(intake.read_bytes()).hexdigest()
+        rows = [json.loads(line) for line in amendments.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+    except (OSError, json.JSONDecodeError):
+        return "initial"
+    for row in reversed(rows):
+        if not isinstance(row, dict) or row.get("kind") != "intake_amendment":
+            continue
+        if row.get("intake_sha256") != digest:
+            continue
+        try:
+            from presentation_job import launcher
+            approved, _detail = launcher.verify_amendment_approval(
+                {"approval": row.get("approval") or {}}, run_dir)
+        except Exception:  # noqa: BLE001 -- no verified witness, no reset
+            approved = False
+        if approved:
+            return f"approved-intake:{digest}"
+    return "initial"
+
+
 def _backoff_delay_s(repeat: int) -> float:
     """repeat is the number of times this outcome has recurred AFTER its first
     observation. repeat<=0 (a new or changed outcome) is always zero delay."""
@@ -7456,6 +7493,23 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
     led = _read_ledger(run_dir, phase_id)
     if not led:
         return True, ""
+    input_revision = _approved_input_revision(run_dir)
+    prior_input_revision = str(led.get("approved_input_revision") or "initial")
+    if input_revision != prior_input_revision:
+        # A verified owner amendment changes the actual authoring input.  It
+        # is the only event that may re-arm a paid budget.  Clear the old
+        # marker before dispatch so the engine does not mistake the prior
+        # generation's park for this one.
+        try:
+            _blocked_marker_path(run_dir, phase_id).unlink()
+        except OSError:
+            pass
+        return True, "approved input revision changed"
+    if (led.get("blocked") and
+            int(led.get("paid_attempts") or 0) >= DISPATCH_RETRY_CAP):
+        return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
+                       f"provider attempts for unchanged approved input "
+                       f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
     eligible_at = led.get("next_eligible_at_epoch")
     if not isinstance(eligible_at, (int, float)):
         return True, ""
@@ -7475,6 +7529,7 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
 def record_outcome(run_dir: Path, phase_id: str, status: str,
                    reasons: Optional[List[str]] = None, *, worker_id: str,
                    order_file: Optional[Path] = None,
+                   paid_attempts: int = 0,
                    now: Optional[float] = None) -> Dict[str, Any]:
     """Fold one dispatch outcome into the ledger and decide whether it earns a
     sidecar record. Returns the new ledger entry.
@@ -7488,6 +7543,12 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
     led = _read_ledger(run_dir, phase_id)
     sig = _outcome_signature(status, reasons)
     rev = _dispatch_revision(run_dir, phase_id, order_file)
+    input_revision = _approved_input_revision(run_dir)
+    prior_input_revision = str(led.get("approved_input_revision") or "initial")
+    prior_paid_attempts = (int(led.get("paid_attempts") or 0)
+                           if input_revision == prior_input_revision else 0)
+    paid_attempts = max(0, int(paid_attempts or 0))
+    total_paid_attempts = prior_paid_attempts + paid_attempts
 
     same = bool(led) and led.get("signature") == sig and led.get("revision") == rev
     consecutive = (int(led.get("consecutive") or 0) + 1) if same else 1
@@ -7511,6 +7572,8 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         "blocked": False,
         "blocked_reason": None,
         "worker": worker_id,
+        "approved_input_revision": input_revision,
+        "paid_attempts": total_paid_attempts,
     }
 
     if status in _FAILING_STATUSES and consecutive >= DISPATCH_REPEAT_CEILING:
@@ -7520,9 +7583,18 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
             f"{phase_id} (retry ceiling DISPATCH_REPEAT_CEILING={DISPATCH_REPEAT_CEILING}). "
             f"Last reasons: {reasons or []}")
         entry["blocked_at"] = utcnow()
-        # Parked, never dropped: re-dispatch resumes the moment the Engine
-        # reissues the work order or this phase's state changes (should_dispatch's
-        # revision check), so a real fix upstream un-parks it automatically.
+        # Unpaid refusal parks stay re-armable when the engine changes the
+        # work order or phase state.  Paid failures additionally carry the
+        # durable budget below, which only a verified input amendment resets.
+        entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
+
+    if status in _FAILING_STATUSES and total_paid_attempts >= DISPATCH_RETRY_CAP:
+        entry["blocked"] = True
+        entry["blocked_reason"] = (
+            f"paid retry budget exhausted after {total_paid_attempts} provider attempts for "
+            f"{phase_id} with unchanged approved input "
+            f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
+        entry["blocked_at"] = utcnow()
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
 
     _write_ledger(run_dir, phase_id, entry)
@@ -7558,9 +7630,10 @@ def _park_blocked(run_dir: Path, phase_id: str, entry: Dict[str, Any], *,
         f"status:      {entry.get('status')}\n"
         f"consecutive: {entry.get('consecutive')} identical outcomes\n"
         f"reason:      {reason}\n"
-        "\nThis phase stopped being re-dispatched after the retry ceiling. It was NOT\n"
-        "marked done and NOT silently dropped. Dispatch resumes automatically if the\n"
-        "Engine reissues the work order or this phase's state.json status changes.\n"
+        "\nThis phase stopped being re-dispatched after its retry ceiling. It was NOT\n"
+        "marked done and NOT silently dropped. A work-order rewrite or worker restart\n"
+        "does not buy more paid attempts; dispatch resumes only after a verified owner\n"
+        "input amendment changes this phase's approved input generation.\n"
         f"Ledger: working/work-orders/{_LEDGER_DIRNAME}/{phase_id}.json\n",
         encoding="utf-8")
     _append_sidecar(run_dir, phase_id, {
@@ -7710,7 +7783,7 @@ def sweep_run_dir(run_dir: Path, *, worker_id: str, max_workers: int) -> List[Di
                 # to run_dir/working/work-orders/<phase_id>.json -- byte-identical
                 # to the `of` this sweep globbed (phase_id IS of.stem).
                 record_outcome(run_dir, phase_id, res.status, list(res.reasons),
-                               worker_id=worker_id)
+                               worker_id=worker_id, paid_attempts=res.attempts)
             finally:
                 # PRES-018: owner-matched release -- the token captured at
                 # claim time must still be the file's token, or the file
