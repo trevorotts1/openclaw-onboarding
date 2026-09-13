@@ -1,3 +1,5 @@
+## [v25.0.48]  -  2026-09-13  -  Publish all declared presentation work-order artifacts safely
+
 ## [v25.0.47]  -  2026-09-12  -  FIX-28 render-phase budget 30 for DESIGN-RENDER SALES/CHECKOUT/VSL (Kie render class)
 
 ## [v25.0.46]  -  2026-09-12  -  Intake-route canonicalizes booleanish WANT selections to yes/no

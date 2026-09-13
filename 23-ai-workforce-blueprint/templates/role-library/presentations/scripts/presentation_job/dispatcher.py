@@ -51,6 +51,7 @@ import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -2544,11 +2545,24 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
                           "header). Never the whole file, never another unit's scope."
         )
     else:
-        user_parts.append(
-            "Write the complete, final content of the target artifact file now. If the target "
-            "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
-            "fence). If the target is Markdown/text, output the complete file content directly."
-        )
+        declared = order.get("produces_artifact") if isinstance(order, dict) else None
+        if isinstance(declared, list) and len(declared) > 1 and all(
+                isinstance(path, str) and path and not any(c in path for c in "*?[")
+                for path in declared):
+            paths = ", ".join(json.dumps(path) for path in declared)
+            user_parts.append(
+                "This phase has MULTIPLE declared artifacts. Output ONE JSON object with exactly "
+                "one top-level key, `artifacts`. Its value must map EACH of these exact manifest-"
+                f"relative paths to that file's complete content: {paths}. No other keys, paths, "
+                "or prose. The value for a .json target must itself be valid JSON text; the value "
+                "for a Markdown/text target must be the complete substantive file text."
+            )
+        else:
+            user_parts.append(
+                "Write the complete, final content of the target artifact file now. If the target "
+                "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
+                "fence). If the target is Markdown/text, output the complete file content directly."
+            )
     user_prompt = "\n\n".join(user_parts)
     return system_prompt, user_prompt
 
@@ -2609,6 +2623,112 @@ def _first_concrete_path(patterns: List[str], run_dir: Path) -> Optional[Path]:
                 return run_dir / stem
             continue
         return run_dir / pat
+    return None
+
+
+def _concrete_target_paths(patterns: List[str], run_dir: Path) -> Optional[List[Path]]:
+    """Resolve every declared output only when each is a literal safe path.
+
+    A completion is one transport payload, so a phase with sibling artifacts
+    must use the explicit envelope contract below.  Globs remain the domain of
+    their dedicated fan-out dispatchers: guessing a second filename would
+    create an artifact the manifest never declared.
+    """
+    root = run_dir.resolve()
+    targets: List[Path] = []
+    seen: set[Path] = set()
+    for pattern in patterns:
+        if not isinstance(pattern, str) or not pattern or any(c in pattern for c in "*?["):
+            return None
+        raw = Path(pattern)
+        if raw.is_absolute() or ".." in raw.parts:
+            return None
+        target = (root / raw).resolve(strict=False)
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return None
+        if target in seen:
+            return None
+        seen.add(target)
+        targets.append(target)
+    return targets or None
+
+
+def _multi_artifact_payload(payload: str, targets: List[Path], run_dir: Path) -> Tuple[Optional[Dict[Path, str]], Optional[str]]:
+    """Parse the only accepted model format for a multi-output phase.
+
+    The keys are manifest-relative target paths, not basenames, so similarly
+    named artifacts cannot be swapped.  Every declared target is required and
+    no undeclared path may be smuggled into the run directory.
+    """
+    try:
+        root = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return None, f"multi-artifact response is not JSON: {exc.msg}"
+    artifacts = root.get("artifacts") if isinstance(root, dict) else None
+    if not isinstance(artifacts, dict):
+        return None, "multi-artifact response needs an artifacts object"
+    root_dir = run_dir.resolve()
+    expected = {str(target.relative_to(root_dir)) for target in targets}
+    actual = set(artifacts)
+    if actual != expected:
+        return None, ("multi-artifact response keys must exactly equal declared targets; "
+                      f"missing={sorted(expected - actual)!r} extra={sorted(actual - expected)!r}")
+    resolved: Dict[Path, str] = {}
+    for target in targets:
+        value = artifacts[str(target.relative_to(root_dir))]
+        if not isinstance(value, str) or not value.strip():
+            return None, f"multi-artifact response has empty/non-text content for {target.relative_to(root_dir)}"
+        resolved[target] = value
+    return resolved, None
+
+
+def _publish_artifact_group(tmp_paths: Dict[Path, Path]) -> Optional[str]:
+    """Publish sibling outputs as a recoverable group.
+
+    ``os.replace`` is atomic per path, not across paths.  Copy prior outputs
+    beside their targets before publication so a failure on a later sibling
+    restores every already-replaced target; a target that did not exist is
+    removed.  The caller still performs the ownership fence before entering
+    this function.
+    """
+    backups: Dict[Path, Optional[Path]] = {}
+    published: List[Path] = []
+    try:
+        for output in tmp_paths:
+            if output.exists():
+                backup = output.with_name(output.name + f".publish-backup-{uuid.uuid4().hex}")
+                shutil.copy2(output, backup)
+                backups[output] = backup
+            else:
+                backups[output] = None
+        for output, tmp in tmp_paths.items():
+            os.replace(tmp, output)
+            published.append(output)
+    except OSError as exc:
+        rollback_errors: List[str] = []
+        for output in reversed(published):
+            backup = backups.get(output)
+            try:
+                if backup is None:
+                    output.unlink(missing_ok=True)
+                else:
+                    shutil.copy2(backup, output)
+            except OSError as rollback_exc:
+                rollback_errors.append(f"{output.name}: {rollback_exc}")
+        for tmp in tmp_paths.values():
+            tmp.unlink(missing_ok=True)
+        for backup in backups.values():
+            if backup is not None:
+                backup.unlink(missing_ok=True)
+        detail = f"multi-artifact publication failed: {exc}"
+        if rollback_errors:
+            detail += "; rollback failures: " + "; ".join(rollback_errors)
+        return detail
+    for backup in backups.values():
+        if backup is not None:
+            backup.unlink(missing_ok=True)
     return None
 
 
@@ -4746,6 +4866,7 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     ok, reasons = _verify(phase_id, run_dir)
     patterns = resolve_target_paths(phase_id, order, phase_obj, run_dir)
     target = _first_concrete_path(patterns, run_dir)
+    targets = _concrete_target_paths(patterns, run_dir)
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3):
     # verify()==True does NOT mean THIS phase's own produces_artifact file exists --
     # for a QC/audit phase whose phase_verifiers mapping re-runs an UPSTREAM check
@@ -4769,14 +4890,16 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # (P4-COPY, P-SP-STRUCTURE, the intake phases, ...) where produces_artifact IS
     # the exact file the verifier reads -- once written it stays on disk, so
     # target_exists is True from the next check onward, same as before.
-    target_exists = bool(target is not None and target.exists())
+    target_exists = bool(
+        all(path.exists() for path in targets) if targets is not None
+        else target is not None and target.exists())
     if ok and target_exists:
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0, "status": "already_satisfied",
         })
         return DispatchResult(phase_id, "skipped_satisfied", 0, [])
 
-    if target is None:
+    if target is None or (len(patterns) > 1 and targets is None):
         reason = f"cannot resolve a concrete write target from produces_artifact={patterns!r}"
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0, "status": "error", "reason": reason,
@@ -4866,9 +4989,26 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             if attempt < DISPATCH_RETRY_CAP:
                 continue
             break
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = target.with_suffix(target.suffix + f".partial-{os.getpid()}-{attempt}")
-        tmp_path.write_text(payload, encoding="utf-8")
+        if targets is not None and len(targets) > 1:
+            contents, payload_reason = _multi_artifact_payload(payload, targets, run_dir)
+            if contents is None:
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt,
+                    "status": "invalid_multi_artifact_response", "reason": payload_reason,
+                })
+                last_reasons = [payload_reason or "invalid multi-artifact response"]
+                prior_reasons = last_reasons
+                if attempt < DISPATCH_RETRY_CAP:
+                    continue
+                break
+        else:
+            contents = {target: payload}
+        tmp_paths: Dict[Path, Path] = {}
+        for output, content in contents.items():
+            output.parent.mkdir(parents=True, exist_ok=True)
+            tmp = output.with_suffix(output.suffix + f".partial-{os.getpid()}-{attempt}")
+            tmp.write_text(content, encoding="utf-8")
+            tmp_paths[output] = tmp
         # PRES-018 fencing at publication (same contract as the fanout
         # aggregate above): a single-target artifact is published only while
         # the claim file still names THIS worker. A worker whose claim was
@@ -4881,12 +5021,13 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             _pub_rec = _read_claim_record(_pub_claim_file) or {}
             if _pub_rec.get("worker") != worker_id or \
                     _pub_rec.get("owner_token") != _current_claim_token(run_dir, phase_id, worker_id):
-                quarantine = target.with_name(
-                    target.name + f".stale-quarantine-{worker_id}")
-                try:
-                    tmp_path.replace(quarantine)
-                except OSError:
-                    tmp_path.unlink(missing_ok=True)
+                for output, tmp in tmp_paths.items():
+                    quarantine = output.with_name(
+                        output.name + f".stale-quarantine-{worker_id}")
+                    try:
+                        tmp.replace(quarantine)
+                    except OSError:
+                        tmp.unlink(missing_ok=True)
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt,
                     "status": "stale_quarantined",
@@ -4896,7 +5037,13 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 return DispatchResult(
                     phase_id, "exhausted", attempt,
                     ["claim lost before publication; output quarantined"])
-        os.replace(tmp_path, target)  # atomic on POSIX, same filesystem -- no torn read
+        publication_error = _publish_artifact_group(tmp_paths)
+        if publication_error:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "publication_rolled_back", "reason": publication_error,
+            })
+            return DispatchResult(phase_id, "error", attempt, [publication_error])
 
         verifier_ok, verifier_reasons = _verify(phase_id, run_dir)
         _append_sidecar(run_dir, phase_id, {
@@ -4915,9 +5062,10 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             # artifact's sha via the QC report's own consumes, rubric
             # version) — identity from the dispatch record, never the
             # report's graded_by prose.
-            _stamp_author(run_dir, phase_id, target,
-                          model=route_dict2.get("model") or DEEPSEEK_MODEL,
-                          provider=route_dict2.get("provider") or "deepseek-direct")
+            for output in (targets or [target]):
+                _stamp_author(run_dir, phase_id, output,
+                              model=route_dict2.get("model") or DEEPSEEK_MODEL,
+                              provider=route_dict2.get("provider") or "deepseek-direct")
             if _estamp.stamps_enabled() and _is_qc_phase(owning_role, phase_id):
                 try:
                     _stamp_qc_reviewer(run_dir, phase_id, target,
