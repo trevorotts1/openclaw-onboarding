@@ -1,3 +1,16 @@
+## [v25.0.49]  -  2026-09-13  -  Rescue Rangers ONB aggregate: EWS pending escalations (RR-005), tick-age sentinel health (RR-016), durable CC receipt bridge (RR-024 ONB half)
+
+- **RR-005 — a failed EWS escalation no longer consumes the incident.** The escalation path now reconciles a STABLE operation identity (`sha256` over box/source/signal/dedup_key/event_id) against the ledger BEFORE any resend decision, and persists the attempt separately from incident resolution. An operation already accepted is never re-POSTed: the stored receipt (same ticket) is returned instead, so a response lost after a real admission recovers the SAME ticket and folds on the intake's idempotency key rather than minting a second incident. Admission outcomes are now a named vocabulary — `accepted` / `deferred` (owned, retryable setup fault such as `no_enrollment`) / `attempted` (retry-eligible uncertainty) / `failed` (terminal refusal) / `dry_run` — and `ews_alert.py escalate` exits non-zero only for `attempted` or `failed`, so an owned deferred state is visible without being reported as a process failure.
+- **RR-016 — a dead sentinel is detected even while its old file is still readable.** Dead-man identity is now episode-scoped: `deadman|<box>|<tick_ts>` when a last known tick exists, falling back to the legacy `deadman|<box>` only for the no-tick path. One stale episode dedups to exactly one incident, and a later episode opens a new one instead of being silently folded into the old. `collector_seen_at` (a successful read) is stored separately from `sentinel_tick_at` (what the sentinel itself last proved) and from `last_verified_progress_at`, so a readable but frozen file can no longer masquerade as a healthy box.
+- **RR-024 (ONB half) — the retained drill-only CC receipt bridge is hardened**: receipt-id validation, `sha256` identity fallback, path containment, and detail scrubbing, with the durable append-only ledger remaining the canonical record.
+
+### Tests
+- `tests/unit/rr005_escalation_pending.test.py` — 31 checks, `RR-005 FAILS=0`.
+- `tests/unit/rr016_tick_health.test.py` — 15 checks, `RR-016 FAILS=0`.
+- Skill 60 `--self-test` batteries (ledger / common / alert / fleet / companion) all PASS; `rescue_cc_board.py --self-test` PASS.
+- `tests/rescue/RR-015/test_rescue_admission_client.py` updated to assert the RR-016 episode-scoped dead-man identity in its two tick-bearing cases; the battery now reports **exactly the same 3 pre-existing failures as `origin/main`** (verified by diffing the failure lists), so this release adds no new RR-015 failure.
+- Release markers rolled to v25.0.49 by `scripts/bump-version.sh` (all 10 markers agree); skill 60 content bump recorded as v1.2.0.
+
 ## [v25.0.48]  -  2026-09-13  -  Publish all declared presentation work-order artifacts safely
 
 ## [v25.0.47]  -  2026-09-12  -  FIX-28 render-phase budget 30 for DESIGN-RENDER SALES/CHECKOUT/VSL (Kie render class)
