@@ -190,9 +190,11 @@ with tempfile.TemporaryDirectory(prefix="rr015-c2-") as td:
     check(posts[0]["body"]["source"] == "skill-60-ews-fleet",
           "dead-man admission is the fleet source", posts[0]["body"].get("source"))
     with Ledger(td) as led:
+        # Episode-scoped dead-man identity (RR-016): the box reported a tick, so
+        # the key is "deadman|<box>|<tick_ts>". See the CASE 10b note below.
         evs = [dict(r) for r in led.conn.execute(
-            "SELECT * FROM events WHERE dedup_key='deadman|box-dm-one' ORDER BY event_id").fetchall()]
-    check(evs and evs[0]["ack_state"] == "escalated", "dead-man event escalated on receipt")
+            "SELECT * FROM events WHERE dedup_key LIKE 'deadman|box-dm-one%' ORDER BY event_id").fetchall()]
+    check(evs and any(e["ack_state"] == "escalated" for e in evs), "dead-man event escalated on receipt")
     # a third cycle does NOT re-post the same episode (dedup; new silent episode
     # events stay open but do not double-fire admission for the same box)
     before = len(posts)
@@ -633,9 +635,19 @@ with tempfile.TemporaryDirectory(prefix="rr015-c10b-") as td:
     F.cmd_cycle(sender=lambda *a: (True, "fake"), admission=cl["admit"])
     check(len(posts) == 1, "dead-man enrollment miss posts exactly once", len(posts))
     with Ledger(td) as led:
+        # RR-016 supersedes the box-only dead-man identity: when the box HAS a
+        # last known tick, the episode key is "deadman|<box>|<tick_ts>" so that
+        # one episode dedups to one incident while a later episode starts a new
+        # one (ews_fleet._stale_episode_key). The legacy "deadman|<box>" form is
+        # kept only for the no-tick path, which CASE 10a above already covers.
+        # This fixture ingests a tick, so the episode form is the correct one to
+        # assert against; matching the exact legacy key found nothing and so
+        # failed for the wrong reason. ews_fleet.py's own self-tests were updated
+        # to the same episode-aware pattern.
         evs = [dict(r) for r in led.conn.execute(
-            "SELECT * FROM events WHERE dedup_key='deadman|box-dm-enroll'").fetchall()]
-    check(evs and evs[0]["ack_state"] == "escalated",
+            "SELECT * FROM events WHERE dedup_key LIKE 'deadman|box-dm-enroll%' "
+            "ORDER BY event_id").fetchall()]
+    check(evs and any(e["ack_state"] == "escalated" for e in evs),
           "dead-man enrollment miss with a durable ticket stays ack-eligible",
           evs)
     clear_state()
