@@ -891,6 +891,45 @@ def _canonical_contract_bytes(contract: dict) -> bytes:
     return json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+# Public operator intake uses a small, user-facing answer shape.  Translate
+# only documented semantic aliases into the driver’s canonical question ids;
+# arbitrary keys must fail before a receipt, ledger entry, or partial intake is
+# written.  `mode` is a user-facing classification and is intentionally not a
+# driver answer (resource_plan owns execution mode).
+_OPERATOR_ANSWER_ALIASES = {"brief": "client_notes"}
+_OPERATOR_ANSWER_IGNORED = {"mode"}
+
+
+def _operator_driver_answers(contract: dict, driver: pathlib.Path) -> dict[str, str]:
+    schema_path = driver.parent.parent / "intake" / "deck-intake-questions.json"
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        driver_ids = {row["id"] for row in schema.get("questions", [])
+                      if isinstance(row, dict) and isinstance(row.get("id"), str)}
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise RuntimeError(f"canonical intake question schema is unavailable: {exc}") from exc
+    # The driver permits this typed merged-turn subfield directly.
+    driver_ids.add("pitch_included")
+
+    supplied = contract["answers"]
+    answers: dict[str, str] = {}
+    unknown: list[str] = []
+    for key, value in supplied.items():
+        if key in _OPERATOR_ANSWER_IGNORED:
+            continue
+        target = _OPERATOR_ANSWER_ALIASES.get(key, key)
+        if target not in driver_ids:
+            unknown.append(key)
+            continue
+        prior = answers.get(target)
+        if prior is not None and prior != value:
+            raise ValueError(f"operator contract answers conflict after mapping: {key} -> {target}")
+        answers[target] = value
+    if unknown:
+        raise ValueError("operator contract has unsupported answer keys: " + ", ".join(sorted(unknown)))
+    return answers
+
+
 def verify_operator_contract_receipt(envelope: dict, *, secret: str | None = None) -> dict:
     """Verify the CC-issued HMAC envelope before any local intake write."""
     if not isinstance(envelope, dict) or envelope.get("receipt_version") != 1:
@@ -919,6 +958,10 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     """
     contract = validate_operator_contract(contract)
     rd = pathlib.Path(run_dir).expanduser().resolve()
+    driver = pathlib.Path(driver_path or _driver_path())
+    # Validate every supplied answer against the installed canonical driver
+    # before creating the receipt or any partial intake artifact.
+    answers = _operator_driver_answers(contract, driver)
     receipt_path = rd / "working" / "interview" / "operator_contract.json"
     contract_sha = hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest()
     existing = receipt_path.is_file()
@@ -956,12 +999,8 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     if not existing:
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-    driver = pathlib.Path(driver_path or _driver_path())
-    answers = dict(contract["answers"])
-    # `mode: general` classifies the informational main deck. The intake driver
-    # owns execution run_mode through resource_plan and rejects this unrelated
-    # user-facing field, so never replay it as a driver answer.
-    answers.pop("mode", None)
+    # The validated mapper already removes user-facing `mode` and converts
+    # semantic `brief` to canonical `client_notes`.
     answers.update({
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
