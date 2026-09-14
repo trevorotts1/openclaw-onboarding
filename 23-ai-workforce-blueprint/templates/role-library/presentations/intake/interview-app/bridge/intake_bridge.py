@@ -828,7 +828,7 @@ _OPERATOR_CONTRACT_REQUIRED = (
     "run_mode", "workhorse_model", "slide_count", "pitch_included",
     "want_teleprompter", "want_speech_script", "want_audio_deliverable",
     "want_audio_demo", "want_ghl_upload", "want_sales_checkout", "want_vsl_page",
-    "delivery_destinations", "answers",
+    "deliverable_set", "delivery_destinations", "answers",
 )
 
 
@@ -857,13 +857,20 @@ def validate_operator_contract(contract: dict) -> dict:
         raise ValueError("operator contract workhorse must be deepseek-flash@deepseek-direct")
     if contract.get("pitch_included") is not False:
         raise ValueError("operator contract must explicitly declare pitch_included=false")
-    selected_extras = ("want_teleprompter", "want_speech_script", "want_audio_deliverable",
-                       "want_audio_demo", "want_ghl_upload", "want_sales_checkout", "want_vsl_page")
-    if any(contract.get(k) != "yes" for k in selected_extras):
-        raise ValueError("operator contract must retain all selected compatible extras")
+    yes_no_extras = ("want_teleprompter", "want_speech_script", "want_audio_deliverable",
+                     "want_ghl_upload", "want_sales_checkout", "want_vsl_page")
+    if any(contract.get(k) not in ("yes", "no") for k in yes_no_extras):
+        raise ValueError("operator contract optional toggles must be yes or no")
+    if not isinstance(contract.get("want_audio_demo"), bool):
+        raise ValueError("operator contract want_audio_demo must be boolean")
+    deliverable_set = contract.get("deliverable_set")
+    if not isinstance(deliverable_set, str) or not deliverable_set.strip():
+        raise ValueError("operator contract deliverable_set must be a non-empty string")
     destinations = contract.get("delivery_destinations")
-    if not isinstance(destinations, list) or not destinations or any(not isinstance(v, str) or not v.strip() for v in destinations):
-        raise ValueError("operator contract delivery_destinations must be a non-empty string list")
+    if not (isinstance(destinations, str) and destinations.strip()) and not (
+            isinstance(destinations, list) and destinations and
+            all(isinstance(v, str) and v.strip() for v in destinations)):
+        raise ValueError("operator contract delivery_destinations must be a non-empty string or string list")
     if not isinstance(contract.get("answers"), dict):
         raise ValueError("operator contract answers must be an object")
     return contract
@@ -950,10 +957,17 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     answers.update({
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
-        "core_deliverables": "want_teleprompter: yes; want_speech_script: yes; want_audio_deliverable: yes",
-        "delivery_and_ghl": "delivery_destinations: " + ", ".join(contract["delivery_destinations"]) + "; want_ghl_upload: yes",
-        "growth_assets": "want_sales_checkout: yes; want_vsl_page: yes",
-        "audio_settings": "want_audio_demo: yes; speech_speed_preference: default",
+        "core_deliverables": ("deliverable_set: " + contract["deliverable_set"] +
+                              "; want_teleprompter: " + contract["want_teleprompter"] +
+                              "; want_speech_script: " + contract["want_speech_script"] +
+                              "; want_audio_deliverable: " + contract["want_audio_deliverable"]),
+        "delivery_and_ghl": ("delivery_destinations: " + (", ".join(contract["delivery_destinations"])
+                             if isinstance(contract["delivery_destinations"], list) else contract["delivery_destinations"]) +
+                             "; want_ghl_upload: " + contract["want_ghl_upload"]),
+        "growth_assets": ("want_sales_checkout: " + contract["want_sales_checkout"] +
+                          "; want_vsl_page: " + contract["want_vsl_page"]),
+        "audio_settings": ("want_audio_demo: " + ("yes" if contract["want_audio_demo"] else "no") +
+                           "; speech_speed_preference: default"),
         "duration_and_slide_count": "slide_count: " + str(contract["slide_count"]),
     })
     if not existing:

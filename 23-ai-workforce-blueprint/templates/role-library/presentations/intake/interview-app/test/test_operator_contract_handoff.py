@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -12,6 +13,8 @@ SCRIPTS = HERE.parent.parent.parent / 'scripts'
 DRIVER = SCRIPTS / 'deck-intake-driver.py'
 RESOLVER = SCRIPTS / 'presentation_job' / 'resolve_intake.py'
 sys.path.insert(0, str(SCRIPTS))
+CC_ROOT = pathlib.Path('/private/tmp/pd025-cc-current')
+CC_TSX = CC_ROOT / 'node_modules/.bin/tsx'
 
 spec = importlib.util.spec_from_file_location('operator_contract_bridge', BRIDGE)
 bridge = importlib.util.module_from_spec(spec)
@@ -31,20 +34,30 @@ def contract():
         'workhorse_model': 'deepseek-flash@deepseek-direct',
         'slide_count': 8, 'pitch_included': False,
         'want_teleprompter': 'yes', 'want_speech_script': 'yes',
-        'want_audio_deliverable': 'yes', 'want_audio_demo': 'yes',
+        'want_audio_deliverable': 'yes', 'want_audio_demo': True,
         'want_ghl_upload': 'yes', 'want_sales_checkout': 'yes', 'want_vsl_page': 'yes',
-        'delivery_destinations': ['PPTX', 'PDF', 'presenter notes', 'workbooks', 'infographic'],
+        'deliverable_set': 'PPTX, PDF, presenter guide, workbook, fillable workbook, infographic',
+        'delivery_destinations': ['PPTX', 'PDF', 'presenter guide', 'workbook', 'fillable workbook', 'infographic'],
         'answers': {
             'audience': 'General informational audience learning how to use the Presentation Department',
-            'named_methodology': 'No named method — informational department demonstration',
             'transformation_promise': 'No commercial transformation promise — informational department demonstration',
-            'time_to_result': 'Not applicable — informational department demonstration',
             'cta_action': 'Request or use the Presentation Department',
             'tone': 'teacher',
-            'offer_name': 'No offer — informational department demonstration',
-            'final_price': 'No price — informational department demonstration',
         },
     }
+
+
+def cc_signed_receipt(payload, tmp_path, secret='contract-test-secret'):
+    """Use CC's real canonical HMAC implementation, never a Python reimplementation."""
+    assert CC_TSX.is_file(), 'PD025 fresh CC checkout/runtime missing'
+    raw = dict(payload)
+    raw.pop('task_id'); raw.pop('execution_id')
+    source = tmp_path / 'cc-input.json'; source.write_text(json.dumps(raw))
+    code = """import { readFileSync } from 'fs'; import { parseOperatorPresentationContract, bindOperatorPresentationContract, bridgeReceipt } from './src/lib/presentation-operator-contract'; const intake=parseOperatorPresentationContract(JSON.parse(readFileSync(process.env.PD025_INPUT,'utf8'))); const contract=bindOperatorPresentationContract('d4e05a2f-f83b-4e87-aabe-d5e31c43867b',intake); process.stdout.write(JSON.stringify(bridgeReceipt(contract)));"""
+    env = dict(os.environ, WEBHOOK_SECRET=secret, PD025_INPUT=str(source))
+    proc = subprocess.run([str(CC_TSX), '-e', code], cwd=CC_ROOT, env=env, text=True, capture_output=True)
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
 
 
 def test_contract_runs_real_driver_then_resolver_without_provider(tmp_path, monkeypatch):
@@ -76,6 +89,7 @@ def test_contract_runs_real_driver_then_resolver_without_provider(tmp_path, monk
     assert resolved['pre_presentation_capture']['WANT_AUDIO_DELIVERABLE'] == 'yes'
     assert resolved['pre_presentation_capture']['WANT_GHL_UPLOAD'] == 'yes'
     assert 'PPTX' in resolved['pre_presentation_capture']['DELIVERY_DESTINATIONS']
+    assert 'fillable workbook' in resolved['pre_presentation_capture']['DELIVERABLE_SET']
     entries = json.loads(ledger.read_text())['entries']
     assert entries['RUN_MODE']['value'] == 'ultra'
     assert entries['WORKHORSE_MODEL']['value'] == 'deepseek-flash@deepseek-direct'
@@ -116,9 +130,8 @@ def test_signed_receipt_binds_existing_cc_task_and_replays_once(tmp_path, monkey
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
     secret = 'contract-test-secret'
-    payload = contract()
-    envelope = {'receipt_version': 1, 'contract': payload,
-                'receipt_hmac': hmac.new(secret.encode(), bridge._canonical_contract_bytes(payload), hashlib.sha256).hexdigest()}
+    envelope = cc_signed_receipt(contract(), tmp_path, secret)
+    payload = envelope['contract']
     assert bridge.verify_operator_contract_receipt(envelope, secret=secret) == payload
     with pytest.raises(ValueError):
         bridge.verify_operator_contract_receipt({**envelope, 'receipt_hmac': '0' * 64}, secret=secret)
@@ -172,8 +185,9 @@ def test_same_signed_contract_resumes_retry_then_acknowledges_once(tmp_path, mon
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
     monkeypatch.setenv('PRES008_BACKOFF_BASE_S', '0')
     monkeypatch.setenv('PRES008_BACKOFF_CAP_S', '0')
-    payload = contract(); rd = tmp_path / 'resume-run'
-    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='stable-receipt')
+    envelope = cc_signed_receipt(contract(), tmp_path)
+    payload = envelope['contract']; rd = tmp_path / 'resume-run'
+    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac=envelope['receipt_hmac'])
     import presentation_job.lease as real_lease
     calls = []
     class Launcher:
@@ -184,11 +198,11 @@ def test_same_signed_contract_resumes_retry_then_acknowledges_once(tmp_path, mon
             pathlib.Path(run_dir, 'state.json').write_text(json.dumps({'engine_pid': os.getpid(), 'job_id': payload['execution_id']}))
             return os.getpid()
     monkeypatch.setattr(bridge, '_load_presentation_job', lambda: types.SimpleNamespace(lease=real_lease, launcher=Launcher()))
-    first = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='stable-receipt')
+    first = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac=envelope['receipt_hmac'])
     assert first['bridge']['_rc'] == 7
-    second = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='stable-receipt')
+    second = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac=envelope['receipt_hmac'])
     assert second['bridge']['_rc'] == 0
-    third = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='stable-receipt')
+    third = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac=envelope['receipt_hmac'])
     assert third['bridge']['_rc'] == 0
     assert len(calls) == 2
 
