@@ -372,6 +372,39 @@ Z5_LEFT=$(( $(z5_live "$Z5_A") + $(z5_live "$Z5_B") ))
 # Restore the writable registry for the EXIT/INT/TERM trap.
 RR028_PIDFILE="$Z5_REG"
 
+# ---------------------------------------------------------------------------
+# 8. THE PROBE BUDGET IS SIZED FOR A REAL RECEIVER, AND BOUNDED
+#
+# Measured 2026-09-14 against the live production receiver: four probe attempts
+# returned transport_error under the old 25s default, the SAME probe with
+# RR_RECEIVER_PROBE_TIMEOUT=220 returned class=no_work/http=200 on the first try,
+# and one identical request took just over 90 seconds to answer while another
+# returned an n8n 500 after 99.8s. A 25s budget therefore reports a working (if
+# slow) receiver as unreachable -- a false negative in the one place an operator
+# looks to decide whether the box is ready.
+#
+# These assertions read the SHIPPED SOURCE, because the value is a default that
+# no hermetic run can exercise without a 90-second stall: the point is that the
+# default and its bounds are what the file says.
+# ---------------------------------------------------------------------------
+echo "--- 8. the probe budget: sized for a real receiver, and bounded ---"
+_PROBE_SRC="$RR028_REPO/65-rescue-receiver/rr-readiness.sh"
+grep -q 'RR_RECEIVER_PROBE_TIMEOUT:-120' "$_PROBE_SRC" \
+  && ok "the probe budget defaults to 120s, not the 25s that failed four times on a working receiver" \
+  || bad "the probe budget default is not 120s" "$(grep -n 'RR_RECEIVER_PROBE_TIMEOUT' "$_PROBE_SRC" | head -2)"
+# A malformed or out-of-range override must fall back to the DEFAULT, never to the
+# old undersized value: a typo must not silently restore the defect.
+grep -q '\*) _pb_timeout=120 ;;' "$_PROBE_SRC" \
+  && ok "a malformed override falls back to 120s, not to 25s" \
+  || bad "malformed override does not fall back to the default" "$(grep -n '_pb_timeout=' "$_PROBE_SRC" | head -3)"
+grep -q '\[ "$_pb_timeout" -ge 5 \]' "$_PROBE_SRC" \
+  && ok "the override is bounded (5..900), so no value can hang a wiring run" \
+  || bad "the override is unbounded" "$(grep -n '_pb_timeout' "$_PROBE_SRC" | head -4)"
+# And the reason it changed is recorded where the next reader will look.
+grep -q 'raised from 25s ON MEASUREMENT' "$_PROBE_SRC" \
+  && ok "the measurement that set the budget is recorded at the constant" \
+  || bad "the budget change carries no measurement" "no rationale comment"
+
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
 RR028_DONE=1
