@@ -1,5 +1,78 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.1] - 2026-09-14 - RR-028 review fixes: fail-closed blind spot + honest exit codes
+
+Independent review (Worker M, `RR028-REVIEW-M.md`) found two HIGH defects in
+23.4.0, both reachable from the fleet-wide roll. Both are fixed at the cause;
+no existing assertion was weakened (two were corrected because they encoded the
+old, wrong behaviour — see below).
+
+- **M-1 (HIGH) — an operator-DISABLED cron was re-enabled and then reported
+  SCHEDULED.** The readback has two views: the CLI (`cron list --json`, which
+  hides DISABLED jobs on builds with no full-status flag) and the gateway store
+  (`cron_jobs.job_json`, the only view that shows them). `RRR_CRON_DISABLED_DIRECT`
+  was set ONLY from an observed row, so when the CLI could not show a disabled
+  job AND no state DB resolved, the visible set was empty, the ladder took the
+  `add` arm, and the reconciler registered a **second, ENABLED** poller beside
+  the operator's disabled one — then reported `SCHEDULED`. A later `--all`
+  readback makes the box `cron_duplicate`, and the dedupe ladder deletes by
+  first match, so the operator's own job could be the one destroyed.
+  **Fix:** the engine now tracks and reports READBACK VISIBILITY
+  (`cron.visibility` = `full` | `enabled_only` | `unknown`). Under CLI-only
+  coverage with `enabled_only` visibility, "nothing visible" is no longer read as
+  "absent": the new state `cli_visibility_insufficient` reports
+  `ENROLLED_PENDING / cron_state_unverifiable`, and `rrr_cron_reconcile` returns
+  a new **rc 8** WITHOUT mutating anything. This is deliberately independent of
+  whether the CLI's help ADVERTISES a full-status flag — advertising is not proof
+  the flag works, and the whole point is that a hidden disabled job is never
+  guessed away. Fail-closed: a box whose CLI cannot list disabled jobs and whose
+  state DB is unreadable stays unregistered (and says so) instead of risking the
+  operator's job.
+- **M-2 (HIGH) — `wire.sh` exited 0 when its OWN readback failed.** Only
+  reconcile rc 5/7 mapped to 1; rc 3 (readback unavailable) and rc 4 (desired job
+  NOT proven, including `add_not_read_back`) fell through to `exit 0`, so
+  `update-skills.sh` printed `✓ enrollment/cron reconciliation ran` over a box
+  with NO cron at all. **Fix:** explicit mapping with no fall-through — 3/4/5/7
+  (and any unexpected code) exit 1; rc 6 (tombstoned / disabled by owner) and
+  rc 8 (fail-closed refusal) are DELIBERATELY 0, because in both the engine
+  attempted no mutation and claims nothing, and neither is a wiring failure that
+  a retry could fix. A genuinely un-enrolled or missing-secrets box still exits 0
+  with zero CLI calls (RR-027 contract preserved; no pre-existing `exit 1`
+  became `exit 0`).
+- **M-4 (LOW)** — the probe printed "safe test claim verified in the intended
+  runtime" even on a box with NO cron. The verdict was right; the line was not.
+  It now says exactly what was verified (the receiver's transport-OK, structured,
+  no-work, zero-turn/zero-ack ANSWER) and prints the schedule readback state, so
+  it can no longer be grepped as "this box is ready".
+- **M-5 (LOW, test harness)** — the batteries' EXIT trap was gated on
+  `RR028_DONE` and tracked only the LAST receiver pid, so a battery killed
+  mid-run leaked every receiver it had started (24 orphans were found alive on
+  the review host; they caused a 41/2 flake). Every spawned pid is now recorded
+  in a per-battery registry that the trap reads on EXIT/INT/TERM, with a bounded
+  `pgrep` supplement; `RR028_DONE` no longer decides whether to reap.
+- **M-6 (INFO)** — with several superseded receipts on a box, the stale-receipt
+  detail named the first one in glob order, so its digest/at could belong to an
+  unrelated receipt. It now reports the NEWEST superseded receipt from the
+  INTENDED runtime, names the file, and says other superseded receipts may exist.
+
+Test-fixture corrections (each one ENCODED the old, wrong behaviour; every
+assertion is kept or strengthened, none weakened):
+- `test_wire_install_vs_ready.sh` asserted `wire.sh` rc 0 for a silent add
+  (`add_not_read_back`). That is the M-2 defect stated as a requirement; it now
+  asserts a NON-ZERO rc with a readable reason, keeping the original readback
+  assertions unchanged, and adds the reviewer-requested blind-spot case
+  (`RR028_MOCK_NO_ALL=1` with NO state DB, driven through `--reconcile`) plus two
+  controls (readable DB → `cron_disabled_by_owner`; a fully read-back
+  reconciliation → exit 0).
+- the mock CLI's `cron list --help` advertised `--all` while its list HID
+  disabled jobs under `RR028_MOCK_NO_ALL=1` — a CLI lying about itself. The two
+  are now consistent, so the fixture genuinely exercises the blind spot the
+  engine's fail-closed rule exists for.
+
+Skill package version 23.4.0 -> 23.4.1. Gates: `tests/rescue/RR-028`
+(readiness states 43 assertions, safe probe 35, wire reconciliation 58), plus
+RR-027 credential gates, RR-005, RR-016, RR-004, RR-025 and RR-026 re-run green.
+
 ## [23.4.0] - 2026-09-13 - RR-028 enrollment + cron reconciliation report REAL readiness
 
 RR-W4-INSTALL. Enrollment and cron status were PROSE. `UNENROLLED` existed only

@@ -38,7 +38,15 @@ echo "== RR-028: safe test claim + receipt + intended runtime =="
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rr028-probe.XXXXXX")"
 RR028_DONE=""
-trap '[ -n "$RR028_DONE" ] && { rr028_stop_receiver; rm -rf "$WORK"; }' EXIT
+# M-5: reap EVERY receiver this battery spawned (not just the last pid) and
+# remove $WORK on ANY exit — including a killed/timed-out run, which is when
+# the leak used to happen. RR028_PIDFILE_BOX names the box whose registry (and
+# stub processes) this battery owns; the registry lives inside $WORK.
+RR028_PIDFILE_BOX="$WORK"
+RR028_PIDFILE="$WORK/rr028-receivers.pid"
+trap 'rr028_cleanup' EXIT
+trap 'rr028_cleanup; exit 130' INT
+trap 'rr028_cleanup; exit 143' TERM
 
 TOK="tok-synthetic-rr028-probe"
 matching_job() {
@@ -226,6 +234,76 @@ LEAKS="$(grep -rlF "$TOK" "$BOX" 2>/dev/null | grep -v '/secrets/.env$' || true)
 grep -q 'HDR X-RR-Box-Token present' "$BOX/receiver.log" \
   && ok "control: the receiver SAW the credential header (the file path works)" \
   || bad "the receiver never saw the credential header"
+
+# ---------------------------------------------------------------------------
+# 6. M-4: the probe's SUCCESS LINE must not overstate what it proved
+#
+# The probe can prove exactly one thing: the receiver RETURNED a transport-OK,
+# structured, no-work, zero-turn/zero-ack answer and a matching receipt was
+# written. It does NOT prove the cron is scheduled. The success line used to say
+# "safe test claim verified in the intended runtime" even on a box with NO cron,
+# which misled an operator grepping the log for "verified" — while the tool's
+# final verdict was (correctly) ENROLLED_PENDING. The line now names the schedule
+# readback it did NOT establish.
+# ---------------------------------------------------------------------------
+echo "--- 6. the probe success line does not imply the box is scheduled ---"
+# Section 5 leaves RR028_EXTRA_ENV set for its own shell wrapper; clear it so
+# this case runs against the plain CLI (the mock exits early on unknown args).
+RR028_EXTRA_ENV=""
+new_box box-nocron 12 no_work
+# Fixture health, asserted BEFORE the behaviour under test: a receiver stub that
+# never came up would make the assertions below fail for the wrong reason (and
+# did, once, when a leaked stub from an interrupted run held the port).
+[ -f "$BOX/receiver.py" ] \
+  && ok "fixture: the receiver stub exists for this case" \
+  || bad "receiver stub was never written — the assertions below cannot be trusted"
+# Remove the cron: the receiver still answers, so the probe still succeeds —
+# which is precisely the misleading case.
+python3 - "$BOX/jobs.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+json.dump({"jobs": []}, open(p, "w"))
+PY
+state_of
+[ "$STATE" = "ENROLLED_PENDING" ] \
+  && ok "control: the box really has NO cron (state=ENROLLED_PENDING before the probe)" \
+  || bad "control box is not in the unscheduled state" "$STATE/$REASON"
+# Run the probe. The harness captures the tool's stdout in RR028_OUT (the same
+# pattern every other case uses); a caller-side redirect around the harness call
+# does NOT capture it, because the harness already redirects stderr itself.
+#
+# NOTE ON THE EXIT CODE: `--probe` reports the READINESS verdict, not the
+# probe's own outcome — on this box the state is ENROLLED_PENDING (no cron), so
+# the tool correctly exits 2 even though the probe itself SUCCEEDED. The probe's
+# success is therefore asserted from its own line (below) and from the receipt,
+# not from the process exit code.
+rr028_readiness "$BOX" --probe
+PROBE_RC=$?
+PROBE_OUT="$RR028_OUT"
+case "$PROBE_OUT" in
+  *"safe test claim answer VERIFIED"*)
+    ok "control: the probe itself SUCCEEDED against a live receiver (its own line says so; the exit code is the readiness verdict, rc=$PROBE_RC)" ;;
+  *) bad "the probe did not succeed on a live receiver" "out=[$PROBE_OUT]" ;;
+esac
+# A live receiver is what makes this case discriminating, so prove the probe
+# actually reached ONE before asserting on what the tool said about it.
+grep -q '^REQ POST' "$BOX/receiver.log" 2>/dev/null \
+  && ok "fixture: the probe really reached the loopback receiver (assertion is not vacuous)" \
+  || bad "the probe never reached the receiver — receiver stub or port problem, not a product result"
+state_of
+[ "$STATE" = "ENROLLED_PENDING" ] \
+  && ok "the verdict stays honest: ENROLLED_PENDING, never SCHEDULED/VERIFIED (reason=$REASON)" \
+  || bad "probe on an unscheduled box produced $STATE/$REASON"
+case "$PROBE_OUT" in
+  *"not that the cron is scheduled"*)
+    ok "the success line NAMES the limit (it proves the receiver answered, not that the cron is scheduled)" ;;
+  *) bad "the success line still implies the box is ready" "$(printf '%s' "$PROBE_OUT" | head -1)" ;;
+esac
+case "$PROBE_OUT" in
+  *"cron.state="*)
+    ok "the success line reports the schedule readback it did NOT establish" ;;
+  *) bad "the success line does not report the cron state" ;;
+esac
 
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"

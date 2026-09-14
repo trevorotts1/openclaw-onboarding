@@ -35,7 +35,15 @@ echo "   host: $(uname -s) $(uname -m)"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rr028-wire.XXXXXX")"
 RR028_DONE=""
-trap '[ -n "$RR028_DONE" ] && { rr028_stop_receiver; rm -rf "$WORK"; }' EXIT
+# M-5: reap EVERY receiver this battery spawned (not just the last pid) and
+# remove $WORK on ANY exit — including a killed/timed-out run, which is when
+# the leak used to happen. RR028_PIDFILE_BOX names the box whose registry (and
+# stub processes) this battery owns; the registry lives inside $WORK.
+RR028_PIDFILE_BOX="$WORK"
+RR028_PIDFILE="$WORK/rr028-receivers.pid"
+trap 'rr028_cleanup' EXIT
+trap 'rr028_cleanup; exit 130' INT
+trap 'rr028_cleanup; exit 143' TERM
 
 matching_job() {  # matching_job <box> [overrides-json]
   _box="$1"; _ov="${2:-}"
@@ -77,6 +85,17 @@ run_wire() {
   WOUT="$RR028_OUT"
 }
 
+# The SAME run with the tool's STDERR appended to its stdout, for asserting on a
+# reason the tool prints on the failing surface (`>&2`) — which is exactly where
+# a roll log keeps its detail. The harness pins stderr to a file, so read that
+# block rather than trying to re-merge streams around it. Exit code is preserved.
+run_wire_combined() {
+  rr028_wire "$BOX" "$@" >/dev/null 2>&1
+  WRC=$?
+  WOUT="$RR028_OUT
+$(cat "$RR028_STDERR" 2>/dev/null)"
+}
+
 # ---------------------------------------------------------------------------
 # 1. FILES INSTALLED != READY
 # ---------------------------------------------------------------------------
@@ -115,10 +134,20 @@ run_wire
 # ---------------------------------------------------------------------------
 echo "--- 2. a write that does not read back is NOT reported as success ---"
 new_box box-silent
-RR028_EXTRA_ENV="RR028_MOCK_ADD_MODE=silent" run_wire
+RR028_EXTRA_ENV="RR028_MOCK_ADD_MODE=silent" run_wire_combined
 OUT="$WOUT"
-[ "$WRC" = "0" ] && ok "the add command exited 0 and the installer claim is still files-installed" \
-  || bad "wire.sh rc=$WRC"
+# M-2: the readback decided the readiness state (ENROLLED_PENDING) but the EXIT
+# CODE used to fall through to 0, so `update-skills.sh` printed
+# "✓ enrollment/cron reconciliation ran" over a box with NO cron at all. The
+# script's own contract maps "not proven" to a retryable failure, so this MUST
+# be non-zero now.
+[ "$WRC" != "0" ] && ok "a silent add (rc 4 add_not_read_back) exits NON-ZERO, so a roll cannot print ✓ over a box with no cron (rc=$WRC)" \
+  || bad "wire.sh exited 0 although its own readback FAILED (add_not_read_back)"
+[ "$WRC" = "1" ] && ok "the non-zero is exactly 1 (the documented retryable wiring failure)" \
+  || bad "unexpected exit code for a failed readback" "rc=$WRC"
+printf '%s' "$OUT" | grep -qi 'not proven' \
+  && ok "the reason is readable on the FAILING surface (stderr says NOT proven)" \
+  || bad "no readable 'not proven' reason"
 [ "$(wire_state "$OUT")" = "ENROLLED_PENDING" ] \
   && ok "the READBACK (not the exit code) decides: readiness=ENROLLED_PENDING" \
   || bad "readback failure reported as success" "$(wire_state "$OUT")"
@@ -135,15 +164,25 @@ rr028_readiness "$BOX" --json >/dev/null 2>&1
 # is about the readback, not about the box being broken.
 new_box box-silent-control
 run_wire
-[ "$(wire_state "$WOUT")" = "SCHEDULED" ] \
-  && ok "control: the same box with a working add IS SCHEDULED (the guard discriminates)" \
-  || bad "control box not scheduled" "$(wire_state "$WOUT")"
+[ "$WRC" = "0" ] && [ "$(wire_state "$WOUT")" = "SCHEDULED" ] \
+  && ok "control: the same box with a working add IS SCHEDULED and exits 0 (the guard discriminates on the READBACK)" \
+  || bad "control box not scheduled/zero" "rc=$WRC state=$(wire_state "$WOUT")"
 
 # A mutation command that FAILS is a retryable wiring failure (rc=1).
 new_box box-rejected
 RR028_EXTRA_ENV="RR028_MOCK_ADD_MODE=reject" run_wire
 [ "$WRC" = "1" ] && ok "a FAILED cron mutation exits 1 (retryable wiring failure)" \
   || bad "failed mutation did not exit 1"
+
+# A reconciliation that FULLY reads back (including an in-place edit and a
+# replace fallback) must still exit 0 — the fix must not make ordinary
+# reconciliation look like a failure.
+new_box box-readback-ok
+rr028_job "$BOX" '{"id":"9","name":"rescue-rr-box-poll","enabled":true,"schedule":{"kind":"cron","expr":"*/30 * * * *"},"payload":{"kind":"command","command":"sh /gone/rescue-poll.sh"},"delivery":{"mode":"none"}}'
+run_wire
+[ "$WRC" = "0" ] && [ "$(wire_state "$WOUT")" = "SCHEDULED" ] \
+  && ok "control: a fully read-back reconciliation (edit-in-place) still exits 0" \
+  || bad "a proven reconciliation exited non-zero" "rc=$WRC state=$(wire_state "$WOUT")"
 
 # ---------------------------------------------------------------------------
 # 3. DUPLICATES, COMMAND, SCHEDULE, ENABLED, DELIVERY — all with readback
@@ -299,6 +338,80 @@ else
   [ "$(rr028_field "$RR028_OUT" state)" = "ENROLLED_PENDING" ] \
     && ok "the CLI-only blind spot still yields ENROLLED_PENDING, not a false SCHEDULED" \
     || bad "CLI-only readback claimed success" "$(rr028_field "$RR028_OUT" state)"
+fi
+
+# ---------------------------------------------------------------------------
+# 7. FAIL-CLOSED MUTATION: the blind spot must REFUSE to add (RR-028 review M-1)
+#
+# The coverage gap E's battery missed: RR028_MOCK_NO_ALL=1 *without* a state DB,
+# driven through the MUTATION path (--reconcile), not just the read-only --json
+# report. Here the CLI cannot show a DISABLED job and no gateway store resolves
+# to cover for it, so `cron list` returning nothing CANNOT distinguish "no such
+# cron" from "the operator's cron is disabled and hidden". Before the fix the
+# ladder took the `add` arm and registered a SECOND, ENABLED poller beside the
+# operator's disabled one, then reported SCHEDULED.
+# ---------------------------------------------------------------------------
+echo "--- 7. blind-spot reconcile REFUSES to add (fail-closed) ---"
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  skip "blind-spot reconcile case (no sqlite3 on this host)"
+else
+  new_box box-blindspot
+  rr028_job "$BOX" "$(matching_job "$BOX" '{"id":"7","enabled":false}')"
+  [ "$(jobs_len "$BOX")" = "1" ] && [ "$(job_field "$BOX" enabled)" = "False" ] \
+    && ok "planted: exactly ONE operator-DISABLED poller, and NO state DB to see it" \
+    || bad "blind-spot plant failed" "$(jobs_len "$BOX") jobs"
+
+  # (a) the read-only report names the ambiguity honestly
+  RR028_EXTRA_ENV="RR028_MOCK_NO_ALL=1" rr028_readiness "$BOX" --json >/dev/null 2>&1
+  [ "$(rr028_field "$RR028_OUT" cron.coverage)" = "cli-only" ] \
+    && ok "blind spot: coverage is cli-only (no gateway store to prove an absence)" \
+    || bad "coverage wrong" "$(rr028_field "$RR028_OUT" cron.coverage)"
+  [ "$(rr028_field "$RR028_OUT" cron.visibility)" = "enabled_only" ] \
+    && ok "the report states the CLI can only see ENABLED jobs (visibility=enabled_only)" \
+    || bad "visibility not reported" "$(rr028_field "$RR028_OUT" cron.visibility)"
+  [ "$(rr028_field "$RR028_OUT" reason)" = "cron_state_unverifiable" ] \
+    && ok "reason names the real fault: cron_state_unverifiable (not 'absent')" \
+    || bad "reason wrong" "$(rr028_field "$RR028_OUT" reason)"
+
+  # (b) THE MUTATION PATH — this is the case that used to create the duplicate
+  RR028_EXTRA_ENV="RR028_MOCK_NO_ALL=1" run_wire_combined --idempotent --reconcile-only
+  [ "$WRC" = "0" ] \
+    && ok "the fail-closed refusal exits 0 (nothing failed; no mutation was attempted — zero is deliberate)" \
+    || bad "the refusal must not be reported as a wiring failure" "rc=$WRC"
+  [ "$(jobs_len "$BOX")" = "1" ] \
+    && ok "NO job was added: still exactly ONE job after --reconcile" \
+    || bad "the blind spot ADDED a job" "$(jobs_len "$BOX") jobs"
+  [ "$(job_field "$BOX" enabled)" = "False" ] \
+    && ok "the operator's job is STILL DISABLED (never re-enabled, never duplicated)" \
+    || bad "the operator's disabled job was mutated" "enabled=$(job_field "$BOX" enabled)"
+  [ "$(job_field "$BOX" id)" = "7" ] \
+    && ok "the surviving job is the OPERATOR's (id 7), not a freshly minted duplicate" \
+    || bad "the operator's job was replaced" "id=$(job_field "$BOX" id)"
+  rr028_argv_blocks "$BOX" | grep -q 'cron.add' \
+    && bad "an add was issued in the blind spot" \
+    || ok "no cron.add argv was issued at all (the reconciler refused before mutating)"
+  [ "$(wire_state "$WOUT")" = "ENROLLED_PENDING" ] \
+    && [ "$(wire_reason "$WOUT")" = "cron_state_unverifiable" ] \
+    && ok "the installer reports the honest non-SCHEDULED state (never a false SCHEDULED)" \
+    || bad "wire reported the wrong verdict" "$(wire_state "$WOUT")/$(wire_reason "$WOUT")"
+
+  # (c) CONTROL for (b): the SAME box WITH a readable gateway store still
+  #     detects the disable and refuses for the RIGHT reason — proving the
+  #     engine can see the disabled job whenever it is allowed to.
+  new_box box-blindspot-db
+  rr028_job "$BOX" "$(matching_job "$BOX" '{"id":"7","enabled":false}')"
+  rr028_make_db "$BOX" || bad "could not build the control state DB"
+  RR028_EXTRA_ENV="RR028_MOCK_NO_ALL=1" run_wire --idempotent --reconcile-only
+  WRC_DB="$WRC"; WOUT_DB="$WOUT"
+  [ "$(jobs_len "$BOX")" = "1" ] && [ "$(job_field "$BOX" enabled)" = "False" ] \
+    && ok "control: with the DB readable the disabled job is SEEN via the store and still left alone (1 job, still disabled)" \
+    || bad "control mutated the operator's job" "$(jobs_len "$BOX") jobs enabled=$(job_field "$BOX" enabled)"
+  [ "$(wire_reason "$WOUT_DB")" = "cron_disabled_by_owner" ] \
+    && ok "control: the reason is the specific cron_disabled_by_owner (the observer really can see it)" \
+    || bad "control reason wrong" "$(wire_reason "$WOUT_DB")"
+  [ "$WRC_DB" = "0" ] \
+    && ok "control: an operator-disabled job does not turn the roll red (exit 0)" \
+    || bad "control exit code" "rc=$WRC_DB"
 fi
 
 echo ""

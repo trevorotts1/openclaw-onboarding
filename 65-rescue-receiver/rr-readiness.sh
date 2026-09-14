@@ -258,7 +258,14 @@ rr_probe() {
     return 1
   fi
   rm -rf "$_pb_tmp"
-  echo "rr-probe: safe test claim verified in the intended runtime (digest=$RRR_DIGEST runtime=$RRR_RUNTIME_ID http=$_pb_status class=no_work turns=0 acks=0)"
+  # M-4: the probe can only prove what the ANSWER was — a transport-OK,
+  # structured, no-work, zero-turn/zero-ack claim returned by the intended
+  # runtime — and that the matching receipt was written. Whether the box is
+  # actually READY also depends on the schedule readback, which this line does
+  # NOT establish: on a box with no cron the verdict below is correctly
+  # ENROLLED_PENDING/cron_state_*, so claiming "verified" here misled operators
+  # grepping the log. Say exactly what was verified, and name the schedule state.
+  echo "rr-probe: safe test claim answer VERIFIED as a no-work result from the intended runtime (digest=$RRR_DIGEST runtime=$RRR_RUNTIME_ID http=$_pb_status class=no_work turns=0 acks=0); receipt written — this proves the RECEIVER answered, not that the cron is scheduled (readback cron.state=$RRR_CRON_STATE)"
   return 0
 }
 

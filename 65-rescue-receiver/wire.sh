@@ -30,6 +30,33 @@
 #      openclaw CLI, or a cron mutation command that itself failed
 # It NEVER means "receiver ready": that claim needs a safe test claim receipt
 # in the intended runtime (`rr-readiness.sh --probe`).
+#
+# WHICH RECONCILE OUTCOMES ARE NON-ZERO (RR-028 review M-2). The reconciler's
+# return code is mapped deliberately, not by fall-through:
+#   3 readback unavailable  -> 1  NOTHING WAS PROVEN. This script cannot say the
+#                                  cron exists, so it must not report success.
+#   4 desired job not proven -> 1  the ladder ran (or the add was invisible) and
+#                                  the readback still does not show the job —
+#                                  including `add_not_read_back`. This is the
+#                                  exact failure RR-028 exists to end; a roll
+#                                  that printed ✓ here would green-light a box
+#                                  with no cron at all.
+#   5 openclaw CLI unresolved -> 1 (unchanged, retryable)
+#   7 a mutation command failed -> 1 (unchanged, retryable)
+#   6 tombstoned / disabled by owner -> 0  DELIBERATELY ZERO. Nothing failed and
+#                                  nothing was attempted: the operator's own
+#                                  signal is being respected, which is the
+#                                  documented success of this path, not an
+#                                  error. A tombstone or an operator-disabled
+#                                  job must not turn a fleet roll red forever.
+#   8 visibility insufficient -> 0  DELIBERATELY ZERO. The fail-closed refusal:
+#                                  no mutation was attempted and none is
+#                                  claimed, so there is no wiring failure to
+#                                  report — the readiness line carries the
+#                                  honest `cron_state_unverifiable`. Treating it
+#                                  as retryable would make every roll warn on a
+#                                  box whose CLI simply cannot see disabled jobs.
+# Any other code is unexpected and is treated as a failure (1), never as success.
 set -u
 
 _RECONCILE_ONLY=0
@@ -231,6 +258,7 @@ if [ -n "$_ENGINE" ]; then
     4) echo "65-rescue-receiver: cron $_NAME NOT proven after reconciliation ($RRR_RECONCILE_STATE)" >&2 ;;
     6) echo "65-rescue-receiver: cron $_NAME NOT mutated — $RRR_RECONCILE_STATE (operator intent respected)" >&2 ;;
     7) echo "65-rescue-receiver: cron mutation command FAILED ($RRR_RECONCILE_STATE)" >&2 ;;
+    8) echo "65-rescue-receiver: cron $_NAME NOT registered — $RRR_RECONCILE_STATE: this readback cannot prove the name is free (a DISABLED job would be hidden), so adding could create a second ENABLED poller beside an operator-disabled one (fail-closed refusal, nothing mutated)" >&2 ;;
   esac
   # Re-observe after the reconciliation so the reported state is the state the
   # readback now shows (never the state the mutation intended).
@@ -248,11 +276,15 @@ if [ -n "$_ENGINE" ]; then
   if [ "$RRR_STATE" != "VERIFIED" ]; then
     echo "65-rescue-receiver: receiver readiness NOT verified — prove it in the intended runtime: bash $_OCROOT/skills/65-rescue-receiver/rr-readiness.sh --probe"
   fi
+  # The exit code repeats the reconciler's own verdict (see the header contract):
+  # 3/4/5/7 mean the desired cron is NOT proven, so this script must not exit 0;
+  # 6/8 are deliberate no-mutation outcomes (operator intent respected, or a
+  # fail-closed refusal) and are honestly zero. There is no fall-through: an
+  # unexpected code is a failure, never a silent success.
   case "$_recon_rc" in
-    5) exit 1 ;;
-    7) exit 1 ;;
+    0|6|8) exit 0 ;;
+    *)     exit 1 ;;
   esac
-  exit 0
 fi
 
 # ---------------------------------------------------------------------------

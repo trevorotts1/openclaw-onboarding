@@ -44,7 +44,15 @@ echo "   host: $(uname -s) $(uname -m)  python: $(python3 -V 2>&1)"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rr028-states.XXXXXX")"
 RR028_DONE=""
-trap '[ -n "$RR028_DONE" ] && { rr028_stop_receiver; rm -rf "$WORK"; }' EXIT
+# M-5: reap EVERY receiver this battery spawned (not just the last pid) and
+# remove $WORK on ANY exit — including a killed/timed-out run, which is when
+# the leak used to happen. RR028_PIDFILE_BOX names the box whose registry (and
+# stub processes) this battery owns; the registry lives inside $WORK.
+RR028_PIDFILE_BOX="$WORK"
+RR028_PIDFILE="$WORK/rr028-receivers.pid"
+trap 'rr028_cleanup' EXIT
+trap 'rr028_cleanup; exit 130' INT
+trap 'rr028_cleanup; exit 143' TERM
 
 # ---------------------------------------------------------------------------
 # helpers

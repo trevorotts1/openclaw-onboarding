@@ -60,8 +60,31 @@
 #
 # COVERAGE NOTE (honest limitation): when no state DB resolves, the readback is
 # CLI-only and a DISABLED job is invisible to `cron list --json` (the defect
-# shared-utils/cron-lib.sh documents). That case is REPORTED as `cli-only` in
-# the JSON report — it is never presented as a DB-proven absence.
+# shared-utils/cron-lib.sh documents). That case is REPORTED as `cli-only` and,
+# when the CLI advertised no full-status listing flag, as
+# `visibility=enabled_only` in the JSON report — it is never presented as a
+# DB-proven absence.
+#
+# FAIL-CLOSED MUTATION RULE (RR-028 review M-1): under `cli-only` coverage with
+# `visibility=enabled_only` — the CLI advertised NO full-status listing flag, so
+# a DISABLED job would be invisible — a visible set that does not contain the
+# managed name is AMBIGUOUS: it means "absent" OR "present but DISABLED and
+# hidden", and nothing in the readback can tell the two apart. Registering the
+# job in that state creates a SECOND, ENABLED poller beside the operator's
+# disabled one (double delivery, and a later `--all` readback makes the box
+# `cron_duplicate` so the dedupe ladder can delete the operator's own job). The
+# reconciler therefore REFUSES TO MUTATE on that combination (rc 8) and reports
+# `ENROLLED_PENDING / cron_state_unverifiable` — an explicit, honest "cannot
+# verify" instead of a write that risks destroying operator intent.
+#
+# Visibility is decided by what the READBACK can actually show, never by hope:
+# `full` requires either a readable gateway DB (the view that carries disabled
+# rows) or a CLI that advertised a full-status flag and was therefore ASKED for
+# one. A CLI that hides disabled jobs without advertising the capability is the
+# case this rule exists for, and it fails closed. The cost is deliberate and
+# one-sided — a box whose CLI cannot list disabled jobs and whose gateway store
+# is unreadable stays unregistered (and says so, with the remedy) rather than
+# risking the operator's job.
 #
 # POSIX sh, safe to source under `set -u`; bash 3.2 compatible (no arrays, no
 # ${var,,}, no local). Never executes the enrollment store. Never exports a
@@ -92,6 +115,11 @@ RRR_URL=""; RRR_SLUG=""; RRR_TOKEN_COMMIT=""
 RRR_SALT_STATE=""; RRR_DIGEST=""; RRR_DIGEST_STATE=""
 RRR_RUNTIME_ID=""; RRR_RUNTIME_STATE=""; RRR_PLATFORM=""; RRR_TARGET_MODE=""; RRR_TARGET_ID=""
 RRR_RB_STATE=""; RRR_JOBS=""; RRR_DB_STATE="none"; RRR_COVERAGE="none"
+# Can this readback PROVE a disabled job's absence? "full" = the CLI advertised
+# a full-status listing flag, or the gateway DB view is available (the DB is the
+# view that shows disabled rows); "enabled_only" = CLI-only coverage with no such
+# flag, so a disabled job is invisible; "unknown" = neither view proved anything.
+RRR_CRON_VISIBILITY="unknown"
 RRR_CRON_STATE=""; RRR_CRON_COUNT=0; RRR_CRON_ID=""
 RRR_CRON_SCHEDULE=""; RRR_CRON_COMMAND=""; RRR_CRON_ENABLED=""; RRR_CRON_DELIVERY=""
 RRR_CRON_MISMATCH=""; RRR_CRON_UNOBS=""; RRR_CRON_DISAGREE=""
@@ -498,14 +526,15 @@ token=$RRR_TOKEN_COMMIT"
 # ---------------------------------------------------------------------------
 rrr_cron_readback() {
     RRR_RB_STATE=""; RRR_JOBS=""; RRR_DB_STATE="none"; RRR_CRON_SOURCES=""; RRR_COVERAGE="none"
+    RRR_CRON_VISIBILITY="unknown"
     _rrr_rb_tmp="$(mktemp "${TMPDIR:-/tmp}/rr028-readback.XXXXXX" 2>/dev/null)" || {
         RRR_RB_STATE="unreadable"; return 1; }
     # ---- CLI view ----
     _rrr_rb_cli_ok=0
+    _rrr_rb_flags=""
     if [ "$RRR_REQ_OPENCLAW" != "ok" ]; then
         RRR_RB_STATE="cli_unresolved"
     else
-        _rrr_rb_flags=""
         rrr_argv_run "$_rrr_rb_tmp.help" "$_rrr_rb_tmp.err" "$RRR_OPENCLAW_BIN" cron list --help || true
         _rrr_rb_help="$(cat "$_rrr_rb_tmp.help" 2>/dev/null)"
         for _rrr_rb_c in --all --include-disabled --show-disabled; do
@@ -522,6 +551,14 @@ rrr_cron_readback() {
             RRR_JOBS="$(rrr_json_rows "$(cat "$_rrr_rb_tmp.cli" 2>/dev/null)" "$RRR_NAME" "cli")"
             _rrr_rb_cli_ok=1
             RRR_RB_STATE="ok"
+            # Only a CLI that ADVERTISES a full-status listing flag can show a
+            # disabled job. Without one the CLI view is enabled-jobs-only and an
+            # absence in it proves nothing (see the FAIL-CLOSED MUTATION RULE).
+            if [ -n "$_rrr_rb_flags" ]; then
+                RRR_CRON_VISIBILITY="full"
+            else
+                RRR_CRON_VISIBILITY="enabled_only"
+            fi
         else
             RRR_RB_STATE="cli_unreadable"
         fi
@@ -568,6 +605,10 @@ $_rrr_rb_dbrows"
     elif [ "$_rrr_rb_db_ok" = "1" ]; then RRR_COVERAGE="db-only"
     elif [ "$_rrr_rb_cli_ok" = "1" ]; then RRR_COVERAGE="cli-only"
     else RRR_COVERAGE="none"; fi
+    # The gateway store is the view that CARRIES disabled rows, so a readable DB
+    # upgrades visibility regardless of what the CLI advertised (this is what
+    # closes the blind spot on a box whose CLI cannot show a disabled job).
+    [ "$_rrr_rb_db_ok" = "1" ] && RRR_CRON_VISIBILITY="full"
     if [ -n "$RRR_JOBS" ] || [ "$_rrr_rb_cli_ok" = "1" ] || [ "$_rrr_rb_db_ok" = "1" ]; then
         return 0
     fi
@@ -576,8 +617,20 @@ $_rrr_rb_dbrows"
 }
 
 # rrr_cron_eval — compare the observed rows against the desired config.
-# RRR_CRON_STATE: absent | cli_only_absent | duplicate | mismatch | single |
-#                 unreadable | unresolved
+# RRR_CRON_STATE: absent | cli_only_absent | cli_visibility_insufficient |
+#                 duplicate | mismatch | single | unreadable | unresolved
+#
+# `absent`                 — nothing visible and the readback could PROVE absence
+#                            (the gateway store was readable, so a disabled job
+#                            would have been seen).
+# `cli_only_absent`        — nothing visible, CLI-only coverage, and the CLI
+#                            advertised a full-status listing flag, so the
+#                            absence is as strong as that CLI can make it.
+# `cli_visibility_insufficient` — nothing visible, CLI-only coverage, no
+#                            full-status flag: a DISABLED job would be hidden,
+#                            so "absent" cannot be distinguished from
+#                            "present but hidden". The reconciler refuses to
+#                            mutate on this state (see the header rule).
 rrr_cron_eval() {
     RRR_CRON_STATE=""; RRR_CRON_MISMATCH=""; RRR_CRON_UNOBS=""; RRR_CRON_DISAGREE=""
     RRR_CRON_COUNT=0; RRR_CRON_ID=""; RRR_CRON_IDS=""; RRR_CRON_MATCH_IDS=""
@@ -667,7 +720,15 @@ rrr_cron_eval() {
     if [ "$RRR_CRON_COUNT" -eq 0 ]; then
         case "$RRR_COVERAGE" in
             db-only|cli+db) RRR_CRON_STATE="absent" ;;
-            cli-only)       RRR_CRON_STATE="cli_only_absent" ;;
+            cli-only)
+                # "Nothing visible" is only a proven absence when the CLI can
+                # actually show a DISABLED job. When it cannot, this is the blind
+                # spot: the desired job may exist and be hidden, so the state says
+                # so instead of pretending the name is free.
+                case "$RRR_CRON_VISIBILITY" in
+                    full) RRR_CRON_STATE="cli_only_absent" ;;
+                    *)    RRR_CRON_STATE="cli_visibility_insufficient" ;;
+                esac ;;
             *)              RRR_CRON_STATE="unreadable" ;;
         esac
         return 0
@@ -720,10 +781,44 @@ rrr_receipt_read() {
         # "never probed" — it is a STALE verdict for a desired config that has
         # since changed, and saying so is the difference between an operator
         # re-probing and an operator chasing a phantom.
-        _rrr_rr_other=""
+        #
+        # M-6: with SEVERAL superseded receipts on the box, naming the first one
+        # in glob order reports an unrelated receipt's digest/at. Report the one
+        # that actually matters — the NEWEST receipt from THIS runtime, since that
+        # is the probe the operator most likely ran before the config changed —
+        # and name its file so any remaining ambiguity is visible rather than
+        # implied.
+        _rrr_rr_other=""; _rrr_rr_other_at=""; _rrr_rr_other_rt=""; _rrr_rr_other_same=0
         if [ -d "$_rrr_rr_dir/readiness" ]; then
             for _rrr_rr_c in "$_rrr_rr_dir"/readiness/receipt-*.json; do
-                [ -f "$_rrr_rr_c" ] && { _rrr_rr_other="$_rrr_rr_c"; break; }
+                [ -f "$_rrr_rr_c" ] || continue
+                _rrr_rr_cjson="$(cat "$_rrr_rr_c" 2>/dev/null)"
+                _rrr_rr_cat="$(rrr_json_get "$_rrr_rr_cjson" "at")"
+                _rrr_rr_crt="$(rrr_json_get "$_rrr_rr_cjson" "runtime_id")"
+                _rrr_rr_csame=0
+                if [ -n "$_rrr_rr_crt" ] && [ "$_rrr_rr_crt" = "$_rrr_rr_runtime" ]; then _rrr_rr_csame=1; fi
+                if [ -z "$_rrr_rr_other" ]; then
+                    _rrr_rr_other="$_rrr_rr_c"; _rrr_rr_other_at="$_rrr_rr_cat"
+                    _rrr_rr_other_rt="$_rrr_rr_crt"; _rrr_rr_other_same="$_rrr_rr_csame"
+                    continue
+                fi
+                # A receipt from the INTENDED runtime beats a foreign one; within
+                # the same class the newest `at` wins (ISO-8601 UTC sorts
+                # lexically). An empty `at` never displaces a dated receipt.
+                _rrr_rr_better=0
+                if [ "$_rrr_rr_csame" = "1" ] && [ "$_rrr_rr_other_same" != "1" ]; then
+                    _rrr_rr_better=1
+                elif [ "$_rrr_rr_csame" = "$_rrr_rr_other_same" ]; then
+                    if [ -n "$_rrr_rr_cat" ] \
+                       && { [ -z "$_rrr_rr_other_at" ] \
+                            || [ "$_rrr_rr_cat" \> "$_rrr_rr_other_at" ]; }; then
+                        _rrr_rr_better=1
+                    fi
+                fi
+                if [ "$_rrr_rr_better" = "1" ]; then
+                    _rrr_rr_other="$_rrr_rr_c"; _rrr_rr_other_at="$_rrr_rr_cat"
+                    _rrr_rr_other_rt="$_rrr_rr_crt"; _rrr_rr_other_same="$_rrr_rr_csame"
+                fi
             done
         fi
         if [ -n "$_rrr_rr_other" ] && [ "$RRR_REQ_JSON" = "ok" ]; then
@@ -731,8 +826,9 @@ rrr_receipt_read() {
             _rrr_rr_odigest="$(rrr_json_get "$_rrr_rr_ojson" "digest")"
             _rrr_rr_oat="$(rrr_json_get "$_rrr_rr_ojson" "at")"
             RRR_RECEIPT_AT="$_rrr_rr_oat"
+            RRR_RECEIPT_RUNTIME="$_rrr_rr_other_rt"
             RRR_RECEIPT_STATE="stale"
-            RRR_RECEIPT_DETAIL="a receipt exists for a DIFFERENT desired-config digest (${_rrr_rr_odigest:-unknown}); the desired config changed since that probe, so the old verdict is void"
+            RRR_RECEIPT_DETAIL="a receipt exists for a DIFFERENT desired-config digest (${_rrr_rr_odigest:-unknown}); the desired config changed since that probe, so the old verdict is void. Named here is the NEWEST superseded receipt from this runtime ($(basename "$_rrr_rr_other") at ${_rrr_rr_oat:-unknown}); other superseded receipts may also exist."
             return 0
         fi
         RRR_RECEIPT_STATE="absent"; return 0
@@ -894,13 +990,23 @@ rrr_evaluate() {
         absent|cli_only_absent)
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_absent"
             RRR_DETAIL="no cron named $RRR_NAME in the readback (coverage=$RRR_COVERAGE)" ;;
+        cli_visibility_insufficient)
+            # FAIL CLOSED (RR-028 review M-1). The CLI listed nothing, but this
+            # CLI build cannot show a DISABLED job and no gateway store resolved,
+            # so the engine cannot tell "no such cron" from "the operator's cron
+            # is disabled and hidden". Reporting ENROLLED_PENDING here — and never
+            # SCHEDULED — is the honest verdict; the reconciler refuses to ADD in
+            # this state, because an add would create a second, ENABLED poller
+            # beside the operator's disabled one.
+            RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_state_unverifiable"
+            RRR_DETAIL="no cron named $RRR_NAME is VISIBLE, but this readback cannot prove it is absent: coverage=$RRR_COVERAGE with visibility=$RRR_CRON_VISIBILITY means a DISABLED job of that name would be hidden, so 'absent' and 'present-but-disabled' are indistinguishable. Refusing to add (fail-closed): register nothing rather than risk a second ENABLED poller beside an operator-disabled job. Make the gateway store readable (state DB) or migrate to a CLI that lists disabled jobs, then reconcile again." ;;
         duplicate)
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_duplicate"
             RRR_DETAIL="readback shows $RRR_CRON_COUNT jobs named $RRR_NAME (ids:$RRR_CRON_IDS)" ;;
         mismatch)
             if [ "$RRR_CRON_DISABLED_DIRECT" = "1" ]; then
                 RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_disabled_by_owner"
-                RRR_DETAIL="cron $RRR_NAME exists but is DISABLED; readiness never re-enables an operator-disabled job (mismatches:$RRR_CRON_MISMATCH)"
+                RRR_DETAIL="cron $RRR_NAME exists but is DISABLED; readiness never re-enables an operator-disabled job it can SEE — and when the readback cannot see one (CLI-only coverage, no full-status flag) it refuses to add at all, so a hidden disable is never guessed away either (mismatches:$RRR_CRON_MISMATCH)"
             else
                 RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_field_mismatch"
                 RRR_DETAIL="readback of ${RRR_CRON_ID:-$RRR_NAME} does not match the desired config: $RRR_CRON_MISMATCH"
@@ -983,9 +1089,9 @@ rrr_report_json() {
     printf '"requirements":{"parser":"%s","curl":"%s","base64":"%s","openclaw":"%s","node":"%s","json_reader":"%s","hasher":"%s","missing":"%s"},' \
         "$RRR_REQ_PARSER" "$RRR_REQ_CURL" "$RRR_REQ_BASE64" "$RRR_REQ_OPENCLAW" "$RRR_REQ_NODE" "$RRR_REQ_JSON" "$RRR_REQ_SHA" \
         "$(rrr_json_escape "$RRR_MISSING_REQS")"
-    printf '"cron":{"state":"%s","count":%s,"id":"%s","sources":"%s","coverage":"%s","schedule":"%s","command":"%s","enabled":"%s","delivery":"%s","unobservable":"%s","disagreement":"%s"},' \
+    printf '"cron":{"state":"%s","count":%s,"id":"%s","sources":"%s","coverage":"%s","visibility":"%s","schedule":"%s","command":"%s","enabled":"%s","delivery":"%s","unobservable":"%s","disagreement":"%s"},' \
         "$RRR_CRON_STATE" "$RRR_CRON_COUNT" "$(rrr_json_escape "$RRR_CRON_ID")" "$(rrr_json_escape "$RRR_CRON_SOURCES")" \
-        "$RRR_COVERAGE" "$(rrr_json_escape "$RRR_CRON_SCHEDULE")" "$(rrr_json_escape "$RRR_CRON_COMMAND")" \
+        "$RRR_COVERAGE" "$RRR_CRON_VISIBILITY" "$(rrr_json_escape "$RRR_CRON_SCHEDULE")" "$(rrr_json_escape "$RRR_CRON_COMMAND")" \
         "$RRR_CRON_ENABLED" "$RRR_CRON_DELIVERY" "$(rrr_json_escape "$RRR_CRON_UNOBS")" "$(rrr_json_escape "$RRR_CRON_DISAGREE")"
     printf '"runtime":{"state":"%s","id":"%s","platform":"%s","target_mode":"%s","target_id":"%s"},"receipt":{"state":"%s","at":"%s"},"reconcile":{"state":"%s","action":"%s"}}\n' \
         "$RRR_RUNTIME_STATE" "$RRR_RUNTIME_ID" "$(rrr_json_escape "$RRR_PLATFORM")" "$(rrr_json_escape "$RRR_TARGET_MODE")" \
@@ -1006,6 +1112,10 @@ rrr_report_line() {
 #   5 openclaw CLI unresolved
 #   6 tombstoned / disabled by owner (never mutated)
 #   7 a mutation command itself failed (retryable wiring failure)
+#   8 REFUSED — the readback cannot prove the name is free (CLI-only coverage
+#     with no disabled-job visibility), so an add would risk a second ENABLED
+#     poller beside an operator-disabled job. Nothing was mutated and nothing
+#     is claimed; this is the fail-closed choice, not a failure.
 # Every mutation is followed by a FRESH readback + rrr_cron_eval; each step's
 # success is the readback, never the command's exit code. The ladder is
 # dedupe -> add -> edit-in-place -> replace, bounded to 4 attempts.
@@ -1102,7 +1212,19 @@ rrr_cron_reconcile() {
                 RRR_RECONCILE_STATE="duplicate_unreconciled"
                 rm -f "$_rrr_cr_tmp"* 2>/dev/null
                 RRR_RECONCILE_RC=4; return 4 ;;
-            absent|cli_only_absent)
+            absent|cli_only_absent|cli_visibility_insufficient)
+                # FAIL CLOSED (RR-028 review M-1): "nothing visible" under
+                # CLI-only coverage with a CLI that cannot list disabled jobs is
+                # NOT proof that the name is free. Adding here would register a
+                # SECOND, ENABLED poller beside a disabled job of the same name
+                # (double delivery), and a later `--all` readback turns that into
+                # `cron_duplicate` whose dedupe can delete the operator's job.
+                # Refuse to mutate and say exactly why.
+                if [ "$RRR_COVERAGE" = "cli-only" ] && [ "$RRR_CRON_VISIBILITY" != "full" ]; then
+                    RRR_RECONCILE_STATE="visibility_insufficient"
+                    rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                    RRR_RECONCILE_RC=8; return 8
+                fi
                 if [ "$_rrr_cr_tried_add" = "0" ]; then
                     _rrr_cr_tried_add=1
                     rrr_argv_run "$_rrr_cr_tmp.ahelp" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add --help || true

@@ -141,9 +141,20 @@ def next_id(d):
     return str(n + 1)
 
 if action == "list" and "--help" in rest:
-    print("usage: openclaw cron list [--json] [--all]")
+    # A build that HIDES disabled jobs from `cron list --json` must not advertise
+    # a full-status listing flag: the engine's fail-closed rule is driven by what
+    # the CLI's own help PROMISES, and a fixture that both hides a disabled job
+    # and claims `--all` support would be modelling a CLI that lies about itself.
+    # RR028_MOCK_NO_ALL=1 therefore makes the help text consistent with the list
+    # behaviour: no flag is offered, so the engine cannot tell "absent" from
+    # "present but disabled" and must refuse to mutate.
     if os.environ.get("RR028_MOCK_NO_ALL") == "1":
+        print("usage: openclaw cron list [--json]")
         print("  --json")
+    else:
+        print("usage: openclaw cron list [--json] [--all]")
+        print("  --json")
+        print("  --all")
     sys.exit(0)
 
 if action == "list":
@@ -267,6 +278,25 @@ con.execute("delete from cron_jobs")
 for j in d.get("jobs", []):
     con.execute("insert or replace into cron_jobs (job_id, job_json) values (?,?)",
                 (str(j.get("id", "")), json.dumps(j)))
+con.commit(); con.close()
+PY
+}
+
+# ---------------------------------------------------------------------------
+# rr028_make_state_db <box> — a state DB that a REAL gateway could have written
+# even before any cron exists (schema present, cron_jobs empty, readable by
+# sqlite3). The descriptor's `ocd_state_db` ACCEPTS a DB only when it has at
+# least one table, so an empty file is not a valid fixture for "the gateway
+# store resolves and holds no cron". Cases that need a successful ADD use this;
+# cases about the CLI-only blind spot deliberately do not.
+# ---------------------------------------------------------------------------
+rr028_make_state_db() {
+  _box="$1"
+  [ -n "$(command -v sqlite3 || true)" ] || return 1
+  RR028_DB="$_box/.openclaw/state/openclaw.sqlite" python3 - <<'PY'
+import os, sqlite3
+con = sqlite3.connect(os.environ["RR028_DB"])
+con.execute("create table if not exists cron_jobs (job_id text primary key, job_json text)")
 con.commit(); con.close()
 PY
 }
@@ -402,6 +432,7 @@ http.server.HTTPServer(("127.0.0.1", $_port), H).serve_forever()
 PYEOF
   python3 "$_box/receiver.py" >/dev/null 2>&1 &
   RR028_RECEIVER_PID=$!
+  rr028_register_pid "$_box" "$RR028_RECEIVER_PID"
   _i=0
   while [ "$_i" -lt 40 ]; do
     if python3 -c "
@@ -420,6 +451,66 @@ rr028_stop_receiver() {
   [ -n "${RR028_RECEIVER_PID:-}" ] && kill "$RR028_RECEIVER_PID" 2>/dev/null || true
   wait "$RR028_RECEIVER_PID" 2>/dev/null || true
   RR028_RECEIVER_PID=""
+}
+# ---------------------------------------------------------------------------
+# Receiver bookkeeping (RR-028 review M-5).
+#
+# `rr028_stop_receiver` used to know only the LAST pid, so a battery killed
+# mid-run (a CI timeout, a tool cap) leaked every receiver it had started;
+# enough orphans and the batteries fail spuriously on port or load collisions.
+# Every spawned pid is now recorded in a PIDFILE the battery sets (normally
+# inside its own $WORK, so the file dies with the run), and `rr028_killall`
+# reaps all of them from a single EXIT/INT/TERM trap.
+# ---------------------------------------------------------------------------
+
+# rr028_pidfile <box> — the registry path for this battery.
+rr028_pidfile() {
+  [ -n "${RR028_PIDFILE:-}" ] && { printf '%s' "$RR028_PIDFILE"; return 0; }
+  printf '%s/rr028-receivers.pid' "$1"
+}
+
+# rr028_register_pid <box> <pid>
+rr028_register_pid() {
+  _rp_file="$(rr028_pidfile "$1")"
+  [ -n "$_rp_file" ] || return 0
+  printf '%s\n' "$2" >> "$_rp_file" 2>/dev/null || true
+}
+
+# rr028_killall <box> — reap EVERY receiver this battery recorded. The registry
+# is the primary source (it lists all of them, not just the last); a
+# command-line match is a bounded SUPPLEMENT so a receiver started before the
+# registry existed, or after it was removed, is still cleaned up. Never fails:
+# a trap must not abort the exit path.
+rr028_killall() {
+  _rk_box="${1:-}"
+  _rk_file=""
+  [ -n "$_rk_box" ] && _rk_file="$(rr028_pidfile "$_rk_box")"
+  if [ -n "$_rk_file" ] && [ -s "$_rk_file" ]; then
+    while read -r _rk_pid; do
+      case "$_rk_pid" in ''|*[!0-9]*) continue ;; esac
+      kill "$_rk_pid" 2>/dev/null || true
+    done < "$_rk_file"
+  fi
+  [ -n "${RR028_RECEIVER_PID:-}" ] && kill "$RR028_RECEIVER_PID" 2>/dev/null || true
+  # Match this battery's OWN stub path only (its box lives under its $WORK), and
+  # never this shell or its parent.
+  if [ -n "$_rk_box" ] && command -v pgrep >/dev/null 2>&1; then
+    for _rk_pid in $(pgrep -f "$_rk_box/receiver.py" 2>/dev/null || true); do
+      case "$_rk_pid" in ''|*[!0-9]*|"$$"|"$PPID") continue ;; esac
+      kill "$_rk_pid" 2>/dev/null || true
+    done
+  fi
+  RR028_RECEIVER_PID=""
+  return 0
+}
+
+# The trap body every battery uses: reap receivers, then remove $WORK. The
+# RR028_DONE flag (set at a clean finish) no longer decides WHETHER to reap —
+# that gate is what leaked receivers when a battery was killed mid-run.
+rr028_cleanup() {
+  rr028_killall "${RR028_PIDFILE_BOX:-}"
+  [ -n "${WORK:-}" ] && rm -rf "$WORK"
+  return 0
 }
 
 # A port unique-ish per battery process AND per case index.
