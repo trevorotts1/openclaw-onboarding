@@ -922,6 +922,10 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     receipt_path = rd / "working" / "interview" / "operator_contract.json"
     contract_sha = hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest()
     existing = receipt_path.is_file()
+    sealed_intake = rd / "working" / "copy" / "intake.json"
+    ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.is_file() else {}
+    needs_initialization = not (bool(ledger.get("complete")) or ledger.get("status") == "complete")
     if existing:
         try:
             prior = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -954,6 +958,10 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     driver = pathlib.Path(driver_path or _driver_path())
     answers = dict(contract["answers"])
+    # `mode: general` classifies the informational main deck. The intake driver
+    # owns execution run_mode through resource_plan and rejects this unrelated
+    # user-facing field, so never replay it as a driver answer.
+    answers.pop("mode", None)
     answers.update({
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
@@ -970,8 +978,13 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                            "; speech_speed_preference: default"),
         "duration_and_slide_count": "slide_count: " + str(contract["slide_count"]),
     })
-    if not existing:
+    if needs_initialization:
+        answered = ledger.get("entries", {}) if isinstance(ledger.get("entries", {}), dict) else {}
         for question_id, text in answers.items():
+            # The driver records each question id atomically. Replaying only
+            # missing turns resumes a partial transcript without duplicate turns.
+            if question_id in answered:
+                continue
             proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd),
                                    "--answer", str(question_id), str(text)],
                                   text=True, capture_output=True, check=False)
@@ -984,7 +997,7 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     # The driver is the sole intake writer. Contract provenance is carried only
     # in memory into the existing board/lease/launcher path; sealed intake stays
     # driver-owned.
-    intake_path = rd / "working" / "copy" / "intake.json"
+    intake_path = sealed_intake
     intake = json.loads(intake_path.read_text(encoding="utf-8"))
     intake["cc_task_id"] = contract["task_id"]
     intake["cc_execution_id"] = contract["execution_id"]
