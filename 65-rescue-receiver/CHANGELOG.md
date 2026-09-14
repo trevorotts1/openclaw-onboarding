@@ -1,5 +1,41 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.5] - 2026-09-14 - the probe budget was sized for a receiver nobody has
+
+The safe test claim's default budget was 25 seconds. Measured against the LIVE
+production receiver on this box:
+
+  * four consecutive probe attempts: `class=transport_error`, http=0 -- the 25s
+    budget expired before ANY answer arrived;
+  * the SAME probe with `RR_RECEIVER_PROBE_TIMEOUT=220`: `class=no_work`,
+    **http=200, structured=true, VERIFIED on the first try**;
+  * one identical request measured independently: curl timed out at 90s while the
+    response file ALREADY held `{"status":"empty"}` -- the answer took just over
+    90 seconds;
+  * a repeat: n8n **HTTP 500 after 99.8s**.
+
+A working answer arrives in the **70-110s band** on this target, so a 25s budget
+reports a merely-slow receiver as unreachable. That is the worst place to have a
+false negative: it is exactly what an operator reads to decide whether the box is
+ready, and it made four attempts look like a broken receiver when the receiver was
+answering all along. **Same defect class as the P2 page budget on the FLEET side**
+-- a budget sized from an assumption rather than a measurement.
+
+- Default raised to **120s**: the smallest round budget that clears every measured
+  ANSWER with headroom while staying under the slowest observed NO-answer (150s),
+  so a genuinely dead endpoint still fails instead of hanging.
+- The `RR_RECEIVER_PROBE_TIMEOUT` override is now **bounded to 5..900**, and a
+  malformed or out-of-range value falls back to the DEFAULT -- a typo must not
+  silently restore the 25s defect.
+- **This does not claim the receiver is healthy.** It is intermittently slow and
+  intermittently 5xx (one probe answered 200 while the next returned
+  `class=server_error`). A late answer is still an answer; the budget stops being
+  the thing that fails.
+
+Batteries: safe-probe 46 -> 50 assertions, pinning the default, the fallback
+target, the bounds and the recorded rationale. Falsification: restoring the 25s
+default and the unbounded override fails **three** of the new assertions.
+
 ## [23.4.4] - 2026-09-14 - an unreachable gateway is not a cron that disagrees with itself
 
 Found by EXECUTING the tool on the operator box, after 23.4.3 had already shipped.

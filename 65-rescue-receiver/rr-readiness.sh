@@ -198,8 +198,37 @@ rr_probe() {
     echo "rr-probe: cannot probe — credential header file could not be staged" >&2
     return 2
   fi
-  _pb_timeout="${RR_RECEIVER_PROBE_TIMEOUT:-25}"
-  case "$_pb_timeout" in ''|*[!0-9]*) _pb_timeout=25 ;; esac
+  # DEFAULT PROBE BUDGET: 120s, raised from 25s ON MEASUREMENT (2026-09-14).
+  #
+  # The 25s figure assumed a healthy receiver answering in seconds. Measured
+  # against the live production receiver, on the box this was written for:
+  #   * four consecutive probe attempts: class=transport_error, http=0 -- the
+  #     25s budget expired before ANY answer arrived;
+  #   * the SAME probe with RR_RECEIVER_PROBE_TIMEOUT=220: class=no_work,
+  #     http=200, structured=true -- VERIFIED on the first try;
+  #   * independent measurement of one identical request: curl timed out at 90s
+  #     while the response file ALREADY held {"status":"empty"}, i.e. the answer
+  #     took just over 90 seconds;
+  #   * a repeat request: n8n HTTP 500 after 99.8s.
+  # So a working answer arrives in the 70-110s band on this target, and a 25s
+  # budget reports "transport_error" for a receiver that is merely slow. That
+  # turns a working box into a failed acceptance for a reason that is not true
+  # -- the same defect class as the P2 page budget on the FLEET side.
+  #
+  # 120s is the smallest round budget that clears every measured ANSWER with
+  # headroom while staying under the slowest observed FAILURE (the 150s no-answer
+  # case), so a genuinely dead endpoint still fails rather than hanging forever.
+  # It is NOT a claim that the receiver is healthy: it is intermittently slow and
+  # intermittently 5xx, and this budget does not fix that -- it stops the budget
+  # from being the thing that fails.
+  #
+  # The override stays, bounded, and a malformed value falls back to the DEFAULT
+  # rather than to the old 25s: a typo must not silently restore the defect.
+  _pb_timeout="${RR_RECEIVER_PROBE_TIMEOUT:-120}"
+  case "$_pb_timeout" in
+    ''|*[!0-9]*) _pb_timeout=120 ;;
+    *) [ "$_pb_timeout" -ge 5 ] && [ "$_pb_timeout" -le 900 ] || _pb_timeout=120 ;;
+  esac
   # argv-safe: the URL, every flag and every path is ONE argv element.
   _pb_code=""
   _pb_code="$(curl -sS --max-time "$_pb_timeout" --connect-timeout 10 \
