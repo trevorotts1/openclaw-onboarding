@@ -764,7 +764,10 @@ MAX_RETRIES=2
 # Center report-back loop can acknowledge/progress/done back to the client. Empty
 # (the default) => omitted from the payload, exactly as mc-route.sh behaves.
 REQUESTER_CHAT_ID="${ROUTE_PRES_REQUESTER_CHAT_ID:-${MC_ROUTE_REQUESTER_CHAT_ID:-}}"
-REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-telegram}}"
+REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-}}"
+# An absent authenticated requester is an operator-delegated route, not Telegram.
+# Callers may explicitly override the source only through the sanctioned route vars.
+ROUTE_SOURCE="${ROUTE_PRES_SOURCE:-${MC_ROUTE_SOURCE:-}}"
 
 TITLE="${1:-}"
 DESCRIPTION="${2:-}"
@@ -840,20 +843,25 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/route-pres.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
 if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" ROUTE_SOURCE="$ROUTE_SOURCE" \
      python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
-payload = {
-    "title": os.environ.get("TITLE", "")[:120],
-    "description": os.environ.get("DESCRIPTION", ""),
-    "department_slug": "presentations",
-    "source": "telegram",
-    "priority": "medium",
-}
 # P1-04 trust engine: pass the originating client chat id through so the Command
 # Center captures it and reports acknowledge/progress/done back to the client.
 # Only added when present — an operator/internal route omits it entirely.
 _rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+_source = os.environ.get("ROUTE_SOURCE", "").strip()
+# Never label an internal/operator route as Telegram when no authenticated chat
+# identity was supplied. A real chat route retains the historical telegram default.
+if not _source:
+    _source = "telegram" if _rcid else "operator-delegated"
+payload = {
+    "title": os.environ.get("TITLE", "")[:120],
+    "description": os.environ.get("DESCRIPTION", ""),
+    "department_slug": "presentations",
+    "source": _source,
+    "priority": "medium",
+}
 if _rcid:
     payload["requester_chat_id"] = _rcid
     payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
