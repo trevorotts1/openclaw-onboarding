@@ -546,15 +546,14 @@ fi
 ls "$WEIRD" 2>/dev/null | grep -q 'PWNED' && bad "injection: a PWNED file appeared in the weird root" \
   || ok "no injection through the box root path (no PWNED artifact)"
 # Control: the stored job proves the readback path also took the whole command.
-if RR028_JOBS="$BW/jobs.json" python3 -c '
-import json, os, sys
-d = json.load(open(os.environ["RR028_JOBS"], encoding="utf-8"))
-cmd = (d["jobs"][0].get("payload") or {}).get("command", "")
-sys.exit(0 if cmd and " " in cmd and cmd.count(" ") >= 1 and cmd.endswith("rescue-poll.sh") else 1)
-'; then
+# Read through rr028_stored_command -- the SAME order the engine readback uses --
+# because `payload.command` is a field the real CLI never populates, and reading
+# it directly is how this battery once agreed with a double that was wrong.
+SCMD="$(rr028_stored_command "$BW/jobs.json")"
+if [ -n "$SCMD" ] && [ "$SCMD" != "${SCMD% *}" ] && [ "$SCMD" = "$WANT_CMD" ]; then
   ok "the job the mock STORED carries the full spaced command (round-trip intact)"
 else
-  bad "stored job command is truncated or split"
+  bad "stored job command is truncated or split" "[$SCMD]"
 fi
 
 echo ""
