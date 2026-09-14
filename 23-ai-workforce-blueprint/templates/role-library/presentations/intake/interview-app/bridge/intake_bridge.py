@@ -409,7 +409,11 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
                 note="existing live worker discovered; acknowledgement idempotent")
             return "acknowledged", f"live worker holds the run ({exec_id})"
 
-    deck_type = str(intake.get("deck_type") or "").strip()
+    # launcher.dispatch_new validates the engine's presentation_type vocabulary
+    # (from_scratch/content_personal/content_general/signature).  The sealed
+    # deck_type is a separate derived display axis (for example webinar), so
+    # passing it here rejects a valid from_scratch intake before the engine.
+    presentation_type = str(intake.get("presentation_type") or "").strip()
     client = str(intake.get("requester_chat_id") or intake.get("intake_session_id")
                  or session_id or "").strip() or "operator"
     holder = {"who": "intake-bridge", "session_id": session_id}
@@ -427,7 +431,7 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
         # ordinary Worker submissions retain the lease-derived identity.
         exec_id = str(intake.get("cc_execution_id") or _ll.mint_execution_id(lease))
         pid = launcher.dispatch_new(str(run_dir), client=client,
-                                    deck_type=deck_type, background=True)
+                                    deck_type=presentation_type, background=True)
         if isinstance(pid, int) and pid > 0:
             _ll.mark_launching(run_dir, session_id, doc, exec_id,
                                why="dispatch in flight under run lease")
@@ -447,7 +451,7 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
             _ll.mark_blocked(
                 run_dir, session_id, _ll.load(run_dir, session_id) or doc,
                 reason=f"engine dispatch permanently refused: {_refusal_summary(pid)} "
-                       f"(deck_type {deck_type!r})",
+                       f"(presentation_type {presentation_type!r})",
                 remediation=(
                     "fix the submission's deck_type/mode/model-plan (see the "
                     "refusal code in this submission's state file), correct "

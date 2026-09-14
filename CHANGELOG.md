@@ -1,3 +1,5 @@
+## [v25.0.57]  -  2026-09-14  -  Pass canonical presentation type to the presentation launcher.
+
 ## [v25.0.56]  -  2026-09-14  -  Map authenticated operator intake answers to canonical driver fields.
 
 ## [v25.0.55]  -  2026-09-14  -  Recover partial authenticated presentation intake safely.
