@@ -395,6 +395,45 @@ state_of "$B16c"
   || bad "reachable-gateway control" "$STATE/$REASON"
 
 # ---------------------------------------------------------------------------
+# 3c. A CLI THAT FAILED TO ANSWER IS NOT A CLI THAT ANSWERED "none".
+#
+# MEASURED LIVE on this box, 2026-09-14: `openclaw cron list --json --all` twice
+# printed NOTHING AT ALL and exited 0 with EMPTY STDERR -- caught by a capture loop
+# on runs 7 and 35 of 40. The reporter called it `cron_source_disagreement` /
+# `cli_hides_enabled_row` while the gateway store held the job correctly, because
+# `rrr_json_rows` treats an unparseable document as an EMPTY JOB LIST and the
+# stderr-based classification sees no stderr. So it manufactured a two-view
+# contradiction out of a CLI that never spoke.
+#
+# The fact that separates the two is SHAPE: a CLI that answered carries the
+# documented envelope. These cases pin that, with the store holding the CORRECT job
+# so the only thing wrong is the listing.
+# ---------------------------------------------------------------------------
+echo "--- 3c. an unparseable listing is a FAILED CLI, not an empty machine ---"
+for _mode in garbage empty_object; do
+  B16e="$WORK/box-cli-$_mode"
+  rr028_make_box "$B16e"
+  rr028_job "$B16e" "$(matching_job "$B16e" 17)"
+  RR028_EXTRA_ENV="RR028_MOCK_LIST_MODE=$_mode" state_of "$B16e"
+  [ "$STATE" = "ENROLLED_PENDING" ] && [ "$REASON" = "cli_unreachable" ] \
+    && printf '%s' "$RR028_OUT" | grep -q 'cli_unparseable' \
+    && ok "a $_mode listing is reported as a FAILED CLI (reason=$REASON, sub=cli_unparseable)" \
+    || bad "$_mode listing" "$STATE/$REASON"
+  [ "$(rr028_field "$RR028_OUT" cron.disagreement)" = "" ] \
+    && ok "and no two-view contradiction is manufactured for $_mode" \
+    || bad "cron.disagreement set for $_mode" "$(rr028_field "$RR028_OUT" cron.disagreement)"
+done
+# NON-VACUITY: the shape predicate must ACCEPT a real listing, or every case above
+# would pass by refusing everything.
+B16f="$WORK/box-cli-good"
+rr028_make_box "$B16f"
+rr028_job "$B16f" "$(matching_job "$B16f" 18)"
+state_of "$B16f"
+[ "$STATE" = "SCHEDULED" ] && [ "$REASON" = "ready_receipt_absent" ] \
+  && ok "control: a WELL-FORMED listing is still read and the box is SCHEDULED -- the gate discriminates" \
+  || bad "shape gate refused a good listing" "$STATE/$REASON"
+
+# ---------------------------------------------------------------------------
 # 4. DESIRED-CONFIG DIGEST KEYING
 # ---------------------------------------------------------------------------
 echo "--- 4. readiness keyed by the desired-config digest ---"

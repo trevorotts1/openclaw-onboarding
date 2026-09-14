@@ -193,6 +193,18 @@ if action == "list":
         # collide would silently move this case into the other class.
         sys.stderr.write("mock: cron store unreadable\n")
         sys.exit(1)
+    if os.environ.get("RR028_MOCK_LIST_MODE") == "garbage":
+        # THE MEASURED LIVE SHAPE (2026-09-14): the CLI prints something that is NOT
+        # the documented envelope -- here non-JSON -- and exits 0 with EMPTY stderr.
+        # This is what `openclaw cron list --json --all` did twice in 40 stress runs
+        # on this box, and the engine read it as "the gateway has no jobs" because
+        # `rrr_json_rows` treats an unparseable document as an empty job list.
+        sys.stdout.write(os.environ.get("RR028_MOCK_LIST_GARBAGE", "not json at all") + "\n")
+        sys.exit(0)
+    if os.environ.get("RR028_MOCK_LIST_MODE") == "empty_object":
+        # A dict with neither `jobs` nor `job`: parses, but is not a listing.
+        sys.stdout.write('{"ok":true}\n')
+        sys.exit(0)
     if os.environ.get("RR028_MOCK_LIST_MODE") == "gateway_down":
         # THE REAL FAILURE FORM, measured live on this operator box:
         #   $ openclaw cron list
