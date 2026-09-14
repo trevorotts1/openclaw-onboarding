@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.4.3"
+  version: "v23.4.4"
   priority: HIGH
 ---
 
@@ -69,7 +69,12 @@ pre-proven local delivery command, and acks the verdict.
   name: agreement corroborates; a contradiction
   (`cron_source_disagreement`) refuses, and a store row the CLI's listing does
   not show is reported `unconfirmed` (`store_row_omitted_by_cli`) — never
-  `corroborated` — and licenses nothing either. The legacy-name cleanup that
+  `corroborated` — and licenses nothing either. A CLI that could not ANSWER is
+  not a view that answered "none": a gateway the box cannot reach (measured: the
+  CLI prints `Gateway not reachable at ws://… (ECONNREFUSED)` to stderr and exits
+  0) is reported `cli_unreachable` and nothing is compared at all — an empty
+  listing from a failed command is never turned into a two-view contradiction
+  against the store. The legacy-name cleanup that
   runs before reconciliation is a removal too and goes through the same guard.
 - Requires `65-rescue-receiver/rescue-poll.sh` and
   `65-rescue-receiver/rr-readiness.sh` to exist under the box's skills dir; the

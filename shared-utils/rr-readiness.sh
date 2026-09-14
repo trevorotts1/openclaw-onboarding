@@ -159,6 +159,12 @@ RRR_URL=""; RRR_SLUG=""; RRR_TOKEN_COMMIT=""
 RRR_SALT_STATE=""; RRR_DIGEST=""; RRR_DIGEST_STATE=""
 RRR_RUNTIME_ID=""; RRR_RUNTIME_STATE=""; RRR_PLATFORM=""; RRR_TARGET_MODE=""; RRR_TARGET_ID=""
 RRR_RB_STATE=""; RRR_JOBS=""; RRR_DB_STATE="none"; RRR_COVERAGE="none"
+# Did the CLI FAIL, as opposed to answer with nothing? An empty stdout from a
+# command that could not reach the gateway is NOT a machine with no cron jobs.
+# Treating it as one manufactures a contradiction against the store
+# (`cli_hides_enabled_row`) out of a broken connection. UNOBSERVABLE IS NOT
+# ABSENT -- the same rule this engine applies to the enabled bit.
+RRR_CLI_FAILURE=""
 # Can this readback PROVE a disabled job's absence? A CLI fact ONLY:
 # "full" = the CLI advertised a full-status listing flag and was ASKED for one,
 # so its listing carries disabled rows and an absence in it is proof;
@@ -656,6 +662,7 @@ token=$RRR_TOKEN_COMMIT"
 # ---------------------------------------------------------------------------
 rrr_cron_readback() {
     RRR_RB_STATE=""; RRR_JOBS=""; RRR_DB_STATE="none"; RRR_CRON_SOURCES=""; RRR_COVERAGE="none"
+    RRR_CLI_FAILURE=""
     RRR_CRON_VISIBILITY="unknown"
     _rrr_rb_tmp="$(mktemp "${TMPDIR:-/tmp}/rr028-readback.XXXXXX" 2>/dev/null)" || {
         RRR_RB_STATE="unreadable"; return 1; }
@@ -691,6 +698,27 @@ rrr_cron_readback() {
             fi
         else
             RRR_RB_STATE="cli_unreadable"
+            # WHY it is unreadable matters. A gateway this box cannot reach yields
+            # empty stdout from a CLI that still exits 0 (measured: the CLI prints
+            # "Gateway not reachable at ws://127.0.0.1:18789 (ECONNREFUSED)" to
+            # stderr and returns 0). Calling that an answer turns it into a FALSE
+            # CONTRADICTION against the gateway store -- reported as
+            # `cli_hides_enabled_row`, which says the gateway own listing hides a
+            # job it actually has. Name it instead, so an operator sees a gateway
+            # that is down rather than a cron that disagrees with itself.
+            _rrr_rb_err="$(cat "$_rrr_rb_tmp.err" 2>/dev/null)"
+            case "$_rrr_rb_err" in
+                *ECONNREFUSED*|*"not reachable"*)
+                    RRR_CLI_FAILURE="gateway_unreachable" ;;
+                *)
+                    # ANY stderr at all is a failure. A command that succeeded has
+                    # nothing to complain about, so silence is the only sound that
+                    # means "I answered, and the answer was empty". The real CLI
+                    # prints its gateway complaint to stderr and exits 0 (measured),
+                    # so an rc test alone would miss it -- which is exactly how the
+                    # fabricated disagreement reached a live box.
+                    if [ -n "$_rrr_rb_err" ]; then RRR_CLI_FAILURE="cli_error"; fi ;;
+            esac
         fi
     fi
     # ---- DB view (authoritative, and the only one that shows disabled jobs) --
@@ -1055,6 +1083,21 @@ rrr_cron_eval() {
     RRR_CRON_MATCH_IDS="${RRR_CRON_MATCH_IDS# }"
     RRR_CRON_UNOBS="${RRR_CRON_UNOBS#,}"
     RRR_CRON_DISAGREE="${RRR_CRON_DISAGREE#,}"
+    # FAIL CLOSED BEFORE ANY COMPARISON (see RRR_CLI_FAILURE). A CLI that could not
+    # answer did not answer "none": comparing an empty listing against the store
+    # would invent a disagreement between two views when only ONE was ever read.
+    #
+    # SCOPED DELIBERATELY. This fires only when the store has NO row for the managed
+    # name -- i.e. when NOTHING was observed at all and an empty CLI listing would be
+    # the only "evidence". When the store DOES carry a row, the engine must keep its
+    # existing, reviewed verdict for a store-only match: `cron_store_unconfirmed`
+    # (a store may veto, never establish). Short-circuiting that case would replace a
+    # precise verdict with a vaguer one, and the battery caught exactly that when
+    # this guard was first written unscoped.
+    if [ -n "$RRR_CLI_FAILURE" ] && [ -z "$RRR_CRON_DB_IDS" ]; then
+        RRR_CRON_STATE="cli_failed"
+        return 0
+    fi
     rrr_cron_store_authority
     if [ "$RRR_CRON_COUNT" -eq 0 ]; then
         case "$RRR_COVERAGE" in
@@ -1463,6 +1506,13 @@ rrr_evaluate() {
             # can license a write and no readiness is claimed.
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_source_disagreement"
             RRR_DETAIL="the CLI's own listing and the gateway store DISAGREE about $RRR_NAME ($RRR_CRON_DISAGREE): a store that does not reflect the gateway licenses nothing and proves nothing. Nothing was mutated. Point the descriptor at the gateway's live state DB (or remove the stale candidate) and reconcile again." ;;
+        cli_failed)
+            # The CLI could not be read because the GATEWAY did not answer. That is
+            # neither a disagreement between two views nor an absent cron: it is an
+            # UNOBSERVED one. Nothing is mutated, and the reason names the gateway so
+            # the operator repairs the connection rather than chasing a phantom cron.
+            RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cli_unreachable"
+            RRR_DETAIL="the openclaw CLI could not read the gateway cron state ($RRR_CLI_FAILURE), so NOTHING was observed about $RRR_NAME -- the gateway store was NOT consulted as a substitute and no disagreement is claimed. Repair or start the gateway, then re-run." ;;
         cli_visibility_insufficient)
             # FAIL CLOSED (RR-028 review M-1, widened by re-review Z-1). The CLI
             # listed nothing, but no view that can show a DISABLED job was

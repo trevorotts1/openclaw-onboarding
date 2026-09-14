@@ -316,8 +316,83 @@ B16="$WORK/box-unreadable"
 rr028_make_box "$B16"
 rr028_job "$B16" "$(matching_job "$B16")"
 RR028_EXTRA_ENV="RR028_MOCK_LIST_MODE=unreadable" state_of "$B16"
-[ "$STATE" = "ENROLLED_PENDING" ] && [ "$REASON" = "cron_readback_unreadable" ] \
-  && ok "an UNREADABLE readback is never a success (reason=$REASON)" || bad "unreadable readback" "$STATE/$REASON"
+# THE REASON IS NOW `cli_unreachable`, NOT `cron_readback_unreadable`. The state and
+# the fail-closed conclusion are unchanged (ENROLLED_PENDING, nothing claimed, rc 2);
+# what changed is that a CLI which FAILED is no longer described with the same word
+# as a CLI that answered nothing. The two cases are different failures with different
+# remedies -- a broken gateway versus an unreadable store -- and both are now named
+# after the actual one. Asserting the specific sub-reason keeps this case from
+# passing for the wrong reason.
+[ "$STATE" = "ENROLLED_PENDING" ] && [ "$REASON" = "cli_unreachable" ] \
+  && printf '%s' "$RR028_OUT" | grep -q 'cli_error' \
+  && ok "a CLI that FAILED (non-zero rc) is never a success and is named (reason=$REASON)" \
+  || bad "unreadable readback" "$STATE/$REASON"
+
+# ---------------------------------------------------------------------------
+# 3b. THE GATEWAY IS DOWN -- an empty listing is NOT an empty machine.
+#
+# MEASURED LIVE on the operator box, 2026-09-14:
+#   $ openclaw cron list
+#   Gateway not reachable at ws://127.0.0.1:18789 (ECONNREFUSED).
+#   ... exit 0, stdout EMPTY
+# `cron list --help` keeps working (it reads no gateway state), so the engine's
+# visibility probe had ALREADY succeeded and set visibility=full before the
+# listing came back empty. The engine then compared that emptiness against the
+# gateway's own store, found the enabled row the CLI "hid", and reported
+#   ENROLLED_PENDING / cron_source_disagreement
+#   cron=store_diverged  disagreement=cli_hides_enabled_row(id=...)
+# which says the gateway's OWN listing contradicts its OWN store. That is a
+# fabricated contradiction: only ONE view was ever read. UNOBSERVABLE IS NOT
+# ABSENT -- the rule this engine already applies to the enabled bit.
+#
+# The stub below models the real stdout/stderr/exit shape, so this case cannot
+# pass by accident on a build that fails differently.
+# ---------------------------------------------------------------------------
+echo "--- 3b. an UNREACHABLE GATEWAY is named, not turned into a disagreement ---"
+B16b="$WORK/box-gw-down"
+rr028_make_box "$B16b"
+# The store carries the correct job, so the ONLY thing wrong is the connection.
+rr028_job "$B16b" "$(matching_job "$B16b" 14)"
+RR028_EXTRA_ENV="RR028_MOCK_LIST_MODE=gateway_down" state_of "$B16b"
+[ "$STATE" = "ENROLLED_PENDING" ] && [ "$REASON" = "cli_unreachable" ] \
+  && ok "an unreachable gateway reports cli_unreachable (reason=$REASON)" \
+  || bad "gateway-down readback" "$STATE/$REASON"
+# CONTROL, and the defect itself: the reason must NOT blame the cron.
+if [ "$REASON" = "cron_source_disagreement" ]; then
+  bad "the empty listing was turned into a two-view CONTRADICTION (cli_hides_enabled_row) out of a dead connection"
+else
+  ok "control: no fabricated cron_source_disagreement is reported"
+fi
+# The disagreement field must be empty, and the store must not be called diverged.
+[ "$(rr028_field "$RR028_OUT" cron.disagreement)" = "" ] \
+  && ok "control: cron.disagreement is empty -- no two-view contradiction is claimed" \
+  || bad "cron.disagreement is not empty" "$(rr028_field "$RR028_OUT" cron.disagreement)"
+[ "$(rr028_field "$RR028_OUT" cron.store)" != "diverged" ] \
+  && ok "control: the gateway store is not reported as diverged (it was never compared)" \
+  || bad "the store was reported diverged although the CLI never answered" "$(rr028_field "$RR028_OUT" cron.store)"
+
+# THE SAME FAILURE, THE OTHER SHAPE: the identical gateway complaint written by a
+# CLI that exits NON-ZERO. Both shapes are one failure class -- the real CLI was
+# measured exiting 0, and a build that exits 1 must not be read as an answer either.
+B16d="$WORK/box-gw-down-rc1"
+rr028_make_box "$B16d"
+rr028_job "$B16d" "$(matching_job "$B16d" 16)"
+RR028_EXTRA_ENV="RR028_MOCK_LIST_MODE=gateway_down RR028_MOCK_LIST_EXIT=1" state_of "$B16d"
+[ "$STATE" = "ENROLLED_PENDING" ] && [ "$REASON" = "cli_unreachable" ] \
+  && ok "a gateway failure that ALSO exits non-zero is the same class (reason=$REASON)" \
+  || bad "non-zero gateway failure" "$STATE/$REASON"
+[ "$(rr028_field "$RR028_OUT" cron.disagreement)" = "" ] \
+  && ok "control: still no two-view contradiction on the non-zero shape" \
+  || bad "cron.disagreement set on the non-zero shape" "$(rr028_field "$RR028_OUT" cron.disagreement)"
+# ...and the same stub WITH a readable gateway is still SCHEDULED: the case above
+# is about the connection, not about the fixture being broken.
+B16c="$WORK/box-gw-up"
+rr028_make_box "$B16c"
+rr028_job "$B16c" "$(matching_job "$B16c" 15)"
+state_of "$B16c"
+[ "$STATE" = "SCHEDULED" ] && [ "$REASON" = "ready_receipt_absent" ] \
+  && ok "control: the SAME fixture with a reachable gateway is SCHEDULED -- the case above measures the connection" \
+  || bad "reachable-gateway control" "$STATE/$REASON"
 
 # ---------------------------------------------------------------------------
 # 4. DESIRED-CONFIG DIGEST KEYING
