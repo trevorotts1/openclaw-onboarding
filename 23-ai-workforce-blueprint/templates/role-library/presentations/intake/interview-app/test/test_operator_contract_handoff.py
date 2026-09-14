@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import os
@@ -222,3 +223,19 @@ def test_optional_boolean_and_yes_no_types_allow_unselected_extras_without_coerc
     candidate['want_audio_demo'] = False
     candidate['want_ghl_upload'] = 'no'
     assert bridge.validate_operator_contract(candidate)['want_audio_demo'] is False
+
+def test_general_mode_contract_recovers_receipt_only_run(tmp_path):
+    payload = contract()
+    payload['answers']['mode'] = 'general'
+    rd = tmp_path / 'receipt-only'
+    (rd / 'working' / 'interview').mkdir(parents=True)
+    receipt = {
+        'version': 1, 'source': 'operator-delegated', 'receipt_hmac': 'stable',
+        'contract_sha256': hashlib.sha256(bridge._canonical_contract_bytes(payload)).hexdigest(),
+        'task_id': payload['task_id'], 'execution_id': payload['execution_id'], 'title': payload['title'],
+    }
+    (rd / 'working' / 'interview' / 'operator_contract.json').write_text(json.dumps(receipt))
+    result = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='stable')
+    intake = json.loads((rd / 'working' / 'copy' / 'intake.json').read_text())
+    assert result['driver_complete'] is True
+    assert intake['run_mode'] == 'ultra'
