@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.4.2"
+  version: "v23.4.3"
   priority: HIGH
 ---
 
@@ -46,22 +46,31 @@ pre-proven local delivery command, and acks the verdict.
   are collapsed, and command / schedule / enabled / delivery flags are compared
   and repaired (`cron edit` in place, else replace) with a FRESH readback after
   every write. A write that does not read back is never reported as success.
+  A row the readback cannot corroborate, or whose `enabled` bit no view reports,
+  is REFUSED rather than repaired (see the store/unobservable rules below).
   Reconciliation reads NO software version, so it is not gated by a
   `.wired-<version>` sentinel and gives the same verdict across a version
   change. `wire.sh`'s exit code is the INSTALLER's claim (files installed) — it
   is never "receiver ready".
-- RR-028 re-review (23.4.2) — the gateway STORE may VETO, never LICENSE. The
-  store is a file the descriptor resolved (`ocd_state_db` accepts any readable
-  candidate sqlite with >=1 table), so "a store resolved" is not "this store
-  reflects the gateway". An ADD therefore requires the CLI's OWN listing to have
-  been asked for a full-status flag (`--all` / `--include-disabled` /
-  `--show-disabled`, advertised by that CLI) and to have reported nothing; and a
-  REMOVAL additionally requires the gateway's own listing to show the row and
-  the row never to have been seen DISABLED (a job the operator switched off is
-  never deleted, exactly as it is never re-enabled). The store is compared
-  against the CLI's listing for the managed name: agreement corroborates,
-  contradiction (`cron_source_disagreement`) or a store-only row without a
-  readable CLI listing (`cron_store_unconfirmed`) refuses and claims nothing.
+- RR-028 re-review (23.4.2, tightened by final review 23.4.3) — the gateway STORE
+  may VETO, never LICENSE. The store is a file the descriptor resolved
+  (`ocd_state_db` accepts any readable candidate sqlite with >=1 table), so "a
+  store resolved" is not "this store reflects the gateway". An ADD therefore
+  requires the CLI's OWN listing to have been asked for a full-status flag
+  (`--all` / `--include-disabled` / `--show-disabled`, advertised by that CLI)
+  and to have reported nothing; and a REMOVAL additionally requires the
+  gateway's own listing to show the row, the row to have been OBSERVED with
+  `enabled=true`, and never to have been seen DISABLED. A job the
+  operator switched off is never deleted, exactly as it is never re-enabled —
+  and a row whose `enabled` bit NO view reports is never edited, replaced or
+  removed either: the reconciler refuses (`enabled_unobservable`, rc 8, nothing
+  mutated, nothing claimed), because "we could not see it" must never authorise
+  destroying it. The store is compared against the CLI's listing for the managed
+  name: agreement corroborates; a contradiction
+  (`cron_source_disagreement`) refuses, and a store row the CLI's listing does
+  not show is reported `unconfirmed` (`store_row_omitted_by_cli`) — never
+  `corroborated` — and licenses nothing either. The legacy-name cleanup that
+  runs before reconciliation is a removal too and goes through the same guard.
 - Requires `65-rescue-receiver/rescue-poll.sh` and
   `65-rescue-receiver/rr-readiness.sh` to exist under the box's skills dir; the
   skill dir ships via the normal update-skills roll.

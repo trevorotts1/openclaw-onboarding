@@ -82,6 +82,22 @@ state_of() {
   REASON="$(rr028_field "$RR028_OUT" reason)"
 }
 
+# no_enabled_job <box> [id] [overrides-json] — a MANAGED row that carries NO
+# `enabled` key: the shape a build whose job JSON omits the bit writes, where
+# the engine cannot tell an operator-DISABLED job from an ENABLED one.
+no_enabled_job() {
+  _box="$1"; _id="${2:-1}"; _ov="${3:-}"
+  _cmd="sh $_box/.openclaw/skills/65-rescue-receiver/rescue-poll.sh"
+  _base="{\"id\":\"$_id\",\"name\":\"rescue-rr-box-poll\",\"schedule\":{\"kind\":\"cron\",\"expr\":\"*/2 * * * *\"},\"payload\":{\"kind\":\"command\",\"command\":\"$_cmd\"},\"delivery\":{\"mode\":\"none\"}}"
+  if [ -n "$_ov" ]; then
+    RR028_BASE="$_base" RR028_OV="$_ov" python3 -c '
+import json, os
+b = json.loads(os.environ["RR028_BASE"]); b.update(json.loads(os.environ["RR028_OV"])); print(json.dumps(b))'
+  else
+    printf '%s' "$_base"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # 0. CONTROL — the harness can SEE the top state. A box with a readback-matching
 #    job AND a verified safe-claim receipt reports VERIFIED. If this control
@@ -164,6 +180,51 @@ state_of "$B6"
   && ok "SCHEDULED: readback matches, no verified receipt (reason=$REASON)" || bad "SCHEDULED" "$STATE/$REASON"
 
 # VERIFIED is section 0's control.
+
+# ---------------------------------------------------------------------------
+# 1b. AD-2 (RR-028 review): A ROW WHOSE `enabled` BIT NO VIEW REPORTS.
+#
+# The CLI's own listing shows a managed job that carries no `enabled` key at
+# all — so the engine cannot tell a job the operator switched OFF from an
+# ENABLED one. The state machine must say exactly that (a NAMED reason, not a
+# bare field mismatch), never claim SCHEDULED, and the reconciler must not
+# touch the row (the wire battery drives the mutation half, scenarios S/G/Q).
+# Covered here at CLI-only coverage: the refusal is about the unobserved bit
+# itself, not about the store.
+# ---------------------------------------------------------------------------
+echo "--- 1b. AD-2: the enabled bit is unobservable (a NAMED reason, never SCHEDULED) ---"
+B6U="$WORK/box-unobservable"
+rr028_make_box "$B6U"
+rr028_job "$B6U" "$(no_enabled_job "$B6U" 7)"
+state_of "$B6U"
+[ "$STATE" = "ENROLLED_PENDING" ] \
+  && ok "AD-2: an enabled-unobservable row is ENROLLED_PENDING, never SCHEDULED" \
+  || bad "unobservable row claimed a verdict" "$STATE/$REASON"
+[ "$REASON" = "cron_enabled_unobservable" ] \
+  && ok "AD-2: the reason NAMES the fault (cron_enabled_unobservable)" \
+  || bad "reason does not name the unobservable bit" "$STATE/$REASON"
+[ "$(rr028_field "$RR028_OUT" cron.state)" = "mismatch" ] \
+  && ok "AD-2: the cron readback state is mismatch (the row exists but is not the desired config)" \
+  || bad "cron state wrong" "$(rr028_field "$RR028_OUT" cron.state)"
+printf '%s' "$(rr028_field "$RR028_OUT" cron.unobservable)" | grep -q 'enabled' \
+  && ok "AD-2: the unobservable field is reported by name (enabled)" \
+  || bad "unobservable field not reported" "$(rr028_field "$RR028_OUT" cron.unobservable)"
+printf '%s' "$RR028_OUT" | grep -q 'tok-synthetic' && bad "report leaked a value" \
+  || ok "the unobservable report is still value-free"
+# CONTROL: the identical row WITH a boolean enabled is a different, honest
+# verdict — the observer can see the opposite, so 1b is not vacuous.
+rr028_make_box "$WORK/box-unobservable-control"
+rr028_job "$WORK/box-unobservable-control" "$(matching_job "$WORK/box-unobservable-control" 7)"
+RR028_JOBS="$WORK/box-unobservable-control/jobs.json" python3 -c '
+import json, os, sys
+p = os.environ["RR028_JOBS"]
+d = json.load(open(p, encoding="utf-8"))
+d["jobs"][0]["enabled"] = False
+json.dump(d, open(p, "w", encoding="utf-8"))'
+state_of "$WORK/box-unobservable-control"
+[ "$REASON" = "cron_disabled_by_owner" ] \
+  && ok "AD-2 control: the SAME row with an observable enabled=false is cron_disabled_by_owner" \
+  || bad "control reason" "$STATE/$REASON"
 
 # ---------------------------------------------------------------------------
 # 2. ALL SIX REQUIRED RESOLUTIONS ARE REAL (slug / token / URL / parser /

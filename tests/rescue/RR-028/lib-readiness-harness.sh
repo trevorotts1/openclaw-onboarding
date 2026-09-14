@@ -148,7 +148,10 @@ if action == "list" and "--help" in rest:
     # RR028_MOCK_NO_ALL=1 therefore makes the help text consistent with the list
     # behaviour: no flag is offered, so the engine cannot tell "absent" from
     # "present but disabled" and must refuse to mutate.
-    if os.environ.get("RR028_MOCK_NO_ALL") == "1":
+    # RR028_MOCK_LIE_ALL=1 models precisely the LYING build the docs call a
+    # documented residual: it ADVERTISES --all in --help (so the engine asks for
+    # it and trusts the listing) and then hides a disabled job anyway.
+    if os.environ.get("RR028_MOCK_NO_ALL") == "1" and os.environ.get("RR028_MOCK_LIE_ALL") != "1":
         print("usage: openclaw cron list [--json]")
         print("  --json")
     else:
@@ -163,7 +166,15 @@ if action == "list":
         sys.exit(1)
     d = load()
     show_all = flag("--all") and os.environ.get("RR028_MOCK_NO_ALL") != "1"
-    jobs = d["jobs"] if show_all else [j for j in d["jobs"] if j.get("enabled", True)]
+    if os.environ.get("RR028_MOCK_LIST_ALL_DEFAULT") == "1":
+        # A build whose DEFAULT `cron list --json` lists EVERY job, disabled
+        # ones included. Each row still carries its own `enabled` value (or
+        # omits it), so the engine can refuse to touch a disabled row — but the
+        # historical legacy-cleanup `cron list --json | grep` + `cron rm` path
+        # saw the disabled row, resolved its id and DELETED it (AD-6).
+        jobs = d["jobs"]
+    else:
+        jobs = d["jobs"] if show_all else [j for j in d["jobs"] if j.get("enabled", True)]
     print(json.dumps({"jobs": jobs}))
     sys.exit(0)
 
@@ -379,6 +390,27 @@ PY
 # rr028_calls_with <box> <substring> — argv blocks containing a token.
 rr028_calls_with() {
   rr028_argv_blocks "$1" | grep -F -- "$2" || true
+}
+
+# ---------------------------------------------------------------------------
+# rr028_mutating_argv <box> — the recorded argv vectors that would MUTATE cron
+# state: add / rm / remove / delete / edit / disable / enable, EXCLUDING the
+# read-only `--help` capability probes the ladder runs before a mutation.
+#
+# A "nothing was mutated" assertion must use THIS, not a `cron.edit` substring
+# match: `cron edit --help` is a probe, and it is issued on paths that
+# deliberately mutate nothing. Prints one argv vector per line (elements joined
+# with \x1f, as rr028_argv_blocks does).
+# ---------------------------------------------------------------------------
+rr028_mutating_argv() {
+  rr028_argv_blocks "$1" | python3 -c '
+import sys
+verbs = {"add", "rm", "remove", "delete", "edit", "disable", "enable"}
+for line in sys.stdin:
+    b = line.rstrip("\n").split("\x1f")
+    if len(b) >= 2 and b[0] == "cron" and b[1] in verbs and "--help" not in b:
+        sys.stdout.write(line)
+'
 }
 
 # ---------------------------------------------------------------------------

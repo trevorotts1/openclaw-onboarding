@@ -79,9 +79,13 @@
 # independent of what the CLI's help advertises. A CLI that advertises the flag
 # IS asked for it and its listing IS trusted; a build that advertises the flag
 # and then hides a disabled job anyway is indistinguishable from an honest build
-# by any input this engine has, and is a documented residual (see the CHANGELOG).
-# What the rule no longer does is take a resolved gateway STORE as a substitute
-# for a full-status CLI listing.
+# IN-BAND — by the CLI's own answers alone — and is a documented residual (see
+# the CHANGELOG). It is NOT indistinguishable by every input this engine has:
+# when a resolved gateway store carries the hidden row, the contradiction is
+# detected (`store_diverged`, `cli_all_omits_disabled_row(id=…)`, rc 4, nothing
+# mutated, nothing claimed), which is what the `store_diverged` check below is
+# for. What the rule no longer does is take a resolved gateway STORE as a
+# substitute for a full-status CLI listing.
 #
 # THE STORE MAY VETO, NEVER LICENSE (Z-1). RRR_DB comes from
 # shared-utils/oc-env-descriptor.sh `ocd_state_db`, which accepts ANY readable
@@ -91,16 +95,37 @@
 #   * may VETO a write (a DISABLED row it carries => leave the job alone, rc 6);
 #   * may CORROBORATE (its rows for the managed name must agree with the CLI's
 #     own listing — a contradiction makes the whole readback `store_diverged`,
-#     which licenses nothing and claims nothing);
-#   * may never LICENSE an add or a removal. Absence is licensed by the CLI's own
-#     full-status listing only, and a removal additionally requires the gateway's
-#     own listing to show the row and the row never to have been seen DISABLED —
-#     removing a job the operator switched off destroys operator intent exactly
-#     as re-enabling it would.
+#     which licenses nothing and claims nothing; and a row the CLI's listing
+#     does not show leaves the store merely `unconfirmed`, never
+#     `corroborated` — AD-1);
+#   * may never LICENSE an add, an edit or a removal. Absence is licensed by the
+#     CLI's own full-status listing only, and a removal additionally requires the
+#     gateway's own listing to show the row, to have OBSERVED its enabled bit,
+#     and never to have seen it DISABLED.
 # The cost is deliberate and one-sided — a box whose CLI cannot list disabled
 # jobs stays unregistered (and says so, with the remedy) rather than risking the
 # operator's job, and the remedy is a CLI that advertises the flag, never "make
 # the state DB readable".
+#
+# UNOBSERVABLE IS NOT ABSENT (RR-028 review AD-2/AD-7). When a row is present
+# and NO view reports its `enabled` bit, the engine cannot tell an
+# operator-DISABLED job from an ENABLED one. Deletion is destructive and
+# irreversible, so the ladder REFUSES to edit, replace or remove such a row
+# (`enabled_unobservable`, rc 8, nothing mutated, nothing claimed) instead of
+# guessing the switch state. This is the CLI-blind-spot rule of the paragraph
+# above applied to the bit itself, not a special case: the same reasoning covers
+# a `disabled` value that is not a boolean (e.g. the string "true"), because an
+# unparseable bit is an unobserved bit.
+#
+# THE MIRROR COST (RR-028 review AD-5). Because the CLI's own listing is the
+# only view that may corroborate the store, a STALE or EMPTY resolved store now
+# reds a box that is genuinely scheduled: the CLI shows the one correct job, the
+# store carries no row for it, `store_missing_row` makes the readback
+# `store_diverged` and the box reports ENROLLED_PENDING/cron_source_disagreement
+# with rc 4 and nothing mutated. That is deliberate (a store that does not
+# reflect the gateway licenses nothing) and the detail names the remedy; it is
+# documented here and in the CHANGELOG so a red roll is not mistaken for a
+# broken box.
 #
 # POSIX sh, safe to source under `set -u`; bash 3.2 compatible (no arrays, no
 # ${var,,}, no local). Never executes the enrollment store. Never exports a
@@ -139,18 +164,30 @@ RRR_RB_STATE=""; RRR_JOBS=""; RRR_DB_STATE="none"; RRR_COVERAGE="none"
 # this value (re-review Z-1: a store that resolves is not a store that reflects
 # the gateway) — the store is reported separately as RRR_DB_AUTHORITY.
 RRR_CRON_VISIBILITY="unknown"
-# What the resolved store is worth (re-review Z-1): "none" = no store resolved;
-# "corroborated" = it agrees with the CLI's own listing about the managed name;
+# What the resolved store is worth (re-review Z-1, widened by review AD-1):
+# "none" = no store resolved; "corroborated" = EVERY row it carries for the
+# managed name is matched by the CLI's own listing and vice versa;
 # "diverged" = it contradicts that listing, so nothing it says is proof and no
 # write is licensed by it; "unconfirmed" = no readable CLI listing to check it
-# against, so it may still veto but can never establish readiness on its own.
+# against, OR a row for the managed name the CLI's listing does not show — so it
+# may still veto but can never establish readiness on its own, and it is never
+# reported as corroborated.
 RRR_DB_AUTHORITY="none"
 RRR_CRON_STATE=""; RRR_CRON_COUNT=0; RRR_CRON_ID=""
 RRR_CRON_SCHEDULE=""; RRR_CRON_COMMAND=""; RRR_CRON_ENABLED=""; RRR_CRON_DELIVERY=""
 RRR_CRON_MISMATCH=""; RRR_CRON_UNOBS=""; RRR_CRON_DISAGREE=""
 RRR_CRON_IDS=""; RRR_CRON_MATCH_IDS=""; RRR_CRON_DISABLED_DIRECT=0; RRR_CRON_SOURCES=""
-# Which view showed each id of the managed name, and which were seen DISABLED.
+# Which view showed each id of the managed name, which were seen DISABLED, and
+# which were seen with an OBSERVABLE enabled bit at all.
 RRR_CRON_CLI_IDS=""; RRR_CRON_DB_IDS=""; RRR_CRON_DB_ENABLED_IDS=""; RRR_CRON_DISABLED_IDS=""
+RRR_CRON_ENABLED_IDS=""
+# 1 when SOME view reported a boolean `enabled` for the managed name. At 0 the
+# readback cannot tell an operator-DISABLED job from an ENABLED one, so the
+# ladder must not edit, replace or remove the row (see the header rule).
+RRR_CRON_ENABLED_OBSERVED=0
+# Why a store that DID resolve was still not corroborated (a row the CLI's own
+# listing does not show). Reported as `cron.store_note`; never a disagreement.
+RRR_CRON_STORE_NOTE=""
 RRR_TOMBSTONED=0
 RRR_RECEIPT_STATE=""; RRR_RECEIPT_AT=""; RRR_RECEIPT_RUNTIME=""; RRR_RECEIPT_DETAIL=""
 RRR_RECONCILE_STATE=""; RRR_RECONCILE_ACTION=""; RRR_RECONCILE_RC=0
@@ -680,6 +717,7 @@ rrr_cron_eval() {
     RRR_CRON_SCHEDULE=""; RRR_CRON_COMMAND=""; RRR_CRON_ENABLED=""; RRR_CRON_DELIVERY=""
     RRR_CRON_DISABLED_DIRECT=0
     RRR_CRON_CLI_IDS=""; RRR_CRON_DB_IDS=""; RRR_CRON_DB_ENABLED_IDS=""; RRR_CRON_DISABLED_IDS=""
+    RRR_CRON_ENABLED_IDS=""; RRR_CRON_ENABLED_OBSERVED=0; RRR_CRON_STORE_NOTE=""
     RRR_DB_AUTHORITY="none"
     _rrr_ce_wantcmd="sh $RRR_POLL"
     _rrr_ce_seen=""
@@ -717,6 +755,14 @@ rrr_cron_eval() {
                  [ "$_rrr_ce_en" = "true" ] && RRR_CRON_DB_ENABLED_IDS="$RRR_CRON_DB_ENABLED_IDS $_rrr_ce_id" ;;
         esac
         [ "$_rrr_ce_en" = "false" ] && RRR_CRON_DISABLED_IDS="$RRR_CRON_DISABLED_IDS $_rrr_ce_id"
+        # Did ANY view report a boolean `enabled` for this name? A row whose
+        # enabled bit no view reports cannot be told apart from an
+        # operator-disabled one, and it is protected on every mutating path.
+        case "$_rrr_ce_en" in
+            true)  RRR_CRON_ENABLED_OBSERVED=1
+                   RRR_CRON_ENABLED_IDS="$RRR_CRON_ENABLED_IDS $_rrr_ce_id" ;;
+            false) RRR_CRON_ENABLED_OBSERVED=1 ;;
+        esac
         # unobservable fields (per view)
         if [ -n "$_rrr_ce_miss" ] && [ "$_rrr_ce_miss" != "$RRR_RS" ]; then
             RRR_CRON_UNOBS="${RRR_CRON_UNOBS}${RRR_CRON_UNOBS:+,}$_rrr_ce_miss"
@@ -839,10 +885,16 @@ rrr_cron_eval() {
 #     view should have shown it — an ENABLED job is listed by every build, and a
 #     DISABLED one is listed by a build that was ASKED for a full-status flag
 #     (an unobservable enabled bit is a coverage gap, not a contradiction),
-# is a contradiction: RRR_DB_AUTHORITY="diverged". With a readable CLI listing
-# and no contradiction the store is "corroborated"; with no readable CLI listing
-# it is "unconfirmed" (it may veto, never establish).
-# Contradictions are appended to RRR_CRON_DISAGREE, the existing report field.
+# is a contradiction: RRR_DB_AUTHORITY="diverged". A row the store carries that
+# the CLI's listing does not show, and that is NOT provably contradictory, is
+# still NOT a corroborated row: the store is then "unconfirmed" — it may veto a
+# write, but it never establishes readiness and is never reported as
+# corroborated (RR-028 review AD-1). With every store row matched by the CLI's
+# own listing and vice versa the store is "corroborated"; with no readable CLI
+# listing it is "unconfirmed" (it may veto, never establish).
+# Contradictions are appended to RRR_CRON_DISAGREE, the existing report field;
+# a merely-uncorroborated row is reported as RRR_CRON_STORE_NOTE (a coverage
+# gap, NOT a disagreement).
 # ---------------------------------------------------------------------------
 rrr_cron_store_authority() {
     RRR_DB_AUTHORITY="none"
@@ -852,6 +904,7 @@ rrr_cron_store_authority() {
         *) RRR_DB_AUTHORITY="unconfirmed"; return 0 ;;
     esac
     _rrr_csa_div=""
+    _rrr_csa_unconf=""
     for _rrr_csa_id in $RRR_CRON_CLI_IDS; do
         case " $RRR_CRON_DB_IDS " in
             *" $_rrr_csa_id "*) : ;;
@@ -863,18 +916,32 @@ rrr_cron_store_authority() {
             *" $_rrr_csa_id "*) continue ;;
         esac
         case " $RRR_CRON_DB_ENABLED_IDS " in
-            *" $_rrr_csa_id "*) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}cli_hides_enabled_row(id=$_rrr_csa_id)" ;;
-            *)
-                if [ "$RRR_CRON_VISIBILITY" = "full" ]; then
-                    case " $RRR_CRON_DISABLED_IDS " in
-                        *" $_rrr_csa_id "*) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}cli_all_omits_disabled_row(id=$_rrr_csa_id)" ;;
-                    esac
-                fi ;;
+            *" $_rrr_csa_id "*) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}cli_hides_enabled_row(id=$_rrr_csa_id)"; continue ;;
         esac
+        if [ "$RRR_CRON_VISIBILITY" = "full" ]; then
+            case " $RRR_CRON_DISABLED_IDS " in
+                *" $_rrr_csa_id "*) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}cli_all_omits_disabled_row(id=$_rrr_csa_id)"; continue ;;
+            esac
+        fi
+        # Neither proven-contradictory case applies: the CLI's own listing does
+        # not show this row and nothing proves it SHOULD have (an ENABLED job is
+        # listed by every build; a DISABLED one by a build that was asked for a
+        # full-status flag). The row may belong to an alternate/stale candidate,
+        # or be a genuinely hidden disabled job — either way the CLI never
+        # corroborated it, so this store is AT MOST `unconfirmed` for this name.
+        # (RR-028 review AD-1: "corroborated" used to be reported here for a
+        # store the CLI's own listing never confirmed — a false report.)
+        _rrr_csa_unconf="$_rrr_csa_unconf${_rrr_csa_unconf:+,}store_row_omitted_by_cli(id=$_rrr_csa_id)"
     done
     if [ -n "$_rrr_csa_div" ]; then
         RRR_DB_AUTHORITY="diverged"
         RRR_CRON_DISAGREE="${RRR_CRON_DISAGREE}${RRR_CRON_DISAGREE:+,}${_rrr_csa_div}"
+    elif [ -n "$_rrr_csa_unconf" ]; then
+        # A coverage gap, not a contradiction: it is NOT appended to
+        # RRR_CRON_DISAGREE (that field means "the two views contradict each
+        # other"), but it does stop the store being called corroborated.
+        RRR_DB_AUTHORITY="unconfirmed"
+        RRR_CRON_STORE_NOTE="$_rrr_csa_unconf"
     else
         RRR_DB_AUTHORITY="corroborated"
     fi
@@ -883,10 +950,24 @@ rrr_cron_store_authority() {
 
 # rrr_cron_authority_gate — a store that cannot be corroborated licenses no
 # success claim. Called on every state that observed at least one row.
+#
+# A `diverged` store always overrides the state (two views that contradict each
+# other prove nothing). An `unconfirmed` store can never ESTABLISH readiness, so
+# a state that would claim the job scheduled is refused outright; but a state
+# that already REFUSES (mismatch / duplicate) keeps its more specific name — the
+# report's `cron.store` field still says the store was not corroborated, and the
+# ladder's own guards decide what (if anything) may be mutated.
 rrr_cron_authority_gate() {
     case "$RRR_DB_AUTHORITY" in
         diverged)    RRR_CRON_STATE="store_diverged" ;;
-        unconfirmed) RRR_CRON_STATE="store_unconfirmed" ;;
+        unconfirmed)
+            case "$RRR_COVERAGE" in
+                # The CLI's own listing could not be read at all.
+                db-only) RRR_CRON_STATE="store_unconfirmed" ;;
+                *) case "$RRR_CRON_STATE" in
+                       single) RRR_CRON_STATE="store_unconfirmed" ;;
+                   esac ;;
+            esac ;;
     esac
     return 0
 }
@@ -1125,12 +1206,13 @@ rrr_evaluate() {
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_absent"
             RRR_DETAIL="no cron named $RRR_NAME in the readback; the CLI's OWN listing was asked for a full-status listing and reported none, which is what proves the absence (coverage=$RRR_COVERAGE)" ;;
         store_unconfirmed)
-            # FAIL CLOSED (re-review Z-1): only the store shows this job. The
-            # store is a file ocd_state_db resolved, and the CLI's own listing —
-            # the gateway's answer — could not be read, so its rows cannot be
-            # corroborated and are never treated as proof of readiness.
+            # FAIL CLOSED (re-review Z-1, widened by review AD-1): the resolved
+            # store is not corroborated by the CLI's own listing — either that
+            # listing could not be read, or it does not show a row the store
+            # carries. The store is a file ocd_state_db resolved, so it is never
+            # treated as proof of readiness.
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_store_unconfirmed"
-            RRR_DETAIL="only the gateway STORE shows $RRR_NAME (store=$RRR_DB_STATE, coverage=$RRR_COVERAGE): the CLI's own cron listing could not be read, so the store cannot be corroborated against the gateway and does not establish readiness. Nothing is mutated; fix the CLI readback (or the gateway it talks to) and reconcile again." ;;
+            RRR_DETAIL="the gateway STORE is not corroborated by the CLI's own cron listing for $RRR_NAME (store=$RRR_DB_STATE, coverage=$RRR_COVERAGE${RRR_CRON_STORE_NOTE:+; $RRR_CRON_STORE_NOTE}), so it cannot establish readiness. Nothing is mutated; fix the CLI readback (or point the descriptor at the gateway's live state DB) and reconcile again." ;;
         store_diverged)
             # FAIL CLOSED (re-review Z-1/Z-2): two views that contradict each
             # other about this name do not describe the same gateway, so neither
@@ -1156,9 +1238,16 @@ rrr_evaluate() {
             if [ "$RRR_CRON_DISABLED_DIRECT" = "1" ]; then
                 RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_disabled_by_owner"
                 RRR_DETAIL="cron $RRR_NAME exists but is DISABLED; readiness never re-enables an operator-disabled job it can SEE — and when the readback cannot see one (CLI-only coverage, no full-status flag) it refuses to add at all, so a hidden disable is never guessed away either (mismatches:$RRR_CRON_MISMATCH)"
+            elif [ "$RRR_CRON_ENABLED_OBSERVED" != "1" ]; then
+                # AD-2/AD-7 (RR-028 review): the row exists but NO view reports
+                # its `enabled` bit, so an operator-disabled job is
+                # indistinguishable from an enabled one. The reconciler refuses
+                # to edit, replace or remove it; the state says exactly that.
+                RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_enabled_unobservable"
+                RRR_DETAIL="cron ${RRR_CRON_ID:-$RRR_NAME} does not match the desired config (mismatches:$RRR_CRON_MISMATCH) AND no view reported its enabled bit, so it cannot be told apart from a job the operator switched OFF. Refusing to edit/replace/remove it (fail-closed, nothing mutated): a job this readback cannot see the switch state of is never touched. Remedy: a CLI/gateway store that reports the job's enabled state so the mismatch can be repaired safely."
             else
                 RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_field_mismatch"
-                RRR_DETAIL="readback of ${RRR_CRON_ID:-$RRR_NAME} does not match the desired config: $RRR_CRON_MISMATCH"
+                RRR_DETAIL="readback of ${RRR_CRON_ID:-$RRR_NAME} does not match the desired config: $RRR_CRON_MISMATCH${RRR_CRON_STORE_NOTE:+ (gateway store: $RRR_CRON_STORE_NOTE — not corroborated, so it licenses nothing)}"
             fi ;;
         single) : ;;
         *)
@@ -1242,10 +1331,11 @@ rrr_report_json() {
     printf '"requirements":{"parser":"%s","curl":"%s","base64":"%s","openclaw":"%s","node":"%s","json_reader":"%s","hasher":"%s","missing":"%s"},' \
         "$RRR_REQ_PARSER" "$RRR_REQ_CURL" "$RRR_REQ_BASE64" "$RRR_REQ_OPENCLAW" "$RRR_REQ_NODE" "$RRR_REQ_JSON" "$RRR_REQ_SHA" \
         "$(rrr_json_escape "$RRR_MISSING_REQS")"
-    printf '"cron":{"state":"%s","count":%s,"id":"%s","sources":"%s","coverage":"%s","visibility":"%s","store":"%s","schedule":"%s","command":"%s","enabled":"%s","delivery":"%s","unobservable":"%s","disagreement":"%s"},' \
+    printf '"cron":{"state":"%s","count":%s,"id":"%s","sources":"%s","coverage":"%s","visibility":"%s","store":"%s","schedule":"%s","command":"%s","enabled":"%s","delivery":"%s","unobservable":"%s","disagreement":"%s","store_note":"%s"},' \
         "$RRR_CRON_STATE" "$RRR_CRON_COUNT" "$(rrr_json_escape "$RRR_CRON_ID")" "$(rrr_json_escape "$RRR_CRON_SOURCES")" \
         "$RRR_COVERAGE" "$RRR_CRON_VISIBILITY" "$RRR_DB_AUTHORITY" "$(rrr_json_escape "$RRR_CRON_SCHEDULE")" "$(rrr_json_escape "$RRR_CRON_COMMAND")" \
-        "$RRR_CRON_ENABLED" "$RRR_CRON_DELIVERY" "$(rrr_json_escape "$RRR_CRON_UNOBS")" "$(rrr_json_escape "$RRR_CRON_DISAGREE")"
+        "$RRR_CRON_ENABLED" "$RRR_CRON_DELIVERY" "$(rrr_json_escape "$RRR_CRON_UNOBS")" "$(rrr_json_escape "$RRR_CRON_DISAGREE")" \
+        "$(rrr_json_escape "$RRR_CRON_STORE_NOTE")"
     printf '"runtime":{"state":"%s","id":"%s","platform":"%s","target_mode":"%s","target_id":"%s"},"receipt":{"state":"%s","at":"%s"},"reconcile":{"state":"%s","action":"%s"}}\n' \
         "$RRR_RUNTIME_STATE" "$RRR_RUNTIME_ID" "$(rrr_json_escape "$RRR_PLATFORM")" "$(rrr_json_escape "$RRR_TARGET_MODE")" \
         "$(rrr_json_escape "$RRR_TARGET_ID")" "$RRR_RECEIPT_STATE" "$(rrr_json_escape "$RRR_RECEIPT_AT")" \
@@ -1261,9 +1351,13 @@ rrr_report_line() {
 # rrr_cron_removable <id> — MAY readiness remove this observed job id?
 #
 # Removal is the one irreversible act in the ladder, so it needs corroboration
-# (RR-028 re-review Z-1/Z-2). A job may be removed only when
+# (RR-028 re-review Z-1/Z-2, widened by review AD-1/AD-2/AD-7). A job may be
+# removed only when
 #   * the gateway's OWN listing shows it — a row ONLY the store shows is not
 #     corroborated (the store may be an alternate or stale candidate), and
+#   * the enabled bit was OBSERVED and TRUE — a row whose `enabled` state no
+#     view reports cannot be told apart from an operator-disabled one, and
+#     "we could not see it" must never authorise destroying it, and
 #   * it was never observed DISABLED — deleting a job the operator switched off
 #     destroys operator intent exactly as re-enabling it would.
 # ---------------------------------------------------------------------------
@@ -1271,7 +1365,8 @@ rrr_cron_removable() {
     _rrr_rem_id="$1"
     [ -n "$_rrr_rem_id" ] || return 1
     case " $RRR_CRON_DISABLED_IDS " in *" $_rrr_rem_id "*) return 1 ;; esac
-    case " $RRR_CRON_CLI_IDS " in *" $_rrr_rem_id "*) return 0 ;; esac
+    case " $RRR_CRON_CLI_IDS " in *" $_rrr_rem_id "*) : ;; *) return 1 ;; esac
+    case " $RRR_CRON_ENABLED_IDS " in *" $_rrr_rem_id "*) return 0 ;; esac
     return 1
 }
 
@@ -1288,11 +1383,15 @@ rrr_cron_removable() {
 #   5 openclaw CLI unresolved
 #   6 tombstoned / disabled by owner (never mutated)
 #   7 a mutation command itself failed (retryable wiring failure)
-#   8 REFUSED — no view that can SHOW a DISABLED job was available, so the
-#     readback cannot prove the name free; an add would risk a second ENABLED
-#     poller beside an operator-disabled job. Nothing was mutated and nothing
-#     is claimed; this is the fail-closed choice, not a failure. (A resolved
-#     gateway store does NOT lift this refusal — see the header rule.)
+#   8 REFUSED — this readback cannot prove the name free, or cannot see the
+#     switch state of the row it would touch. Either (a) no view that can SHOW a
+#     DISABLED job was available, so an add would risk a second ENABLED poller
+#     beside an operator-disabled job, or (b) NO view reported the row's
+#     `enabled` bit, so it cannot be told apart from an operator-disabled one
+#     and is neither edited, replaced nor removed. Nothing was mutated and
+#     nothing is claimed; this is the fail-closed choice, not a failure. (A
+#     resolved gateway store does NOT lift either refusal — see the header
+#     rule.)
 # Every mutation is followed by a FRESH readback + rrr_cron_eval; each step's
 # success is the readback, never the command's exit code. The ladder is
 # dedupe -> add -> edit-in-place -> replace, bounded to 4 attempts.
@@ -1348,6 +1447,19 @@ rrr_cron_reconcile() {
                     case "$_rrr_cr_ehelp" in *--command*) _rrr_cr_has_cmd=1 ;; esac
                     case "$_rrr_cr_ehelp" in *--no-deliver*) _rrr_cr_has_nod=1 ;; esac
                     if [ "$_rrr_cr_has_cron" = "1" ] || [ "$_rrr_cr_has_cmd" = "1" ] || [ "$_rrr_cr_has_nod" = "1" ]; then
+                        if [ "$RRR_CRON_ENABLED_OBSERVED" != "1" ]; then
+                            # AD-2/AD-7 (RR-028 review): NO view reported the
+                            # `enabled` bit for this name, so the engine cannot
+                            # tell an operator-DISABLED job from an ENABLED one.
+                            # Editing it rewrites a job whose switch state is
+                            # unknown, and the ladder's next rung would REMOVE
+                            # it. Refuse instead: "we could not see it" must
+                            # never authorise touching it. Fail-closed, in the
+                            # same family as the CLI-blind-spot refusal.
+                            RRR_RECONCILE_STATE="enabled_unobservable"
+                            rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                            RRR_RECONCILE_RC=8; return 8
+                        fi
                         if [ "$_rrr_cr_has_cron" = "1" ] && [ "$_rrr_cr_has_cmd" = "1" ] && [ "$_rrr_cr_has_nod" = "1" ]; then
                             rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron edit "$RRR_CRON_ID" \
                                 --cron "$RRR_SCHEDULE" --command "sh $RRR_POLL" --no-deliver

@@ -1,5 +1,104 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.3] - 2026-09-14 - RR-028 final review: unobservable is not absent
+
+Final independent review before promotion (Worker AD, `RR028-AD-REVIEW.md`)
+returned APPROVE-WITH-CONCERNS and found (AD-2) that a NEW unqualified safety
+claim added by 23.4.2 was FALSE, plus that the job-destruction class re-entered
+through two more doors (AD-1, AD-7), one understated header sentence (AD-4), one
+undocumented mirror cost (AD-5), one unguarded `cron rm` in the legacy cleanup
+(AD-6), and two untested removal guards (AD-3). All are fixed at the cause; no
+existing assertion was weakened, skipped or deleted. The batteries gained 59
+assertions (49 -> 55, 46 -> 46, 82 -> 135) and every write path below is pinned
+by a new case that fails when its effect is disabled.
+
+- **AD-2 (MEDIUM, pre-existing) — "a job the operator switched off is never
+  deleted" was FALSE when the `enabled` bit is unobservable.** When a row for the
+  managed name was present and NEITHER view reported its `enabled` bit (the key
+  absent, or `"disabled"` carrying a non-boolean such as the string `"true"`),
+  the engine reported `enabled_unobservable` and then ran
+  `cron edit` -> `cron rm` -> `cron add`: the operator's row was DELETED and
+  replaced by a freshly minted ENABLED one, reported `SCHEDULED` with `wire.sh`
+  rc 0 (reviewer scenario S). The 23.4.2 `SKILL.md` sentence that
+  categorically denied this was therefore a false shipped safety claim — the
+  third in this program.
+  **Fix — unobservable is not absent, on every mutating rung:**
+  * The readback now tracks whether ANY view reported a boolean `enabled` for
+    the managed name. When none did, the reconciler REFUSES to edit, replace or
+    remove that row: new state `enabled_unobservable`, **rc 8**, nothing
+    mutated, nothing claimed — the same fail-closed family as the CLI
+    blind-spot refusal, extended to the bit itself.
+  * `rrr_cron_removable` now requires the row to have been OBSERVED with
+    `enabled=true` as well as shown by the CLI's own listing and never observed
+    DISABLED (AD-7: the `cron rm` half).
+  * The verdict is a NAMED one: `ENROLLED_PENDING / cron_enabled_unobservable`,
+    with the refusal spelled out on the failing surface.
+- **AD-1 (MEDIUM, pre-existing) — the store still licensed one mutation and was
+  reported `corroborated` without corroboration.** A store row the CLI's own
+  listing never showed (scenarios G/G2/Q/Q2) licensed `cron edit <store-only-id>`
+  and the report said `cron.store=corroborated` although the CLI had never
+  confirmed the row.
+  **Fix:** a store row the CLI's own listing does not show, and that is not
+  provably contradictory, now makes the store `unconfirmed` — never
+  `corroborated` — and is reported as `cron.store_note =
+  store_row_omitted_by_cli(id=…)` (a coverage gap, deliberately NOT a
+  `disagreement`). Combined with AD-2's guard the store licenses no edit, rm or
+  add from such a row.
+- **AD-7 (INFO) — closed by the same guard.** A row that is genuinely disabled
+  but whose bit no view reports can no longer be `cron rm`'d on any rung
+  (dedupe or replace), and the refusal is a named state rather than a silent
+  skip.
+- **AD-4 (INFO) — the engine header understated the residual.** It claimed a
+  lying CLI build is "indistinguishable … by any input this engine has". That is
+  wrong when a resolved store contradicts the lying CLI: the engine detects it
+  (`store_diverged` / `cli_all_omits_disabled_row(id=…)`, rc 4, nothing
+  mutated). The header now says "indistinguishable IN-BAND — by the CLI's own
+  answers alone", which is true and is pinned by a new lying-CLI test
+  (`RR028_MOCK_LIE_ALL=1` advertises `--all` and hides a disabled job anyway).
+- **AD-5 (LOW) — the mirror cost is now documented.** Because only the CLI's own
+  listing may corroborate the store, a STALE or EMPTY resolved store reds a box
+  that is genuinely scheduled: the CLI shows the one correct ENABLED job, the
+  store carries no row for it, `store_missing_row` makes the readback
+  `store_diverged`, the box reports `ENROLLED_PENDING /
+  cron_source_disagreement` with rc 4, and NOTHING is mutated. Deliberate (a
+  store that does not reflect the gateway licenses nothing), and the detail
+  names the missing row and the remedy; it is stated here and in the engine
+  header so a red roll is not mistaken for a broken box. Pinned by a new test.
+- **AD-6 (INFO) — the last unguarded `cron rm` is now guarded.** `wire.sh`'s
+  legacy cleanup (`rescue-rangers-poll`) used `cron list --json | grep` plus an
+  UNCONDITIONAL `cron rm`: no full-status flag, and no look at the row's
+  `enabled` bit. On a build whose DEFAULT listing includes disabled jobs it
+  resolved the id of a job the operator had switched OFF and deleted it — the
+  same destruction class as AD-2. It now asks the LADDER'S OWN question
+  (`rrr_cron_removable` against the engine's two-view readback of the legacy
+  name) and removes the row only when the CLI's own listing shows it with an
+  observed `enabled=true`; otherwise it leaves it in place and says so. Without
+  the engine there is no guarded readback, so no removal is attempted (wire.sh
+  and the engine ship together). Pinned by a disabled case, an unobservable
+  case, and an enabled control that IS still removed.
+- **AD-3 (LOW) — the removal guards are now covered.** New cases drive a
+  store-only stray through the dedupe arm (a row the CLI's own listing never
+  showed, reviewer mutation `mutF2`'s target), a CLI-visible stray whose enabled
+  bit is unobservable (AD-7), and the replace rung with a CLI that cannot edit
+  (reviewer mutation `mutK`'s target). `mutK` is CAUGHT by the new replace-rung
+  case; `mutF2` is reported honestly as structurally shadowed — see the test
+  header: with the AD-1/AD-2 fixes in place, a CLI-invisible row is also
+  refused by the enabled-observed guard and (when its bit IS observable) by the
+  store-authority gate, so no input isolates that one check. The class it
+  protects is pinned by the new cases and by a coarser mutation of the same
+  guard, which IS caught.
+- **Tests / harness.** `RR028_MOCK_LIST_ALL_DEFAULT=1` models a CLI whose
+  DEFAULT listing includes disabled rows (the AD-6 fixture);
+  `RR028_MOCK_LIE_ALL=1` models the lying build (advertises `--all`, hides a
+  disabled job anyway); `rr028_mutating_argv` reports only MUTATING argv
+  vectors, so a "nothing was mutated" assertion can no longer be satisfied or
+  broken by the read-only `cron edit --help` probe.
+
+Skill package version 23.4.2 -> 23.4.3. Gates (run serially): `tests/rescue/RR-028`
+readiness states **55/0**, safe probe **46/0**, wire reconciliation **135/0**;
+RR-027 credential gates 32/0 and 35/0 in BOTH bash and sh legs; RR-005 `FAILS=0`;
+RR-016 `FAILS=0`; frontmatter gate PASS; RR-004 12/0; RR-025 39/0; RR-026 47/0.
+
 ## [23.4.2] - 2026-09-14 - RR-028 re-review fixes: the store may veto, never license
 
 Independent re-review (Worker Z, `RR028-RE-REVIEW-Z.md`) confirmed both 23.4.1

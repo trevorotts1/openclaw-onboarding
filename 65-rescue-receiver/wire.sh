@@ -227,25 +227,14 @@ if [ -z "$_OC_BIN" ]; then
   exit 1
 fi
 
-# Legacy cleanup MUST precede the canonical reconciliation below, or boxes
-# wired under the old name accumulate a second poller every time this script
-# runs (both crons firing = double delivery).
-if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_LEGACY_NAME\""; then
-  _LEGACY_ID="$("$_OC_BIN" cron list --json 2>/dev/null | python3 -c 'import json,sys; jobs=json.load(sys.stdin).get("jobs",[]); print(next((j["id"] for j in jobs if j.get("name")=="'"$_LEGACY_NAME"'"), ""))')"
-  if [ -n "$_LEGACY_ID" ]; then
-    if "$_OC_BIN" cron rm "$_LEGACY_ID" >&2; then
-      echo "65-rescue-receiver: removed legacy cron $_LEGACY_NAME (id $_LEGACY_ID)"
-    else
-      echo "65-rescue-receiver: legacy cron $_LEGACY_NAME rm FAILED (id $_LEGACY_ID); left in place" >&2
-    fi
-  else
-    echo "65-rescue-receiver: legacy cron $_LEGACY_NAME seen in list but id not resolvable; skipping removal" >&2
-  fi
-fi
-
+# The engine is SOURCED here — definitions only; `rrr_init` and the reconcile
+# ladder still run below, in order — because the legacy cleanup immediately
+# below is a REMOVAL and must go through the SAME guards as every other removal.
+_RRR_LOADED=0
 if [ -n "$_ENGINE" ]; then
   # shellcheck disable=SC1090
   . "$_ENGINE"
+  _RRR_LOADED=1
   # The engine uses the SAME CLI this script resolved (and its runtime id
   # therefore names the same intended runtime).
   RRR_OPENCLAW_OVERRIDE="$_OC_BIN"
@@ -259,6 +248,52 @@ if [ -n "$_ENGINE" ]; then
       [ -s "$_cand" ] && { RRR_DB="$_cand"; break; }
     done
   fi
+  rrr_tools_resolve
+fi
+
+# ---------------------------------------------------------------------------
+# Legacy cleanup MUST precede the canonical reconciliation below, or boxes
+# wired under the old name accumulate a second poller every time this script
+# runs (both crons firing = double delivery).
+#
+# AD-6 (RR-028 review): this is the ONE removal outside the reconcile ladder, so
+# it asks the LADDER'S OWN question first — `rrr_cron_removable` against the
+# engine's own two-view readback of the legacy name. A legacy job is therefore
+# removed only when the CLI's OWN listing shows it, its enabled bit was
+# OBSERVED, and it was observed enabled (never disabled). A legacy job that is
+# disabled, or whose enabled bit no view reports, is LEFT IN PLACE and said so —
+# deleting it would destroy operator intent exactly as re-enabling it would.
+# (The historical `cron list --json | grep` + unconditional `cron rm` removed
+# whatever the DEFAULT listing showed, which on a build whose default listing
+# includes disabled jobs — or whose rows omit the enabled bit — is the same
+# destruction class as AD-2/AD-7.)
+#
+# Without the engine there is no guarded readback, so no removal is attempted:
+# wire.sh and the engine ship together, and a bundle that cannot check the
+# switch state must not delete a job on a guess.
+# ---------------------------------------------------------------------------
+if [ "$_RRR_LOADED" = "1" ]; then
+  _RRR_NAME_KEEP="$RRR_NAME"
+  RRR_NAME="$_LEGACY_NAME"
+  rrr_cron_readback || true
+  rrr_cron_eval
+  RRR_NAME="$_RRR_NAME_KEEP"
+  for _LEGACY_ID in $RRR_CRON_IDS; do
+    if rrr_cron_removable "$_LEGACY_ID"; then
+      if "$_OC_BIN" cron rm "$_LEGACY_ID" >&2; then
+        echo "65-rescue-receiver: removed legacy cron $_LEGACY_NAME (id $_LEGACY_ID)"
+      else
+        echo "65-rescue-receiver: legacy cron $_LEGACY_NAME rm FAILED (id $_LEGACY_ID); left in place" >&2
+      fi
+    else
+      echo "65-rescue-receiver: legacy cron $_LEGACY_NAME (id $_LEGACY_ID) NOT removed — the CLI's own listing must show the row with an OBSERVED enabled=true before this script may delete it (never-seen-DISABLED is not proof of enabled), and this readback does not, so deleting it could destroy a job the operator switched off" >&2
+    fi
+  done
+elif "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_LEGACY_NAME\""; then
+  echo "65-rescue-receiver: legacy cron $_LEGACY_NAME is present but the RR-028 engine is NOT installed, so its enabled state cannot be checked — NOT removed (remove it by hand if it is genuinely yours)" >&2
+fi
+
+if [ -n "$_ENGINE" ]; then
   rrr_init "$_OCROOT" "$_SECRETS" "$_POLL" "$_OCROOT/state/rr-receiver"
   rrr_cron_reconcile
   _recon_rc=$RRR_RECONCILE_RC
@@ -268,7 +303,10 @@ if [ -n "$_ENGINE" ]; then
     4) echo "65-rescue-receiver: cron $_NAME NOT proven after reconciliation ($RRR_RECONCILE_STATE)" >&2 ;;
     6) echo "65-rescue-receiver: cron $_NAME NOT mutated — $RRR_RECONCILE_STATE (operator intent respected)" >&2 ;;
     7) echo "65-rescue-receiver: cron mutation command FAILED ($RRR_RECONCILE_STATE)" >&2 ;;
-    8) echo "65-rescue-receiver: cron $_NAME NOT registered — $RRR_RECONCILE_STATE: this readback cannot prove the name is free (a DISABLED job would be hidden), so adding could create a second ENABLED poller beside an operator-disabled one (fail-closed refusal, nothing mutated)" >&2 ;;
+    8) case "$RRR_RECONCILE_STATE" in
+         enabled_unobservable) echo "65-rescue-receiver: cron $_NAME NOT touched — $RRR_RECONCILE_STATE: no view reported this job's enabled bit, so it cannot be told apart from a job the operator switched OFF; nothing was edited, replaced or removed (fail-closed refusal)" >&2 ;;
+         *) echo "65-rescue-receiver: cron $_NAME NOT registered — $RRR_RECONCILE_STATE: this readback cannot prove the name is free (a DISABLED job would be hidden), so adding could create a second ENABLED poller beside an operator-disabled one (fail-closed refusal, nothing mutated)" >&2 ;;
+       esac ;;
   esac
   # Re-observe after the reconciliation so the reported state is the state the
   # readback now shows (never the state the mutation intended).
