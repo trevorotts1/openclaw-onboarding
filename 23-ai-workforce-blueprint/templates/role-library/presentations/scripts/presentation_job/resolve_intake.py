@@ -356,6 +356,11 @@ def _resolve_upsell_capture(entries: dict, intake_copy: dict) -> dict:
         if not val:
             val = _entry_raw_value(entries, qid) or _entry_raw_value(entries, field)
         if val:
+            # These two fields are structured list values in the declared
+            # schema. The merged-turn writer may retain its final separator;
+            # remove only that delimiter, never punctuation in free-form text.
+            if field in {"DELIVERABLE_SET", "DELIVERY_DESTINATIONS"} and isinstance(val, str):
+                val = val.rstrip("; ")
             capture[field] = val
     return capture
 

@@ -168,6 +168,20 @@ class TestExecutionSelection:
         assert resolved["run_mode"] == "ultra"
         assert resolved["workhorse_model"] == "deepseek-flash@deepseek-direct"
 
+    def test_structured_deliverable_lists_drop_only_merged_separator(self):
+        rd = _run_dir()
+        entries = _base_entries("from_scratch")
+        entries.update({
+            "deliverable_set": _entry("PPTX, PDF;"),
+            "delivery_destinations": _entry("PPTX, PDF;"),
+        })
+        _write_ledger(rd, entries)
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        resolved = ri.resolve(rd / "working/interview/intake_ledger.json", "test")
+        capture = resolved["pre_presentation_capture"]
+        assert capture["DELIVERABLE_SET"] == "PPTX, PDF"
+        assert capture["DELIVERY_DESTINATIONS"] == "PPTX, PDF"
+
     def test_invalid_validated_execution_value_fails_before_output(self, capsys):
         rd = _run_dir()
         entries = _base_entries("from_scratch")
