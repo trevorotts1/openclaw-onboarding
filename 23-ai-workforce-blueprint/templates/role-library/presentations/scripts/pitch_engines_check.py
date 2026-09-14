@@ -406,6 +406,33 @@ ALL_CHECKS = [chk_cadence, chk_cost_of_inaction, chk_guarantee_generic,
               chk_villain, chk_promise_before_price, chk_speech_hook_count]
 
 
+def _pitch_applicability(intake):
+    """Return (applicable, refusal) for commercial-copy gates.
+
+    Pitch content is a user-selected format property.  A non-signature deck can
+    explicitly opt out with ``pitch_included: false``; then pricing/method/time
+    promises are irrelevant and must not be fabricated merely to satisfy QC.
+    Signature decks remain commercial and cannot opt out.  Missing or malformed
+    classification is fail-closed instead of silently treating an unknown deck
+    as informational.
+    """
+    if not isinstance(intake, dict):
+        return False, "AF-PITCH-APPLICABILITY-UNSET: intake.json is missing or invalid"
+    deck_type = str(intake.get("deck_type") or "").strip()
+    selected = intake.get("pitch_included")
+    if deck_type == "signature_presentation":
+        if selected is False:
+            return False, ("AF-PITCH-APPLICABILITY-CONFLICT: signature_presentation "
+                           "cannot declare pitch_included:false")
+        return True, None
+    if selected is True:
+        return True, None
+    if selected is False:
+        return False, None
+    return False, ("AF-PITCH-APPLICABILITY-UNSET: intake.pitch_included must be "
+                   "an explicit boolean for a non-signature deck")
+
+
 def load_run(run_dir: Path):
     cp = run_dir / "working" / "copy"
     return {
@@ -452,6 +479,15 @@ def run(run_dir, phase="1Q"):
     loaded = load_run(deck_dir)
     checks = ALL_CHECKS if phase == "all" else CHECKS.get(phase, CHECKS["1Q"])
     problems = []
+    # Speech QC has no commercial-copy assertions. Every other pitch-engine
+    # invocation first resolves the selected format from the sealed intake.
+    if phase != "SPEECH-QC":
+        applicable, refusal = _pitch_applicability(loaded["intake"])
+        if refusal:
+            return [{"code": refusal.split(":", 1)[0], "slide": "DECK",
+                     "phase": "Phase 1Q", "detail": refusal}]
+        if not applicable:
+            return []
     for fn in checks:
         for item in fn(loaded):
             if "defer" in item:
