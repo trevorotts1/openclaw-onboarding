@@ -395,12 +395,80 @@ def test_verified_intake_amendment_explicitly_rearms_paid_budget(
     monkeypatch.setattr(pl, "verify_amendment_approval", lambda *_a, **_k: (False, "refused"))
     assert dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())[0] is False
 
-    # The launcher oracle is the authority; a verified record re-arms exactly
-    # this phase and clears the prior-generation marker before dispatch.
+    # The launcher oracle is the authority.  The marker remains until the
+    # first new-generation provider slot is atomically reserved.
     monkeypatch.setattr(pl, "verify_amendment_approval", lambda *_a, **_k: (True, "verified"))
     may, why = dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())
     assert may is True and why == "approved input revision changed"
+    assert _marker(run_dir).exists()
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker")
     assert not _marker(run_dir).exists()
+
+
+def test_atomic_reservation_allows_only_remaining_paid_call_and_survives_crash(
+        tmp_path):
+    """The slot is consumed before transport and is never refunded on a crash."""
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {
+        "phase_id": PHASE, "approved_input_revision": "initial",
+        "paid_attempts": dj.DISPATCH_RETRY_CAP - 1,
+    })
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker-a")
+    assert _ledger(run_dir)["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker-a")
+    # Simulated process death after the first call: the next process reads the
+    # durable reservation and cannot spend another call.
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker-b")
+
+
+def test_atomic_reservation_refuses_claim_handoff_stale_owner(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    claim = run_dir / "working" / "work-orders" / f"{PHASE}.claim"
+    claim.write_text(json.dumps({"worker": "new-owner", "owner_token": "new"}),
+                     encoding="utf-8")
+    with pytest.raises(dj.PaidBudgetExhausted, match="claim ownership changed"):
+        dj._reserve_paid_attempt(run_dir, PHASE, "stale-owner")
+    assert not _ledger(run_dir), "stale owner must not reserve a provider call"
+
+
+def test_local_operator_receipt_rearms_once_with_bounded_allowance(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    receipt = dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    assert receipt["phase_id"] == PHASE and receipt["allowance"] == 1
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+    assert _ledger(run_dir)["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    assert _ledger(run_dir)["repair_receipt_consumed"] is True
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+
+
+@pytest.mark.parametrize("field,value", [
+    ("phase_id", "OTHER"), ("run", "/wrong/run"), ("dispatcher_sha256", "forged"),
+    ("approved_input_revision", "forged"), ("prior_generation", 99),
+])
+def test_mismatched_operator_receipt_never_rearms(tmp_path, field, value):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    receipt = dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    receipt[field] = value
+    dj._repair_receipt_path(run_dir, PHASE).write_text(json.dumps(receipt), encoding="utf-8")
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+
+
+def test_work_order_rewrite_cannot_reset_paid_receipt_budget(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP})
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    order.write_text('{"authorized_retry":{"allowance":3}}', encoding="utf-8")
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker")
 
 
 # ---------------------------------------------------------------------------
