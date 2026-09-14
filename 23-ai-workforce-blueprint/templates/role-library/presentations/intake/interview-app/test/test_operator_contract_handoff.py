@@ -4,11 +4,14 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 HERE = pathlib.Path(__file__).resolve().parent
 BRIDGE = HERE.parent / 'bridge' / 'intake_bridge.py'
 SCRIPTS = HERE.parent.parent.parent / 'scripts'
 DRIVER = SCRIPTS / 'deck-intake-driver.py'
 RESOLVER = SCRIPTS / 'presentation_job' / 'resolve_intake.py'
+sys.path.insert(0, str(SCRIPTS))
 
 spec = importlib.util.spec_from_file_location('operator_contract_bridge', BRIDGE)
 bridge = importlib.util.module_from_spec(spec)
@@ -97,3 +100,41 @@ def test_contract_delegates_to_bridge_launcher_with_transport_stub(tmp_path, mon
     assert seen['intake']['pitch_included'] is False
     assert seen['intake']['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
     assert seen['intake']['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
+
+
+def test_signed_receipt_binds_existing_cc_task_and_replays_once(tmp_path, monkeypatch):
+    """The real durable core binds the server task and lease; only launcher is stubbed."""
+    import hashlib, hmac, os, types
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    secret = 'contract-test-secret'
+    payload = contract()
+    envelope = {'receipt_version': 1, 'contract': payload,
+                'receipt_hmac': hmac.new(secret.encode(), bridge._canonical_contract_bytes(payload), hashlib.sha256).hexdigest()}
+    assert bridge.verify_operator_contract_receipt(envelope, secret=secret) == payload
+    with pytest.raises(ValueError):
+        bridge.verify_operator_contract_receipt({**envelope, 'receipt_hmac': '0' * 64}, secret=secret)
+    rd = tmp_path / 'core-run'
+    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    intake = json.loads((rd / 'working/copy/intake.json').read_text())
+    intake.update(cc_task_id=payload['task_id'], cc_execution_id=payload['execution_id'])
+    import presentation_job.lease as real_lease
+    calls = []
+    class Launcher:
+        def dispatch_new(self, run_dir, **kwargs):
+            calls.append(kwargs)
+            # Transport stub's acknowledgement witness: it is not an engine stage.
+            pathlib.Path(run_dir, 'state.json').write_text(json.dumps({'engine_pid': os.getpid(), 'job_id': payload['execution_id']}))
+            return os.getpid()
+    fake_pj = types.SimpleNamespace(lease=real_lease, launcher=Launcher())
+    monkeypatch.setattr(bridge, '_load_presentation_job', lambda: fake_pj)
+    monkeypatch.setattr(bridge, '_load_cc_board', lambda: (_ for _ in ()).throw(AssertionError('must reuse authenticated CC task')))
+    policy = {'backoff_base_s': 0, 'backoff_cap_s': 0, 'max_attempts': 3, 'notify_thresholds': (), 'claim_ttl_s': 60}
+    first = bridge._drive_submission(rd, intake, 'operator-' + payload['task_id'], policy, False)
+    assert first['_rc'] == 0, first
+    ledger = bridge._ll.load(rd, 'operator-' + payload['task_id'])
+    assert ledger['board_task_id'] == payload['task_id']
+    assert ledger['execution_id'] == payload['execution_id']
+    second = bridge._drive_submission(rd, intake, 'operator-' + payload['task_id'], policy, False)
+    assert second['_rc'] == 0
+    assert len(calls) == 1

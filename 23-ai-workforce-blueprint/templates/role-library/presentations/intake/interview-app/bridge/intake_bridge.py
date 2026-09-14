@@ -60,6 +60,8 @@ INTAKE_ADMIN_TOKEN (never from argv, never logged).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 import pathlib
@@ -320,7 +322,12 @@ def _ensure_board_card(run_dir: pathlib.Path, intake: dict, session_id: str,
     itself idempotent (sha256(source_ref+title) key server-side) — the local
     record makes that idempotency durable across bridge restarts.
     """
+    expected_task = str(intake.get("cc_task_id") or "").strip()
     existing = str(doc.get("board_task_id") or "").strip()
+    if expected_task:
+        if existing and existing != expected_task:
+            raise ValueError("submission ledger board task conflicts with authenticated contract")
+        return "registered", expected_task
     if existing:
         return "registered", existing
     manifest_task = ""
@@ -394,7 +401,7 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
     # spawn — the crash-window recovery (state.json/.engine.pid named a pid
     # that is alive) completes the handoff without a second executor.
     if _ll.engine_alive(run_dir):
-        exec_id = _ll.execution_id_of(run_dir)
+        exec_id = str(intake.get("cc_execution_id") or _ll.execution_id_of(run_dir) or "")
         if exec_id:
             _ll.mark_worker_acknowledged(
                 run_dir, session_id, doc, exec_id,
@@ -416,7 +423,9 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
                     "lease held by pid {pid} on host {host}; submission stays "
                     "launch_pending for the next tick".format(
                         pid=lease_doc.get("pid"), host=lease_doc.get("host")))
-        exec_id = _ll.mint_execution_id(lease)
+        # A CC-signed operator receipt pins the execution identity before launch;
+        # ordinary Worker submissions retain the lease-derived identity.
+        exec_id = str(intake.get("cc_execution_id") or _ll.mint_execution_id(lease))
         pid = launcher.dispatch_new(str(run_dir), client=client,
                                     deck_type=deck_type, background=True)
         if isinstance(pid, int) and pid > 0:
@@ -864,9 +873,29 @@ def _driver_path() -> pathlib.Path:
     raise RuntimeError("deck-intake-driver.py is not installed")
 
 
+def _canonical_contract_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def verify_operator_contract_receipt(envelope: dict, *, secret: str | None = None) -> dict:
+    """Verify the CC-issued HMAC envelope before any local intake write."""
+    if not isinstance(envelope, dict) or envelope.get("receipt_version") != 1:
+        raise ValueError("operator contract receipt version is invalid")
+    contract = envelope.get("contract")
+    supplied = envelope.get("receipt_hmac")
+    key = (secret if secret is not None else os.environ.get("WEBHOOK_SECRET", "")).encode("utf-8")
+    if not key or not isinstance(contract, dict) or not isinstance(supplied, str):
+        raise ValueError("operator contract receipt is unsigned")
+    expected = hmac.new(key, _canonical_contract_bytes(contract), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, supplied):
+        raise ValueError("operator contract receipt signature is invalid")
+    return contract
+
+
 def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                             driver_path: pathlib.Path | None = None,
-                            launch: bool = True) -> dict:
+                            launch: bool = True,
+                            receipt_hmac: str | None = None) -> dict:
     """Run a CC-authenticated operator contract through the normal local path.
 
     It writes a compact immutable receipt, invokes the real turn-gated driver
@@ -882,6 +911,8 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     receipt = {
         "version": _OPERATOR_CONTRACT_VERSION,
         "source": "operator-delegated",
+        "receipt_version": 1 if receipt_hmac else None,
+        "receipt_hmac": receipt_hmac,
         "task_id": contract["task_id"],
         "execution_id": contract["execution_id"],
         "title": contract["title"],
@@ -911,13 +942,17 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                           text=True, capture_output=True, check=False)
     if proc.returncode:
         raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
-    # The driver is the sole intake writer.  The receipt carries task provenance;
-    # requester resolution is deliberately left to the sanctioned operator fallback.
+    # The driver is the sole intake writer. Contract provenance is carried only
+    # in memory into the existing board/lease/launcher path; sealed intake stays
+    # driver-owned.
+    intake_path = rd / "working" / "copy" / "intake.json"
+    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    intake["cc_task_id"] = contract["task_id"]
+    intake["cc_execution_id"] = contract["execution_id"]
     if not launch:
         return {"run_dir": str(rd), "receipt": str(receipt_path), "driver_complete": True}
     if _ll is None:
         raise RuntimeError("launch_ledger.py is not importable")
-    intake = json.loads((rd / "working" / "copy" / "intake.json").read_text(encoding="utf-8"))
     stamp_requester(intake)
     # Do not overwrite the driver record: requester resolution must have been
     # available before completion, otherwise resolve_intake correctly refuses.
@@ -933,12 +968,15 @@ def cmd_operator_contract(args) -> int:
     """Drive a server-validated local operator contract through the normal bridge."""
     contract_path = pathlib.Path(args.contract_file).expanduser().resolve()
     try:
-        contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        envelope = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract = verify_operator_contract_receipt(envelope)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(json.dumps({"status": "invalid_operator_contract", "error": str(exc)}), file=sys.stderr)
         return 2
     try:
-        report = drive_operator_contract(contract, pathlib.Path(args.run_dir), launch=not args.no_launch)
+        report = drive_operator_contract(contract, pathlib.Path(args.run_dir),
+                                         launch=not args.no_launch,
+                                         receipt_hmac=envelope["receipt_hmac"])
     except (ValueError, RuntimeError) as exc:
         print(json.dumps({"status": "operator_contract_rejected", "error": str(exc)}), file=sys.stderr)
         return 8
