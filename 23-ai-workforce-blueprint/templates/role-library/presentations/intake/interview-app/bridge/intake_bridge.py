@@ -955,6 +955,36 @@ def verify_operator_contract_receipt(envelope: dict, *, secret: str | None = Non
     return contract
 
 
+def _verified_operator_model_plan(contract: dict) -> dict:
+    """Confirm the driver's supported profile projection retained this contract.
+
+    The resource profile is the sole cross-worker model-plan store. A sealed
+    intake field is provenance, not a routing override, so a missing or
+    different profile plan must refuse before launcher/model-plan gating can
+    silently use a department default. This function only reads that durable
+    projection; it never writes credentials, profiles, or ledger entries.
+    """
+    pj = _load_presentation_job()
+    if pj is None:
+        raise RuntimeError("presentation_job is not reachable for model-plan verification")
+    try:
+        import importlib as _importlib
+        profile_mod = _importlib.import_module("presentation_job.resource_profile")
+        router = _importlib.import_module("presentation_job.model_router")
+    except ImportError as exc:
+        raise RuntimeError(f"presentation model-plan modules are unavailable: {exc}") from exc
+    raw = str(contract["workhorse_model"])
+    model, provider = raw.split("@", 1)
+    profile = profile_mod.load_profile()
+    slot = router.plan_slot(router.model_plan(profile), "workhorse")
+    if slot != {"provider": provider, "model": model}:
+        raise RuntimeError(
+            "authenticated operator workhorse was not retained by the supported "
+            f"resource profile (expected {provider}/{model}, got {slot!r})")
+    return {"provider": provider, "model": model,
+            "run_mode": str(contract["run_mode"])}
+
+
 def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                             driver_path: pathlib.Path | None = None,
                             launch: bool = True,
@@ -1043,15 +1073,17 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                               text=True, capture_output=True, check=False)
         if proc.returncode:
             raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
-    # The driver is the sole intake writer. Contract provenance is carried only
-    # in memory into the existing board/lease/launcher path; sealed intake stays
-    # driver-owned.
+    # The driver is the sole intake writer. Verify the separately durable
+    # model-plan projection before the bridge can hand this run to launcher.
+    # The sealed intake remains driver-owned and is never amended here.
+    model_selection = _verified_operator_model_plan(contract)
     intake_path = sealed_intake
     intake = json.loads(intake_path.read_text(encoding="utf-8"))
     intake["cc_task_id"] = contract["task_id"]
     intake["cc_execution_id"] = contract["execution_id"]
     if not launch:
-        return {"run_dir": str(rd), "receipt": str(receipt_path), "driver_complete": True}
+        return {"run_dir": str(rd), "receipt": str(receipt_path),
+                "driver_complete": True, "model_selection": model_selection}
     if _ll is None:
         raise RuntimeError("launch_ledger.py is not importable")
     stamp_requester(intake)
@@ -1061,7 +1093,8 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         raise RuntimeError("no sanctioned operator requester is configured")
     policy = _retry_policy()
     report = _drive_submission(rd, intake, "operator-" + contract["task_id"], policy, False)
-    return {"run_dir": str(rd), "receipt": str(receipt_path), "bridge": report}
+    return {"run_dir": str(rd), "receipt": str(receipt_path),
+            "model_selection": model_selection, "bridge": report}
 
 
 

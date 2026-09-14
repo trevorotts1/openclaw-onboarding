@@ -14,7 +14,7 @@ SCRIPTS = HERE.parent.parent.parent / 'scripts'
 DRIVER = SCRIPTS / 'deck-intake-driver.py'
 RESOLVER = SCRIPTS / 'presentation_job' / 'resolve_intake.py'
 sys.path.insert(0, str(SCRIPTS))
-from presentation_job import model_router, resource_profile  # noqa: E402
+from presentation_job import model_router, resource_profile, launcher  # noqa: E402
 CC_ROOT = pathlib.Path('/private/tmp/pd025-cc-current')
 CC_TSX = CC_ROOT / 'node_modules/.bin/tsx'
 
@@ -142,8 +142,10 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     }
     resource_profile.save_profile(profile, profile_dir)
     rd = tmp_path / 'live-contract-shape'
+    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider == 'deepseek-direct')
     result = bridge.drive_operator_contract(live_contract(), rd, driver_path=DRIVER, launch=False)
     assert result['driver_complete'] is True
+    assert result['model_selection'] == {'provider': 'deepseek-direct', 'model': 'deepseek-flash', 'run_mode': 'ultra'}
     ledger = rd / 'working/interview/intake_ledger.json'
     engine_intake = rd / 'working/checkpoints/engine-intake.json'
     proc = subprocess.run([sys.executable, str(RESOLVER), '--ledger', str(ledger),
@@ -156,15 +158,49 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     assert not resolved['workhorse_model'].endswith(';')
     assert resolved['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
     assert resolved['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
-    # The driver's supported resource-profile projection already owns client
-    # model routing. Isolate credentials, not routing, at the provider edge.
-    profile = _profile_with_direct_flash()
-    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider == 'deepseek-direct')
+    # Read the exact profile the real driver just produced. Credentials are
+    # isolated at the provider boundary; model-plan persistence is not stubbed.
+    profile = resource_profile.load_profile()
     decision = model_router.resolve_route('P4-COPY', profile=profile, mode=resolved['run_mode'])
     assert decision['route'] == {'provider': 'deepseek-direct', 'model': 'deepseek-flash'}
     assert decision['client_plan']['applied'] is True
     assert decision['mode_ceiling']['mode'] == 'ultra'
     assert decision['mode_ceiling']['operator_ceiling'] == 100
+
+
+def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypatch):
+    """Exercise launcher preflight with the real supported profile projection.
+    The engine executable is a no-provider recorder; no model transport runs."""
+    profile_dir = tmp_path / 'profile'
+    monkeypatch.setenv('PRESENTATION_RESOURCE_PROFILE_DIR', str(profile_dir))
+    profile = resource_profile.new_profile()
+    profile['providers']['deepseek-direct'] = {
+        'provider': 'deepseek-direct', 'presence': True, 'detected': True,
+        'wired_models': ['deepseek-flash', 'deepseek-v4-pro'], 'consented': True,
+    }
+    profile['model_plan'] = _profile_with_direct_flash()['model_plan']
+    resource_profile.save_profile(profile, profile_dir)
+    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider == 'deepseek-direct')
+    monkeypatch.setattr(launcher, 'notify_gate', lambda run: True)
+    monkeypatch.setattr(launcher, 'ocr_launch_gate', lambda run: True)
+    monkeypatch.setattr(launcher, 'capacity_gate', lambda: (100, {'status': 'MEASURED', 'provider': 'deepseek-direct', 'plan': 'test', 'detection_source': 'test'}))
+    monkeypatch.setenv('PRESENTATION_CREDIT_PREFLIGHT', '0')
+    scripts = tmp_path / 'scripts'; scripts.mkdir()
+    (scripts / 'presentation_job.py').write_text(
+        "import json,os,sys\nrd=sys.argv[sys.argv.index('--run-dir')+1]\njson.dump({'mode':os.environ.get('PRESENTATION_MODE')},open(os.path.join(rd,'engine-env.json'),'w'))\n",
+        encoding='utf-8')
+    monkeypatch.setattr(launcher, 'resolve_scripts_dir', lambda: scripts)
+    run = tmp_path / 'run'; (run / 'working/copy').mkdir(parents=True)
+    (run / 'working/copy/intake.json').write_text(json.dumps({'presentation_type': 'from_scratch'}))
+    rc = launcher.dispatch_new(str(run), client='operator', deck_type='from_scratch', background=False, mode='ultra')
+    assert rc == 0
+    mode_plan = json.loads((run / '.mode-plan.json').read_text())
+    model_plan = json.loads((run / '.model-plan.json').read_text())
+    assert mode_plan['mode'] == 'ultra' and mode_plan['declared'] is True
+    assert mode_plan['ceiling']['operator_ceiling'] == 100
+    assert json.loads((run / 'engine-env.json').read_text())['mode'] == 'ultra'
+    authoring = next(row for row in model_plan['decisions'] if row['capability'] == 'authoring')
+    assert authoring['provider'] == 'deepseek-direct' and authoring['model'] == 'deepseek-flash'
 
 
 def test_rejects_client_shaped_or_incomplete_contract(tmp_path):
