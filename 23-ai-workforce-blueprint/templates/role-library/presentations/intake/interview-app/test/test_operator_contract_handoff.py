@@ -215,3 +215,10 @@ def test_changed_contract_cannot_resume_authenticated_run(tmp_path, monkeypatch)
     changed = contract(); changed['slide_count'] = 9
     with pytest.raises(ValueError, match='conflicts'):
         bridge.drive_operator_contract(changed, rd, driver_path=DRIVER, launch=False, receipt_hmac='stable-receipt')
+
+
+def test_optional_boolean_and_yes_no_types_allow_unselected_extras_without_coercion():
+    candidate = contract()
+    candidate['want_audio_demo'] = False
+    candidate['want_ghl_upload'] = 'no'
+    assert bridge.validate_operator_contract(candidate)['want_audio_demo'] is False
