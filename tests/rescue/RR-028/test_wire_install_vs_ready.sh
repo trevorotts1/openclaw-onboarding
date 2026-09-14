@@ -269,9 +269,9 @@ new_box box-stale-cmd
 rr028_job "$BOX" '{"id":"9","name":"rescue-rr-box-poll","enabled":true,"schedule":{"kind":"cron","expr":"*/2 * * * *"},"payload":{"kind":"command","command":"sh /gone/rescue-poll.sh"},"delivery":{"mode":"none"}}'
 run_wire
 WANT="sh $BOX/.openclaw/skills/65-rescue-receiver/rescue-poll.sh"
-[ "$(job_field "$BOX" payload.command)" = "$WANT" ] \
+[ "$(rr028_stored_command "$BOX/jobs.json")" = "$WANT" ] \
   && ok "a stale COMMAND is reconciled in place to the desired command" \
-  || bad "command not reconciled" "$(job_field "$BOX" payload.command)"
+  || bad "command not reconciled" "$(rr028_stored_command "$BOX/jobs.json")"
 [ "$(job_field "$BOX" id)" = "9" ] \
   && ok "reconciled IN PLACE (the job id and its run history survive)" \
   || bad "job was replaced instead of edited" "id=$(job_field "$BOX" id)"

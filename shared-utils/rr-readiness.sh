@@ -143,6 +143,9 @@ RRR_DELIVERY="${RRR_DELIVERY:-none}"
 RRR_ENABLED="${RRR_ENABLED:-1}"
 RRR_STATE_NAME="${RRR_STATE_NAME:-rr-receiver}"
 RRR_RS="$(printf '\036')"          # empty-field sentinel (see rrr_json_rows)
+_RRR_CK_TAB="$(printf '\t')"       # literal tab for rrr_cron_cmd_key (never a
+                                   # literal tab in the pattern: an editor that
+                                   # eats it must not silently change behaviour)
 
 # ---- resolved state --------------------------------------------------------
 RRR_ROOT=""; RRR_SECRETS=""; RRR_POLL=""; RRR_STATE_DIR=""
@@ -317,6 +320,57 @@ def g(d, *ks):
             return None
     return o
 
+# Shells whose argv[0] means "the rest of argv is a command for me to run".
+SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "ksh93", "ash", "mksh")
+# The flag a shell uses to read its program from the NEXT word. Exactly the two
+# forms this platform documents/emits: `--command <shell>` is defined as
+# "Command payload run as sh -lc <shell> on the Gateway".
+WRAP_FLAGS = ("-lc", "-c")
+
+def _base(w):
+    return w.rsplit("/", 1)[-1]
+
+def argv_command(v):
+    """The command a payload.argv vector expresses, or None if uninterpretable.
+
+    RR-028 argv readback. Measured on a live box across all 117 jobs:
+    `payload.command` is populated for 0 of them and `payload.argv` for 16, so
+    the canonical command job is
+
+        {"kind":"command","argv":["sh","-lc","sh <poll>"]}
+
+    with payload.command and top-level command BOTH absent. The engine used to
+    fall through to the literal "kind=command", which can never equal the
+    desired "sh <poll>" -- so SCHEDULED/VERIFIED were unreachable, and a
+    healthy, actively-running job was reported as a field mismatch.
+
+    EXACTLY ONE shape is accepted, because it is the documented encoding the
+    CLI itself defines for `--command <shell>` and the only one observed:
+
+        [<shell>, "-lc" | "-c", <command>]     (3 elements, all non-empty str)
+
+    -> returns <command>.
+
+    EVERY other shape returns None -- which the caller reports as an
+    UNOBSERVABLE command. That is deliberate. `--command-argv <json>` lets a
+    job carry an arbitrary argv vector, so an unrecognised vector must not be
+    flattened, joined or otherwise guessed into text that might coincidentally
+    equal the desired command: a different arity (including an EXTRA element),
+    a non-string or empty member, a non-shell argv[0], or any other flag is a
+    shape this readback cannot vouch for, and an unreadable field must never
+    be able to look like a match.
+    """
+    if not isinstance(v, list) or len(v) != 3:
+        return None
+    for x in v:
+        if not isinstance(x, str) or not x:
+            return None
+    if _base(v[0]) not in SHELLS:
+        return None
+    if v[1] not in WRAP_FLAGS:
+        return None
+    return v[2]
+
 try:
     data = json.load(sys.stdin)
 except Exception:
@@ -358,12 +412,24 @@ for j in jobs:
             sch = alt if isinstance(alt, str) else ""
     cmd = g(j, "payload", "command")
     if not (isinstance(cmd, str) and cmd):
+        # RR-028: the measured CLI shape exposes the command ONLY as
+        # payload.argv. Reconstruct it here; a vector this readback cannot
+        # interpret yields None and falls through to the top-level fallbacks.
+        cmd = argv_command(g(j, "payload", "argv"))
+    if not (isinstance(cmd, str) and cmd):
         alt = j.get("command")
         if isinstance(alt, str) and alt:
             cmd = alt
         else:
-            pk = g(j, "payload", "kind")
-            cmd = ("kind=" + pk) if isinstance(pk, str) and pk else ""
+            # NOTHING readable. This is deliberately EMPTY, not a "kind=..."
+            # marker: the payload KIND being `command` says what sort of job
+            # this is, it does not reveal WHAT it runs. An empty field is the
+            # honest report -- it lands in `miss` as "command" and the
+            # evaluator records `command_unobservable` -- whereas the old
+            # "kind=command" string dressed an unreadable field up as an
+            # observed value. Either way it can never equal "sh <poll>"; empty
+            # additionally keeps it out of every "we read this" path.
+            cmd = ""
     dl = g(j, "delivery", "mode")
     if not (isinstance(dl, str) and dl):
         alt = j.get("deliver")
@@ -685,6 +751,169 @@ $_rrr_rb_dbrows"
     return 1
 }
 
+# ---------------------------------------------------------------------------
+# rrr_cron_cmd_key <raw-command> [root] — THE command comparison.
+#
+# WHY THIS EXISTS (RR-028): the match used to be a byte comparison of the
+# observed command against the literal "sh $RRR_POLL". That is brittle in both
+# directions that matter on a live box:
+#   * it reported a MISMATCH for a job that runs the right script through a
+#     shell wrapper (`sh -lc "sh <poll>"`, which is exactly how some CLIs store
+#     a command job), and
+#   * it reported a MISMATCH for the right script named relatively
+#     (`sh ../../skills/.../rescue-poll.sh`).
+# Both are the same job. So BOTH sides are normalised here, and the comparison
+# is between what each side RESOLVES TO.
+#
+# THE NORMALISATION RULE (one rule, applied identically to both sides):
+#   1. Trim leading/trailing blanks (the readback already folds tabs, CRs and
+#      newlines to spaces).
+#   2. Strip AT MOST ONE shell-wrapper prefix `<shell> <flag>` where <shell>'s
+#      basename is one of sh/bash/zsh/dash/ksh/ksh93/ash/mksh and <flag> is
+#      EXACTLY "-lc" or "-c" -- the two forms this platform documents ("Command
+#      payload run as sh -lc <shell> on the Gateway") and emits. A wrapper is
+#      stripped because `sh -lc "sh <poll>"` runs `sh <poll>`. Any OTHER flag is
+#      a shape this engine has not observed and cannot vouch for: it is left in
+#      place, so the row keys as its own text and cannot match.
+#   3. Strip AT MOST ONE bare shell prefix `<shell> `, because `sh <script>`
+#      runs <script>. (So "sh <poll>", "<poll>" and "sh -lc \"sh <poll>\"" all
+#      reach the same leaf. No recursion: at most one wrapper, one shell.)
+#   4. The remainder -- VERBATIM, spaces and all, never re-split or evaluated --
+#      is the leaf command text.
+#   5. Resolve the leaf to an ABSOLUTE path: an absolute leaf is taken as-is;
+#      a relative leaf is resolved against <root> (the openclaw root, the only
+#      directory a relative cron command could sanely be relative to).
+#   6. Canonicalise that absolute path: "" and "." segments dropped, ".."
+#      segments applied, duplicate "/" collapsed.
+# The printed KEY is that canonical absolute path.
+#
+# WHY IT IS FAIL-CLOSED. rc is 1 -- the caller must then treat the command as
+# UNOBSERVABLE and match NOTHING -- when the input is empty, when the leaf is
+# empty, when the leaf is just a bare shell name ("sh" resolves to no script at
+# all), or when the two sides cannot both be resolved (an empty <root> cannot
+# resolve a relative leaf). Every accepted difference is a difference that
+# provably runs the SAME file:
+#   * an extra/unexpected argument is NOT dropped -- it stays in the preserved
+#     remainder, so `sh -lc "sh <poll> extra"` keys as "<poll> extra" != key.
+#   * a different script, or the same basename in a different directory, keys
+#     as a different path.
+#   * a non-shell program (`python <poll>`, `kind=command`) has no prefix
+#     stripped, so it keys as its own text and cannot collide with <poll>.
+#   * a metacharacter-bearing leaf (a box root may legitimately contain spaces,
+#     `;` and `$( )`) is compared as a STRING and is never executed, eval'd or
+#     word-split, so it is neither an injection nor a false match.
+# ---------------------------------------------------------------------------
+_rrr_ck_trim() {   # sets _RRR_CK_T
+    _RRR_CK_T="$1"
+    while [ -n "$_RRR_CK_T" ]; do
+        case "$_RRR_CK_T" in
+            " "*)  _RRR_CK_T="${_RRR_CK_T# }" ;;
+            "$_RRR_CK_TAB"*) _RRR_CK_T="${_RRR_CK_T#"$_RRR_CK_TAB"}" ;;
+            *) break ;;
+        esac
+    done
+    while [ -n "$_RRR_CK_T" ]; do
+        case "$_RRR_CK_T" in
+            *" ")  _RRR_CK_T="${_RRR_CK_T% }" ;;
+            *"$_RRR_CK_TAB") _RRR_CK_T="${_RRR_CK_T%"$_RRR_CK_TAB"}" ;;
+            *) break ;;
+        esac
+    done
+    return 0
+}
+
+_rrr_ck_is_shell() {
+    case "${1##*/}" in
+        sh|bash|zsh|dash|ksh|ksh93|ash|mksh) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_rrr_ck_is_wrapflag() {
+    [ "$1" = "-lc" ] || [ "$1" = "-c" ]
+}
+
+# _rrr_ck_canon <absolute-path> — sets _RRR_CK_C. Never globs (set -f), never
+# touches the filesystem (this must not depend on the path existing -- a
+# mismatched job may name a script that is not installed).
+_rrr_ck_canon() {
+    _rrr_ck_p="$1"
+    _rrr_ck_out=""
+    case $- in *f*) _rrr_ck_hadf=1 ;; *) _rrr_ck_hadf=0; set -f ;; esac
+    _rrr_ck_oifs="$IFS"; IFS=/
+    for _rrr_ck_seg in $_rrr_ck_p; do
+        case "$_rrr_ck_seg" in
+            ""|.) : ;;
+            ..) [ -n "$_rrr_ck_out" ] && _rrr_ck_out="${_rrr_ck_out%/*}" ;;
+            *) _rrr_ck_out="$_rrr_ck_out/$_rrr_ck_seg" ;;
+        esac
+    done
+    IFS="$_rrr_ck_oifs"
+    [ "$_rrr_ck_hadf" = "0" ] && set +f
+    _RRR_CK_C="${_rrr_ck_out:-/}"
+    return 0
+}
+
+rrr_cron_cmd_key() {
+    _rrr_ck_raw="$1"; _rrr_ck_root="${2:-$RRR_ROOT}"
+    _RRR_CK_KEY=""
+    [ -n "$_rrr_ck_raw" ] || return 1
+    _rrr_ck_trim "$_rrr_ck_raw"
+    _rrr_ck_t="$_RRR_CK_T"
+    [ -n "$_rrr_ck_t" ] || return 1
+    # first word / remainder
+    case "$_rrr_ck_t" in
+        *" "*) _rrr_ck_w="${_rrr_ck_t%% *}"; _rrr_ck_r="${_rrr_ck_t#* }" ;;
+        *)     _rrr_ck_w="$_rrr_ck_t";        _rrr_ck_r="" ;;
+    esac
+    _rrr_ck_trim "$_rrr_ck_r"; _rrr_ck_r="$_RRR_CK_T"
+    # (2) one shell-wrapper prefix
+    if [ -n "$_rrr_ck_r" ] && _rrr_ck_is_shell "$_rrr_ck_w"; then
+        case "$_rrr_ck_r" in
+            *" "*) _rrr_ck_w2="${_rrr_ck_r%% *}"; _rrr_ck_r2="${_rrr_ck_r#* }" ;;
+            *)     _rrr_ck_w2="$_rrr_ck_r";        _rrr_ck_r2="" ;;
+        esac
+        _rrr_ck_trim "$_rrr_ck_r2"; _rrr_ck_r2="$_RRR_CK_T"
+        if [ -n "$_rrr_ck_r2" ] && _rrr_ck_is_wrapflag "$_rrr_ck_w2"; then
+            _rrr_ck_t="$_rrr_ck_r2"
+        else
+            _rrr_ck_t="$_rrr_ck_r"
+        fi
+    fi
+    # (3) one bare shell prefix
+    case "$_rrr_ck_t" in
+        *" "*) _rrr_ck_w="${_rrr_ck_t%% *}"; _rrr_ck_r="${_rrr_ck_t#* }" ;;
+        *)     _rrr_ck_w="$_rrr_ck_t";        _rrr_ck_r="" ;;
+    esac
+    _rrr_ck_trim "$_rrr_ck_r"; _rrr_ck_r="$_RRR_CK_T"
+    if [ -n "$_rrr_ck_r" ] && _rrr_ck_is_shell "$_rrr_ck_w"; then
+        _rrr_ck_leaf="$_rrr_ck_r"
+    else
+        _rrr_ck_leaf="$_rrr_ck_t"
+    fi
+    # (4)/(5) leaf -> absolute
+    _rrr_ck_trim "$_rrr_ck_leaf"; _rrr_ck_leaf="$_RRR_CK_T"
+    [ -n "$_rrr_ck_leaf" ] || return 1
+    case "$_rrr_ck_leaf" in
+        /*) _rrr_ck_abs="$_rrr_ck_leaf" ;;
+        *)  if _rrr_ck_is_shell "$_rrr_ck_leaf"; then return 1; fi
+            [ -n "$_rrr_ck_root" ] || return 1
+            _rrr_ck_abs="$_rrr_ck_root/$_rrr_ck_leaf" ;;
+    esac
+    # (6) canonicalise
+    _rrr_ck_canon "$_rrr_ck_abs" || return 1
+    _RRR_CK_KEY="$_RRR_CK_C"
+    [ -n "$_RRR_CK_KEY" ] && [ "$_RRR_CK_KEY" != "/" ] || return 1
+    return 0
+}
+
+# rrr_cron_cmd_key_of <raw> — the KEY, or "" when uninterpretable. A convenience
+# for the two comparison sites so neither can forget the fail-closed default.
+rrr_cron_cmd_key_of() {
+    if rrr_cron_cmd_key "$1"; then printf '%s' "$_RRR_CK_KEY"; else printf ''; fi
+    return 0
+}
+
 # rrr_cron_eval — compare the observed rows against the desired config.
 # RRR_CRON_STATE: absent_proven_by_cli | cli_visibility_insufficient |
 #                 duplicate | mismatch | single | unreadable | unresolved |
@@ -720,6 +949,10 @@ rrr_cron_eval() {
     RRR_CRON_ENABLED_IDS=""; RRR_CRON_ENABLED_OBSERVED=0; RRR_CRON_STORE_NOTE=""
     RRR_DB_AUTHORITY="none"
     _rrr_ce_wantcmd="sh $RRR_POLL"
+    # Normalised ONCE, for both comparison sites. An unresolvable desired
+    # command yields "" and then matches NOTHING (fail-closed): readiness can
+    # never be claimed against a desired config this engine cannot name.
+    _rrr_ce_wantkey="$(rrr_cron_cmd_key_of "$_rrr_ce_wantcmd")"
     _rrr_ce_seen=""
     _rrr_ce_first_id=""; _rrr_ce_first_src=""; _rrr_ce_first_sch=""; _rrr_ce_first_cmd=""
     _rrr_ce_first_en=""; _rrr_ce_first_dl=""
@@ -768,8 +1001,13 @@ rrr_cron_eval() {
             RRR_CRON_UNOBS="${RRR_CRON_UNOBS}${RRR_CRON_UNOBS:+,}$_rrr_ce_miss"
         fi
         # Does THIS row already satisfy the desired config? Used by the dedupe
-        # step to keep a good job and remove the strays.
-        if [ "$_rrr_ce_sch" = "$RRR_SCHEDULE" ] && [ "$_rrr_ce_cmd" = "sh $RRR_POLL" ] \
+        # step to keep a good job and remove the strays. The command is
+        # compared by NORMALISED KEY (rrr_cron_cmd_key), never as raw bytes:
+        # see the normalisation rule above. A command this readback cannot
+        # interpret keys as "" and therefore matches nothing.
+        _rrr_ce_cmdkey="$(rrr_cron_cmd_key_of "$_rrr_ce_cmd")"
+        if [ "$_rrr_ce_sch" = "$RRR_SCHEDULE" ] \
+           && [ -n "$_rrr_ce_wantkey" ] && [ "$_rrr_ce_cmdkey" = "$_rrr_ce_wantkey" ] \
            && [ "$_rrr_ce_en" = "true" ] && [ "$_rrr_ce_dl" = "$RRR_DELIVERY" ]; then
             case " $RRR_CRON_MATCH_IDS " in
                 *" $_rrr_ce_id "*) : ;;
@@ -849,7 +1087,13 @@ rrr_cron_eval() {
     if [ "$RRR_CRON_SCHEDULE" = "$RRR_SCHEDULE" ]; then :; else
         [ -n "$RRR_CRON_SCHEDULE" ] && _rrr_ce_mism="$_rrr_ce_mism schedule" || _rrr_ce_mism="$_rrr_ce_mism schedule_unobservable"
     fi
-    if [ "$RRR_CRON_COMMAND" = "$_rrr_ce_wantcmd" ]; then :; else
+    # The command is compared by NORMALISED KEY on BOTH sides (the rule is
+    # documented at rrr_cron_cmd_key). An unreadable command is already empty,
+    # which reports `command_unobservable`; a readable-but-different one -- or
+    # any shape the normaliser refuses -- keys differently from the desired
+    # job and reports `command`. Neither can ever match the desired config.
+    if [ -n "$_rrr_ce_wantkey" ] \
+       && [ "$(rrr_cron_cmd_key_of "$RRR_CRON_COMMAND")" = "$_rrr_ce_wantkey" ]; then :; else
         [ -n "$RRR_CRON_COMMAND" ] && _rrr_ce_mism="$_rrr_ce_mism command" || _rrr_ce_mism="$_rrr_ce_mism command_unobservable"
     fi
     case "$RRR_CRON_ENABLED" in

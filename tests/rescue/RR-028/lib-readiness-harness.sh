@@ -99,6 +99,31 @@ def load():
     d.setdefault("jobs", [])
     return d
 
+# THE REAL FIELD FORM. Measured on a live box across all 117 jobs:
+# `payload.command` is populated for 0 of them, `payload.argv` for 16, and the
+# CLI defines `--command <shell>` as "Command payload run as sh -lc <shell> on
+# the Gateway". This double used to write `payload.command`, a field the real
+# CLI never produces -- so the engine and its own double agreed with each other
+# while BOTH disagreed with the real system, which is exactly how the RR-028
+# argv readback defect survived every review. The double now mirrors the real
+# field FORM, not just the export names.
+#
+# RR028_MOCK_JOB_SHAPE=command restores the OLD, non-real form for the one case
+# that must keep covering it (a build that exposes payload.command instead).
+def job_payload(cmd):
+    if os.environ.get("RR028_MOCK_JOB_SHAPE") == "command":
+        return {"kind": "command", "command": cmd}
+    return {"kind": "command", "argv": ["sh", "-lc", cmd]}
+
+def set_job_command(job, cmd):
+    p = job.setdefault("payload", {})
+    p["kind"] = "command"
+    # Drop the stale field so the store never carries BOTH forms: this double
+    # models ONE real shape at a time.
+    p.pop("command", None)
+    p.pop("argv", None)
+    p.update(job_payload(cmd))
+
 def save(d):
     tmp = JOBS + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -206,7 +231,7 @@ if action == "add":
         "name": val("--name"),
         "enabled": True,
         "schedule": {"kind": "cron", "expr": val("--cron")},
-        "payload": {"kind": "command", "command": val("--command")},
+        "payload": job_payload(val("--command")),
         "delivery": {"mode": "none" if flag("--no-deliver") else "announce"},
     }
     d["jobs"].append(job)
@@ -224,8 +249,7 @@ if action == "edit":
                 j.setdefault("schedule", {})["expr"] = val("--cron")
                 j["schedule"]["kind"] = "cron"
             if flag("--command"):
-                j.setdefault("payload", {})["command"] = val("--command")
-                j["payload"]["kind"] = "command"
+                set_job_command(j, val("--command"))
             if flag("--no-deliver"):
                 j.setdefault("delivery", {})["mode"] = "none"
             break
@@ -411,6 +435,38 @@ for line in sys.stdin:
     if len(b) >= 2 and b[0] == "cron" and b[1] in verbs and "--help" not in b:
         sys.stdout.write(line)
 '
+}
+
+# ---------------------------------------------------------------------------
+# rr028_stored_command <jobs-json-file> [index]
+#   The command a STORED job carries, read in the SAME order the engine's
+#   readback uses: payload.command first, then the documented argv wrapper
+#   payload.argv[2] (the real CLI form), then the top-level `command`.
+#
+#   Tests must inspect the box this way rather than reaching for
+#   `payload.command` directly: that field is populated for 0 of the 117 jobs
+#   on a real box, so a test that reads it proves nothing about the real
+#   system. Keeping the readback order here -- in ONE place -- is what stops
+#   the double and the engine drifting apart again.
+# ---------------------------------------------------------------------------
+rr028_stored_command() {
+  RR028_SC_JOBS="$1" RR028_SC_IDX="${2:-0}" python3 -c '
+import json, os
+try:
+    d = json.load(open(os.environ["RR028_SC_JOBS"], encoding="utf-8"))
+    j = (d.get("jobs") or [])[int(os.environ["RR028_SC_IDX"])]
+except Exception:
+    j = {}
+p = j.get("payload") if isinstance(j.get("payload"), dict) else {}
+cmd = p.get("command")
+if not (isinstance(cmd, str) and cmd):
+    a = p.get("argv")
+    if isinstance(a, list) and len(a) == 3 and all(isinstance(x, str) for x in a) \
+       and a[1] in ("-lc", "-c"):
+        cmd = a[2]
+if not (isinstance(cmd, str) and cmd):
+    cmd = j.get("command") if isinstance(j.get("command"), str) else ""
+print(cmd or "")'
 }
 
 # ---------------------------------------------------------------------------
