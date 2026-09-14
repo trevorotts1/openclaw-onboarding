@@ -1,0 +1,79 @@
+name: rescue-rangers-rr028-gates
+
+# RR-028 — Rescue Receiver READINESS gates. "Make enrollment and cron
+# reconciliation report real readiness." Proves the four explicit states
+# (UNENROLLED / ENROLLED_PENDING / SCHEDULED / VERIFIED) stay reachable with an
+# explicit reason, that readiness stays keyed by the desired-config digest and
+# a verified receipt, that every write is READ BACK (a write that does not read
+# back is never reported as success), that duplicates / command / schedule /
+# enabled / delivery are reconciled, that argv-safety and the shared
+# host/container descriptor hold, and that installer success (files installed)
+# is never reported as receiver-ready. Also re-runs the RR-027 credential gates
+# and the RR-025 receiver battery this change sits on top of.
+#
+# Triggered whenever any guarded file changes.
+
+on:
+  push:
+    paths:
+      - "shared-utils/rr-readiness.sh"
+      - "65-rescue-receiver/wire.sh"
+      - "65-rescue-receiver/rr-readiness.sh"
+      - "65-rescue-receiver/skill-version.txt"
+      - "update-skills.sh"
+      - "tests/rescue/RR-028/**"
+      - "tests/unit/rr027-*.test.sh"
+      - ".github/workflows/rescue-rangers-rr028-gates.yml"
+  pull_request:
+    paths:
+      - "shared-utils/rr-readiness.sh"
+      - "65-rescue-receiver/wire.sh"
+      - "65-rescue-receiver/rr-readiness.sh"
+      - "65-rescue-receiver/skill-version.txt"
+      - "update-skills.sh"
+      - "tests/rescue/RR-028/**"
+      - "tests/unit/rr027-*.test.sh"
+      - ".github/workflows/rescue-rangers-rr028-gates.yml"
+
+jobs:
+  rescue-rangers-rr028-gates:
+    name: RR-028 gates (states + readback + probe + argv safety)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax gates
+        run: |
+          bash -n shared-utils/rr-readiness.sh
+          sh -n shared-utils/rr-readiness.sh
+          bash -n 65-rescue-receiver/wire.sh
+          bash -n 65-rescue-receiver/rr-readiness.sh
+          bash -n tests/rescue/RR-028/lib-readiness-harness.sh
+          bash -n tests/rescue/RR-028/test_readiness_states.sh
+          bash -n tests/rescue/RR-028/test_safe_probe.sh
+          bash -n tests/rescue/RR-028/test_wire_install_vs_ready.sh
+
+      - name: Readiness state machine, readback and digest keying
+        run: |
+          bash tests/rescue/RR-028/test_readiness_states.sh
+
+      - name: Safe test claim / receipt / intended runtime / credential argv
+        run: |
+          bash tests/rescue/RR-028/test_safe_probe.sh
+
+      - name: Installer-vs-ready, duplicate/field reconciliation, version independence
+        run: |
+          bash tests/rescue/RR-028/test_wire_install_vs_ready.sh
+
+      - name: RR-027 credential gates (this change consumes the shared parser)
+        run: |
+          bash tests/unit/rr027-rescue-env.test.sh
+          sh tests/unit/rr027-rescue-env.test.sh
+          bash tests/unit/rr027-no-credential-in-child-env.test.sh
+          sh tests/unit/rr027-no-credential-in-child-env.test.sh
+
+      - name: Receiver regressions (RR-004 pairing, RR-025 envelope)
+        run: |
+          bash tests/rescue/RR-004/test_receiver_additive_fields.sh
+          bash tests/rescue/RR-025/test_claim_envelope.sh

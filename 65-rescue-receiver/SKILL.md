@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.3.0"
+  version: "v23.4.0"
   priority: HIGH
 ---
 
@@ -38,10 +38,28 @@ pre-proven local delivery command, and acks the verdict.
 ## Wiring
 
 - `wire.sh` — idempotent; registers the */2-minute cron ONLY when the box is
-  enrolled (RR_RECEIVER_URL + RR_BOX_TOKEN present in the secrets env). Safe to
-  re-run on every roll.
-- Requires `65-rescue-receiver/rescue-poll.sh` to exist under the box's skills
-  dir; the skill dir ships via the normal update-skills roll.
+  enrolled (RR_RECEIVER_URL + RR_BOX_TOKEN + RR_BOX_SLUG present in the secrets
+  env). Safe to re-run on every roll.
+- RR-028: it RECONCILES rather than assumes. The cron is read back from
+  `openclaw cron list --json` AND from the gateway's stored
+  `cron_jobs.job_json` (the only view that shows a DISABLED job); duplicates
+  are collapsed, and command / schedule / enabled / delivery flags are compared
+  and repaired (`cron edit` in place, else replace) with a FRESH readback after
+  every write. A write that does not read back is never reported as success.
+  Reconciliation reads NO software version, so it is not gated by a
+  `.wired-<version>` sentinel and gives the same verdict across a version
+  change. `wire.sh`'s exit code is the INSTALLER's claim (files installed) — it
+  is never "receiver ready".
+- Requires `65-rescue-receiver/rescue-poll.sh` and
+  `65-rescue-receiver/rr-readiness.sh` to exist under the box's skills dir; the
+  skill dir ships via the normal update-skills roll.
+- Requires `shared-utils/rr-readiness.sh` (RR-028): the readiness engine —
+  explicit states UNENROLLED / ENROLLED_PENDING / SCHEDULED / VERIFIED with an
+  explicit reason each, keyed by a desired-config digest (name, schedule,
+  command, enabled, delivery, slug, URL and a SALTED token commitment).
+- Requires `shared-utils/oc-env-descriptor.sh` (RR-029): the ONE host/container
+  descriptor. The runtime the cron is scheduled in is derived from it, and a
+  readiness receipt only verifies the runtime it was taken in.
 - Requires `shared-utils/rescue-env.sh` (RR-027): the shared dotenv parser +
   child-env scrub. Enrollment values are PARSED (never sourced as shell, never
   exported), and every child of the poll runs with rescue credential aliases
@@ -49,6 +67,30 @@ pre-proven local delivery command, and acks the verdict.
   credentials pass through untouched. Malformed store lines fail VISIBLY
   (file + line named on stderr, values never printed) instead of a silent
   half-config.
+
+## Readiness (RR-028)
+
+```sh
+bash <ocroot>/skills/65-rescue-receiver/rr-readiness.sh            # report (read-only)
+bash <ocroot>/skills/65-rescue-receiver/rr-readiness.sh --json     # one JSON object
+bash <ocroot>/skills/65-rescue-receiver/rr-readiness.sh --reconcile
+bash <ocroot>/skills/65-rescue-receiver/rr-readiness.sh --probe    # safe test claim
+```
+
+| state | meaning |
+|---|---|
+| `UNENROLLED` | slug/token/URL absent, or the store is unreadable/malformed — the reason names the missing NAME(s) |
+| `ENROLLED_PENDING` | enrolled, but scheduling is unproven: cron absent/duplicated/mismatched/disabled, readback unreadable, or a runtime requirement (parser / curl / base64 / openclaw / node) unresolved |
+| `SCHEDULED` | exactly one cron read back with the desired digest, enabled and silent — no verified receipt yet |
+| `VERIFIED` | the above, plus a receipt from a safe test claim taken in the intended runtime |
+
+Exit codes: `0` VERIFIED, `1` SCHEDULED, `2` ENROLLED_PENDING, `3` UNENROLLED,
+`78` no openclaw root. The safe test claim is a capacity-0 `dry_run` claim that
+starts no agent turn and acks nothing; if the receiver hands it an instruction
+it is REFUSED and no receipt is written (the box stays `SCHEDULED`). The bearer
+token rides a 0600 `curl -H @file` header inside a 0700 private temp dir —
+never argv, never a log. Exit code of `wire.sh` = files installed; readiness is
+a separate claim that only `--probe` can raise to `VERIFIED`.
 
 ## What the agent needs to know
 

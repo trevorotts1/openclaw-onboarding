@@ -1,5 +1,53 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.0] - 2026-09-13 - RR-028 enrollment + cron reconciliation report REAL readiness
+
+RR-W4-INSTALL. Enrollment and cron status were PROSE. `UNENROLLED` existed only
+as a comment inside `wire.sh`; the four-state vocabulary did not exist anywhere
+in this repo. A job registered with a stale poll path, the wrong cadence, or
+client-facing delivery left ON was indistinguishable from a correct one,
+because presence was decided by `cron list --json | grep '"name": ..."'` — a
+text match that proves nothing about the job. And nothing separated "files were
+installed" (the installer's claim) from "the receiver is READY" (a claim about
+the intended runtime).
+
+New engine `shared-utils/rr-readiness.sh` + operator surface
+`65-rescue-receiver/rr-readiness.sh`:
+
+- **Four explicit states with explicit reasons** — `UNENROLLED`,
+  `ENROLLED_PENDING`, `SCHEDULED`, `VERIFIED`; every outcome carries a
+  machine-readable reason code and a detail that names NAMES, never values.
+  Anything unproven is `ENROLLED_PENDING` naming exactly what is missing.
+- **Version-independent** — no input to reconciliation is a software version.
+  A `.wired-<version>` sentinel says "files were copied"; it is never evidence
+  that a cron exists. `update-skills.sh` now runs this skill's reconciler on
+  every pass, BEFORE the sentinel gate, so a cron an operator removed is
+  repaired on the next roll instead of waiting for a version bump.
+- **Keyed by a desired-config digest** — name, schedule, command, enabled bit,
+  delivery mode, slug, URL and a SALTED token commitment (the token itself is
+  never printed, logged or exported). A verified receipt is keyed by that
+  digest AND by the runtime, so a changed desired config or a probe taken in a
+  different runtime can never inherit an old verdict.
+- **All required resolutions** — slug, token and URL from the store, plus the
+  parser, curl, base64, the OpenClaw CLI and node. Anything unresolved is
+  reported by name.
+- **Readback, never assume** — two views (`cron list --json` and the gateway's
+  stored `cron_jobs.job_json`, the only one that shows a DISABLED job);
+  duplicates collapsed, command / schedule / enabled / delivery compared and
+  repaired (`cron edit` in place, else replace), with a FRESH readback after
+  every write. An operator-disabled cron or a tombstone is never resurrected.
+- **argv-safe** — every external command runs as an argv vector; no eval, no
+  `sh -c`, no string re-splitting. The host/container identity comes from
+  `shared-utils/oc-env-descriptor.sh`.
+- **Installer success != ready** — `wire.sh` exit 0 means files installed and
+  now prints `files-installed=1` plus the readiness line. `VERIFIED` requires a
+  receipt from a capacity-0 `dry_run` probe that starts no agent turn, acks
+  nothing, and is refused outright if the receiver hands it an instruction.
+
+Skill package version 23.3.0 -> 23.4.0. Gates: `tests/rescue/RR-028`
+(readiness states 43 assertions, safe probe 35, wire reconciliation 42), plus
+RR-027 credential gates, RR-004, RR-015, RR-025 and RR-026 re-run green.
+
 ## [23.3.0] - 2026-09-10 - RR-025 claim envelope identity + RR-026 process/lock supervision (RECEIVER_VERSION 1.6.0)
 
 RR-W3-RECEIVER. Two defect classes, both of which let the poller be *wrong* on a

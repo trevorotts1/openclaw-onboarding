@@ -6888,6 +6888,37 @@ PYEOF
       fi
     fi
 
+    # RR-028: ENROLLMENT/CRON RECONCILIATION IS NOT VERSION-GATED.
+    #
+    # `wire.sh` (Skill 65) is the ONLY thing that registers the Rescue Rangers
+    # receiver poll, and it used to run only through the `.wired-<version>`
+    # sentinel gate below. That made enrollment reconciliation a function of
+    # the SOFTWARE version: a box already wired at the current version never
+    # re-ran it, so a cron an operator removed (or one that a failed gateway
+    # call never created) stayed missing until the next version bump -- and a
+    # box whose files were current reported a "successful roll" over a receiver
+    # that was not scheduled at all. SPEC RR-028 requires reconciliation to be
+    # INDEPENDENT of the software version, so the reconciler runs on every pass
+    # for this one skill.
+    #
+    # Safe every pass by construction: wire.sh re-reads the enrollment store
+    # with the shared parser (no sourcing, no export), and when the box is not
+    # enrolled it exits before touching the gateway. When it is enrolled it
+    # reconciles the DURABLE cron state -- duplicates collapsed, command,
+    # schedule, enabled and delivery flags compared and READ BACK -- which is
+    # idempotent by design. Its exit code is the INSTALLER's claim (files
+    # installed); the readiness state is printed and is a separate claim that
+    # still requires a safe test claim receipt (65-rescue-receiver/
+    # rr-readiness.sh --probe), so a green roll can never be read as "receiver
+    # ready" again.
+    if [ "$SKILL_NAME" = "65-rescue-receiver" ] && [ -x "$SKILL_DIR/wire.sh" ]; then
+      if bash "$SKILL_DIR/wire.sh" --idempotent --reconcile-only >>"$LOG_FILE" 2>&1; then
+        echo "    ✓ enrollment/cron reconciliation ran (RR-028, version-independent -- see readiness line in log)"
+      else
+        echo "    ⚠ enrollment/cron reconciliation reported a wiring failure for $SKILL_NAME (see $LOG_FILE) -- next pass retries it"
+      fi
+    fi
+
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
     if [ -f "$WIRED_SENTINEL" ]; then
