@@ -239,3 +239,95 @@ def test_general_mode_contract_recovers_receipt_only_run(tmp_path):
     intake = json.loads((rd / 'working' / 'copy' / 'intake.json').read_text())
     assert result['driver_complete'] is True
     assert intake['run_mode'] == 'ultra'
+
+
+def live_authorized_contract_shape():
+    """Sanitized shape of task 1d269693's server-stored contract.
+
+    IDs are fixture values and no HMAC/secret is retained; every selected
+    option and answer key/type from the accepted request is represented.
+    """
+    payload = contract()
+    payload['answers'] = {
+        'deck_type_source': 'presentation_type: from_scratch; pitch_included: false',
+        'audience': 'General informational audience learning how to request and use the Presentation Department',
+        'mode': 'general',
+        'brief': 'How the Presentation Department Works — an informational department demonstration.',
+    }
+    return payload
+
+
+def test_live_contract_shape_maps_brief_to_canonical_client_notes_and_seals_all_options(tmp_path, monkeypatch):
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    payload = live_authorized_contract_shape()
+    mapped = bridge._operator_driver_answers(payload, DRIVER)
+    assert 'brief' not in mapped
+    assert 'mode' not in mapped
+    assert mapped['client_notes'] == payload['answers']['brief']
+    result = bridge.drive_operator_contract(payload, tmp_path / 'live-shape', driver_path=DRIVER, launch=False)
+    assert result['driver_complete'] is True
+    rd = tmp_path / 'live-shape'
+    ledger = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
+    assert ledger['status'] == 'complete'
+    assert ledger['entries']['client_notes']['value'] == payload['answers']['brief']
+    intake = json.loads((rd / 'working/copy/intake.json').read_text())
+    assert intake['deck_type'] == 'webinar'
+    assert intake['run_mode'] == 'ultra'
+    assert intake['pitch_included'] is False
+    engine = rd / 'working/checkpoints/engine-intake.json'
+    resolved = subprocess.run([sys.executable, str(RESOLVER), '--ledger', str(rd / 'working/interview/intake_ledger.json'), '--out', str(engine), '--source', 'operator-contract-live-shape'], text=True, capture_output=True)
+    assert resolved.returncode == 0, resolved.stderr
+    final = json.loads(engine.read_text())
+    assert final['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
+    assert final['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
+    assert final['pre_presentation_capture']['WANT_TELEPROMPTER'] == 'yes'
+    assert final['pre_presentation_capture']['WANT_SPEECH_SCRIPT'] == 'yes'
+    assert final['pre_presentation_capture']['WANT_AUDIO_DELIVERABLE'] == 'yes'
+    assert final['pre_presentation_capture']['WANT_AUDIO_DEMO'] is True
+    assert final['pre_presentation_capture']['WANT_GHL_UPLOAD'] == 'yes'
+    assert all(item in final['pre_presentation_capture']['DELIVERY_DESTINATIONS'] for item in payload['delivery_destinations'])
+    assert all(item in final['pre_presentation_capture']['DELIVERABLE_SET'] for item in payload['deliverable_set'].split(', '))
+
+
+def test_unknown_answer_is_rejected_before_receipt_or_partial_intake(tmp_path):
+    payload = live_authorized_contract_shape()
+    payload['answers']['unsupported_user_field'] = 'must never reach driver'
+    rd = tmp_path / 'unsupported'
+    with pytest.raises(ValueError, match='unsupported answer keys'):
+        bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    assert not (rd / 'working/interview/operator_contract.json').exists()
+    assert not (rd / 'working/interview/intake_ledger.json').exists()
+
+
+def test_live_contract_shape_resumes_after_mid_intake_failure_without_duplicate_turns(tmp_path, monkeypatch):
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    payload = live_authorized_contract_shape()
+    rd = tmp_path / 'partial-live-shape'
+    real_run = subprocess.run
+    failed = {'value': False}
+
+    def fail_client_notes(argv, *args, **kwargs):
+        if (not failed['value'] and '--answer' in argv and
+                argv[argv.index('--answer') + 1] == 'client_notes'):
+            failed['value'] = True
+            return subprocess.CompletedProcess(argv, 1, '', 'forced mid-intake failure')
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(bridge.subprocess, 'run', fail_client_notes)
+    with pytest.raises(RuntimeError, match='driver refused client_notes'):
+        bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    ledger = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
+    assert ledger['status'] == 'in_progress'
+    assert 'client_notes' not in ledger['entries']
+
+    monkeypatch.setattr(bridge.subprocess, 'run', real_run)
+    result = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    assert result['driver_complete'] is True
+    transcript = json.loads((rd / 'working/interview/intake_transcript_raw.json').read_text())
+    owner_qids = [turn['qid'] for turn in transcript if turn['role'] == 'owner']
+    assert len(owner_qids) == len(set(owner_qids))
+    completed = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
+    assert completed['status'] == 'complete'
+    assert completed['entries']['client_notes']['value'] == payload['answers']['brief']
