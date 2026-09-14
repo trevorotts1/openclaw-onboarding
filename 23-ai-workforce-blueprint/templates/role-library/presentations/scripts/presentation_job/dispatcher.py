@@ -7510,6 +7510,11 @@ def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) 
     with lock_path.open("a+", encoding="utf-8") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         led = _read_ledger(run_dir, phase_id)
+        # A reset must be bound to an existing durable generation.  Treating a
+        # missing field as generation zero would let a hand-created legacy
+        # ledger satisfy a newly-issued receipt's default prior generation.
+        if not isinstance(led.get("generation"), int):
+            raise RuntimeError("paid retry reset requires a durable ledger generation")
         receipt = {"kind": "local-operator-paid-retry-reset-v1", "run": str(run_dir.resolve()),
                    "phase_id": phase_id, "approved_input_revision": _approved_input_revision(run_dir, phase_id),
                    "prior_generation": led.get("generation", 0), "dispatcher_sha256": _file_sha(Path(__file__)),
@@ -7548,7 +7553,8 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
             valid = (receipt.get("kind") == "local-operator-paid-retry-reset-v1" and
                      receipt.get("run") == str(run_dir.resolve()) and receipt.get("phase_id") == phase_id and
                      receipt.get("approved_input_revision") == generation and
-                     receipt.get("prior_generation") == led.get("generation", 0) and
+                     isinstance(led.get("generation"), int) and
+                     receipt.get("prior_generation") == led["generation"] and
                      receipt.get("dispatcher_sha256") == _file_sha(Path(__file__)) and
                      isinstance(receipt.get("allowance"), int) and 1 <= receipt["allowance"] <= DISPATCH_RETRY_CAP and
                      receipt.get("operator_uid") == run_dir.stat().st_uid)
@@ -7673,6 +7679,12 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         "worker": worker_id,
         "approved_input_revision": input_revision,
         "paid_attempts": total_paid_attempts,
+        # Reservation state is durable across outcome folds.  Dropping these
+        # fields would make a consumed repair receipt appear fresh after an
+        # exhausted result and buy a second allowance on restart.
+        "generation": int(led.get("generation") or 0),
+        "repair_receipt_consumed": bool(led.get("repair_receipt_consumed")),
+        "repair_receipt": led.get("repair_receipt"),
     }
 
     if status in _FAILING_STATUSES and consecutive >= DISPATCH_REPEAT_CEILING:
@@ -7695,6 +7707,16 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
             f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
         entry["blocked_at"] = utcnow()
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
+
+    # A provider reservation may have committed while this outcome was being
+    # assembled.  Never let an older outcome fold erase its generation or a
+    # consumed receipt; retaining the larger paid count is fail-closed too.
+    latest = _read_ledger(run_dir, phase_id)
+    if int(latest.get("generation") or 0) > entry["generation"]:
+        entry["generation"] = int(latest["generation"])
+        entry["repair_receipt_consumed"] = bool(latest.get("repair_receipt_consumed"))
+        entry["repair_receipt"] = latest.get("repair_receipt")
+        entry["paid_attempts"] = max(entry["paid_attempts"], int(latest.get("paid_attempts") or 0))
 
     _write_ledger(run_dir, phase_id, entry)
 

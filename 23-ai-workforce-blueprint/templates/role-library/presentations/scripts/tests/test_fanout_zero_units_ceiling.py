@@ -446,9 +446,38 @@ def test_local_operator_receipt_rearms_once_with_bounded_allowance(tmp_path):
         dj._reserve_paid_attempt(run_dir, PHASE, "worker")
 
 
+def test_consumed_receipt_survives_outcome_restart_and_order_reissue(tmp_path):
+    """The precise PD14 regression: outcome folding must not resurrect a receipt."""
+    run_dir = _seed_run(tmp_path)
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+    # This is the old destructive fold: it used to discard generation and
+    # consumed-receipt metadata after the one permitted post-repair call.
+    dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic"],
+                      worker_id="worker", order_file=order)
+    order.write_text(order.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    led = _ledger(run_dir)
+    assert led["generation"] == 1
+    assert led["repair_receipt_consumed"] is True
+    assert led["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "restarted-worker")
+
+
+def test_operator_reset_refuses_ledger_without_durable_generation(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP})
+    with pytest.raises(RuntimeError, match="durable ledger generation"):
+        dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+
+
 @pytest.mark.parametrize("field,value", [
     ("phase_id", "OTHER"), ("run", "/wrong/run"), ("dispatcher_sha256", "forged"),
-    ("approved_input_revision", "forged"), ("prior_generation", 99),
+    ("approved_input_revision", "forged"), ("prior_generation", 99), ("operator_uid", -1),
 ])
 def test_mismatched_operator_receipt_never_rearms(tmp_path, field, value):
     run_dir = _seed_run(tmp_path)
