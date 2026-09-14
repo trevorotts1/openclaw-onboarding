@@ -40,7 +40,9 @@ RR028_DONE=""
 # the leak used to happen. RR028_PIDFILE_BOX names the box whose registry (and
 # stub processes) this battery owns; the registry lives inside $WORK.
 RR028_PIDFILE_BOX="$WORK"
-RR028_PIDFILE="$WORK/rr028-receivers.pid"
+# An ALREADY-EXPORTED RR028_PIDFILE wins, so a reviewer can neuter the registry
+# (Z-5 evidence) without patching this battery.
+RR028_PIDFILE="${RR028_PIDFILE:-$WORK/rr028-receivers.pid}"
 trap 'rr028_cleanup' EXIT
 trap 'rr028_cleanup; exit 130' INT
 trap 'rr028_cleanup; exit 143' TERM
@@ -67,6 +69,28 @@ o = j
 for k in os.environ["RR028_F"].split("."):
     o = (o or {}).get(k) if isinstance(o, dict) else None
 print(o if o is not None else "")'; }
+# job_by_id <box> <id> -> enabled | disabled | absent (looks the id up, not [0])
+job_by_id() { RR028_JOBS="$1/jobs.json" RR028_JID="$2" python3 -c '
+import json, os
+d = json.load(open(os.environ["RR028_JOBS"], encoding="utf-8"))
+for j in d.get("jobs", []) or []:
+    if str(j.get("id")) == os.environ["RR028_JID"]:
+        print("enabled" if j.get("enabled", True) else "disabled"); break
+else:
+    print("absent")'; }
+# seed_store_only <box> <job-json> — put a row in the state DB and NOT in the
+# CLI store: exactly the shape a diverged/alternate candidate file has.
+seed_store_only() { RR028_DB="$1/.openclaw/state/openclaw.sqlite" RR028_JOB="$2" python3 - <<'PY'
+import json, os, sqlite3
+con = sqlite3.connect(os.environ["RR028_DB"])
+con.execute("create table if not exists cron_jobs (job_id text primary key, job_json text)")
+j = json.loads(os.environ["RR028_JOB"])
+con.execute("insert or replace into cron_jobs (job_id, job_json) values (?,?)",
+            (str(j.get("id", "")), json.dumps(j)))
+con.commit(); con.close()
+PY
+}
+store_rows() { sqlite3 -readonly "$1/.openclaw/state/openclaw.sqlite" 'select count(*) from cron_jobs;' 2>/dev/null || echo "?"; }
 wire_state() { printf '%s' "$1" | sed -n 's/.*readiness=\([A-Z_]*\).*/\1/p' | head -1; }
 wire_reason() { printf '%s' "$1" | sed -n 's/.*reason=\([a-z_]*\).*/\1/p' | head -1; }
 
@@ -412,6 +436,136 @@ else
   [ "$WRC_DB" = "0" ] \
     && ok "control: an operator-disabled job does not turn the roll red (exit 0)" \
     || bad "control exit code" "rc=$WRC_DB"
+
+  # -------------------------------------------------------------------------
+  # (d) Z-1 (RE-REVIEW): a resolved gateway store is NOT proof that it reflects
+  #     the gateway. Here a schema-valid store resolves and holds ZERO rows,
+  #     while the operator's DISABLED job exists in the CLI's store and the CLI
+  #     cannot show disabled jobs. Before the fix a resolved store upgraded
+  #     visibility to `full` on its own, so the ladder ADDED an ENABLED
+  #     duplicate (id 8) and the dedupe pass then DELETED the operator's job
+  #     (id 7). Nothing here may be added or removed, and the verdict must be
+  #     the honest non-SCHEDULED one.
+  # -------------------------------------------------------------------------
+  new_box box-z1-empty-store
+  rr028_job "$BOX" "$(matching_job "$BOX" '{"id":"7","enabled":false}')"
+  Z1_DB="$BOX/.openclaw/state/openclaw.sqlite"
+  rr028_make_state_db "$BOX" || bad "could not build the Z-1 empty-store fixture"
+  [ -s "$Z1_DB" ] && [ "$(store_rows "$BOX")" = "0" ] \
+    && ok "planted: the store resolves (>=1 table) and holds ZERO cron rows — it does not contain the operator's job" \
+    || bad "Z-1 store fixture is not the empty/diverged shape" "rows=$(store_rows "$BOX")"
+  [ "$(jobs_len "$BOX")" = "1" ] && [ "$(job_by_id "$BOX" 7)" = "disabled" ] \
+    && ok "planted: the operator's DISABLED poller (id 7) is the only job the gateway's CLI store carries" \
+    || bad "Z-1 plant failed" "$(jobs_len "$BOX") jobs id7=$(job_by_id "$BOX" 7)"
+  # NO_ALL=1: this CLI cannot show disabled jobs. RR028_DB_FILE makes the mock
+  # keep the sqlite store in step with any mutation, exactly as a live gateway
+  # would, so a mutation here would be observable in BOTH views.
+  RR028_DB_FILE="$Z1_DB" RR028_EXTRA_ENV="RR028_MOCK_NO_ALL=1" run_wire_combined --idempotent --reconcile-only
+  [ "$(jobs_len "$BOX")" = "1" ] \
+    && ok "Z-1: NOTHING was added (still exactly ONE job after --reconcile)" \
+    || bad "the diverged store licensed an ADD" "$(jobs_len "$BOX") jobs"
+  [ "$(job_by_id "$BOX" 7)" = "disabled" ] && [ "$(job_by_id "$BOX" 8)" = "absent" ] \
+    && ok "Z-1: the OPERATOR's job survived (id 7, still DISABLED) and no duplicate id 8 was minted" \
+    || bad "the operator's job was destroyed or duplicated" "id7=$(job_by_id "$BOX" 7) id8=$(job_by_id "$BOX" 8)"
+  rr028_argv_blocks "$BOX" | grep -q 'cron.add' \
+    && bad "an add was issued against the diverged store" \
+    || ok "Z-1: NO cron.add argv was issued"
+  rr028_argv_blocks "$BOX" | grep -q 'cron.rm' \
+    && bad "a cron rm was issued against the diverged store (the destructive step ran)" \
+    || ok "Z-1: NO cron.rm argv was issued"
+  [ "$(wire_state "$WOUT")" = "ENROLLED_PENDING" ] \
+    && [ "$(wire_reason "$WOUT")" = "cron_state_unverifiable" ] \
+    && ok "Z-1: the installer reports the honest non-SCHEDULED state (never a false SCHEDULED)" \
+    || bad "wire reported the wrong verdict" "$(wire_state "$WOUT")/$(wire_reason "$WOUT")"
+  [ "$WRC" = "0" ] \
+    && ok "Z-1: the refusal is a deliberate non-failure (nothing was attempted, nothing is claimed)" \
+    || bad "the refusal must not be reported as a wiring failure" "rc=$WRC"
+  RR028_DB_FILE="$Z1_DB" RR028_EXTRA_ENV="RR028_MOCK_NO_ALL=1" rr028_readiness "$BOX" --json >/dev/null 2>&1
+  [ "$(rr028_field "$RR028_OUT" cron.coverage)" = "cli+db" ] \
+    && [ "$(rr028_field "$RR028_OUT" cron.visibility)" = "enabled_only" ] \
+    && ok "Z-1 root cause pinned: coverage=cli+db but a resolved store did NOT upgrade visibility (enabled_only)" \
+    || bad "a resolved store licensed visibility=full again" \
+           "coverage=$(rr028_field "$RR028_OUT" cron.coverage) visibility=$(rr028_field "$RR028_OUT" cron.visibility)"
+
+  # -------------------------------------------------------------------------
+  # (e) Z-1b: the OTHER destructive path — a duplicate whose stray is
+  #     OPERATOR-DISABLED. No divergence is needed: the dedupe ladder used to
+  #     keep the matching job and `cron rm` the disabled one, so a readiness
+  #     pass deleted a job the operator had switched off. Readiness may never
+  #     remove a row it observed DISABLED.
+  # -------------------------------------------------------------------------
+  new_box box-dupe-disabled
+  rr028_job "$BOX" "$(matching_job "$BOX" '{"id":"7","enabled":false}')"
+  rr028_job "$BOX" "$(matching_job "$BOX" '{"id":"8","enabled":true}')"
+  [ "$(jobs_len "$BOX")" = "2" ] && [ "$(job_by_id "$BOX" 7)" = "disabled" ] \
+    && ok "planted: the operator's DISABLED job (7) beside a matching ENABLED job (8)" \
+    || bad "duplicate-with-disabled plant failed" "$(jobs_len "$BOX") jobs"
+  run_wire --idempotent --reconcile-only
+  [ "$(jobs_len "$BOX")" = "2" ] && [ "$(job_by_id "$BOX" 7)" = "disabled" ] \
+    && ok "Z-1b: the operator's DISABLED job was NOT deleted by the dedupe pass (still 2 jobs, id 7 still disabled)" \
+    || bad "the operator's disabled job was removed" "$(jobs_len "$BOX") jobs id7=$(job_by_id "$BOX" 7)"
+  rr028_argv_blocks "$BOX" | grep -q 'cron.rm' \
+    && bad "a cron rm was issued for the operator's disabled job" \
+    || ok "Z-1b: NO cron.rm argv was issued"
+  [ "$(wire_state "$WOUT")" = "ENROLLED_PENDING" ] \
+    && [ "$(wire_reason "$WOUT")" = "cron_duplicate" ] \
+    && ok "Z-1b: the honest verdict for an unresolvable duplicate (ENROLLED_PENDING/cron_duplicate)" \
+    || bad "verdict wrong" "$(wire_state "$WOUT")/$(wire_reason "$WOUT")"
+  [ "$WRC" != "0" ] \
+    && ok "Z-1b: a duplicate readiness could not clear is not reported as success (rc=$WRC)" \
+    || bad "an unprotected duplicate was reported as success" "rc=$WRC"
+
+  # -------------------------------------------------------------------------
+  # (f) Z-1c: only the STORE shows the job and the CLI's own listing cannot be
+  #     read. The store may VETO, never ESTABLISH: a store-only match used to
+  #     produce SCHEDULED and rc 0 from a file nobody had corroborated.
+  # -------------------------------------------------------------------------
+  new_box box-store-only
+  rr028_job "$BOX" "$(matching_job "$BOX")"
+  rr028_make_db "$BOX" || bad "could not build the store-only fixture"
+  [ "$(jobs_len "$BOX")" = "1" ] && [ "$(store_rows "$BOX")" = "1" ] \
+    && ok "planted: the store carries the matching job while the CLI listing is made unreadable" \
+    || bad "store-only plant failed" "jobs=$(jobs_len "$BOX") rows=$(store_rows "$BOX")"
+  RR028_EXTRA_ENV="RR028_MOCK_LIST_MODE=unreadable" run_wire_combined --idempotent --reconcile-only
+  [ "$(wire_state "$WOUT")" = "ENROLLED_PENDING" ] \
+    && [ "$(wire_reason "$WOUT")" = "cron_store_unconfirmed" ] \
+    && ok "Z-1c: a store-only match is NOT readiness (ENROLLED_PENDING/cron_store_unconfirmed)" \
+    || bad "the store alone established readiness" "$(wire_state "$WOUT")/$(wire_reason "$WOUT")"
+  [ "$WRC" != "0" ] \
+    && ok "Z-1c: an uncorroborated store does not report wiring success (rc=$WRC)" \
+    || bad "store-only match exited 0" "rc=$WRC"
+  [ "$(jobs_len "$BOX")" = "1" ] && [ "$(store_rows "$BOX")" = "1" ] \
+    && ok "Z-1c: nothing was mutated (1 CLI job, 1 store row)" \
+    || bad "the store-only case mutated something" "jobs=$(jobs_len "$BOX") rows=$(store_rows "$BOX")"
+  rr028_argv_blocks "$BOX" | grep -q -e 'cron.add' -e 'cron.rm' -e 'cron.edit' \
+    && bad "an uncorroborated store licensed a mutation" \
+    || ok "Z-1c: no add/rm/edit argv was issued"
+
+  # -------------------------------------------------------------------------
+  # (g) Z-1d: the store and the CLI's own listing CONTRADICT each other — the
+  #     store carries a matching ENABLED row the CLI's listing does not show,
+  #     so the store is an alternate/stale candidate. Two views that do not
+  #     describe the same gateway prove nothing: no SCHEDULED, no mutation.
+  # -------------------------------------------------------------------------
+  new_box box-store-stale
+  seed_store_only "$BOX" "$(matching_job "$BOX")"
+  [ "$(jobs_len "$BOX")" = "0" ] && [ "$(store_rows "$BOX")" = "1" ] \
+    && ok "planted: a matching ENABLED row exists ONLY in the store (the CLI's own listing is empty)" \
+    || bad "stale-store plant failed" "jobs=$(jobs_len "$BOX") rows=$(store_rows "$BOX")"
+  run_wire_combined --idempotent --reconcile-only
+  [ "$(wire_state "$WOUT")" = "ENROLLED_PENDING" ] \
+    && [ "$(wire_reason "$WOUT")" = "cron_source_disagreement" ] \
+    && ok "Z-1d: contradicting views claim nothing (ENROLLED_PENDING/cron_source_disagreement)" \
+    || bad "a contradicting store still produced a verdict" "$(wire_state "$WOUT")/$(wire_reason "$WOUT")"
+  [ "$WRC" != "0" ] \
+    && ok "Z-1d: a self-contradicting readback does not report wiring success (rc=$WRC)" \
+    || bad "a contradicting store exited 0" "rc=$WRC"
+  [ "$(jobs_len "$BOX")" = "0" ] && [ "$(store_rows "$BOX")" = "1" ] \
+    && ok "Z-1d: nothing was mutated on either surface (0 CLI jobs, 1 store row)" \
+    || bad "the diverged store licensed a mutation" "jobs=$(jobs_len "$BOX") rows=$(store_rows "$BOX")"
+  rr028_argv_blocks "$BOX" | grep -q -e 'cron.add' -e 'cron.rm' -e 'cron.edit' \
+    && bad "a diverged store licensed a mutation" \
+    || ok "Z-1d: no add/rm/edit argv was issued"
 fi
 
 echo ""

@@ -35,12 +35,22 @@
 # return code is mapped deliberately, not by fall-through:
 #   3 readback unavailable  -> 1  NOTHING WAS PROVEN. This script cannot say the
 #                                  cron exists, so it must not report success.
+#                                  Includes `store_unconfirmed`: only the
+#                                  gateway store shows the job and the CLI's own
+#                                  listing could not be read (RR-028 re-review
+#                                  Z-1 — a store alone never proves readiness).
 #   4 desired job not proven -> 1  the ladder ran (or the add was invisible) and
 #                                  the readback still does not show the job —
 #                                  including `add_not_read_back`. This is the
 #                                  exact failure RR-028 exists to end; a roll
 #                                  that printed ✓ here would green-light a box
-#                                  with no cron at all.
+#                                  with no cron at all. Also: `store_diverged`
+#                                  (the gateway store contradicts the CLI's own
+#                                  listing, so neither licenses a write) and
+#                                  `duplicate_protected`/`replace_protected`
+#                                  (a stray readiness may not delete: it is
+#                                  operator-disabled, or visible only in the
+#                                  store). All of these mutate nothing.
 #   5 openclaw CLI unresolved -> 1 (unchanged, retryable)
 #   7 a mutation command failed -> 1 (unchanged, retryable)
 #   6 tombstoned / disabled by owner -> 0  DELIBERATELY ZERO. Nothing failed and

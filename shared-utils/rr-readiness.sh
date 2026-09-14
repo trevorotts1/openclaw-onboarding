@@ -63,28 +63,44 @@
 # shared-utils/cron-lib.sh documents). That case is REPORTED as `cli-only` and,
 # when the CLI advertised no full-status listing flag, as
 # `visibility=enabled_only` in the JSON report — it is never presented as a
-# DB-proven absence.
+# proven absence.
 #
-# FAIL-CLOSED MUTATION RULE (RR-028 review M-1): under `cli-only` coverage with
-# `visibility=enabled_only` — the CLI advertised NO full-status listing flag, so
-# a DISABLED job would be invisible — a visible set that does not contain the
-# managed name is AMBIGUOUS: it means "absent" OR "present but DISABLED and
-# hidden", and nothing in the readback can tell the two apart. Registering the
-# job in that state creates a SECOND, ENABLED poller beside the operator's
-# disabled one (double delivery, and a later `--all` readback makes the box
-# `cron_duplicate` so the dedupe ladder can delete the operator's own job). The
-# reconciler therefore REFUSES TO MUTATE on that combination (rc 8) and reports
-# `ENROLLED_PENDING / cron_state_unverifiable` — an explicit, honest "cannot
-# verify" instead of a write that risks destroying operator intent.
+# FAIL-CLOSED MUTATION RULE (RR-028 review M-1, corrected by re-review Z-1/Z-2).
+# "Nothing visible" is proof of ABSENCE only when the view that returned it can
+# actually SHOW a DISABLED job — i.e. when the CLI's own listing was asked for a
+# full-status flag (`--all` / `--include-disabled` / `--show-disabled`, which the
+# CLI must ADVERTISE in its own `--help` before it is asked). Otherwise the
+# visible set is AMBIGUOUS — "absent" OR "present but DISABLED and hidden" —
+# and the reconciler REFUSES TO MUTATE (rc 8), reporting
+# `ENROLLED_PENDING / cron_state_unverifiable` instead of a write that risks
+# destroying operator intent.
 #
-# Visibility is decided by what the READBACK can actually show, never by hope:
-# `full` requires either a readable gateway DB (the view that carries disabled
-# rows) or a CLI that advertised a full-status flag and was therefore ASKED for
-# one. A CLI that hides disabled jobs without advertising the capability is the
-# case this rule exists for, and it fails closed. The cost is deliberate and
-# one-sided — a box whose CLI cannot list disabled jobs and whose gateway store
-# is unreadable stays unregistered (and says so, with the remedy) rather than
-# risking the operator's job.
+# THE RULE'S REAL DEPENDENCY, STATED PLAINLY (Z-2): the refusal is NOT
+# independent of what the CLI's help advertises. A CLI that advertises the flag
+# IS asked for it and its listing IS trusted; a build that advertises the flag
+# and then hides a disabled job anyway is indistinguishable from an honest build
+# by any input this engine has, and is a documented residual (see the CHANGELOG).
+# What the rule no longer does is take a resolved gateway STORE as a substitute
+# for a full-status CLI listing.
+#
+# THE STORE MAY VETO, NEVER LICENSE (Z-1). RRR_DB comes from
+# shared-utils/oc-env-descriptor.sh `ocd_state_db`, which accepts ANY readable
+# candidate sqlite with at least one table — an alternate or older file that
+# ocd_state_db happens to resolve is NOT proof that it reflects the gateway's
+# live cron state. So a resolved store:
+#   * may VETO a write (a DISABLED row it carries => leave the job alone, rc 6);
+#   * may CORROBORATE (its rows for the managed name must agree with the CLI's
+#     own listing — a contradiction makes the whole readback `store_diverged`,
+#     which licenses nothing and claims nothing);
+#   * may never LICENSE an add or a removal. Absence is licensed by the CLI's own
+#     full-status listing only, and a removal additionally requires the gateway's
+#     own listing to show the row and the row never to have been seen DISABLED —
+#     removing a job the operator switched off destroys operator intent exactly
+#     as re-enabling it would.
+# The cost is deliberate and one-sided — a box whose CLI cannot list disabled
+# jobs stays unregistered (and says so, with the remedy) rather than risking the
+# operator's job, and the remedy is a CLI that advertises the flag, never "make
+# the state DB readable".
 #
 # POSIX sh, safe to source under `set -u`; bash 3.2 compatible (no arrays, no
 # ${var,,}, no local). Never executes the enrollment store. Never exports a
@@ -115,15 +131,26 @@ RRR_URL=""; RRR_SLUG=""; RRR_TOKEN_COMMIT=""
 RRR_SALT_STATE=""; RRR_DIGEST=""; RRR_DIGEST_STATE=""
 RRR_RUNTIME_ID=""; RRR_RUNTIME_STATE=""; RRR_PLATFORM=""; RRR_TARGET_MODE=""; RRR_TARGET_ID=""
 RRR_RB_STATE=""; RRR_JOBS=""; RRR_DB_STATE="none"; RRR_COVERAGE="none"
-# Can this readback PROVE a disabled job's absence? "full" = the CLI advertised
-# a full-status listing flag, or the gateway DB view is available (the DB is the
-# view that shows disabled rows); "enabled_only" = CLI-only coverage with no such
-# flag, so a disabled job is invisible; "unknown" = neither view proved anything.
+# Can this readback PROVE a disabled job's absence? A CLI fact ONLY:
+# "full" = the CLI advertised a full-status listing flag and was ASKED for one,
+# so its listing carries disabled rows and an absence in it is proof;
+# "enabled_only" = a readable CLI listing that cannot show a disabled job;
+# "unknown" = no readable CLI listing. A resolved gateway store does NOT upgrade
+# this value (re-review Z-1: a store that resolves is not a store that reflects
+# the gateway) — the store is reported separately as RRR_DB_AUTHORITY.
 RRR_CRON_VISIBILITY="unknown"
+# What the resolved store is worth (re-review Z-1): "none" = no store resolved;
+# "corroborated" = it agrees with the CLI's own listing about the managed name;
+# "diverged" = it contradicts that listing, so nothing it says is proof and no
+# write is licensed by it; "unconfirmed" = no readable CLI listing to check it
+# against, so it may still veto but can never establish readiness on its own.
+RRR_DB_AUTHORITY="none"
 RRR_CRON_STATE=""; RRR_CRON_COUNT=0; RRR_CRON_ID=""
 RRR_CRON_SCHEDULE=""; RRR_CRON_COMMAND=""; RRR_CRON_ENABLED=""; RRR_CRON_DELIVERY=""
 RRR_CRON_MISMATCH=""; RRR_CRON_UNOBS=""; RRR_CRON_DISAGREE=""
 RRR_CRON_IDS=""; RRR_CRON_MATCH_IDS=""; RRR_CRON_DISABLED_DIRECT=0; RRR_CRON_SOURCES=""
+# Which view showed each id of the managed name, and which were seen DISABLED.
+RRR_CRON_CLI_IDS=""; RRR_CRON_DB_IDS=""; RRR_CRON_DB_ENABLED_IDS=""; RRR_CRON_DISABLED_IDS=""
 RRR_TOMBSTONED=0
 RRR_RECEIPT_STATE=""; RRR_RECEIPT_AT=""; RRR_RECEIPT_RUNTIME=""; RRR_RECEIPT_DETAIL=""
 RRR_RECONCILE_STATE=""; RRR_RECONCILE_ACTION=""; RRR_RECONCILE_RC=0
@@ -605,10 +632,15 @@ $_rrr_rb_dbrows"
     elif [ "$_rrr_rb_db_ok" = "1" ]; then RRR_COVERAGE="db-only"
     elif [ "$_rrr_rb_cli_ok" = "1" ]; then RRR_COVERAGE="cli-only"
     else RRR_COVERAGE="none"; fi
-    # The gateway store is the view that CARRIES disabled rows, so a readable DB
-    # upgrades visibility regardless of what the CLI advertised (this is what
-    # closes the blind spot on a box whose CLI cannot show a disabled job).
-    [ "$_rrr_rb_db_ok" = "1" ] && RRR_CRON_VISIBILITY="full"
+    # RR-028 re-review Z-1: a resolved store does NOT upgrade visibility. The
+    # store is a FILE that ocd_state_db resolved (any candidate with >=1 table);
+    # it may be an alternate or older file that does not reflect the gateway's
+    # live cron state, so "a DB resolved" is NOT "this DB is authoritative for
+    # the gateway". Visibility therefore stays a CLI fact (set above), and the
+    # store's role is to VETO or CORROBORATE in rrr_cron_eval — never to license
+    # a write. Before this, an empty-but-readable store made the ladder treat a
+    # hidden disabled job as absent, add an ENABLED poller beside it, and then
+    # delete the operator's disabled job in the dedupe pass.
     if [ -n "$RRR_JOBS" ] || [ "$_rrr_rb_cli_ok" = "1" ] || [ "$_rrr_rb_db_ok" = "1" ]; then
         return 0
     fi
@@ -617,25 +649,38 @@ $_rrr_rb_dbrows"
 }
 
 # rrr_cron_eval — compare the observed rows against the desired config.
-# RRR_CRON_STATE: absent | cli_only_absent | cli_visibility_insufficient |
-#                 duplicate | mismatch | single | unreadable | unresolved
+# RRR_CRON_STATE: absent_proven_by_cli | cli_visibility_insufficient |
+#                 duplicate | mismatch | single | unreadable | unresolved |
+#                 store_unconfirmed | store_diverged
 #
-# `absent`                 — nothing visible and the readback could PROVE absence
-#                            (the gateway store was readable, so a disabled job
-#                            would have been seen).
-# `cli_only_absent`        — nothing visible, CLI-only coverage, and the CLI
-#                            advertised a full-status listing flag, so the
-#                            absence is as strong as that CLI can make it.
-# `cli_visibility_insufficient` — nothing visible, CLI-only coverage, no
-#                            full-status flag: a DISABLED job would be hidden,
-#                            so "absent" cannot be distinguished from
-#                            "present but hidden". The reconciler refuses to
-#                            mutate on this state (see the header rule).
+# `absent_proven_by_cli`  — nothing visible, and the CLI's OWN listing was asked
+#                           for a full-status flag (visibility=full), so it could
+#                           have shown a DISABLED job and returned none. That —
+#                           and only that — is a proven absence. (Before the
+#                           re-review this was `cli_only_absent`, and a resolved
+#                           gateway store could also produce a bare `absent`;
+#                           neither is emitted any more, because a store file is
+#                           not proof that it reflects the gateway.)
+# `cli_visibility_insufficient` — nothing visible and NO view that can show a
+#                           DISABLED job was available (the CLI advertised no
+#                           full-status flag, or its listing was unreadable).
+#                           A hidden disabled job cannot be distinguished from
+#                           an absent one, so the reconciler refuses to mutate.
+# `store_unconfirmed`     — only the gateway STORE shows the managed name: the
+#                           CLI's own listing could not be read, so the store's
+#                           rows cannot be corroborated and never establish
+#                           readiness (they may still veto a write).
+# `store_diverged`        — the CLI's own listing and the store contradict each
+#                           other about the managed name. Two views that do not
+#                           describe the same gateway prove nothing, so no state
+#                           is claimed and no write is licensed.
 rrr_cron_eval() {
     RRR_CRON_STATE=""; RRR_CRON_MISMATCH=""; RRR_CRON_UNOBS=""; RRR_CRON_DISAGREE=""
     RRR_CRON_COUNT=0; RRR_CRON_ID=""; RRR_CRON_IDS=""; RRR_CRON_MATCH_IDS=""
     RRR_CRON_SCHEDULE=""; RRR_CRON_COMMAND=""; RRR_CRON_ENABLED=""; RRR_CRON_DELIVERY=""
     RRR_CRON_DISABLED_DIRECT=0
+    RRR_CRON_CLI_IDS=""; RRR_CRON_DB_IDS=""; RRR_CRON_DB_ENABLED_IDS=""; RRR_CRON_DISABLED_IDS=""
+    RRR_DB_AUTHORITY="none"
     _rrr_ce_wantcmd="sh $RRR_POLL"
     _rrr_ce_seen=""
     _rrr_ce_first_id=""; _rrr_ce_first_src=""; _rrr_ce_first_sch=""; _rrr_ce_first_cmd=""
@@ -663,6 +708,15 @@ rrr_cron_eval() {
         _rrr_ce_miss="$_rrr_ce_rest"
         _rrr_ce_id="$(printf '%s' "$_rrr_ce_id" | tr -d "$RRR_RS")"
         [ -n "$_rrr_ce_id" ] || _rrr_ce_id="?${RRR_CRON_COUNT}"
+        # Which VIEW showed this id, and was the row observed DISABLED? The
+        # reconciler uses this to corroborate the store against the CLI's own
+        # listing and to refuse removing a row this readback cannot trust.
+        case "$_rrr_ce_src" in
+            cli) RRR_CRON_CLI_IDS="$RRR_CRON_CLI_IDS $_rrr_ce_id" ;;
+            db)  RRR_CRON_DB_IDS="$RRR_CRON_DB_IDS $_rrr_ce_id"
+                 [ "$_rrr_ce_en" = "true" ] && RRR_CRON_DB_ENABLED_IDS="$RRR_CRON_DB_ENABLED_IDS $_rrr_ce_id" ;;
+        esac
+        [ "$_rrr_ce_en" = "false" ] && RRR_CRON_DISABLED_IDS="$RRR_CRON_DISABLED_IDS $_rrr_ce_id"
         # unobservable fields (per view)
         if [ -n "$_rrr_ce_miss" ] && [ "$_rrr_ce_miss" != "$RRR_RS" ]; then
             RRR_CRON_UNOBS="${RRR_CRON_UNOBS}${RRR_CRON_UNOBS:+,}$_rrr_ce_miss"
@@ -717,24 +771,31 @@ rrr_cron_eval() {
     RRR_CRON_MATCH_IDS="${RRR_CRON_MATCH_IDS# }"
     RRR_CRON_UNOBS="${RRR_CRON_UNOBS#,}"
     RRR_CRON_DISAGREE="${RRR_CRON_DISAGREE#,}"
+    rrr_cron_store_authority
     if [ "$RRR_CRON_COUNT" -eq 0 ]; then
         case "$RRR_COVERAGE" in
-            db-only|cli+db) RRR_CRON_STATE="absent" ;;
-            cli-only)
-                # "Nothing visible" is only a proven absence when the CLI can
-                # actually show a DISABLED job. When it cannot, this is the blind
-                # spot: the desired job may exist and be hidden, so the state says
-                # so instead of pretending the name is free.
+            none|db-only)
+                # The gateway's OWN answer is missing (the CLI's listing could
+                # not be read). A store alone can never prove the managed name
+                # free (Z-1), so nothing is claimed: this is the existing,
+                # retryable `unreadable` readback.
+                RRR_CRON_STATE="unreadable" ;;
+            *)
+                # The CLI answered. Only a CLI that ADVERTISED a full-status
+                # listing flag — and was therefore ASKED for one — can show a
+                # DISABLED job, and only then does an empty result prove
+                # absence. Without that the emptiness is ambiguous and the
+                # reconciler refuses (fail-closed).
                 case "$RRR_CRON_VISIBILITY" in
-                    full) RRR_CRON_STATE="cli_only_absent" ;;
+                    full) RRR_CRON_STATE="absent_proven_by_cli" ;;
                     *)    RRR_CRON_STATE="cli_visibility_insufficient" ;;
                 esac ;;
-            *)              RRR_CRON_STATE="unreadable" ;;
         esac
         return 0
     fi
     if [ "$RRR_CRON_COUNT" -gt 1 ]; then
         RRR_CRON_STATE="duplicate"
+        rrr_cron_authority_gate
         return 0
     fi
     # --- the single job, field by field ---
@@ -758,9 +819,75 @@ rrr_cron_eval() {
     RRR_CRON_MISMATCH="${_rrr_ce_mism# }"
     if [ -n "$RRR_CRON_MISMATCH" ]; then
         RRR_CRON_STATE="mismatch"
+        rrr_cron_authority_gate
         return 0
     fi
     RRR_CRON_STATE="single"
+    rrr_cron_authority_gate
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# rrr_cron_store_authority — corroborate the resolved gateway store against the
+# CLI's OWN listing (RR-028 re-review Z-1).
+#
+# The store is a file ocd_state_db resolved; it may be an alternate or older
+# candidate. For the MANAGED NAME only (an unrelated agent's job can never look
+# like a contradiction), the two views must describe the same gateway:
+#   * a row the CLI listing shows that the store does NOT carry, or
+#   * a row the store carries that the CLI listing OMITS while the CLI's own
+#     view should have shown it — an ENABLED job is listed by every build, and a
+#     DISABLED one is listed by a build that was ASKED for a full-status flag
+#     (an unobservable enabled bit is a coverage gap, not a contradiction),
+# is a contradiction: RRR_DB_AUTHORITY="diverged". With a readable CLI listing
+# and no contradiction the store is "corroborated"; with no readable CLI listing
+# it is "unconfirmed" (it may veto, never establish).
+# Contradictions are appended to RRR_CRON_DISAGREE, the existing report field.
+# ---------------------------------------------------------------------------
+rrr_cron_store_authority() {
+    RRR_DB_AUTHORITY="none"
+    [ "$RRR_DB_STATE" = "ok" ] || return 0
+    case "$RRR_COVERAGE" in
+        cli-only|cli+db) : ;;
+        *) RRR_DB_AUTHORITY="unconfirmed"; return 0 ;;
+    esac
+    _rrr_csa_div=""
+    for _rrr_csa_id in $RRR_CRON_CLI_IDS; do
+        case " $RRR_CRON_DB_IDS " in
+            *" $_rrr_csa_id "*) : ;;
+            *) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}store_missing_row(id=$_rrr_csa_id)" ;;
+        esac
+    done
+    for _rrr_csa_id in $RRR_CRON_DB_IDS; do
+        case " $RRR_CRON_CLI_IDS " in
+            *" $_rrr_csa_id "*) continue ;;
+        esac
+        case " $RRR_CRON_DB_ENABLED_IDS " in
+            *" $_rrr_csa_id "*) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}cli_hides_enabled_row(id=$_rrr_csa_id)" ;;
+            *)
+                if [ "$RRR_CRON_VISIBILITY" = "full" ]; then
+                    case " $RRR_CRON_DISABLED_IDS " in
+                        *" $_rrr_csa_id "*) _rrr_csa_div="$_rrr_csa_div${_rrr_csa_div:+,}cli_all_omits_disabled_row(id=$_rrr_csa_id)" ;;
+                    esac
+                fi ;;
+        esac
+    done
+    if [ -n "$_rrr_csa_div" ]; then
+        RRR_DB_AUTHORITY="diverged"
+        RRR_CRON_DISAGREE="${RRR_CRON_DISAGREE}${RRR_CRON_DISAGREE:+,}${_rrr_csa_div}"
+    else
+        RRR_DB_AUTHORITY="corroborated"
+    fi
+    return 0
+}
+
+# rrr_cron_authority_gate — a store that cannot be corroborated licenses no
+# success claim. Called on every state that observed at least one row.
+rrr_cron_authority_gate() {
+    case "$RRR_DB_AUTHORITY" in
+        diverged)    RRR_CRON_STATE="store_diverged" ;;
+        unconfirmed) RRR_CRON_STATE="store_unconfirmed" ;;
+    esac
     return 0
 }
 
@@ -769,6 +896,13 @@ rrr_cron_eval() {
 # <state>/readiness/receipt-<digest>.json. It is the ONLY thing that can lift a
 # box from SCHEDULED to VERIFIED, and it must match the CURRENT digest AND the
 # CURRENT runtime id.
+#
+# WHAT VERIFIED DOES AND DOES NOT MEAN (RR-028 re-review M-3): the receipt is a
+# plain local FILE recording that a safe test claim was answered in this
+# runtime. Nothing authenticates it — there is no signature, no HMAC and no
+# signing key on the box — so a hand-written file carrying the printed digest,
+# runtime id and claim fields is indistinguishable from one this engine wrote.
+# VERIFIED is therefore a local liveness attestation, not a tamper-proof one.
 # ---------------------------------------------------------------------------
 rrr_receipt_path() { printf '%s/readiness/receipt-%s.json' "$1" "$2"; }
 
@@ -983,23 +1117,38 @@ rrr_evaluate() {
     case "$RRR_CRON_STATE" in
         unreadable)
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_readback_unreadable"
-            RRR_DETAIL="cron store could not be read back (coverage=$RRR_COVERAGE); a write is never assumed to have succeeded" ;;
+            RRR_DETAIL="the CLI's own cron listing could not be read back (coverage=$RRR_COVERAGE, store=$RRR_DB_STATE); absence is never inferred from the gateway store alone, so nothing is claimed" ;;
         unresolved)
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_capability_unresolved"
             RRR_DETAIL="openclaw CLI unresolved, so no cron can be listed" ;;
-        absent|cli_only_absent)
+        absent_proven_by_cli)
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_absent"
-            RRR_DETAIL="no cron named $RRR_NAME in the readback (coverage=$RRR_COVERAGE)" ;;
+            RRR_DETAIL="no cron named $RRR_NAME in the readback; the CLI's OWN listing was asked for a full-status listing and reported none, which is what proves the absence (coverage=$RRR_COVERAGE)" ;;
+        store_unconfirmed)
+            # FAIL CLOSED (re-review Z-1): only the store shows this job. The
+            # store is a file ocd_state_db resolved, and the CLI's own listing —
+            # the gateway's answer — could not be read, so its rows cannot be
+            # corroborated and are never treated as proof of readiness.
+            RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_store_unconfirmed"
+            RRR_DETAIL="only the gateway STORE shows $RRR_NAME (store=$RRR_DB_STATE, coverage=$RRR_COVERAGE): the CLI's own cron listing could not be read, so the store cannot be corroborated against the gateway and does not establish readiness. Nothing is mutated; fix the CLI readback (or the gateway it talks to) and reconcile again." ;;
+        store_diverged)
+            # FAIL CLOSED (re-review Z-1/Z-2): two views that contradict each
+            # other about this name do not describe the same gateway, so neither
+            # can license a write and no readiness is claimed.
+            RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_source_disagreement"
+            RRR_DETAIL="the CLI's own listing and the gateway store DISAGREE about $RRR_NAME ($RRR_CRON_DISAGREE): a store that does not reflect the gateway licenses nothing and proves nothing. Nothing was mutated. Point the descriptor at the gateway's live state DB (or remove the stale candidate) and reconcile again." ;;
         cli_visibility_insufficient)
-            # FAIL CLOSED (RR-028 review M-1). The CLI listed nothing, but this
-            # CLI build cannot show a DISABLED job and no gateway store resolved,
-            # so the engine cannot tell "no such cron" from "the operator's cron
-            # is disabled and hidden". Reporting ENROLLED_PENDING here — and never
-            # SCHEDULED — is the honest verdict; the reconciler refuses to ADD in
-            # this state, because an add would create a second, ENABLED poller
-            # beside the operator's disabled one.
+            # FAIL CLOSED (RR-028 review M-1, widened by re-review Z-1). The CLI
+            # listed nothing, but no view that can show a DISABLED job was
+            # available, so the engine cannot tell "no such cron" from "the
+            # operator's cron is disabled and hidden". Reporting
+            # ENROLLED_PENDING here — and never SCHEDULED — is the honest
+            # verdict; the reconciler refuses to ADD in this state, because an add
+            # would create a second, ENABLED poller beside the operator's
+            # disabled one. A resolved gateway store is NOT a substitute: a file
+            # that resolves is not a file that reflects the gateway.
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_state_unverifiable"
-            RRR_DETAIL="no cron named $RRR_NAME is VISIBLE, but this readback cannot prove it is absent: coverage=$RRR_COVERAGE with visibility=$RRR_CRON_VISIBILITY means a DISABLED job of that name would be hidden, so 'absent' and 'present-but-disabled' are indistinguishable. Refusing to add (fail-closed): register nothing rather than risk a second ENABLED poller beside an operator-disabled job. Make the gateway store readable (state DB) or migrate to a CLI that lists disabled jobs, then reconcile again." ;;
+            RRR_DETAIL="no cron named $RRR_NAME is VISIBLE, but this readback cannot prove it is absent: no view that can SHOW a disabled job was available (coverage=$RRR_COVERAGE, visibility=$RRR_CRON_VISIBILITY), so 'absent' and 'present-but-DISABLED' are indistinguishable. Refusing to add (fail-closed): register nothing rather than risk a second ENABLED poller beside an operator-disabled job. Remedy: run a CLI that ADVERTISES a full-status listing flag (--all / --include-disabled / --show-disabled) so the CLI itself can list disabled jobs — a readable state DB alone is not accepted as proof." ;;
         duplicate)
             RRR_STATE="ENROLLED_PENDING"; RRR_REASON="cron_duplicate"
             RRR_DETAIL="readback shows $RRR_CRON_COUNT jobs named $RRR_NAME (ids:$RRR_CRON_IDS)" ;;
@@ -1034,7 +1183,7 @@ rrr_evaluate() {
         verified)
             RRR_STATE="VERIFIED"
             RRR_REASON="ready_receipt_verified"
-            RRR_DETAIL="cron $RRR_CRON_ID read back matching the desired digest and a safe test claim receipt ($RRR_RECEIPT_AT) verified the intended runtime"
+            RRR_DETAIL="cron $RRR_CRON_ID read back matching the desired digest and a safe test claim receipt ($RRR_RECEIPT_AT) recorded a no-work answer from the intended runtime (a local file record: unauthenticated, see the receipt contract)"
             ;;
         absent)
             RRR_STATE="SCHEDULED"
@@ -1044,7 +1193,11 @@ rrr_evaluate() {
         stale)
             RRR_STATE="SCHEDULED"
             RRR_REASON="ready_receipt_stale"
-            RRR_DETAIL="the desired config changed since the last probe (digest mismatch); the old receipt is void"
+            # Z-6 (re-review): the M-6 detail was computed and then DISCARDED
+            # here, so "names the file / NEWEST superseded receipt" could never
+            # be observed. It is appended now, which is what makes the claim
+            # checkable in the printed detail.
+            RRR_DETAIL="the desired config changed since the last probe (digest mismatch); the old receipt is void${RRR_RECEIPT_DETAIL:+ — $RRR_RECEIPT_DETAIL}"
             ;;
         foreign)
             RRR_STATE="SCHEDULED"
@@ -1089,9 +1242,9 @@ rrr_report_json() {
     printf '"requirements":{"parser":"%s","curl":"%s","base64":"%s","openclaw":"%s","node":"%s","json_reader":"%s","hasher":"%s","missing":"%s"},' \
         "$RRR_REQ_PARSER" "$RRR_REQ_CURL" "$RRR_REQ_BASE64" "$RRR_REQ_OPENCLAW" "$RRR_REQ_NODE" "$RRR_REQ_JSON" "$RRR_REQ_SHA" \
         "$(rrr_json_escape "$RRR_MISSING_REQS")"
-    printf '"cron":{"state":"%s","count":%s,"id":"%s","sources":"%s","coverage":"%s","visibility":"%s","schedule":"%s","command":"%s","enabled":"%s","delivery":"%s","unobservable":"%s","disagreement":"%s"},' \
+    printf '"cron":{"state":"%s","count":%s,"id":"%s","sources":"%s","coverage":"%s","visibility":"%s","store":"%s","schedule":"%s","command":"%s","enabled":"%s","delivery":"%s","unobservable":"%s","disagreement":"%s"},' \
         "$RRR_CRON_STATE" "$RRR_CRON_COUNT" "$(rrr_json_escape "$RRR_CRON_ID")" "$(rrr_json_escape "$RRR_CRON_SOURCES")" \
-        "$RRR_COVERAGE" "$RRR_CRON_VISIBILITY" "$(rrr_json_escape "$RRR_CRON_SCHEDULE")" "$(rrr_json_escape "$RRR_CRON_COMMAND")" \
+        "$RRR_COVERAGE" "$RRR_CRON_VISIBILITY" "$RRR_DB_AUTHORITY" "$(rrr_json_escape "$RRR_CRON_SCHEDULE")" "$(rrr_json_escape "$RRR_CRON_COMMAND")" \
         "$RRR_CRON_ENABLED" "$RRR_CRON_DELIVERY" "$(rrr_json_escape "$RRR_CRON_UNOBS")" "$(rrr_json_escape "$RRR_CRON_DISAGREE")"
     printf '"runtime":{"state":"%s","id":"%s","platform":"%s","target_mode":"%s","target_id":"%s"},"receipt":{"state":"%s","at":"%s"},"reconcile":{"state":"%s","action":"%s"}}\n' \
         "$RRR_RUNTIME_STATE" "$RRR_RUNTIME_ID" "$(rrr_json_escape "$RRR_PLATFORM")" "$(rrr_json_escape "$RRR_TARGET_MODE")" \
@@ -1105,17 +1258,41 @@ rrr_report_line() {
 }
 
 # ---------------------------------------------------------------------------
+# rrr_cron_removable <id> — MAY readiness remove this observed job id?
+#
+# Removal is the one irreversible act in the ladder, so it needs corroboration
+# (RR-028 re-review Z-1/Z-2). A job may be removed only when
+#   * the gateway's OWN listing shows it — a row ONLY the store shows is not
+#     corroborated (the store may be an alternate or stale candidate), and
+#   * it was never observed DISABLED — deleting a job the operator switched off
+#     destroys operator intent exactly as re-enabling it would.
+# ---------------------------------------------------------------------------
+rrr_cron_removable() {
+    _rrr_rem_id="$1"
+    [ -n "$_rrr_rem_id" ] || return 1
+    case " $RRR_CRON_DISABLED_IDS " in *" $_rrr_rem_id "*) return 1 ;; esac
+    case " $RRR_CRON_CLI_IDS " in *" $_rrr_rem_id "*) return 0 ;; esac
+    return 1
+}
+
+# ---------------------------------------------------------------------------
 # rrr_cron_reconcile — make the desired job true, then READ IT BACK.
 #   0 single matching job proven by readback
-#   3 readback unavailable (nothing claimed)
-#   4 readback read, desired job not proven after the ladder
+#   3 readback unavailable (nothing claimed) — includes `store_unconfirmed`,
+#     where only the store shows the job and the CLI's own listing is unreadable
+#   4 the readback does not prove the desired job after the ladder, OR the
+#     readback/licence itself is refused as untrustworthy: `store_diverged`
+#     (the store contradicts the CLI's own listing) and `duplicate_protected` /
+#     `replace_protected` (a stray readiness may not delete: operator-disabled,
+#     or visible only in the store)
 #   5 openclaw CLI unresolved
 #   6 tombstoned / disabled by owner (never mutated)
 #   7 a mutation command itself failed (retryable wiring failure)
-#   8 REFUSED — the readback cannot prove the name is free (CLI-only coverage
-#     with no disabled-job visibility), so an add would risk a second ENABLED
+#   8 REFUSED — no view that can SHOW a DISABLED job was available, so the
+#     readback cannot prove the name free; an add would risk a second ENABLED
 #     poller beside an operator-disabled job. Nothing was mutated and nothing
-#     is claimed; this is the fail-closed choice, not a failure.
+#     is claimed; this is the fail-closed choice, not a failure. (A resolved
+#     gateway store does NOT lift this refusal — see the header rule.)
 # Every mutation is followed by a FRESH readback + rrr_cron_eval; each step's
 # success is the readback, never the command's exit code. The ladder is
 # dedupe -> add -> edit-in-place -> replace, bounded to 4 attempts.
@@ -1139,10 +1316,23 @@ rrr_cron_reconcile() {
                 [ "$RRR_RECONCILE_ACTION" = "none" ] && RRR_RECONCILE_STATE="in_sync" || RRR_RECONCILE_STATE="readback_verified"
                 rm -f "$_rrr_cr_tmp"* 2>/dev/null
                 RRR_RECONCILE_RC=0; return 0 ;;
+            store_unconfirmed)
+                # Only the store shows the job and the CLI's own listing is
+                # unreadable: the store cannot be corroborated, so it may veto
+                # but never establish. Nothing is claimed, nothing is mutated.
+                RRR_RECONCILE_STATE="store_unconfirmed"
+                rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                RRR_RECONCILE_RC=3; return 3 ;;
             unreadable|unresolved)
                 RRR_RECONCILE_STATE="readback_unavailable"
                 rm -f "$_rrr_cr_tmp"* 2>/dev/null
                 RRR_RECONCILE_RC=3; return 3 ;;
+            store_diverged)
+                # The two views contradict each other: nothing they say is
+                # licensed by the other, so mutate nothing and claim nothing.
+                RRR_RECONCILE_STATE="store_diverged"
+                rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                RRR_RECONCILE_RC=4; return 4 ;;
             mismatch)
                 if [ "$RRR_CRON_DISABLED_DIRECT" = "1" ]; then
                     RRR_RECONCILE_STATE="disabled_by_owner"
@@ -1184,6 +1374,13 @@ rrr_cron_reconcile() {
                 fi
                 if [ "$_rrr_cr_tried_replace" = "0" ] && [ -n "$RRR_CRON_ID" ]; then
                     _rrr_cr_tried_replace=1
+                    if ! rrr_cron_removable "$RRR_CRON_ID"; then
+                        # Never replace a job this readback cannot corroborate
+                        # (store-only row) — the rm half of replace is still a rm.
+                        RRR_RECONCILE_STATE="replace_protected"
+                        rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                        RRR_RECONCILE_RC=4; return 4
+                    fi
                     rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron rm "$RRR_CRON_ID" || true
                     [ "$RRR_ARGV_RC" -ne 0 ] && _rrr_cr_mut_rc="$RRR_ARGV_RC"
                     RRR_RECONCILE_ACTION="replace"
@@ -1201,30 +1398,46 @@ rrr_cron_reconcile() {
                     if [ -z "$_rrr_cr_keep" ]; then
                         for _rrr_cr_id in $RRR_CRON_IDS; do _rrr_cr_keep="$_rrr_cr_id"; break; done
                     fi
+                    _rrr_cr_blocked=0; _rrr_cr_removed=0
                     for _rrr_cr_id in $RRR_CRON_IDS; do
                         [ "$_rrr_cr_id" = "$_rrr_cr_keep" ] && continue
-                        rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron rm "$_rrr_cr_id" || true
-                        [ "$RRR_ARGV_RC" -ne 0 ] && _rrr_cr_mut_rc="$RRR_ARGV_RC"
+                        if rrr_cron_removable "$_rrr_cr_id"; then
+                            rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron rm "$_rrr_cr_id" || true
+                            [ "$RRR_ARGV_RC" -ne 0 ] && _rrr_cr_mut_rc="$RRR_ARGV_RC"
+                            _rrr_cr_removed=1
+                        else
+                            # Operator-disabled, or visible only in the store.
+                            # Deleting either destroys intent or a job this
+                            # readback cannot corroborate: refuse instead.
+                            _rrr_cr_blocked=1
+                        fi
                     done
-                    RRR_RECONCILE_ACTION="dedupe"
+                    [ "$_rrr_cr_removed" = "1" ] && RRR_RECONCILE_ACTION="dedupe"
+                    if [ "$_rrr_cr_blocked" = "1" ]; then
+                        RRR_RECONCILE_STATE="duplicate_protected"
+                        rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                        RRR_RECONCILE_RC=4; return 4
+                    fi
                     continue
                 fi
                 RRR_RECONCILE_STATE="duplicate_unreconciled"
                 rm -f "$_rrr_cr_tmp"* 2>/dev/null
                 RRR_RECONCILE_RC=4; return 4 ;;
-            absent|cli_only_absent|cli_visibility_insufficient)
-                # FAIL CLOSED (RR-028 review M-1): "nothing visible" under
-                # CLI-only coverage with a CLI that cannot list disabled jobs is
-                # NOT proof that the name is free. Adding here would register a
-                # SECOND, ENABLED poller beside a disabled job of the same name
-                # (double delivery), and a later `--all` readback turns that into
-                # `cron_duplicate` whose dedupe can delete the operator's job.
-                # Refuse to mutate and say exactly why.
-                if [ "$RRR_COVERAGE" = "cli-only" ] && [ "$RRR_CRON_VISIBILITY" != "full" ]; then
-                    RRR_RECONCILE_STATE="visibility_insufficient"
-                    rm -f "$_rrr_cr_tmp"* 2>/dev/null
-                    RRR_RECONCILE_RC=8; return 8
-                fi
+            cli_visibility_insufficient)
+                # FAIL CLOSED (RR-028 review M-1, widened by re-review Z-1): no
+                # view that can SHOW a disabled job was available, so "nothing
+                # visible" is NOT proof that the name is free. Adding here would
+                # register a SECOND, ENABLED poller beside a disabled job of the
+                # same name (double delivery), and a later readback that does see
+                # the disabled job turns that into `cron_duplicate` whose dedupe
+                # could only ever delete the operator's job. A resolved gateway
+                # store does not lift this refusal: a file that resolves is not a
+                # file that reflects the gateway (Z-1). Refuse to mutate and say
+                # exactly why.
+                RRR_RECONCILE_STATE="visibility_insufficient"
+                rm -f "$_rrr_cr_tmp"* 2>/dev/null
+                RRR_RECONCILE_RC=8; return 8 ;;
+            absent_proven_by_cli)
                 if [ "$_rrr_cr_tried_add" = "0" ]; then
                     _rrr_cr_tried_add=1
                     rrr_argv_run "$_rrr_cr_tmp.ahelp" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add --help || true

@@ -1,5 +1,81 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.2] - 2026-09-14 - RR-028 re-review fixes: the store may veto, never license
+
+Independent re-review (Worker Z, `RR028-RE-REVIEW-Z.md`) confirmed both 23.4.1
+HIGH fixes hold at the cause and found one MEDIUM hole the M-1 fix did not close
+(Z-1), one FALSE claim in the 23.4.1 text (Z-2), one unreachable detail (Z-6),
+and two test/harness defects (Z-3, Z-5). All five are fixed here, plus the M-3
+limitation is now documented in the shipped artifacts. No test was weakened; the
+three batteries gained 34 assertions (43->49, 42->46, 58->82).
+
+- **Z-1 (MEDIUM, pre-existing — NOT a 23.4.1 regression) — a resolved gateway
+  store licensed a mutation.** `rrr_cron_readback` upgraded
+  `cron.visibility` to `full` whenever a state DB resolved, and the 23.4.1
+  refusal guard only fired for `coverage=cli-only`; so on a box whose CLI
+  cannot show DISABLED jobs AND whose resolved store does not actually hold the
+  operator's job (an alternate/older candidate `ocd_state_db` accepts — it takes
+  any readable sqlite with >=1 table), "nothing visible" was read as "absent":
+  the ladder ADDED an enabled poller, the readback then saw both rows, and the
+  dedupe pass DELETED the operator's disabled job and reported SCHEDULED with
+  `wire.sh` rc 0. Identical on the parent revision.
+  **Fix — the store may VETO, never LICENSE:**
+  * `cron.visibility` is now a CLI fact only. Absence is proven ONLY by the
+    CLI's own listing having been asked for a full-status flag and reporting
+    nothing (`absent_proven_by_cli`); a resolved store never upgrades it.
+  * The store is corroborated against the CLI's own listing for the managed
+    name. Contradiction (`cli_hides_enabled_row`, `cli_all_omits_disabled_row`,
+    `store_missing_row`) => `cron_source_disagreement`, nothing claimed, nothing
+    mutated (rc 4). A store-only row with an unreadable CLI listing =>
+    `cron_store_unconfirmed` (rc 3): it may veto, never establish.
+  * REMOVAL now needs corroboration: `cron rm` may only touch an id the
+    gateway's own listing shows AND that was never observed DISABLED.
+    `duplicate_protected` / `replace_protected` (rc 4) refuse instead — this
+    also closes the reachable path where a duplicate beside an operator-DISABLED
+    job was "deduped" by deleting the operator's job.
+  * Vocabulary: the dead `absent` state and the misleading `cli_only_absent`
+    are replaced by `absent_proven_by_cli`; `cron.store`
+    (`corroborated`/`diverged`/`unconfirmed`/`none`) is reported in the JSON.
+  * Cost, stated plainly: a box whose CLI cannot list disabled jobs stays
+    unregistered EVEN IF its store resolves, and says so — the remedy is a CLI
+    that advertises the flag, never "make the state DB readable".
+- **Z-2 — a FALSE safety claim in the 23.4.1 text, corrected in place.** The
+  M-1 bullet claimed the refusal was "deliberately independent of whether the
+  CLI's help ADVERTISES a full-status flag". The code does the opposite: it asks
+  for the flag when the help advertises one and trusts the listing. The 23.4.1
+  bullet now carries an explicit correction, and the engine header states the
+  real rule and its residual: a CLI that advertises the flag and then hides a
+  disabled job anyway is indistinguishable in-band — except when a resolved
+  store contradicts it, which is now detected.
+- **Z-6 / M-6 — the superseded-receipt detail is now OBSERVABLE.** In 23.4.1 the
+  `stale` arm of `rrr_evaluate` substituted a fixed sentence and discarded
+  `RRR_RECEIPT_DETAIL`, so "names the file / NEWEST superseded receipt" could not
+  be seen anywhere. The stale detail now carries it, and a four-receipt test
+  pins both the observable `receipt.at` (newest from the INTENDED runtime) and
+  the named file.
+- **Z-3 — the M-4 assertion checked the label, not the state.** It asserted only
+  `cron.state=`; an empty or hard-coded value passed. It now pins the exact
+  state (`readback cron.state=absent_proven_by_cli)`).
+- **Z-5 — M-5's pgrep supplement could never fire.** It matched
+  `"$WORK/receiver.py"` while every stub lives at `"$WORK/<box>/receiver.py"`, so
+  the protection was single-mechanism (the batteries stayed green while 7
+  receivers leaked with the registry disabled). The pattern is fixed and a new
+  test proves BOTH mechanisms: the registry records both pids, then — with the
+  registry neutered at runtime (no code touched) — the supplement alone reaps
+  both receivers, 0 survivors. The batteries now honour a pre-exported
+  `RR028_PIDFILE`, so a killed-battery run can be reproduced without patching.
+- **M-3 honesty (documentation only).** A hand-written receipt is accepted as
+  VERIFIED — there is no signing key on the box — and that limitation was
+  nowhere in the shipped artifacts. The receipt contract and `SKILL.md` now state
+  that a receipt is a plain unauthenticated file (local liveness attestation, not
+  tamper-proof), and the VERIFIED detail no longer says a receipt "verified the
+  intended runtime"; it says what was actually recorded.
+
+Skill package version 23.4.1 -> 23.4.2. Gates (run serially): `tests/rescue/RR-028`
+readiness states **49/0**, safe probe **46/0**, wire reconciliation **82/0**;
+RR-027 credential gates 32/0 and 35/0 in BOTH bash and sh legs; RR-005 `FAILS=0`;
+RR-016 `FAILS=0`; frontmatter gate PASS; RR-004 12/0; RR-025 39/0; RR-026 47/0.
+
 ## [23.4.1] - 2026-09-14 - RR-028 review fixes: fail-closed blind spot + honest exit codes
 
 Independent review (Worker M, `RR028-REVIEW-M.md`) found two HIGH defects in
@@ -22,12 +98,21 @@ old, wrong behaviour — see below).
   coverage with `enabled_only` visibility, "nothing visible" is no longer read as
   "absent": the new state `cli_visibility_insufficient` reports
   `ENROLLED_PENDING / cron_state_unverifiable`, and `rrr_cron_reconcile` returns
-  a new **rc 8** WITHOUT mutating anything. This is deliberately independent of
-  whether the CLI's help ADVERTISES a full-status flag — advertising is not proof
-  the flag works, and the whole point is that a hidden disabled job is never
-  guessed away. Fail-closed: a box whose CLI cannot list disabled jobs and whose
-  state DB is unreadable stays unregistered (and says so) instead of risking the
-  operator's job.
+  a new **rc 8** WITHOUT mutating anything. Fail-closed: a box whose CLI cannot
+  list disabled jobs and whose state DB is unreadable stays unregistered (and
+  says so) instead of risking the operator's job.
+  **CORRECTION (23.4.2, re-review Z-2 — the following sentence was FALSE as
+  shipped here):** this bullet used to claim *"This is deliberately independent
+  of whether the CLI's help ADVERTISES a full-status flag — advertising is not
+  proof the flag works, and the whole point is that a hidden disabled job is
+  never guessed away."* The code does the opposite: visibility is `full` exactly
+  when the CLI's help advertises `--all` / `--include-disabled` /
+  `--show-disabled`, the CLI IS then asked for that flag, and its listing IS
+  trusted — advertising is taken as the proof. A hidden disabled job is still
+  guessed away when a CLI advertises a flag it does not honour and nothing
+  contradicts it. The other false half — that a resolved gateway store proves
+  an absence — was removed in 23.4.2 (Z-1). The engine header now states the
+  real rule and this residual.
 - **M-2 (HIGH) — `wire.sh` exited 0 when its OWN readback failed.** Only
   reconcile rc 5/7 mapped to 1; rc 3 (readback unavailable) and rc 4 (desired job
   NOT proven, including `add_not_read_back`) fell through to `exit 0`, so
@@ -54,6 +139,10 @@ old, wrong behaviour — see below).
   detail named the first one in glob order, so its digest/at could belong to an
   unrelated receipt. It now reports the NEWEST superseded receipt from the
   INTENDED runtime, names the file, and says other superseded receipts may exist.
+  **NOTE (23.4.2, re-review Z-6):** as shipped in 23.4.1 this bullet overstated —
+  the `stale)` arm substituted a fixed sentence and DISCARDED that detail, so
+  "names the file" was observable nowhere. 23.4.2 appends the detail to the
+  stale verdict and pins it with a test.
 
 Test-fixture corrections (each one ENCODED the old, wrong behaviour; every
 assertion is kept or strengthened, none weakened):
@@ -72,6 +161,9 @@ assertion is kept or strengthened, none weakened):
 Skill package version 23.4.0 -> 23.4.1. Gates: `tests/rescue/RR-028`
 (readiness states 43 assertions, safe probe 35, wire reconciliation 58), plus
 RR-027 credential gates, RR-005, RR-016, RR-004, RR-025 and RR-026 re-run green.
+**CORRECTION (23.4.2):** the safe-probe count above was stale — as shipped in
+23.4.1 that battery reports **42/0** (the M-4 success-line assertions were added
+without updating this line).
 
 ## [23.4.0] - 2026-09-13 - RR-028 enrollment + cron reconciliation report REAL readiness
 

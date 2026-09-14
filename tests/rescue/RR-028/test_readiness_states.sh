@@ -49,7 +49,9 @@ RR028_DONE=""
 # the leak used to happen. RR028_PIDFILE_BOX names the box whose registry (and
 # stub processes) this battery owns; the registry lives inside $WORK.
 RR028_PIDFILE_BOX="$WORK"
-RR028_PIDFILE="$WORK/rr028-receivers.pid"
+# An ALREADY-EXPORTED RR028_PIDFILE wins, so a reviewer can neuter the registry
+# (Z-5 evidence) without patching this battery.
+RR028_PIDFILE="${RR028_PIDFILE:-$WORK/rr028-receivers.pid}"
 trap 'rr028_cleanup' EXIT
 trap 'rr028_cleanup; exit 130' INT
 trap 'rr028_cleanup; exit 143' TERM
@@ -295,6 +297,47 @@ state_of "$B17"
 [ "$STATE" = "SCHEDULED" ] && [ "$REASON" = "ready_receipt_stale" ] \
   && ok "the receipt is keyed by digest: a NEW desired config voids it (reason=$REASON)" \
   || bad "stale receipt did not void" "$STATE/$REASON"
+# M-6 (+ re-review Z-6): with SEVERAL superseded receipts, name the NEWEST one
+# from THIS runtime — and make that naming OBSERVABLE in the detail. The detail
+# used to be computed and then silently discarded by the `stale` arm, so the
+# M-6 claim ("names the file") could not be checked anywhere.
+B17B="$WORK/box-superseded"
+rr028_make_box "$B17B"
+rr028_job "$B17B" "$(matching_job "$B17B")"
+state_of "$B17B"
+RID="$(rr028_field "$RR028_OUT" runtime.id)"
+[ -n "$RID" ] \
+  && ok "fixture: the intended runtime id resolves, so 'from THIS runtime' is testable" \
+  || bad "runtime id unresolved — the M-6 case cannot be built" "$STATE/$REASON"
+mkdir -p "$B17B/.openclaw/state/rr-receiver/readiness"
+mk_superseded() {  # mk_superseded <file-digest> <runtime-id> <at>
+    printf '{"schema":"rr-028/readiness-receipt/1","state":"VERIFIED","digest":"%s","runtime_id":"%s","claim":{"kind":"safe_test_claim","agent_turns":0,"acks_sent":0},"evidence":{"transport":"ok","http_status":200,"structured":true,"response_class":"no_work"},"at":"%s"}\n' \
+      "$1" "$2" "$3" > "$B17B/.openclaw/state/rr-receiver/readiness/receipt-$1.json"
+}
+# Glob order aaaa,bbbb,cccc,dddd. aaaa is FOREIGN and dated 2030 (the first in
+# glob order — what the pre-M-6 code named); bbbb is the newest from the
+# intended runtime; cccc older from the intended runtime; dddd foreign, 2010.
+mk_superseded aaaa "deadbeef-foreign-runtime" "2030-01-01T00:00:00Z"
+mk_superseded bbbb "$RID" "2025-01-01T00:00:00Z"
+mk_superseded cccc "$RID" "2020-01-01T00:00:00Z"
+mk_superseded dddd "deadbeef-foreign-runtime" "2010-01-01T00:00:00Z"
+state_of "$B17B"
+[ "$STATE" = "SCHEDULED" ] && [ "$REASON" = "ready_receipt_stale" ] \
+  && ok "control: four superseded receipts still yield ready_receipt_stale" \
+  || bad "the superseded-receipt case is not the stale state" "$STATE/$REASON"
+[ "$(rr028_field "$RR028_OUT" receipt.at)" = "2025-01-01T00:00:00Z" ] \
+  && ok "M-6: receipt.at names the NEWEST superseded receipt from the INTENDED runtime (2025, not the foreign 2030)" \
+  || bad "receipt.at names the wrong superseded receipt" "$(rr028_field "$RR028_OUT" receipt.at)"
+printf '%s' "$RR028_OUT" | grep -q 'receipt-bbbb\.json' \
+  && ok "Z-6: the stale detail NAMES that receipt file, so the M-6 claim is observable" \
+  || bad "the stale detail does not name the superseded receipt (the M-6 detail is unreachable)" \
+         "$(rr028_field "$RR028_OUT" detail)"
+printf '%s' "$RR028_OUT" | grep -q 'receipt-aaaa\.json' \
+  && bad "the stale detail names the FOREIGN, glob-first receipt" \
+  || ok "Z-6: the foreign glob-first receipt (2030) is NOT the one named"
+printf '%s' "$RR028_OUT" | grep -q 'other superseded receipts may also exist' \
+  && ok "Z-6: the detail keeps the 'other superseded receipts may also exist' caveat" \
+  || bad "the detail drops the other-receipts caveat"
 # And a receipt from a DIFFERENT runtime must not verify this one.
 B18="$WORK/box-foreign"
 rr028_make_box "$B18"

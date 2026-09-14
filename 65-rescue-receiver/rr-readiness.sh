@@ -292,6 +292,7 @@ rr_reconcile() {
     5) echo "rr-reconcile: openclaw CLI unresolved" >&2 ;;
     6) echo "rr-reconcile: not mutated — $RRR_RECONCILE_STATE (operator intent respected)" >&2 ;;
     7) echo "rr-reconcile: mutation command FAILED (state=$RRR_RECONCILE_STATE)" >&2 ;;
+    8) echo "rr-reconcile: REFUSED to mutate — $RRR_RECONCILE_STATE: no view that can show a DISABLED job was available, so the name is not proven free and nothing was changed (fail-closed)" >&2 ;;
   esac
   return 0
 }

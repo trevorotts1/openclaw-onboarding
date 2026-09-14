@@ -463,7 +463,11 @@ rr028_stop_receiver() {
 # reaps all of them from a single EXIT/INT/TERM trap.
 # ---------------------------------------------------------------------------
 
-# rr028_pidfile <box> — the registry path for this battery.
+# rr028_pidfile <box> — the registry path for this battery. RR028_PIDFILE, when
+# the caller already exported one, wins: a reviewer can therefore point the
+# registry at an unwritable path to prove the pgrep supplement reaps on its own
+# (Z-5), and a killed-battery run can be reproduced without patching any code
+# (see the Z-5 section of the probe battery).
 rr028_pidfile() {
   [ -n "${RR028_PIDFILE:-}" ] && { printf '%s' "$RR028_PIDFILE"; return 0; }
   printf '%s/rr028-receivers.pid' "$1"
@@ -492,10 +496,14 @@ rr028_killall() {
     done < "$_rk_file"
   fi
   [ -n "${RR028_RECEIVER_PID:-}" ] && kill "$RR028_RECEIVER_PID" 2>/dev/null || true
-  # Match this battery's OWN stub path only (its box lives under its $WORK), and
-  # never this shell or its parent.
+  # Match this battery's OWN stub paths only, and never this shell or its parent.
+  # Z-5 (re-review): the pattern used to be "$_rk_box/receiver.py", but every stub
+  # actually lives at "$_rk_box/<box>/receiver.py" — so the supplement could never
+  # match and M-5 rested on the pid registry alone. `$_rk_box` is a mktemp path
+  # (no regex metacharacters beyond '.', which only over-matches within this
+  # battery's own directory).
   if [ -n "$_rk_box" ] && command -v pgrep >/dev/null 2>&1; then
-    for _rk_pid in $(pgrep -f "$_rk_box/receiver.py" 2>/dev/null || true); do
+    for _rk_pid in $(pgrep -f "$_rk_box/.*receiver\.py" 2>/dev/null || true); do
       case "$_rk_pid" in ''|*[!0-9]*|"$$"|"$PPID") continue ;; esac
       kill "$_rk_pid" 2>/dev/null || true
     done

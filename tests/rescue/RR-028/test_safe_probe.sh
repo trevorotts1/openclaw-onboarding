@@ -43,7 +43,9 @@ RR028_DONE=""
 # the leak used to happen. RR028_PIDFILE_BOX names the box whose registry (and
 # stub processes) this battery owns; the registry lives inside $WORK.
 RR028_PIDFILE_BOX="$WORK"
-RR028_PIDFILE="$WORK/rr028-receivers.pid"
+# An ALREADY-EXPORTED RR028_PIDFILE wins, so a reviewer can neuter the registry
+# (Z-5 evidence) without patching this battery.
+RR028_PIDFILE="${RR028_PIDFILE:-$WORK/rr028-receivers.pid}"
 trap 'rr028_cleanup' EXIT
 trap 'rr028_cleanup; exit 130' INT
 trap 'rr028_cleanup; exit 143' TERM
@@ -300,10 +302,63 @@ case "$PROBE_OUT" in
   *) bad "the success line still implies the box is ready" "$(printf '%s' "$PROBE_OUT" | head -1)" ;;
 esac
 case "$PROBE_OUT" in
-  *"cron.state="*)
-    ok "the success line reports the schedule readback it did NOT establish" ;;
-  *) bad "the success line does not report the cron state" ;;
+  *"readback cron.state=absent_proven_by_cli)"*)
+    ok "the success line reports the schedule readback it did NOT establish, as the REAL state of this box (absent_proven_by_cli: the CLI's own full-status listing proved no cron of this name exists)" ;;
+  *) bad "the success line does not report the exact cron state this box is in (expected absent_proven_by_cli)" "$(printf '%s' "$PROBE_OUT" | tail -1)" ;;
 esac
+
+# ---------------------------------------------------------------------------
+# 7. M-5's SECOND mechanism must actually fire (RR-028 re-review Z-5).
+#
+# rr028_killall reaps from a per-battery pid REGISTRY and, as a bounded
+# supplement, from a command-line match. The supplement's pattern was
+# "$WORK/receiver.py" while every stub lives at "$WORK/<box>/receiver.py", so it
+# could never match: the protection was single-mechanism, and a battery killed
+# mid-run leaked receivers while still reporting green. Both mechanisms are
+# proven here, and the supplement is proven ALONE (the registry is neutered at
+# runtime — no code touched, declarations intact).
+# ---------------------------------------------------------------------------
+echo "--- 7. the bounded pgrep supplement really reaps (Z-5) ---"
+Z5_REG="$RR028_PIDFILE"
+Z5_A="$WORK/z5-box-a"; Z5_B="$WORK/z5-box-b"
+rr028_make_box "$Z5_A"; rr028_make_box "$Z5_B"
+rr028_start_receiver "$Z5_A" "$(rr028_port 60)" no_work
+rr028_start_receiver "$Z5_B" "$(rr028_port 61)" no_work
+# Independent observer: count the stubs by their exact stub path (NOT by the
+# supplement's own pattern), so a broken supplement cannot hide behind it.
+z5_live() { pgrep -f "$1/receiver\.py" 2>/dev/null | grep -c . || true; }
+if [ -s "$Z5_REG" ]; then
+  Z5_REGN="$(grep -c . "$Z5_REG" 2>/dev/null || true)"
+else
+  Z5_REGN=0
+fi
+[ "${Z5_REGN:-0}" -ge 2 ] \
+  && ok "Z-5 control: the pid REGISTRY recorded both receivers (the primary mechanism works)" \
+  || bad "the pid registry did not record both receivers" "file=$Z5_REG entries=$Z5_REGN"
+Z5_BEFORE=$(( $(z5_live "$Z5_A") + $(z5_live "$Z5_B") ))
+[ "$Z5_BEFORE" -ge 2 ] \
+  && ok "Z-5 control: both receiver stubs are genuinely alive before the supplement runs (n=$Z5_BEFORE)" \
+  || bad "the Z-5 receiver stubs never started — the assertion below would be vacuous" "n=$Z5_BEFORE"
+# NEUTER the registry: point it at a path whose directory does not exist (every
+# write is refused) and clear the last-pid variable. Now only the pgrep
+# supplement can reap anything.
+RR028_PIDFILE="$WORK/z5-no-such-dir/rr028-receivers.pid"
+RR028_RECEIVER_PID=""
+[ ! -e "$WORK/z5-no-such-dir" ] && [ ! -e "$RR028_PIDFILE" ] \
+  && ok "Z-5: the registry is genuinely dead at reap time (unwritable path, no file) and no last-pid is held" \
+  || bad "the Z-5 registry could not be neutered" "path=$RR028_PIDFILE"
+rr028_killall "$WORK"
+Z5_I=0
+while [ "$Z5_I" -lt 40 ]; do
+  [ "$(( $(z5_live "$Z5_A") + $(z5_live "$Z5_B") ))" = "0" ] && break
+  sleep 0.05; Z5_I=$((Z5_I + 1))
+done
+Z5_LEFT=$(( $(z5_live "$Z5_A") + $(z5_live "$Z5_B") ))
+[ "$Z5_LEFT" = "0" ] \
+  && ok "Z-5: the pgrep supplement reaped BOTH receivers with the registry dead (0 survivors)" \
+  || bad "the pgrep supplement never matched — receivers leaked" "$Z5_LEFT still alive"
+# Restore the writable registry for the EXIT/INT/TERM trap.
+RR028_PIDFILE="$Z5_REG"
 
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
