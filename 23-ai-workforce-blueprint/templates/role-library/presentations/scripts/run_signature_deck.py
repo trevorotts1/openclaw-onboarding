@@ -2094,8 +2094,13 @@ def _measure_copy_qc(run_dir: Path) -> dict:
     if iec is not None and hasattr(iec, "check_copy"):
         iec.check_copy(working, problems)
     pec = _import_checker("pitch_engines_check")
-    if pec is not None and hasattr(pec, "check_copy") and _pitch_included(run_dir):
-        pec.check_copy(working, problems)
+    if pec is not None and hasattr(pec, "check_copy"):
+        applicable, refusal = pec.pitch_applicability(run_dir)
+        if refusal:
+            problems.append({"code": refusal.split(":", 1)[0], "slide": "DECK",
+                             "phase": "Phase 1Q", "detail": refusal})
+        elif applicable:
+            pec.check_copy(working, problems)
     return {"pass": len(problems) == 0, "problems": problems}
 
 

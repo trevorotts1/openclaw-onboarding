@@ -52,3 +52,36 @@ def test_sp_claim_preserves_signature_enforcement(tmp_path):
     (copy / "intake.json").write_text(json.dumps({"deck_type": "signature_presentation"}))
     (copy / "sp_claims.json").write_text(json.dumps({"deck_type": "signature_presentation", "claimed": True}))
     assert phase_verifiers._sp_claim_matches_intake(tmp_path) == (True, [])
+
+
+def _signature_conflict_run(tmp_path: Path) -> Path:
+    copy = tmp_path / "working" / "copy"
+    copy.mkdir(parents=True)
+    (copy / "intake.json").write_text(json.dumps({
+        "deck_type": "signature_presentation", "pitch_included": False,
+    }))
+    (copy / "slides_copy.md").write_text("Informational copy " * 8)
+    return tmp_path
+
+
+def test_canonical_copy_wrappers_do_not_skip_signature_pitch_conflict(tmp_path):
+    """Every wrapper consumes the shared resolver before deciding to skip."""
+    import build_deck
+    import run_signature_deck
+
+    run_dir = _signature_conflict_run(tmp_path)
+    assert "AF-PITCH-APPLICABILITY-CONFLICT" in build_deck.check_pitch_engines(run_dir)
+
+    ok, verifier_notes = phase_verifiers._verify_copy(run_dir)
+    assert not ok
+    assert any("AF-PITCH-APPLICABILITY-CONFLICT" in note for note in verifier_notes)
+
+    measured = run_signature_deck._measure_copy_qc(run_dir)
+    assert not measured["pass"]
+    assert any(p["code"] == "AF-PITCH-APPLICABILITY-CONFLICT"
+               for p in measured["problems"])
+
+    deterministic = build_deck.check_copy_qc_deterministic(run_dir)
+    assert not deterministic["pass"]
+    assert any(d["code"] == "AF-PITCH-APPLICABILITY-CONFLICT"
+               for d in deterministic["deficiencies"])

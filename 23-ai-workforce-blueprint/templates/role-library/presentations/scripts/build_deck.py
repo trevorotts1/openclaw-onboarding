@@ -8490,17 +8490,22 @@ def check_pitch_engines(run_dir: Path, slides_path: Optional[Path] = None) -> st
     pre-copy. Calls pitch_engines_check.check_copy(run_dir, problems) — the v15 importable
     entry point Agent 3 exposes; run_dir is the ACTUAL run dir, matching the module's own
     load_run(run_dir) -> working/copy convention. Returns a fatal message on any auto-fail."""
-    if _intake_pitch_included(run_dir) is not True:
-        return ""  # pitchless / unset — AF-PITCH-LEAK / AF-PITCH-FLAG-UNSET own those cases.
-    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
-    if not copy_md.exists():
-        return ""  # pre-copy phase — the offer engines defer.
     pec = _import_pitch_engines_check()
     if pec is None:
         return ("AF-PITCH-ENGINE: pitch_engines_check.py could not be imported from the "
                 "scripts directory; the offer sub-engines (cadence / cost-of-inaction / "
                 "branded-method / guarantee / time-to-result) could not run. Ensure "
                 "pitch_engines_check.py is present beside build_deck.py.")
+    if not hasattr(pec, "pitch_applicability"):
+        return "AF-PITCH-ENGINE: pitch_engines_check.py exposes no pitch_applicability(run_dir) contract."
+    applicable, refusal = pec.pitch_applicability(run_dir)
+    if refusal:
+        return refusal
+    if not applicable:
+        return ""
+    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
+    if not copy_md.exists():
+        return ""  # pre-copy phase — the offer engines defer.
     if not hasattr(pec, "check_copy"):
         return ("AF-PITCH-ENGINE: pitch_engines_check.py exposes no check_copy(run_dir, "
                 "problems) entry point (the v15 interface contract requires it). The offer "
@@ -8775,9 +8780,13 @@ def check_copy_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = Non
                 continue
             deficiencies.append(_engine_problem_to_def(p, "copy"))
 
-    if _intake_pitch_included(run_dir) is True:
-        pec = _import_pitch_engines_check()
-        if pec is not None and hasattr(pec, "check_copy"):
+    pec = _import_pitch_engines_check()
+    if pec is not None and hasattr(pec, "check_copy"):
+        applicable, refusal = pec.pitch_applicability(run_dir)
+        if refusal:
+            deficiencies.append(_engine_problem_to_def(
+                {"code": refusal.split(":", 1)[0], "detail": refusal}, "offer"))
+        elif applicable:
             pprob = []
             try:
                 pec.check_copy(run_dir, pprob)
