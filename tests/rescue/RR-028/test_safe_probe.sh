@@ -96,12 +96,24 @@ state_of
   || bad "probe did not verify" "rc=$PROBE_RC state=$STATE/$REASON"
 [ -f "$(receipt_path "$DG")" ] && ok "the receipt is keyed by the desired-config digest" \
   || bad "receipt file missing for digest $DG"
-if receipt_mode="$(stat -f '%Lp' "$(receipt_path "$DG")" 2>/dev/null || stat -c '%a' "$(receipt_path "$DG")" 2>/dev/null)"; then
+# Portable mode lookup. `stat -f '%Lp'` is BSD/macOS and `stat -c '%a'` is GNU, but GNU's
+# `stat -f` does NOT fail -- it prints filesystem status -- so a `||` fallback can never fire
+# and the mode silently reads empty on Linux. Detect the dialect once instead. (CI runs Ubuntu;
+# this bug made two assertions report "mode=" with no value while passing on macOS.)
+_st_mode() {
+  # Try GNU first and CAPTURE -- do not call twice, and do not rely on `||`, because GNU's
+  # `stat -f` succeeds while printing filesystem status, which is what silently yielded an
+  # empty mode on CI. A successful `-c '%a'` prints the octal mode; anything else falls back.
+  _m="$(stat -c '%a' "$1" 2>/dev/null)" && [ -n "$_m" ] && { printf '%s\n' "$_m"; return 0; }
+  stat -f '%Lp' "$1"
+}
+
+if receipt_mode="$(_st_mode "$(receipt_path "$DG")")"; then
   [ "$receipt_mode" = "600" ] && ok "receipt is 0600" || bad "receipt mode=$receipt_mode (expected 600)"
 else
   skip "receipt mode probe unavailable on this host"
 fi
-dir_mode="$(stat -f '%Lp' "$BOX/.openclaw/state/rr-receiver/readiness" 2>/dev/null || stat -c '%a' "$BOX/.openclaw/state/rr-receiver/readiness" 2>/dev/null)"
+dir_mode="$(_st_mode "$BOX/.openclaw/state/rr-receiver/readiness")"
 [ "$dir_mode" = "700" ] && ok "readiness dir is 0700" || bad "readiness dir mode=$dir_mode (expected 700)"
 grep -q '"agent_turns":0' "$(receipt_path "$DG")" \
   && ok "receipt records ZERO agent turns" || bad "receipt does not record a zero-turn claim"
