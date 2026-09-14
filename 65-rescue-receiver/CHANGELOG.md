@@ -1,5 +1,41 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.6] - 2026-09-14 - the runtime identity: stable across releases, bound to the runtime
+
+The engine hashes TWO canonical forms, and only one of them was pinned:
+
+  * the DESIRED-CONFIG digest (`rr028-desired/1`), whose comment says "NO VERSION INPUTS"
+    -- `test_readiness_states.sh` section 5 already proved it ignores
+    ONBOARDING_VERSION / RECEIVER_VERSION / ONBOARDING_SKILL_VERSION; and
+  * the RUNTIME identity (`rr028-runtime/1`), which is what a readiness RECEIPT is bound
+    to: a receipt taken in one runtime can never verify another.
+
+The second is the dangerous half, and nothing asserted either of its two failure
+directions:
+
+  * if it moved on a VERSION change, an upgrade would silently void the box's own
+    receipt, and readiness would flap between VERIFIED and SCHEDULED for a reason no
+    operator could see;
+  * if it were INSENSITIVE to the runtime, a receipt could be replayed onto a different
+    runtime -- the exact hole the binding exists to close.
+
+Neither was true, but "not true and untested" is a claim. Section **5b** now measures both
+directions on the same synthetic box: the id does NOT move for a version change, DOES move
+for a changed `target_id`, and the report NAMES the runtime it judged
+(`platform=mac mode=launchd`) rather than only hashing it.
+
+Falsification, both reverted with the engine hash-checked afterwards:
+  MUT-RID1 add `ONBOARDING_VERSION` to the runtime identity -> the stability assertion FAILS
+  MUT-RID2 remove `target_id` from the runtime identity     -> the binding assertion FAILS
+
+Batteries: readiness-states 62 -> 65 assertions, and all four green: 65/0, 50/0, 71/0, 135/0.
+
+A measurement note kept because it cost time: `RR028_EXTRA_ENV="OC_TARGET_ID=..."` is
+SILENTLY IGNORED -- `rr028_run` sets both `OC_TARGET_ID` and `OC_SERVICE_LABEL` from
+`RR028_TARGET_ID` before the extra env is applied, so the override must use
+`RR028_TARGET_ID`. The first version of 5b failed for that reason alone, and the note is
+now in the test.
+
 ## [23.4.5] - 2026-09-14 - the probe budget was sized for a receiver nobody has
 
 The safe test claim's default budget was 25 seconds. Measured against the LIVE
