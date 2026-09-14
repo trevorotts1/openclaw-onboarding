@@ -187,8 +187,26 @@ if action == "list" and "--help" in rest:
 
 if action == "list":
     if os.environ.get("RR028_MOCK_LIST_MODE") == "unreadable":
+        # NOTE the wording: this is a DIFFERENT failure class from gateway_down
+        # below, so the message deliberately does NOT contain "not reachable"
+        # -- the engine classifies on stderr text, and a fixture whose words
+        # collide would silently move this case into the other class.
         sys.stderr.write("mock: cron store unreadable\n")
         sys.exit(1)
+    if os.environ.get("RR028_MOCK_LIST_MODE") == "gateway_down":
+        # THE REAL FAILURE FORM, measured live on this operator box:
+        #   $ openclaw cron list
+        #   Gateway not reachable at ws://127.0.0.1:18789 (ECONNREFUSED).
+        #   ... exit 0, stdout EMPTY
+        # `--help` still works (it reads no gateway state), which is why the
+        # engine's visibility probe has already succeeded by the time this
+        # fires. That combination is what produced the false
+        # `cli_hides_enabled_row` contradiction this case pins.
+        sys.stderr.write("Gateway not reachable at ws://127.0.0.1:18789 (ECONNREFUSED).\n")
+        # RR028_MOCK_LIST_EXIT=1 models the OTHER observed shape of the same
+        # failure: a non-zero exit. Both shapes must be treated as a FAILED
+        # command, never as an empty answer.
+        sys.exit(int(os.environ.get("RR028_MOCK_LIST_EXIT", "0")))
     d = load()
     show_all = flag("--all") and os.environ.get("RR028_MOCK_NO_ALL") != "1"
     if os.environ.get("RR028_MOCK_LIST_ALL_DEFAULT") == "1":

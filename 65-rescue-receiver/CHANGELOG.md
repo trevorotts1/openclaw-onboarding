@@ -1,5 +1,57 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.4] - 2026-09-14 - an unreachable gateway is not a cron that disagrees with itself
+
+Found by EXECUTING the tool on the operator box, after 23.4.3 had already shipped.
+The readiness reporter said:
+
+    ENROLLED_PENDING / cron_source_disagreement
+    cron=store_diverged  disagreement=cli_hides_enabled_row(id=07757c08-...)
+
+That message was FALSE. `openclaw cron list` could not reach the gateway at all:
+
+    Gateway not reachable at ws://127.0.0.1:18789 (ECONNREFUSED).
+    ... exit 0, stdout EMPTY
+
+`cron list --help` still works (it reads no gateway state), so the engine's
+visibility probe had already succeeded and set `visibility=full` before the
+listing came back empty. The engine then compared that emptiness against the
+gateway's own store, found the enabled row the CLI "hid", and concluded the
+gateway's own listing contradicted its own store. Only ONE view had ever been
+read. UNOBSERVABLE IS NOT ABSENT -- the rule this engine already applies to the
+`enabled` bit, applied one level up to the whole readback.
+
+- **A CLI that FAILED is no longer read as a CLI that answered nothing.** The
+  readback classifies a failed `cron list` (`RRR_CLI_FAILURE`): `gateway_unreachable`
+  when stderr names an unreachable gateway, `cli_error` for any other stderr. ANY
+  stderr counts, because the real CLI writes its complaint and still exits 0, so an
+  exit-code test alone misses exactly the case that reached the box.
+- **Fail-closed, before any comparison.** With a failure recorded and NO store row
+  for the managed name, the evaluator returns `cli_failed` immediately. Nothing is
+  compared, nothing is mutated, and the report reads
+  `ENROLLED_PENDING / cli_unreachable` with the connection named as the remedy --
+  so an operator repairs the gateway instead of chasing a phantom cron.
+- **The guard is SCOPED, deliberately.** When the store DOES carry a row for the
+  managed name, the engine keeps its existing, reviewed verdict
+  (`cron_store_unconfirmed`): a store may veto, never establish. An unscoped guard
+  was written first and the battery caught it replacing that precise verdict with a
+  vaguer one -- which is why the scope is stated here rather than left to the code.
+- **Nothing changed about the states, the rc contract, or any other reason.** The
+  fail-closed conclusion was already correct; the REASON was wrong, and a wrong
+  reason sends an operator to the wrong place.
+
+Batteries: readiness-states 60 -> 62 assertions (both gateway-failure shapes, plus
+the reachable-gateway control that proves the case measures the connection and not
+the fixture), and the case that previously read `cron_readback_unreadable` for a
+failed CLI now asserts `cli_unreachable` with its sub-reason. All four RR-028
+batteries green: 62/0, 46/0, 71/0, 135/0.
+
+Falsification: removing the scoped guard (declarations and classification left
+intact) makes THREE cases fail, including both gateway-failure shapes. No
+pre-existing test caught the defect, because the mock CLI had no way to fail at the
+LIST step with the real stdout/stderr/exit shape -- so the double and the engine
+agreed with each other while both disagreed with the real box.
+
 ## [23.4.3] - 2026-09-14 - RR-028 final review: unobservable is not absent
 
 Final independent review before promotion (Worker AD, `RR028-AD-REVIEW.md`)
