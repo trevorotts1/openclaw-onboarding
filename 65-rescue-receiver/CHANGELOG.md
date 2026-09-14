@@ -1,5 +1,52 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.7] - 2026-09-14 - the routing-fault refusals had no test
+
+RR-025's own required QC is: *"Verify requested local agent exists. If absent, use a verified
+authorized same-client General/CEO fallback and record substitution, or keep an owned
+operator-recoverable routing fault."* Only the FIRST half was pinned -- the fallback path was
+covered by `test_claim_envelope.sh` case 9, and the refusal half was covered by nothing.
+
+A survey of the whole ONB test tree found three reason literals in `rescue-poll.sh` that NO
+test mentioned:
+
+  `roster_unreadable`       the roster could not be read at all
+  `requested_agent_absent`  the requested agent is absent; a verified local substitute was
+                            chosen and recorded (this one was exercised, by case 9)
+  `no_verified_fallback`    the requested agent is absent AND no local candidate could be
+                            verified
+
+`no_verified_fallback` is the one that matters most: it is the point where the box could page
+a session nobody verified, on a ticket that names a different agent. The code says it refuses
+and records an owned routing fault instead, and nothing measured that.
+
+NEW BATTERY: `tests/rescue/RR-025/test_routing_fallback.sh` drives the REAL `rescue-poll.sh`
+against a loopback receiver stub and counts the agent turns a stub `openclaw` records:
+  * a resolvable agent DOES get a turn, and that turn is ACKED -- the non-vacuity control for
+    both counters;
+  * an UNREADABLE roster produces zero turns and zero acks;
+  * a candidate-less roster produces zero turns, zero acks, and a RECORDED
+    `no_verified_fallback` fault;
+  * with a verifiable candidate the turn DOES run, ON that candidate, and is acked -- so the
+    contrast with the refusal is a turn, not a silent difference;
+  * an unrelated agent present in the roster is NOT chosen merely for being there;
+  * the two unresolvable inputs are reported as DIFFERENT faults.
+
+TWO MEASUREMENT TRAPS ARE RECORDED IN THE BATTERY, because both cost a run:
+  1. `claims.txt` counts every POST, and a run ALWAYS claims once -- so counting its lines
+     measures "the poll ran", not "the poll lied". The wire event that must not happen is an
+     ACK, so the battery counts `"action":"ack"` bodies instead.
+  2. an EMPTY `STUB_ROSTER` does not model an unreadable roster: the stub falls through to its
+     built-in default, so the poll saw a good roster and legitimately ran a turn. The harness
+     gained `STUB_ROSTER_FAIL=1` for a roster read that genuinely FAILS.
+
+FALSIFICATION (both reverted, poll hash-checked afterwards)
+  MUT-F1 fall back to ANY roster entry instead of refusing -> FIVE assertions FAIL
+  MUT-F2 treat an unreadable roster as an empty one         -> the distinctness assertion FAILS
+
+Batteries: new 14/0; `test_claim_envelope.sh` 39/0; RR-028 65/0, 50/0, 71/0, 135/0.
+Skill 65 v23.4.6 -> v23.4.7.
+
 ## [23.4.6] - 2026-09-14 - the runtime identity: stable across releases, bound to the runtime
 
 The engine hashes TWO canonical forms, and only one of them was pinned:
