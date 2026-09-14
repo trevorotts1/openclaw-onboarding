@@ -606,7 +606,6 @@ def cmd_next(args) -> int:
 # subfield with an unmet condition records its documented default/derived/
 # none_value, and only a fully undocumentable skip leaves the marker entry.
 # ---------------------------------------------------------------------------
-_PITCHLESS_RE = re.compile(r"no\s+pitch|pitchless|without\s+(a\s+)?pitch", re.I)
 _INT_RE = re.compile(r"(\d+)")
 _WPM_RE = re.compile(r"(\d{2,4})\s*w(?:ords)?[\s-]*p(?:m|er\s?min)", re.I)
 _MIN_RE = re.compile(r"(\d{1,3})\s*(?:minutes|minute|mins|m)\b", re.I)
@@ -638,11 +637,24 @@ def derive_slide_count_from_duration(duration_min: Any) -> Optional[int]:
     return max(1, int(round(d * 0.8)))
 
 def pitchless_session(derived: Dict[str, Any]) -> bool:
-    """Q4 (goal_cta_feeling) decides: a session with no sell has no pitch.
-    Group-2 rows (11-15) are skipped-with-defaults when the client says so."""
-    blob = " ".join(str(derived.get(k) or "")
-                    for k in ("goal", "cta_action", "target_feeling"))
-    return bool(_PITCHLESS_RE.search(blob))
+    """Only the explicit, typed pitch decision can suppress commercial turns.
+
+    Free text such as ``"without a pitch"`` is not a durable intake decision:
+    it may describe one section while the owner still selected an offer, or
+    vice versa. ``pitch_included`` is written as a real bool by cmd_answer;
+    missing or non-bool values intentionally do not skip anything.
+    """
+    return derived.get("pitch_included") is False
+
+
+def _explicit_pitch_value(text: str) -> Optional[bool]:
+    """Parse the one owner-selected pitch decision without inferring it."""
+    normalized = (text or "").strip().lower()
+    if normalized in ("true", "yes"):
+        return True
+    if normalized in ("false", "no"):
+        return False
+    return None
 
 def _answer_view(entries: Dict[str, Any]) -> Dict[str, Any]:
     """Flatten ledger entries to a {key: value} answers view. Structured
@@ -673,9 +685,9 @@ def _enum_match(text: str, allowed: List[str]) -> Optional[str]:
 
 def _yes_or_no(text: str) -> Optional[str]:
     lowered = (text or "").strip().lower()
-    if re.match(r"^(y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
+    if re.match(r"^(true|y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
         return "yes"
-    if re.match(r"^(n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
+    if re.match(r"^(false|n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
         return "no"
     return None
 
@@ -1501,9 +1513,26 @@ def cmd_answer(args) -> int:
         if q["id"] == qid:
             qdef = q
             break
+    # pitch_included is a typed subfield of the first merged type/source
+    # turn.  Accept its id directly as well because the local bridge records
+    # individual canonical fields; this does not create another interview
+    # turn or loosen its validation.
+    if qdef is None and qid == "pitch_included":
+        qdef = {"id": qid, "storeOn": "PITCH_INCLUDED",
+                "prompt": "Does this presentation include a pitch?"}
     if qdef is None:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
+
+    # The pitch branch is a typed owner decision, never a text inference.
+    # Validate before creating a ledger row so malformed or contradictory
+    # answers leave no partial intake state behind.
+    pitch_value: Optional[bool] = None
+    if qid == "pitch_included":
+        pitch_value = _explicit_pitch_value(text)
+        if pitch_value is None:
+            print(json.dumps({"error": "pitch_included must be an explicit yes/no or true/false decision"}))
+            return 1
 
     # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
@@ -1522,12 +1551,24 @@ def cmd_answer(args) -> int:
     # never silently left stale or (the old bug) clobbered.
     already_complete = bool(ledger.get("complete")) or ledger.get("status") == "complete"
     entries = ledger.get("entries", {})
+    prior_answers = _answer_view(entries)
+    if qid == "pitch_included":
+        prior_type = prior_answers.get("presentation_type")
+        if prior_type == "signature" and pitch_value is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
+            return 1
     store_on = qdef.get("storeOn", qid)
     entries[store_on] = {"value": text.strip(), "validated": True,
                          "source": "deck-intake-driver",
                          "answered_at": datetime.now(timezone.utc).isoformat()}
     # Also store by question id for lookup
     entries[qid] = entries[store_on]
+    if qid == "pitch_included":
+        pitch_record = dict(entries[store_on])
+        pitch_record.update({"value": pitch_value, "normalized": pitch_value,
+                             "answer": "true" if pitch_value else "false"})
+        entries[store_on] = pitch_record
+        entries[qid] = pitch_record
 
     # FIX 30: merged-turn answer -- split into legacy subfield records, each
     # with the SAME shape the drift-side waiver builder reads (validated +
@@ -1568,6 +1609,10 @@ def cmd_answer(args) -> int:
                             "normalized": parent, "answer": text.strip()}
         # presentation_type special (mirrors the legacy plain-row handler)
         ptype = derived.get("presentation_type")
+        selected_pitch = derived.get("pitch_included")
+        if ptype == "signature" and selected_pitch is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
+            return 1
         if ptype in LEGAL_PRESENTATION_TYPES:
             try:
                 dl = derive_legacy_fields(
@@ -1639,6 +1684,9 @@ def cmd_answer(args) -> int:
         ptype = text.strip()
         if ptype not in LEGAL_PRESENTATION_TYPES:
             print(json.dumps({"error": f"Invalid presentation_type {ptype!r}"}))
+            return 1
+        if ptype == "signature" and prior_answers.get("pitch_included") is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
             return 1
         try:
             derived = derive_legacy_fields(ptype)
@@ -1802,6 +1850,15 @@ def cmd_complete(args) -> int:
     intake = read_intake_json(run_dir)
     for store_key, entry in entries.items():
         if isinstance(entry, dict):
+            # A commercial-only field skipped because the owner selected an
+            # informational deck is not an empty client answer. Keep the
+            # provenance marker in the ledger but do not manufacture a root
+            # intake value that a later consumer could mistake for supplied
+            # content.
+            if (entry.get("skipped") and store_key in
+                    ("named_methodology", "time_to_result",
+                     "NAMED_METHODOLOGY", "TIME_TO_RESULT")):
+                continue
             val = entry.get("value")
             if val is not None:
                 intake[store_key] = val

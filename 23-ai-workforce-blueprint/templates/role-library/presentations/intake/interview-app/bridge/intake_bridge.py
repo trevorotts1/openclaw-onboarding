@@ -60,10 +60,13 @@ INTAKE_ADMIN_TOKEN (never from argv, never logged).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -319,7 +322,12 @@ def _ensure_board_card(run_dir: pathlib.Path, intake: dict, session_id: str,
     itself idempotent (sha256(source_ref+title) key server-side) — the local
     record makes that idempotency durable across bridge restarts.
     """
+    expected_task = str(intake.get("cc_task_id") or "").strip()
     existing = str(doc.get("board_task_id") or "").strip()
+    if expected_task:
+        if existing and existing != expected_task:
+            raise ValueError("submission ledger board task conflicts with authenticated contract")
+        return "registered", expected_task
     if existing:
         return "registered", existing
     manifest_task = ""
@@ -393,7 +401,7 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
     # spawn — the crash-window recovery (state.json/.engine.pid named a pid
     # that is alive) completes the handoff without a second executor.
     if _ll.engine_alive(run_dir):
-        exec_id = _ll.execution_id_of(run_dir)
+        exec_id = str(intake.get("cc_execution_id") or _ll.execution_id_of(run_dir) or "")
         if exec_id:
             _ll.mark_worker_acknowledged(
                 run_dir, session_id, doc, exec_id,
@@ -415,7 +423,9 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
                     "lease held by pid {pid} on host {host}; submission stays "
                     "launch_pending for the next tick".format(
                         pid=lease_doc.get("pid"), host=lease_doc.get("host")))
-        exec_id = _ll.mint_execution_id(lease)
+        # A CC-signed operator receipt pins the execution identity before launch;
+        # ordinary Worker submissions retain the lease-derived identity.
+        exec_id = str(intake.get("cc_execution_id") or _ll.mint_execution_id(lease))
         pid = launcher.dispatch_new(str(run_dir), client=client,
                                     deck_type=deck_type, background=True)
         if isinstance(pid, int) and pid > 0:
@@ -804,6 +814,219 @@ def _load_presentation_job():
                 continue
     return None
 
+
+
+# ---------------------------------------------------------------------------
+# PD-025 — authenticated operator-contract handoff
+# ---------------------------------------------------------------------------
+# This path intentionally shares the normal driver's ledger, resolver and
+# durable bridge.  It does not accept a browser/Worker tenant tuple, does not
+# mint a requester identity, and never writes an engine state directly.
+_OPERATOR_CONTRACT_VERSION = 1
+_OPERATOR_CONTRACT_REQUIRED = (
+    "task_id", "execution_id", "source", "title", "presentation_type",
+    "run_mode", "workhorse_model", "slide_count", "pitch_included",
+    "want_teleprompter", "want_speech_script", "want_audio_deliverable",
+    "want_audio_demo", "want_ghl_upload", "want_sales_checkout", "want_vsl_page",
+    "deliverable_set", "delivery_destinations", "answers",
+)
+
+
+def validate_operator_contract(contract: dict) -> dict:
+    """Validate the server-authenticated presentation contract before any write.
+
+    The caller is responsible for authentication at the Command Center boundary;
+    this function rejects a client-shaped or incomplete payload rather than
+    treating free-form text as consent or a tenant identity.
+    """
+    if not isinstance(contract, dict):
+        raise ValueError("operator contract must be a JSON object")
+    if contract.get("version") != _OPERATOR_CONTRACT_VERSION:
+        raise ValueError("operator contract version is unsupported")
+    missing = [k for k in _OPERATOR_CONTRACT_REQUIRED
+               if contract.get(k) is None or contract.get(k) == ""]
+    if missing:
+        raise ValueError("operator contract missing: " + ", ".join(missing))
+    if contract.get("source") != "operator-delegated":
+        raise ValueError("operator contract source must be operator-delegated")
+    if contract.get("presentation_type") != "from_scratch":
+        raise ValueError("operator contract presentation_type is not supported")
+    if contract.get("run_mode") not in ("ultra", "standard", "economy"):
+        raise ValueError("operator contract has invalid run_mode")
+    if contract.get("workhorse_model") != "deepseek-flash@deepseek-direct":
+        raise ValueError("operator contract workhorse must be deepseek-flash@deepseek-direct")
+    if contract.get("pitch_included") is not False:
+        raise ValueError("operator contract must explicitly declare pitch_included=false")
+    yes_no_extras = ("want_teleprompter", "want_speech_script", "want_audio_deliverable",
+                     "want_ghl_upload", "want_sales_checkout", "want_vsl_page")
+    if any(contract.get(k) not in ("yes", "no") for k in yes_no_extras):
+        raise ValueError("operator contract optional toggles must be yes or no")
+    if not isinstance(contract.get("want_audio_demo"), bool):
+        raise ValueError("operator contract want_audio_demo must be boolean")
+    deliverable_set = contract.get("deliverable_set")
+    if not isinstance(deliverable_set, str) or not deliverable_set.strip():
+        raise ValueError("operator contract deliverable_set must be a non-empty string")
+    destinations = contract.get("delivery_destinations")
+    if not (isinstance(destinations, str) and destinations.strip()) and not (
+            isinstance(destinations, list) and destinations and
+            all(isinstance(v, str) and v.strip() for v in destinations)):
+        raise ValueError("operator contract delivery_destinations must be a non-empty string or string list")
+    if not isinstance(contract.get("answers"), dict):
+        raise ValueError("operator contract answers must be an object")
+    return contract
+
+
+def _driver_path() -> pathlib.Path:
+    for root in (
+        pathlib.Path(os.environ.get("PRESENTATIONS_SCRIPTS", "")) if os.environ.get("PRESENTATIONS_SCRIPTS") else None,
+        HERE.parent.parent.parent / "scripts",
+        pathlib.Path.home() / ".openclaw" / "workspace" / "departments" / "Presentations" / "scripts",
+    ):
+        if root and (root / "deck-intake-driver.py").is_file():
+            return root / "deck-intake-driver.py"
+    raise RuntimeError("deck-intake-driver.py is not installed")
+
+
+def _canonical_contract_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def verify_operator_contract_receipt(envelope: dict, *, secret: str | None = None) -> dict:
+    """Verify the CC-issued HMAC envelope before any local intake write."""
+    if not isinstance(envelope, dict) or envelope.get("receipt_version") != 1:
+        raise ValueError("operator contract receipt version is invalid")
+    contract = envelope.get("contract")
+    supplied = envelope.get("receipt_hmac")
+    key = (secret if secret is not None else os.environ.get("WEBHOOK_SECRET", "")).encode("utf-8")
+    if not key or not isinstance(contract, dict) or not isinstance(supplied, str):
+        raise ValueError("operator contract receipt is unsigned")
+    expected = hmac.new(key, _canonical_contract_bytes(contract), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, supplied):
+        raise ValueError("operator contract receipt signature is invalid")
+    return contract
+
+
+def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
+                            driver_path: pathlib.Path | None = None,
+                            launch: bool = True,
+                            receipt_hmac: str | None = None) -> dict:
+    """Run a CC-authenticated operator contract through the normal local path.
+
+    It writes a compact immutable receipt, invokes the real turn-gated driver
+    for each server-validated answer, then delegates to `_drive_submission`.
+    `launch=False` is only for offline integration tests; production callers
+    use the bridge/lease/launcher path and never invoke the engine directly.
+    """
+    contract = validate_operator_contract(contract)
+    rd = pathlib.Path(run_dir).expanduser().resolve()
+    receipt_path = rd / "working" / "interview" / "operator_contract.json"
+    contract_sha = hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest()
+    existing = receipt_path.is_file()
+    if existing:
+        try:
+            prior = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"operator contract receipt is unreadable: {exc}")
+        if (prior.get("contract_sha256") != contract_sha or
+                prior.get("receipt_hmac") != receipt_hmac or
+                prior.get("task_id") != contract["task_id"] or
+                prior.get("execution_id") != contract["execution_id"]):
+            raise ValueError("operator contract conflicts with existing run receipt")
+    elif (rd / "state.json").exists() or (rd / "working" / "copy" / "intake.json").exists():
+        raise ValueError("initialized run lacks an authenticated operator contract receipt")
+    else:
+        rd.mkdir(parents=True, exist_ok=False)
+    receipt = {
+        "version": _OPERATOR_CONTRACT_VERSION,
+        "source": "operator-delegated",
+        "receipt_version": 1 if receipt_hmac else None,
+        "receipt_hmac": receipt_hmac,
+        "contract_sha256": hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest(),
+        "task_id": contract["task_id"],
+        "execution_id": contract["execution_id"],
+        "title": contract["title"],
+        "contract_fields": {k: contract[k] for k in (
+            "presentation_type", "run_mode", "workhorse_model", "slide_count",
+            "pitch_included", "want_sales_checkout", "want_vsl_page")},
+    }
+    if not existing:
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    driver = pathlib.Path(driver_path or _driver_path())
+    answers = dict(contract["answers"])
+    answers.update({
+        "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
+        "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
+        "core_deliverables": ("deliverable_set: " + contract["deliverable_set"] +
+                              "; want_teleprompter: " + contract["want_teleprompter"] +
+                              "; want_speech_script: " + contract["want_speech_script"] +
+                              "; want_audio_deliverable: " + contract["want_audio_deliverable"]),
+        "delivery_and_ghl": ("delivery_destinations: " + (", ".join(contract["delivery_destinations"])
+                             if isinstance(contract["delivery_destinations"], list) else contract["delivery_destinations"]) +
+                             "; want_ghl_upload: " + contract["want_ghl_upload"]),
+        "growth_assets": ("want_sales_checkout: " + contract["want_sales_checkout"] +
+                          "; want_vsl_page: " + contract["want_vsl_page"]),
+        "audio_settings": ("want_audio_demo: " + ("yes" if contract["want_audio_demo"] else "no") +
+                           "; speech_speed_preference: default"),
+        "duration_and_slide_count": "slide_count: " + str(contract["slide_count"]),
+    })
+    if not existing:
+        for question_id, text in answers.items():
+            proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd),
+                                   "--answer", str(question_id), str(text)],
+                                  text=True, capture_output=True, check=False)
+            if proc.returncode:
+                raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
+        proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
+                              text=True, capture_output=True, check=False)
+        if proc.returncode:
+            raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
+    # The driver is the sole intake writer. Contract provenance is carried only
+    # in memory into the existing board/lease/launcher path; sealed intake stays
+    # driver-owned.
+    intake_path = rd / "working" / "copy" / "intake.json"
+    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    intake["cc_task_id"] = contract["task_id"]
+    intake["cc_execution_id"] = contract["execution_id"]
+    if not launch:
+        return {"run_dir": str(rd), "receipt": str(receipt_path), "driver_complete": True}
+    if _ll is None:
+        raise RuntimeError("launch_ledger.py is not importable")
+    stamp_requester(intake)
+    # Do not overwrite the driver record: requester resolution must have been
+    # available before completion, otherwise resolve_intake correctly refuses.
+    if not intake.get("requester_chat_id"):
+        raise RuntimeError("no sanctioned operator requester is configured")
+    policy = _retry_policy()
+    report = _drive_submission(rd, intake, "operator-" + contract["task_id"], policy, False)
+    return {"run_dir": str(rd), "receipt": str(receipt_path), "bridge": report}
+
+
+
+def cmd_operator_contract(args) -> int:
+    """Drive a server-validated local operator contract through the normal bridge."""
+    contract_path = pathlib.Path(args.contract_file).expanduser().resolve()
+    try:
+        envelope = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract = verify_operator_contract_receipt(envelope)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(json.dumps({"status": "invalid_operator_contract", "error": str(exc)}), file=sys.stderr)
+        return 2
+    try:
+        report = drive_operator_contract(contract, pathlib.Path(args.run_dir),
+                                         launch=not args.no_launch,
+                                         receipt_hmac=envelope["receipt_hmac"])
+    except (ValueError, RuntimeError) as exc:
+        print(json.dumps({"status": "operator_contract_rejected", "error": str(exc)}), file=sys.stderr)
+        return 8
+    bridge_report = report.get("bridge") if isinstance(report, dict) else None
+    rc = int(bridge_report.get("_rc", 0)) if isinstance(bridge_report, dict) else 0
+    status = ("worker_acknowledged" if rc == 0 else
+              "deferred" if rc == 7 else
+              "blocked" if rc == 8 else "retry_scheduled")
+    print(json.dumps({"status": status, "task_id": contract["task_id"],
+                      "execution_id": contract["execution_id"], **report}, sort_keys=True))
+    return rc
 
 def cmd_ingest(args) -> int:
     """PRES-008: one submission, driven through the durable states. The return
@@ -1267,6 +1490,11 @@ def main(argv=None) -> int:
                         "(only for a root that never holds a second submission)")
     i.add_argument("--verbose", action="store_true")
     i.set_defaults(func=cmd_ingest, per_session_dirs=True)
+    o = sub.add_parser("operator-contract", help="drive a CC-authenticated structured operator contract locally")
+    o.add_argument("--contract-file", required=True, help="server-written JSON contract; never a client receipt")
+    o.add_argument("--run-dir", required=True, help="new, empty run directory for this immutable task/execution")
+    o.add_argument("--no-launch", action="store_true", help="offline verification only; production always launches through the bridge")
+    o.set_defaults(func=cmd_operator_contract)
     p = sub.add_parser("poll", help="list finished intakes and drive each through the durable states")
     p.add_argument("--worker-url", required=True)
     p.add_argument("--run-dir", required=True, help="deck run directory to stamp each intake under")
