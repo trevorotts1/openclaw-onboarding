@@ -37,6 +37,10 @@ harness_make_box() {  # <root> [slug]
 if [ "$1" = "agents" ]; then
   case "$2" in
     list)
+      # STUB_ROSTER_FAIL=1 models a roster that CANNOT BE READ -- distinct from an
+      # empty one. (An empty STUB_ROSTER falls through to the default roster below,
+      # which is a READABLE roster, so it cannot be used to test unreadability.)
+      if [ "${STUB_ROSTER_FAIL:-}" = "1" ]; then exit 1; fi
       if [ -n "${STUB_ROSTER:-}" ]; then printf '%s\n' "$STUB_ROSTER"
       else printf '%s\n' '[{"id":"main","isDefault":true}]'
       fi
