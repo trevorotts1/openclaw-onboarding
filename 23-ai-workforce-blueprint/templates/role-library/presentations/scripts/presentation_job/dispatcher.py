@@ -768,8 +768,13 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     # AND its own literal `<!-- ARC: TAG -->` marker for pitch_engines_check. Do not
     # "fix" this again by teaching only one half.
     "P4-COPY": (
-        "OUTPUT CONTRACT -- TWO SEPARATE CHECKERS both grade this ONE file, by TWO "
-        "DIFFERENT mechanisms, and BOTH must show zero problems:\n"
+        "OUTPUT CONTRACT -- FIRST read intake.json's explicit pitch_included selection. "
+        "When it is false for a non-signature deck, commercial ARC beats (VILLAIN, "
+        "FELT_STAKES, NAMED_METHOD, EXPECTATION and PRICE) are not applicable and must "
+        "not be fabricated. Missing/malformed selection is AF-PITCH-APPLICABILITY-UNSET; "
+        "a signature deck with pitch_included:false is AF-PITCH-APPLICABILITY-CONFLICT. "
+        "TWO SEPARATE CHECKERS otherwise grade this ONE file, by TWO DIFFERENT mechanisms, "
+        "and BOTH must show zero problems:\n"
         "  (a) intelligence_engines_check.check_copy scans PROSE SUBSTRINGS and a "
         "`LADDER: <value>` metadata field line.\n"
         "  (b) pitch_engines_check.check_copy scans ONLY literal marker syntax: "
@@ -965,9 +970,11 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "your narration fails both gates."
     ),
     "P-SP-CLAIM": (
-        "OUTPUT CONTRACT: valid JSON object at working/copy/sp_claims.json recording that "
-        "this deck's presentation_type/deck_type has been explicitly claimed as a signature "
-        "presentation (deck_type: 'signature_presentation'), matching intake.json."
+        "OUTPUT CONTRACT: valid JSON object at working/copy/sp_claims.json that records the "
+        "presentation_type and deck_type ALREADY declared in working/copy/intake.json. If and "
+        "only if that sealed intake declares signature_presentation, record a signature claim; "
+        "otherwise record a non-signature routing result. Never change intake.json, never upgrade "
+        "a from_scratch deck to signature, and never infer commercial/pitch requirements."
     ),
     # NOTE: P-SP-STRUCTURE has no static entry here (mirrors the P-SP-INTAKE
     # no-entry comment below) -- unlike every other phase, its contract is NOT
