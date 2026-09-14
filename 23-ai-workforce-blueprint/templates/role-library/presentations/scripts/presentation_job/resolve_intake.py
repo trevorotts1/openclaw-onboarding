@@ -94,6 +94,15 @@ _UPSELL_FIELDS = (
     ("SALES_CHECKOUT_DECLINED_REASON", "sales_checkout_declined_reason"),
     ("WANT_VSL_PAGE", "want_vsl_page"),
     ("VSL_PAGE_DECLINED_REASON", "vsl_page_declined_reason"),
+    # Core deliverables and destinations share the same sealed capture path.
+    # Carry only captured values into the engine's immutable input; no defaults.
+    ("DELIVERABLE_SET", "deliverable_set"),
+    ("WANT_TELEPROMPTER", "want_teleprompter"),
+    ("WANT_SPEECH_SCRIPT", "want_speech_script"),
+    ("WANT_AUDIO_DELIVERABLE", "want_audio_deliverable"),
+    ("WANT_AUDIO_DEMO", "want_audio_demo"),
+    ("WANT_GHL_UPLOAD", "want_ghl_upload"),
+    ("DELIVERY_DESTINATIONS", "delivery_destinations"),
 )
 
 

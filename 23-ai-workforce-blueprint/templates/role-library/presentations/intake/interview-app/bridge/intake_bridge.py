@@ -826,7 +826,9 @@ _OPERATOR_CONTRACT_VERSION = 1
 _OPERATOR_CONTRACT_REQUIRED = (
     "task_id", "execution_id", "source", "title", "presentation_type",
     "run_mode", "workhorse_model", "slide_count", "pitch_included",
-    "want_sales_checkout", "want_vsl_page", "answers",
+    "want_teleprompter", "want_speech_script", "want_audio_deliverable",
+    "want_audio_demo", "want_ghl_upload", "want_sales_checkout", "want_vsl_page",
+    "delivery_destinations", "answers",
 )
 
 
@@ -855,8 +857,13 @@ def validate_operator_contract(contract: dict) -> dict:
         raise ValueError("operator contract workhorse must be deepseek-flash@deepseek-direct")
     if contract.get("pitch_included") is not False:
         raise ValueError("operator contract must explicitly declare pitch_included=false")
-    if contract.get("want_sales_checkout") != "yes" or contract.get("want_vsl_page") != "yes":
-        raise ValueError("operator contract must retain selected sales and VSL extras")
+    selected_extras = ("want_teleprompter", "want_speech_script", "want_audio_deliverable",
+                       "want_audio_demo", "want_ghl_upload", "want_sales_checkout", "want_vsl_page")
+    if any(contract.get(k) != "yes" for k in selected_extras):
+        raise ValueError("operator contract must retain all selected compatible extras")
+    destinations = contract.get("delivery_destinations")
+    if not isinstance(destinations, list) or not destinations or any(not isinstance(v, str) or not v.strip() for v in destinations):
+        raise ValueError("operator contract delivery_destinations must be a non-empty string list")
     if not isinstance(contract.get("answers"), dict):
         raise ValueError("operator contract answers must be an object")
     return contract
@@ -905,14 +912,29 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     """
     contract = validate_operator_contract(contract)
     rd = pathlib.Path(run_dir).expanduser().resolve()
-    if (rd / "state.json").exists() or (rd / "working" / "copy" / "intake.json").exists():
-        raise ValueError("operator contract run directory is already initialized")
-    rd.mkdir(parents=True, exist_ok=False)
+    receipt_path = rd / "working" / "interview" / "operator_contract.json"
+    contract_sha = hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest()
+    existing = receipt_path.is_file()
+    if existing:
+        try:
+            prior = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"operator contract receipt is unreadable: {exc}")
+        if (prior.get("contract_sha256") != contract_sha or
+                prior.get("receipt_hmac") != receipt_hmac or
+                prior.get("task_id") != contract["task_id"] or
+                prior.get("execution_id") != contract["execution_id"]):
+            raise ValueError("operator contract conflicts with existing run receipt")
+    elif (rd / "state.json").exists() or (rd / "working" / "copy" / "intake.json").exists():
+        raise ValueError("initialized run lacks an authenticated operator contract receipt")
+    else:
+        rd.mkdir(parents=True, exist_ok=False)
     receipt = {
         "version": _OPERATOR_CONTRACT_VERSION,
         "source": "operator-delegated",
         "receipt_version": 1 if receipt_hmac else None,
         "receipt_hmac": receipt_hmac,
+        "contract_sha256": hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest(),
         "task_id": contract["task_id"],
         "execution_id": contract["execution_id"],
         "title": contract["title"],
@@ -920,28 +942,31 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
             "presentation_type", "run_mode", "workhorse_model", "slide_count",
             "pitch_included", "want_sales_checkout", "want_vsl_page")},
     }
-    receipt_path = rd / "working" / "interview" / "operator_contract.json"
-    receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    if not existing:
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     driver = pathlib.Path(driver_path or _driver_path())
     answers = dict(contract["answers"])
     answers.update({
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
-        "want_sales_checkout": "yes",
-        "want_vsl_page": "yes",
+        "core_deliverables": "want_teleprompter: yes; want_speech_script: yes; want_audio_deliverable: yes",
+        "delivery_and_ghl": "delivery_destinations: " + ", ".join(contract["delivery_destinations"]) + "; want_ghl_upload: yes",
+        "growth_assets": "want_sales_checkout: yes; want_vsl_page: yes",
+        "audio_settings": "want_audio_demo: yes; speech_speed_preference: default",
         "duration_and_slide_count": "slide_count: " + str(contract["slide_count"]),
     })
-    for question_id, text in answers.items():
-        proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd),
-                               "--answer", str(question_id), str(text)],
+    if not existing:
+        for question_id, text in answers.items():
+            proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd),
+                                   "--answer", str(question_id), str(text)],
+                                  text=True, capture_output=True, check=False)
+            if proc.returncode:
+                raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
+        proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
                               text=True, capture_output=True, check=False)
         if proc.returncode:
-            raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
-    proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
-                          text=True, capture_output=True, check=False)
-    if proc.returncode:
-        raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
+            raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
     # The driver is the sole intake writer. Contract provenance is carried only
     # in memory into the existing board/lease/launcher path; sealed intake stays
     # driver-owned.
@@ -980,8 +1005,14 @@ def cmd_operator_contract(args) -> int:
     except (ValueError, RuntimeError) as exc:
         print(json.dumps({"status": "operator_contract_rejected", "error": str(exc)}), file=sys.stderr)
         return 8
-    print(json.dumps({"status": "operator_contract_submitted", **report}, sort_keys=True))
-    return 0
+    bridge_report = report.get("bridge") if isinstance(report, dict) else None
+    rc = int(bridge_report.get("_rc", 0)) if isinstance(bridge_report, dict) else 0
+    status = ("worker_acknowledged" if rc == 0 else
+              "deferred" if rc == 7 else
+              "blocked" if rc == 8 else "retry_scheduled")
+    print(json.dumps({"status": status, "task_id": contract["task_id"],
+                      "execution_id": contract["execution_id"], **report}, sort_keys=True))
+    return rc
 
 def cmd_ingest(args) -> int:
     """PRES-008: one submission, driven through the durable states. The return

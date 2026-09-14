@@ -30,7 +30,10 @@ def contract():
         'presentation_type': 'from_scratch', 'run_mode': 'ultra',
         'workhorse_model': 'deepseek-flash@deepseek-direct',
         'slide_count': 8, 'pitch_included': False,
-        'want_sales_checkout': 'yes', 'want_vsl_page': 'yes',
+        'want_teleprompter': 'yes', 'want_speech_script': 'yes',
+        'want_audio_deliverable': 'yes', 'want_audio_demo': 'yes',
+        'want_ghl_upload': 'yes', 'want_sales_checkout': 'yes', 'want_vsl_page': 'yes',
+        'delivery_destinations': ['PPTX', 'PDF', 'presenter notes', 'workbooks', 'infographic'],
         'answers': {
             'audience': 'General informational audience learning how to use the Presentation Department',
             'named_methodology': 'No named method — informational department demonstration',
@@ -68,6 +71,11 @@ def test_contract_runs_real_driver_then_resolver_without_provider(tmp_path, monk
     assert resolved['requester']['chat_id'] == 'operator-test-route'
     assert resolved['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
     assert resolved['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
+    assert resolved['pre_presentation_capture']['WANT_TELEPROMPTER'] == 'yes'
+    assert resolved['pre_presentation_capture']['WANT_SPEECH_SCRIPT'] == 'yes'
+    assert resolved['pre_presentation_capture']['WANT_AUDIO_DELIVERABLE'] == 'yes'
+    assert resolved['pre_presentation_capture']['WANT_GHL_UPLOAD'] == 'yes'
+    assert 'PPTX' in resolved['pre_presentation_capture']['DELIVERY_DESTINATIONS']
     entries = json.loads(ledger.read_text())['entries']
     assert entries['RUN_MODE']['value'] == 'ultra'
     assert entries['WORKHORSE_MODEL']['value'] == 'deepseek-flash@deepseek-direct'
@@ -138,3 +146,58 @@ def test_signed_receipt_binds_existing_cc_task_and_replays_once(tmp_path, monkey
     second = bridge._drive_submission(rd, intake, 'operator-' + payload['task_id'], policy, False)
     assert second['_rc'] == 0
     assert len(calls) == 1
+
+
+def test_cli_propagates_deferred_bridge_status(tmp_path, monkeypatch, capsys):
+    import argparse, hashlib, hmac
+    secret = 'contract-test-secret'
+    monkeypatch.setenv('WEBHOOK_SECRET', secret)
+    payload = contract()
+    envelope = {'receipt_version': 1, 'contract': payload,
+                'receipt_hmac': hmac.new(secret.encode(), bridge._canonical_contract_bytes(payload), hashlib.sha256).hexdigest()}
+    receipt = tmp_path / 'receipt.json'; receipt.write_text(json.dumps(envelope))
+    monkeypatch.setattr(bridge, 'drive_operator_contract', lambda *a, **k: {
+        'run_dir': '/tmp/contract-run', 'receipt': '/tmp/receipt',
+        'bridge': {'_rc': 7, 'verdict': 'launching', 'state': 'launching'}})
+    rc = bridge.cmd_operator_contract(argparse.Namespace(contract_file=str(receipt), run_dir=str(tmp_path / 'run'), no_launch=False))
+    emitted = json.loads(capsys.readouterr().out)
+    assert rc == 7
+    assert emitted['status'] == 'deferred'
+    assert emitted['task_id'] == payload['task_id']
+
+
+def test_same_signed_contract_resumes_retry_then_acknowledges_once(tmp_path, monkeypatch):
+    import os, types
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    monkeypatch.setenv('PRES008_BACKOFF_BASE_S', '0')
+    monkeypatch.setenv('PRES008_BACKOFF_CAP_S', '0')
+    payload = contract(); rd = tmp_path / 'resume-run'
+    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='stable-receipt')
+    import presentation_job.lease as real_lease
+    calls = []
+    class Launcher:
+        def dispatch_new(self, run_dir, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return -4  # retryable transport refusal; no engine state written
+            pathlib.Path(run_dir, 'state.json').write_text(json.dumps({'engine_pid': os.getpid(), 'job_id': payload['execution_id']}))
+            return os.getpid()
+    monkeypatch.setattr(bridge, '_load_presentation_job', lambda: types.SimpleNamespace(lease=real_lease, launcher=Launcher()))
+    first = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='stable-receipt')
+    assert first['bridge']['_rc'] == 7
+    second = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='stable-receipt')
+    assert second['bridge']['_rc'] == 0
+    third = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='stable-receipt')
+    assert third['bridge']['_rc'] == 0
+    assert len(calls) == 2
+
+
+def test_changed_contract_cannot_resume_authenticated_run(tmp_path, monkeypatch):
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    rd = tmp_path / 'immutable-run'
+    bridge.drive_operator_contract(contract(), rd, driver_path=DRIVER, launch=False, receipt_hmac='stable-receipt')
+    changed = contract(); changed['slide_count'] = 9
+    with pytest.raises(ValueError, match='conflicts'):
+        bridge.drive_operator_contract(changed, rd, driver_path=DRIVER, launch=False, receipt_hmac='stable-receipt')
