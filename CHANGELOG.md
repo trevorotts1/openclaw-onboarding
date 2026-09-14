@@ -1,3 +1,5 @@
+## [v25.0.54]  -  2026-09-14  -  Preserve authenticated presentation operator contracts through canonical intake and launch.
+
 ## [v25.0.53]  -  2026-09-14  -  RR-028: read the cron command from payload.argv, and fix the test double that hid it
 
 - **The readiness engine could never report `SCHEDULED` on this platform.** Its cron readback extracted `payload.command`, but the real `openclaw` CLI emits a command job **only** as `payload.argv` — measured across all 117 jobs on a live box: `payload.command` populated **0 times**, `payload.argv` **16 times**. The readback therefore yielded the literal string `kind=command` while the evaluator compared it against `sh <poll>` — **a comparison that could never be true**. `SCHEDULED` and `VERIFIED` were structurally unreachable, and a correct, enabled, actively-running job was reported as `cron_field_mismatch`: the engine blaming the cron configuration for a defect in its own reader.
