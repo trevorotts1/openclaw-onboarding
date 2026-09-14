@@ -46,6 +46,9 @@ Runnable two ways (both exercise the exact same code):
 """
 
 import argparse
+import contextlib
+import fcntl
+import functools
 import hashlib
 import inspect
 import json
@@ -1991,6 +1994,7 @@ def _apply_route_override(decision: Optional[Dict[str, Any]],
 def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       phase_id: str,
                       run_dir: Optional[Path] = None,
+                      worker_id: Optional[str] = None,
                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
                       retries: int = 3,
                       route_override: Optional[Dict[str, Any]] = None,
@@ -2082,9 +2086,10 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
                 or "deepseek-flash"
             ctx.reason = str((decision or {}).get("reason")
                              or "no profile route; dispatcher default DeepSeek-direct")
+            _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=retries)
+                                               max_tokens=max_tokens, retries=1)
             _emit_model_route_telemetry(run_dir, ctx, phase_id)
             return content, usage, ctx.as_dict()
         if router_id == "disabled":
@@ -2095,9 +2100,10 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             ctx.model = DEEPSEEK_MODEL
             ctx.requested_alias = None
             ctx.reason = str((decision or {}).get("reason") or "router disabled")
+            _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=retries)
+                                               max_tokens=max_tokens, retries=1)
             return content, usage, ctx.as_dict()
 
         ctx.provider = str(route.get("provider") or "")
@@ -2122,18 +2128,20 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             pass
 
         if ctx.provider == "deepseek-direct":
+            _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=retries)
+                                               max_tokens=max_tokens, retries=1)
             # usage/model provenance stays honest even though the native endpoint
             # pins its own served id; FIX 16 now sends the ROUTE's model id in the
             # request body itself (the route is what callers stamp AND what is sent).
             _emit_model_route_telemetry(run_dir, ctx, phase_id)
             return content, usage, ctx.as_dict()
 
+        _reserve_paid_attempt(run_dir, phase_id, worker_id)
         content, usage = _openai_compat_complete(
             system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
-            max_tokens=max_tokens, retries=retries, run_dir=run_dir)
+            max_tokens=max_tokens, retries=1, run_dir=run_dir)
         _emit_model_route_telemetry(run_dir, ctx, phase_id)
         return content, usage, ctx.as_dict()
     finally:
@@ -3217,7 +3225,7 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
             try:
                 content, usage, route_dict = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id,
-                    run_dir=run_dir)
+                    run_dir=run_dir, worker_id=worker_id)
             except RoutingUnavailable as exc:
                 # no client-owned model can serve this phase: park the slide
                 # honestly (fail-closed), never fabricate a route.
@@ -4524,7 +4532,7 @@ def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
         try:
             content, usage, route_dict = dispatch_complete(
                 system_prompt, user_prompt, phase_id="P-0.5-RESEARCH",
-                run_dir=run_dir)
+                run_dir=run_dir, worker_id=worker_id)
         except RoutingUnavailable as exc:
             reason = f"RoutingUnavailable: {exc}"
             _append_sidecar(run_dir, phase_id, {
@@ -4645,7 +4653,7 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
                 # sent is the one the client's profile routed.
                 content, usage, route_dict = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id,
-                    run_dir=run_dir)
+                    run_dir=run_dir, worker_id=worker_id)
             except RoutingUnavailable as exc:
                 # fail-closed: no client-owned route for this phase, park the
                 # slide honestly rather than fabricating a model.
@@ -4954,6 +4962,7 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         try:
             content, usage, route_dict2 = dispatch_complete(
                 system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
+                worker_id=worker_id,
                 # F10: a heal rung's provider pin, if this order carries one.
                 # Ignored unless the router already lists it as eligible --
                 # see _apply_route_override.
@@ -6409,7 +6418,8 @@ def _dispatch_phase_fanout_units(
                 attempt=1, prior_reasons=prior_reasons,
             )
             content, usage, route = dispatch_complete(
-                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
+                worker_id=worker_id)
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
@@ -7398,6 +7408,34 @@ def _write_ledger(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> None:
     os.replace(tmp, path)  # atomic: a concurrent reader never sees a torn ledger
 
 
+@contextlib.contextmanager
+def _phase_budget_transaction(run_dir: Path, phase_id: str):
+    """Serialize every mutation of a phase's paid-budget ledger.
+
+    Atomic replacement prevents torn JSON, but it does not serialize a
+    read/modify/write cycle.  The reset issuer, pre-transport reservation, and
+    outcome fold must therefore all hold this *same* lock from their read
+    through their final ledger replacement.
+    """
+    lock_path = _ledger_path(run_dir, phase_id).with_suffix(".budget.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _phase_budget_locked(fn):
+    """Apply the shared ledger transaction to a (run_dir, phase_id) writer."""
+    @functools.wraps(fn)
+    def guarded(run_dir: Path, phase_id: str, *args, **kwargs):
+        with _phase_budget_transaction(run_dir, phase_id):
+            return fn(run_dir, phase_id, *args, **kwargs)
+    return guarded
+
+
 def _outcome_signature(status: str, reasons: Optional[List[str]] = None) -> str:
     """What makes two outcomes 'the same outcome'. Status plus reasons, never
     the timestamp or the worker id -- those are exactly the two fields that
@@ -7436,6 +7474,138 @@ def _dispatch_revision(run_dir: Path, phase_id: str,
     return f"wo={wo}|state={status}"
 
 
+def _approved_input_revision(run_dir: Path, phase_id: Optional[str] = None) -> str:
+    """Return the durable budget-reset witness for this run.
+
+    Rewriting a work order is a request to retry, not evidence that the model
+    now has different approved inputs.  The one sanctioned mutable input after
+    launch is an intake amendment.  It may reset a paid phase's budget only
+    when the replacement intake still matches an amendment row and that row
+    passes the same owner-approval oracle used by launcher.apply_intake_amendment.
+
+    An unreadable, hand-written, or unverified row deliberately has no power
+    here: it remains the original budget generation.  This is best-effort and
+    fail-closed; a broken approval oracle cannot buy more provider attempts.
+    """
+    intake = run_dir / "working" / "copy" / "intake.json"
+    amendments = run_dir / "working" / "copy" / "intake_amendments.jsonl"
+    try:
+        digest = hashlib.sha256(intake.read_bytes()).hexdigest()
+        rows = [json.loads(line) for line in amendments.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+    except (OSError, json.JSONDecodeError):
+        return "initial"
+    for row in reversed(rows):
+        if not isinstance(row, dict) or row.get("kind") != "intake_amendment":
+            continue
+        if row.get("intake_sha256") != digest:
+            continue
+        try:
+            from presentation_job import launcher
+            approved, _detail = launcher.verify_amendment_approval(
+                {"approval": row.get("approval") or {}}, run_dir)
+        except Exception:  # noqa: BLE001 -- no verified witness, no reset
+            approved = False
+        if approved:
+            return f"approved-intake:{digest}"
+    return "initial"
+
+
+class PaidBudgetExhausted(DeepSeekCallError):
+    """No provider transport may start after the durable paid-attempt cap."""
+
+
+def _repair_receipt_path(run_dir: Path, phase_id: str) -> Path:
+    return _ledger_path(run_dir, phase_id).with_suffix(".repair-receipt.json")
+
+
+def _file_sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) -> Dict[str, Any]:
+    """Local-operator control-plane action; never invoked from a work order.
+
+    The OS owner of the run may issue one bounded repair receipt after a
+    deployed code repair.  It is atomic and binds the current sealed intake,
+    installed dispatcher bytes, and prior ledger generation before any marker
+    can be cleared.  The dispatcher consumes it exactly once.
+    """
+    if allowance < 1 or allowance > DISPATCH_RETRY_CAP:
+        raise ValueError(f"allowance must be 1..{DISPATCH_RETRY_CAP}")
+    if os.getuid() != run_dir.stat().st_uid:
+        raise PermissionError("local operator must own the run directory")
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        # A reset must be bound to an existing durable generation.  Treating a
+        # missing field as generation zero would let a hand-created legacy
+        # ledger satisfy a newly-issued receipt's default prior generation.
+        if not isinstance(led.get("generation"), int):
+            raise RuntimeError("paid retry reset requires a durable ledger generation")
+        receipt = {"kind": "local-operator-paid-retry-reset-v1", "run": str(run_dir.resolve()),
+                   "phase_id": phase_id, "approved_input_revision": _approved_input_revision(run_dir, phase_id),
+                   "prior_generation": led.get("generation", 0), "dispatcher_sha256": _file_sha(Path(__file__)),
+                   "allowance": allowance, "issued_at": utcnow(), "operator_uid": os.getuid()}
+        target = _repair_receipt_path(run_dir, phase_id); target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(f".partial-{os.getpid()}"); tmp.write_text(json.dumps(receipt, sort_keys=True), encoding="utf-8"); os.replace(tmp, target)
+        return receipt
+
+
+def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
+                          worker_id: Optional[str]) -> None:
+    """Atomically reserve one provider call before transport.
+
+    A reservation is intentionally never released: a process can die after
+    sending bytes to a provider but before receiving/logging a response.  In
+    that ambiguous case retaining the slot is the only no-double-charge policy.
+    """
+    if run_dir is None:
+        return
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        generation = _approved_input_revision(run_dir, phase_id)
+        prior_generation = str(led.get("approved_input_revision") or "initial")
+        paid = int(led.get("paid_attempts") or 0) if generation == prior_generation else 0
+        # A local-operator receipt is the only code-repair reset path.  Its
+        # fields are rechecked at consumption; an order file is never read.
+        try:
+            receipt = json.loads(_repair_receipt_path(run_dir, phase_id).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            receipt = {}
+        if receipt and not led.get("repair_receipt_consumed"):
+            valid = (receipt.get("kind") == "local-operator-paid-retry-reset-v1" and
+                     receipt.get("run") == str(run_dir.resolve()) and receipt.get("phase_id") == phase_id and
+                     receipt.get("approved_input_revision") == generation and
+                     isinstance(led.get("generation"), int) and
+                     receipt.get("prior_generation") == led["generation"] and
+                     receipt.get("dispatcher_sha256") == _file_sha(Path(__file__)) and
+                     isinstance(receipt.get("allowance"), int) and 1 <= receipt["allowance"] <= DISPATCH_RETRY_CAP and
+                     receipt.get("operator_uid") == run_dir.stat().st_uid)
+            if valid:
+                paid = DISPATCH_RETRY_CAP - receipt["allowance"]
+                led["generation"] = int(led.get("generation", 0)) + 1
+                led["repair_receipt_consumed"] = True
+                led["repair_receipt"] = receipt
+        if worker_id:
+            claim = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
+            if claim and str(claim.get("worker") or "") != worker_id:
+                raise PaidBudgetExhausted("paid attempt refused: claim ownership changed")
+        if paid >= DISPATCH_RETRY_CAP:
+            raise PaidBudgetExhausted(
+                f"paid retry budget exhausted: {paid} provider attempts for unchanged "
+                f"approved input (DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+        led.update({"phase_id": phase_id, "approved_input_revision": generation,
+                    "paid_attempts": paid + 1, "last_reserved_at": utcnow(),
+                    "last_reservation_worker": worker_id or "unknown"})
+        _write_ledger(run_dir, phase_id, led)
+        # The new generation is durable before removing a prior park marker.
+        if generation != prior_generation:
+            try:
+                _blocked_marker_path(run_dir, phase_id).unlink()
+            except OSError:
+                pass
+
+
 def _backoff_delay_s(repeat: int) -> float:
     """repeat is the number of times this outcome has recurred AFTER its first
     observation. repeat<=0 (a new or changed outcome) is always zero delay."""
@@ -7456,6 +7626,17 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
     led = _read_ledger(run_dir, phase_id)
     if not led:
         return True, ""
+    input_revision = _approved_input_revision(run_dir, phase_id)
+    prior_input_revision = str(led.get("approved_input_revision") or "initial")
+    if input_revision != prior_input_revision:
+        # Marker removal follows only the durable reservation of this
+        # generation, never this read-only preflight.
+        return True, "approved input revision changed"
+    if (led.get("blocked") and
+            int(led.get("paid_attempts") or 0) >= DISPATCH_RETRY_CAP):
+        return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
+                       f"provider attempts for unchanged approved input "
+                       f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
     eligible_at = led.get("next_eligible_at_epoch")
     if not isinstance(eligible_at, (int, float)):
         return True, ""
@@ -7472,9 +7653,11 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
                    f"{eligible_at - now:.0f}s")
 
 
+@_phase_budget_locked
 def record_outcome(run_dir: Path, phase_id: str, status: str,
                    reasons: Optional[List[str]] = None, *, worker_id: str,
                    order_file: Optional[Path] = None,
+                   paid_attempts: int = 0,
                    now: Optional[float] = None) -> Dict[str, Any]:
     """Fold one dispatch outcome into the ledger and decide whether it earns a
     sidecar record. Returns the new ledger entry.
@@ -7488,6 +7671,12 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
     led = _read_ledger(run_dir, phase_id)
     sig = _outcome_signature(status, reasons)
     rev = _dispatch_revision(run_dir, phase_id, order_file)
+    input_revision = _approved_input_revision(run_dir, phase_id)
+    prior_input_revision = str(led.get("approved_input_revision") or "initial")
+    prior_paid_attempts = (int(led.get("paid_attempts") or 0)
+                           if input_revision == prior_input_revision else 0)
+    paid_attempts = max(0, int(paid_attempts or 0))
+    total_paid_attempts = prior_paid_attempts + paid_attempts
 
     same = bool(led) and led.get("signature") == sig and led.get("revision") == rev
     consecutive = (int(led.get("consecutive") or 0) + 1) if same else 1
@@ -7511,6 +7700,14 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         "blocked": False,
         "blocked_reason": None,
         "worker": worker_id,
+        "approved_input_revision": input_revision,
+        "paid_attempts": total_paid_attempts,
+        # Reservation state is durable across outcome folds.  Dropping these
+        # fields would make a consumed repair receipt appear fresh after an
+        # exhausted result and buy a second allowance on restart.
+        "generation": int(led.get("generation") or 0),
+        "repair_receipt_consumed": bool(led.get("repair_receipt_consumed")),
+        "repair_receipt": led.get("repair_receipt"),
     }
 
     if status in _FAILING_STATUSES and consecutive >= DISPATCH_REPEAT_CEILING:
@@ -7520,9 +7717,18 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
             f"{phase_id} (retry ceiling DISPATCH_REPEAT_CEILING={DISPATCH_REPEAT_CEILING}). "
             f"Last reasons: {reasons or []}")
         entry["blocked_at"] = utcnow()
-        # Parked, never dropped: re-dispatch resumes the moment the Engine
-        # reissues the work order or this phase's state changes (should_dispatch's
-        # revision check), so a real fix upstream un-parks it automatically.
+        # Unpaid refusal parks stay re-armable when the engine changes the
+        # work order or phase state.  Paid failures additionally carry the
+        # durable budget below, which only a verified input amendment resets.
+        entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
+
+    if status in _FAILING_STATUSES and total_paid_attempts >= DISPATCH_RETRY_CAP:
+        entry["blocked"] = True
+        entry["blocked_reason"] = (
+            f"paid retry budget exhausted after {total_paid_attempts} provider attempts for "
+            f"{phase_id} with unchanged approved input "
+            f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
+        entry["blocked_at"] = utcnow()
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
 
     _write_ledger(run_dir, phase_id, entry)
@@ -7558,9 +7764,10 @@ def _park_blocked(run_dir: Path, phase_id: str, entry: Dict[str, Any], *,
         f"status:      {entry.get('status')}\n"
         f"consecutive: {entry.get('consecutive')} identical outcomes\n"
         f"reason:      {reason}\n"
-        "\nThis phase stopped being re-dispatched after the retry ceiling. It was NOT\n"
-        "marked done and NOT silently dropped. Dispatch resumes automatically if the\n"
-        "Engine reissues the work order or this phase's state.json status changes.\n"
+        "\nThis phase stopped being re-dispatched after its retry ceiling. It was NOT\n"
+        "marked done and NOT silently dropped. A work-order rewrite or worker restart\n"
+        "does not buy more paid attempts; dispatch resumes only after a verified owner\n"
+        "input amendment changes this phase's approved input generation.\n"
         f"Ledger: working/work-orders/{_LEDGER_DIRNAME}/{phase_id}.json\n",
         encoding="utf-8")
     _append_sidecar(run_dir, phase_id, {
@@ -8444,6 +8651,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "when this box's detection and resource profile do not already "
                         "know it. A structural cap-table provider declared with no plan "
                         "PARKS the run, so --declare-capacity refuses instead")
+    p.add_argument("--authorize-paid-retry-reset", metavar="PHASE_ID", default=None,
+                   help="local-operator repair action: issue one bounded reset receipt for PHASE_ID")
+    p.add_argument("--reset-allowance", type=int, default=None,
+                   help="provider calls allowed by --authorize-paid-retry-reset (1..retry cap)")
     return p
 
 
@@ -8453,6 +8664,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.run_dir:
         run_dir = args.run_dir.expanduser().resolve()
+        if args.authorize_paid_retry_reset:
+            if args.reset_allowance is None:
+                raise SystemExit("--reset-allowance is required with --authorize-paid-retry-reset")
+            print(json.dumps(authorize_paid_retry_reset(
+                run_dir, args.authorize_paid_retry_reset,
+                allowance=args.reset_allowance), sort_keys=True))
+            return 0
         scripts_dir = resolve_scripts_dir_for_run(run_dir)
         dept_root = resolve_dept_root(scripts_dir)
         # FIX 6: the override file is written only when an operator explicitly

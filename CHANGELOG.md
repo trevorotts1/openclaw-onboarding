@@ -1,3 +1,11 @@
+## [v25.0.51]  -  2026-09-13  -  fix(presentations): fence and serialize paid retry resets
+
+- **Paid presentation retries now reserve their budget before transport and retain that reservation across a crash.** Reissued work orders and worker restarts cannot buy a new provider attempt after the unchanged-input ceiling is exhausted.
+- **A local operator's bounded repair receipt is one-use and generation-bound.** Receipt issuance, consumption, outcome folding, and parking markers share one per-phase transaction, so concurrent workers cannot erase a consumed receipt or lower the durable paid-attempt count.
+
+### Tests
+- `test_fanout_zero_units_ceiling.py` and `test_f9f10f11_engine_heal_respawn.py` — 47 passed in 84.52s; explicit exit code 0 recorded in acceptance evidence.
+
 ## [v25.0.50]  -  2026-09-14  -  fix(presentations): enforce selected pitch applicability across all QC wrappers
 
 ## [v25.0.49]  -  2026-09-13  -  Rescue Rangers ONB aggregate: EWS pending escalations (RR-005), tick-age sentinel health (RR-016), durable CC receipt bridge (RR-024 ONB half)

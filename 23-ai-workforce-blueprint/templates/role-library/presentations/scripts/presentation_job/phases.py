@@ -2501,6 +2501,15 @@ class Engine:
             # it: P4-COPY and P4-PROMPT together burned 8.3 hours across ten
             # fail-park-resume cycles in one run, 60-90 minutes of budget spent
             # waiting for a dispatcher that had already stopped, every time.
+            # PD-014: a durable paid-attempt budget is an explicit park, not
+            # a transient artifact defect.  Reissuing the same order would
+            # only loop the heal ladder against a marker that correctly says
+            # no more provider calls are permitted.  _fail_unit records the
+            # visible, resumable run park; a verified owner amendment is the
+            # only supported path that re-arms this generation.
+            if "paid retry budget exhausted" in marker_text:
+                return self._fail_unit(
+                    phase, f"dispatcher paid retry budget: {marker_text}")
             return self._heal_or_fail_agent_phase(
                 phase, f"dispatcher retry ceiling: {marker_text}")
         if last_present:
@@ -2878,6 +2887,21 @@ class Engine:
             if not self._sidecar_pending(phase.id):
                 marker_text = self._read_blocked_marker(phase.id)
                 if marker_text:
+                    # PD-014: a prior generation's paid-budget marker must
+                    # not trap a run after the dispatcher independently sees
+                    # a verified owner amendment.  Ask the dispatcher's
+                    # read-mostly gate to refresh that witness; ordinary
+                    # reissues still leave the marker in force.
+                    try:
+                        from . import dispatcher as _dispatcher
+                        rearmed, why = _dispatcher.should_dispatch(
+                            self.run_dir, phase.id,
+                            order_file=(self.run_dir / "working" / "work-orders"
+                                        / f"{phase.id}.json"))
+                    except Exception:  # noqa: BLE001 -- a park stays fail-closed
+                        rearmed, why = False, ""
+                    if rearmed and why == "approved input revision changed":
+                        continue
                     return "dispatch_blocked", last_present, last_verify_notes, marker_text
             now = time.time()
             remaining = deadline - now
@@ -4742,4 +4766,3 @@ class Engine:
 # Watchdog. Stall detection is SEPARATE from error detection: a hung tool call
 # throws nothing, so error handling never fires (decision #5e).
 # ---------------------------------------------------------------------------
-
