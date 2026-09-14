@@ -504,3 +504,38 @@ def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch
     assert composite_out['bridge']['_rc'] == 8
     assert ll.load(composite, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
     assert len(calls) == 1
+
+
+def test_operator_launch_uses_selected_env_store_without_logging_values(monkeypatch):
+    class Store:
+        @staticmethod
+        def resolve():
+            return ({'PRESENTATION_NOTIFY_CMD': '/sanctioned/notify --quiet'}, {
+                'names': {'PRESENTATION_NOTIFY_CMD': {'resolved': True}},
+                'exported_names': ['PRESENTATION_NOTIFY_CMD']})
+        @staticmethod
+        def unresolved_required(report):
+            return []
+    real_import = bridge.importlib.import_module
+    monkeypatch.delenv('PRESENTATION_NOTIFY_CMD', raising=False)
+    monkeypatch.setattr(bridge, '_load_presentation_job', lambda: object())
+    monkeypatch.setattr(bridge.importlib, 'import_module',
+                        lambda name: Store if name == 'presentation_job.env_store' else real_import(name))
+    report = bridge._load_operator_launch_environment()
+    assert os.environ['PRESENTATION_NOTIFY_CMD'] == '/sanctioned/notify --quiet'
+    assert report['names']['PRESENTATION_NOTIFY_CMD']['resolved'] is True
+    monkeypatch.setenv('PRESENTATION_NOTIFY_CMD', '/operator/override')
+    bridge._load_operator_launch_environment()
+    assert os.environ['PRESENTATION_NOTIFY_CMD'] == '/operator/override'
+
+
+def test_operator_launch_rejects_unresolved_selected_transport(monkeypatch):
+    class Store:
+        @staticmethod
+        def resolve(): return ({}, {'names': {}})
+        @staticmethod
+        def unresolved_required(report): return ['PRESENTATION_NOTIFY_CMD']
+    monkeypatch.setattr(bridge, '_load_presentation_job', lambda: object())
+    monkeypatch.setattr(bridge.importlib, 'import_module', lambda name: Store)
+    with pytest.raises(RuntimeError, match='PRESENTATION_NOTIFY_CMD'):
+        bridge._load_operator_launch_environment()

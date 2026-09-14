@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import hmac
 import json
 import os
@@ -825,6 +826,34 @@ def _load_presentation_job():
     return None
 
 
+def _load_operator_launch_environment() -> dict:
+    """Load the selected box env store for a direct CC bridge launch.
+
+    Scheduler shells already call ``presentation_job.env_store`` before they
+    dispatch. The authenticated CC contract path invokes this Python bridge
+    directly, so it must use that same sanctioned loader before launcher
+    preflight. The loader parses selected stores without executing them; it
+    reports only names/counts and rejects an unresolved required transport.
+    """
+    if _load_presentation_job() is None:
+        raise RuntimeError("presentation_job is not reachable for launch environment")
+    try:
+        store = importlib.import_module("presentation_job.env_store")
+        assignments, report = store.resolve()
+        unresolved = store.unresolved_required(report)
+    except Exception as exc:  # noqa: BLE001 -- fail closed at the known boundary
+        raise RuntimeError(f"operator launch environment is unavailable: {type(exc).__name__}") from exc
+    if unresolved:
+        raise RuntimeError("operator launch required environment is unresolved: " + ", ".join(sorted(unresolved)))
+    # resolve() guarantees a nonblank process value wins; retain that rule at
+    # the assignment boundary too, so a future resolver regression cannot
+    # overwrite an operator's one-invocation override. Values are never logged
+    # or serialized.
+    for name, value in assignments.items():
+        if not str(os.environ.get(name) or "").strip():
+            os.environ[name] = value
+    return report
+
 
 # ---------------------------------------------------------------------------
 # PD-025 — authenticated operator-contract handoff
@@ -1073,6 +1102,9 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                               text=True, capture_output=True, check=False)
         if proc.returncode:
             raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
+    # The direct CC bridge bypasses scheduler shells, so load their sanctioned
+    # selected-box environment before the launcher/model consumers run.
+    launch_environment = _load_operator_launch_environment()
     # The driver is the sole intake writer. Verify the separately durable
     # model-plan projection before the bridge can hand this run to launcher.
     # The sealed intake remains driver-owned and is never amended here.
@@ -1083,7 +1115,8 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     intake["cc_execution_id"] = contract["execution_id"]
     if not launch:
         return {"run_dir": str(rd), "receipt": str(receipt_path),
-                "driver_complete": True, "model_selection": model_selection}
+                "driver_complete": True, "model_selection": model_selection,
+                "launch_environment": launch_environment}
     if _ll is None:
         raise RuntimeError("launch_ledger.py is not importable")
     # PD-TEST-036: a same-contract recovery after the reviewed PD034 launcher
@@ -1104,7 +1137,8 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     policy = _retry_policy()
     report = _drive_submission(rd, intake, session_id, policy, False)
     return {"run_dir": str(rd), "receipt": str(receipt_path),
-            "model_selection": model_selection, "bridge": report}
+            "model_selection": model_selection, "launch_environment": launch_environment,
+            "bridge": report}
 
 
 
