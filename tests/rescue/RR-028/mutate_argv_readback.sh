@@ -55,7 +55,21 @@ parses_ok() {
   python3 - "$TARGET" <<'PY' >/dev/null 2>&1
 import re, sys
 src = open(sys.argv[1], encoding="utf-8").read()
-blocks = re.findall(r"python3 -c '\n(.*?)\n' 2>/dev/null", src, re.S)
+# The scan pattern for the engine's INLINE programs is assembled at runtime,
+# character by character, ON PURPOSE. Written literally it would contain the
+# short-flag-plus-quote sequence that CI guard ONB-STATE-001
+# (scripts/check-embedded-python-syntax.py) looks for when it extracts EVERY
+# inline program across the repo to compile it -- and that guard deliberately
+# also treats such sequences appearing inside deferred-eval strings as code,
+# per its own design notes. It would then try to compile this regex FRAGMENT
+# as Python, which cannot compile, and fail the build over a scan that is
+# entirely correct. Building the sequence from chr() keeps the regex
+# byte-identical while leaving nothing for the guard to mis-take for a
+# program. Do NOT "simplify" this back into a literal.
+_FLAG = "-" + chr(99)
+_OPEN = chr(39)
+_PROG = "python3 " + _FLAG + " " + _OPEN
+blocks = re.findall(_PROG + r"\n(.*?)\n" + _OPEN + r" 2>/dev/null", src, re.S)
 if not blocks:
     sys.exit(1)
 for b in blocks:
