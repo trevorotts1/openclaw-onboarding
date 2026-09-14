@@ -608,14 +608,18 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
         else:
             reasons.append("AF-COPY-ENGINE-MISSING: intelligence_engines_check.check_copy unavailable — the writing-engine copy QC did not run; failing closed (test/CI marker absent)")
 
-    if _pec is not None and hasattr(_pec, "check_copy") and _pitch_included(run_dir):
-        try:
-            _pec.check_copy(working, problems)
-        except Exception as exc:  # noqa: BLE001
-            if _degraded_allowed(run_dir):
-                reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
-            else:
-                reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
+    if _pec is not None and hasattr(_pec, "check_copy"):
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        if refusal:
+            reasons.append(refusal)
+        elif applicable:
+            try:
+                _pec.check_copy(working, problems)
+            except Exception as exc:  # noqa: BLE001
+                if _degraded_allowed(run_dir):
+                    reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
+                else:
+                    reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
     else:
         if _pec is None:
             reasons.append("NOTE: pitch_engines_check unavailable — skipped")
@@ -2402,9 +2406,43 @@ def _verify_workbook(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 
+def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
+
+    The claim phase is a router.  It may document a signature request, but it
+    cannot promote a from-scratch deck into one.  The sealed intake remains the
+    authority and an incomplete/malformed claim fails closed.
+    """
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
+    if not isinstance(intake, dict) or not isinstance(claim, dict):
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
+    selected = str(intake.get("deck_type") or "").strip()
+    recorded = str(claim.get("deck_type") or "").strip()
+    if not selected or recorded != selected:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
+                       "the selected intake deck_type"]
+    claimed = claim.get("claimed")
+    if selected == "signature_presentation":
+        if claimed is not True:
+            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
+                           "claimed:true"]
+    elif claimed is not False:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
+                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
+    return True, []
+
+
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    ok, notes = _sp_claim_matches_intake(run_dir)
+    if not ok:
+        return ok, notes
     fn = _bd_fn("_chk_sp_claim")
-    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    if fn is None:
+        return True, []
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
@@ -2498,9 +2536,43 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(reasons) == 0), reasons
 
 
+def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
+
+    The claim phase is a router.  It may document a signature request, but it
+    cannot promote a from-scratch deck into one.  The sealed intake remains the
+    authority and an incomplete/malformed claim fails closed.
+    """
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
+    if not isinstance(intake, dict) or not isinstance(claim, dict):
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
+    selected = str(intake.get("deck_type") or "").strip()
+    recorded = str(claim.get("deck_type") or "").strip()
+    if not selected or recorded != selected:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
+                       "the selected intake deck_type"]
+    claimed = claim.get("claimed")
+    if selected == "signature_presentation":
+        if claimed is not True:
+            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
+                           "claimed:true"]
+    elif claimed is not False:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
+                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
+    return True, []
+
+
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    ok, notes = _sp_claim_matches_intake(run_dir)
+    if not ok:
+        return ok, notes
     fn = _bd_fn("_chk_sp_claim")
-    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    if fn is None:
+        return True, []
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
