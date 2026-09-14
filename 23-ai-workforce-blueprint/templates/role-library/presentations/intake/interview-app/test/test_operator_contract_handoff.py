@@ -78,3 +78,22 @@ def test_rejects_client_shaped_or_incomplete_contract(tmp_path):
         assert 'operator-delegated' in str(exc)
     else:
         raise AssertionError('client-shaped contract was accepted')
+
+
+def test_contract_delegates_to_bridge_launcher_with_transport_stub(tmp_path, monkeypatch):
+    # The provider boundary is stubbed here; the adapter must never substitute
+    # direct engine/artifact writes for the bridge's lease/launcher call.
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    seen = {}
+    def fake_drive(run_dir, intake, session_id, policy, verbose):
+        seen.update(run_dir=pathlib.Path(run_dir), intake=intake, session_id=session_id,
+                    policy=policy, verbose=verbose)
+        return {'status': 'transport-stubbed'}
+    monkeypatch.setattr(bridge, '_drive_submission', fake_drive)
+    result = bridge.drive_operator_contract(contract(), tmp_path / 'launch', driver_path=DRIVER, launch=True)
+    assert result['bridge'] == {'status': 'transport-stubbed'}
+    assert seen['session_id'] == 'operator-' + contract()['task_id']
+    assert seen['intake']['pitch_included'] is False
+    assert seen['intake']['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
+    assert seen['intake']['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
