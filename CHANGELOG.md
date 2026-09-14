@@ -1,3 +1,23 @@
+## [v25.0.52]  -  2026-09-14  -  RR-028: enrollment and cron reconciliation report real readiness
+
+- **The installer now reports real readiness instead of inferring it.** Four explicit states — `UNENROLLED` / `ENROLLED_PENDING` / `SCHEDULED` / `VERIFIED` — each with a named reason, reconciled **independently of software version** (the engine reads no version marker, and skill-65 reconciliation now runs before the `.wired-<version>` sentinel gate). Previously the installer's success and the box's actual readiness were the same claim.
+- **The gateway store may VETO, never LICENSE.** Absence is proven only by the CLI's own listing having been asked for an *advertised* full-status flag. A store that contradicts the CLI is a refusal; a store row the CLI never showed is `unconfirmed` — **never** `corroborated`; a removal requires the row to have been **observed `enabled=true`** and never seen disabled.
+- **Unobservable is not absent.** A row whose `enabled` bit **no view reports** is never edited, replaced or removed: the reconciler refuses (`enabled_unobservable`, nothing mutated, nothing claimed), because *"we could not see it"* must never authorise destroying a job the operator switched off.
+- **Three destruction paths were found and closed during review**, each independently reproduced before and after: an operator-disabled cron re-enabled and then reported `SCHEDULED`; a diverged store causing `cron add` followed by **`cron rm`** of the operator's own job; and the same outcome via an unobservable `enabled` bit. The legacy cleanup path, which called `cron rm` unguarded, now goes through the same guards.
+- **`wire.sh` no longer exits 0 when its own readback failed.** rc 3/4/5/7 and any unexpected code now exit non-zero, so a fleet roll cannot print success over a box with no cron. rc 6 and rc 8 remain 0 deliberately: nothing was mutated and nothing is claimed.
+
+### Tests
+- `tests/rescue/RR-028/` — states 55, probe 46, wire 135 assertions, all passing; **+59 assertions** over the first reviewed revision, none removed.
+- A **12-scenario falsification sweep** over the view × enabled-bit matrix: 12/12 protected, 0 destroyed.
+- 16 effect-disabling mutations: 14 caught, 2 not caught (both reported: one is a structurally shadowed second-line guard, whose protected class is still pinned by a coarser mutation).
+- RR-027 gates 32/0 and 35/0 in both bash and sh legs; RR-005/RR-016 `FAILS=0`; RR-004 12/0; RR-025 39/0; RR-026 47/0.
+
+### Honest limits
+- A CLI that advertises `--all`, **hides** a disabled job, and has **no** resolved store is indistinguishable in-band; the engine would add an enabled duplicate beside it. Documented as a residual. A resolved store that contradicts such a CLI **is** detected.
+- The readiness receipt is a plain local file — no signature, no HMAC, no signing key on the box — so `VERIFIED` is a **local liveness attestation, not tamper-proof**.
+- Verified on one box, one CLI build (2026.9.2), read-only.
+- A silent `cron add` that exited 0, and a `cron rm` protection test, were both found to encode wrong behaviour and were corrected rather than accommodated.
+
 ## [v25.0.51]  -  2026-09-13  -  fix(presentations): fence and serialize paid retry resets
 
 - **Paid presentation retries now reserve their budget before transport and retain that reservation across a crash.** Reissued work orders and worker restarts cannot buy a new provider attempt after the unchanged-input ceiling is exhausted.
