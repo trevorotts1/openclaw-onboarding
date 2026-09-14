@@ -46,7 +46,9 @@ Runnable two ways (both exercise the exact same code):
 """
 
 import argparse
+import contextlib
 import fcntl
+import functools
 import hashlib
 import inspect
 import json
@@ -7406,6 +7408,34 @@ def _write_ledger(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> None:
     os.replace(tmp, path)  # atomic: a concurrent reader never sees a torn ledger
 
 
+@contextlib.contextmanager
+def _phase_budget_transaction(run_dir: Path, phase_id: str):
+    """Serialize every mutation of a phase's paid-budget ledger.
+
+    Atomic replacement prevents torn JSON, but it does not serialize a
+    read/modify/write cycle.  The reset issuer, pre-transport reservation, and
+    outcome fold must therefore all hold this *same* lock from their read
+    through their final ledger replacement.
+    """
+    lock_path = _ledger_path(run_dir, phase_id).with_suffix(".budget.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _phase_budget_locked(fn):
+    """Apply the shared ledger transaction to a (run_dir, phase_id) writer."""
+    @functools.wraps(fn)
+    def guarded(run_dir: Path, phase_id: str, *args, **kwargs):
+        with _phase_budget_transaction(run_dir, phase_id):
+            return fn(run_dir, phase_id, *args, **kwargs)
+    return guarded
+
+
 def _outcome_signature(status: str, reasons: Optional[List[str]] = None) -> str:
     """What makes two outcomes 'the same outcome'. Status plus reasons, never
     the timestamp or the worker id -- those are exactly the two fields that
@@ -7505,10 +7535,7 @@ def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) 
         raise ValueError(f"allowance must be 1..{DISPATCH_RETRY_CAP}")
     if os.getuid() != run_dir.stat().st_uid:
         raise PermissionError("local operator must own the run directory")
-    path = _ledger_path(run_dir, phase_id)
-    lock_path = path.with_suffix(".budget.lock")
-    with lock_path.open("a+", encoding="utf-8") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with _phase_budget_transaction(run_dir, phase_id):
         led = _read_ledger(run_dir, phase_id)
         # A reset must be bound to an existing durable generation.  Treating a
         # missing field as generation zero would let a hand-created legacy
@@ -7534,11 +7561,7 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
     """
     if run_dir is None:
         return
-    path = _ledger_path(run_dir, phase_id)
-    lock_path = path.with_suffix(".budget.lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with _phase_budget_transaction(run_dir, phase_id):
         led = _read_ledger(run_dir, phase_id)
         generation = _approved_input_revision(run_dir, phase_id)
         prior_generation = str(led.get("approved_input_revision") or "initial")
@@ -7581,7 +7604,6 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
                 _blocked_marker_path(run_dir, phase_id).unlink()
             except OSError:
                 pass
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def _backoff_delay_s(repeat: int) -> float:
@@ -7631,6 +7653,7 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
                    f"{eligible_at - now:.0f}s")
 
 
+@_phase_budget_locked
 def record_outcome(run_dir: Path, phase_id: str, status: str,
                    reasons: Optional[List[str]] = None, *, worker_id: str,
                    order_file: Optional[Path] = None,
@@ -7707,16 +7730,6 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
             f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
         entry["blocked_at"] = utcnow()
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
-
-    # A provider reservation may have committed while this outcome was being
-    # assembled.  Never let an older outcome fold erase its generation or a
-    # consumed receipt; retaining the larger paid count is fail-closed too.
-    latest = _read_ledger(run_dir, phase_id)
-    if int(latest.get("generation") or 0) > entry["generation"]:
-        entry["generation"] = int(latest["generation"])
-        entry["repair_receipt_consumed"] = bool(latest.get("repair_receipt_consumed"))
-        entry["repair_receipt"] = latest.get("repair_receipt")
-        entry["paid_attempts"] = max(entry["paid_attempts"], int(latest.get("paid_attempts") or 0))
 
     _write_ledger(run_dir, phase_id, entry)
 

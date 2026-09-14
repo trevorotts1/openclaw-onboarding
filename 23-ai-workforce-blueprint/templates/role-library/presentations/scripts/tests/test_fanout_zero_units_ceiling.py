@@ -61,6 +61,7 @@ ceiling are all the real code.
 from __future__ import annotations
 
 import json
+import multiprocessing
 import sys
 import time as _real_time
 from collections import Counter
@@ -161,6 +162,29 @@ def _ledger(run_dir: Path) -> dict:
 
 def _marker(run_dir: Path) -> Path:
     return run_dir / "working" / "work-orders" / f"{PHASE}.dispatch-blocked.txt"
+
+
+def _paused_outcome_writer(run_text: str, ready, release) -> None:
+    """Fork child used only by the ledger interleaving regression below."""
+    run_dir = Path(run_text)
+    original = dj._write_ledger
+
+    def pause_before_replace(*args, **kwargs):
+        ready.set()
+        assert release.wait(5), "test controller never released paused outcome"
+        return original(*args, **kwargs)
+
+    dj._write_ledger = pause_before_replace
+    try:
+        dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic"],
+                          worker_id="outcome-worker",
+                          order_file=run_dir / "working" / "work-orders" / f"{PHASE}.json")
+    finally:
+        dj._write_ledger = original
+
+
+def _reserve_in_child(run_text: str) -> None:
+    dj._reserve_paid_attempt(Path(run_text), PHASE, "reserve-worker")
 
 
 def _sweep_n(run_dir: Path, clock: _Clock, n: int = TICKS) -> list:
@@ -465,6 +489,41 @@ def test_consumed_receipt_survives_outcome_restart_and_order_reissue(tmp_path):
     assert led["paid_attempts"] == dj.DISPATCH_RETRY_CAP
     with pytest.raises(dj.PaidBudgetExhausted):
         dj._reserve_paid_attempt(run_dir, PHASE, "restarted-worker")
+
+
+def test_outcome_and_reservation_share_one_budget_transaction(tmp_path):
+    """A stale outcome must not overwrite a pre-transport receipt reservation.
+
+    The outcome child pauses after its read/assembly and before replacement.
+    Without the transaction around the entire fold, the reservation commits
+    during that pause and this old outcome then erases its generation and
+    consumed receipt.  With the shared flock, reserve waits, then sees and
+    preserves the completed fold.  Forked children make this a real
+    cross-process lock test with bounded event waits.
+    """
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    ctx = multiprocessing.get_context("fork")
+    ready, release = ctx.Event(), ctx.Event()
+    outcome = ctx.Process(target=_paused_outcome_writer, args=(str(run_dir), ready, release))
+    reserve = ctx.Process(target=_reserve_in_child, args=(str(run_dir),))
+    outcome.start()
+    assert ready.wait(5), "outcome did not reach its bounded interleaving point"
+    reserve.start()
+    # Give an unlocked implementation a deterministic chance to reserve while
+    # the stale outcome is paused.  A locked implementation leaves it waiting.
+    _real_time.sleep(0.15)
+    release.set()
+    outcome.join(5); reserve.join(5)
+    assert outcome.exitcode == 0 and reserve.exitcode == 0
+    led = _ledger(run_dir)
+    assert led["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    assert led["generation"] == 1
+    assert led["repair_receipt_consumed"] is True
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "restart-worker")
 
 
 def test_operator_reset_refuses_ledger_without_durable_generation(tmp_path):
