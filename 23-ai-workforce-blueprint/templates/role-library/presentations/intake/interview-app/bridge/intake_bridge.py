@@ -1086,13 +1086,23 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                 "driver_complete": True, "model_selection": model_selection}
     if _ll is None:
         raise RuntimeError("launch_ledger.py is not importable")
+    # PD-TEST-036: a same-contract recovery after the reviewed PD034 launcher
+    # repair reopens only its recorded obsolete webinar/type refusal. The
+    # ledger function preserves the prior block and never resets retry budget.
+    session_id = "operator-" + contract["task_id"]
+    prior = _ll.load(rd, session_id)
+    if prior is not None:
+        _ll.reopen_verified_operator_repair(
+            rd, session_id, prior, task_id=contract["task_id"],
+            contract_sha256=receipt["contract_sha256"],
+            repair_key="pd034-presentation-type-launcher")
     stamp_requester(intake)
     # Do not overwrite the driver record: requester resolution must have been
     # available before completion, otherwise resolve_intake correctly refuses.
     if not intake.get("requester_chat_id"):
         raise RuntimeError("no sanctioned operator requester is configured")
     policy = _retry_policy()
-    report = _drive_submission(rd, intake, "operator-" + contract["task_id"], policy, False)
+    report = _drive_submission(rd, intake, session_id, policy, False)
     return {"run_dir": str(rd), "receipt": str(receipt_path),
             "model_selection": model_selection, "bridge": report}
 

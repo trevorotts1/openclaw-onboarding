@@ -531,6 +531,34 @@ def mark_retry_pending(run_dir, session_id: str, doc: Dict[str, Any],
                       retry_attempt=attempt, next_retry_at=doc["next_retry_at"])
 
 
+def reopen_verified_operator_repair(run_dir, session_id: str, doc: Dict[str, Any], *,
+                                    task_id: str, contract_sha256: str,
+                                    repair_key: str) -> Dict[str, Any]:
+    """Re-arm one obsolete bridge refusal without erasing its evidence.
+
+    This is deliberately narrower than a generic unblock: only the documented
+    pre-PD034 presentation-type refusal, on the same bound task and immutable
+    operator receipt, can return to board_registered. Paid retry counters are
+    untouched; the prior block is retained in recovery_history.
+    """
+    if not is_blocked(doc):
+        return doc
+    blocked = doc.get("blocked") if isinstance(doc.get("blocked"), dict) else {}
+    reason = str(blocked.get("reason") or "")
+    if (str(doc.get("board_task_id") or "") != str(task_id) or
+            repair_key != "pd034-presentation-type-launcher" or
+            "AF-DECK-TYPE-UNKNOWN" not in reason or "deck_type 'webinar'" not in reason):
+        return doc
+    rows = doc.setdefault("recovery_history", [])
+    if isinstance(rows, list):
+        rows.append({"at": _iso(_now()), "repair_key": repair_key,
+                     "prior_block": dict(blocked),
+                     "contract_sha256": str(contract_sha256)})
+    doc.pop("blocked", None)
+    return transition(run_dir, session_id, doc, BOARD_REGISTERED,
+                      why="verified operator contract re-opened after pd034 launcher repair")
+
+
 def mark_blocked(run_dir, session_id: str, doc: Dict[str, Any], *,
                  reason: str, remediation: str,
                  notify: bool = False, notifier: Optional[Notifier] = None,
