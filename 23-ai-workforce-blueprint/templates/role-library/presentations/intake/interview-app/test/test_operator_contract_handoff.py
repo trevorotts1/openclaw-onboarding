@@ -489,3 +489,18 @@ def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch
     assert again['bridge']['_rc'] == 8
     assert ll.load(other, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
     assert len(calls) == 1
+    # A composite operator note quoting the old code is not the exact legacy
+    # refusal and must remain final as well.
+    composite = tmp_path / 'composite-block'
+    bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=False)
+    (composite / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
+    composite_doc = {'version': 1, 'session_id': other_sid, 'state': ll.STAGED,
+                     'run_dir': str(composite), 'history': [],
+                     'board_task_id': payload['task_id']}
+    ll.mark_blocked(composite, other_sid, composite_doc,
+                    reason="AF-MODEL-PLAN-UNSATISFIED; prior note AF-DECK-TYPE-UNKNOWN (rc=-5) (deck_type 'webinar')",
+                    remediation='real model gate')
+    composite_out = bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=True)
+    assert composite_out['bridge']['_rc'] == 8
+    assert ll.load(composite, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
+    assert len(calls) == 1

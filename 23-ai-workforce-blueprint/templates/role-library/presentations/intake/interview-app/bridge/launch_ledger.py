@@ -65,6 +65,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -531,6 +532,15 @@ def mark_retry_pending(run_dir, session_id: str, doc: Dict[str, Any],
                       retry_attempt=attempt, next_retry_at=doc["next_retry_at"])
 
 
+# PD-TEST-036's persisted pre-PD034 rejection. This matcher is deliberately
+# exact: recovery must not re-arm an unrelated permanent failure whose operator
+# note merely quotes the old code.
+_OBSOLETE_WEBINAR_TYPE_REFUSAL = re.compile(
+    r"engine dispatch permanently refused: AF-DECK-TYPE-UNKNOWN \(rc=-5\) "
+    r"\(deck_type 'webinar'\)"
+)
+
+
 def reopen_verified_operator_repair(run_dir, session_id: str, doc: Dict[str, Any], *,
                                     task_id: str, contract_sha256: str,
                                     repair_key: str) -> Dict[str, Any]:
@@ -547,7 +557,7 @@ def reopen_verified_operator_repair(run_dir, session_id: str, doc: Dict[str, Any
     reason = str(blocked.get("reason") or "")
     if (str(doc.get("board_task_id") or "") != str(task_id) or
             repair_key != "pd034-presentation-type-launcher" or
-            "AF-DECK-TYPE-UNKNOWN" not in reason or "deck_type 'webinar'" not in reason):
+            _OBSOLETE_WEBINAR_TYPE_REFUSAL.fullmatch(reason) is None):
         return doc
     rows = doc.setdefault("recovery_history", [])
     if isinstance(rows, list):
