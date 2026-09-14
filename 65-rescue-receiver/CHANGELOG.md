@@ -1,5 +1,46 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.8] - 2026-09-14 - a CLI that failed to answer is not a CLI that answered "none"
+
+MEASURED LIVE, not hypothesised. A capture loop ran the readiness reporter 40 times on this
+box; on runs 7 and 35 it returned `ENROLLED_PENDING / cron_source_disagreement` with
+`cron=store_diverged`, `cli_hides_enabled_row`, and the reporter's own view showing
+`sources=cli,db`, `coverage=cli+db`, `visibility=full`, `count=1`. In BOTH captures the
+evidence was identical:
+
+    openclaw cron list --json --all  ->  ZERO rows, exit 0, EMPTY stderr
+    gateway store (cron_jobs)        ->  the job, present, enabled=true
+
+So the CLI printed NOTHING AT ALL and reported success. The engine read that as "the gateway
+genuinely has no jobs", because:
+
+  * `rrr_json_rows` treats an UNPARSEABLE document as an empty job list -- correct for its
+    per-row DB use, wrong for a whole listing; and
+  * the stderr-based classification added in 23.4.4 saw no stderr to classify.
+
+The result was a FABRICATED two-view contradiction: it says the gateway's own listing hides a
+job the gateway actually has. It is fail-closed and self-correcting (12 consecutive clean runs
+either side), and it cannot manufacture an acceptance -- it makes the box look LESS ready --
+but it is a false statement about the system, and it recurred twice.
+
+THE FIX: **shape is the fact that separates "answered none" from "did not answer"**. A CLI
+that answered carries the documented envelope -- an array, `{"jobs":[...]}`, or a single job
+object. `rrr_cli_listing_shape` checks exactly that, and anything else is now
+`cli_unreadable` with sub-reason `cli_unparseable`, reported as `ENROLLED_PENDING /
+cli_unreachable` with NOTHING compared. No contradiction is manufactured, because only one
+view ever spoke.
+
+NEW CASES (section 3c, five assertions): a garbage listing and a parseable-but-not-a-listing
+object (`{"ok":true}`) are both reported as a FAILED CLI with `cron.disagreement` EMPTY; and a
+WELL-FORMED listing is still read, with the box SCHEDULED, so the gate discriminates rather
+than refusing everything.
+
+FALSIFICATION: disabling the shape gate (declarations intact) makes both new cases FAIL --
+each falls back to `cron_absent`, i.e. the empty listing is believed again.
+
+Batteries: readiness-states 65 -> 70 assertions; all green: 70/0, 50/0, 71/0, 135/0, plus
+RR-025 39/0 and 14/0. Skill 65 v23.4.7 -> v23.4.8.
+
 ## [23.4.7] - 2026-09-14 - the routing-fault refusals had no test
 
 RR-025's own required QC is: *"Verify requested local agent exists. If absent, use a verified

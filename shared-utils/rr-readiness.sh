@@ -653,6 +653,46 @@ token=$RRR_TOKEN_COMMIT"
 }
 
 # ---------------------------------------------------------------------------
+# rrr_cli_listing_shape <text> — 0 when the text carries the DOCUMENTED listing
+# shape, 1 when it does not.
+#
+# WHY THIS EXISTS, measured on the live box 2026-09-14:
+#   `openclaw cron list --json --all` sometimes prints NOTHING AT ALL and exits 0
+#   with EMPTY STDERR -- no error, exit status 0, zero rows. Captured twice on this
+#   box while the reporter was being stress-run (runs 7 and 35 of 40), each time as
+#   `ENROLLED_PENDING / cron_source_disagreement`, `cron=store_diverged`,
+#   `cli_hides_enabled_row`, while the gateway store held the job correctly and
+#   `enabled=true`.
+#
+#   The engine could not tell that apart from "the gateway genuinely has no jobs",
+#   because `rrr_json_rows` treats an unparseable document as an empty job list --
+#   correct for its per-row DB use, wrong for a whole listing -- and the
+#   stderr-based classification (added for the gateway-down case) sees no stderr.
+#   So a CLI that FAILED TO ANSWER was read as a CLI that answered "none", which
+#   manufactured a contradiction between two views when only one had spoken.
+#
+#   Shape is the fact that separates them: a CLI that answered carries the
+#   documented envelope. Anything else is a failure to answer, named as one.
+rrr_cli_listing_shape() {
+    [ -n "$1" ] || return 1
+    printf '%s' "$1" | RRR_CLS="$RRR_REQ_JSON" python3 -c '
+import json, os, sys
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw)
+except Exception:
+    sys.exit(1)
+if isinstance(d, list):
+    sys.exit(0)
+if isinstance(d, dict) and isinstance(d.get("jobs"), list):
+    sys.exit(0)
+if isinstance(d, dict) and isinstance(d.get("job"), dict):
+    sys.exit(0)
+sys.exit(1)
+'
+}
+
+# ---------------------------------------------------------------------------
 # Cron readback. TWO views, never one:
 #   cli — `openclaw cron list --json` (with a feature-detected full-status flag)
 #   db  — the gateway's stored `cron_jobs.job_json` (the ONLY view that shows a
@@ -685,7 +725,18 @@ rrr_cron_readback() {
             rrr_argv_run "$_rrr_rb_tmp.cli" "$_rrr_rb_tmp.err" "$RRR_OPENCLAW_BIN" cron list --json || true
         fi
         if [ -s "$_rrr_rb_tmp.cli" ]; then
-            RRR_JOBS="$(rrr_json_rows "$(cat "$_rrr_rb_tmp.cli" 2>/dev/null)" "$RRR_NAME" "cli")"
+            _rrr_rb_cli_text="$(cat "$_rrr_rb_tmp.cli" 2>/dev/null)"
+            # A CLI that FAILED TO ANSWER is not a CLI that answered "none". The
+            # documented envelope is the fact that separates them (see
+            # rrr_cli_listing_shape). Without this, unparseable output became an empty
+            # job list and manufactured a two-view contradiction out of a CLI that
+            # never spoke.
+            if ! rrr_cli_listing_shape "$_rrr_rb_cli_text"; then
+                RRR_RB_STATE="cli_unreadable"
+                RRR_CLI_FAILURE="cli_unparseable"
+                _rrr_rb_cli_text=""
+            else
+            RRR_JOBS="$(rrr_json_rows "$_rrr_rb_cli_text" "$RRR_NAME" "cli")"
             _rrr_rb_cli_ok=1
             RRR_RB_STATE="ok"
             # Only a CLI that ADVERTISES a full-status listing flag can show a
@@ -695,6 +746,7 @@ rrr_cron_readback() {
                 RRR_CRON_VISIBILITY="full"
             else
                 RRR_CRON_VISIBILITY="enabled_only"
+            fi
             fi
         else
             RRR_RB_STATE="cli_unreadable"
