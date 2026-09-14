@@ -1,3 +1,5 @@
+## [v25.0.61]  -  2026-09-14  -  Stamp the nested presentation requester the engine reads, so an operator-delegated deck can start
+
 ## [v25.0.60]  -  2026-09-14  -  Load selected notifier environment for direct operator presentation launches
 
 ## [v25.0.59]  -  2026-09-14  -  Recover verified operator submissions blocked by the pre-PD034 webinar launcher axis

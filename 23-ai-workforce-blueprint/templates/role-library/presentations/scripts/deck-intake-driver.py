@@ -350,6 +350,80 @@ def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, st
     return {}
 
 
+# ---------------------------------------------------------------------------
+# the NESTED requester object -- the shape the ENGINE itself reads
+# (PD-TEST-049).
+#
+# THE SECOND HALF OF THE F19 GAP. The block above makes the requester durable
+# as the FLAT pair working/copy/intake.json's OTHER readers use:
+# presentation_job/resolve_intake.py reads `requester_chat_id` /
+# `requester_channel` there (resolve_intake.py:477-480) and turns them into the
+# nested `requester: {chat_id, client_name, channel}` object the engine's --new
+# wants (resolve_intake.py:498-504). That works for the two SHELL callers that
+# run resolve_intake.py first -- presentation-canonical-entry.sh:1188 and
+# presentation-intake-poll.sh:1270 -- because they hand the engine
+# `working/checkpoints/.engine-intake.json`, resolve_intake.py's OWN output.
+#
+# The launcher path does NOT go through resolve_intake.py: launcher.py:
+# 1763-1771 passes `working/copy/intake.json` STRAIGHT to the engine as
+# --intake (its documented launcher contract -- launcher.py:1760-1761 and
+# dispatch_new's docstring, launcher.py:1884-1885: "The engine's --new path
+# reads intake_json from the run directory's working/copy/intake.json").
+# The engine then reads the NESTED object
+# (presentation_job/__main__.py:266 `intake.get("requester") or {}`) and
+# hard-fails F1 when it carries no chat_id (__main__.py:278-281).
+#
+# So a run produced by THIS driver and launched by the launcher -- the
+# operator-delegated bridge path, intake_bridge.drive_operator_contract()
+# -> `deck-intake-driver.py --complete` -> launcher.dispatch_new() -- carried a
+# perfectly good requester in the FLAT shape and still died at F1 with an
+# EMPTY NESTED object. Because this driver is the SOLE writer of the file
+# (comment above; intake_bridge.py:1108-1110), the mirror belongs HERE: the
+# producer emits both shapes and the file is self-sufficient for both
+# consumers. resolve_intake.py is left untouched and still reads the flat pair.
+_OPERATOR_REQUESTER_CLIENT_NAME = "operator"
+
+
+def _ensure_nested_requester(intake: Dict[str, Any]) -> None:
+    """Mirror intake.json's FLAT requester pair into the NESTED `requester`
+    object the engine's --new actually reads, IN PLACE.
+
+    Sourced from whatever the file already carries, so this covers both the
+    freshly-stamped case AND the upstream-stamped case
+    (_resolve_requester_from_env() returns {} -- deliberately, never
+    clobbering -- when a value is already on disk; the nested mirror must
+    still be derived from it, or such a run keeps dying at F1).
+
+    Never fabricates: with no chat_id anywhere this writes NOTHING and the
+    engine's own F1 gate fires exactly as designed. The emitted shape is the
+    product's own canonical one -- `{"chat_id", "client_name", "channel"}`,
+    byte-for-byte the object resolve_intake.py:498-500 builds and the shape
+    real runs' state.json carries.
+    """
+    existing = intake.get("requester")
+    if isinstance(existing, dict) and str(existing.get("chat_id") or "").strip():
+        return
+    chat_id = str(intake.get("requester_chat_id") or "").strip()
+    if not chat_id:
+        return
+    channel = str(intake.get("requester_channel") or "").strip() or "telegram"
+    client_name = str(intake.get("client_name") or "").strip() \
+        or _OPERATOR_REQUESTER_CLIENT_NAME
+    intake["requester"] = {"chat_id": chat_id,
+                           "client_name": client_name,
+                           "channel": channel}
+
+
+def _stamp_requester(intake: Dict[str, Any]) -> Dict[str, Any]:
+    """Stamp the requester onto `intake` in BOTH shapes its readers use, and
+    return it (for easy call-site chaining). Resolve first (env -> sanctioned
+    operator fallback), then mirror into the nested engine object. The single
+    entry point every finalize path in this driver calls."""
+    intake.update(_resolve_requester_from_env(intake))
+    _ensure_nested_requester(intake)
+    return intake
+
+
 def read_intake_ledger(run_dir: Path) -> Dict[str, Any]:
     """Read working/interview/intake_ledger.json. Returns empty dict if absent."""
     path = run_dir / "working" / "interview" / "intake_ledger.json"
@@ -1921,7 +1995,10 @@ def cmd_complete(args) -> int:
     # fix/deck-type-routing-bypass follow-up: stamp the requester identity
     # (env -> intake.json) so the engine's resolve_intake.py has something to
     # read besides an empty ledger. See _resolve_requester_from_env() above.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: _stamp_requester() also mirrors it into the NESTED
+    # `requester` object the engine's own --new reads -- this run's real
+    # consumer, because the launcher passes THIS file straight to --intake.
+    _stamp_requester(intake)
 
     # Mark interview_confirmed
     intake["interview_confirmed"] = True
@@ -2579,7 +2656,8 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     # requester here too, or a signature-mode deck driven straight to
     # --record never picks up either the chat-surface env vars or the
     # operator fallback. See _resolve_requester_from_env()'s own docstring.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: BOTH shapes, as in cmd_complete -- see _stamp_requester().
+    _stamp_requester(intake)
     write_intake_json(run_dir, intake)
 
     # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
@@ -2671,7 +2749,8 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
     # function exists specifically for "tooling that already ran the
     # turn-gate through another surface") never picks one up. See
     # _resolve_requester_from_env()'s own docstring.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: BOTH shapes, as in cmd_complete -- see _stamp_requester().
+    _stamp_requester(intake)
     write_intake_json(run_dir, intake)
 
     # Prove it (fail-soft -- build_deck.py preflight is the real gate)
