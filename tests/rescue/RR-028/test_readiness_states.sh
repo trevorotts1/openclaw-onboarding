@@ -540,6 +540,64 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 5b. RUNTIME-IDENTITY STABILITY -- the other half of "version independent".
+#
+# WHY THIS IS HERE. The engine hashes TWO canonical forms:
+#   * the DESIRED-CONFIG digest (`rr028-desired/1`), whose comment says "NO VERSION
+#     INPUTS" -- covered by section 5 above; and
+#   * the RUNTIME identity (`rr028-runtime/1`), which is what a readiness receipt is
+#     BOUND to: a receipt taken in one runtime can never verify another.
+#
+# The second one is the dangerous half. If the runtime id moved when a VERSION changed,
+# a box that upgraded would silently invalidate its own receipt and readiness would flap
+# between VERIFIED and SCHEDULED for no reason an operator could see. If it were
+# completely INSENSITIVE to the environment, a receipt could be replayed onto a
+# different runtime -- the exact hole the binding exists to close. So the property is
+# not "stable" or "sensitive"; it is stable with respect to VERSIONS and sensitive with
+# respect to the RUNTIME, and BOTH halves are asserted.
+# ---------------------------------------------------------------------------
+echo "--- 5b. the runtime identity: version-independent, runtime-sensitive ---"
+B19b="$WORK/box-runtime-id"
+rr028_make_box "$B19b"
+rr028_job "$B19b" "$(matching_job "$B19b")"
+
+state_of "$B19b"
+R_ID_A="$(rr028_field "$RR028_OUT" runtime.id)"
+R_PLAT_A="$(rr028_field "$RR028_OUT" runtime.platform)"
+R_MODE_A="$(rr028_field "$RR028_OUT" runtime.target_mode)"
+
+RR028_EXTRA_ENV="ONBOARDING_VERSION=v11.22.33 ONBOARDING_SKILL_VERSION=v9.9.9" state_of "$B19b"
+R_ID_V="$(rr028_field "$RR028_OUT" runtime.id)"
+
+if [ -n "$R_ID_A" ] && [ "$R_ID_A" = "$R_ID_V" ]; then
+  ok "the runtime id does NOT move when a VERSION changes (so a release cannot invalidate a box's own receipt)"
+else
+  bad "the runtime id moved on a version change -- an upgrade would silently void every receipt" "A=$R_ID_A V=$R_ID_V"
+fi
+
+# The other direction: the id MUST move when something the runtime actually IS changes.
+# OC_TARGET_ID names the service/container the cron is scheduled in, and a receipt taken
+# against a different target must not verify this one.
+# The override has to be the one the HARNESS forwards: `rr028_run` sets BOTH
+# `OC_TARGET_ID` and `OC_SERVICE_LABEL` from `RR028_TARGET_ID` (and overrides
+# `RR028_EXTRA_ENV` cannot reach the ones it sets first). Setting `OC_TARGET_ID`
+# directly in RR028_EXTRA_ENV is therefore silently ignored -- measured while writing
+# this, and the reason the assertion below failed at first.
+RR028_TARGET_ID=some-other-gateway state_of "$B19b"
+R_ID_T="$(rr028_field "$RR028_OUT" runtime.id)"
+R_TID_T="$(rr028_field "$RR028_OUT" runtime.target_id)"
+if [ -n "$R_ID_T" ] && [ "$R_ID_T" != "$R_ID_A" ]; then
+  ok "the runtime id DOES move when the target identity changes (a foreign receipt cannot verify this runtime)"
+else
+  bad "the runtime id ignored a changed target identity -- receipts would not be runtime-bound" "A=$R_ID_A T=$R_ID_T target=$R_TID_T"
+fi
+# And the target is REPORTED, not merely hashed: an operator must be able to see which
+# runtime a verdict is about.
+[ "$R_PLAT_A" = "mac" ] && [ "$R_MODE_A" = "launchd" ] \
+  && ok "control: the runtime is NAMED in the report (platform=$R_PLAT_A mode=$R_MODE_A), not only hashed" \
+  || bad "the report does not name the runtime it judged" "$R_PLAT_A/$R_MODE_A"
+
 # 6. argv SAFETY
 # ---------------------------------------------------------------------------
 echo "--- 6. argv-safe invocation ---"
