@@ -1,3 +1,5 @@
+## [v25.0.59]  -  2026-09-14  -  Recover verified operator submissions blocked by the pre-PD034 webinar launcher axis
+
 ## [v25.0.58]  -  2026-09-14  -  Preserve validated Ultra mode and Direct Flash workhorse through presentation launch
 
 ## [v25.0.57]  -  2026-09-14  -  Pass canonical presentation type to the presentation launcher.

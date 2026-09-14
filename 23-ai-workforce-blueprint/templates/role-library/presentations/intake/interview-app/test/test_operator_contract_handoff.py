@@ -438,3 +438,69 @@ def test_live_contract_shape_resumes_after_mid_intake_failure_without_duplicate_
     completed = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
     assert completed['status'] == 'complete'
     assert completed['entries']['client_notes']['value'] == payload['answers']['brief']
+
+def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch):
+    """Only the obsolete type rejection is reopened through the real core.
+
+    The fake launcher is the sole external transport boundary. The lease,
+    board binding, durable ledger and blocked-state behavior remain real.
+    """
+    import os, types
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
+    monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    profile_dir = tmp_path / 'profile'; monkeypatch.setenv('PRESENTATION_RESOURCE_PROFILE_DIR', str(profile_dir))
+    profile = resource_profile.new_profile(); profile['providers']['deepseek-direct'] = {'provider':'deepseek-direct','presence':True,'detected':True,'wired_models':['deepseek-flash'],'consented':True}; resource_profile.save_profile(profile, profile_dir)
+    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda p: p == 'deepseek-direct')
+    rd = tmp_path / 'resume'; payload = live_contract()
+    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    sid = 'operator-' + payload['task_id']; import launch_ledger as ll
+    (rd / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
+    doc = {'version': 1, 'session_id': sid, 'state': ll.STAGED,
+           'run_dir': str(rd), 'history': [], 'board_task_id': payload['task_id']}
+    ll.mark_blocked(rd, sid, doc,
+                    reason="engine dispatch permanently refused: AF-DECK-TYPE-UNKNOWN (rc=-5) (deck_type 'webinar')",
+                    remediation='old type path')
+    import presentation_job.lease as real_lease
+    calls = []
+    class Launcher:
+        def dispatch_new(self, run_dir, **kwargs):
+            calls.append(kwargs)
+            pathlib.Path(run_dir, 'state.json').write_text(json.dumps({
+                'engine_pid': os.getpid(), 'job_id': payload['execution_id']}))
+            return os.getpid()
+    monkeypatch.setattr(bridge, '_load_presentation_job', lambda: types.SimpleNamespace(lease=real_lease, launcher=Launcher()))
+    monkeypatch.setattr(bridge, '_load_cc_board', lambda: (_ for _ in ()).throw(AssertionError('must reuse authenticated CC task')))
+    out = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True)
+    state = ll.load(rd, sid)
+    assert out['bridge']['_rc'] == 0
+    assert len(calls) == 1
+    assert state['state'] == ll.WORKER_ACKNOWLEDGED
+    assert state['recovery_history'][0]['prior_block']['reason'].endswith("deck_type 'webinar')")
+    # A distinct permanent failure remains final: no generic unblock or second launch.
+    other = tmp_path / 'distinct-block'
+    bridge.drive_operator_contract(payload, other, driver_path=DRIVER, launch=False)
+    other_sid = sid
+    (other / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
+    other_doc = {'version': 1, 'session_id': other_sid, 'state': ll.STAGED,
+                 'run_dir': str(other), 'history': [], 'board_task_id': payload['task_id']}
+    ll.mark_blocked(other, other_sid, other_doc,
+                    reason='AF-MODEL-PLAN-UNSATISFIED', remediation='real gate')
+    again = bridge.drive_operator_contract(payload, other, driver_path=DRIVER, launch=True)
+    assert again['bridge']['_rc'] == 8
+    assert ll.load(other, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
+    assert len(calls) == 1
+    # A composite operator note quoting the old code is not the exact legacy
+    # refusal and must remain final as well.
+    composite = tmp_path / 'composite-block'
+    bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=False)
+    (composite / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
+    composite_doc = {'version': 1, 'session_id': other_sid, 'state': ll.STAGED,
+                     'run_dir': str(composite), 'history': [],
+                     'board_task_id': payload['task_id']}
+    ll.mark_blocked(composite, other_sid, composite_doc,
+                    reason="AF-MODEL-PLAN-UNSATISFIED; prior note AF-DECK-TYPE-UNKNOWN (rc=-5) (deck_type 'webinar')",
+                    remediation='real model gate')
+    composite_out = bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=True)
+    assert composite_out['bridge']['_rc'] == 8
+    assert ll.load(composite, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
+    assert len(calls) == 1
