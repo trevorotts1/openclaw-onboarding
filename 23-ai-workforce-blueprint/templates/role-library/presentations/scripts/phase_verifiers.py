@@ -608,14 +608,18 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
         else:
             reasons.append("AF-COPY-ENGINE-MISSING: intelligence_engines_check.check_copy unavailable — the writing-engine copy QC did not run; failing closed (test/CI marker absent)")
 
-    if _pec is not None and hasattr(_pec, "check_copy") and _pitch_included(run_dir):
-        try:
-            _pec.check_copy(working, problems)
-        except Exception as exc:  # noqa: BLE001
-            if _degraded_allowed(run_dir):
-                reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
-            else:
-                reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
+    if _pec is not None and hasattr(_pec, "check_copy"):
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        if refusal:
+            reasons.append(refusal)
+        elif applicable:
+            try:
+                _pec.check_copy(working, problems)
+            except Exception as exc:  # noqa: BLE001
+                if _degraded_allowed(run_dir):
+                    reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
+                else:
+                    reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
     else:
         if _pec is None:
             reasons.append("NOTE: pitch_engines_check unavailable — skipped")
