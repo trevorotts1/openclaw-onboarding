@@ -430,8 +430,14 @@ def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
         # A CC-signed operator receipt pins the execution identity before launch;
         # ordinary Worker submissions retain the lease-derived identity.
         exec_id = str(intake.get("cc_execution_id") or _ll.mint_execution_id(lease))
+        # `run_mode` is the execution axis resolved from the validated
+        # resource-plan child, not the informational answer `mode`. Passing it
+        # makes launcher preflight, the immutable mode plan and engine env use
+        # the exact declared Ultra/Standard/Economy choice.
+        run_mode = intake.get("run_mode")
         pid = launcher.dispatch_new(str(run_dir), client=client,
-                                    deck_type=presentation_type, background=True)
+                                    deck_type=presentation_type, background=True,
+                                    mode=run_mode)
         if isinstance(pid, int) and pid > 0:
             _ll.mark_launching(run_dir, session_id, doc, exec_id,
                                why="dispatch in flight under run lease")

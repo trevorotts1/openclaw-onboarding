@@ -1,3 +1,5 @@
+## [v25.0.58]  -  2026-09-14  -  Preserve validated Ultra mode and Direct Flash workhorse through presentation launch
+
 ## [v25.0.57]  -  2026-09-14  -  Pass canonical presentation type to the presentation launcher.
 
 ## [v25.0.56]  -  2026-09-14  -  Map authenticated operator intake answers to canonical driver fields.

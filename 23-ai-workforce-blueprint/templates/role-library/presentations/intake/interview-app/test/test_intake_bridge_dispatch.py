@@ -97,7 +97,7 @@ class _RecordingPresentationJob(types.ModuleType):
                          background=True, requested_parallel=None, mode=None):
             ib._RECORDED.append({
                 "run_dir": str(run_dir), "client": client,
-                "deck_type": deck_type, "background": background})
+                "deck_type": deck_type, "background": background, "mode": mode})
             return self.next_rc
 
 
@@ -144,6 +144,7 @@ class TestDispatchLaunch(unittest.TestCase):
         # Launcher receives its own presentation_type vocabulary, not the
         # separately derived display deck_type.
         self.assertEqual(ib._RECORDED[0]["deck_type"], "signature")
+        self.assertIsNone(ib._RECORDED[0]["mode"])
         # The lease document named the bridge as holder while dispatch ran.
         lease_doc = json.loads(
             (self.run_dir / "working" / ".lease.json").read_text(encoding="utf-8"))
@@ -170,6 +171,15 @@ class TestDispatchLaunch(unittest.TestCase):
         self.assertEqual(verdict, "launched", detail)
         self.assertEqual(ib._RECORDED[0]["deck_type"], "from_scratch")
 
+    def test_declared_ultra_mode_reaches_launcher(self):
+        intake = _grounded_intake()
+        intake["run_mode"] = "ultra"
+        _install_fake_pj(lambda pj: setattr(ib, "_load_presentation_job", lambda: pj))
+        doc = self._hold()
+        verdict, detail = ib._dispatch_launch(self.run_dir, intake, "sess-f61", doc, POLICY, False)
+        self.assertEqual(verdict, "launched", detail)
+        self.assertEqual(ib._RECORDED[0]["mode"], "ultra")
+
     def test_shared_launcher_accepts_presentation_type_and_dispatch_new_forwards_it(self):
         """Exercise the shared launcher's type vocabulary and wrapper, not only
         the bridge recording launcher.  Dispatch itself is replaced at the
@@ -186,12 +196,14 @@ class TestDispatchLaunch(unittest.TestCase):
         real_launcher.dispatch = transport_boundary
         try:
             pid = real_launcher.dispatch_new(str(self.run_dir), client="operator",
-                                              deck_type="from_scratch", background=True)
+                                              deck_type="from_scratch", background=True,
+                                              mode="ultra")
         finally:
             real_launcher.dispatch = original
         self.assertEqual(pid, 4242)
         self.assertEqual(seen["deck_type"], "from_scratch")
         self.assertFalse(seen["resume"])
+        self.assertEqual(seen["mode"], "ultra")
 
     def test_held_lease_respected_never_completion(self):
         """A live foreign holder keeps the run: acquire() returns None, NO

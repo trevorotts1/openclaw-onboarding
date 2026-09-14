@@ -147,6 +147,42 @@ class TestFault04MissingRequester:
 
 
 # ---------------------------------------------------------------------------
+# PD-TEST-035 -- validated execution child fields survive the resolver
+# ---------------------------------------------------------------------------
+class TestExecutionSelection:
+    def test_projects_validated_mode_and_workhorse_not_parent_summary(self):
+        rd = _run_dir()
+        entries = _base_entries("from_scratch")
+        entries.update({
+            "resource_plan": _entry("use conservative default"),
+            "RUN_MODE": _entry("ULTRA;"),
+            # Uppercase storeOn is authoritative and delimiter-cleaned before
+            # the legacy lower alias. The latter reproduces the live trailing
+            # merged-turn separator and must not win.
+            "WORKHORSE_MODEL": _entry("deepseek-flash@deepseek-direct"),
+            "workhorse_model": _entry("deepseek-flash@deepseek-direct;"),
+        })
+        _write_ledger(rd, entries)
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        resolved = ri.resolve(rd / "working/interview/intake_ledger.json", "test")
+        assert resolved["run_mode"] == "ultra"
+        assert resolved["workhorse_model"] == "deepseek-flash@deepseek-direct"
+
+    def test_invalid_validated_execution_value_fails_before_output(self, capsys):
+        rd = _run_dir()
+        entries = _base_entries("from_scratch")
+        entries["RUN_MODE"] = _entry("quick")
+        _write_ledger(rd, entries)
+        _write_intake_copy(rd, {"requester_chat_id": "42"})
+        out = rd / "working/checkpoints/engine-intake.json"
+        rc = ri.main(["--ledger", str(rd / "working/interview/intake_ledger.json"),
+                      "--out", str(out), "--source", "test"])
+        assert rc == 6
+        assert "AF-EXECUTION-SELECTION-INVALID" in capsys.readouterr().err
+        assert not out.exists()
+
+
+# ---------------------------------------------------------------------------
 # FAULT-05 -- upsell answers must survive into pre_presentation_capture.*
 # ---------------------------------------------------------------------------
 class TestFault05UpsellCapture:
