@@ -7628,6 +7628,51 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _read_repair_receipt(run_dir: Path, phase_id: str) -> Dict[str, Any]:
+    """Best-effort read of a phase's repair receipt. Never raises: an absent,
+    unreadable, torn or non-object receipt is simply no receipt at all."""
+    try:
+        receipt = json.loads(_repair_receipt_path(run_dir, phase_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return receipt if isinstance(receipt, dict) else {}
+
+
+def _repair_receipt_releases_cap(run_dir: Path, phase_id: str, led: Dict[str, Any],
+                                 receipt: Any, *,
+                                 generation: Optional[str] = None) -> bool:
+    """THE single validity predicate for a local-operator repair receipt.
+
+    PD-TEST-068: this predicate used to live inline in _reserve_paid_attempt()
+    only. should_dispatch() therefore refused an exhausted phase BEFORE the
+    receipt's only consumer could ever run, and the one sanctioned code-repair
+    release was inert (proven live on run
+    pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4, P4-COPY). Both the
+    read-only preflight (should_dispatch) and the consuming reservation
+    (_reserve_paid_attempt) now call THIS function, so gate and consumer cannot
+    drift apart.
+
+    Read-only and side-effect free: admission here consumes NOTHING. The
+    receipt is consumed exactly once, under the phase budget lock, by
+    _reserve_paid_attempt().
+    """
+    if not isinstance(receipt, dict) or not receipt:
+        return False
+    if led.get("repair_receipt_consumed"):
+        return False
+    gen = _approved_input_revision(run_dir, phase_id) if generation is None else generation
+    return (receipt.get("kind") == "local-operator-paid-retry-reset-v1" and
+            receipt.get("run") == str(run_dir.resolve()) and
+            receipt.get("phase_id") == phase_id and
+            receipt.get("approved_input_revision") == gen and
+            isinstance(led.get("generation"), int) and
+            receipt.get("prior_generation") == led["generation"] and
+            receipt.get("dispatcher_sha256") == _file_sha(Path(__file__)) and
+            isinstance(receipt.get("allowance"), int) and
+            1 <= receipt["allowance"] <= DISPATCH_RETRY_CAP and
+            receipt.get("operator_uid") == run_dir.stat().st_uid)
+
+
 def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) -> Dict[str, Any]:
     """Local-operator control-plane action; never invoked from a work order.
 
@@ -7673,24 +7718,15 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
         paid = int(led.get("paid_attempts") or 0) if generation == prior_generation else 0
         # A local-operator receipt is the only code-repair reset path.  Its
         # fields are rechecked at consumption; an order file is never read.
-        try:
-            receipt = json.loads(_repair_receipt_path(run_dir, phase_id).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            receipt = {}
-        if receipt and not led.get("repair_receipt_consumed"):
-            valid = (receipt.get("kind") == "local-operator-paid-retry-reset-v1" and
-                     receipt.get("run") == str(run_dir.resolve()) and receipt.get("phase_id") == phase_id and
-                     receipt.get("approved_input_revision") == generation and
-                     isinstance(led.get("generation"), int) and
-                     receipt.get("prior_generation") == led["generation"] and
-                     receipt.get("dispatcher_sha256") == _file_sha(Path(__file__)) and
-                     isinstance(receipt.get("allowance"), int) and 1 <= receipt["allowance"] <= DISPATCH_RETRY_CAP and
-                     receipt.get("operator_uid") == run_dir.stat().st_uid)
-            if valid:
-                paid = DISPATCH_RETRY_CAP - receipt["allowance"]
-                led["generation"] = int(led.get("generation", 0)) + 1
-                led["repair_receipt_consumed"] = True
-                led["repair_receipt"] = receipt
+        # The SAME predicate gates should_dispatch(), so a receipt that admits
+        # dispatch here is exactly one that can be consumed (PD-TEST-068).
+        receipt = _read_repair_receipt(run_dir, phase_id)
+        if _repair_receipt_releases_cap(run_dir, phase_id, led, receipt,
+                                        generation=generation):
+            paid = DISPATCH_RETRY_CAP - receipt["allowance"]
+            led["generation"] = int(led.get("generation", 0)) + 1
+            led["repair_receipt_consumed"] = True
+            led["repair_receipt"] = receipt
         if worker_id:
             claim = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
             if claim and str(claim.get("worker") or "") != worker_id:
@@ -7726,8 +7762,9 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
     """The gate sweep_run_dir consults BEFORE claiming a phase. Returns
     (True, "") to dispatch, or (False, why) to skip this tick.
 
-    Skipping happens on exactly one condition -- an unexpired backoff window
-    whose world has NOT moved. Anything else dispatches."""
+    Skipping happens on exactly two conditions -- an exhausted durable paid
+    budget with no valid unconsumed repair receipt, or an unexpired backoff
+    window whose world has NOT moved. Anything else dispatches."""
     led = _read_ledger(run_dir, phase_id)
     if not led:
         return True, ""
@@ -7739,6 +7776,15 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
         return True, "approved input revision changed"
     if (led.get("blocked") and
             int(led.get("paid_attempts") or 0) >= DISPATCH_RETRY_CAP):
+        # PD-TEST-068: the local operator's bounded repair receipt is the one
+        # sanctioned release from an exhausted paid-retry budget.  Admit the
+        # dispatch when a valid UNCONSUMED receipt is present; consumption
+        # happens exactly once, under the lock, in _reserve_paid_attempt().
+        if _repair_receipt_releases_cap(run_dir, phase_id, led,
+                                        _read_repair_receipt(run_dir, phase_id),
+                                        generation=input_revision):
+            return True, ("paid retry budget released by an unconsumed operator "
+                          "repair receipt")
         return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
                        f"provider attempts for unchanged approved input "
                        f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
