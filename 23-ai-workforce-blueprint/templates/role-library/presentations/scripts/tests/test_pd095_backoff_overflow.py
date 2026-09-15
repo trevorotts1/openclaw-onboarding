@@ -36,9 +36,12 @@ repair receipt that was never consumed -- because the dispatcher could no longer
 reach any phase at all. Reproduced on a copy of the live run:
 
     record_outcome(..., "P-0.5-RESEARCH") ->
-      dispatcher.py:8063  delay = _backoff_delay_s(consecutive - 1)
-      dispatcher.py:7975  DISPATCH_BACKOFF_BASE_S * (MULT ** (repeat - 1))
+      record_outcome:  delay = _backoff_delay_s(consecutive - 1)
+      _backoff_delay_s: DISPATCH_BACKOFF_BASE_S * (MULT ** (repeat - 1))
       OverflowError: (34, 'Result too large')
+    (cited by SYMBOL: these were cited by line number until the delta re-review
+     showed the offsets had already moved -- 8063/7975 at the base commit, which is
+     exactly why this project's convention is now symbols, not line numbers.)
     consecutive AFTER = 1025   # unchanged: the fold never wrote
 
 THE FIX

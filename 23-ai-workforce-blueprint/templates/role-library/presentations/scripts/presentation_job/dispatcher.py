@@ -8000,10 +8000,14 @@ def _backoff_delay_s(repeat: int) -> float:
     construction and is used directly, so no path is O(repeat)."""
     if repeat <= 0:
         return 0.0
-    if DISPATCH_BACKOFF_MULTIPLIER <= 1:
-        # A multiplier that does not GROW cannot overflow a power: `mult ** n`
-        # either stays 1 (mult == 1) or underflows toward 0 (mult < 1), and both
-        # are finite for any n. Use the power directly here so a non-growing
+    if 0 <= DISPATCH_BACKOFF_MULTIPLIER <= 1:
+        # A multiplier in [0, 1] cannot overflow a power: `mult ** n` either stays 1
+        # (mult == 1) or underflows toward 0 (0 <= mult < 1), and both are finite for
+        # any n. The range is checked EXPLICITLY rather than as `<= 1`, because a
+        # NEGATIVE multiplier reaches this branch otherwise and `(-2.0) ** 1024`
+        # raises the very OverflowError this function exists to prevent (found by
+        # the delta re-review; unreachable today because the multiplier is the module
+        # literal 2.0, but the guard should not depend on that being true forever). Use the power directly here so a non-growing
         # multiplier stays O(1) instead of walking `repeat` steps -- the value is
         # identical to the loop's, and the loop would be O(repeat) for mult < 1
         # because `delay < CAP` never becomes false on a decreasing sequence.
