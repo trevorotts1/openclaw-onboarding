@@ -884,6 +884,19 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "ARC markers -- add at least one, typically `<!-- ARC: FINAL -->` on the single "
         "price-reveal slide, even for a flat-price deck, so that check can see the beat "
         "at all. Every price/ladder slide must be LATER than the PROMISE slide.\n"
+        "APPLICABILITY GATE FOR POINTS 8, 9 AND 12 (PD-TEST-125 D2). Read "
+        "intake.json's pitch_included FIRST. When it is FALSE for a non-signature "
+        "deck, points 8, 9 and 12 DO NOT APPLY: write NO price rung, NO re-pitch "
+        "and NO `<!-- ARC: COST_OF_INACTION -->` marker, and no prose naming the "
+        "cost of inaction. This is not a style preference -- `build_deck."
+        "_chk_pitch_leak` refuses the deck with AF-PITCH-LEAK when a pitchless deck "
+        "carries those tokens, so following points 8/9 on a pitchless deck "
+        "GUARANTEES a QC failure you cannot write your way out of. Measured live on "
+        "pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: the contract ordered "
+        "`<!-- ARC: COST_OF_INACTION -->`, the copy carried it verbatim at "
+        "slides_copy.md:23-24, and AF-PITCH-LEAK fired on exactly that token. When "
+        "pitch_included is false the whole price/pitch apparatus is inapplicable; "
+        "points 1-7 and 10-11 still apply, under their own applicability rules.\n"
         "8. Cadence loop between price rungs (AF-CADENCE -- NOTE: this specific check "
         "currently DEFERS pipeline-wide because no phase yet writes "
         "working/copy/price_ladder.json; write it correctly anyway so the deck already "
@@ -5661,7 +5674,95 @@ def invalidated_units(unit_payloads: List[Dict[str, Any]],
     return [k for k in out if k]
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-125 -- DECK-LEVEL ORDERED BEATS MUST BE OWNED BY A NAMED UNIT.
+#
+# THE DEFECT, measured. Every P4-COPY unit authors EXACTLY ONE SECTION, while the
+# writing engines require six DECK-LEVEL beats in a fixed order
+# (`intelligence_engines_check.check_narrative_harmony`, whose `beats` list at
+# `beats` list is the authority for these names and this order):
+#
+#     HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
+#
+# The unit prompt already carried the whole requirement -- a rebuilt unit prompt
+# (system 50,954 chars + user 103,895) contains `AF-NO-VILLAIN`, `VILLAIN beat`,
+# `<!-- ARC: VILLAIN -->` and the derived constraint index. The producer was told
+# and the output still omitted every beat, because the contract states the beats
+# as properties of the WHOLE deck ("must be the FIRST slide that carries either
+# the VILLAIN prose/marker or the PROMISE prose/marker") and a section-scoped
+# author cannot evaluate a whole-deck ordering: it does not know where its section
+# sits, nor whether a sibling already claimed the beat. The equilibrium is that NO
+# section claims it -- and the artifact showed exactly that: 8 SLIDE markers, all 8
+# units `ok`, ZERO villain tokens, and FOUR ARC markers of which one (`<!-- ARC: PROMISE HERO -->`)
+# IS a story beat -- so the deck carried PROMISE and still omitted VILLAIN and FELT_STAKES.
+#
+# THE FIX, and its precedent. PD-TEST-098 hit the identical structure on the design
+# phases -- three units author ONE prompt -- and it was fixed by TELLING each unit
+# which PART owns which single structural block (part 1 carries the one
+# `[ARCHETYPE` header, part N closes with the one `DO-NOT BLOCK`). That assignment
+# is what made the design fanout converge. This is the same mechanism: assign each
+# ordered deck-level beat to exactly one section, by position, and say so in that
+# unit's scope instruction.
+#
+# WHY BY POSITION. It is deterministic, it distributes the load instead of piling
+# every beat on one unit, and because the beats are ordered and the sections are
+# ordered it preserves the required HOOK -> ... -> RECAP sequence by construction.
+# A section beyond the last beat owns none, which is correct: absence of an
+# assignment is not an assignment to duplicate.
+# ---------------------------------------------------------------------------
+DECK_ORDERED_BEATS: Tuple[str, ...] = (
+    "HOOK", "VILLAIN", "FELT_STAKES", "PROMISE", "PRICE", "RECAP",
+)
+
+def _deck_commercial_beats_apply(run_dir: Path) -> bool:
+    """False only on an EXPLICIT pitchless verdict from the ONE authority.
+
+    `pitch_engines_check.pitch_applicability` returns `(False, None)` for a
+    non-signature deck that declares `pitch_included: false`; anything else
+    (including a refusal, and including an import that will not load) keeps the
+    assignment ON, so a degraded environment behaves exactly as it does today."""
+    try:
+        import pitch_engines_check as _pec
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        return not (applicable is False and refusal is None)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+#: Phases whose verifier judges DECK-LEVEL ordered beats. Only the copy fan-out
+#: exists today; the set is explicit so a future phase opts IN rather than
+#: inheriting an assignment its verifier does not ask for.
+DECK_BEAT_PHASES: frozenset = frozenset({"P4-COPY"})
+
+
+def _owned_beat_clause(payload: Dict[str, Any]) -> str:
+    """PD-TEST-125: the beat THIS unit is the sole owner of, or "" when none.
+
+    Absence is deliberate and must be stated as absence-with-reason, or a unit
+    that owns no beat may "helpfully" plant one and duplicate a sibling's."""
+    if not isinstance(payload, dict):
+        return ""
+    owned = payload.get("owned_beats")
+    if not isinstance(owned, (list, tuple)) or not owned:
+        return ""
+    arc = " -> ".join(DECK_ORDERED_BEATS)
+    return (
+        f"=== YOU ARE THE SOLE OWNER OF THIS DECK-LEVEL STORY BEAT: "
+        f"{', '.join(str(x) for x in owned)} ===\n"
+        f"The deck-level writing engines require SIX ordered beats across the whole "
+        f"deck -- {arc} -- and an ordering failure on any one of them refuses the "
+        f"assembled copy for the WHOLE deck. Every other section is owned by a "
+        f"different unit, so no sibling will plant yours, and you must not plant "
+        f"theirs: plant {', '.join(str(x) for x in owned)} in YOUR section, using "
+        f"the prose and the literal `<!-- ARC: <BEAT> -->` marker the OUTPUT "
+        f"CONTRACT names for it.\n\n")
+
+
 def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
+    return _owned_beat_clause(payload) + (_unit_scope_text_base(payload) or "")
+
+
+def _unit_scope_text_base(payload: Dict[str, Any]) -> Optional[str]:
     """The ONE-scope instruction a unit worker gets INSTEAD of the generic
     whole-artifact trigger (compose_prompt suppresses its "write the complete
     final content" tail when the work order carries a `_unit_scope` key).
@@ -6397,6 +6498,14 @@ def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
         lo_hi = _section_payload_range(item, run_dir, name)
         if lo_hi is not None:
             payload["first_ordinal"], payload["last_ordinal"] = lo_hi
+        # PD-TEST-125: assign this section its ordered deck-level beat, if any --
+        # but ONLY when the deck is actually pitched. On a pitchless deck the
+        # contract forbids fabricating these beats, so assigning them would order
+        # the author to violate AF-PITCH-LEAK in order to satisfy AF-NO-VILLAIN.
+        if phase_id in DECK_BEAT_PHASES and _deck_commercial_beats_apply(run_dir):
+            _n = payload.get("ordinal")
+            if isinstance(_n, int) and 1 <= _n <= len(DECK_ORDERED_BEATS):
+                payload["owned_beats"] = [DECK_ORDERED_BEATS[_n - 1]]
     if phase_id == "P-STYLE-SPEC" and payload["ordinal"] is not None:
         # TODO.md step 1: EXPLICIT variant ids, bounded three. Each unit is
         # ASSIGNED one variant id by its enumeration position (unit 1 -> A,

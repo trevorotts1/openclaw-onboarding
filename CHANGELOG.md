@@ -1,3 +1,37 @@
+## [v25.1.22]  -  2026-09-16  -  The commercial-beat engines are pitch-aware, so a pitchless deck is no longer asked to fabricate them
+
+### What Changed
+- **PD-TEST-125 — six DECK-LEVEL beats were enforced on the assembled deck and owned by no unit; the first fix for that ordered FABRICATION, and this is the correction.**
+
+  Every `P4-COPY` unit authors **exactly one section**, while the writing engines require six deck-level beats in a fixed order (`intelligence_engines_check.check_narrative_harmony`):
+
+  ```
+  HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
+  ```
+
+  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: the assembled `working/copy/slides_copy.md` (9,324 B, all 8 `SLIDE` markers, all 8 units admitted) contained **zero** villain tokens across all eleven `VILLAIN_TOKENS`, and four `ARC` markers — of which `PROMISE HERO` **is** a story beat, so the deck carried PROMISE and still omitted VILLAIN and FELT_STAKES. The producer *was* told: a rebuilt per-unit prompt (system 50,954 + user 103,895 chars) already carried `AF-NO-VILLAIN`, `VILLAIN beat` and `<!-- ARC: VILLAIN -->`. So this is a **division-of-labour** defect, not a contract gap — the contract states the beats as whole-deck properties (*"must be the FIRST slide that carries either the VILLAIN prose/marker or the PROMISE prose/marker"*) that a section-scoped author cannot evaluate, and the equilibrium is that no section claims them.
+
+- **THE CORRECTION, and it matters more than the original fix.** The first version assigned each ordered beat to a section **unconditionally**. Independent review measured that this deck is a **pitchless webinar** (`intake.json` `pitch_included: false`, `deck_type: webinar`), that the P4-COPY contract's **FIRST rule** states commercial ARC beats (VILLAIN, FELT_STAKES, NAMED_METHOD, EXPECTATION, PRICE) *"are not applicable and must not be fabricated"* on such a deck, and that `build_deck._chk_pitch_leak` **already** reported `AF-PITCH-LEAK` on the same copy (`slides_copy.md: 'cost of inaction'`).
+
+  **The conflict is CONTRACT-versus-ENGINE, not checker-versus-checker.** An earlier draft of this sentence claimed "no text satisfies both"; the independent review **falsified** it by writing a pitchless copy that satisfies both. The real problem is that the contract **ordered** `<!-- ARC: COST_OF_INACTION -->` at point 9 while `AF-PITCH-LEAK` forbids that token — the two checkers *can* agree, but only on copy the contract forbade. So the author was told to write the leak, wrote it faithfully (`slides_copy.md:23-24`), and was refused for it.
+
+- **The fix, now:** `intelligence_engines_check.check_copy` **defers** the `AF-NO-FELT-STAKES` and `AF-NO-VILLAIN` engines and the narrative-harmony walk when `pitch_engines_check.pitch_applicability` returns an **explicit pitchless verdict** — through the SAME authority the pitch checker already honours, so the two cannot drift — and the beat assignment is gated on that same verdict, so a pitchless deck receives **no** assignment rather than a fabricated one.
+
+  **Fail direction is deliberate:** only `applicable is False` with **no refusal** defers. A refusal (missing or malformed `pitch_included`) or an unimportable authority keeps today's behaviour, so `AF-PITCH-APPLICABILITY-UNSET` is still what reports the problem instead of the engines silently switching off.
+
+- Verified on the live run: `check_copy` problems are now `[]` and **`phase_verifiers.verify("P4-COPY")` is `True`** — the deck's copy phase passes. (Stated precisely, because an earlier draft overclaimed: the *deck* is not yet cleared. `build_deck._chk_pitch_leak` still reports AF-PITCH-LEAK on the EXISTING copy, which was authored under the ungated contract; it clears when that copy is re-authored under the gated points 8/9/12 below.)
+
+### Tests
+- New `tests/test_pd125_deck_beat_ownership.py`: every beat owned exactly once; the owner of an earlier beat sits at an earlier deck position; a section beyond the beat list is told **nothing**; the clause reaches the unit and names the literal `<!-- ARC: <BEAT> -->` form; a **drift guard** against `check_narrative_harmony`'s own beats list; a pitchless deck gets **no** assignment while a pitched deck still gets one; an unset selection keeps the assignment **on**.
+- **The order test was a TAUTOLOGY and the review proved it**: it asserted against `D.DECK_ORDERED_BEATS`, the same constant the assignment read, so inverting that constant still passed. It now derives the canonical order **from the verifier's own source** and measures against `first_ordinal`. Verified **failing when the constant is inverted in memory** and passing otherwise.
+
+### Also in this change (independent review of the first version)
+- **The harmony walk is no longer deferred whole.** The contract's FIRST rule exempts only VILLAIN / FELT_STAKES / NAMED_METHOD / EXPECTATION / PRICE, and contract point 2 still names `AF-NARRATIVE-HARMONY` — the `HOOK -> PROMISE -> RECAP` ordering is required of a pitchless deck. The first version skipped the entire walk, which short-circuited a contract-required check and bought nothing (harmony only orders beats that are PRESENT, so it exerts no fabrication pressure). `check_narrative_harmony` now takes `commercial_beats_apply` and drops **only** the exempt beats.
+- **Contract points 8, 9 and 12 now carry an explicit pitchless applicability gate.** They previously ordered price-rung, re-pitch and `<!-- ARC: COST_OF_INACTION -->` content unconditionally — tokens `AF-PITCH-LEAK` refuses — which is the measured cause of this run's leak.
+
+### Risk
+- Scope is the pitch applicability of the commercial-beat engines, the gated contract points, and the beat assignment. Pitched decks are unaffected; pitchless decks now defer instead of demanding fabricated content. It does not weaken any check the contract actually requires of a pitchless deck.
+
 ## [v25.1.21]  -  2026-09-15  -  The bank-void sufficiency gate must count the units it WANTS, not the units it enumerated
 
 ### What Changed
