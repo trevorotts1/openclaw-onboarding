@@ -1,4 +1,4 @@
-## [v25.1.18]  -  2026-09-15  -  Two builders were reading a front-door nonce the engine stopped minting
+## [v25.1.18]  -  2026-09-15  -  Four builders were reading a front-door nonce the engine stopped minting
 
 ### What Changed
 - **PD-TEST-115 — FOUR scripts could never pass their own front-door nonce check in an engine run.** FIX 25 (`phases._run_script_phase`, phases.py:2298-2323) mints a **PER-PHASE** nonce and delivers BOTH:
@@ -18,7 +18,7 @@
     presentation-canonical-entry.sh, which mints the per-run front-door nonce.
   ```
 
-  The scope is all four manifest-invoked scripts, not the two the failure happened to expose: `sales_checkout_builder.py` (`P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`), `vsl_builder.py` (`P-U-VSL-BUILD`), `workbook_builder.py` (`P8.25-WORKBOOK`) and `build_webinar_video.py` (`P9.6-WEBINAR-VIDEO`). `run_signature_deck.py` and `presentation_job/runfacts.py` are pre-FIX-25 too and are **deliberately left alone** — neither is invoked by the manifest; `run_signature_deck.py` is dispatched *by* `presentation-canonical-entry.sh`, which mints the legacy run-scoped nonce, so the legacy path is correct for it.
+  The scope is all four manifest-invoked scripts, not the two the failure happened to expose: `sales_checkout_builder.py` (`P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`), `vsl_builder.py` (`P-U-VSL-BUILD`), `workbook_builder.py` (`P8.25-WORKBOOK`) and `build_webinar_video.py` (`P9.6-WEBINAR-VIDEO`). `run_signature_deck.py` and `presentation_job/runfacts.py` are **deliberately left alone** (the independent review corrected my original reason: neither defines a nonce verifier of its own — `run_signature_deck.py` delegates to `build_deck._verify_entry_nonce`, which IS post-FIX-25, and `runfacts.py`'s only mention is a docstring) — neither is invoked by the manifest; `run_signature_deck.py` is dispatched *by* `presentation-canonical-entry.sh`, which mints the legacy run-scoped nonce, so the legacy path is correct for it.
 
 - **The fix is a port, not a redesign.** `_entry_nonce_phase_file` plus the `OC_DECK_ENTRY_NONCE_FILE` branch of `_verify_entry_nonce` are taken from `build_infographic.py`, including the path-form confinement (a path value is accepted only when it resolves inside this run's checkpoints dir with a `.nonce-` basename) and the fail-closed handling of a missing/short/mismatched nonce. The legacy run-scoped handshake is preserved for the standalone canonical entry, so nothing that works today stops working.
 
