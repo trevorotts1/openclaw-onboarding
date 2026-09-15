@@ -5663,20 +5663,24 @@ def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
         page = DESIGN_PAGE_PHASES[payload["phase_id"]]
         if not isinstance(ordinal, int) or not (1 <= ordinal <= n):
             ordinal = 1
+        # Name the unit's own slide identity so the part stays anchored to the
+        # upstream copy it is responsible for (review nit: the PART-of-ONE
+        # rewrite had dropped the slide identity the old slide-scope text
+        # carried). Falls back to the unit key when no slide_id was derived.
+        _sid = payload.get("slide_id") or payload.get("key") or f"part-{ordinal}"
         return (
             f"=== THIS CALL AUTHORS PART {ordinal} OF {n} OF THE ONE "
-            f"{page.upper()} PAGE-DESIGN PROMPT ===\n"
+            f"{page.upper()} PAGE-DESIGN PROMPT — YOUR SLIDE: {_sid} ===\n"
             f"`prompts/{page}.design.txt` is ONE image prompt rendered as ONE "
             f"16:9 page-design image. You are writing PART {ordinal} of {n}; the "
             f"engine joins the {n} parts, in this order, into that one file. "
             f"Author ONLY your part -- never the whole file, never another "
             f"part's content, no preamble, no file header, no fences around the "
-            f"answer, and never a restatement of this work order.\n"
-            f"The content you are responsible for is the upstream copy for the "
-            f"slide named in your unit payload; render it as art direction "
-            f"INSIDE the one shared prompt (see the OUTPUT CONTRACT below for "
-            f"which structural blocks are yours and for your exact character "
-            f"share of the shared band).\n\n")
+            f"answer, and never a restatement this work order.\n"
+            f"The content you are responsible for is the upstream copy for "
+            f"{_sid}; render it as art direction INSIDE the one shared prompt "
+            f"(see the OUTPUT CONTRACT below for which structural blocks are "
+            f"yours and for your exact character share of the shared band).\n\n")
     n = payload.get("unit_count")
     if scope == "section":
         name = payload.get("name")
@@ -6645,6 +6649,31 @@ def _dispatch_phase_fanout_units(
     desired_count = getattr(spec, "desired_count", None)
     batch_width = getattr(spec, "batch_width", None)
 
+    # PD-TEST-098 (review fix B): `admitted_count` MUST be stamped BEFORE any
+    # validator runs -- the scoped-reuse loop above and the banked-validation
+    # loop below both call `contract.validator(payload, ...)`, and for a design
+    # phase that validator bounds the text by the part's share of the shared
+    # band. Stamped late (it used to be stamped just before `pending_items`),
+    # those two loops saw `unit_count` instead -- the ENUMERATED count, 8 on the
+    # live run -- and computed the share as (1124, 2248). Since
+    # floor_share(3) = 2999 > ceiling_share(8) = 2248, EVERY compliant part
+    # failed reuse: measured with the real dispatcher and a stubbed model,
+    # pristine main re-paid 0 units on dispatch #2/#3 while the late stamp
+    # re-paid 3 each (9 total). That silently broke PRES-001's "a resume re-pays
+    # ONLY the changed units" contract for these three phases and inverted the
+    # fix's own cost story.
+    #
+    # `wanted_items` is computed HERE now because it is exactly the number of
+    # parts the reducer will join; it depends only on `items` and
+    # `desired_count`, neither of which the loops below mutate, so hoisting it
+    # changes nothing else. The later line reuses this value rather than
+    # recomputing it, so the two can never disagree.
+    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+    for _it in wanted_items:
+        _p = by_key.get(_it["key"])
+        if isinstance(_p, dict):
+            _p["admitted_count"] = len(wanted_items)
+
     # Step 4 -- validate banked results BEFORE admission. A validated unit is
     # admitted as already-done; a stale/corrupt one falls through to a real
     # (re)submission with its transition recorded.
@@ -6699,19 +6728,11 @@ def _dispatch_phase_fanout_units(
     # Step 2 -- the DESIRED WORK COUNT reduces the enumerated list only for
     # whole-deck-unit phases. Per-slide QC phases (desired_count is None on
     # them, enforced by the caller's plan) never drop a slide here.
-    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
-
-    # PD-TEST-098: the number of parts that will ACTUALLY be reduced into the
-    # artifact. It is NOT `unit_count` (which is the ENUMERATED count): on the
-    # live run P-U-DESIGN-SALES enumerated 8 deck slides and `desired_count: 3`
-    # admitted only the leading 3, so `unit_count` is 8 while the reducer only
-    # ever sees 3 parts. A shared budget divided by 8 but assembled from 3
-    # would drive the aggregate UNDER the gate's floor -- the same class of
-    # producer/consumer disagreement, mirrored. Design phases divide by THIS.
-    for _it in wanted_items:
-        _p = by_key.get(_it["key"])
-        if isinstance(_p, dict):
-            _p["admitted_count"] = len(wanted_items)
+    #
+    # PD-TEST-098: `wanted_items` and the `admitted_count` stamp now happen
+    # ABOVE, before the scoped-reuse and banked-validation loops -- both call the
+    # design phase's share-bounded validator (see the note there). It is NOT
+    # recomputed here, so the two can never disagree.
 
     pending_items = [it for it in wanted_items if it["key"] not in _banked_keys and it["key"] not in reuse]
     _append_sidecar(run_dir, phase_id, {

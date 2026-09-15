@@ -429,3 +429,76 @@ def test_pre_fix_shape_would_be_refused_by_the_gate():
     problems = PG.prompt_problems(merged)
     assert any("AF-P2" in p and "over the hard ceiling" in p for p in problems), (
         "the live shape must still be refused by the gate")
+
+
+# ---------------------------------------------------------------------------
+# 7 -- PRES-001 SCOPED REUSE must survive the band (review fix B).
+# ---------------------------------------------------------------------------
+def test_resume_reuses_every_compliant_part_without_repaying(tmp_path, monkeypatch):
+    """THE REGRESSION THE FIRST CUT INTRODUCED, pinned.
+
+    The scoped-reuse loop and the banked-validation loop both call
+    `contract.validator(payload, ...)`. `admitted_count` used to be stamped
+    AFTER them, so those loops saw `unit_count` -- the ENUMERATED count, 8 on
+    the live run -- and computed the share as (1124, 2248). Since
+    floor_share(3) = 2999 > ceiling_share(8) = 2248, EVERY compliant part
+    failed reuse: measured with the real dispatcher and a stubbed model,
+    pristine main re-paid 0 units on dispatch #2/#3 while the late stamp
+    re-paid 3 each (9 total), silently breaking PRES-001's "a resume re-pays
+    ONLY the changed units" contract.
+
+    A part written against the SHARED budget must reuse cleanly, so dispatch
+    #2 and #3 cost ZERO model calls -- the same as pristine main."""
+    rd = _design_run(tmp_path, "P-U-DESIGN-SALES")
+    dept = _dept(tmp_path, "slide-image-creator")
+    calls: list = []
+
+    def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
+        calls.append(user_prompt)
+        parts = _compliant_parts(DESIRED)
+        return (parts[(len(calls) - 1) % len(parts)], {"request_id": "req-stub"},
+                {"provider": "stub", "model": "stub-1"})
+
+    monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
+    monkeypatch.setattr(D, "_verify", lambda pid, rdir: (True, []))
+    order = {"owning_role": "slide-image-creator",
+             "produces_artifact": ["prompts/sales.design.txt"]}
+    spec = fanout.parse_fanout_field(
+        {"by": "slide", "desired_count": DESIRED, "batch_width": DESIRED})
+
+    def dispatch():
+        before = len(calls)
+        res = D._dispatch_phase_fanout_units(
+            rd, order, dept_root=dept,
+            phase_obj=FakePhase("P-U-DESIGN-SALES", "slide-image-creator"),
+            worker_id="test", spec=spec, patterns=["prompts/sales.design.txt"],
+            target=rd / "prompts" / "sales.design.txt", prior_reasons=[])
+        return res, len(calls) - before
+
+    res1, paid1 = dispatch()
+    assert res1.status == "ok", res1.reasons
+    assert paid1 == DESIRED, "the first dispatch authors every admitted part"
+
+    for round_no in (2, 3):
+        res_n, paid_n = dispatch()
+        assert res_n.status == "ok", res_n.reasons
+        assert paid_n == 0, (
+            f"dispatch #{round_no} re-paid {paid_n} units -- a resume must reuse "
+            "every unchanged, contract-valid part (PRES-001 scoped reuse)")
+
+
+def test_reuse_validator_sees_the_admitted_count_not_the_enumerated_one():
+    """The mechanism behind the regression above, asserted directly: a part
+    sized for the ADMITTED share must validate when the payload carries
+    `admitted_count`, and must NOT validate on the enumerated `unit_count`."""
+    part = "p " * 3200                      # 6,400 chars: inside 2,999..5,998? no
+    part = "p " * 2400                      # 4,800 chars: inside the n=3 share
+    admitted = {"phase_id": "P-U-DESIGN-SALES", "admitted_count": DESIRED,
+                "unit_count": N_SLIDES, "ordinal": 1}
+    assert D._validate_design_page_unit(admitted, part)[0] is True
+
+    enumerated_only = {"phase_id": "P-U-DESIGN-SALES", "unit_count": N_SLIDES,
+                       "ordinal": 1}
+    assert D._validate_design_page_unit(enumerated_only, part)[0] is False, (
+        "without admitted_count the share is computed for the ENUMERATED 8, "
+        "which is exactly the reuse-breaking bug")

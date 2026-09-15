@@ -233,8 +233,20 @@ def test_non_design_prompt_paths_do_not_enter_the_band_arm(tmp_path):
 #      Manifest. This is the acceptance target: the engine's own resume
 #      self-heal must fire on the three live design prompts.
 # ---------------------------------------------------------------------------
-_REPO = SCRIPTS.parents[4]
-_REAL_MANIFEST = _REPO / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+def _find_shipped_manifest():
+    """Locate the shipped PIPELINE-MANIFEST.json by WALKING UP from this file,
+    never by a fixed `parents[N]` index: `SCRIPTS.parents[4]` raised
+    `IndexError: 4` at COLLECTION time in any tree shallower than the canonical
+    checkout (a deployed copy, a scratch clone), turning the whole module into a
+    collection error rather than a skip."""
+    for base in SCRIPTS.parents:
+        cand = base / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+        if cand.is_file():
+            return cand
+    return None
+
+
+_REAL_MANIFEST = _find_shipped_manifest()
 
 # The REAL phase -> artifact bindings (PIPELINE-MANIFEST.json v69), and the
 # measured live artifact sizes.
@@ -251,7 +263,7 @@ def _real_bindings_match_the_shipped_manifest():
     """When the shipped manifest is in this tree, the bindings above must be
     exactly what it declares -- so this fixture cannot drift from the real
     contract it is standing in for."""
-    if not _REAL_MANIFEST.is_file():
+    if _REAL_MANIFEST is None:
         return None
     m = json.loads(_REAL_MANIFEST.read_text(encoding="utf-8"))
     got = {}
@@ -292,7 +304,7 @@ def _design_engine(tmp_path, stripped_override=None):
         phases.append({"id": pid, "status": "done", "artifacts": [rel],
                        "sha256": {rel: sha}, "attempts": 1, "heal_events": [],
                        "attested_at": "x"})
-    if _REAL_MANIFEST.is_file():
+    if _REAL_MANIFEST is not None:
         manifest = Manifest(_REAL_MANIFEST)
     else:
         mf = tmp_path / "mf.json"

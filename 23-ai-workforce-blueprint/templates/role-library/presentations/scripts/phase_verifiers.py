@@ -4235,6 +4235,74 @@ def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
     return []
 
 
+# The three page-design prompts: `prompts/<page>.design.txt`. Kept as ONE
+# pattern so the verifier arm and the producer's own registry agree.
+_DESIGN_PROMPT_REL_RE = re.compile(r"^prompts/[A-Za-z0-9_-]+\.design\.txt$")
+
+
+def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
+    """PD-TEST-098: a page-design prompt (`prompts/<page>.design.txt`) must sit
+    inside the SHARED prompt band its render phase enforces.
+
+    THE DEFECT THIS CLOSES -- and why the artifacts.py predicate alone was NOT
+    enough. `_pu_check_text` accepted these files on ">= 40 chars" alone, so
+    `phase_verifiers.verify('P-U-DESIGN-SALES', run)` returned `(True, [])` on
+    the live 58,482-char prompt. Two authorities then re-blessed the artifact
+    that `Engine._revalidate_banked` had just announced as invalid:
+
+      1. `Engine._phase_artifact_satisfied` (phases.py:2670) is presence AND
+         this verifier, and `wo_satisfied` (phases.py:2813) uses it to complete
+         a phase WITHOUT dispatching -- so the engine re-attested the phase
+         `done`, rc=0, artifact byte-unchanged;
+      2. the dispatcher's own idempotent pre-check (dispatcher.py:5121-5160)
+         consults the same verifier and returned `skipped_satisfied`;
+      3. and because that re-attestation path is NOT gated on
+         `status == 'done'`, it also covers `running`/`pending` phases -- the
+         DEADLOCK-1 window, where `_revalidate_banked` never runs at all.
+
+    Net effect before this check: 0 model calls, artifact unchanged, render
+    phases refused exactly as before. This verifier IS the seam all three
+    consult, so the band belongs here (and the `artifacts.validate_artifact`
+    arm stays as the banked re-validation half).
+
+    The band is READ FROM `prompt_gate` -- the same shared source the render
+    gate and the producer use, never a second copy. Length is measured on the
+    stripped text, exactly as `build_infographic.resolve_design_prompt` and
+    `prompt_gate.prompt_problems` measure it."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    length = len(text.strip())
+    if length < 40:
+        return [f"{rel}: only {length} chars of content -- too small to "
+                "be a real authored fragment"]
+    try:
+        import prompt_gate as _pg
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED, deliberately: this gate decides whether a phase may be
+        # marked DONE without re-authoring, so an unverifiable band must not
+        # silently re-bless the artifact. (The artifacts.py arm degrades the
+        # other way on purpose -- it must not turn every banked design prompt
+        # into a permanent re-author loop -- and DISCLOSES that in its verdict.)
+        return [f"{rel}: PD-TEST-098 band check UNAVAILABLE -- prompt_gate "
+                f"could not be imported ({type(exc).__name__}: {exc}); refusing "
+                "to attest an unverifiable design prompt"]
+    if length < _pg.PROMPT_CHAR_FLOOR:
+        return [f"{rel}: {length} chars, UNDER the {_pg.PROMPT_CHAR_FLOOR}-char "
+                "shared prompt floor (AF-P1; prompt_gate.PROMPT_CHAR_FLOOR) -- the "
+                "render phase refuses it, so this phase is NOT satisfied"]
+    if length > _pg.PROMPT_CHAR_CEILING:
+        return [f"{rel}: {length} chars, over the {_pg.PROMPT_CHAR_CEILING}-char "
+                "shared prompt ceiling (AF-P2; prompt_gate.PROMPT_CHAR_CEILING, "
+                "2,000 under the GPT-Image-2.5 API ceiling) -- the render phase "
+                "refuses it before any paid call, so this phase is NOT satisfied"]
+    return []
+
+
 def _pu_check_form_gate(run_dir: Path, rel: str) -> List[str]:
     """P-U-FORM-GATE's two declared Skill-44 plan artifacts. Each must be a
     parseable JSON OBJECT with the Skill-44 operation shape: gate-form.json
@@ -4424,6 +4492,12 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_qc_scorecard(run_dir, rel))
             elif shape == "collection":
                 reasons.extend(_pu_check_collection(run_dir, rel))
+            elif _DESIGN_PROMPT_REL_RE.match(rel):
+                # PD-TEST-098: the page-design prompt carries the SHARED prompt
+                # band, not just ">= 40 chars". This is the seam the engine's
+                # wo_satisfied re-attestation AND the dispatcher's
+                # already_satisfied pre-check both consult.
+                reasons.extend(_pu_check_design_prompt(run_dir, rel))
             elif rel.endswith(".json") or rel in _PU_JSON_ARTIFACTS:
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:
