@@ -210,7 +210,11 @@ def test_resume_readmits_failed_unit_and_run_advances(tmp_path):
     rc1 = eng.run()
     assert rc1 != EXIT_OK
     a = eng._phase_state("A")
-    assert a["status"] == "failed" and a["attempts"] == 1, a
+    # The script executor's heal ladder retries 3 times and then QUARANTINES
+    # the unit -- that is this fixture's real terminal status, and the
+    # re-admission seam must cover it exactly as it covers `failed`.
+    assert a["status"] == "quarantined" and a["attempts"] == 1, a
+    assert a["heal_events"], "the heal ladder really ran before the quarantine"
     assert eng.state.get("terminal") == "BLOCKED"
     assert not (run / "working" / "c.txt").exists(), "C ran behind a failed A"
 
@@ -239,10 +243,18 @@ def test_resume_does_not_readmit_a_dispatcher_parked_unit(tmp_path):
 
     sentinel.write_text("go", encoding="utf-8")
     _reset_parked_state(eng.state)
+    assert eng.state.get("last_resume_readmissions") == [], (
+        "the dispatcher's durable park must survive the unpark")
     eng.store.save(eng.state)
-    rc2 = eng.run()
-    assert rc2 != EXIT_OK, "a parked unit must not be re-dispatched by a resume"
+    eng.run()
+    # The autouse fixture stubs close() to succeed unconditionally, so the
+    # engine's return code on this second pass is NOT evidence about dispatch
+    # (the walk simply has nothing admissible left). The scheduling invariants
+    # below are: the parked unit is never re-executed, and its dependent is
+    # never admitted.
     a = eng._phase_state("A")
-    assert a["status"] == "failed"
+    assert a["status"] == "quarantined", a
     assert a["attempts"] == 1, "no attempt may be bought by a resume"
+    assert not a.get("readmissions"), a
+    assert eng._phase_state("C")["status"] == "pending"
     assert not (run / "working" / "c.txt").exists()
