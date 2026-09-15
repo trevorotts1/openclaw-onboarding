@@ -84,6 +84,7 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
 from presentation_job.manifest import Manifest, Phase, resolve_manifest  # noqa: E402
 from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 13
 from presentation_job.state import StateStore, utcnow  # noqa: E402
+from presentation_job import autospawn as _autospawn  # noqa: E402  PD-TEST-080
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
 from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
@@ -7522,6 +7523,107 @@ def _blocked_marker_path(run_dir: Path, phase_id: str) -> Path:
     'a human needs to look at this' signal, and it must survive an `ls` while
     staying out of sweep_run_dir's own *.json phase glob."""
     return run_dir / "working" / "work-orders" / f"{phase_id}.dispatch-blocked.txt"
+
+
+# ---------------------------------------------------------------------------
+# PD-TEST-080 -- a park marker must not outlive the dispatcher that wrote it.
+#
+# `_park_blocked` records `worker: dispatcher-<pid>-<uuid8>`, the exact id
+# watch_run_dir mints for itself, so the marker names its own owner. Reader
+# side, phases.readmit_retryable_phases treated the bare EXISTENCE of that file
+# as "a dispatcher owns this generation's durable budget" and skipped the phase
+# -- true while the writer lives, FALSE once it is gone, which is the ordinary
+# end state of a run: a dispatcher's last act after state.terminal is set is to
+# exit, leaving the marker it wrote with no owner. Measured on
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4 -- five quarantined phases
+# parked by pids 55801 / 71266 / 87833, every one of them dead, terminal
+# BLOCKED -- no --resume could re-admit them, so the run re-parked identically:
+# precisely the failure PD-TEST-060 (phases.py:654-675) was written to end.
+#
+# LIVENESS IS NOT THE WHOLE QUESTION. POSIX recycles pids, so a dead
+# dispatcher's pid can be held by an unrelated process; "the pid resolves" is
+# not "the owner is here". The marker's own `blocked_at` is the discriminator
+# its writer cannot fake: that line was written BY the owner WHILE IT EXISTED,
+# so a live process at that pid which STARTED LATER cannot be the author.
+# autospawn._process_start_epoch supplies the live start (reusing the one
+# module that owns pid questions, so the two can never disagree), and
+# autospawn._pid_is_alive supplies the liveness test.
+#
+# EVERY DOUBT RESOLVES TO LIVE. No worker line, no timestamp, no `ps`,
+# unparseable output, our own pid -- all "live". Honouring a marker too long is
+# the fail-closed direction: it cannot spend a provider call (the paid ceiling
+# is the LEDGER, enforced by should_dispatch/_reserve_paid_attempt, neither of
+# which this decision touches), while ignoring a marker whose owner is still
+# working would be the protection being weakened.
+# ---------------------------------------------------------------------------
+_PARK_MARKER_WORKER_RE = re.compile(
+    r"^worker:\s*dispatcher-(\d+)-[0-9a-fA-F]{4,32}\s*$", re.M)
+_PARK_MARKER_BLOCKED_AT_RE = re.compile(r"^blocked_at:\s*(\S+)\s*$", re.M)
+
+# utcnow() has one-second resolution, and _process_start_epoch never returns a
+# start LATER than the real one, so a true owner can appear at most ~1 s after
+# its own `blocked_at`. A recycled pid would have to take the pid within this
+# window of the park to be mistaken for the owner -- and that mistake is the
+# fail-closed one. Anything later is proof of recycling.
+_PARK_MARKER_RECYCLE_GRACE_S = 5.0
+
+
+def _park_marker_blocked_epoch(text: str) -> Optional[float]:
+    """The marker's `blocked_at` as an epoch, or None when absent/unreadable."""
+    m = _PARK_MARKER_BLOCKED_AT_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(
+            m.group(1).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def park_marker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
+    """Adjudicate who owns this phase's dispatcher park marker RIGHT NOW.
+
+    Returns (state, detail), state one of:
+      "absent"   -- no marker on disk; nothing to honour.
+      "live"     -- a marker exists and its owner process is still running.
+      "orphaned" -- a marker exists and the dispatcher that wrote it is gone.
+      "unknown"  -- a marker exists but ownership cannot be established; the
+                    caller MUST treat this as live (fail closed).
+
+    Read-only: nothing here deletes or rewrites the marker -- acting on the
+    verdict is phases.readmit_retryable_phases' job."""
+    marker = _blocked_marker_path(run_dir, phase_id)
+    try:
+        if not marker.is_file():
+            return "absent", "no dispatcher park marker"
+        text = marker.read_text(encoding="utf-8")
+    except OSError as exc:
+        return "unknown", f"park marker unreadable ({exc.__class__.__name__})"
+    m = _PARK_MARKER_WORKER_RE.search(text)
+    if not m:
+        # A hand-written or pre-PD-TEST-080 marker with no owner line: there is
+        # no pid to adjudicate, so the honest answer is "not established".
+        return "unknown", "park marker names no dispatcher worker"
+    pid = int(m.group(1))
+    worker = m.group(0).split(":", 1)[1].strip()
+    if pid == os.getpid():
+        return "live", f"{worker} is this process"
+    if not _autospawn._pid_is_alive(pid):
+        return "orphaned", (f"owner {worker} is gone: pid {pid} names no "
+                            "process")
+    started = _autospawn._process_start_epoch(pid)
+    blocked_at = _park_marker_blocked_epoch(text)
+    if started is None or blocked_at is None:
+        return "live", (f"owner {worker} is alive (pid {pid}); its start could "
+                        "not be compared with the park timestamp, so the park "
+                        "is honoured")
+    if started > blocked_at + _PARK_MARKER_RECYCLE_GRACE_S:
+        return "orphaned", (
+            f"owner {worker} is gone and its pid was recycled: the process "
+            f"holding pid {pid} started {started - blocked_at:.0f}s AFTER the "
+            "park was written")
+    return "live", f"owner {worker} is alive (pid {pid})"
 
 
 def _read_ledger(run_dir: Path, phase_id: str) -> Dict[str, Any]:

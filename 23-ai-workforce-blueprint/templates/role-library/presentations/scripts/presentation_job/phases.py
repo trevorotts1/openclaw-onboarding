@@ -688,6 +688,80 @@ def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
                 / f"{phase_id}.dispatch-blocked.txt")
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-080 (2026-09-11) -- the park marker only binds while its OWNER is
+# still alive to own it.
+#
+# PD-TEST-060 (above) skipped any phase whose dispatcher marker was on disk, on
+# the rationale "the dispatcher owns this generation's durable budget". That
+# rationale is true only while the dispatcher exists. It routinely outlives its
+# owner: the dispatcher re-arms on the Engine's own quarantine (dispatcher
+# .should_dispatch keys on the phase's state.json status, and quarantined IS a
+# change -- phases.py:3537-3539), sweeps again, fails identically, RE-PARKS and
+# re-writes the marker AFTER the Engine cleared it (phases.py:3546), and then
+# reaches state.terminal and exits ("run terminal is set -- exiting"). The
+# marker is left with no owner, and none of the three marker-clearing sites can
+# fire for a phase parked by a CODE bug: dispatcher._reserve_paid_attempt only
+# clears on a new approved-input generation (:7806-7810), the Engine only
+# clears on a work-order reissue (:2722) which needs a runnable phase, and the
+# quarantine clear (:3546) has already happened and been undone.
+#
+# The result was a closed loop: the code fix is deployed, --resume runs,
+# readmission skips the phase because a dead dispatcher's marker is still on
+# disk, the phase stays quarantined, _phase_terminal_bad withholds its
+# descendants, and the run re-parks identically -- exactly the failure
+# PD-TEST-060 was written to eliminate. Measured on
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4 (terminal BLOCKED, 10/57
+# done): four quarantined phases held markers owned by pids 55801 and 71266,
+# all dead, and with those markers set aside the same call re-admitted all five
+# failed/quarantined phases -- the markers were the sole gate.
+#
+# THE BUDGET IS STILL NOT BYPASSED, and that is why this is the right seam. The
+# durable paid ceiling is the LEDGER (.dispatch-state/<phase>.json: `blocked`,
+# `paid_attempts`, DISPATCH_RETRY_CAP), enforced by dispatcher.should_dispatch
+# and dispatcher._reserve_paid_attempt -- neither of which this decision
+# touches, and neither of which reads the marker. The marker is a SIGNAL ("a
+# human needs to look at this"), so a marker whose owner is gone is retired
+# here, loudly, rather than left to make the Engine's own park reaction
+# (phases.py:3144-3162) fire for a park nobody holds. Every ambiguity resolves
+# to LIVE: see dispatcher.park_marker_owner_state.
+# ---------------------------------------------------------------------------
+_PARK_MARKER_HONOURED_STATES = ("live", "unknown")
+
+
+def _park_marker_owner_state(run_dir: Any, phase_id: str) -> Tuple[str, str]:
+    """dispatcher.park_marker_owner_state for this run dir, degrading to
+    "unknown" -- i.e. the marker is honoured -- when that module will not
+    import. Same fail-closed fallback discipline as _dispatch_blocked_marker:
+    a degraded install must never silently start discarding live parks."""
+    try:
+        from . import dispatcher as _dispatcher
+        return _dispatcher.park_marker_owner_state(Path(run_dir), phase_id)
+    except Exception:  # noqa: BLE001 -- see docstring
+        return "unknown", "dispatcher module unavailable"
+
+
+def _retire_orphaned_park_marker(run_dir: Any, phase_id: str) -> bool:
+    """Delete a park marker whose owner is provably gone. True when one was
+    removed.
+
+    Called BEFORE the phase's status flips to PENDING, deliberately: a crash
+    between the two then leaves a still-quarantined phase with no marker (the
+    next resume re-admits it, idempotently) instead of a PENDING phase still
+    carrying a park nobody owns -- which is the one shape that would make the
+    Engine's own F9 park reaction (phases.py:3144) fire for an ownerless park.
+    Best-effort: an unlink that fails is reported to the caller, never raised,
+    and the readmission itself stands -- the marker is a signal, not the lock."""
+    path = _dispatch_blocked_marker(run_dir, phase_id)
+    try:
+        if path.is_file():
+            path.unlink()
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Reset FAILED/QUARANTINED phases to PENDING so the next run re-enters
     them. Returns one record per re-admitted phase; each record is also
@@ -695,6 +769,11 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     state["resume_readmissions"]. The phase's `attempts`, `heal_events`,
     `failed_rc`/`failed_reason` are PRESERVED -- the failed attempt is never
     erased, and the next attempt increments the same counter.
+
+    A phase is skipped only while the dispatcher that parked it is STILL ALIVE
+    (PD-TEST-080: a marker whose owner is gone is adjudicated by
+    dispatcher.park_marker_owner_state and retired, and its record carries
+    `orphaned_park_marker` / `orphaned_park_marker_retired`).
 
     Called from __main__._reset_parked_state, the shared --run/--resume
     unpark helper (FIX 22), so both entry verbs stay identical."""
@@ -704,8 +783,10 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         pid = ps.get("id")
         if not pid or ps.get("status") not in _READMITTABLE_PHASE_STATUSES:
             continue
-        if _dispatch_blocked_marker(run_dir, pid).exists():
-            # The dispatcher owns this generation's durable budget.
+        owner_state, owner_detail = _park_marker_owner_state(run_dir, pid)
+        if owner_state in _PARK_MARKER_HONOURED_STATES:
+            # The dispatcher owns this generation's durable budget -- and it is
+            # still running to enforce it.
             continue
         record: Dict[str, Any] = {
             "phase": pid,
@@ -715,6 +796,10 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "prior_reason": (ps.get("quarantined_reason")
                              or ps.get("failed_reason")),
         }
+        if owner_state == "orphaned":
+            record["orphaned_park_marker"] = owner_detail
+            record["orphaned_park_marker_retired"] = _retire_orphaned_park_marker(
+                run_dir, pid)
         ps.setdefault("readmissions", []).append(record)
         ps["readmitted_at"] = record["at"]
         ps["status"] = PHASE_STATUS_PENDING
