@@ -7968,11 +7968,60 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
 
 def _backoff_delay_s(repeat: int) -> float:
     """repeat is the number of times this outcome has recurred AFTER its first
-    observation. repeat<=0 (a new or changed outcome) is always zero delay."""
+    observation. repeat<=0 (a new or changed outcome) is always zero delay.
+
+    PD-TEST-095 -- SATURATE BY REPEATED MULTIPLICATION, NEVER BY A POWER.
+    This used to be `min(CAP, BASE * (MULT ** (repeat - 1)))`. The power is
+    evaluated BEFORE the min(), so it overflows float range before the cap can
+    clamp it: at exponent 1024, `2.0 ** 1024` raises
+    `OverflowError(34, 'Result too large')`. `repeat` is not bounded by the retry
+    ceiling -- a work order that LINGERS on a phase whose status stopped changing
+    is re-folded on every sweep tick, so `consecutive` climbs without limit (the
+    live run reached 1025 on two phases).
+
+    The consequence is a PERMANENT, SELF-LOCKING STALL, not a slow backoff:
+    `record_outcome` computes the delay BEFORE it writes the ledger, so the raise
+    aborts the fold and `consecutive` never advances past the boundary -- and
+    because the exception escapes `sweep_run_dir`, EVERY phase in the run stops
+    being dispatched. Measured on pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    271 consecutive `sweep error: OverflowError(34, 'Result too large')` lines and
+    zero dispatches, which is why a freshly issued P4-COPY repair receipt was
+    never consumed.
+
+    The result is `min(cap, base * mult**exp)` for every input this function can
+    actually be called with (`repeat` is an int, and the sole call site passes
+    `consecutive - 1` where `consecutive` is `int(...) + 1`), verified by sweeping
+    the range: zero differences wherever the old expression returned a value. It is
+    NOT bit-identical for out-of-contract inputs -- a non-integral float `repeat`,
+    NaN, or a negative multiplier can differ -- and the docstring says so rather
+    than claiming a universal equivalence it does not have.
+    Above mult == 1 the loop stops as soon as the cap is reached, so it runs a
+    handful of times and cannot overflow; at or below 1 the power is safe by
+    construction and is used directly, so no path is O(repeat)."""
     if repeat <= 0:
         return 0.0
-    return min(DISPATCH_BACKOFF_CAP_S,
-               DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+    if 0 <= DISPATCH_BACKOFF_MULTIPLIER <= 1:
+        # A multiplier in [0, 1] cannot overflow a power: `mult ** n` either stays 1
+        # (mult == 1) or underflows toward 0 (0 <= mult < 1), and both are finite for
+        # any n. The range is checked EXPLICITLY rather than as `<= 1`, because a
+        # NEGATIVE multiplier reaches this branch otherwise and `(-2.0) ** 1024`
+        # raises the very OverflowError this function exists to prevent (found by
+        # the delta re-review; unreachable today because the multiplier is the module
+        # literal 2.0, but the guard should not depend on that being true forever). Use the power directly here so a non-growing
+        # multiplier stays O(1) instead of walking `repeat` steps -- the value is
+        # identical to the loop's, and the loop would be O(repeat) for mult < 1
+        # because `delay < CAP` never becomes false on a decreasing sequence.
+        # (Independent review of PR #1145 measured 0.25s for 1e7 steps at
+        # mult == 1.0, i.e. ~25s at 1e9: correct but unbounded.)
+        return min(DISPATCH_BACKOFF_CAP_S,
+                   DISPATCH_BACKOFF_BASE_S
+                   * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+    delay = DISPATCH_BACKOFF_BASE_S
+    steps = 0
+    while delay < DISPATCH_BACKOFF_CAP_S and steps < repeat - 1:
+        delay *= DISPATCH_BACKOFF_MULTIPLIER
+        steps += 1
+    return min(DISPATCH_BACKOFF_CAP_S, delay)
 
 
 def should_dispatch(run_dir: Path, phase_id: str, *,
