@@ -137,13 +137,19 @@ def validate_sheet_create(export):
     check(share is not None, "create: 'Set Anyone Can Edit' node present",
           "FAIL create: 'Set Anyone Can Edit' node missing — F02 sharing contract broken")
     if share:
-        perms = share["parameters"]["permissionsUi"]["permissionsValues"]
-        check(perms.get("role") == "writer" and perms.get("type") == "anyone",
-              "create: share node is type=anyone role=writer",
-              f"FAIL create: share node permissions drifted: {perms}")
-        check(share["type"] == "n8n-nodes-base.googleDrive",
-              "create: share node is a real googleDrive node",
-              "FAIL create: share node is not n8n-nodes-base.googleDrive")
+        params = share["parameters"]
+        body = params.get("jsonBody", "")
+        check("{type:'anyone',role:'writer'}" in body and "{type:'user',role:'writer',emailAddress:c.clientEmail}" in body,
+              "create: explicit private editor or default anyone writer",
+              "FAIL create: share node permissions drifted")
+        check(share["type"] == "n8n-nodes-base.httpRequest" and params.get("method") == "POST"
+              and params.get("nodeCredentialType") == "googleDriveOAuth2Api"
+              and "/permissions?" in params.get("url", ""),
+              "create: authenticated Drive permission write",
+              "FAIL create: share node must write Drive permissions with OAuth")
+        check(export["connections"][share["name"]]["main"][0][0]["node"] == "Read Sharing Permission",
+              "create: permission write verified by readback",
+              "FAIL create: sharing write bypasses permission readback")
     # F15 — provisioning key + readback.
     vjs = js_code_of(export, "Validate + Build Provisioning Key")
     check("company_id" in vjs and "planner_kind" in vjs and "provisioningKey" in vjs,
