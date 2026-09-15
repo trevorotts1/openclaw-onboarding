@@ -209,6 +209,7 @@ from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from presentation_job.result import CheckResult
 from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
 from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases, never literal model IDs
+from presentation_job import arc_slides as _arc_slides  # PD-TEST-067: the ONE reader for the deck's slide-array shape
 
 # FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
 # BUNDLE gate's guide_pdf/deck_pdf floors scale by THIS deck's slide count via
@@ -4457,8 +4458,7 @@ def _chk_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     if isinstance(obj, dict) and "__parse_error__" in obj:
         return ("AF-PITCH-MISSING: arc_allocation.json is not valid JSON, so the offer "
                 "ladder + re-pitch cannot be proven. See SOP-PITCH-01 / SOP-PITCH-03.")
-    slots = obj if isinstance(obj, list) else (
-        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067: shared reader
     # Flatten every arc-section / tag token across the allocation into one lowercase blob.
     tokens = []
     for s in slots if isinstance(slots, list) else []:
@@ -4657,7 +4657,7 @@ def _chk_arc(path: Optional[Path]) -> str:
     obj = _read_json(path)
     if "__parse_error__" in obj:
         return f"not valid JSON ({obj['__parse_error__']})"
-    slots = obj if isinstance(obj, list) else (obj.get("slots") or obj.get("allocation") or obj.get("slides"))
+    slots = _arc_slides.slots_from_obj(obj)  # PD-TEST-067: the shared reader
     if not slots:
         return "no per-slide arc-section allocation present (Architect arc not built)"
     return ""
@@ -4696,14 +4696,11 @@ def _count_output_slides(run_dir: Path, slides_path: Optional[Path] = None) -> O
     def _count_from(p: Path) -> Optional[int]:
         if not p.exists():
             return None
-        obj = _read_json(p)
-        if isinstance(obj, list):
-            return len(obj)
-        if isinstance(obj, dict) and "__parse_error__" not in obj:
-            slides = obj.get("slides")
-            if isinstance(slides, list):
-                return len(slides)
-        return None
+        # PD-TEST-067: the shape is read by presentation_job.arc_slides, the one
+        # module that knows it -- this gate, dispatcher._prompt_slide_count and
+        # fanout._slides_for_units must never disagree on N again. The
+        # "__parse_error__" sentinel _read_json returns is still "no count".
+        return _arc_slides.slide_count_from_obj(_read_json(p))
 
     # 0. The ACTUAL rendered file (positional slides.json), when threaded in.
     if slides_path is not None:
@@ -4720,12 +4717,13 @@ def _count_output_slides(run_dir: Path, slides_path: Optional[Path] = None) -> O
     # 2. arc_allocation.json — per-slide arc-section allocation.
     arc = run_dir / "working" / "copy" / "arc_allocation.json"
     if arc.exists():
-        obj = _read_json(arc)
-        if "__parse_error__" not in obj:
-            slots = obj if isinstance(obj, list) else (
-                obj.get("slots") or obj.get("allocation") or obj.get("slides"))
-            if isinstance(slots, list):
-                return len(slots)
+        # PD-TEST-067: same shared reader as _count_from above; the live P3-ARC
+        # artifact spells its array "slide_allocations", which the old
+        # slots/allocation/slides lookup could not see (returned None for a
+        # present, complete 8-slide allocation).
+        n = _arc_slides.slide_count_from_obj(_read_json(arc))
+        if n is not None:
+            return n
     return None
 
 
@@ -5090,8 +5088,7 @@ def _load_slide_arc_tags(run_dir: Path) -> dict:
     obj = _read_json(arc)
     if isinstance(obj, dict) and "__parse_error__" in obj:
         return {}
-    slots = obj if isinstance(obj, list) else (
-        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067: shared reader
     out = {}
     if not isinstance(slots, list):
         return {}
@@ -9167,8 +9164,7 @@ def _apex_slide_ordinal(run_dir: Path) -> Optional[int]:
         obj = _read_json(p)
         if not isinstance(obj, (list, dict)) or (isinstance(obj, dict) and "__parse_error__" in obj):
             return None
-        slots = obj if isinstance(obj, list) else (
-            obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+        slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067: shared reader
         for s in slots if isinstance(slots, list) else []:
             if not isinstance(s, dict):
                 continue
@@ -9441,8 +9437,7 @@ def _chk_peak_end(run_dir: Path, slides_path: Optional[Path] = None) -> str:
             if isinstance(obj, dict) and "__parse_error__" in obj:
                 return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
                         "engineered PEAK + ending cannot be proven (P49).")
-            slots = obj if isinstance(obj, list) else (
-                obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+            slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067
             tokens = []
             for s in slots if isinstance(slots, list) else []:
                 if isinstance(s, dict):

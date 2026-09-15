@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from presentation_job import runfacts as _rf
+from presentation_job import arc_slides as _arc_slides  # PD-TEST-067: the ONE reader for the deck's slide-array shape
 
 # ---------------------------------------------------------------------------
 # Re-exports — slices import ONE module for the machinery
@@ -236,9 +237,11 @@ def _build_snapshot(run_dir: Path) -> dict:
         arc_obj = _read_json(arc_p)
         if isinstance(arc_obj, list) or (isinstance(arc_obj, dict)
                                          and "__parse_error__" not in arc_obj):
-            slots = (arc_obj if isinstance(arc_obj, list) else
-                     (arc_obj.get("slots") or arc_obj.get("allocation")
-                      or arc_obj.get("slides") or []))
+            # PD-TEST-067: the shared reader, so the arc token blob the SLICE1
+            # gates scan is built from the shape P3-ARC actually emits. An
+            # unrecognised container made this blob empty, i.e. every
+            # arc-token check saw a deck that declared no beats at all.
+            slots = _arc_slides.slots_from_obj(arc_obj) or []
             tokens: List[str] = []
             for s in slots if isinstance(slots, list) else []:
                 if isinstance(s, dict):

@@ -2142,6 +2142,74 @@ def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
     return _v
 
 
+def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P3-ARC's arc_allocation.json — valid JSON **that a consumer can read**.
+
+    PD-TEST-067. This phase used to be ``_verify_json_artifact(
+    "working/copy/arc_allocation.json")`` with NO required_keys, i.e. "parses
+    and is not zero bytes". On run pres-operator-1d269693 that blessed an
+    artifact whose 8 slides sat under ``slide_allocations``/``slide_number``
+    — a spelling no reader in this tree could see — so P3-ARC reported
+    ``done`` while ``fanout._slides_for_units`` derived ZERO units for every
+    downstream phase that reads the deck's slide list. P-U-DESIGN-VSL,
+    P-U-DESIGN-SALES, P-U-DESIGN-CHECKOUT and P-STYLE-SPEC each emitted 43
+    identical zero-unit refusals, hit DISPATCH_REPEAT_CEILING and were
+    quarantined, stopping the run.
+
+    A validity-only gate cannot catch that: the file was perfectly valid JSON,
+    and every OTHER gate P3-ARC carries (_chk_arc presence/non-emptiness,
+    _chk_peak_end / _chk_pitch / _chk_pitch_leak token scans) passed too. The
+    artifact's ONE contractual obligation is that its consumers can read the
+    slide allocation, so that is what this gate now requires — via the same
+    shared reader the consumers use (presentation_job.arc_slides), so the
+    producer and its readers cannot drift apart again.
+
+    Still FAIL-HARD, and strictly stronger than before, never weaker:
+      * absent / zero-byte / unparseable  -> FAIL (unchanged, via
+        _check_json_nonempty);
+      * no recognised slide array at all  -> FAIL (NEW: the live defect);
+      * a recognised but EMPTY slide array -> FAIL (NEW: declares no slides);
+      * recognised, non-empty             -> PASS.
+    """
+    ok, reasons = _check_json_nonempty(run_dir, "working/copy/arc_allocation.json")
+    if not ok:
+        return ok, reasons
+    try:
+        from presentation_job import arc_slides as _shared
+    except ImportError:  # pragma: no cover - presentation_job absent entirely
+        # Matches this module's documented defensive-import convention, but
+        # NEVER silently: the degradation is recorded as a NOTE reason (the
+        # "NOTE" prefix is excluded from the hard-failure list), so a record
+        # graded under a validity-only gate is visibly distinguishable from one
+        # graded against the real consumer contract.
+        return True, reasons + [
+            "NOTE: presentation_job.arc_slides is unavailable, so the arc "
+            "slide-allocation SHAPE was NOT validated (validity-only, "
+            "pre-PD-TEST-067 behavior)"]
+    path = _resolve_glob(run_dir, "working/copy/arc_allocation.json")
+    slots = _shared.slots_from_obj(_read_json(path) if path is not None else None)
+    if slots is None:
+        return False, [
+            "working/copy/arc_allocation.json: no slide allocation array this "
+            "pipeline can read — P3-ARC's own consumers (fanout unit "
+            "enumeration, dispatcher._prompt_slide_count, "
+            "build_deck._count_output_slides, craft_judgement) read the slides "
+            "from one of "
+            f"{', '.join(repr(k) for k in _shared.SLIDE_LIST_KEYS)}, each slot "
+            "carrying a whole-number ordinal under one of "
+            f"{', '.join(repr(k) for k in _shared.SLIDE_ORDINAL_KEYS)}. A "
+            "structurally valid artifact no consumer can read reports ZERO "
+            "units downstream and quarantines every phase that needs the deck's "
+            "slide list (PD-TEST-067)."]
+    if not slots:
+        return False, [
+            "working/copy/arc_allocation.json: the slide allocation array is "
+            "present but EMPTY — the arc declares zero slides, so every "
+            "downstream fan-out over the deck's slide list would enumerate "
+            "zero units."]
+    return True, reasons
+
+
 # fix/run-slides: P-CONVERTER (Phase -1, "Content-to-Presentation Conversion")
 # used to be _verify_json_artifact("working/copy/intake.json", ("slides",)) --
 # demanding a "slides" key that NO writer anywhere in this codebase (grepped
@@ -3607,7 +3675,10 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 0.2   Priority-Shift Spec
     "P0B-PRIORITY":       _verify_json_artifact("working/copy/priority_shift_spec.json"),
     # Phase 3     Converting Arc Allocation
-    "P3-ARC":             _verify_json_artifact("working/copy/arc_allocation.json"),
+    # PD-TEST-067: a validity-only gate here let an artifact no consumer could
+    # read report `done` and quarantine four downstream phases. The gate now
+    # requires the slide allocation its own consumers read.
+    "P3-ARC":             _verify_arc_allocation,
     # Phase 3.5   Research-to-Slide Mapping
     "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
     # Phase 4     Slide Copy

@@ -202,6 +202,8 @@ def slide_count(run_dir) -> int:
     import json as _json
     from pathlib import Path as _Path
 
+    from presentation_job import arc_slides as _arc_slides  # PD-TEST-067
+
     root = _Path(run_dir)
     candidates = [
         root / "working" / "copy" / "slides.json",
@@ -229,8 +231,10 @@ def slide_count(run_dir) -> int:
     try:
         if arc.is_file():
             obj = _json.loads(arc.read_text(encoding="utf-8", errors="replace"))
-            slots = obj if isinstance(obj, list) else (
-                obj.get("slots") or obj.get("allocation") or obj.get("slides"))
+            # PD-TEST-067: the shared reader, so the live P3-ARC container
+            # spelling (slide_allocations) yields the real slide count instead
+            # of 0 -- which silently mis-sized every scaled deliverable floor.
+            slots = _arc_slides.slots_from_obj(obj)
             if isinstance(slots, list):
                 return len(slots)
     except (OSError, ValueError):

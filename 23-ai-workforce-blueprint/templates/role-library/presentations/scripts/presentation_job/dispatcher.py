@@ -88,6 +88,9 @@ from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
 from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
 from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
+# PD-TEST-067: the ONE reader for the deck's slide-array shape, shared with
+# fanout, build_deck and craft_judgement. json/pathlib/typing only -- no cycle.
+from presentation_job import arc_slides as _arc_slides  # noqa: E402
 # PRES-014 (W2 WF05): durable fan-out unit records. Banked results are read
 # and validated BEFORE any model call; only failed/changed units resubmit;
 # the attempt/budget ledger survives restarts (append-only transitions +
@@ -3084,41 +3087,19 @@ def _prompt_slide_count(run_dir: Path) -> Optional[int]:
     the real verifier can never disagree on N: working/copy/slides.json (a list,
     or {"slides":[...]}) first, then working/copy/arc_allocation.json's
     slides/slots/allocation array. Returns None when neither is present/readable
-    yet (the phase is not ready to dispatch)."""
-    def _len_from(obj) -> Optional[int]:
-        if isinstance(obj, list):
-            return len(obj)
-        if isinstance(obj, dict) and "__parse_error__" not in obj:
-            slides = obj.get("slides")
-            if isinstance(slides, list):
-                return len(slides)
-        return None
+    yet (the phase is not ready to dispatch).
 
-    for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
-        p = run_dir / rel
-        if not p.is_file():
-            continue
-        try:
-            obj = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        n = _len_from(obj)
-        if n is not None:
-            return n
-
-    arc = run_dir / "working" / "copy" / "arc_allocation.json"
-    if arc.is_file():
-        try:
-            obj = json.loads(arc.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            obj = None
-        if isinstance(obj, dict):
-            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-            if isinstance(slots, list):
-                return len(slots)
-        elif isinstance(obj, list):
-            return len(obj)
-    return None
+    PD-TEST-067: those two sources are now read by ``arc_slides`` -- the ONE
+    module that knows the deck's slide-array shape -- so this function, the
+    fan-out enumerator and the real verifier cannot drift apart again. The
+    live run's arc_allocation.json carried its 8 slides under the P3-ARC
+    spelling ``slide_allocations``/``slide_number``, which this function's
+    private key list could not see; it returned None for a present, complete
+    artifact, and the two P4-PROMPT callers below turn that None into a
+    status="error" -- the same byte-identical repeat that parked four phases.
+    The None contract itself is UNCHANGED.
+    """
+    return _arc_slides.load_slide_count(run_dir)
 
 
 def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]:
@@ -5987,11 +5968,11 @@ def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tup
         obj = json.loads(arc.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
-    slots = None
-    if isinstance(obj, dict):
-        slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-    elif isinstance(obj, list):
-        slots = obj
+    # PD-TEST-067: the deck's slide allocation is read by the shared reader, so
+    # a section's ordinal range is derivable from the live P3-ARC shape too
+    # (previously an unrecognised container made this return [] and every
+    # section unit silently lost its declared slide range).
+    slots = _arc_slides.slots_from_obj(obj) or []
     if not isinstance(slots, list) or not slots:
         return []
     name_to_idx = {n: i for i, n in enumerate(section_names)}
@@ -5999,7 +5980,12 @@ def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tup
     for pos, slot in enumerate(slots):
         if not isinstance(slot, dict):
             continue
-        label = slot.get("arc") or slot.get("section") or slot.get("name")
+        # PD-TEST-067: THE SAME accessor the enumerator derived the names with.
+        # One reader for both sides of the join; the live slots say
+        # ``arc_section``, which this used never to look for, so no label ever
+        # matched and every section silently got the (-1,-1) sentinel -- the
+        # live 'unit payload carries no ordinal range' refusal.
+        label = _arc_slides.slot_label(slot)
         if not isinstance(label, str):
             continue
         idx = name_to_idx.get(label)
