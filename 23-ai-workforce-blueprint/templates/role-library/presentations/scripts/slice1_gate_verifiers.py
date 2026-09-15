@@ -113,6 +113,8 @@ class SliceFacts(RunFacts):
       priority_spec    parsed working/copy/priority_shift_spec.json dict (or None)
       slides_copy_lc   lowercased slides_copy.md text (or None)
       arc_blob         lowercased arc-allocation token blob (or None)
+      arc_peak_end     AF-PEAK-END evidence dict from build_deck's ONE reader
+                       (or None when no arc file exists)
       apex_ordinal     OFFER/PROMISE-APEX slide ordinal (or None)
       render_pngs      sorted [(ordinal, rel_path)] for rendered slide PNGs (or [])
       flatfill         {rel_path: (dominant_fraction, rgb)} for the render PNGs
@@ -233,30 +235,31 @@ def _build_snapshot(run_dir: Path) -> dict:
 
     arc_p = _first_existing(rd, _ARC_RELS)
     snap["arc_blob"] = None
+    #: PD-TEST-082: the peak-end evidence, derived by THE one reader
+    #: (build_deck._arc_peak_end_evidence) so ``slice1:peak_end`` and the
+    #: legacy ``build_deck._chk_peak_end`` it shadow-compares cannot disagree
+    #: about the same artifact. None means "no arc file" (defer to _chk_arc);
+    #: the parse-error case keeps its own ``arc_blob`` sentinel below.
+    snap["arc_peak_end"] = None
     if arc_p:
-        arc_obj = _read_json(arc_p)
-        if isinstance(arc_obj, list) or (isinstance(arc_obj, dict)
-                                         and "__parse_error__" not in arc_obj):
-            # PD-TEST-067: the shared reader, so the arc token blob the SLICE1
-            # gates scan is built from the shape P3-ARC actually emits. An
-            # unrecognised container made this blob empty, i.e. every
-            # arc-token check saw a deck that declared no beats at all.
-            slots = _arc_slides.slots_from_obj(arc_obj) or []
-            tokens: List[str] = []
-            for s in slots if isinstance(slots, list) else []:
-                if isinstance(s, dict):
-                    for k in ("arc_section", "section", "beat", "tag", "type", "role"):
-                        v = s.get(k)
-                        if isinstance(v, str):
-                            tokens.append(v.lower())
-                    tags = s.get("tags")
-                    if isinstance(tags, list):
-                        tokens += [str(t).lower() for t in tags]
-                elif isinstance(s, str):
-                    tokens.append(s.lower())
-            snap["arc_blob"] = " ".join(tokens)
-        elif isinstance(arc_obj, dict) and "__parse_error__" in arc_obj:
+        # build_deck._read_json -- NOT this module's -- because only it returns
+        # the ``__parse_error__`` sentinel this snapshot's contract documents.
+        # slice1's own _read_json collapses an unparseable file to None, which
+        # silently turned "corrupt arc" into "no arc yet" and PASSED a gate the
+        # legacy one FAILED (a live divergence, repaired by PD-TEST-082).
+        arc_obj = _bd._read_json(arc_p)
+        if isinstance(arc_obj, dict) and "__parse_error__" in arc_obj:
             snap["arc_blob"] = "__parse_error__"
+        else:
+            # PD-TEST-082: ONE evidence derivation, shared with
+            # build_deck._chk_peak_end, so the two sides of the shadow compare
+            # cannot disagree about the same artifact. It carries the FORM 1
+            # token blob too, so the arc-token scan is no longer duplicated
+            # here -- the container is read inside that one function by the
+            # shared arc_slides.slots_from_obj (PD-TEST-067).
+            _ev = _bd._arc_peak_end_evidence(arc_obj)
+            snap["arc_blob"] = _ev["blob"]
+            snap["arc_peak_end"] = _ev
 
     snap["apex_ordinal"] = _bd._apex_slide_ordinal(rd)
 
@@ -312,7 +315,8 @@ def _build_snapshot(run_dir: Path) -> dict:
 
 
 _SNAPSHOT_REQUIRED = (
-    "intake_obj", "priority_spec", "slides_copy_lc", "arc_blob", "apex_ordinal",
+    "intake_obj", "priority_spec", "slides_copy_lc", "arc_blob", "arc_peak_end",
+    "apex_ordinal",
     "render_pngs", "flatfill", "style_manifest", "style_choice", "source_brief",
     "source_text", "sp_intake", "sp_structure", "sp_transcript", "af_skip",
 )
@@ -635,20 +639,27 @@ def v_proclamation_hedge(facts: SliceFacts) -> Tuple[Verdict, str]:
 
 
 def v_peak_end(facts: SliceFacts) -> Tuple[Verdict, str]:
-    """AF-PEAK-END — the arc declares a PEAK beat AND an ENDING beat."""
+    """AF-PEAK-END — the arc declares a PEAK beat AND an ENDING beat.
+
+    PD-TEST-082: reads the SAME evidence dict the legacy ``_chk_peak_end``
+    builds (``build_deck._arc_peak_end_evidence``), so both forms of evidence —
+    the free-text tokens AND the arc's explicit ``arc_marks`` /
+    ``peak_apex*`` / ``ending_*`` declarations — are honoured identically on
+    both sides of the shadow compare, and a truthy ``flat_ending`` fails the
+    ending on both. Absence and the message text are unchanged."""
     snap = _snap(facts)
     if snap.get("priority_spec") is None:
         return Verdict.PASS, ""
-    blob = snap.get("arc_blob")
-    if blob is None:
-        return Verdict.PASS, ""  # no arc yet — _chk_arc owns absence.
-    if blob == "__parse_error__":
+    if snap.get("arc_blob") == "__parse_error__":
         return Verdict.FAIL, ("AF-PEAK-END: arc_allocation.json is not valid JSON, so "
                               "the engineered PEAK + ending cannot be proven (P49).")
+    evidence = snap.get("arc_peak_end")
+    if not isinstance(evidence, dict):
+        return Verdict.PASS, ""  # no arc yet — _chk_arc owns absence.
     missing: List[str] = []
-    if not any(t in blob for t in _bd.PEAK_TAGS):
+    if not evidence.get("peak"):
         missing.append("no PEAK/APEX/WOW beat")
-    if not any(t in blob for t in _bd.ENDING_TAGS):
+    if not evidence.get("ending"):
         missing.append("no deliberate ending/recap/CTA beat")
     if missing:
         return Verdict.FAIL, ("AF-PEAK-END: the arc fails the peak-end rule -- "

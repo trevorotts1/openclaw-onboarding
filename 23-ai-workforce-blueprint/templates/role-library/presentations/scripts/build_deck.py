@@ -9073,6 +9073,175 @@ PEAK_TAGS = ("peak", "apex", "wow", "salience_apex", "salience-apex",
              "promise-apex", "promise_apex")
 ENDING_TAGS = ("recap", "close", "closing", "cta", "call to action", "call-to-action",
                "final", "ending", "send-off", "sendoff")
+
+# ---------------------------------------------------------------------------
+# AF-PEAK-END's artifact contract (PD-TEST-082, 2026-09-15).
+#
+# PEAK_TAGS / ENDING_TAGS ABOVE ARE DELIBERATELY UNCHANGED. The doctrine
+# decision was that the gate must accept EITHER form of evidence, so the fix is
+# that the gate stops reading ONLY free-text tokens and starts ALSO reading the
+# arc's own first-class fields -- exactly how PD-TEST-067 was resolved in this
+# tree ("the consumer widening to the artifact actually produced").
+#
+# FORM 1 -- free text: a PEAK/ENDING token anywhere in the slots' arc labels
+# (unchanged since the gate was written).
+# FORM 2 -- explicit, machine-readable declaration: the arc's own top-level
+# peak/ending fields and its per-slide arc_marks.
+#
+# Neither form is a weakening: FORM 2 still demands a DELIBERATE POSITIVE
+# declaration, and ARC_FLAT_ENDING_KEY overrides every form of ending evidence.
+# ---------------------------------------------------------------------------
+
+#: Container keys holding the arc's slide list — an ALIAS of
+#: ``presentation_job/arc_slides.SLIDE_LIST_KEYS``, the ONE reader for the
+#: deck's slide-array shape that PD-TEST-067 established. It is the same tuple
+#: OBJECT (asserted by identity in tests/test_pd082_peak_end_contract.py), so
+#: the two names cannot drift apart. ``slide_allocations`` is the spelling the
+#: live P3-ARC agent actually wrote on run pres-operator-1d269693, and looking
+#: for only the first three keys is precisely why this gate saw zero slots
+#: (PD-TEST-082 layer 1).
+ARC_SLOT_LIST_KEYS = _arc_slides.SLIDE_LIST_KEYS
+
+#: The shared container reader — likewise an alias of the same FUNCTION object,
+#: so there is exactly ONE implementation of "where is the deck's slide array?"
+#: in this tree (the invariant PD-TEST-067 established, which PD-TEST-082
+#: honours rather than re-implementing).
+ARC_SLOTS_FROM_OBJ = _arc_slides.slots_from_obj
+
+#: Per-slot free-text keys FORM 1 scans. Unchanged by PD-TEST-082.
+ARC_SLOT_TOKEN_KEYS = ("arc_section", "section", "beat", "tag", "type", "role")
+
+#: Per-slot explicit marks (FORM 2), the live shape:
+#: ``arc_marks = {"peak": bool, "decision_climax": bool, "ending": bool}``.
+ARC_MARKS_KEY = "arc_marks"
+ARC_MARK_PEAK_KEY = "peak"
+ARC_MARK_ENDING_KEY = "ending"
+
+#: Top-level explicit declarations (FORM 2), in precedence order. The live arc
+#: carries BOTH the object (slide_number + arc_section + move_tag + summary) and
+#: the bare ordinal; either alone is a positive declaration.
+ARC_PEAK_DECL_KEYS = ("peak_apex_slide", "peak_apex")
+ARC_ENDING_DECL_KEYS = ("ending_slide", "ending_beat")
+
+#: The producer's own flat-ending flag. Truthy => the ending is flat, and a
+#: flat ending is remembered as flat (P49), so it OVERRIDES every other form of
+#: ending evidence -- see _arc_peak_end_evidence.
+ARC_FLAT_ENDING_KEY = "flat_ending"
+
+
+def _arc_positive_declaration(value) -> bool:
+    """True when an explicit peak/ending field is a POSITIVE declaration.
+
+    "Positive" is the doctrine's own word: a present-but-empty placeholder must
+    not satisfy a gate that exists to force a deliberate choice. So JSON null,
+    ``false``, an empty/blank string, an empty object and a zero/negative
+    ordinal are all NOT declarations; a dict with real content, a bare non-zero
+    ordinal, a non-empty string, ``true`` or a non-empty list all are.
+    """
+    if value is None or value is False:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip()) and value.strip().lower() not in (
+            "none", "null", "false")
+    if isinstance(value, dict):
+        return any(bool(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0  # slide ordinals are 1-based; 0 is a placeholder
+    return True
+
+
+def _arc_peak_end_evidence(obj) -> dict:
+    """AF-PEAK-END's evidence from ONE already-parsed arc object.
+
+    THE one place the peak-end evidence is derived, so the preflight gate
+    (_chk_peak_end), the shadow-compared slice verifier (slice1:peak_end) and
+    any future reader agree BY CONSTRUCTION rather than by three copies of the
+    same scan -- the failure mode PD-TEST-067 documented for this exact
+    artifact.
+
+    Returns the two verdicts plus the raw evidence behind each:
+
+      present          an arc object was supplied at all
+      blob             the FORM 1 token blob the verdicts were derived from
+      token_peak       FORM 1: a PEAK_TAGS token in the slots' free text
+      token_ending     FORM 1: an ENDING_TAGS token in the slots' free text
+      marked_peak      FORM 2: some slide's arc_marks.peak is true
+      marked_ending    FORM 2: some slide's arc_marks.ending is true
+      declared_peak    FORM 2: a positive peak_apex_slide / peak_apex
+      declared_ending  FORM 2: a positive ending_slide / ending_beat
+      flat_ending      the producer's own flat_ending flag is truthy
+      peak             FINAL: token OR marked OR declared
+      ending           FINAL: (token OR marked OR declared) AND NOT flat_ending
+
+    The container is read by the SHARED reader
+    (``arc_slides.slots_from_obj``, aliased as ``ARC_SLOTS_FROM_OBJ``), never by
+    a private copy.
+    """
+    slots = ARC_SLOTS_FROM_OBJ(obj)
+    top = obj if isinstance(obj, dict) else {}
+
+    tokens = []
+    marked_peak = False
+    marked_ending = False
+    for slot in slots if isinstance(slots, list) else []:
+        if isinstance(slot, dict):
+            for key in ARC_SLOT_TOKEN_KEYS:
+                value = slot.get(key)
+                if isinstance(value, str):
+                    tokens.append(value.lower())
+            tags = slot.get("tags")
+            if isinstance(tags, list):
+                tokens += [str(t).lower() for t in tags]
+            # arc_slides.slots_from_obj wraps a NON-dict entry as {"slot": entry}
+            # (it normalises every slot to a dict so ordinal consumers work).
+            # Re-reading that one key restores the historical bare-string entry
+            # (`["apex", "recap"]`) as a FORM 1 token source, so widening the
+            # reader does not silently DROP evidence the old scan accepted.
+            legacy = slot.get("slot")
+            if isinstance(legacy, str):
+                tokens.append(legacy.lower())
+            marks = slot.get(ARC_MARKS_KEY)
+            if isinstance(marks, dict):
+                # Strict ``is True``: the producer emits real JSON booleans
+                # (verified on the live artifact). A truthy stand-in is a
+                # producer defect and must fail loudly, not be papered over.
+                if marks.get(ARC_MARK_PEAK_KEY) is True:
+                    marked_peak = True
+                if marks.get(ARC_MARK_ENDING_KEY) is True:
+                    marked_ending = True
+    blob = " ".join(tokens)
+
+    token_peak = any(t in blob for t in PEAK_TAGS)
+    token_ending = any(t in blob for t in ENDING_TAGS)
+    declared_peak = any(_arc_positive_declaration(top.get(k))
+                        for k in ARC_PEAK_DECL_KEYS)
+    declared_ending = any(_arc_positive_declaration(top.get(k))
+                          for k in ARC_ENDING_DECL_KEYS)
+    flat_ending = bool(top.get(ARC_FLAT_ENDING_KEY))
+
+    ending_evidence = token_ending or marked_ending or declared_ending
+    return {
+        "present": True,
+        "blob": blob,
+        "token_peak": token_peak,
+        "token_ending": token_ending,
+        "marked_peak": marked_peak,
+        "marked_ending": marked_ending,
+        "declared_peak": declared_peak,
+        "declared_ending": declared_ending,
+        "flat_ending": flat_ending,
+        "peak": bool(token_peak or marked_peak or declared_peak),
+        # The doctrine's core, in one place: a flat ending is remembered as
+        # flat, so flat_ending defeats a token match AND an explicit
+        # ending_slide/ending_beat/arc_marks.ending alike.
+        "ending": bool(ending_evidence and not flat_ending),
+    }
+
+
 LADDER_BEAT_MARKERS = ("ladder", "anchor", "price", "offer", "value-stack",
                        "value_stack", "valuestack", "drop", "value_add", "value add")
 COST_OF_INACTION_MARKERS = ("cost of inaction", "cost_of_inaction", "cost-of-inaction",
@@ -9425,39 +9594,38 @@ def _chk_proclamation_hedge(run_dir: Path, slides_path: Optional[Path] = None) -
 def _chk_peak_end(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-PEAK-END (P49). The arc must declare a deliberate PEAK beat AND a deliberate
     ending beat (the peak-end rule — a flat ending is remembered as flat). Defers when
-    no arc / no doctrine."""
+    no arc / no doctrine.
+
+    PD-TEST-082: the arc may declare each beat EITHER as a free-text token
+    (FORM 1, unchanged) OR through its own first-class fields (FORM 2:
+    per-slide ``arc_marks`` and the top-level ``peak_apex*``/``ending_*``
+    declarations). Absence of BOTH forms still fails, and a truthy
+    ``flat_ending`` still fails the ending even when an ``ending_slide`` is
+    present — the doctrine is not softened, only the evidence widened to what
+    the producer actually emits. The evidence itself is derived in ONE place
+    (``_arc_peak_end_evidence``) so this gate and the shadow-compared
+    ``slice1:peak_end`` verifier cannot drift apart."""
     if not _doctrine_active(run_dir):
         return ""
-    blob = None
+    obj = None
+    found = False
     for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
                 "working/arc_allocation.json"):
         p = run_dir / rel
         if p.exists():
             obj = _read_json(p)
-            if isinstance(obj, dict) and "__parse_error__" in obj:
-                return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
-                        "engineered PEAK + ending cannot be proven (P49).")
-            slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067
-            tokens = []
-            for s in slots if isinstance(slots, list) else []:
-                if isinstance(s, dict):
-                    for k in ("arc_section", "section", "beat", "tag", "type", "role"):
-                        v = s.get(k)
-                        if isinstance(v, str):
-                            tokens.append(v.lower())
-                    tags = s.get("tags")
-                    if isinstance(tags, list):
-                        tokens += [str(t).lower() for t in tags]
-                elif isinstance(s, str):
-                    tokens.append(s.lower())
-            blob = " ".join(tokens)
+            found = True
             break
-    if blob is None:
+    if not found:
         return ""  # no arc yet — _chk_arc owns absence.
+    if isinstance(obj, dict) and "__parse_error__" in obj:
+        return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
+                "engineered PEAK + ending cannot be proven (P49).")
+    evidence = _arc_peak_end_evidence(obj)
     missing = []
-    if not any(t in blob for t in PEAK_TAGS):
+    if not evidence["peak"]:
         missing.append("no PEAK/APEX/WOW beat")
-    if not any(t in blob for t in ENDING_TAGS):
+    if not evidence["ending"]:
         missing.append("no deliberate ending/recap/CTA beat")
     if missing:
         return ("AF-PEAK-END: the arc fails the peak-end rule — " + "; ".join(missing)

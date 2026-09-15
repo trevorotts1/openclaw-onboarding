@@ -94,12 +94,30 @@ def _live_allocation(n: int = 8) -> dict:
 
 
 def _canonical_allocation(n: int = 8) -> dict:
-    """The same allocation in the repo's canonical shape."""
+    """The same allocation in the repo's canonical shape.
+
+    PD-TEST-082 NOTE: this fixture now also carries the arc's explicit PEAK and
+    ENDING declarations, because P3-ARC's verifier requires them (see
+    phase_verifiers._verify_arc_allocation). This file's own subject — that
+    every accepted container/ordinal spelling is READABLE and every reader
+    agrees — is unchanged: every assertion and the full parametrization below
+    are preserved.
+
+    The genuine committed reference artifact
+    (51-signature-presentation/examples/golden-quest/working/copy/
+    arc_allocation.json, 103 slots) declares the beats in NO recognised form:
+    its ``arc_section`` values are the four Signature-Presentation PHASES
+    (Avatar / Signature Story / Transformational Teaching / Purpose Pitch),
+    which match no PEAK_TAGS or ENDING_TAGS token. That is recorded as an open
+    doctrine question in tests/test_pd082_peak_end_contract.py, not silently
+    absorbed by this fixture.
+    """
     return {
         "deck_type": "signature", "deck_slug": "pd067", "bands": {},
         "slots": [{"slide": i, "phase": "avatar", "arc_section": f"Section {i}",
                    "hook": False, "label_slide": False, "case_study": False}
                   for i in (range(1, n + 1))],
+        "peak_apex_slide": 4, "ending_slide": n,
     }
 
 
@@ -282,10 +300,16 @@ def test_slides_json_still_wins_over_the_arc(tmp_path):
 def test_every_reader_agrees_on_one_slide_count(tmp_path, container, ordinal_key):
     """The divergence itself was the defect: five readers with five private
     key lists let one blessed artifact be readable by none of them. Whatever
-    spelling is accepted, every reader must see the SAME number."""
+    spelling is accepted, every reader must see the SAME number.
+
+    PD-TEST-082: the allocation also declares the arc's PEAK and ENDING, which
+    P3-ARC's verifier now additionally requires. The parametrization over every
+    accepted container/ordinal spelling — this test's actual subject — is
+    untouched."""
     n = 8
     alloc = {container: [{ordinal_key: i, "arc_section": f"s{i}"}
-                         for i in range(1, n + 1)]}
+                         for i in range(1, n + 1)],
+             "peak_apex_slide": 4, "ending_slide": n}
     run_dir = _seed_run(tmp_path, allocation=alloc)
 
     from_slides = len(fo._slides_for_units(run_dir))

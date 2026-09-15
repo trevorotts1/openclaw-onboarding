@@ -3433,6 +3433,29 @@ def test_doctrine_gates_fire_and_pass():
         {"slide": 3, "arc_section": "teaching"}]))
     fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end")
 
+    # AF-PEAK-END (PD-TEST-082) — the LIVE container + explicit declarations,
+    # but a FLAT ending: still fires. A flat ending is remembered as flat, so
+    # flat_ending defeats the explicit ending_slide / arc_marks.ending too.
+    _r = _active("dgf_peak_end_flat_")
+    (_r / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({
+        "slide_allocations": [
+            {"slide_number": 4, "arc_section": "value_anchor",
+             "arc_marks": {"peak": True, "ending": False}},
+            {"slide_number": 8, "arc_section": "trigger",
+             "arc_marks": {"peak": False, "ending": True}}],
+        "peak_apex_slide": 4, "ending_slide": 8, "flat_ending": True}))
+    fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end/flat_ending")
+
+    # AF-PEAK-END (PD-TEST-082) — slides under ``slide_allocations`` but with
+    # NEITHER form of evidence (no token, no arc_marks, no explicit field):
+    # absence still fires.
+    _r = _active("dgf_peak_end_no_evidence_")
+    (_r / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({
+        "slide_allocations": [
+            {"slide_number": 1, "arc_section": "opening"},
+            {"slide_number": 2, "arc_section": "cost_of_inaction"}]}))
+    fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end/no_evidence")
+
     # AF-NO-SALIENCE-APEX — the apex slide is the LEAST vivid (von Restorff inversion).
     _r = _active("dgf_salience_")
     for _i in range(1, 4):
@@ -3555,6 +3578,18 @@ def test_doctrine_gates_fire_and_pass():
     passes(build_deck._chk_trigger(cr), "clean/no_trigger")
     passes(build_deck._chk_proclamation_hedge(cr), "clean/hedge")
     passes(build_deck._chk_peak_end(cr), "clean/peak_end")
+    # AF-PEAK-END (PD-TEST-082) — the LIVE shape passes with no tag token
+    # anywhere: slides under ``slide_allocations`` + explicit arc_marks.peak /
+    # arc_marks.ending + peak_apex_slide / ending_slide + flat_ending false.
+    _lr = _active("dgf_clean_peak_end_live_")
+    (_lr / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({
+        "slide_allocations": [
+            {"slide_number": 4, "arc_section": "value_anchor",
+             "arc_marks": {"peak": True, "ending": False}},
+            {"slide_number": 8, "arc_section": "trigger",
+             "arc_marks": {"peak": False, "ending": True}}],
+        "peak_apex_slide": 4, "ending_slide": 8, "flat_ending": False}))
+    passes(build_deck._chk_peak_end(_lr), "clean/peak_end/live_shape")
     passes(build_deck._chk_persuasion_beats(cr), "clean/persuasion_beats")
     passes(build_deck._chk_style_preview(cr), "clean/style")
 
@@ -3582,6 +3617,217 @@ def test_doctrine_gates_fire_and_pass():
     passes(build_deck._chk_converter_no_invent(cc), "clean/converter")
 
     print(f"DOCTRINE-GATES (fire+pass)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+# ---------------------------------------------------------------------------
+# PD-TEST-082 — AF-PEAK-END must read the artifact contract the producer
+# ACTUALLY emits.
+#
+# The live arc (run pres-operator-1d269693, working/copy/arc_allocation.json)
+# failed this gate for two independent reasons:
+#   1. the container — its slides live under ``slide_allocations``, which the
+#      gate never looked for, so it saw zero slots (the PD-TEST-067 divergence
+#      class);
+#   2. the evidence form — its labels/tags (opening, cost_of_inaction, ...,
+#      VALUE_ANCHOR, TRIGGER, ...) match no PEAK_TAGS/ENDING_TAGS token, even
+#      though it declares both beats explicitly and machine-readably
+#      (peak_apex/peak_apex_slide, ending_beat/ending_slide, per-slide
+#      arc_marks.peak / arc_marks.ending).
+#
+# The doctrine decision pinned here: accept EITHER form; a FLAT ending still
+# FAILS; ABSENCE of both forms still FAILS. PEAK_TAGS / ENDING_TAGS membership
+# is deliberately unchanged.
+# ---------------------------------------------------------------------------
+def _live_arc_obj():
+    """The live arc's shape, reproduced exactly (values verbatim from run
+    pres-operator-1d269693): slots under ``slide_allocations``, per-slide
+    ``arc_marks``, the explicit top-level declarations, ``flat_ending`` false.
+    NO token in PEAK_TAGS or ENDING_TAGS appears anywhere in it."""
+    return {
+        "artifact": "arc_allocation.json", "phase": "P3-ARC",
+        "slide_count": 8,
+        "arc_sections": ["Opening", "Cost of Inaction", "Higher Aim",
+                         "Value Anchor", "Urgency", "Ability Unblock",
+                         "Decision", "Trigger"],
+        "slide_allocations": [
+            {"slide_number": 1, "arc_section": "opening",
+             "move_tag": "PRIORITY_STACK",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 2, "arc_section": "cost_of_inaction",
+             "move_tag": "COST_OF_INACTION",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 3, "arc_section": "higher_aim",
+             "move_tag": "HIGHER_PRIORITY",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 4, "arc_section": "value_anchor",
+             "move_tag": "VALUE_ANCHOR",
+             "arc_marks": {"peak": True, "decision_climax": False, "ending": False}},
+            {"slide_number": 5, "arc_section": "urgency",
+             "move_tag": "URGENCY_SCARCITY",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 6, "arc_section": "ability_unblock",
+             "move_tag": "ABILITY_UNBLOCK",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 7, "arc_section": "decision",
+             "move_tag": "RERANK_DEMAND",
+             "arc_marks": {"peak": False, "decision_climax": True, "ending": False}},
+            {"slide_number": 8, "arc_section": "trigger",
+             "move_tag": "TRIGGER",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": True}},
+        ],
+        "peak_apex": {"slide_number": 4, "arc_section": "value_anchor",
+                      "move_tag": "VALUE_ANCHOR", "summary": "Anchor value."},
+        "peak_apex_slide": 4,
+        "decision_climax": {"slide_number": 7, "arc_section": "decision",
+                            "move_tag": "RERANK_DEMAND", "summary": "Ask now."},
+        "decision_climax_slide": 7,
+        "ending_beat": {"slide_number": 8, "arc_section": "trigger",
+                        "move_tag": "TRIGGER", "summary": "Fire the trigger."},
+        "ending_slide": 8,
+        "flat_ending": False,
+    }
+
+
+def test_peak_end_reads_live_artifact_contract():
+    """PD-TEST-082: the live shape PASSES; flat_ending still FAILS; absence
+    still FAILS; the legacy token form still PASSES; no arc still defers."""
+    import tempfile
+    fails = []
+
+    def _active(prefix):
+        root = Path(tempfile.mkdtemp(prefix=prefix))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "priority_shift_spec.json").write_text(
+            json.dumps({"true_goal": "convert audience priority to owner offer"}))
+        return root
+
+    def _write(root, obj):
+        (root / "working" / "copy" / "arc_allocation.json").write_text(
+            json.dumps(obj))
+
+    def _expect_pass(where, root):
+        reason = build_deck._chk_peak_end(root)
+        if reason:
+            fails.append(f"PD-TEST-082 {where}: expected PASS, got {reason!r}")
+
+    def _expect_fail(where, root, *needles):
+        reason = build_deck._chk_peak_end(root)
+        if not reason:
+            fails.append(f"PD-TEST-082 {where}: expected a FAIL, got '' (PASS)")
+            return
+        if "AF-PEAK-END" not in reason:
+            fails.append(f"PD-TEST-082 {where}: reason lacks AF-PEAK-END: {reason!r}")
+        for needle in needles:
+            if needle not in reason:
+                fails.append(f"PD-TEST-082 {where}: reason lacks {needle!r}: {reason!r}")
+
+    # (0) Sanity: the live shape really does carry NO token from either list —
+    #     otherwise the container/evidence fix would be untested by it.
+    live = _live_arc_obj()
+    _blob = " ".join(str(v).lower() for v in [
+        s["arc_section"] for s in live["slide_allocations"]]
+        + [s["move_tag"] for s in live["slide_allocations"]])
+    for _tok in build_deck.PEAK_TAGS + build_deck.ENDING_TAGS:
+        if _tok in _blob:
+            fails.append(f"PD-TEST-082 fixture sanity: live shape unexpectedly "
+                         f"contains token {_tok!r} — the fixture no longer proves "
+                         "the token scan fails on it")
+
+    # (1) THE LIVE SHAPE PASSES (container + explicit declarations).
+    r = _active("pd082_live_shape_")
+    _write(r, live)
+    _expect_pass("live shape", r)
+
+    # (2) flat_ending: true FAILS — even though ending_slide/ending_beat and
+    #     arc_marks.ending are ALL still present. The doctrine's core.
+    r = _active("pd082_flat_ending_")
+    _flat = _live_arc_obj()
+    _flat["flat_ending"] = True
+    _write(r, _flat)
+    _expect_fail("flat_ending=true (declarations intact)", r,
+                 "no deliberate ending/recap/CTA beat")
+    if "no PEAK/APEX/WOW beat" in (build_deck._chk_peak_end(r) or ""):
+        fails.append("PD-TEST-082 flat_ending=true: the PEAK half must still pass "
+                     "— flat_ending defeats only the ENDING")
+
+    # (3) ABSENCE of both forms FAILS: explicit fields removed AND arc_marks
+    #     stripped AND the labels carry no matching token.
+    r = _active("pd082_absence_")
+    _bare = _live_arc_obj()
+    for _k in ("peak_apex", "peak_apex_slide", "decision_climax",
+               "decision_climax_slide", "ending_beat", "ending_slide",
+               "flat_ending"):
+        _bare.pop(_k, None)
+    _bare["slide_allocations"] = [
+        {k: v for k, v in s.items() if k != "arc_marks"}
+        for s in _bare["slide_allocations"]]
+    _write(r, _bare)
+    _expect_fail("explicit fields + arc_marks removed", r,
+                 "no PEAK/APEX/WOW beat", "no deliberate ending/recap/CTA beat",
+                 "P49, SOP-NORTHSTAR-00")
+
+    # (4) The LEGACY token form still PASSES — no regression.
+    r = _active("pd082_legacy_tokens_")
+    _write(r, [{"slide": 1, "arc_section": "hook"},
+               {"slide": 2, "arc_section": "apex", "beat": "promise-apex"},
+               {"slide": 3, "arc_section": "recap"}])
+    _expect_pass("legacy token form", r)
+
+    # (4b) A bare LIST container still works, and an arc_section-only bare list
+    #      with neither form still FAILS (the pre-existing fixture's shape).
+    r = _active("pd082_bare_list_absence_")
+    _write(r, [{"slide": 1, "arc_section": "hook"},
+               {"slide": 2, "arc_section": "body"},
+               {"slide": 3, "arc_section": "teaching"}])
+    _expect_fail("bare list, neither form", r,
+                 "no PEAK/APEX/WOW beat", "no deliberate ending/recap/CTA beat")
+
+    # (5) A MISSING arc DEFERS — _chk_arc owns absence, never this gate.
+    r = _active("pd082_no_arc_")
+    if build_deck._chk_peak_end(r) != "":
+        fails.append("PD-TEST-082 missing arc: must defer with '' "
+                     "(no arc -> _chk_arc owns absence)")
+
+    # (6) Partial evidence still fails only the half that is absent: explicit
+    #     PEAK alone must leave the ENDING complaint standing.
+    r = _active("pd082_peak_only_")
+    _peak_only = _live_arc_obj()
+    for _k in ("ending_beat", "ending_slide", "flat_ending"):
+        _peak_only.pop(_k, None)
+    _peak_only["slide_allocations"] = [
+        {**{k: v for k, v in s.items() if k != "arc_marks"},
+         "arc_marks": {"peak": s["arc_marks"]["peak"]}}
+        for s in _peak_only["slide_allocations"]]
+    _write(r, _peak_only)
+    _expect_fail("explicit PEAK only", r, "no deliberate ending/recap/CTA beat")
+
+    # (7) The SHADOW-COMPARED slice verifier must agree with the gate on the
+    #     live shape (they read THE one evidence dict) — a divergence here is
+    #     the trust-boundary drift this fix exists to prevent.
+    try:
+        import slice1_gate_verifiers as _s1
+        _spec = _s1.get_verifier("slice1:peak_end")
+        r = _active("pd082_slice_parity_")
+        _write(r, live)
+        _ok, _reasons = _spec.run_verifier(r)
+        if not _ok:
+            fails.append(f"PD-TEST-082 slice1:peak_end disagrees with the gate on "
+                         f"the live shape (legacy PASS, slice FAIL): {_reasons}")
+        r = _active("pd082_slice_parity_flat_")
+        _write(r, _flat)
+        _ok2, _reasons2 = _spec.run_verifier(r)
+        if _ok2:
+            fails.append("PD-TEST-082 slice1:peak_end accepted a flat ending")
+    except Exception as _exc:  # noqa: BLE001 — surfaced, never swallowed
+        fails.append(f"PD-TEST-082 slice1:peak_end parity probe crashed: {_exc!r}")
+
+    print(f"PD-TEST-082 (peak-end artifact contract)  -> "
+          f"{'PASS' if not fails else 'FAIL'}")
+    # This module's convention is to RETURN the failure list for main(); a bare
+    # return is invisible to pytest, so assert as well — the checks above must
+    # fail the suite, not just print.
+    assert not fails, "PD-TEST-082:\n" + "\n".join(fails)
     return fails
 
 
@@ -5836,6 +6082,10 @@ def main():
     # v16.0.1 (FIX-2) — positive-fire + clean-pass assertions for the v18 priority-shift
     # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).
     failures += test_doctrine_gates_fire_and_pass()
+    # PD-TEST-082 — AF-PEAK-END reads the artifact contract the producer
+    # actually emits (slide_allocations container + explicit peak/ending
+    # declarations), while flat_ending: true and total absence still FAIL.
+    failures += test_peak_end_reads_live_artifact_contract()
 
     # U022 -- _chk_mode with dated exemption, extracted_substance, and owner-skip token.
     failures += test_mode_substance_u022()
