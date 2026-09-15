@@ -1,3 +1,28 @@
+## [v25.1.1]  -  2026-09-15  -  Gate signature-only presentation stages out of the phase walk on a non-signature deck
+
+### What Changed
+- **PD-TEST-010 / PD-TEST-011 — the presentation engine no longer walks signature-only stages on a deck that is not a signature presentation.** The real run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4` walked the manifest's full phase list for the first time and deadlocked: `terminal=BLOCKED`, with `P-SP-INTAKE` failed on *"dispatcher retry ceiling: 8 consecutive identical 'declined' dispatch outcomes"* (`DISPATCH_REPEAT_CEILING=8`). `_SP_ONLY_PHASE_IDS` was consumed **only** by `_client_visible_phases`, a function whose own docstring declares it display-only, so the walk's applicability selection had no signature-only branch at all. The stage was dispatched onto a webinar deck (`presentation_type=from_scratch`, `deck_type=webinar`, `pitch_included=false`); the executor **correctly** refused to author a signature artifact for a non-signature deck, and the retry ceiling turned that correct refusal into a run-wide block.
+- **The fix mirrors the existing `P-CONVERTER` route-around exactly** — the precedent already in this engine. `_phases_applicable_to_this_deck()` now holds both deck-conditional branches, and a signature-only stage on a positively-confirmed non-signature deck is recorded `status=done` + `routed_around=true` with an explicit `routed_around_reason`: **no executor, no verifier, no dispatch**, so it can never decline into the retry ceiling. The executor's refusal is deliberately left untouched, and the retry ceiling is **not** raised — the defect is gated, not masked.
+- **The predicate is `working/copy/intake.json["deck_type"] == "signature_presentation"`.** That is the SOP-governed axis (`deck-intake-driver.py`'s `LEGACY_FIELD_MAPPING`, mirrored in `intake/deck-intake-questions.json`; the SP claim gate itself is `intake.get("deck_type") == "signature_presentation"`). `presentation_type` is a **different axis** — its canonical vocabulary is `{from_scratch, content_personal, content_general, signature}`, and `signature_presentation` is merely an alias onto `signature`. Neither `signature_source` nor `creation_mode` can substitute: both are `"from_scratch"` on the live non-signature deck **and** on the real signature example.
+- **Fails OPEN, never closed.** Absent, empty, unparseable or whitespace `deck_type` widens back to full enforcement, so an unprovable signature deck still fails closed at its own SP gates rather than being silently skipped. `P-SP-CLAIM` (the router) still walks on every deck, and an operator naming one phase by id via `only=` is still honoured as-is.
+- **Contrast preserved:** `P-CONVERTER` continues to be excluded by `creation_mode ∉ _CONTENT_FIRST_CREATION_MODES`, and no other phase's declared input depends on the four SP artifacts in manifest v69.
+
+### Tests
+- New `presentation_job/tests/test_pd010_signature_only_phase_gating.py` — 13 tests, **no hand-built fixtures**: it drives the real `PIPELINE-MANIFEST.json` (62 phases, v69) with the live run's own sealed intake and with `51-signature-presentation`'s golden-quest intake. Both directions are pinned: a non-signature deck does not walk or dispatch the four stages (a recording executor asserts a dispatch would be a failure), and a genuine signature presentation still walks all four.
+- No existing test was deleted, skipped, weakened or renamed.
+- Targeted phase/gate suites: **346 passed, 8 failed**; the same 8 failures reproduce byte-for-byte on the pre-change revision, i.e. pre-existing and unrelated. `python3 -m py_compile` clean.
+
+### Honest limits
+- **Repo-only release.** No tag is created here (`auto-tag-on-merge` owns it) and the installed runtime mirror is deliberately **not** reconciled by this commit; installing the single `phases.py` into the department mirror is a separate, coordinator-owned step. Until that install lands, the live defect is unchanged in the field.
+- The failing 8 are **not** fixed by this release: two are `test_f16_agent_phase_wait_race.py`, one `test_fault17_resume_false_block.py`, five `test_fix17_verifier_import_failclosed.py`.
+- Verified against a reconstructed state, **not** a live engine restart: the walk was exercised against a read-only copy of the live run dir with the real manifest and real sealed intake. No recovery POST and no re-drive was performed.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py`
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd010_signature_only_phase_gating.py` (new)
+- `.gitignore` — adds `*.sqlite3` beside the existing `*.sqlite` rule (the capacity governor materializes `<dept>/governor_state.sqlite3`; the old rule covered only the other spelling, leaving a generated DB committable)
+- `CHANGELOG.md`, `version` (+ the 9 other version markers rolled by `scripts/bump-version.sh` to v25.1.1)
+
 ## [v25.1.0]  -  2026-09-14  -  Add Skill 69 (archify) — the fleet gains a verifiable diagram engine, gated in Wave 6
 
 ### What Changed
