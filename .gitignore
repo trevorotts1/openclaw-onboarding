@@ -51,6 +51,12 @@ tmp/
 *.sqlite
 # Exception: committed CI fixtures are tiny schema-only DBs (not runtime artifacts).
 !tests/fixtures/*.fixture.sqlite
+# Same class, .sqlite3 spelling: the Presentations governor store
+# (presentation_job/governor_store.py) defaults to
+# <department root>/governor_state.sqlite3, and ANY test that exercises the
+# capacity governor creates it in the materialized dept dir. It is runtime
+# state, never source — the templates role-library copy must never be committed.
+*.sqlite3
 *-journal
 *-wal
 *-shm
