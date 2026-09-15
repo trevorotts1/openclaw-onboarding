@@ -6003,6 +6003,70 @@ def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tup
     return ranges
 
 
+def _section_payload_range(item: Dict[str, Any], run_dir: Path,
+                           name: str) -> Optional[Tuple[int, int]]:
+    """The slide-ordinal range one SECTION unit's payload must carry.
+
+    PD-TEST-099. Order, and why it is this order:
+
+      1. the ITEM's own ``first_ordinal``/``last_ordinal`` -- put there by
+         ``fanout.enumerate_fanout_items`` from the SAME source that named the
+         section (its declared ``sections[].slides``, or the very slots that
+         carried its arc label). This is the join made unbreakable: one source,
+         one derivation, carried across the seam;
+      2. else ``_section_ordinal_ranges`` -- the arc reader, for an item built
+         by hand with no enumerator provenance (the direct-call/test path);
+      3. else None: the section declares no ordinals this run can see. The
+         caller must then refuse the fan-out BEFORE any paid call -- a
+         range-less section unit cannot pass its own contract validator (and
+         ``_reduce_markdown_sections`` refuses its payload too), so a paid
+         attempt on it is guaranteed waste, which is precisely how the live run
+         spent its whole retry budget twice."""
+    lo, hi = item.get("first_ordinal"), item.get("last_ordinal")
+    if isinstance(lo, int) and not isinstance(lo, bool) \
+            and isinstance(hi, int) and not isinstance(hi, bool) and lo <= hi:
+        return (int(lo), int(hi))
+    ranges = _section_ordinal_ranges(run_dir, [name])
+    if ranges and tuple(ranges[0]) != (-1, -1):
+        return (int(ranges[0][0]), int(ranges[0][1]))
+    return None
+
+
+def _preflight_section_payload_ranges(phase_id: str,
+                                      payloads: List[Dict[str, Any]]) -> Optional[str]:
+    """PRES-001/PD-TEST-099 preflight — refuses a SECTION-scoped fan-out whose
+    units carry no derivable slide-ordinal range, BEFORE any paid call.
+
+    ``_validate_copy_section`` refuses a payload without an ordinal range
+    unconditionally ("unit payload carries no ordinal range"), and the markdown
+    reducer refuses it too, so such a unit can NEVER come back ok: dispatching it
+    converts the phase's bounded paid retry budget into byte-identical refusals
+    — the live ledger's ``paid_attempts: 3, status: exhausted`` on an unchanged
+    approved input. The defect is in the PAYLOAD, and it is knowable before the
+    first token, so it is refused here. Returns the reason, or None when every
+    section unit's range is present."""
+    contract = _unit_contract_for(phase_id)
+    if contract is None or contract.scope != "section" or not payloads:
+        return None
+    missing = [p for p in payloads
+               if not (isinstance(p.get("first_ordinal"), int)
+                       and not isinstance(p.get("first_ordinal"), bool)
+                       and isinstance(p.get("last_ordinal"), int))]
+    if not missing:
+        return None
+    keys = ", ".join(str(p.get("key") or "?") for p in missing[:4])
+    if len(missing) > 4:
+        keys += f", +{len(missing) - 4} more"
+    return (f"AF-UNIT-CONTRACT: phase {phase_id} is section-scoped but "
+            f"{len(missing)} of {len(payloads)} unit payload(s) carry no "
+            f"derivable slide-ordinal range ({keys}) — a range-less section unit "
+            "can never pass its own contract validator, so a paid attempt on it "
+            "is refused only AFTER the money is spent. Refusing the fan-out "
+            "before any paid call: the section source must declare each "
+            "section's slides (arc_allocation.json sections[].slides, or slots "
+            "carrying the section label AND their ordinals).")
+
+
 def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
                              unit_count: int) -> Dict[str, Any]:
     """The full validated unit payload TODO.md step 1 demands: scope + ordinal
@@ -6024,11 +6088,14 @@ def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
         "slide": item.get("slide") if isinstance(item.get("slide"), dict) else None,
     }
     if payload["scope"] == "section":
+        # PD-TEST-099: the ITEM's own range first -- fanout derived it from the
+        # same source that named the section, so the two halves of the join
+        # cannot disagree. ``_section_ordinal_ranges`` stays as the fallback for
+        # an item built by hand (no enumerator provenance to carry).
         name = payload.get("name") or ""
-        ranges = _section_ordinal_ranges(run_dir, [name])
-        if ranges and ranges[0] != (-1, -1):
-            payload["first_ordinal"] = ranges[0][0]
-            payload["last_ordinal"] = ranges[0][1]
+        lo_hi = _section_payload_range(item, run_dir, name)
+        if lo_hi is not None:
+            payload["first_ordinal"], payload["last_ordinal"] = lo_hi
     if phase_id == "P-STYLE-SPEC" and payload["ordinal"] is not None:
         # TODO.md step 1: EXPLICIT variant ids, bounded three. Each unit is
         # ASSIGNED one variant id by its enumeration position (unit 1 -> A,
@@ -6291,6 +6358,18 @@ def _dispatch_phase_fanout_units(
     # input-hash snapshot pair) before anything is dispatched.
     payloads = [_unit_payload_enrichment(run_dir, phase_id, it, len(items))
                 for it in items]
+    # PD-TEST-099 preflight: a section-scoped unit whose payload carries no
+    # ordinal range can never pass its own contract validator, so it is refused
+    # HERE -- before any paid call -- instead of after the model answers (the
+    # live P4-COPY ledger's whole retry budget, spent on three byte-identical
+    # post-payment refusals).
+    range_gap = _preflight_section_payload_ranges(phase_id, payloads)
+    if range_gap:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error",
+            "reason": range_gap,
+        })
+        return DispatchResult(phase_id, "error", 0, [range_gap])
     by_key = {p["key"]: p for p in payloads}
 
     # PRES-001 scoped reuse (the 'fail slide7, resume only7' acceptance): unit
