@@ -142,6 +142,31 @@ class TestEquivalenceWhereTheOldFormWorked:
         t = timeit.timeit(lambda: dj._backoff_delay_s(10 ** 9), number=1000)
         assert t < 1.0, f"1e9 repeats took {t:.3f}s for 1000 calls - no early exit?"
 
+    @pytest.mark.parametrize("multiplier", [1.0, 0.5, 0.0])
+    def test_a_non_growing_multiplier_is_also_O1(self, multiplier, monkeypatch):
+        """Reviewed gap: with MULT <= 1 the cap is never reached, so a plain loop
+        walked `repeat` steps -- correct, but O(repeat) (the review measured 0.25s
+        for 1e7 steps at MULT == 1.0, i.e. ~25s at 1e9). The power is safe for a
+        non-growing multiplier (it stays 1 or underflows to 0), so it is used
+        directly. Pin BOTH the value and the constant-time property."""
+        import timeit
+        monkeypatch.setattr(dj, "DISPATCH_BACKOFF_MULTIPLIER", multiplier)
+        expected = min(CAP, BASE * (multiplier ** (10 ** 6 - 1)))
+        assert dj._backoff_delay_s(10 ** 6) == expected
+        t = timeit.timeit(lambda: dj._backoff_delay_s(10 ** 9), number=100)
+        assert t < 0.5, (
+            f"MULT={multiplier}: 100 calls at 1e9 took {t:.3f}s - still O(repeat)?")
+
+    @pytest.mark.parametrize("multiplier", [1.0, 0.5])
+    def test_non_growing_multiplier_is_identical_to_the_old_expression(self, multiplier, monkeypatch):
+        """Equivalence must hold for the non-growing branch too, since it takes a
+        different code path than the saturated loop."""
+        monkeypatch.setattr(dj, "DISPATCH_BACKOFF_MULTIPLIER", multiplier)
+        diffs = [(r, min(CAP, BASE * (multiplier ** (r - 1))), dj._backoff_delay_s(r))
+                 for r in range(1, 300)
+                 if min(CAP, BASE * (multiplier ** (r - 1))) != dj._backoff_delay_s(r)]
+        assert diffs == [], diffs[:5]
+
 
 # ---------------------------------------------------------------------------
 # 3. END TO END: the fold that used to abort must now complete AND write.
@@ -215,7 +240,12 @@ class TestTheStallIsGone:
                               reasons=[], worker_id="t", paid_attempts=1)
         led = dj._read_ledger(rd, PHASE)
         assert led["consecutive"] == consecutive + 3
-        assert led["backoff_s"] if "backoff_s" in led else True
+        # The PERSISTED backoff must be the cap. (Reviewed nit: this used to read
+        # `assert led["backoff_s"] if "backoff_s" in led else True`, which parses
+        # as `assert (X if cond else True)` -- a no-op whenever the key is absent,
+        # and only a truthiness check when it is present.)
+        assert "backoff_s" in led, "the fold did not persist backoff_s"
+        assert led["backoff_s"] == CAP, led["backoff_s"]
 
     def test_a_sweep_over_the_stalled_run_dir_no_longer_reports_an_error(self, tmp_path, monkeypatch):
         """The whole-sweep consequence: one poisoned counter used to abort the

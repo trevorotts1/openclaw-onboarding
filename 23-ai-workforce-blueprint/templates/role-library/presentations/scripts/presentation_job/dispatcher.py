@@ -7988,12 +7988,30 @@ def _backoff_delay_s(repeat: int) -> float:
     zero dispatches, which is why a freshly issued P4-COPY repair receipt was
     never consumed.
 
-    Multiplying in a bounded loop is exactly equivalent for every value the old
-    expression could return -- `min(cap, base * mult**exp)` -- because the loop
-    stops as soon as the cap is reached, so it runs at most a handful of times and
-    can never overflow."""
+    The result is `min(cap, base * mult**exp)` for every input this function can
+    actually be called with (`repeat` is an int, and the sole call site passes
+    `consecutive - 1` where `consecutive` is `int(...) + 1`), verified by sweeping
+    the range: zero differences wherever the old expression returned a value. It is
+    NOT bit-identical for out-of-contract inputs -- a non-integral float `repeat`,
+    NaN, or a negative multiplier can differ -- and the docstring says so rather
+    than claiming a universal equivalence it does not have.
+    Above mult == 1 the loop stops as soon as the cap is reached, so it runs a
+    handful of times and cannot overflow; at or below 1 the power is safe by
+    construction and is used directly, so no path is O(repeat)."""
     if repeat <= 0:
         return 0.0
+    if DISPATCH_BACKOFF_MULTIPLIER <= 1:
+        # A multiplier that does not GROW cannot overflow a power: `mult ** n`
+        # either stays 1 (mult == 1) or underflows toward 0 (mult < 1), and both
+        # are finite for any n. Use the power directly here so a non-growing
+        # multiplier stays O(1) instead of walking `repeat` steps -- the value is
+        # identical to the loop's, and the loop would be O(repeat) for mult < 1
+        # because `delay < CAP` never becomes false on a decreasing sequence.
+        # (Independent review of PR #1145 measured 0.25s for 1e7 steps at
+        # mult == 1.0, i.e. ~25s at 1e9: correct but unbounded.)
+        return min(DISPATCH_BACKOFF_CAP_S,
+                   DISPATCH_BACKOFF_BASE_S
+                   * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
     delay = DISPATCH_BACKOFF_BASE_S
     steps = 0
     while delay < DISPATCH_BACKOFF_CAP_S and steps < repeat - 1:
