@@ -498,3 +498,66 @@ def test_void_is_refused_when_the_receipt_cannot_pay_for_every_unit(tmp_path, mo
     assert "bank_void_refused_insufficient_allowance" in side, (
         "the refusal must be recorded, not silent")
 
+def test_sufficiency_gate_counts_WANTED_units_not_ENUMERATED_ones(tmp_path, monkeypatch):
+    """REGRESSION for the bug that made the void inert on the live run.
+
+    A `by: slide` fan-out ENUMERATES one unit per slide but only WANTS
+    `desired_count` of them. The design phases enumerate 8 and want 3, so a gate
+    comparing the receipt's allowance against the ENUMERATED count saw `3 < 8`,
+    refused with `bank_void_refused_insufficient_allowance`, and left the bank
+    intact -- on exactly the three phases the void was written for. Everything
+    looked correct: the receipt was actionable and the code path ran."""
+    from presentation_job import unit_store
+    rd = tmp_path / "d8"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "work-orders").mkdir(parents=True)
+    # EIGHT slides, but the fan-out wants only THREE.
+    (rd / "working" / "copy" / "slides.json").write_text(
+        json.dumps({"slides": [{"ordinal": n} for n in range(1, 9)]}))
+    (rd / "working" / "copy" / "arc_allocation.json").write_text(
+        json.dumps({"slots": [{"ordinal": n} for n in range(1, 9)]}))
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps({"client": "t"}))
+    dept = _dept(tmp_path, "designer-x")
+    calls: list = []
+
+    def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
+        calls.append(user_prompt)
+        return ("part text " * 400, {"request_id": "r"}, {"provider": "s", "model": "m"})
+
+    monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
+    monkeypatch.setattr(D, "_verify", lambda pid, rdir: (True, []))
+    order = {"owning_role": "designer-x",
+             "produces_artifact": "prompts/sales.design.txt"}
+    spec = fanout.parse_fanout_field({"by": "slide", "max_units": 3})
+    phase = FakePhase("P-U-DESIGN-SALES", "designer-x")
+    target = rd / "prompts" / "sales.design.txt"
+
+    def run():
+        return D._dispatch_phase_fanout_units(
+            rd, order, dept_root=dept, phase_obj=phase, worker_id="t", spec=spec,
+            patterns=["prompts/sales.design.txt"], target=target, prior_reasons=[])
+
+    run()
+    wanted = len(unit_store.apply_desired_count(
+        fanout.enumerate_fanout_items(rd, spec, phase_id="P-U-DESIGN-SALES",
+                                      produces_artifact=["prompts/sales.design.txt"]),
+        getattr(spec, "desired_count", None)))
+    assert wanted == 3, f"fixture must want 3 of the 8 enumerated units, got {wanted}"
+    after_first = len(calls)
+    assert after_first == 3, f"only the WANTED units author: {after_first}"
+
+    D._write_ledger(rd, "P-U-DESIGN-SALES", {
+        "phase_id": "P-U-DESIGN-SALES", "status": "exhausted", "paid_attempts": 3,
+        "generation": 0, "blocked": True, "approved_input_revision": "initial"})
+    D.authorize_paid_retry_reset(rd, "P-U-DESIGN-SALES", allowance=3)
+
+    run()
+    assert len(calls) == 6, (
+        "allowance 3 IS sufficient for 3 wanted units: the gate must count the "
+        "WANTED units, not the 8 enumerated ones, or the void is inert")
+    side = (rd / "working" / "work-orders"
+            / "P-U-DESIGN-SALES.dispatcher-log.jsonl").read_text()
+    assert "bank_voided_by_receipt" in side, "the void must have fired"
+    assert "insufficient_allowance" not in side, (
+        "the gate refused a sufficient receipt")
+

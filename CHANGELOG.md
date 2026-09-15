@@ -1,3 +1,33 @@
+## [v25.1.21]  -  2026-09-15  -  The bank-void sufficiency gate must count the units it WANTS, not the units it enumerated
+
+### What Changed
+- **PD-TEST-119 follow-up — v25.1.19's sufficiency gate made its own fix INERT on exactly the phases it was written for.** The gate (added in response to the independent review of PR #1150) refuses to void a bank unless the receipt's `allowance` covers every unit the void would invalidate. It compared that allowance against **`len(items)` — the ENUMERATED count** — but a `by: slide` fan-out enumerates **one unit per slide** while authoring only `desired_count` of them.
+
+  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`. The three page-design phases **enumerate 8 and want 3**, so the gate evaluated `3 < 8`, refused, and recorded three `bank_void_refused_insufficient_allowance` rows per phase — while the receipt was genuinely actionable and every step looked correct:
+
+  ```
+  P-U-DESIGN-SALES  units: slide-01/02/03 all 'banked'
+                    receipt: prior_generation 2, allowance 3, actionable=True
+                    sweep:   exhausted (attempts=3), reasons = the SAME AF-R3/AF-P13
+                    after:   sales.design.txt unchanged at 13,512 chars, still banked
+  ```
+
+  The artifact never changed, no paid attempt was spent, and the unit store was never touched. The void was a no-op for a reason no log line names — the refusal message said "would invalidate 8 unit(s)" about a phase that owns three.
+
+- **Fix:** `desired_count` and `wanted_items` are hoisted above the gate and the comparison is made against **`len(wanted_items)`**, the number of units the void would actually invalidate. The later line reuses the hoisted value rather than recomputing it, so the enumerated count and the wanted count can never disagree in two places.
+
+  Verified against the live phases: `P-U-DESIGN-SALES` and `P-U-DESIGN-VSL` enumerate 8, want 3, and `allowance 3` is now correctly judged **sufficient**; `P4-COPY` enumerates 8 and wants 8, so a 3-attempt receipt is still correctly refused there.
+
+### Known limitation, recorded rather than hidden
+`authorize_paid_retry_reset` caps `allowance` at `DISPATCH_RETRY_CAP` (3), so a receipt can never cover a fan-out of **more than three** units: for such a phase the void will always be refused and its bank can only be invalidated by a genuine input or status change. That is the correct trade — the whole point of the gate is that a phase must not destroy a bank it cannot pay to rebuild — but it means the void is a lever for **small** fan-outs only, and large ones must rely on their units not being banked in the first place (which is how `P4-COPY` proceeds: its records read `admitted`, not `banked`).
+
+### Tests
+- New `test_sufficiency_gate_counts_WANTED_units_not_ENUMERATED_ones`: a fixture with **eight slides** and a fan-out that wants **three**, asserting allowance 3 DOES void the bank and author exactly the three wanted units. Verified **RED against `origin/main`** (fails on the refusal) and GREEN with the fix, so it pins the enumerated-vs-wanted confusion rather than restating it.
+- Both suites pass: 22 tests, including all 10 `test_pres014_unit_records.py` cost-contract tests.
+
+### Risk
+- Scope is one comparison and one hoist inside `_dispatch_phase_fanout_units`. With the gate satisfied the behaviour is unchanged from v25.1.19; with it unsatisfied the bank is left intact exactly as before.
+
 ## [v25.1.19]  -  2026-09-15  -  A repair receipt now voids a fan-out's bank, so a rejected aggregate can actually be re-authored
 
 ### What Changed
