@@ -8,6 +8,22 @@ what the onboarding repo vendored and what the integration changed.
 
 ---
 
+## [v2.17.1] - 2026-09-14
+
+### Fixed
+- **QC.md no longer contradicts INSTALL.md on how many upstream npm scripts are
+  broken.** QC.md claimed "the seven `../scripts/*.mjs` npm scripts are
+  upstream-repo-only", while INSTALL.md documents TWO classes: nine scripts plus
+  the composite `test` whose paths point at the upstream monorepo root's
+  unvendored CI / documentation-site tooling, and four whose vendored script
+  imports an absent upstream devDependency. Both numbers were defensible for
+  different things (8 npm script ENTRIES reference `../scripts/`, resolving to 7
+  distinct `.mjs` FILES) which is exactly why the single total was misleading.
+  QC.md now points at the two-class model and explicitly says not to state a
+  single "N scripts are broken" total. No behavioural change; documentation
+  only. Bumped per CI guard G3, which requires a `skill-version.txt` bump for
+  any change inside a skill directory.
+
 ## [v2.17.0] - 2026-09-14
 
 ### Added — vendored upstream skill

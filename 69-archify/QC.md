@@ -46,8 +46,14 @@ clean showcase receipt, never because a command merely exited 0.
 - [ ] The installer understands that `package.json`'s `devDependencies`
       (`ajv`, `parse5`, `saxes`, `simple-icons`) belong to the **upstream
       monorepo's development tooling**, not to diagram rendering, and that the
-      seven `../scripts/*.mjs` npm scripts are upstream-repo-only (see
-      INSTALL.md § "UPSTREAM NPM SCRIPTS NOT APPLICABLE HERE").
+      upstream-repo npm scripts cannot run in this tree. There are **TWO
+      distinct classes** and they fail for different reasons: nine scripts plus
+      the composite `test` whose paths point at the upstream monorepo root's
+      unvendored CI / documentation-site tooling, and four whose vendored
+      script imports an absent upstream devDependency. Enumerated lists and the
+      measured failure of each are in INSTALL.md § "UPSTREAM NPM SCRIPTS NOT
+      APPLICABLE HERE" — do not collapse the two classes into one claim, and do
+      not state a single "N scripts are broken" total.
 - [ ] `python3` is not required by this skill (the repo installer/merger needs
       it; archify does not).
 
