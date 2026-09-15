@@ -800,12 +800,27 @@ def _reset_parked_state(state: Dict[str, Any]) -> Dict[str, Any]:
     # re-enters it exactly as _fail_unit's docstring promises. Without this the
     # ready queue could never admit it again, its descendants stayed withheld
     # by _phase_terminal_bad, and every resume re-parked the run identically.
+    # PD-TEST-080: "owns it" now means the dispatcher that wrote the marker is
+    # STILL ALIVE -- a marker left behind by a dispatcher that exited is
+    # adjudicated as orphaned and retired, so a code repair can actually reach
+    # the phases it repaired. The durable paid-attempt ledger is not touched.
     readmitted = readmit_retryable_phases(state)
     state["last_resume_readmissions"] = readmitted
     if readmitted:
         print(f"resume: re-admitted {len(readmitted)} failed/quarantined "
               f"phase(s) for retry: "
               + ", ".join(r["phase"] for r in readmitted), flush=True)
+        orphaned = [r for r in readmitted if r.get("orphaned_park_marker")]
+        if orphaned:
+            print("resume: " + "; ".join(
+                f"{r['phase']} was parked by a dispatcher that is no longer "
+                f"running [{r['orphaned_park_marker']}]"
+                + (" -- orphaned park marker retired"
+                   if r.get("orphaned_park_marker_retired")
+                   else " -- orphaned park marker could not be retired")
+                for r in orphaned)
+                + " (PD-TEST-080; the phase's durable paid-attempt ledger is "
+                  "unchanged and still binds)", flush=True)
     return prior
 
 
