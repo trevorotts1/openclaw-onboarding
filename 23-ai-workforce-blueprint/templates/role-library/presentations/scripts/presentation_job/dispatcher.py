@@ -555,6 +555,16 @@ CAPACITY_REFUSAL_CODE = "AF-CAPACITY-UNMEASURED"
 DISPATCH_BACKOFF_BASE_S = 30.0
 DISPATCH_BACKOFF_MULTIPLIER = 2.0
 DISPATCH_BACKOFF_CAP_S = 900.0
+# PD-TEST-094: the highest exponent `_backoff_delay_s` may hand to `**`. The
+# delay is already clamped at DISPATCH_BACKOFF_CAP_S long before this
+# (30 * 2**5 = 960 > 900), so clamping the exponent changes NO returned value --
+# it only stops float exponentiation from RAISING where float multiplication
+# merely yields inf. `2.0 ** 1024` raises OverflowError("Result too large"),
+# and because that raise precedes `_write_ledger` in record_outcome() a run
+# whose stored `consecutive` reached 1025 could never persist the advance
+# again: every later sweep re-raised on the first order file and NOTHING was
+# dispatched (live: 46+ consecutive sweep errors, zero work orders).
+DISPATCH_BACKOFF_MAX_EXPONENT = 64
 # Consecutive IDENTICAL failing outcomes (error/exhausted) for one (phase, run)
 # before the phase is parked BLOCKED with a visible on-disk reason instead of
 # being re-dispatched forever. 8 identical failures at the backoff schedule
@@ -7941,11 +7951,18 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
 
 def _backoff_delay_s(repeat: int) -> float:
     """repeat is the number of times this outcome has recurred AFTER its first
-    observation. repeat<=0 (a new or changed outcome) is always zero delay."""
+    observation. repeat<=0 (a new or changed outcome) is always zero delay.
+
+    PD-TEST-094: the exponent is clamped to DISPATCH_BACKOFF_MAX_EXPONENT before
+    `**`. Left unclamped, a large stored `consecutive` (live: 1025) makes
+    `DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)` raise OverflowError instead of
+    returning the cap -- and that raise precedes the ledger write, so the counter
+    could never advance past it and the sweep aborted forever."""
     if repeat <= 0:
         return 0.0
+    exponent = min(repeat - 1, DISPATCH_BACKOFF_MAX_EXPONENT)
     return min(DISPATCH_BACKOFF_CAP_S,
-               DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+               DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** exponent))
 
 
 def should_dispatch(run_dir: Path, phase_id: str, *,
