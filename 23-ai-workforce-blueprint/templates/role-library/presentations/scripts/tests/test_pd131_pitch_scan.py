@@ -138,3 +138,48 @@ def test_pitch_scan_texts_returns_values_never_keys(tmp_path):
     assert "price_ladder_section" not in joined, "a KEY must never be scanned"
     assert "Cost of Carrying It Yourself" in joined, "values must be scanned"
     assert "x" in joined, "nested values must be scanned"
+
+
+# ---------------------------------------------------------------------------
+# Independent review of PR #1155 (2026-09-16) found that the first cut of the
+# value-only scan opened two NEW leak channels:
+#   D1 -- the prose skip was broader than the defect AND skipped whole subtrees,
+#         so `speaker_notes` (delivered content, first-class in this department)
+#         passed with a live price ladder inside it;
+#   D2 -- dropping the key scan lost the AFFIRMATIVE case, so a producer asserting
+#         `{"offer_price_ladder_included": true}` passed silently.
+# These pin the closure of both, alongside the false positives the rewrite exists
+# to remove -- so neither direction can regress unnoticed.
+# ---------------------------------------------------------------------------
+
+def _hits(tmp_path: Path, obj: object) -> list:
+    p = tmp_path / "arc.json"
+    p.write_text(json.dumps(obj))
+    low = [s.lower() for s in bd._pitch_scan_texts(p)]
+    return [t for t in bd.PITCHLESS_FORBIDDEN_TOKENS if any(t in s for s in low)]
+
+
+@pytest.mark.parametrize("obj,label", [
+    ({"speaker_notes": "Buy now: price ladder tier 2 is $2997, act now."},
+     "D1a speaker_notes carries delivered content"),
+    ({"speaker_notes": {"section_id": "price_ladder", "move_tag": "BUY_NOW"}},
+     "D1b a prose-named key must not skip its subtree"),
+    ({"offer_price_ladder_included": True}, "D2a affirmative key"),
+    ({"price_ladder_section": {"rung_1": "$997"}}, "D2b affirmative nested key"),
+    ({"non_applicable_sections": {"price_ladder_section": "Tier 1 $997"}},
+     "D2c affirmative key under a container"),
+])
+def test_review_leak_channels_still_fail(tmp_path, obj, label):
+    assert _hits(tmp_path, obj), f"leak escaped: {label}"
+
+
+@pytest.mark.parametrize("obj,label", [
+    ({"offer_price_ladder": None}, "null-valued schema key"),
+    ({"offer_price_ladder_reason": "avoided the price ladder"}, "denial prose"),
+    ({"peak_apex": {"note": "no anchor price here"}}, "nested denial note"),
+    ({"non_applicable_sections": {"reason": "pitch suppressed"}}, "container of denial prose"),
+    ({"validation_notes": ["no offer, price, ladder, VIP, or re-pitch content"]},
+     "list of denial prose"),
+])
+def test_review_false_positives_stay_clean(tmp_path, obj, label):
+    assert not _hits(tmp_path, obj), f"false positive returned: {label}"

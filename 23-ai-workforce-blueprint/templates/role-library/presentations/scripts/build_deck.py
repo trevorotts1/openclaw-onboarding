@@ -6607,10 +6607,34 @@ _PITCH_SCAN_PROSE_FIELDS = frozenset({
     "reason", "note", "notes", "validation_notes", "validation_note",
 })
 
+#: Names that LOOK like prose fields but carry DELIVERED content (review D1). A
+#: speaker note ships with the deck; skipping it would hide a real leak, so these
+#: are never treated as prose-about-the-artifact.
+_PITCH_SCAN_CONTENT_FIELDS = frozenset({
+    "speaker_notes", "slide_notes", "presenter_notes", "script_notes",
+    "narration_notes",
+})
+
 
 def _pitch_scan_is_prose_field(name: str) -> bool:
     n = str(name or "").strip().lower()
+    if n in _PITCH_SCAN_CONTENT_FIELDS:
+        return False
     return n in _PITCH_SCAN_PROSE_FIELDS or n.endswith(("_reason", "_note", "_notes"))
+
+
+def _pitch_scan_key_is_affirmative(value) -> bool:
+    """True when a key's own NAME should be scanned as content (review D2).
+
+    Scanning keys unconditionally is what produced the false positives this rewrite
+    exists to remove: the live arc records a suppressed mechanic as a null/false
+    key (`"offer_price_ladder": null`). Scanning keys only when the value asserts
+    something keeps `{"offer_price_ladder_included": true}` and
+    `{"price_ladder_section": {"rung_1": "$997"}}` failing, while a null/false/empty
+    key stays silent. Underscores normalise to spaces so `price_ladder_section`
+    still matches the token "price ladder"."""
+    return not (value is None or value is False or value == "" or value == []
+                or value == {})
 
 
 def _pitch_scan_texts(path: Path) -> List[str]:
@@ -6632,7 +6656,15 @@ def _pitch_scan_texts(path: Path) -> List[str]:
     def walk(node, key=""):
         if isinstance(node, dict):
             for k, v in node.items():
-                if _pitch_scan_is_prose_field(k):
+                prose = _pitch_scan_is_prose_field(k)
+                # D2: a non-prose key with an affirmative value states content in
+                # its own name ("offer_price_ladder_included": true).
+                if not prose and _pitch_scan_key_is_affirmative(v):
+                    out.append(str(k).replace("_", " "))
+                # D1: a prose field skips its own prose -- scalars AND lists of
+                # prose (`validation_notes: [...]`) -- but a prose key holding a
+                # DICT is still walked, because that subtree can carry content.
+                if prose and not isinstance(v, dict):
                     continue
                 walk(v, str(k))
         elif isinstance(node, list):
