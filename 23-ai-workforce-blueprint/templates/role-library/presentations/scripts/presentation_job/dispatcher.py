@@ -497,6 +497,18 @@ DEEPSEEK_REASONING_EFFORT = "max"
 # completion is deterministic, so an identical retry can only burn another paid
 # call and lose the same way.
 DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY = "medium"
+# PD-070 (2026-09-15). A LADDER, not a single step. `medium` is a documented
+# ALIAS for `high` on this endpoint (api-docs.deepseek.com/guides/thinking_mode:
+# "`medium`/`xhigh` are accepted and mapped to `high`"), and `high` is the
+# model's own DEFAULT effort -- so PD-TEST-065's single "max -> medium" step
+# lands on the default and then DEAD-ENDS: a second, third and fourth empty
+# completion all re-send that same default effort. Index 0 preserves
+# PD-TEST-065's first step-down; each further empty completion moves one rung
+# lower so the retry is never the request that just failed. Every value here is
+# a documented member of the reasoning_effort enum that keeps thinking ENABLED
+# (only "none" disables it, and mixing that with thinking.type=enabled has
+# undocumented precedence -- so it is deliberately NOT a rung until probed).
+DEEPSEEK_REASONING_EFFORT_LADDER: Tuple[str, ...] = ("medium", "low")
 DEEPSEEK_TEMPERATURE = 0.3
 DEEPSEEK_TIMEOUT_S = 600       # thinking MAX at a large max_tokens can genuinely run minutes
 
@@ -1683,6 +1695,17 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                 choice = (obj.get("choices") or [{}])[0]
                 content = ((choice.get("message") or {}).get("content")) or ""
                 usage = obj.get("usage") or {}
+                # PD-070: keep the provider's OWN stop signal alongside the
+                # usage. `finish_reason="length"` is the documented marker that
+                # the request's token maximum was reached; with thinking enabled
+                # that maximum is SHARED with reasoning, so "length" + an empty
+                # `content` means reasoning starved the deliverable -- a
+                # different defect from a model that answered nothing ("stop" +
+                # empty), needing a different fix. Before this the field was
+                # read nowhere at all (grep -c finish_reason dispatcher.py == 0),
+                # so the two were indistinguishable after the fact.
+                if isinstance(usage, dict):
+                    usage["finish_reason"] = choice.get("finish_reason")
                 _govern_ok("deepseek-direct")
                 return content, usage
             except urllib.error.HTTPError as exc:
@@ -6212,14 +6235,22 @@ def _empty_completion_detail(usage: Optional[Dict[str, Any]]) -> str:
     details = usage.get("completion_tokens_details")
     reasoning = details.get("reasoning_tokens") if isinstance(details, dict) else None
     completion = usage.get("completion_tokens")
+    # PD-070: `finish_reason` is the provider's own verdict on WHY generation
+    # ended. "length" == the token maximum was reached; with thinking enabled
+    # that maximum is shared with reasoning, so "length" + empty content is
+    # budget starvation, while "stop" + empty is a model that emitted nothing.
+    # Absent (older logs, other transports) adds nothing to the string, so the
+    # PD-TEST-065 wording is byte-identical when the field is missing.
+    finish = usage.get("finish_reason")
+    finish_txt = "" if finish is None else f", finish_reason={finish!r}"
     if completion is None and reasoning is None:
-        return " (usage recorded without token counts)"
+        return f" (usage recorded without token counts{finish_txt})"
     if reasoning is None:
         return (f" (completion_tokens={completion}, reasoning_tokens not "
-                f"reported)")
+                f"reported{finish_txt})")
     return (f" (completion_tokens={completion}, reasoning_tokens={reasoning} of "
-            f"max_tokens={DEEPSEEK_MAX_OUTPUT_TOKENS} -- reasoning is billed "
-            f"INSIDE that budget)")
+            f"max_tokens={DEEPSEEK_MAX_OUTPUT_TOKENS}{finish_txt} -- reasoning "
+            f"is billed INSIDE that budget)")
 
 
 def _dispatch_phase_fanout_units(
@@ -6492,8 +6523,18 @@ def _dispatch_phase_fanout_units(
         prior_rec = _store_state.get(unit.key)
         prior_err = str(prior_rec.get("last_error") or "") \
             if isinstance(prior_rec, dict) else ""
-        effort = (DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY
-                  if EMPTY_COMPLETION_MARKER in prior_err else None)
+        effort = None
+        if EMPTY_COMPLETION_MARKER in prior_err:
+            # PD-070: walk DOWN the ladder by how many attempts this unit has
+            # already spent, instead of re-sending one fixed reduced effort.
+            # `attempts_total` is durable (PRES-014), so the rung survives
+            # restarts and resumes exactly as the PD-TEST-065 decision did.
+            # Attempt 1 keeps PD-TEST-065's behaviour byte-for-byte; only a
+            # SECOND empty completion reaches the next rung, which is the case
+            # that used to repeat the request that had just failed.
+            _spent = int(prior_rec.get("attempts_total") or 1)
+            _rung = max(0, min(_spent - 1, len(DEEPSEEK_REASONING_EFFORT_LADDER) - 1))
+            effort = DEEPSEEK_REASONING_EFFORT_LADDER[_rung]
         try:
             system_prompt, user_prompt = compose_prompt(
                 phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
