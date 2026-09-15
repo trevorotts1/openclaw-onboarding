@@ -23,9 +23,9 @@
 - **REQUIRED AFTER DEPLOY — a fresh receipt, because this fix changes `dispatcher.py` and the receipt pins that file's hash.** The current `P4-COPY` receipt is bound to `dispatcher_sha256 52a98603…` (the deployed mirror, i.e. this commit's base); the fixed file hashes to `d52ea9f5…`. The gate refuses a receipt whose hash does not match the running source, so **installing v25.1.14 invalidates the current receipt and a new one must be issued afterwards** — otherwise `P4-COPY` stays blocked and the deck stays unreachable. This is the documented design (`_repair_receipt_is_actionable`'s docstring: *"re-issue after the repair is deployed"*), and the ceremony issues the receipt *after* the install for exactly this reason. It is called out here because without it "merge this and the stall is fixed" would be read as "the deck unblocks", which is not true. `CANONICAL-RENDERER-PIN.sha256` unchanged and still equals a fresh recomputation; `PIPELINE-MANIFEST.json` byte-unchanged.
 
 ### Files Changed
-Line counts are `git diff --numstat` against `c74dcdd64`, measured rather than estimated.
-- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+30/-3 — the saturating loop, and the docstring that records the live measurement)
-- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd095_backoff_overflow.py` (new, 22 cases)
+Line counts are `git diff --numstat` against `c74dcdd64`, measured AFTER the review's findings were folded in rather than estimated — an earlier draft carried the pre-review numbers, and stale counts are the exact error class two reviewers have now caught in this test's CHANGELOG entries.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+48/-3 — the saturating loop, the O(1) non-growing branch, and the docstring that records the live measurement)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd095_backoff_overflow.py` (+263, new — 27 cases)
 
 ## [v25.1.13]  -  2026-09-15  -  A consumed repair receipt no longer latches the phase forever
 
