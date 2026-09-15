@@ -1342,6 +1342,15 @@ def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
             f"canvas/format/resolution declaration, and closes with the ONE "
             f"`DO-NOT BLOCK` negative block.\n")
 
+    # PD-TEST-113: the AF-P13 defect classes and their tolerant tokens are read
+    # from prompt_gate at call time, exactly as the band numbers are. The
+    # producer must be told every rule its consumer enforces, or each unstated
+    # rule costs one full paid re-author and one quarantined render phase to
+    # discover (measured: AF-P13 and AF-R3 on run
+    # pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4). Importing the map
+    # rather than retyping it means a class added to the gate reaches the
+    # contract with no second edit.
+    defect_classes = sorted(pg.NEGATIVE_BLOCK_CLASS_TOKENS.items())
     return (
         f"OUTPUT CONTRACT: author `prompts/{page}.design.txt` -- the page-design "
         f"prompt for the {page.upper()} upsell page. This contract is "
@@ -1367,6 +1376,19 @@ def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
         f"final block headed exactly `DO-NOT BLOCK`; and at least one literal "
         f"`Do not ` imperative inside that block. They are required ONCE each "
         f"across the whole file -- see point 1 for which part carries each.\n"
+        f"3a. THE `DO-NOT BLOCK` MUST NAME ALL {len(defect_classes)} DEFECT "
+        f"CLASSES (AF-P13). A one-line 'no text' AVOID stub does NOT satisfy "
+        f"it. Pair EVERY class with an explicit `Do not ...` imperative, using "
+        f"the wording in brackets so the mechanical check can see it: "
+        + "; ".join(f"{name} [{', '.join(tokens[:4])}]"
+                    for name, tokens in defect_classes)
+        + ".\n"
+        f"3b. NEVER hardcode a demographic default (AF-R3): no fixed "
+        f"percentage split and no baked-in representation mix. State that "
+        f"skin-tone and representation follow the client's captured audience / "
+        f"casting ledger. The gate matches the forbidden 'default <group>' "
+        f"phrasing LITERALLY, so never write that two-word form -- the "
+        f"assembled file is refused before any paid call if you do.\n"
         f"4. DENSITY: the assembled file needs at least "
         f"{pg.PROMPT_MIN_DISTINCT_WORDS} DISTINCT words, a brand palette color "
         f"as a 6-digit `#RRGGBB` HEX code, an explicit typography SIZE token "
