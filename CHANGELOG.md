@@ -1,3 +1,35 @@
+## [v25.1.17]  -  2026-09-15  -  The design-prompt verifier applies the whole render gate, not just its length clause
+
+### What Changed
+- **PD-TEST-113 — a phase verifier that was a strict SUBSET of its consumer's gate, so the paid re-author loop could not converge.** `phase_verifiers._pu_check_design_prompt` enforced exactly two rules of the shared prompt gate — AF-P1 (the 9,000-char floor) and AF-P2 (the 18,000-char ceiling). `prompt_gate.prompt_problems` applies more than that, and the CONSUMER (`build_infographic.resolve_design_prompt`, reached from `P-U-DESIGN-RENDER-*`) calls the whole gate. A design prompt could therefore clear the verifier, be attested `done` by the engine, and then be refused by its own render phase on a rule this seam never checked.
+
+  The re-author loop was **structurally incapable** of recovering: the producer contract is composed from the reasons the verifier emits, so a rule the verifier never applied could never appear in `prior_reasons`. Measured live on run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, after the three page-design prompts were re-authored into the band (13,513 / 14,612 / 12,296 chars, all three `verify -> (True, [])`):
+
+  ```
+  P-U-DESIGN-RENDER-VSL   exit 1: AF-P13: negative block does not name defect class(es):
+                                   placeholder/bracket tokens
+  P-U-DESIGN-RENDER-SALES exit 1: AF-R3: forbidden hardcoded demographic default
+                                   'default demographic'
+                          exit 1: AF-P13: negative block does not name defect class(es):
+                                   placeholder/bracket tokens, anatomical artifacts
+  ```
+
+  Two quarantined render units, one full paid re-author per undiscovered rule, discovered one gate code at a time.
+
+- **The fix is delegation, not restatement.** `_pu_check_design_prompt` now returns `prompt_gate.prompt_problems(text)` — the same accumulating, non-raising function the render path and `build_deck`'s provers call, so the phase fails on exactly the rules its consumer enforces, with no second copy of any rule to drift. `copy_val` stays `None` deliberately: AF-P-VERBATIM needs a slide's exact copy, which is a property of the consuming slide, not of the aggregate page prompt.
+
+  Verified against the live run before the fix was written: `prompt_problems` on the three banked artifacts returns byte-identical findings to the render refusals above — 2 / 0 / 1 problems, including AF-R3 and both AF-P13 class lists.
+
+- **The producer is told the rules it is graded on (PD-TEST-113, producer half).** `_design_page_prompt_contract` point 3 stated only that a `DO-NOT BLOCK` heading and one `Do not ` imperative were required — which a one-line stub satisfies, while AF-P13 does not. New point **3a** names all eight mandatory negative-block defect classes **read from `prompt_gate.NEGATIVE_BLOCK_CLASS_TOKENS` at call time** (never retyped), each with its tolerant tokens, so a class added to the gate reaches the contract with no second edit. New point **3b** states the AF-R3 prohibition. It deliberately does NOT quote the forbidden two-word phrase: models echo instructions, and a contract containing the landmine would be refused by the very gate it documents (asserted in test).
+
+### Tests
+- `tests/test_pd098_design_verifier_band.py`: the negative control previously authored every "in-band" artifact as `"d" * size` — byte padding. That fixture only ever tested the length clause; once the verifier applied the whole gate it failed for the right reason (1 distinct word against a 220 floor, no brand HEX, no type size, no composition token, no structural block). It now builds a **gate-clean** prompt of exactly the requested length, from a filler vocabulary that is **provably gate-neutral** — the first version contained `monogram` and `lockup`, so deleting the negative block's logo clause left AF-P13's logo class satisfied by the filler and a mutation test passed for the wrong reason. Neutrality and size are asserted at import.
+- New `test_verifier_agrees_with_the_consumer_gate` pins the broken invariant directly: for an artifact INSIDE the band, `verify()` must return the same verdict as `prompt_gate.prompt_problems`, and must forward every one of the consumer's reasons into `prior_reasons`. Driven by three mutations reproducing the live refusals (AF-P13 via a `no text` stub, AF-R3, AF-P14). Verified RED against the pre-fix verifier and GREEN against the fixed one.
+
+### Risk
+- Scope is the three page-design phases (`P-U-DESIGN-SALES` / `-CHECKOUT` / `-VSL`) only; no other phase's verifier is touched. A design prompt that previously passed and was later refused by its render phase now fails one phase EARLIER and cheaper — no paid render call is made in either case (`build_infographic.resolve_design_prompt` refuses before submission).
+- The producer's contract grew by ~340 chars; it is a prompt to the authoring model, not an artifact, so it is not itself gated.
+
 ## [v25.1.16]  -  2026-09-15  -  A section unit's payload must carry its own ordinal range
 
 ### What Changed

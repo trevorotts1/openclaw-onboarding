@@ -4291,15 +4291,46 @@ def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
         return [f"{rel}: PD-TEST-098 band check UNAVAILABLE -- prompt_gate "
                 f"could not be imported ({type(exc).__name__}: {exc}); refusing "
                 "to attest an unverifiable design prompt"]
-    if length < _pg.PROMPT_CHAR_FLOOR:
-        return [f"{rel}: {length} chars, UNDER the {_pg.PROMPT_CHAR_FLOOR}-char "
-                "shared prompt floor (AF-P1; prompt_gate.PROMPT_CHAR_FLOOR) -- the "
-                "render phase refuses it, so this phase is NOT satisfied"]
-    if length > _pg.PROMPT_CHAR_CEILING:
-        return [f"{rel}: {length} chars, over the {_pg.PROMPT_CHAR_CEILING}-char "
-                "shared prompt ceiling (AF-P2; prompt_gate.PROMPT_CHAR_CEILING, "
-                "2,000 under the GPT-Image-2.5 API ceiling) -- the render phase "
-                "refuses it before any paid call, so this phase is NOT satisfied"]
+    # PD-TEST-113 -- THE WHOLE GATE, NOT JUST ITS LENGTH CLAUSE.
+    #
+    # This verifier used to enforce exactly two rules of the shared gate:
+    # AF-P1 (floor) and AF-P2 (ceiling). `prompt_gate.prompt_problems` applies
+    # more than that, and the CONSUMER
+    # (`build_infographic.resolve_design_prompt`) calls the WHOLE gate. So a
+    # design prompt could clear this verifier, be attested `done` by the
+    # engine, and then be refused by its own render phase on a rule this seam
+    # never checked -- and `prior_reasons` could never carry that requirement
+    # back to the producer, because the producer is only ever told the reasons
+    # THIS function emits. The re-author loop was therefore structurally
+    # incapable of converging on the unstated rules.
+    #
+    # Measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    # all three design prompts PASSED this verifier at 13,513 / 14,612 /
+    # 12,296 chars, and P-U-DESIGN-RENDER-SALES / -VSL then refused them with
+    # `AF-R3: forbidden hardcoded demographic default 'default demographic'`
+    # and `AF-P13: negative block does not name defect class(es): placeholder/
+    # bracket tokens, anatomical artifacts` -- one full paid re-author plus a
+    # quarantined render phase per undiscovered rule, discovered one gate code
+    # at a time.
+    #
+    # THE FIX: delegate to the ONE shared authority rather than restate a
+    # subset of it. `prompt_problems` is the same accumulating, non-raising
+    # function the render path and build_deck's provers call, so this phase now
+    # fails on exactly the rules its consumer enforces -- no more, no fewer,
+    # and no second copy of any rule to drift. Verified against the live run:
+    # `prompt_problems` on the three banked artifacts returns byte-identical
+    # findings to the render refusals above (2 / 0 / 1 problems), including
+    # AF-R3 and both AF-P13 class lists.
+    #
+    # `copy_val` stays None deliberately -- AF-P-VERBATIM needs a slide's exact
+    # copy, which is a property of the CONSUMING slide, not of this aggregate
+    # page prompt; the render path applies it per slide with the copy in hand.
+    # The floor/ceiling constants this function already imported remain the
+    # single source for the length rule, now applied by `prompt_problems`
+    # itself.
+    problems = _pg.prompt_problems(text)
+    if problems:
+        return [f"{rel}: {problem}" for problem in problems]
     return []
 
 
