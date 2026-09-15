@@ -232,7 +232,7 @@ log "pin config: $_PIN_FILE"
 
 # Operational defaults only. NOTHING security-relevant (commit, profile, repo
 # URL) may default here — those must come from the delivered pin file.
-GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-10}"
+GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-30}"   # v25.1.10: 10s tripped on loaded boxes
 GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
 GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP:-3}"
 GHL_MCP_VETTED_COMMIT="${GHL_MCP_VETTED_COMMIT:-}"
@@ -1589,6 +1589,34 @@ install_log_rotation() {
 # ── 7. Periodic liveness probe (D5) — every 15 minutes, self-healing once ────
 install_periodic_probe() {
   [ -n "${PROBE:-}" ] || { log "ghl-mcp-probe.sh not co-located — periodic liveness probe NOT installed"; return 0; }
+  # v25.1.10 — operator off-switch. A marker file (or GHL_MCP_PROBE_DISABLED=1)
+  # means the operator turned the probe off on purpose; a fleet roll must not
+  # quietly re-arm it. Remove the schedule this installer owns and install
+  # nothing. The probe script honours the same switch, so any schedule this
+  # function cannot reach (the openclaw cron store) stays inert regardless.
+  local _dis="" _m=""
+  case "${GHL_MCP_PROBE_DISABLED:-}" in
+    1) _dis="GHL_MCP_PROBE_DISABLED=1" ;;
+    0) : ;;   # explicit ON: ignore marker files
+    *) for _m in "${HOME:-}/.openclaw/.ghl-mcp-probe-disabled" "/data/.openclaw/.ghl-mcp-probe-disabled"; do
+         case "$_m" in /.openclaw/*) continue ;; esac
+         [ -f "$_m" ] && { _dis="$_m"; break; }
+       done ;;
+  esac
+  if [ -n "$_dis" ]; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      local _PPLIST="$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist"
+      if [ -f "$_PPLIST" ]; then launchctl bootout "gui/$(id -u)" "$_PPLIST" >/dev/null 2>&1 || true; fi
+    elif command -v crontab >/dev/null 2>&1; then
+      local _cur=""
+      _cur="$(crontab -l 2>/dev/null || true)"
+      case "$_cur" in
+        *"$CRON_TAG_PROBE"*) printf '%s\n' "$_cur" | grep -vF "$CRON_TAG_PROBE" | grep -v '^$' | crontab - >/dev/null 2>&1 || true ;;
+      esac
+    fi
+    log "periodic liveness probe DISABLED by operator off-switch ($_dis) — schedule removed, nothing installed; delete the marker to re-enable"
+    return 0
+  fi
   # launchd exists ONLY on Darwin. A HOME-layout Linux container must never be
   # handed a plist — nothing will ever run it (the silent failure this class
   # of box hit live). Cron covers linux-home.
