@@ -1,3 +1,32 @@
+## [v25.1.2]  -  2026-09-15  -  Re-admit a failed phase on resume so the walk can advance
+
+### What Changed
+- **PD-TEST-060 — a phase that ended `failed`/`quarantined` was never re-entered by a supported resume, so its dependents stayed withheld forever and the run re-parked identically.** `_ready_queue_tick` admits `PENDING` phases only — it `continue`s past `RUNNING`, `QUARANTINED`, `FAILED`, `BLOCKED`, `DEFERRED` and `OBSOLETE` without ever appending them to the ready set — and `_phase_terminal_bad` then withholds every descendant of a failed ancestor. `__main__._reset_parked_state` cleared `terminal`/`blocked` but reset **no** phase status, so a unit that ended `failed` was excluded from every later resume and its descendants sat in `waiting_dependencies` indefinitely.
+- **Live evidence on the real run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`.** A supported resume (`auto-resume [RESUME] ... attempt 1 of 3 ... class transient ... manifest pin ok` -> `presentation_job.launcher --resume --run-dir <run> --mode ultra`, rc 0, `Engine launched: PID 17346`) cleared the old block at `P-0.5-RESEARCH` and correctly routed the four signature-only phases around (PD-TEST-010 live-verified). It then did **not** re-attempt `P3-ARC`: that phase's record is byte-for-byte identical before and after (`status=failed`, `attempts=1`, `heal_events=[]`, `quarantined_reason=null`) and no heal event was logged for it. Because `P3-ARC` stayed failed, the engine emitted `phase.waiting_dependency: P-3.5-RESEARCH-MAP waits on P3-ARC (failed) -- not admitted`, and the same for `P-U-SALES-COPY`, `P-U-VSL-RESEARCH` and `P-STYLE-SPEC`. With nothing else runnable it went straight to close and failed closed on six gates (`script, teleprompter, prompt_floor, ghl_upload, qc, ocr_readback`): `terminal=BLOCKED` at phase `CLOSE`, 0 artifacts. Exactly five phases changed status across that resume and `P3-ARC` was not one of them.
+- **`phases.py` gains `readmit_retryable_phases()`** — a `FAILED`/`QUARANTINED` phase is reset to `PENDING`. It is called from `__main__._reset_parked_state`, the shared `--run`/`--resume` unpark helper (FIX 22), so both entry verbs stay identical, and both announce the re-admission count in their `job.resume` / `job.run_reset` event.
+- **The failed attempt is never erased.** `attempts`, `heal_events`, `failed_rc`/`failed_reason` are preserved and the next attempt increments the same counter; each re-admission is appended to that phase's own `readmissions` history and to run-level `state["resume_readmissions"]`.
+- **Deliberately not a budget bypass.** A phase carrying the **dispatcher's** own durable park marker (`_park_blocked` / `_blocked_marker_path`, whose text says only a verified owner input amendment re-arms that generation) is **not** re-admitted, so `DISPATCH_REPEAT_CEILING` and the paid `DISPATCH_RETRY_CAP` still bind across resumes. Owner-decision parks (`PHASE_STATUS_BLOCKED`, FIX 10) are never touched. This mirrors `_fail_unit`'s own documented contract: *"Resume treats a quarantined unit exactly like a blocked one: it is not 'done', so the next run re-enters it."*
+- **Install-robust marker lookup.** `_dispatch_blocked_marker()` uses the dispatcher's own resolver with the same literal fallback `Engine._blocked_marker_path` uses, so a degraded install still finds the marker.
+
+### Tests
+- New `presentation_job/tests/test_pd060_failed_phase_readmission.py` — 5 tests, **5/5 pass** (33.52s) at tip `9aed9914e`. Both directions are pinned: an ordinary non-signature run re-attempts a failed unit and advances, and a dispatcher-parked unit is **not** re-dispatched. Unit level: `failed -> pending` with history preserved; dispatcher-parked phase stays parked; owner-`BLOCKED` and `DONE` untouched.
+- The two engine-level assertions pin the engine's **real** terminal status, not the hoped-for one: the script executor heals 3 times and `_fail_unit` then **quarantines**, so the pinned status is `quarantined` (with `attempts == 1` and non-empty `heal_events`), and the re-admission seam covers both statuses.
+- Regression pair against tip `9aed9914e`: **1 failed / 24 passed** (41.05s). The **same** test fails at merged main `62e7e12c8` **without** the fix (1 failed / 24 passed, 38.75s), so it is pre-existing, environment-dependent benchmark noise on this box and **not** attributable to this candidate. The two-direction PD-TEST-010 guard passed **16/16**. Logs: `/tmp/pd060-regression-pair-20260915T040347Z.log` (tip), `/tmp/pd060-base-pair-20260915T0409Z.log` (base control).
+- No existing test was deleted, skipped, weakened or renamed.
+
+### Honest limits
+- **Not independently reviewed, not merged, not installed.** Review is the next step. Until the install lands in **both** runtime mirrors, the live run still cannot re-admit `P3-ARC` and still cannot advance.
+- `P3-ARC`'s **original** `rc 3` failure is **not** claimed to be a product defect and is **not** diagnosed by this release; this release only makes the unit re-enterable. The live run carries **no** `P3-ARC.dispatch-blocked.txt` marker (only `P0A-INTAKE` and `P-SP-INTAKE`), so `readmit_retryable_phases()` **will** re-admit `P3-ARC` once installed — that is a code-level prediction, **not** yet a live retest.
+- The one regression-pair failure is pre-existing and is **not** fixed by this release.
+- **Repo-only release.** No tag is cut here (`auto-tag-on-merge` owns it) and the installed runtime mirrors are deliberately **not** reconciled by this commit.
+- **PD-TEST-050 remains open.** The receipted pre-engine recovery lane is structurally closed for this task (the installed artifact gate makes any `operator-preengine-recovery` POST return HTTP 409 while `state.json` exists), so the supported re-drive for this run is an ordinary resume — **not** a recovery POST.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py`
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/__main__.py`
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd060_failed_phase_readmission.py` (new)
+- `CHANGELOG.md` (this entry), plus the 10 version markers rolled to v25.1.2 by `scripts/bump-version.sh`
+
 ## [v25.1.1]  -  2026-09-15  -  Gate signature-only presentation stages out of the phase walk on a non-signature deck
 
 ### What Changed
