@@ -49,13 +49,15 @@ sys.path.insert(0, str(SCRIPTS))
 
 from presentation_job import phases as _phases_mod  # noqa: E402
 
-BUILDERS = ("sales_checkout_builder", "workbook_builder")
+BUILDERS = ("sales_checkout_builder", "workbook_builder", "vsl_builder",
+            "build_webinar_video")
 
 # The real phase id from the live run, plus ids that exercise the sanitizer.
 PHASE_IDS = (
     "P-U-CHECKOUT-BUILD",
     "P-U-SALES-BUILD",
-    "P-U-FORM-CHECKOUT",
+    "P-U-VSL-BUILD",
+    "P9.6-WEBINAR-VIDEO",
     "P-U-CHECKOUT-BUILD.RETRY",   # a dot survives the sanitizer
     "P-U/CHECKOUT BUILD",         # slash + space do not
 )
