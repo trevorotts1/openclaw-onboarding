@@ -23,12 +23,27 @@
 - **The producer is told the rules it is graded on (PD-TEST-113, producer half).** `_design_page_prompt_contract` point 3 stated only that a `DO-NOT BLOCK` heading and one `Do not ` imperative were required — which a one-line stub satisfies, while AF-P13 does not. New point **3a** names all eight mandatory negative-block defect classes **read from `prompt_gate.NEGATIVE_BLOCK_CLASS_TOKENS` at call time** (never retyped), each with its tolerant tokens, so a class added to the gate reaches the contract with no second edit. New point **3b** states the AF-R3 prohibition. It deliberately does NOT quote the forbidden two-word phrase: models echo instructions, and a contract containing the landmine would be refused by the very gate it documents (asserted in test).
 
 ### Tests
-- `tests/test_pd098_design_verifier_band.py`: the negative control previously authored every "in-band" artifact as `"d" * size` — byte padding. That fixture only ever tested the length clause; once the verifier applied the whole gate it failed for the right reason (1 distinct word against a 220 floor, no brand HEX, no type size, no composition token, no structural block). It now builds a **gate-clean** prompt of exactly the requested length, from a filler vocabulary that is **provably gate-neutral** — the first version contained `monogram` and `lockup`, so deleting the negative block's logo clause left AF-P13's logo class satisfied by the filler and a mutation test passed for the wrong reason. Neutrality and size are asserted at import.
+- `tests/test_pd098_design_verifier_band.py`: the negative control previously authored every "in-band" artifact as `"d" * size` — byte padding. That fixture only ever tested the length clause; once the verifier applied the whole gate it failed for the right reason (1 distinct word against a 220 floor, no brand HEX, no type size, no composition token, no structural block). It now builds a **gate-clean** prompt of exactly the requested length, from a filler vocabulary that is **provably gate-neutral** (the neutrality assert runs on first fixture use, not at module import) — the first version contained `monogram` and `lockup`, so deleting the negative block's logo clause left AF-P13's logo class satisfied by the filler and a mutation test passed for the wrong reason. Neutrality and size are asserted at import.
 - New `test_verifier_agrees_with_the_consumer_gate` pins the broken invariant directly: for an artifact INSIDE the band, `verify()` must return the same verdict as `prompt_gate.prompt_problems`, and must forward every one of the consumer's reasons into `prior_reasons`. Driven by three mutations reproducing the live refusals (AF-P13 via a `no text` stub, AF-R3, AF-P14). Verified RED against the pre-fix verifier and GREEN against the fixed one.
+
+### Review
+- Independent review of PR #1148 returned **MERGE-WITH-CHANGES** and found four real items, all fixed here.
+  **D1** the verifier passed `text` while the consumer passes `text.strip()` -- `prompt_gate` matches the
+  literal `'Do not '` *including its trailing space*, so a truncated file whose only such literal is a
+  trailing-space EOF passed the verifier and was refused by the render phase. One-word fix, plus a test.
+  **D2 (MEDIUM)** `artifacts.validate_design_prompt` still enforced only the length band, and *that* is the
+  arm which decides whether an already-`done` phase is re-opened (`_revalidate_banked` -> `validate_artifact`;
+  `dispatcher._phase_already_done` short-circuits before its verifier pre-check). A prompt that was in-band
+  but failed AF-P13/AF-R3 was therefore still treated as reusable banked work, the strict verifier was never
+  consulted, and the consuming render phase stayed refused -- measured live, where `P-U-DESIGN-SALES`
+  (2 problems) and `P-U-DESIGN-VSL` (1) were `done` while their render phases were quarantined, and
+  `P-U-DESIGN-RENDER-CHECKOUT` was `done` with 0 problems. Fixed by delegating to the same whole gate.
+  **D3** this entry originally said the contract grew by "~340 chars"; the measured figure is 1,255. Corrected.
+  **D4** "asserted at import" -- the neutrality assert runs on first fixture use. Wording corrected.
 
 ### Risk
 - Scope is the three page-design phases (`P-U-DESIGN-SALES` / `-CHECKOUT` / `-VSL`) only; no other phase's verifier is touched. A design prompt that previously passed and was later refused by its render phase now fails one phase EARLIER and cheaper — no paid render call is made in either case (`build_infographic.resolve_design_prompt` refuses before submission).
-- The producer's contract grew by ~340 chars; it is a prompt to the authoring model, not an artifact, so it is not itself gated.
+- The producer's contract grew by **1,255 chars** for every page (measured with the same call: sales 2,267 -> 3,522; checkout 2,279 -> 3,534; vsl 2,259 -> 3,514). It is a prompt to the authoring model, not an artifact, so it is not itself gated. (An earlier draft of this entry said "~340 chars" -- an estimate, not a measurement; the independent review measured it and corrected it.)
 
 ## [v25.1.16]  -  2026-09-15  -  A section unit's payload must carry its own ordinal range
 

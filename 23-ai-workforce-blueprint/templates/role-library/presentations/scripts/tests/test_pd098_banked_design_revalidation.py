@@ -51,6 +51,7 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # cross-test fixture import
 
 import prompt_gate as PG  # noqa: E402
 from presentation_job import artifacts as A  # noqa: E402
@@ -83,6 +84,17 @@ def _validate(rd: Path, rel: str, sha=None):
     return A.validate_artifact(rd, rel, _Manifest(), recorded_sha=sha)
 
 
+def _gate_clean(size: int) -> str:
+    """A prompt of exactly `size` chars that clears the WHOLE gate, not just the
+    band. The in-band controls below assert "reusable banked work", and since
+    PD-TEST-113/D2 the banked predicate applies the same gate the render phase
+    applies -- so a byte-padded fixture (`"d" * size`) is refused for the RIGHT
+    reason (1 distinct word against a 220 floor). Reused from the sibling suite
+    rather than duplicated, so the two cannot drift."""
+    from test_pd098_design_verifier_band import _gate_clean_prompt
+    return _gate_clean_prompt(size)
+
+
 # ---------------------------------------------------------------------------
 # 1 / 2 / 3 -- the predicate's own behaviour.
 # ---------------------------------------------------------------------------
@@ -112,7 +124,7 @@ def test_under_floor_design_prompt_fails_revalidation(tmp_path):
 def test_in_band_design_prompt_passes_and_sha_still_applies(tmp_path):
     rd = _run(tmp_path)
     rel = "prompts/checkout.design.txt"
-    sha = _write(rd, rel, "d" * PG.PROMPT_CHAR_CEILING)
+    sha = _write(rd, rel, _gate_clean(PG.PROMPT_CHAR_CEILING))
     ok, why = _validate(rd, rel, sha)
     assert ok, why
     assert "shared prompt band" in why and "sha256 match" in why
@@ -136,7 +148,7 @@ def test_all_three_design_pages_are_covered():
 def test_band_is_read_from_prompt_gate_not_hardcoded(tmp_path, monkeypatch):
     rd = _run(tmp_path)
     rel = "prompts/sales.design.txt"
-    _write(rd, rel, "d" * 30000)          # over 18000, under a moved ceiling
+    _write(rd, rel, _gate_clean(30000))   # over 18000, under a moved ceiling
     assert not _validate(rd, rel)[0]
 
     monkeypatch.setattr(PG, "PROMPT_CHAR_CEILING", 40000)
@@ -295,7 +307,7 @@ def _design_engine(tmp_path, stripped_override=None):
     for pid, rel, nbytes, nstripped in DESIGN_PHASE_ARTIFACTS:
         p = rd / rel
         if stripped_override is not None:
-            p.write_text("d" * stripped_override, encoding="utf-8")
+            p.write_text(_gate_clean(stripped_override), encoding="utf-8")
         else:
             # Reproduce the live file's exact byte size AND stripped length.
             p.write_text("d" * nstripped + "\n" * max(0, nbytes - nstripped),

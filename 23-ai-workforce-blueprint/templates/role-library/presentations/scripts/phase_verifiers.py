@@ -4328,7 +4328,8 @@ def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
     # The floor/ceiling constants this function already imported remain the
     # single source for the length rule, now applied by `prompt_problems`
     # itself.
-    problems = _pg.prompt_problems(text)
+    # D1 (independent review of PR #1148): the CONSUMER feeds the STRIPPED text (`build_infographic.resolve_design_prompt` does `stripped = text.strip()` then `prompt_gate.prompt_problems(stripped)`). `prompt_gate`'s structural check matches the literal `'Do not '` INCLUDING its trailing space, so a file whose only such literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED by the consumer. Passing `text` here reproduced that divergence one layer up; pass exactly what the consumer passes.
+    problems = _pg.prompt_problems(text.strip())
     if problems:
         return [f"{rel}: {problem}" for problem in problems]
     return []

@@ -136,6 +136,27 @@ def validate_design_prompt(path: Path, rel_path: str,
             "under the GPT-Image-2.5 API ceiling) -- the render gate refuses it "
             "before any paid call, so it is not reusable banked work")
 
+    # PD-TEST-113 / D2 (independent review of PR #1148). The band checks above are
+    # only PART of the gate, and this predicate -- not the phase verifier -- is the
+    # arm that decides whether an already-`done` phase is re-opened:
+    # `phases._revalidate_banked` -> `validate_artifact` -> here, and
+    # `dispatcher._phase_already_done` short-circuits before its verifier pre-check.
+    # So a prompt that is in-band but fails AF-P13 / AF-R3 / AF-P14 was still
+    # treated as reusable banked work: the phase was NOT re-opened, the new strict
+    # verifier was never consulted, and the consuming render phase stayed refused.
+    # Measured live: P-U-DESIGN-SALES and P-U-DESIGN-VSL were `status=done` with 2
+    # and 1 gate problems respectively while P-U-DESIGN-RENDER-SALES/-VSL sat
+    # quarantined -- and P-U-DESIGN-RENDER-CHECKOUT was `done` with 0 problems.
+    # Same ONE authority as the verifier and the consumer; no second copy.
+    problems = pg.prompt_problems(text.strip())
+    if problems:
+        return False, (
+            f"{rel_path} fails the shared render gate its consuming phase applies "
+            "(prompt_gate.prompt_problems -- the same call "
+            "build_infographic.resolve_design_prompt makes) -- the render gate "
+            "refuses it before any paid call, so it is not reusable banked work: "
+            + "; ".join(problems))
+
     band = (f"inside the {pg.PROMPT_CHAR_FLOOR}-{pg.PROMPT_CHAR_CEILING} "
             "shared prompt band")
     if recorded_sha is not None:

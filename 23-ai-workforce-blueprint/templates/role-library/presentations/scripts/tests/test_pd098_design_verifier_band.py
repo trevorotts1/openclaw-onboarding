@@ -117,14 +117,15 @@ def _manifest_file(tmp_path: Path, *, with_fanout: bool = True) -> Path:
 # controls failed for the RIGHT reason: 1 distinct word against a 220 floor, no
 # brand HEX, no type size, no composition token, no structural block. The
 # negative control has to be a prompt that genuinely clears the gate, or it
-# pins nothing about the band.
+# pins nothing about the band. (The neutrality assert runs on first use, not at
+# module import.)
 #
 # The filler is GATE-NEUTRAL by construction. Without that, a mutation test is
 # vacuous: the first version of this vocabulary contained `monogram` and
 # `lockup`, so deleting the negative block's logo clause still left AF-P13's
 # logo class satisfied by the FILLER, and a test that meant to prove "the
 # verifier applies AF-P13" passed for the wrong reason. Neutrality is asserted
-# at import, never assumed.
+# on first use, never assumed.
 # ---------------------------------------------------------------------------
 _ART_DIRECTION_WORDS = (
     "editorial premium cinematic restrained confident warm architectural studio "
@@ -519,4 +520,59 @@ def test_verifier_agrees_with_the_consumer_gate(tmp_path):
                 f"{code}: the verifier withheld the consumer's own reason "
                 f"{problem[:70]!r} from prior_reasons, so no re-author can ever "
                 f"converge on it")
+
+# ---------------------------------------------------------------------------
+# D1 / D2 -- the two defects the INDEPENDENT REVIEW of PR #1148 found. Both are
+# the same shape as PD-TEST-113: a seam that disagrees with the consumer.
+# ---------------------------------------------------------------------------
+def test_verifier_strips_like_the_consumer_does(tmp_path):
+    """D1: the verifier passed raw `text`; `build_infographic.resolve_design_prompt`
+    passes `text.strip()`. `prompt_gate`'s structural check matches the literal
+    `'Do not '` INCLUDING its trailing space, so a truncated file whose only such
+    literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED
+    by the consumer -- the exact one-directional divergence the review proved."""
+    rd, _mf = _run_with_live_artifacts(
+        tmp_path, sizes={pid: PG.PROMPT_CHAR_CEILING - 200 for pid, _r, _n in DESIGN},
+        gate_clean=True)
+    rel = "prompts/sales.design.txt"
+    base = _gate_clean_prompt(PG.PROMPT_CHAR_CEILING - 200)
+    # Rewrite every `Do not ` so that the ONLY surviving one is the final
+    # trailing-space literal -- then let the fixture's "\n" make it a trailing-space EOF.
+    text = base.replace("Do not ", "Never ").rstrip() + "\nDo not "
+    assert PG.prompt_problems(text) == [], (
+        "control is wrong: the RAW form must clear the gate")
+    assert PG.prompt_problems(text.strip()) != [], (
+        "control is wrong: the STRIPPED form must be refused")
+
+    _rewrite_artifact(rd, "P-U-DESIGN-SALES", rel, text)
+    ok, reasons = PV.verify("P-U-DESIGN-SALES", rd)
+    joined = " ".join(reasons)
+    assert ok is False, (
+        "the verifier accepted an artifact its own render phase REFUSES: it must "
+        "strip exactly as build_infographic.resolve_design_prompt does")
+    assert "Do not" in joined, joined
+
+
+def test_banked_predicate_applies_the_whole_gate(tmp_path):
+    """D2: `artifacts.validate_design_prompt` enforced only the length band, and
+    THAT is the arm deciding whether an already-`done` phase is re-opened
+    (`_revalidate_banked` -> `validate_artifact`). An in-band prompt failing
+    AF-P13 was still reusable banked work, so the phase was never re-opened and
+    the strict verifier was never consulted -- the live state of P-U-DESIGN-SALES
+    and P-U-DESIGN-VSL."""
+    from presentation_job import artifacts as A
+    rd, _mf = _run_with_live_artifacts(
+        tmp_path, sizes={pid: PG.PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
+        gate_clean=True)
+    rel = "prompts/sales.design.txt"
+    text = _drop_negative_block(_gate_clean_prompt(PG.PROMPT_CHAR_CEILING))
+    assert len(text.strip()) <= PG.PROMPT_CHAR_CEILING, "must stay IN band"
+    _rewrite_artifact(rd, "P-U-DESIGN-SALES", rel, text)
+
+    assert PG.prompt_problems(text.strip()), "control must fail the gate"
+    ok, why = A.validate_artifact(rd, rel, None)
+    assert ok is False, (
+        "the banked predicate accepted an in-band prompt the render gate REFUSES, "
+        "so a `done` phase holding it is never re-opened: " + str(why))
+    assert "AF-P13" in str(why), why
 
