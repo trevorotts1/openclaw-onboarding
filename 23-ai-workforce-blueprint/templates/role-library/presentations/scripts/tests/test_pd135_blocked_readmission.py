@@ -211,3 +211,29 @@ def test_prior_reason_records_the_block_being_cleared():
         "heal_events": [{"class": "verifier_substance", "reason": verdict}]}]}
     recs = phases.readmit_retryable_phases(st)
     assert recs[0]["prior_reason"] == verdict
+
+
+def test_prior_reason_is_status_conditional(tmp_path):
+    """Delta review: the mirror case is reachable in live data. P-U-DESIGN-SALES
+    carries BOTH a stale substance blocked_reason AND the quarantined_reason that
+    actually parked it ('dispatcher retry ceiling: 8 consecutive identical error
+    dispatch outcomes'), failed_reason=None. An unconditional blocked-first
+    preference would log the stale block for a phase that was never blocked."""
+    st = {"run_dir": "/nonexistent", "phases": [{
+        "id": "Q", "status": "quarantined", "attempts": 3,
+        "blocked_reason": "substance check failed: AF-OLD: stale",
+        "quarantined_reason": "dispatcher retry ceiling: 8 consecutive identical 'error' dispatch outcomes",
+        "heal_events": []}]}
+    assert phases.readmit_retryable_phases(st)[0]["prior_reason"] == \
+        "dispatcher retry ceiling: 8 consecutive identical 'error' dispatch outcomes"
+
+
+def test_prior_reason_blocked_still_prefers_the_block(tmp_path):
+    """And the original case must keep working: a blocked phase logs its block."""
+    v = "substance check failed: AF-NO-VILLAIN: x"
+    st = {"run_dir": "/nonexistent", "phases": [{
+        "id": "B", "status": "blocked", "attempts": 7,
+        "blocked_reason": v,
+        "quarantined_reason": "agent-authored phase produced nothing within 60 minutes",
+        "heal_events": [{"class": "verifier_substance", "reason": v}]}]}
+    assert phases.readmit_retryable_phases(st)[0]["prior_reason"] == v

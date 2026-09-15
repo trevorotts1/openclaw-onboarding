@@ -824,6 +824,12 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     ev_reason = str(last.get("reason") or "").strip()
     if not ev_reason:
         return False
+    # NOTE (delta review): the 60-char test is a SUBSTRING test, not episode
+    # equality, so two verdicts from the same check that share a 60-char prefix
+    # but different tails would match (measured: OP12). It is not reachable by an
+    # operator -- the only writer of a state blocked_reason is Engine._block, and
+    # all its call sites pass engine-authored text beginning with this prefix --
+    # so it is recorded here as a known looseness rather than left implicit.
     return reason.startswith(ev_reason) or ev_reason[:60] in reason
 
 
@@ -866,17 +872,27 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "at": utcnow(),
             "prior_status": ps.get("status"),
             "prior_attempts": ps.get("attempts"),
-            # PD-TEST-135: blocked_reason FIRST. Both independent reviews flagged
-            # that preferring quarantined_reason/failed_reason logged the WRONG
-            # reason on the live P4-COPY record -- it carries a stale
-            # quarantined_reason ("agent-authored phase produced nothing within 60
-            # minutes"), so the audit trail for a REOPENED BLOCK named a
-            # missing-artifact cause instead of the substance verdict being
-            # cleared. The reason actually being adjudicated must be the one
-            # recorded.
-            "prior_reason": (ps.get("blocked_reason")
-                             or ps.get("quarantined_reason")
-                             or ps.get("failed_reason")),
+            # PD-TEST-135: record the reason ACTUALLY being cleared, which
+            # depends on which status is being re-admitted.
+            #   * blocked -> blocked_reason is the one being adjudicated. Both
+            #     reviews flagged the opposite order: the live P4-COPY record
+            #     carries a STALE quarantined_reason ("agent-authored phase
+            #     produced nothing within 60 minutes"), so a reopened BLOCK
+            #     named a missing-artifact cause instead of the substance
+            #     verdict.
+            #   * failed/quarantined -> the mirror case, measured on the live
+            #     run: P-U-DESIGN-SALES carries BOTH a stale substance
+            #     blocked_reason AND the quarantined_reason that actually parked
+            #     it ("dispatcher retry ceiling: 8 consecutive identical 'error'
+            #     dispatch outcomes"), with failed_reason None. Blocked-first
+            #     would log the stale block for a phase that was never blocked.
+            # Control flow is unaffected either way; this is the audit trail.
+            "prior_reason": (
+                ((ps.get("blocked_reason") or ps.get("quarantined_reason")
+                  or ps.get("failed_reason"))
+                 if ps.get("status") == PHASE_STATUS_BLOCKED else
+                 (ps.get("quarantined_reason") or ps.get("failed_reason")
+                  or ps.get("blocked_reason")))),
         }
         if owner_state == "orphaned":
             record["orphaned_park_marker"] = owner_detail
