@@ -1736,6 +1736,31 @@ class Engine:
             if phase.id == "P4-RENDER" and self.board:
                 self.board.mark_in_progress()
 
+        # PD-TEST-081: materialise working/copy/slides.json for a phase that
+        # declares it, BEFORE its executor runs. This is THE producer for the
+        # manifest's only orphan consumed pattern -- three phases consume it
+        # (P-STYLE-SPEC, P-STYLE-PREVIEW, P4-RENDER) and none produced it, so
+        # P4-RENDER's `build_deck.py {run_dir}/working/copy/slides.json ...`
+        # positional hit "FATAL: slides.json not found" and exited 2 on every
+        # run; only ~20 TEST sites ever wrote the file, which is why CI stayed
+        # green while the live pipeline could not render.
+        #
+        # NO MANIFEST CHANGE. manifest.py's V5 exemption note and
+        # manifest._ROOT_INPUTS already declare this file engine-owned run-setup
+        # state ("written at run setup by the P4 copy tooling + engine prep ...
+        # a build artifact of the run harness, not of any single declared
+        # phase"). Producing it here implements that documented intent, so the
+        # manifest sha256 is untouched: no EXIT_MANIFEST_MISMATCH and no gated
+        # --repin, which is what lets this reach an IN-FLIGHT run on its next
+        # phase dispatch.
+        #
+        # Placed at the single executor choke point so all three consumers are
+        # covered by ONE seam (P-STYLE-SPEC is kind=agent, P-STYLE-PREVIEW and
+        # P4-RENDER are kind=script). Fail-soft and never raising: when the
+        # copy/arc cannot yield a complete honest deck the producer writes
+        # NOTHING and the phase's own verifier stays the authority on failure.
+        self._materialise_slides_index(phase)
+
         if phase.executor_kind == "script":
             rc = self._run_script_phase(phase)
         elif phase.executor_kind == "agent":
@@ -2223,6 +2248,56 @@ class Engine:
         except AttributeError:
             pass
         self._script_nonce_file = None
+
+    def _materialise_slides_index(self, phase: Phase) -> None:
+        """PD-TEST-081: produce working/copy/slides.json for a consumer of it.
+
+        The renderer's index is the manifest's ONLY orphan consumed pattern --
+        P-STYLE-SPEC, P-STYLE-PREVIEW and P4-RENDER all declare it in
+        ``consumes`` and NO phase declared it in ``produces_artifact``, so
+        ``build_deck.py``'s positional (``{run_dir}/working/copy/slides.json``)
+        never existed on a live run and the render step exited 2 every time.
+        See ``presentation_job/slides_assembly.py`` for the full analysis, the
+        emitted shape, and why this is engine-owned run-setup state rather than
+        a manifest change.
+
+        Called once per dispatch, immediately before the executor branch, so
+        the single seam covers every executor kind. Strictly fail-soft:
+
+          * a phase that does not declare the index is a no-op;
+          * an incomplete assembly writes NOTHING (no silently-empty or
+            fabricated deck) and the phase's own verifier owns the failure;
+          * no exception ever escapes -- a producer bug must not take the
+            engine down or change any gating decision.
+        """
+        try:
+            from presentation_job import slides_assembly
+        except ImportError:  # pragma: no cover - defensive
+            return
+        try:
+            if not slides_assembly.phase_consumes_slides_json(
+                    getattr(phase, "consumes", None)):
+                return
+            result = slides_assembly.ensure_slides_json(self.run_dir)
+        except Exception as exc:  # noqa: BLE001 -- never take the engine down
+            self.report.event(
+                "phase.slides_index_producer_error",
+                f"{phase.id}: slides.json producer raised {exc!r}; continuing "
+                "without materialising the render index")
+            return
+        if result.written:
+            self.report.event(
+                "phase.slides_index_produced",
+                f"{phase.id}: wrote {slides_assembly.SLIDES_JSON_REL} "
+                f"({result.reason})")
+        elif not result.ok:
+            # Honest, non-fatal: the why is recorded, the failure stays with
+            # the phase's own verifier / executor so the run still fails on the
+            # REAL cause rather than on a missing file it cannot explain.
+            self.report.event(
+                "phase.slides_index_unavailable",
+                f"{phase.id}: {slides_assembly.SLIDES_JSON_REL} not produced "
+                f"({result.status}: {result.reason})")
 
     def _run_script_phase(self, phase: Phase) -> int:
         # U069: tokenise FIRST, substitute SECOND -- via the single shared helper.
