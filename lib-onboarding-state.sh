@@ -706,7 +706,7 @@ OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improv
 OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
 OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
 
-# Wave 6 — EXTENSIONS & DOMAIN VERTICALS (skills 44-62).
+# Wave 6 — EXTENSIONS & DOMAIN VERTICALS (skills 44-62, plus 69-archify).
 #
 # WHY A SIXTH WAVE, AND WHY IT IS TERMINAL
 # ----------------------------------------
@@ -773,7 +773,25 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # order satisfies every one of those, which is why the watchdog prompt tells the
 # agent to install this wave in ascending order and to read each skill's
 # SKILL.md Prerequisites section first.
-OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box"
+#
+# 69-archify (added v25.1.0) is the wave's first entry above the original 44-62
+# range, so it sorts last and changes no existing entry's position. It is GATED
+# because it satisfies the same test the six exclusions above fail: it reaches
+# qc-passed on an ordinary client box, verified rather than assumed —
+# `node bin/archify.mjs doctor` reports all 15 subsystems ok (exit 0), the
+# runtime has ZERO package dependencies (package.json declares none; bin/ only
+# imports `node:` builtins), so there is no `npm install` step to fail, and its
+# only prerequisite is Node >= 18, which every box already has because OpenClaw
+# itself requires it. That prerequisite is declared machine-readably in
+# 69-archify/PREREQS.json (a `binary` entry) so a box without Node reports a
+# named missing prereq via shared-utils/check-skill-prereqs.sh instead of
+# wedging the wave. The verification path is
+# 69-archify/scripts/onboarding-smoke.sh (doctor + validate + render, exits
+# non-zero on failure). Note that 69-archify's upstream repo-level npm scripts
+# (check:viewer, check:release-identity, build:*) are deliberately NOT usable
+# here and are NOT part of the qc-passed path — they reference the upstream
+# monorepo root ../scripts/, which is not vendored.
+OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify"
 
 # ------------------------------------------------------------
 # oc_wave_state_init
@@ -1000,7 +1018,7 @@ oc_repo_consistency_ok() {
 # ------------------------------------------------------------
 # oc_overall_goal_check
 #   CHEAP overall goal check (reads two state files, no network):
-#   (i) all 5 waves passed in waveGoals, (ii) interviewComplete in
+#   (i) all 6 waves passed in waveGoals, (ii) interviewComplete in
 #   workforce-build-state.json, (iii) workforce built — buildCompletedAt set AND
 #   the WORKSPACE-SHELL gate passes (workspace departments materialized, NOT just
 #   a template on disk), (iv) closeoutStatus=done.
