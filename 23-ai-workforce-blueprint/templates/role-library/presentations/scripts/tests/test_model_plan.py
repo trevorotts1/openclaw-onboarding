@@ -439,6 +439,131 @@ def test_a_later_answer_updates_the_plan_and_appends_an_audit_row(
 
 
 # ---------------------------------------------------------------------------
+# 5b. PD-TEST-064: a PARTIAL answer must never null a slot it did not declare
+# ---------------------------------------------------------------------------
+# THE DEFECT THIS PINS. The intake asks the model plan ONE SUBFIELD PER TURN
+# (`workhorse_model`, `reasoning_model`, `qc_model`, `thinking_mode`), so the
+# real driver calls record_model_plan() once per answer and most calls declare
+# exactly one slot. The write path used to rebuild the whole block from
+# scratch with every undeclared slot pinned to None, so answering the JUDGE
+# subfield one second after declaring a workhorse erased the workhorse:
+# `model_plan.workhorse` went null and the Command Center operator-contract
+# re-dispatch path (intake_bridge._verified_operator_model_plan) then failed
+# closed, because the profile no longer retained the operator's workhorse.
+# Reproduced live: 2026-09-15T02:01:00+00:00, audit row 2757 declared the
+# workhorse and row 2758, one second later, declared only the judge.
+def test_a_partial_answer_never_nulls_a_slot_it_did_not_declare(
+        monkeypatch, tmp_path):
+    cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    resource_profile.record_model_plan(
+        {"workhorse": "deepseek-flash@deepseek-direct"}, source="interview")
+    prof = resource_profile.record_model_plan(
+        {"judge": "z-ai/glm-5.3@openrouter"}, source="interview")
+    # The WORKHORSE the earlier answer declared is still there...
+    assert prof["model_plan"]["workhorse"] == {"provider": "deepseek-direct",
+                                               "model": "deepseek-flash"}
+    # ...and it survived the round trip through the store, not just in memory.
+    on_disk = resource_profile.load_profile(cfg)["model_plan"]
+    assert on_disk["workhorse"] == {"provider": "deepseek-direct",
+                                    "model": "deepseek-flash"}, on_disk
+    # The judge slot this answer DID declare is overlaid as usual.
+    assert on_disk["judge"] == {"provider": "openrouter", "model": "z-ai/glm-5.3"}
+    # And the declared workhorse still drives selection, off disk.
+    assert model_router.resolve_route("P4-COPY", config_dir=cfg)["route"] == {
+        "provider": "deepseek-direct", "model": "deepseek-flash"}
+
+
+def test_the_live_pd064_sequence_leaves_the_bridge_slot_retained(
+        monkeypatch, tmp_path):
+    """The exact live sequence, replayed: three workhorse answers, then the
+    judge answer one second later. The bridge compares
+    `router.plan_slot(router.model_plan(profile), "workhorse")` against
+    `{"provider": "deepseek-direct", "model": "deepseek-flash"}` and REFUSES on
+    any mismatch, so this asserts the comparison the fail-closed gate makes --
+    it must be EQUAL after the trailing judge answer."""
+    cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    for _ in range(3):
+        resource_profile.record_model_plan(
+            {"workhorse": "deepseek-flash@deepseek-direct"}, source="interview")
+    resource_profile.record_model_plan(
+        {"judge": "deepseek-flash@deepseek-direct", "thinking": "max"},
+        source="interview")
+
+    profile = resource_profile.load_profile(cfg)
+    slot = model_router.plan_slot(model_router.model_plan(profile), "workhorse")
+    assert slot == {"provider": "deepseek-direct", "model": "deepseek-flash"}, (
+        "the operator contract names deepseek-flash@deepseek-direct; a plan "
+        f"that reports {slot!r} here is what made the re-dispatch fail rc=8")
+    assert profile["model_plan"]["thinking"] == "max"
+    # four answers, four audit rows -- the log is still append-only
+    assert len(profile["interview"]["model_plan"]) == 4
+
+
+def test_a_carried_slot_keeps_the_waiver_that_honours_it(monkeypatch, tmp_path):
+    """A waivered slot carried over MUST keep its waiver. model_router honours
+    a declared model only while its capability is in `floor_waivers`, so
+    preserving the declaration while dropping the waiver would trade one
+    silent failure for another."""
+    cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    resource_profile.record_model_plan(
+        {"reasoning": "deepseek-flash@deepseek-direct"}, source="cli")
+    prof = resource_profile.record_model_plan(
+        {"judge": "z-ai/glm-5.3@openrouter"}, source="cli")
+    assert prof["model_plan"]["reasoning"] == {"provider": "deepseek-direct",
+                                               "model": "deepseek-flash"}
+    assert "reasoning_long" in prof["model_plan"]["floor_waivers"]
+    assert "long_synthesis" in prof["model_plan"]["floor_waivers"]
+    decision = model_router.resolve_route("P3-ARC", config_dir=cfg)
+    assert decision["client_plan"]["floor"] == "waived", decision["client_plan"]
+
+
+def test_redeclaring_a_slot_drops_its_stale_waiver(monkeypatch, tmp_path):
+    """Preservation is not a ratchet: a slot re-declared HERE is re-judged, so
+    a waiver it no longer needs must not linger in the store."""
+    cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    prof = resource_profile.record_model_plan(
+        {"reasoning": "deepseek-flash@deepseek-direct"}, source="cli")
+    assert "reasoning_long" in prof["model_plan"]["floor_waivers"]
+    prof = resource_profile.record_model_plan(
+        {"reasoning": "z-ai/glm-5.3@openrouter"}, source="cli")
+    assert prof["model_plan"]["reasoning"] == {"provider": "openrouter",
+                                               "model": "z-ai/glm-5.3"}
+    assert "reasoning_long" not in prof["model_plan"]["floor_waivers"], (
+        "the long-context model needs no waiver; a stale one would misreport "
+        "a floor shortfall that no longer exists")
+
+
+def test_an_omitted_thinking_level_is_not_erased(monkeypatch, tmp_path):
+    """'off' is a real choice in THINKING_LEVELS, so only an OMITTED answer
+    leaves the stored level standing -- it never erases it."""
+    cfg = _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    resource_profile.record_model_plan(
+        {"workhorse": "deepseek-flash@deepseek-direct", "thinking": "max"},
+        source="interview")
+    prof = resource_profile.record_model_plan(
+        {"judge": "z-ai/glm-5.3@openrouter"}, source="interview")
+    assert prof["model_plan"]["thinking"] == "max"
+    # an EXPLICIT level still overwrites
+    prof = resource_profile.record_model_plan(
+        {"judge": "z-ai/glm-5.3@openrouter", "thinking": "off"}, source="interview")
+    assert prof["model_plan"]["thinking"] == "off"
+
+
+def test_a_first_declaration_still_leaves_undeclared_slots_empty(
+        monkeypatch, tmp_path):
+    """The complement, so the fix cannot regress into 'sticky forever': on a
+    profile with NO prior plan, an undeclared slot is still recorded as None --
+    silence is not a declaration, and the department default still governs."""
+    _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    prof = resource_profile.record_model_plan(
+        {"workhorse": "deepseek-flash@deepseek-direct"}, source="interview")
+    assert prof["model_plan"]["workhorse"] == {"provider": "deepseek-direct",
+                                               "model": "deepseek-flash"}
+    assert prof["model_plan"]["reasoning"] is None
+    assert prof["model_plan"]["judge"] is None
+
+
+# ---------------------------------------------------------------------------
 # 6. THE REAL DRIVER, end to end
 # ---------------------------------------------------------------------------
 def _driver(run_dir, cfg, qid, text):
@@ -484,6 +609,39 @@ def test_the_real_driver_records_a_model_plan_from_one_merged_turn(tmp_path):
         assert key in entries, sorted(entries)
         assert entries[key]["value"] == expected, (key, entries[key])
     assert entries["REASONING_MODEL"]["value"] == ""
+
+
+def test_the_real_driver_preserves_a_workhorse_across_separate_answers(tmp_path):
+    """PD-TEST-064 through the REAL driver and two SEPARATE process
+    invocations -- the shape production actually uses, where the intake asks
+    each model-plan subfield in its own turn. The second answer declares only
+    the judge; the workhorse the FIRST answer declared must still be retained
+    in the store, because that slot is what the Command Center operator
+    contract is re-validated against."""
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / resource_profile.PROFILE_FILENAME).write_text(
+        json.dumps({".schema_version": 1, "providers": {
+            "deepseek-direct": _wired("deepseek-direct",
+                                      ["deepseek-flash", "deepseek-v4-pro"]),
+            "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
+        }}, indent=2), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    first = _driver(run_dir, cfg, "resource_plan",
+                    "workhorse: deepseek-flash@deepseek-direct")
+    assert first.returncode == 0, first.stdout + first.stderr
+    second = _driver(run_dir, cfg, "resource_plan",
+                     "qc: glm-5.3-flash@ollama-cloud; thinking: max")
+    assert second.returncode == 0, second.stdout + second.stderr
+
+    plan = json.loads((cfg / resource_profile.PROFILE_FILENAME)
+                      .read_text(encoding="utf-8"))["model_plan"]
+    assert plan["workhorse"] == {"provider": "deepseek-direct",
+                                 "model": "deepseek-flash"}, plan
+    assert plan["judge"] == {"provider": "ollama-cloud", "model": "glm-5.3-flash"}
+    assert plan["thinking"] == "max"
 
 
 def test_the_real_driver_refuses_an_unwired_model_at_intake(tmp_path):

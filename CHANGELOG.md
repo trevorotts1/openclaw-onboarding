@@ -1,3 +1,19 @@
+## [v25.1.6]  -  2026-09-15  -  A partial model-plan answer keeps the slots it omits instead of nulling them
+
+### What Changed
+- **PD-TEST-064 — `resource_profile.record_model_plan()` rebuilt the stored `model_plan` block from scratch on every call, pinning every slot the caller did not name to `None`.** The intake asks the model plan **one subfield per turn** (`workhorse_model`, `reasoning_model`, `qc_model`, `thinking_mode`), so the real driver calls in once per answer and most calls declare exactly one slot. Answering the **judge** subfield therefore **erased a workhorse declared seconds earlier**: `model_plan.workhorse` went `null`, and the Command Center → bridge operator-contract re-dispatch path (`intake_bridge._verified_operator_model_plan`, which re-validates the contract's `deepseek-flash@deepseek-direct` against exactly that profile slot) then failed closed with **rc=8**. The owner's declared authoring route stopped driving model selection.
+- **Measured, not theorised.** Reproduced live in the operator's store at `2026-09-15T02:01:00+00:00`: audit row **2757** declared the workhorse and row **2758**, one second later, declared only the judge — leaving workhorse `null`. **309** such null-a-valid-workhorse events are recorded in that file's own audit log (first `2026-09-05T12:41:21+00:00`).
+- **The two halves of the function contradicted each other.** The **parse** loop skips an omitted slot ("an omitted slot keeps the department default — silence is not a declaration", `parse_model_spec`), while the **write** loop nulled that same slot in the store.
+- **Fix — preserve-before-overlay.** The block now starts from what is already stored and the answer overlays only the slots it actually declared. An omitted slot keeps its declaration, and it also keeps the **floor waivers** that make it honourable: `model_router.client_plan_for()` honours a declared model only while its capability is in `floor_waivers`, so preserving the slot while dropping its waiver would trade one silent failure for another. An omitted **thinking level** is not erased either (`"off"` is already a real, explicit choice in `THINKING_LEVELS`).
+- **A slot re-declared in the same call is still re-judged**, so a stale waiver cannot linger. A **first-ever** declaration is unchanged: with no prior block the result is byte-for-byte the document the old code wrote, so an undeclared slot is still recorded `None` and the department default still governs.
+- **Not touched:** the bridge's fail-closed comparison was **not** relaxed and the approved authoring route is unchanged. Accepting a department-default fallback there is the exact outcome `_verified_operator_model_plan`'s own docstring exists to prevent.
+- **Tests (`tests/test_model_plan.py`):** four new tests fail on unmodified `main` and pass here (including `test_the_live_pd064_sequence_leaves_the_bridge_slot_retained` and `test_a_carried_slot_keeps_the_waiver_that_honours_it`); the others pin the complement so the fix cannot become a ratchet. Pre-fix failure is exactly the rc=8 cause: `assert None == {'model': 'deepseek-flash', 'provider': 'deepseek-direct'}`. The driver test runs the **real** `deck-intake-driver.py` in two separate `--answer` invocations, which is the shape production uses.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/resource_profile.py` (+47/-8)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_model_plan.py` (+158)
+- Version markers rolled to v25.1.6 by `scripts/bump-version.sh`
+
 ## [v25.1.5]  -  2026-09-15  -  A valid paid-retry repair receipt now lifts the gate that was blocking its own consumption
 
 ### What Changed
