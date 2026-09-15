@@ -750,7 +750,18 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "arc section each slide belongs to), a clear PEAK/APEX beat, and a clear ending "
         "beat (never a flat ending). If intake.json records pitch_included:false, do NOT "
         "include any offer/price/ladder content; otherwise include the value-stack/anchor/"
-        "price-ladder beats and a re-pitch after the FINAL beat."
+        "price-ladder beats and a re-pitch after the FINAL beat. "
+        "PITCHLESS VOCABULARY IS NOT OPTIONAL TO AVOID (PD-TEST-132). `build_deck."
+        "_chk_pitch_leak` is a RENDER GATE that scans this file for a fixed token list, so "
+        "on a pitch_included:false deck the artifact is refused for the WORDS it uses, "
+        "including words used to record that the content is absent. The exact suppressed "
+        "tokens are enumerated at the END of this contract, read out of the gate itself at "
+        "import time, so that list is complete and cannot drift. Name a felt-stakes section "
+        "by WHAT IT DOES for this audience (for example 'what-carrying-it-alone-costs', "
+        "'the-hidden-cost-of-waiting', 'status-quo-cost') rather than by a suppressed sale "
+        "mechanic. State the pitchless decision itself PLAINLY -- 'this deck carries no "
+        "commercial offer' -- and do not enumerate the mechanics you are omitting, because "
+        "listing them trips the same scan."
     ),
     "P-3.5-RESEARCH-MAP": (
         "OUTPUT CONTRACT: valid JSON object at working/research/research_map.json mapping "
@@ -1502,6 +1513,87 @@ def _compose_p4_copy_contract(base: str) -> str:
 
 
 ARTIFACT_CONTRACTS["P4-COPY"] = _compose_p4_copy_contract(ARTIFACT_CONTRACTS["P4-COPY"])
+
+
+def _module_str_sequence(module: str, name: str) -> List[str]:
+    """Read a module-level list/tuple of string literals out of source by AST.
+
+    DERIVED, never re-typed: a hand-copied rule list is what drifts
+    (contract_introspect.py), and the hand-copied version of the suppressed-token
+    list written first for PD-TEST-132 missed 3 of the gate's 26 variants. Fails
+    soft to [] so a read failure can never block a dispatch.
+    """
+    try:
+        node = _ci._module_level_assigns(module).get(name)
+        if node is None or type(node).__name__ not in ("Tuple", "List"):
+            return []
+        out: List[str] = []
+        for elt in getattr(node, "elts", []):
+            text = _ci.literal_text(elt)
+            if text:
+                out.append(text)
+        return out
+    except Exception:  # noqa: BLE001 -- a derivation failure must never block a dispatch
+        return []
+
+
+def _compose_p3_arc_contract(base: str) -> str:
+    """Name, in the P3-ARC contract, the rules its own artifact is judged by (PD-TEST-132).
+
+    P3-ARC writes working/copy/arc_allocation.json. Two separate checkers grade that
+    file and NEITHER rule was in this contract, so the author wrote blind and the run
+    paid for it one re-author at a time:
+
+      * AF-NO-VILLAIN -- the arc MUST carry a named antagonist beat. Measured on run
+        pres-operator-1d269693: the arc has 8 sections and ZERO antagonist vocabulary,
+        so P4-COPY failed the substance check with "no VILLAIN/antagonist beat anywhere
+        in the arc". P4-COPY's own contract DOES name that rule (the derived index
+        covers it) -- but P4-COPY does not own the arc and cannot repair it, so naming
+        the rule downstream only produced a phase that blocks on an artifact it cannot
+        fix. The rule belongs where the artifact is authored.
+      * AF-PITCH-LEAK -- on a pitch_included:false deck the arc is refused for the
+        suppressed vocabulary. All 11 recognised antagonist tokens are pitchless-SAFE
+        (zero overlap with the forbidden 26), so the deck is satisfiable; the author
+        was simply never told which words are closed to it.
+    """
+    tokens = _module_str_sequence("build_deck", "PITCHLESS_FORBIDDEN_TOKENS")
+    villain = _module_str_sequence("intelligence_engines_check", "VILLAIN_TOKENS")
+    safe_villain = [v for v in villain
+                    if not any(f in v.lower() or v.lower() in f for f in tokens)]
+    out = base
+    if safe_villain:
+        out += (
+            " MANDATORY VILLAIN BEAT (AF-NO-VILLAIN, graded on THIS artifact). The arc "
+            "MUST contain a named antagonist beat -- the thing standing between this "
+            "audience and the outcome -- placed BEFORE the solution/hero beat. An arc "
+            "with no named antagonist fails the substance check and blocks P4-COPY, "
+            "which cannot repair an artifact it does not own. Recognised antagonist "
+            "vocabulary, read at import time from "
+            "intelligence_engines_check.VILLAIN_TOKENS: "
+            + "; ".join(safe_villain)
+            + "."
+        )
+    else:
+        out += (
+            " MANDATORY VILLAIN BEAT (AF-NO-VILLAIN, graded on THIS artifact). The arc "
+            "MUST contain a named antagonist beat before the solution/hero beat. An arc "
+            "with no named antagonist fails the substance check and blocks P4-COPY."
+        )
+    if tokens:
+        out += (
+            " SUPPRESSED TOKENS -- read at import time from "
+            "build_deck.PITCHLESS_FORBIDDEN_TOKENS, the very tuple `_chk_pitch_leak` "
+            "scans for, so this list is complete and cannot drift. None of these "
+            f"{len(tokens)} tokens may appear in ANY string value of the artifact on a "
+            "pitch_included:false deck (the scan reads values, not keys, and skips "
+            "*_reason / *_note / validation_notes): "
+            + "; ".join(tokens)
+            + "."
+        )
+    return out
+
+
+ARTIFACT_CONTRACTS["P3-ARC"] = _compose_p3_arc_contract(ARTIFACT_CONTRACTS["P3-ARC"])
 
 
 GENERIC_CONTRACT = (
