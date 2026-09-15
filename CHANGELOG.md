@@ -1,3 +1,28 @@
+## [v25.1.8]  -  2026-09-15  -  One reader for the deck's slide shape, so the section join cannot drift
+
+### What Changed
+- **PD-TEST-067 — every reader of the deck's slide list agreed on a shape the producer does not emit.** P3-ARC wrote `working/copy/arc_allocation.json` with its eight slides under **`slide_allocations`**, each slot carrying **`arc_section`** and **`slide_number`**. Five independent readers (`fanout._slides_for_units`, `dispatcher._prompt_slide_count`, `build_deck._count_output_slides`, `craft_judgement._arc_slots`, and `build_deck`'s own P3-ARC preflights) each asked for **`slots`/`allocation`/`slides`**, **`arc`/`section`/`name`** and **`ordinal`**. The string `slide_allocations` appeared **nowhere else in the repository**, so no reader could see the artifact at all.
+- **The live consequence was two-layered, and the second layer survived the first repair.** (1) `fanout._slides_for_units` returned zero, so the dispatcher's zero-unit refusal fired — **correctly**, a fan-out must never invent a unit — but that refusal is a byte-identical `error` on every tick, so `record_outcome` folded **8** of them into `DISPATCH_REPEAT_CEILING` and parked `P-U-DESIGN-VSL`/`SALES`/`CHECKOUT` and `P-STYLE-SPEC`; five dependents then waited on those quarantines forever. (2) `_section_ordinal_ranges` could not read the container **either**, so every section lost its declared slide-ordinal range and P4-COPY's unit payload was refused with `section-01: unit payload carries no ordinal range`.
+- **A container-key fix alone was not enough, and a passing test hid that.** Fixing only the array key made `arc_slides.load_slots()` return all eight slots, so a test asserting that count passed — while the deck was still unbuildable, because the real defect was the **label join between two readers**: the enumerator derived section *names*, the range reader looked those names up, and both held a private copy of the key list that asked for `arc`/`section`/`name`. The enumerator therefore collapsed the whole deck to **one unit named `whole`** and the range reader matched nothing, returning the `(-1, -1)` sentinel for all eight sections.
+- **Fix — `presentation_job/arc_slides.py` is THE ONE READER**, and every consumer now asks it: `fanout`, `dispatcher`, `build_deck`, `craft_judgement`, `deliverable_floors`, `phase_verifiers`, `slice1_gate_verifiers`. It accepts every shape a producer in this tree has actually emitted, and it reports **"not determinable" (`None`) separately from "determined, and the answer is zero" (`[]`)** — the distinction the zero-unit refusal needs in order to stay honest.
+- **The join is fixed on BOTH sides in the same place.** Section names are derived by `arc_slides.section_names_from_obj` and looked up by `arc_slides.slot_label`, so the two can no longer disagree. Names are deliberately derived from the **slots**, never from the artifact's top-level `arc_sections` list, whose entries are display titles (`"Opening / Priority Stack"`) rather than the slot labels (`"opening"`) — keying off those would move the join failure one step downstream instead of fixing it.
+- **The producer's own verifier is strengthened.** P3-ARC's entry in `phase_verifiers.py` now validates the shape it promises instead of accepting mere valid JSON, so the **next** drift fails loudly at P3-ARC rather than silently starving four downstream phases.
+- **Measured against the live run (`pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`), before and after:** `fanout._sections_for_units` went from **1 unit named `whole`** to **8 arc-named sections** (`opening` … `trigger`), and `dispatcher._section_ordinal_ranges` went from **`[(-1,-1)] × 8`** to **(1,1) … (8,8)**, tiling all 8 slides exactly once.
+- **Not weakened:** the zero-unit refusal itself is unchanged and `tests/test_fanout_zero_units_ceiling.py` still passes **26/26** — a fan-out that enumerates no units must never invent one.
+- **Not touched, deliberately:** the manifest is left **byte-identical to the run's pinned sha** (`094d898f1f27…`), so this repair reaches the in-flight run with **no repin**. The paid-retry receipt logic, the empty-completion/reasoning step-down, `DISPATCH_RETRY_CAP` and `DISPATCH_REPEAT_CEILING` are all untouched.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/arc_slides.py` (+293, new — the one reader)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/fanout.py` (+51/-52)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+27/-41)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py` (+18/-23)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/craft_judgement.py` (+23/-8)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py` (+72/-1)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/deliverable_floors.py` (+6/-2)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slice1_gate_verifiers.py` (+6/-3)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd067_section_join.py` (+163, new — asserts the join on a live-shaped fixture)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd067_arc_slide_shape_contract.py` (+514, new — the shape contract)
+
 ## [v25.1.6]  -  2026-09-15  -  A partial model-plan answer keeps the slots it omits instead of nulling them
 
 ### What Changed
