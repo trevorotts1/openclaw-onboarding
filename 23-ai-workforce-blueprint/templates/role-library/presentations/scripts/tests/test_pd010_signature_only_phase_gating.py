@@ -59,10 +59,26 @@ SP_ONLY = ("P-SP-INTAKE", "P-SP-INTAKE-TRACE", "P-SP-STRUCTURE", "P-SP-P3-HYGIEN
 SP_CLAIM = "P-SP-CLAIM"
 CONVERTER = "P-CONVERTER"
 
-# The live run whose intake deadlocked the pipeline (read-only source).
-LIVE_RUN_INTAKE = Path(
-    "/Users/blackceomacmini/.openclaw/workspace/departments/Presentations/runs/"
-    "pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4/working/copy/intake.json")
+# The live run whose intake deadlocked the pipeline. Its run id is a job id (no
+# client data), and the directory is resolved RELATIVE TO THE RUNNING BOX --
+# never as a hardcoded operator home. A literal operator path is a banned
+# always-on token in tracked files (scripts/qc-assert-no-client-names.sh
+# ALWAYS_ON_TOKENS: "/Users/<operator>" and its dash-separated form), and this
+# repo is fleet-wide, so the path may only ever be COMPUTED here, never written.
+LIVE_RUN_ID = "pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4"
+LIVE_RUN_INTAKE_RELPATH = (".openclaw", "workspace", "departments", "Presentations",
+                           "runs", LIVE_RUN_ID, "working", "copy", "intake.json")
+
+# The REAL saved intake, committed so the non-signature direction is proven on
+# every box INCLUDING CI (where no live run dir exists). It is a VERBATIM copy of
+# the live run's sealed working/copy/intake.json with ONLY the requester-identity
+# keys removed -- `requester`, `requester_chat_id`, `requester_channel` -- because
+# a live chat id is PII and must never be committed. Every deck-shape field the
+# walk reads (deck_type, presentation_type, creation_mode, signature_source,
+# pitch_included, presentation_mode, audience_mode) is byte-identical to the live
+# record, and the tests below pin those values.
+FIXTURE_INTAKE = (Path(__file__).resolve().parent / "fixtures"
+                  / "pd010-webinar-intake.json")
 
 
 # ---------------------------------------------------------------------------
@@ -92,14 +108,58 @@ def _real_manifest_path() -> Path:
     return _repo_root() / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
 
 
-def _live_intake() -> dict:
-    """The live run's own sealed intake (deck_type=webinar). Env override
-    PD010_LIVE_INTAKE lets a reviewer point at an archived copy; the live path
-    itself is only ever READ."""
-    p = Path(os.environ.get("PD010_LIVE_INTAKE") or LIVE_RUN_INTAKE)
-    if not p.is_file():
-        pytest.skip(f"live non-signature intake not available at {p}")
+def _load_intake(p: Path) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+def _non_signature_sources() -> dict:
+    """Every REAL saved non-signature intake this box can reach, keyed by source
+    name. Always contains the committed verbatim fixture (so CI proves this
+    direction); ADDS the box's own live run record when this box is the one that
+    ran the job, and any explicit $PD010_LIVE_INTAKE override.
+
+    Resolution is by `Path.home()`, never a hardcoded operator path -- see the
+    LIVE_RUN_INTAKE_RELPATH comment above."""
+    sources: dict = {}
+    if FIXTURE_INTAKE.is_file():
+        sources["committed-live-fixture"] = _load_intake(FIXTURE_INTAKE)
+
+    candidates = []
+    if os.environ.get("PD010_LIVE_INTAKE"):
+        candidates.append(("live-run-on-this-box($PD010_LIVE_INTAKE)",
+                           Path(os.environ["PD010_LIVE_INTAKE"])))
+    candidates.append(("live-run-on-this-box",
+                       Path.home().joinpath(*LIVE_RUN_INTAKE_RELPATH)))
+    for label, p in candidates:
+        try:
+            if p.is_file():
+                sources[label] = _load_intake(p)
+                break  # the true record is the same record; one is enough
+        except OSError:
+            continue
+    return sources  # never raises and never skips: callers decide
+
+
+# Evaluated once at import so the parametrize ids are stable; the sentinel id
+# keeps collection working on a box that somehow has no record at all, where the
+# test body then skips with an explicit reason instead of erroring at collection.
+_NON_SIG_SOURCE_IDS = sorted(_non_signature_sources()) or ["<no-real-intake-available>"]
+
+
+def _non_sig_intake(source: str) -> dict:
+    sources = _non_signature_sources()
+    if source not in sources:
+        pytest.skip(f"no real non-signature intake record available ({source})")
+    return sources[source]
+
+
+def _live_intake() -> dict:
+    """The real non-signature (webinar) intake -- the fixture by default, or the
+    box's own live record when it has one."""
+    sources = _non_signature_sources()
+    if not sources:
+        pytest.skip("no real non-signature intake record available on this box")
+    return next(iter(sources.values()))
 
 
 def _signature_intake() -> dict:
@@ -150,11 +210,13 @@ def _walked_ids(eng: Engine, phases) -> set:
 
 # ---------------------------------------------------------------------------
 # 1. Direction A: a NON-signature deck must not walk (therefore cannot
-#    dispatch) any of the four signature-only stages -- using the LIVE run's
-#    own intake, the exact record that deadlocked the real pipeline.
+#    dispatch) any of the four signature-only stages -- driven by the REAL saved
+#    intake that deadlocked the real pipeline (the committed verbatim fixture,
+#    plus this box's own live record when it has one).
 # ---------------------------------------------------------------------------
-def test_live_non_signature_deck_does_not_walk_signature_only_stages(tmp_path):
-    intake = _live_intake()
+@pytest.mark.parametrize("source", _NON_SIG_SOURCE_IDS)
+def test_live_non_signature_deck_does_not_walk_signature_only_stages(tmp_path, source):
+    intake = _non_sig_intake(source)
     assert intake["deck_type"] == "webinar"            # the real record, pinned
     assert intake["presentation_type"] == "from_scratch"
     assert intake["pitch_included"] is False
@@ -174,11 +236,12 @@ def test_live_non_signature_deck_does_not_walk_signature_only_stages(tmp_path):
     assert len(phases) == len(eng.manifest.phases) - 5  # 4 SP-only + P-CONVERTER
 
 
-def test_non_signature_route_around_is_honest_not_a_fake_pass(tmp_path):
+@pytest.mark.parametrize("source", _NON_SIG_SOURCE_IDS)
+def test_non_signature_route_around_is_honest_not_a_fake_pass(tmp_path, source):
     """Each routed stage is marked done-with-routed_around, with NO artifact,
     NO verifier result, and a reason that names the real deck_type -- the
     auditable distinction from a genuine execution."""
-    eng = _engine(tmp_path, _live_intake())
+    eng = _engine(tmp_path, _non_sig_intake(source))
     _walk(eng)
 
     for pid in SP_ONLY:
@@ -202,11 +265,12 @@ def test_non_signature_route_around_is_honest_not_a_fake_pass(tmp_path):
         assert pid in emitted, f"no phase.routed_around event recorded for {pid}"
 
 
-def test_non_signature_route_around_forwards_nothing_to_the_executor(tmp_path, monkeypatch):
+@pytest.mark.parametrize("source", _NON_SIG_SOURCE_IDS)
+def test_non_signature_route_around_forwards_nothing_to_the_executor(tmp_path, monkeypatch, source):
     """Regression proof at the dispatch seam: an executor that would be called
     for every walked phase is NEVER called for a routed-around stage, and no
     agent step is spent on it."""
-    eng = _engine(tmp_path, _live_intake())
+    eng = _engine(tmp_path, _non_sig_intake(source))
 
     dispatched: list[str] = []
 
