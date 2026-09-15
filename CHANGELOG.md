@@ -1,3 +1,32 @@
+## [v25.1.23]  -  2026-09-16  -  AF-PITCH-LEAK scans the artifact's content, not its serialization
+
+### What Changed
+- **PD-TEST-131 — the pitchless-deck leak check failed on the RECORD of its own compliance.** `build_deck._chk_pitch_leak` lowercased the whole file and tested each of its 24 forbidden tokens as a bare substring. On live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4` — a pitchless webinar — that produced two failures which are **not pitch content at all**:
+
+  1. **The record of absence.** The arc allocation documents its own suppression using the forbidden vocabulary, verbatim:
+     ```
+     "...intake declares pitch_included:false, so there is no anchor price, value stack, or price ladder in this deck."
+     "...no offer, anchor, price-ladder, or re-pitch beats are authored."
+     "...no offer, price, ladder, vip, or re-pitch content is included because intake.json records pitch_included:false."
+     ```
+     The producer did exactly what a pitchless deck requires **and then said so** — and the saying is what failed. A check for content must not be tripped by a sentence denying that content.
+
+  2. **Null-valued schema keys.** The same file carries the schema's own field names with null values — `"price_ladder_section": null`, `"value_stack_section": null`, `"re_pitch_section": null`, `"anchor_price_section": null`, `"offer_price_ladder_included": false`. A key declaring a thing **absent** was scanned as if it declared it **present**; the last case trips on the key name alone.
+
+- **The fix scans content, not serialization.** For JSON artifacts the scan now walks the **values** and never the keys, so a field *name* can never be a match; and it skips fields that are prose **about** the artifact rather than part of it (`*_reason`, `*_note`, `*_notes`, `validation_notes`), because those exist to explain decisions — including the decision to suppress. Non-JSON artifacts (the `.md` copy) are prose by nature and stay whole-text.
+
+  **An unparseable JSON artifact degrades to the whole-text scan**, i.e. the old, stricter behaviour, so a broken artifact can never become a **silent pass**.
+
+- **Effect on the live run, measured:** the flag narrows from three mechanisms to one. What remains is a **true positive** — the arc really does carry `"section_id": "cost_of_inaction"` with a slide named *"the cost of carrying it yourself"*, and that token is on the forbidden list. That is a doctrine question (the same list forbids a beat the felt-stakes engine otherwise wants), not a scanning bug, and it is deliberately left to a reviewed decision rather than patched away here.
+
+### Tests
+- New `tests/test_pd131_pitch_scan.py`, nine cases: null-valued schema keys do not leak; the record of absence does not leak; **four negative controls** proving a genuine leak in a *substantive* field (`section_id`, `name`, `move_tag`, `slide_title`) and in the copy STILL fails — without which this would be a "make the check pass" patch; an unparseable artifact still fails; and the helper returns values, never keys.
+- **Negative control: the three new-behaviour cases fail against the pre-fix tree** and the six genuine-leak guards pass on both — the correct asymmetry.
+- Broader regression: 43 passed.
+
+### Risk
+- Scope is `_chk_pitch_leak`'s scan. A genuine leak in a substantive field or in the copy is caught exactly as before; the only behaviour removed is failing on key names and on prose that explains the suppression. The `price_ladder.json`-must-not-exist half of the check is untouched.
+
 ## [v25.1.22]  -  2026-09-16  -  The commercial-beat engines are pitch-aware, so a pitchless deck is no longer asked to fabricate them
 
 ### What Changed
