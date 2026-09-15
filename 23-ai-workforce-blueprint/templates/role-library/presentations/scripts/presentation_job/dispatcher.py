@@ -7926,10 +7926,15 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
             # Exactly-once, and atomic.  authorize_paid_retry_reset writes the
             # receipt under THIS same _phase_budget_transaction lock, so the
             # bytes the predicate just proved are the bytes read here: no
-            # re-derivation, no second validation copy.  The durable claim is
-            # repair_receipt_consumed=True in the ledger written below, so a
-            # second reservation -- in this process or any later one -- sees a
-            # consumed receipt and can never re-arm this allowance.
+            # re-derivation, no second validation copy.
+            # PD-TEST-092: the durable claim that makes this exactly-once is the
+            # GENERATION BUMP on the next line, NOT repair_receipt_consumed.  The
+            # generation is the only field a receipt must match (it carries
+            # prior_generation == the ledger's current generation), and bumping it
+            # here is what strands this receipt permanently.  The bool below is an
+            # audit record only; gating on it is what PD-TEST-092 removed, because
+            # it latched the phase for life and made the paid budget unopenable a
+            # second time.  Both fields are carried across outcome folds (:8078).
             receipt = _read_repair_receipt(run_dir, phase_id)
             paid = DISPATCH_RETRY_CAP - receipt["allowance"]
             led["generation"] = int(led.get("generation", 0)) + 1
@@ -8077,6 +8082,12 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         # exhausted result and buy a second allowance on restart.
         "generation": int(led.get("generation") or 0),
         "repair_receipt_consumed": bool(led.get("repair_receipt_consumed")),
+        # PD-TEST-092: this entry REBUILDS the ledger, so any field not named here
+        # is erased on the very next outcome fold.  The independent review of PR
+        # #1143 measured exactly that: the new audit field was present after
+        # _reserve and GONE after one record_outcome, which made the advertised
+        # audit trail fiction.  Carried forward so it survives as documented.
+        "repair_receipt_consumed_generation": led.get("repair_receipt_consumed_generation"),
         "repair_receipt": led.get("repair_receipt"),
     }
 

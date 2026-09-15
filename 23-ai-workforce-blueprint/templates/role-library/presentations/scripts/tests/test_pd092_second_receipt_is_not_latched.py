@@ -252,7 +252,14 @@ class TestTheLiveLedgerShape:
         """Reproduce the live bytes exactly: generation=1,
         repair_receipt_consumed=True (a bare bool, written before this fix), and
         a fresh receipt issued for generation 1.  This is the state the real run
-        was stuck in; it must now be actionable."""
+        was stuck in; it must now be actionable.
+
+        Note on the `extra` field (raised in independent review): `repair_receipt`
+        is carried in the fixture because the LIVE ledger carries it, so the
+        fixture is faithful to the bytes this bug was found on. The predicate
+        reads the receipt from DISK, never from `led["repair_receipt"]`, so that
+        key is not what makes this test pass -- `test_a_consumed_bool_alone_does_not_block`
+        below is the same assertion with no `extra` at all."""
         rd = _seed_run(
             tmp_path, paid_attempts=dj.DISPATCH_RETRY_CAP, generation=1,
             consumed=True,
@@ -338,3 +345,33 @@ class TestTheDurableBudgetIsUnchanged:
         assert led["repair_receipt_consumed"] is True
         assert led["repair_receipt_consumed_generation"] == 0
         assert led["repair_receipt"]["allowance"] == 2
+
+    def test_the_audit_record_survives_an_outcome_fold(self, tmp_path):
+        """The audit record must be DURABLE, not just written once.
+
+        `record_outcome` rebuilds the ledger from a fresh dict, so any field it
+        does not name is ERASED on the next tick.  The independent review of PR
+        #1143 measured exactly that: the field was present after `_reserve` and
+        gone after one fold, which made the advertised audit trail fiction.  Both
+        of the other tests here assert it immediately after `_reserve` and so
+        never crossed a fold -- this one does.
+        """
+        rd = _seed_run(tmp_path, paid_attempts=dj.DISPATCH_RETRY_CAP)
+        _issue(rd, allowance=2)
+        _reserve(rd)
+        assert _ledger(rd)["repair_receipt_consumed_generation"] == 0
+
+        dj.record_outcome(rd, PHASE, worker_id="w", status="failed",
+                          reasons=["synthetic fold"], paid_attempts=1)
+        folded = _ledger(rd)
+        assert "repair_receipt_consumed_generation" in folded, (
+            "the audit field was dropped by an outcome fold")
+        assert folded["repair_receipt_consumed_generation"] == 0
+        # and the fields exactly-once depends on must survive the same fold
+        assert folded["generation"] == 1
+        assert folded["repair_receipt_consumed"] is True
+
+        # The receipt is still not re-armable after the fold.
+        ok, why = _actionable(rd)
+        assert not ok, "the spent receipt became actionable again across a fold"
+        assert "generation" in why, why
