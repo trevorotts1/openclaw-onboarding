@@ -762,9 +762,50 @@ def _retire_orphaned_park_marker(run_dir: Any, phase_id: str) -> bool:
     return False
 
 
+def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
+    """True when a BLOCKED phase was parked by a CHECKER, not by an operator
+    (PD-TEST-135).
+
+    The gap this closes: `_phase_terminal_bad` treats
+    {QUARANTINED, FAILED, BLOCKED, OBSOLETE} as terminal -- it withholds every
+    descendant -- but `_READMITTABLE_PHASE_STATUSES` covered only
+    FAILED and QUARANTINED. BLOCKED was therefore the ONE status that was
+    terminal-bad yet never re-admittable: a phase parked by a substance check
+    could not be re-entered on ANY resume, so its descendants stayed withheld
+    and the run re-parked identically forever -- even after the checker that
+    parked it had been fixed.
+
+    Measured 2026-09-16 on run pres-operator-1d269693: P4-COPY sat
+    status="blocked" on blocked_reason "substance check failed: AF-NO-VILLAIN
+    ..." while the INSTALLED intelligence_engines_check.check_copy() returned
+    ZERO problems against the same copy -- the defect had already been fixed by
+    PD-TEST-125, and 34 downstream phases (including PF-DESIGN -> P4-RENDER ->
+    out.pptx) waited on the stale string. A sanctioned `--resume` did not
+    re-adjudicate it, and the only documented exit was an owner
+    skip_approval token -- i.e. mark it done WITHOUT re-running the check.
+
+    An OPERATOR park carries no checker verdict and is still honoured: only a
+    block whose own reason, or whose heal history, records a verifier verdict is
+    reopened. The vocabulary is read from heal.py, which already owns it, so the
+    two cannot drift."""
+    try:
+        from .heal import FAILURE_VERIFIER_SUBSTANCE, _VERIFIER_MARKERS
+    except Exception:  # noqa: BLE001 -- a degraded install must not lose the fix
+        FAILURE_VERIFIER_SUBSTANCE = "verifier_substance"
+        _VERIFIER_MARKERS = ("substance check failed", "verifier", "verify")
+    reason = str(ps.get("blocked_reason") or "").lower()
+    if reason and any(m in reason for m in _VERIFIER_MARKERS):
+        return True
+    for h in (ps.get("heal_events") or []):
+        if isinstance(h, dict) and h.get("class") == FAILURE_VERIFIER_SUBSTANCE:
+            return True
+    return False
+
+
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Reset FAILED/QUARANTINED phases to PENDING so the next run re-enters
-    them. Returns one record per re-admitted phase; each record is also
+    """Reset FAILED/QUARANTINED phases -- and verifier-parked BLOCKED phases
+    (PD-TEST-135) -- to PENDING so the next run re-enters them.
+    Returns one record per re-admitted phase; each record is also
     appended to that phase's `readmissions` history and to the run-level
     state["resume_readmissions"]. The phase's `attempts`, `heal_events`,
     `failed_rc`/`failed_reason` are PRESERVED -- the failed attempt is never
@@ -781,8 +822,15 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     readmitted: List[Dict[str, Any]] = []
     for ps in state.get("phases") or []:
         pid = ps.get("id")
-        if not pid or ps.get("status") not in _READMITTABLE_PHASE_STATUSES:
+        if not pid:
             continue
+        status = ps.get("status")
+        if status not in _READMITTABLE_PHASE_STATUSES:
+            # PD-TEST-135: a verifier-parked BLOCKED phase is re-openable so the
+            # repaired checker actually reaches it; an operator park is not.
+            if not (status == PHASE_STATUS_BLOCKED
+                    and _block_is_verifier_sourced(ps)):
+                continue
         owner_state, owner_detail = _park_marker_owner_state(run_dir, pid)
         if owner_state in _PARK_MARKER_HONOURED_STATES:
             # The dispatcher owns this generation's durable budget -- and it is
@@ -794,7 +842,8 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "prior_status": ps.get("status"),
             "prior_attempts": ps.get("attempts"),
             "prior_reason": (ps.get("quarantined_reason")
-                             or ps.get("failed_reason")),
+                             or ps.get("failed_reason")
+                             or ps.get("blocked_reason")),
         }
         if owner_state == "orphaned":
             record["orphaned_park_marker"] = owner_detail
