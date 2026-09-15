@@ -6568,6 +6568,83 @@ PITCHLESS_FORBIDDEN_TOKENS = (
 )
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-131 -- WHAT AF-PITCH-LEAK MUST ACTUALLY SCAN.
+#
+# THE DEFECT. This check lowercased the WHOLE FILE and tested each forbidden token
+# as a bare substring. On the live pitchless run that made it fail on two things
+# that are not pitch content at all:
+#
+#   1. THE RECORD OF ABSENCE. The arc allocation documents its own suppression
+#      using the forbidden vocabulary, verbatim:
+#        "...intake declares pitch_included:false, so there is no anchor price,
+#         value stack, or price ladder in this deck."
+#        "...no offer, price, ladder, vip, or re-pitch content is included because
+#         intake.json records pitch_included:false."
+#      The producer did exactly what a pitchless deck requires and then SAID SO,
+#      and the saying is what failed. A check for content must not be tripped by a
+#      sentence denying that content.
+#
+#   2. NULL-VALUED SCHEMA KEYS. The same file carries the schema's own field names
+#      with null values -- "price_ladder_section": null, "value_stack_section":
+#      null, "re_pitch_section": null, "offer_price_ladder_included": false. A key
+#      declaring a thing ABSENT was scanned as if it declared it PRESENT, and the
+#      `_included: false` case trips on the key name alone.
+#
+# THE FIX. Scan the artifact's CONTENT, not its serialization:
+#   * for JSON, walk the VALUES and never the keys, so a field NAME can never be a
+#     match; and
+#   * skip fields that are prose ABOUT the artifact rather than part of it
+#     (`*_reason`, `*_note(s)`, `validation_notes`), because those exist to explain
+#     decisions -- including the decision to suppress.
+# Everything else is still scanned exactly as before, so a genuine leak in a
+# substantive field (`section_id`, `name`, `move_tag`, `slide_title`, ...) still
+# fails. Non-JSON artifacts (.md copy) are prose by nature and stay whole-text.
+# ---------------------------------------------------------------------------
+
+#: Field names whose VALUE is prose about the artifact rather than artifact content.
+_PITCH_SCAN_PROSE_FIELDS = frozenset({
+    "reason", "note", "notes", "validation_notes", "validation_note",
+})
+
+
+def _pitch_scan_is_prose_field(name: str) -> bool:
+    n = str(name or "").strip().lower()
+    return n in _PITCH_SCAN_PROSE_FIELDS or n.endswith(("_reason", "_note", "_notes"))
+
+
+def _pitch_scan_texts(path: Path) -> List[str]:
+    """The strings of `path` that AF-PITCH-LEAK should test.
+
+    JSON -> its values (never its keys), minus prose-about-the-artifact fields.
+    Anything else (the .md copy) -> the file text, because that IS prose content.
+    An unparseable JSON file degrades to the whole text, i.e. the old behaviour,
+    so a broken artifact can never become a SILENT pass."""
+    raw = path.read_text(errors="replace")
+    if path.suffix.lower() != ".json":
+        return [raw]
+    try:
+        obj = json.loads(raw)
+    except Exception:  # noqa: BLE001 -- fail towards the stricter scan
+        return [raw]
+    out: List[str] = []
+
+    def walk(node, key=""):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if _pitch_scan_is_prose_field(k):
+                    continue
+                walk(v, str(k))
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, key)
+        elif isinstance(node, str):
+            out.append(node)
+
+    walk(obj)
+    return out
+
+
 def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """2A — AF-PITCH-LEAK. A PITCHLESS deck (intake.json.pitch_included:false) must
     contain NO pitch/price/offer/ladder content. Scans arc_allocation.json,
@@ -6585,15 +6662,18 @@ def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
             leaks.append(f"{rel} present (Offer Price Strategist ran on a pitchless deck)")
             break
     # Token scan over the arc + copy artifacts.
-    scan = []
     for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
                 "working/copy/slides_copy.md", "slides_copy.md",
                 "working/copy/price_ladder.json"):
         p = run_dir / rel
-        if p.exists():
-            scan.append((rel, p.read_text(errors="replace").lower()))
-    for rel, low in scan:
-        hits = [t for t in PITCHLESS_FORBIDDEN_TOKENS if t in low]
+        if not p.exists():
+            continue
+        hits = []
+        for text in _pitch_scan_texts(p):
+            low = text.lower()
+            for t in PITCHLESS_FORBIDDEN_TOKENS:
+                if t in low and t not in hits:
+                    hits.append(t)
         if hits:
             leaks.append(f"{rel}: " + ", ".join(repr(h) for h in hits[:6]))
     if leaks:

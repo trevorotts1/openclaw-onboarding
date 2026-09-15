@@ -1,0 +1,140 @@
+"""PD-TEST-131 -- AF-PITCH-LEAK must scan CONTENT, not serialization.
+
+THE DEFECT, measured on live run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4.
+`build_deck._chk_pitch_leak` lowercased the whole file and tested each forbidden
+token as a bare substring. On that PITCHLESS deck it failed on two things that are
+not pitch content at all:
+
+  1. THE RECORD OF ABSENCE. The arc allocation documents its own suppression using
+     the forbidden vocabulary, verbatim: "...intake declares pitch_included:false,
+     so there is no anchor price, value stack, or price ladder in this deck."
+     The producer did what a pitchless deck requires and then SAID SO.
+  2. NULL-VALUED SCHEMA KEYS. The same file carries the schema's own field names
+     with null values -- "price_ladder_section": null, "value_stack_section": null,
+     "re_pitch_section": null, "offer_price_ladder_included": false -- so a key
+     declaring a thing ABSENT was scanned as if it declared it PRESENT.
+
+WHAT THESE TESTS PIN
+  * a null-valued schema key is never a hit (values are scanned, keys are not);
+  * prose ABOUT the artifact (`*_reason`, `*_note(s)`, `validation_notes`) is not
+    content and is not scanned;
+  * a GENUINE leak in a substantive field STILL fails -- the negative control that
+    stops this from being a "make the check pass" patch;
+  * an unparseable JSON file degrades to the whole-text scan, so a broken artifact
+    can never become a SILENT pass.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+SCRIPTS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SCRIPTS))
+
+import build_deck as bd  # noqa: E402
+
+
+def _run(tmp_path: Path, arc: object, copy_text: str = "SLIDE 1\nsomething\n") -> Path:
+    rd = tmp_path / "run"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"deck_type": "webinar", "pitch_included": False}))
+    (rd / "working" / "copy" / "slides_copy.md").write_text(copy_text)
+    p = rd / "working" / "copy" / "arc_allocation.json"
+    if isinstance(arc, str):
+        p.write_text(arc)                       # raw, for the unparseable case
+    else:
+        p.write_text(json.dumps(arc))
+    return rd
+
+
+# ---------------------------------------------------------------------------
+# 1 -- NULL-VALUED SCHEMA KEYS ARE NOT A LEAK.
+# ---------------------------------------------------------------------------
+def test_null_valued_schema_keys_do_not_leak(tmp_path):
+    rd = _run(tmp_path, {
+        "pitch_included": False,
+        "non_applicable_sections": {
+            "price_ladder_section": None,
+            "value_stack_section": None,
+            "re_pitch_section": None,
+            "anchor_price_section": None,
+            "offer_price_ladder_included": False,
+        },
+    })
+    assert bd._chk_pitch_leak(rd) == "", (
+        "a key that declares a thing ABSENT must not be read as declaring it present")
+
+
+# ---------------------------------------------------------------------------
+# 2 -- PROSE ABOUT THE ARTIFACT IS NOT CONTENT.
+# ---------------------------------------------------------------------------
+def test_the_record_of_absence_does_not_leak(tmp_path):
+    rd = _run(tmp_path, {
+        "pitch_included": False,
+        "arc_profile": {"offer_price_ladder_reason":
+                        "intake.json records pitch_included:false and all offer, price, "
+                        "and stack fields are empty; no offer, anchor, price-ladder, or "
+                        "re-pitch beats are authored."},
+        "peak_apex": {"note": "intake declares pitch_included:false, so there is no "
+                              "anchor price, value stack, or price ladder in this deck."},
+        "validation_notes": ["no offer, price, ladder, vip, or re-pitch content is "
+                             "included because intake.json records pitch_included:false."],
+    })
+    assert bd._chk_pitch_leak(rd) == "", (
+        "a sentence DENYING pitch content must not be read as pitch content")
+
+
+# ---------------------------------------------------------------------------
+# 3 -- THE NEGATIVE CONTROL: a real leak still fails.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("field,value,token", [
+    ("section_id", "price_ladder", "price_ladder"),
+    ("name", "Value Stack Reveal", "value stack"),
+    ("move_tag", "RE-PITCH", "re-pitch"),
+    ("slide_title", "Buy now before it closes", "buy now"),
+])
+def test_a_genuine_leak_in_a_substantive_field_still_fails(tmp_path, field, value, token):
+    """Without this the fix would be a 'make the check pass' patch. `_reason` and
+    `note` are skipped because they are prose ABOUT the artifact; `section_id`,
+    `name`, `move_tag` and `slide_title` ARE the artifact, so a leak there is real."""
+    rd = _run(tmp_path, {"pitch_included": False, field: value})
+    msg = bd._chk_pitch_leak(rd)
+    assert msg, f"a real leak in {field!r} must still fail"
+    assert token in msg, msg
+
+
+def test_a_leak_in_the_copy_still_fails(tmp_path):
+    rd = _run(tmp_path, {"pitch_included": False},
+              copy_text="SLIDE 1\nLIMITED TIME OFFER: act now\n")
+    msg = bd._chk_pitch_leak(rd)
+    assert msg and "act now" in msg, msg
+
+
+# ---------------------------------------------------------------------------
+# 4 -- A BROKEN ARTIFACT CAN NEVER BECOME A SILENT PASS.
+# ---------------------------------------------------------------------------
+def test_unparseable_json_degrades_to_the_whole_text_scan(tmp_path):
+    rd = _run(tmp_path, '{"broken": "price ladder", ')   # raw, invalid JSON
+    msg = bd._chk_pitch_leak(rd)
+    assert msg and "price ladder" in msg, (
+        "an unparseable artifact must fall back to the stricter whole-text scan, "
+        f"never to a pass: {msg!r}")
+
+
+# ---------------------------------------------------------------------------
+# 5 -- the scan helper itself: keys are never returned.
+# ---------------------------------------------------------------------------
+def test_pitch_scan_texts_returns_values_never_keys(tmp_path):
+    p = tmp_path / "a.json"
+    p.write_text(json.dumps({"price_ladder_section": None,
+                             "name": "Cost of Carrying It Yourself",
+                             "nested": {"value_stack": "x"}}))
+    texts = bd._pitch_scan_texts(p)
+    joined = " | ".join(texts)
+    assert "price_ladder_section" not in joined, "a KEY must never be scanned"
+    assert "Cost of Carrying It Yourself" in joined, "values must be scanned"
+    assert "x" in joined, "nested values must be scanned"
