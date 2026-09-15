@@ -19,7 +19,7 @@ from .state import (
 from . import lease as lease_mod
 from .lease import DEFAULT_TTL_S as LEASE_TTL_S, HEARTBEAT_INTERVAL_S as LEASE_HEARTBEAT_S
 from .manifest import Manifest, resolve_manifest
-from .phases import Engine
+from .phases import Engine, readmit_retryable_phases
 from .report import dispatch
 # F13: cmd_sweep_undeliverable_roots below resolves its root list exactly the
 # way watchdog() and reconcile_sweep() do, and reports it with the same audit
@@ -795,6 +795,17 @@ def _reset_parked_state(state: Dict[str, Any]) -> Dict[str, Any]:
               f"-- those phases will re-run", flush=True)
     else:
         print("resume: all banked artifacts re-validated", flush=True)
+    # PD-TEST-060: a unit that ended failed/quarantined is re-admitted as
+    # pending (unless the dispatcher's own durable park owns it), so a resume
+    # re-enters it exactly as _fail_unit's docstring promises. Without this the
+    # ready queue could never admit it again, its descendants stayed withheld
+    # by _phase_terminal_bad, and every resume re-parked the run identically.
+    readmitted = readmit_retryable_phases(state)
+    state["last_resume_readmissions"] = readmitted
+    if readmitted:
+        print(f"resume: re-admitted {len(readmitted)} failed/quarantined "
+              f"phase(s) for retry: "
+              + ", ".join(r["phase"] for r in readmitted), flush=True)
     return prior
 
 
@@ -1040,7 +1051,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             engine.report.event(
                 "job.resume",
                 "resuming from checkpoint; banked artifacts reused" +
-                (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else ""))
+                (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else "") +
+                (f"; re-admitted {len(state.get('last_resume_readmissions') or [])} "
+                 f"failed/quarantined phase(s) for retry"
+                 if state.get("last_resume_readmissions") else ""))
         elif args.run:
             # FIX 22 — --run on a parked job resets like --resume. The door
             # always invokes --run; before this branch a parked run kept
@@ -1058,7 +1072,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     "job.run_reset",
                     "--run on a parked job: cleared terminal/blocked like --resume" +
                     (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}"
-                     if prior else ""),
+                     if prior else "") +
+                    (f"; re-admitted {len(state.get('last_resume_readmissions') or [])} "
+                     f"failed/quarantined phase(s) for retry"
+                     if state.get("last_resume_readmissions") else ""),
                     phase_id=(prior or {}).get("phase"))
 
         # PRES-052 — reconcile pending relay events on resume BEFORE the

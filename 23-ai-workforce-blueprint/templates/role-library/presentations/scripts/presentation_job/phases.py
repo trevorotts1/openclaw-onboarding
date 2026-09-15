@@ -650,6 +650,79 @@ def _phase_terminal_bad(status: Optional[str]) -> bool:
     return status in (PHASE_STATUS_QUARANTINED, PHASE_STATUS_FAILED,
                       PHASE_STATUS_BLOCKED, PHASE_STATUS_OBSOLETE)
 
+
+# ---------------------------------------------------------------------------
+# PD-TEST-060 -- a FAILED/QUARANTINED unit is re-enterable on an unpark.
+#
+# _ready_queue_tick admits PENDING phases only: it `continue`s past RUNNING,
+# QUARANTINED, FAILED, BLOCKED, DEFERRED and OBSOLETE without ever appending
+# them to the ready set, and _phase_terminal_bad then withholds every
+# descendant of a failed ancestor. __main__._reset_parked_state cleared
+# terminal/blocked but reset NO phase status, so a unit that ended `failed`
+# (or `quarantined`) was excluded from every later resume, its descendants
+# stayed in waiting_dependencies forever, and the run re-parked identically.
+# _fail_unit's own docstring already promises the opposite: "Resume treats a
+# quarantined unit exactly like a blocked one: it is not 'done', so the next
+# run re-enters it."
+#
+# The re-admission is deliberately NOT a budget bypass. A phase the DISPATCHER
+# parked keeps its durable ceiling: _park_blocked writes a per-phase blocked
+# marker whose own text says only a verified owner input amendment re-arms
+# that generation, so a phase carrying the marker is left exactly as it is --
+# DISPATCH_REPEAT_CEILING and the paid DISPATCH_RETRY_CAP therefore still bind
+# across resumes. Owner-decision parks (PHASE_STATUS_BLOCKED, FIX 10) are
+# never re-admitted: only the client can make that call.
+# ---------------------------------------------------------------------------
+_READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
+
+
+def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
+    """The dispatcher's own park marker for a phase (the F9 resolution, with
+    the same literal fallback Engine._blocked_marker_path uses so a degraded
+    install still finds the marker)."""
+    try:
+        from . import dispatcher as _dispatcher
+        return _dispatcher._blocked_marker_path(Path(run_dir), phase_id)
+    except Exception:  # noqa: BLE001 -- see docstring
+        return (Path(run_dir) / "working" / "work-orders"
+                / f"{phase_id}.dispatch-blocked.txt")
+
+
+def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Reset FAILED/QUARANTINED phases to PENDING so the next run re-enters
+    them. Returns one record per re-admitted phase; each record is also
+    appended to that phase's `readmissions` history and to the run-level
+    state["resume_readmissions"]. The phase's `attempts`, `heal_events`,
+    `failed_rc`/`failed_reason` are PRESERVED -- the failed attempt is never
+    erased, and the next attempt increments the same counter.
+
+    Called from __main__._reset_parked_state, the shared --run/--resume
+    unpark helper (FIX 22), so both entry verbs stay identical."""
+    run_dir = state.get("run_dir") or "."
+    readmitted: List[Dict[str, Any]] = []
+    for ps in state.get("phases") or []:
+        pid = ps.get("id")
+        if not pid or ps.get("status") not in _READMITTABLE_PHASE_STATUSES:
+            continue
+        if _dispatch_blocked_marker(run_dir, pid).exists():
+            # The dispatcher owns this generation's durable budget.
+            continue
+        record: Dict[str, Any] = {
+            "phase": pid,
+            "at": utcnow(),
+            "prior_status": ps.get("status"),
+            "prior_attempts": ps.get("attempts"),
+            "prior_reason": (ps.get("quarantined_reason")
+                             or ps.get("failed_reason")),
+        }
+        ps.setdefault("readmissions", []).append(record)
+        ps["readmitted_at"] = record["at"]
+        ps["status"] = PHASE_STATUS_PENDING
+        readmitted.append(record)
+    if readmitted:
+        state.setdefault("resume_readmissions", []).extend(readmitted)
+    return readmitted
+
 def _critical_path_len(pid: str, dag: Dict[str, List[str]], memo: Dict[str, int]) -> int:
     """Longest chain of ARTIFACT-DEPENDENT descendants below pid (the dag is
     the artifact graph in execution_plan.build_edges adjacency shape:
