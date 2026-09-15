@@ -277,8 +277,21 @@ def test_preflight_refuses_script_executor_fanout(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# P-U-DESIGN-SALES (by=slide, text units): ordered text join; every unit
-# contributes exactly its own slide's page-design prompt.
+# P-U-DESIGN-SALES (by=slide, text units): ordered text join.
+#
+# PD-TEST-098 UPDATED THIS FIXTURE -- deliberately, and here is why. It used to
+# read "every unit contributes exactly its own slide's page-design prompt", and
+# its stub matched `SLIDE (\d+) OF (\d+)` and returned a 25-char
+# "DESIGN PROMPT for slide N". That is the DEFECT, encoded as a test: the
+# consumer (`build_infographic.resolve_design_prompt`) reads
+# `prompts/<page>.design.txt` VERBATIM as ONE prompt for ONE 16:9 image and
+# gates it at 9,000-18,000 chars, so three complete per-slide prompts
+# concatenated is not a valid single prompt -- on the live run it made a
+# 58,484-char file against an 18,000 ceiling and parked three render phases.
+# The units now author PARTS of the one prompt, each inside its share of the
+# shared band. The test's REAL intent (units join in declared order) is
+# unchanged and still asserted, and the assertion is now stronger: the joined
+# artifact must land inside the band the consumer enforces.
 # ---------------------------------------------------------------------------
 
 def test_design_text_units_join_in_order(tmp_path, monkeypatch):
@@ -292,11 +305,18 @@ def test_design_text_units_join_in_order(tmp_path, monkeypatch):
     (rd / ".test-context").write_text("test")
     dept = _dept(tmp_path, "designer-x")
 
+    calls = []
+
     def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
-        m = re.search(r"SLIDE (\d+) OF (\d+)", user_prompt)
+        m = re.search(r"PART (\d+) OF (\d+)", user_prompt)
+        assert m, "a design unit must be told which PART of the one prompt it authors"
         n = int(m.group(1))
-        return f"DESIGN PROMPT for slide {n}", {"request_id": "r"}, \
-            {"provider": "s", "model": "m"}
+        calls.append(user_prompt)
+        # A part inside its own share of the shared band (PD-TEST-098).
+        floor_share, _ceil = D.design_unit_char_budget(int(m.group(2)))
+        part = f"PART for slide {n}. " + ("specific art direction. " *
+                                          (floor_share // 20 + 40))
+        return part, {"request_id": "r"}, {"provider": "s", "model": "m"}
 
     monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
     monkeypatch.setattr(D, "_verify", lambda pid, rdir: (True, []))
@@ -310,4 +330,12 @@ def test_design_text_units_join_in_order(tmp_path, monkeypatch):
         target=target, prior_reasons=[])
     assert res.status == "ok", res.reasons
     body = target.read_text()
+    # the original intent: the parts join in declared order
     assert body.index("slide 1") < body.index("slide 2") < body.index("slide 3")
+    # PD-TEST-098: and the joined artifact is ONE prompt inside the band the
+    # consumer enforces -- the property whose absence parked three phases.
+    assert 3 == len(calls)
+    import prompt_gate as _pg
+    assert _pg.PROMPT_CHAR_FLOOR <= len(body.strip()) <= _pg.PROMPT_CHAR_CEILING, (
+        f"joined design prompt is {len(body.strip())} chars, outside the "
+        f"{_pg.PROMPT_CHAR_FLOOR}-{_pg.PROMPT_CHAR_CEILING} band")
