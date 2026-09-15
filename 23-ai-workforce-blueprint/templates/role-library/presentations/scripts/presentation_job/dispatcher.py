@@ -750,7 +750,18 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "arc section each slide belongs to), a clear PEAK/APEX beat, and a clear ending "
         "beat (never a flat ending). If intake.json records pitch_included:false, do NOT "
         "include any offer/price/ladder content; otherwise include the value-stack/anchor/"
-        "price-ladder beats and a re-pitch after the FINAL beat."
+        "price-ladder beats and a re-pitch after the FINAL beat. "
+        "PITCHLESS VOCABULARY IS NOT OPTIONAL TO AVOID (PD-TEST-132). `build_deck."
+        "_chk_pitch_leak` is a RENDER GATE that scans this file for a fixed token list, so "
+        "on a pitch_included:false deck the artifact is refused for the WORDS it uses, "
+        "including words used to record that the content is absent. The exact suppressed "
+        "tokens are enumerated at the END of this contract, read out of the gate itself at "
+        "import time, so that list is complete and cannot drift. Name a felt-stakes section "
+        "by WHAT IT DOES for this audience (for example 'what-carrying-it-alone-costs', "
+        "'the-hidden-cost-of-waiting', 'status-quo-cost') rather than by a suppressed sale "
+        "mechanic. State the pitchless decision itself PLAINLY -- 'this deck carries no "
+        "commercial offer' -- and do not enumerate the mechanics you are omitting, because "
+        "listing them trips the same scan."
     ),
     "P-3.5-RESEARCH-MAP": (
         "OUTPUT CONTRACT: valid JSON object at working/research/research_map.json mapping "
@@ -1502,6 +1513,58 @@ def _compose_p4_copy_contract(base: str) -> str:
 
 
 ARTIFACT_CONTRACTS["P4-COPY"] = _compose_p4_copy_contract(ARTIFACT_CONTRACTS["P4-COPY"])
+
+
+def _pitchless_forbidden_tokens() -> List[str]:
+    """PD-TEST-132: the suppressed-vocabulary list, DERIVED from the gate that enforces it.
+
+    `build_deck._chk_pitch_leak` refuses a pitchless deck whose arc/copy carries any
+    token in `PITCHLESS_FORBIDDEN_TOKENS`. P3-ARC writes one of the files that gate
+    scans, but its contract never named the list -- so the author wrote blind and
+    lost a paid re-author to a rule it could not have known, while complying with
+    the only rule it WAS given ("no offer/price/ladder content").
+
+    Hand-copying the list into the contract prose is the exact drift this package
+    already warns about in contract_introspect.py: measured 2026-09-16, the
+    hand-copied version of THIS list missed three of the gate's variants
+    (second-close, limited-time offer, money back guarantee) on first writing.
+    So read it out of build_deck.py by AST, the same way the P4-COPY index is
+    derived, and fail soft to [] rather than block a dispatch on a read failure.
+    """
+    try:
+        assigns = _ci._module_level_assigns("build_deck")
+        node = assigns.get("PITCHLESS_FORBIDDEN_TOKENS")
+        if node is None or type(node).__name__ != "Tuple":
+            return []
+        out: List[str] = []
+        for elt in getattr(node, "elts", []):
+            text = _ci.literal_text(elt)
+            if text:
+                out.append(text)
+        return out
+    except Exception:  # noqa: BLE001 -- a derivation failure must never block a dispatch
+        return []
+
+
+def _compose_p3_arc_contract(base: str) -> str:
+    """Append the derived suppressed-token list to the P3-ARC contract (PD-TEST-132)."""
+    tokens = _pitchless_forbidden_tokens()
+    if not tokens:
+        return base
+    return (
+        base
+        + " SUPPRESSED TOKENS -- read at import time from "
+        "build_deck.PITCHLESS_FORBIDDEN_TOKENS, the very tuple `_chk_pitch_leak` "
+        "scans for, so this list is complete and cannot drift. None of these "
+        f"{len(tokens)} tokens may appear in ANY string value of the artifact on a "
+        "pitch_included:false deck (the scan reads values, not keys, and skips "
+        "*_reason / *_note / validation_notes): "
+        + "; ".join(tokens)
+        + "."
+    )
+
+
+ARTIFACT_CONTRACTS["P3-ARC"] = _compose_p3_arc_contract(ARTIFACT_CONTRACTS["P3-ARC"])
 
 
 GENERIC_CONTRACT = (
