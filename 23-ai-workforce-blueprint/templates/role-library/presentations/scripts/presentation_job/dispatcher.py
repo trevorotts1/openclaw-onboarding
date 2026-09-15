@@ -1190,6 +1190,199 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# PD-TEST-098 -- THE DESIGN-PAGE PROMPT BAND IS A *SHARED* BUDGET.
+#
+# THE DEFECT. P-U-DESIGN-SALES / -CHECKOUT / -VSL are three-unit fan-outs
+# (`fanout.by: slide`, `desired_count: 3`, PIPELINE-MANIFEST.json v69) whose
+# reducer CONCATENATES the three unit outputs into ONE artifact
+# (`prompts/<page>.design.txt`, `_reduce_text_concat`), and the consuming
+# render phase (`build_infographic.resolve_design_prompt`) sends that ONE
+# artifact VERBATIM to GPT-Image-2.5 as ONE prompt behind the shared gate at
+# `prompt_gate.PROMPT_CHAR_FLOOR .. PROMPT_CHAR_CEILING`.
+#
+# Nothing in the producer knew any of that. All three phases had NO entry in
+# ARTIFACT_CONTRACTS, so `compose_prompt` fell through to GENERIC_CONTRACT,
+# whose entire length rule is "real prose long enough to be substantive (not
+# a one-line stub)" -- there was no upper bound anywhere on the authoring
+# path. The owning role's SOP states the 9,000-14,000 band PER PROMPT, and
+# each of the three units reasonably spent that budget on ITSELF, so three
+# individually in-band prompts concatenated to 49,526-58,484 chars against an
+# 18,000 ceiling. Measured live on run
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: sales unit outputs
+# 20,917 + 20,024 + 17,537 = 58,478, plus the 4 separator chars
+# `_reduce_text_concat` inserts = the 58,484-char file the gate refused.
+# Every one of those units PASSED its validator -- `_validate_text` refused
+# nothing but emptiness -- so the ceiling was discovered three phases later,
+# at the paid render gate, instead of here.
+#
+# THE FIX. The band is stated to the units as what it actually is -- a budget
+# on the FINAL AGGREGATE artifact, shared across the phase's N units -- and
+# each unit is told its own share of it. The numbers are IMPORTED from
+# `prompt_gate`, the same module the gate itself raises from, so the
+# authoring target and the gate cannot drift; there is deliberately no second
+# copy of 9,000/18,000 in this file to drift from. The separator arithmetic
+# mirrors `_reduce_text_concat` through the ONE shared separator constant
+# below, so the budget and the reducer can never disagree either.
+#
+# NO MANIFEST CHANGE IS REQUIRED. `fanout.desired_count: 3` + one declared
+# artifact + the concat reducer + the aggregate ceiling are mutually
+# satisfiable: three units each authoring ONE PART of the one prompt, inside
+# their share of the one budget, sum to an artifact that clears the gate.
+# ---------------------------------------------------------------------------
+DESIGN_PAGE_PHASES: Dict[str, str] = {
+    "P-U-DESIGN-SALES": "sales",
+    "P-U-DESIGN-CHECKOUT": "checkout",
+    "P-U-DESIGN-VSL": "vsl",
+}
+
+# The ONE separator `_reduce_text_concat` joins unit texts with. The shared
+# budget arithmetic below charges for it, so a change here can never silently
+# put the reducer's real output over the ceiling the units were given.
+_UNIT_TEXT_SEPARATOR = "\n\n"
+
+
+def _shared_prompt_gate():
+    """The shared prompt gate module (`prompt_gate.py`, at the top of
+    scripts/ -- already on sys.path via this module's own bootstrap).
+
+    FAIL CLOSED, deliberately: a design unit that cannot be told the band is
+    a design unit authoring blind against a gate that will refuse it, which is
+    the exact defect above. Refusing the phase here costs nothing; authoring
+    without a ceiling costs three paid units and a parked render phase."""
+    try:
+        import prompt_gate  # noqa: PLC0415 -- lazy: never a hard import at module scope
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "PD-TEST-098: prompt_gate.py could not be imported, so the "
+            "design-page prompt band cannot be stated to the authoring unit. "
+            "Refusing to author a design prompt blind against the shared "
+            f"gate ({type(exc).__name__}: {exc}).") from exc
+    return prompt_gate
+
+
+def design_unit_char_budget(unit_count: int) -> Tuple[int, int]:
+    """`(floor_share, ceiling_share)` -- the character budget for ONE unit of
+    a design-page fan-out, derived from the SHARED band.
+
+    The gate measures the FINAL artifact: N unit texts joined by
+    `_UNIT_TEXT_SEPARATOR` (2 chars each, N-1 of them). So the aggregate is
+    `sum(u) + 2*(N-1)`, and each unit's fair share is the band minus the
+    separators, divided N ways. Both bounds are imported from `prompt_gate`
+    -- never re-typed here.
+
+    A degenerate/absent `unit_count` is treated as ONE unit (the whole band),
+    which is the honest reading for a phase that enumerated a single unit."""
+    pg = _shared_prompt_gate()
+    n = unit_count if isinstance(unit_count, int) and unit_count > 0 else 1
+    sep_total = len(_UNIT_TEXT_SEPARATOR) * (n - 1)
+    ceiling_share = max(1, (pg.PROMPT_CHAR_CEILING - sep_total) // n)
+    floor_share = -(-max(0, pg.PROMPT_CHAR_FLOOR - sep_total) // n)  # ceil
+    return floor_share, min(ceiling_share, pg.PROMPT_CHAR_CEILING)
+
+
+def design_part_count(payload: Dict[str, Any]) -> int:
+    """How many parts the design-page artifact is ACTUALLY assembled from.
+
+    `admitted_count` (stamped by the dispatcher from `wanted_items`) is the
+    authority -- it is the number of parts `_reduce_text_concat` will join.
+    `unit_count` is only the ENUMERATED count and over-counts whenever
+    `fanout.desired_count` bounded the phase (live run P-U-DESIGN-SALES:
+    enumerated 8, admitted 3), so it is a last-resort fallback for direct
+    callers that never went through the dispatcher's admission pass."""
+    payload = payload if isinstance(payload, dict) else {}
+    for key in ("admitted_count", "unit_count"):
+        val = payload.get(key)
+        if isinstance(val, int) and val > 0:
+            return val
+    return 1
+
+
+def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
+    """The OUTPUT CONTRACT a P-U-DESIGN-* unit is dispatched with.
+
+    Replaces the GENERIC_CONTRACT fallthrough that let this defect through.
+    States, in the model's own instruction and with numbers imported from the
+    gate: that the file is ONE prompt for ONE rendered image, that the band
+    applies to the AGGREGATE and is therefore SHARED across the phase's
+    units, which part this unit is, and the exact character share it owns."""
+    page = DESIGN_PAGE_PHASES.get(phase_id, "page")
+    payload = order.get("_unit_payload") if isinstance(order, dict) else None
+    payload = payload if isinstance(payload, dict) else {}
+    n = design_part_count(payload)
+    ordinal = payload.get("ordinal")
+    if not isinstance(ordinal, int) or not (1 <= ordinal <= n):
+        ordinal = 1
+    floor_share, ceiling_share = design_unit_char_budget(n)
+    pg = _shared_prompt_gate()
+    # Aim at the MIDDLE of the share so a compliant part clears both bounds
+    # with real headroom; the shares themselves stay the hard bounds the
+    # validator enforces.
+    target_lo = floor_share + (ceiling_share - floor_share) // 4
+    target_hi = floor_share + (3 * (ceiling_share - floor_share)) // 4
+
+    if n > 1:
+        attribution = (
+            f"1. YOU ARE AUTHORING PART {ordinal} OF {n} OF ONE SINGLE PROMPT, "
+            f"NOT A PROMPT OF YOUR OWN. `prompts/{page}.design.txt` is ONE "
+            f"image prompt, sent VERBATIM to GPT-Image-2.5 to render ONE 16:9 "
+            f"page-design image. The engine authors it in {n} parts "
+            f"concurrently and joins them in ordinal order with a blank line. "
+            f"Part 1 opens the prompt: it carries the ONE `[ARCHETYPE ...]` "
+            f"layout header, the ONE canvas/format/resolution declaration, the "
+            f"background, and the brand palette. Every later part CONTINUES "
+            f"that same prompt: no second `[ARCHETYPE` header, no second "
+            f"canvas/frame/resolution declaration, no restart. Part {n} closes "
+            f"it with the ONE `DO-NOT BLOCK` negative block.\n")
+    else:
+        attribution = (
+            f"1. YOU ARE AUTHORING THE WHOLE PROMPT. "
+            f"`prompts/{page}.design.txt` is ONE image prompt, sent VERBATIM to "
+            f"GPT-Image-2.5 to render ONE 16:9 page-design image. It carries "
+            f"exactly ONE `[ARCHETYPE ...]` layout header, ONE "
+            f"canvas/format/resolution declaration, and closes with the ONE "
+            f"`DO-NOT BLOCK` negative block.\n")
+
+    return (
+        f"OUTPUT CONTRACT: author `prompts/{page}.design.txt` -- the page-design "
+        f"prompt for the {page.upper()} upsell page. This contract is "
+        f"mechanically graded BEFORE any paid image call; a violation is refused "
+        f"by `build_infographic.resolve_design_prompt` via the shared "
+        f"`prompt_gate`, and the render phase is NOT submitted.\n"
+        + attribution +
+        f"2. LENGTH -- THE BAND IS SHARED, AND IT IS MEASURED ON THE FINAL "
+        f"ASSEMBLED FILE, NOT ON YOUR PART. The shared gate requires the "
+        f"complete `prompts/{page}.design.txt` to be between "
+        f"{pg.PROMPT_CHAR_FLOOR:,} and {pg.PROMPT_CHAR_CEILING:,} characters "
+        f"({pg.PROMPT_CHAR_CEILING:,} sits 2,000 under the "
+        f"{pg.API_PROMPT_HARD_CEILING:,}-character GPT-Image-2.5 API ceiling). "
+        f"Your part is {ordinal} of {n}, so YOUR OWN OUTPUT MUST BE BETWEEN "
+        f"{floor_share:,} AND {ceiling_share:,} CHARACTERS -- aim for "
+        f"{target_lo:,}-{target_hi:,}. The {n} parts plus their separators sum "
+        f"to the file, so a part written at full single-prompt length is what "
+        f"puts the file over the ceiling and gets the whole phase refused. Do "
+        f"NOT pad to reach a number: this is a MAXIMUM to respect, and every "
+        f"character must still be real, specific art direction.\n"
+        f"3. REQUIRED STRUCTURAL BLOCKS -- the assembled file must contain all "
+        f"three (case-insensitive): a layout header starting `[ARCHETYPE`; a "
+        f"final block headed exactly `DO-NOT BLOCK`; and at least one literal "
+        f"`Do not ` imperative inside that block. They are required ONCE each "
+        f"across the whole file -- see point 1 for which part carries each.\n"
+        f"4. DENSITY: the assembled file needs at least "
+        f"{pg.PROMPT_MIN_DISTINCT_WORDS} DISTINCT words, a brand palette color "
+        f"as a 6-digit `#RRGGBB` HEX code, an explicit typography SIZE token "
+        f"(e.g. '96pt'), and a real COMPOSITION/zone instruction (e.g. 'rule of "
+        f"thirds', 'left third', 'safe margin', 'negative space') -- "
+        f"'centered' alone does NOT count.\n"
+        f"5. SPELLING-LOCK: quote every on-slide string VERBATIM, "
+        f"letter-for-letter, and say so ('render every quoted text string "
+        f"exactly as written, letter-for-letter').\n"
+        f"6. Output ONLY this part's prompt text -- no preamble, no commentary, "
+        f"no markdown code fence around the answer, no file header, no restated "
+        f"work order."
+    )
+
+
+# ---------------------------------------------------------------------------
 # CONTRACT COMPLETENESS (the class fix, not the instance).
 #
 # THE DEFECT: every rule in the hand-written contract above had to be noticed
@@ -2513,6 +2706,13 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
     # no static entry" comment in ARTIFACT_CONTRACTS for why.
     if phase_id == "P-SP-STRUCTURE":
         contract = _sp_structure_contract(run_dir)
+    elif phase_id in DESIGN_PAGE_PHASES:
+        # PD-TEST-098: derived PER UNIT, because the band is a SHARED budget
+        # and the unit's own share depends on how many units this phase
+        # enumerated (`unit_count` rides the unit payload). Without this the
+        # three design phases fell through to GENERIC_CONTRACT, which states
+        # no upper bound at all -- see the PD-TEST-098 block above.
+        contract = _design_page_prompt_contract(phase_id, order)
     else:
         contract = ARTIFACT_CONTRACTS.get(phase_id, GENERIC_CONTRACT)
 
@@ -5451,6 +5651,36 @@ def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
         return None
     scope = payload.get("scope")
     ordinal = payload.get("ordinal")
+    # PD-TEST-098: the design phases reuse the by=slide enumerator to get N
+    # units, but the artifact is ONE image prompt, not N slide prompts. The
+    # generic slide-scope text below ("EXACTLY ONE UNIT: ... for SLIDE 2 OF 8")
+    # is what made each design unit author its own COMPLETE prompt for its own
+    # deck slide, so three complete prompts were concatenated into one. Say
+    # what the unit actually is: one PART of one prompt.
+    if isinstance(payload.get("phase_id"), str) \
+            and payload["phase_id"] in DESIGN_PAGE_PHASES:
+        n = design_part_count(payload)
+        page = DESIGN_PAGE_PHASES[payload["phase_id"]]
+        if not isinstance(ordinal, int) or not (1 <= ordinal <= n):
+            ordinal = 1
+        # Name the unit's own slide identity so the part stays anchored to the
+        # upstream copy it is responsible for (review nit: the PART-of-ONE
+        # rewrite had dropped the slide identity the old slide-scope text
+        # carried). Falls back to the unit key when no slide_id was derived.
+        _sid = payload.get("slide_id") or payload.get("key") or f"part-{ordinal}"
+        return (
+            f"=== THIS CALL AUTHORS PART {ordinal} OF {n} OF THE ONE "
+            f"{page.upper()} PAGE-DESIGN PROMPT — YOUR SLIDE: {_sid} ===\n"
+            f"`prompts/{page}.design.txt` is ONE image prompt rendered as ONE "
+            f"16:9 page-design image. You are writing PART {ordinal} of {n}; the "
+            f"engine joins the {n} parts, in this order, into that one file. "
+            f"Author ONLY your part -- never the whole file, never another "
+            f"part's content, no preamble, no file header, no fences around the "
+            f"answer, and never a restatement this work order.\n"
+            f"The content you are responsible for is the upstream copy for "
+            f"{_sid}; render it as art direction INSIDE the one shared prompt "
+            f"(see the OUTPUT CONTRACT below for which structural blocks are "
+            f"yours and for your exact character share of the shared band).\n\n")
     n = payload.get("unit_count")
     if scope == "section":
         name = payload.get("name")
@@ -5641,14 +5871,58 @@ def _validate_text(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]
     return True, []
 
 
+def _validate_design_page_unit(payload: Dict[str, Any],
+                               text: str) -> Tuple[bool, List[str]]:
+    """PD-TEST-098: a design-page unit must fit ITS SHARE of the shared band.
+
+    The defect this closes: `_validate_text` refused nothing but emptiness, so
+    three units at 20,917 / 20,024 / 17,537 chars each reported `ok`, the
+    concat reducer wrote a 58,484-char file, and the shared gate refused it
+    three phases later at the PAID render call. The unit is where the producer
+    can still refuse for free -- so the bound belongs here, not at the gate.
+
+    Bounds come from `design_unit_char_budget` (imported from `prompt_gate`),
+    which charges for the separators `_reduce_text_concat` inserts, so a phase
+    whose units all pass here cannot assemble an out-of-band file. Both
+    directions are checked: over-share units blow the aggregate ceiling, and
+    sub-share stubs drop the aggregate under the floor -- the gate refuses
+    either one."""
+    if not text.strip():
+        return False, ["unit output is empty"]
+    stripped = text.strip()
+    payload = payload if isinstance(payload, dict) else {}
+    n = design_part_count(payload)
+    floor_share, ceiling_share = design_unit_char_budget(n)
+    length = len(stripped)
+    problems: List[str] = []
+    if length > ceiling_share:
+        problems.append(
+            f"PD-TEST-098/AF-P2: this unit's part is {length:,} chars, over its "
+            f"{ceiling_share:,}-char share of the shared "
+            f"{_shared_prompt_gate().PROMPT_CHAR_CEILING:,}-char ceiling. This "
+            f"phase authors ONE prompt in {n} parts and the gate measures the "
+            f"ASSEMBLED file, so a part written at full single-prompt length "
+            f"puts the whole artifact over the ceiling and the render phase is "
+            f"refused before any paid call. Tighten redundant phrasing -- never "
+            f"delete the negative block or any spelling-lock.")
+    if length < floor_share:
+        problems.append(
+            f"PD-TEST-098/AF-P1: this unit's part is {length:,} chars, under its "
+            f"{floor_share:,}-char share of the shared "
+            f"{_shared_prompt_gate().PROMPT_CHAR_FLOOR:,}-char floor. The "
+            f"assembled file would fall under the gate's hard floor. Expand with "
+            f"real, specific art direction -- never boilerplate padding.")
+    return (not problems), problems
+
+
 _UNIT_VALIDATORS: Dict[str, Any] = {
     "P4-COPY": _validate_copy_section,
     "P-PROMPT-QC": _validate_qc_slide,
     "P-IMAGE-QC": _validate_qc_slide,
     "P-STYLE-SPEC": _validate_style_variant,
-    "P-U-DESIGN-SALES": _validate_text,
-    "P-U-DESIGN-CHECKOUT": _validate_text,
-    "P-U-DESIGN-VSL": _validate_text,
+    "P-U-DESIGN-SALES": _validate_design_page_unit,
+    "P-U-DESIGN-CHECKOUT": _validate_design_page_unit,
+    "P-U-DESIGN-VSL": _validate_design_page_unit,
     "P9-SPEECH": _validate_text,
 }
 
@@ -5886,11 +6160,16 @@ def _reduce_style_variants(ordered: List[Tuple[Dict[str, Any], str]]) -> Optiona
 def _reduce_text_concat(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
     """Ordered text join (design page prompts, whole-file units): exactly the
     units in input order, each separated by a blank line. Refuses nothing but
-    emptiness — scope there is one file/one prompt."""
+    emptiness — scope there is one file/one prompt.
+
+    PD-TEST-098: the separator is `_UNIT_TEXT_SEPARATOR`, the SAME constant
+    `design_unit_char_budget` charges for when it divides the shared band
+    across the parts. The two must never disagree, or the units would be
+    budgeted against a different assembly than this one performs."""
     texts = [t.strip() for _p, t in ordered if t.strip()]
     if not texts:
         return None
-    return "\n\n".join(texts)
+    return _UNIT_TEXT_SEPARATOR.join(texts)
 
 
 _UNIT_REDUCERS: Dict[str, Any] = {
@@ -6449,6 +6728,31 @@ def _dispatch_phase_fanout_units(
     desired_count = getattr(spec, "desired_count", None)
     batch_width = getattr(spec, "batch_width", None)
 
+    # PD-TEST-098 (review fix B): `admitted_count` MUST be stamped BEFORE any
+    # validator runs -- the scoped-reuse loop above and the banked-validation
+    # loop below both call `contract.validator(payload, ...)`, and for a design
+    # phase that validator bounds the text by the part's share of the shared
+    # band. Stamped late (it used to be stamped just before `pending_items`),
+    # those two loops saw `unit_count` instead -- the ENUMERATED count, 8 on the
+    # live run -- and computed the share as (1124, 2248). Since
+    # floor_share(3) = 2999 > ceiling_share(8) = 2248, EVERY compliant part
+    # failed reuse: measured with the real dispatcher and a stubbed model,
+    # pristine main re-paid 0 units on dispatch #2/#3 while the late stamp
+    # re-paid 3 each (9 total). That silently broke PRES-001's "a resume re-pays
+    # ONLY the changed units" contract for these three phases and inverted the
+    # fix's own cost story.
+    #
+    # `wanted_items` is computed HERE now because it is exactly the number of
+    # parts the reducer will join; it depends only on `items` and
+    # `desired_count`, neither of which the loops below mutate, so hoisting it
+    # changes nothing else. The later line reuses this value rather than
+    # recomputing it, so the two can never disagree.
+    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+    for _it in wanted_items:
+        _p = by_key.get(_it["key"])
+        if isinstance(_p, dict):
+            _p["admitted_count"] = len(wanted_items)
+
     # Step 4 -- validate banked results BEFORE admission. A validated unit is
     # admitted as already-done; a stale/corrupt one falls through to a real
     # (re)submission with its transition recorded.
@@ -6503,7 +6807,11 @@ def _dispatch_phase_fanout_units(
     # Step 2 -- the DESIRED WORK COUNT reduces the enumerated list only for
     # whole-deck-unit phases. Per-slide QC phases (desired_count is None on
     # them, enforced by the caller's plan) never drop a slide here.
-    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+    #
+    # PD-TEST-098: `wanted_items` and the `admitted_count` stamp now happen
+    # ABOVE, before the scoped-reuse and banked-validation loops -- both call the
+    # design phase's share-bounded validator (see the note there). It is NOT
+    # recomputed here, so the two can never disagree.
 
     pending_items = [it for it in wanted_items if it["key"] not in _banked_keys and it["key"] not in reuse]
     _append_sidecar(run_dir, phase_id, {
