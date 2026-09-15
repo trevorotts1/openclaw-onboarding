@@ -7,7 +7,7 @@
   HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
   ```
 
-  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: the assembled `working/copy/slides_copy.md` (9,324 B, all 8 `SLIDE` markers, **all 8 units `status=ok`**) contained **zero** villain tokens across all ten `VILLAIN_TOKENS` and only three `ARC` markers — none of them a story beat.
+  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: the assembled `working/copy/slides_copy.md` (9,324 B, all 8 `SLIDE` markers; the store held 2 units `ok` and 6 `banked` — all 8 admitted) contained **zero** villain tokens across all eleven `VILLAIN_TOKENS`, and four `ARC` markers of which one (`PROMISE HERO`) IS a story beat — so the deck carried the PROMISE marker and still omitted the VILLAIN and FELT_STAKES beats.
 
   **The producer was told, and that is what made this hard to see.** A rebuilt per-unit prompt (system 50,954 chars + user 103,895) contains `AF-NO-VILLAIN`, `VILLAIN beat`, `<!-- ARC: VILLAIN -->` and the derived constraint index. The contract states the beats as properties of the **whole deck** — *"must be the FIRST slide (lowest slide number) that carries either the VILLAIN prose/marker or the PROMISE prose/marker"* — which a section-scoped author **cannot evaluate**: it does not know where its section sits, nor whether a sibling already claimed the beat. The equilibrium is that **no** section claims it: 8 cheap omissions rather than 1 duplicated beat.
 

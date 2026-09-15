@@ -454,6 +454,20 @@ def _first_index_with(blocks, predicate):
     return None
 
 
+def _pitch_applicability_for_copy(run_dir):
+    """`(applicable, refusal)` from the ONE authority, or `(True, None)` when it
+    cannot be consulted.
+
+    FAIL DIRECTION, deliberately: a degraded import keeps TODAY'S behaviour
+    (demand the beats) rather than silently switching the engines off. Only an
+    EXPLICIT pitchless verdict -- `applicable is False` with no refusal -- defers."""
+    try:
+        import pitch_engines_check as _pec
+        return _pec.pitch_applicability(run_dir)
+    except Exception:  # noqa: BLE001
+        return True, None
+
+
 def check_copy(run_dir, problems):
     copy_md = run_dir / "copy" / "slides_copy.md"
     if not copy_md.exists():
@@ -461,6 +475,26 @@ def check_copy(run_dir, problems):
     md = copy_md.read_text()
     md_lc = md.lower()
     blocks = _parse_slide_blocks(md)
+
+    # PD-TEST-125 (CORRECTED). The beats this function demands are PITCH content.
+    # The P4-COPY contract's FIRST rule states that when `intake.json`'s
+    # `pitch_included` is false for a non-signature deck, "commercial ARC beats
+    # (VILLAIN, FELT_STAKES, NAMED_METHOD, EXPECTATION and PRICE) are not
+    # applicable and must not be fabricated". Demanding them here therefore
+    # CONTRADICTS the contract and leaves an honest author no answer at all: plant
+    # them and trip AF-PITCH-LEAK, or omit them and trip AF-NO-VILLAIN.
+    #
+    # Measured live on pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: a
+    # pitchless webinar deck (`pitch_included: false`, `deck_type: webinar`) was
+    # refused on AF-NO-VILLAIN while `build_deck._chk_pitch_leak` ALREADY reported
+    # AF-PITCH-LEAK on the SAME copy ("slides_copy.md: 'cost of inaction'"). No text
+    # satisfies both, so one of the two checkers had to yield -- and the contract
+    # says which.
+    #
+    # This defers through the SAME `pitch_engines_check.pitch_applicability` that
+    # the pitch checker already honours, so the two cannot drift.
+    _pitch_on, _pitch_refusal = _pitch_applicability_for_copy(run_dir)
+    commercial_beats_apply = not (_pitch_on is False and _pitch_refusal is None)
 
     # --- EMOTIONAL — AF-NO-FELT-STAKES (DECK) ---
     # A FELT_STAKES beat: a concrete number paired with a personal-loss frame,
@@ -477,14 +511,14 @@ def check_copy(run_dir, problems):
     def is_ladder(body):
         return any(re.search(rf"\b{t}\b", body, re.IGNORECASE) for t in LADDER_BEAT_TAGS)
     ladder_idx = _first_index_with(blocks, is_ladder)
-    if felt_idx is None:
+    if felt_idx is None and commercial_beats_apply:
         problems.append({
             "code": "AF-NO-FELT-STAKES", "slide": "DECK", "phase": "Phase 1Q",
             "detail": "no FELT_STAKES beat anywhere: the deck never quantifies the cost "
                       "of inaction in concrete human terms (a number paired with a "
                       "personal-loss frame, the 'mornings left' device) before the "
                       "offer. Add one felt-stakes slide (SOP-ENGINE-00 Emotional)."})
-    elif ladder_idx is not None and felt_idx > ladder_idx:
+    elif commercial_beats_apply and ladder_idx is not None and felt_idx > ladder_idx:
         problems.append({
             "code": "AF-NO-FELT-STAKES", "slide": "DECK", "phase": "Phase 1Q",
             "detail": f"FELT_STAKES beat appears (block #{felt_idx+1}) AFTER the first "
@@ -498,14 +532,14 @@ def check_copy(run_dir, problems):
         return _has_any(body.lower(), HERO_TOKENS)
     v_idx = _first_index_with(blocks, has_villain)
     h_idx = _first_index_with(blocks, has_hero)
-    if v_idx is None:
+    if v_idx is None and commercial_beats_apply:
         problems.append({
             "code": "AF-NO-VILLAIN", "slide": "DECK", "phase": "Phase 1Q",
             "detail": "no VILLAIN/antagonist beat anywhere in the arc. 'No one cares "
                       "about the hero until they meet the villain' — name the antagonist "
                       "(the broken system / old way / the thing stopping them) before "
                       "the hero/solution beat (SOP-ENGINE-00 Story; SOP-STORY-01)."})
-    elif h_idx is not None and v_idx > h_idx:
+    elif commercial_beats_apply and h_idx is not None and v_idx > h_idx:
         problems.append({
             "code": "AF-NO-VILLAIN", "slide": "DECK", "phase": "Phase 1Q",
             "detail": f"VILLAIN beat (block #{v_idx+1}) appears AFTER the HERO/solution "
@@ -521,7 +555,8 @@ def check_copy(run_dir, problems):
     # --- NARRATIVE HARMONY — the arc holds end-to-end (hook->villain->stakes->
     #     promise->price->recap). This is the orchestration layer above the
     #     individual writing engines; it fires at COPY-QC, before any prompt. ---
-    check_narrative_harmony(run_dir, problems)
+    if commercial_beats_apply:
+        check_narrative_harmony(run_dir, problems)
     return
 
 

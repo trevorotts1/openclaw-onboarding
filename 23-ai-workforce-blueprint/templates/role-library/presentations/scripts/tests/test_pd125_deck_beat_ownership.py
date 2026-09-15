@@ -58,15 +58,52 @@ def test_every_beat_is_owned_exactly_once():
 # ---------------------------------------------------------------------------
 # 2 -- the assignment PRESERVES THE REQUIRED ORDER.
 # ---------------------------------------------------------------------------
+def _canonical_beat_order_from_the_verifier():
+    """The beat names and order as the JUDGING ENGINE declares them, parsed from
+    its own source.
+
+    This is the whole point: an earlier version of this test asserted the
+    assignment against `D.DECK_ORDERED_BEATS` -- the same constant the assignment
+    reads -- so inverting that constant changed BOTH sides and the test still
+    PASSED. The independent review proved that by inverting it in memory. The
+    assertion is only meaningful against the VERIFIER's order, because that is
+    what the arc has to satisfy."""
+    import inspect
+    import re as _re
+    src = inspect.getsource(IEC.check_narrative_harmony)
+    names = _re.findall(r'\("([A-Z_]+)",', src)
+    assert names, "could not read the verifier's beats list"
+    return names
+
+
 def test_ownership_preserves_the_required_beat_order():
-    owner = {}
-    for it in _items():
-        for b in (_payload(it).get("owned_beats") or []):
-            owner[b] = it["ordinal"]
-    ordinals = [owner[b] for b in D.DECK_ORDERED_BEATS]
-    assert ordinals == sorted(ordinals), (
-        "a section owning a later beat must sit after the section owning the "
-        f"earlier one, or the arc is inverted by construction: {ordinals}")
+    """Each beat's owner must sit at a deck position that ASCENDS in the
+    VERIFIER's order -- otherwise the assignment inverts the very arc it exists
+    to preserve. Measured against `first_ordinal` (the section's real slide
+    position), never against the constant being tested."""
+    import presentation_job.dispatcher as D2
+    canonical = _canonical_beat_order_from_the_verifier()
+
+    real_range = D2._section_payload_range
+    D2._section_payload_range = lambda item, run_dir, name: (
+        int(item["ordinal"]), int(item["ordinal"]))
+    try:
+        owner = {}
+        for it in _items():
+            pl = _payload(it)
+            assert pl.get("first_ordinal") == it["ordinal"], pl
+            for b in (pl.get("owned_beats") or []):
+                owner[b] = pl["first_ordinal"]
+    finally:
+        D2._section_payload_range = real_range
+
+    assert set(owner) == set(canonical), (
+        f"the assignment and the verifier disagree about WHICH beats exist: "
+        f"assigned={sorted(owner)} verifier={sorted(canonical)}")
+    positions = [owner[b] for b in canonical]
+    assert positions == sorted(positions), (
+        "a beat the VERIFIER wants earlier is owned by a section that sits LATER "
+        f"in the deck, so the assignment inverts the arc: {list(zip(canonical, positions))}")
 
 
 # ---------------------------------------------------------------------------
@@ -121,3 +158,48 @@ def test_other_phases_get_no_beat_assignment():
     assert "P4-COPY" in D.DECK_BEAT_PHASES
     pl = D._unit_payload_enrichment(Path("."), "P-STYLE-SPEC", _items()[0], 3)
     assert not pl.get("owned_beats"), pl.get("owned_beats")
+
+# ---------------------------------------------------------------------------
+# 7 -- PD-TEST-125 CORRECTED: a PITCHLESS deck gets no assignment and its
+#      verifier defers, because the contract forbids fabricating these beats.
+# ---------------------------------------------------------------------------
+def test_pitchless_deck_gets_no_beat_assignment(tmp_path):
+    """The contract's FIRST rule: when `intake.json` declares `pitch_included:
+    false` for a non-signature deck, commercial ARC beats 'are not applicable and
+    must not be fabricated'. Assigning them would order the author to violate
+    AF-PITCH-LEAK in order to satisfy AF-NO-VILLAIN -- measured live, where BOTH
+    fired on the same copy and no text can satisfy both."""
+    rd = tmp_path / "pitchless"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"deck_type": "webinar", "pitch_included": False}))
+    for it in _items():
+        pl = D._unit_payload_enrichment(rd, PHASE, it, 8)
+        assert not pl.get("owned_beats"), (
+            f"{it['key']} was assigned {pl.get('owned_beats')} on a PITCHLESS deck")
+    assert D._deck_commercial_beats_apply(rd) is False
+
+
+def test_pitched_deck_still_gets_the_assignment(tmp_path):
+    """REGRESSION GUARD for the guard: gating must not switch the feature off for
+    the decks the defect was measured on."""
+    rd = tmp_path / "pitched"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"deck_type": "webinar", "pitch_included": True}))
+    owned = []
+    for it in _items():
+        owned += (D._unit_payload_enrichment(rd, PHASE, it, 8).get("owned_beats") or [])
+    assert sorted(owned) == sorted(D.DECK_ORDERED_BEATS), owned
+
+
+def test_unset_applicability_keeps_the_assignment_ON(tmp_path):
+    """FAIL DIRECTION: a missing/malformed selection must not silently switch the
+    commercial engines off -- it keeps today's behaviour so the dedicated
+    AF-PITCH-APPLICABILITY-UNSET code is still the thing that reports it."""
+    rd = tmp_path / "unset"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"deck_type": "webinar"}))          # no pitch_included at all
+    assert D._deck_commercial_beats_apply(rd) is True
+

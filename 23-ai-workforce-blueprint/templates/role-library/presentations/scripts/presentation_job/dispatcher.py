@@ -5701,6 +5701,21 @@ DECK_ORDERED_BEATS: Tuple[str, ...] = (
     "HOOK", "VILLAIN", "FELT_STAKES", "PROMISE", "PRICE", "RECAP",
 )
 
+def _deck_commercial_beats_apply(run_dir: Path) -> bool:
+    """False only on an EXPLICIT pitchless verdict from the ONE authority.
+
+    `pitch_engines_check.pitch_applicability` returns `(False, None)` for a
+    non-signature deck that declares `pitch_included: false`; anything else
+    (including a refusal, and including an import that will not load) keeps the
+    assignment ON, so a degraded environment behaves exactly as it does today."""
+    try:
+        import pitch_engines_check as _pec
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        return not (applicable is False and refusal is None)
+    except Exception:  # noqa: BLE001
+        return True
+
+
 #: Phases whose verifier judges DECK-LEVEL ordered beats. Only the copy fan-out
 #: exists today; the set is explicit so a future phase opts IN rather than
 #: inheriting an assignment its verifier does not ask for.
@@ -6470,8 +6485,11 @@ def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
         lo_hi = _section_payload_range(item, run_dir, name)
         if lo_hi is not None:
             payload["first_ordinal"], payload["last_ordinal"] = lo_hi
-        # PD-TEST-125: assign this section its ordered deck-level beat, if any.
-        if phase_id in DECK_BEAT_PHASES:
+        # PD-TEST-125: assign this section its ordered deck-level beat, if any --
+        # but ONLY when the deck is actually pitched. On a pitchless deck the
+        # contract forbids fabricating these beats, so assigning them would order
+        # the author to violate AF-PITCH-LEAK in order to satisfy AF-NO-VILLAIN.
+        if phase_id in DECK_BEAT_PHASES and _deck_commercial_beats_apply(run_dir):
             _n = payload.get("ordinal")
             if isinstance(_n, int) and 1 <= _n <= len(DECK_ORDERED_BEATS):
                 payload["owned_beats"] = [DECK_ORDERED_BEATS[_n - 1]]
