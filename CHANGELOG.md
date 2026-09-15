@@ -1,3 +1,24 @@
+## [v25.1.23]  -  2026-09-16  -  A receipt drains a large bank in bounded chunks instead of refusing to touch it
+
+### What Changed
+- **PD-TEST-130 — the bank-void sufficiency gate dead-ended every fan-out larger than the retry cap.** v25.1.19 added the rule "never invalidate more units than the receipt can pay to re-author", which is right. Its first implementation was **all-or-nothing**: if the receipt's `allowance` did not cover *every* wanted unit, the gate refused and left the bank intact. But `authorize_paid_retry_reset` hard-caps `allowance` at `DISPATCH_RETRY_CAP` (3), so any fan-out wanting more than three units could **never** be voided at all.
+
+  Measured live on `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: `P4-COPY` wants **8** section units, all 8 sitting `banked` and holding a `working/copy/slides_copy.md` that the contract has since stopped ordering — and **no receipt could dislodge them**, because 3 < 8. The phase's copy was frozen against a contract that had moved.
+
+- **The rule is satisfied just as well by draining.** When the allowance cannot cover the whole bank, the gate now voids the **first `allowance` banked units** instead of refusing: the receipt still pays for exactly what it invalidates, and repeated receipts drain the bank in chunks of three rather than never. Units are taken in `wanted_items` order — deck order — so a partially drained bank is a **prefix** of the deck rather than a scattering, which is easier to reason about and to watch.
+
+  When the allowance *does* cover the bank, behaviour is unchanged: everything is voided at once. When **nothing** is banked, the gate still refuses and says so.
+
+- The sidecar records which units were voided, whether the drain was complete (`voided_all`), and the allowance, so an operator can see that the bank is not yet clear and re-issue.
+
+### Tests
+- `test_a_receipt_voids_only_what_it_can_pay_for` re-expresses the PR #1150 review's MEDIUM defect under the new contract. Its original premise — "allowance 1 with 3 banked units must NOT void" — is exactly what dead-ended `P4-COPY`; the invariant that mattered was **never invalidate more than you can pay to re-author**, and draining honours it: allowance 1 voids **one** unit. The test asserts an allowance-1 receipt re-authors **exactly one** unit (4 calls, not 3 and not 6), that no unit is downgraded to `failed`, that no record is dropped, and that `voided_all` is `false`. **Verified RED against the pre-drain code** (which refused, so nothing re-authored).
+- Note, stated rather than hidden: the `>cap` case is covered by this same test, because it WANTS 3 against allowance 1 — i.e. `allowance < wanted`, the precise condition that used to refuse. A dedicated 8-unit fixture could not bank its units without deep scaffolding; an unverified extra test would be worse than none, so the property is asserted on the shape that genuinely exercises it.
+- Both suites pass: **22 tests**, including all 10 `test_pres014_unit_records.py` cost-contract tests.
+
+### Risk
+- Scope is the void branch inside `_dispatch_phase_fanout_units`. With a receipt that covers the bank, or with no bank at all, behaviour is unchanged; the only new path is the partial drain, which is strictly more capable than the refusal it replaces and cannot spend more than the receipt's allowance.
+
 ## [v25.1.22]  -  2026-09-16  -  The commercial-beat engines are pitch-aware, so a pitchless deck is no longer asked to fabricate them
 
 ### What Changed

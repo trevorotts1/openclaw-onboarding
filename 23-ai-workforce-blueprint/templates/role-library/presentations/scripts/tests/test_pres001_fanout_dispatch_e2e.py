@@ -390,9 +390,10 @@ def _design_env2(tmp_path, monkeypatch, *, verify_ok):
 def _run119(env):
     """Dispatch the design fanout with this env's stubs (the same call shape the
     PD-TEST-119 work used, defined here so this suite is self-contained)."""
+    rel = str(env["order"]["produces_artifact"])
     return D._dispatch_phase_fanout_units(
         env["rd"], env["order"], dept_root=env["dept"], phase_obj=env["phase"],
-        worker_id="t", spec=env["spec"], patterns=["prompts/sales.design.txt"],
+        worker_id="t", spec=env["spec"], patterns=[rel],
         target=env["target"], prior_reasons=[])
 
 
@@ -464,30 +465,36 @@ def test_no_receipt_leaves_the_bank_untouched(tmp_path, monkeypatch):
     _run119(env)
     assert len(env["calls"]) == 3, "no receipt -> banked units reused, zero re-bill"
 
-def test_void_is_refused_when_the_receipt_cannot_pay_for_every_unit(tmp_path, monkeypatch):
-    """MEDIUM defect found by the independent review of PR #1150.
+def test_a_receipt_voids_only_what_it_can_pay_for(tmp_path, monkeypatch):
+    """MEDIUM defect found by the independent review of PR #1150, RE-EXPRESSED for
+    PD-TEST-130.
 
-    `--reset-allowance 1` is a legal, documented invocation. Without this gate it
-    voided the WHOLE bank while paying for ONE unit: one unit re-authored, the
-    others died on PaidBudgetExhausted, and their durable records were overwritten
-    from `ok` to `failed` -- the "parked AND unbuildable" mode. The bank must be
-    left intact instead."""
+    The defect was: `--reset-allowance 1` (a legal, documented invocation) voided
+    the WHOLE bank while paying for ONE unit, so two units died on
+    PaidBudgetExhausted and their durable records were overwritten from `ok` to
+    `failed`. The original fix refused the void outright; that satisfied the
+    invariant but dead-ended every fan-out larger than DISPATCH_RETRY_CAP, because
+    `allowance` cannot exceed 3 and `P4-COPY` wants 8 -- measured live, where all
+    8 units sat banked and NO receipt could dislodge them.
+
+    The invariant is "never invalidate more units than the receipt can pay to
+    re-author", and draining satisfies it exactly: allowance 1 voids ONE unit and
+    leaves the rest untouched."""
     from presentation_job import unit_store
     env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
     _run119(env)
     assert len(env["calls"]) == 3, "first pass authors"
     before = unit_store.load_state(env["rd"], "P-U-DESIGN-SALES")
+    assert len(before) == 3, before
 
     _seed_ledger(env["rd"], generation=0)
     D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=1)
     _run119(env)
-    assert len(env["calls"]) == 3, (
-        "a receipt that cannot pay for every unit it would invalidate must NOT "
-        "void the bank -- the units are reused instead")
+    assert len(env["calls"]) == 4, (
+        "allowance 1 must re-author EXACTLY ONE unit -- not none, and not all "
+        f"three: {len(env['calls'])} calls")
+
     after = unit_store.load_state(env["rd"], "P-U-DESIGN-SALES")
-    # `ok` -> `banked` is the NORMAL admission transition for a reused unit and is
-    # expected here; what the defect produced was `ok` -> `failed`, which loses the
-    # bank outright. Assert the hazard, not the transition.
     statuses = {k: v.get("status") for k, v in after.items()}
     assert set(statuses.values()) <= {"ok", "banked"}, (
         f"no unit may be downgraded to failed by a receipt that cannot pay for it: {statuses}")
@@ -495,8 +502,19 @@ def test_void_is_refused_when_the_receipt_cannot_pay_for_every_unit(tmp_path, mo
         f"unit records must not be dropped: before={len(before)} after={len(after)}")
     side = (env["rd"] / "working" / "work-orders"
             / "P-U-DESIGN-SALES.dispatcher-log.jsonl").read_text()
-    assert "bank_void_refused_insufficient_allowance" in side, (
-        "the refusal must be recorded, not silent")
+    assert "bank_voided_by_receipt" in side, "the void must be recorded"
+    assert '"voided_all": false' in side, (
+        "a partial drain must say so, so an operator can see the bank is not yet clear")
+    # NOTE ON THE >CAP CASE (PD-TEST-130). This fixture WANTS 3 and the receipt
+    # carries allowance 1, so `allowance < wanted` -- the exact condition that used
+    # to make the gate refuse outright and that dead-ended P4-COPY (wanted 8,
+    # allowance capped at 3). That the drain now happens instead of a refusal is
+    # therefore covered here. A separate 8-unit fixture proved unable to bank its
+    # units without deep scaffolding, and an unverified extra test would be worse
+    # than none, so the property is asserted on the shape that genuinely exercises
+    # it rather than on a fixture that does not.
+
+
 
 def test_sufficiency_gate_counts_WANTED_units_not_ENUMERATED_ones(tmp_path, monkeypatch):
     """REGRESSION for the bug that made the void inert on the live run.

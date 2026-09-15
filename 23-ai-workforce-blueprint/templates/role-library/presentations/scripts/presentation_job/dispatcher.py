@@ -6931,31 +6931,65 @@ def _dispatch_phase_fanout_units(
         except (TypeError, ValueError):
             _allowance = 0
         _n_units = len(wanted_items)
-        if _allowance < _n_units:
+        # DRAIN IN BOUNDED CHUNKS (PD-TEST-130). The sufficiency gate's rule is
+        # "never invalidate more units than the receipt can pay to re-author", and
+        # that rule is right. Its FIRST implementation made the gate all-or-
+        # nothing, which dead-ended every fan-out larger than DISPATCH_RETRY_CAP:
+        # `authorize_paid_retry_reset` hard-caps `allowance` at 3, so `P4-COPY`
+        # (8 wanted) could NEVER be voided -- measured live, where all 8 units sat
+        # `banked` holding a copy the contract has since stopped ordering, and no
+        # receipt could dislodge them.
+        #
+        # The rule is satisfied just as well by voiding the FIRST `allowance`
+        # banked units: the receipt still pays for exactly what it invalidates, and
+        # repeated receipts drain the bank in chunks of 3 instead of never. The
+        # units are taken in `wanted_items` order, which is deck order, so a
+        # partially drained bank is the PREFIX of the deck rather than a scattering
+        # -- easier to reason about and to watch.
+        _banked_now = [u["key"] for u in wanted_items
+                       if str((_store_state.get(u["key"]) or {}).get("status") or "")
+                       in _us.BANKED_STATUSES] if _us is not None else []
+        if _allowance >= _n_units:
+            _void_keys = [u["key"] for u in wanted_items]
+            _void_all = True
+        else:
+            _void_keys = _banked_now[:_allowance]
+            _void_all = False
+        if not _void_keys:
             _force_reauthor = False
             _append_sidecar(run_dir, phase_id, {
                 "worker": worker_id, "attempt": 0,
                 "status": "bank_void_refused_insufficient_allowance",
                 "reason": (f"an actionable repair receipt covers {_allowance} paid "
-                           f"attempt(s) but this fan-out would invalidate {_n_units} "
-                           "unit(s); voiding the bank would leave units it cannot "
-                           "pay to re-author, so the bank is left INTACT and the "
-                           "phase behaves as if no receipt were present. Re-issue "
-                           f"with --reset-allowance >= {_n_units} (max "
-                           f"{DISPATCH_RETRY_CAP})."),
+                           f"attempt(s) and this fan-out wants {_n_units} unit(s), "
+                           f"but only {len(_banked_now)} are banked and the receipt "
+                           "still could not pay to re-author them; the bank is left "
+                           "INTACT and the phase behaves as if no receipt were "
+                           "present."),
                 "allowance": _allowance, "units": _n_units,
+                "banked": len(_banked_now),
+            })
+        else:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0,
+                "status": "bank_voided_by_receipt",
+                "reason": ("an actionable paid-retry repair receipt is on disk, so "
+                           f"{len(_void_keys)} of {_n_units} unit(s) are no longer "
+                           "reusable and re-author against the current approved "
+                           "input; the reservations below consume that receipt. "
+                           "Re-issue the receipt to drain the rest (PD-TEST-119/120/"
+                           "121/130)."),
+                "voided_units": _void_keys, "voided_all": _void_all,
+                "allowance": _allowance, "units": _n_units,
+                "receipt_reason": _force_why,
             })
     if _force_reauthor:
-        reuse = {}
-        _store_state = {}
-        _append_sidecar(run_dir, phase_id, {
-            "worker": worker_id, "attempt": 0, "status": "bank_voided_by_receipt",
-            "reason": ("an actionable paid-retry repair receipt is on disk, so the "
-                       "banked unit outputs are NOT reusable and every unit "
-                       "re-authors against the current approved input; the "
-                       "reservations below consume that receipt (PD-TEST-119/120/121)"),
-            "receipt_reason": _force_why,
-        })
+        for _k in _void_keys:
+            _store_state.pop(_k, None)
+            reuse.pop(_k, None)
+        if _void_all:
+            _store_state = {}
+            reuse = {}
 
     reuse = {k: v for k, v in reuse.items() if k not in _store_state}
     batch_width = getattr(spec, "batch_width", None)
