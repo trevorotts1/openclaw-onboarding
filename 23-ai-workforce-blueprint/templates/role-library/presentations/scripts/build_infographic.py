@@ -27,9 +27,11 @@ units that author a prompt and render through build_infographic.py-style canonic
 path (reuse Fix 2's script with --spec design)"). `--spec design --page sales`
 re-runs the SAME canonical Kie path for one upsell page design:
   1. reads the agent-authored page-design prompt at
-     working/prompts/<page>.design.txt   (page ∈ sales|checkout|vsl, VERBATIM —
-     the design-prompt contract lives in INFOGRAPHIC-PROMPT-TEMPLATE.md § DESIGN
-     MODE; the P-U-DESIGN-* agent phase authors it, the render stays mechanical),
+     prompts/<page>.design.txt AT THE RUN ROOT (page ∈ sales|checkout|vsl,
+     VERBATIM — the design-prompt contract lives in INFOGRAPHIC-PROMPT-TEMPLATE.md
+     § DESIGN MODE; the P-U-DESIGN-* agent phase authors it, the render stays
+     mechanical). PD-TEST-091: this is the manifest's produces_artifact/consumes
+     path for the design pair, NOT working/prompts/ — the two must not drift,
   2. submits it through the SAME canonical Kie path, at 16:9 landscape 2560x1440
      (a page design mirrors an HTML page, not a poster),
   3. polls, downloads, verifies the PNG magic AND the 102,400-byte floor,
@@ -46,7 +48,7 @@ the prompt only (FIX 28 PROOF: "design phases complete without hand rendering").
 CONTRACT:
   * Reads:  working/prompts/infographic-prompt.txt   (VERBATIM, never re-composed —
             the same VERBATIM rule build_deck.py applies to slide prompts)
-            [--spec design --page <page>] working/prompts/<page>.design.txt
+            [--spec design --page <page>] prompts/<page>.design.txt (run root)
   * Writes: working/deliverables/infographic.png
             working/renders/infographic.png            (raw render, per SOP 9.10 step 6)
             working/checkpoints/pending_tasks.json     (task id, via the U028 shape)
@@ -227,7 +229,17 @@ DESIGN_PAGES = ("sales", "checkout", "vsl")
 
 
 def _design_prompt_rel(page: str) -> Path:
-    return Path("working") / "prompts" / f"{page}.design.txt"
+    """PD-TEST-091: the page-design prompt lives at the RUN ROOT, not under
+    working/. This is the same path (a) PIPELINE-MANIFEST.json declares as
+    P-U-DESIGN-<page>.produces_artifact AND as P-U-DESIGN-RENDER-<page>.consumes,
+    (b) the dispatcher's design-fanout map writes (dispatcher.py:5297-5299; and
+    tests/test_pres001_fanout_dispatch_e2e.py:306 asserts rd/"prompts"), and
+    (c) phase_verifiers resolves (phase_verifiers.py:4448-4450).
+    Returning working/prompts/ here made three independently correct components
+    disagree with the one component that renders: every P-U-DESIGN-RENDER-* script
+    phase died with "FATAL: design prompt not found" and was quarantined after its
+    3 attempts even though the prompt existed and verified at the run root."""
+    return Path("prompts") / f"{page}.design.txt"
 
 
 def _design_out_rel(page: str) -> Path:
@@ -861,7 +873,7 @@ def run(run_dir: Path, out_arg: Path | None = None, force: bool = False) -> int:
 # design geometry, with the page prompt and run-root output. No hand step.
 # ---------------------------------------------------------------------------
 def resolve_design_prompt(run_dir: Path, page: str) -> tuple[str, Path]:
-    """Locate + read working/prompts/<page>.design.txt and enforce the SAME
+    """Locate + read prompts/<page>.design.txt AT THE RUN ROOT and enforce the SAME
     9,000-char HARD floor + shared rich-prompt gate resolve_prompt enforces for
     the infographic (one gate, every paid render). Returns (prompt_text, path).
     Exits 1 with a named reason on any failure — never a placeholder render."""
@@ -873,8 +885,10 @@ def resolve_design_prompt(run_dir: Path, page: str) -> tuple[str, Path]:
     if not p.is_file():
         print(f"FATAL: design prompt not found: {p}\n"
               f"       The P-U-DESIGN-{page.upper()} agent phase authors "
-              f"working/prompts/{page}.design.txt under the 15-element template "
-              "(INFOGRAPHIC-PROMPT-TEMPLATE.md § DESIGN MODE). No prompt -> no "
+              f"prompts/{page}.design.txt AT THE RUN ROOT under the 15-element "
+              "template (INFOGRAPHIC-PROMPT-TEMPLATE.md § DESIGN MODE) — the exact "
+              "path PIPELINE-MANIFEST.json declares as that phase's "
+              "produces_artifact and this render phase's consumes. No prompt -> no "
               "render (fail loud, never a placeholder, never a hand step).",
               file=sys.stderr)
         raise SystemExit(1)
