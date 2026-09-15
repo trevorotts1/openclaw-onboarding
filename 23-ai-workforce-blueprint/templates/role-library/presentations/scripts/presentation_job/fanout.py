@@ -83,6 +83,14 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
 
 from presentation_job import heal as _heal  # noqa: E402
 
+# PD-TEST-067: the deck's slide list has ONE reader now. Every slide-count /
+# slide-list consumer in this tree (this module, dispatcher._prompt_slide_count,
+# build_deck._count_output_slides, craft_judgement._arc_slots,
+# phase_verifiers' P3-ARC gate) asks this module, so a producer that emits a
+# recognised shape can never be silently unreadable by one reader and readable
+# by another. Imports json/pathlib/typing only -- no cycle, ever.
+from presentation_job import arc_slides as _arc_slides  # noqa: E402
+
 # FIX 14 (MASTER Part 8): one per-provider governor for every outbound call.
 # Defensive import, same pattern as heal above: a tree that predates the
 # governor module (W09 has not landed presentation_job/governor.py yet) keeps
@@ -891,45 +899,32 @@ def _slides_for_units(run_dir: Path) -> List[Dict[str, Any]]:
     dispatcher._prompt_slide_count trusts (working/copy/slides.json, then
     arc_allocation.json). Ordered by ordinal; entries carry at least
     {"ordinal": int}. Returns [] when neither source is present/readable --
-    the caller reports that honestly rather than inventing slides."""
-    for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
-        p = run_dir / rel
-        if not p.is_file():
-            continue
-        try:
-            obj = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        raw = obj if isinstance(obj, list) else (
-            obj.get("slides") if isinstance(obj, dict) else None)
-        if isinstance(raw, list) and raw:
-            out = []
-            for s in raw:
-                if isinstance(s, dict):
-                    o = s.get("ordinal") if isinstance(s.get("ordinal"), int) else None
-                    if o is None and isinstance(s.get("slide"), int):
-                        o = s["slide"]
-                    if o is None:
-                        o = len(out) + 1  # positional fallback keeps order honest
-                    out.append({"ordinal": int(o), **{k: v for k, v in s.items()
-                                                      if k not in ("ordinal", "slide")}})
-            if out:
-                return sorted(out, key=lambda s: s["ordinal"])
-    arc = run_dir / "working" / "copy" / "arc_allocation.json"
-    if arc.is_file():
-        try:
-            obj = json.loads(arc.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            obj = None
-        slots = None
-        if isinstance(obj, dict):
-            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-        elif isinstance(obj, list):
-            slots = obj
-        if isinstance(slots, list) and slots:
-            return [{"ordinal": i + 1, **(s if isinstance(s, dict) else {"slot": s})}
-                    for i, s in enumerate(slots)]
-    return []
+    the caller reports that honestly rather than inventing slides.
+
+    PD-TEST-067: the two sources are now read by ``arc_slides``, the ONE
+    module that knows the deck's slide-array shape, instead of by a third
+    private copy of the key list. On run pres-operator-1d269693 this function
+    returned [] for an arc_allocation.json that WAS present and DID carry 8
+    slides (under ``slide_allocations``, the live P3-ARC spelling) while this
+    module looked only for slots/allocation/slides -- the zero-unit refusal
+    then fired, byte-identically, 8 times into DISPATCH_REPEAT_CEILING and
+    quarantined four phases. The [] contract itself is UNCHANGED and still
+    means "no unit is ever invented": a recognised-but-empty array
+    ({"slots": []}) and an unrecognisable artifact both still return [] here,
+    and the caller still refuses loudly. Only the set of artifacts that are
+    READABLE changed.
+    """
+    slots = _arc_slides.load_slots(run_dir)
+    if not slots:
+        return []
+    # `ordinal`/`slide` are dropped and `ordinal` re-added, byte-for-byte the
+    # dict this function returned before PD-TEST-067: the unit item carries the
+    # slot as its payload, and unit_store.input_hash_for_unit hashes that
+    # payload, so a gratuitously different dict here would invalidate every
+    # already-banked unit's input hash and re-pay it on resume.
+    return [{"ordinal": s["ordinal"], **{k: v for k, v in s.items()
+                                         if k not in ("ordinal", "slide")}}
+            for s in slots]
 
 
 def _sections_for_units(run_dir: Path) -> List[Dict[str, Any]]:
@@ -952,19 +947,23 @@ def _sections_for_units(run_dir: Path) -> List[Dict[str, Any]]:
                          "name": str((s.get("name") if isinstance(s, dict) else s)
                                      or f"section-{i + 1:02d}")}
                         for i, s in enumerate(secs)]
-            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-            if isinstance(slots, list) and slots:
-                names: List[str] = []
-                for s in slots:
-                    if not isinstance(s, dict):
-                        continue
-                    arc_name = s.get("arc") or s.get("section") or s.get("name")
-                    if isinstance(arc_name, str) and arc_name.strip() \
-                            and arc_name not in names:
-                        names.append(arc_name)
-                if names:
-                    return [{"ordinal": i + 1, "name": n}
-                            for i, n in enumerate(names)]
+            # PD-TEST-067: shared reader (this is the ONLY private key list that
+            # used to remain in this module). Verified behaviour-neutral for
+            # both real shapes -- neither the live slide_allocations artifact
+            # nor the canonical golden-quest slots carry arc/section/name keys,
+            # so both fall through to the slides_copy.md headings below exactly
+            # as before; a shape that DOES carry names is read identically.
+            # PD-TEST-067: the section NAMES are derived by the shared reader,
+            # through the slot's own arc label, so the names produced here and
+            # the names dispatcher._section_ordinal_ranges looks up can never
+            # disagree. They used to hold two private copies of the key list and
+            # both asked for arc/section/name while the live slots carried
+            # arc_section -- so this collapsed the whole deck to the single
+            # "whole" unit below, and every section then lost its ordinal range.
+            names = _arc_slides.section_names_from_obj(obj)
+            if names:
+                return [{"ordinal": i + 1, "name": n}
+                        for i, n in enumerate(names)]
     copy_md = run_dir / "working" / "copy" / "slides_copy.md"
     if copy_md.is_file():
         try:
