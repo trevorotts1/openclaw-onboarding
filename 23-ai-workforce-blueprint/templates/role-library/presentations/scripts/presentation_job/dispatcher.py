@@ -7628,6 +7628,105 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# The ONE kind string for the local-operator repair receipt.  Issued by
+# authorize_paid_retry_reset, validated by _repair_receipt_is_actionable, both
+# reading THIS constant so the writer and the reader cannot drift.
+DISPATCH_REPAIR_RECEIPT_KIND = "local-operator-paid-retry-reset-v1"
+
+
+def _read_repair_receipt(run_dir: Path, phase_id: str) -> Dict[str, Any]:
+    """The repair receipt's bytes, or {} when absent/unreadable/not an object.
+
+    ONE reader, so the read-only gate and the reserve consumer cannot disagree
+    about what "the receipt on disk" means.  An unreadable receipt is an absent
+    receipt: no clause downstream may treat a parse failure as permission.
+    """
+    try:
+        obj = json.loads(_repair_receipt_path(run_dir, phase_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: Path,
+                                  *, approved_input_revision: Optional[str] = None
+                                  ) -> Tuple[bool, str]:
+    """THE single receipt-versus-ledger validation, shared by BOTH the read-only
+    dispatch gate (should_dispatch) and the one and only consumer
+    (_reserve_paid_attempt).  Returns (True, <truthful reason>) only when the
+    receipt on disk may lift this phase's paid-budget block; (False, <why not>)
+    otherwise.
+
+    WHY IT IS SHARED (PD-TEST-068).  The two callers used to hold separate
+    copies of this predicate -- and the gate's copy was EMPTY.  The receipt was
+    read in exactly one place, _reserve_paid_attempt, which every claim path
+    reaches only AFTER should_dispatch has said yes; should_dispatch refused on
+    the exhausted branch before consulting anything, so a valid unconsumed
+    receipt could never lift the very gate that blocks its own consumption.
+    Observed live: receipt issued rc=0, six 30s samples over ~2.5 minutes with
+    zero consumption, zero dispatch, zero provider requests, ledger unchanged
+    (status=exhausted, paid_attempts=3, generation=0,
+    repair_receipt_consumed=False).  One predicate, two call sites, makes that
+    divergence unrepresentable.
+
+    PURE READ.  It never writes, never consumes and never mutates the ledger;
+    should_dispatch's three call sites rely on that.  Consumption happens only
+    in _reserve_paid_attempt, under the phase's budget transaction.
+
+    Every clause is fail-closed and every refusal names itself:
+      * a ledger must exist, be still un-consumed, and carry a durable integer
+        generation (a missing one cannot satisfy any receipt's prior_generation);
+      * the receipt must be readable, of kind
+        'local-operator-paid-retry-reset-v1', and issued for THIS phase and THIS
+        resolved run directory;
+      * its allowance must be a positive int within DISPATCH_RETRY_CAP;
+      * its prior_generation must be the ledger's CURRENT generation, so a
+        receipt can never re-arm a generation it was not issued against;
+      * its approved_input_revision must be the CURRENT one, so a receipt can
+        never outlive the input it was issued for;
+      * its operator_uid must be the OS owner of the run directory;
+      * its dispatcher_sha256 must be the hash of the dispatcher source running
+        RIGHT NOW, so a receipt cannot survive the code change it was not issued
+        for (stale receipt => refused; re-issue after the repair is deployed).
+    """
+    if not led:
+        return False, "no dispatch ledger for this phase"
+    if led.get("repair_receipt_consumed"):
+        return False, "paid-retry repair receipt already consumed"
+    receipt = _read_repair_receipt(run_dir, phase_id)
+    if not receipt:
+        return False, "no readable paid-retry repair receipt on disk"
+    if receipt.get("kind") != DISPATCH_REPAIR_RECEIPT_KIND:
+        return False, (f"repair receipt kind is not {DISPATCH_REPAIR_RECEIPT_KIND}")
+    if receipt.get("phase_id") != phase_id:
+        return False, "repair receipt is for a different phase"
+    if receipt.get("run") != str(run_dir.resolve()):
+        return False, "repair receipt is for a different run"
+    allowance = receipt.get("allowance")
+    if (isinstance(allowance, bool) or not isinstance(allowance, int)
+            or not 1 <= allowance <= DISPATCH_RETRY_CAP):
+        return False, (f"repair receipt allowance is not an int in 1.."
+                       f"{DISPATCH_RETRY_CAP}")
+    ledger_generation = led.get("generation")
+    if isinstance(ledger_generation, bool) or not isinstance(ledger_generation, int):
+        return False, "repair receipt has no durable ledger generation to bind to"
+    if receipt.get("prior_generation") != ledger_generation:
+        return False, "repair receipt does not match the ledger generation"
+    revision = (_approved_input_revision(run_dir, phase_id)
+                if approved_input_revision is None else approved_input_revision)
+    if receipt.get("approved_input_revision") != revision:
+        return False, "repair receipt does not match the approved input revision"
+    try:
+        run_owner_uid = run_dir.stat().st_uid
+    except OSError:
+        return False, "repair receipt owner could not be verified"
+    if receipt.get("operator_uid") != run_owner_uid:
+        return False, "repair receipt was not issued by the owner of this run"
+    if receipt.get("dispatcher_sha256") != _file_sha(Path(__file__)):
+        return False, "repair receipt does not match the running dispatcher source"
+    return True, "valid unconsumed paid-retry repair receipt"
+
+
 def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) -> Dict[str, Any]:
     """Local-operator control-plane action; never invoked from a work order.
 
@@ -7647,7 +7746,7 @@ def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) 
         # ledger satisfy a newly-issued receipt's default prior generation.
         if not isinstance(led.get("generation"), int):
             raise RuntimeError("paid retry reset requires a durable ledger generation")
-        receipt = {"kind": "local-operator-paid-retry-reset-v1", "run": str(run_dir.resolve()),
+        receipt = {"kind": DISPATCH_REPAIR_RECEIPT_KIND, "run": str(run_dir.resolve()),
                    "phase_id": phase_id, "approved_input_revision": _approved_input_revision(run_dir, phase_id),
                    "prior_generation": led.get("generation", 0), "dispatcher_sha256": _file_sha(Path(__file__)),
                    "allowance": allowance, "issued_at": utcnow(), "operator_uid": os.getuid()}
@@ -7672,25 +7771,25 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
         prior_generation = str(led.get("approved_input_revision") or "initial")
         paid = int(led.get("paid_attempts") or 0) if generation == prior_generation else 0
         # A local-operator receipt is the only code-repair reset path.  Its
-        # fields are rechecked at consumption; an order file is never read.
-        try:
-            receipt = json.loads(_repair_receipt_path(run_dir, phase_id).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            receipt = {}
-        if receipt and not led.get("repair_receipt_consumed"):
-            valid = (receipt.get("kind") == "local-operator-paid-retry-reset-v1" and
-                     receipt.get("run") == str(run_dir.resolve()) and receipt.get("phase_id") == phase_id and
-                     receipt.get("approved_input_revision") == generation and
-                     isinstance(led.get("generation"), int) and
-                     receipt.get("prior_generation") == led["generation"] and
-                     receipt.get("dispatcher_sha256") == _file_sha(Path(__file__)) and
-                     isinstance(receipt.get("allowance"), int) and 1 <= receipt["allowance"] <= DISPATCH_RETRY_CAP and
-                     receipt.get("operator_uid") == run_dir.stat().st_uid)
-            if valid:
-                paid = DISPATCH_RETRY_CAP - receipt["allowance"]
-                led["generation"] = int(led.get("generation", 0)) + 1
-                led["repair_receipt_consumed"] = True
-                led["repair_receipt"] = receipt
+        # fields are rechecked at consumption by the SAME predicate the
+        # read-only dispatch gate consults; an order file is never read.
+        # PD-TEST-068: this function is the receipt's SINGLE consumer, and the
+        # consumption below is the only place a receipt is ever spent.
+        actionable, _why = _repair_receipt_is_actionable(
+            led, phase_id, run_dir, approved_input_revision=generation)
+        if actionable:
+            # Exactly-once, and atomic.  authorize_paid_retry_reset writes the
+            # receipt under THIS same _phase_budget_transaction lock, so the
+            # bytes the predicate just proved are the bytes read here: no
+            # re-derivation, no second validation copy.  The durable claim is
+            # repair_receipt_consumed=True in the ledger written below, so a
+            # second reservation -- in this process or any later one -- sees a
+            # consumed receipt and can never re-arm this allowance.
+            receipt = _read_repair_receipt(run_dir, phase_id)
+            paid = DISPATCH_RETRY_CAP - receipt["allowance"]
+            led["generation"] = int(led.get("generation", 0)) + 1
+            led["repair_receipt_consumed"] = True
+            led["repair_receipt"] = receipt
         if worker_id:
             claim = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
             if claim and str(claim.get("worker") or "") != worker_id:
@@ -7739,6 +7838,23 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
         return True, "approved input revision changed"
     if (led.get("blocked") and
             int(led.get("paid_attempts") or 0) >= DISPATCH_RETRY_CAP):
+        # PD-TEST-068.  This early return used to precede every other clause of
+        # this function AND to be blind to the repair receipt, while the only
+        # code that ever reads that receipt sits downstream of a claim -- and
+        # every claim path is gated right here.  A valid unconsumed receipt
+        # could therefore never lift the very gate that blocks its own
+        # consumption.  Consult the SAME predicate the consumer uses.
+        #
+        # READ-ONLY: this gate never consumes the receipt, never resets the
+        # counters and never mutates the ledger.  All three should_dispatch
+        # call sites (sweep_run_dir, the scheduler's claim loop, and the
+        # scan-root reporter) depend on that, and the reservation remains the
+        # single consumer.  Nothing is weakened for the no-receipt case: the
+        # refusal below is the unchanged, truthful exhaustion message.
+        actionable, why = _repair_receipt_is_actionable(
+            led, phase_id, run_dir, approved_input_revision=input_revision)
+        if actionable:
+            return True, why
         return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
                        f"provider attempts for unchanged approved input "
                        f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
@@ -7871,8 +7987,21 @@ def _park_blocked(run_dir: Path, phase_id: str, entry: Dict[str, Any], *,
         f"reason:      {reason}\n"
         "\nThis phase stopped being re-dispatched after its retry ceiling. It was NOT\n"
         "marked done and NOT silently dropped. A work-order rewrite or worker restart\n"
-        "does not buy more paid attempts; dispatch resumes only after a verified owner\n"
-        "input amendment changes this phase's approved input generation.\n"
+        "does not buy more paid attempts. Dispatch resumes by EITHER of two verified\n"
+        "routes -- and by nothing else:\n"
+        "  1. ENGINE route: a verified owner input amendment changes this phase's\n"
+        "     approved input generation; or\n"
+        "  2. REPAIR-RECEIPT route: after a deployed code repair, the OS owner of this\n"
+        f"     run issues ONE bounded local-operator paid-retry repair receipt (kind\n"
+        f"     {DISPATCH_REPAIR_RECEIPT_KIND}, allowance 1..{DISPATCH_RETRY_CAP}) bound to the\n"
+        "     then-current dispatcher source hash, ledger generation, approved input\n"
+        "     revision and run owner. The dispatcher consumes it exactly once and\n"
+        "     reserves that many further paid attempts:\n"
+        "       dispatcher.py --run-dir <THIS RUN DIR> \\\n"
+        f"         --authorize-paid-retry-reset {phase_id} --reset-allowance <N>\n"
+        "     A receipt whose dispatcher_sha256 is not the hash of the dispatcher\n"
+        "     source RUNNING NOW is refused -- re-issue it after the repair is\n"
+        "     deployed to every mirror.\n"
         f"Ledger: working/work-orders/{_LEDGER_DIRNAME}/{phase_id}.json\n",
         encoding="utf-8")
     _append_sidecar(run_dir, phase_id, {
