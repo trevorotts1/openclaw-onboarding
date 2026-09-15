@@ -229,6 +229,13 @@ _VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
         "_chk_sp_no_pitch",
         "_chk_sp_claim",
         "_chk_sp_intake_trace",
+        # P3-ARC's shape assertion (PD-TEST-082) — the PEAK/ending evidence
+        # reader, plus the ALIASES of presentation_job.arc_slides' shared
+        # slide-array reader (PD-TEST-067), so this gate, build_deck's
+        # preflight and slice1:peak_end all read one artifact one way.
+        "ARC_SLOT_LIST_KEYS",
+        "ARC_SLOTS_FROM_OBJ",
+        "_arc_peak_end_evidence",
     ),
     "canonical_render_guard": (
         # the REAL render image-QC entry (F39/U023): the render gate routes
@@ -2169,7 +2176,21 @@ def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
         _check_json_nonempty);
       * no recognised slide array at all  -> FAIL (NEW: the live defect);
       * a recognised but EMPTY slide array -> FAIL (NEW: declares no slides);
-      * recognised, non-empty             -> PASS.
+      * recognised, non-empty, but the PEAK/ending declared in NO recognised
+        form                                -> FAIL (NEW: PD-TEST-082);
+      * recognised, non-empty, beats declared -> PASS.
+
+    PD-TEST-082 EXTENDS this gate (it does not replace it). PD-TEST-067 asked
+    "can a consumer read the slide allocation?"; this now ALSO asks "did the
+    phase declare the PEAK and the ENDING it owes?" — the declaration
+    AF-PEAK-END grades one phase later. Without it, an arc that declares
+    NEITHER a free-text token NOR the explicit ``arc_marks`` / ``peak_apex*`` /
+    ``ending_*`` fields is blessed ``done`` here and then silently starves the
+    peak-end doctrine gate, which is exactly how PD-TEST-082 presented. The
+    check is a SHAPE assertion, not a second copy of the doctrine: an arc that
+    declares the beats in ANY recognised form passes, and the doctrine
+    judgement (including ``flat_ending``) stays build_deck._chk_peak_end's job
+    with its own message and its own P49 / SOP-NORTHSTAR-00 citation.
     """
     ok, reasons = _check_json_nonempty(run_dir, "working/copy/arc_allocation.json")
     if not ok:
@@ -2187,7 +2208,8 @@ def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
             "slide-allocation SHAPE was NOT validated (validity-only, "
             "pre-PD-TEST-067 behavior)"]
     path = _resolve_glob(run_dir, "working/copy/arc_allocation.json")
-    slots = _shared.slots_from_obj(_read_json(path) if path is not None else None)
+    arc_obj = _read_json(path) if path is not None else None
+    slots = _shared.slots_from_obj(arc_obj)
     if slots is None:
         return False, [
             "working/copy/arc_allocation.json: no slide allocation array this "
@@ -2207,6 +2229,28 @@ def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
             "present but EMPTY — the arc declares zero slides, so every "
             "downstream fan-out over the deck's slide list would enumerate "
             "zero units."]
+    # PD-TEST-082: the beats must be declared in at least one recognised form.
+    # Derived by build_deck's ONE evidence reader, so this gate, the preflight
+    # _chk_peak_end and the shadow-compared slice1:peak_end verifier all read
+    # the same artifact the same way.
+    evidence = _bd_fn("_arc_peak_end_evidence")
+    if evidence is not None:
+        ev = evidence(arc_obj)
+        missing: List[str] = []
+        if not ev.get("peak"):
+            missing.append("no PEAK/APEX/WOW beat")
+        if not ev.get("ending"):
+            missing.append("no deliberate ending/recap/CTA beat")
+        if missing:
+            return False, reasons + [
+                "working/copy/arc_allocation.json: the arc declares no "
+                "consumable shape for — " + "; ".join(missing) + ". Declare "
+                "each beat EITHER as a free-text arc label/tag token OR through "
+                "the arc's own explicit fields (per-slide arc_marks.peak / "
+                "arc_marks.ending, or top-level peak_apex_slide / peak_apex and "
+                "ending_slide / ending_beat). A flat ending (flat_ending: true) "
+                "does not satisfy the ending. See PD-TEST-082 / AF-PEAK-END "
+                "(P49)."]
     return True, reasons
 
 
@@ -3665,6 +3709,7 @@ def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, []
 
 
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -3678,6 +3723,10 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # PD-TEST-067: a validity-only gate here let an artifact no consumer could
     # read report `done` and quarantine four downstream phases. The gate now
     # requires the slide allocation its own consumers read.
+    # PD-TEST-082 extends the SAME function (never a second definition): it now
+    # ALSO requires the PEAK and the ENDING declared in at least one recognised
+    # form, so an arc that declares neither is refused HERE instead of silently
+    # starving AF-PEAK-END one phase later. See _verify_arc_allocation.
     "P3-ARC":             _verify_arc_allocation,
     # Phase 3.5   Research-to-Slide Mapping
     "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
