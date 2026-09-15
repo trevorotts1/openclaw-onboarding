@@ -1,3 +1,36 @@
+## [v25.1.13]  -  2026-09-15  -  A consumed repair receipt no longer latches the phase forever
+
+### What Changed
+- **PD-TEST-092 — one spent receipt permanently closed a phase's paid budget.** `_repair_receipt_is_actionable` gated on the bare bool `repair_receipt_consumed`:
+  ```python
+  if led.get("repair_receipt_consumed"):
+      return False, "paid-retry repair receipt already consumed"
+  ```
+  **Nothing ever clears that field.** `authorize_paid_retry_reset` (`dispatcher.py:7859-7884`) writes only the receipt and never touches the ledger, and `_reserve_paid_attempt` is its sole writer, setting it `True` (`dispatcher.py:7920`). So once a phase consumed its *first* receipt, **every later receipt was refused** however valid it was — right phase, right run, right owner, allowance within cap, matching approved-input revision, matching ledger generation, and a `dispatcher_sha256` equal to the running source.
+- **Measured on the real live bytes, read-only.** Probes against a copy of `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`'s ledger with only the run path rewritten (the live ledger was re-hashed afterwards and was unchanged — `d88ce8e12ad0adcb1bb29db2`, `repair_receipt_consumed` still `True`, `generation` still `1`):
+
+  | probe | input | verdict |
+  |---|---|---|
+  | A | live ledger + live fresh receipt | `(False, 'paid-retry repair receipt already consumed')` |
+  | B | flip **only** `repair_receipt_consumed` to `False` | `(True, 'valid unconsumed paid-retry repair receipt')` |
+  | C | the already-spent receipt (`prior_generation` 0) vs ledger `generation` 1 | `(False, 'repair receipt does not match the ledger generation')` |
+
+  Probe B shows that single bool was the **sole** blocker — every other clause already passed. Probe C is the decisive one: **the generation clause already enforces exactly-once**, which is the very property the bool claims to provide.
+- **Why the latch was redundant.** Consumption is the *only* writer of the ledger generation anywhere in the package (`dispatcher.py:7919`, `led["generation"] = int(led.get("generation", 0)) + 1`) and it only ever increments; a receipt must carry `prior_generation ==` the ledger's **current** generation (`dispatcher.py:7842`). So the instant a receipt is consumed the generation moves past it and that same receipt can never match again — in this process or any later one.
+- **Why this was critical path, not cosmetic.** The latch bites **P4-COPY**, the phase that produces `working/copy/slides_copy.md` — the input `slides_assembly.py` needs to produce `working/copy/slides.json` (PD-TEST-081), which `build_deck.py` hard-requires as `positional[0]` and exits 2 without. With the latch in place P4-COPY could never be retried, so **no run could ever produce a deck**, however many other repairs landed. The live ledger shows exactly that history: `generation` 1, `repair_receipt_consumed` true, `paid_attempts` 3 — the first receipt was consumed and its three paid attempts spent at 11:48:12Z on `section-01: unit payload carries no ordinal range`, i.e. **before** the PD-081/PD-068 repairs were installed, so a second reset is precisely the designed repair path and it was being refused.
+- **Fix — the bool stops being a gate.** It is still written on consumption as an audit record, now beside a new `repair_receipt_consumed_generation` recording *which* generation was spent, so no later reader has to infer it. Single-use is left to the generation clause, which provably provides it. The docstring bullet claiming "a ledger must … be still un-consumed" was corrected at the same time, because a stale comment is how this recurs.
+- **Tests — `tests/test_pd092_second_receipt_is_not_latched.py` (22 cases).** A second receipt is admitted *and actually lifts `should_dispatch`*; three successive repairs all work; the second receipt is consumed and restores its allowance; the live ledger shape (`generation` 1, bare bool true, fresh receipt for generation 1) is actionable; exactly-once survives — the spent receipt is refused **by the generation clause** and the granted allowance **drains to exhaustion rather than being re-granted**; and all nine forged-field refusals plus missing-receipt and absent-ledger still fail closed. **Ablation proof:** restoring **only** the pre-fix latch clause turns `22 passed` into `18 failed, 4 passed`.
+- **A test was holding the defect in place.** `test_pd068_paid_retry_receipt_gate.py::test_consumed_flag_alone_refuses_a_fresh_looking_receipt` documented itself as proving that "a receipt re-copied onto disk after consumption must not re-arm anything" — but its fixture issued a receipt whose `prior_generation` **equalled** the ledger's generation, i.e. a genuinely fresh and valid receipt, so only the latch made it pass. It is replaced by its honest pair: one test that really spends a receipt and requires the **generation** clause to refuse the re-copied bytes, and its complement asserting that `consumed=True` alone must not refuse a receipt fresh for the current generation.
+- **One of the author's own tests was wrong and was corrected.** The first draft asserted that reserving again after consumption raises `PaidBudgetExhausted`. It does not — consumption deliberately resets `paid_attempts` to `DISPATCH_RETRY_CAP - allowance`, which is the whole point of a receipt. The test now asserts the real property (the receipt is spent once and the grant drains) rather than the assumed one.
+- **Regression.** `test_pd068` + `test_pd080` + `test_pd092` = **77 passed**. The wider neighbour set = 73 passed, 1 failed, and that failure is **pre-existing**: `test_pd081_slides_json_producer::test_empty_copy_never_yields_a_silently_empty_slides_json` reproduces identically on a pristine `origin/main` `b822384b8` worktree with none of this change (registered separately as PD-TEST-093).
+- **Blast radius.** `dispatcher.py` **is** the file the receipt pins, so installing this repair invalidates any receipt issued before it and a fresh receipt must be issued afterwards — that is the documented design (`dispatcher.py:7819`, "re-issue after the repair is deployed") and exactly what the ceremony does. `CANONICAL-RENDERER-PIN.sha256` is unchanged and still equals a fresh recomputation (`294ffdabc95f41d0ff040d738eea2d02272578d9285fe58c77569ce71d2ef598`); `PIPELINE-MANIFEST.json` is byte-unchanged.
+
+### Files Changed
+Line counts are `git diff --numstat` against this branch's base.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+24/-4 — the latch clause removed from the gate, the audit generation recorded, the docstring corrected)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd092_second_receipt_is_not_latched.py` (+340, new — 22 cases)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd068_paid_retry_receipt_gate.py` (+41/-9 — the latch-encoding test replaced by its honest pair; the module docstring's mechanism attribution corrected)
+
 ## [v25.1.12]  -  2026-09-15  -  Read the page-design prompt where the pipeline actually writes it
 
 ### What Changed
