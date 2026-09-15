@@ -675,6 +675,12 @@ def _phase_terminal_bad(status: Optional[str]) -> bool:
 # ---------------------------------------------------------------------------
 _READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
 
+#: The literal prefix the engine's own substance park writes (phases.py `_block`
+#: callers build it as f"substance check failed: {verdict}"). PD-TEST-135 matches
+#: a block against this SO THAT operator prose can never be mistaken for a
+#: checker verdict, however it is worded.
+_VERIFIER_VERDICT_PREFIX = "substance check failed"
+
 
 def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
     """The dispatcher's own park marker for a phase (the F9 resolution, with
@@ -763,7 +769,7 @@ def _retire_orphaned_park_marker(run_dir: Any, phase_id: str) -> bool:
 
 
 def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
-    """True when a BLOCKED phase was parked by a CHECKER, not by an operator
+    """True ONLY when the phase's current block is the engine's own SUBSTANCE park
     (PD-TEST-135).
 
     The gap this closes: `_phase_terminal_bad` treats
@@ -776,30 +782,49 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     parked it had been fixed.
 
     Measured 2026-09-16 on run pres-operator-1d269693: P4-COPY sat
-    status="blocked" on blocked_reason "substance check failed: AF-NO-VILLAIN
-    ..." while the INSTALLED intelligence_engines_check.check_copy() returned
-    ZERO problems against the same copy -- the defect had already been fixed by
-    PD-TEST-125, and 34 downstream phases (including PF-DESIGN -> P4-RENDER ->
-    out.pptx) waited on the stale string. A sanctioned `--resume` did not
-    re-adjudicate it, and the only documented exit was an owner
-    skip_approval token -- i.e. mark it done WITHOUT re-running the check.
+    status="blocked" on "substance check failed: AF-NO-VILLAIN ..." while the
+    INSTALLED intelligence_engines_check.check_copy() returned ZERO problems
+    against the same copy -- already fixed by PD-TEST-125 -- and 34 downstream
+    phases (including PF-DESIGN -> P4-RENDER -> out.pptx) waited on the stale
+    string.
 
-    An OPERATOR park carries no checker verdict and is still honoured: only a
-    block whose own reason, or whose heal history, records a verifier verdict is
-    reopened. The vocabulary is read from heal.py, which already owns it, so the
-    two cannot drift."""
-    try:
-        from .heal import FAILURE_VERIFIER_SUBSTANCE, _VERIFIER_MARKERS
-    except Exception:  # noqa: BLE001 -- a degraded install must not lose the fix
-        FAILURE_VERIFIER_SUBSTANCE = "verifier_substance"
-        _VERIFIER_MARKERS = ("substance check failed", "verifier", "verify")
-    reason = str(ps.get("blocked_reason") or "").lower()
-    if reason and any(m in reason for m in _VERIFIER_MARKERS):
-        return True
-    for h in (ps.get("heal_events") or []):
-        if isinstance(h, dict) and h.get("class") == FAILURE_VERIFIER_SUBSTANCE:
-            return True
-    return False
+    WHY THIS MATCHES A SHAPE, NOT heal's VOCABULARY. An earlier cut tested the
+    reason for heal's verifier keywords ("verifier", "verify"); an independent
+    review measured that this reopened 12 of 12 crafted OPERATOR park reasons --
+    any operator prose mentioning verification -- and so contradicted the rule
+    stated immediately above `_READMITTABLE_PHASE_STATUSES` ("Owner-decision
+    parks (PHASE_STATUS_BLOCKED, FIX 10) are never re-admitted: only the client
+    can make that call") and the pre-existing test
+    test_owner_blocked_and_done_phases_are_never_readmitted.
+
+    heal.classify_failure() cannot arbitrate either: it tests
+    _OWNER_DECISION_MARKERS FIRST, and the engine appends the boilerplate "An
+    owner_skip_approval token for this phase is required to advance it to
+    done." to EVERY substance park -- so heal returns owner_decision for the
+    very reason P4-COPY carries. Deferring to heal would refuse the one block
+    this fix exists to reopen. Both were measured, not assumed.
+
+    The engine's substance park has a shape, so this matches the shape:
+      (a) the reason BEGINS with the checker's own verdict prefix, never with
+          operator prose; AND
+      (b) the phase's MOST RECENT heal event is a verifier_substance event whose
+          reason the current block quotes -- the SAME episode -- so a stale
+          verifier heal cannot reopen a later dispatcher budget park.
+    The class constant comes from heal at module scope (phases.py:40), so it
+    cannot drift behind a silent fallback."""
+    reason = str(ps.get("blocked_reason") or "").strip()
+    if not reason.lower().startswith(_VERIFIER_VERDICT_PREFIX):
+        return False
+    events = [h for h in (ps.get("heal_events") or []) if isinstance(h, dict)]
+    if not events:
+        return False
+    last = events[-1]
+    if last.get("class") != heal.FAILURE_VERIFIER_SUBSTANCE:
+        return False
+    ev_reason = str(last.get("reason") or "").strip()
+    if not ev_reason:
+        return False
+    return reason.startswith(ev_reason) or ev_reason[:60] in reason
 
 
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -841,9 +866,17 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "at": utcnow(),
             "prior_status": ps.get("status"),
             "prior_attempts": ps.get("attempts"),
-            "prior_reason": (ps.get("quarantined_reason")
-                             or ps.get("failed_reason")
-                             or ps.get("blocked_reason")),
+            # PD-TEST-135: blocked_reason FIRST. Both independent reviews flagged
+            # that preferring quarantined_reason/failed_reason logged the WRONG
+            # reason on the live P4-COPY record -- it carries a stale
+            # quarantined_reason ("agent-authored phase produced nothing within 60
+            # minutes"), so the audit trail for a REOPENED BLOCK named a
+            # missing-artifact cause instead of the substance verdict being
+            # cleared. The reason actually being adjudicated must be the one
+            # recorded.
+            "prior_reason": (ps.get("blocked_reason")
+                             or ps.get("quarantined_reason")
+                             or ps.get("failed_reason")),
         }
         if owner_state == "orphaned":
             record["orphaned_park_marker"] = owner_detail
