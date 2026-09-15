@@ -4,6 +4,29 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.0.1] - 2026-09-15 — liveness probe: no self-inflicted restarts, one alert per outage, operator off-switch
+
+### Changed
+- **`scripts/ghl-mcp-probe.sh` no longer knocks over a healthy server.** On a
+  loaded box a single slow `/health` check (old limit 5s) used to trigger a
+  forced restart; the re-probe waited 20s while a cold start takes 60-120s, so
+  the probe reported NO_LISTENER and filed a Command Center card every 15
+  minutes (347 restarts, 72 identical cards on one board in ten days). Now:
+  `/health` 20s, JSON-RPC 30s, a restart only when the previous tick also
+  failed, and a 180s post-restart wait.
+- **One alert per outage.** The operator card and the Rescue Rangers page fire
+  together on the 3rd consecutive identical failure, once per streak
+  (`GHL_MCP_PROBE_ALERT_STREAK`). The RECOVERED card only follows an outage
+  that was actually alerted.
+- **Operator off-switch.** `GHL_MCP_PROBE_DISABLED=1` or a marker file at
+  `$HOME/.openclaw/.ghl-mcp-probe-disabled` (VPS: `/data/.openclaw/...`) makes
+  every probe run report DISABLED and exit 0, and `scripts/ghl-mcp-autostart.sh`
+  removes the schedule instead of reinstalling it on a roll.
+- **The unit test can no longer file real cards.** `tests/unit/ghl-mcp-probe.test.sh`
+  used to reach the real signed ingest helper next to the probe and POST
+  genuine cards onto the box that ran it; cards and restarts are now stubbed
+  (`GHL_MCP_PROBE_ROUTE_CMD`, `GHL_MCP_PROBE_HEAL_CMD`) and asserted on.
+
 ## [2.0.0] - 2026-09-03 — contact write routing: generic add/save defaults to upsert
 
 ### Changed

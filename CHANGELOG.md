@@ -1,4 +1,4 @@
-## [v25.1.11]  -  2026-09-15  -  Read the page-design prompt where the pipeline actually writes it
+## [v25.1.12]  -  2026-09-15  -  Read the page-design prompt where the pipeline actually writes it
 
 ### What Changed
 - **PD-TEST-091 — every upsell page-design render phase was quarantined by a path that disagreed with all four components that name it.** `build_infographic.py::_design_prompt_rel()` resolved the agent-authored page-design prompt to `working/prompts/<page>.design.txt`. Nothing writes there. The **run root** `prompts/<page>.design.txt` is what the pipeline declares, produces and verifies — so `--spec design` failed its own input lookup and exited 1.
@@ -15,6 +15,23 @@ carried a wrong split (+24/-6 and +88/-5) which the independent review caught an
 corrected here rather than left to read as measured.
 - `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_infographic.py` (+22/-8 — the reader, the header, the `CONTRACT:` block, the `FATAL` text)
 - `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix28_design_producer.py` (+91/-2 — fixture writes the real path; manifest↔reader↔dispatcher lockstep; verifier behavioural control)
+## [v25.1.11]  -  2026-09-15  -  GHL MCP probe: no restart on one slow check, one alert per outage, operator off-switch
+
+### What Changed
+- **The liveness probe was the outage.** On a loaded operator box one `/health` check exceeded the old 5-second limit; `scripts/ghl-mcp-probe.sh --heal` force-restarted a HEALTHY server, waited only 20 seconds while a cold start on that box takes 60 to 120 seconds, declared NO_LISTENER and filed a Command Center card. Every 15 minutes. Measured: 347 forced restarts in the probe log, 72 identical cards on one board in ten days, each card un-groomable (no SOP, no persona) and therefore re-pinging the operator through the stale-task sweep.
+- **Timeouts fit a loaded box.** `/health` gets its own 20-second ceiling (`GHL_MCP_HEALTH_TIMEOUT`); the JSON-RPC default rises from 10 to 30 seconds (`GHL_MCP_PROBE_TIMEOUT`, `--timeout` still wins). `ghl-mcp-autostart.sh` bakes the new default into the plist and cron line it writes.
+- **A restart needs a streak.** `--heal` no longer restarts on the first failing tick; the previous tick must already have failed. After a restart the re-probe waits up to 180 seconds (`GHL_MCP_PROBE_HEAL_WAIT_SECONDS`) instead of 20.
+- **One alert per outage.** The operator card and the Rescue Rangers page now fire TOGETHER on the 3rd consecutive identical failure (`GHL_MCP_PROBE_ALERT_STREAK`, ~45 minutes), exactly once per unbroken streak. The card used to go out on every failing tick while only the page was throttled. The RECOVERED card only follows an outage that was actually alerted, still one per hour per box.
+- **Operator off-switch.** `GHL_MCP_PROBE_DISABLED=1` or a marker file at `$HOME/.openclaw/.ghl-mcp-probe-disabled` (VPS: `/data/.openclaw/.ghl-mcp-probe-disabled`) makes every probe run report `DISABLED` and exit 0, and `install_periodic_probe()` in `ghl-mcp-autostart.sh` removes the launchd job or managed cron line and installs nothing, so a fleet roll cannot quietly re-arm a probe the operator turned off. `GHL_MCP_PROBE_DISABLED=0` forces the probe on for one run (markers ignored).
+- **The unit test can no longer file real cards.** `tests/unit/ghl-mcp-probe.test.sh` resolved the real signed ingest helper next to the probe and POSTed genuine `GHL MCP DOWN (no listener)` cards onto the board of whichever box ran it. Cards and restarts are now stubbed (`GHL_MCP_PROBE_ROUTE_CMD`, `GHL_MCP_PROBE_HEAL_CMD`) and asserted on: 8 new cases (15 to 22) prove one card per outage, streak-gated heal, and both forms of the off-switch. 22/22 pass.
+- **Not fixed here, known:** `tests/unit/ghl-mcp-supervised.test.sh` cases (J) and (T) fail identically on pristine main before this change.
+
+### Files Changed
+- `scripts/ghl-mcp-probe.sh` (streak-gated heal, longer timeouts, one alert per outage, off-switch, test hooks)
+- `scripts/ghl-mcp-autostart.sh` (probe timeout default 30s; off-switch honoured by `install_periodic_probe`)
+- `tests/unit/ghl-mcp-probe.test.sh` (+8 cases, cards and restarts stubbed)
+- `36-ghl-mcp-setup/CHANGELOG.md`, `36-ghl-mcp-setup/skill-version.txt` (2.0.1)
+- Version markers rolled to v25.1.11 by `scripts/bump-version.sh`
 
 ## [v25.1.10]  -  2026-09-15  -  A dispatcher park marker stops outliving the dispatcher that wrote it
 
