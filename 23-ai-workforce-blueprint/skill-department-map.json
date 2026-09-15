@@ -1290,6 +1290,16 @@
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
+  },
+  {
+   "skill": "69",
+   "slug": "archify",
+   "name": "archify",
+   "client_facing": false,
+   "description": "Diagram engine: turns plain-language requirements, pasted Mermaid, or repository evidence into validated architecture / workflow / sequence / data-flow / lifecycle diagrams as self-contained interactive HTML (inline SVG, dark/light themes, optional trace motion, PNG/JPEG/WebP/SVG/WebM export). Zero-dependency Node.js CLI (bin/archify.mjs, Node >= 18); invoked BY other skills and departments rather than routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
   }
  ]
 }

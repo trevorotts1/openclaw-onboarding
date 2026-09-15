@@ -256,6 +256,17 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "Waiting for auto-tag-on-merge to publish the tag (bounded 300s)..."
             for _i in $(seq 1 60); do
+              # RE-FETCH TAGS EVERY ITERATION. Without this the wait is a
+              # no-op: `actions/checkout` fetched the tag set once, at job
+              # start, so a tag pushed by auto-tag-on-merge.yml *after*
+              # checkout is invisible to every re-run of the checker and the
+              # loop can only ever spin for the full 300s and then fail with
+              # the very false negative it exists to absorb. G1 above already
+              # fetches inside its loop for the same reason; G1b did not.
+              # Measured 2026-09-15: v25.1.0's tag landed ~180s after the
+              # merge that triggered this job, inside the 300s window, and
+              # G1b still failed until it was manually re-run.
+              git fetch --tags --quiet origin 2>/dev/null || true
               if python3 scripts/check-released-versions-tagged.py \
                   --ref refs/remotes/origin/main; then
                 exit 0

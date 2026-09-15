@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SECURITY_MIN_VERSION = (7, 3, 1)
+SECURITY_MIN_VERSION = (7, 4, 0)
 NODE_RANGE = '^20.19.0 || ^22.13.0 || >=24'
 
 
