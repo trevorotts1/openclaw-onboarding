@@ -259,7 +259,7 @@ except Exception:  # noqa: BLE001 — fail-soft: legacy box without governor.py
     except Exception:  # noqa: BLE001 — still fail-soft
         _governor = None  # type: ignore[assignment]
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # FIX 20 citation-validation gate (lazy import: only needed when a run dir
