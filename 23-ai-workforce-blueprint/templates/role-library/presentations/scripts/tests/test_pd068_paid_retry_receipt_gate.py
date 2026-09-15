@@ -402,14 +402,17 @@ class TestRefusalsAreFailClosed:
 
     @pytest.mark.parametrize("allowance", [0, -1, -3,
                                            dj.DISPATCH_RETRY_CAP + 1,
-                                           None, "1"])
+                                           None, "1", True])
     def test_non_positive_or_unbounded_allowance_is_refused(
             self, tmp_path, allowance):
         """`allowance` must be a positive int within DISPATCH_RETRY_CAP.
 
-        The bound and the `isinstance(..., int)` test are preserved VERBATIM
-        from the pre-existing predicate, so this repair changes only WHERE the
-        validation is called from, never what it accepts.
+        The bound and the `isinstance(..., int)` test are the pre-existing
+        predicate's own; the only tightening is that `bool` is refused
+        explicitly (it is an `int` SUBCLASS in Python, so the old clause would
+        have accepted a forged `"allowance": true` as a one-attempt allowance).
+        That is strictly fail-closed: it can only refuse receipts the old
+        predicate would also have refused, plus the bool impostor.
         """
         run_dir = _seed_run(tmp_path)
         _forge(run_dir, allowance=allowance)

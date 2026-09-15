@@ -7703,12 +7703,12 @@ def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: P
     if receipt.get("run") != str(run_dir.resolve()):
         return False, "repair receipt is for a different run"
     allowance = receipt.get("allowance")
-    if (not isinstance(allowance, int)
+    if (isinstance(allowance, bool) or not isinstance(allowance, int)
             or not 1 <= allowance <= DISPATCH_RETRY_CAP):
         return False, (f"repair receipt allowance is not an int in 1.."
                        f"{DISPATCH_RETRY_CAP}")
     ledger_generation = led.get("generation")
-    if not isinstance(ledger_generation, int):
+    if isinstance(ledger_generation, bool) or not isinstance(ledger_generation, int):
         return False, "repair receipt has no durable ledger generation to bind to"
     if receipt.get("prior_generation") != ledger_generation:
         return False, "repair receipt does not match the ledger generation"
