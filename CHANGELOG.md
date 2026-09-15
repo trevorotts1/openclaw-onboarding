@@ -1,3 +1,36 @@
+## [v25.1.18]  -  2026-09-15  -  Four builders were reading a front-door nonce the engine stopped minting
+
+### What Changed
+- **PD-TEST-115 — FOUR scripts could never pass their own front-door nonce check in an engine run.** FIX 25 (`phases._run_script_phase`, phases.py:2298-2323) mints a **PER-PHASE** nonce and delivers BOTH:
+
+  ```
+  OC_DECK_ENTRY_NONCE      = <nonce>
+  OC_DECK_ENTRY_NONCE_FILE = <sanitized phase token>      -> <run>/working/checkpoints/.nonce-<token>
+  ```
+
+  `build_infographic.py` and `build_deck.py` were migrated and read `OC_DECK_ENTRY_NONCE_FILE`. `sales_checkout_builder.py`, `workbook_builder.py`, `vsl_builder.py` and `build_webinar_video.py` were **not**: they compared `OC_DECK_ENTRY_NONCE` against the legacy run-scoped `working/checkpoints/.canonical-entry-nonce` file. The environment variable therefore carried the *per-phase* secret while the comparison target was a file the engine **no longer mints at all** — two different values, so the comparison could never succeed.
+
+  Measured live on run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, where 0 nonce files existed under the run's checkpoints dir:
+
+  ```
+  P-U-CHECKOUT-BUILD  quarantined after 3 attempts:
+    FATAL [AF-CANONICAL-RENDER-BYPASS]: sales_checkout_builder.py must run via
+    presentation-canonical-entry.sh, which mints the per-run front-door nonce.
+  ```
+
+  The scope is all four manifest-invoked scripts, not the two the failure happened to expose: `sales_checkout_builder.py` (`P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`), `vsl_builder.py` (`P-U-VSL-BUILD`), `workbook_builder.py` (`P8.25-WORKBOOK`) and `build_webinar_video.py` (`P9.6-WEBINAR-VIDEO`). `run_signature_deck.py` and `presentation_job/runfacts.py` are **deliberately left alone** (the independent review corrected my original reason: neither defines a nonce verifier of its own — `run_signature_deck.py` delegates to `build_deck._verify_entry_nonce`, which IS post-FIX-25, and `runfacts.py`'s only mention is a docstring) — neither is invoked by the manifest; `run_signature_deck.py` is dispatched *by* `presentation-canonical-entry.sh`, which mints the legacy run-scoped nonce, so the legacy path is correct for it.
+
+- **The fix is a port, not a redesign.** `_entry_nonce_phase_file` plus the `OC_DECK_ENTRY_NONCE_FILE` branch of `_verify_entry_nonce` are taken from `build_infographic.py`, including the path-form confinement (a path value is accepted only when it resolves inside this run's checkpoints dir with a `.nonce-` basename) and the fail-closed handling of a missing/short/mismatched nonce. The legacy run-scoped handshake is preserved for the standalone canonical entry, so nothing that works today stops working.
+
+- **Two shortcuts were deliberately NOT taken.** Adding `--no-push` to the manifest executors would silence the refusal — but `--no-push` is the documented **offline smoke** flag: it skips the GHL push and its receipt, so it would ship a deck with no delivery. Minting the legacy `.canonical-entry-nonce` in the engine would also silence it — by resurrecting the handshake FIX 25 replaced and discarding the per-phase confinement that stops one concurrent wave's script from authorizing another.
+
+### Tests
+- New `tests/test_pd115_perphase_nonce_port.py`, 88 cases over all four builders x six phase ids. It pins: the engine's per-phase handshake is **accepted** (the case that was impossible before the port); a **negative control** re-implements the pre-port body and asserts it **refuses** that same handshake, so the test cannot pass vacuously; the legacy handshake still works when `OC_DECK_ENTRY_NONCE_FILE` is unset; every malformed input fails closed (missing env var, short env nonce, absent file, short file nonce, a foreign phase's file, a path outside the checkpoints dir, a traversal path, a mismatched nonce); and a **drift guard** asserts each builder's `_entry_nonce_phase_file` equals `presentation_job.phases._entry_nonce_phase_file` for every phase id — if the mint and the compare target ever diverge, every script phase fails its front door, which is exactly this defect's shape.
+
+### Risk
+- Scope is the front-door nonce check in four scripts. No other control flow changes; the legacy path is byte-equivalent for callers that never set `OC_DECK_ENTRY_NONCE_FILE` (this is asserted).
+- A script invoked by hand, outside the engine and outside `presentation-canonical-entry.sh`, still fails closed — that is the point of the guard and it is unchanged.
+
 ## [v25.1.17]  -  2026-09-15  -  The design-prompt verifier applies the whole render gate, not just its length clause
 
 ### What Changed
