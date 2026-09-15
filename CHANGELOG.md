@@ -1,3 +1,30 @@
+## [v25.1.19]  -  2026-09-15  -  A repair receipt now voids a fan-out's bank, so a rejected aggregate can actually be re-authored
+
+### What Changed
+- **PD-TEST-119 / 120 / 121 — three defects that interlock into a loop with no exit.** On live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4` the design phase `P-U-DESIGN-SALES` could never re-author:
+
+  1. **PD-TEST-119 — a banked unit is reusable on its INPUT hash alone.** All three units sat `status=ok, banked=true, attempts=0`, and `prompts/sales.design.txt` was bit-for-bit `"\n\n".join(working/fanout/P-U-DESIGN-SALES/slide-0{1,2,3}.out)`. The assembled file failed the gate its consumer applies (`AF-R3` + `AF-P13`), so every dispatch rebuilt the identical rejected artifact from the identical parts — forever, with zero paid calls. The parts are not individually wrong: PD-TEST-098 correctly tells the three units to author ONE prompt between them, so a part is *expected* to fail the whole gate in isolation.
+  2. **PD-TEST-120 — the paid-attempt cap is PER PHASE, not per unit.** `DISPATCH_RETRY_CAP=3` caps provider calls per approved-input generation, and a 3-unit design phase spends all three on its FIRST authoring pass, so there is normally no budget left to re-author with.
+  3. **PD-TEST-121 — nothing sanctioned un-banks a unit set.** `unit_store.validate_banked` refuses only on a changed input hash or a missing/corrupt output, and the dispatcher CLI has no unit or bank reset at all.
+
+- **The fix hangs on the repair receipt, because that is the one operator act that resolves all three at once.** While a receipt is actionable, `_dispatch_phase_fanout_units` refuses to reuse banked units, so every unit re-authors against the current approved input — and the reservations that pay for that re-author consume that same receipt. The receipt is therefore:
+
+  * **budget-aware** — `authorize_paid_retry_reset` reopens `allowance` paid attempts, so the re-author is paid for by the same deliberate act (this is what PD-TEST-120 requires);
+  * **audited and single-use** — bound to owner uid, dispatcher sha256, phase, approved input revision and ledger generation, and spent exactly once, so the bound is the generation clause rather than a new flag;
+  * **opt-in** — no receipt means behaviour is byte-identical to before, so a verifier that can never pass cannot loop; it simply behaves as it does today.
+
+- **A phase-verifier-driven invalidation was implemented first and REFUTED by independent review — it is not in this change.** With no budget left it destroyed the bank and left the phase parked **and unbuildable**: the units came back `failed` with every reservation denied, so the aggregate could no longer even be rebuilt. The review also showed the anti-loop bound such a design needs (a hash of the verifier's reasons) is defeatable, because the AF-P13 reason embeds the *subset* of mandated classes the prompt failed to name, so a re-authored prompt yields a different signature and units are re-billed every second dispatch. Invalidation must be *paid for*, and the only component that can promise payment is the receipt.
+
+### Tests
+- `tests/test_pres001_fanout_dispatch_e2e.py`, three new cases: an actionable receipt forces a re-author; the bound holds once the ledger generation advances past the receipt's `prior_generation`; and with no receipt the bank is untouched. Negative control: reverting `dispatcher.py` fails the two defect-detecting cases.
+- `tests/test_pres014_unit_records.py` — **10/10 pass**, unchanged. The unit-level cost contract ("first run 20 units with 1 failure → retry exactly one") is untouched by construction, which is the property the refuted design broke.
+- Broader sweep: 397 passed, 1 skipped, 3 failed — and all three failures are **pre-existing and environmental**, reproduced identically with `dispatcher.py` reverted to HEAD.
+- Note, honestly: these suites stub `dispatch_complete`, which sits ABOVE the reservation seam (`dispatcher.py:2409`), so they cannot observe receipt *consumption*. The new bound test therefore asserts the generation property that decides single-use rather than claiming an observed consumption.
+
+### Risk
+- Scope is the fan-out reuse decision in `_dispatch_phase_fanout_units`. With no receipt on disk the code path is unchanged.
+- A receipt now costs a full re-author of the phase's units rather than only re-running failed ones. That is the intended meaning of the operator act, and it is bounded by the receipt's own `allowance` and by the generation clause.
+
 ## [v25.1.18]  -  2026-09-15  -  Four builders were reading a front-door nonce the engine stopped minting
 
 ### What Changed

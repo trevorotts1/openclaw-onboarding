@@ -6746,6 +6746,58 @@ def _dispatch_phase_fanout_units(
                 {"inputs": by_key.get(it["key"], {}).get("unit_inputs_now", {}),
                  "payload": it.get("payload", it)})
 
+    # ------------------------------------------------------------------
+    # PD-TEST-119 / 120 / 121 -- AN ACTIONABLE REPAIR RECEIPT VOIDS THE BANK.
+    #
+    # Three defects interlock into a loop with no exit:
+    #   * PD-TEST-119: a unit is reusable on its INPUT hash alone, so once the
+    #     phase-level verifier rejects the assembled artifact, every dispatch
+    #     rebuilds the identical rejected file from the identical banked parts --
+    #     forever, with zero paid calls.
+    #   * PD-TEST-120: DISPATCH_RETRY_CAP caps PAID CALLS PER PHASE, and a 3-unit
+    #     phase spends all 3 on its first authoring pass, so there is normally no
+    #     budget left to re-author with.
+    #   * PD-TEST-121: nothing sanctioned un-banks a unit set -- `validate_banked`
+    #     refuses only on a changed input hash or a missing/corrupt output, and the
+    #     dispatcher CLI has no unit or bank reset at all.
+    #
+    # The repair receipt is exactly the operator act that resolves all three at
+    # once, which is why it is the right place to hang this:
+    #   * it is BUDGET-AWARE -- `authorize_paid_retry_reset` reopens `allowance`
+    #     paid attempts and the reservations below then consume it, so the
+    #     re-author is paid for by the same deliberate act;
+    #   * it is AUDITED and SINGLE-USE -- owner uid, dispatcher sha256, phase,
+    #     approved input revision and ledger generation, spent exactly once;
+    #   * it is BOUNDED -- no receipt means no change at all, so a phase whose
+    #     verifier can never pass cannot loop: it simply behaves exactly as it does
+    #     today.
+    #
+    # Deliberately NOT a phase-verifier-driven invalidation. An earlier attempt at
+    # that was refuted by independent review: with no budget left it destroyed the
+    # bank and left the phase parked AND unbuildable (the units came back FAILED
+    # with every reservation denied). Invalidation must be paid for, and the only
+    # component that can promise payment is the receipt.
+    # ------------------------------------------------------------------
+    _force_reauthor, _force_why = False, ""
+    try:
+        _led = _read_ledger(run_dir, phase_id)
+        _force_reauthor, _force_why = _repair_receipt_is_actionable(
+            _led, phase_id, run_dir,
+            approved_input_revision=_approved_input_revision(run_dir, phase_id))
+    except Exception:  # noqa: BLE001 -- never let the check itself break a fanout
+        _force_reauthor, _force_why = False, "receipt check unavailable"
+    if _force_reauthor:
+        reuse = {}
+        _store_state = {}
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "bank_voided_by_receipt",
+            "reason": ("an actionable paid-retry repair receipt is on disk, so the "
+                       "banked unit outputs are NOT reusable and every unit "
+                       "re-authors against the current approved input; the "
+                       "reservations below consume that receipt (PD-TEST-119/120/121)"),
+            "receipt_reason": _force_why,
+        })
+
     reuse = {k: v for k, v in reuse.items() if k not in _store_state}
     desired_count = getattr(spec, "desired_count", None)
     batch_width = getattr(spec, "batch_width", None)

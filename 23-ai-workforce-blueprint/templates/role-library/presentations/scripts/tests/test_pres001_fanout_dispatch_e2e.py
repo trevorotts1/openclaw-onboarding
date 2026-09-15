@@ -339,3 +339,128 @@ def test_design_text_units_join_in_order(tmp_path, monkeypatch):
     assert _pg.PROMPT_CHAR_FLOOR <= len(body.strip()) <= _pg.PROMPT_CHAR_CEILING, (
         f"joined design prompt is {len(body.strip())} chars, outside the "
         f"{_pg.PROMPT_CHAR_FLOOR}-{_pg.PROMPT_CHAR_CEILING} band")
+
+# ---------------------------------------------------------------------------
+# PD-TEST-119 / 120 / 121 -- AN ACTIONABLE REPAIR RECEIPT VOIDS THE BANK.
+#
+# These three defects interlock into a loop with no exit: banked units are reused
+# on an input hash alone (119), the paid cap is per PHASE so the first authoring
+# pass spends it (120), and nothing sanctioned un-banks a unit set (121). The
+# repair receipt is the one operator act that resolves all three at once, so the
+# fanout now refuses to reuse banked units while a receipt is actionable -- and
+# the reservations that pay for the re-author consume that same receipt.
+# ---------------------------------------------------------------------------
+def _design_run_for_receipt(tmp_path):
+    rd = tmp_path / "d121"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "upsell" / "copy").mkdir(parents=True)
+    (rd / "working" / "work-orders").mkdir(parents=True)
+    (rd / "working" / "copy" / "slides.json").write_text(
+        json.dumps({"slides": [{"ordinal": n} for n in range(1, 4)]}))
+    (rd / "working" / "upsell" / "copy" / "sales.fragment.md").write_text("FRAGMENT")
+    (rd / ".test-context").write_text("test")
+    return rd
+
+
+def _design_env2(tmp_path, monkeypatch, *, verify_ok):
+    rd = _design_run_for_receipt(tmp_path)
+    dept = _dept(tmp_path, "designer-x")
+    calls: list = []
+
+    def fake_dispatch(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
+        m = re.search(r"PART (\d+) OF (\d+)", user_prompt)
+        assert m, "a design unit must be told which PART it authors"
+        n = int(m.group(1))
+        calls.append(user_prompt)
+        floor_share, _ceil = D.design_unit_char_budget(int(m.group(2)))
+        return (f"PART for slide {n}. "
+                + ("specific art direction. " * (floor_share // 20 + 40)),
+                {"request_id": "r"}, {"provider": "s", "model": "m"})
+
+    monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
+    monkeypatch.setattr(D, "_verify", lambda pid, rdir: (verify_ok, [] if verify_ok else ["AF-P13"]))
+    return {"rd": rd, "dept": dept, "calls": calls,
+            "order": {"owning_role": "designer-x",
+                      "produces_artifact": "prompts/sales.design.txt"},
+            "spec": fanout.parse_fanout_field({"by": "slide", "max_units": 3}),
+            "phase": FakePhase("P-U-DESIGN-SALES", "designer-x"),
+            "target": rd / "prompts" / "sales.design.txt"}
+
+
+def _run119(env):
+    """Dispatch the design fanout with this env's stubs (the same call shape the
+    PD-TEST-119 work used, defined here so this suite is self-contained)."""
+    return D._dispatch_phase_fanout_units(
+        env["rd"], env["order"], dept_root=env["dept"], phase_obj=env["phase"],
+        worker_id="t", spec=env["spec"], patterns=["prompts/sales.design.txt"],
+        target=env["target"], prior_reasons=[])
+
+
+def _seed_ledger(rd, generation=0, paid=3):
+    """A durable ledger, the precondition `authorize_paid_retry_reset` enforces."""
+    D._write_ledger(rd, "P-U-DESIGN-SALES", {
+        "phase_id": "P-U-DESIGN-SALES", "status": "exhausted",
+        "paid_attempts": paid, "generation": generation,
+        "blocked": True, "approved_input_revision": "initial"})
+
+
+def test_actionable_receipt_forces_a_re_author(tmp_path, monkeypatch):
+    """THE ACCEPTANCE TARGET. Banked units are reused on an input hash alone, so
+    without this the phase rebuilds the identical rejected artifact forever."""
+    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    _run119(env)
+    assert len(env["calls"]) == 3, "first pass authors"
+    _run119(env)
+    assert len(env["calls"]) == 3, "a banked unit set is reused (no re-bill)"
+
+    _seed_ledger(env["rd"], generation=0)
+    receipt = D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=3)
+    assert receipt["prior_generation"] == 0
+
+    _run119(env)
+    assert len(env["calls"]) == 6, (
+        "an actionable repair receipt must void the bank and re-author every "
+        "unit -- otherwise the phase can never produce a different artifact")
+
+
+def test_consuming_the_receipt_restores_normal_banking(tmp_path, monkeypatch):
+    """BOUND: the receipt is single-use by generation. Once spent, the bank is
+    reusable again, so a phase whose verifier can never pass cannot loop."""
+    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    _run119(env)
+    _seed_ledger(env["rd"], generation=0)
+    D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=3)
+    _run119(env)
+    assert len(env["calls"]) == 6, "the receipt voided the bank once"
+
+    # The receipt's single-use property is the LEDGER GENERATION: consumption
+    # bumps it, and `_repair_receipt_is_actionable` then refuses because the
+    # receipt's prior_generation no longer matches. This suite stubs
+    # `dispatch_complete`, which sits ABOVE the reservation seam
+    # (dispatcher.py:2409) and is therefore the ONLY place a receipt is consumed --
+    # so consumption cannot happen here, and asserting that it did would be
+    # asserting something the stub bypasses (the exact gap the PD-TEST-119 review
+    # flagged). Assert the BOUND on the property that actually decides it instead:
+    # advance the generation exactly as consumption does, and require the bank to
+    # be honoured again.
+    led = D._read_ledger(env["rd"], "P-U-DESIGN-SALES")
+    led = dict(led)
+    led["generation"] = int(led.get("generation") or 0) + 1
+    D._write_ledger(env["rd"], "P-U-DESIGN-SALES", led)
+    _run119(env)
+    assert len(env["calls"]) == 6, (
+        "once the ledger generation has advanced past the receipt's "
+        "prior_generation the receipt is spent, so the bank must be honoured "
+        "again -- this is what stops a never-passing verifier from looping")
+
+
+def test_no_receipt_leaves_the_bank_untouched(tmp_path, monkeypatch):
+    """REGRESSION GUARD for PRES-014: with no receipt on disk nothing about the
+    reuse decision changes."""
+    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    _run119(env)
+    assert len(env["calls"]) == 3
+    _run119(env)
+    _run119(env)
+    assert len(env["calls"]) == 3, "no receipt -> banked units reused, zero re-bill"
+
