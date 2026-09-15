@@ -1,3 +1,27 @@
+## [v25.1.14]  -  2026-09-15  -  The dispatch backoff must saturate, never overflow
+
+### What Changed
+- **PD-TEST-095 — one unbounded counter froze the ENTIRE dispatcher, permanently.** `_backoff_delay_s(repeat)` computed `min(CAP, BASE * (MULT ** (repeat - 1)))`. The power is evaluated **before** `min()` can clamp it, so it overflows float range before the cap is ever applied: at exponent 1024, `2.0 ** 1024` raises `OverflowError(34, 'Result too large')`. `repeat` is **not** bounded by `DISPATCH_REPEAT_CEILING` — a work order that *lingers* on a phase whose status stopped changing is re-folded on **every sweep tick**, so `consecutive` climbs without limit.
+- **Measured on the live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`.** Two phases had reached `consecutive == 1025` (`P-0.5-RESEARCH`, `P0A-INTAKE`), with observations in the 1000s, and the dispatcher log carried **271 consecutive** `sweep error: OverflowError(34, 'Result too large')` lines with `active_units: 0` and `last_claim_phase: null` — i.e. **zero dispatches**.
+- **It is a self-locking stall, not a slow backoff.** `record_outcome` computes the delay **before** it writes the ledger, so the raise aborts the fold and `consecutive` can never advance past the boundary — and because the exception escapes `sweep_run_dir`, whose caller logs `sweep error` per tick, **no phase in the run is ever dispatched again**. Reproduced on a copy of the live run, with the exact traceback:
+  ```
+  dispatcher.py  delay = _backoff_delay_s(consecutive - 1)
+  dispatcher.py  DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1))
+  OverflowError: (34, 'Result too large')
+  consecutive AFTER = 1025   # unchanged: the fold never wrote
+  ```
+- **Why it mattered here specifically.** A fresh `P4-COPY` repair receipt had just been issued and correctly bound to the installed dispatcher, and it was **never consumed** — not because of anything to do with receipts, but because the dispatcher could no longer reach *any* phase. This is a general dispatcher stall that would eventually stop **every** run on this box; the receipt was merely the first thing blocked behind it.
+- **Fix — saturate by repeated multiplication, never by a power.** The delay is built in a bounded loop that stops as soon as the cap is reached. That is **exactly equivalent** for every value the old expression could return, and it cannot overflow. Verified mechanically over `repeat ∈ [-5, 1025)`: **zero** differences; the only behavioural change is at the 1025+ values where the old form raised, which now return the cap.
+- **Tests — `tests/test_pd095_backoff_overflow.py` (22 cases).** The exact live boundary (`1025`); large repeats (`10**6`, `10**9`, `2**31`, `2**63`) saturating instead of raising; equivalence with the old expression across the whole usable range; monotonicity and the cap; an early-exit check so a correct-but-quadratic implementation cannot pass; **and the end-to-end proof** — a ledger seeded with a *real* signature/revision and a counter pinned at the live boundary must complete its fold **and persist the incremented counter**, on the same fixture where the pre-fix expression raises. A sweep over that run dir must return normally instead of aborting.
+- **One fixture lesson, recorded because it is the same class of error as everything else in this test.** The first version of the stall fixture wrote `consecutive` directly and the end-to-end test failed with `assert 3 == (10000000 + 3)`. That was the fixture's fault, not the product's: `record_outcome` only **increments** `consecutive` when `same` is true, i.e. when the ledger already carries the signature and revision that fold computes — otherwise it resets to 1 and the overflow is never reached. The fixture now performs one real fold to let the engine write its own signature/revision, then pins only the counter, which reproduces the live shape instead of merely looking like it.
+- **Ablation proof:** restoring **only** the pre-fix expression turns `22 passed` into **`15 failed, 7 passed`**.
+- **Regression:** `test_pd095` + `test_pd068` + `test_pd092` + `test_pd080` = **100 passed**. `CANONICAL-RENDERER-PIN.sha256` unchanged and still equals a fresh recomputation; `PIPELINE-MANIFEST.json` byte-unchanged.
+
+### Files Changed
+Line counts are `git diff --numstat` against `c74dcdd64`, measured rather than estimated.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+30/-3 — the saturating loop, and the docstring that records the live measurement)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd095_backoff_overflow.py` (new, 22 cases)
+
 ## [v25.1.13]  -  2026-09-15  -  A consumed repair receipt no longer latches the phase forever
 
 ### What Changed
