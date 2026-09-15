@@ -1,3 +1,37 @@
+## [v25.1.20]  -  2026-09-15  -  A deck-level story beat is now owned by a named unit
+
+### What Changed
+- **PD-TEST-125 — six DECK-LEVEL beats were enforced on the assembled deck and owned by no unit.** Every `P4-COPY` unit authors **exactly one section**, while the writing engines require six beats in a fixed order (`intelligence_engines_check.check_narrative_harmony`, whose `beats` list at `:638-646` is the authority for the names and the order):
+
+  ```
+  HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
+  ```
+
+  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: the assembled `working/copy/slides_copy.md` (9,324 B, all 8 `SLIDE` markers, **all 8 units `status=ok`**) contained **zero** villain tokens across all ten `VILLAIN_TOKENS` and only three `ARC` markers — none of them a story beat.
+
+  **The producer was told, and that is what made this hard to see.** A rebuilt per-unit prompt (system 50,954 chars + user 103,895) contains `AF-NO-VILLAIN`, `VILLAIN beat`, `<!-- ARC: VILLAIN -->` and the derived constraint index. The contract states the beats as properties of the **whole deck** — *"must be the FIRST slide (lowest slide number) that carries either the VILLAIN prose/marker or the PROMISE prose/marker"* — which a section-scoped author **cannot evaluate**: it does not know where its section sits, nor whether a sibling already claimed the beat. The equilibrium is that **no** section claims it: 8 cheap omissions rather than 1 duplicated beat.
+
+- **The fix is the mechanism PD-TEST-098 already established for the design phases.** There, three units author ONE prompt, so the contract had to say which *part* carries the single `[ARCHETYPE` header and which closes with the single `DO-NOT BLOCK` — and that assignment is what made the design fanout converge. Here each ordered beat is assigned to **exactly one section, by position**, and that unit's scope instruction says so:
+
+  ```
+  section-01 -> HOOK   section-02 -> VILLAIN   section-03 -> FELT_STAKES
+  section-04 -> PROMISE   section-05 -> PRICE   section-06 -> RECAP
+  section-07, section-08 -> none
+  ```
+
+  Position is used deliberately: it is deterministic, it distributes the load instead of piling every beat on one unit, and because the beats and the sections are both ordered it **preserves `HOOK -> ... -> RECAP` by construction**. A section beyond the beat list is told **nothing** — absence of an assignment is not an assignment to duplicate, and a clause there would invite a unit to plant a sibling's beat.
+
+- The phase set is explicit (`DECK_BEAT_PHASES = {"P4-COPY"}`) so a future phase opts **in** rather than inheriting an assignment its verifier does not ask for.
+
+### Tests
+- New `tests/test_pd125_deck_beat_ownership.py`, six cases: every beat owned exactly once; the assignment preserves the required order; a section beyond the beat list owns none **and is told nothing**; the clause reaches the unit and points at the literal `<!-- ARC: <BEAT> -->` form; **a drift guard** asserting our names and order are the judging engine's (if a beat is renamed or reordered in `check_narrative_harmony` and not here, the assignment silently stops covering what the verifier checks — the whole defect class this closes); and no assignment for a phase whose verifier does not ask for beats.
+- **Negative control: all six fail against the pre-fix tree, all six pass with it.**
+- Broader sweep: 398 passed, 1 skipped, 7 failed — the 7 are the known pre-existing set (4 in `test_fanout_prompt_phase.py`, independently confirmed pre-existing during the PD-TEST-119 adjudication, plus PD-TEST-123's `test_pd081_slides_json_producer.py`, `test_pres013_fanout_deadline.py` and the `FileNotFoundError` in `test_fix112_missing_producers.py`). `_dispatch_prompt_phase` is untouched by this change.
+
+### Risk
+- Scope is the per-unit payload and scope instruction for `P4-COPY`. Units already banked keep their outputs until they are re-authored; the assignment changes what the NEXT authoring pass is told.
+- It does not weaken the verifier: the beats are still checked on the assembled deck exactly as before. It only stops asking eight units to guess which one owns a whole-deck requirement.
+
 ## [v25.1.19]  -  2026-09-15  -  A repair receipt now voids a fan-out's bank, so a rejected aggregate can actually be re-authored
 
 ### What Changed

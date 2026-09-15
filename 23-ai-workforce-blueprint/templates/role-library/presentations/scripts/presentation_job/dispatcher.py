@@ -5661,7 +5661,80 @@ def invalidated_units(unit_payloads: List[Dict[str, Any]],
     return [k for k in out if k]
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-125 -- DECK-LEVEL ORDERED BEATS MUST BE OWNED BY A NAMED UNIT.
+#
+# THE DEFECT, measured. Every P4-COPY unit authors EXACTLY ONE SECTION, while the
+# writing engines require six DECK-LEVEL beats in a fixed order
+# (`intelligence_engines_check.check_narrative_harmony`, whose `beats` list at
+# :638-646 is the authority for these names and this order):
+#
+#     HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
+#
+# The unit prompt already carried the whole requirement -- a rebuilt unit prompt
+# (system 50,954 chars + user 103,895) contains `AF-NO-VILLAIN`, `VILLAIN beat`,
+# `<!-- ARC: VILLAIN -->` and the derived constraint index. The producer was told
+# and the output still omitted every beat, because the contract states the beats
+# as properties of the WHOLE deck ("must be the FIRST slide that carries either
+# the VILLAIN prose/marker or the PROMISE prose/marker") and a section-scoped
+# author cannot evaluate a whole-deck ordering: it does not know where its section
+# sits, nor whether a sibling already claimed the beat. The equilibrium is that NO
+# section claims it -- and the artifact showed exactly that: 8 SLIDE markers, all 8
+# units `ok`, ZERO villain tokens, and only three ARC markers, none of them a story
+# beat.
+#
+# THE FIX, and its precedent. PD-TEST-098 hit the identical structure on the design
+# phases -- three units author ONE prompt -- and it was fixed by TELLING each unit
+# which PART owns which single structural block (part 1 carries the one
+# `[ARCHETYPE` header, part N closes with the one `DO-NOT BLOCK`). That assignment
+# is what made the design fanout converge. This is the same mechanism: assign each
+# ordered deck-level beat to exactly one section, by position, and say so in that
+# unit's scope instruction.
+#
+# WHY BY POSITION. It is deterministic, it distributes the load instead of piling
+# every beat on one unit, and because the beats are ordered and the sections are
+# ordered it preserves the required HOOK -> ... -> RECAP sequence by construction.
+# A section beyond the last beat owns none, which is correct: absence of an
+# assignment is not an assignment to duplicate.
+# ---------------------------------------------------------------------------
+DECK_ORDERED_BEATS: Tuple[str, ...] = (
+    "HOOK", "VILLAIN", "FELT_STAKES", "PROMISE", "PRICE", "RECAP",
+)
+
+#: Phases whose verifier judges DECK-LEVEL ordered beats. Only the copy fan-out
+#: exists today; the set is explicit so a future phase opts IN rather than
+#: inheriting an assignment its verifier does not ask for.
+DECK_BEAT_PHASES: frozenset = frozenset({"P4-COPY"})
+
+
+def _owned_beat_clause(payload: Dict[str, Any]) -> str:
+    """PD-TEST-125: the beat THIS unit is the sole owner of, or "" when none.
+
+    Absence is deliberate and must be stated as absence-with-reason, or a unit
+    that owns no beat may "helpfully" plant one and duplicate a sibling's."""
+    if not isinstance(payload, dict):
+        return ""
+    owned = payload.get("owned_beats")
+    if not isinstance(owned, (list, tuple)) or not owned:
+        return ""
+    arc = " -> ".join(DECK_ORDERED_BEATS)
+    return (
+        f"=== YOU ARE THE SOLE OWNER OF THIS DECK-LEVEL STORY BEAT: "
+        f"{', '.join(str(x) for x in owned)} ===\n"
+        f"The deck-level writing engines require SIX ordered beats across the whole "
+        f"deck -- {arc} -- and an ordering failure on any one of them refuses the "
+        f"assembled copy for the WHOLE deck. Every other section is owned by a "
+        f"different unit, so no sibling will plant yours, and you must not plant "
+        f"theirs: plant {', '.join(str(x) for x in owned)} in YOUR section, using "
+        f"the prose and the literal `<!-- ARC: <BEAT> -->` marker the OUTPUT "
+        f"CONTRACT names for it.\n\n")
+
+
 def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
+    return _owned_beat_clause(payload) + (_unit_scope_text_base(payload) or "")
+
+
+def _unit_scope_text_base(payload: Dict[str, Any]) -> Optional[str]:
     """The ONE-scope instruction a unit worker gets INSTEAD of the generic
     whole-artifact trigger (compose_prompt suppresses its "write the complete
     final content" tail when the work order carries a `_unit_scope` key).
@@ -6397,6 +6470,11 @@ def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
         lo_hi = _section_payload_range(item, run_dir, name)
         if lo_hi is not None:
             payload["first_ordinal"], payload["last_ordinal"] = lo_hi
+        # PD-TEST-125: assign this section its ordered deck-level beat, if any.
+        if phase_id in DECK_BEAT_PHASES:
+            _n = payload.get("ordinal")
+            if isinstance(_n, int) and 1 <= _n <= len(DECK_ORDERED_BEATS):
+                payload["owned_beats"] = [DECK_ORDERED_BEATS[_n - 1]]
     if phase_id == "P-STYLE-SPEC" and payload["ordinal"] is not None:
         # TODO.md step 1: EXPLICIT variant ids, bounded three. Each unit is
         # ASSIGNED one variant id by its enumeration position (unit 1 -> A,
