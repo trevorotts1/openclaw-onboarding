@@ -5680,7 +5680,7 @@ def invalidated_units(unit_payloads: List[Dict[str, Any]],
 # THE DEFECT, measured. Every P4-COPY unit authors EXACTLY ONE SECTION, while the
 # writing engines require six DECK-LEVEL beats in a fixed order
 # (`intelligence_engines_check.check_narrative_harmony`, whose `beats` list at
-# :638-646 is the authority for these names and this order):
+# `beats` list is the authority for these names and this order):
 #
 #     HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
 #
