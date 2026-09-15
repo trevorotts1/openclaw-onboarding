@@ -371,6 +371,15 @@ class TestTheDurableBudgetIsUnchanged:
         assert folded["generation"] == 1
         assert folded["repair_receipt_consumed"] is True
 
+        # The carry-forward is UNCONDITIONAL, so the key alone proves nothing: it
+        # is present with a null value even when no receipt was ever consumed
+        # (raised as nit N8 in the delta re-review). Pin that explicitly, so the
+        # operative assertion is always the VALUE and never mere membership.
+        fresh = _seed_run(tmp_path / "fresh", paid_attempts=0, consumed=False)
+        dj.record_outcome(fresh, PHASE, worker_id="w", status="ok", reasons=[])
+        assert _ledger(fresh).get("repair_receipt_consumed_generation") is None, (
+            "a never-consumed ledger must fold to a null audit generation")
+
         # The receipt is still not re-armable after the fold.
         ok, why = _actionable(rd)
         assert not ok, "the spent receipt became actionable again across a fold"

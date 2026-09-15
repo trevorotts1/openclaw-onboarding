@@ -7934,7 +7934,9 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
             # here is what strands this receipt permanently.  The bool below is an
             # audit record only; gating on it is what PD-TEST-092 removed, because
             # it latched the phase for life and made the paid budget unopenable a
-            # second time.  Both fields are carried across outcome folds (:8078).
+            # second time.  Both fields are carried across outcome folds in
+            # record_outcome's rebuild dict (cited by symbol, not by line: the
+            # line moved once already and a stale offset is how this recurs).
             receipt = _read_repair_receipt(run_dir, phase_id)
             paid = DISPATCH_RETRY_CAP - receipt["allowance"]
             led["generation"] = int(led.get("generation", 0)) + 1
