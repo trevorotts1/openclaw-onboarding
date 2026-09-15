@@ -460,8 +460,45 @@ def cmd_invalidate_phase(args, scripts_dir: Path) -> int:
         die(EXIT_USAGE, f"phase {pid!r} is done but records no artifacts — nothing to discard")
     sha_now = ps.get("sha256") or {}
 
+    # DEFECT 3 (review): artifact paths are recorded data, not trusted input. A
+    # corrupt or hostile state.json must not turn this operator verb into an
+    # arbitrary-path renamer, so every recorded path must stay INSIDE the run
+    # dir. normpath (not realpath) is used deliberately: it blocks `..` and
+    # absolute paths without following a final symlink, so a symlinked artifact
+    # is still moved as the symlink it is, leaving its target untouched (which
+    # the review confirmed is the safe behaviour).
+    root = os.path.normpath(str(run_dir))
+    for a in artifacts:
+        joined = os.path.normpath(os.path.join(root, a))
+        if not (joined == root or joined.startswith(root + os.sep)):
+            die(EXIT_USAGE, f"{a!r} is recorded on {pid} but resolves OUTSIDE the run "
+                            f"directory ({joined}) — refusing to rename a path this run does "
+                            "not own; the run's state and disk disagree, investigate first")
+    # DEFECT 1 (review): the existence guard used to run INSIDE the move loop, so
+    # a multi-artifact phase whose SECOND artifact was missing had the first one
+    # already moved while state.json stayed unchanged -- leaving state and disk
+    # disagreeing and the phase permanently un-invalidatable. Pre-flight the whole
+    # set before touching anything.
+    missing = [a for a in artifacts if not (run_dir / a).exists()]
+    if missing:
+        die(EXIT_USAGE, f"{', '.join(missing)} recorded on {pid} but not on disk — refusing to "
+                        "invalidate a phase whose state and disk disagree; investigate first")
+
     stamp = utcnow().replace(":", "").replace("-", "")
-    moves = [(a, f"{a}.invalidated-{stamp}") for a in artifacts]
+
+    # DEFECT 2 (review): os.replace silently clobbers an existing destination, and
+    # a non-empty directory destination raised an uncaught OSError traceback. The
+    # natural collision window is one microsecond, but silent byte loss in an
+    # operator repair is not acceptable, so a taken name is suffixed instead.
+    def _free_dst(name: str) -> str:
+        if not (run_dir / name).exists():
+            return name
+        n = 2
+        while (run_dir / f"{name}-{n}").exists():
+            n += 1
+        return f"{name}-{n}"
+
+    moves = [(a, _free_dst(f"{a}.invalidated-{stamp}")) for a in artifacts]
     if not args.confirm:
         print(f"invalidate-phase {pid}: would move {len(moves)} artifact(s) aside and set the "
               f"phase back to pending:")
@@ -471,15 +508,23 @@ def cmd_invalidate_phase(args, scripts_dir: Path) -> int:
         print("Nothing was changed. Re-run with --confirm to proceed.")
         return EXIT_OK
 
+    # All-or-nothing: if any move fails, put back the ones that succeeded rather
+    # than leaving a half-invalidated phase whose state.json was never saved.
     done_moves = []
-    for src, dst in moves:
-        sp, dp = run_dir / src, run_dir / dst
-        if not sp.exists():
-            die(EXIT_USAGE, f"{src} is recorded on {pid} but is not on disk — refusing to "
-                            "invalidate a phase whose state and disk disagree; investigate first")
-        dp.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(sp, dp)
-        done_moves.append((src, dst))
+    try:
+        for src, dst in moves:
+            sp, dp = run_dir / src, run_dir / dst
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(sp, dp)
+            done_moves.append((src, dst))
+    except OSError as exc:
+        for src, dst in reversed(done_moves):
+            try:
+                os.replace(run_dir / dst, run_dir / src)
+            except OSError:
+                pass
+        die(EXIT_USAGE, f"could not move {src!r}: {exc} — rolled back {len(done_moves)} "
+                        "move(s); NOTHING was invalidated and state.json is unchanged")
 
     rec = {
         "at": utcnow(),
