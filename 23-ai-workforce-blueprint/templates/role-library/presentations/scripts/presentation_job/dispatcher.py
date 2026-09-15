@@ -6786,6 +6786,19 @@ def _dispatch_phase_fanout_units(
             approved_input_revision=_approved_input_revision(run_dir, phase_id))
     except Exception:  # noqa: BLE001 -- never let the check itself break a fanout
         _force_reauthor, _force_why = False, "receipt check unavailable"
+    # PD-TEST-119 follow-up (round 270). `wanted_items` is computed HERE because
+    # the sufficiency gate below must compare the receipt's allowance against the
+    # number of units the void would ACTUALLY invalidate -- and `len(items)` is the
+    # ENUMERATED count, not that number. Measured on the live run: the design
+    # phases enumerate 8 units (by slide) while only 3 are wanted, so the gate saw
+    # `3 < 8`, refused with bank_void_refused_insufficient_allowance, and made the
+    # void INERT on exactly the three phases it was written for -- the receipt was
+    # actionable, everything looked correct, and the artifact never changed. The
+    # later line reuses this value rather than recomputing it, so the two can never
+    # disagree.
+    desired_count = getattr(spec, "desired_count", None)
+    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+
     # SUFFICIENCY GATE (independent review of PR #1150, MEDIUM).
     #
     # The void and the payment must be COMMENSURATE. `authorize_paid_retry_reset`
@@ -6808,7 +6821,7 @@ def _dispatch_phase_fanout_units(
             _allowance = int((_read_repair_receipt(run_dir, phase_id) or {}).get("allowance") or 0)
         except (TypeError, ValueError):
             _allowance = 0
-        _n_units = len(items)
+        _n_units = len(wanted_items)
         if _allowance < _n_units:
             _force_reauthor = False
             _append_sidecar(run_dir, phase_id, {
@@ -6836,7 +6849,6 @@ def _dispatch_phase_fanout_units(
         })
 
     reuse = {k: v for k, v in reuse.items() if k not in _store_state}
-    desired_count = getattr(spec, "desired_count", None)
     batch_width = getattr(spec, "batch_width", None)
 
     # PD-TEST-098 (review fix B): `admitted_count` MUST be stamped BEFORE any
@@ -6858,7 +6870,7 @@ def _dispatch_phase_fanout_units(
     # `desired_count`, neither of which the loops below mutate, so hoisting it
     # changes nothing else. The later line reuses this value rather than
     # recomputing it, so the two can never disagree.
-    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+    # `wanted_items` was hoisted above the sufficiency gate -- reused here, never recomputed.
     for _it in wanted_items:
         _p = by_key.get(_it["key"])
         if isinstance(_p, dict):
