@@ -464,3 +464,37 @@ def test_no_receipt_leaves_the_bank_untouched(tmp_path, monkeypatch):
     _run119(env)
     assert len(env["calls"]) == 3, "no receipt -> banked units reused, zero re-bill"
 
+def test_void_is_refused_when_the_receipt_cannot_pay_for_every_unit(tmp_path, monkeypatch):
+    """MEDIUM defect found by the independent review of PR #1150.
+
+    `--reset-allowance 1` is a legal, documented invocation. Without this gate it
+    voided the WHOLE bank while paying for ONE unit: one unit re-authored, the
+    others died on PaidBudgetExhausted, and their durable records were overwritten
+    from `ok` to `failed` -- the "parked AND unbuildable" mode. The bank must be
+    left intact instead."""
+    from presentation_job import unit_store
+    env = _design_env2(tmp_path, monkeypatch, verify_ok=True)
+    _run119(env)
+    assert len(env["calls"]) == 3, "first pass authors"
+    before = unit_store.load_state(env["rd"], "P-U-DESIGN-SALES")
+
+    _seed_ledger(env["rd"], generation=0)
+    D.authorize_paid_retry_reset(env["rd"], "P-U-DESIGN-SALES", allowance=1)
+    _run119(env)
+    assert len(env["calls"]) == 3, (
+        "a receipt that cannot pay for every unit it would invalidate must NOT "
+        "void the bank -- the units are reused instead")
+    after = unit_store.load_state(env["rd"], "P-U-DESIGN-SALES")
+    # `ok` -> `banked` is the NORMAL admission transition for a reused unit and is
+    # expected here; what the defect produced was `ok` -> `failed`, which loses the
+    # bank outright. Assert the hazard, not the transition.
+    statuses = {k: v.get("status") for k, v in after.items()}
+    assert set(statuses.values()) <= {"ok", "banked"}, (
+        f"no unit may be downgraded to failed by a receipt that cannot pay for it: {statuses}")
+    assert len(after) == len(before), (
+        f"unit records must not be dropped: before={len(before)} after={len(after)}")
+    side = (env["rd"] / "working" / "work-orders"
+            / "P-U-DESIGN-SALES.dispatcher-log.jsonl").read_text()
+    assert "bank_void_refused_insufficient_allowance" in side, (
+        "the refusal must be recorded, not silent")
+

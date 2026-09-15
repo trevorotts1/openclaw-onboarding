@@ -6786,6 +6786,43 @@ def _dispatch_phase_fanout_units(
             approved_input_revision=_approved_input_revision(run_dir, phase_id))
     except Exception:  # noqa: BLE001 -- never let the check itself break a fanout
         _force_reauthor, _force_why = False, "receipt check unavailable"
+    # SUFFICIENCY GATE (independent review of PR #1150, MEDIUM).
+    #
+    # The void and the payment must be COMMENSURATE. `authorize_paid_retry_reset`
+    # accepts any `allowance` in 1..DISPATCH_RETRY_CAP, so `--reset-allowance 1`
+    # is a legal, documented invocation -- and without this gate it voided the
+    # WHOLE bank while paying for exactly ONE unit. Measured by the reviewer with
+    # the real reservation seam running: allowance=1 -> one unit re-authored, two
+    # died on PaidBudgetExhausted, and their durable records were OVERWRITTEN from
+    # `ok` to `failed`. That is the same "parked AND unbuildable" mode that
+    # refuted the earlier verifier-driven design, reachable silently through the
+    # tool's own CLI.
+    #
+    # So: void only when the actionable receipt can pay for every unit it would
+    # invalidate. Otherwise leave the bank INTACT and say so -- the phase then
+    # behaves exactly as it does without a receipt, which is the safe direction,
+    # and the operator can re-issue with an allowance that covers the work.
+    _allowance = 0
+    if _force_reauthor:
+        try:
+            _allowance = int((_read_repair_receipt(run_dir, phase_id) or {}).get("allowance") or 0)
+        except (TypeError, ValueError):
+            _allowance = 0
+        _n_units = len(items)
+        if _allowance < _n_units:
+            _force_reauthor = False
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0,
+                "status": "bank_void_refused_insufficient_allowance",
+                "reason": (f"an actionable repair receipt covers {_allowance} paid "
+                           f"attempt(s) but this fan-out would invalidate {_n_units} "
+                           "unit(s); voiding the bank would leave units it cannot "
+                           "pay to re-author, so the bank is left INTACT and the "
+                           "phase behaves as if no receipt were present. Re-issue "
+                           f"with --reset-allowance >= {_n_units} (max "
+                           f"{DISPATCH_RETRY_CAP})."),
+                "allowance": _allowance, "units": _n_units,
+            })
     if _force_reauthor:
         reuse = {}
         _store_state = {}
