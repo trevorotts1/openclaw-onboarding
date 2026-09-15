@@ -40,10 +40,17 @@ WHAT THIS FILE PINS
      because there is one predicate: a field the gate rejects is a field the
      reservation rejects, in the same words.
   C. THE RESERVATION IS STILL THE SINGLE CONSUMER.
-     Consumed exactly once (durable `repair_receipt_consumed=True`); a second
-     reservation is refused; one allowance can never buy two resets; two
-     concurrent reservations produce exactly one winner, one generation bump and
-     one consumed paid slot.
+     Consumed exactly once; a second reservation is refused; one allowance can
+     never buy two resets; two concurrent reservations produce exactly one
+     winner, one generation bump and one consumed paid slot.
+     PD-TEST-092: "exactly once" is enforced by the RECEIPT-to-GENERATION match
+     -- a receipt must carry prior_generation == the ledger's CURRENT generation,
+     and consumption is the only writer of that generation anywhere in the
+     package, so a spent receipt can never match again. It is NOT enforced by the
+     `repair_receipt_consumed` bool, which is written on consumption as an audit
+     record only. That bool used to be a GATE, which made one consumed receipt a
+     LIFETIME latch on the phase: every later, genuinely valid receipt was
+     refused, so a phase could be repaired only once.
   D. THE BUDGET IS NOT WEAKENED FOR THE NO-RECEIPT CASE.
      Missing / stale / forged / already-consumed receipts all keep the existing
      truthful refusal text. Not-blocked-and-under-cap still returns `(True, "")`
@@ -346,13 +353,38 @@ class TestRefusalsAreFailClosed:
         assert _ledger(run_dir)["repair_receipt_consumed"] is True
         _assert_refused_at_both_seams(run_dir)
 
-    def test_consumed_flag_alone_refuses_a_fresh_looking_receipt(self, tmp_path):
-        """The durable flag is the claim, not the file's presence: a receipt
-        re-copied onto disk after consumption must not re-arm anything."""
-        run_dir = _seed_run(tmp_path, consumed=True)
-        _issue(run_dir, allowance=dj.DISPATCH_RETRY_CAP)
+    def test_a_receipt_recopied_after_consumption_cannot_rearm(self, tmp_path):
+        """A receipt RE-COPIED onto disk after it was SPENT must not re-arm
+        anything.
+
+        PD-TEST-092: the old fixture could not build that situation. It seeded
+        `consumed=True` and then issued a receipt whose `prior_generation`
+        equalled the ledger's generation -- i.e. a genuinely FRESH, valid
+        receipt -- so the test only passed because the bare `consumed` bool
+        refused it. That same bool refused every later genuine repair too, and
+        made the deck unreachable on the live run. A spent receipt is recognised
+        by its GENERATION, so the fixture must actually spend one.
+        """
+        run_dir = _seed_run(tmp_path, consumed=False, generation=0)
+        _issue(run_dir, allowance=1)
+        _reserve(run_dir)                       # spend it: generation 0 -> 1
+        spent = _ledger(run_dir)["repair_receipt"]
+        assert spent["prior_generation"] == 0, "fixture did not spend a generation-0 receipt"
+        assert _ledger(run_dir)["generation"] == 1
+
+        # put the SPENT receipt back on disk: same bytes, now behind the ledger
+        dj._repair_receipt_path(run_dir, PHASE).write_text(
+            json.dumps(spent, sort_keys=True), encoding="utf-8")
         assert dj._repair_receipt_path(run_dir, PHASE).exists()
         _assert_refused_at_both_seams(run_dir)
+
+    def test_a_receipt_fresh_for_the_current_generation_is_admitted(self, tmp_path):
+        """The complement, and the live-run case: `consumed=True` on the ledger
+        must NOT by itself refuse a receipt issued for the CURRENT generation."""
+        run_dir = _seed_run(tmp_path, consumed=True, generation=1)
+        _issue(run_dir, allowance=1)
+        may, why = _gate(run_dir)
+        assert may is True, f"a fresh receipt for the current generation was refused: {why!r}"
 
     def test_wrong_run_is_refused(self, tmp_path):
         run_dir = _seed_run(tmp_path)

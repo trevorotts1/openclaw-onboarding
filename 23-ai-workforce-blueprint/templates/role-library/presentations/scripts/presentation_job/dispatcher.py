@@ -7803,8 +7803,9 @@ def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: P
     in _reserve_paid_attempt, under the phase's budget transaction.
 
     Every clause is fail-closed and every refusal names itself:
-      * a ledger must exist, be still un-consumed, and carry a durable integer
-        generation (a missing one cannot satisfy any receipt's prior_generation);
+      * a ledger must exist and carry a durable integer generation (a missing one
+        cannot satisfy any receipt's prior_generation). Single-use is enforced by the
+        generation clause below, NOT by a consumed flag -- see PD-TEST-092 above;
       * the receipt must be readable, of kind
         'local-operator-paid-retry-reset-v1', and issued for THIS phase and THIS
         resolved run directory;
@@ -7820,8 +7821,23 @@ def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: P
     """
     if not led:
         return False, "no dispatch ledger for this phase"
-    if led.get("repair_receipt_consumed"):
-        return False, "paid-retry repair receipt already consumed"
+    # PD-TEST-092: this used to gate on the bare bool `repair_receipt_consumed`, which
+    # made ONE consumed receipt a LIFETIME latch on the phase: every later receipt was
+    # refused with "paid-retry repair receipt already consumed" no matter how valid it
+    # was, so a phase could only ever be repaired once and P4-COPY's paid budget could
+    # never be reopened. The latch is REDUNDANT for its stated purpose, because the
+    # generation clause below already makes each receipt single-use:
+    #   * consumption is the ONLY writer of the ledger generation
+    #     (_reserve_paid_attempt: led["generation"] = generation + 1) and that is the
+    #     only increment anywhere in the package, so the generation never repeats;
+    #   * a receipt must carry prior_generation == the ledger's CURRENT generation;
+    # therefore the instant a receipt is consumed the generation advances and that same
+    # receipt can never match again -- in this process or any later one. The bool is
+    # still WRITTEN on consumption as an audit record of which receipt was spent (see
+    # repair_receipt / repair_receipt_consumed_generation beside it); it is simply no
+    # longer a gate. Measured on the live run: with the latch flipped to False and
+    # nothing else changed the predicate returns True, and an already-spent receipt is
+    # still refused by the generation clause -- exactly-once survives, the latch does not.
     receipt = _read_repair_receipt(run_dir, phase_id)
     if not receipt:
         return False, "no readable paid-retry repair receipt on disk"
@@ -7910,14 +7926,25 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
             # Exactly-once, and atomic.  authorize_paid_retry_reset writes the
             # receipt under THIS same _phase_budget_transaction lock, so the
             # bytes the predicate just proved are the bytes read here: no
-            # re-derivation, no second validation copy.  The durable claim is
-            # repair_receipt_consumed=True in the ledger written below, so a
-            # second reservation -- in this process or any later one -- sees a
-            # consumed receipt and can never re-arm this allowance.
+            # re-derivation, no second validation copy.
+            # PD-TEST-092: the durable claim that makes this exactly-once is the
+            # GENERATION BUMP on the next line, NOT repair_receipt_consumed.  The
+            # generation is the only field a receipt must match (it carries
+            # prior_generation == the ledger's current generation), and bumping it
+            # here is what strands this receipt permanently.  The bool below is an
+            # audit record only; gating on it is what PD-TEST-092 removed, because
+            # it latched the phase for life and made the paid budget unopenable a
+            # second time.  Both fields are carried across outcome folds in
+            # record_outcome's rebuild dict (cited by symbol, not by line: the
+            # line moved once already and a stale offset is how this recurs).
             receipt = _read_repair_receipt(run_dir, phase_id)
             paid = DISPATCH_RETRY_CAP - receipt["allowance"]
             led["generation"] = int(led.get("generation", 0)) + 1
             led["repair_receipt_consumed"] = True
+            # PD-TEST-092: record the generation this receipt was spent FOR, so the
+            # audit trail says which generation consumed it and a later reader never
+            # has to infer it from the stored receipt's prior_generation.
+            led["repair_receipt_consumed_generation"] = int(led.get("generation", 0)) - 1
             led["repair_receipt"] = receipt
         if worker_id:
             claim = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
@@ -8057,6 +8084,12 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         # exhausted result and buy a second allowance on restart.
         "generation": int(led.get("generation") or 0),
         "repair_receipt_consumed": bool(led.get("repair_receipt_consumed")),
+        # PD-TEST-092: this entry REBUILDS the ledger, so any field not named here
+        # is erased on the very next outcome fold.  The independent review of PR
+        # #1143 measured exactly that: the new audit field was present after
+        # _reserve and GONE after one record_outcome, which made the advertised
+        # audit trail fiction.  Carried forward so it survives as documented.
+        "repair_receipt_consumed_generation": led.get("repair_receipt_consumed_generation"),
         "repair_receipt": led.get("repair_receipt"),
     }
 
