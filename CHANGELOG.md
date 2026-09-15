@@ -1,3 +1,25 @@
+## [v25.1.3]  -  2026-09-15  -  Record and step down an empty fan-out completion, so a zero-length answer is diagnosable and its retry is not byte-identical
+
+> **Backfilled entry.** The v25.1.3 tag was cut without a CHANGELOG header, which turned CI guard
+> G2 (`version-consistency.yml` — every v11+ annotated tag must have a CHANGELOG entry) red on
+> `main` and on every open PR. G2 itself could not catch this at release time: it has no wait for
+> `auto-tag-on-merge.yml`, so on the release push it sampled a tag set that did not yet contain the
+> new tag and passed **vacuously**. Both the missing entry and that detection gap are fixed in the
+> PR that adds this header.
+
+### What Changed
+- **PD-TEST-065 — the deck spine phase `P4-COPY` quarantined after 3/3 paid attempts returned zero-length content, withholding 14 dependents**, on the live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`. Two separate defects, both in the **generic** manifest fan-out (`_dispatch_phase_fanout_units`, the runner for `P4-COPY` and every other `by: slide` / `by: section` phase).
+- **The failure was undiagnosable.** `_unit_worker` turned an empty completion into a bare failure and **discarded the provider's `usage` dict**, so `reasoning_tokens` — the one number that explains the failure — never reached any durable record. The serial path has always written a sidecar `empty_completion` row *with* usage, and `P4-PROMPT` has its own copy of that guard; the generic path did not. It now writes an explicit `empty_completion` sidecar row carrying `usage`, `reasoning_effort` and `max_tokens`, and the budget arithmetic goes into the unit reason and therefore into the durable per-unit `last_error`.
+- **The retry was byte-identical.** An unchanged-input empty completion is deterministic, so attempts 2 and 3 could only burn paid calls and lose the same way. `reasoning_effort` is now parameterised through `deepseek_complete` → `dispatch_complete` → the fan-out unit worker: the **default stays `"max"`** (what this box's own `openclaw.json` declares for `deepseek/deepseek-flash`, so the code does not silently disagree with the operator's declaration), while a re-attempt for a unit whose own durable record already carries an empty completion is issued at `"medium"` — the 2026-08-26/27 mitigation this box used and later lost.
+- **`last_error` is cleared when a unit returns ok**, because it means "the *current* error"; a stale marker would silently step down reasoning for a unit that has since succeeded. No other consumer reads that field (verified by repo-wide search).
+- **Root cause, measured on the same run, same model, same endpoint:** the three `P4-COPY` request bodies each sent `thinking={type: enabled}` + `reasoning_effort="max"` with `max_tokens=64000`, and DeepSeek's native endpoint bills reasoning **inside** `max_tokens`. On a ~155K-char authoring prompt, reasoning consumed the whole budget — a successful call spent `reasoning_tokens=47,940` of a `57,178` completion, **83.8%** of budget — and content came back empty.
+- **Scope / non-goals:** no change to the shared `max_tokens` budget, to `DISPATCH_RETRY_CAP`, to any counter, or to any manifest. No invented API fields.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+125)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/tests/test_pd065_fanout_empty_completion.py` (new, +356)
+- Version markers rolled to v25.1.3 by `scripts/bump-version.sh`
+
 ## [v25.1.2]  -  2026-09-15  -  Re-admit a failed phase on resume so the walk can advance
 
 ### What Changed
