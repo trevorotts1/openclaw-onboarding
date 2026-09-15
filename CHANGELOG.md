@@ -19,14 +19,18 @@
 
   **Fail direction is deliberate:** only `applicable is False` with **no refusal** defers. A refusal (missing or malformed `pitch_included`) or an unimportable authority keeps today's behaviour, so `AF-PITCH-APPLICABILITY-UNSET` is still what reports the problem instead of the engines silently switching off.
 
-- Verified on the live run: `check_copy` problems are now `[]`, and **`phase_verifiers.verify("P4-COPY")` is `True`** — the deck's copy phase passes, cleared without fabricating anything.
+- Verified on the live run: `check_copy` problems are now `[]` and **`phase_verifiers.verify("P4-COPY")` is `True`** — the deck's copy phase passes. (Stated precisely, because an earlier draft overclaimed: the *deck* is not yet cleared. `build_deck._chk_pitch_leak` still reports AF-PITCH-LEAK on the EXISTING copy, which was authored under the ungated contract; it clears when that copy is re-authored under the gated points 8/9/12 below.)
 
 ### Tests
 - New `tests/test_pd125_deck_beat_ownership.py`: every beat owned exactly once; the owner of an earlier beat sits at an earlier deck position; a section beyond the beat list is told **nothing**; the clause reaches the unit and names the literal `<!-- ARC: <BEAT> -->` form; a **drift guard** against `check_narrative_harmony`'s own beats list; a pitchless deck gets **no** assignment while a pitched deck still gets one; an unset selection keeps the assignment **on**.
 - **The order test was a TAUTOLOGY and the review proved it**: it asserted against `D.DECK_ORDERED_BEATS`, the same constant the assignment read, so inverting that constant still passed. It now derives the canonical order **from the verifier's own source** and measures against `first_ordinal`. Verified **failing when the constant is inverted in memory** and passing otherwise.
 
+### Also in this change (independent review of the first version)
+- **The harmony walk is no longer deferred whole.** The contract's FIRST rule exempts only VILLAIN / FELT_STAKES / NAMED_METHOD / EXPECTATION / PRICE, and contract point 2 still names `AF-NARRATIVE-HARMONY` — the `HOOK -> PROMISE -> RECAP` ordering is required of a pitchless deck. The first version skipped the entire walk, which short-circuited a contract-required check and bought nothing (harmony only orders beats that are PRESENT, so it exerts no fabrication pressure). `check_narrative_harmony` now takes `commercial_beats_apply` and drops **only** the exempt beats.
+- **Contract points 8, 9 and 12 now carry an explicit pitchless applicability gate.** They previously ordered price-rung, re-pitch and `<!-- ARC: COST_OF_INACTION -->` content unconditionally — tokens `AF-PITCH-LEAK` refuses — which is the measured cause of this run's leak.
+
 ### Risk
-- Scope is the pitch applicability of the commercial-beat engines plus the beat assignment. Pitched decks are unaffected; pitchless decks now defer instead of demanding fabricated content. It does not weaken any check the contract actually requires of a pitchless deck.
+- Scope is the pitch applicability of the commercial-beat engines, the gated contract points, and the beat assignment. Pitched decks are unaffected; pitchless decks now defer instead of demanding fabricated content. It does not weaken any check the contract actually requires of a pitchless deck.
 
 ## [v25.1.21]  -  2026-09-15  -  The bank-void sufficiency gate must count the units it WANTS, not the units it enumerated
 

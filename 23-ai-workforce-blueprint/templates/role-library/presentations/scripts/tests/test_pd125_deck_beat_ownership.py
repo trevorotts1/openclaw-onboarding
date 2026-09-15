@@ -203,3 +203,58 @@ def test_unset_applicability_keeps_the_assignment_ON(tmp_path):
         {"deck_type": "webinar"}))          # no pitch_included at all
     assert D._deck_commercial_beats_apply(rd) is True
 
+
+
+# ---------------------------------------------------------------------------
+# 10 -- D1 (independent review of PR #1153): the HARMONY walk is not WHOLLY
+#       commercial. Only VILLAIN / FELT_STAKES / PRICE are exempt on a pitchless
+#       deck; HOOK -> PROMISE -> RECAP ordering is still REQUIRED.
+#
+# The walk is driven here through a fake `_first_index_with` rather than a
+# synthetic deck, because what D1 changed is precisely WHICH beats enter the
+# walk -- and a fixture that fails to parse exercises nothing at all.
+# ---------------------------------------------------------------------------
+def test_deferral_drops_only_the_commercial_beats():
+    """The exempt set is exactly what the contract's FIRST rule names."""
+    import intelligence_engines_check as iec
+    assert set(iec._COMMERCIAL_HARMONY_BEATS) == {"VILLAIN", "FELT_STAKES", "PRICE"}
+    for kept in ("HOOK", "PROMISE", "RECAP"):
+        assert kept not in iec._COMMERCIAL_HARMONY_BEATS, (
+            f"{kept} ordering is required of a pitchless deck and must not be exempt")
+
+
+def test_harmony_is_called_unconditionally_with_the_flag():
+    """D1's regression risk is a REVERT to guarding the whole walk.
+
+    The first version of this fix did `if commercial_beats_apply:
+    check_narrative_harmony(...)`, which short-circuited a contract-required check
+    (contract point 2 names AF-NARRATIVE-HARMONY, and the FIRST rule exempts only
+    the five commercial beats). The walk must now be called ALWAYS, carrying the
+    flag, so that only the commercial entries are dropped. Asserted at the source
+    because the property is precisely "how the call is made"."""
+    import inspect
+    import re as _re
+    import intelligence_engines_check as iec
+    src = inspect.getsource(iec.check_copy)
+    assert "check_narrative_harmony(" in src, "check_copy must still call the walk"
+    before = src[:src.index("check_narrative_harmony(")]
+    last_line = before.rstrip().splitlines()[-1].strip()
+    assert not last_line.startswith("if commercial_beats_apply"), (
+        "REGRESSION: the walk is guarded again -- deferring it wholesale drops the "
+        "HOOK/PROMISE/RECAP ordering the contract still requires of a pitchless deck")
+    assert "commercial_beats_apply=commercial_beats_apply" in src, (
+        "the walk must receive the flag so it can drop only the commercial beats")
+
+
+def test_the_walk_drops_the_exempt_beats_from_its_own_list():
+    """The filtering happens on the walk's `beats` list, which is the change D1
+    made. Asserted on the source so the exemption cannot silently become a
+    whole-walk skip again."""
+    import inspect
+    import intelligence_engines_check as iec
+    src = inspect.getsource(iec.check_narrative_harmony)
+    assert "_COMMERCIAL_HARMONY_BEATS" in src, (
+        "the walk no longer filters by the exempt set")
+    assert "commercial_beats_apply=True" in src, (
+        "the walk must default to demanding every beat, so a caller that forgets "
+        "the flag keeps today's behaviour")

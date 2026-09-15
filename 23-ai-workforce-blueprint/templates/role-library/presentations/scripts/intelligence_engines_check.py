@@ -487,9 +487,18 @@ def check_copy(run_dir, problems):
     # Measured live on pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: a
     # pitchless webinar deck (`pitch_included: false`, `deck_type: webinar`) was
     # refused on AF-NO-VILLAIN while `build_deck._chk_pitch_leak` ALREADY reported
-    # AF-PITCH-LEAK on the SAME copy ("slides_copy.md: 'cost of inaction'"). No text
-    # satisfies both, so one of the two checkers had to yield -- and the contract
-    # says which.
+    # AF-PITCH-LEAK on the SAME copy ("slides_copy.md: 'cost of inaction'").
+    #
+    # CORRECTION (independent review of PR #1153): an earlier draft of this comment
+    # claimed 'no text satisfies both'. That is FALSE -- the reviewer wrote a
+    # pitchless copy that satisfies both ('The real enemy is the broken system...'
+    # plus a cost stated without a forbidden token). The real conflict is
+    # CONTRACT-versus-ENGINE, not checker-versus-checker: the contract told the
+    # author to write `<!-- ARC: COST_OF_INACTION -->` (point 9) while AF-PITCH-LEAK
+    # forbids that token -- so the two checkers CAN agree, but only on copy the
+    # contract forbade. That is what the gate in `_unit_payload_enrichment`'s
+    # contract points 8/9/12 fixes, and it is why the deferral below is scoped to
+    # the beats the contract itself exempts.
     #
     # This defers through the SAME `pitch_engines_check.pitch_applicability` that
     # the pitch checker already honours, so the two cannot drift.
@@ -555,8 +564,16 @@ def check_copy(run_dir, problems):
     # --- NARRATIVE HARMONY — the arc holds end-to-end (hook->villain->stakes->
     #     promise->price->recap). This is the orchestration layer above the
     #     individual writing engines; it fires at COPY-QC, before any prompt. ---
-    if commercial_beats_apply:
-        check_narrative_harmony(run_dir, problems)
+    # D1 (independent review of PR #1153): the harmony walk is NOT wholly
+    # commercial. The contract's FIRST rule exempts only VILLAIN / FELT_STAKES /
+    # NAMED_METHOD / EXPECTATION / PRICE -- the HOOK -> PROMISE -> RECAP ordering
+    # is still REQUIRED of a pitchless deck (contract point 2 names
+    # AF-NARRATIVE-HARMONY). Deferring the whole walk short-circuited a
+    # contract-required check, and it bought nothing: harmony only ever orders
+    # beats that are PRESENT, so it exerts no fabrication pressure at all.
+    # So call it ALWAYS and let it drop just the commercial beats.
+    check_narrative_harmony(run_dir, problems,
+                            commercial_beats_apply=commercial_beats_apply)
     return
 
 
@@ -624,7 +641,13 @@ def _check_recap_copy(blocks, problems):
                   "Recap/Re-Pitch)."})
 
 
-def check_narrative_harmony(run_dir, problems):
+#: The beats the P4-COPY contract exempts on a pitchless deck. Every other beat in
+#: the walk is still required, so this list -- not the whole walk -- is what the
+#: deferral may drop.
+_COMMERCIAL_HARMONY_BEATS = frozenset({"VILLAIN", "FELT_STAKES", "PRICE"})
+
+
+def check_narrative_harmony(run_dir, problems, commercial_beats_apply=True):
     """NARRATIVE HARMONY — the writing arc holds end-to-end, in order:
         HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP.
 
@@ -679,6 +702,8 @@ def check_narrative_harmony(run_dir, problems):
         ("PRICE", first_idx(_has_price_beat)),
         ("RECAP", recap_after_price()),
     ]
+    if not commercial_beats_apply:
+        beats = [(n, i) for n, i in beats if n not in _COMMERCIAL_HARMONY_BEATS]
     present = [(name, idx) for name, idx in beats if idx is not None]
 
     # walk adjacent present beats; flag any pair whose order is inverted

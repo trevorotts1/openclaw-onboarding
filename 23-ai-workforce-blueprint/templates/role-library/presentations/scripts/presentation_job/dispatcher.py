@@ -884,6 +884,19 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "ARC markers -- add at least one, typically `<!-- ARC: FINAL -->` on the single "
         "price-reveal slide, even for a flat-price deck, so that check can see the beat "
         "at all. Every price/ladder slide must be LATER than the PROMISE slide.\n"
+        "APPLICABILITY GATE FOR POINTS 8, 9 AND 12 (PD-TEST-125 D2). Read "
+        "intake.json's pitch_included FIRST. When it is FALSE for a non-signature "
+        "deck, points 8, 9 and 12 DO NOT APPLY: write NO price rung, NO re-pitch "
+        "and NO `<!-- ARC: COST_OF_INACTION -->` marker, and no prose naming the "
+        "cost of inaction. This is not a style preference -- `build_deck."
+        "_chk_pitch_leak` refuses the deck with AF-PITCH-LEAK when a pitchless deck "
+        "carries those tokens, so following points 8/9 on a pitchless deck "
+        "GUARANTEES a QC failure you cannot write your way out of. Measured live on "
+        "pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: the contract ordered "
+        "`<!-- ARC: COST_OF_INACTION -->`, the copy carried it verbatim at "
+        "slides_copy.md:23-24, and AF-PITCH-LEAK fired on exactly that token. When "
+        "pitch_included is false the whole price/pitch apparatus is inapplicable; "
+        "points 1-7 and 10-11 still apply, under their own applicability rules.\n"
         "8. Cadence loop between price rungs (AF-CADENCE -- NOTE: this specific check "
         "currently DEFERS pipeline-wide because no phase yet writes "
         "working/copy/price_ladder.json; write it correctly anyway so the deck already "
@@ -5680,8 +5693,8 @@ def invalidated_units(unit_payloads: List[Dict[str, Any]],
 # author cannot evaluate a whole-deck ordering: it does not know where its section
 # sits, nor whether a sibling already claimed the beat. The equilibrium is that NO
 # section claims it -- and the artifact showed exactly that: 8 SLIDE markers, all 8
-# units `ok`, ZERO villain tokens, and only three ARC markers, none of them a story
-# beat.
+# units `ok`, ZERO villain tokens, and FOUR ARC markers of which one (`<!-- ARC: PROMISE HERO -->`)
+# IS a story beat -- so the deck carried PROMISE and still omitted VILLAIN and FELT_STAKES.
 #
 # THE FIX, and its precedent. PD-TEST-098 hit the identical structure on the design
 # phases -- three units author ONE prompt -- and it was fixed by TELLING each unit
