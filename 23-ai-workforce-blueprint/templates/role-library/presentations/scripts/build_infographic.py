@@ -230,15 +230,25 @@ DESIGN_PAGES = ("sales", "checkout", "vsl")
 
 def _design_prompt_rel(page: str) -> Path:
     """PD-TEST-091: the page-design prompt lives at the RUN ROOT, not under
-    working/. This is the same path (a) PIPELINE-MANIFEST.json declares as
-    P-U-DESIGN-<page>.produces_artifact AND as P-U-DESIGN-RENDER-<page>.consumes,
-    (b) the dispatcher's design-fanout map writes (dispatcher.py:5297-5299; and
-    tests/test_pres001_fanout_dispatch_e2e.py:306 asserts rd/"prompts"), and
-    (c) phase_verifiers resolves (phase_verifiers.py:4448-4450).
-    Returning working/prompts/ here made three independently correct components
-    disagree with the one component that renders: every P-U-DESIGN-RENDER-* script
-    phase died with "FATAL: design prompt not found" and was quarantined after its
-    3 attempts even though the prompt existed and verified at the run root."""
+    working/. Every component that names this path says so:
+      (a) PIPELINE-MANIFEST.json declares it as BOTH
+          P-U-DESIGN-<page>.produces_artifact AND
+          P-U-DESIGN-RENDER-<page>.consumes;
+      (b) the fanout producer's target is DERIVED FROM THAT MANIFEST --
+          dispatcher.resolve_target_paths -> Phase.resolve_artifact_patterns
+          -> _first_concrete_path, which returns run_dir / pattern -- so the
+          agent phase physically writes run_root/prompts/<page>.design.txt
+          (dispatcher.py:5297-5299 `_UNIT_CONTRACT_OUTPUTS` carries the same
+          string, but it is a declaration with no runtime reader; do not cite it
+          as the writer);
+      (c) phase_verifiers resolves it from the same manifest, canonically and
+          fail-closed (_pu_manifest_declared_artifacts);
+      (d) the producer's own e2e asserts the run root
+          (tests/test_pres001_fanout_dispatch_e2e.py:306).
+    Returning working/prompts/ here made this one component disagree with all of
+    them: every P-U-DESIGN-RENDER-* script phase died with "FATAL: design prompt
+    not found" and was quarantined after its 3 attempts even though the prompt
+    existed and verified at the run root."""
     return Path("prompts") / f"{page}.design.txt"
 
 

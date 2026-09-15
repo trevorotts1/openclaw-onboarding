@@ -278,10 +278,15 @@ def _design_prompt_authorities():
 @pytest.mark.parametrize("page", DESIGN_PAGES)
 def test_design_prompt_path_is_one_path_everywhere(page):
     """build_infographic's reader must equal the manifest's declared path."""
-    from pathlib import Path as _P
     want = str(bi._design_prompt_rel(page))
-    offenders = [(who, str(rel)) for who, pg, rel in _design_prompt_authorities()
-                 if pg == page and str(rel) != want]
+    authorities = [(who, str(rel)) for who, pg, rel in _design_prompt_authorities()
+                   if pg == page]
+    # Reviewer nit (PD-TEST-091 re-review): a manifest that declared NO artifacts
+    # for a design phase would make the offenders assertion below pass vacuously.
+    # Require both edges to be present AND to name this path.
+    assert len(authorities) >= 2, (
+        f"the manifest declared fewer than two edges for {page!r}: {authorities}")
+    offenders = [(who, rel) for who, rel in authorities if rel != want]
     assert not offenders, (
         f"the design prompt for {page!r} is named {want!r} by build_infographic "
         f"but differently by: {offenders}. One of them is the outage.")
@@ -289,7 +294,16 @@ def test_design_prompt_path_is_one_path_everywhere(page):
 
 @pytest.mark.parametrize("page", DESIGN_PAGES)
 def test_design_prompt_reader_matches_dispatcher_output_map(page):
-    """The dispatcher's reverse-edge map must name the same path."""
+    """The dispatcher's `_UNIT_CONTRACT_OUTPUTS` declaration must name the same
+    path.
+
+    Honest scope (reviewer nit): `_UNIT_CONTRACT_OUTPUTS` has NO runtime reader --
+    the fanout's real target is derived from the MANIFEST via
+    `resolve_target_paths -> Phase.resolve_artifact_patterns`. So this is a
+    tripwire on a declaration, not a live lockstep; the manifest assertion above
+    and the verifier control below are the live ones. It is kept because a stale
+    declaration is how a future reader gets misled, which is what happened here.
+    """
     from presentation_job import dispatcher as D
     want = str(bi._design_prompt_rel(page))
     got = [str(x) for x in D._UNIT_CONTRACT_OUTPUTS[f"P-U-DESIGN-{page.upper()}"]]
@@ -299,9 +313,14 @@ def test_design_prompt_reader_matches_dispatcher_output_map(page):
 
 @pytest.mark.parametrize("page", DESIGN_PAGES)
 def test_design_phase_verifier_accepts_a_run_root_prompt(tmp_path, page):
-    """Behavioural control: the REAL verifier must PASS when the prompt is where
-    the pipeline puts it, and FAIL when it is only at the old nested path. This
-    is what makes the lockstep assertion above non-vacuous."""
+    """Behavioural control on the VERIFIER: the real `phase_verifiers.verify()`
+    must PASS when the prompt is where the pipeline puts it, and FAIL when it is
+    only at the old nested path.
+
+    Scope, stated honestly (reviewer nit): this test never calls
+    `_design_prompt_rel`, so it does NOT fail under the reader ablation. It pins
+    the verifier's side of the contract, not the reader's -- the reader is pinned
+    by the two tests above, which do fail under ablation."""
     import phase_verifiers as pv
     pid = f"P-U-DESIGN-{page.upper()}"
 
