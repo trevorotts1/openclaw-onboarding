@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ghl-mcp-probe.sh — v21.5.0
+# ghl-mcp-probe.sh — v25.1.10
 #
 # THE ALIVE-NOT-JUST-LISTENING TEST for the GHL Community MCP (Tier 2, skill 36).
 #
@@ -44,6 +44,32 @@
 # Never exits non-zero for its own internal problems (missing curl/python3 is
 # reported as an honest SKIP with exit 0) — a broken probe must not masquerade
 # as a broken server.
+#
+# WHAT CHANGED IN v25.1.10 (operator incident 2026-09-15: the probe WAS the outage)
+#   On a heavily loaded operator box one /health check took longer than the old
+#   5-second limit. The probe "healed" by force-restarting a HEALTHY server,
+#   waited only 20 seconds while a cold start on a loaded box takes 60-120s,
+#   declared NO_LISTENER and filed a Command Center card. Every 15 minutes.
+#   347 forced restarts and 72 identical cards later, the board's stale-task
+#   sweep was paging the operator's phone about cards nobody could groom.
+#   Five rules now hold, all bash-3.2 safe:
+#     1. Timeouts fit a loaded box: /health 20s (GHL_MCP_HEALTH_TIMEOUT),
+#        JSON-RPC 30s (GHL_MCP_PROBE_TIMEOUT default; --timeout still wins).
+#     2. --heal never restarts on the FIRST failing tick. A restart needs a
+#        streak: the previous tick must already have failed.
+#     3. After a restart the re-probe waits up to 180s (36 x 5s), not 20s.
+#     4. ONE alert per outage: the operator card AND the Rescue Rangers page
+#        both fire on the 3rd consecutive identical failure, once per streak
+#        (GHL_MCP_PROBE_ALERT_STREAK). No card per tick, ever. The RECOVERED
+#        card only follows an outage that was actually alerted.
+#     5. Operator off-switch: GHL_MCP_PROBE_DISABLED=1 or a marker file at
+#        $HOME/.openclaw/.ghl-mcp-probe-disabled (or /data/.openclaw/...)
+#        makes every run report DISABLED and exit 0, and stops
+#        ghl-mcp-autostart.sh from (re)installing the schedule.
+#        GHL_MCP_PROBE_DISABLED=0 forces ON for one run (markers ignored).
+#   Test hooks (unit test only, never set on a box): GHL_MCP_PROBE_ROUTE_CMD
+#   replaces the Command Center ingest helper; GHL_MCP_PROBE_HEAL_CMD replaces
+#   the supervisor restart.
 
 set -u
 
@@ -90,7 +116,15 @@ for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
 done
 
 GHL_MCP_PORT="${GHL_MCP_PORT:-8765}"
-GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-10}"
+GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-30}"
+# v25.1.10: /health gets its own, generous ceiling. 5s was the trigger of the
+# 2026-09-15 self-inflicted outage loop on a loaded box.
+GHL_MCP_HEALTH_TIMEOUT="${GHL_MCP_HEALTH_TIMEOUT:-20}"
+# v25.1.10: alert (card + Rangers page) only on the Nth consecutive identical
+# failure, once per streak. 3 x 15 min = ~45 minutes of a genuinely stuck server.
+GHL_MCP_PROBE_ALERT_STREAK="${GHL_MCP_PROBE_ALERT_STREAK:-3}"
+# v25.1.10: how long a post-restart re-probe may wait for a cold start.
+GHL_MCP_PROBE_HEAL_WAIT_SECONDS="${GHL_MCP_PROBE_HEAL_WAIT_SECONDS:-180}"
 GHL_MCP_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE:-curated}"
 GHL_MCP_EXPECT_MIN_TOOLS="${GHL_MCP_EXPECT_MIN_TOOLS:-1}"
 GHL_MCP_EXPECT_MAX_TOOLS="${GHL_MCP_EXPECT_MAX_TOOLS:-200}"
@@ -151,6 +185,31 @@ report() {
   printf '%s STATUS: ghl-mcp-probe=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$*" >> "$LOG_DIR/probe.log" 2>/dev/null || true
 }
 
+# ── Operator off-switch (v25.1.10) ───────────────────────────────────────────
+# A scheduled job that is still installed must be INERT once the operator has
+# turned the probe off, so the switch is honoured here and not only by the
+# installer. No probe, no restart, no alert. Exit 0: this is a decision, not a
+# server verdict.
+probe_disabled_reason() {
+  # Explicit env wins in both directions: 1 = off, 0 = on (marker files are
+  # ignored, for the unit test and deliberate one-off manual runs), unset or
+  # empty = the marker files decide.
+  case "${GHL_MCP_PROBE_DISABLED:-}" in
+    1) printf 'GHL_MCP_PROBE_DISABLED=1'; return 0 ;;
+    0) return 1 ;;
+  esac
+  local m
+  for m in "${HOME:-}/.openclaw/.ghl-mcp-probe-disabled" "/data/.openclaw/.ghl-mcp-probe-disabled"; do
+    case "$m" in /.openclaw/*) continue ;; esac
+    [ -f "$m" ] && { printf '%s' "$m"; return 0; }
+  done
+  return 1
+}
+if _DIS="$(probe_disabled_reason)"; then
+  report "DISABLED" "(operator off-switch present: ${_DIS} — no probe, no restart, no alert; remove it to re-enable)"
+  exit 0
+fi
+
 if ! command -v curl >/dev/null 2>&1; then
   report "SKIPPED_NO_CURL" "(curl not on PATH — cannot probe; this is a probe gap, NOT a server verdict)"
   exit 0
@@ -161,6 +220,12 @@ fi
 # No Telegram, no client messaging, and never fails the probe.
 alert_operator() {
   local title="$1" body="$2" route=""
+  # v25.1.10 test hook: the unit test used to reach the REAL ingest helper and
+  # file genuine cards on the operator's board. Never set this on a box.
+  if [ -n "${GHL_MCP_PROBE_ROUTE_CMD:-}" ]; then
+    "$GHL_MCP_PROBE_ROUTE_CMD" general-task "$title" "$body" >/dev/null 2>&1 || true
+    return 0
+  fi
   for c in "$SELF_DIR/mc-route.sh" \
            "$HOME/.openclaw/onboarding/scripts/mc-route.sh" \
            "$HOME/.openclaw/skills/scripts/mc-route.sh" \
@@ -267,7 +332,7 @@ PYEOF
 # ── 1. Is anything (and the RIGHT thing) listening? ──────────────────────────
 HEALTH_BODY=""
 check_health() {
-  HEALTH_BODY="$(curl -fsS --max-time 5 "${URL}/health" 2>/dev/null || true)"
+  HEALTH_BODY="$(curl -fsS --max-time "$GHL_MCP_HEALTH_TIMEOUT" "${URL}/health" 2>/dev/null || true)"
   [ -n "$HEALTH_BODY" ] || return 2
   case "$HEALTH_BODY" in
     *0.5.3-local*|*cognee*|*Cognee*) return 2 ;;   # wrong service on the port
@@ -304,24 +369,27 @@ check_profile() {
 
 # ── Bounded self-heal: exactly ONE restart attempt, then re-probe ────────────
 heal_once() {
-  say "  [ghl-mcp-probe] attempting ONE bounded restart"
-  if [ "$(uname -s)" = "Darwin" ]; then
+  say "  [ghl-mcp-probe] attempting ONE bounded restart (the previous tick also failed: a sustained fault, not one slow check)"
+  if [ -n "${GHL_MCP_PROBE_HEAL_CMD:-}" ]; then
+    # v25.1.10 unit-test hook only. Never set on a box.
+    "$GHL_MCP_PROBE_HEAL_CMD" >/dev/null 2>&1 || true
+  elif [ "$(uname -s)" = "Darwin" ]; then
     launchctl kickstart -k "gui/$(id -u)/com.clawd.ghl-mcp" >/dev/null 2>&1 || true
   elif command -v pm2 >/dev/null 2>&1 && pm2 describe ghl-community-mcp >/dev/null 2>&1; then
     pm2 restart ghl-community-mcp >/dev/null 2>&1 || true
   elif command -v systemctl >/dev/null 2>&1; then
-    # sudo -n (non-interactive): this probe runs unattended from launchd/cron and
-    # may also be run by hand in a TTY. A bare `sudo` would PROMPT for a password
-    # in the interactive case and block the heal indefinitely. Never prompt —
-    # on a box without passwordless sudo this simply skips, and the probe still
-    # reports the honest DEAF/NO_LISTENER verdict below.
     sudo -n systemctl restart ghl-mcp >/dev/null 2>&1 || true
   fi
-  local i=0
-  while [ "$i" -lt 10 ]; do
-    sleep 2
+  # v25.1.10: a cold start on a loaded box takes 60-120s (credential pre-check
+  # plus a GHL connection test that may itself wait 30s). The old 20-second
+  # ceiling is how a restart of a healthy server became a NO_LISTENER verdict
+  # and a fresh card every 15 minutes.
+  local waited=0 step=5
+  [ "$step" -gt "$GHL_MCP_PROBE_HEAL_WAIT_SECONDS" ] 2>/dev/null && step="$GHL_MCP_PROBE_HEAL_WAIT_SECONDS"
+  while [ "$waited" -lt "$GHL_MCP_PROBE_HEAL_WAIT_SECONDS" ]; do
+    sleep "$step"
+    waited=$((waited + step))
     if check_health && check_responds; then return 0; fi
-    i=$((i+1))
   done
   return 1
 }
@@ -346,29 +414,48 @@ run_probe() {
 run_probe
 RC=$?
 
+# ── R13: streak state is read BEFORE any heal decision (v25.1.10) ────────────
+# The previous tick's verdict decides whether a failure now is a sustained fault
+# (restart-worthy) or a single slow check (record it, restart nothing).
+_PREV="$(read_streak)"
+_PREV_STATE="$(printf '%s' "$_PREV" | awk '{print $1}')"
+_PREV_COUNT="$(printf '%s' "$_PREV" | awk '{print $2}')"
+_PREV_ESC="$(printf '%s' "$_PREV" | awk '{print $3}')"
+[ -n "$_PREV_STATE" ] || _PREV_STATE="NONE"
+case "$_PREV_COUNT" in ''|*[!0-9]*) _PREV_COUNT=0 ;; esac
+case "$_PREV_ESC"   in ''|*[!0-9]*) _PREV_ESC=0 ;; esac
+
 if [ "$RC" != "0" ] && [ "$HEAL" = "1" ]; then
-  if heal_once; then
-    report "RECOVERED" "(a bounded restart restored a JSON-RPC response on ${URL}; prior state rc=${RC})"
-    # R13: RATE-LIMIT the RECOVERED notice to at most one per hour. A flapping
-    # server (heal → drop → heal) would otherwise card the operator every 15
-    # minutes and train them to ignore the channel. The verdict is still written
-    # to probe.log every time; only the ALERT is throttled.
-    _RECOV_STAMP="$LOG_DIR/.probe-recovered-last"
-    _now="$(date -u +%s 2>/dev/null || echo 0)"
-    _last=0
-    [ -f "$_RECOV_STAMP" ] && _last="$(tr -dc '0-9' < "$_RECOV_STAMP" 2>/dev/null | head -1)"
-    [ -n "$_last" ] || _last=0
-    if [ "$((_now - _last))" -ge 3600 ] 2>/dev/null; then
-      alert_operator "GHL MCP recovered after probe restart" \
-        "ghl-mcp-probe restarted the Tier 2 community MCP on ${URL} after it stopped answering JSON-RPC (prior rc=${RC}). It is answering now. Check ${LOG_DIR} if this repeats."
-      printf '%s\n' "$_now" > "$_RECOV_STAMP" 2>/dev/null || true
-    else
-      say "  [ghl-mcp-probe] RECOVERED alert suppressed (one per hour per box; last $((_now - _last))s ago)"
+  if [ "$_PREV_COUNT" -ge 1 ] && [ "$_PREV_STATE" != "OK" ] && [ "$_PREV_STATE" != "NONE" ]; then
+    if heal_once; then
+      report "RECOVERED" "(a bounded restart restored a JSON-RPC response on ${URL}; prior state rc=${RC}, streak was ${_PREV_COUNT})"
+      # The RECOVERED card closes the loop for a reader who received a DOWN
+      # card. If no outage was ever alerted (the streak never reached the
+      # threshold) there is nothing to close: log it and stay quiet. Still
+      # rate-limited to one per hour per box for a flapping server.
+      if [ "$_PREV_ESC" = "1" ]; then
+        _RECOV_STAMP="$LOG_DIR/.probe-recovered-last"
+        _now="$(date -u +%s 2>/dev/null || echo 0)"
+        _last=0
+        [ -f "$_RECOV_STAMP" ] && _last="$(tr -dc '0-9' < "$_RECOV_STAMP" 2>/dev/null | head -1)"
+        [ -n "$_last" ] || _last=0
+        if [ "$((_now - _last))" -ge 3600 ] 2>/dev/null; then
+          alert_operator "GHL MCP recovered after probe restart" \
+            "ghl-mcp-probe restarted the Tier 2 community MCP on ${URL} after ${_PREV_COUNT} consecutive failed probes (prior rc=${RC}). It is answering now. Check ${LOG_DIR} if this repeats."
+          printf '%s\n' "$_now" > "$_RECOV_STAMP" 2>/dev/null || true
+        else
+          say "  [ghl-mcp-probe] RECOVERED alert suppressed (one per hour per box; last $((_now - _last))s ago)"
+        fi
+      else
+        say "  [ghl-mcp-probe] recovered before any alert went out — nothing to announce"
+      fi
+      clear_streak
+      exit 0
     fi
-    clear_streak
-    exit 0
+    run_probe; RC=$?
+  else
+    say "  [ghl-mcp-probe] first failing tick (rc=${RC}) — recorded, NOT restarting: a restart on one slow check is how a healthy server used to be knocked over every 15 minutes"
   fi
-  run_probe; RC=$?
 fi
 
 # ── R13: streak accounting, computed BEFORE the verdict dispatch below ────────
@@ -380,13 +467,6 @@ case "$RC" in
   4) _STATE_NAME="PROFILE_DRIFT" ;;
   *) _STATE_NAME="UNHEALTHY" ;;
 esac
-_PREV="$(read_streak)"
-_PREV_STATE="$(printf '%s' "$_PREV" | awk '{print $1}')"
-_PREV_COUNT="$(printf '%s' "$_PREV" | awk '{print $2}')"
-_PREV_ESC="$(printf '%s' "$_PREV" | awk '{print $3}')"
-[ -n "$_PREV_STATE" ] || _PREV_STATE="NONE"
-case "$_PREV_COUNT" in ''|*[!0-9]*) _PREV_COUNT=0 ;; esac
-case "$_PREV_ESC"   in ''|*[!0-9]*) _PREV_ESC=0 ;; esac
 
 _STREAK=1
 _ESCALATED=0
@@ -400,14 +480,23 @@ else
   write_streak "$_STATE_NAME" "$_STREAK" "$_ESCALATED"
 fi
 
-# Escalate to Rescue Rangers on the 3rd CONSECUTIVE identical non-OK verdict
-# (~45 minutes), exactly once per unbroken streak. The operator card below is
-# still sent every cycle — escalation is additive, never a replacement.
-maybe_escalate() {
-  local detail="$1"
+# ONE alert per outage (v25.1.10). The operator card and the Rescue Rangers
+# page fire together on the GHL_MCP_PROBE_ALERT_STREAK-th CONSECUTIVE identical
+# non-OK verdict (default 3 = ~45 minutes), exactly once per unbroken streak.
+# Before this, the card went out on EVERY failing tick while only the page was
+# throttled: 72 identical cards on one board in ten days.
+maybe_alert() {
+  local title="$1" body="$2" detail="$3"
   [ "$RC" = "0" ] && return 0
-  [ "$_STREAK" -ge 3 ] 2>/dev/null || return 0
-  [ "$_ESCALATED" = "0" ] || return 0
+  if [ "$_STREAK" -lt "$GHL_MCP_PROBE_ALERT_STREAK" ] 2>/dev/null; then
+    say "  [ghl-mcp-probe] ${_STATE_NAME} streak ${_STREAK}/${GHL_MCP_PROBE_ALERT_STREAK} — no alert yet (a transient must not page anyone)"
+    return 0
+  fi
+  if [ "$_ESCALATED" != "0" ]; then
+    say "  [ghl-mcp-probe] ${_STATE_NAME} continues (streak ${_STREAK}) — already alerted once for this outage"
+    return 0
+  fi
+  alert_operator "$title" "$body"
   escalate_rescue_rangers "$_STATE_NAME" "$detail"
   write_streak "$_STATE_NAME" "$_STREAK" 1
 }
@@ -417,22 +506,22 @@ case "$RC" in
     report "OK" "(${URL} answers JSON-RPC; tools=${TOOL_COUNT:-?}, profile=${GHL_MCP_TOOL_PROFILE})"
     exit 0 ;;
   2)
-    report "NO_LISTENER" "(nothing healthy on ${URL} — the Tier 2 MCP is DOWN or another service owns the port)"
-    alert_operator "GHL MCP DOWN (no listener)" \
-      "ghl-mcp-probe found no healthy GHL MCP on ${URL}. Tier 2 GHL tools will not resolve. Re-run scripts/ghl-mcp-autostart.sh on this box. (consecutive NO_LISTENER probes: ${_STREAK})"
-    maybe_escalate "Nothing healthy is listening on ${URL}; Tier 2 GHL tools do not resolve."
+    report "NO_LISTENER" "(nothing healthy on ${URL} — the Tier 2 MCP is DOWN or another service owns the port; streak ${_STREAK})"
+    maybe_alert "GHL MCP DOWN (no listener)" \
+      "ghl-mcp-probe found no healthy GHL MCP on ${URL} for ${_STREAK} consecutive 15-minute probes. Tier 2 GHL tools will not resolve. Re-run scripts/ghl-mcp-autostart.sh on this box." \
+      "Nothing healthy is listening on ${URL}; Tier 2 GHL tools do not resolve."
     exit 2 ;;
   3)
-    report "DEAF" "(/health is green but NO JSON-RPC response within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-dist deafness signature: every agent init will burn the full connectionTimeoutMs)"
-    alert_operator "GHL MCP DEAF (alive but not answering)" \
-      "ghl-mcp-probe: ${URL}/health is green but /mcp returned no JSON-RPC response in ${GHL_MCP_PROBE_TIMEOUT}s. This is the stale-compiled-dist signature. Re-run scripts/ghl-mcp-autostart.sh (it rebuilds from the pinned commit and verifies the artifact). (consecutive DEAF probes: ${_STREAK})"
-    maybe_escalate "/health is green but /mcp answers no JSON-RPC within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-compiled-dist deafness signature. Every agent init on this box burns the full connectionTimeoutMs."
+    report "DEAF" "(/health is green but NO JSON-RPC response within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-dist deafness signature: every agent init will burn the full connectionTimeoutMs; streak ${_STREAK})"
+    maybe_alert "GHL MCP DEAF (alive but not answering)" \
+      "ghl-mcp-probe: ${URL}/health is green but /mcp returned no JSON-RPC response in ${GHL_MCP_PROBE_TIMEOUT}s for ${_STREAK} consecutive probes. This is the stale-compiled-dist signature. Re-run scripts/ghl-mcp-autostart.sh (it rebuilds dist from the vetted commit)." \
+      "/health is green but /mcp answers no JSON-RPC within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-compiled-dist deafness signature. Every agent init on this box burns the full connectionTimeoutMs."
     exit 3 ;;
   4)
-    report "PROFILE_DRIFT" "(answering, but tools=${TOOL_COUNT} is outside the ${GHL_MCP_EXPECT_MIN_TOOLS}..${GHL_MCP_EXPECT_MAX_TOOLS} band for profile=${GHL_MCP_TOOL_PROFILE} — GHL_TOOL_PROFILE is not taking effect)"
-    alert_operator "GHL MCP tool-profile drift" \
-      "ghl-mcp-probe: ${URL} reports ${TOOL_COUNT} tools, outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}. The service definition may have lost the profile env. Re-run scripts/ghl-mcp-autostart.sh. (consecutive PROFILE_DRIFT probes: ${_STREAK})"
-    maybe_escalate "The live tool count (${TOOL_COUNT}) is outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}; the service definition appears to have lost the profile env."
+    report "PROFILE_DRIFT" "(answering, but tools=${TOOL_COUNT} is outside the ${GHL_MCP_EXPECT_MIN_TOOLS}..${GHL_MCP_EXPECT_MAX_TOOLS} band for profile=${GHL_MCP_TOOL_PROFILE} — GHL_TOOL_PROFILE is not in effect; streak ${_STREAK})"
+    maybe_alert "GHL MCP tool-profile drift" \
+      "ghl-mcp-probe: ${URL} reports ${TOOL_COUNT} tools, outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}, for ${_STREAK} consecutive probes. The service definition may have lost the profile env. Re-run scripts/ghl-mcp-autostart.sh." \
+      "The live tool count (${TOOL_COUNT}) is outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}; the service definition appears to have lost the profile env."
     exit 4 ;;
   *)
     report "UNHEALTHY" "(${URL}/health responded but not as a healthy GHL MCP)"
