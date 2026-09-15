@@ -6609,10 +6609,15 @@ _PITCH_SCAN_PROSE_FIELDS = frozenset({
 
 #: Names that LOOK like prose fields but carry DELIVERED content (review D1). A
 #: speaker note ships with the deck; skipping it would hide a real leak, so these
-#: are never treated as prose-about-the-artifact.
+#: are never treated as prose-about-the-artifact. BOTH spellings are listed: the
+#: department's canonical delivered-notes field is SINGULAR -- `presenter_note`
+#: inside presenter_notes.json (director-of-presentations.md:505,
+#: presenter_guide.py:105/374, pptx-assembly-specialist.md:195) -- and the plural-
+#: only set let `{"presenter_note": "price ladder tier 2 is $2997"}` pass.
 _PITCH_SCAN_CONTENT_FIELDS = frozenset({
-    "speaker_notes", "slide_notes", "presenter_notes", "script_notes",
-    "narration_notes",
+    "speaker_note", "speaker_notes", "slide_note", "slide_notes",
+    "presenter_note", "presenter_notes", "script_note", "script_notes",
+    "narration_note", "narration_notes",
 })
 
 
@@ -6620,7 +6625,16 @@ def _pitch_scan_is_prose_field(name: str) -> bool:
     n = str(name or "").strip().lower()
     if n in _PITCH_SCAN_CONTENT_FIELDS:
         return False
-    return n in _PITCH_SCAN_PROSE_FIELDS or n.endswith(("_reason", "_note", "_notes"))
+    # EXACT prose names, plus the `*_reason` family the department actually uses
+    # to record a suppression rationale. The blanket `*_note` / `*_notes`
+    # catch-all was deliberately DROPPED (independent review of PR #1155): it
+    # swallowed content-bearing names whose own KEY states the leak --
+    # `{"price_ladder_notes":"Tier 1 $997, Tier 2 $2997"}` and
+    # `{"offer_notes":"Buy now, act now."}` both passed while failing on main.
+    # `*_reason` stays because the live run records suppressions as
+    # `offer_price_ladder_reason` and `non_applicable_sections.reason`, and
+    # scanning those keys would restore the false positive this rewrite removes.
+    return n in _PITCH_SCAN_PROSE_FIELDS or n.endswith("_reason")
 
 
 def _pitch_scan_key_is_affirmative(value) -> bool:
@@ -6653,22 +6667,33 @@ def _pitch_scan_texts(path: Path) -> List[str]:
         return [raw]
     out: List[str] = []
 
-    def walk(node, key=""):
+    def walk(node, key="", skip_direct_strings=False):
         if isinstance(node, dict):
             for k, v in node.items():
                 prose = _pitch_scan_is_prose_field(k)
                 # D2: a non-prose key with an affirmative value states content in
-                # its own name ("offer_price_ladder_included": true).
+                # its own name ("offer_price_ladder_included": true). BOTH the raw
+                # key and its space-normalised form are tested: normalising alone
+                # turned `re_pitch_section` into "re pitch section", which matches
+                # no token (the tuple holds "re-pitch"/"re_pitch"/"repitch"), so
+                # the whole re-pitch family silently stopped being caught.
                 if not prose and _pitch_scan_key_is_affirmative(v):
+                    out.append(str(k))
                     out.append(str(k).replace("_", " "))
-                # D1: a prose field skips its own prose -- scalars AND lists of
-                # prose (`validation_notes: [...]`) -- but a prose key holding a
-                # DICT is still walked, because that subtree can carry content.
-                if prose and not isinstance(v, dict):
-                    continue
+                if prose:
+                    if isinstance(v, str):
+                        continue          # its own prose, not content
+                    if isinstance(v, list):
+                        # D1: a prose key skips its STRING LEAVES but still
+                        # descends into container elements, so a list of dicts
+                        # cannot hide content the way a bare dict cannot.
+                        walk(v, str(k), True)
+                        continue
                 walk(v, str(k))
         elif isinstance(node, list):
             for v in node:
+                if skip_direct_strings and isinstance(v, str):
+                    continue
                 walk(v, key)
         elif isinstance(node, str):
             out.append(node)

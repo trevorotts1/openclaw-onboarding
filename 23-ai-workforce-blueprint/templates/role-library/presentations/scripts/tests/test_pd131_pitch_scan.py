@@ -183,3 +183,54 @@ def test_review_leak_channels_still_fail(tmp_path, obj, label):
 ])
 def test_review_false_positives_stay_clean(tmp_path, obj, label):
     assert not _hits(tmp_path, obj), f"false positive returned: {label}"
+
+
+# ---------------------------------------------------------------------------
+# SECOND independent review of PR #1155 (2026-09-16) found that the D1/D2 fix
+# itself opened THREE new FAIL->PASS channels, all reproduced before repair:
+#   ESC1 -- normalising the key (`str(k).replace("_"," ")`) turned
+#           `re_pitch_section` into "re pitch section", which matches no token
+#           (the tuple holds "re-pitch"/"re_pitch"/"repitch"), so the re-pitch
+#           family stopped being caught: a regression against origin/main.
+#   ESC2 -- the blanket `*_note`/`*_notes` prose catch-all swallowed
+#           content-bearing KEYS (`price_ladder_notes`, `offer_notes`), and
+#           `_PITCH_SCAN_CONTENT_FIELDS` listed only PLURAL note fields while the
+#           department's canonical delivered field is singular `presenter_note`.
+#   ESC3 -- a prose key holding a LIST of dicts skipped the whole list, though a
+#           prose key holding a bare dict was walked (asymmetric).
+# These pin the closure of all three, plus the false positives that must survive.
+# ---------------------------------------------------------------------------
+
+def _hits(tmp_path: Path, obj: object) -> list:
+    p = tmp_path / "arc.json"
+    p.write_text(json.dumps(obj))
+    low = [s.lower() for s in bd._pitch_scan_texts(p)]
+    return [t for t in bd.PITCHLESS_FORBIDDEN_TOKENS if any(t in s for s in low)]
+
+
+@pytest.mark.parametrize("obj,label", [
+    ({"re_pitch_section": {"slide_count": 3}}, "ESC1 key normalisation must not lose re-pitch"),
+    ({"re_pitch": {"x": 1}}, "ESC1b bare re_pitch key"),
+    ({"price_ladder_notes": "Tier 1 $997, Tier 2 $2997"}, "ESC2 *_notes is not prose when the key names a token"),
+    ({"offer_notes": "Buy now, act now."}, "ESC2c offer_notes"),
+    ({"anchor_price_note": "$4997 anchored"}, "ESC2d anchor_price_note"),
+    ({"presenter_note": "price ladder tier 2 is $2997"}, "ESC2b singular presenter_note is delivered content"),
+    ({"speaker_note": "act now, buy now"}, "ESC2e singular speaker_note"),
+    ({"validation_notes": [{"section_id": "price_ladder"}]}, "ESC3 list of dicts under a prose key"),
+    ({"peak_apex": {"note": [{"price_ladder_section": {"rung_1": "$997"}}]}}, "ESC3b nested list of dicts"),
+    ({"validation_notes": ["prose", {"move_tag": "BUY NOW"}]}, "ESC3c mixed prose + dict list"),
+])
+def test_second_review_escapes_are_closed(tmp_path, obj, label):
+    assert _hits(tmp_path, obj), f"leak escaped: {label}"
+
+
+@pytest.mark.parametrize("obj,label", [
+    ({"offer_price_ladder": None}, "null-valued schema key"),
+    ({"offer_price_ladder_reason": "avoided the price ladder"}, "*_reason stays prose"),
+    ({"non_applicable_sections": {"reason": "pitch suppressed"}}, "nested exact reason"),
+    ({"peak_apex": {"note": "no anchor price here"}}, "exact note stays prose"),
+    ({"validation_notes": ["no offer, price, ladder, VIP, or re-pitch content"]},
+     "list of prose under validation_notes"),
+])
+def test_second_review_false_positives_survive(tmp_path, obj, label):
+    assert not _hits(tmp_path, obj), f"false positive returned: {label}"
