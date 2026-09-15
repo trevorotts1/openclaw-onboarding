@@ -477,6 +477,26 @@ DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 # gives a large structured artifact (deep choreography JSON, 60+ slides of copy)
 # room to complete even after thinking-MAX spends heavily on reasoning first.
 DEEPSEEK_MAX_OUTPUT_TOKENS = 64_000
+# PD-TEST-065 (2026-09-15). The reasoning effort is a REQUEST parameter, not a
+# buried literal. The default stays "max" because that is exactly what this
+# box's own openclaw.json declares for this model
+# (agents.defaults.models["deepseek/deepseek-flash"].params.reasoning_effort =
+# "max"); code must not silently disagree with the operator's declaration.
+DEEPSEEK_REASONING_EFFORT = "max"
+# ...but "max" is not free. This endpoint bills reasoning INSIDE max_tokens
+# (confirmed live above), so on a very large authoring prompt reasoning can
+# consume the WHOLE budget and return ZERO-LENGTH content. Proven live on run
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: P4-COPY's section-01 unit
+# returned empty output on 3/3 paid attempts while a same-model call elsewhere
+# in that same run spent reasoning_tokens=47,940 of a 57,178 completion (83.8%
+# of the 64,000 budget). The 2026-08-26/27 incident on this box was mitigated
+# with exactly this one-line step-down (the reasoning_effort max -> medium
+# backup pair still on disk), and it was later lost. A re-attempt for a unit
+# that has ALREADY come back empty is therefore re-issued at the reduced effort
+# instead of repeating the byte-identical request: an unchanged-input empty
+# completion is deterministic, so an identical retry can only burn another paid
+# call and lose the same way.
+DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY = "medium"
 DEEPSEEK_TEMPERATURE = 0.3
 DEEPSEEK_TIMEOUT_S = 600       # thinking MAX at a large max_tokens can genuinely run minutes
 
@@ -1583,14 +1603,21 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                       model: Optional[str] = None,
                       run_dir: Optional[Path] = None,
                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
-                      retries: int = 3) -> Tuple[str, Dict[str, Any]]:
+                      retries: int = 3,
+                      reasoning_effort: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
     """One DeepSeek chat completion, thinking MAX. Returns
     (content_text, usage_dict). FIX 16: the caller passes the model the ROUTE
     selected (default stays the catalog text.fast id so the pre-FIX-7
     rollback path is byte-for-byte unchanged). Retries transient
     HTTP/network failures with backoff; a non-transient (4xx other than 429)
-    failure raises immediately."""
+    failure raises immediately.
+
+    PD-TEST-065: `reasoning_effort` defaults to DEEPSEEK_REASONING_EFFORT
+    ("max", the operator's declared value). A caller may step it DOWN for a
+    call whose identical predecessor already returned empty content -- see
+    DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY."""
     key = _load_deepseek_key()
+    effort = reasoning_effort or DEEPSEEK_REASONING_EFFORT
     body = {
         # FIX 16: send the model the router chose, not a module constant.
         "model": model or DEEPSEEK_MODEL,
@@ -1601,7 +1628,7 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
         "max_tokens": max_tokens,
         "temperature": DEEPSEEK_TEMPERATURE,
         "thinking": {"type": "enabled"},
-        "reasoning_effort": "max",
+        "reasoning_effort": effort,
     }
     data = json.dumps(body).encode("utf-8")
     # FIX 16 dispatcher debug log: the exact request body that leaves this
@@ -1998,6 +2025,7 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
                       retries: int = 3,
                       route_override: Optional[Dict[str, Any]] = None,
+                      reasoning_effort: Optional[str] = None,
                       ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     """THE routed completion entrypoint: every dispatcher LLM call site goes
     through here. Returns (content, usage, route_dict) where route_dict carries
@@ -2012,7 +2040,13 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
 
     F10: `route_override` ({provider, model}, from a heal rung's reissued work
     order) re-points the selection -- but only onto a candidate the router
-    itself already marked eligible. See _apply_route_override."""
+    itself already marked eligible. See _apply_route_override.
+
+    PD-TEST-065: `reasoning_effort` (optional) is forwarded to the native
+    DeepSeek transport only. None keeps DEEPSEEK_REASONING_EFFORT ("max", the
+    operator-declared value); a caller steps it DOWN only when the identical
+    predecessor call already returned empty content. A non-native provider
+    route ignores it -- that provider's own params govern."""
     ctx = _RouteContext()
     decision: Optional[Dict[str, Any]] = None
     if _model_router is not None:
@@ -2089,7 +2123,8 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=1)
+                                               max_tokens=max_tokens, retries=1,
+                                               reasoning_effort=reasoning_effort)
             _emit_model_route_telemetry(run_dir, ctx, phase_id)
             return content, usage, ctx.as_dict()
         if router_id == "disabled":
@@ -2103,7 +2138,8 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=1)
+                                               max_tokens=max_tokens, retries=1,
+                                               reasoning_effort=reasoning_effort)
             return content, usage, ctx.as_dict()
 
         ctx.provider = str(route.get("provider") or "")
@@ -2131,7 +2167,8 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=1)
+                                               max_tokens=max_tokens, retries=1,
+                                               reasoning_effort=reasoning_effort)
             # usage/model provenance stays honest even though the native endpoint
             # pins its own served id; FIX 16 now sends the ROUTE's model id in the
             # request body itself (the route is what callers stamp AND what is sent).
@@ -6150,6 +6187,41 @@ def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
         indent=2, ensure_ascii=False)
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-065. `EMPTY_COMPLETION_MARKER` is the ONE spelling of the fan-out
+# empty-completion failure, so the durable per-unit record written by the batch
+# loop (`last_error`) and the re-attempt decision read by `_unit_worker` can
+# never drift apart. It is the PREFIX of the recorded reason; the detail suffix
+# is diagnostic only and is deliberately excluded from the match.
+# ---------------------------------------------------------------------------
+EMPTY_COMPLETION_MARKER = "unit returned empty output"
+
+
+def _empty_completion_detail(usage: Optional[Dict[str, Any]]) -> str:
+    """Name the ONE number that explains an empty completion.
+
+    PD-TEST-065: the generic fan-out path used to discard the provider's usage
+    dict on an empty completion, so the run could not tell "reasoning consumed
+    the whole shared budget" from any other empty answer -- the diagnosis had to
+    be reconstructed later from a DIFFERENT phase's successful call. The serial
+    path has always recorded its usage; this brings the fan-out path to parity.
+    Never raises: a missing/misshapen usage is reported as missing, not
+    invented."""
+    if not isinstance(usage, dict):
+        return " (no usage recorded)"
+    details = usage.get("completion_tokens_details")
+    reasoning = details.get("reasoning_tokens") if isinstance(details, dict) else None
+    completion = usage.get("completion_tokens")
+    if completion is None and reasoning is None:
+        return " (usage recorded without token counts)"
+    if reasoning is None:
+        return (f" (completion_tokens={completion}, reasoning_tokens not "
+                f"reported)")
+    return (f" (completion_tokens={completion}, reasoning_tokens={reasoning} of "
+            f"max_tokens={DEEPSEEK_MAX_OUTPUT_TOKENS} -- reasoning is billed "
+            f"INSIDE that budget)")
+
+
 def _dispatch_phase_fanout_units(
         run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
         phase_obj: Optional[Phase], worker_id: str,
@@ -6411,6 +6483,17 @@ def _dispatch_phase_fanout_units(
 
     def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
         payload = by_key.get(unit.key, {})
+        # PD-TEST-065: if THIS unit's own durable record already carries an
+        # empty completion, the identical request has already been proven to
+        # return nothing at full reasoning effort. Re-issue it at the reduced
+        # effort instead of repeating the byte-identical call. The record
+        # survives restarts and resumes (PRES-014: no restart resets the
+        # ledger), so this holds across sweeps, not just within one process.
+        prior_rec = _store_state.get(unit.key)
+        prior_err = str(prior_rec.get("last_error") or "") \
+            if isinstance(prior_rec, dict) else ""
+        effort = (DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY
+                  if EMPTY_COMPLETION_MARKER in prior_err else None)
         try:
             system_prompt, user_prompt = compose_prompt(
                 phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
@@ -6419,14 +6502,26 @@ def _dispatch_phase_fanout_units(
             )
             content, usage, route = dispatch_complete(
                 system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                worker_id=worker_id)
+                worker_id=worker_id, reasoning_effort=effort)
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
         text = _clean_payload((content or "").strip())
         if not text:
-            return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
-                                     reasons=["unit returned empty output"])
+            # PD-TEST-065: record the failure the way the serial path does --
+            # an explicit sidecar row carrying the provider's usage -- and put
+            # the budget arithmetic in the reason, so the durable unit record
+            # says WHY the output was empty on the NEXT read.
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 1, "unit": unit.key,
+                "status": "empty_completion",
+                "reasoning_effort": effort or DEEPSEEK_REASONING_EFFORT,
+                "max_tokens": DEEPSEEK_MAX_OUTPUT_TOKENS,
+                "usage": usage})
+            return fanout.UnitResult(
+                key=unit.key, status="failed", attempts=1,
+                reasons=[EMPTY_COMPLETION_MARKER
+                         + _empty_completion_detail(usage)])
         # PRES-001: the unit output must pass the CONTRACT's validator BEFORE
         # it may report ok. An invalid unit is a failed unit — it never rides
         # into the reducer, never overwrites a sibling's scratch, never counts
@@ -6541,6 +6636,16 @@ def _dispatch_phase_fanout_units(
                     _next["author_route"] = r.meta
                 if r.status != "ok" and r.reasons:
                     _next["last_error"] = "; ".join(r.reasons)[:500]
+                else:
+                    # PD-TEST-065: `last_error` means "the CURRENT error". A unit
+                    # that just came back ok must not keep advertising its
+                    # previous attempt's failure: the re-attempt decision in
+                    # _unit_worker reads this record, and a stale marker would
+                    # silently step down the reasoning effort for a unit that
+                    # has since succeeded. Set to the store's own empty shape
+                    # (unit_store.py's new-unit record) rather than deleting the
+                    # key, so every record keeps the same field set.
+                    _next["last_error"] = None
                 _us.stamp_identity(_next, company_id=_company_id,
                                    presentation_id=_presentation_id,
                                    phase_id=phase_id)
