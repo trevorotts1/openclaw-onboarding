@@ -544,6 +544,32 @@ class VerifierImportError(RuntimeError):
 _SP_ONLY_PHASE_IDS = frozenset({
     "P-SP-INTAKE", "P-SP-INTAKE-TRACE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
 })
+# PD-TEST-010/PD-TEST-011 (2026-09-15): the value of working/copy/intake.json's
+# `deck_type` that declares a SIGNATURE presentation. `deck_type` -- NOT the
+# engine's `presentation_type` -- is the authoritative axis for "is this deck a
+# signature presentation":
+#   * deck-intake-driver.py's LEGACY_FIELD_MAPPING (line 98) / intake/
+#     deck-intake-questions.json's legacy_field_mapping are the single declared
+#     derivation point, and they map ONLY presentation_type "signature" onto
+#     deck_type "signature_presentation" -- every other type derives "webinar".
+#     That same module states the rule at line 95: "THIS IS THE SOURCE OF TRUTH
+#     for deck_type. Every other consumer reads intake.json.deck_type -- never
+#     derives it independently."
+#   * presentation_type is a DIFFERENT axis: its canonical vocabulary is
+#     {from_scratch, content_personal, content_general, signature} (vocab.py:50)
+#     and "signature_presentation" is merely an ALIAS onto "signature"
+#     (vocab.py:62). The live run carries presentation_type "from_scratch" while
+#     its deck_type is "webinar" -- reading presentation_type here would be the
+#     cross-axis confusion PD-TEST-011 names.
+#   * the SP machinery itself already keys on deck_type: deck-intake-driver.py's
+#     _run_sp_claim_gate declares `intake.get("deck_type") ==
+#     "signature_presentation"` (line 2058) and phase_verifiers' SP gates /
+#     _sp_claim_matches_intake read the same field.
+#   * signature_source is NOT a usable predicate: for a signature deck it may be
+#     "from_scratch" (an existing non-signature value) and the live non-signature
+#     run carries signature_source "from_scratch" too -- it cannot separate the
+#     two decks at all.
+_SIGNATURE_DECK_TYPE = "signature_presentation"
 _CONVERTER_ONLY_PHASE_IDS = frozenset({"P-CONVERTER"})
 # Wave C unit C1 (manifest_version 51) -- the upsell branch. Same fail-safe shape as the
 # two sets above: filtered out ONLY when the electing intake flag is POSITIVELY known to be
@@ -878,6 +904,25 @@ class Engine:
         val = obj.get("creation_mode")
         return val if isinstance(val, str) and val else None
 
+    def _deck_type(self) -> Optional[str]:
+        """Best-effort read of working/copy/intake.json's `deck_type` -- the
+        SOP-governed, authoritative "is this deck a signature presentation"
+        axis (see _SIGNATURE_DECK_TYPE for why this field and not
+        presentation_type/signature_source).
+
+        Returns None on ANY absence/parse failure -- exactly the same
+        fail-open-to-full-enforcement contract as _deck_creation_mode above:
+        the signature-only routing decision may NEVER skip a phase on missing
+        information, only on a positively-read, confirmed deck_type. When in
+        doubt the phase still runs and still has to earn its pass the normal
+        way (and the SP gates fail closed on a signature deck that cannot
+        prove its type).
+
+        Read from the same source the CLIENT-FACING filter already reads
+        (_client_deck_shape), so the walk and the step-count message can never
+        disagree about this run's deck type."""
+        return self._client_deck_shape().get("deck_type") or None
+
     # -- B2b: CLIENT-FACING deck-shape + step-count/message rendering -------
     def _client_deck_shape(self) -> Dict[str, Any]:
         """Best-effort read of intake.json's deck-shape signals for
@@ -901,8 +946,9 @@ class Engine:
         sales_checkout = str(pre_capture.get("WANT_SALES_CHECKOUT") or "").strip().lower()
         vsl_page = str(pre_capture.get("WANT_VSL_PAGE") or "").strip().lower()
         return {
+            "deck_type": deck_type,
             "deck_type_known": bool(deck_type),
-            "is_signature": deck_type == "signature_presentation",
+            "is_signature": deck_type == _SIGNATURE_DECK_TYPE,
             "creation_mode_known": bool(creation_mode),
             "is_content_first": creation_mode in self._CONTENT_FIRST_CREATION_MODES,
             "sales_checkout_known": bool(sales_checkout),
@@ -1050,6 +1096,144 @@ class Engine:
             shas={},
             method="engine_routed_around",
             notes=[f"NOTE: {reason}"])
+
+    def _route_around_sp_only_phase(self, phase: Phase, deck_type: str) -> None:
+        """PD-TEST-010 / PD-TEST-011 (2026-09-15): record a SIGNATURE-ONLY
+        phase as not applicable to a non-signature deck, WITHOUT running its
+        executor or its substance verifier -- the exact shape
+        _route_around_converter_phase above already gives P-CONVERTER.
+
+        THE DEFECT THIS CLOSES (live run
+        pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4, 2026-09-14, the
+        first run that ever walked this manifest's full phase list):
+        _SP_ONLY_PHASE_IDS was consumed ONLY by _client_visible_phases -- a
+        DISPLAY-ONLY filter (see its own docstring: "Does NOT change `phases`
+        itself, the attestation chain, the DAG, or anything the phase walk/
+        dispatch loop iterates"). So the walk still queued P-SP-INTAKE on a
+        webinar deck (presentation_type=from_scratch, deck_type=webinar,
+        pitch_included=false), the executor refused to author a signature
+        artifact for a non-signature deck (dispatcher reason: "driver_only:
+        build_deck._chk_sp_intake -> Skill 51's prove_sp_intake..."), and after
+        DISPATCH_REPEAT_CEILING=8 identical 'declined' outcomes the dispatcher
+        retry ceiling marked the phase failed -- taking the WHOLE run to
+        terminal=BLOCKED behind one phase that never applied to this deck.
+
+        This is a dispatch/routing defect, not a substance-check defect: the
+        executor's refusal is CORRECT and is deliberately left untouched. What
+        was missing is the gate that keeps an inapplicable phase out of the
+        walk in the first place -- what P-CONVERTER already has.
+
+        status="done" so certificate/gap/all_done accounting stays consistent
+        with a deck that never had this phase's precondition -- but
+        `routed_around` + `routed_around_reason` keep the distinction from a
+        real, verified execution fully auditable, permanently, in state.json
+        and the event log. verifier_ok stays None (never checked, not "checked
+        and passed") and artifacts stays empty (nothing was produced), so
+        _mint_process_certificate's substance_unverified scan (verifier_ok is
+        None and artifacts) does not misflag it either.
+        """
+        reason = (f"deck_type={deck_type!r} — {phase.id} is a signature-"
+                  "presentation-only stage (signature-presentation-architect / "
+                  "the sacred-structure ledger); not applicable to this deck, "
+                  "so it was never dispatched")
+        self.report.event("phase.routed_around", f"{phase.id}: {reason}")
+        self._checkpoint(phase.id, status=PHASE_STATUS_DONE, attested_at=utcnow(),
+                         artifacts=[], sha256={}, verifier_ok=None,
+                         verifier_notes=[f"NOTE: {reason}"],
+                         owner_skip_approval=None, routed_around=True,
+                         routed_around_reason=reason,
+                         intake_sha_at_done=_intake_sha_now(self.run_dir))
+        # FIX 30 — a routed-around phase is also 'completed': it gets an engine
+        # row too, honestly marked (never verified, no artifact). Its
+        # substance_verified=False means the shared chain gate does NOT count it
+        # as attested — the routing distinction stays auditable in the row and
+        # in state.json, exactly as the converter twin's contract promises.
+        self._engine_attest(
+            phase,
+            substance_verified=False,
+            shas={},
+            method="engine_routed_around",
+            notes=[f"NOTE: {reason}"])
+
+    def _sp_only_route_around_applies(self, phase: Phase) -> bool:
+        """PD-TEST-010: should `phase` be routed around for THIS run's deck?
+
+        True only when BOTH hold:
+          1. the phase is one of the four signature-presentation-only stages
+             (_SP_ONLY_PHASE_IDS); and
+          2. this run's deck is POSITIVELY known to be a non-signature deck --
+             working/copy/intake.json declares a non-empty deck_type that is
+             not _SIGNATURE_DECK_TYPE.
+
+        Fails OPEN to full enforcement, never closed: an absent/unreadable
+        intake.json or a missing deck_type returns False, so the phase stays
+        in the walk exactly as before. A genuinely signature deck (deck_type
+        == "signature_presentation") returns False and keeps every one of the
+        four stages. This is the same fail-safe direction _client_visible_phases
+        already documents ("an unknown deck-shape signal WIDENS", never
+        narrows)."""
+        if phase.id not in _SP_ONLY_PHASE_IDS:
+            return False
+        deck_type = self._deck_type()
+        return bool(deck_type) and deck_type != _SIGNATURE_DECK_TYPE
+
+    def _phases_applicable_to_this_deck(self, phases: List[Phase],
+                                        only: Optional[str] = None) -> List[Phase]:
+        """THE phase walk's applicability selection: return the subset of
+        `phases` this run's deck actually walks, recording every phase it
+        routes around (file: presentation_job/phases.py; consumed only by
+        Engine.run, which passes the result to the plan/wave/ready-queue
+        schedulers).
+
+        Two deck-conditional branches are decided here, both by READING the
+        deck's own sealed intake and both failing OPEN to full enforcement
+        when the deciding signal is not positively known:
+
+          * converter_path phases (P-CONVERTER) on a deck whose confirmed
+            creation_mode is not a content-conversion mode
+            (fix/run-slides -- the original precedent);
+          * the four signature-presentation-only stages (_SP_ONLY_PHASE_IDS)
+            on a deck whose confirmed deck_type is not
+            _SIGNATURE_DECK_TYPE (PD-TEST-010 / PD-TEST-011).
+
+        Routing a phase around marks it status=done + routed_around=true with
+        NO executor and NO verifier run (see _route_around_converter_phase /
+        _route_around_sp_only_phase) -- it is never dispatched, so it can never
+        decline into the dispatcher's retry ceiling, and the deck that never
+        had the phase's precondition still completes.
+
+        `only` is honored as-is, for both branches: an operator who explicitly
+        asked for ONE phase by id is asking for that phase by name, never for a
+        silent reroute. `until` selection still gets the filter -- it walks the
+        same automatic phase list this decision governs.
+
+        This is deliberately a separate, side-effecting step from
+        _client_visible_phases (which stays DISPLAY-ONLY): one decides what the
+        walk DISPATCHES, the other what the client is TOLD. Both read the same
+        _client_deck_shape()/_deck_type() source, so they can never disagree
+        about this run's deck.
+        """
+        if only:
+            return list(phases)
+
+        creation_mode = self._deck_creation_mode()
+        if (creation_mode is not None
+                and creation_mode not in self._CONTENT_FIRST_CREATION_MODES):
+            keep, routed = [], []
+            for p in phases:
+                (routed if p.converter_path else keep).append(p)
+            for p in routed:
+                self._route_around_converter_phase(p, creation_mode)
+            phases = keep
+
+        sp_routed = [p for p in phases if self._sp_only_route_around_applies(p)]
+        if sp_routed:
+            deck_type = self._deck_type() or ""
+            for p in sp_routed:
+                self._route_around_sp_only_phase(p, deck_type)
+            routed_ids = {p.id for p in sp_routed}
+            phases = [p for p in phases if p.id not in routed_ids]
+        return list(phases)
 
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
@@ -3688,19 +3872,16 @@ class Engine:
 
         # fix/run-slides: route converter_path phases (P-CONVERTER) around any
         # deck whose confirmed creation_mode is not a content-conversion mode.
-        # `only` means the operator explicitly asked to dispatch this ONE phase
-        # by id -- that direct request is always honored as-is, never silently
-        # rerouted. `until` still gets the filter: it walks the same automatic
-        # phase list this routing decision governs.
-        if not only:
-            creation_mode = self._deck_creation_mode()
-            if creation_mode is not None and creation_mode not in self._CONTENT_FIRST_CREATION_MODES:
-                keep, routed = [], []
-                for p in phases:
-                    (routed if p.converter_path else keep).append(p)
-                for p in routed:
-                    self._route_around_converter_phase(p, creation_mode)
-                phases = keep
+        # PD-TEST-010 / PD-TEST-011 (2026-09-15): the SAME routing decision for
+        # the four SIGNATURE-PRESENTATION-ONLY stages (_SP_ONLY_PHASE_IDS).
+        # They were previously gated only in the DISPLAY layer
+        # (_client_visible_phases), so the walk still dispatched P-SP-INTAKE
+        # onto a webinar deck and the dispatcher's retry ceiling blocked the
+        # whole run on a phase that never applied to it. Selection is the
+        # correct place to gate applicability (the same place, and the same
+        # fail-open-on-unknown posture, as the converter route): a phase keeps
+        # its executor and verifier for every deck it DOES apply to.
+        phases = self._phases_applicable_to_this_deck(phases, only=only)
         # DESIGN-OPUS.md §4.2 — defers_unless gating. A phase whose gate evaluates
         # false is DEFERRED for this run: never surfaced, never attested, but
         # recorded with a skip_attestation so the attestation chain stays complete
