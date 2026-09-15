@@ -7968,11 +7968,38 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
 
 def _backoff_delay_s(repeat: int) -> float:
     """repeat is the number of times this outcome has recurred AFTER its first
-    observation. repeat<=0 (a new or changed outcome) is always zero delay."""
+    observation. repeat<=0 (a new or changed outcome) is always zero delay.
+
+    PD-TEST-095 -- SATURATE BY REPEATED MULTIPLICATION, NEVER BY A POWER.
+    This used to be `min(CAP, BASE * (MULT ** (repeat - 1)))`. The power is
+    evaluated BEFORE the min(), so it overflows float range before the cap can
+    clamp it: at exponent 1024, `2.0 ** 1024` raises
+    `OverflowError(34, 'Result too large')`. `repeat` is not bounded by the retry
+    ceiling -- a work order that LINGERS on a phase whose status stopped changing
+    is re-folded on every sweep tick, so `consecutive` climbs without limit (the
+    live run reached 1025 on two phases).
+
+    The consequence is a PERMANENT, SELF-LOCKING STALL, not a slow backoff:
+    `record_outcome` computes the delay BEFORE it writes the ledger, so the raise
+    aborts the fold and `consecutive` never advances past the boundary -- and
+    because the exception escapes `sweep_run_dir`, EVERY phase in the run stops
+    being dispatched. Measured on pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    271 consecutive `sweep error: OverflowError(34, 'Result too large')` lines and
+    zero dispatches, which is why a freshly issued P4-COPY repair receipt was
+    never consumed.
+
+    Multiplying in a bounded loop is exactly equivalent for every value the old
+    expression could return -- `min(cap, base * mult**exp)` -- because the loop
+    stops as soon as the cap is reached, so it runs at most a handful of times and
+    can never overflow."""
     if repeat <= 0:
         return 0.0
-    return min(DISPATCH_BACKOFF_CAP_S,
-               DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+    delay = DISPATCH_BACKOFF_BASE_S
+    steps = 0
+    while delay < DISPATCH_BACKOFF_CAP_S and steps < repeat - 1:
+        delay *= DISPATCH_BACKOFF_MULTIPLIER
+        steps += 1
+    return min(DISPATCH_BACKOFF_CAP_S, delay)
 
 
 def should_dispatch(run_dir: Path, phase_id: str, *,
