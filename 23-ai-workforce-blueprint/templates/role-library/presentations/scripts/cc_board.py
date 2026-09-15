@@ -757,6 +757,28 @@ def ingest_deck_task(
         )
         return None
 
+    # PD-066 — an enabled board with NO credentials is not "enabled" in any
+    # useful sense: _request() below would attach neither the Bearer nor the
+    # HMAC, and the Command Center's middleware rejects the write 401
+    # ('missing-header') before the route's own signature check is reached.
+    # Name the missing variables HERE, so the operator gets a diagnosable line
+    # instead of a bare 401 that looks like a wrong-secret fault. This does NOT
+    # change control flow: the attempt still runs and still fails soft, and no
+    # auth check anywhere is weakened or bypassed.
+    if not cfg["token"] or not cfg["secret"]:
+        _missing = []
+        if not cfg["token"]:
+            _missing.append("MC_API_TOKEN/CC_API_TOKEN")
+        if not cfg["secret"]:
+            _missing.append("WEBHOOK_SECRET/CC_WEBHOOK_SECRET")
+        _log(
+            "board enabled but credentials missing from THIS process env "
+            f"({', '.join(_missing)}) — the CC will reject the registration "
+            "401. The sanctioned fix is the entry-point env store "
+            "(presentation_job.env_store.load_into_process). "
+            "cc_register_attempted=True already logged."
+        )
+
     # FIX 57 — per-run parent identity. With a run_id the card's source_ref
     # (its ``Ref:`` line) and external_session_id (its ``Session:`` line) are
     # BOTH the run id, so (a) the idempotency key sha256(source_ref + title)

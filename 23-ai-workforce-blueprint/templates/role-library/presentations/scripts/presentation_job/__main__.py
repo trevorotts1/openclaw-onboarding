@@ -810,6 +810,19 @@ def _reset_parked_state(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # PD-066 -- load the box env store into THIS process before anything else.
+    # This is the third sanctioned entry point (the two launchd shells and
+    # intake_bridge are the others). Without it, an engine launched directly
+    # from an operator/agent shell inherits COMMAND_CENTER_URL but NOT
+    # MC_API_TOKEN / WEBHOOK_SECRET, so every CC board registration is posted
+    # unsigned and rejected 401 ("run continues ungrouped"). Reported with the
+    # redacted report, never fatal: a credential problem must not kill a run.
+    from .env_store import load_into_process, redacted_report
+    _env_report = load_into_process()
+    print("[env-store/engine-entry] "
+          + redacted_report(_env_report).replace("\n", " | "),
+          file=sys.stderr, flush=True)
+
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
 
