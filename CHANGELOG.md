@@ -1,3 +1,20 @@
+## [v25.1.7]  -  2026-09-15  -  Capture finish_reason and give the reasoning-effort retry a real ladder
+
+### What Changed
+- **PD-070 — hardening for the empty-completion failure class in the generic fan-out path**, the one that blocked the deck's spine phase `P4-COPY` on the live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`. Two defects, both established from live evidence rather than speculation.
+- **An empty completion could not say WHY it was empty.** `finish_reason` was read *nowhere* in the module (`grep -c finish_reason dispatcher.py` → `0`). On this endpoint `finish_reason="length"` is the documented marker that the request's token maximum was reached — and with `thinking` enabled that maximum is **shared with reasoning**. So `"length"` + empty content (reasoning starved the deliverable) and `"stop"` + empty content (the model emitted nothing) were recorded identically, while needing different fixes. `deepseek_complete` now keeps the provider's `finish_reason` with the usage it belongs to, and `_empty_completion_detail` names it; an **absent** field leaves the PD-TEST-065 wording **byte-identical**.
+- **The step-down had one rung and dead-ended.** `medium` is a documented **alias for `high`** on this endpoint ([thinking mode](https://api-docs.deepseek.com/guides/thinking_mode): "`medium`/`xhigh` are accepted and mapped to `high`"), and `high` is the model's own **default** effort. So PD-TEST-065's single `max → medium` step landed on the default and then dead-ended: a second empty completion re-sent that same default effort, a third re-sent it again, and the phase could only ever reach the paid-retry ceiling. An unchanged-input empty completion is deterministic, so repeating it cannot succeed.
+- **`DEEPSEEK_REASONING_EFFORT_LADDER = ("medium", "low")` replaces the single constant**, indexed by the unit's durable `attempts_total` and clamped at both ends. Attempt 1 keeps PD-TEST-065's behaviour **exactly** (`medium`); only a *second* empty completion reaches a lower rung — precisely the case that used to repeat the request that had just failed.
+- **`"none"` is deliberately not a rung:** `thinking` is sent as `enabled` on every call and that contradiction's precedence is undocumented, so it must be probed rather than assumed.
+- **Deployment caveat.** `_reserve_paid_attempt` (dispatcher.py:7686) validates the operator's paid-retry receipt with `receipt["dispatcher_sha256"] == _file_sha(Path(__file__))`, so **any byte change to `dispatcher.py` invalidates an already-issued receipt**. This release must not be rolled onto a box that is mid-run on a pinned receipt until the operator has re-issued it.
+- **Tests:** `tests/test_pd070_reasoning_effort_ladder.py` — 9 new fixture-based tests, `urlopen` stubbed (**no network, no key**), 9 passed. Narrow relevant regression set (`test_dispatcher_repeat_suppression`, `test_executor_dispatch`, `test_fanout_zero_units_ceiling`, `test_pd065_fanout_empty_completion`, `test_pd070_reasoning_effort_ladder`, `test_pres001_fanout_dispatch_e2e`, `test_pres001_unit_contracts`, `test_pres014_unit_records`, `test_pres017_dispatcher_readiness`, `test_pres050_multi_artifact_dispatch`) → **147 passed**.
+- **Not addressed here.** Raising `DEEPSEEK_MAX_OUTPUT_TOKENS` (64000) is **not** a safe standalone fix: at the observed ~210 tok/s the provider's own default for `reasoning_effort=max` (128K) would take ~615 s and blow `DEEPSEEK_TIMEOUT_S = 600`, converting an empty-output failure into a client timeout. Any cap raise must be paired with a timeout raise and is out of scope for this minimal patch.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+47/-6)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd070_reasoning_effort_ladder.py` (new, +332)
+- Version markers rolled to v25.1.7 by `scripts/bump-version.sh`
+
 ## [v25.1.6]  -  2026-09-15  -  A partial model-plan answer keeps the slots it omits instead of nulling them
 
 ### What Changed
