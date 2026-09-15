@@ -15,6 +15,31 @@ sys.path.insert(0, str(ROOT / 'shared-utils'))
 import cc_runtime_preflight as guard
 from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version
 
+# The Command Center floor + pin from cc-compat.json.
+#
+# These are pinned DELIBERATELY and are asserted against the real
+# cc-compat.json below: the whole point of this suite is to fail when the
+# security floor moves without a corresponding, reviewed decision, so the
+# literals must NOT be derived from the file under test (that would make the
+# check tautological and it could never catch an unintended floor change).
+#
+# When the floor legitimately moves, update these three values and nothing else
+# — every boundary assertion in this module reads from them. v25.1.0 moved the
+# floor and the pin together to v7.4.0 for the Skill 69 (archify) board
+# endpoints: minVersion had to move WITH pinnedTag because /api/archify-runs is
+# a brand-new endpoint, so an older CC answers 404 (see cc-compat.json notes).
+CC_FLOOR = 'v7.4.0'
+CC_PIN = 'v7.4.0'
+CC_FLOOR_BARE = CC_FLOOR.lstrip('v')
+
+# Every released CC version BELOW the current floor. The boundary is tested
+# exhaustively: each of these must be refused, and CC_FLOOR_BARE must be
+# accepted. Keep this list append-only as the floor advances.
+CC_BELOW_FLOOR_BARE = [
+    '6.1.0', '7.0.0', '7.1.0', '7.1.1', '7.1.2', '7.1.3', '7.1.4', '7.1.5',
+    '7.2.0', '7.3.0', '7.3.1', '7.3.2', '7.3.3', '7.3.4',
+]
+
 
 class Compatibility(unittest.TestCase):
     def test_node_boundaries(self):
@@ -25,25 +50,34 @@ class Compatibility(unittest.TestCase):
 
     def test_security_floor_and_resolver(self):
         compat=load_cc_compat(ROOT)
-        self.assertEqual(compat['commandCenter']['minVersion'],'v7.3.1')
-        # pinnedTag moved to v7.3.2 (CC deploy-guard repair); the floor stays
-        # permissive at v7.3.1 so a roll does not block boxes mid-update.
-        self.assertEqual(resolve_cc_tag(compat),'v7.3.2')
+        self.assertEqual(compat['commandCenter']['minVersion'],CC_FLOOR)
+        # v25.1.0 moved floor AND pin together to v7.4.0: the Skill 69 archify
+        # board endpoints are BRAND NEW, so an older CC answers 404 and the
+        # permissive-floor posture used for correctness fixes (v19.0.0 ->
+        # v22.0.75) does not apply here.
+        self.assertEqual(resolve_cc_tag(compat),CC_PIN)
         self.assertEqual(guard.SECURITY_MIN_VERSION, guard.stable_version(compat['commandCenter']['minVersion']))
-        for version in ['6.1.0','7.0.0','7.1.0','7.1.1','7.1.2','7.1.3','7.1.4','7.1.5','7.2.0','7.3.0']:
+        for version in CC_BELOW_FLOOR_BARE:
             with self.assertRaises(ValueError): assert_min_version(version,compat)
             with self.assertRaises(ValueError): guard.assert_cc_package({'version':version})
-        guard.assert_cc_package({'version':'7.3.1'})
+        guard.assert_cc_package({'version':CC_FLOOR_BARE})
         compat['commandCenter']['pinnedTag']=None
-        self.assertEqual(resolve_cc_tag(compat,['v7.0.0','v7.3.1']),'v7.3.1')
+        self.assertEqual(resolve_cc_tag(compat,['v7.0.0',CC_FLOOR]),CC_FLOOR)
         with self.assertRaises(ValueError): resolve_cc_tag(compat,['v7.0.0'])
 
     def test_cli_node_and_checkout_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             directory=Path(td); node=directory/'node'; package=directory/'package.json'
-            package.write_text('{"version":"7.3.1"}')
+            package.write_text(json.dumps({'version':CC_FLOOR_BARE}))
             env={**os.environ,'PATH':str(directory)}
-            for node_version,cc_version,expected in [('v22.12.0','7.3.1',1),('v22.13.0','7.0.0',1),('v22.13.0','7.1.0',1),('v22.13.0','7.1.1',1),('v22.13.0','7.1.2',1),('v22.13.0','7.1.3',1),('v22.13.0','7.1.4',1),('v22.13.0','7.1.5',1),('v22.13.0','7.3.0',1),('v22.13.0','7.3.1',0)]:
+            # Every below-floor CC version must fail closed (expected 1) even on a
+            # good Node; the floor itself must pass (expected 0). Derived from
+            # CC_BELOW_FLOOR_BARE so advancing the floor cannot silently shrink
+            # this boundary sweep.
+            cases=[('v22.12.0',CC_FLOOR_BARE,1)]
+            cases+=[('v22.13.0',v,1) for v in CC_BELOW_FLOOR_BARE]
+            cases.append(('v22.13.0',CC_FLOOR_BARE,0))
+            for node_version,cc_version,expected in cases:
                 node.write_text('#!/bin/sh\nprintf "%s\\n" "'+node_version+'"\n');node.chmod(0o755)
                 package.write_text(json.dumps({'version':cc_version}))
                 result=subprocess.run([sys.executable,str(ROOT/'shared-utils/cc_runtime_preflight.py'),'--checkout',td],env=env,capture_output=True,text=True)
@@ -102,7 +136,7 @@ class Compatibility(unittest.TestCase):
             directory=Path(td);(directory/'package.json').write_text('{"version":"7.0.0"}')
             result=runner.BoxResult('fixture',dry_run=False)
             with patch.object(guard,'check_node',side_effect=ValueError('unsupported Node')), patch.object(runner.subprocess,'run') as run:
-                runner.step_pull_cc({'cc_dir':directory},'v7.3.1',result,False)
+                runner.step_pull_cc({'cc_dir':directory},CC_FLOOR,result,False)
                 run.assert_not_called()
                 self.assertNotEqual(result.steps.get('pull-cc'),'ok')
             result=runner.BoxResult('fixture',dry_run=False)
@@ -110,7 +144,7 @@ class Compatibility(unittest.TestCase):
                 subprocess.CompletedProcess([],0,''),
                 subprocess.CompletedProcess([],0,'{"version":"7.0.0"}')
             ]) as run:
-                runner.step_pull_cc({'cc_dir':directory},'v7.3.1',result,False)
+                runner.step_pull_cc({'cc_dir':directory},CC_FLOOR,result,False)
                 self.assertEqual(run.call_count,2)  # fetch/read only; old updater never invoked
                 self.assertNotEqual(result.steps.get('pull-cc'),'ok')
             for method,step in [(runner.step_build_cc,'build-cc'),(runner.step_restart_cc,'restart-cc')]:
