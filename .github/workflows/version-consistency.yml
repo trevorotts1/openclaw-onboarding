@@ -302,6 +302,29 @@ jobs:
         run: |
           set -euo pipefail
 
+          # ── Wait for THIS release's tag before scanning (PUSH only) ─────────
+          # G2 iterates whatever tags are PRESENT in the checkout, so on the very
+          # push that cuts a release it can sample a tag set that does not yet
+          # contain the new tag and pass VACUOUSLY -- never validating the one
+          # release it exists to validate. Measured 2026-09-15: v25.1.3 was cut
+          # with NO CHANGELOG header, G2 reported success on the v25.1.3 push
+          # (09:04), and the missing entry only surfaced hours later as a red G2
+          # on unrelated PRs, where it blocked work that had nothing to do with
+          # it. The tag itself is published by auto-tag-on-merge.yml racing this
+          # job, so waiting is the only way to see it.
+          #
+          # The fetch inside the loop is load-bearing: actions/checkout fetched
+          # the tag set once at job start, so without it a tag pushed after
+          # checkout stays invisible and the loop is a 300s sleep.
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            _WANT=$(head -1 version | tr -d '[:space:]')
+            for _i in $(seq 1 60); do
+              git fetch --tags --quiet origin 2>/dev/null || true
+              git tag -l "$_WANT" | grep -qx "$_WANT" && break
+              sleep 5
+            done
+          fi
+
           FAIL=""
           CHECKED=0
 

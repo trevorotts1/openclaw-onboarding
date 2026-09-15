@@ -3617,9 +3617,10 @@ main() {
         echo
       else
         # CONTENT-AWARE EXIT (fleet fix). A matching stamp is NOT evidence that
-        # the installed content matches canonical. ONE string governs 62 skill
-        # trees plus shared-utils/ and universal-sops/ — and neither of those two
-        # carries a version file at all. Exiting here meant an arbitrarily
+        # the installed content matches canonical. ONE string governs every
+        # numbered skill tree (69 today, archived included) plus shared-utils/
+        # and universal-sops/ — and neither of those two carries a version file
+        # at all. Exiting here meant an arbitrarily
         # drifted box was never compared, never repaired, and still reported
         # success: the fleet-wide false-success path. We now continue far enough
         # to PULL the source and diff it against the box (see CONTENT RECHECK
