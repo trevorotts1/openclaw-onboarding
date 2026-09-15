@@ -7,7 +7,12 @@
 
 - **The rule is satisfied just as well by draining.** When the allowance cannot cover the whole bank, the gate now voids the **first `allowance` banked units** instead of refusing: the receipt still pays for exactly what it invalidates, and repeated receipts drain the bank in chunks of three rather than never. Units are taken in `wanted_items` order — deck order — so a partially drained bank is a **prefix** of the deck rather than a scattering, which is easier to reason about and to watch.
 
-  When the allowance *does* cover the bank, behaviour is unchanged: everything is voided at once. When **nothing** is banked, the gate still refuses and says so.
+  When the allowance *does* cover the bank, everything banked is voided at once. When **nothing** is banked the gate refuses (with `allowance < wanted`; with `allowance >= wanted` there is simply nothing to void, and only units that ARE banked are ever named).
+
+  **Three corrections the independent review's DO-NOT-MERGE required, and the first two were real bugs in the first version of this drain:**
+  - **the cursor must move.** Taking the first `allowance` units in *deck order* re-voided the SAME prefix forever: the units it re-authored re-banked (still `BANKED_STATUSES`) and were again the front of the order, so receipt #2 voided the same three and the remaining five were unreachable — while the sidecar told the operator to "re-issue the receipt to drain the rest", which was unimplementable. Candidates are now ordered **stalest first** by `(updated_at, revision)`, both of which advance on a re-author; verified against the live store, whose stale-first order differs from deck order.
+  - **the void must be sized against what the receipt has to pay for anyway.** Voiding a banked unit while a sibling is still pending put two units in competition for one reservation: measured with the REAL reservation seam, an allowance-1 receipt voided one unit of a mixed bank, the pending sibling then took the single reservation, and the newly re-authored unit was overwritten `ok` -> `failed` in **10 of 12 runs** (on `origin/main` the same fixture refused and destroyed nothing, 0/12). Pending work is now subtracted from the void budget (`_void_budget = allowance - must_pay`).
+  - only units that are actually banked are named in `voided_units`.
 
 - The sidecar records which units were voided, whether the drain was complete (`voided_all`), and the allowance, so an operator can see that the bank is not yet clear and re-issue.
 

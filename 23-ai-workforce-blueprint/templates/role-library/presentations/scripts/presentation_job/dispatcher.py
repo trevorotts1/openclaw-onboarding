@@ -6949,11 +6949,44 @@ def _dispatch_phase_fanout_units(
         _banked_now = [u["key"] for u in wanted_items
                        if str((_store_state.get(u["key"]) or {}).get("status") or "")
                        in _us.BANKED_STATUSES] if _us is not None else []
+        # D2 (independent review of PR #1154, HIGH): the void must be sized against
+        # what the receipt has to pay for ANYWAY. Voiding a banked unit while a
+        # sibling is still pending makes the two compete for the receipt's
+        # allowance: measured with the REAL reservation seam, an allowance-1
+        # receipt voided one unit of a mixed bank, the pending sibling then lost the
+        # single reservation, and the newly re-authored unit was overwritten
+        # `ok` -> `failed` in 10 of 12 runs. On origin/main the same fixture refused
+        # and destroyed nothing (0/12). That is exactly the "parked AND unbuildable"
+        # hazard the sufficiency gate exists to prevent, so the pending work is
+        # subtracted from the void budget FIRST.
+        _must_pay = [u["key"] for u in wanted_items
+                     if u["key"] not in set(_banked_now) and u["key"] not in reuse]
+        _void_budget = max(0, _allowance - len(_must_pay))
+        # D1 (same review, HIGH): candidates are ordered STALEST FIRST, not in deck
+        # order. Deck order made the drain re-void the SAME prefix forever: the
+        # three units it re-authored re-banked (still BANKED_STATUSES) and were
+        # again the front of wanted order, so receipt #2 voided 01/02/03 again and
+        # sections 04-08 were unreachable -- while the sidecar told the operator to
+        # "re-issue the receipt to drain the rest", which was unimplementable.
+        # `updated_at`/`revision` both advance on a re-author, so a stale-first
+        # cursor moves forward on every receipt.
+        def _staleness(k: str):
+            _r = _store_state.get(k) or {}
+            try:
+                _rev = int(_r.get("revision") or 0)
+            except (TypeError, ValueError):
+                _rev = 0
+            return (str(_r.get("updated_at") or ""), _rev)
+        _banked_stale_first = sorted(_banked_now, key=_staleness)
         if _allowance >= _n_units:
-            _void_keys = [u["key"] for u in wanted_items]
+            # D4 (same review, LOW): report exactly the units that ARE banked. The
+            # previous arm named every wanted unit even when none were banked, so a
+            # phase with an empty bank produced `bank_voided_by_receipt` over units
+            # that had never been banked.
+            _void_keys = list(_banked_stale_first)
             _void_all = True
         else:
-            _void_keys = _banked_now[:_allowance]
+            _void_keys = _banked_stale_first[:_void_budget]
             _void_all = False
         if not _void_keys:
             _force_reauthor = False
