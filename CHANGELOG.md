@@ -1,3 +1,25 @@
+## [v25.1.28]  -  2026-09-16  -  The prompt phase declares the render index it reads, unblocking the deck
+
+### What Changed
+- **PD-TEST-156 — the deck's render index had no producer, and the one seam that could write it was keyed on a declaration the phase needing it did not make. A CIRCULAR deadlock.** `working/copy/slides.json` is the renderer's structured index. **No manifest phase declares it as `produces_artifact`**; instead the engine materialises it at dispatch time, immediately before the executor branch, via `slides_assembly.ensure_slides_json()` (`phases.py:2516`) — and that seam is deliberately keyed on the phase's own declaration:
+
+  ```python
+  if not slides_assembly.phase_consumes_slides_json(phase.consumes):
+      return                      # no-op
+  ```
+
+  `P4-PROMPT` is a phase that **needs** the index but did **not declare** it. `_dispatch_prompt_phase_parallel` (`dispatcher.py:4642`) reads `working/copy/slides.json` directly to normalize its per-slide payloads and refuses with *"P4-PROMPT parallel dispatch could not normalize any slide payloads from slides.json/arc_allocation.json"* — the exact string on the live ledger.
+
+  **The circle:** the only phases that DID declare the index were `P-STYLE-PREVIEW`, `P-STYLE-SPEC` and `P4-RENDER` — and every one of them consumes `working/prompts/slide-*.txt`, which is what `P4-PROMPT` **produces**. So every phase that could trigger the producer was **downstream of the phase that was failing for want of the artifact**: nothing could ever write the index, so `P4-PROMPT` could never succeed, so the render could never be reached. This is the PD-TEST-151 class (a gate running without an artifact it needs) but it blocked the DECK rather than one QC gate, and it is why the walk sat at `P4-PROMPT` with the run otherwise unblocked.
+
+  **Fix: add `working/copy/slides.json` to `P4-PROMPT`'s `consumes`.** One field, and **DAG-NEUTRAL by construction**: because no phase PRODUCES the index, declaring it creates **no artifact edge** at all — verified by comparing `execution_plan.build_edges()` before and after, which is byte-identical. So the fix turns the producer seam ON without reordering the plan and without any cycle risk. Declaring set: `P-STYLE-PREVIEW`, `P-STYLE-SPEC`, `P4-RENDER` → **plus `P4-PROMPT`**.
+
+  **The producer itself was never missing code.** `test_pd081_slides_json_producer.py` is 17 passed / 1 failed, and the single failure is the already-numbered PD-TEST-123 (`build_deck._count_output_slides` returns 3 on a run dir with no copy and no slides.json, instead of `None`). This was purely a **declaration** gap.
+
+### Tests
+- New `tests/test_pd156_prompt_phase_declares_slides_index.py` (3 cases), and it is **derived from the code rather than restating the fix**: it parses `dispatcher.py`, finds `_dispatch_prompt_phase_parallel` — the function that normalizes per-slide payloads straight out of the index — extracts the phase ids that function names, and requires each to satisfy `slides_assembly.phase_consumes_slides_json()`. A second phase routed through that path is therefore caught rather than silently deadlocked. Two further cases pin the anti-vacuity conditions (the function still exists and names a real phase; at least one phase declares the index) and the **DAG-neutrality** claim (no phase produces the index, so declaring it must add no edge — asserted against `build_edges`, not asserted in prose).
+- **Negative control:** removing the one declaration again fails the guard with the offending phase and the exact remediation, `"these phases read working/copy/slides.json during DISPATCH but do not DECLARE it in consumes: ['P4-PROMPT']"`. Restored, 3 passed.
+
 ## [v25.1.27]  -  2026-09-16  -  A phase stranded `running` by a dead engine is reclaimed on resume
 
 ### What Changed
