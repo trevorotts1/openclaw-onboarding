@@ -1,3 +1,26 @@
+## [v25.1.27]  -  2026-09-16  -  A phase stranded `running` by a dead engine is reclaimed on resume
+
+### What Changed
+- **PD-TEST-155 — a run could be UNBLOCKED and still completely INERT.** `Engine._ready_set()` treats `running` as a status it neither plans nor expires: the phase is collected into the `running` bucket and `continue`d. Only the phase's OWN wait loop (`phases.py:3438-3446`) can time it out, and that loop only runs while an engine is executing that phase. So when an engine dies mid-wait — a crash, an OOM, a reboot, or an operator stopping a spinning engine — the phase stays `running` **forever**: `_phase_terminal_bad` does not apply to it, so its descendants are not even quarantined, they just emit `waiting_dependency` on it for the rest of the run's life.
+
+  Measured live on `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, immediately after the PD-TEST-151 repin + `--resume` had correctly cleared the block:
+  * three phases (`P1Q-COPY-QC`, `P-TYPO-QC`, `P4-PROMPT`) left `status: running` by the previous engine; every one of their dispatch ledgers named `dispatcher-64201-…`, a pid that no longer existed;
+  * `waited_seconds` **frozen** at 602 / 600 / 450 across minutes of sampling while `state.json`'s `updated_at` kept advancing every ~15 s — i.e. the checkpoint/timeout loop for those phases was not running at all;
+  * **zero** provider requests for the whole 11-minute window;
+  * the engine log carried **only** identical `phase.waiting_dependency` lines (the PD-TEST-116 loop), so the sweep never reached the phase loops and F11's `_respawn_dispatcher_if_dead` never got a chance to fire;
+  * all **29** pending phases were downstream of those three.
+
+  Two of the three had already been judged satisfied by the dispatcher (`status: skipped_satisfied`) with their artifacts **on disk** (912 B and 2,006 B) — they needed only to be re-entered so the existing wait/verify path could finish them. **No supported verb could fix this**: `--invalidate-phase` refuses a phase that is not `done`, and `--watchdog` only scans and reports. Hand-editing `state.json` was and remains unacceptable.
+
+  **Fix.** `readmit_retryable_phases` — the shared `--run`/`--resume` unpark helper, called only from `__main__._reset_parked_state` on the startup path *inside* `RunLock`'s exclusive `flock` — now also reclaims a `running` phase whose dispatcher worker is provably gone. The verdict comes from the existing orphan-adjudication seam, not from the lock argument alone: a new `dispatcher.running_worker_owner_state()` mirrors `park_marker_owner_state()` exactly (same four-state vocabulary, same pid-reuse guard via `_autospawn._process_start_epoch` against the ledger's own `last_seen_at`, same fail-closed degradation to `"unknown"` when the module will not import). Only a positive `"orphaned"` verdict re-opens the phase; `"live"` **and** `"unknown"` are honoured, so a phase whose worker might still be finishing its artifact is never reclaimed out from under it. The reclaim is recorded in the readmission audit trail together with the `waiting_for` artifact and the frozen `waited_seconds`, so the record says why a `running` phase is suddenly pending again.
+
+  **The paid budget is not bypassed.** The durable ceiling remains the per-phase ledger (`.dispatch-state/<phase>.json`: `blocked`, `paid_attempts`, `DISPATCH_RETRY_CAP`), enforced by `should_dispatch`/`_reserve_paid_attempt` — neither of which this touches. The reclaim only re-opens the phase for planning; it grants no attempt.
+
+### Tests
+- New `tests/test_pd155_orphaned_running_reclaim.py` (10 cases), pinning both directions: a `running` phase whose ledger names a DEAD worker is re-admitted to `pending` (with the audit record carrying `reclaimed_orphaned_running`, the `waiting_for` artifact and `waited_seconds`); a phase whose worker is **alive**, one whose ledger is **corrupt**, one whose ledger names **no adjudicable worker**, and one that is already `done` are each left exactly as they are. Non-regression cases cover FAILED / QUARANTINED re-admission, an operator park still being honoured, and the reclaim coexisting with the old readmission in a single pass.
+- **Negative control:** disabling the `running` branch fails exactly the two reclaim cases and nothing else. Restored, this file plus `test_pd135_blocked_readmission.py` is **38 passed**.
+- Broader engine set (`pd155`, `pd135`, `pd060`, `f9f10f11`, `f16`, `fanout_no_second_engine`, `fault17`, `pd010`): **95 passed, 3 failed** — and those identical **3** cases fail on pristine `origin/main` too, so they are pre-existing, not regressions from this change.
+
 ## [v25.1.26]  -  2026-09-16  -  A gate that reads the rendered slides now WAITS for them
 
 ### What Changed

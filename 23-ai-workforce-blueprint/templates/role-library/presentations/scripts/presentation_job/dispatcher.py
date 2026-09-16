@@ -8639,6 +8639,77 @@ def park_marker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
     return "live", f"owner {worker} is alive (pid {pid})"
 
 
+def running_worker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
+    """Adjudicate whether the dispatcher worker that last serviced this phase is
+    still there to finish it. The exact counterpart of `park_marker_owner_state`
+    for a phase the Engine still calls `running`.
+
+    WHY THIS EXISTS (PD-TEST-155). `_ready_set()` skips any phase whose status is
+    `running` -- it is collected into the `running` bucket and `continue`d, never
+    re-planned and never expired. That is correct while an engine is genuinely
+    working the phase, but nothing ever revisits it when the engine that owned it
+    died mid-wait: the phase stays `running` forever, `_phase_terminal_bad` does
+    not apply to it (so its descendants are not even quarantined, they just
+    `waiting_dependency` on it), and the run becomes INERT with a full queue and
+    zero dispatches. Measured on pres-operator-1d269693: three phases stranded
+    `running` by a killed engine, `waited_seconds` frozen, 0 provider requests
+    for 11 minutes, 29 pending phases all downstream of them.
+
+    Returns (state, detail), state one of:
+      "absent"   -- no ledger row, so no worker is claimed; nothing to honour.
+      "live"     -- the ledger names a worker pid that is still running.
+      "orphaned" -- the ledger names a worker pid that is gone (or was recycled).
+      "unknown"  -- ownership cannot be established; the caller MUST treat this
+                    as live (fail closed). A degraded install must never start
+                    reclaiming phases out from under a live worker.
+
+    Read-only, exactly like `park_marker_owner_state`: acting on the verdict is
+    the caller's job, and the caller must NOT touch the paid ledger."""
+    path = _ledger_path(run_dir, phase_id)
+    try:
+        if not path.is_file():
+            return "absent", "no dispatch ledger for this phase"
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return "unknown", f"dispatch ledger unreadable ({exc.__class__.__name__})"
+    except json.JSONDecodeError:
+        return "unknown", "dispatch ledger is not valid JSON"
+    record = raw if isinstance(raw, dict) else {}
+    if not record:
+        return "unknown", "dispatch ledger holds no record to adjudicate"
+    worker = str(record.get("worker") or "").strip()
+    m = re.match(r"^dispatcher-(\d+)-[0-9a-fA-F]{4,32}$", worker)
+    if not m:
+        # A row with no parseable worker (an older shape, or a hand-written
+        # record): there is no pid to adjudicate, so the honest answer is
+        # "not established".
+        return "unknown", (f"ledger worker {worker!r} names no adjudicable "
+                           "dispatcher pid")
+    pid = int(m.group(1))
+    if pid == os.getpid():
+        return "live", f"{worker} is this process"
+    if not _autospawn._pid_is_alive(pid):
+        return "orphaned", f"worker {worker} is gone: pid {pid} names no process"
+    seen = record.get("last_seen_at") or record.get("updated_at")
+    try:
+        from datetime import datetime
+        seen_epoch = datetime.fromisoformat(
+            str(seen).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        seen_epoch = None
+    started = _autospawn._process_start_epoch(pid)
+    if started is None or seen_epoch is None:
+        return "live", (f"worker {worker} is alive (pid {pid}); its start could "
+                        "not be compared with the ledger timestamp, so the "
+                        "worker is honoured")
+    if started > seen_epoch + _PARK_MARKER_RECYCLE_GRACE_S:
+        return "orphaned", (
+            f"worker {worker} is gone and its pid was recycled: the process "
+            f"holding pid {pid} started {started - seen_epoch:.0f}s AFTER the "
+            "ledger was last written")
+    return "live", f"worker {worker} is alive (pid {pid})"
+
+
 def _read_ledger(run_dir: Path, phase_id: str) -> Dict[str, Any]:
     try:
         obj = json.loads(_ledger_path(run_dir, phase_id).read_text(encoding="utf-8"))
