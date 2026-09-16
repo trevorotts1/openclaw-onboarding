@@ -73,7 +73,9 @@ NON_RENDERED: Dict[str, str] = {
     "HOOK_REFRAIN": "yes/no + where the hook sits",
     "TEXT_ANCHOR": "a layout token (bottom band | left block | ...)",
     "EMPHASIS": ("which words take the accent colour -- a DESIGN instruction; the accent word already sits inside "
-                 "the headline, and the engine's own P4-PROMPT contract lists EMPHASIS among the fields that are "
+                 "the headline, and the engine's own P4-COPY contract (dispatcher.py ARTIFACT_CONTRACTS['P4-COPY'], "
+                 "the AF-C8 paragraph at :1136-1143 -- corrected from an earlier revision of this file that cited "
+                 "P4-PROMPT) lists EMPHASIS among the fields that are "
                  "'internal production metadata never rendered on the slide'"),
     "PRESENTER NOTE": ("the SOP says these are 'sentences the speaker says aloud "
                        "that are NOT on the slide'"),
@@ -114,6 +116,25 @@ _LIVE_BLOCK = "\n".join([
 #: Lines that are engine bookkeeping but are NOT `FIELD:` lines, so the field
 #: classification cannot describe them. They are stripped structurally.
 _NON_FIELD_BOOKKEEPING = ("QC-NOTE", "<!--", "---")
+
+#: The OTHER live shape of SUPPORTING: an INLINE third text block, which is what
+#: 7 of the live deck's 8 slides use (slide 3 verbatim). PD-TEST-169 review
+#: finding: the first fixture used ONLY the bare `SUPPORTING:` + bullets shape,
+#: so adding SUPPORTING to _FIELD_LINE_RE -- which would delete every slide's
+#: supporting line -- still left all 6 tests GREEN. This block pins the VALUE.
+_LIVE_BLOCK_INLINE_SUPPORTING = "\n".join([
+    "SECTION: higher-priority-reframe",
+    "PURPOSE: Reframe the department as the path to shipping finished packages.",
+    "ARCHETYPE: A2",
+    "LADDER: none",
+    "HEADLINE: Ship Finished Packages, Not Unfinished Files",
+    "EMPHASIS: \"Ship Finished Packages\"",
+    "SUBHEAD: You become the person who requests first.",
+    "SUPPORTING: Research helps you make better decisions.",
+    "PROOF USED: none",
+    "PEOPLE: no",
+    "TEXT_ANCHOR: right block",
+])
 
 
 def _sop_fields() -> Set[str]:
@@ -236,6 +257,30 @@ def test_every_field_regex_token_is_a_contract_field():
         "the contract is missing them (add them there first) or they are invented "
         "-- an invented token silently deletes real slide copy, and the "
         "contract->classification tripwire cannot see it.")
+
+
+def test_inline_supporting_value_survives_and_is_positioned_as_the_third_block():
+    """PD-TEST-169 review finding: the bare-`SUPPORTING:` fixture could not catch
+    SUPPORTING being added to `_FIELD_LINE_RE`, which would silently DELETE every
+    slide's supporting line. 7 of the live deck's 8 slides use the INLINE shape.
+
+    `slides_copy.md`'s `SUPPORTING:` is defined by the copy contract as "third
+    text block if any -- stat, label, or CTA chip -- or NONE", so its VALUE is
+    slide text and must reach copy[]; only its LABEL must not.
+    """
+    lines = sa.copy_lines(_LIVE_BLOCK_INLINE_SUPPORTING)
+    joined = "\n".join(lines)
+    assert "Research helps you make better decisions." in lines, (
+        "the inline SUPPORTING value was dropped from copy[] -- it is slide text "
+        f"(the contract calls SUPPORTING the 'third text block'). Got: {lines}")
+    assert not any(re.match(r"(?i)^\s*SUPPORTING\s*:", ln) for ln in lines), (
+        f"the SUPPORTING: label reached copy[]: {lines}")
+    # and it lands in the third-block position the positional consumers read
+    assert lines[0] == "Ship Finished Packages, Not Unfinished Files", lines
+    assert lines[1] == "You become the person who requests first.", lines
+    assert lines[2] == "Research helps you make better decisions.", lines
+    assert joined.count("Research helps you make better decisions.") == 1, (
+        "the supporting value was duplicated")
 
 
 def test_the_guard_is_not_vacuous():

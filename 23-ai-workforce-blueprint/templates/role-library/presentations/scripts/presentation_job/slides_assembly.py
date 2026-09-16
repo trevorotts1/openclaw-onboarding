@@ -191,13 +191,22 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #: SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those are the
 #: slide's words -- and, since PD-TEST-169, they appear WITHOUT their labels.
 #:
-#: EMPHASIS joined this set in PD-TEST-169. The engine's OWN P4-PROMPT contract
-#: (dispatcher.py, the AF-C8 point) says the fields counting toward the on-slide
-#: word total are "exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING",
-#: and that "SECTION, PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PROOF USED, PEOPLE,
-#: HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata
-#: never rendered on the slide". The accent word already appears INSIDE the
-#: headline, so the EMPHASIS entry is redundant for the renderer as well.
+#: EMPHASIS joined this set in PD-TEST-169. The engine's OWN **P4-COPY**
+#: contract (dispatcher.py ARTIFACT_CONTRACTS["P4-COPY"], opened at :979; the
+#: AF-C8 paragraph is at :1136-1143) says the fields counting toward the
+#: on-slide word total are "exactly: HEADLINE, SUBHEAD, and every line under
+#: SUPPORTING", and that "SECTION, PURPOSE, ARCHETYPE, LADDER, EMPHASIS,
+#: PROOF USED, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal
+#: production metadata never rendered on the slide". The accent word already
+#: appears INSIDE the headline, so the EMPHASIS entry is redundant for the
+#: renderer as well.
+#:
+#: Corrected attribution, PD-TEST-169 review finding: an earlier revision of
+#: this comment cited "the P4-PROMPT contract". The quote is in **P4-COPY**.
+#: P4-PROMPT's own point 5 (dispatcher.py :1329-1334) corroborates the same
+#: conclusion in different words ("quote the slide's ACTUAL headline (and
+#: subhead/supporting line if it has one) from slides_copy.md VERBATIM"), but
+#: it is not the passage quoted here.
 _FIELD_LINE_RE = re.compile(
     r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
     r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
@@ -216,6 +225,38 @@ _FIELD_LINE_RE = re.compile(
 #: subhead, [2] as the kicker and [3:] as bullets; slide_craft.AF-OBI-2
 #: (check_obi_headline_words) grades copy[0] as the headline. With labels present
 #: those reads were grading "HEADLINE: ..." and "EMPHASIS: ..." as slide text.
+#:
+#: !! KNOWN INCOMPLETE -- REQUIRED BEFORE THIS CAN SHIP (PD-TEST-175) !!
+#: That positional model is only *approximately* right, and it was previously
+#: propped up by accident: the `HEADLINE: ` prefix (10 chars) and the `EMPHASIS:`
+#: line supplied padding that satisfied bands the real copy does not. Removing
+#: them changes _chk_copy_density's verdicts in BOTH directions, and that gate is
+#: FATAL (a non-empty return makes build_deck print "FATAL: PROCESS PREFLIGHT
+#: FAILED" and sys.exit(3)). All three cases below were reproduced against the
+#: real gate, feeding each revision's OWN copy_lines() output into it:
+#:
+#:   (a) PASS -> FAIL, pure-typography HOOK slide. The hook line alone plus
+#:       `SUPPORTING: NONE` used to be padded past COPY_SLIDE_TOTAL_CHAR_FLOOR
+#:       (40) by the labels. Now "NONE" (4 chars) is graded against the SUBHEAD
+#:       20-110 band and the 39-char total fails the 40 floor. The doctrine's
+#:       own hook floor (COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12) exists but is
+#:       switched off (COPY_HOOK_EXEMPTION_ENFORCED = False).
+#:   (b) PASS -> FAIL, slide with NO SUBHEAD -- which the copy contract calls
+#:       OPTIONAL. The first body line is inferred to be the subhead and fails
+#:       the 20-char floor.
+#:   (c) FAIL -> PASS, bare `SUPPORTING:` slide whose FIRST BULLET is 38 chars.
+#:       The bullet moves out of the 8-30 BULLET band into the <=40 KICKER band,
+#:       so an identical, unchanged copy now passes. This one MASKS a violation
+#:       rather than creating one, and it is why "BULLET offenders 9 -> 0"
+#:       overstates the improvement.
+#:
+#: The real fix is to stop inferring structure from position: the bands describe
+#: the copywriter's FIELDS, so they must be measured against the fields. That
+#: needs the producer's structure to reach the gate (a `copy_fields` key on
+#: slides.json -- which requires slides.schema.json to allow it, in BOTH trees,
+#: since GATE 8 hash-locks that file, plus the waiver pins in
+#: scripts/shared-script-authority.json). Tracked as PD-TEST-175; do NOT merge
+#: this producer change without it.
 _LABEL_STRIP_RE = re.compile(r"(?i)^\s*(?:HEADLINE|SUBHEAD|SUPPORTING)\s*:\s*")
 
 #: ANY HTML comment is engine bookkeeping, not pixels -- not just the ARC marker.
