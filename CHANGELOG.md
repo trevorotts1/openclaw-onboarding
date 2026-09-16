@@ -1,3 +1,28 @@
+## [v25.1.33]  -  2026-09-16  -  A unit's own retry is no longer refused by its own in-flight paid reservation
+
+### What Changed
+- **PD-TEST-177 — PD-TEST-161 introduced a REGRESSION that made `DISPATCH_RETRY_CAP` unreachable and mislabelled the cause of every transient fault.** `_reserve_paid_attempt`'s double-reserve guard refuses a second attempt while the unit already holds a `reserved` row, unless the row's owner process is provably gone — and `_reservation_owner_is_gone()` answers `False` for `pid == os.getpid()` (fail-closed), so a process's **own** row is treated as live. But a unit's retries run **inside** the worker (`parallel_prompt_worker._execute_slide`'s `while attempt < RETRY_CAP` loop), and the rows are settled only **after the whole wave returns** (`_settle_unit_paid_attempts`, called by `_dispatch_prompt_phase_parallel`). Each attempt opens its own `paid_unit_scope`, so it carries a **different** token and never takes the same-token idempotent early return.
+
+  Measured by an independent delta review driving the real wave with only `urllib.request.urlopen` stubbed — identical 1-slide wave whose transport raises HTTP 500:
+
+  | | transport calls | `paid_attempts` | reported class |
+  |---|---|---|---|
+  | pre-PD-TEST-161 | **3** | 3 | `server_error` ×3 |
+  | PD-TEST-161 (shipped) | **1** | 1 | `server_error`, then `budget_deferred` ×2 |
+
+  Reproduced with **no declaration at all** (`phase_paid_budget: null`, paid 1 vs 3), which rules the declaration out as the cause. So **one transient 5xx / 429 / timeout lost the slide for the whole wave**, and the durable record named a *budget* problem where the **provider** had actually failed — the same masking class as PD-TEST-162.
+
+  **Fix:** the guard now treats a reservation left by **this same thread** for **this same unit** as what it provably is — an attempt that has already ENDED, because a worker task runs one unit sequentially and a unit's retries all happen inside that one task. The guard's real job is unchanged: stopping two **concurrent** attempts for one unit. A different thread (even in this process), a different process, or a row that predates this field still refuses.
+
+  **Why the thread and not `worker_id`:** the prompt path calls `dispatch_complete(system_prompt, user_prompt, phase_id=…, run_dir=…)` and deliberately does **not** pass `worker_id` (`parallel_prompt_worker.py`), so it is `None` there and cannot identify an owner. Thread identity can, paired with the `unit_key` the lookup is already keyed on. Threads are reused across units (`ThreadPoolExecutor(thread_name_prefix="p4prompt")` — `p4prompt_0` handled slides 1 and 4 in one measured run), so a thread name alone identifies no unit; the pair does. The reservation records its `thread`, and a row **without** that field still refuses, so the change is fail-closed on any already-reserved row.
+
+  **Spend is unchanged and still bounded:** the per-unit ceiling (`spent >= DISPATCH_RETRY_CAP`) and the declared phase bound (`paid >= cap`) both run *before* this check, and every replacement still increments `seq` and `paid` — a retry is charged, not a free re-roll.
+
+  **Controls** (`tests/test_pd177_unit_own_retry_not_refused.py`, 5 cases): reverting the fix fails exactly the three that pin the regression (**3 failed / 2 passed**), and the two that assert the guard still refuses pass either way. Verified additionally that the full `DISPATCH_RETRY_CAP` is now reachable and the ceiling still stops the next attempt; that a **different thread** is still refused and the refusal is never charged; and that a row with no `thread` field is still refused (fail-closed).
+
+### Why It Mattered
+The retry allowance the engine believes it has was not the allowance it had: for transient provider faults a slide got **one** attempt while the ledger, the retry cap and the operator-facing reason all described a budget policy. Restoring the retry is a prerequisite for a deck whose prompts can survive a single 5xx — and for the failure class recorded against a slide to be the real one.
+
 ## [v25.1.32]  -  2026-09-16  -  `MOVE TAG:` was the engine's own routing metadata sitting in `copy[0]` — so a slide's HEADLINE was a field name
 
 ### What Changed
