@@ -1497,7 +1497,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/copy/priority_shift_spec.json",
-        "working/copy/slides_copy.md"
+        "working/copy/slides_copy.md",
+        "renders/slide-*.png"
       ]
     },
     {
