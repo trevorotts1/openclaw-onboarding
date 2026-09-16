@@ -681,6 +681,25 @@ _READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
 #: checker verdict, however it is worded.
 _VERIFIER_VERDICT_PREFIX = "substance check failed"
 
+#: PD-TEST-194: the identifiers a substance verdict names, used to identify WHICH
+#: EPISODE a park belongs to by identity rather than by a text prefix (this
+#: checker's verdict list is non-deterministic in both order and membership
+#: between two attempts of the same episode -- see `_block_is_verifier_sourced`).
+#:
+#: THE CHECK LABEL IS NOT AN IDENTITY. phase_verifiers builds each line as
+#:   f"AF-PROMPT-FLOOR slide-{sid}: {code} -- {detail}"
+#: so the literal label `AF-PROMPT-FLOOR` is hard-coded on EVERY line that checker
+#: emits. Intersecting ALL `AF-` tokens therefore makes the match a TAUTOLOGY for
+#: the only pairing that occurs in reality (block and heal are written by the same
+#: verifier call). Independent review MEASURED the consequence: two draws with
+#: wholly disjoint autofails (AF-AAA vs AF-ZZZ) matched on the constant label
+#: alone. The autofails are the part that varies, and the grammar places them
+#: AFTER `slide-<n>:`, so take them from there; keep the all-token form only as a
+#: fallback for a verdict that does not follow the grammar.
+_VERDICT_AUTOFAIL_RE = re.compile(r"slide-\d+\s*:\s*(AF-[A-Z0-9][A-Z0-9-]*)",
+                                  re.IGNORECASE)
+_VERDICT_ID_RE = re.compile(r"\bAF-[A-Z0-9][A-Z0-9-]*", re.IGNORECASE)
+
 
 def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
     """The dispatcher's own park marker for a phase (the F9 resolution, with
@@ -841,18 +860,119 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     if not events:
         return False
     last = events[-1]
-    if last.get("class") != heal.FAILURE_VERIFIER_SUBSTANCE:
-        return False
     ev_reason = str(last.get("reason") or "").strip()
     if not ev_reason:
+        return False
+    # PD-TEST-194 (F2, independent review): the heal event's `class` is DERIVED,
+    # not authoritative. phases.py writes it as heal.classify_failure(sub_reason),
+    # and _PROVIDER_ERROR_MARKERS matches bare words -- "provider", "timeout",
+    # "connection", "quota", "429". A genuine substance verdict that merely
+    # MENTIONS the transport is therefore labelled provider_error, and trusting
+    # that label left a measurable class of substance parks permanently
+    # unreopenable:
+    #   "substance check failed: AF-IMAGE-GROUNDING: the image provider returned
+    #    429 rate limit for slide-3."  -> class=provider_error -> gate (b) False.
+    # The reason is the structural fact; the label is an inference from it.
+    # Accept either, so the gate cannot be defeated by vocabulary alone.
+    if (last.get("class") != heal.FAILURE_VERIFIER_SUBSTANCE
+            and not ev_reason.lower().startswith(_VERIFIER_VERDICT_PREFIX)):
         return False
     # NOTE (delta review): the 60-char test is a SUBSTRING test, not episode
     # equality, so two verdicts from the same check that share a 60-char prefix
     # but different tails would match (measured: OP12). It is not reachable by an
-    # operator -- the only writer of a state blocked_reason is Engine._block, and
-    # all its call sites pass engine-authored text beginning with this prefix --
-    # so it is recorded here as a known looseness rather than left implicit.
-    return reason.startswith(ev_reason) or ev_reason[:60] in reason
+    # operator -- the only writer of a state blocked_reason is Engine._block
+    # (phases.py:4039). PD-TEST-194 (F3, independent review) CORRECTS the earlier
+    # wording here, which claimed "all its call sites pass engine-authored text
+    # beginning with this prefix": an AST sweep of all 21 _block/_fail_unit call
+    # sites found EXACTLY ONE whose reason literal starts with the prefix (the
+    # substance park itself). The guarantee is the CALL-SITE INVENTORY plus
+    # _block being the sole writer -- NOT a property every call site enforces,
+    # and nothing in this module enforces it. A future call site that prefixed
+    # operator prose with the verdict string WOULD be misread as a verifier park;
+    # that hole is latent, not reachable today, and is recorded rather than
+    # implied away.
+    if reason.startswith(ev_reason) or ev_reason[:60] in reason:
+        return True
+    # PD-TEST-194 -- THE EPISODE MATCH ABOVE IS STRUCTURALLY FRAGILE, and it was
+    # measured inert on the very park this function exists to reopen.
+    #
+    # Both gates above pass for the live P4-PROMPT park (the reason begins with
+    # the checker's prefix, and the newest heal event IS a verifier_substance
+    # event), and the function still returned False -- so PD-TEST-135's re-open
+    # path never fired and the phase could not be re-entered on ANY resume. The
+    # two verdicts, from the SAME checker on the SAME phase in the SAME episode:
+    #
+    #   blocked_reason : substance check failed: ... slide-1: AF-WORLD-SCALE -- ;
+    #                    ... AF-FACE-PROMPT-MISSING -- ; ... AF-LIGHT-...
+    #   heal ev_reason : substance check failed: ... slide-1: AF-FACE-PROMPT-MISSING
+    #                    -- ; ... AF-LIGHT-PROMPT-MISSING -- ; ... AF-P-DENSITY ...
+    #
+    # Neither `startswith` nor the 60-char substring can hold, because the lists
+    # differ in BOTH order and membership -- the block leads with AF-WORLD-SCALE
+    # (absent from the heal event) and the heal event carries AF-P-DENSITY
+    # (absent from the block). A text-prefix episode test assumes the checker
+    # emits one stable string; this checker does not. PD-TEST-190 measured that
+    # its omissions are NON-DETERMINISTIC (which required family is missing
+    # varies per draw), so the tail of the verdict -- and often its head -- moves
+    # BETWEEN ATTEMPTS OF THE SAME EPISODE. Any park whose verdict list shifted
+    # was therefore misclassified as an operator park and could never be
+    # reopened, which is the exact defect PD-TEST-135 was written to fix.
+    #
+    # WHAT IS ACTUALLY INVARIANT is the IDENTITY OF THE FAILING CHECKS, not their
+    # order or the prose between them. So compare the check-id SETS. This keeps
+    # every protection the note above relies on: the caller has already required
+    # the checker's own verdict prefix (so operator prose cannot reach here), and
+    # the newest heal event has already been required to be a verifier_substance
+    # event (so a stale verifier heal cannot reopen a LATER dispatcher budget
+    # park -- that park's text does not carry the prefix and is rejected at the
+    # gate above). A single shared failing check id, in an episode the phase's own
+    # newest verifier heal produced, is the same episode by identity rather than
+    # by string luck.
+    block_ids = _verdict_check_ids(reason)
+    heal_ids = _verdict_check_ids(ev_reason)
+    if block_ids and heal_ids:
+        return bool(block_ids & heal_ids)
+    if block_ids or heal_ids:
+        # PD-TEST-194 (mixed grammar, independent delta review): EXACTLY ONE side
+        # carries structural autofails. That side is specific; the other names no
+        # autofail at all, so it cannot CONTRADICT it -- and refusing here was a
+        # reachable FALSE NEGATIVE. Both shapes are real and produced by the SAME
+        # checker (phase_verifiers emits the detailed
+        # "AF-PROMPT-FLOOR slide-<n>: <code> -- <detail>" and the summary-only
+        # "AF-PROMPT-FLOOR: <verdict>" / "AF-PROMPT-FLOOR: check_prompt_qc_
+        # deterministic returned pass:false"). The heal is written from one draw
+        # and the block from the next, so a phase whose verdict flips between
+        # draws lands here -- measured on BASE as True, and my first cut of the
+        # fallback closure made it False, i.e. one narrow shape of the very
+        # defect this PR exists to fix.
+        #
+        # This does NOT reopen F1's tautology: that was two STRUCTURED verdicts
+        # with disjoint autofails matching on the constant label, which the
+        # intersection above still rejects.
+        return True
+    # PD-TEST-194 (adversarial self-probe, closing a hole F1 left open): when
+    # either verdict lacks the `slide-<n>:` grammar the set match CANNOT be used,
+    # and falling back to "all AF- tokens" silently reintroduced the very
+    # tautology F1 removed -- two grammar-less verdicts sharing only the constant
+    # label would match. That path is REACHABLE: phase_verifiers emits
+    #   "AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false"  and
+    #   f"AF-PROMPT-FLOOR: {verdict}"
+    # So when there is no structural identity to compare, fall back to the
+    # ORIGINAL text tests (already tried above) and otherwise stay CLOSED. A
+    # park we cannot identify is not a park we reopen.
+    return False
+
+
+def _verdict_check_ids(text: str) -> set:
+    """The autofail/check identifiers a substance verdict names, order-insensitive.
+
+    PD-TEST-194. A verdict reads
+    `substance check failed: <CHECK> slide-1: <AUTOFAIL> -- ; <CHECK> slide-1: ...`
+    so the identifiers are the `AF-...` autofail tokens plus the leading check
+    names. Extracting the `AF-` tokens is enough to identify the episode: they are
+    the checker's own vocabulary, they are not free prose, and two unrelated
+    episodes do not share them by accident."""
+    return {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(text or "")}
 
 
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
