@@ -26,6 +26,15 @@
 
   **Controls (each pinning one behaviour, so neither change can silently no-op):** reverting the label strip ⇒ `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` fails on the label half; removing `EMPHASIS` from `_FIELD_LINE_RE` ⇒ `test_every_non_rendered_field_is_stripped_from_copy` fails; the pre-existing reverse-direction tripwire (`test_every_field_regex_token_is_a_contract_field`) still proves no *invented* token silently deletes real copy.
 
+- **The same defect was reaching a DELIVERABLE, not just a gate: the workbook's slide titles were the labels.** `workbook_mapper._title_from_copy` documents itself as taking `copy[0]` *"verbatim"* and `_first_n_copy_lines` takes `copy[:n]` *"verbatim"* — so `copy[]` is the workbook's own text source. Measured on the live run's `working/copy/slides.json` vs the same block re-extracted through this fix, using the real workbook functions' own selection rules:
+
+  | | slides whose workbook title carried a field label or engine metadata |
+  |---|---|
+  | before | **8 of 8** |
+  | after | **0 of 8** |
+
+  Every one of the eight workbook titles was the literal string `"HEADLINE: <the real headline>"`, and `body[:3]` carried `HEADLINE:` / `EMPHASIS:` / `SUBHEAD:` as if they were workbook body text. Slide 08 remains `MOVE TAG: TRIGGER` — the PD-TEST-173 defect, here confirmed independently through a *second* consumer.
+
 - **`slides.schema.json` and the field regexes can no longer drift apart silently.** `tests/test_pd158_copy_metadata_not_rendered.py` reads the P4-COPY contract's own slide-block template out of `sops/slide-copywriter-sops.md` and asserts that **every** field it prescribes is classified here as either rendered or non-rendered, and that no token in `_FIELD_LINE_RE` names a field the contract never prescribes — the same tripwire shape that caught PD-TEST-156. A field added to the contract now fails this suite until someone decides whether it reaches the slide.
 
 ### Why It Mattered
