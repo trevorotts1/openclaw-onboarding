@@ -196,7 +196,26 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 _FIELD_LINE_RE = re.compile(
     r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
     r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
-    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT|VISUAL_ANCHOR)\s*:")
+    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT)\s*:")
+
+#: ANY HTML comment is engine bookkeeping, not pixels -- not just the ARC marker.
+#: PD-TEST-158, review finding: the P4-COPY contract itself INSTRUCTS the writer
+#: to "flag the gap in a comment in slides_copy.md" (slide-copywriter SOP 9.1), so
+#: the live copy carries lines like
+#:     <!-- QC-NOTE: AF-NO-BRANDED-METHOD -- intake.json has no named_methodology -->
+#: `_ARC_MARKER_RE` matched ONLY `<!-- ARC: ... -->`, so those 12 comments survived
+#: into copy[] and AF-P-VERBATIM then demanded them be BAKED INTO THE IMAGE PROMPT.
+#: Measured on the live run: 12 QC-NOTE comments plus one `---` rule still reached
+#: copy[] after the first version of this fix, and on slide 8 two of the six
+#: remaining verbatim misses were these comments. Contract-sanctioned input, never
+#: rendered text.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+#: A standalone horizontal rule is markdown structure, not slide copy. The P4-COPY
+#: template wraps each slide block in `---` fences; `_LEADING_MARKUP_RE` never
+#: matched one, so a stray rule reached copy[] (live: slide 3) and was demanded
+#: verbatim like any other line.
+_RULE_LINE_RE = re.compile(r"^\s*-{3,}\s*$")
 
 #: Optional per-slide art-direction line inside a copy block. When the writer
 #: supplies one it is the honest scene; otherwise the scene is derived.
@@ -379,15 +398,22 @@ def style_directive(run_dir: Path) -> Optional[str]:
 def copy_lines(body: str) -> List[str]:
     """The RENDERED copy lines of one slide block, in reading order.
 
-    Strips ONLY what is not pixels: ARC marker syntax (engine metadata),
-    engine field lines (HOOK_REFRAIN/LADDER/RESEARCH_USED/...), and leading
-    markdown decoration. Every other character is preserved, because
-    ``_chk_research_map`` condition 3 matches research anchors as SUBSTRINGS of
-    the render copy and ``build_deck`` bakes these words verbatim.
+    Strips ONLY what is not pixels: ARC marker syntax and ALL other HTML
+    comments (engine bookkeeping -- the P4-COPY contract tells the writer to
+    leave QC notes in comments), standalone `---` rules (block structure),
+    engine field lines (HOOK_REFRAIN/LADDER/RESEARCH_USED/SECTION/PURPOSE/
+    PRESENTER NOTE/... -- the vocabulary the contract prescribes and the
+    engine's own P4-PROMPT contract calls "internal production metadata never
+    rendered on the slide"), and leading markdown decoration. Every other
+    character is preserved, because ``_chk_research_map`` condition 3 matches
+    research anchors as SUBSTRINGS of the render copy and ``build_deck`` bakes
+    these words verbatim.
     """
     out: List[str] = []
     for raw_line in body.splitlines():
-        line = _ARC_MARKER_RE.sub("", raw_line)
+        line = _HTML_COMMENT_RE.sub("", _ARC_MARKER_RE.sub("", raw_line))
+        if _RULE_LINE_RE.match(line):
+            continue
         if _FIELD_LINE_RE.match(line):
             continue
         line = _LEADING_MARKUP_RE.sub("", line).strip()

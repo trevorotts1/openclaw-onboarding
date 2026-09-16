@@ -77,7 +77,11 @@ NON_RENDERED: Dict[str, str] = {
     "HOOK VARIANT": "which hook variant was used (engine metadata)",
 }
 
-#: A block in the live shape: the SOP template's own fields, filled in.
+#: A block in the REAL live shape -- taken from the run's own slides_copy.md,
+#: including the two things the first version of this fixture lacked and which
+#: therefore went unnoticed: contract-sanctioned QC-NOTE HTML comments (the SOP
+#: 9.1 tells the writer to "flag the gap in a comment in slides_copy.md") and a
+#: standalone `---` rule. Both reached copy[] and were demanded verbatim.
 _LIVE_BLOCK = "\n".join([
     "SLIDE 1",
     "SECTION: decision-rerank",
@@ -97,7 +101,13 @@ _LIVE_BLOCK = "\n".join([
     "TEXT_ANCHOR: center punch",
     "PRESENTER NOTE: Name their real list out loud, then let the omission sit.",
     "HOOK VARIANT: The department is not a last resort.",
+    "<!-- QC-NOTE: AF-NO-BRANDED-METHOD -- intake.json has no named_methodology -->",
+    "---",
 ])
+
+#: Lines that are engine bookkeeping but are NOT `FIELD:` lines, so the field
+#: classification cannot describe them. They are stripped structurally.
+_NON_FIELD_BOOKKEEPING = ("QC-NOTE", "<!--", "---")
 
 
 def _sop_fields() -> Set[str]:
@@ -156,6 +166,53 @@ def test_every_rendered_field_survives_with_its_text():
                      "Your plate holds the deck work.",
                      "Take a stance on this list"):
         assert fragment in joined, f"rendered text was lost: {fragment!r}"
+
+
+def test_non_field_bookkeeping_is_stripped_too():
+    """HTML comments and standalone `---` rules are bookkeeping, not slide copy.
+
+    The field classification cannot see these: they are not `FIELD:` lines, and
+    the P4-COPY contract actively tells the writer to leave QC notes in comments
+    (SOP 9.1). The first version of this fix missed all of them, and AF-P-VERBATIM
+    then demanded the QC notes be baked into the image prompt."""
+    joined = "\n".join(sa.copy_lines(_LIVE_BLOCK))
+    leaked = [token for token in _NON_FIELD_BOOKKEEPING if token in joined]
+    assert not leaked, (
+        f"non-field engine bookkeeping reached copy[]: {leaked}. copy[] drives "
+        "AF-P-VERBATIM, so each is DEMANDED verbatim in the image prompt. Strip "
+        "HTML comments and standalone horizontal rules in copy_lines() -- see "
+        "_HTML_COMMENT_RE / _RULE_LINE_RE.")
+
+
+def test_every_field_regex_token_is_a_contract_field():
+    """The REVERSE direction: the regex may not invent field names.
+
+    The contract->classification tripwire above is one-directional, so it cannot
+    catch a token added to `_FIELD_LINE_RE` that no contract prescribes. The first
+    version of this fix shipped exactly that (`VISUAL_ANCHOR`, which appears
+    nowhere in the repo outside the regex) while claiming to be "grounded in the
+    contract". This asserts the set is a subset of the contract's own fields (plus
+    the legacy aliases the engine has always stripped)."""
+    legacy = {"ARC", "BEAT", "TAG", "TAGS"}
+    pattern = sa._FIELD_LINE_RE.pattern
+    # Pull the alternation body out of `^\s*(?:A|B|C)\s*:` and undo the escapes.
+    import re as _re
+    body = pattern.split("(?:", 1)[1].rsplit(")", 1)[0]
+    tokens = set()
+    for t in body.split("|"):
+        # `HOOK\s+VARIANT` -> `HOOK VARIANT`; `PROOF\s+USED` -> `PROOF USED`.
+        norm = _re.sub(r"\\s\+?", " ", t).replace("\\", "").strip().upper()
+        norm = _re.sub(r"\s+", " ", norm)
+        if norm:
+            tokens.add(norm)
+    assert tokens, "could not parse any token out of _FIELD_LINE_RE"
+
+    unknown = sorted(tokens - _sop_fields() - legacy)
+    assert not unknown, (
+        f"_FIELD_LINE_RE strips fields no contract prescribes: {unknown}. Either "
+        "the contract is missing them (add them there first) or they are invented "
+        "-- an invented token silently deletes real slide copy, and the "
+        "contract->classification tripwire cannot see it.")
 
 
 def test_the_guard_is_not_vacuous():
