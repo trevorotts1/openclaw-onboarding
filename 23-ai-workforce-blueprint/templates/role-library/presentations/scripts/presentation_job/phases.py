@@ -681,6 +681,13 @@ _READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
 #: checker verdict, however it is worded.
 _VERIFIER_VERDICT_PREFIX = "substance check failed"
 
+#: PD-TEST-194: the autofail/check identifiers a substance verdict names. Used to
+#: identify WHICH EPISODE a park belongs to by identity rather than by a text
+#: prefix, because this checker's verdict list is non-deterministic in both order
+#: and membership between two attempts of the same episode (see
+#: `_block_is_verifier_sourced`).
+_VERDICT_ID_RE = re.compile(r"\bAF-[A-Z0-9][A-Z0-9-]*", re.IGNORECASE)
+
 
 def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
     """The dispatcher's own park marker for a phase (the F9 resolution, with
@@ -852,7 +859,56 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     # operator -- the only writer of a state blocked_reason is Engine._block, and
     # all its call sites pass engine-authored text beginning with this prefix --
     # so it is recorded here as a known looseness rather than left implicit.
-    return reason.startswith(ev_reason) or ev_reason[:60] in reason
+    if reason.startswith(ev_reason) or ev_reason[:60] in reason:
+        return True
+    # PD-TEST-194 -- THE EPISODE MATCH ABOVE IS STRUCTURALLY FRAGILE, and it was
+    # measured inert on the very park this function exists to reopen.
+    #
+    # Both gates above pass for the live P4-PROMPT park (the reason begins with
+    # the checker's prefix, and the newest heal event IS a verifier_substance
+    # event), and the function still returned False -- so PD-TEST-135's re-open
+    # path never fired and the phase could not be re-entered on ANY resume. The
+    # two verdicts, from the SAME checker on the SAME phase in the SAME episode:
+    #
+    #   blocked_reason : substance check failed: ... slide-1: AF-WORLD-SCALE -- ;
+    #                    ... AF-FACE-PROMPT-MISSING -- ; ... AF-LIGHT-...
+    #   heal ev_reason : substance check failed: ... slide-1: AF-FACE-PROMPT-MISSING
+    #                    -- ; ... AF-LIGHT-PROMPT-MISSING -- ; ... AF-P-DENSITY ...
+    #
+    # Neither `startswith` nor the 60-char substring can hold, because the lists
+    # differ in BOTH order and membership -- the block leads with AF-WORLD-SCALE
+    # (absent from the heal event) and the heal event carries AF-P-DENSITY
+    # (absent from the block). A text-prefix episode test assumes the checker
+    # emits one stable string; this checker does not. PD-TEST-190 measured that
+    # its omissions are NON-DETERMINISTIC (which required family is missing
+    # varies per draw), so the tail of the verdict -- and often its head -- moves
+    # BETWEEN ATTEMPTS OF THE SAME EPISODE. Any park whose verdict list shifted
+    # was therefore misclassified as an operator park and could never be
+    # reopened, which is the exact defect PD-TEST-135 was written to fix.
+    #
+    # WHAT IS ACTUALLY INVARIANT is the IDENTITY OF THE FAILING CHECKS, not their
+    # order or the prose between them. So compare the check-id SETS. This keeps
+    # every protection the note above relies on: the caller has already required
+    # the checker's own verdict prefix (so operator prose cannot reach here), and
+    # the newest heal event has already been required to be a verifier_substance
+    # event (so a stale verifier heal cannot reopen a LATER dispatcher budget
+    # park -- that park's text does not carry the prefix and is rejected at the
+    # gate above). A single shared failing check id, in an episode the phase's own
+    # newest verifier heal produced, is the same episode by identity rather than
+    # by string luck.
+    return bool(_verdict_check_ids(reason) & _verdict_check_ids(ev_reason))
+
+
+def _verdict_check_ids(text: str) -> set:
+    """The autofail/check identifiers a substance verdict names, order-insensitive.
+
+    PD-TEST-194. A verdict reads
+    `substance check failed: <CHECK> slide-1: <AUTOFAIL> -- ; <CHECK> slide-1: ...`
+    so the identifiers are the `AF-...` autofail tokens plus the leading check
+    names. Extracting the `AF-` tokens is enough to identify the episode: they are
+    the checker's own vocabulary, they are not free prose, and two unrelated
+    episodes do not share them by accident."""
+    return {tok.upper() for tok in _VERDICT_ID_RE.findall(text or "")}
 
 
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:

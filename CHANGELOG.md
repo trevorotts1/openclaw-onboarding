@@ -1,3 +1,22 @@
+## [v25.1.42]  -  2026-09-16  -  A substance park can finally be re-entered, so a repaired checker reaches it
+
+### What Changed
+- **PD-TEST-194 — PD-TEST-135's re-open path was INERT on the very park it was written for.** `_block_is_verifier_sourced` decides whether a `blocked` phase is the engine's own substance park (re-openable, "so the repaired checker actually reaches it") or an owner-decision park (never re-admitted). On the live run `pres-operator-1d269693` **both of its gates passed and it still returned False**: the `blocked_reason` does begin with the checker's own prefix, the newest heal event **is** a `verifier_substance` event, and there is **no** dispatcher park marker. It failed on the last line — the episode match — which compares the two verdicts as **text**:
+
+  * `blocked_reason` → `… slide-1: AF-WORLD-SCALE — ; … AF-FACE-PROMPT-MISSING …`
+  * `heal ev_reason` → `… slide-1: AF-FACE-PROMPT-MISSING — ; … AF-P-DENSITY …`
+
+  Neither `reason.startswith(ev_reason)` nor `ev_reason[:60] in reason` can hold, because the two lists differ in **both order and membership** — `AF-WORLD-SCALE` appears only in the block, `AF-P-DENSITY` only in the heal event. **The consequence was exactly the defect PD-TEST-135 exists to fix**: the park could not be re-entered on *any* resume, its 34 downstream phases stayed withheld, and the run re-parked identically forever — even with the repaired checker installed.
+
+- **Not a freak.** PD-TEST-190 measured that this checker's omissions are **non-deterministic** (which required token family is missing varies per draw), so the verdict's head *and* tail move between two attempts of the **same episode**. A text-prefix episode test cannot survive the checker it is testing.
+
+- **Fix:** test the one thing that is invariant — the **identity** of the failing checks, as a **set**, not their order or the prose between them. Every existing protection is preserved: the caller still requires the checker's own verdict prefix (so operator prose cannot reach the match), and the newest heal event must still be a `verifier_substance` event (so a stale verifier heal cannot reopen a later dispatcher budget park — that text does not carry the prefix and is rejected at the first gate).
+
+  **Controls** (`tests/test_pd194_verifier_episode_match.py`, 7 cases): the live reordered verdict, a single shared failing check, identical verdicts, operator prose (plain **and** quoting autofails verbatim), a stale verifier heal against a later budget park, absent/non-verifier heal history, and the extractor itself. Reverting only the match — restoring the pre-fix `False` — turns the suite **2 failed / 5 passed**. The 5 protections pass under both, which is the point: the widening did not weaken them. Neighbours green (**33 passed** across pd135 + pd060 readmission).
+
+### Why It Mattered
+This is the mechanism that made the run un-recoverable. A phase parked by a substance check is supposed to be re-enterable precisely so a fixed checker gets another look; with the match inert, **no** supported recovery — not `--resume`, not `--run`, not a funded repair receipt — could reach `P4-PROMPT`. Verified against the live state: before the fix `_block_is_verifier_sourced(P4-PROMPT)` is `False`; after it is `True`, on four shared check ids.
+
 ## [v25.1.41]  -  2026-09-16  -  A dead per-attempt paid-attempt settle is now audible instead of silent
 
 ### What Changed
