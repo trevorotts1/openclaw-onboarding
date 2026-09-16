@@ -58,7 +58,7 @@ SOP = (REPO_ROOT / "23-ai-workforce-blueprint" / "templates" / "role-library"
 _TEMPLATE_FIELD_RE = re.compile(r"^\s{2,}([A-Z][A-Z0-9_ ]{2,20}):\s*\[", re.M)
 
 #: Fields that ARE the slide's words, and must therefore reach `copy[]`.
-RENDERED: Set[str] = {"HEADLINE", "EMPHASIS", "SUBHEAD", "SUPPORTING"}
+RENDERED: Set[str] = {"HEADLINE", "SUBHEAD", "SUPPORTING"}
 
 #: Fields that are engine/authoring metadata, keyed to why. Every one of these is
 #: prescribed by the SOP template and none of them is text a viewer should read.
@@ -72,6 +72,11 @@ NON_RENDERED: Dict[str, str] = {
     "PEOPLE": "yes/no + representation group",
     "HOOK_REFRAIN": "yes/no + where the hook sits",
     "TEXT_ANCHOR": "a layout token (bottom band | left block | ...)",
+    "EMPHASIS": ("which words take the accent colour -- a DESIGN instruction; the accent word already sits inside "
+                 "the headline, and the engine's own P4-COPY contract (dispatcher.py ARTIFACT_CONTRACTS['P4-COPY'], "
+                 "the AF-C8 paragraph at :1136-1143 -- corrected from an earlier revision of this file that cited "
+                 "P4-PROMPT) lists EMPHASIS among the fields that are "
+                 "'internal production metadata never rendered on the slide'"),
     "PRESENTER NOTE": ("the SOP says these are 'sentences the speaker says aloud "
                        "that are NOT on the slide'"),
     "HOOK VARIANT": "which hook variant was used (engine metadata)",
@@ -83,7 +88,10 @@ NON_RENDERED: Dict[str, str] = {
 #: 9.1 tells the writer to "flag the gap in a comment in slides_copy.md") and a
 #: standalone `---` rule. Both reached copy[] and were demanded verbatim.
 _LIVE_BLOCK = "\n".join([
-    "SLIDE 1",
+    # NOTE: no leading `SLIDE 1` line. Production never passes the block
+    # DELIMITER to copy_lines (iter_slide_copy_blocks returns the body only), so
+    # including it made copy_lines emit it as a copy line and skewed the
+    # positional assertions below. Review finding on the previous revision.
     "SECTION: decision-rerank",
     "PURPOSE: Force the priority question out loud and make the stakes visible.",
     "ARCHETYPE: A1",
@@ -108,6 +116,25 @@ _LIVE_BLOCK = "\n".join([
 #: Lines that are engine bookkeeping but are NOT `FIELD:` lines, so the field
 #: classification cannot describe them. They are stripped structurally.
 _NON_FIELD_BOOKKEEPING = ("QC-NOTE", "<!--", "---")
+
+#: The OTHER live shape of SUPPORTING: an INLINE third text block, which is what
+#: 7 of the live deck's 8 slides use (slide 3 verbatim). PD-TEST-169 review
+#: finding: the first fixture used ONLY the bare `SUPPORTING:` + bullets shape,
+#: so adding SUPPORTING to _FIELD_LINE_RE -- which would delete every slide's
+#: supporting line -- still left all 6 tests GREEN. This block pins the VALUE.
+_LIVE_BLOCK_INLINE_SUPPORTING = "\n".join([
+    "SECTION: higher-priority-reframe",
+    "PURPOSE: Reframe the department as the path to shipping finished packages.",
+    "ARCHETYPE: A2",
+    "LADDER: none",
+    "HEADLINE: Ship Finished Packages, Not Unfinished Files",
+    "EMPHASIS: \"Ship Finished Packages\"",
+    "SUBHEAD: You become the person who requests first.",
+    "SUPPORTING: Research helps you make better decisions.",
+    "PROOF USED: none",
+    "PEOPLE: no",
+    "TEXT_ANCHOR: right block",
+])
 
 
 def _sop_fields() -> Set[str]:
@@ -154,18 +181,35 @@ def test_every_non_rendered_field_is_stripped_from_copy():
         + "; ".join(f"{f} = {NON_RENDERED[f]}" for f in leaked))
 
 
-def test_every_rendered_field_survives_with_its_text():
+def test_every_rendered_VALUE_survives_and_its_LABEL_does_not():
+    """PD-TEST-169: copy[] is the slide's TEXT, not a labelled form.
+
+    slides.schema.json defines copy[] as "the EXACT text that must appear
+    rendered on the slide, in reading order. Index 0 is treated as the HEADLINE"
+    and its own example is ["Northwind Co", "Three moves that doubled our
+    pipeline in 90 days"] -- BARE text. A `HEADLINE:` prefix is therefore not
+    slide copy, and leaving it in made AF-P-VERBATIM demand the LABEL be painted
+    into the image (measured live: 8 of 8 prompts failed on exactly that)."""
     lines = sa.copy_lines(_LIVE_BLOCK)
     joined = "\n".join(lines)
-    for field in sorted(RENDERED):
-        assert re.search(rf"(?m)^\s*{re.escape(field)}\s*:", joined), (
-            f"{field} is RENDERED copy but copy_lines() dropped it -- the slide "
-            "would render without its own words")
-    # The actual words must survive, not just the labels.
+
+    # The VALUES survive...
     for fragment in ("Department First, or Back on Your Plate?",
                      "Your plate holds the deck work.",
                      "Take a stance on this list"):
         assert fragment in joined, f"rendered text was lost: {fragment!r}"
+
+    # ...and the LABELS do not.
+    for field in sorted(RENDERED):
+        assert not re.search(rf"(?m)^\s*{re.escape(field)}\s*:", joined), (
+            f"the {field}: label reached copy[] -- copy[] is the text RENDERED on "
+            "the slide, and a label is not that text")
+
+    # copy[] must be in the shape its POSITIONAL consumers assume: index 0 the
+    # headline, index 1 the subhead, the rest body lines (PD-TEST-163).
+    assert lines[0] == "Department First, or Back on Your Plate?", lines[0]
+    assert lines[1] == "Your plate holds the deck work. The department is missing.", lines[1]
+    assert lines[2] == "Take a stance on this list", lines[2]
 
 
 def test_non_field_bookkeeping_is_stripped_too():
@@ -213,6 +257,30 @@ def test_every_field_regex_token_is_a_contract_field():
         "the contract is missing them (add them there first) or they are invented "
         "-- an invented token silently deletes real slide copy, and the "
         "contract->classification tripwire cannot see it.")
+
+
+def test_inline_supporting_value_survives_and_is_positioned_as_the_third_block():
+    """PD-TEST-169 review finding: the bare-`SUPPORTING:` fixture could not catch
+    SUPPORTING being added to `_FIELD_LINE_RE`, which would silently DELETE every
+    slide's supporting line. 7 of the live deck's 8 slides use the INLINE shape.
+
+    `slides_copy.md`'s `SUPPORTING:` is defined by the copy contract as "third
+    text block if any -- stat, label, or CTA chip -- or NONE", so its VALUE is
+    slide text and must reach copy[]; only its LABEL must not.
+    """
+    lines = sa.copy_lines(_LIVE_BLOCK_INLINE_SUPPORTING)
+    joined = "\n".join(lines)
+    assert "Research helps you make better decisions." in lines, (
+        "the inline SUPPORTING value was dropped from copy[] -- it is slide text "
+        f"(the contract calls SUPPORTING the 'third text block'). Got: {lines}")
+    assert not any(re.match(r"(?i)^\s*SUPPORTING\s*:", ln) for ln in lines), (
+        f"the SUPPORTING: label reached copy[]: {lines}")
+    # and it lands in the third-block position the positional consumers read
+    assert lines[0] == "Ship Finished Packages, Not Unfinished Files", lines
+    assert lines[1] == "You become the person who requests first.", lines
+    assert lines[2] == "Research helps you make better decisions.", lines
+    assert joined.count("Research helps you make better decisions.") == 1, (
+        "the supporting value was duplicated")
 
 
 def test_the_guard_is_not_vacuous():
