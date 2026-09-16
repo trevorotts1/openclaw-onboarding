@@ -9608,12 +9608,7 @@ def _reserve_scoped_unit_attempt(led: Dict[str, Any], *, run_dir: Path,
         # checks that already ran: the per-unit ceiling (`spent >=
         # DISPATCH_RETRY_CAP`) and the declared phase bound (`paid >= cap`).
         # Every replacement below still increments `seq` and `paid`.
-        _own_previous_attempt = (
-            live.get("pid") == os.getpid()
-            and live.get("thread") is not None
-            and live.get("thread") == threading.get_ident())
-        if not _own_previous_attempt \
-                and not _reservation_owner_is_gone(live.get("pid")):
+        if not _reservation_owner_is_gone(live.get("pid")):
             raise PaidAttemptDeferred(
                 f"unit {unit_key} already has an in-flight paid reservation "
                 f"(attempt {live.get('seq')}, owner pid {live.get('pid')}, worker "

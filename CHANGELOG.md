@@ -1,3 +1,21 @@
+## [v25.1.35]  -  2026-09-16  -  A unit's retry is allowed because NOTHING IS IN FLIGHT -- the double-reserve guarantee is restored
+
+### What Changed
+- **PD-TEST-179 — PD-TEST-177 restored the retry by WEAKENING THE GUARD, and that repeal is undone here.** PD-TEST-177 correctly found that a unit's in-run retry was refused by its own attempt-1 reservation, because the dispatcher settles a whole wave only *after* `run_worker` returns while the retry loop runs inside it. But its fix relaxed the double-reserve guard to accept any later reservation from the same `(pid, thread)` — which admits a **genuinely in-flight** second attempt too, repealing the contract the guard's own docstring states (*"the unit already has an in-flight paid reservation"*).
+
+  **Measured on main before this fix:** `tests/test_pd124_sibling_starvation.py` → **2 failed, 22 passed** (`test_two_logical_attempts_for_one_unit_cannot_both_reserve`, `test_a_restart_preserves_successes_reservations_and_failure_history`); with the test file's own helpers the ledger moved `count 2→3, phase_paid 9→10` where it previously refused at `2→2 / 9→9`. **No CI workflow runs that suite**, which is why the regression merged green.
+
+  **The fix is in the worker, not the guard.** `parallel_prompt_worker._execute_slide` now **settles the attempt that just ended before starting the next one**, so at the moment of a retry the unit holds no in-flight reservation and the guard admits it on its own unchanged terms. The guard is **restored byte-for-byte** to its original condition; no new identity field, no thread inference.
+
+  **Measured after:** `test_pd124_sibling_starvation.py` **24 passed** (previously 2 failed), `test_pd161_prompt_fanout_fair_budget.py` **18 passed**, and the new `test_pd179_per_attempt_settle.py` **4 passed**, which pins the correct contract through the real seam: an UNSETTLED reservation still refuses a second attempt; once SETTLED the retry is allowed **and charged**; the per-unit ceiling still binds; settling never refunds spend.
+
+  **The old test file asserted the wrong contract and was deleted.** `test_pd177_unit_own_retry_not_refused.py` drove `_reserve_paid_attempt` directly and *demanded that an in-flight reservation be bypassed* — precisely what must not happen — so it could not see the harm its mechanism caused. Two of its five cases (the ones asserting the guard still refuses) were true and are carried into the new file; the three that encoded the relaxation are gone.
+
+  **What is NOT claimed:** the new tests pin the seam contract, and the worker change that consumes it is not covered end-to-end here. Proving the retry in situ — a wave whose transport raises a transient 5xx and which makes `RETRY_CAP` provider calls — needs a wave-driving harness and remains **outstanding**. The honest status is: guarantee restored, mechanism in place and unit-tested, end-to-end proof still owed.
+
+### Why It Mattered
+The retry restoration and the double-reserve guarantee are not in tension — but PD-TEST-177 resolved them in the wrong place, and its own tests could not tell, because they asserted the mechanism rather than the invariant. Settling where the attempt actually ends satisfies both, and leaves the guard's documentation true.
+
 ## [v25.1.34]  -  2026-09-16  -  P4-PROMPT stops declaring an artifact its own fan-out cannot produce
 
 ### What Changed
