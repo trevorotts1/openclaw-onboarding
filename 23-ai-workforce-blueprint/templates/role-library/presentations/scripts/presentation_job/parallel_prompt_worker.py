@@ -425,7 +425,8 @@ def _wave_lease_provider(routing: Dict[str, Any], run_dir: Path) -> str:
 
 def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
                            attempt: int, run_dir: Path, owning_role: str,
-                           n_slides: int) -> str:
+                           n_slides: int,
+                           prior_reasons: Optional[List[str]] = None) -> str:
     """PRODUCTION transport: reuse the existing routed authoring path the
     serial loop uses today (dispatcher.compose_prompt + dispatch_complete --
     FIX 16: the routed entrypoint, never the raw deepseek transport). Lazy
@@ -441,14 +442,35 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
         "_prompt_slide_total": n_slides,
         "slide": dict(slide),
     }
-    prior_reasons = None
+    # PD-TEST-183 -- carry the ACTUAL previous-attempt findings.
+    #
+    # `prior_reasons` is supplied by the caller (`_execute_slide`), which owns the
+    # accumulated `base["_reasons"]` -- the verify path records the real failing
+    # checks there as `attempt {n}: verify failed ({'; '.join(reasons)})`. Before
+    # this, the instruction was content-free ("attempt N failed verification;
+    # re-author slide X"): it named neither the failing check nor the requirement,
+    # so a model re-authoring had no signal about WHICH token was missing.
+    #
+    # That is now MEASURED, not argued. On pres-operator-1d269693 the engine was
+    # given a funded re-dispatch and reproduced the SAME findings
+    # (AF-FACE-PROMPT-MISSING, AF-LIGHT-PROMPT-MISSING, AF-HAIR-INAUTHENTIC) and
+    # added AF-WORLD-SCALE -- spending the entire allowance plus the retry pool for
+    # the same non-result. Same masking family as PD-TEST-162 and PD-TEST-177: the
+    # durable record knows the real reason and the actor that could act on it is
+    # not told it.
+    #
+    # The seam stays backward-compatible: the parameter is optional, and a stub
+    # that ignores it still satisfies the call.
+    _compose_reasons = None
     if attempt > 1:
-        prior_reasons = [
+        _compose_reasons = [
             f"attempt {attempt - 1} failed verification; re-author slide {ordinal}"]
+        for _r in (prior_reasons or []):
+            _compose_reasons.append(f"what failed on a previous attempt: {_r}")
     system_prompt, user_prompt = dispatcher.compose_prompt(
         phase_id=PHASE_ID, owning_role=owning_role,
         dept_root=_dept_root_from(run_dir), run_dir=run_dir, order=slide_order,
-        attempt=attempt, prior_reasons=prior_reasons)
+        attempt=attempt, prior_reasons=_compose_reasons)
     user_prompt = (
         f"=== THIS CALL AUTHORS EXACTLY ONE FILE: SLIDE {ordinal} OF {n_slides} ===\n"
         f"Find slide {ordinal}'s block in slides_copy.md above (the line reading "
@@ -794,7 +816,9 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
             # wave; outside such a declaration the legacy cap still applies
             # byte-for-byte, so nothing else changes.
             with dispatcher.paid_unit_scope(slide_id):
-                text = pcall(slide, routing, attempt, run_dir, owning_role, n_slides)
+                text = pcall(slide, routing, attempt, run_dir, owning_role,
+                            n_slides,
+                            prior_reasons=list(base.get("_reasons") or []))
         except Exception as exc:  # noqa: BLE001 -- classified below
             eclass, retryable = _classify(exc)
             base["attempts"] = attempt
