@@ -18,6 +18,26 @@
 ### Why It Mattered
 The settle is the mechanism that lets a unit retry at all. Its failure mode was silence, which is the worst property a recovery mechanism can have: the suite stays green, the ledger looks fine, and the only symptom is that retries stop happening — the exact defect PD-TEST-179 was written to repair.
 
+## [v25.1.40]  -  2026-09-16  -  The provider seam's env stub accepts the argument the worker now passes
+
+### What Changed
+- **PD-TEST-189 — PD-TEST-183 extended the provider seam with an OPTIONAL `prior_reasons` and left the seam's OWN environment stub at six parameters, so with `PRESENTATION_PROMPT_PROVIDER_STUB` set EVERY attempt died.** Found by PD-TEST-183's adversarial review, after that PR had already merged and been installed.
+
+  The reasoning error is worth stating precisely, because it is easy to repeat: **a defaulted CALLEE parameter makes a function compatible with its CALLERS — it does not make an existing IMPLEMENTATION compatible with a new keyword.** `_execute_slide` passes `prior_reasons=` unconditionally, `_resolve_provider()` can return the documented `_StubSpec` env stub, and `_StubSpec.__call__` still took six arguments.
+
+  **Measured with the stub set** (`{"default":"succeed"}`): BASE **1 provider call / attempt 1**; #1173 **0 calls / attempts 3 / `verify_failed`** — every attempt dead, the whole wave a non-result, and `_classify` mapping the `TypeError` to exactly the class this seam exists to diagnose. The PR's own comment (*"a stub that ignores it still satisfies the call"*) was false.
+
+  **Fix:** `_StubSpec.__call__` accepts `prior_reasons=None`, and the `ProviderCall` alias — which described the old six-argument call — is widened. Verified directly: the stub's signature now carries the parameter and a real call returns a 11,593-character prompt.
+
+- **The same review found a second 6-arg implementation in the repo's OWN suite, which PD-TEST-183 had broken.** `tests/test_f8_one_governor_per_wave.py::test_wave_units_share_one_governor` binds `provider_call` to a six-argument `_governed_provider`: **BASE 3 passed; #1173 1 failed / 2 passed** (*"governor recorded peak in-flight 0 for a 4-wide wave"*). It was the ONLY differential failure across a 19-file neighbour sweep, and **no workflow runs that file**, so CI merged the breakage green.
+
+  **This is the FIFTH time this session a change of mine moved something another test pinned** — after PD-TEST-179 (#1167/pd124), PD-TEST-184 (#1171's two allowance witnesses), PD-TEST-185 (#1171's operator-marker assertion) and PD-TEST-183 itself (the pd161 stub). Every one was caught by running the surrounding suite by hand; **none by CI.** Fixed here: the stub accepts the keyword, and the file is green again.
+
+  **Verified:** `test_f8_one_governor_per_wave.py` **3 passed** (was 1 failed / 2 passed); neighbour sweep across pd161 + pd183 + pd179 + pd124 + f8 **51 passed**.
+
+### Why It Mattered
+The env stub is the documented way to run the prompt worker deterministically without a provider, and it is the seam every proof harness in this area stubs. A change that silently kills it does not fail loudly — it fails as `verify_failed` on every slide, which reads like a content problem and is the exact confusion PD-TEST-183 was written to remove.
+
 ## [v25.1.38]  -  2026-09-16  -  A retry is told WHICH check failed, not just that one did
 
 ### What Changed
