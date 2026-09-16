@@ -32,6 +32,20 @@ The fix: keep `finish_reason` with the usage it belongs to, and drive the
 re-attempt from DEEPSEEK_REASONING_EFFORT_LADDER indexed by how many attempts
 the unit has already spent, so the retry is never the request that just failed.
 
+PD-TEST-124 (2026-09-16) -- THIS FILE'S PREMISE MOVED. The ladder above was a
+RECOVERY-ONLY mechanism: attempt 1 always went out at the default `max`, `max`
+saturated the 64,000-token budget on a ~155k-char section prompt, and the
+phase's 3-attempt paid cap was often spent before any rung could help. A
+bounded experiment on the byte-identical production prompt showed `max`
+spending reasoning_tokens=64,000 of 64,000 for ZERO-length content
+(finish_reason="length") while `medium` finished at 9,788 tokens with valid
+content (finish_reason="stop"). So the worker's DEFAULT is now `medium` and the
+ladder's rung 0 moved `medium` -> `low` (a rung equal to the new default would
+be the dead rung PD-070 removed). The tests below were restated to assert the
+invariant that still holds -- a re-attempt after an empty completion is never
+re-sent the worker's DEFAULT -- rather than PD-070's `LADDER[1]`, which no
+longer exists. See DEEPSEEK_REASONING_EFFORT in dispatcher.py.
+
 `urlopen` is stubbed throughout: there is NO network and NO real key.
 """
 from __future__ import annotations
@@ -221,8 +235,25 @@ def test_absent_finish_reason_leaves_the_pd065_wording_byte_identical():
 # 2. THE LADDER -- a second empty completion must not repeat the first rung.
 # ---------------------------------------------------------------------------
 
-def test_second_empty_completion_reaches_a_lower_rung(p4_env):
-    # ROUND 1: first attempt, no evidence yet -> the operator-declared effort.
+def test_second_empty_completion_never_re_sends_the_workers_default(p4_env):
+    """PD-TEST-124 restated this test's invariant.
+
+    PD-070's version asserted that a SECOND empty completion reaches
+    `LADDER[1]`, i.e. it required the ladder to have at least two rungs. That
+    requirement is no longer satisfiable: PD-TEST-124 moved the worker's default
+    from `max` down to `medium`, and the only documented, thinking-ENABLED value
+    below it is `low`. There is no second rung to reach that is not either the
+    default itself (a dead rung) or a return to the runaway value.
+
+    The invariant that actually protects the unit is therefore: **a re-attempt
+    after an empty completion is never re-sent the worker's default.** That is
+    what this asserts, at every round, and it is the property PD-070 existed to
+    guarantee. KNOWN AND ACCEPTED LIMIT: with one rung, round 3 re-sends `low`
+    -- a bounded repeat, not PD-070's unbounded one, because the phase's
+    paid-attempt cap (DISPATCH_RETRY_CAP=3) parks the unit after it.
+    """
+    # ROUND 1: first attempt, no evidence yet -> effort stays None, so the
+    # MODULE's own default (DEEPSEEK_REASONING_EFFORT, "medium") governs.
     p4_env["monkeypatch"].setattr(
         D, "dispatch_complete", _empty_for(p4_env, "Teach", EMPTY_USAGE_LENGTH))
     _dispatch(p4_env)
@@ -233,33 +264,55 @@ def test_second_empty_completion_reaches_a_lower_rung(p4_env):
     p4_env["calls"].clear()
     _dispatch(p4_env)
     assert _effort_for(p4_env, "Teach") == [D.DEEPSEEK_REASONING_EFFORT_LADDER[0]]
+    assert _effort_for(p4_env, "Teach") != [D.DEEPSEEK_REASONING_EFFORT], \
+        "a retry after an empty completion re-sent the worker's own default"
 
-    # ROUND 3: it carries the marker TWICE. PD-TEST-065 would re-send rung 0
-    # verbatim; the ladder must move on.
+    # ROUND 3: it carries the marker TWICE. The rung clamps to the last
+    # documented value -- never back to the default.
     p4_env["calls"].clear()
     _dispatch(p4_env)
     spent = _unit_record(p4_env["rd"], "section-02")["attempts_total"]
     assert spent >= 2, spent
-    assert _effort_for(p4_env, "Teach") == [D.DEEPSEEK_REASONING_EFFORT_LADDER[1]], \
-        "a second empty completion re-sent the rung that had just failed"
+    assert _effort_for(p4_env, "Teach") == [D.DEEPSEEK_REASONING_EFFORT_LADDER[-1]], \
+        "a second empty completion did not stay on the documented rung"
+    assert _effort_for(p4_env, "Teach") != [D.DEEPSEEK_REASONING_EFFORT], \
+        "a second empty completion re-sent the worker's own default"
 
 
-def test_the_ladder_never_repeats_a_rung_and_ends_somewhere_new(p4_env):
-    """Every rung is a genuinely different request from its predecessor."""
+def test_every_rung_is_a_different_request_from_the_workers_default(p4_env):
+    """The invariant PD-070 was really protecting, restated for PD-TEST-124.
+
+    PD-070 asserted `len(ladder) >= 2`; with the default now `medium` and only
+    `low` available below it, a length check would demand an invented rung.
+    What must hold is that NO rung is the request the unit was just sent, i.e.
+    no rung equals the worker's default, and rung 0 is the documented
+    after-empty step-down.
+    """
     ladder = D.DEEPSEEK_REASONING_EFFORT_LADDER
-    assert len(ladder) >= 2, ladder
+    assert ladder, "an empty ladder would make every retry the default again"
     assert len(set(ladder)) == len(ladder), f"a rung repeats: {ladder}"
+    assert D.DEEPSEEK_REASONING_EFFORT not in ladder, \
+        f"rung re-sends the worker's own default ({D.DEEPSEEK_REASONING_EFFORT}): {ladder}"
     assert ladder[0] == D.DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY, \
-        "rung 0 must preserve PD-TEST-065's step-down for attempt 1"
+        "rung 0 must be the documented after-empty step-down"
 
 
 def test_the_ladder_never_disables_thinking_implicitly():
     """`thinking` is sent as enabled on every call, so a rung that DISABLES
     thinking would contradict it, and the precedence of that contradiction is
-    undocumented -- so no rung may be `none` until it has been probed."""
-    assert "none" not in D.DEEPSEEK_REASONING_EFFORT_LADDER
-    assert D.DEEPSEEK_REASONING_EFFORT_LADDER[0] == "medium"  # -> documented alias of high
-    assert "low" in D.DEEPSEEK_REASONING_EFFORT_LADDER
+    undocumented -- so no rung may be `none` (or the profile's `off`) until it
+    has been probed. Every rung must be a member of this box's own documented
+    thinking-level vocabulary (resource_profile.THINKING_LEVELS)."""
+    documented = ("max", "high", "medium", "low")   # THINKING_LEVELS minus "off"
+    ladder = D.DEEPSEEK_REASONING_EFFORT_LADDER
+    assert "none" not in ladder and "off" not in ladder
+    for rung in ladder:
+        assert rung in documented, f"undocumented rung {rung!r} in {ladder}"
+    # PD-TEST-124: rung 0 stepped DOWN with the default (max -> medium moved the
+    # step-down medium -> low). It is no longer `medium`, because `medium` is
+    # now the default and a rung equal to the default is a dead rung.
+    assert ladder[0] == "low"
+    assert ladder[0] != D.DEEPSEEK_REASONING_EFFORT
 
 
 def test_the_rung_is_clamped_so_a_long_failure_history_still_retries(p4_env):
