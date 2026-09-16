@@ -121,6 +121,28 @@ def _transitive_prerequisites(edges: Dict[str, List[str]]) -> Dict[str, Set[str]
     return closure
 
 
+def _required_checkers(phase: dict) -> List[str]:
+    """Every checker the manifest makes REQUIRED for this phase.
+
+    Both spellings count, and keeping them together is the point: the first
+    version of this test read only `preflight.checker`, which silently skipped
+    `additional_preflights[]` -- a SIBLING of `preflight`, not a child of it.
+    `P-IMAGE-QC` carries `additional_preflights: [_chk_salience_apex]` and
+    `_chk_salience_apex` reads rendered PNGs, so it was covered only by
+    accident (its primary `_chk_image_qc` happens to read PNGs too, and the
+    phase happens to depend on the render). An independent review caught that
+    gap; this helper is the fix, so a phase whose ONLY render-reading checker
+    sits in `additional_preflights` is now caught on its own merits."""
+    out: List[str] = []
+    pf = phase.get("preflight") or {}
+    if pf.get("required") and pf.get("checker"):
+        out.append(pf["checker"])
+    for ap in phase.get("additional_preflights") or []:
+        if isinstance(ap, dict) and ap.get("required") and ap.get("checker"):
+            out.append(ap["checker"])
+    return out
+
+
 def _png_producers(phases: List[dict]) -> Set[str]:
     out = set()
     for p in phases:
@@ -140,11 +162,7 @@ def test_the_invariant_is_not_vacuous():
         "silently emptied")
 
     phases = _load_phases()
-    dispatched = {
-        (p.get("preflight") or {}).get("checker")
-        for p in phases
-        if (p.get("preflight") or {}).get("required")
-    }
+    dispatched = {c for p in phases for c in _required_checkers(p)}
     assert dispatched & needing, (
         "no phase dispatches a render-reading preflight checker any more; the "
         f"guard would pass vacuously (checkers={sorted(c for c in dispatched if c)})")
@@ -164,19 +182,16 @@ def test_every_render_reading_preflight_gate_waits_for_the_render():
     offenders = []
     checked = []
     for p in phases:
-        pf = p.get("preflight") or {}
-        if not pf.get("required"):
-            continue
-        checker = pf.get("checker")
-        if checker not in needing:
-            continue
-        checked.append((p["id"], checker))
-        got = prereqs.get(p["id"], set())
-        if not (got & producers):
-            offenders.append(
-                f"{p['id']} dispatches {checker}() (transitively reads "
-                f"{RENDER_ARTIFACT}) but its prerequisites {sorted(got)} contain "
-                f"none of the producers {sorted(producers)}")
+        for checker in _required_checkers(p):
+            if checker not in needing:
+                continue
+            checked.append((p["id"], checker))
+            got = prereqs.get(p["id"], set())
+            if not (got & producers):
+                offenders.append(
+                    f"{p['id']} dispatches {checker}() (transitively reads "
+                    f"{RENDER_ARTIFACT}) but its prerequisites {sorted(got)} contain "
+                    f"none of the producers {sorted(producers)}")
 
     assert checked, "no render-reading preflight gate found -- guard is vacuous"
     assert not offenders, (
@@ -187,8 +202,14 @@ def test_every_render_reading_preflight_gate_waits_for_the_render():
         "restamp MANIFEST-SOURCE.txt + universal-sops/_content-manifest.json), or "
         "the phase will park the run on a gate it can never earn (PD-TEST-151).")
 
-    # The two known members, named so a rename/removal is a visible test edit.
-    assert {pid for pid, _ in checked} == {"P-IMAGE-QC", "P-SHIFT-QC"}, (
-        "the set of render-reading preflight gates changed: "
-        f"{sorted(pid for pid, _ in checked)} -- update this expectation "
-        "deliberately (and confirm the new member waits for the render)")
+    # Both known members, named so a rename/removal is a visible test edit.
+    # P-IMAGE-QC appears TWICE on purpose: its primary `_chk_image_qc` AND its
+    # `additional_preflights` entry `_chk_salience_apex` both read rendered PNGs,
+    # so both are asserted. Reading only the primary is the gap this pins shut.
+    assert set(checked) == {
+        ("P-IMAGE-QC", "_chk_image_qc"),
+        ("P-IMAGE-QC", "_chk_salience_apex"),
+        ("P-SHIFT-QC", "_chk_priority_shift_ledger"),
+    }, ("the set of render-reading required gates changed: "
+        f"{sorted(checked)} -- update this expectation deliberately (and confirm "
+        "the new member waits for the render)")
