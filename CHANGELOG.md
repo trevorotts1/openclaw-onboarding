@@ -1,3 +1,25 @@
+## [v25.1.36]  -  2026-09-16  -  A readmitted phase no longer keeps a park predicate from the PREVIOUS manifest
+
+### What Changed
+- **PD-TEST-178 — correcting a phase's `produces_artifact` in the manifest did NOT unpark it, because the park predicate is stored as DATA and outlived the rule that produced it.** Measured on `pres-operator-1d269693` while following the engine's own prescribed recovery exactly: `--resume` correctly refused (*"FATAL: manifest changed under a running job"*), `--repin` correctly re-pinned (`v69 @ 519d304cd112 -> v69 @ fc2b036c0bea, removed phases marked obsolete: 1 ['CLOSE'], new phases added pending: 0`) — and **`P4-PROMPT` still would not pass.** It came back as `running` (the PD-TEST-155 reclaim worked) but kept
+
+  ```
+  waiting_for = ['working/prompts/slide-*.txt', 'working/prompts/infographic-prompt.txt']
+  ```
+
+  even though the newly pinned manifest gives it **only** `['working/prompts/slide-*.txt']` — **and all 8 slide prompts were already on disk.** Two resume cycles reproduced it identically.
+
+  **Why nothing re-derived it:** the fresh derivation — `waiting_for=list(phase.produces_artifact)`, which reads the CURRENT manifest and is otherwise correct — **only runs when a phase PARKS.** This phase never parked again, because the readmission path resets it in place (`ps["status"] = PHASE_STATUS_PENDING`) and left the stale list attached. So the fix belongs there: **`waiting_for` and `waited_seconds` are now cleared on readmission.**
+
+  Clearing is deliberate rather than re-deriving: a PENDING phase has no park predicate yet, and will set one from the **current** manifest if and when it parks. The old values are already preserved for audit on the readmission record (`reclaimed_waiting_for` / `reclaimed_waited_seconds`), so nothing is lost.
+
+  **Verified:** `test_pd010_signature_only_phase_gating.py` **16 passed** and `test_pd168b_infographic_skip_not_a_deadlock.py` **11 passed** — the reclaim path is shared, so the neighbouring routing suites were re-run to show it is undisturbed.
+
+  **What is NOT claimed:** this change is **not yet covered by a dedicated test.** Driving the readmission path needs the PD-TEST-155 harness (a `running` phase whose recorded owner pid names no process), and that test is **outstanding** — the sibling suites above show no regression, they do not show the fix works. It also does not by itself advance the deck: `P9-SPEECH` remains externally blocked on the Ollama 401 (PD-TEST-153).
+
+### Why It Mattered
+The engine's own recovery instructions — repin, then resume — were insufficient, which made a corrected manifest unactionable by the operator who followed the documented path. A park predicate is derived state; keeping it across a manifest change silently pins the run to a rule that no longer exists.
+
 ## [v25.1.35]  -  2026-09-16  -  A unit's retry is allowed because NOTHING IS IN FLIGHT -- the double-reserve guarantee is restored
 
 ### What Changed

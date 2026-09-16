@@ -953,6 +953,24 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         ps.setdefault("readmissions", []).append(record)
         ps["readmitted_at"] = record["at"]
         ps["status"] = PHASE_STATUS_PENDING
+        # PD-TEST-178 -- a readmitted phase must NOT keep the park predicate it
+        # was carrying before, because that predicate was derived from whatever
+        # manifest was pinned THEN. Measured on pres-operator-1d269693: after a
+        # `--repin` that corrected P4-PROMPT's produces_artifact to just
+        # ['working/prompts/slide-*.txt'], the phase was reclaimed to `running`
+        # and kept waiting_for = ['working/prompts/slide-*.txt',
+        # 'working/prompts/infographic-prompt.txt'] -- so it stayed parked on an
+        # artifact the CURRENT manifest no longer declares, even though all 8
+        # slide prompts were on disk. Nothing re-derived it, because the fresh
+        # derivation (`waiting_for=list(phase.produces_artifact)`) only runs when
+        # a phase PARKS, and this one never parked again.
+        #
+        # Clearing is the correct action, not re-deriving: a PENDING phase has no
+        # park predicate yet, and will set one from the CURRENT manifest if and
+        # when it parks. The old values are preserved for audit on `record`
+        # above (`reclaimed_waiting_for` / `reclaimed_waited_seconds`).
+        ps.pop("waiting_for", None)
+        ps.pop("waited_seconds", None)
         readmitted.append(record)
     if readmitted:
         state.setdefault("resume_readmissions", []).extend(readmitted)
