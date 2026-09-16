@@ -72,6 +72,11 @@ NON_RENDERED: Dict[str, str] = {
     "PEOPLE": "yes/no + representation group",
     "HOOK_REFRAIN": "yes/no + where the hook sits",
     "TEXT_ANCHOR": "a layout token (bottom band | left block | ...)",
+    "MOVE TAG": ("PD-TEST-173 -- which of the eight build-move beats this slide carries. build_deck.AF-NO-SHIFT "
+                 "REQUIRES >=5 of the eight tags to appear in slides_copy.md, monotonic, so the writer MUST record "
+                 "them in the copy file; before MOVE TAG was classified, the live run's `MOVE TAG: TRIGGER` line "
+                 "was not stripped, became copy[0] -- THE HEADLINE -- and AF-P-VERBATIM then demanded the engine's "
+                 "own routing metadata be painted onto the slide as its headline"),
     "EMPHASIS": ("which words take the accent colour -- a DESIGN instruction; the accent word already sits inside "
                  "the headline, and the engine's own P4-PROMPT contract lists EMPHASIS among the fields that are "
                  "'internal production metadata never rendered on the slide'"),
@@ -94,6 +99,10 @@ _LIVE_BLOCK = "\n".join([
     "PURPOSE: Force the priority question out loud and make the stakes visible.",
     "ARCHETYPE: A1",
     "LADDER: none",
+    # PD-TEST-173: the live run carries this line (slides_copy.md line 140) and
+    # it was the ONLY field-shaped line in the whole file that copy_lines() did
+    # not strip -- so it became copy[0], i.e. the HEADLINE.
+    "MOVE TAG: TRIGGER",
     "HEADLINE: Department First, or Back on Your Plate?",
     "EMPHASIS: Department First",
     "SUBHEAD: Your plate holds the deck work. The department is missing.",
@@ -236,6 +245,40 @@ def test_every_field_regex_token_is_a_contract_field():
         "the contract is missing them (add them there first) or they are invented "
         "-- an invented token silently deletes real slide copy, and the "
         "contract->classification tripwire cannot see it.")
+
+
+def test_move_tag_never_becomes_the_headline():
+    """PD-TEST-173 -- the engine's own routing metadata must not BE the headline.
+
+    `MOVE TAG` is not optional decoration: `build_deck.AF-NO-SHIFT` requires >=5
+    of the eight build-move tags to appear IN `slides_copy.md`, monotonic, so the
+    copywriter has to record them in the copy file -- and before this field was
+    classified, the block template never said how, so the live run invented
+    `MOVE TAG: TRIGGER`. Nothing stripped it, so it landed at copy[0].
+
+    That is the most damaging possible position. copy[0] is the HEADLINE: it is
+    the field `slide_craft` AF-OBI-2 word-counts, the field
+    `build_deck._chk_copy_density` measures against the headline band, the field
+    `workbook_mapper._title_from_copy` prints as the workbook's slide title, and
+    -- through AF-P-VERBATIM -- a string the image prompt must render verbatim.
+
+    Measured on the live run before this fix: slide 08's copy[0] was
+    `MOVE TAG: TRIGGER`, the real headline sat at index 1, and
+    `working/prompts/slide-08.txt` contains the string `MOVE TAG` exactly once
+    while the other seven prompts contain it zero times.
+    """
+    lines = sa.copy_lines(_LIVE_BLOCK)
+    assert lines, "copy_lines() returned nothing"
+    assert lines[0] == "Department First, or Back on Your Plate?", (
+        "the first copy line is not the headline -- an engine metadata line has "
+        f"taken copy[0]: {lines[0]!r}. copy[0] is what AF-OBI-2 word-counts, what "
+        "the copy-density band measures, what the workbook prints as the slide "
+        "title, and what AF-P-VERBATIM demands be PAINTED ONTO THE SLIDE.")
+    assert not any(re.match(r"(?i)^\s*MOVE\s+TAG\s*:", ln) for ln in lines), (
+        f"a MOVE TAG line reached copy[]: {lines}")
+    # and it must not survive in any other guise either
+    assert "TRIGGER" not in "\n".join(lines), (
+        "the move tag VALUE leaked into copy[] without its label")
 
 
 def test_the_guard_is_not_vacuous():

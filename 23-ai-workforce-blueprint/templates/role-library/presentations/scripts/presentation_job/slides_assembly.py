@@ -186,6 +186,18 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #:                  are NOT on the slide"; demanding them be baked would put the
 #:                  presenter's script ON the slide, which SOP step 1 forbids
 #:   HOOK VARIANT   which hook variant was used (engine metadata)
+#:   MOVE TAG       PD-TEST-173. Which of the eight build-move beats this slide
+#:                  carries (PRIORITY_STACK | PRESENT_COST | HIGHER_PRIORITY |
+#:                  VALUE_ANCHOR | URGENCY_SCARCITY | ABILITY_UNBLOCK |
+#:                  RERANK_DEMAND | TRIGGER). build_deck.AF-NO-SHIFT REQUIRES
+#:                  >=5 of those tags to appear in slides_copy.md, monotonic, so
+#:                  the writer MUST record them in the copy file -- but the
+#:                  copy-block template never said HOW, so the live run invented
+#:                  `MOVE TAG: TRIGGER`. Nothing stripped it, so it became
+#:                  copy[0] -- THE HEADLINE -- shifting every positional reader
+#:                  by one for that slide, and AF-P-VERBATIM then demanded the
+#:                  metadata be PAINTED AS THE HEADLINE (measured: slide-08.txt
+#:                  contains "MOVE TAG" once; the other seven prompts, zero).
 #:
 #: Deliberately STILL RENDERED, and therefore still in `copy[]`: HEADLINE,
 #: SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those are the
@@ -201,7 +213,7 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 _FIELD_LINE_RE = re.compile(
     r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
     r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
-    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT|EMPHASIS)\s*:")
+    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT|EMPHASIS|MOVE\s+TAG)\s*:")
 
 #: PD-TEST-169 -- the RENDERED fields carry a LABEL that must not be rendered.
 #: slides.schema.json is explicit: copy[] is "the EXACT text that must appear

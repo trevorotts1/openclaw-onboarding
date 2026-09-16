@@ -1,3 +1,40 @@
+## [v25.1.32]  -  2026-09-16  -  `MOVE TAG:` was the engine's own routing metadata sitting in `copy[0]` — so a slide's HEADLINE was a field name
+
+### What Changed
+- **PD-TEST-173 — the copywriter's build-move tag line was the one field-shaped line in `slides_copy.md` that `copy[]` did not classify, and it landed at index 0, the HEADLINE.** `build_deck.AF-NO-SHIFT` **requires** ≥5 of the eight build-move tags (`PRIORITY_STACK`, `PRESENT_COST`, `HIGHER_PRIORITY`, `VALUE_ANCHOR`, `URGENCY_SCARCITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER`) to appear in `slides_copy.md`, monotonic — so the copywriter *has* to record them in the copy file. But the copy-block template never said **how**, so the live run invented `MOVE TAG: TRIGGER`. `_FIELD_LINE_RE` listed `TAG|TAGS` but matches those only at the **start** of a line, and this line starts with `MOVE`, so nothing stripped it.
+
+  The consequence is the worst possible position. `copy[0]` is the field `slide_craft` **AF-OBI-2** word-counts, the field `build_deck._chk_copy_density` measures against the **headline** band, the field `workbook_mapper._title_from_copy` prints as the workbook's slide title, and — through `AF-P-VERBATIM` — a string the image prompt must render **verbatim**.
+
+  **Measured on the live run, `pres-operator-1d269693`:** `slides_copy.md` line 140 carries the line, and slide 08's `copy[]` was
+
+  ```
+  ['MOVE TAG: TRIGGER', 'Submit Your First Request Now',
+   'The nine-question intake takes minutes, not an afternoon.', 'Telegram channel is open']
+  ```
+
+  — the real headline at index 1, every positional reader shifted by one. And the demand was **obeyed**: `working/prompts/slide-08.txt` contains the string `MOVE TAG` **exactly once**, while all seven other slide prompts contain it **zero** times. The per-slide art direction carried it too.
+
+  **Fix:** `MOVE TAG` joins the non-rendered field set in `slides_assembly._FIELD_LINE_RE`, **and the copy contract now says how to record the tags** — `MOVE TAG: [the ONE build-move beat this slide carries: PRIORITY_STACK | … | TRIGGER — engine metadata, NEVER rendered on the slide]` is added to the copy-block template in **both** `sops/slide-copywriter-sops.md` and `slide-copywriter.md`. Classifying the field without documenting it would have left the next writer to invent the form again; the contract mandates the information, so the contract must state the shape.
+
+  **Measured after the fix**, through the real extractor, slide 08's `copy[]` is exactly the schema's shape:
+
+  ```
+  ['Submit Your First Request Now',
+   'The nine-question intake takes minutes, not an afternoon.',
+   'Telegram channel is open']
+  ```
+
+  and the `slide-craft` **AF-OBI-1** (3-block ceiling) offender count across the deck went **8 slides → 2 → 1** (PD-TEST-169 took it to 2; this fix removes slide 8's). The single survivor is slide 1 at 5 blocks — three bullets under a headline and a subhead, a genuine density question, **not** claimed as fixed here.
+
+- **The leak was found by auditing rather than by guessing, and it is the only one.** Every field-shaped line in the live `slides_copy.md` was enumerated and checked against the extractor: 15 distinct field names, and of them only `MOVE TAG` (×1) was unclassified. `HEADLINE` / `SUBHEAD` / `SUPPORTING` are not leaks — they are the **rendered** fields, whose values must reach `copy[]` while their labels must not (the rule PD-TEST-169 established). So this is a complete fix, not a patch over a larger family.
+
+  **A tripwire that could not have caught it, now documented.** `tests/test_pd158_copy_metadata_not_rendered.py`'s `test_every_field_regex_token_is_a_contract_field` checks regex-token → contract-field, one direction only; and `test_every_contract_field_is_classified` reads its field list **from the SOP template** — which never mentioned `MOVE TAG`. A field the contract omits but the writer must emit is invisible to both. The template addition above closes that specific hole, and the fixture now carries the real `MOVE TAG: TRIGGER` line so the leak is pinned by `test_move_tag_never_becomes_the_headline`.
+
+  **Controls:** removing `MOVE TAG` from `_FIELD_LINE_RE` while leaving everything else intact fails **3** tests — `test_move_tag_never_becomes_the_headline`, `test_every_non_rendered_field_is_stripped_from_copy`, and `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` — versus 7 passed with the fix. The new test asserts the *positional* consequence (that `copy[0]` is the real headline), not merely that a string is absent.
+
+### Why It Mattered
+A slide whose headline is `MOVE TAG: TRIGGER` is not a styling defect — it is the engine's internal routing label occupying the single most important text position on the slide, in the demand list handed to the image model, and in the workbook's title field. It also silently shifted **every** positional consumer for that slide by one, so the word-count, density and craft gates were all grading the wrong strings. The copy phase had no way to avoid it: the gate required the information and the contract never said where to put it.
+
 ## [v25.1.31]  -  2026-09-16  -  `copy[]` is the slide's TEXT, not a labelled form — so the engine stops demanding its own field labels be painted onto the slide
 
 ### What Changed
