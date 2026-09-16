@@ -1,3 +1,33 @@
+## [v25.1.30]  -  2026-09-16  -  The prompt fan-out is funded per slide, and budget exhaustion stops masquerading as a provider fault
+
+### What Changed
+- **PD-TEST-161 — PD-TEST-124's fair-admission fix reached the COPY fan-out and never the PROMPT one, so 5 of 8 slides could never get a first attempt.** `paid_unit_scope` — the seam that makes a fan-out's budget declared, bounded and accounted per unit — is referenced in exactly **one** production place, `dispatcher._dispatch_phase_fanout_units`. `presentation_job/parallel_prompt_worker.py` calls `dispatcher.dispatch_complete` directly, so its reservations fell through to the **legacy phase-level clause** (`paid >= DISPATCH_RETRY_CAP`, i.e. **3**). An 8-slide prompt wave therefore had 8 units racing for 3 attempts.
+
+  Measured live on `pres-operator-1d269693` (`working/checkpoints/prompt-worker-results-attempts.jsonl`): slides **02/03/04/05/06** each failed at attempt 1 with **ZERO verification codes**, all at the **same second** (13:07:55) — they never reached a provider, they lost the reservation race — while 01/07/08 got real attempts and died on attempt 2. The ledger ended `paid_attempts: 3`, `status: exhausted`; the checkpoint recorded `failed_count: 8`, `missing_ordinals: [1..8]`.
+
+  **Fix, in the two places that make the accounting real:**
+  1. `_dispatch_prompt_phase_parallel` now **declares** the wave's bounded total — through the same single writer, `_declare_phase_paid_budget`, keyed on each slide's own `slide_id` — **before** the wave runs. Without a declaration `_effective_phase_paid_cap` returns the legacy cap, so the scope alone would have changed nothing. Strictly fail-soft, recording `paid_budget_declaration_failed` and the consequence (legacy cap, i.e. the pre-fix behaviour) so a declaration failure is never silent.
+  2. `parallel_prompt_worker._execute_slide` enters `paid_unit_scope(slide_id)` **once per attempt**, so each attempt is accounted to its slide with its own logical token — the same predicate the copy fan-out has used since PD-TEST-124. Outside such a declaration the legacy path is unchanged byte-for-byte, so serial and undeclared phases are untouched.
+
+  Measured after the fix, through the **real** `_reserve_paid_attempt` seam: all **8 of 8** slides reserve a first attempt; undeclared, the legacy cap still stops at exactly **3** with `PaidBudgetExhausted`.
+
+- **PD-TEST-162 — a LOCAL SCHEDULING event was reported as a non-retryable PROVIDER fault, which is why PD-TEST-161 was invisible.** `parallel_prompt_worker._classify` ends in a deliberate catch-all ("everything unknown is non-retryable so garbage never consumes the provider budget"), and `PaidBudgetExhausted` / `PaidAttemptDeferred` derive from `DeepSeekCallError(RuntimeError)` — not from `ValueError`/`KeyError`/`TypeError`, and carrying none of the 401/403/429/5xx/timeout markers. Measured before the fix:
+
+  ```python
+  _classify(PaidBudgetExhausted('paid retry budget exhausted: 3 provider attempts'))
+      -> ('provider_error', False)
+  ```
+
+  Two harms, both observed: it sent the reader hunting credentials and endpoints when the cause was local, and it marked the unit **abandoned** rather than deferred until budget exists. They are now matched **by type first** — `budget_exhausted` / `budget_deferred`, both **retryable** — so no future wording change can re-mask them. The catch-all still catches: a plain `RuntimeError` stays `provider_error`/non-retryable, and 401 / 429 / 5xx / timeout / shape errors keep their existing classes exactly.
+
+### Tests
+- New `tests/test_pd161_prompt_fanout_fair_budget.py` (**8 cases**), driven through the **real** reservation seam (`_declare_phase_paid_budget` + `paid_unit_scope` + `_reserve_paid_attempt`), not a stub: every slide gets a first attempt under a declared budget; **undeclared, the legacy cap of exactly 3 still binds** (the before-state, and the no-regression guarantee); a later, narrower declaration cannot shrink the bound; budget exhaustion and deferral classify as scheduling and **retryable**; genuine provider/auth/rate/5xx/timeout/shape faults keep their classes; and two structural pins assert the per-attempt `paid_unit_scope(slide_id)` and that the dispatcher **declares before** `run_worker` and stays fail-soft.
+- **Negative controls (all measured):** removing the per-attempt scope fails the scope pin; reverting the classification fails both budget-class cases; removing the declaration fails the ordering pin. Restored, 8 passed.
+
+### Not fixed here, deliberately
+- **PD-TEST-163** — `_chk_copy_density` / `check_copy_qc_teeth` (AF-COPY-BAND) and `check_obi_headline_words` (AF-OBI-2) read `copy[]` **by index**; a separate change.
+- **PD-TEST-158 is narrowed, not closed** — field LABELS (`HEADLINE:`/`EMPHASIS:`/`SUBHEAD:`/`SUPPORTING:`) are still in `copy[]`; the engine's own contract calls `EMPHASIS` metadata.
+
 ## [v25.1.29]  -  2026-09-16  -  Engine bookkeeping stops reaching `copy[]` (the metadata leak is narrowed, not closed)
 
 ### What Changed

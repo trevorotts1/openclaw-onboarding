@@ -4751,6 +4751,41 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # error -- never silently falls back to the serial loop and re-spends.
     started_iso = utcnow()
     started_t = time.monotonic()
+    # PD-TEST-161: DECLARE this fan-out's bounded total BEFORE any paid call, so
+    # the prompt wave is funded the same way the copy fan-out has been since
+    # PD-TEST-124. `_declare_phase_paid_budget` is the single writer of
+    # `phase_paid_budget`, and `_effective_phase_paid_cap` returns the declared
+    # bound when one exists (else the legacy DISPATCH_RETRY_CAP, byte-for-byte).
+    # Each slide's own attempt is then accounted under its `slide_id` by the
+    # `paid_unit_scope` the worker enters per attempt.
+    #
+    # Strictly fail-soft: a declaration failure must not stop the wave. The
+    # ledger then simply stays undeclared and the legacy per-phase cap governs,
+    # which is exactly the pre-fix behaviour -- the sidecar records which
+    # happened so the difference is never silent.
+    try:
+        _unit_keys = [str(s.get("slide_id") or s.get("ordinal"))
+                      for s in slides_payload]
+        _budget_decl = _declare_phase_paid_budget(
+            run_dir, phase_id, unit_keys=_unit_keys, worker_id=worker_id)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_budget_declared",
+            "policy": _budget_decl.get("policy"),
+            "units": len(_unit_keys),
+            "total_cap": _budget_decl.get("total_cap"),
+            "units_admitted_first_attempt":
+                _budget_decl.get("units_admitted_first_attempt"),
+            "units_not_admitted": _budget_decl.get("units_not_admitted"),
+        })
+    except Exception as exc:  # noqa: BLE001 -- the wave still runs undeclared
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("the prompt wave runs on the legacy per-phase cap "
+                            "(DISPATCH_RETRY_CAP) exactly as before PD-TEST-161"),
+        })
     _append_sidecar(run_dir, phase_id, {
         "worker": worker_id, "attempt": 1, "status": "parallel_wave_started",
         "input": str(input_path), "slides": len(slides_payload),

@@ -541,7 +541,35 @@ _NONRETRYABLE_CODES = ("auth_error", "permission_error", "invalid_input",
 def _classify(exc: BaseException) -> Tuple[str, bool]:
     """Returns (error_class, retryable). Text matching is deliberately strict:
     only explicit status codes or timeout markers count; everything unknown is
-    non-retryable so garbage never consumes the provider budget."""
+    non-retryable so garbage never consumes the provider budget.
+
+    PD-TEST-162: SCHEDULING IS NOT A PROVIDER FAULT, and it is RETRYABLE.
+    `PaidBudgetExhausted` / `PaidAttemptDeferred` derive from
+    `DeepSeekCallError(RuntimeError)` -- not from ValueError/KeyError/TypeError,
+    and carrying none of the 401/403/429/5xx/timeout markers -- so they used to
+    fall through to this function's catch-all and be reported as
+    `provider_error` with `retryable=False`. Measured on run
+    pres-operator-1d269693 before the fix:
+
+        _classify(PaidBudgetExhausted('paid retry budget exhausted: 3 provider
+                   attempts'))  ->  ('provider_error', False)
+
+    Two harms, both observed: it sent the reader hunting credentials/endpoints
+    when the cause was LOCAL (the phase's own bounded paid budget, PD-TEST-161),
+    and it marked the unit abandoned rather than deferred until budget exists.
+    They are matched by TYPE FIRST so no wording change can re-mask them."""
+    # Local imports: `dispatcher` is already imported lazily elsewhere in this
+    # module (see the provider seam), and these two names live there.
+    try:
+        from . import dispatcher as _d
+        _budget_types = (_d.PaidBudgetExhausted, _d.PaidAttemptDeferred)
+    except Exception:  # noqa: BLE001 -- a degraded install keeps the old order
+        _budget_types = ()
+    if _budget_types and isinstance(exc, _budget_types):
+        eclass = ("budget_deferred" if isinstance(exc, getattr(_d, "PaidAttemptDeferred", ()))
+                  else "budget_exhausted")
+        return eclass, True
+
     text = f"{type(exc).__name__}: {exc}"
     if isinstance(exc, WorkerUsageError):
         return "usage_error", False
@@ -649,7 +677,28 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     while attempt < RETRY_CAP:
         attempt += 1
         try:
-            text = pcall(slide, routing, attempt, run_dir, owning_role, n_slides)
+            # PD-TEST-161: bind this ATTEMPT's paid reservation to THIS SLIDE.
+            #
+            # Without this the prompt fan-out reserved through the legacy
+            # phase-level clause (`paid >= DISPATCH_RETRY_CAP`, i.e. 3), so an
+            # 8-slide wave had 8 units racing for 3 attempts: measured on run
+            # pres-operator-1d269693, slides 02-06 failed at attempt 1 with ZERO
+            # verification codes at the SAME SECOND (they never reached a
+            # provider -- they lost the reservation race) while 01/07/08 got real
+            # attempts. PD-TEST-124 fixed exactly this for the COPY fan-out but
+            # `paid_unit_scope` is used at only that one site; this is the same
+            # accounting applied to the prompt fan-out, which is the other
+            # multi-unit paid path.
+            #
+            # One scope entry per ATTEMPT, so each attempt carries its own
+            # logical token -- two different tokens for one unit are two real
+            # attempts, and a duplicate call inside one attempt is a no-op. The
+            # phase's bounded total is declared by
+            # dispatcher._dispatch_prompt_phase_parallel immediately before the
+            # wave; outside such a declaration the legacy cap still applies
+            # byte-for-byte, so nothing else changes.
+            with dispatcher.paid_unit_scope(slide_id):
+                text = pcall(slide, routing, attempt, run_dir, owning_role, n_slides)
         except Exception as exc:  # noqa: BLE001 -- classified below
             eclass, retryable = _classify(exc)
             base["attempts"] = attempt
