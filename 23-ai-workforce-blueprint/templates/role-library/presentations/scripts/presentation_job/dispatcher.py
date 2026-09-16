@@ -9576,7 +9576,44 @@ def _reserve_scoped_unit_attempt(led: Dict[str, Any], *, run_dir: Path,
             and str(live.get("generation") or "initial") == scope:
         if token and live.get("token") == token:
             return paid
-        if not _reservation_owner_is_gone(live.get("pid")):
+        # PD-TEST-177 -- THIS THREAD'S OWN PREVIOUS ATTEMPT FOR THIS UNIT IS, BY
+        # CONSTRUCTION, NO LONGER IN FLIGHT. A worker task runs one unit
+        # sequentially, and a unit's retries all happen inside that one task
+        # (parallel_prompt_worker._execute_slide's `while attempt < RETRY_CAP`
+        # loop), so a reservation this same THREAD left for this same unit can
+        # only be the attempt that just ended. Refusing it disabled the retry:
+        # the reservation is settled only AFTER the whole wave returns
+        # (_settle_unit_paid_attempts, called by _dispatch_prompt_phase_parallel),
+        # so during the retry loop the attempt-1 reservation is still 'reserved'.
+        # Measured on the shipped code: a 1-slide wave whose transport raises
+        # HTTP 500 made ONE provider call and then reported `budget_deferred`
+        # twice, where pre-PD-TEST-161 code made three and reported the real
+        # `server_error` -- one transient 5xx/429/timeout lost the slide AND
+        # mislabelled the cause.
+        #
+        # WHY (pid, thread) AND NOT worker_id: the prompt path calls
+        # `dispatch_complete(system_prompt, user_prompt, phase_id=..., run_dir=...)`
+        # -- worker_id is deliberately NOT passed (parallel_prompt_worker.py), so
+        # it is None here and cannot identify an owner. Thread identity can:
+        # threads are REUSED across units (ThreadPoolExecutor(thread_name_prefix=
+        # "p4prompt"); p4prompt_0 handled slides 1 and 4 in one measured run), so
+        # a thread name identifies no unit on its own -- but paired with the
+        # `unit_key` this lookup is already keyed on, and this process's pid, it
+        # identifies exactly "my own previous attempt at this unit".
+        #
+        # The guard's real job is unchanged: it stops TWO CONCURRENT attempts for
+        # one unit. A different thread (even in this process), a different
+        # process, or a reservation predating this field still refuses, because
+        # `live.get("thread")` will not equal ours. Spend stays bounded by the
+        # checks that already ran: the per-unit ceiling (`spent >=
+        # DISPATCH_RETRY_CAP`) and the declared phase bound (`paid >= cap`).
+        # Every replacement below still increments `seq` and `paid`.
+        _own_previous_attempt = (
+            live.get("pid") == os.getpid()
+            and live.get("thread") is not None
+            and live.get("thread") == threading.get_ident())
+        if not _own_previous_attempt \
+                and not _reservation_owner_is_gone(live.get("pid")):
             raise PaidAttemptDeferred(
                 f"unit {unit_key} already has an in-flight paid reservation "
                 f"(attempt {live.get('seq')}, owner pid {live.get('pid')}, worker "
@@ -9590,6 +9627,11 @@ def _reserve_scoped_unit_attempt(led: Dict[str, Any], *, run_dir: Path,
     reservations[unit_key] = {
         "token": token, "seq": seq, "worker": worker_id or "unknown",
         "pid": os.getpid(), "state": "reserved", "generation": scope,
+        # PD-TEST-177: the reserving THREAD, so this unit's own in-run retry can
+        # recognise its predecessor as finished (see the double-reserve guard
+        # above) while a different thread or process still refuses. Absent on
+        # rows written before this change, which therefore still refuse.
+        "thread": threading.get_ident(),
         "reserved_at": utcnow(),
     }
     tokens = [t for t in (led.get(LEDGER_RESERVATION_TOKENS) or [])
