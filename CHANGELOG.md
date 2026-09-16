@@ -1,3 +1,32 @@
+## [v25.1.31]  -  2026-09-16  -  `copy[]` is the slide's TEXT, not a labelled form — so the engine stops demanding its own field labels be painted onto the slide
+
+### What Changed
+- **PD-TEST-169 — PD-TEST-158 got the metadata OUT of `copy[]` and left the LABELS in, so 8 of 8 slide prompts still failed on exactly that.** `slides.schema.json` defines `copy[]` as "The EXACT text that must appear rendered on the slide, in reading order. **Index 0 is treated as the HEADLINE**; remaining entries are subheads/body lines", and its own worked example is `["Northwind Co", "Three moves that doubled our pipeline in 90 days"]` — **bare text**. But `copy_lines()` preserved the `HEADLINE:` / `SUBHEAD:` prefixes, so `copy[]` looked like `["HEADLINE: Department First, or Back on Your Plate?", "EMPHASIS: Department First", "SUBHEAD: ..."]`. `AF-P-VERBATIM` then failed every slide because the *label* — a form artifact that is never pixels — was not baked into the image prompt. Measured live on `pres-operator-1d269693`: **4–6 `AF-P-VERBATIM` failures on every one of the 8 slides**, each naming a label-prefixed string as `required=`.
+
+  Two changes in `slides_assembly`:
+  1. **`EMPHASIS:` is now a non-rendered field.** The engine's OWN P4-PROMPT contract says the fields counting toward the on-slide word total are "exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING", and that "SECTION, PURPOSE, ARCHETYPE, LADDER, **EMPHASIS**, PROOF USED, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata **never rendered on the slide**". The accent word already appears inside the headline, so the `EMPHASIS` line was redundant for the renderer as well.
+  2. **`_LABEL_STRIP_RE` removes the `HEADLINE:` / `SUBHEAD:` / `SUPPORTING:` label and keeps the value.** A bare `SUPPORTING:` (label, no value) collapses to nothing — correct, since its bullets are their own lines beneath it.
+
+  Measured through the live verifier against the run's 8 real prompts: `AF-P-VERBATIM` failures went **4–6 per slide → 0 on every slide**; slides failing the whole prompt gate went **8/8 → 5/8**; slides **02, 03 and 05 now PASS**. The 3 residual failures are a *different* defect (prompt content: `AF-FACE-PROMPT-MISSING` / `AF-LIGHT-PROMPT-MISSING` / `AF-HAIR-INAUTHENTIC`), tracked separately and not claimed as fixed here.
+
+- **PD-TEST-163 — the positional gates were reading engine labels as slide text, and now read the real fields.** `copy[]` has positional consumers that assume the schema's shape: `build_deck._chk_copy_density` reads `fields[0]` as the headline, `[1]` the subhead, `[2]` the kicker and `[3:]` the bullets; `slide_craft.AF-OBI-2` (`check_obi_headline_words`) grades `copy[0]` as the headline. With labels present, those gates were grading `"HEADLINE: ..."` and — worse — `"EMPHASIS: Department First"` as the slide's *subhead*. After the fix `copy[0]` is the real 6-word headline, `copy[1]` the real subhead and `copy[2]` the first real bullet.
+
+  **Measured effect on `build_deck.AF-COPY-BAND`** (a *fatal* preflight — a non-empty return makes `build_deck` print `FATAL: PROCESS PREFLIGHT FAILED` and `sys.exit(3)`), run over the live run's own `slides_copy.md` at `850b81034` vs this commit:
+
+  | | slides with offenders | offender lines |
+  |---|---|---|
+  | before | **8 of 8** | 26 |
+  | after | **5 of 8** | 5 |
+
+  `SLIDE TOTAL` offenders fell **5 → 0** and `BULLET` offenders **9 → 0**. The 5 survivors are a single, separate pre-existing defect — all five are `KICKER <n> over 40` — filed as PD-TEST-171 and **not** claimed as fixed here. Note the odd shapes the labels produced before: slide 01 reported `BULLETS 4 over 3` and slide 08's `copy[0]` was `MOVE TAG: TRIGGER`, i.e. a metadata line was the headline.
+
+  **Controls (each pinning one behaviour, so neither change can silently no-op):** reverting the label strip ⇒ `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` fails on the label half; removing `EMPHASIS` from `_FIELD_LINE_RE` ⇒ `test_every_non_rendered_field_is_stripped_from_copy` fails; the pre-existing reverse-direction tripwire (`test_every_field_regex_token_is_a_contract_field`) still proves no *invented* token silently deletes real copy.
+
+- **`slides.schema.json` and the field regexes can no longer drift apart silently.** `tests/test_pd158_copy_metadata_not_rendered.py` reads the P4-COPY contract's own slide-block template out of `sops/slide-copywriter-sops.md` and asserts that **every** field it prescribes is classified here as either rendered or non-rendered, and that no token in `_FIELD_LINE_RE` names a field the contract never prescribes — the same tripwire shape that caught PD-TEST-156. A field added to the contract now fails this suite until someone decides whether it reaches the slide.
+
+### Why It Mattered
+`copy[]` is not a report — it is the **verbatim demand list** handed to the image model. Anything left in it is ordered to be painted into the pixels. So a label prefix is not cosmetic: it converts the engine's own form syntax into a QC failure that no writer can ever satisfy, because satisfying it would mean rendering the word "HEADLINE:" onto the client's slide. That is what kept 8 of 8 prompts red.
+
 ## [v25.1.30]  -  2026-09-16  -  The prompt fan-out is funded per slide, and budget exhaustion stops masquerading as a provider fault
 
 ### What Changed

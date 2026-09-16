@@ -188,15 +188,35 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #:   HOOK VARIANT   which hook variant was used (engine metadata)
 #:
 #: Deliberately STILL RENDERED, and therefore still in `copy[]`: HEADLINE,
-#: EMPHASIS, SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those
-#: are the slide's words. `EMPHASIS:` keeps its label because the live verifier
-#: demands `EMPHASIS: <word>` verbatim and prompts are already authored to it;
-#: dropping the label there is a separate, visibly-rendering change and is not
-#: bundled into a fix whose purpose is to stop METADATA reaching the slide.
+#: SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those are the
+#: slide's words -- and, since PD-TEST-169, they appear WITHOUT their labels.
+#:
+#: EMPHASIS joined this set in PD-TEST-169. The engine's OWN P4-PROMPT contract
+#: (dispatcher.py, the AF-C8 point) says the fields counting toward the on-slide
+#: word total are "exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING",
+#: and that "SECTION, PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PROOF USED, PEOPLE,
+#: HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata
+#: never rendered on the slide". The accent word already appears INSIDE the
+#: headline, so the EMPHASIS entry is redundant for the renderer as well.
 _FIELD_LINE_RE = re.compile(
     r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
     r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
-    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT)\s*:")
+    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT|EMPHASIS)\s*:")
+
+#: PD-TEST-169 -- the RENDERED fields carry a LABEL that must not be rendered.
+#: slides.schema.json is explicit: copy[] is "the EXACT text that must appear
+#: rendered on the slide, in reading order. Index 0 is treated as the HEADLINE"
+#: and its own example is ["Northwind Co", "Three moves that doubled our
+#: pipeline in 90 days"] -- BARE text, no `HEADLINE:` prefix. So the label is
+#: stripped and the VALUE kept. A bare `SUPPORTING:` (label, no value) collapses
+#: to nothing, which is right: its bullets are their own lines beneath it.
+#:
+#: This also puts copy[] into the shape its POSITIONAL consumers already assume:
+#: build_deck._chk_copy_density reads fields[0] as the headline, [1] as the
+#: subhead, [2] as the kicker and [3:] as bullets; slide_craft.AF-OBI-2
+#: (check_obi_headline_words) grades copy[0] as the headline. With labels present
+#: those reads were grading "HEADLINE: ..." and "EMPHASIS: ..." as slide text.
+_LABEL_STRIP_RE = re.compile(r"(?i)^\s*(?:HEADLINE|SUBHEAD|SUPPORTING)\s*:\s*")
 
 #: ANY HTML comment is engine bookkeeping, not pixels -- not just the ARC marker.
 #: PD-TEST-158, review finding: the P4-COPY contract itself INSTRUCTS the writer
@@ -416,6 +436,7 @@ def copy_lines(body: str) -> List[str]:
             continue
         if _FIELD_LINE_RE.match(line):
             continue
+        line = _LABEL_STRIP_RE.sub("", line)
         line = _LEADING_MARKUP_RE.sub("", line).strip()
         if line:
             out.append(line)
