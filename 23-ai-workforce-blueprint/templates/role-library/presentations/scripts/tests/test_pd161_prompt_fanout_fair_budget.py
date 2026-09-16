@@ -164,6 +164,33 @@ def test_budget_deferral_classifies_as_scheduling_and_is_retryable():
     assert retryable is True
 
 
+def test_the_claim_ownership_HARD_STOP_stays_non_retryable():
+    """Review F8: one `PaidBudgetExhausted` is a hard stop, not a budget event.
+
+    `"paid attempt refused: claim ownership changed"` (dispatcher.py:9629) means
+    another worker took the phase; retrying it achieves nothing. The TYPE cannot
+    tell it apart from a genuine budget refusal, so it is matched explicitly --
+    and it must ALSO be in `_NONRETRYABLE_CODES`, because `_finalize_failure`
+    re-derives `retryable` from that tuple and would otherwise undo this."""
+    cls, retryable = ppw._classify(
+        dj.PaidBudgetExhausted("paid attempt refused: claim ownership changed"))
+    assert cls == "claim_lost", cls
+    assert retryable is False, "a lost claim must NOT be retried"
+    assert cls in ppw._NONRETRYABLE_CODES, (
+        "_finalize_failure derives retryable from the code tuples; a class "
+        "missing from both is silently treated as non-retryable by accident "
+        "rather than by decision")
+
+
+def test_the_budget_classes_are_declared_retryable_in_the_code_tuples():
+    """Review F8, the other half: `_classify` returning retryable is not enough
+    if `_RETRYABLE_CODES` does not list the class."""
+    for cls in ("budget_exhausted", "budget_deferred"):
+        assert cls in ppw._RETRYABLE_CODES, (
+            f"{cls} is retryable by design (a refusal is free) but missing from "
+            "_RETRYABLE_CODES")
+
+
 def test_genuine_provider_and_auth_faults_keep_their_classes():
     """The catch-all must still catch. This fix narrows ONE type, it does not
     loosen the classifier."""
@@ -178,7 +205,80 @@ def test_genuine_provider_and_auth_faults_keep_their_classes():
     assert ppw._classify(ValueError("bad shape"))[0] == "verify_failed"
 
 
+def test_execute_slide_really_runs_and_reaches_the_provider(tmp_path):
+    """EXECUTE the worker -- do not grep it.
+
+    Review F1: the first version of this fix wrote `with dispatcher.paid_unit_scope(...)`
+    in `_execute_slide`, but `dispatcher` is not a module global in
+    `parallel_prompt_worker` (every other use is a function-local import, because
+    `dispatcher` imports this module at its own line 119). EVERY slide therefore
+    raised `NameError: name 'dispatcher' is not defined` before any provider call.
+
+    The other tests in this file could not see it: they drive
+    `_reserve_paid_attempt` directly, and the worker assertions were source-text
+    greps. A grep proves a line EXISTS; only execution proves it RUNS. This test
+    calls the real `_execute_slide` end to end with a stubbed transport and
+    asserts the provider was actually reached.
+    """
+    import json as _json
+    run_dir = tmp_path / "run"
+    (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    (run_dir / "working" / "work-orders").mkdir(parents=True, exist_ok=True)
+    (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (run_dir / "state.json").write_text(_json.dumps({
+        "phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    dj._declare_phase_paid_budget(run_dir, PHASE,
+                                  unit_keys=["slide-01"], worker_id=WORKER)
+
+    calls = []
+    scopes_seen = []
+
+    def fake_provider(slide, routing, attempt, rd, role, n_slides):
+        # Record that the REAL worker got this far, and WHICH unit the paid scope
+        # is bound to. `dispatch_complete` -- the layer that actually reserves --
+        # is stubbed out here, so the scope binding is what this asserts; the
+        # reservation itself is covered by the seam tests above.
+        calls.append((slide.get("slide_id"), attempt))
+        scopes_seen.append(dj._current_paid_unit_key())
+        return "PROMPT BODY " * 20
+
+    task = {
+        "slide": {"slide_id": "slide-01", "ordinal": 1,
+                  "copy": ["HEADLINE: Go"], "archetype": "A1"},
+        "routing": {"model": "stub"},
+        "run_dir": str(run_dir),
+        "prompt_constraints": {},
+        "n_slides": 1,
+        "owning_role": "slide-copywriter",
+        "attempts_log": str(run_dir / "working" / "checkpoints"
+                            / "prompt-worker-results.json"),
+    }
+    monkey = pytest.MonkeyPatch()
+    try:
+        monkey.setattr(ppw, "_resolve_provider", lambda: fake_provider)
+        # The verifier is not what this test is about; keep it out of the way.
+        monkey.setattr(ppw, "_verify_prompt", lambda *a, **k: (True, []))
+        result = ppw._execute_slide(task)
+    finally:
+        monkey.undo()
+
+    assert calls, (
+        "the provider was NEVER reached -- `_execute_slide` raised before its "
+        "first attempt. This is the F1 failure mode (a NameError on the paid "
+        f"scope binding). Result was: {result!r}")
+    assert calls[0] == ("slide-01", 1), calls
+    assert "NameError" not in str(result.get("error_message") or ""), result
+    # The unit scope must be BOUND, not merely mentioned: the provider call has
+    # to run inside `paid_unit_scope("slide-01")`, or the reservation downstream
+    # falls back to the legacy per-phase cap and this slide starves.
+    assert scopes_seen and all(k == "slide-01" for k in scopes_seen), (
+        f"the paid scope was not bound to this slide during the attempt: "
+        f"{scopes_seen}")
+
+
 def test_the_worker_enters_a_unit_scope_per_attempt():
+
+
     """Structural pin: the per-attempt scope is what makes the accounting work,
     and deleting it would otherwise be silent."""
     import inspect

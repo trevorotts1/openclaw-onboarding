@@ -4768,16 +4768,38 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
                       for s in slides_payload]
         _budget_decl = _declare_phase_paid_budget(
             run_dir, phase_id, unit_keys=_unit_keys, worker_id=worker_id)
+        # Review F4: `_declare_phase_paid_budget` returns a NESTED document --
+        # {"budget": {...}, "admitted": [...], "not_admitted": {...}} -- and the
+        # copy caller reads `["budget"]["total_cap"]`. The first version of this
+        # sidecar read those keys at top level and therefore recorded nulls.
+        _bd = _budget_decl.get("budget") or {}
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0,
             "status": "fanout_paid_budget_declared",
-            "policy": _budget_decl.get("policy"),
+            "policy": _bd.get("policy"),
             "units": len(_unit_keys),
-            "total_cap": _budget_decl.get("total_cap"),
+            "units_eligible": _bd.get("units_eligible"),
+            "total_cap": _bd.get("total_cap"),
             "units_admitted_first_attempt":
-                _budget_decl.get("units_admitted_first_attempt"),
-            "units_not_admitted": _budget_decl.get("units_not_admitted"),
+                _bd.get("units_admitted_first_attempt"),
+            "units_not_admitted": _bd.get("units_not_admitted"),
         })
+        # Review F5: the same explicit cannot-fund-all record the copy path
+        # writes, so slides outside the bound are visibly NOT ATTEMPTED rather
+        # than silently absent.
+        if _bd.get("units_not_admitted"):
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0,
+                "status": "paid_budget_cannot_fund_all_units",
+                "reason": (f"{_bd.get('units_not_admitted')} of "
+                           f"{_bd.get('units_eligible')} eligible slide(s) fall "
+                           f"outside the declared bounded total of "
+                           f"{_bd.get('total_cap')} paid attempt(s); they were "
+                           "NOT attempted (they did not fail). They are named in "
+                           "the ledger's phase_paid_budget/unit_not_admitted."),
+                "units_not_admitted": sorted(
+                    (_budget_decl.get("not_admitted") or {}).keys()),
+            })
     except Exception as exc:  # noqa: BLE001 -- the wave still runs undeclared
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0,

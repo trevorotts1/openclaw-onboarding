@@ -533,9 +533,17 @@ def _resolve_provider() -> Callable:
 # ---------------------------------------------------------------------------
 # Error classification -- retry only timeouts/429/5xx/verify failures.
 # ---------------------------------------------------------------------------
-_RETRYABLE_CODES = ("timeout", "rate_limited", "server_error", "verify_failed")
+_RETRYABLE_CODES = ("timeout", "rate_limited", "server_error", "verify_failed",
+                    # Review F8: the budget classes are retryable BY DESIGN (a
+                    # refusal is free -- it is raised before any transport
+                    # call), so they belong here as well as in _classify, or
+                    # _finalize_failure would re-derive them as non-retryable
+                    # and silently undo the classification.
+                    "budget_exhausted", "budget_deferred")
 _NONRETRYABLE_CODES = ("auth_error", "permission_error", "invalid_input",
-                       "empty_response", "usage_error")
+                       "empty_response", "usage_error",
+                       # ...and this one is a HARD STOP, not a budget event.
+                       "claim_lost")
 
 
 def _classify(exc: BaseException) -> Tuple[str, bool]:
@@ -564,9 +572,18 @@ def _classify(exc: BaseException) -> Tuple[str, bool]:
         from . import dispatcher as _d
         _budget_types = (_d.PaidBudgetExhausted, _d.PaidAttemptDeferred)
     except Exception:  # noqa: BLE001 -- a degraded install keeps the old order
-        _budget_types = ()
+        _d, _budget_types = None, ()
     if _budget_types and isinstance(exc, _budget_types):
-        eclass = ("budget_deferred" if isinstance(exc, getattr(_d, "PaidAttemptDeferred", ()))
+        # Review F8: exactly ONE `PaidBudgetExhausted` is a HARD STOP rather than
+        # a budget event -- the claim-ownership refusal raised when another
+        # worker took the phase (dispatcher.py:9629). Retrying it achieves
+        # nothing and it must stay non-retryable, but the TYPE cannot tell it
+        # apart from a genuine budget refusal, so this one fixed literal is
+        # matched explicitly. Every OTHER budget message stays scheduling.
+        if "claim ownership changed" in str(exc):
+            return "claim_lost", False
+        eclass = ("budget_deferred"
+                  if isinstance(exc, _d.PaidAttemptDeferred)
                   else "budget_exhausted")
         return eclass, True
 
@@ -674,6 +691,16 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     }
     attempt = 0
     pcall = _resolve_provider()
+    # PD-TEST-161 review F1: `dispatcher` is NOT a module global here -- every
+    # other use in this module is a function-local import (see _provider_call,
+    # _verify_and_write, _dept_root_from), because `dispatcher` imports THIS
+    # module at its own line 119, so a module-level import would be circular.
+    # The first version of the per-attempt scope below used the bare name and
+    # raised `NameError: name 'dispatcher' is not defined` on EVERY slide --
+    # before any provider call, so the wave silently produced nothing and spent
+    # nothing while reporting a provider fault. Bind it the way the rest of the
+    # module does.
+    import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
     while attempt < RETRY_CAP:
         attempt += 1
         try:
