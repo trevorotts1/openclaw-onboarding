@@ -932,6 +932,24 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     heal_ids = _verdict_check_ids(ev_reason)
     if block_ids and heal_ids:
         return bool(block_ids & heal_ids)
+    if block_ids or heal_ids:
+        # PD-TEST-194 (mixed grammar, independent delta review): EXACTLY ONE side
+        # carries structural autofails. That side is specific; the other names no
+        # autofail at all, so it cannot CONTRADICT it -- and refusing here was a
+        # reachable FALSE NEGATIVE. Both shapes are real and produced by the SAME
+        # checker (phase_verifiers emits the detailed
+        # "AF-PROMPT-FLOOR slide-<n>: <code> -- <detail>" and the summary-only
+        # "AF-PROMPT-FLOOR: <verdict>" / "AF-PROMPT-FLOOR: check_prompt_qc_
+        # deterministic returned pass:false"). The heal is written from one draw
+        # and the block from the next, so a phase whose verdict flips between
+        # draws lands here -- measured on BASE as True, and my first cut of the
+        # fallback closure made it False, i.e. one narrow shape of the very
+        # defect this PR exists to fix.
+        #
+        # This does NOT reopen F1's tautology: that was two STRUCTURED verdicts
+        # with disjoint autofails matching on the constant label, which the
+        # intersection above still rejects.
+        return True
     # PD-TEST-194 (adversarial self-probe, closing a hole F1 left open): when
     # either verdict lacks the `slide-<n>:` grammar the set match CANNOT be used,
     # and falling back to "all AF- tokens" silently reintroduced the very

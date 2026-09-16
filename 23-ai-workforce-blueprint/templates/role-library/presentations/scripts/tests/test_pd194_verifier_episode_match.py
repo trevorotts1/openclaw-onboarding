@@ -258,3 +258,45 @@ def test_the_widened_heal_gate_still_rejects_a_non_verifier_heal():
     ps = _park(f"{PREFIX}: AF-A \u2014 ; ", "dispatcher budget park AF-A",
                cls="dispatcher_budget")
     assert not P._block_is_verifier_sourced(ps)
+
+
+def test_a_MIXED_grammar_pair_still_identifies_the_episode():
+    """The false NEGATIVE the delta review found, closed.
+
+    `phase_verifiers` emits BOTH shapes from the same checker: the detailed
+    `"AF-PROMPT-FLOOR slide-<n>: <code> -- <detail>"` and the summary-only
+    `"AF-PROMPT-FLOOR: <verdict>"` / `"... check_prompt_qc_deterministic returned
+    pass:false"`. The heal is written from one draw and the block from the NEXT,
+    so a phase whose verdict flips shape between draws lands here. Measured: BASE
+    `True`, my first cut of the fallback closure `False` -- i.e. one narrow shape
+    of the very defect this PR exists to fix, still unrecoverable.
+
+    Only ONE side carries autofails, so it cannot be CONTRADICTED by the other;
+    the park is accepted. This does NOT reopen F1's tautology, which was two
+    STRUCTURED verdicts with disjoint autofails matching on the constant label --
+    `test_the_check_LABEL_alone_is_not_an_episode_match` still pins that closed.
+    """
+    detailed = f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-AAA \u2014 ; "
+    summary = (f"{PREFIX}: AF-PROMPT-FLOOR: check_prompt_qc_deterministic "
+               f"returned pass:false.")
+    assert P._verdict_check_ids(detailed) == {"AF-AAA"}
+    assert P._verdict_check_ids(summary) == set()
+    assert P._block_is_verifier_sourced(_park(summary, detailed))
+    assert P._block_is_verifier_sourced(_park(detailed, summary))
+
+
+def test_the_mixed_grammar_widening_does_not_readmit_an_operator_park():
+    """The asymmetry must not become an escape hatch.
+
+    With only one side structured, the gates that carry the operator/verifier
+    boundary are unchanged: the CURRENT block must still begin with the checker's
+    verdict prefix, and the newest heal must still be verifier-related.
+    """
+    detailed = f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-AAA \u2014 ; "
+    assert not P._block_is_verifier_sourced(
+        _park("Owner decision required before this phase proceeds.", detailed))
+    assert not P._block_is_verifier_sourced(
+        _park("dispatcher paid retry budget: exhausted after 11 of 11", detailed))
+    assert not P._block_is_verifier_sourced(
+        _park(f"{PREFIX}: AF-AAA \u2014 ; ", "dispatcher retry ceiling: 8 identical errors",
+              cls="dispatcher_budget"))
