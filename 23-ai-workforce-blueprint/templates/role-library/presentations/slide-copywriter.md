@@ -171,6 +171,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    PURPOSE: [the one big idea, one sentence]
    ARCHETYPE: [A1-A5 from SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)]
    LADDER: [none | ANCHOR | BUILDUP | DROP1 | DROP2 | DROP3 | FINAL]
+   MOVE TAG: [the ONE build-move beat this slide carries: PRIORITY_STACK | PRESENT_COST | HIGHER_PRIORITY | VALUE_ANCHOR | URGENCY_SCARCITY | ABILITY_UNBLOCK | RERANK_DEMAND | TRIGGER -- engine metadata, NEVER rendered on the slide; AF-NO-SHIFT requires >=5 of the eight across the deck, monotonic]
    HEADLINE: [max 9 words, active voice, no em dash]
    EMPHASIS: [which word(s) get accent color]
    SUBHEAD: [max 18 words, one line, optional -- only if the headline needs support]
