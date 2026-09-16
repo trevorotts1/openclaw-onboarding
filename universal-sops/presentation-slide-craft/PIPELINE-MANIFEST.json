@@ -1644,7 +1644,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/infographic-prompt.txt"
-      ]
+      ],
+      "infographic_path": true
     },
     {
       "id": "P9-SPEECH",
