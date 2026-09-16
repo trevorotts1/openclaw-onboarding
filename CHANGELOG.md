@@ -1,3 +1,33 @@
+## [v25.1.25]  -  2026-09-16  -  Bound reasoning on the FIRST attempt, and fund every fan-out unit fairly
+
+### What Changed
+- **PD-TEST-124, generation half — the production default stops being the one setting that fails.** `DEEPSEEK_REASONING_EFFORT` was `"max"`, copied from this box's `openclaw.json` declaration for the **harness agent**. That declaration governs the harness's own interactive turns; it does not govern this module, which sends ONE very large authoring prompt. Measured on the **byte-identical production request** (155,379 chars, `max_tokens=64,000`, same endpoint/model/temperature), four live sends:
+  - `max` -> `reasoning 64,000` (100.0% of the budget), `content` **ZERO**, `finish_reason="length"` — **FAIL**
+  - `medium` -> `reasoning 9,788` (15.3%), `content` 1,494, `finish_reason="stop"` — **PASS**
+  - `low` -> `reasoning 13,445` (21.0%), `content` 1,063, `stop` — **PASS**
+  - `thinking.type="disabled"` -> `reasoning 0`, `content` 1,297, `stop` — **PASS** *(DIAGNOSTIC ONLY; not shipped)*
+
+  Every PASS carried all 7 required fields and validated against the module's own `_validate_copy_section`. The ceiling was therefore never the binding constraint, and raising it a fourth time would buy nothing: reasoning expands to fill whatever ceiling it is given (8,000 -> 32,000 -> 64,000 each saturated). The default becomes `medium`; the operator's declared value is retained as `DEEPSEEK_REASONING_EFFORT_DECLARED_BY_OPERATOR` for audit, and the divergence is now pinned by a test rather than left to a comment.
+
+- **The effort ladder was RECOVERY-ONLY, and is no longer a dead-end.** It fired only when a unit's stored `last_error` already contained the empty-completion marker, so no unit's **first** attempt was ever protected — and for the seven units whose `last_error` was `PaidBudgetExhausted` it never fired at all. Wire evidence from the live run's 74 captured requests: **70 were sent at `"max"`**, 2 at `medium`, 2 at `low`.
+
+- **PD-TEST-124, scheduling half — one unit can no longer starve its siblings.** `DISPATCH_RETRY_CAP` capped paid calls **per phase**, so run `pres-operator-1d269693`'s `section-01` spent all three attempts and sections 02-08 were **never attempted at all**. The fan-out budget is now bounded and explicit:
+  `total_cap = min(PHASE_TOTAL_PAID_HARD_CAP, eligible_units * FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT + PHASE_RETRY_POOL_ATTEMPTS)`
+  with one funded **first** attempt per eligible unit, first attempts prioritised over retries, per-unit accounting, admissions taken under the existing phase-budget lock, and an explicit recorded outcome naming the bound when it cannot fund every unit ("it did NOT fail"). **A serial (non-fan-out) phase keeps the legacy cap byte-for-byte** — this is deliberately not eight unrestricted three-attempt allowances.
+
+### Tests
+- New `tests/test_pd124_sibling_starvation.py`: an eight-unit phase where one unit always fails (every eligible unit gets a first attempt while the budget supports it; successes are not regenerated; aggregate spend stays within the declared bound; concurrent workers cannot duplicate a reservation; a simulated restart preserves successes, reservations and failure history).
+- The two `test_pd065_fanout_empty_completion.py` wire tests now assert the NEW contract — the default is `medium`, the step-down is `low`, and the worker's default must DIFFER from the operator's declared value. A new property test asserts the ladder never repeats the rung that just failed.
+- `tests/test_f6_fanout_width.py`: its `_sidecar_rows` helper selected its audit trail with `sorted(rglob(...))[0]` and could pick a `.dispatch-state/` file whose single line is a JSON *string*, raising `AttributeError: 'str' object has no attribute 'get'`. A correct product change therefore read as a fan-out width regression (PD-TEST-139). It now prefers the path the writer used and requires dict rows.
+- Broader regression: **240 passed**.
+
+### Risk
+- The reasoning default changes for **every** agent-authored phase, not only P4-COPY. That is intended — `max` demonstrably returns zero-length content on this worker's prompt size — but it does reduce thinking depth on smaller prompts where `max` was working. The ladder remains available, and the operator's declared value is preserved in code and in the ledger.
+- Scope of the scheduling change is the fan-out paid path. Serial phases, the PD-TEST-068 receipt machinery and every verifier are untouched.
+
+### Recovery note
+A fan-out phase already exhausted under the OLD per-phase cap needs the sanctioned PD-TEST-068 repair receipt (`--authorize-paid-retry-reset`) before it can dispatch, because `should_dispatch` gates on the undeclared-cap fallback until a budget is declared, and the declaration happens inside the fan-out dispatch. A never-dispatched phase needs no receipt.
+
 ## [v25.1.24]  -  2026-09-16  -  A substance-parked phase is re-admitted on resume, and a completed phase's artifact can finally be replaced
 
 ### What Changed
