@@ -156,8 +156,47 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #: Engine metadata field lines that are NOT rendered copy. The P4-COPY contract
 #: requires both on the slide block, but slides.schema.json defines copy[] as
 #: "the EXACT text that must appear rendered on the slide" -- so these stay out.
+#:
+#: PD-TEST-158 (2026-09-16). The vocabulary below was INCOMPLETE, and that was not
+#: cosmetic: `copy[]` drives `build_deck._load_slide_copy_map` -> the
+#: AF-P-VERBATIM check, which FAILS a slide until every `copy[]` string is baked
+#: verbatim into the image prompt. So any metadata left in `copy[]` is not merely
+#: untidy -- the engine demands that its own bookkeeping be PAINTED ONTO THE
+#: SLIDE. Measured live on run pres-operator-1d269693, whose
+#: working/checkpoints/prompt-worker-results-attempts.jsonl carries:
+#:
+#:   AF-P-VERBATIM ... measured='copy not baked' required='SECTION: decision-rerank'
+#:   AF-P-VERBATIM ... measured='copy not baked' required='PURPOSE: Force the
+#:                     priority question out loud...'
+#:
+#: The list now matches the field vocabulary the P4-COPY contract actually
+#: prescribes (sops/slide-copywriter-sops.md step 2, which every field is
+#: mandatory in). Those NOT rendered on the slide, and therefore excluded:
+#:
+#:   SECTION        arc-section name (engine routing)
+#:   PURPOSE        the one big idea, a brief addressed to the WRITER
+#:   ARCHETYPE      A1-A5 layout id (design routing)
+#:   LADDER         offer-ladder position (commercial routing)
+#:   PROOF USED     proof-inventory item name
+#:   RESEARCH_USED  research_map item_ids
+#:   PEOPLE         yes/no + representation group
+#:   HOOK_REFRAIN   yes/no + where the hook sits
+#:   TEXT_ANCHOR    a layout token (bottom band | left block | ...)
+#:   PRESENTER NOTE the SOP says these are "sentences the speaker says aloud that
+#:                  are NOT on the slide"; demanding them be baked would put the
+#:                  presenter's script ON the slide, which SOP step 1 forbids
+#:   HOOK VARIANT   which hook variant was used (engine metadata)
+#:
+#: Deliberately STILL RENDERED, and therefore still in `copy[]`: HEADLINE,
+#: EMPHASIS, SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those
+#: are the slide's words. `EMPHASIS:` keeps its label because the live verifier
+#: demands `EMPHASIS: <word>` verbatim and prompts are already authored to it;
+#: dropping the label there is a separate, visibly-rendering change and is not
+#: bundled into a fix whose purpose is to stop METADATA reaching the slide.
 _FIELD_LINE_RE = re.compile(
-    r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS)\s*:")
+    r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
+    r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
+    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT|VISUAL_ANCHOR)\s*:")
 
 #: Optional per-slide art-direction line inside a copy block. When the writer
 #: supplies one it is the honest scene; otherwise the scene is derived.

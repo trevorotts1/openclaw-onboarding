@@ -1,3 +1,38 @@
+## [v25.1.29]  -  2026-09-16  -  The engine stops demanding that its own metadata be painted onto the slides
+
+### What Changed
+- **PD-TEST-158 — `copy[]` carried engine metadata, and the verifier then DEMANDED that metadata be baked into the image prompt.** `slides.schema.json` defines `copy[]` as *"the EXACT text that must appear rendered on the slide"*, and `slides_assembly._FIELD_LINE_RE` exists to keep metadata out of it. But that regex listed only `HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS`, while the P4-COPY contract (`sops/slide-copywriter-sops.md` step 2, whose every field is mandatory) prescribes a **larger** field set. `SECTION`, `PURPOSE`, `ARCHETYPE`, `PROOF USED`, `PEOPLE`, `TEXT_ANCHOR`, `PRESENTER NOTE` and `HOOK VARIANT` were all missing from it.
+
+  This is not cosmetic. `copy[]` drives `build_deck._load_slide_copy_map` and hence the **AF-P-VERBATIM** check, which fails a slide until every `copy[]` string is baked verbatim into the image prompt. So metadata left in `copy[]` makes the engine insist its own bookkeeping be **painted onto the rendered slide**. The live run's `working/checkpoints/prompt-worker-results-attempts.jsonl` carries it verbatim:
+
+  ```
+  AF-P-VERBATIM ... measured='copy not baked' required='SECTION: decision-rerank'
+  AF-P-VERBATIM ... measured='copy not baked' required='PURPOSE: Force the
+                    priority question out loud...'
+  ```
+
+  Worst of all it applied to **`PRESENTER NOTE`**, which the SOP itself defines as *"sentences the speaker says aloud that are **NOT on the slide**"* — with step 1 adding *"never put the presenter's spoken words on the slide"*. Demanding it be baked does exactly what the doctrine forbids.
+
+  **Fix: complete the field vocabulary** in `_FIELD_LINE_RE`, grounded in the contract rather than guessed. Measured on the live run's own copy, rebuilding the index through the real producer: **slide 1 15 copy lines → 7, with metadata lines 8 → 0**; slides 2 and 3 likewise 7 → 0 and 8 → 0. What survives for slide 1 is exactly the slide's words:
+
+  ```
+  HEADLINE: The List You Already Run On
+  EMPHASIS: Already Run On
+  SUBHEAD: Your plate holds the deck work. The department is missing.
+  SUPPORTING:
+  Take a stance on this list
+  Carrying deck work alone
+  Reusing old familiar files
+  ```
+
+  `HEADLINE`, `EMPHASIS`, `SUBHEAD` and `SUPPORTING` are deliberately **still rendered** and still in `copy[]`. `EMPHASIS:` keeps its label because the live verifier demands `EMPHASIS: <word>` verbatim and prompts are already authored to it; changing that is a visibly-rendering decision and is not bundled into a fix whose purpose is to stop metadata reaching the slide.
+
+### Tests
+- New `tests/test_pd158_copy_metadata_not_rendered.py` (4 cases). It reads the **contract document itself** — parsing the field list out of the `SLIDE [N]` template in `sops/slide-copywriter-sops.md` — and asserts that every field is classified, that every NON-RENDERED field is stripped by `copy_lines()`, and that every RENDERED field survives **with its text intact**. The SOP is the single source of truth for *which* fields exist; only the rendered/non-rendered split is asserted, each with its reason.
+  It is a **tripwire**, so a field added to the contract must be classified deliberately rather than silently leaking into `copy[]`.
+- **Negative controls (measured):** (i) reverting `_FIELD_LINE_RE` to its previous vocabulary fails the strip assertion; (ii) adding a new field to the SOP template fails the classification assertion with *"the P4-COPY contract prescribes fields this test does not classify: ['NEWFANGLED_FIELD']"*. Restored, 4 passed.
+- Regression across the seven files this change could touch (`pd158`, `pd081`, `pd156`, `af_c8_copy_contract`, `fanout_prompt_phase`, `fix22_prompt_dup_detector`, `pd098_design_prompt_band`): **5 failed, 64 passed** — all five pre-existing and identical on a pristine `origin/main` archive (`test_pd081::test_empty_copy_never_yields_a_silently_empty_slides_json` = PD-TEST-123, plus the four `test_fanout_prompt_phase.py` cases already documented as pre-existing).
+
 ## [v25.1.28]  -  2026-09-16  -  The prompt phase declares the render index it reads, unblocking the deck
 
 ### What Changed
