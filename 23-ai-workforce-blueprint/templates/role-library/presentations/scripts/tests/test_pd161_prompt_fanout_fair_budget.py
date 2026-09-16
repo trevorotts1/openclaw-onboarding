@@ -296,6 +296,47 @@ def test_the_declaration_excludes_slides_already_good_on_disk():
         "the wave/pending split must be recorded, or the narrowing is invisible")
 
 
+def test_both_halves_compute_the_SAME_unit_key(tmp_path):
+    """The review's mutation (d), pinned: declaration keys MUST equal scope keys.
+
+    Keying the declaration on `ordinal` instead of `slide_id` passed every test
+    in the previous revision while producing 0 transport calls, 0 paid attempts
+    and 8 `budget_deferred` in production. This test drives BOTH key spaces
+    through the real seam so that mismatch is a failure, not a silent dead end.
+    """
+    slides = [{"slide_id": "slide-%02d" % i, "ordinal": i} for i in range(1, 4)]
+
+    # The two halves must agree on the key for the same slide...
+    for s in slides:
+        assert ppw.prompt_slide_unit_key(s) == s["slide_id"]
+
+    # ...and the MISMATCH must actually break something, or pinning it proves
+    # nothing. Declare with ORDINAL keys (the mutation), scope with slide_id.
+    run_dir = tmp_path / "run"
+    (run_dir / "working" / "work-orders").mkdir(parents=True)
+    (run_dir / "state.json").write_text(json.dumps(
+        {"phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    dj._declare_phase_paid_budget(run_dir, PHASE,
+                                  unit_keys=[str(s["ordinal"]) for s in slides],
+                                  worker_id=WORKER)
+    outcomes = [_reserve(run_dir, s["slide_id"]) for s in slides]
+    assert set(outcomes) == {"budget_deferred"}, (
+        "declaring under one key space and reserving under another must be "
+        f"VISIBLY broken, not silently starved; got {outcomes}")
+
+    # And the shipped code cannot drift into that state: both halves call the
+    # one helper.
+    import inspect
+    assert "_ppw.prompt_slide_unit_key(" in inspect.getsource(
+        dj._dispatch_prompt_phase_parallel), (
+        "the declaration must use the shared key helper")
+    worker_src = inspect.getsource(ppw._execute_slide)
+    assert "prompt_slide_unit_key(slide)" in worker_src, (
+        "the worker must derive its scope key from the shared helper")
+    assert "paid_unit_scope(slide_id)" in worker_src, (
+        "the scope must be bound to that key")
+
+
 def test_the_claim_ownership_HARD_STOP_stays_non_retryable():
     """Review F8: one `PaidBudgetExhausted` is a hard stop, not a budget event.
 

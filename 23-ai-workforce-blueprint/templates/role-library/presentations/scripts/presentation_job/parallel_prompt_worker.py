@@ -654,6 +654,23 @@ def _verify_prompt(slide: Dict[str, Any], prompt_text: str, run_dir: Path,
 # One slide task: runs on a wave worker THREAD (F8) OR inline (n==1 /
 # constrained probes).
 # ---------------------------------------------------------------------------
+def prompt_slide_unit_key(slide: Dict[str, Any]) -> str:
+    """THE unit key for one slide's paid budget -- ONE definition, used by BOTH
+    halves of the PD-TEST-161 fix.
+
+    The declaration (dispatcher._dispatch_prompt_phase_parallel) and the paid
+    scope (this module's worker) must agree on this string EXACTLY, or every
+    slide defers: the review of PR #1164 measured that keying the declaration on
+    `ordinal` instead of `slide_id` still passed every test while producing 0
+    transport calls, 0 paid attempts and 8 `budget_deferred` in production.
+
+    Defined here rather than duplicated so the two halves cannot drift. Uses
+    `slide["slide_id"]` (required, not `.get`) because that is what
+    wave_contract.validate_input guarantees is present and unique -- an absent
+    key should fail loudly rather than silently fall back to the ordinal."""
+    return str(slide["slide_id"])
+
+
 def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     slide = task["slide"]
     routing = task["routing"]
@@ -663,7 +680,7 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     n_slides = task["n_slides"]
     owning_role = task["owning_role"]
     ordinal = int(slide["ordinal"])
-    slide_id = str(slide["slide_id"])
+    slide_id = prompt_slide_unit_key(slide)
     attempts_log = Path(task["attempts_log"])
     attempt_log_path = attempts_log.with_name(
         attempts_log.name + ATTEMPTS_LOG_SUFFIX) if attempts_log.name != \

@@ -4776,11 +4776,10 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         # The WAVE itself still processes every slide, so already-good ones are
         # re-derived from disk by `_run_one` as usual -- only the DECLARATION is
         # narrowed to the units that can actually spend.
-        _all_keys = [str(s.get("slide_id") or s.get("ordinal"))
-                     for s in slides_payload]
+        _all_keys = [_ppw.prompt_slide_unit_key(_s) for _s in slides_payload]
         _pending_keys = []
         for _s in slides_payload:
-            _key = str(_s.get("slide_id") or _s.get("ordinal"))
+            _key = _ppw.prompt_slide_unit_key(_s)
             try:
                 _ok, _ = _verify_single_prompt(run_dir, int(_s["ordinal"]))
             except Exception:  # noqa: BLE001 -- unverifiable != already good
@@ -4793,6 +4792,21 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         _unit_keys = _pending_keys or _all_keys
         _budget_decl = _declare_phase_paid_budget(
             run_dir, phase_id, unit_keys=_unit_keys, worker_id=worker_id)
+    except Exception as exc:  # noqa: BLE001 -- the wave still runs undeclared
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("the prompt wave runs on the legacy per-phase cap "
+                            "(DISPATCH_RETRY_CAP) exactly as before PD-TEST-161"),
+        })
+        _budget_decl, _bd = None, {}
+    # Review (delta): the AUDIT of a successful declaration gets its OWN guard.
+    # Wrapping it in the declaration's try meant a sidecar write failure AFTER a
+    # successful declaration recorded "declaration_failed / legacy cap governs"
+    # while the ledger in fact held the declaration -- a false record.
+    if _budget_decl is not None:
+      try:
         # Review F4: `_declare_phase_paid_budget` returns a NESTED document --
         # {"budget": {...}, "admitted": [...], "not_admitted": {...}} -- and the
         # copy caller reads `["budget"]["total_cap"]`. The first version of this
@@ -4827,13 +4841,13 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
                 "units_not_admitted": sorted(
                     (_budget_decl.get("not_admitted") or {}).keys()),
             })
-    except Exception as exc:  # noqa: BLE001 -- the wave still runs undeclared
+      except Exception as exc:  # noqa: BLE001 -- an audit failure is not a budget failure
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0,
-            "status": "paid_budget_declaration_failed",
+            "status": "paid_budget_declaration_audit_failed",
             "reason": f"{type(exc).__name__}: {exc}"[:300],
-            "consequence": ("the prompt wave runs on the legacy per-phase cap "
-                            "(DISPATCH_RETRY_CAP) exactly as before PD-TEST-161"),
+            "note": ("the DECLARATION itself succeeded -- the ledger carries the "
+                     "bounded total; only this audit row failed"),
         })
     _append_sidecar(run_dir, phase_id, {
         "worker": worker_id, "attempt": 1, "status": "parallel_wave_started",
