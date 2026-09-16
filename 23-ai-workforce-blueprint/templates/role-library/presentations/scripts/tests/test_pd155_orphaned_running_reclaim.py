@@ -2,7 +2,7 @@
 
 THE DEFECT, measured on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4.
 
-`Engine._ready_set()` treats `running` as a status it neither plans nor expires:
+`Engine._ready_queue_tick()` treats `running` as a status it neither plans nor expires:
 the phase is collected into the `running` bucket and `continue`d. Only the phase's
 OWN wait loop (phases.py:3438-3446) can time it out, and that loop only runs while
 an engine is executing the phase. So when an engine dies mid-wait -- a crash, an
@@ -50,6 +50,12 @@ sys.path.insert(0, str(SCRIPTS))
 from presentation_job import dispatcher, phases  # noqa: E402
 
 RUN_DIR_KEY = "run_dir"
+
+
+def _iso_now() -> str:
+    """Now, in the same shape the dispatcher writes (`utcnow()`)."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _ledger(tmp_path: Path, phase_id: str, worker: str, **extra) -> Path:
@@ -117,6 +123,114 @@ def test_a_ledger_with_no_adjudicable_worker_is_unknown(tmp_path):
     _ledger(tmp_path, "P4-PROMPT", "some-old-shape-worker")
     state, detail = dispatcher.running_worker_owner_state(tmp_path, "P4-PROMPT")
     assert state == "unknown", (state, detail)
+
+
+# ---------------------------------------------------------------------------
+# F1 (independent review of PR #1161) -- the pair-selection regression.
+#
+# The ledger carries TWO owner records naming DIFFERENT attempts:
+#   * `last_reservation_worker` + `last_reserved_at` -- written BEFORE the
+#     transport call and erased by the next outcome fold, so they exist ONLY
+#     while an attempt is genuinely IN FLIGHT;
+#   * `worker` + `last_seen_at` -- written at outcome-fold time, naming the last
+#     SETTLED attempt.
+# The first version of the helper read only the second pair. Mid-dispatch that
+# pair still names the PREVIOUS attempt, and if its pid has since been recycled
+# by the CURRENT dispatcher the start-time comparison fires and a phase with a
+# LIVE worker is reported "orphaned". These tests pin the fix.
+# ---------------------------------------------------------------------------
+
+def _spawn_live_worker():
+    """A genuinely alive process whose pid is NOT this process -- so the
+    os.getpid() short-circuit cannot mask the pid-reuse guard (review F4)."""
+    import subprocess
+    return subprocess.Popen(["sleep", "30"])
+
+
+def _reap(proc) -> None:
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001 -- best-effort cleanup
+        pass
+
+
+def test_an_in_flight_live_worker_is_honoured_even_when_the_settled_worker_is_dead(tmp_path):
+    """The exact false reclaim the review constructed: a LIVE in-flight worker,
+    while the ledger's settled pair still names a DEAD worker from the previous
+    attempt with a timestamp that predates the live process."""
+    live = _spawn_live_worker()
+    try:
+        _ledger(tmp_path, "P4-PROMPT", "dispatcher-999999-deadbeef",
+                last_seen_at="2020-01-01T00:00:00+00:00",
+                last_reservation_worker=f"dispatcher-{live.pid}-feedface",
+                last_reserved_at=_iso_now())
+        state, detail = dispatcher.running_worker_owner_state(tmp_path, "P4-PROMPT")
+        assert state == "live", (
+            "an IN-FLIGHT reservation naming a live worker must be honoured even "
+            f"though the settled worker is dead: got {state!r} ({detail})")
+    finally:
+        _reap(live)
+
+
+def test_a_live_worker_is_honoured_using_a_REAL_process(tmp_path):
+    """F4: the first version's 'live' case used os.getpid(), which short-circuits
+    at the self check before the pid-reuse guard -- so the guard the author cites
+    as the protection was exercised by ZERO tests. This drives the full path."""
+    live = _spawn_live_worker()
+    try:
+        assert live.pid != os.getpid(), "the test must not self-short-circuit"
+        _ledger(tmp_path, "P4-PROMPT", f"dispatcher-{live.pid}-feedface",
+                last_seen_at=_iso_now())  # written AFTER the process started
+        state, detail = dispatcher.running_worker_owner_state(tmp_path, "P4-PROMPT")
+        assert state == "live", (state, detail)
+        assert str(live.pid) in detail
+    finally:
+        _reap(live)
+
+
+def test_a_pid_recycled_after_the_record_is_reported_orphaned(tmp_path):
+    """The guard's real teeth, on a real process: the recorded pid IS alive, but
+    the process holding it started long AFTER the record was written."""
+    live = _spawn_live_worker()
+    try:
+        _ledger(tmp_path, "P4-PROMPT", f"dispatcher-{live.pid}-feedface",
+                last_seen_at="2020-01-01T00:00:00+00:00")
+        state, detail = dispatcher.running_worker_owner_state(tmp_path, "P4-PROMPT")
+        assert state == "orphaned", (state, detail)
+        assert "recycled" in detail, detail
+    finally:
+        _reap(live)
+
+
+# ---------------------------------------------------------------------------
+# F4: the paths the first version left unpinned.
+# ---------------------------------------------------------------------------
+
+def test_an_ABSENT_verdict_reclaims_through_the_real_entry_point(tmp_path):
+    """No ledger at all: a `running` phase cannot be backed by any dispatch, and
+    the reclaim must still reach it. This is a real shape -- an engine that died
+    after checkpointing status=running but before the first ledger write."""
+    st = _state(tmp_path, _phase("P4-PROMPT", "running"))
+    readmitted = phases.readmit_retryable_phases(st)
+    assert [r["phase"] for r in readmitted] == ["P4-PROMPT"]
+    assert _status_of(st, "P4-PROMPT") == "pending"
+
+
+def test_the_reclaim_does_not_reset_attempts_or_touch_the_ledger(tmp_path):
+    """The reclaim re-opens the phase for PLANNING. It must not grant an attempt
+    and must not rewrite the paid ledger."""
+    led = _ledger(tmp_path, "P4-PROMPT", "dispatcher-999999-deadbeef",
+                  blocked=True, blocked_reason="paid retry budget exhausted",
+                  paid_attempts=2, generation=0)
+    before = led.read_bytes()
+    st = _state(tmp_path, _phase("P4-PROMPT", "running", attempts=3))
+
+    phases.readmit_retryable_phases(st)
+
+    assert _status_of(st, "P4-PROMPT") == "pending"
+    assert st["phases"][0]["attempts"] == 3, "the reclaim must not reset attempts"
+    assert led.read_bytes() == before, "the reclaim must not touch the paid ledger"
 
 
 # ---------------------------------------------------------------------------

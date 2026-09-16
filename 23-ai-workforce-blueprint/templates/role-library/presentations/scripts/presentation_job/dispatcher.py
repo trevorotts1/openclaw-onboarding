@@ -8644,21 +8644,44 @@ def running_worker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
     still there to finish it. The exact counterpart of `park_marker_owner_state`
     for a phase the Engine still calls `running`.
 
-    WHY THIS EXISTS (PD-TEST-155). `_ready_set()` skips any phase whose status is
-    `running` -- it is collected into the `running` bucket and `continue`d, never
-    re-planned and never expired. That is correct while an engine is genuinely
-    working the phase, but nothing ever revisits it when the engine that owned it
-    died mid-wait: the phase stays `running` forever, `_phase_terminal_bad` does
-    not apply to it (so its descendants are not even quarantined, they just
-    `waiting_dependency` on it), and the run becomes INERT with a full queue and
-    zero dispatches. Measured on pres-operator-1d269693: three phases stranded
-    `running` by a killed engine, `waited_seconds` frozen, 0 provider requests
-    for 11 minutes, 29 pending phases all downstream of them.
+    WHY THIS EXISTS (PD-TEST-155). `Engine._ready_queue_tick()` skips any phase
+    whose status is `running` -- it is collected into the `running` bucket and
+    `continue`d, never re-planned and never expired. That is correct while an
+    engine is genuinely working the phase, but nothing ever revisits it when the
+    engine that owned it died mid-wait: the phase stays `running` forever,
+    `_phase_terminal_bad` does not apply to it (so its descendants are not even
+    quarantined, they just `waiting_dependency` on it), and the run becomes INERT
+    with a full queue and zero dispatches. Measured on pres-operator-1d269693:
+    three phases stranded `running` by a killed engine, `waited_seconds` frozen,
+    0 provider requests for 11 minutes, 29 pending phases all downstream.
+
+    WHICH ATTEMPT ARE WE ADJUDICATING? (independent review of PR #1161, F1.)
+    The ledger holds TWO different owner records, and they name DIFFERENT
+    attempts, so a worker must never be judged against the other one's clock:
+
+      * `last_reservation_worker` + `last_reserved_at` -- written by
+        `_reserve_paid_attempt` BEFORE the transport call, and DELIBERATELY
+        erased by the next `record_outcome` rebuild (see the PD-TEST-092 note on
+        that dict). They therefore exist ONLY while an attempt is genuinely IN
+        FLIGHT, and they are the authoritative pair for "who is working now".
+      * `worker` + `last_seen_at` -- written by `record_outcome` at outcome-fold
+        time, and consistent with EACH OTHER. They name the last SETTLED attempt.
+
+    The first version of this function read only the second pair. Mid-dispatch,
+    that pair still names the PREVIOUS attempt while the pid it records may since
+    have been recycled by the CURRENT dispatcher -- whose start is then LATER than
+    the stale `last_seen_at`, so the pid-reuse guard fired and a phase with a live
+    worker was reported "orphaned". The guard was reading a stale record and
+    comparing it against the wrong clock. Selecting the pair FIRST fixes that by
+    construction: a worker is only ever compared with the timestamp written
+    alongside it.
 
     Returns (state, detail), state one of:
       "absent"   -- no ledger row, so no worker is claimed; nothing to honour.
-      "live"     -- the ledger names a worker pid that is still running.
-      "orphaned" -- the ledger names a worker pid that is gone (or was recycled).
+      "live"     -- the governing record names a worker pid that is still running.
+      "orphaned" -- the governing record names a worker pid that is gone (or was
+                    recycled -- i.e. the pid now belongs to a process that started
+                    after the record was written).
       "unknown"  -- ownership cannot be established; the caller MUST treat this
                     as live (fail closed). A degraded install must never start
                     reclaiming phases out from under a live worker.
@@ -8677,34 +8700,46 @@ def running_worker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
     record = raw if isinstance(raw, dict) else {}
     if not record:
         return "unknown", "dispatch ledger holds no record to adjudicate"
-    worker = str(record.get("worker") or "").strip()
+
+    # Pick the owner record and ITS OWN timestamp together. See the docstring:
+    # mixing a worker from one attempt with a timestamp from another is the exact
+    # defect this selection exists to prevent.
+    worker = str(record.get("last_reservation_worker") or "").strip()
+    stamp = record.get("last_reserved_at")
+    phase_of_attempt = "in-flight"
+    if not (worker and stamp):
+        worker = str(record.get("worker") or "").strip()
+        stamp = record.get("last_seen_at") or record.get("updated_at")
+        phase_of_attempt = "settled"
+
     m = re.match(r"^dispatcher-(\d+)-[0-9a-fA-F]{4,32}$", worker)
     if not m:
         # A row with no parseable worker (an older shape, or a hand-written
         # record): there is no pid to adjudicate, so the honest answer is
         # "not established".
-        return "unknown", (f"ledger worker {worker!r} names no adjudicable "
-                           "dispatcher pid")
+        return "unknown", (f"{phase_of_attempt} ledger worker {worker!r} names no "
+                           "adjudicable dispatcher pid")
     pid = int(m.group(1))
     if pid == os.getpid():
         return "live", f"{worker} is this process"
     if not _autospawn._pid_is_alive(pid):
-        return "orphaned", f"worker {worker} is gone: pid {pid} names no process"
-    seen = record.get("last_seen_at") or record.get("updated_at")
+        return "orphaned", (f"the {phase_of_attempt} worker {worker} is gone: "
+                            f"pid {pid} names no process")
     try:
         from datetime import datetime
         seen_epoch = datetime.fromisoformat(
-            str(seen).replace("Z", "+00:00")).timestamp()
+            str(stamp).replace("Z", "+00:00")).timestamp()
     except (TypeError, ValueError, OverflowError):
         seen_epoch = None
     started = _autospawn._process_start_epoch(pid)
     if started is None or seen_epoch is None:
-        return "live", (f"worker {worker} is alive (pid {pid}); its start could "
-                        "not be compared with the ledger timestamp, so the "
-                        "worker is honoured")
+        return "live", (f"{phase_of_attempt} worker {worker} is alive (pid "
+                        f"{pid}); its start could not be compared with its own "
+                        "ledger timestamp, so the worker is honoured")
     if started > seen_epoch + _PARK_MARKER_RECYCLE_GRACE_S:
         return "orphaned", (
-            f"worker {worker} is gone and its pid was recycled: the process "
+            f"the {phase_of_attempt} worker {worker} is gone and its pid was "
+            "recycled: the process "
             f"holding pid {pid} started {started - seen_epoch:.0f}s AFTER the "
             "ledger was last written")
     return "live", f"worker {worker} is alive (pid {pid})"

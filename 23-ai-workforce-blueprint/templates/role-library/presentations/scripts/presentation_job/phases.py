@@ -749,7 +749,7 @@ def _park_marker_owner_state(run_dir: Any, phase_id: str) -> Tuple[str, str]:
 
 # PD-TEST-155. A phase the Engine still calls `running` may be re-opened ONLY
 # when the dispatcher worker named by its own dispatch ledger is provably gone.
-# `_ready_set()` skips `running` outright, so without this the phase is never
+# `_ready_queue_tick()` skips `running` outright, so without this the phase is never
 # re-planned and its whole descendant subtree waits on it forever. The set is
 # the SAME fail-closed vocabulary as the park marker's on purpose: "live" and
 # "unknown" both mean HONOUR IT (never reclaim a phase out from under a worker
@@ -882,7 +882,7 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         if status == PHASE_STATUS_RUNNING:
             # PD-TEST-155: a phase left `running` by an engine that died mid-wait
             # is ORPHANED, and nothing else in the engine can rescue it --
-            # `_ready_set()` collects `running` into its own bucket and
+            # `_ready_queue_tick()` collects `running` into its own bucket and
             # `continue`s, so it is never re-planned, never expired, and (being
             # neither terminal-bad nor done) it silently holds its entire
             # descendant subtree in `waiting_dependency` forever. The run ends up
