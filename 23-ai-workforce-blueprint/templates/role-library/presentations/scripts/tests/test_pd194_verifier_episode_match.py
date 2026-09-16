@@ -55,18 +55,11 @@ def _park(blocked_reason, heal_reason=None, *, cls="verifier_substance",
             "blocked_reason": blocked_reason, "heal_events": events}
 
 
-# The live P4-PROMPT pair, verbatim in shape: same episode, same checker, lists
-# that differ in both order and membership.
-LIVE_BLOCK = (
-    f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-WORLD-SCALE \u2014 ; "
-    f"AF-PROMPT-FLOOR slide-1: AF-FACE-PROMPT-MISSING \u2014 ; "
-    f"AF-PROMPT-FLOOR slide-1: AF-LIGHT-PROMPT-MISSING \u2014 ; "
-    f"AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC \u2014 ; ")
-LIVE_HEAL = (
-    f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-FACE-PROMPT-MISSING \u2014 ; "
-    f"AF-PROMPT-FLOOR slide-1: AF-LIGHT-PROMPT-MISSING \u2014 ; "
-    f"AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC \u2014 ; "
-    f"AF-PROMPT-FLOOR slide-1: AF-P-DENSITY \u2014 ; ")
+# The live P4-PROMPT pair, taken VERBATIM from the run's own state.json (F4,
+# independent review: the earlier fixture was a 4-item paraphrase, not the real
+# 10-item verdicts). Captured literally so the pinned property is faithful.
+LIVE_BLOCK = 'substance check failed: AF-PROMPT-FLOOR slide-1: AF-WORLD-SCALE — ; AF-PROMPT-FLOOR slide-1: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-1: AF-LIGHT-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC — ; AF-PROMPT-FLOOR slide-4: AF-LIGHT-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-4: AF-HAIR-INAUTHENTIC — ; AF-PROMPT-FLOOR slide-6: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-6: AF-HAIR-INAUTHENTIC — ; AF-PROMPT-FLOOR slide-8: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-8: AF-HAIR-INAUTHENTIC — . An owner_skip_approval token for this phase is required to advance it to done.'
+LIVE_HEAL = 'substance check failed: AF-PROMPT-FLOOR slide-1: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-1: AF-LIGHT-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC — ; AF-PROMPT-FLOOR slide-4: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-4: AF-HAIR-INAUTHENTIC — ; AF-PROMPT-FLOOR slide-4: AF-P-DENSITY — ; AF-PROMPT-FLOOR slide-6: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-6: AF-HAIR-INAUTHENTIC — ; AF-PROMPT-FLOOR slide-8: AF-FACE-PROMPT-MISSING — ; AF-PROMPT-FLOOR slide-8: AF-HAIR-INAUTHENTIC — .'
 
 
 def test_the_live_reordered_verdict_is_an_episode_match():
@@ -84,12 +77,17 @@ def test_the_live_reordered_verdict_is_an_episode_match():
         "re-entered on any resume -- the exact defect it was written to fix")
 
 
-def test_a_single_shared_failing_check_is_enough():
+def test_a_single_shared_AUTOFAIL_is_enough():
+    """One genuinely-shared autofail identifies the episode.
+
+    NOTE: the LABEL does not count -- see
+    `test_the_check_LABEL_alone_is_not_an_episode_match`. This test previously
+    shared only `AF-PROMPT-FLOOR`, which F1 (independent review) measured to be a
+    tautology, since every line that checker emits carries it.
+    """
     ps = _park(f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC \u2014 ; ",
-               f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-P-DENSITY \u2014 ; ")
-    # Only AF-PROMPT-FLOOR is shared; membership otherwise disjoint.
-    assert P._verdict_check_ids(ps["blocked_reason"]) & \
-        P._verdict_check_ids(ps["heal_events"][-1]["reason"]) == {"AF-PROMPT-FLOOR"}
+               f"{PREFIX}: AF-PROMPT-FLOOR slide-2: AF-HAIR-INAUTHENTIC \u2014 ; ")
+    assert P._verdict_check_ids(ps["blocked_reason"]) == {"AF-HAIR-INAUTHENTIC"}
     assert P._block_is_verifier_sourced(ps)
 
 
@@ -130,8 +128,15 @@ def test_a_stale_verifier_heal_cannot_reopen_a_later_budget_park():
 
 def test_no_heal_events_or_a_non_verifier_heal_is_not_verifier_sourced():
     assert not P._block_is_verifier_sourced(_park(LIVE_BLOCK, None))
+    # A heal whose REASON is not a verdict is rejected whatever its class says.
     assert not P._block_is_verifier_sourced(
-        _park(LIVE_BLOCK, LIVE_HEAL, cls="dispatcher_budget"))
+        _park(LIVE_BLOCK, "dispatcher retry ceiling: 8 identical error outcomes",
+              cls="dispatcher_budget"))
+    # NOTE (F2): a heal carrying class="dispatcher_budget" but a VERDICT-SHAPED
+    # reason IS now accepted -- the class is derived from the reason by keyword,
+    # so the reason is the structural fact and the label is the inference. That
+    # is the change F2 makes, and it is asserted in
+    # `test_a_substance_verdict_that_mentions_the_TRANSPORT_is_still_reopenable`.
 
 
 def test_check_id_extraction_ignores_prose_and_order():
@@ -143,35 +148,22 @@ def test_check_id_extraction_ignores_prose_and_order():
     assert P._verdict_check_ids(None) == set()
 
 
-def test_a_generic_check_name_alone_is_now_enough_AND_THAT_IS_A_WIDENING():
-    """A DISCLOSED WIDENING, measured against the base commit.
+def test_the_generic_label_widening_was_REMOVED_by_F1():
+    """Supersedes the widening disclosed in cf7fc37e6.
 
-    Every verdict from this checker carries the check NAME (`AF-PROMPT-FLOOR`)
-    as well as the autofails. Two verdicts from different attempts can therefore
-    share ONLY the generic name. Measured:
-
-        BASE (origin/main, pre-fix) -> False
-        after this fix              -> True
-
-    So this IS a behaviour change, and it is recorded as a test rather than left
-    as an accident. It is NOT a false positive in the sense that matters: to
-    reach the set match at all, the caller must already have required the
-    checker's own verdict prefix AND a newest heal event of class
-    `verifier_substance`, so an OPERATOR park still cannot pass (see
-    `test_operator_prose_is_still_never_verifier_sourced` and
-    `test_a_stale_verifier_heal_cannot_reopen_a_later_budget_park`). What it does
-    relax is EPISODE separation: two verifier verdicts that share only the check
-    name now count as one episode. Both are verifier parks, which is the case
-    this function exists to reopen, so the relaxation is bounded by those gates.
+    That commit honestly disclosed that two verdicts sharing ONLY the generic
+    check label now matched (BASE False -> True). Independent review then
+    measured that the label is hard-coded on every line the checker emits, which
+    makes that match a tautology, so F1 removed it: the autofails are extracted
+    from after `slide-<n>:`. The disclosure is kept as history; the behaviour it
+    described is now asserted gone.
     """
     ps = _park(f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC \u2014 ; ",
                f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-P-DENSITY \u2014 ; ")
     shared = (P._verdict_check_ids(ps["blocked_reason"])
               & P._verdict_check_ids(ps["heal_events"][-1]["reason"]))
-    assert shared == {"AF-PROMPT-FLOOR"}, "only the generic check name is shared"
-    # The old text path cannot match here -- so this True comes from the SET match.
-    assert not ps["blocked_reason"].startswith(ps["heal_events"][-1]["reason"])
-    assert P._block_is_verifier_sourced(ps)
+    assert shared == set(), f"the label is still carrying a match: {shared}"
+    assert not P._block_is_verifier_sourced(ps)
 
 
 def test_a_degenerate_empty_verdict_is_PRE_EXISTING_not_introduced_here():
@@ -181,3 +173,59 @@ def test_a_degenerate_empty_verdict_is_PRE_EXISTING_not_introduced_here():
     `reason.startswith(ev_reason)` path, which this fix preserves.
     """
     assert P._block_is_verifier_sourced(_park(f"{PREFIX}: ", f"{PREFIX}: "))
+
+
+def test_the_check_LABEL_alone_is_not_an_episode_match():
+    """F1 (independent review): the intersection must not be a tautology.
+
+    `phase_verifiers` hard-codes the literal label `AF-PROMPT-FLOOR` on EVERY
+    line that checker emits, so intersecting all `AF-` tokens matched two draws
+    with wholly disjoint autofails. Measured before this fix: `True`. The
+    autofails are extracted from after `slide-<n>:` precisely so the constant
+    label cannot carry the match on its own.
+    """
+    ps = _park(f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-AAA \u2014 ; ",
+               f"{PREFIX}: AF-PROMPT-FLOOR slide-9: AF-ZZZ \u2014 ; ")
+    a = P._verdict_check_ids(ps["blocked_reason"])
+    b = P._verdict_check_ids(ps["heal_events"][-1]["reason"])
+    assert a == {"AF-AAA"} and b == {"AF-ZZZ"}, (a, b)
+    assert not (a & b)
+    assert not P._block_is_verifier_sourced(ps), (
+        "the constant check label alone reopened the park -- the intersection is "
+        "a tautology again")
+
+
+def test_the_real_verdicts_still_match_on_THREE_real_autofails():
+    """The fix must not depend on the label -- it does not."""
+    shared = (P._verdict_check_ids(LIVE_BLOCK)
+              & P._verdict_check_ids(LIVE_HEAL))
+    assert shared == {"AF-FACE-PROMPT-MISSING", "AF-LIGHT-PROMPT-MISSING",
+                      "AF-HAIR-INAUTHENTIC"}, shared
+    assert "AF-PROMPT-FLOOR" not in shared, "the label leaked back into the match"
+    assert "AF-WORLD-SCALE" not in shared and "AF-P-DENSITY" not in shared
+    assert P._block_is_verifier_sourced(_park(LIVE_BLOCK, LIVE_HEAL))
+
+
+def test_a_substance_verdict_that_mentions_the_TRANSPORT_is_still_reopenable():
+    """F2 (independent review): the heal `class` is DERIVED, not authoritative.
+
+    phases.py writes it as `heal.classify_failure(sub_reason)`, and
+    `_PROVIDER_ERROR_MARKERS` matches bare words -- "provider", "timeout",
+    "connection", "quota", "429" -- so a genuine substance verdict that merely
+    mentions the transport was labelled `provider_error` and gate (b) rejected
+    it. Measured before this fix: `False`; a measurable class of substance parks
+    was permanently unreopenable.
+    """
+    ps = _park(f"{PREFIX}: AF-IMAGE-GROUNDING: the image provider returned 429 "
+               f"rate limit for slide-3.",
+               f"{PREFIX}: AF-IMAGE-GROUNDING slide-3: AF-IMAGE-GROUNDING \u2014 "
+               f"provider 429", cls="provider_error")
+    assert not ps["blocked_reason"].lower().startswith("dispatcher")
+    assert P._block_is_verifier_sourced(ps)
+
+
+def test_the_widened_heal_gate_still_rejects_a_non_verifier_heal():
+    """The F2 widening must not accept a heal whose REASON is not a verdict."""
+    ps = _park(f"{PREFIX}: AF-A \u2014 ; ", "dispatcher budget park AF-A",
+               cls="dispatcher_budget")
+    assert not P._block_is_verifier_sourced(ps)

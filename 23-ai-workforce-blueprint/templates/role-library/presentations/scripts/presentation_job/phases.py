@@ -681,11 +681,23 @@ _READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
 #: checker verdict, however it is worded.
 _VERIFIER_VERDICT_PREFIX = "substance check failed"
 
-#: PD-TEST-194: the autofail/check identifiers a substance verdict names. Used to
-#: identify WHICH EPISODE a park belongs to by identity rather than by a text
-#: prefix, because this checker's verdict list is non-deterministic in both order
-#: and membership between two attempts of the same episode (see
-#: `_block_is_verifier_sourced`).
+#: PD-TEST-194: the identifiers a substance verdict names, used to identify WHICH
+#: EPISODE a park belongs to by identity rather than by a text prefix (this
+#: checker's verdict list is non-deterministic in both order and membership
+#: between two attempts of the same episode -- see `_block_is_verifier_sourced`).
+#:
+#: THE CHECK LABEL IS NOT AN IDENTITY. phase_verifiers builds each line as
+#:   f"AF-PROMPT-FLOOR slide-{sid}: {code} -- {detail}"
+#: so the literal label `AF-PROMPT-FLOOR` is hard-coded on EVERY line that checker
+#: emits. Intersecting ALL `AF-` tokens therefore makes the match a TAUTOLOGY for
+#: the only pairing that occurs in reality (block and heal are written by the same
+#: verifier call). Independent review MEASURED the consequence: two draws with
+#: wholly disjoint autofails (AF-AAA vs AF-ZZZ) matched on the constant label
+#: alone. The autofails are the part that varies, and the grammar places them
+#: AFTER `slide-<n>:`, so take them from there; keep the all-token form only as a
+#: fallback for a verdict that does not follow the grammar.
+_VERDICT_AUTOFAIL_RE = re.compile(r"slide-\d+\s*:\s*(AF-[A-Z0-9][A-Z0-9-]*)",
+                                  re.IGNORECASE)
 _VERDICT_ID_RE = re.compile(r"\bAF-[A-Z0-9][A-Z0-9-]*", re.IGNORECASE)
 
 
@@ -848,17 +860,37 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     if not events:
         return False
     last = events[-1]
-    if last.get("class") != heal.FAILURE_VERIFIER_SUBSTANCE:
-        return False
     ev_reason = str(last.get("reason") or "").strip()
     if not ev_reason:
+        return False
+    # PD-TEST-194 (F2, independent review): the heal event's `class` is DERIVED,
+    # not authoritative. phases.py writes it as heal.classify_failure(sub_reason),
+    # and _PROVIDER_ERROR_MARKERS matches bare words -- "provider", "timeout",
+    # "connection", "quota", "429". A genuine substance verdict that merely
+    # MENTIONS the transport is therefore labelled provider_error, and trusting
+    # that label left a measurable class of substance parks permanently
+    # unreopenable:
+    #   "substance check failed: AF-IMAGE-GROUNDING: the image provider returned
+    #    429 rate limit for slide-3."  -> class=provider_error -> gate (b) False.
+    # The reason is the structural fact; the label is an inference from it.
+    # Accept either, so the gate cannot be defeated by vocabulary alone.
+    if (last.get("class") != heal.FAILURE_VERIFIER_SUBSTANCE
+            and not ev_reason.lower().startswith(_VERIFIER_VERDICT_PREFIX)):
         return False
     # NOTE (delta review): the 60-char test is a SUBSTRING test, not episode
     # equality, so two verdicts from the same check that share a 60-char prefix
     # but different tails would match (measured: OP12). It is not reachable by an
-    # operator -- the only writer of a state blocked_reason is Engine._block, and
-    # all its call sites pass engine-authored text beginning with this prefix --
-    # so it is recorded here as a known looseness rather than left implicit.
+    # operator -- the only writer of a state blocked_reason is Engine._block
+    # (phases.py:4039). PD-TEST-194 (F3, independent review) CORRECTS the earlier
+    # wording here, which claimed "all its call sites pass engine-authored text
+    # beginning with this prefix": an AST sweep of all 21 _block/_fail_unit call
+    # sites found EXACTLY ONE whose reason literal starts with the prefix (the
+    # substance park itself). The guarantee is the CALL-SITE INVENTORY plus
+    # _block being the sole writer -- NOT a property every call site enforces,
+    # and nothing in this module enforces it. A future call site that prefixed
+    # operator prose with the verdict string WOULD be misread as a verifier park;
+    # that hole is latent, not reachable today, and is recorded rather than
+    # implied away.
     if reason.startswith(ev_reason) or ev_reason[:60] in reason:
         return True
     # PD-TEST-194 -- THE EPISODE MATCH ABOVE IS STRUCTURALLY FRAGILE, and it was
@@ -908,7 +940,11 @@ def _verdict_check_ids(text: str) -> set:
     names. Extracting the `AF-` tokens is enough to identify the episode: they are
     the checker's own vocabulary, they are not free prose, and two unrelated
     episodes do not share them by accident."""
-    return {tok.upper() for tok in _VERDICT_ID_RE.findall(text or "")}
+    t = text or ""
+    autofails = {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(t)}
+    if autofails:
+        return autofails
+    return {m.upper() for m in _VERDICT_ID_RE.findall(t)}
 
 
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
