@@ -1,3 +1,21 @@
+## [v25.1.39]  -  2026-09-16  -  A dead per-attempt paid-attempt settle is now audible instead of silent
+
+### What Changed
+- **PD-TEST-187 — the per-attempt settle introduced by PD-TEST-179 (#1169) swallowed every failure in a bare `except Exception: pass`, so a DEAD settle was indistinguishable from a working one.** Found by that PR's own adversarial review, which measured the consequence rather than arguing it: deleting the whole block, or mutating it four ways —
+
+  * a `str` instead of the outcome list → `TypeError` on **every** retry,
+  * a typo'd phase id → the settle targets a ledger that does not exist,
+  * `"ok"` instead of `"failed"` → the retry is refused as *"already succeeded … refusing to regenerate"*,
+
+  — **all leave the repo's own suites GREEN at 46/46 while the end-to-end wave silently degrades to ONE provider call.** That is a return of the PD-TEST-177 defect with nothing anywhere saying so. The dispatcher's own settle failure records a consequence row; the worker's recorded nothing at all.
+
+  **Fix:** the settle stays **fail-soft** — bookkeeping must never break a unit — but a failure is now **reported** on stderr with the slide, the attempt and the exception, so a dead settle surfaces instead of hiding. The diagnostic itself is guarded, so even the warning cannot break a unit.
+
+  **Controls** (`tests/test_pd187_settle_failure_is_visible.py`, 2 cases): with the fix **2 passed**; restoring the bare `except` fails exactly the case that pins it (**1 failed / 1 passed**). The tests also assert the fail-soft property directly — a settle failure must not abort the attempt sequence — and that a healthy settle stays quiet. Neighbours re-run green.
+
+### Why It Mattered
+The settle is the mechanism that lets a unit retry at all. Its failure mode was silence, which is the worst property a recovery mechanism can have: the suite stays green, the ledger looks fine, and the only symptom is that retries stop happening — the exact defect PD-TEST-179 was written to repair.
+
 ## [v25.1.37]  -  2026-09-16  -  The repair-receipt bound is described by the ceiling it actually enforces
 
 ### What Changed

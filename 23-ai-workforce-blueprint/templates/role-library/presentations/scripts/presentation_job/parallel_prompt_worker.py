@@ -750,8 +750,27 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
                     run_dir, PHASE_ID,
                     [(slide_id, "failed", list(base.get("_reasons") or []))],
                     worker_id="p4prompt-unit")
-            except Exception:  # noqa: BLE001 -- bookkeeping never breaks a unit
-                pass
+            except Exception as exc:  # noqa: BLE001 -- bookkeeping never breaks a unit
+                # PD-TEST-187 (independent review of #1169): a BARE `pass` here made
+                # a permanently dead settle indistinguishable from a working one.
+                # Measured: deleting this whole block, or mutating it four ways
+                # (a str instead of the outcome list -> TypeError on every retry; a
+                # typo'd phase id -> the settle targets no ledger; "ok" instead of
+                # "failed" -> the retry is refused as "already succeeded"), all
+                # leave the repo's own suites GREEN at 46/46 while the end-to-end
+                # wave silently degrades to ONE provider call. The dispatcher's own
+                # settle failure records a consequence (dispatcher.py); the worker's
+                # recorded nothing.
+                #
+                # Still FAIL-SOFT -- bookkeeping must never break a unit -- but now
+                # AUDIBLE, so a dead settle surfaces instead of hiding.
+                try:
+                    print(f"WARNING: per-attempt paid-attempt settle failed for "
+                          f"{slide_id!r} (attempt {attempt}); the unit's own retry "
+                          f"may be refused by its own in-flight reservation: "
+                          f"{exc!r}", file=sys.stderr, flush=True)
+                except Exception:  # noqa: BLE001 -- even the warning must not break a unit
+                    pass
         attempt += 1
         try:
             # PD-TEST-161: bind this ATTEMPT's paid reservation to THIS SLIDE.
