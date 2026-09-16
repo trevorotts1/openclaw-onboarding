@@ -432,8 +432,12 @@ class TestRefusalsAreFailClosed:
         dj._write_ledger(run_dir, PHASE, led)
         _assert_refused_at_both_seams(run_dir)
 
+    # PD-TEST-182: the out-of-range witness must sit above the ceiling the
+    # producer ACTUALLY enforces. That ceiling is PHASE_TOTAL_PAID_HARD_CAP (128),
+    # not DISPATCH_RETRY_CAP (3), so `DISPATCH_RETRY_CAP + 1` == 4 is now a
+    # perfectly valid request and no longer exercises this clause.
     @pytest.mark.parametrize("allowance", [0, -1, -3,
-                                           dj.DISPATCH_RETRY_CAP + 1,
+                                           dj.PHASE_TOTAL_PAID_HARD_CAP + 1,
                                            None, "1", True])
     def test_non_positive_or_unbounded_allowance_is_refused(
             self, tmp_path, allowance):
