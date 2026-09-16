@@ -747,6 +747,28 @@ def _park_marker_owner_state(run_dir: Any, phase_id: str) -> Tuple[str, str]:
         return "unknown", "dispatcher module unavailable"
 
 
+# PD-TEST-155. A phase the Engine still calls `running` may be re-opened ONLY
+# when the dispatcher worker named by its own dispatch ledger is provably gone.
+# `_ready_queue_tick()` skips `running` outright, so without this the phase is never
+# re-planned and its whole descendant subtree waits on it forever. The set is
+# the SAME fail-closed vocabulary as the park marker's on purpose: "live" and
+# "unknown" both mean HONOUR IT (never reclaim a phase out from under a worker
+# that might still be finishing it), and only a positive "orphaned" verdict
+# re-opens the phase.
+_RUNNING_OWNER_HONOURED_STATES = ("live", "unknown")
+
+
+def _running_worker_owner_state(run_dir: Any, phase_id: str) -> Tuple[str, str]:
+    """dispatcher.running_worker_owner_state for this run dir, degrading to
+    "unknown" -- i.e. honoured -- when that module will not import, so a
+    degraded install never reclaims a possibly-live phase."""
+    try:
+        from . import dispatcher as _dispatcher
+        return _dispatcher.running_worker_owner_state(Path(run_dir), phase_id)
+    except Exception:  # noqa: BLE001 -- see docstring
+        return "unknown", "dispatcher module unavailable"
+
+
 def _retire_orphaned_park_marker(run_dir: Any, phase_id: str) -> bool:
     """Delete a park marker whose owner is provably gone. True when one was
     removed.
@@ -856,7 +878,29 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not pid:
             continue
         status = ps.get("status")
-        if status not in _READMITTABLE_PHASE_STATUSES:
+        _reclaimed_running: Optional[str] = None
+        if status == PHASE_STATUS_RUNNING:
+            # PD-TEST-155: a phase left `running` by an engine that died mid-wait
+            # is ORPHANED, and nothing else in the engine can rescue it --
+            # `_ready_queue_tick()` collects `running` into its own bucket and
+            # `continue`s, so it is never re-planned, never expired, and (being
+            # neither terminal-bad nor done) it silently holds its entire
+            # descendant subtree in `waiting_dependency` forever. The run ends up
+            # INERT with a full queue and zero dispatches.
+            #
+            # This function is called ONLY from __main__._reset_parked_state, on
+            # the --run/--resume startup path, INSIDE RunLock's exclusive flock --
+            # so by the time we are here no other engine is servicing this run,
+            # and a `running` status can only be a leftover. The verdict below is
+            # still taken from the phase's own dispatch ledger rather than from
+            # that argument alone, and every ambiguity resolves to "honoured"
+            # (fail closed), so a phase whose worker is genuinely alive is never
+            # reclaimed out from under it.
+            owner_state, owner_detail = _running_worker_owner_state(run_dir, pid)
+            if owner_state in _RUNNING_OWNER_HONOURED_STATES:
+                continue
+            _reclaimed_running = owner_detail
+        elif status not in _READMITTABLE_PHASE_STATUSES:
             # PD-TEST-135: a verifier-parked BLOCKED phase is re-openable so the
             # repaired checker actually reaches it; an operator park is not.
             if not (status == PHASE_STATUS_BLOCKED
@@ -872,6 +916,14 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "at": utcnow(),
             "prior_status": ps.get("status"),
             "prior_attempts": ps.get("attempts"),
+            # PD-TEST-155: name the reclaim so the audit trail says WHY a phase
+            # that was `running` is suddenly pending again -- and carry the
+            # phase's own `waiting_for` so the artifact it was blocked on is on
+            # the record rather than only in the state being overwritten.
+            **({"reclaimed_orphaned_running": _reclaimed_running,
+                "reclaimed_waiting_for": list(ps.get("waiting_for") or []),
+                "reclaimed_waited_seconds": ps.get("waited_seconds")}
+               if _reclaimed_running else {}),
             # PD-TEST-135: record the reason ACTUALLY being cleared, which
             # depends on which status is being re-admitted.
             #   * blocked -> blocked_reason is the one being adjudicated. Both
