@@ -503,7 +503,8 @@ class BoardMirror:
         children[phase_id] = task_id
         self.store.save(self.state)
 
-    def child_report(self, phase_id, title, description, status, note):
+    def child_report(self, phase_id, title, description, status, note,
+                     deliverables=None):
         """Ensure a child card exists for `phase_id` (created ONCE, on the
         first call for that phase -- idempotent via the dual state+manifest
         check in _resolve_child_task_id, so a phase reporting progress twice
@@ -574,6 +575,54 @@ class BoardMirror:
                 self._remember_child_task_id(phase_id, child_task_id)
             if status not in cc.CC_TASK_STATUSES:
                 raise ValueError(f"invalid status: {status!r}")
+            # PD-TEST-195: REGISTER THE WORK BEFORE CLOSING THE CARD.
+            #
+            # The CC server refuses a done-transition with no completion
+            # evidence -- measured live on pres-operator-1d269693:
+            #   patch_phase P-STYLE-PREVIEW->done non-OK (HTTP 403):
+            #   {'error': 'Forbidden: cannot mark a task done with no completion
+            #    evidence.', 'hint': '... Register it with POST
+            #    /api/tasks/<id>/deliverables ... {"deliverable_type":"file",
+            #    "title":"<name>","path":"<absolute path>"} ...'}
+            # The phase had genuinely produced its artifacts (nine style samples
+            # on disk) and the engine had verified them, so the board was left
+            # DISAGREEING WITH THE RUN: it showed the phase not-done while the
+            # engine held it done. That is the opposite of an accurate Kanban,
+            # and it is silent -- patch_phase is fail-soft, so nothing stopped.
+            #
+            # Registering is idempotent enough for this purpose and FAIL-SOFT:
+            # each call is wrapped, a failure is reported, and the transition
+            # still happens -- a board that cannot be told is not a reason to
+            # hold the deck.
+            if status == "done" and deliverables:
+                for _path in deliverables:
+                    _p = str(_path or "").strip()
+                    if not _p:
+                        continue
+                    _abs = _p if os.path.isabs(_p) else str(self.run_dir / _p)
+                    if not os.path.exists(_abs):
+                        self.report.event(
+                            "board.deliverable_missing",
+                            f"child_report({phase_id!r}): artifact not on disk, "
+                            f"not registering it as completion evidence: {_abs}")
+                        continue
+                    try:
+                        ok = cc.register_deliverable(
+                            child_task_id, _abs, meta={"title": os.path.basename(_abs),
+                                                       "type": phase_id},
+                            env=os.environ, deliverable_type="file")
+                    except Exception as exc:  # noqa: BLE001 -- never block the deck
+                        ok = False
+                        self.report.event(
+                            "board.deliverable_error",
+                            f"child_report({phase_id!r}): registering {_abs} raised "
+                            f"{type(exc).__name__}: {exc}")
+                    if not ok:
+                        self.report.event(
+                            "board.deliverable_unregistered",
+                            f"child_report({phase_id!r}): could not register {_abs} "
+                            "as completion evidence; the done-transition may be "
+                            "refused by the board")
             return cc.patch_phase(self.run_dir, child_task_id, phase_id, status,
                                   note, env=os.environ)
 

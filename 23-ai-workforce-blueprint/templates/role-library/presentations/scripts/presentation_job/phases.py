@@ -2414,7 +2414,15 @@ class Engine:
                     # child card (idempotent, see BoardMirror.child_report) and closes
                     # it 'done' in the same call.
                     title, description = self._child_card_meta(phase)
-                    self.board.child_report(phase.id, title, description, "done", done_msg)
+                    # PD-TEST-195: hand the board the phase's VERIFIED artifacts
+                    # as completion evidence. `shas` is the same mapping already
+                    # checkpointed three lines up (`artifacts=sorted(shas.keys())`),
+                    # so this is the exact set the phase is claiming, not a
+                    # re-derivation. Without it the CC server 403s the
+                    # done-transition ("no completion evidence") and the board is
+                    # left disagreeing with the run.
+                    self.board.child_report(phase.id, title, description, "done", done_msg,
+                                            deliverables=sorted(shas.keys()))
         return rc
 
     def _intake_gate_applies(self, phase: Phase) -> bool:
