@@ -222,7 +222,7 @@ def load_input(path: Path) -> Dict[str, Any]:
 # subprocess-launched worker resolves the same seam through _resolve_provider()
 # (env stub spec or the real dispatcher path).
 # ---------------------------------------------------------------------------
-ProviderCall = Callable[[Dict[str, Any], Dict[str, Any], int, Path, str, int], str]
+ProviderCall = Callable[..., str]  # PD-TEST-189: 7th arg `prior_reasons` is optional; see _default_provider_call
 
 provider_call: Optional[ProviderCall] = None   # None -> resolve per-process
 
@@ -251,7 +251,16 @@ class _StubSpec:
         return self.by_ordinal.get(key, self.default)
 
     def __call__(self, slide: Dict[str, Any], routing: Dict[str, Any], attempt: int,
-                 run_dir: Path, owning_role: str, n_slides: int) -> str:
+                 run_dir: Path, owning_role: str, n_slides: int,
+                 prior_reasons: Optional[List[str]] = None) -> str:
+        # PD-TEST-189 (review of #1173): `_execute_slide` passes `prior_reasons=`
+        # UNCONDITIONALLY, so an implementation left at six parameters dies with
+        # `TypeError` on EVERY attempt -- measured with
+        # PRESENTATION_PROMPT_PROVIDER_STUB set: BASE 1 provider call / attempt 1;
+        # #1173 0 calls / attempts 3 / `verify_failed`, because `_classify` maps
+        # TypeError to exactly the class this seam exists to diagnose. A defaulted
+        # CALLEE parameter does not make an existing 6-arg IMPLEMENTATION
+        # compatible; the implementation has to accept the keyword too.
         plan = self._plan(slide)
         kind = plan
         if isinstance(plan, list):
