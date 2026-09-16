@@ -9161,8 +9161,33 @@ def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) 
     installed dispatcher bytes, and prior ledger generation before any marker
     can be cleared.  The dispatcher consumes it exactly once.
     """
-    if allowance < 1 or allowance > DISPATCH_RETRY_CAP:
-        raise ValueError(f"allowance must be 1..{DISPATCH_RETRY_CAP}")
+    # PD-TEST-182 -- the ceiling is the PAID-BUDGET hard cap, NOT DISPATCH_RETRY_CAP.
+    #
+    # This receipt exists to fund RE-AUTHORING of the units a fan-out invalidates,
+    # and its consumer refuses to act unless the allowance covers ALL of them
+    # (`_n_units = len(wanted_items)`, then `if _allowance < _n_units` leaves the
+    # bank INTACT). Capping the allowance at DISPATCH_RETRY_CAP (3) made the
+    # requirement unsatisfiable for any fan-out larger than 3: on
+    # pres-operator-1d269693 P4-PROMPT has 8 units, so the engine demanded
+    # `allowance >= 8` while itself rejecting anything above 3, and its own
+    # refusal text asked the operator to re-issue with a value it would refuse.
+    # The run was therefore walled by an internal contradiction in its own
+    # recovery path -- no operator action could clear it.
+    #
+    # This is PD-TEST-124's theme in the recovery instrument: the fair-budget work
+    # gave the fan-out a bounded total of min(128, units + pool) precisely because
+    # the legacy per-phase cap of 3 starved an 8-unit fan-out, but the receipt that
+    # must fund the re-authoring was left on that same legacy ceiling.
+    #
+    # Spend stays bounded exactly as before: by PHASE_TOTAL_PAID_HARD_CAP (128),
+    # the same ceiling `_declare_phase_paid_budget` already enforces, and by the
+    # consumer's own `_allowance >= _n_units` check. The per-unit ceilings still
+    # bind at dispatch time.
+    if allowance < 1 or allowance > PHASE_TOTAL_PAID_HARD_CAP:
+        raise ValueError(
+            f"allowance must be 1..{PHASE_TOTAL_PAID_HARD_CAP} "
+            f"(PHASE_TOTAL_PAID_HARD_CAP; it must cover the units the receipt "
+            f"invalidates)")
     if os.getuid() != run_dir.stat().st_uid:
         raise PermissionError("local operator must own the run directory")
     with _phase_budget_transaction(run_dir, phase_id):

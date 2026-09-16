@@ -1,3 +1,32 @@
+## [v25.1.36]  -  2026-09-16  -  A repair receipt can finally FUND the re-authoring it exists to pay for
+
+### What Changed
+- **PD-TEST-182 — the local-operator repair receipt was PERMANENTLY UNSATISFIABLE for any fan-out larger than three units, which walled the live run behind a contradiction in its own recovery path.** `authorize_paid_retry_reset` is the control-plane verb that clears an exhausted paid-retry wall after a deployed code repair. Its consumer refuses to act unless the allowance covers **every** unit the fan-out would invalidate:
+
+  ```python
+  _n_units = len(wanted_items)
+  if _allowance < _n_units:
+      _force_reauthor = False        # bank left INTACT, receipt ignored
+  ```
+
+  but the producer capped the allowance at `DISPATCH_RETRY_CAP`, which is **3**:
+
+  ```python
+  if allowance < 1 or allowance > DISPATCH_RETRY_CAP:
+      raise ValueError(f"allowance must be 1..{DISPATCH_RETRY_CAP}")
+  ```
+
+  On `pres-operator-1d269693`, `P4-PROMPT` fans out over **8** units. The engine therefore demanded `allowance >= 8` while itself rejecting anything above 3 — and its own refusal text asked the operator to *"Re-issue with `--reset-allowance >= 8` (max 3)"*, a value it would refuse. Verified directly against the live runtime: `authorize_paid_retry_reset(run, 'P4-PROMPT', allowance=8)` → **`ValueError: allowance must be 1..3`**.
+
+  **This is PD-TEST-124's theme inside the recovery instrument.** The fair-budget work gave the prompt fan-out a bounded total of `min(128, units + pool)` precisely because the legacy per-phase cap of 3 starved an 8-unit fan-out — but the receipt that must fund the re-authoring those starved units need was left on that same legacy ceiling. The fix is the ceiling itself: **`PHASE_TOTAL_PAID_HARD_CAP` (128)**, the exact bound `_declare_phase_paid_budget` already enforces, so a receipt can always be sized to cover the units it invalidates.
+
+  **Spend is unchanged and still bounded** by the same two things as before: `PHASE_TOTAL_PAID_HARD_CAP` at issue time, and the consumer's own `_allowance >= _n_units` check. The per-unit and phase ceilings still bind at dispatch. The receipt still binds the **installed dispatcher sha** and the durable `generation`, so it cannot be replayed against different bytes.
+
+  **Controls** (`tests/test_pd182_repair_receipt_allowance.py`, 4 cases): reverting the ceiling to `DISPATCH_RETRY_CAP` fails exactly the two cases that need an 8-unit allowance — **2 failed / 2 passed** — while the bound tests pass either way; with the fix, **4 passed**. The suite also pins that an allowance above `PHASE_TOTAL_PAID_HARD_CAP` is refused, that zero/negative is refused, and that the receipt records the installed dispatcher sha and the prior generation.
+
+### Why It Mattered
+The run's only route forward was: re-author the 8 slide prompts that fail the substance verifier, which required clearing an exhausted paid budget, whose only instrument could not be issued at a size the engine would honour. **No operator action could clear it** — the wall was an internal contradiction, not a missing prerequisite, which is why it read as "stuck" from the outside.
+
 ## [v25.1.35]  -  2026-09-16  -  A unit's retry is allowed because NOTHING IS IN FLIGHT -- the double-reserve guarantee is restored
 
 ### What Changed
