@@ -4844,6 +4844,50 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     except (OSError, json.JSONDecodeError):
         doc = result_doc  # in-memory copy is authoritative if the file vanished
     slide_rows = doc.get("slides") or []
+
+    # PD-TEST-165: SETTLE this wave's paid reservations, exactly as the copy
+    # fan-out does for every batch (`_settle_unit_paid_attempts`, dispatcher.py).
+    #
+    # Without this the prompt path had NO settlement at all: a slide's
+    # attempt-1 reservation stayed IN FLIGHT in the ledger, and because the wave
+    # runs in the dispatcher's own process the unit's own second reservation was
+    # refused -- measured by the independent review of PR #1164 on an 8-slide
+    # wave: attempts 2-3 ALL resolved as `budget_deferred` and the final row's
+    # error class was the refusal rather than what actually failed
+    # (verify_failed, HTTP 500). So PD-TEST-161 bought every slide a FIRST
+    # attempt and no working retry.
+    #
+    # `_settle_unit_paid_attempts` marks each reservation settled (a later
+    # dispatch may reserve again; a duplicate carrying the same token stays a
+    # no-op) and records each unit's durable outcome, which is what the
+    # first-attempt-fairness rule reads to decide whether a retry may proceed.
+    # Strictly fail-soft: a settlement failure must not fail a wave whose
+    # artifacts are already on disk.
+    try:
+        _outcomes = [
+            (str(_r.get("slide_id") or _r.get("ordinal")),
+             "ok" if str(_r.get("status")) == "succeeded" else "failed",
+             list((_r.get("verify") or {}).get("codes") or []))
+            for _r in slide_rows if isinstance(_r, dict)
+        ]
+        _settle_unit_paid_attempts(run_dir, phase_id, _outcomes,
+                                   worker_id=worker_id)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_attempts_settled",
+            "units": len(_outcomes),
+            "ok": sum(1 for _o in _outcomes if _o[1] == "ok"),
+            "failed": sum(1 for _o in _outcomes if _o[1] != "ok"),
+        })
+    except Exception as exc:  # noqa: BLE001 -- settlement never fails a wave
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_settle_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("reservations stay in flight, so this wave's units "
+                            "cannot reserve again (retries resolve as "
+                            "budget_deferred) until the next successful settle"),
+        })
     telemetry_rows = []
     for row in slide_rows:
         telemetry_rows.append({

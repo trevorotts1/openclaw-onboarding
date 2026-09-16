@@ -63,9 +63,13 @@ def _run_dir(tmp_path: Path, *, declare: bool) -> Path:
     return run_dir
 
 
-def _reserve(run_dir: Path, unit: str) -> str:
+def _reserve(run_dir: Path, unit: str, *, new_token: bool = False) -> str:
     """One slide's pre-transport reservation, exactly as the worker makes it:
-    one scope entry per ATTEMPT, through the real _reserve_paid_attempt."""
+    one scope entry per ATTEMPT, through the real _reserve_paid_attempt.
+
+    `new_token=False` lets the context manager mint its own token; True is the
+    same thing, made explicit for readability at call sites that are asserting
+    "a SECOND, DIFFERENT logical attempt"."""
     try:
         with dj.paid_unit_scope(unit):
             dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
@@ -162,6 +166,73 @@ def test_budget_deferral_classifies_as_scheduling_and_is_retryable():
         dj.PaidAttemptDeferred("unit slide-03 retry budget exhausted"))
     assert cls == "budget_deferred", cls
     assert retryable is True
+
+
+def test_an_UNSETTLED_reservation_blocks_a_DIFFERENT_attempt(tmp_path):
+    """PD-TEST-165, the bug: without settlement a unit can never retry.
+
+    The prompt path had NO `_settle_unit_paid_attempts` call at all, so a
+    slide's attempt-1 reservation stayed IN FLIGHT and any DISTINCT later
+    attempt for that slide was refused -- the review measured attempts 2-3 all
+    resolving as `budget_deferred`, masking what had actually failed."""
+    run_dir = _run_dir(tmp_path, declare=True)
+
+    # attempt 1, with an explicit token so the SAME logical attempt is repeatable
+    with dj.paid_unit_scope("slide-01", token="t1"):
+        dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
+    paid = dj._read_ledger(run_dir, PHASE)["paid_attempts"]
+
+    # the SAME logical attempt again is a free no-op, not a second charge
+    with dj.paid_unit_scope("slide-01", token="t1"):
+        dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
+    assert dj._read_ledger(run_dir, PHASE)["paid_attempts"] == paid, (
+        "a duplicate carrying the SAME token must be a no-op")
+
+    # a DIFFERENT attempt, while the first is still UNSETTLED, is refused
+    assert _reserve(run_dir, "slide-01") == "budget_deferred", (
+        "with no settlement an in-flight reservation blocks every distinct "
+        "later attempt for that unit -- which is exactly why PD-TEST-161 alone "
+        "bought a first attempt and no working retry")
+
+
+def test_SETTLING_a_batch_frees_its_units_to_retry(tmp_path):
+    """PD-TEST-165, the fix: settle, then the retry is allowed.
+
+    This is the property the prompt path was missing, and the reason
+    PD-TEST-161 alone bought a first attempt but no working retry."""
+    run_dir = _run_dir(tmp_path, declare=True)
+
+    # The wave: every slide reserves its first attempt...
+    for slide in SLIDES:
+        assert _reserve(run_dir, slide) == "ok"
+    in_flight = dj._read_ledger(run_dir, PHASE)
+    assert in_flight.get("paid_attempts") == len(SLIDES), in_flight.get("paid_attempts")
+
+    # ...then the wave SETTLES each slide's outcome, exactly as
+    # _dispatch_prompt_phase_parallel now does.
+    dj._settle_unit_paid_attempts(
+        run_dir, PHASE,
+        [(s, "failed", ["AF-P-VERBATIM"]) for s in SLIDES],
+        worker_id=WORKER)
+
+    # Now a RETRY for a failed slide is admitted rather than deferred.
+    retry = _reserve(run_dir, "slide-01")
+    assert retry == "ok", (
+        "after settling, a failed unit's retry must be admitted -- otherwise "
+        f"every retry is dead (got {retry!r})")
+
+
+def test_the_dispatcher_SETTLES_the_wave(tmp_path):
+    """Structural pin on the call site: the settlement must actually be wired."""
+    import inspect
+    src = inspect.getsource(dj._dispatch_prompt_phase_parallel)
+    assert "_settle_unit_paid_attempts(" in src, (
+        "the prompt wave must settle its paid reservations, or no slide can "
+        "ever retry (PD-TEST-165)")
+    assert src.index("run_worker(") < src.index("_settle_unit_paid_attempts("), (
+        "the settlement must follow the wave it settles")
+    assert "fanout_paid_settle_failed" in src, (
+        "a settlement failure must be recorded, never silent")
 
 
 def test_the_claim_ownership_HARD_STOP_stays_non_retryable():
