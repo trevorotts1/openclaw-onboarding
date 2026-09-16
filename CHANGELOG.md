@@ -1,3 +1,42 @@
+## [v25.1.34]  -  2026-09-16  -  P4-PROMPT stops declaring an artifact its own fan-out cannot produce
+
+### What Changed
+- **PD-TEST-168 (part A of 2) — `P4-PROMPT` declared a NON-SLIDE product while its fan-out is strictly per-slide, so the phase could never satisfy its own completion predicate and the run parked forever.**
+
+  `presentation_job/phases.py:3491` sets **`waiting_for = list(phase.produces_artifact)`** — a phase parks on its own declared outputs. `P4-PROMPT` declared **two**: `working/prompts/slide-*.txt` **and** `working/prompts/infographic-prompt.txt`. But its `fanout` is `{"by": "slide"}` and `fanout._slides_for_units` returns **slides only** — *"no unit is ever invented"*. So the infographic prompt was not any unit's job and could never appear.
+
+  **Measured on the live run `pres-operator-1d269693`:** `P4-PROMPT` status `quarantined`, `attempts: 7`, `waited_seconds: 3157`, `waiting_for` exactly those two patterns — and `working/prompts/` contains `slide-01..08.txt` and **nothing else**. With `engine_pid` naming no live process, the run is stalled at 31 done / 29 pending with `out.pptx` absent.
+
+  **Three independent sources agree the author is NOT `prompt-author-presentations`:**
+  1. `build_infographic.py:714-718`, the engine's own failure text — *"P8.3-INFOGRAPHIC consumes …infographic-prompt.txt, **authored by role slide-image-creator**"*;
+  2. `sops/slide-image-creator-sops.md` step 5 — *"Save the prompt to `working/prompts/infographic-prompt.txt`"* — with steps 3–9 the full authoring procedure and the path listed under its own **Outputs**;
+  3. the `prompt-author-presentations` role file and SOP mention **"infographic" zero times**.
+
+  `manifest.py:915` records the entry was added as *"the FIX 2 fanout extra unit"* — but **no extra-unit mechanism exists anywhere in the engine**, so the design note was never implemented. The declaration is therefore unrealizable **by construction**, not merely unsatisfied.
+
+  **Fix:** remove `working/prompts/infographic-prompt.txt` from `P4-PROMPT.produces_artifact`. One line. `P4-PROMPT` then completes on the slide prompts it genuinely owns.
+
+  **This is HALF the fix, and is deliberately not presented as more.** `P8.3-INFOGRAPHIC` is **pending** on this run and its verifier (`phase_verifiers.py:3541-3589`) has **no skip path** — it hard-requires the PNG (≥102,400 bytes), `status: "ready"`, `qc_passed: true` and a passing QC verdict. So removing the declaration alone would **move** the deadlock to `P8.3` rather than clear it. Part B — a path-applicability route-around for a legitimately skipped infographic (the engine already has the pattern: `P-CONVERTER`'s `converter_path: true`, skipped on this run as *"not applicable to this deck"*), which must **fail open** when the deciding signal is unknown — is required before the run can proceed.
+
+  **And for this deck the skip is the contract-correct outcome**, not a shortcut: `slide-image-creator-sops.md` step 1 says skip when `deliverable_bundle.checklist_items` is absent/empty and the run is not a converter origin — measured `deliverable_bundle: null`, `checklist_items: null`, `creation_mode: "from_scratch"`. `build_infographic.py:702-711` already honours an `infographic_skipped: true` marker.
+
+- **PD-TEST-168 part B — the infographic stage is now deck-conditional, so a LEGITIMATELY SKIPPED infographic cannot deadlock it.** Part A alone moved the deadlock rather than clearing it: `P8.3-INFOGRAPHIC` is pending on the live run and `phase_verifiers` has **no skip path** — it hard-requires `working/deliverables/infographic.png` (≥102,400 bytes), `status: "ready"`, `qc_passed: true` and a passing QC verdict. But `sops/slide-image-creator-sops.md` step 1 tells the role to **skip** the infographic when the deck does not need one, and `build_infographic.py:702-711` already honours an `infographic_skipped: true` marker. The walk did not agree with either.
+
+  Added a **third deck-conditional branch**, mirroring the two the engine already has (`P-CONVERTER`'s `converter_path: true`, and the `_SP_ONLY_PHASE_IDS` signature-only stages): a phase may declare `infographic_path: true`, and `Engine._phases_applicable_to_this_deck` routes it around — `status=done`, **no executor and no verifier run**, `verifier_ok=None`, `artifacts=[]`, plus `routed_around` / `routed_around_reason` so the decision is never disguised as a verified execution.
+
+  **It FAILS OPEN, which is the property the mechanism rests on.** `_deck_infographic_required()` returns `None` — meaning *keep the phase* — for an absent, unreadable or unparseable `intake.json`, for an unconfirmed `creation_mode`, and it returns `True` for a non-empty `deliverable_bundle.checklist_items` or a content-first `creation_mode`. Only a **positively read** intake that carries no checklist items *and* a confirmed non-content-first creation mode routes the phase around. The rule is not invented here: it is SOP 9.10 step 1, verbatim.
+
+  **Controls** (`tests/test_pd168b_infographic_skip_not_a_deadlock.py`, 11 cases): reverting the wiring fails exactly the **2** cases that pin the skip, while the 9 fail-open / still-walks-it cases pass either way — **11 passed** with it, **2 failed / 9 passed** without.
+
+  **One existing test was updated, and it is stated rather than hidden:** `test_pd010_signature_only_phase_gating.py` hard-coded the routed-around COUNT (`len(phases) == len(manifest.phases) - 5  # 4 SP-only + P-CONVERTER`). That fixture deck is `from_scratch` with no checklist items, so it correctly gains a 6th routed-around phase. The assertion now expects **6** and additionally asserts `"P8.3-INFOGRAPHIC" not in walked` **by name**, so it stays a real check instead of a magic number. (Verified the two files pass at base and that the failure was only that count: 16 passed at base, 27 passed after the update.)
+
+- **Manifest restamp.** `PIPELINE-MANIFEST.json` is hash-locked by GATE 2 against **both** `MANIFEST-SOURCE.txt` (`content_sha256=`) and `universal-sops/_content-manifest.json`. Both are restamped here; `scripts/hash-universal-sops-manifest.py` regenerates the latter but **not** `MANIFEST-SOURCE.txt`, so that stamp is updated explicitly. `manifest_version` stays **69** (no phase, order, or version changed) and `MIN_MANIFEST_VERSION` is untouched. Editing by JSON round-trip was checked to be **byte-identical** to the original (`indent=2, ensure_ascii=False`) so the diff is one removed line, not a reformat: **3 files, +6/−7**.
+
+  Gates: `scripts/ci/presentations-drift-gates.sh` **ALL 8 PASSED** (GATE 2 manifest-lockstep, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift, GATE 7 phase-doc value lockstep all read this file).
+
+### Why It Mattered
+A declared-but-unproducible artifact is a deadlock with no operator remedy that does not involve fabricating something: `owner_skip_approval` is not available either, because `presentation_job/approvals.py` requires an `owner_msg_id` that resolves through the owner oracle to a real owner-authored message, and rejects a hand-written record as `AF-FORGED-APPROVAL`. The declaration had to be corrected.
+
 ## [v25.1.33]  -  2026-09-16  -  A unit's own retry is no longer refused by its own in-flight paid reservation
 
 ### What Changed

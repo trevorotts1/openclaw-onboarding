@@ -1485,6 +1485,81 @@ class Engine:
         deck_type = self._deck_type()
         return bool(deck_type) and deck_type != _SIGNATURE_DECK_TYPE
 
+    def _deck_infographic_required(self):
+        """PD-TEST-168 part B: does THIS deck require the infographic extra?
+
+        Returns True / False / None, and only False ever routes the phase
+        around:
+
+          * None  -- intake.json absent, unreadable, or the deciding keys are
+            not positively present. FAIL OPEN: the phase stays in the walk.
+          * True  -- a non-empty `deliverable_bundle.checklist_items`, or a
+            content-first creation_mode (a converter origin). The phase runs.
+          * False -- intake.json WAS read, `checklist_items` is absent/empty,
+            AND the creation_mode is confirmed non-content-first.
+
+        The rule is not invented here: sops/slide-image-creator-sops.md step 1
+        states it -- "Confirm the run requires an infographic by checking
+        `deliverable_bundle.checklist_items` in intake.json. If the key is
+        absent or empty and the run is NOT a converter origin, skip this SOP
+        and record `infographic_skipped: true` ... Do NOT produce the file
+        speculatively." build_infographic.py:702-711 already honours that
+        marker; this makes the WALK agree with it, so a legitimately skipped
+        infographic cannot deadlock the phase on an artifact that will never
+        exist.
+        """
+        p = self.run_dir / "working" / "copy" / "intake.json"
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        if not isinstance(obj, dict):
+            return None
+        creation_mode = self._deck_creation_mode()
+        if creation_mode in self._CONTENT_FIRST_CREATION_MODES:
+            return True
+        if creation_mode is None:
+            return None
+        bundle = obj.get("deliverable_bundle")
+        if isinstance(bundle, dict):
+            items = bundle.get("checklist_items")
+        else:
+            items = obj.get("checklist_items")
+        if items:
+            return True
+        return False
+
+    def _infographic_route_around_applies(self, phase: Phase) -> bool:
+        """True only when `phase` is the infographic stage AND this deck is
+        POSITIVELY known not to require one. Fails OPEN, exactly like
+        _sp_only_route_around_applies above: an absent/unreadable signal keeps
+        the phase in the walk and it must earn its pass the normal way."""
+        if not getattr(phase, "infographic_path", False):
+            return False
+        return self._deck_infographic_required() is False
+
+    def _route_around_infographic_phase(self, phase: Phase) -> None:
+        """Record the infographic stage as not applicable to this deck, with no
+        executor and no verifier run -- and WITHOUT disguising the decision as a
+        genuine execution. Mirrors _route_around_converter_phase exactly:
+        status=done so all_done accounting matches a deck that never had the
+        precondition, verifier_ok=None and artifacts=[] so no substance scan
+        mistakes it for a verified pass, and routed_around + reason so the
+        distinction is permanently auditable in state.json and the event log.
+        """
+        reason = ("this deck positively does not require an infographic — "
+                  "working/copy/intake.json carries no deliverable_bundle."
+                  "checklist_items and its creation_mode is not a content-first "
+                  "mode, so the slide-image-creator SOP 9.10 step 1 skip "
+                  "applies; not dispatched")
+        self.report.event("phase.routed_around", f"{phase.id}: {reason}")
+        self._checkpoint(phase.id, status=PHASE_STATUS_DONE, attested_at=utcnow(),
+                         artifacts=[], sha256={}, verifier_ok=None,
+                         verifier_notes=[f"NOTE: {reason}"],
+                         owner_skip_approval=None, routed_around=True,
+                         routed_around_reason=reason,
+                         intake_sha_at_done=_intake_sha_now(self.run_dir))
+
     def _phases_applicable_to_this_deck(self, phases: List[Phase],
                                         only: Optional[str] = None) -> List[Phase]:
         """THE phase walk's applicability selection: return the subset of
@@ -1541,6 +1616,17 @@ class Engine:
                 self._route_around_sp_only_phase(p, deck_type)
             routed_ids = {p.id for p in sp_routed}
             phases = [p for p in phases if p.id not in routed_ids]
+
+        # PD-TEST-168 part B — the optional infographic extra. Without this a
+        # deck that legitimately skips the infographic deadlocks P8.3-INFOGRAPHIC
+        # on working/deliverables/infographic.png, an artifact that will never
+        # exist (phase_verifiers has no skip path).
+        info_routed = [p for p in phases if self._infographic_route_around_applies(p)]
+        if info_routed:
+            for p in info_routed:
+                self._route_around_infographic_phase(p)
+            info_ids = {p.id for p in info_routed}
+            phases = [p for p in phases if p.id not in info_ids]
         return list(phases)
 
     # -- verification -----------------------------------------------------

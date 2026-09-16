@@ -1069,8 +1069,7 @@
         "prompt-author-presentations-sops.md"
       ],
       "produces_artifact": [
-        "working/prompts/slide-*.txt",
-        "working/prompts/infographic-prompt.txt"
+        "working/prompts/slide-*.txt"
       ],
       "gate_codes": [
         "AF-PROMPT-FLOOR"
@@ -1645,7 +1644,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/infographic-prompt.txt"
-      ]
+      ],
+      "infographic_path": true
     },
     {
       "id": "P9-SPEECH",
