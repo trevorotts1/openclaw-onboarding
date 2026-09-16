@@ -111,6 +111,28 @@ def test_the_legacy_cap_still_governs_when_nothing_is_declared(tmp_path):
         "past the legacy cap the refusal must be PaidBudgetExhausted")
 
 
+def test_a_REFUSED_reservation_costs_nothing_so_retrying_cannot_burn_calls(tmp_path):
+    """The safety property behind marking budget errors RETRYABLE.
+
+    `_execute_slide` retries up to RETRY_CAP times, so making a budget error
+    retryable is only safe if a REFUSED reservation is free. It is: the refusal
+    happens in `_reserve_paid_attempt`, BEFORE any transport call, so the phase
+    counter does not move. Measured here by exhausting the legacy cap and then
+    retrying a starved unit three times."""
+    run_dir = _run_dir(tmp_path, declare=False)
+    for slide in SLIDES:
+        _reserve(run_dir, slide)                      # spend the legacy cap
+    spent = dj._read_ledger(run_dir, PHASE)["paid_attempts"]
+    assert spent == dj.DISPATCH_RETRY_CAP, spent
+
+    retries = [_reserve(run_dir, "slide-04") for _ in range(3)]
+    assert retries == ["budget_exhausted"] * 3, retries
+    assert dj._read_ledger(run_dir, PHASE)["paid_attempts"] == spent, (
+        "a refused reservation must not consume a paid attempt -- otherwise "
+        "RETRY_CAP retries of a budget error would burn the very budget they "
+        "are waiting for")
+
+
 def test_a_budget_cannot_be_shrunk_by_a_later_narrower_declaration(tmp_path):
     """Monotonic within a generation: a re-dispatch over fewer slides must not
     strand slides the pool is still paying for."""
