@@ -659,9 +659,18 @@ DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY = "low"
 # thinking ENABLED ("none" disables it, and mixing that with
 # thinking.type="enabled" has undocumented precedence -- so it is NOT a rung
 # until probed), and inventing an unmeasured rung would re-create PD-070's
-# dead-end defect from the other direction. A unit that exhausts this ladder
-# parks on the phase's paid-attempt cap, which is the correct fail-closed
-# outcome rather than another identical paid call.
+# dead-end defect from the other direction.
+#
+# HONEST BOUND, stated here because a comment that overclaims is how PD-070
+# happened: the rung index in `effort_for_paid_attempt` is CLAMPED to the last
+# rung, so a unit whose attempt allowance outlives the ladder re-sends the
+# FINAL rung on every later attempt rather than stepping further down. With this
+# one-rung ladder, attempt 2 and attempt 3 both send `low`: attempt 3 is a
+# RESAMPLE at DEEPSEEK_TEMPERATURE, not a fresh step-down. The property a test
+# may assert is therefore only that attempt 2 DIFFERS from attempt 1 -- NOT that
+# no attempt ever repeats the rung that just failed. A unit that exhausts the
+# ladder parks on the phase's paid-attempt cap, which is the correct fail-closed
+# outcome rather than an unbounded series of paid calls.
 DEEPSEEK_REASONING_EFFORT_LADDER: Tuple[str, ...] = ("low",)
 DEEPSEEK_TEMPERATURE = 0.3
 DEEPSEEK_TIMEOUT_S = 600       # thinking MAX at a large max_tokens can genuinely run minutes
@@ -6934,6 +6943,46 @@ def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
 EMPTY_COMPLETION_MARKER = "unit returned empty output"
 
 
+def effort_for_paid_attempt(prior_error: str,
+                            attempts_total: int) -> Optional[str]:
+    """The reasoning effort a fan-out unit's NEXT paid attempt must send.
+
+    PD-TEST-124 / PD-070. Extracted from `_unit_worker` so the ladder walk is a
+    real, directly-testable function rather than an inline expression that only
+    a constants-level test could reach (the test that used to guard this
+    asserted properties of `DEEPSEEK_REASONING_EFFORT_LADDER` alone and so
+    passed unchanged even when the walk itself was broken).
+
+    Returns:
+      * `None` — attempt 1, or any attempt after a failure that was NOT an
+        empty completion. The caller then sends `DEEPSEEK_REASONING_EFFORT`
+        (the product worker's default), which is PD-TEST-065's behaviour.
+      * a rung of `DEEPSEEK_REASONING_EFFORT_LADDER` — a unit that has ALREADY
+        come back empty is re-issued at a reduced effort instead of repeating
+        the request that just failed. The rung is chosen by how many attempts
+        the unit has already spent; `attempts_total` is durable (PRES-014), so
+        the rung survives restarts and resumes.
+
+    HONEST BOUND (do not let a test claim more than this): the rung index is
+    CLAMPED to the last rung, so once the ladder is shorter than the unit's
+    remaining attempt allowance, later attempts re-send the final rung rather
+    than stepping further down. With the shipped one-rung ladder that means
+    attempt 2 and attempt 3 both send `low` — a RESAMPLE at
+    `DEEPSEEK_TEMPERATURE`, not a fresh step-down. That is deliberate: no
+    documented value below `low` keeps thinking enabled (`none` disables it and
+    mixing it with `thinking.type="enabled"` has undocumented precedence, so it
+    is not a rung until probed), and inventing an unmeasured rung would
+    re-create PD-070's dead-end defect from the other direction. The genuine
+    guarantee is only that attempt 2 DIFFERS from attempt 1.
+    """
+    if EMPTY_COMPLETION_MARKER not in (prior_error or ""):
+        return None
+    spent = int(attempts_total or 1)
+    rung = max(0, min(spent - 1, len(DEEPSEEK_REASONING_EFFORT_LADDER) - 1))
+    return DEEPSEEK_REASONING_EFFORT_LADDER[rung]
+
+
+
 def _empty_completion_detail(usage: Optional[Dict[str, Any]]) -> str:
     """Name the ONE number that explains an empty completion.
 
@@ -7430,18 +7479,13 @@ def _dispatch_phase_fanout_units(
         prior_rec = _store_state.get(unit.key)
         prior_err = str(prior_rec.get("last_error") or "") \
             if isinstance(prior_rec, dict) else ""
-        effort = None
-        if EMPTY_COMPLETION_MARKER in prior_err:
-            # PD-070: walk DOWN the ladder by how many attempts this unit has
-            # already spent, instead of re-sending one fixed reduced effort.
-            # `attempts_total` is durable (PRES-014), so the rung survives
-            # restarts and resumes exactly as the PD-TEST-065 decision did.
-            # Attempt 1 keeps PD-TEST-065's behaviour byte-for-byte; only a
-            # SECOND empty completion reaches the next rung, which is the case
-            # that used to repeat the request that had just failed.
-            _spent = int(prior_rec.get("attempts_total") or 1)
-            _rung = max(0, min(_spent - 1, len(DEEPSEEK_REASONING_EFFORT_LADDER) - 1))
-            effort = DEEPSEEK_REASONING_EFFORT_LADDER[_rung]
+        # PD-070/PD-TEST-124: the ladder walk lives in `effort_for_paid_attempt`
+        # so it is directly testable over a real attempt sequence. It returns
+        # None for a first attempt (caller sends the product default) and a
+        # ladder rung once the unit has already come back empty.
+        _prior_attempts = int(prior_rec.get("attempts_total") or 1) \
+            if isinstance(prior_rec, dict) else 1
+        effort = effort_for_paid_attempt(prior_err, _prior_attempts)
         # PD-TEST-124: the paid reservation this unit's dispatch makes must be
         # accounted to THIS unit, so the whole dispatch runs inside a unit
         # scope. Inside it the reservation enforces the phase's declared bounded

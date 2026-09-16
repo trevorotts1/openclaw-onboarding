@@ -350,16 +350,56 @@ def test_wire_body_carries_the_stepped_down_effort_when_asked(wire):
     assert wire[0]["max_tokens"] == D.DEEPSEEK_MAX_OUTPUT_TOKENS, wire[0]
 
 
-def test_the_ladder_never_repeats_the_rung_that_just_failed():
-    """PD-TEST-124 property, asserted rather than commented: every rung differs
-    from the production default AND from every other rung, so an unchanged-input
-    retry can never be the byte-identical request that just returned empty."""
+def test_the_step_down_never_repeats_the_effort_that_just_failed():
+    """PD-TEST-124 property, driven through the REAL ladder walk rather than
+    asserted against the constants.
+
+    The previous version of this test only inspected
+    `DEEPSEEK_REASONING_EFFORT_LADDER` (`default not in ladder`, no duplicate
+    rungs). Both of those hold for ANY one-rung ladder, so it passed unchanged
+    even when the walk was broken -- and its claim ("never repeats the rung that
+    just failed") was FALSE for the shipped ladder: the rung index is clamped,
+    so attempt 3 re-sent attempt 2's `low`. An independent review caught that
+    (PD-TEST-148). This version calls the production function over the real
+    attempt sequence, so it fails if the walk regresses, and it asserts the
+    guarantee that actually holds.
+
+    The genuine guarantee: attempt 2 DIFFERS from attempt 1 (the step-down that
+    PD-TEST-124 exists to create). Attempts beyond the ladder's length are
+    documented resamples of the final rung, and are asserted as such here rather
+    than denied.
+    """
     ladder = D.DEEPSEEK_REASONING_EFFORT_LADDER
     assert ladder, "the ladder must have at least one rung"
+    assert len(set(ladder)) == len(ladder), f"ladder repeats a rung: {ladder!r}"
     assert D.DEEPSEEK_REASONING_EFFORT not in ladder, (
         "the first rung must differ from the default, or a retry after an empty "
         f"completion re-sends it: default={D.DEEPSEEK_REASONING_EFFORT!r} ladder={ladder!r}")
-    assert len(set(ladder)) == len(ladder), f"ladder repeats a rung: {ladder!r}"
+
+    # Attempt 1: nothing has failed yet -> no override, the product default.
+    assert D.effort_for_paid_attempt("", 1) is None
+    assert D.effort_for_paid_attempt("some other provider error", 1) is None
+    assert D.effort_for_paid_attempt("", 0) is None
+
+    # Attempt 2 after an EMPTY COMPLETION: a real step DOWN from attempt 1.
+    attempt1 = D.DEEPSEEK_REASONING_EFFORT
+    attempt2 = D.effort_for_paid_attempt(D.EMPTY_COMPLETION_MARKER + " detail", 2)
+    assert attempt2 is not None, "attempt 2 must be re-issued at a reduced effort"
+    assert attempt2 != attempt1, (
+        "attempt 2 must differ from attempt 1, or the retry re-sends the request "
+        f"that just returned empty: attempt1={attempt1!r} attempt2={attempt2!r}")
+    assert attempt2 in ladder, attempt2
+
+    # Attempts past the ladder's length RESAMPLE the final rung. Asserted
+    # explicitly so the shipped behaviour is pinned honestly; if a measured rung
+    # below `low` is ever added, this case is where the new step-down gets
+    # pinned. (It is a clamp, not a crash and not a silent fall back to the
+    # default -- which would be the PD-070 dead-end.)
+    last_rung = ladder[-1]
+    for spent in range(len(ladder) + 1, len(ladder) + 4):
+        assert D.effort_for_paid_attempt(D.EMPTY_COMPLETION_MARKER, spent) == last_rung, (
+            f"a unit past the ladder must resample the final rung {last_rung!r}, "
+            f"never fall back to the default {attempt1!r}")
 
 
 def test_dispatch_complete_forwards_the_effort_to_the_transport(monkeypatch):
