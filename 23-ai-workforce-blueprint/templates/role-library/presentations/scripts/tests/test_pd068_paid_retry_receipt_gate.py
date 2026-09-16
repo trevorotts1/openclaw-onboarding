@@ -560,7 +560,12 @@ class TestOperatorMarkerNamesBothRoutes:
         text = _park_at_paid_cap(run_dir)
         assert "REPAIR-RECEIPT route" in text
         assert dj.DISPATCH_REPAIR_RECEIPT_KIND in text
-        assert f"allowance 1..{dj.DISPATCH_RETRY_CAP}" in text
+        # PD-TEST-185: the marker must advertise the ceiling the producer
+        # ACTUALLY enforces. PD-TEST-182 raised it from DISPATCH_RETRY_CAP (3)
+        # to PHASE_TOTAL_PAID_HARD_CAP (128) so a receipt can cover an 8-unit
+        # fan-out; this assertion is the tripwire that keeps the operator-facing
+        # text and the engine in agreement.
+        assert f"allowance 1..{dj.PHASE_TOTAL_PAID_HARD_CAP}" in text
         assert "--authorize-paid-retry-reset" in text
         assert "--reset-allowance" in text
         # The engine route is still named, and the OLD lie is gone.

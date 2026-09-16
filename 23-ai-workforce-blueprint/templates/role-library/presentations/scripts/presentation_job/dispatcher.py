@@ -7352,7 +7352,7 @@ def _dispatch_phase_fanout_units(
     # SUFFICIENCY GATE (independent review of PR #1150, MEDIUM).
     #
     # The void and the payment must be COMMENSURATE. `authorize_paid_retry_reset`
-    # accepts any `allowance` in 1..DISPATCH_RETRY_CAP, so `--reset-allowance 1`
+    # accepts any `allowance` in 1..PHASE_TOTAL_PAID_HARD_CAP, so `--reset-allowance 1`
     # is a legal, documented invocation -- and without this gate it voided the
     # WHOLE bank while paying for exactly ONE unit. Measured by the reviewer with
     # the real reservation seam running: allowance=1 -> one unit re-authored, two
@@ -9090,7 +9090,9 @@ def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: P
       * the receipt must be readable, of kind
         'local-operator-paid-retry-reset-v1', and issued for THIS phase and THIS
         resolved run directory;
-      * its allowance must be a positive int within DISPATCH_RETRY_CAP;
+      * its allowance must be a positive int within PHASE_TOTAL_PAID_HARD_CAP
+        (PD-TEST-182: the SAME ceiling the producer enforces, so the two can
+        never drift apart again);
       * its prior_generation must be the ledger's CURRENT generation, so a
         receipt can never re-arm a generation it was not issued against;
       * its approved_input_revision must be the CURRENT one, so a receipt can
@@ -9358,7 +9360,7 @@ def _paid_attempt_scope(led: Dict[str, Any], generation: str) -> str:
       * the approved input revision changed (a verified intake amendment) --
          `paid_attempts`' own `generation == prior_generation` rule; and
       * an operator repair receipt was consumed, which bumps `led['generation']`
-        and re-arms `paid_attempts` as `DISPATCH_RETRY_CAP - allowance`.
+        and re-arms `paid_attempts` as `max(0, DISPATCH_RETRY_CAP - allowance)`.
 
     The second term is not optional. Without it a receipt would reopen the
     phase's TOTAL but leave a saturated unit pinned at its per-unit ceiling: the
@@ -10123,7 +10125,7 @@ def _park_blocked(run_dir: Path, phase_id: str, entry: Dict[str, Any], *,
         "     approved input generation; or\n"
         "  2. REPAIR-RECEIPT route: after a deployed code repair, the OS owner of this\n"
         f"     run issues ONE bounded local-operator paid-retry repair receipt (kind\n"
-        f"     {DISPATCH_REPAIR_RECEIPT_KIND}, allowance 1..{DISPATCH_RETRY_CAP}) bound to the\n"
+        f"     {DISPATCH_REPAIR_RECEIPT_KIND}, allowance 1..{PHASE_TOTAL_PAID_HARD_CAP}) bound to the\n"
         "     then-current dispatcher source hash, ledger generation, approved input\n"
         "     revision and run owner. The dispatcher consumes it exactly once and\n"
         "     reserves that many further paid attempts:\n"
