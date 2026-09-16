@@ -384,7 +384,11 @@ def test_engine_hook_materialises_the_index_before_the_executor(tmp_path):
     other_run = _seed_run(tmp_path / "other", 3)
 
     class _Other:
-        id = "P4-PROMPT"
+        # PD-TEST-156: this stub used to borrow the id "P4-PROMPT", which was then
+        # genuinely a non-consumer. That id IS a consumer now, so the example
+        # contradicted the manifest. A deliberately FICTIONAL id keeps the example
+        # honest forever: no real phase can ever make it stale.
+        id = "P-NOT-A-CONSUMER"
         consumes = ["working/copy/slides_copy.md"]
 
     engine.run_dir = other_run

@@ -47,7 +47,6 @@ import ast
 import json
 import pathlib
 import re
-import subprocess
 import sys
 from typing import Set
 
@@ -74,14 +73,29 @@ def _load_phases():
     return phases
 
 
-def _phases_named_in(function_name: str) -> Set[str]:
-    """Phase ids the named dispatcher function mentions in its own source.
+def _phases_named_in(function_name: str, real_ids: Set[str]) -> Set[str]:
+    """Real manifest phase ids that the named dispatcher function mentions.
 
-    Derived from the CODE, not restated from the fix: if a second phase is ever
-    routed through the slide-normalizing path, its id appears here and the
-    assertion below demands it declare the index too."""
-    src = DISPATCHER.read_text(encoding="utf-8")
-    tree = ast.parse(src)
+    Matched by scanning the function's EXECUTABLE string literals for each actual
+    manifest phase id, rather than by a phase-shaped regex.
+
+    The first version used `\\b(P4-[A-Z]+|P-[A-Z0-9.\\-]+)\\b`, which the
+    independent review measured as detecting only 43 of the 62 real ids:
+    `P0A-INTAKE`, `P0B-PRIORITY`, `P3-ARC`, `P1Q-COPY-QC`, `PF-DESIGN`,
+    `P8-ASSEMBLE`, `P7-TELEPROMPTER`, the `P8.x` and `P9*` families and others were
+    INVISIBLE to it -- adding `P9-SPEECH`, `P8-ASSEMBLE`, `PF-DESIGN` or
+    `P0A-INTAKE` to the fan-out function left this guard GREEN. Matching against
+    the manifest's own id set closes that hole by construction, whatever shape a
+    future id takes.
+
+    Only `ast.Constant` strings are scanned, so a COMMENT that merely mentions a
+    phase id cannot make the guard demand that phase declare the index (the
+    first version scanned raw source lines, including comments)."""
+    try:
+        src = DISPATCHER.read_text(encoding="utf-8")
+        tree = ast.parse(src)
+    except (OSError, SyntaxError) as exc:  # pragma: no cover - unreadable tree
+        raise AssertionError(f"cannot parse {DISPATCHER}: {exc!r}")
     fn = next((n for n in ast.walk(tree)
                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                and n.name == function_name), None)
@@ -89,18 +103,18 @@ def _phases_named_in(function_name: str) -> Set[str]:
         f"dispatcher.{function_name} no longer exists -- this guard is pinned to "
         "the function that reads working/copy/slides.json for a prompt fan-out; "
         "if that work moved, repoint this test rather than deleting it")
-    lines = src.split("\n")[fn.lineno - 1:fn.end_lineno]
-    # Only the LITERAL phase ids matter; the regex is deliberately narrow.
-    return set(re.findall(r"\b(P4-[A-Z]+|P-[A-Z0-9.\-]+)\b", "\n".join(lines)))
+    haystack = "\n".join(n.value for n in ast.walk(fn)
+                         if isinstance(n, ast.Constant)
+                         and isinstance(n.value, str))
+    return {pid for pid in real_ids if pid in haystack}
 
 
 def test_the_guard_is_not_vacuous():
     phases = _load_phases()
     assert sa.SLIDES_JSON_REL == "working/copy/slides.json", sa.SLIDES_JSON_REL
-    named = _phases_named_in(SLIDE_NORMALIZING_FUNCTION)
-    assert named, "the slide-normalizing function names no phase -- guard is vacuous"
     ids = {p["id"] for p in phases}
-    assert named & ids, f"none of {sorted(named)} is a real manifest phase"
+    named = _phases_named_in(SLIDE_NORMALIZING_FUNCTION, ids)
+    assert named, "the slide-normalizing function names no phase -- guard is vacuous"
 
     declaring = [p["id"] for p in phases
                  if sa.phase_consumes_slides_json(p.get("consumes"))]
@@ -112,7 +126,7 @@ def test_the_guard_is_not_vacuous():
 def test_every_slide_normalizing_phase_declares_the_index():
     phases = _load_phases()
     by_id = {p["id"]: p for p in phases}
-    named = {pid for pid in _phases_named_in(SLIDE_NORMALIZING_FUNCTION) if pid in by_id}
+    named = _phases_named_in(SLIDE_NORMALIZING_FUNCTION, set(by_id))
 
     offenders = [pid for pid in sorted(named)
                  if not sa.phase_consumes_slides_json(by_id[pid].get("consumes"))]
@@ -153,10 +167,18 @@ def test_the_declaration_is_DAG_neutral():
             p["consumes"] = [c for c in p["consumes"]
                              if str(c).strip().lower() != sa.SLIDES_JSON_REL]
 
+    # Compare the EDGE RECORDS (which carry the `via` artifact), not just the
+    # producer->dependent adjacency. The independent review showed adjacency
+    # alone misses a broad-glob producer such as `working/copy/*.json`: its edge
+    # pair is already implied by another consumed artifact, so the adjacency is
+    # unchanged and the weaker check passed. The records make the `via` visible.
+    assert ep.build_edge_records(phases) == ep.build_edge_records(reduced), (
+        "declaring the render index changed the artifact DAG's edge records -- "
+        "it has no producer, so it must contribute no edge; a diff here means a "
+        "producer (possibly a glob) appeared, or the declaration is being "
+        "matched as another artifact")
     assert ep.build_edges(phases) == ep.build_edges(reduced), (
-        "declaring the render index changed the artifact DAG -- it has no "
-        "producer, so it must be edge-free; a diff here means either a producer "
-        "appeared or the declaration is being matched as another artifact")
+        "declaring the render index changed the producer->dependent adjacency")
 
     assert len(declaring) >= 2, (
         "fewer than two phases declare the index -- check the fix is still present")
