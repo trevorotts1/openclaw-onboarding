@@ -44,8 +44,30 @@ from presentation_job import fanout  # noqa: E402
 MANIFEST = (SCRIPTS.parent.parent.parent.parent.parent
             / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
 
-#: The three consumers the defect report names, in manifest order.
-EXPECTED_CONSUMERS = {"P-STYLE-SPEC", "P-STYLE-PREVIEW", "P4-RENDER"}
+#: The consumers the defect report names, in manifest order.
+#:
+#: PD-TEST-156 (2026-09-16): P4-PROMPT joined this set, and the tripwire in
+#: `test_producer_matches_every_manifest_consumer_of_the_index` fired in exactly
+#: the intended way -- the fix that added the declaration had to come here and
+#: say so. The addition IS the fix:
+#:
+#:   `_dispatch_prompt_phase_parallel` reads `working/copy/slides.json` directly to
+#:   normalize its per-slide payloads and returns an `error` DispatchResult when it
+#:   cannot -- "P4-PROMPT parallel dispatch could not normalize any slide payloads
+#:   from slides.json/arc_allocation.json", the exact string on the live ledger for
+#:   run pres-operator-1d269693. But the ENGINE materialises the index only for
+#:   phases that DECLARE it, so the producer was a no-op for P4-PROMPT. And because
+#:   every OTHER consumer here consumes `working/prompts/slide-*.txt`, which
+#:   P4-PROMPT produces, the phases that could trigger the producer were all
+#:   downstream of the phase failing for want of the artifact -- a closed circle.
+#:
+#: The set is still asserted EXACTLY, so the next addition must justify itself here
+#: too. NOTE the blind spot this tripwire cannot cover: a phase that READS the
+#: index without DECLARING it is invisible to `consumes`, and therefore to this
+#: test -- which is precisely how P4-PROMPT starved. That side is now covered by
+#: test_pd156_prompt_phase_declares_slides_index.py, which derives the reader set
+#: from dispatcher.py instead of from the manifest.
+EXPECTED_CONSUMERS = {"P-STYLE-SPEC", "P-STYLE-PREVIEW", "P4-RENDER", "P4-PROMPT"}
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +384,11 @@ def test_engine_hook_materialises_the_index_before_the_executor(tmp_path):
     other_run = _seed_run(tmp_path / "other", 3)
 
     class _Other:
-        id = "P4-PROMPT"
+        # PD-TEST-156: this stub used to borrow the id "P4-PROMPT", which was then
+        # genuinely a non-consumer. That id IS a consumer now, so the example
+        # contradicted the manifest. A deliberately FICTIONAL id keeps the example
+        # honest forever: no real phase can ever make it stale.
+        id = "P-NOT-A-CONSUMER"
         consumes = ["working/copy/slides_copy.md"]
 
     engine.run_dir = other_run

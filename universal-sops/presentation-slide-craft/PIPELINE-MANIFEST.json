@@ -1091,7 +1091,8 @@
       "heartbeat_minutes": 30,
       "consumes": [
         "working/copy/slides_copy.md",
-        "working/research/design-brief-*.md"
+        "working/research/design-brief-*.md",
+        "working/copy/slides.json"
       ],
       "workers": 12
     },
