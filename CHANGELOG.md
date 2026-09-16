@@ -35,6 +35,21 @@
 
   Every one of the eight workbook titles was the literal string `"HEADLINE: <the real headline>"`, and `body[:3]` carried `HEADLINE:` / `EMPHASIS:` / `SUBHEAD:` as if they were workbook body text. Slide 08 remains `MOVE TAG: TRIGGER` — the PD-TEST-173 defect, here confirmed independently through a *second* consumer.
 
+- **Full measured impact across every fatal render preflight, on a read-only snapshot of the live run.** All 62 `PREFLIGHT_REQUIRED` gates were executed against a copy of `pres-operator-1d269693`, with `working/copy/slides.json` regenerated through `python3 -m presentation_job.slides_assembly` — same run, same prompts, only `copy[]` differing:
+
+  | gate | labelled `copy[]` | bare `copy[]` |
+  |---|---|---|
+  | `AF-P1` rich per-slide prompt | **9 of 8** slide-checks | **1 of 8** |
+  | `slide-craft` `AF-OBI-1` (3-block ceiling) | **8** slides | **2** slides |
+  | `AF-COPY-BAND` | **21** field offenders | **5** |
+  | `AF-COPY-QC` | FAIL | FAIL |
+
+  The **8 label-driven `AF-P-VERBATIM` failures are gone entirely**: `AF-P1`'s single survivor is slide 04 on an unrelated `AF-P-DENSITY: no explicit type SIZE token`. `AF-OBI-1`'s two survivors are slide 1 (5 blocks — three bullets under a headline and subhead, a genuine density question) and slide 8 (**the PD-TEST-173 leak**).
+
+  **No gate flips to PASS, and 15 of 62 gates still fail — stated plainly so this fix is not mistaken for unblocking the render.** A hypothesis of mine was tested and **refuted**: that `AF-COPY-QC`'s *"a typed pass:true over sub-band copy is a fabricated pass"* was itself a labels artifact. It is not. After the fix it still reports **5** discrepancies, naming `slide 02 KICKER is 51 chars`, `03 is 41`, `04 is 115`, `07 is 84`, `08 is 57` — *"over the 40-char ceiling the copy-QC report marked pass"* — i.e. exactly the five genuine breaches of PD-TEST-171, and thus a real defect in the copy-QC report, not a parser artifact.
+
+- **The labels were also reaching the slide's ART DIRECTION.** `slides.json`'s per-slide `scene` field read `photographic background for the opening-priority-stack section, framing "HEADLINE: The List You Already Run On", …` — the label was in the text handed to the image model as the framing instruction. After the fix it reads `framing "The List You Already Run On"`.
+
 - **`slides.schema.json` and the field regexes can no longer drift apart silently.** `tests/test_pd158_copy_metadata_not_rendered.py` reads the P4-COPY contract's own slide-block template out of `sops/slide-copywriter-sops.md` and asserts that **every** field it prescribes is classified here as either rendered or non-rendered, and that no token in `_FIELD_LINE_RE` names a field the contract never prescribes — the same tripwire shape that caught PD-TEST-156. A field added to the contract now fails this suite until someone decides whether it reaches the slide.
 
 ### Why It Mattered
