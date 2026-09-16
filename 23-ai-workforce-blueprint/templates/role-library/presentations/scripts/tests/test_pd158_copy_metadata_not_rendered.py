@@ -75,8 +75,13 @@ NON_RENDERED: Dict[str, str] = {
     "MOVE TAG": ("PD-TEST-173 -- which of the eight build-move beats this slide carries. build_deck.AF-NO-SHIFT "
                  "REQUIRES >=5 of the eight tags to appear in slides_copy.md, monotonic, so the writer MUST record "
                  "them in the copy file; before MOVE TAG was classified, the live run's `MOVE TAG: TRIGGER` line "
-                 "was not stripped, became copy[0] -- THE HEADLINE -- and AF-P-VERBATIM then demanded the engine's "
-                 "own routing metadata be painted onto the slide as its headline"),
+                 "was not stripped, became copy[0] -- THE HEADLINE -- and shifted every positional reader by one "
+                 "for that slide (slide_craft AF-OBI-1 and build_deck AF-COPY-BAND both graded it as slide text). "
+                 "NOTE, retracted claim: an earlier revision of this docstring said AF-P-VERBATIM then demanded it "
+                 "be painted onto the slide as its headline. That is FALSE -- slide-08.txt:48 mentions the tag in a "
+                 "metadata section and says 'Render nothing from that tag as visible artwork', and AF-P-VERBATIM is a "
+                 "substring-presence test, so the mention satisfied it; 0 of the run's 56 AF-P-VERBATIM failures name "
+                 "MOVE TAG. The harm here is positional, not verbatim."),
     "EMPHASIS": ("which words take the accent colour -- a DESIGN instruction; the accent word already sits inside "
                  "the headline, and the engine's own P4-PROMPT contract lists EMPHASIS among the fields that are "
                  "'internal production metadata never rendered on the slide'"),
@@ -272,8 +277,8 @@ def test_move_tag_never_becomes_the_headline():
     assert lines[0] == "Department First, or Back on Your Plate?", (
         "the first copy line is not the headline -- an engine metadata line has "
         f"taken copy[0]: {lines[0]!r}. copy[0] is what AF-OBI-2 word-counts, what "
-        "the copy-density band measures, what the workbook prints as the slide "
-        "title, and what AF-P-VERBATIM demands be PAINTED ONTO THE SLIDE.")
+        "the copy-density band measures (AF-COPY-BAND bands fields[0] as the "
+        "HEADLINE), and what the workbook prints as the slide title.")
     assert not any(re.match(r"(?i)^\s*MOVE\s+TAG\s*:", ln) for ln in lines), (
         f"a MOVE TAG line reached copy[]: {lines}")
     # and it must not survive in any other guise either

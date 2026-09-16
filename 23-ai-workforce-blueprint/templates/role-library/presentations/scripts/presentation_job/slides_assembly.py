@@ -195,9 +195,24 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #:                  copy-block template never said HOW, so the live run invented
 #:                  `MOVE TAG: TRIGGER`. Nothing stripped it, so it became
 #:                  copy[0] -- THE HEADLINE -- shifting every positional reader
-#:                  by one for that slide, and AF-P-VERBATIM then demanded the
-#:                  metadata be PAINTED AS THE HEADLINE (measured: slide-08.txt
-#:                  contains "MOVE TAG" once; the other seven prompts, zero).
+#:                  by one for that slide.
+#:
+#:                  RETRACTED CLAIM (independent review): an earlier revision of
+#:                  this comment said AF-P-VERBATIM then demanded the metadata be
+#:                  PAINTED AS THE HEADLINE, citing slide-08.txt's single
+#:                  occurrence of "MOVE TAG". That is FALSE. slide-08.txt:48 says
+#:                  "This beat carries the structural tag MOVE TAG: TRIGGER. ...
+#:                  Render nothing from that tag as visible artwork" -- the writer
+#:                  mentioned it in a metadata section and expressly forbade
+#:                  rendering it, and AF-P-VERBATIM is a substring-presence test,
+#:                  so the mention SATISFIED it. The live run's checkpoints carry
+#:                  56 AF-P-VERBATIM failures, ZERO of which name MOVE TAG.
+#:
+#:                  The real, measured harm is POSITIONAL, not verbatim:
+#:                  slide_craft AF-OBI-1 counted the metadata line as a text block
+#:                  (8 slides -> 2 with PD-TEST-169 -> 1 with this fix), and
+#:                  build_deck AF-COPY-BAND graded slide 08's real subhead as an
+#:                  over-long KICKER (5 -> 4 failing fields).
 #:
 #: Deliberately STILL RENDERED, and therefore still in `copy[]`: HEADLINE,
 #: SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those are the
