@@ -141,3 +141,43 @@ def test_check_id_extraction_ignores_prose_and_order():
     assert "AF-P-DENSITY" in b and "AF-P-DENSITY" not in a
     assert P._verdict_check_ids("") == set()
     assert P._verdict_check_ids(None) == set()
+
+
+def test_a_generic_check_name_alone_is_now_enough_AND_THAT_IS_A_WIDENING():
+    """A DISCLOSED WIDENING, measured against the base commit.
+
+    Every verdict from this checker carries the check NAME (`AF-PROMPT-FLOOR`)
+    as well as the autofails. Two verdicts from different attempts can therefore
+    share ONLY the generic name. Measured:
+
+        BASE (origin/main, pre-fix) -> False
+        after this fix              -> True
+
+    So this IS a behaviour change, and it is recorded as a test rather than left
+    as an accident. It is NOT a false positive in the sense that matters: to
+    reach the set match at all, the caller must already have required the
+    checker's own verdict prefix AND a newest heal event of class
+    `verifier_substance`, so an OPERATOR park still cannot pass (see
+    `test_operator_prose_is_still_never_verifier_sourced` and
+    `test_a_stale_verifier_heal_cannot_reopen_a_later_budget_park`). What it does
+    relax is EPISODE separation: two verifier verdicts that share only the check
+    name now count as one episode. Both are verifier parks, which is the case
+    this function exists to reopen, so the relaxation is bounded by those gates.
+    """
+    ps = _park(f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-HAIR-INAUTHENTIC \u2014 ; ",
+               f"{PREFIX}: AF-PROMPT-FLOOR slide-1: AF-P-DENSITY \u2014 ; ")
+    shared = (P._verdict_check_ids(ps["blocked_reason"])
+              & P._verdict_check_ids(ps["heal_events"][-1]["reason"]))
+    assert shared == {"AF-PROMPT-FLOOR"}, "only the generic check name is shared"
+    # The old text path cannot match here -- so this True comes from the SET match.
+    assert not ps["blocked_reason"].startswith(ps["heal_events"][-1]["reason"])
+    assert P._block_is_verifier_sourced(ps)
+
+
+def test_a_degenerate_empty_verdict_is_PRE_EXISTING_not_introduced_here():
+    """True at BASE too -- pinned so a future reader does not blame this change.
+
+    `"substance check failed: "` matches itself via the ORIGINAL
+    `reason.startswith(ev_reason)` path, which this fix preserves.
+    """
+    assert P._block_is_verifier_sourced(_park(f"{PREFIX}: ", f"{PREFIX}: "))
