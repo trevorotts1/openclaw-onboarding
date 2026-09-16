@@ -235,6 +235,67 @@ def test_the_dispatcher_SETTLES_the_wave(tmp_path):
         "a settlement failure must be recorded, never silent")
 
 
+def test_declaring_ALREADY_GOOD_slides_blocks_every_sibling_retry(tmp_path):
+    """PD-TEST-166, the harm, and why the declaration is narrowed.
+
+    `_declare_phase_paid_budget`'s own contract says banked/reused units must be
+    EXCLUDED -- "they cost nothing, so funding them would only shrink the pool
+    available to the units that do". The first version of this fix declared
+    EVERY slide in the wave. A slide whose prompt is already on disk never
+    reserves, so its count stays 0 while it is still listed as owed a first
+    attempt -- and first-attempt fairness then refuses every sibling's retry.
+
+    This drives the two declarations side by side through the real seam."""
+    slides = SLIDES[:4]
+    needs_work = slides[:2]        # only these two actually need paid work
+    for label in ("wide", "narrow"):
+        (tmp_path / label / "working" / "work-orders").mkdir(parents=True)
+        (tmp_path / label / "state.json").write_text(json.dumps(
+            {"phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    wide, narrow = tmp_path / "wide", tmp_path / "narrow"
+
+    # (a) THE OLD SHAPE: declare the whole wave.
+    dj._declare_phase_paid_budget(wide, PHASE, unit_keys=slides, worker_id=WORKER)
+    for s in needs_work:
+        assert _reserve(wide, s) == "ok"
+    dj._settle_unit_paid_attempts(wide, PHASE,
+                                  [(s, "failed", ["x"]) for s in needs_work],
+                                  worker_id=WORKER)
+    blocked = _reserve(wide, needs_work[0])
+    assert blocked == "budget_deferred", (
+        "with already-good slides still declared, the retry is refused because "
+        f"they count as owed a first attempt -- PD-TEST-166 (got {blocked!r})")
+
+    # (b) THE FIX: declare only the slides that need paid work.
+    dj._declare_phase_paid_budget(narrow, PHASE, unit_keys=needs_work,
+                                  worker_id=WORKER)
+    for s in needs_work:
+        assert _reserve(narrow, s) == "ok"
+    dj._settle_unit_paid_attempts(narrow, PHASE,
+                                  [(s, "failed", ["x"]) for s in needs_work],
+                                  worker_id=WORKER)
+    admitted = _reserve(narrow, needs_work[0])
+    assert admitted == "ok", (
+        f"with only the needing slides declared, the retry is ADMITTED (got {admitted!r})")
+
+    cap = dj._read_ledger(narrow, PHASE)["phase_paid_budget"]["total_cap"]
+    assert cap >= len(needs_work), cap
+
+
+def test_the_declaration_excludes_slides_already_good_on_disk():
+    """Structural pin on the narrowing: the declared set must be computed from a
+    NEEDS-WORK test, not from the whole wave."""
+    import inspect
+    src = inspect.getsource(dj._dispatch_prompt_phase_parallel)
+    assert "_pending_keys" in src and "_verify_single_prompt(" in src, (
+        "the declaration must exclude slides whose prompt is already on disk and "
+        "verifying (PD-TEST-166)")
+    assert "_unit_keys = _pending_keys" in src, (
+        "the narrowed set must be what is declared")
+    assert "units_already_good" in src, (
+        "the wave/pending split must be recorded, or the narrowing is invisible")
+
+
 def test_the_claim_ownership_HARD_STOP_stays_non_retryable():
     """Review F8: one `PaidBudgetExhausted` is a hard stop, not a budget event.
 

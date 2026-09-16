@@ -4764,8 +4764,33 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # which is exactly the pre-fix behaviour -- the sidecar records which
     # happened so the difference is never silent.
     try:
-        _unit_keys = [str(s.get("slide_id") or s.get("ordinal"))
-                      for s in slides_payload]
+        # PD-TEST-166 (review of PR #1164): declare only the slides that still
+        # need PAID work -- a slide whose prompt is already on disk and clears
+        # the real per-slide gate costs nothing, and `_declare_phase_paid_budget`
+        # says so in its own contract: banked/reused units must be EXCLUDED,
+        # "because they cost nothing, so funding them would only shrink the pool
+        # available to the units that do". The first version declared EVERY slide,
+        # which (with the settlement PD-TEST-165 adds) would leave already-good
+        # slides at counts == 0 while still listed as owed a first attempt.
+        #
+        # The WAVE itself still processes every slide, so already-good ones are
+        # re-derived from disk by `_run_one` as usual -- only the DECLARATION is
+        # narrowed to the units that can actually spend.
+        _all_keys = [str(s.get("slide_id") or s.get("ordinal"))
+                     for s in slides_payload]
+        _pending_keys = []
+        for _s in slides_payload:
+            _key = str(_s.get("slide_id") or _s.get("ordinal"))
+            try:
+                _ok, _ = _verify_single_prompt(run_dir, int(_s["ordinal"]))
+            except Exception:  # noqa: BLE001 -- unverifiable != already good
+                _ok = False
+            if not _ok:
+                _pending_keys.append(_key)
+        # Never declare an EMPTY set: with nothing pending the wave is a no-op
+        # anyway, and an empty declaration would rewrite the phase's bound to
+        # its `0 units -> 3` floor for no reason.
+        _unit_keys = _pending_keys or _all_keys
         _budget_decl = _declare_phase_paid_budget(
             run_dir, phase_id, unit_keys=_unit_keys, worker_id=worker_id)
         # Review F4: `_declare_phase_paid_budget` returns a NESTED document --
@@ -4778,6 +4803,8 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
             "status": "fanout_paid_budget_declared",
             "policy": _bd.get("policy"),
             "units": len(_unit_keys),
+            "units_in_wave": len(_all_keys),
+            "units_already_good": len(_all_keys) - len(_pending_keys),
             "units_eligible": _bd.get("units_eligible"),
             "total_cap": _bd.get("total_cap"),
             "units_admitted_first_attempt":
