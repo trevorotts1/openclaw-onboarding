@@ -1,3 +1,22 @@
+## [v25.1.37]  -  2026-09-16  -  The repair-receipt bound is described by the ceiling it actually enforces
+
+### What Changed
+- **PD-TEST-185 — PD-TEST-182 raised the repair-receipt allowance ceiling from `DISPATCH_RETRY_CAP` (3) to `PHASE_TOTAL_PAID_HARD_CAP` (128) and left FOUR descriptions still advertising `1..3` — including the one the operator actually reads.** Found by PD-TEST-182's own adversarial review, after that PR had already merged:
+
+  | site | what it said | who reads it |
+  |---|---|---|
+  | `dispatcher.py` BLOCKED marker | `allowance 1..3` | **the operator**, in the park reason that tells them how to repair the phase |
+  | `_repair_receipt_is_actionable` docstring | "positive int within `DISPATCH_RETRY_CAP`" | whoever maintains the validator |
+  | the refusal-site comment | "accepts any `allowance` in `1..DISPATCH_RETRY_CAP`" | maintainers |
+  | the re-arm comment | "re-arms `paid_attempts` as `DISPATCH_RETRY_CAP - allowance`" | maintainers (the code now clamps at 0) |
+
+  A message that under-states the range is not cosmetic: the BLOCKED marker is the operator's **instruction sheet**, and after PD-TEST-182 it told them a bound the engine no longer enforces — while the very problem PD-TEST-182 fixed was that this marker's sibling message printed an instruction that could not be satisfied.
+
+  **Left deliberately unchanged**, because they are correct as history or as arithmetic: the comment explaining *why* capping at `DISPATCH_RETRY_CAP` was wrong, and the two lines describing the actual clamped re-arm.
+
+### Why It Mattered
+The ceiling moved, and four descriptions of it did not. Two of them are the operator-facing text of the recovery path — the same text that had already misled once.
+
 ## [v25.1.36]  -  2026-09-16  -  A repair receipt can finally FUND the re-authoring it exists to pay for
 
 ### What Changed
