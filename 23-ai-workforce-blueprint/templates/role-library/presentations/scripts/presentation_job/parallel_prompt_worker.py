@@ -719,6 +719,39 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     # module does.
     import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
     while attempt < RETRY_CAP:
+        if attempt > 0:
+            # PD-TEST-179: SETTLE THE ATTEMPT THAT JUST ENDED, before starting the
+            # next one.
+            #
+            # The dispatcher settles a whole wave only AFTER run_worker returns
+            # (`_dispatch_prompt_phase_parallel` -> `_settle_unit_paid_attempts`),
+            # but this retry loop runs INSIDE run_worker. So on every retry this
+            # unit still held its OWN previous reservation in state `reserved` --
+            # and the PD-TEST-124 double-reserve guard, whose contract is
+            # literally "the unit already has an IN-FLIGHT paid reservation",
+            # refused it. Measured on shipped main: a 1-slide wave whose
+            # transport raised HTTP 500 made ONE provider call and reported
+            # `budget_deferred` twice, where pre-PD-TEST-161 code made three and
+            # reported the real `server_error`.
+            #
+            # Settling here makes the guard's contract TRUE again rather than
+            # weakening it, so the retry is allowed because nothing is in flight
+            # -- not because a thread was recognised. This replaces the earlier
+            # thread-identity relaxation, which admitted ANY later reservation
+            # from the same thread, including a genuinely in-flight one, and
+            # thereby repealed the guarantee `tests/test_pd124_sibling_starvation.py`
+            # encodes (2 failures on main).
+            #
+            # FAIL-SOFT, deliberately: settling is bookkeeping and must never
+            # break a unit. The dispatcher's post-wave settle still runs and is
+            # idempotent over an already-settled row.
+            try:
+                dispatcher._settle_unit_paid_attempts(
+                    run_dir, PHASE_ID,
+                    [(slide_id, "failed", list(base.get("_reasons") or []))],
+                    worker_id="p4prompt-unit")
+            except Exception:  # noqa: BLE001 -- bookkeeping never breaks a unit
+                pass
         attempt += 1
         try:
             # PD-TEST-161: bind this ATTEMPT's paid reservation to THIS SLIDE.
