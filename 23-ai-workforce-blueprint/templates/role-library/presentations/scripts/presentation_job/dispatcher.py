@@ -157,6 +157,96 @@ DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (s
                                                 # whole pipeline, not a second number.
 
 # ---------------------------------------------------------------------------
+# PD-TEST-124 -- THE BOUNDED TOTAL PAID BUDGET OF A FAN-OUT PHASE.
+#
+# THE DEFECT. `paid_attempts` is a PHASE counter compared against
+# DISPATCH_RETRY_CAP, with no per-unit accounting at all. A fan-out phase
+# therefore has ONE three-attempt allowance shared by every unit, and the first
+# unit to fail repeatedly spends it. Measured on P4-COPY (8 units):
+# section-01 recorded completion_tokens=64000, finish_reason='length', empty
+# output; it then exhausted the phase allowance, and section-02..section-08
+# each died on `PaidBudgetExhausted: paid retry budget exhausted: 3 provider
+# attempts for unchanged approved input` WITHOUT EVER BEING ATTEMPTED. Seven
+# units did not fail -- they never ran -- and the phase quarantined having
+# authored nothing. Sibling starvation, not unit failure.
+#
+# THE POLICY IMPLEMENTED HERE (declared once, recorded in the phase ledger as
+# `phase_paid_budget`, and enforced by _reserve_paid_attempt):
+#
+#   1. ONE FUNDED FIRST ATTEMPT PER ELIGIBLE UNIT, and first attempts have
+#      ABSOLUTE PRIORITY: while any admitted unit still has zero paid attempts,
+#      no unit may reserve a second or third (PaidAttemptDeferred). One unit's
+#      retries can therefore never again preempt a sibling's first attempt.
+#
+#   2. THE TOTAL IS BOUNDED AND EXPLICIT, never `units x DISPATCH_RETRY_CAP`:
+#
+#          total_cap = min(PHASE_TOTAL_PAID_HARD_CAP,
+#                          eligible_units * FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT
+#                          + PHASE_RETRY_POOL_ATTEMPTS)
+#
+#      i.e. one attempt per unit plus the SAME phase-level retry allowance
+#      (DISPATCH_RETRY_CAP = 3) this module has always granted -- reused, not
+#      multiplied. For the measured 8-unit P4-COPY phase that is 8 + 3 = 11,
+#      not 8 * 3 = 24. Within one generation the declared total NEVER shrinks
+#      (a later declaration with fewer pending units re-uses the larger bound),
+#      so a sweep that banks successes never strands the units still owed work.
+#
+#   3. DISPATCH_RETRY_CAP IS THE PER-UNIT CEILING for one unchanged approved
+#      input -- the same number, now applied per unit instead of per phase. No
+#      existing cap is weakened: the phase-level total only ever GROWS to fund
+#      the first attempts the old counter could never pay for, and a serial
+#      (non-fan-out) phase keeps the legacy phase-level cap byte-for-byte.
+#
+#   4. CANNOT-FUND-ALL BEHAVIOUR. When the total cap cannot fund every
+#      eligible unit's first attempt (eligible_units > total_cap), the first
+#      `total_cap` units in DETERMINISTIC ENUMERATION ORDER are admitted and
+#      every remaining unit is recorded in `unit_not_admitted` with a
+#      machine-readable reason, named in the sidecar, and refused at
+#      reservation time. No unit is ever silently dropped: the phase reports
+#      exactly how many units the bound could not fund, and which.
+#
+#   5. SUCCESSES ARE NEVER REGENERATED. A unit whose durable outcome is ok is
+#      refused a reservation outright (PD-TEST-124 requirement 4), and a unit
+#      whose valid on-disk output is still bound to the current inputs is
+#      REUSED without any reservation at all (see _reusable_unit_output).
+#
+#   6. RESERVATIONS ARE ATOMIC AND DUPLICATE-SAFE. Every reservation happens
+#      inside the phase's existing `_phase_budget_transaction` flock, in one
+#      read-modify-write, and carries the logical attempt's token. A duplicate
+#      call for a token already charged is a no-op (idempotent), and a second
+#      logical attempt for a unit that already has an in-flight reservation is
+#      refused unless the reserving process is gone (pid-liveness takeover,
+#      the same idiom the claim code uses). Concurrent workers cannot
+#      double-reserve one unit's attempt.
+#
+#   7. NOTHING IS RESET. Per-unit counters are durable and generation-scoped
+#      exactly like the phase counter they sit beside: a new approved-input
+#      generation (verified intake amendment, or a consumed repair receipt)
+#      starts a fresh per-unit count, and `unit_paid_attempts_lifetime` keeps
+#      the never-reset audit total. A restart, a re-sweep and a re-issued work
+#      order preserve successes, reservations and failure history.
+# ---------------------------------------------------------------------------
+FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT = 1
+# The legacy phase-level retry allowance, reused as the fan-out RETRY POOL.
+# Deliberately DISPATCH_RETRY_CAP and not a second number (spec S7.1).
+PHASE_RETRY_POOL_ATTEMPTS = DISPATCH_RETRY_CAP
+# An explicit, finite ceiling on any single phase's total paid attempts, no
+# matter how many units a manifest enumerates. The shipped manifest's widest
+# fan-out is a per-slide QC phase over a >=100-slide deck (100 + 3 = 103), so
+# 128 funds every shipped phase's first attempts plus the retry pool while
+# keeping the bound a declared constant rather than an emergent product.
+PHASE_TOTAL_PAID_HARD_CAP = 128
+# The one-line policy string recorded in every fan-out ledger this module
+# writes, so an operator reading the ledger sees the rule that produced the
+# numbers beside it.
+PHASE_PAID_BUDGET_POLICY = (
+    "bounded-total-first-attempt-fair-v1: one funded first attempt per eligible "
+    "unit in deterministic order, then a phase retry pool of "
+    f"{PHASE_RETRY_POOL_ATTEMPTS}; total = min({PHASE_TOTAL_PAID_HARD_CAP}, "
+    f"units*{FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT} + {PHASE_RETRY_POOL_ATTEMPTS}); "
+    f"per-unit ceiling {DISPATCH_RETRY_CAP}; no success is ever regenerated")
+
+# ---------------------------------------------------------------------------
 # FIX 14 -- per-provider governor gates. Every outbound call site acquires a
 # lease from presentation_job.governor before its HTTP attempt and releases it
 # after; a 429 feeds report_429, a clean response feeds report_ok. The gates
@@ -481,38 +571,98 @@ DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 # gives a large structured artifact (deep choreography JSON, 60+ slides of copy)
 # room to complete even after thinking-MAX spends heavily on reasoning first.
 DEEPSEEK_MAX_OUTPUT_TOKENS = 64_000
+# PD-TEST-124 (2026-09-16): do NOT raise this again to "fix" an empty
+# completion. The bounded experiment measured `medium` finishing at 15.3% of
+# this ceiling while `max` consumed 100.0% of the BYTE-IDENTICAL request -- the
+# effort, not the budget, was binding. Raising it a fourth time would buy
+# nothing and cost more. See DEEPSEEK_REASONING_EFFORT below.
 # PD-TEST-065 (2026-09-15). The reasoning effort is a REQUEST parameter, not a
-# buried literal. The default stays "max" because that is exactly what this
-# box's own openclaw.json declares for this model
+# buried literal.
+#
+# PD-TEST-124 (2026-09-16) -- HARNESS DECLARATION vs PRODUCT WORKER.
+# `max` is what this box's openclaw.json declares for the HARNESS agent
 # (agents.defaults.models["deepseek/deepseek-flash"].params.reasoning_effort =
-# "max"); code must not silently disagree with the operator's declaration.
-DEEPSEEK_REASONING_EFFORT = "max"
-# ...but "max" is not free. This endpoint bills reasoning INSIDE max_tokens
-# (confirmed live above), so on a very large authoring prompt reasoning can
-# consume the WHOLE budget and return ZERO-LENGTH content. Proven live on run
-# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: P4-COPY's section-01 unit
-# returned empty output on 3/3 paid attempts while a same-model call elsewhere
-# in that same run spent reasoning_tokens=47,940 of a 57,178 completion (83.8%
-# of the 64,000 budget). The 2026-08-26/27 incident on this box was mitigated
-# with exactly this one-line step-down (the reasoning_effort max -> medium
-# backup pair still on disk), and it was later lost. A re-attempt for a unit
-# that has ALREADY come back empty is therefore re-issued at the reduced effort
-# instead of repeating the byte-identical request: an unchanged-input empty
-# completion is deterministic, so an identical retry can only burn another paid
-# call and lose the same way.
-DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY = "medium"
+# "max"). That declaration governs the harness agent's own interactive turns.
+# It does NOT govern THIS module. This dispatcher is a PRODUCT worker that
+# sends ONE very large authoring prompt (P4-COPY's real section prompt measured
+# 155,379 chars = 38,365 prompt tokens) and the endpoint bills reasoning INSIDE
+# max_tokens (confirmed live above). On that workload `max` is not a quality
+# setting, it is a runaway: four independent live sends of the byte-identical
+# P4-COPY section-01 request at max_tokens=64,000 returned
+# completion_tokens=64,000, reasoning_tokens=64,000, ZERO-length `content` and
+# finish_reason="length" -- 100% of the deliverable budget spent thinking, none
+# left to deliver. Raising the ceiling does not fix it (8,000 -> 32,000 ->
+# 64,000 each filled; see this constant's history above): reasoning expands to
+# consume whatever ceiling it is given, so the ceiling was never the binding
+# constraint.
+#
+# PD-TEST-124 BOUNDED EXPERIMENT (2026-09-16). ONE real prompt, the captured
+# production request body BYTE-IDENTICAL (sha256 a2cc393fd4dc1a91...), same
+# endpoint / model / temperature / max_tokens=64,000; ONLY the documented
+# request control varied (4 paid calls, every response schema-validated by this
+# module's own _validate_copy_section):
+#   reasoning_effort="max"     reasoning 64,000 (100.0% of budget)  content
+#                              ZERO  finish_reason="length"  308.2s  -- FAIL
+#   reasoning_effort="medium"  reasoning  9,788 ( 15.3% of budget)  content
+#                              1,494 chars  finish_reason="stop"  49.1s  -- PASS
+#   reasoning_effort="low"     reasoning 13,445 ( 21.0% of budget)  content
+#                              1,063 chars  finish_reason="stop"  62.2s  -- PASS
+#   thinking.type="disabled"   reasoning      0                    content
+#                              1,297 chars  finish_reason="stop"   3.4s  -- PASS
+#                              (DIAGNOSTIC ONLY -- not a production candidate;
+#                              it removes thinking altogether, which no
+#                              incident asked for. Recorded to bound the
+#                              mechanism, not to be shipped.)
+# Every PASS carried all 7 required per-slide fields. The decisive number is
+# that `medium` terminates at 15.3% of the SAME 64,000 ceiling that `max`
+# exhausts -- the EFFORT was binding, never the budget. This also refutes the
+# tempting reading of the tiny "Reply with the single word OK" probe (max=23
+# vs none=25 reasoning tokens): a 256-token probe is not the 38k-token
+# authoring regime, and it cannot show the difference that this test does.
+#
+# `medium` is the default, NOT `low`: it is the cheapest of the two
+# thinking-enabled settings that work (9,788 vs 13,445 reasoning tokens), it is
+# a documented enum member (resource_profile.THINKING_LEVELS and
+# api-docs.deepseek.com/guides/thinking_mode), and it is the same step-down
+# this box already used successfully on 2026-08-26/27 before it was lost.
+# Honest limit of the evidence: `low` spent MORE reasoning tokens than `medium`
+# here, so the ladder below is a change of REQUEST, not a strict monotonic
+# reduction in thinking.
+DEEPSEEK_REASONING_EFFORT = "medium"
+#: What the operator's openclaw.json declares, recorded so the divergence above
+#: is EXPLICIT and auditable rather than silent. The product worker sends
+#: DEEPSEEK_REASONING_EFFORT; the harness agent keeps the operator's
+#: declaration. The two are deliberately allowed to differ because `max`
+#: demonstrably returns ZERO-LENGTH content on this worker's prompt size, so
+#: the harness declaration cannot govern the worker's own authoring calls.
+#: Nothing in this module writes openclaw.json.
+DEEPSEEK_REASONING_EFFORT_DECLARED_BY_OPERATOR = "max"
+# A re-attempt for a unit that has ALREADY come back empty is re-issued at the
+# reduced effort instead of repeating a request that just failed. This is the
+# FIRST rung of the ladder below and must always differ from
+# DEEPSEEK_REASONING_EFFORT -- otherwise the "retry" re-sends the exact request
+# that just failed and can only burn another paid call. (Before PD-TEST-124
+# this was "medium" and the default was "max"; the default moved DOWN to
+# medium, so the step-down moved down with it.)
+DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY = "low"
 # PD-070 (2026-09-15). A LADDER, not a single step. `medium` is a documented
 # ALIAS for `high` on this endpoint (api-docs.deepseek.com/guides/thinking_mode:
 # "`medium`/`xhigh` are accepted and mapped to `high`"), and `high` is the
-# model's own DEFAULT effort -- so PD-TEST-065's single "max -> medium" step
-# lands on the default and then DEAD-ENDS: a second, third and fourth empty
-# completion all re-send that same default effort. Index 0 preserves
-# PD-TEST-065's first step-down; each further empty completion moves one rung
-# lower so the retry is never the request that just failed. Every value here is
-# a documented member of the reasoning_effort enum that keeps thinking ENABLED
-# (only "none" disables it, and mixing that with thinking.type=enabled has
-# undocumented precedence -- so it is deliberately NOT a rung until probed).
-DEEPSEEK_REASONING_EFFORT_LADDER: Tuple[str, ...] = ("medium", "low")
+# model's own DEFAULT effort -- so a "max -> medium" step lands on the model
+# default and then DEAD-ENDS: a second, third and fourth empty completion all
+# re-send that same effort. Each rung here must therefore be a request that has
+# NOT just failed.
+# PD-TEST-124 (2026-09-16): with the default now `medium`, rung 0 is `low` --
+# a genuine step DOWN from what attempt 1 sends, and a setting the bounded
+# experiment above measured returning valid content with finish_reason="stop".
+# The ladder is deliberately SHORT: no documented value below `low` keeps
+# thinking ENABLED ("none" disables it, and mixing that with
+# thinking.type="enabled" has undocumented precedence -- so it is NOT a rung
+# until probed), and inventing an unmeasured rung would re-create PD-070's
+# dead-end defect from the other direction. A unit that exhausts this ladder
+# parks on the phase's paid-attempt cap, which is the correct fail-closed
+# outcome rather than another identical paid call.
+DEEPSEEK_REASONING_EFFORT_LADDER: Tuple[str, ...] = ("low",)
 DEEPSEEK_TEMPERATURE = 0.3
 DEEPSEEK_TIMEOUT_S = 600       # thinking MAX at a large max_tokens can genuinely run minutes
 
@@ -1948,9 +2098,13 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
     HTTP/network failures with backoff; a non-transient (4xx other than 429)
     failure raises immediately.
 
-    PD-TEST-065: `reasoning_effort` defaults to DEEPSEEK_REASONING_EFFORT
-    ("max", the operator's declared value). A caller may step it DOWN for a
-    call whose identical predecessor already returned empty content -- see
+    PD-TEST-065: `reasoning_effort` defaults to DEEPSEEK_REASONING_EFFORT.
+    PD-TEST-124: that default is now "medium" (a measured-working effort for
+    this worker's very large authoring prompts), NOT the operator's declared
+    "max" -- see the DEEPSEEK_REASONING_EFFORT comment for the evidence and for
+    why the product worker is entitled to differ from the harness declaration.
+    A caller may still step it DOWN for a call whose identical predecessor
+    already returned empty content -- see
     DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY."""
     key = _load_deepseek_key()
     effort = reasoning_effort or DEEPSEEK_REASONING_EFFORT
@@ -2390,10 +2544,14 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     itself already marked eligible. See _apply_route_override.
 
     PD-TEST-065: `reasoning_effort` (optional) is forwarded to the native
-    DeepSeek transport only. None keeps DEEPSEEK_REASONING_EFFORT ("max", the
-    operator-declared value); a caller steps it DOWN only when the identical
-    predecessor call already returned empty content. A non-native provider
-    route ignores it -- that provider's own params govern."""
+    DeepSeek transport only. PD-TEST-124: None now sends
+    DEEPSEEK_REASONING_EFFORT ("medium", measured working on this worker's real
+    authoring prompt), NOT the operator's declared "max" -- see that constant's
+    comment for the four-call evidence and for why the product worker is
+    entitled to differ from the harness declaration. A caller steps it DOWN
+    only when the identical predecessor call already returned empty content. A
+    non-native provider route ignores it -- that provider's own params
+    govern."""
     ctx = _RouteContext()
     decision: Optional[Dict[str, Any]] = None
     if _model_router is not None:
@@ -7146,6 +7304,57 @@ def _dispatch_phase_fanout_units(
         "desired_count": desired_count, "batch_width": batch_width,
     })
 
+    # ------------------------------------------------------------------
+    # PD-TEST-124 -- DECLARE THE BOUNDED TOTAL PAID BUDGET BEFORE ANY PAID CALL.
+    #
+    # The declaration is written (atomically, under the phase's own ledger lock)
+    # BEFORE a single unit is submitted, so:
+    #   * every reservation below is checked against a bound that is on disk,
+    #     durable and identical for every concurrent worker and every later
+    #     sweep -- not against an in-memory number a restart would lose;
+    #   * the admission ORDER is fixed here, in the deterministic enumeration
+    #     order fanout.enumerate_fanout_items produced, so "which units get the
+    #     first attempts" is reproducible rather than whichever thread ran first;
+    #   * a phase whose budget cannot fund every eligible unit says so, by name,
+    #     in the ledger and in a sidecar -- never by silently dropping units.
+    #
+    # Only PENDING units are declared: a banked or reused unit costs nothing, so
+    # funding it would shrink the pool owed to the units that must actually run.
+    # The call is idempotent and monotonic within a generation, and it NEVER
+    # resets a counter (a re-declaration over a smaller pending set keeps the
+    # larger bound already granted).
+    # ------------------------------------------------------------------
+    _budget_decl: Dict[str, Any] = {}
+    try:
+        _budget_decl = _declare_phase_paid_budget(
+            run_dir, phase_id, unit_keys=[str(it["key"]) for it in pending_items],
+            worker_id=worker_id)
+    except Exception as exc:  # noqa: BLE001 -- a broken declaration must never
+        # kill the phase: the reservations fall back to the legacy phase-level
+        # cap, i.e. exactly the pre-PD-TEST-124 behaviour, and the sidecar says
+        # so loudly instead of pretending the new bound applied.
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_failed",
+            "reason": (f"{type(exc).__name__}: {exc}; paid reservations fall back "
+                       "to the legacy phase-level cap for this dispatch"),
+        })
+    if _budget_decl.get("not_admitted"):
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_cannot_fund_all_units",
+            "reason": (f"{_budget_decl['budget']['units_not_admitted']} of "
+                       f"{_budget_decl['budget']['units_eligible']} eligible unit(s) "
+                       f"fall outside the declared bounded total of "
+                       f"{_budget_decl['budget']['total_cap']} paid attempt(s); they "
+                       "were NOT attempted (they did not fail). They are named in "
+                       f"{_ledger_path(run_dir, phase_id)} under "
+                       f"{LEDGER_UNIT_NOT_ADMITTED}."),
+            "budget": _budget_decl["budget"],
+            "admitted_units": _budget_decl.get("admitted"),
+            "not_admitted_units": sorted(_budget_decl["not_admitted"]),
+        })
+
     results: List[fanout.UnitResult] = []
     # Banked units first, in input order, with attempts=0 -- they are real
     # results from real prior calls, validated above.
@@ -7233,15 +7442,36 @@ def _dispatch_phase_fanout_units(
             _spent = int(prior_rec.get("attempts_total") or 1)
             _rung = max(0, min(_spent - 1, len(DEEPSEEK_REASONING_EFFORT_LADDER) - 1))
             effort = DEEPSEEK_REASONING_EFFORT_LADDER[_rung]
+        # PD-TEST-124: the paid reservation this unit's dispatch makes must be
+        # accounted to THIS unit, so the whole dispatch runs inside a unit
+        # scope. Inside it the reservation enforces the phase's declared bounded
+        # total, this unit's own DISPATCH_RETRY_CAP ceiling, first-attempt
+        # fairness, and duplicate-safe atomicity; outside it (every serial
+        # phase) the reservation is the untouched legacy phase-level one.
+        #
+        # `allow_reauthor` is set ONLY when this unit's own durable record says
+        # it SUCCEEDED BEFORE and it is back in the pending set, which is the
+        # fan-out's own proof that the success was invalidated (its inputs
+        # changed, its output no longer validates, or `_force_reauthor` voided
+        # the bank for a repair receipt). A unit that has not been invalidated
+        # never reaches this code at all -- banked and reused units are taken
+        # out of the pending list above -- so "a success is never regenerated"
+        # and "an invalidated success can still be repaired" both hold.
+        _prior_status = str((prior_rec or {}).get("status") or "") \
+            if isinstance(prior_rec, dict) else ""
+        _was_success = _prior_status in (
+            _us.BANKED_STATUSES if _us is not None else ("ok", "verified", "banked"))
         try:
-            system_prompt, user_prompt = compose_prompt(
-                phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
-                run_dir=run_dir, order=_unit_scope_work_order(order, payload),
-                attempt=1, prior_reasons=prior_reasons,
-            )
-            content, usage, route = dispatch_complete(
-                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                worker_id=worker_id, reasoning_effort=effort)
+            with paid_unit_scope(unit.key,
+                                 allow_reauthor=bool(_force_reauthor or _was_success)):
+                system_prompt, user_prompt = compose_prompt(
+                    phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
+                    run_dir=run_dir, order=_unit_scope_work_order(order, payload),
+                    attempt=1, prior_reasons=prior_reasons,
+                )
+                content, usage, route = dispatch_complete(
+                    system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
+                    worker_id=worker_id, reasoning_effort=effort)
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
@@ -7298,6 +7528,21 @@ def _dispatch_phase_fanout_units(
 
     deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
     results.extend(r for k, r in reused_results.items() if k not in _banked_keys)
+    # PD-TEST-124: record the FREE successes durably before any paid unit runs.
+    # A reused or banked unit is an ok outcome that cost nothing; writing it to
+    # the ledger now is what makes "a success is never regenerated" survive a
+    # restart -- the next dispatch sees the same picture instead of re-deriving
+    # it from scratch. Both sets are already validated above (banked by
+    # unit_store.validate_banked + the contract validator, reused by the
+    # contract validator + the recorded input-hash snapshot), and neither has a
+    # reservation to settle, which the settle helper tolerates by design.
+    _settle_unit_paid_attempts(
+        run_dir, phase_id,
+        [(k, "ok", ["banked: prior output re-validated, no paid attempt"])
+         for k in sorted(_banked_keys)] +
+        [(k, "ok", ["reused: validated on-disk output, no paid attempt"])
+         for k in sorted(reuse) if k not in _banked_keys],
+        worker_id=worker_id)
     # ------------------------------------------------------------------
     # PRES-014: bounded admission BATCHES. The enumerated unit list is split
     # into batches of at most `batch_width` (migrated from the legacy
@@ -7403,6 +7648,19 @@ def _dispatch_phase_fanout_units(
             _us.save_state(run_dir, phase_id, _store_state,
                            company_id=_company_id,
                            presentation_id=_presentation_id)
+        # PD-TEST-124: settle this batch's paid reservations and record each
+        # unit's durable outcome IN ONE atomic fold. This runs whether or not a
+        # unit store exists, because it is the PAID ledger's own record:
+        #   * a reservation whose unit came back is marked settled, so the next
+        #     dispatch of that unit may reserve again while a duplicate call
+        #     carrying the same token stays a no-op forever;
+        #   * the outcome ("ok"/"failed" + its reasons) is what the next
+        #     dispatch reads to keep a success from being regenerated and to
+        #     retry only the units that actually failed.
+        _settle_unit_paid_attempts(
+            run_dir, phase_id,
+            [(r.key, r.status, list(r.reasons or [])) for r in batch_results],
+            worker_id=worker_id)
         results.extend(batch_results)
     _ordered = {r.key: r for r in results}
     results = [_ordered[it["key"]] for it in wanted_items if it["key"] in _ordered]
@@ -8460,6 +8718,26 @@ class PaidBudgetExhausted(DeepSeekCallError):
     """No provider transport may start after the durable paid-attempt cap."""
 
 
+class PaidAttemptDeferred(DeepSeekCallError):
+    """This ONE attempt may not start yet -- and no budget was spent.
+
+    Raised in three situations, all of which are scheduling decisions rather
+    than exhausted budgets (PD-TEST-124):
+
+      * FIRST-ATTEMPT FAIRNESS: an admitted sibling unit has not had its first
+        paid attempt yet, and this call was a retry. The unit is not failed --
+        it is queued behind a first attempt that must not be starved.
+      * NOT ADMITTED: the phase's declared bounded total could not fund this
+        unit's first attempt at all; the ledger records why, by name.
+      * DOUBLE-RESERVE: the unit already has an in-flight paid reservation
+        owned by a live process.
+
+    A deferral is deliberately a DIFFERENT type from PaidBudgetExhausted so the
+    two are distinguishable in a sidecar: an exhausted budget parks the phase,
+    a deferral resolves itself as soon as the sibling's first attempt is made.
+    """
+
+
 def _repair_receipt_path(run_dir: Path, phase_id: str) -> Path:
     return _ledger_path(run_dir, phase_id).with_suffix(".repair-receipt.json")
 
@@ -8611,6 +8889,500 @@ def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) 
         return receipt
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-124 -- the per-unit paid-attempt ledger, the bounded TOTAL budget and
+# the first-attempt fairness rule. The behaviour these helpers implement is
+# declared once in the policy block beside DISPATCH_RETRY_CAP.
+#
+# Every field name is a module constant read by BOTH the writer and every
+# reader, so a rename cannot leave a half-migrated ledger behind.
+# ---------------------------------------------------------------------------
+LEDGER_PHASE_PAID_BUDGET = "phase_paid_budget"
+LEDGER_UNIT_ADMISSION_ORDER = "unit_admission_order"
+LEDGER_UNIT_NOT_ADMITTED = "unit_not_admitted"
+LEDGER_UNIT_PAID_ATTEMPTS = "unit_paid_attempts"
+LEDGER_UNIT_PAID_ATTEMPTS_GENERATION = "unit_paid_attempts_generation"
+LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME = "unit_paid_attempts_lifetime"
+LEDGER_UNIT_OUTCOMES = "unit_outcomes"
+LEDGER_UNIT_RESERVATIONS = "unit_reservations"
+LEDGER_RESERVATION_TOKENS = "reservation_tokens"
+# Bounded audit trail of charged logical-attempt tokens. 512 is far more than
+# any one dispatch of any shipped phase can mint (the widest enumerates 100
+# units) while keeping the ledger a bounded document.
+_RESERVATION_TOKEN_HISTORY = 512
+# Fallback for a ledger whose budget declaration could not be written (an
+# unwritable run dir). Deliberately the LEGACY number, so a broken declaration
+# degrades to the pre-PD-TEST-124 behaviour instead of inventing a wider bound.
+_PAID_BUDGET_UNDECLARED_CAP = DISPATCH_RETRY_CAP
+
+_PAID_UNIT_SCOPE = threading.local()
+
+
+@contextlib.contextmanager
+def paid_unit_scope(unit_key: Optional[str], *, token: Optional[str] = None,
+                    allow_reauthor: bool = False):
+    """Bind the paid reservations made inside this block to ONE fan-out unit.
+
+    Set by the fan-out unit worker around its dispatch_complete() call and read
+    by _reserve_paid_attempt. Thread-local rather than global because units run
+    concurrently in fanout.run_units' pool: each pool thread carries exactly the
+    unit it is working on, and a nested call inside that unit's dispatch (a
+    transport re-entry) sees the same unit -- which is what makes the token
+    idempotency below correct.
+
+    Outside a scope the reservation keeps the legacy phase-level behaviour
+    byte-for-byte, so every serial phase is untouched by this repair.
+
+    `token` identifies ONE LOGICAL paid attempt. Two reservations carrying the
+    same token are the same attempt (a duplicate call) and the second is a
+    no-op; two different tokens for one unit are two real attempts.
+
+    `allow_reauthor=True` is set ONLY when the unit's own durable record says it
+    succeeded before and it is being re-admitted because that success was
+    invalidated (changed inputs, corrupt output, or an operator repair receipt
+    that voided the bank). It is what keeps "a success is never regenerated"
+    from also meaning "an invalidated success can never be repaired".
+    """
+    previous = (getattr(_PAID_UNIT_SCOPE, "unit_key", None),
+                getattr(_PAID_UNIT_SCOPE, "token", None),
+                getattr(_PAID_UNIT_SCOPE, "allow_reauthor", False))
+    _PAID_UNIT_SCOPE.unit_key = unit_key
+    _PAID_UNIT_SCOPE.token = (token or uuid.uuid4().hex) if unit_key else None
+    _PAID_UNIT_SCOPE.allow_reauthor = bool(allow_reauthor) if unit_key else False
+    try:
+        yield getattr(_PAID_UNIT_SCOPE, "token", None)
+    finally:
+        (_PAID_UNIT_SCOPE.unit_key, _PAID_UNIT_SCOPE.token,
+         _PAID_UNIT_SCOPE.allow_reauthor) = previous
+
+
+def _current_paid_unit_key() -> Optional[str]:
+    """The unit this thread is dispatching a paid call for, or None outside a
+    fan-out unit scope."""
+    key = getattr(_PAID_UNIT_SCOPE, "unit_key", None)
+    return str(key) if key else None
+
+
+def _current_paid_unit_token() -> Optional[str]:
+    token = getattr(_PAID_UNIT_SCOPE, "token", None)
+    return str(token) if token else None
+
+
+def _paid_unit_allows_reauthor() -> bool:
+    return bool(getattr(_PAID_UNIT_SCOPE, "allow_reauthor", False))
+
+
+def _fanout_total_paid_cap(eligible_units: int) -> int:
+    """The declared TOTAL paid-attempt bound for a fan-out phase with this many
+    eligible units. Explicit and finite -- one funded first attempt per unit
+    plus the legacy phase retry pool, clamped by the hard ceiling. Deliberately
+    NOT `units * DISPATCH_RETRY_CAP`."""
+    n = max(0, int(eligible_units or 0))
+    return min(PHASE_TOTAL_PAID_HARD_CAP,
+               n * FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT + PHASE_RETRY_POOL_ATTEMPTS)
+
+
+def _declared_paid_budget(led: Dict[str, Any],
+                          generation: str) -> Optional[Dict[str, Any]]:
+    """This phase's declared fan-out budget, or None for the legacy serial path.
+
+    Generation-scoped exactly like the phase counter it sits beside: a budget
+    declared for a superseded approved-input generation describes spending that
+    generation no longer has, so it is simply not consulted."""
+    budget = led.get(LEDGER_PHASE_PAID_BUDGET)
+    if not isinstance(budget, dict):
+        return None
+    if str(budget.get("generation") or "initial") != str(generation):
+        return None
+    try:
+        total = int(budget.get("total_cap"))
+    except (TypeError, ValueError):
+        return None
+    return budget if total >= 1 else None
+
+
+def _effective_phase_paid_cap(led: Dict[str, Any], generation: str) -> int:
+    """DISPATCH_RETRY_CAP for a serial phase (unchanged), the declared total for
+    a fan-out phase."""
+    budget = _declared_paid_budget(led, generation)
+    if budget is None:
+        return _PAID_BUDGET_UNDECLARED_CAP
+    return int(budget["total_cap"])
+
+
+def _unit_paid_counts(led: Dict[str, Any], generation: str) -> Dict[str, int]:
+    """Per-unit paid attempts for the CURRENT budget scope.
+
+    A scope change starts a fresh count, mirroring the phase counter's own
+    documented rule (`paid = ... if generation == prior_generation else 0`); the
+    counters themselves are preserved -- `unit_paid_attempts_lifetime` is the
+    never-reset audit total and the superseded counts are archived. Nothing in
+    this repair zeroes or hand-edits a counter."""
+    stored = led.get(LEDGER_UNIT_PAID_ATTEMPTS)
+    if not isinstance(stored, dict):
+        return {}
+    if str(led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION) or "initial") \
+            != _paid_attempt_scope(led, generation):
+        return {}
+    return {str(k): int(v) for k, v in stored.items()
+            if isinstance(v, int) and not isinstance(v, bool) and v >= 0}
+
+
+def _paid_attempt_scope(led: Dict[str, Any], generation: str) -> str:
+    """The scope key the PER-UNIT paid counters belong to.
+
+    Two things start a fresh per-unit count, and both are deliberate acts the
+    PHASE counter already honours in exactly the same way:
+
+      * the approved input revision changed (a verified intake amendment) --
+         `paid_attempts`' own `generation == prior_generation` rule; and
+      * an operator repair receipt was consumed, which bumps `led['generation']`
+        and re-arms `paid_attempts` as `DISPATCH_RETRY_CAP - allowance`.
+
+    The second term is not optional. Without it a receipt would reopen the
+    phase's TOTAL but leave a saturated unit pinned at its per-unit ceiling: the
+    phase could re-dispatch and pay, yet the one unit that needs re-authoring
+    could never be re-authored -- which is precisely the PD-TEST-119/120/121
+    situation the receipt exists to resolve. Counters are never destroyed: the
+    superseded counts are archived under
+    `unit_paid_attempts_prior_generation` and `unit_paid_attempts_lifetime`
+    keeps the never-reset total."""
+    return f"{generation}|receipt-gen:{int(led.get('generation') or 0)}"
+
+
+def _unit_outcome(led: Dict[str, Any], unit_key: str,
+                  generation: str) -> Optional[Dict[str, Any]]:
+    """This unit's durable outcome in the CURRENT generation, or None."""
+    outcomes = led.get(LEDGER_UNIT_OUTCOMES)
+    if not isinstance(outcomes, dict):
+        return None
+    rec = outcomes.get(unit_key)
+    if not isinstance(rec, dict):
+        return None
+    if str(rec.get("generation") or "initial") != str(generation):
+        return None
+    return rec
+
+
+def _unit_succeeded(led: Dict[str, Any], unit_key: str, generation: str) -> bool:
+    rec = _unit_outcome(led, unit_key, generation)
+    return bool(rec and rec.get("status") == "ok")
+
+
+def _reservation_owner_is_gone(pid: Any) -> bool:
+    """Fail-closed pid-liveness test: an unprovable death keeps the reservation
+    (the same direction _autospawn decides park-marker ownership in)."""
+    if isinstance(pid, bool) or not isinstance(pid, int):
+        return False
+    if pid == os.getpid():
+        return False
+    try:
+        return not _autospawn._pid_is_alive(pid)
+    except Exception:  # noqa: BLE001 -- no liveness answer is not "gone"
+        return False
+
+
+def _declare_phase_paid_budget(run_dir: Path, phase_id: str, *,
+                               unit_keys: List[str],
+                               worker_id: str) -> Dict[str, Any]:
+    """Declare (or re-declare) this phase's bounded TOTAL paid budget and its
+    first-attempt admission order.
+
+    Idempotent, atomic (the same `_phase_budget_transaction` lock every other
+    ledger writer takes) and it NEVER resets a counter: existing per-unit
+    counts, lifetime counts, outcomes and reservations are carried forward
+    untouched.
+
+    Called by _dispatch_phase_fanout_units once per dispatch with the keys of
+    the units that still need paid work. Banked and reused units are EXCLUDED --
+    they cost nothing, so funding them would only shrink the pool available to
+    the units that do.
+
+    MONOTONIC WITHIN A GENERATION. `total_cap` is the max of the stored and the
+    recomputed bound, so a later dispatch over fewer pending units cannot shrink
+    the budget an earlier dispatch of the same generation already declared --
+    that would strand units the retry pool is still paying for.
+
+    CANNOT-FUND-ALL. With more eligible units than the bound can fund, the first
+    `total_cap` keys in the given (deterministically enumerated) order are
+    admitted, and every remaining unit is recorded in `unit_not_admitted` with a
+    reason naming the bound, refused at reservation time, and reported in the
+    phase's sidecar. No unit is ever silently dropped.
+    """
+    order = [str(k) for k in unit_keys if k]
+    computed = _fanout_total_paid_cap(len(order))
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        generation = _approved_input_revision(run_dir, phase_id)
+        stored = _declared_paid_budget(led, generation)
+        # Monotonic within the generation, then clamped by the hard ceiling --
+        # so neither a shrinking eligible set nor a hand-edited stored value can
+        # raise the bound above the declared maximum.
+        cap = computed
+        if stored is not None:
+            cap = max(int(stored.get("total_cap") or 0), computed)
+        cap = min(PHASE_TOTAL_PAID_HARD_CAP, cap)
+        admitted = order[:cap]
+        reason = (
+            f"not admitted: this phase's declared bounded TOTAL paid budget is "
+            f"{cap} attempt(s) -- {len(order)} eligible unit(s) each owed one funded "
+            f"first attempt, capped at PHASE_TOTAL_PAID_HARD_CAP="
+            f"{PHASE_TOTAL_PAID_HARD_CAP} and funded by "
+            f"FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT="
+            f"{FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT} per unit plus a "
+            f"{PHASE_RETRY_POOL_ATTEMPTS}-attempt retry pool. First attempts are "
+            f"admitted in deterministic enumeration order and this unit falls "
+            f"outside the bound, so it was NOT attempted (it did not fail)")
+        not_admitted = {k: reason for k in order[cap:]}
+        budget = {
+            "policy": PHASE_PAID_BUDGET_POLICY,
+            "generation": generation,
+            "units_eligible": len(order),
+            "units_admitted_first_attempt": len(admitted),
+            "units_not_admitted": len(not_admitted),
+            "first_attempt_reserve": FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT,
+            "retry_pool": PHASE_RETRY_POOL_ATTEMPTS,
+            "total_cap": cap,
+            "computed_cap": computed,
+            "hard_cap": PHASE_TOTAL_PAID_HARD_CAP,
+            "per_unit_cap": DISPATCH_RETRY_CAP,
+            "declared_at": utcnow(),
+            "declared_by": worker_id,
+        }
+        led.update({
+            "phase_id": phase_id,
+            "approved_input_revision": led.get("approved_input_revision") or generation,
+            LEDGER_PHASE_PAID_BUDGET: budget,
+            LEDGER_UNIT_ADMISSION_ORDER: admitted,
+            LEDGER_UNIT_NOT_ADMITTED: not_admitted,
+        })
+        # A scope change (a new approved-input generation, or a consumed repair
+        # receipt) starts a FRESH per-unit count -- the phase counter's own
+        # rule, applied per unit. The superseded counts are preserved for audit
+        # under their own key; they are never read for admission again.
+        scope = _paid_attempt_scope(led, generation)
+        stamp = str(led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION) or "initial")
+        if stamp != scope:
+            prior = led.get(LEDGER_UNIT_PAID_ATTEMPTS)
+            if isinstance(prior, dict) and prior:
+                led["unit_paid_attempts_prior_generation"] = {
+                    "scope": stamp, "attempts": prior}
+            led[LEDGER_UNIT_PAID_ATTEMPTS] = {}
+            led[LEDGER_UNIT_PAID_ATTEMPTS_GENERATION] = scope
+        if not isinstance(led.get(LEDGER_UNIT_PAID_ATTEMPTS), dict):
+            led[LEDGER_UNIT_PAID_ATTEMPTS] = {}
+        if not isinstance(led.get(LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME), dict):
+            led[LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME] = {}
+        if not isinstance(led.get(LEDGER_UNIT_OUTCOMES), dict):
+            led[LEDGER_UNIT_OUTCOMES] = {}
+        if not isinstance(led.get(LEDGER_UNIT_RESERVATIONS), dict):
+            led[LEDGER_UNIT_RESERVATIONS] = {}
+        _write_ledger(run_dir, phase_id, led)
+        return {"budget": budget, "admitted": admitted,
+                "not_admitted": not_admitted}
+
+
+def _reserve_scoped_unit_attempt(led: Dict[str, Any], *, run_dir: Path,
+                                 phase_id: str, worker_id: Optional[str],
+                                 paid: int) -> int:
+    """The PER-UNIT branch of _reserve_paid_attempt.
+
+    Runs INSIDE the phase budget transaction, after the ledger has been read and
+    any actionable repair receipt already consumed, with `paid` being the
+    caller's generation- and receipt-adjusted PHASE count. Mutates `led` in
+    place and returns the new phase count; the caller writes the ledger.
+
+    Every refusal raises BEFORE mutating, so a refused attempt leaves no mark --
+    the property should_dispatch's read-only call sites and the existing PD-068
+    test both depend on."""
+    unit_key = _current_paid_unit_key()
+    token = _current_paid_unit_token() or ""
+    generation = _approved_input_revision(run_dir, phase_id)
+    budget = _declared_paid_budget(led, generation)
+    cap = _effective_phase_paid_cap(led, generation)
+    counts = _unit_paid_counts(led, generation)
+    lifetime = led.get(LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME)
+    if not isinstance(lifetime, dict):
+        lifetime = {}
+    reservations = led.get(LEDGER_UNIT_RESERVATIONS)
+    if not isinstance(reservations, dict):
+        reservations = {}
+    charged = {t for t in (led.get(LEDGER_RESERVATION_TOKENS) or [])
+               if isinstance(t, str)}
+
+    # (0) DUPLICATE CALL. This exact logical attempt has already been charged:
+    # return without buying a second paid slot. This is what makes a re-entrant
+    # or concurrent second call for one attempt idempotent.
+    if token and token in charged:
+        return paid
+
+    # (1) A SUCCESS IS NEVER REGENERATED. The ledger's own durable ok outcome
+    # refuses the attempt unless the fan-out worker proved the success was
+    # INVALIDATED (changed inputs / corrupt output / a receipt that voided the
+    # bank) -- in which case re-authoring is the whole point of the retry.
+    if _unit_succeeded(led, unit_key, generation) and not _paid_unit_allows_reauthor():
+        raise PaidAttemptDeferred(
+            f"unit {unit_key} already succeeded in generation {generation!r}; "
+            f"refusing to regenerate a completed unit (PD-TEST-124). A unit is "
+            f"re-authored only when its success was invalidated.")
+
+    # (2) THE DECLARED BOUND. The refusal names the policy's own numbers, so an
+    # operator reading the sidecar sees which bound stopped the spend.
+    if paid >= cap:
+        raise PaidBudgetExhausted(
+            f"phase paid budget exhausted: {paid} of the declared bounded total "
+            f"{cap} provider attempt(s) for unchanged approved input "
+            f"({PHASE_PAID_BUDGET_POLICY})")
+
+    # (3) THE PER-UNIT CEILING -- DISPATCH_RETRY_CAP, the same number this
+    # module has always used, now applied per unit instead of per phase. One
+    # unit can never spend a sibling's budget.
+    spent = int(counts.get(unit_key) or 0)
+    if spent >= DISPATCH_RETRY_CAP:
+        raise PaidBudgetExhausted(
+            f"unit {unit_key} retry budget exhausted: {spent} provider attempt(s) "
+            f"for unchanged approved input (DISPATCH_RETRY_CAP="
+            f"{DISPATCH_RETRY_CAP}); sibling units keep their own budget "
+            f"(PD-TEST-124)")
+
+    # (4) CANNOT-FUND-ALL: a unit the declared bound could not fund is refused
+    # by name, with the recorded reason, instead of consuming a slot the
+    # admitted units are owed.
+    if budget is not None:
+        admitted = [str(k) for k in (led.get(LEDGER_UNIT_ADMISSION_ORDER) or [])]
+        if admitted and unit_key not in admitted:
+            why = (led.get(LEDGER_UNIT_NOT_ADMITTED) or {}).get(unit_key) or (
+                "not admitted: outside this phase's bounded total paid budget")
+            raise PaidAttemptDeferred(f"unit {unit_key} {why}")
+
+    # (5) FIRST-ATTEMPT FAIRNESS. While any admitted unit still has ZERO paid
+    # attempts, no unit may take a second or third. This is the rule that ends
+    # sibling starvation: the retry of a failing unit can no longer preempt a
+    # sibling's first attempt.
+    if budget is not None:
+        order = [str(k) for k in (led.get(LEDGER_UNIT_ADMISSION_ORDER) or [])]
+        pending_first = [k for k in order
+                         if int(counts.get(k) or 0) == 0
+                         and not _unit_succeeded(led, k, generation)]
+        if spent > 0 and pending_first:
+            raise PaidAttemptDeferred(
+                f"unit {unit_key} retry deferred: {len(pending_first)} admitted "
+                f"sibling unit(s) have not had their first paid attempt yet "
+                f"({', '.join(pending_first[:6])}"
+                f"{', ...' if len(pending_first) > 6 else ''}); first attempts "
+                f"have absolute priority (PD-TEST-124)")
+
+    # (6) ATOMIC, DUPLICATE-SAFE RESERVATION. Held under the phase's own budget
+    # lock, so two workers cannot interleave a read-modify-write and charge one
+    # slot twice; the token makes a repeat of THIS attempt a no-op; an in-flight
+    # reservation for the unit blocks a second concurrent attempt for it unless
+    # its owner process is provably gone (pid-liveness takeover, the same idiom
+    # the claim code uses for a dead claimant).
+    scope = _paid_attempt_scope(led, generation)
+    live = reservations.get(unit_key)
+    if isinstance(live, dict) and live.get("state") == "reserved" \
+            and str(live.get("generation") or "initial") == scope:
+        if token and live.get("token") == token:
+            return paid
+        if not _reservation_owner_is_gone(live.get("pid")):
+            raise PaidAttemptDeferred(
+                f"unit {unit_key} already has an in-flight paid reservation "
+                f"(attempt {live.get('seq')}, owner pid {live.get('pid')}, worker "
+                f"{live.get('worker')!r}); refusing to double-reserve one unit's "
+                f"attempt (PD-TEST-124)")
+
+    seq = spent + 1
+    counts[unit_key] = seq
+    lifetime[unit_key] = int(lifetime.get(unit_key) or 0) + 1
+    paid = int(paid) + 1
+    reservations[unit_key] = {
+        "token": token, "seq": seq, "worker": worker_id or "unknown",
+        "pid": os.getpid(), "state": "reserved", "generation": scope,
+        "reserved_at": utcnow(),
+    }
+    tokens = [t for t in (led.get(LEDGER_RESERVATION_TOKENS) or [])
+              if isinstance(t, str)]
+    if token:
+        tokens.append(token)
+    # A scope change is normally archived by _declare_phase_paid_budget, but a
+    # repair receipt is consumed HERE -- after the declaration -- so the archive
+    # is repeated on this path too. Audit history is never dropped.
+    prior_stamp = str(led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION) or "initial")
+    if prior_stamp != scope:
+        prior_counts = led.get(LEDGER_UNIT_PAID_ATTEMPTS)
+        if isinstance(prior_counts, dict) and prior_counts:
+            led["unit_paid_attempts_prior_generation"] = {
+                "scope": prior_stamp, "attempts": prior_counts}
+    led.update({
+        LEDGER_UNIT_PAID_ATTEMPTS: counts,
+        # The SCOPE, not the bare revision: a receipt re-arms the per-unit
+        # ceilings, so the stamp has to move with it or the counts would look
+        # stale on the very next read and the caps would silently vanish.
+        LEDGER_UNIT_PAID_ATTEMPTS_GENERATION: scope,
+        LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME: lifetime,
+        LEDGER_UNIT_RESERVATIONS: reservations,
+        LEDGER_RESERVATION_TOKENS: tokens[-_RESERVATION_TOKEN_HISTORY:],
+        "paid_attempts": paid,
+    })
+    return paid
+
+
+def _settle_unit_paid_attempts(run_dir: Optional[Path], phase_id: str,
+                               outcomes: List[Tuple[str, str, List[str]]], *,
+                               worker_id: str) -> None:
+    """Settle one batch's paid reservations and record each unit's durable
+    outcome, in ONE transaction.
+
+    A settled reservation stays in the ledger as history: its `state` becomes
+    "settled", so a later dispatch of the same unit may reserve again while a
+    duplicate call carrying the SAME token stays a no-op forever. The outcome
+    row is what later dispatches read to decide "this unit already succeeded --
+    do not regenerate it" and "this unit failed -- retry it".
+
+    Appended for every unit the batch reported, including banked/reused units
+    with no reservation at all (their outcome is an honest ok at zero cost), so
+    a restart sees the same picture. Never raises on a missing ledger: a phase
+    with no ledger has nothing to settle."""
+    if run_dir is None or not outcomes:
+        return
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        if not led:
+            return
+        generation = _approved_input_revision(run_dir, phase_id)
+        reservations = led.get(LEDGER_UNIT_RESERVATIONS)
+        if not isinstance(reservations, dict):
+            reservations = {}
+        recorded = led.get(LEDGER_UNIT_OUTCOMES)
+        if not isinstance(recorded, dict):
+            recorded = {}
+        counts = _unit_paid_counts(led, generation)
+        scope = _paid_attempt_scope(led, generation)
+        for unit_key, status, reasons in outcomes:
+            unit_key = str(unit_key)
+            live = reservations.get(unit_key)
+            if isinstance(live, dict) and live.get("state") == "reserved" \
+                    and str(live.get("generation") or "initial") == scope:
+                settled = dict(live)
+                settled["state"] = "settled"
+                settled["settled_at"] = utcnow()
+                settled["settled_status"] = str(status)
+                reservations[unit_key] = settled
+            recorded[unit_key] = {
+                "status": "ok" if str(status) == "ok" else "failed",
+                "unit_status": str(status),
+                "generation": generation,
+                "attempts": int(counts.get(unit_key) or 0),
+                "reasons": [str(r) for r in (reasons or [])][:5],
+                "at": utcnow(),
+                "worker": worker_id,
+            }
+        led.update({LEDGER_UNIT_RESERVATIONS: reservations,
+                    LEDGER_UNIT_OUTCOMES: recorded,
+                    "phase_id": phase_id})
+        _write_ledger(run_dir, phase_id, led)
+
+
 def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
                           worker_id: Optional[str]) -> None:
     """Atomically reserve one provider call before transport.
@@ -8618,6 +9390,15 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
     A reservation is intentionally never released: a process can die after
     sending bytes to a provider but before receiving/logging a response.  In
     that ambiguous case retaining the slot is the only no-double-charge policy.
+
+    TWO MODES, ONE LEDGER. Outside a fan-out unit scope (every serial phase)
+    this is the legacy phase-level reservation, unchanged. Inside a unit scope
+    -- paid_unit_scope, set by the fan-out unit worker -- the same call is
+    accounted PER UNIT against the phase's declared bounded total budget
+    (PD-TEST-124): first-attempt fairness, the per-unit DISPATCH_RETRY_CAP
+    ceiling, admission, and a token-keyed duplicate-safe reservation. The
+    phase's `paid_attempts` total is incremented in both modes, so the declared
+    bound and the legacy counter can never disagree about total spend.
     """
     if run_dir is None:
         return
@@ -8661,12 +9442,24 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
             claim = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
             if claim and str(claim.get("worker") or "") != worker_id:
                 raise PaidBudgetExhausted("paid attempt refused: claim ownership changed")
-        if paid >= DISPATCH_RETRY_CAP:
-            raise PaidBudgetExhausted(
-                f"paid retry budget exhausted: {paid} provider attempts for unchanged "
-                f"approved input (DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+        # PD-TEST-124: INSIDE a fan-out unit scope the budget is the phase's
+        # declared BOUNDED TOTAL, accounted per unit (first-attempt fairness,
+        # per-unit ceiling, admission, duplicate-safe reservation). OUTSIDE one
+        # -- every serial phase -- the legacy phase-level clause below is
+        # byte-for-byte unchanged, so no existing cap is weakened.
+        unit_key = _current_paid_unit_key()
+        if unit_key:
+            paid = _reserve_scoped_unit_attempt(
+                led, run_dir=run_dir, phase_id=phase_id,
+                worker_id=worker_id, paid=paid)
+        else:
+            if paid >= DISPATCH_RETRY_CAP:
+                raise PaidBudgetExhausted(
+                    f"paid retry budget exhausted: {paid} provider attempts for unchanged "
+                    f"approved input (DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+            paid = paid + 1
         led.update({"phase_id": phase_id, "approved_input_revision": generation,
-                    "paid_attempts": paid + 1, "last_reserved_at": utcnow(),
+                    "paid_attempts": paid, "last_reserved_at": utcnow(),
                     "last_reservation_worker": worker_id or "unknown"})
         _write_ledger(run_dir, phase_id, led)
         # The new generation is durable before removing a prior park marker.
@@ -8752,8 +9545,14 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
         # Marker removal follows only the durable reservation of this
         # generation, never this read-only preflight.
         return True, "approved input revision changed"
+    # PD-TEST-124: the ceiling is the phase's DECLARED bounded total for a
+    # fan-out phase and DISPATCH_RETRY_CAP for every other phase, so a fan-out
+    # phase whose siblings are still owed their first attempt is NOT gated off
+    # by the legacy three-attempt phase counter. Undeclared => the legacy
+    # comparison and the legacy refusal text, byte-for-byte.
     if (led.get("blocked") and
-            int(led.get("paid_attempts") or 0) >= DISPATCH_RETRY_CAP):
+            int(led.get("paid_attempts") or 0) >= _effective_phase_paid_cap(
+                led, input_revision)):
         # PD-TEST-068.  This early return used to precede every other clause of
         # this function AND to be blind to the repair receipt, while the only
         # code that ever reads that receipt sits downstream of a claim -- and
@@ -8771,9 +9570,15 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
             led, phase_id, run_dir, approved_input_revision=input_revision)
         if actionable:
             return True, why
-        return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
+        _budget = _declared_paid_budget(led, input_revision)
+        if _budget is None:
+            return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
+                           f"provider attempts for unchanged approved input "
+                           f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+        return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} of "
+                       f"the declared bounded total {_budget.get('total_cap')} "
                        f"provider attempts for unchanged approved input "
-                       f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+                       f"({PHASE_PAID_BUDGET_POLICY})")
     eligible_at = led.get("next_eligible_at_epoch")
     if not isinstance(eligible_at, (int, float)):
         return True, ""
@@ -8851,6 +9656,24 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         # audit trail fiction.  Carried forward so it survives as documented.
         "repair_receipt_consumed_generation": led.get("repair_receipt_consumed_generation"),
         "repair_receipt": led.get("repair_receipt"),
+        # PD-TEST-124: the per-unit paid ledger, the declared bounded total
+        # budget and the settled reservations are exactly as durable as the
+        # phase counter above -- and for the same reason. This entry REBUILDS
+        # the ledger, so a field not named here is erased by the very next
+        # outcome fold. Measured: without these four lines one record_outcome
+        # wiped every per-unit counter, the admission order and the reservation
+        # history, and a restart then re-paid units whose successes it could no
+        # longer see. Nothing here is reset; everything is carried forward.
+        LEDGER_PHASE_PAID_BUDGET: led.get(LEDGER_PHASE_PAID_BUDGET),
+        LEDGER_UNIT_ADMISSION_ORDER: led.get(LEDGER_UNIT_ADMISSION_ORDER),
+        LEDGER_UNIT_NOT_ADMITTED: led.get(LEDGER_UNIT_NOT_ADMITTED),
+        LEDGER_UNIT_PAID_ATTEMPTS: led.get(LEDGER_UNIT_PAID_ATTEMPTS),
+        LEDGER_UNIT_PAID_ATTEMPTS_GENERATION: led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION),
+        LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME: led.get(LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME),
+        "unit_paid_attempts_prior_generation": led.get("unit_paid_attempts_prior_generation"),
+        LEDGER_UNIT_OUTCOMES: led.get(LEDGER_UNIT_OUTCOMES),
+        LEDGER_UNIT_RESERVATIONS: led.get(LEDGER_UNIT_RESERVATIONS),
+        LEDGER_RESERVATION_TOKENS: led.get(LEDGER_RESERVATION_TOKENS),
     }
 
     if status in _FAILING_STATUSES and consecutive >= DISPATCH_REPEAT_CEILING:
@@ -8865,12 +9688,30 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         # durable budget below, which only a verified input amendment resets.
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
 
-    if status in _FAILING_STATUSES and total_paid_attempts >= DISPATCH_RETRY_CAP:
+    # PD-TEST-124: the ceiling this clause compares against is the phase's
+    # DECLARED bounded total for a fan-out phase, and DISPATCH_RETRY_CAP for
+    # every other phase. Before this, an 8-unit fan-out phase was parked as
+    # "paid retry budget exhausted" after its THIRD attempt -- with seven units
+    # never attempted -- because the phase counter was compared against the
+    # per-phase legacy cap no matter how many units the phase owed work to.
+    # The legacy refusal text is preserved byte-for-byte when no fan-out budget
+    # is declared, so serial phases and the existing PD-068/PD-092 pins are
+    # untouched.
+    _outcome_cap = _effective_phase_paid_cap(led, input_revision)
+    if status in _FAILING_STATUSES and total_paid_attempts >= _outcome_cap:
         entry["blocked"] = True
-        entry["blocked_reason"] = (
-            f"paid retry budget exhausted after {total_paid_attempts} provider attempts for "
-            f"{phase_id} with unchanged approved input "
-            f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
+        _budget = _declared_paid_budget(led, input_revision)
+        if _budget is None:
+            entry["blocked_reason"] = (
+                f"paid retry budget exhausted after {total_paid_attempts} provider attempts for "
+                f"{phase_id} with unchanged approved input "
+                f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
+        else:
+            entry["blocked_reason"] = (
+                f"paid retry budget exhausted after {total_paid_attempts} of the "
+                f"declared bounded total {_budget.get('total_cap')} provider "
+                f"attempts for {phase_id} with unchanged approved input "
+                f"({PHASE_PAID_BUDGET_POLICY}). Last reasons: {reasons or []}")
         entry["blocked_at"] = utcnow()
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
 

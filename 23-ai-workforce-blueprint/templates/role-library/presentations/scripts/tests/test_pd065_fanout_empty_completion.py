@@ -316,23 +316,50 @@ def wire(monkeypatch):
     return sent
 
 
-def test_wire_body_carries_the_declared_effort_by_default(wire):
+def test_wire_body_carries_the_product_workers_effort_by_default(wire):
+    """PD-TEST-124: the DEFAULT is the PRODUCT WORKER's effort, not the harness
+    agent's declared one. On a ~155k-char authoring prompt `max` consumes 100%
+    of max_tokens on reasoning and returns ZERO-length content; `medium`
+    terminates at ~15% of the same budget with a schema-valid payload. This test
+    previously asserted "max" and so pinned the defect."""
     content, usage = D.deepseek_complete("sys", "user", retries=1)
     assert content == "hello" and usage["completion_tokens"] == 3
     assert len(wire) == 1
-    assert wire[0]["reasoning_effort"] == "max", wire[0]
+    assert wire[0]["reasoning_effort"] == "medium", wire[0]
     assert wire[0]["thinking"] == {"type": "enabled"}, wire[0]
     assert wire[0]["max_tokens"] == D.DEEPSEEK_MAX_OUTPUT_TOKENS, wire[0]
+    # The harness-vs-worker distinction must be PINNED, not merely commented:
+    # the operator's declared value is retained for audit, and the worker's
+    # default deliberately differs from it.
+    assert D.DEEPSEEK_REASONING_EFFORT_DECLARED_BY_OPERATOR == "max"
+    assert D.DEEPSEEK_REASONING_EFFORT != D.DEEPSEEK_REASONING_EFFORT_DECLARED_BY_OPERATOR
 
 
 def test_wire_body_carries_the_stepped_down_effort_when_asked(wire):
     D.deepseek_complete("sys", "user", retries=1,
                         reasoning_effort=D.DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY)
     assert len(wire) == 1
-    assert wire[0]["reasoning_effort"] == "medium", wire[0]
+    assert wire[0]["reasoning_effort"] == D.DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY
+    # NO DEAD-END: the step-down must differ from the default, or a retry after
+    # an empty completion would re-send the request that just failed (the exact
+    # defect in the old ("medium","low") ladder once medium became a documented
+    # ALIAS of high, the model's own default).
+    assert wire[0]["reasoning_effort"] != D.DEEPSEEK_REASONING_EFFORT, wire[0]
     # ...and the shared budget is UNCHANGED -- this is a reasoning step-down,
     # not a silent budget cut.
     assert wire[0]["max_tokens"] == D.DEEPSEEK_MAX_OUTPUT_TOKENS, wire[0]
+
+
+def test_the_ladder_never_repeats_the_rung_that_just_failed():
+    """PD-TEST-124 property, asserted rather than commented: every rung differs
+    from the production default AND from every other rung, so an unchanged-input
+    retry can never be the byte-identical request that just returned empty."""
+    ladder = D.DEEPSEEK_REASONING_EFFORT_LADDER
+    assert ladder, "the ladder must have at least one rung"
+    assert D.DEEPSEEK_REASONING_EFFORT not in ladder, (
+        "the first rung must differ from the default, or a retry after an empty "
+        f"completion re-sends it: default={D.DEEPSEEK_REASONING_EFFORT!r} ladder={ladder!r}")
+    assert len(set(ladder)) == len(ladder), f"ladder repeats a rung: {ladder!r}"
 
 
 def test_dispatch_complete_forwards_the_effort_to_the_transport(monkeypatch):
