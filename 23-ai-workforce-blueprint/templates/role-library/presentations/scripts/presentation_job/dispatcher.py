@@ -4751,6 +4751,104 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # error -- never silently falls back to the serial loop and re-spends.
     started_iso = utcnow()
     started_t = time.monotonic()
+    # PD-TEST-161: DECLARE this fan-out's bounded total BEFORE any paid call, so
+    # the prompt wave is funded the same way the copy fan-out has been since
+    # PD-TEST-124. `_declare_phase_paid_budget` is the single writer of
+    # `phase_paid_budget`, and `_effective_phase_paid_cap` returns the declared
+    # bound when one exists (else the legacy DISPATCH_RETRY_CAP, byte-for-byte).
+    # Each slide's own attempt is then accounted under its `slide_id` by the
+    # `paid_unit_scope` the worker enters per attempt.
+    #
+    # Strictly fail-soft: a declaration failure must not stop the wave. The
+    # ledger then simply stays undeclared and the legacy per-phase cap governs,
+    # which is exactly the pre-fix behaviour -- the sidecar records which
+    # happened so the difference is never silent.
+    try:
+        # PD-TEST-166 (review of PR #1164): declare only the slides that still
+        # need PAID work -- a slide whose prompt is already on disk and clears
+        # the real per-slide gate costs nothing, and `_declare_phase_paid_budget`
+        # says so in its own contract: banked/reused units must be EXCLUDED,
+        # "because they cost nothing, so funding them would only shrink the pool
+        # available to the units that do". The first version declared EVERY slide,
+        # which (with the settlement PD-TEST-165 adds) would leave already-good
+        # slides at counts == 0 while still listed as owed a first attempt.
+        #
+        # The WAVE itself still processes every slide, so already-good ones are
+        # re-derived from disk by `_run_one` as usual -- only the DECLARATION is
+        # narrowed to the units that can actually spend.
+        _all_keys = [_ppw.prompt_slide_unit_key(_s) for _s in slides_payload]
+        _pending_keys = []
+        for _s in slides_payload:
+            _key = _ppw.prompt_slide_unit_key(_s)
+            try:
+                _ok, _ = _verify_single_prompt(run_dir, int(_s["ordinal"]))
+            except Exception:  # noqa: BLE001 -- unverifiable != already good
+                _ok = False
+            if not _ok:
+                _pending_keys.append(_key)
+        # Never declare an EMPTY set: with nothing pending the wave is a no-op
+        # anyway, and an empty declaration would rewrite the phase's bound to
+        # its `0 units -> 3` floor for no reason.
+        _unit_keys = _pending_keys or _all_keys
+        _budget_decl = _declare_phase_paid_budget(
+            run_dir, phase_id, unit_keys=_unit_keys, worker_id=worker_id)
+    except Exception as exc:  # noqa: BLE001 -- the wave still runs undeclared
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("the prompt wave runs on the legacy per-phase cap "
+                            "(DISPATCH_RETRY_CAP) exactly as before PD-TEST-161"),
+        })
+        _budget_decl, _bd = None, {}
+    # Review (delta): the AUDIT of a successful declaration gets its OWN guard.
+    # Wrapping it in the declaration's try meant a sidecar write failure AFTER a
+    # successful declaration recorded "declaration_failed / legacy cap governs"
+    # while the ledger in fact held the declaration -- a false record.
+    if _budget_decl is not None:
+      try:
+        # Review F4: `_declare_phase_paid_budget` returns a NESTED document --
+        # {"budget": {...}, "admitted": [...], "not_admitted": {...}} -- and the
+        # copy caller reads `["budget"]["total_cap"]`. The first version of this
+        # sidecar read those keys at top level and therefore recorded nulls.
+        _bd = _budget_decl.get("budget") or {}
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_budget_declared",
+            "policy": _bd.get("policy"),
+            "units": len(_unit_keys),
+            "units_in_wave": len(_all_keys),
+            "units_already_good": len(_all_keys) - len(_pending_keys),
+            "units_eligible": _bd.get("units_eligible"),
+            "total_cap": _bd.get("total_cap"),
+            "units_admitted_first_attempt":
+                _bd.get("units_admitted_first_attempt"),
+            "units_not_admitted": _bd.get("units_not_admitted"),
+        })
+        # Review F5: the same explicit cannot-fund-all record the copy path
+        # writes, so slides outside the bound are visibly NOT ATTEMPTED rather
+        # than silently absent.
+        if _bd.get("units_not_admitted"):
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0,
+                "status": "paid_budget_cannot_fund_all_units",
+                "reason": (f"{_bd.get('units_not_admitted')} of "
+                           f"{_bd.get('units_eligible')} eligible slide(s) fall "
+                           f"outside the declared bounded total of "
+                           f"{_bd.get('total_cap')} paid attempt(s); they were "
+                           "NOT attempted (they did not fail). They are named in "
+                           "the ledger's phase_paid_budget/unit_not_admitted."),
+                "units_not_admitted": sorted(
+                    (_budget_decl.get("not_admitted") or {}).keys()),
+            })
+      except Exception as exc:  # noqa: BLE001 -- an audit failure is not a budget failure
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_audit_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "note": ("the DECLARATION itself succeeded -- the ledger carries the "
+                     "bounded total; only this audit row failed"),
+        })
     _append_sidecar(run_dir, phase_id, {
         "worker": worker_id, "attempt": 1, "status": "parallel_wave_started",
         "input": str(input_path), "slides": len(slides_payload),
@@ -4787,6 +4885,50 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     except (OSError, json.JSONDecodeError):
         doc = result_doc  # in-memory copy is authoritative if the file vanished
     slide_rows = doc.get("slides") or []
+
+    # PD-TEST-165: SETTLE this wave's paid reservations, exactly as the copy
+    # fan-out does for every batch (`_settle_unit_paid_attempts`, dispatcher.py).
+    #
+    # Without this the prompt path had NO settlement at all: a slide's
+    # attempt-1 reservation stayed IN FLIGHT in the ledger, and because the wave
+    # runs in the dispatcher's own process the unit's own second reservation was
+    # refused -- measured by the independent review of PR #1164 on an 8-slide
+    # wave: attempts 2-3 ALL resolved as `budget_deferred` and the final row's
+    # error class was the refusal rather than what actually failed
+    # (verify_failed, HTTP 500). So PD-TEST-161 bought every slide a FIRST
+    # attempt and no working retry.
+    #
+    # `_settle_unit_paid_attempts` marks each reservation settled (a later
+    # dispatch may reserve again; a duplicate carrying the same token stays a
+    # no-op) and records each unit's durable outcome, which is what the
+    # first-attempt-fairness rule reads to decide whether a retry may proceed.
+    # Strictly fail-soft: a settlement failure must not fail a wave whose
+    # artifacts are already on disk.
+    try:
+        _outcomes = [
+            (str(_r.get("slide_id") or _r.get("ordinal")),
+             "ok" if str(_r.get("status")) == "succeeded" else "failed",
+             list((_r.get("verify") or {}).get("codes") or []))
+            for _r in slide_rows if isinstance(_r, dict)
+        ]
+        _settle_unit_paid_attempts(run_dir, phase_id, _outcomes,
+                                   worker_id=worker_id)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_attempts_settled",
+            "units": len(_outcomes),
+            "ok": sum(1 for _o in _outcomes if _o[1] == "ok"),
+            "failed": sum(1 for _o in _outcomes if _o[1] != "ok"),
+        })
+    except Exception as exc:  # noqa: BLE001 -- settlement never fails a wave
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_settle_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("reservations stay in flight, so this wave's units "
+                            "cannot reserve again (retries resolve as "
+                            "budget_deferred) until the next successful settle"),
+        })
     telemetry_rows = []
     for row in slide_rows:
         telemetry_rows.append({
