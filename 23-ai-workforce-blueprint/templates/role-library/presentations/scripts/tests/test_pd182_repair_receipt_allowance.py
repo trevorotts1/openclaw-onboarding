@@ -112,3 +112,41 @@ def test_the_receipt_still_binds_the_installed_dispatcher_bytes(tmp_path):
     receipt = dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=len(UNITS))
     assert receipt["dispatcher_sha256"] == dj._file_sha(Path(dj.__file__))
     assert isinstance(receipt["prior_generation"], int)
+
+
+# ---------------------------------------------------------------------------
+# The two ways the FIRST version of this fix was inert or harmful
+# ---------------------------------------------------------------------------
+
+def test_the_CONSUMER_validator_accepts_what_the_producer_issues(tmp_path):
+    """The first version of this fix changed only the producer. The consumer's
+    own validator (`_repair_receipt_is_actionable`) still required
+    `1 <= allowance <= DISPATCH_RETRY_CAP`, so an 8-unit receipt would have been
+    ISSUED and then REJECTED as invalid -- the fan-out still never re-authors.
+    Producer and consumer must agree on the ceiling."""
+    run_dir = _run_dir(tmp_path)
+    receipt = dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=len(UNITS))
+    led = dj._read_ledger(run_dir, PHASE)
+    ok, why = dj._repair_receipt_is_actionable(led, PHASE, run_dir)
+    assert ok, (
+        f"the consumer rejected a receipt the producer just issued: {why!r}. "
+        "The two ceilings must be the same constant.")
+
+
+def test_consuming_a_fanout_sized_receipt_never_writes_a_negative_counter(tmp_path):
+    """The re-arm is `paid = DISPATCH_RETRY_CAP - allowance`. With an 8-unit
+    allowance that is 3 - 8 = -5. A negative phase counter makes `paid >= cap`
+    unsatisfiable, i.e. UNBOUNDED re-dispatch -- strictly worse than the bug
+    being fixed. It must clamp at zero."""
+    run_dir = _run_dir(tmp_path)
+    dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=len(UNITS))
+    # Drive the real reservation path, which is where the receipt is consumed.
+    with dj.paid_unit_scope(UNITS[1]):
+        dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
+    led = dj._read_ledger(run_dir, PHASE)
+    paid = int(led.get("paid_attempts") or 0)
+    assert paid >= 0, (
+        f"paid_attempts went NEGATIVE ({paid}) after consuming a "
+        f"{len(UNITS)}-unit receipt -- the phase bound is now unsatisfiable")
+    assert led.get("repair_receipt_consumed") is True, (
+        "the receipt was not consumed on the reservation path")
