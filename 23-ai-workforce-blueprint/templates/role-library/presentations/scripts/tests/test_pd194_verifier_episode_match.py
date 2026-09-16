@@ -212,16 +212,45 @@ def test_a_substance_verdict_that_mentions_the_TRANSPORT_is_still_reopenable():
     phases.py writes it as `heal.classify_failure(sub_reason)`, and
     `_PROVIDER_ERROR_MARKERS` matches bare words -- "provider", "timeout",
     "connection", "quota", "429" -- so a genuine substance verdict that merely
-    mentions the transport was labelled `provider_error` and gate (b) rejected
-    it. Measured before this fix: `False`; a measurable class of substance parks
-    was permanently unreopenable.
+    mentions the transport is labelled `provider_error`. The gate now accepts a
+    VERDICT-SHAPED reason regardless of the derived label.
+
+    NOTE: both verdicts carry the real `slide-<n>:` grammar, as production emits
+    them. An earlier cut of this test used a grammar-less BLOCK, which the set
+    match cannot identify at all -- see
+    `test_a_grammar_less_pair_falls_back_to_the_original_text_tests`.
     """
-    ps = _park(f"{PREFIX}: AF-IMAGE-GROUNDING: the image provider returned 429 "
-               f"rate limit for slide-3.",
-               f"{PREFIX}: AF-IMAGE-GROUNDING slide-3: AF-IMAGE-GROUNDING \u2014 "
-               f"provider 429", cls="provider_error")
-    assert not ps["blocked_reason"].lower().startswith("dispatcher")
-    assert P._block_is_verifier_sourced(ps)
+    verdict = (f"{PREFIX}: AF-PROMPT-FLOOR slide-3: AF-IMAGE-GROUNDING \u2014 the "
+               f"image provider returned 429 rate limit")
+    ps = _park(verdict, verdict, cls="provider_error")
+    assert P._verdict_check_ids(verdict) == {"AF-IMAGE-GROUNDING"}
+    assert ps["heal_events"][-1]["class"] != "verifier_substance"
+    assert P._block_is_verifier_sourced(ps), (
+        "a substance verdict that mentions the transport is still unreopenable")
+
+
+def test_a_grammar_less_pair_falls_back_to_the_original_text_tests():
+    """The set match requires BOTH sides to yield structural autofails.
+
+    Two verdicts lack the `slide-<n>:` grammar in production
+    (`"AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false"` and
+    `f"AF-PROMPT-FLOOR: {verdict}"`), and an earlier cut of this fix fell back to
+    "all AF- tokens" there -- silently reintroducing the constant-label tautology
+    F1 removed. The fallback is now CLOSED: with no structural identity to
+    compare, only the original text tests apply, and otherwise the park is left
+    alone. A park we cannot identify is not a park we reopen.
+    """
+    a = f"{PREFIX}: AF-PROMPT-FLOOR: returned pass:false (draw A)"
+    b = f"{PREFIX}: AF-PROMPT-FLOOR: returned pass:false (draw B)"
+    assert P._verdict_check_ids(a) == set(), "no grammar -> no structural ids"
+    # PRE-EXISTING: the ORIGINAL 60-char test already matches this pair, on BASE
+    # as well, so True here is not introduced by the set match.
+    assert b[:60] in a
+    assert P._block_is_verifier_sourced(_park(a, b))
+    # A grammar-less pair the original tests do NOT match stays closed.
+    c = f"{PREFIX}: AF-PROMPT-FLOOR: an entirely different failure narrative here"
+    assert not P._block_is_verifier_sourced(_park(a, c))
+    assert not P._block_is_verifier_sourced(_park(c, a))
 
 
 def test_the_widened_heal_gate_still_rejects_a_non_verifier_heal():

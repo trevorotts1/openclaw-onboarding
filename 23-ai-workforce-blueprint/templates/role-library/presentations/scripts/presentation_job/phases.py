@@ -928,7 +928,21 @@ def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
     # gate above). A single shared failing check id, in an episode the phase's own
     # newest verifier heal produced, is the same episode by identity rather than
     # by string luck.
-    return bool(_verdict_check_ids(reason) & _verdict_check_ids(ev_reason))
+    block_ids = _verdict_check_ids(reason)
+    heal_ids = _verdict_check_ids(ev_reason)
+    if block_ids and heal_ids:
+        return bool(block_ids & heal_ids)
+    # PD-TEST-194 (adversarial self-probe, closing a hole F1 left open): when
+    # either verdict lacks the `slide-<n>:` grammar the set match CANNOT be used,
+    # and falling back to "all AF- tokens" silently reintroduced the very
+    # tautology F1 removed -- two grammar-less verdicts sharing only the constant
+    # label would match. That path is REACHABLE: phase_verifiers emits
+    #   "AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false"  and
+    #   f"AF-PROMPT-FLOOR: {verdict}"
+    # So when there is no structural identity to compare, fall back to the
+    # ORIGINAL text tests (already tried above) and otherwise stay CLOSED. A
+    # park we cannot identify is not a park we reopen.
+    return False
 
 
 def _verdict_check_ids(text: str) -> set:
@@ -940,11 +954,7 @@ def _verdict_check_ids(text: str) -> set:
     names. Extracting the `AF-` tokens is enough to identify the episode: they are
     the checker's own vocabulary, they are not free prose, and two unrelated
     episodes do not share them by accident."""
-    t = text or ""
-    autofails = {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(t)}
-    if autofails:
-        return autofails
-    return {m.upper() for m in _VERDICT_ID_RE.findall(t)}
+    return {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(text or "")}
 
 
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
