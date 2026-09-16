@@ -1,3 +1,90 @@
+## [v25.1.32]  -  2026-09-16  -  `MOVE TAG:` was the engine's own routing metadata sitting in `copy[0]` — so a slide's HEADLINE was a field name
+
+### What Changed
+- **PD-TEST-173 — the copywriter's build-move tag line was the one field-shaped line in `slides_copy.md` that `copy[]` did not classify, and it landed at index 0, the HEADLINE.** `build_deck.AF-NO-SHIFT` **requires** ≥5 of the eight build-move tags (`PRIORITY_STACK`, `PRESENT_COST`, `HIGHER_PRIORITY`, `VALUE_ANCHOR`, `URGENCY_SCARCITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER`) to appear in `slides_copy.md`, monotonic — so the copywriter *has* to record them in the copy file. But the copy-block template never said **how**, so the live run invented `MOVE TAG: TRIGGER`. `_FIELD_LINE_RE` listed `TAG|TAGS` but matches those only at the **start** of a line, and this line starts with `MOVE`, so nothing stripped it.
+
+  The consequence is the worst possible position. `copy[0]` is the field `slide_craft` **AF-OBI-2** word-counts, the field `build_deck._chk_copy_density` measures against the **headline** band, the field `workbook_mapper._title_from_copy` prints as the workbook's slide title, and — through `AF-P-VERBATIM` — a string the image prompt must render **verbatim**.
+
+  **Measured on the live run, `pres-operator-1d269693`:** `slides_copy.md` line 140 carries the line, and slide 08's `copy[]` was
+
+  ```
+  ['MOVE TAG: TRIGGER', 'Submit Your First Request Now',
+   'The nine-question intake takes minutes, not an afternoon.', 'Telegram channel is open']
+  ```
+
+  — the real headline at index 1, every positional reader shifted by one. And the demand was **obeyed**: `working/prompts/slide-08.txt` contains the string `MOVE TAG` **exactly once**, while all seven other slide prompts contain it **zero** times. The per-slide art direction carried it too.
+
+  **Fix:** `MOVE TAG` joins the non-rendered field set in `slides_assembly._FIELD_LINE_RE`, **and the copy contract now says how to record the tags** — `MOVE TAG: [the ONE build-move beat this slide carries: PRIORITY_STACK | … | TRIGGER — engine metadata, NEVER rendered on the slide]` is added to the copy-block template in **both** `sops/slide-copywriter-sops.md` and `slide-copywriter.md`. Classifying the field without documenting it would have left the next writer to invent the form again; the contract mandates the information, so the contract must state the shape.
+
+  **Measured after the fix**, through the real extractor, slide 08's `copy[]` is exactly the schema's shape:
+
+  ```
+  ['Submit Your First Request Now',
+   'The nine-question intake takes minutes, not an afternoon.',
+   'Telegram channel is open']
+  ```
+
+  and the `slide-craft` **AF-OBI-1** (3-block ceiling) offender count across the deck went **8 slides → 2 → 1** (PD-TEST-169 took it to 2; this fix removes slide 8's). The single survivor is slide 1 at 5 blocks — three bullets under a headline and a subhead, a genuine density question, **not** claimed as fixed here.
+
+- **The leak was found by auditing rather than by guessing, and it is the only one in the live copy.** Every field-shaped line in the live `slides_copy.md` was enumerated and checked against the extractor: 15 distinct field names, and of them only `MOVE TAG` (×1) was unclassified. `HEADLINE` / `SUBHEAD` / `SUPPORTING` are not leaks — they are the **rendered** fields, whose values must reach `copy[]` while their labels must not (the rule PD-TEST-169 established).
+
+  **"Complete fix" was an overstatement and is corrected (independent review).** The classification is *name- and form-specific*. Measured on this fix, `copy[0]` still leaks for **7 of 11 realistic spellings** — `MOVE-TAG:`, `MOVE BEAT:`, `MOVETAG:`, `**MOVE TAG:**`, `- MOVE TAG:`, `> MOVE TAG:`, `1. MOVE TAG:`. Handled: `MOVE TAG:`, `MOVE  TAG:`, `MOVE TAG :`, lowercase. The root cause is pre-existing and generic: `_FIELD_LINE_RE` anchors `^\s*` but `_LEADING_MARKUP_RE` runs **after** it, so any decorated field line survives for *every* field, not just this one. The SOP now prescribes the plain form, so the live risk is low — but the honest claim is "the only leak in this copy", not "complete".
+
+  **Also disclosed (independent review): the live deck FAILS `AF-NO-SHIFT`.** Measured: *"only 4/8 build-move beat tags are present in slides_copy.md (need >=5 …)"* — `HIGHER_PRIORITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER`, doctrine active. So the invented `MOVE TAG: TRIGGER` line did **not** discharge the gate's demand on this deck; one line cannot satisfy a ≥5 rule. The narrative that the tag was recorded *to satisfy* `AF-NO-SHIFT` explains why the writer produced the line, but it does not mean the deck complied. Filed as PD-TEST-174.
+
+  **A tripwire that could not have caught it, now documented.** `tests/test_pd158_copy_metadata_not_rendered.py`'s `test_every_field_regex_token_is_a_contract_field` checks regex-token → contract-field, one direction only; and `test_every_contract_field_is_classified` reads its field list **from the SOP template** — which never mentioned `MOVE TAG`. A field the contract omits but the writer must emit is invisible to both. The template addition above closes that specific hole, and the fixture now carries the real `MOVE TAG: TRIGGER` line so the leak is pinned by `test_move_tag_never_becomes_the_headline`.
+
+  **Controls:** removing `MOVE TAG` from `_FIELD_LINE_RE` while leaving everything else intact fails **3** tests — `test_move_tag_never_becomes_the_headline`, `test_every_non_rendered_field_is_stripped_from_copy`, and `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` — versus 7 passed with the fix. The new test asserts the *positional* consequence (that `copy[0]` is the real headline), not merely that a string is absent.
+
+### Why It Mattered
+A slide whose headline is `MOVE TAG: TRIGGER` is not a styling defect — it is the engine's internal routing label occupying the single most important text position on the slide, in the demand list handed to the image model, and in the workbook's title field. It also silently shifted **every** positional consumer for that slide by one, so the word-count, density and craft gates were all grading the wrong strings. The copy phase had no way to avoid it: the gate required the information and the contract never said where to put it.
+
+## [v25.1.31]  -  2026-09-16  -  `copy[]` is the slide's TEXT, not a labelled form — so the engine stops demanding its own field labels be painted onto the slide
+
+### What Changed
+- **PD-TEST-169 — PD-TEST-158 got the metadata OUT of `copy[]` and left the LABELS in, so 8 of 8 slide prompts still failed on exactly that.** `slides.schema.json` defines `copy[]` as "The EXACT text that must appear rendered on the slide, in reading order. **Index 0 is treated as the HEADLINE**; remaining entries are subheads/body lines", and its own worked example is `["Northwind Co", "Three moves that doubled our pipeline in 90 days"]` — **bare text**. But `copy_lines()` preserved the `HEADLINE:` / `SUBHEAD:` prefixes, so `copy[]` looked like `["HEADLINE: Department First, or Back on Your Plate?", "EMPHASIS: Department First", "SUBHEAD: ..."]`. `AF-P-VERBATIM` then failed every slide because the *label* — a form artifact that is never pixels — was not baked into the image prompt. Measured live on `pres-operator-1d269693`: **4–6 `AF-P-VERBATIM` failures on every one of the 8 slides**, each naming a label-prefixed string as `required=`.
+
+  Two changes in `slides_assembly`:
+  1. **`EMPHASIS:` is now a non-rendered field.** The engine's OWN P4-PROMPT contract says the fields counting toward the on-slide word total are "exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING", and that "SECTION, PURPOSE, ARCHETYPE, LADDER, **EMPHASIS**, PROOF USED, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata **never rendered on the slide**". The accent word already appears inside the headline, so the `EMPHASIS` line was redundant for the renderer as well.
+  2. **`_LABEL_STRIP_RE` removes the `HEADLINE:` / `SUBHEAD:` / `SUPPORTING:` label and keeps the value.** A bare `SUPPORTING:` (label, no value) collapses to nothing — correct, since its bullets are their own lines beneath it.
+
+  Measured through the live verifier against the run's 8 real prompts: `AF-P-VERBATIM` failures went **4–6 per slide → 0 on every slide**; slides failing the whole prompt gate went **8/8 → 5/8**; slides **02, 03 and 05 now PASS**. The 3 residual failures are a *different* defect (prompt content: `AF-FACE-PROMPT-MISSING` / `AF-LIGHT-PROMPT-MISSING` / `AF-HAIR-INAUTHENTIC`), tracked separately and not claimed as fixed here.
+
+- **PD-TEST-163 — the positional gates were reading engine labels as slide text, and now read the real fields.** `copy[]` has positional consumers that assume the schema's shape: `build_deck._chk_copy_density` reads `fields[0]` as the headline, `[1]` the subhead, `[2]` the kicker and `[3:]` the bullets; `slide_craft.AF-OBI-2` (`check_obi_headline_words`) grades `copy[0]` as the headline. With labels present, those gates were grading `"HEADLINE: ..."` and — worse — `"EMPHASIS: Department First"` as the slide's *subhead*. After the fix `copy[0]` is the real 6-word headline, `copy[1]` the real subhead and `copy[2]` the first real bullet.
+
+  **Measured effect on `build_deck.AF-COPY-BAND`** (a *fatal* preflight — a non-empty return makes `build_deck` print `FATAL: PROCESS PREFLIGHT FAILED` and `sys.exit(3)`), run over the live run's own `slides_copy.md` at `850b81034` vs this commit:
+
+  | | slides with offenders | offender lines |
+  |---|---|---|
+  | before | **8 of 8** | 26 |
+  | after | **5 of 8** | 5 |
+
+  `SLIDE TOTAL` offenders fell **5 → 0** and `BULLET` offenders **9 → 0**. The 5 survivors are **not** fixed here: all five are `KICKER <n> over 40`, and on inspection they are a **copy-content** defect, not a gate defect — every one of the five is an *inline* `SUPPORTING:` value of 41–115 chars (slide 03's `Research helps you make better decisions.` clears the 40-char ceiling by **one** character), and the SOP defines `SUPPORTING` as "third text block if any — **stat, label, or CTA chip** — or NONE". Each also exceeds the 30-char bullet ceiling, so the verdict does not depend on which band is applied. Filed as PD-TEST-171.
+
+  **Correction to an earlier draft of this entry, and a defect this fix does NOT repair: slide 08's `copy[0]` is still `MOVE TAG: TRIGGER`, i.e. an engine metadata line is still that slide's HEADLINE.** The label strip does not touch it, because `MOVE TAG:` is a *different* field that `_FIELD_LINE_RE` has never listed. `slides_copy.md` line 140 carries it for slide 8 only, so every positional reader is shifted by one for that slide. Filed as **PD-TEST-173** and **not** claimed as fixed here.
+
+  **A claim I made about this was FALSE and is retracted (independent review).** An earlier draft said `AF-P-VERBATIM` "demanded `MOVE TAG: TRIGGER` be painted as the headline — and it was: `slide-08.txt` contains the string `MOVE TAG` exactly once". The count is right; the inference is not. `slide-08.txt:48` reads *"This beat carries the structural tag MOVE TAG: TRIGGER. … **Render nothing from that tag as visible artwork**, as a caption, or as a corner stamp."* — the writer mentioned the tag in a metadata section and **explicitly prohibited rendering it**, and the prompt's own VERBATIM COPY section lists only Headline / Emphasis / Subhead / Supporting. `AF-P-VERBATIM` is a substring-presence test, so a metadata mention satisfies it. Decisive: the live run's checkpoints carry **56 `AF-P-VERBATIM` failures and ZERO of them name `MOVE TAG`**. So the gate was *satisfied* for slide 8 and the tag was correctly quarantined — no metadata was ever painted onto that slide.
+
+  **The real harm, measured through the production gates, which is why the fix still stands:** `slide_craft` **AF-OBI-1** counts the metadata line as a text block (**8 slides → 2** with PD-TEST-169 → **1** with this fix, survivor slide 1 at 5 blocks), and `build_deck` **AF-COPY-BAND** stops grading slide 08's real subhead as an over-long `KICKER` (**5 → 4** failing fields). `slide_craft.check_aud_credentials` also scans `copy[1:]` as "non-headline", so it was scanning the real headline while exempting the metadata line.
+
+- **Two further fatal preflight failures were measured on the live copy and are NOT caused by, nor repaired by, this change — recorded so the delivery path is not mistaken for clear.** `build_deck.PREFLIGHT_REQUIRED` gates were run directly against the live run: **`AF-NO-SHIFT` fails** — `_chk_priority_shift` returns *"only 4/8 build-move beat tags are present in slides_copy.md (need >=5 of PRIORITY_STACK, PRESENT_COST, HIGHER_PRIORITY, VALUE_ANCHOR, URGENCY_SCARCITY, ABILITY_UNBLOCK, RERANK_DEMAND, TRIGGER)"* (doctrine active; `HIGHER_PRIORITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER` found; monotonic). Both are `sys.exit(3)` gates, so the copy phase reported success while producing copy that several later fatal preflights reject — filed as PD-TEST-174.
+
+  **Controls (each pinning one behaviour, so neither change can silently no-op):** reverting the label strip ⇒ `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` fails on the label half; removing `EMPHASIS` from `_FIELD_LINE_RE` ⇒ `test_every_non_rendered_field_is_stripped_from_copy` fails; the pre-existing reverse-direction tripwire (`test_every_field_regex_token_is_a_contract_field`) still proves no *invented* token silently deletes real copy.
+
+- **The same defect was reaching a DELIVERABLE, not just a gate: the workbook's slide titles were the labels.** `workbook_mapper._title_from_copy` documents itself as taking `copy[0]` *"verbatim"* and `_first_n_copy_lines` takes `copy[:n]` *"verbatim"* — so `copy[]` is the workbook's own text source. Measured on the live run's `working/copy/slides.json` vs the same block re-extracted through this fix, using the real workbook functions' own selection rules:
+
+  | | slides whose workbook title carried a field label or engine metadata |
+  |---|---|
+  | before | **8 of 8** |
+  | after | **0 of 8** |
+
+  Every one of the eight workbook titles was the literal string `"HEADLINE: <the real headline>"`, and `body[:3]` carried `HEADLINE:` / `EMPHASIS:` / `SUBHEAD:` as if they were workbook body text. Slide 08 remains `MOVE TAG: TRIGGER` — the PD-TEST-173 defect, here confirmed independently through a *second* consumer.
+
+- **`slides.schema.json` and the field regexes can no longer drift apart silently.** `tests/test_pd158_copy_metadata_not_rendered.py` reads the P4-COPY contract's own slide-block template out of `sops/slide-copywriter-sops.md` and asserts that **every** field it prescribes is classified here as either rendered or non-rendered, and that no token in `_FIELD_LINE_RE` names a field the contract never prescribes — the same tripwire shape that caught PD-TEST-156. A field added to the contract now fails this suite until someone decides whether it reaches the slide.
+
+### Why It Mattered
+`copy[]` is not a report — it is the **verbatim demand list** handed to the image model. Anything left in it is ordered to be painted into the pixels. So a label prefix is not cosmetic: it converts the engine's own form syntax into a QC failure that no writer can ever satisfy, because satisfying it would mean rendering the word "HEADLINE:" onto the client's slide. That is what kept 8 of 8 prompts red.
+
 ## [v25.1.30]  -  2026-09-16  -  The prompt fan-out is funded per slide, and budget exhaustion stops masquerading as a provider fault
 
 ### What Changed
