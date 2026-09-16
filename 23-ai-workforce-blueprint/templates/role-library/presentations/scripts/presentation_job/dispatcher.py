@@ -7383,7 +7383,7 @@ def _dispatch_phase_fanout_units(
                            "pay to re-author, so the bank is left INTACT and the "
                            "phase behaves as if no receipt were present. Re-issue "
                            f"with --reset-allowance >= {_n_units} (max "
-                           f"{DISPATCH_RETRY_CAP})."),
+                           f"{PHASE_TOTAL_PAID_HARD_CAP})."),
                 "allowance": _allowance, "units": _n_units,
             })
     if _force_reauthor:
@@ -9129,10 +9129,14 @@ def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: P
     if receipt.get("run") != str(run_dir.resolve()):
         return False, "repair receipt is for a different run"
     allowance = receipt.get("allowance")
+    # PD-TEST-182: the SAME ceiling the producer enforces. Leaving this at
+    # DISPATCH_RETRY_CAP would have made the fix inert -- authorize_paid_retry_reset
+    # would ISSUE a receipt for an 8-unit fan-out and this validator would then
+    # REJECT it as invalid, so the fan-out would still never re-author.
     if (isinstance(allowance, bool) or not isinstance(allowance, int)
-            or not 1 <= allowance <= DISPATCH_RETRY_CAP):
+            or not 1 <= allowance <= PHASE_TOTAL_PAID_HARD_CAP):
         return False, (f"repair receipt allowance is not an int in 1.."
-                       f"{DISPATCH_RETRY_CAP}")
+                       f"{PHASE_TOTAL_PAID_HARD_CAP}")
     ledger_generation = led.get("generation")
     if isinstance(ledger_generation, bool) or not isinstance(ledger_generation, int):
         return False, "repair receipt has no durable ledger generation to bind to"
@@ -9161,8 +9165,33 @@ def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) 
     installed dispatcher bytes, and prior ledger generation before any marker
     can be cleared.  The dispatcher consumes it exactly once.
     """
-    if allowance < 1 or allowance > DISPATCH_RETRY_CAP:
-        raise ValueError(f"allowance must be 1..{DISPATCH_RETRY_CAP}")
+    # PD-TEST-182 -- the ceiling is the PAID-BUDGET hard cap, NOT DISPATCH_RETRY_CAP.
+    #
+    # This receipt exists to fund RE-AUTHORING of the units a fan-out invalidates,
+    # and its consumer refuses to act unless the allowance covers ALL of them
+    # (`_n_units = len(wanted_items)`, then `if _allowance < _n_units` leaves the
+    # bank INTACT). Capping the allowance at DISPATCH_RETRY_CAP (3) made the
+    # requirement unsatisfiable for any fan-out larger than 3: on
+    # pres-operator-1d269693 P4-PROMPT has 8 units, so the engine demanded
+    # `allowance >= 8` while itself rejecting anything above 3, and its own
+    # refusal text asked the operator to re-issue with a value it would refuse.
+    # The run was therefore walled by an internal contradiction in its own
+    # recovery path -- no operator action could clear it.
+    #
+    # This is PD-TEST-124's theme in the recovery instrument: the fair-budget work
+    # gave the fan-out a bounded total of min(128, units + pool) precisely because
+    # the legacy per-phase cap of 3 starved an 8-unit fan-out, but the receipt that
+    # must fund the re-authoring was left on that same legacy ceiling.
+    #
+    # Spend stays bounded exactly as before: by PHASE_TOTAL_PAID_HARD_CAP (128),
+    # the same ceiling `_declare_phase_paid_budget` already enforces, and by the
+    # consumer's own `_allowance >= _n_units` check. The per-unit ceilings still
+    # bind at dispatch time.
+    if allowance < 1 or allowance > PHASE_TOTAL_PAID_HARD_CAP:
+        raise ValueError(
+            f"allowance must be 1..{PHASE_TOTAL_PAID_HARD_CAP} "
+            f"(PHASE_TOTAL_PAID_HARD_CAP; it must cover the units the receipt "
+            f"invalidates)")
     if os.getuid() != run_dir.stat().st_uid:
         raise PermissionError("local operator must own the run directory")
     with _phase_budget_transaction(run_dir, phase_id):
@@ -9759,7 +9788,16 @@ def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
             # record_outcome's rebuild dict (cited by symbol, not by line: the
             # line moved once already and a stale offset is how this recurs).
             receipt = _read_repair_receipt(run_dir, phase_id)
-            paid = DISPATCH_RETRY_CAP - receipt["allowance"]
+            # PD-TEST-182: `paid = DISPATCH_RETRY_CAP - allowance` assumed the
+            # allowance could never exceed DISPATCH_RETRY_CAP. With a fan-out
+            # sized receipt (up to PHASE_TOTAL_PAID_HARD_CAP) it would go
+            # NEGATIVE -- an 8-unit receipt would write paid_attempts = 3 - 8 = -5,
+            # and a negative phase counter makes the `paid >= cap` bound
+            # unsatisfiable, i.e. UNBOUNDED re-dispatch. The intent is to reopen
+            # the phase total by `allowance`; clamped at zero, "reopen by more
+            # than the cap" simply means "fully reopened", and the phase bound
+            # still governs from there.
+            paid = max(0, DISPATCH_RETRY_CAP - receipt["allowance"])
             led["generation"] = int(led.get("generation", 0)) + 1
             led["repair_receipt_consumed"] = True
             # PD-TEST-092: record the generation this receipt was spent FOR, so the

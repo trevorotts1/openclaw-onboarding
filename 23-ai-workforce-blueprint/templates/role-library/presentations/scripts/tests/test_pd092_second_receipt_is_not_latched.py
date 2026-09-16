@@ -292,7 +292,9 @@ class TestAllOtherClausesStillFailClosed:
         ("phase_id", "P-OTHER", "different phase"),
         ("run", "/tmp/not-this-run", "different run"),
         ("allowance", 0, "allowance"),
-        ("allowance", dj.DISPATCH_RETRY_CAP + 1, "allowance"),
+        # PD-TEST-182: above the ceiling the producer actually enforces
+        # (PHASE_TOTAL_PAID_HARD_CAP), not the legacy DISPATCH_RETRY_CAP.
+        ("allowance", dj.PHASE_TOTAL_PAID_HARD_CAP + 1, "allowance"),
         ("prior_generation", 42, "generation"),
         ("approved_input_revision", "moved", "input revision"),
         ("operator_uid", 99999, "owner"),
