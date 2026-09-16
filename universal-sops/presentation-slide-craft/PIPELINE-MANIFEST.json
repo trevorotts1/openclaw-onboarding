@@ -1069,8 +1069,7 @@
         "prompt-author-presentations-sops.md"
       ],
       "produces_artifact": [
-        "working/prompts/slide-*.txt",
-        "working/prompts/infographic-prompt.txt"
+        "working/prompts/slide-*.txt"
       ],
       "gate_codes": [
         "AF-PROMPT-FLOOR"
