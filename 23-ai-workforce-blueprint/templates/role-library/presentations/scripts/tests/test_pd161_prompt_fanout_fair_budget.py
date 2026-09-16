@@ -406,7 +406,11 @@ def test_execute_slide_really_runs_and_reaches_the_provider(tmp_path):
     calls = []
     scopes_seen = []
 
-    def fake_provider(slide, routing, attempt, rd, role, n_slides):
+    # PD-TEST-183 extended the provider seam with an OPTIONAL `prior_reasons`
+    # keyword (the failing checks from the previous attempt); a real stub must
+    # tolerate it.
+    def fake_provider(slide, routing, attempt, rd, role, n_slides,
+                      prior_reasons=None):
         # Record that the REAL worker got this far, and WHICH unit the paid scope
         # is bound to. `dispatch_complete` -- the layer that actually reserves --
         # is stubbed out here, so the scope binding is what this asserts; the

@@ -1,3 +1,19 @@
+## [v25.1.38]  -  2026-09-16  -  A retry is told WHICH check failed, not just that one did
+
+### What Changed
+- **PD-TEST-183 — a verifier failure was retried with a CONTENT-FREE instruction, and the live run is the proof that it does not work.** On retry the worker composed the next attempt's prompt as `"attempt {n} failed verification; re-author slide {ordinal}"` — naming neither the failing check nor the requirement. The engine **had** the real findings (the verify path records them as `attempt {n}: verify failed (AF-FACE-PROMPT-MISSING; …)`) but they went only to the attempt log, the settle outcome and the final report.
+
+  **Measured end to end on `pres-operator-1d269693`, 2026-09-16:** after PD-TEST-182's repair receipt was issued and consumed (`should_dispatch` returned `True` for the first time, `slide-01` re-authored at 17:47), the re-authored prompt **failed the same checks** — `AF-FACE-PROMPT-MISSING`, `AF-LIGHT-PROMPT-MISSING`, `AF-HAIR-INAUTHENTIC` — and **added `AF-WORLD-SCALE`**, spending the entire allowance plus the retry pool for the same non-result. A model told only *that* it failed has no signal about *which* token is missing, so it omits the same ones.
+
+  **Fix:** the provider seam gains an **optional** `prior_reasons` parameter, and `_execute_slide` passes the accumulated `base["_reasons"]` into it, so the composer can instruct the re-author to fix the **named** gap. Optional and defaulted, so the call stays backward-compatible; the in-repo stub in `test_pd161_prompt_fanout_fair_budget.py` is updated to tolerate it, and the seam-wide contract change is documented here rather than left implicit.
+
+  **Controls** (`tests/test_pd183_retry_carries_the_real_reasons.py`, 2 cases): with the fix **2 passed**; reverting the reasons-passing fails exactly the case that pins it (**1 failed / 1 passed**); a first attempt is still told nothing about failures. Neighbours re-run green: **48 passed** across pd161 + pd183 + pd179 + pd124.
+
+  **Harness note, recorded because it cost two rounds:** the composition happens in `_default_provider_call`, **not** `_execute_slide`. Replacing `ppw.provider_call` therefore skips the code under test and the capture comes back empty — stub one level lower, at `dispatcher.dispatch_complete`.
+
+### Why It Mattered
+This is the same masking family as PD-TEST-162 and PD-TEST-177: the durable record knows the real reason and the actor that could act on it is not told it. It also means **the next repair receipt would have been wasted the same way** — the engine would re-dispatch and reproduce the failure for the same spend. The one-shot operator instrument has to buy a different outcome, which requires the retry to carry the reason.
+
 ## [v25.1.37]  -  2026-09-16  -  The repair-receipt bound is described by the ceiling it actually enforces
 
 ### What Changed
