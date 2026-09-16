@@ -156,8 +156,66 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #: Engine metadata field lines that are NOT rendered copy. The P4-COPY contract
 #: requires both on the slide block, but slides.schema.json defines copy[] as
 #: "the EXACT text that must appear rendered on the slide" -- so these stay out.
+#:
+#: PD-TEST-158 (2026-09-16). The vocabulary below was INCOMPLETE, and that was not
+#: cosmetic: `copy[]` drives `build_deck._load_slide_copy_map` -> the
+#: AF-P-VERBATIM check, which FAILS a slide until every `copy[]` string is baked
+#: verbatim into the image prompt. So any metadata left in `copy[]` is not merely
+#: untidy -- the engine demands that its own bookkeeping be PAINTED ONTO THE
+#: SLIDE. Measured live on run pres-operator-1d269693, whose
+#: working/checkpoints/prompt-worker-results-attempts.jsonl carries:
+#:
+#:   AF-P-VERBATIM ... measured='copy not baked' required='SECTION: decision-rerank'
+#:   AF-P-VERBATIM ... measured='copy not baked' required='PURPOSE: Force the
+#:                     priority question out loud...'
+#:
+#: The list now matches the field vocabulary the P4-COPY contract actually
+#: prescribes (sops/slide-copywriter-sops.md step 2, which every field is
+#: mandatory in). Those NOT rendered on the slide, and therefore excluded:
+#:
+#:   SECTION        arc-section name (engine routing)
+#:   PURPOSE        the one big idea, a brief addressed to the WRITER
+#:   ARCHETYPE      A1-A5 layout id (design routing)
+#:   LADDER         offer-ladder position (commercial routing)
+#:   PROOF USED     proof-inventory item name
+#:   RESEARCH_USED  research_map item_ids
+#:   PEOPLE         yes/no + representation group
+#:   HOOK_REFRAIN   yes/no + where the hook sits
+#:   TEXT_ANCHOR    a layout token (bottom band | left block | ...)
+#:   PRESENTER NOTE the SOP says these are "sentences the speaker says aloud that
+#:                  are NOT on the slide"; demanding them be baked would put the
+#:                  presenter's script ON the slide, which SOP step 1 forbids
+#:   HOOK VARIANT   which hook variant was used (engine metadata)
+#:
+#: Deliberately STILL RENDERED, and therefore still in `copy[]`: HEADLINE,
+#: EMPHASIS, SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those
+#: are the slide's words. `EMPHASIS:` keeps its label because the live verifier
+#: demands `EMPHASIS: <word>` verbatim and prompts are already authored to it;
+#: dropping the label there is a separate, visibly-rendering change and is not
+#: bundled into a fix whose purpose is to stop METADATA reaching the slide.
 _FIELD_LINE_RE = re.compile(
-    r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS)\s*:")
+    r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
+    r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
+    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT)\s*:")
+
+#: ANY HTML comment is engine bookkeeping, not pixels -- not just the ARC marker.
+#: PD-TEST-158, review finding: the P4-COPY contract itself INSTRUCTS the writer
+#: to "flag the gap in a comment in slides_copy.md" (slide-copywriter SOP 9.1), so
+#: the live copy carries lines like
+#:     <!-- QC-NOTE: AF-NO-BRANDED-METHOD -- intake.json has no named_methodology -->
+#: `_ARC_MARKER_RE` matched ONLY `<!-- ARC: ... -->`, so those 12 comments survived
+#: into copy[] and AF-P-VERBATIM then demanded them be BAKED INTO THE IMAGE PROMPT.
+#: Measured on the live run: 12 QC-NOTE comments plus one `---` rule still reached
+#: copy[] after the first version of this fix, and on slide 8 two of the six
+#: remaining verbatim misses were these comments. Contract-sanctioned input, never
+#: rendered text.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+#: A standalone horizontal rule is markdown structure, not slide copy. The P4-COPY
+#: template wraps each slide block in `---` fences; `_LEADING_MARKUP_RE` never
+#: matched one, so a stray rule reached copy[] (live: slide 3) and was demanded
+#: verbatim like any other line.
+_RULE_LINE_RE = re.compile(r"^\s*-{3,}\s*$")
 
 #: Optional per-slide art-direction line inside a copy block. When the writer
 #: supplies one it is the honest scene; otherwise the scene is derived.
@@ -340,15 +398,22 @@ def style_directive(run_dir: Path) -> Optional[str]:
 def copy_lines(body: str) -> List[str]:
     """The RENDERED copy lines of one slide block, in reading order.
 
-    Strips ONLY what is not pixels: ARC marker syntax (engine metadata),
-    engine field lines (HOOK_REFRAIN/LADDER/RESEARCH_USED/...), and leading
-    markdown decoration. Every other character is preserved, because
-    ``_chk_research_map`` condition 3 matches research anchors as SUBSTRINGS of
-    the render copy and ``build_deck`` bakes these words verbatim.
+    Strips ONLY what is not pixels: ARC marker syntax and ALL other HTML
+    comments (engine bookkeeping -- the P4-COPY contract tells the writer to
+    leave QC notes in comments), standalone `---` rules (block structure),
+    engine field lines (HOOK_REFRAIN/LADDER/RESEARCH_USED/SECTION/PURPOSE/
+    PRESENTER NOTE/... -- the vocabulary the contract prescribes and the
+    engine's own P4-PROMPT contract calls "internal production metadata never
+    rendered on the slide"), and leading markdown decoration. Every other
+    character is preserved, because ``_chk_research_map`` condition 3 matches
+    research anchors as SUBSTRINGS of the render copy and ``build_deck`` bakes
+    these words verbatim.
     """
     out: List[str] = []
     for raw_line in body.splitlines():
-        line = _ARC_MARKER_RE.sub("", raw_line)
+        line = _HTML_COMMENT_RE.sub("", _ARC_MARKER_RE.sub("", raw_line))
+        if _RULE_LINE_RE.match(line):
+            continue
         if _FIELD_LINE_RE.match(line):
             continue
         line = _LEADING_MARKUP_RE.sub("", line).strip()
