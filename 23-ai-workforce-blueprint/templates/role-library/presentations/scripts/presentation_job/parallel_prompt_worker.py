@@ -647,6 +647,80 @@ def _sanitize(msg: str) -> str:
     return cleaned[:400]
 
 
+def _settle_missed(run_dir, slide_id) -> "Optional[str]":
+    """PD-TEST-187: did the settle we just made actually LAND?
+
+    A settle can die in two ways and only one of them raises.
+    `_settle_unit_paid_attempts` returns QUIETLY when there is nothing to settle
+    (dispatcher.py, `if not led: return`), so a phase id that reads an empty
+    ledger is a silent no-op; and a settle that records "ok" for a unit we
+    reported "failed" writes the wrong durable row while leaving the reservation
+    in flight -- the exact state that makes this unit's own retry resolve as
+    `budget_deferred`. Neither raises, so `except` alone cannot see them.
+
+    Assert the POST-CONDITION instead. Returns a human-readable reason when the
+    settle provably did not take effect, else None.
+
+    Failure to CHECK returns None (stay quiet): a bookkeeping probe must never
+    cry wolf, and must never break a unit.
+    """
+    try:
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import
+        led = dispatcher._read_ledger(run_dir, PHASE_ID)
+        if not isinstance(led, dict):
+            return None
+        rows = led.get(dispatcher.LEDGER_UNIT_OUTCOMES)
+    except Exception:  # noqa: BLE001 -- a probe that cannot read is not a finding
+        return None
+    if not isinstance(rows, dict):
+        return f"the ledger carries no {dispatcher.LEDGER_UNIT_OUTCOMES} table"
+    row = rows.get(str(slide_id))
+    if not isinstance(row, dict):
+        return f"no outcome row was recorded for {slide_id!r}"
+    if row.get("worker") != "p4prompt-unit":
+        return (f"the outcome row for {slide_id!r} was written by "
+                f"{row.get('worker')!r}, not by this settle")
+    if row.get("status") != "failed":
+        return (f"the outcome row for {slide_id!r} records status "
+                f"{row.get('status')!r}, but this attempt FAILED")
+    return None
+
+
+def _report_dead_settle(run_dir, slide_id, attempt: int, detail: str) -> None:
+    """PD-TEST-187: a dead per-attempt settle is AUDIBLE, on two channels.
+
+    stderr is read live; the phase sidecar is read after the fact. That is the
+    same pair this module's own `_announce_unleased_route` uses ("the log is only
+    read after the fact and stderr is only read live"), and the sidecar is where
+    the dispatcher's serial settle already records the same class of failure.
+
+    FAIL-SOFT throughout: bookkeeping must never break a unit, so even the
+    report itself is guarded, and the text is sanitised and length-bounded
+    (`_sanitize`) exactly like every other exception this module surfaces.
+    """
+    text = _sanitize(str(detail))
+    try:
+        print(f"WARNING: the per-attempt paid-attempt settle for {slide_id!r} "
+              f"(attempt {attempt}) did not take effect: {text}; the attempt that "
+              f"just ended stays reserved in flight, so this unit's own retry may "
+              f"resolve as budget_deferred", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- even the warning must not break a unit
+        pass
+    try:
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import
+        dispatcher._append_sidecar(run_dir, PHASE_ID, {
+            "status": "fanout_paid_settle_dead",
+            "unit": str(slide_id),
+            "attempt": int(attempt),
+            "reason": text,
+            "consequence": ("the attempt that just ended stays reserved in flight, "
+                            "so this unit's own retry can resolve as budget_deferred "
+                            "until a later settle succeeds"),
+        })
+    except Exception:  # noqa: BLE001 -- bookkeeping must never break a unit
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Artifact naming + atomic write + read-back verify.
 # ---------------------------------------------------------------------------
@@ -776,13 +850,34 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
             # FAIL-SOFT, deliberately: settling is bookkeeping and must never
             # break a unit. The dispatcher's post-wave settle still runs and is
             # idempotent over an already-settled row.
+            # PD-TEST-187 (independent review of #1169, then of the first version of
+            # this fix): a BARE `pass` here made a permanently dead settle
+            # indistinguishable from a working one. Measured: deleting this whole
+            # block, or mutating it four ways, leaves the repo's own neighbour
+            # suites GREEN at 46/46 while the end-to-end wave silently degrades to
+            # ONE provider call.
+            #
+            # The first version of this fix caught only a settle that RAISES, and
+            # adversarial review then proved that is the minority case: a settle
+            # whose phase id reads an empty ledger returns NORMALLY (dispatcher.py
+            # `if not led: return`), and one that records "ok" for a unit we
+            # reported "failed" also returns normally -- while writing the wrong
+            # durable row and leaving the reservation in flight. Both were still
+            # invisible, and the new test passed 2/2 under that mutant. So the
+            # POST-CONDITION is asserted as well: silence is not evidence.
+            #
+            # Still FAIL-SOFT: bookkeeping must never break a unit, so neither the
+            # check nor the report may raise out of here.
             try:
                 dispatcher._settle_unit_paid_attempts(
                     run_dir, PHASE_ID,
                     [(slide_id, "failed", list(base.get("_reasons") or []))],
                     worker_id="p4prompt-unit")
-            except Exception:  # noqa: BLE001 -- bookkeeping never breaks a unit
-                pass
+                missed = _settle_missed(run_dir, slide_id)
+            except Exception as exc:  # noqa: BLE001 -- bookkeeping never breaks a unit
+                missed = f"{type(exc).__name__}: {exc}"
+            if missed:
+                _report_dead_settle(run_dir, slide_id, attempt, missed)
         attempt += 1
         try:
             # PD-TEST-161: bind this ATTEMPT's paid reservation to THIS SLIDE.

@@ -1,3 +1,23 @@
+## [v25.1.41]  -  2026-09-16  -  A dead per-attempt paid-attempt settle is now audible instead of silent
+
+### What Changed
+- **PD-TEST-187 — the per-attempt settle introduced by PD-TEST-179 (#1169) swallowed every failure in a bare `except Exception: pass`, so a DEAD settle was indistinguishable from a working one.** Found by that PR's own adversarial review, which measured the consequence rather than arguing it: deleting the whole block, or mutating it four ways —
+
+  * a `str` instead of the outcome list → `TypeError` on **every** retry,
+  * a typo'd phase id → the settle targets a ledger that does not exist,
+  * `"ok"` instead of `"failed"` → the retry is refused as *"already succeeded … refusing to regenerate"*,
+
+  — **all leave the repo's own neighbour suites GREEN at 46/46 (pd179 + pd124 + pd161) while the end-to-end wave silently degrades to ONE provider call.** That is a return of the PD-TEST-177 defect with nothing anywhere saying so. The dispatcher's own settle failure records a consequence row; the worker's recorded nothing at all.
+
+  **Fix:** the settle stays **fail-soft** — bookkeeping must never break a unit — but a dead settle is now **reported on two channels**: stderr, which is read live, carrying the slide, the attempt and the (sanitised, length-bounded) reason; and the phase sidecar, which is read after the fact, under `fanout_paid_settle_dead` with the consequence spelled out. The diagnostic itself is guarded, so even the warning cannot break a unit.
+
+  **This fix was itself reviewed adversarially, and its first version was too narrow.** It caught only a settle that **raises** — and **two of the four mutants above never raise.** A settle whose phase id reads an empty ledger returns *normally* (`dispatcher.py`, `if not led: return`), and a settle that records `"ok"` for a unit we reported `"failed"` returns normally too, writing the wrong durable row and leaving the reservation in flight — the exact state that makes the unit's own retry resolve as `budget_deferred`. Both were still invisible, with the first version's tests passing 2/2 under that mutant. So the **post-condition is asserted as well**: after settling, the ledger is read back and the outcome row must exist, have been written by *this* settle, and record the status we asked for. An exception-only guard cannot see silence — and silence is the failure mode that matters here.
+
+  **Controls** (`tests/test_pd187_settle_failure_is_visible.py`, 5 cases): the raising settle, the **silent** settle (returns normally, settles nothing), the settle that records the **wrong** outcome, the sidecar row and its bounded reason, and a healthy settle staying quiet. Neutering only the post-condition — regressing to the except-only first version — turns the suite **3 failed / 2 passed**, so the silent cases are genuinely pinned rather than decorative. The tests also assert the fail-soft property directly: a settle failure must not abort the attempt sequence. Neighbours re-run green (91 passed across pd187 + pd179 + pd124 + pd161 + pd183 + pd068).
+
+### Why It Mattered
+The settle is the mechanism that lets a unit retry at all. Its failure mode was silence, which is the worst property a recovery mechanism can have: the suite stays green, the ledger looks fine, and the only symptom is that retries stop happening — the exact defect PD-TEST-179 was written to repair.
+
 ## [v25.1.40]  -  2026-09-16  -  The provider seam's env stub accepts the argument the worker now passes
 
 ### What Changed
