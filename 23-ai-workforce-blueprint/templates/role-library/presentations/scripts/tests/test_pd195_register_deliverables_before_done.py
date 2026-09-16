@@ -190,3 +190,62 @@ def test_register_deliverable_sends_the_TYPE_it_was_given():
         cc_board.register_deliverable("task-1", "https://x/y", env={},
                                       deliverable_type="banana")
         assert seen["payload"]["deliverable_type"] == "url", seen["payload"]
+
+
+def test_a_RE_RUN_does_not_re_POST_already_registered_artifacts(tmp_path):
+    """THE DEFECT THE REVIEW FOUND: the CC route is NOT idempotent.
+
+    `command-center .../deliverables/route.ts` mints a fresh `crypto.randomUUID()`
+    and does a plain INSERT -- no ON CONFLICT, no unique index -- then broadcasts
+    an SSE event. So re-registering the same artifact creates a DUPLICATE row.
+    The engine re-runs and re-admits phases by design, so the client must dedupe.
+    """
+    cc = _fake_cc()
+    bm, _, _ = _mirror(tmp_path, cc, artifacts=["working/prompts/slide-01.txt"])
+    for _ in range(3):  # a run, then two re-admissions
+        bm.child_report("P4-PROMPT", "t", "d", "done", "n",
+                        deliverables=["working/prompts/slide-01.txt"])
+    assert cc.patch_phase.call_count == 3, "every transition must still happen"
+    assert cc.register_deliverable.call_count == 1, (
+        "the artifact was re-POSTed on a later transition, which the CC route "
+        "turns into a duplicate deliverable row -- observed "
+        f"{cc.register_deliverable.call_count} POSTs for one file")
+
+
+def test_the_dedupe_survives_a_RESUME(tmp_path):
+    """The registry lives ON DISK, so a fresh BoardMirror still skips.
+
+    This is the case that actually produces duplicates: the duplicate comes from
+    a LATER process re-running the phase, not from two calls in one process.
+    """
+    cc = _fake_cc()
+    bm1, _, run_dir = _mirror(tmp_path, cc, artifacts=["working/a.txt"])
+    bm1.child_report("P4-PROMPT", "t", "d", "done", "n", deliverables=["working/a.txt"])
+    assert cc.register_deliverable.call_count == 1
+    assert (run_dir / "working" / "checkpoints"
+            / "cc-board-deliverables.json").exists(), "no on-disk registry"
+
+    # a NEW mirror over the SAME run dir == a resumed engine
+    cc2 = _fake_cc()
+    state = {"board": {"task_id": "parent-1"}, "job_id": "pj_test",
+             "intake": {"deck_slug": run_dir.name}}
+    board_module._cc_board = cc2
+    bm2 = board_module.BoardMirror(run_dir, state, mock.MagicMock(), _Reporter())
+    bm2._resolve_child_task_id = lambda phase_id: "child-1"
+    bm2.child_report("P4-PROMPT", "t", "d", "done", "n", deliverables=["working/a.txt"])
+    assert cc2.patch_phase.call_count == 1, "the transition must still happen"
+    assert cc2.register_deliverable.call_count == 0, (
+        "a RESUMED run re-registered an artifact already on the card")
+
+
+def test_distinct_artifacts_are_each_registered_once(tmp_path):
+    """Dedupe must key on the PATH, not collapse everything to one registration."""
+    cc = _fake_cc()
+    bm, _, _ = _mirror(tmp_path, cc,
+                       artifacts=["working/a.txt", "working/b.txt", "working/c.txt"])
+    bm.child_report("P4-PROMPT", "t", "d", "done", "n",
+                    deliverables=["working/a.txt", "working/b.txt", "working/c.txt"])
+    assert cc.register_deliverable.call_count == 3
+    bm.child_report("P4-PROMPT", "t", "d", "done", "n",
+                    deliverables=["working/a.txt", "working/b.txt", "working/c.txt"])
+    assert cc.register_deliverable.call_count == 3, "second pass must add nothing"

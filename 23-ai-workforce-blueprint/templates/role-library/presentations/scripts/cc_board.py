@@ -1506,8 +1506,8 @@ def register_deliverable(
         return False
 
     if 200 <= http_status < 300:
-        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
-             f"http={http_status}.")
+        _log(f"task {tid} deliverable registered: type={_dtype} "
+             f"path={artifact_url!r} http={http_status}.")
         return True
 
     _log(
