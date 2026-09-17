@@ -24,9 +24,10 @@ SCOPE (P2-08 (c) step 2, extended by D2 to close the sop/dept drain gap)
 ────────────────────────────────────────────────────────────────────────────
 Drains queue items where status == "STALE" and kind is "role", "sop" (D2), or
 "dept" (D2):
-  - role: unchanged since P2-08 (see refresh_one() below, MOVED VERBATIM from
-    the original single-kind consumer) — re-fills how-to.md from the role
-    library.
+  - role: re-fills how-to.md from the role library (refresh_one() below) AND
+    restamps artifactProvenance.roles[key] in .workforce-build-state.json
+    (2026-09-17: without that restamp the refilled role re-flags STALE on
+    every subsequent roll; see "THE RE-FLAGGING LOOP" below).
   - sop (D2): re-copies the dept-level SOP file bytes from
     templates/role-library/<dept>/sops/<fname> over the client's EXISTING
     copy under <resolved-dept-dir>/sops/<fname> (see refresh_sop()).
@@ -59,10 +60,14 @@ For each in-scope item:
   4. Overwrite ONLY how-to.md with the freshly filled + re-stamped content.
      IDENTITY.md / SOUL.md / MEMORY.md / HEARTBEAT.md are role-specific
      (never library-templated) and are NEVER touched.
+  4b. RESTAMP .workforce-build-state.json's artifactProvenance.roles[key] with
+     the content_sha / content_version / instantiatedAt carried by the marker
+     just written (2026-09-17 fix; see "THE RE-FLAGGING LOOP" below). Merged
+     into the SAME atomic build-state write as the sop/dept restamps.
   5. On success, the item is dropped from the queue (it is no longer
-     actionable — the fresh provenance marker now carries the CURRENT
-     content_sha, so a re-run of detect-stale-artifacts.py will classify
-     it CURRENT).
+     actionable: both the on-disk provenance marker AND the build-state
+     provenance record now carry the CURRENT content_sha, so a re-run of
+     detect-stale-artifacts.py will classify it CURRENT).
 
      On failure the item is left in the queue, a loud FAILED line is printed,
      THE DRAIN CONTINUES (one bad row never aborts it) — and the run is
@@ -98,6 +103,33 @@ Fully additive / idempotent / re-runnable: a role already CURRENT is not in
 the queue in the first place (detect-stale-artifacts.py only emits
 actionable items), so re-running this script when the queue is already
 drained is a no-op that prints "0 artifact(s) refreshed".
+
+────────────────────────────────────────────────────────────────────────────
+THE RE-FLAGGING LOOP THIS FILE ALSO FIXES (2026-09-17)
+────────────────────────────────────────────────────────────────────────────
+Step 5 above claimed a successful refresh returns the role to CURRENT. For a
+role it did not: the drain restamped artifactProvenance for kind=="sop" and
+kind=="dept" rows only, never for kind=="role". detect-stale-artifacts.py's
+FAST PATH (load_built_from_state) reads ONLY .workforce-build-state.json (its
+own comment calls that path filesystem-blind), so a role whose how-to.md had
+just been refilled kept its OLD source_content_sha in build state and was
+re-classified STALE on the very next run. The queue refilled it again, the
+drain reported REFRESHED again, and the roll's D2 completeness gate withheld
+the version stamp every time. One box sat on a single version with 10 roles
+looping exactly this way across five consecutive rolls.
+
+The fix restamps artifactProvenance.roles[key] with the content_sha /
+content_version / instantiatedAt from the provenance marker in the bytes the
+drain just wrote (falling back to the queue row's own "current" manifest sha),
+in the SAME atomic build-state write as the sop/dept restamps, in the same
+record shape build-workforce.py's _flush_artifact_provenance_to_state() writes
+for a fresh build. sop/dept/persona provenance is untouched by the change.
+
+A companion pin (see "ONE LIBRARY PER DRAIN" at the import block) guarantees
+the bytes written come from the SAME skill tree the queue was computed against:
+create_role_workspaces.py resolves the role-library with different precedence
+than this file does, and could otherwise refill how-to.md from an INSTALLED
+library while the restamp certified the sha of a DIFFERENT one.
 
 ────────────────────────────────────────────────────────────────────────────
 RETIRED-DEPARTMENT RECONCILIATION (2026-08-04 fix)
@@ -149,7 +181,8 @@ EXIT CODES
       this drain could not find, library content it could not produce, or an
       exception. For sop/dept rows: a real IO error re-copying a SOP, an
       unresolvable department directory, a malformed in-scope row, or a
-      .workforce-build-state.json restamp write failure (D2). The drain
+      .workforce-build-state.json restamp write failure (D2); the restamp
+      covers refreshed ROLE rows too since 2026-09-17. The drain
       still ran to completion (one bad row never aborts it); this code only
       tells the caller the completeness contract was NOT met. Also writes
       <workspace>/.artifact-refresh-receipt.json {ok, refreshed, skipped,
@@ -191,6 +224,36 @@ def _resolve_skill_dir() -> Path:
 SKILL_DIR = _resolve_skill_dir()
 SCRIPTS = SKILL_DIR / "scripts"
 LIBRARY = SKILL_DIR / "templates" / "role-library"
+
+# ── ONE LIBRARY PER DRAIN (2026-09-17) ───────────────────────────────────────
+# This module and create_role_workspaces.py resolve the skill directory with
+# DIFFERENT precedence, so in one process they can disagree about WHICH
+# role-library is authoritative:
+#   here  -> $OPENCLAW_SKILL23_DIR, then the directory this script was RUN
+#            from, then ~/.openclaw/skills/..., then /data/.openclaw/skills/...
+#   there -> $ROLE_LIBRARY_PATH, then $OPENCLAW_WORKSPACE_PATH/skills/...,
+#            then the INSTALLED skills dir detect_platform resolves, then the
+#            directory the MODULE was imported from.
+# The installed-dir probe is third there and absent here, so a drain executed
+# from any tree that is NOT the installed skills dir re-fills how-to.md out of
+# the INSTALLED library while LIBRARY (this file's SOP source) and the queue
+# rows this drain consumes came from the tree it was run from. Two trees that
+# differ by even one library addition then produce "library_fill produced no
+# usable content" for exactly the roles the newer tree added -- a drain that
+# fails only for the newest roles, with no other symptom, while the same
+# command run from the installed tree succeeds.
+# Correctness needs the same pin independently: the role provenance restamped
+# below records the manifest sha this queue was computed against, so the BYTES
+# written must come from that same manifest's library or the restamp would
+# certify content this box never received.
+# ROLE_LIBRARY_PATH is create_role_workspaces.py's OWN documented,
+# highest-precedence override, so pinning it makes both resolvers agree without
+# changing that module. An operator who set it explicitly still wins, and a
+# SKILL_DIR carrying no library index is never pinned (crw's own fallback chain
+# stays in charge).
+if not os.environ.get("ROLE_LIBRARY_PATH", "").strip() and (LIBRARY / "_index.json").is_file():
+    os.environ["ROLE_LIBRARY_PATH"] = str(SKILL_DIR)
+
 sys.path.insert(0, str(SCRIPTS))
 import create_role_workspaces as crw  # type: ignore  # noqa: E402
 
@@ -388,8 +451,86 @@ def find_role_dir(dept_dir: Path, role_slug: str):
     return None
 
 
-def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: bool):
-    """Attempt to refresh one STALE role artifact. Returns (ok, detail, retired).
+# ── ROLE PROVENANCE RESTAMP (2026-09-17 fix) ─────────────────────────────────
+# detect-stale-artifacts.py's FAST PATH (load_built_from_state) reads ONLY
+# .workforce-build-state.json's artifactProvenance -- its own comment calls that
+# path filesystem-blind. So rewriting how-to.md WITHOUT restamping
+# artifactProvenance.roles["<dept>/<slug>"] leaves the box's recorded
+# source_content_sha at its old value: the very next detect run re-classifies
+# the freshly-refilled role STALE, this drain refills it again, and the roll's
+# D2 completeness gate withholds the version stamp forever. That is not
+# hypothetical -- a live box sat on one version with 10 roles in exactly this
+# loop while every roll reported the refresh as REFRESHED.
+#
+# The sha restamped is the one carried by the provenance marker try_library_fill
+# just stamped into the bytes written to disk, so the state file and the
+# artifact can never disagree about what this box holds. The queue row's own
+# "current" -- the manifest sha detect-stale-artifacts.py resolved when it
+# produced the row, and the exact value the sop/dept branches restamp -- is the
+# fallback when a marker cannot be read.
+_PROV_LINE_RE = re.compile(r"workforce-provenance:")
+_PROV_FIELD_RE = re.compile(r"(\w[\w-]*)=([^\s]+)")
+
+
+def _parse_provenance_marker(text):
+    """Parse the workforce-provenance marker line -> {field: value}, or {}.
+    Same marker grammar and 50-line scan depth detect-stale-artifacts.py's
+    parse_provenance_marker() uses, so the writer and the reader of this marker
+    can never disagree about what a field is called."""
+    for line in str(text or "").split("\n", 50)[:50]:
+        if _PROV_LINE_RE.search(line):
+            return dict(_PROV_FIELD_RE.findall(line))
+    return {}
+
+
+def _role_provenance_record(filled, dept_slug: str, role_slug: str, current_sha):
+    """Build the artifactProvenance.roles[...] record for a just-refreshed role.
+
+    Same shape build-workforce.py's _flush_artifact_provenance_to_state() writes
+    for a fresh build (source_content_sha / source_content_version /
+    instantiatedAt / sourcePath), plus the restamped_at + generator audit pair
+    the sibling sop/dept restamps in this file already carry, so a reader can
+    tell a drain restamp from a build stamp.
+
+    Returns None when no usable sha can be established at all (no marker in the
+    filled content AND no manifest sha on the queue row). The caller treats that
+    as an in-scope failure: a refresh whose provenance cannot be restamped
+    leaves the role re-flagging STALE on every future roll, which is the whole
+    defect this restamp exists to close."""
+    fields = _parse_provenance_marker(filled)
+    sha = fields.get("content_sha")
+    if not sha or sha.endswith("UNKNOWN"):
+        sha = current_sha if isinstance(current_sha, str) and current_sha.strip() else None
+    if not sha:
+        return None
+    m_slug = fields.get("role-slug") or role_slug
+    m_dept = fields.get("dept") or dept_slug
+    source_path = ""
+    try:
+        _doc, _entry = crw.library_lookup(m_slug, m_dept)
+        if isinstance(_entry, dict):
+            source_path = _entry.get("path") or ""
+    except Exception:
+        source_path = ""   # cosmetic field; never fail a restamp over it
+    return {
+        "source_content_sha": sha,
+        "source_content_version": fields.get("content_version"),
+        "instantiatedAt": fields.get("instantiated")
+                          or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "sourcePath": source_path,
+        "restamped_at": datetime.now(timezone.utc).isoformat(),
+        "generator": "refresh-stale-roles.py",
+    }
+
+
+def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: bool,
+                current_sha=None):
+    """Attempt to refresh one STALE role artifact.
+    Returns (ok, detail, retired, provenance).
+
+    provenance is the artifactProvenance.roles[...] record for the content just
+    written (None on every non-ok path, and on the defensive case where no sha
+    could be established at all) -- see _role_provenance_record().
 
     ok=False, retired=False is ALWAYS a genuine failure of this drain's
     completeness contract, never a benign skip: a STALE role row is
@@ -412,13 +553,13 @@ def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: 
                 f"explicit, provenance-gated owner decline in .workforce-build-state.json "
                 f"(canonical_decline.py); its absence on disk is the box's recorded intent, "
                 f"not a gap. Dropping the stale queue entry."
-            ), True
+            ), True, None
         return False, (f"UNRESOLVABLE department directory for '{dept_slug}/{role_slug}' — "
                         f"looked for '{dept_slug}', '{dept_slug}-dept', and any normalized "
                         f"match under {workspace / 'departments'}; the queue says this role "
                         f"is STALE on this box but its department is not on disk, and no "
                         f"provenance-gated owner-decline record explains the absence, so a "
-                        f"DETECTED gap cannot be filled — FAILING loudly, nothing written"), False
+                        f"DETECTED gap cannot be filled — FAILING loudly, nothing written"), False, None
 
     role_dir = find_role_dir(dept_dir, role_slug)
     if role_dir is None:
@@ -426,7 +567,7 @@ def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: 
                         f"{dept_dir} — the queue says this role is STALE on this box "
                         f"(so it was tracked as present), but its folder is gone; this "
                         f"drain never fabricates a role folder (that is floor-fill's "
-                        f"MISSING job) — FAILING loudly so the roll can act on it"), False
+                        f"MISSING job) — FAILING loudly so the roll can act on it"), False, None
 
     is_ceo = (norm(role_slug) == "master-orchestrator")
     role_name = label or role_slug.replace("-", " ").title()
@@ -446,13 +587,17 @@ def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: 
         return False, (f"library_fill produced no usable content for "
                         f"'{dept_slug}/{role_slug}' (no library match, or fill below "
                         f"the 3072B floor) — the role is queued STALE but cannot be "
-                        f"refilled — FAILING loudly, existing how-to.md left untouched"), False
+                        f"refilled — FAILING loudly, existing how-to.md left untouched"), False, None
 
     how_to = role_dir / "how-to.md"
     if apply_:
         how_to.write_text(filled, encoding="utf-8")
+    # The restamp record is derived from the SAME bytes just written, so the
+    # build-state fast path and the on-disk marker can never disagree about
+    # which library content this box now holds.
+    prov = _role_provenance_record(filled, dept_slug, role_slug, current_sha)
     return True, (f"{dept_slug}/{role_slug} -> {dept_dir.name}/{role_dir.name}/how-to.md "
-                  f"({len(filled.encode('utf-8'))}B)"), False
+                  f"({len(filled.encode('utf-8'))}B)"), False, prov
 
 
 def find_dept_dir(workspace: Path, dept_slug: str):
@@ -525,19 +670,25 @@ def refresh_sop(workspace: Path, dept_slug: str, sop_slug: str, apply_: bool):
                   f"({len(content.encode('utf-8'))}B)"), False, False
 
 
-def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: dict) -> bool:
-    """Additively merge freshly-refreshed sop/dept source_content_sha values
-    into .workforce-build-state.json's artifactProvenance (D2), leaving
-    artifactProvenance.roles / .personas — and everything else in the state
-    file — completely untouched.
+def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: dict,
+                          role_restamps: dict = None) -> bool:
+    """Additively merge freshly-refreshed role/sop/dept source_content_sha values
+    into .workforce-build-state.json's artifactProvenance, leaving
+    artifactProvenance.personas — and everything else in the state file —
+    completely untouched.
 
     sop_restamps / dept_restamps are {key -> {"source_content_sha": ..., ...}}
     maps built by main() from the queue rows' own "current" sha (the
     manifest sha detect-stale-artifacts.py already resolved when it produced
-    the queue). Returns True on success, False on a genuine state-write
-    failure — NEVER raises, so a poisoned/unwritable state file cannot abort
-    the drain; the caller decides whether that failure is in-scope-fatal."""
-    if not sop_restamps and not dept_restamps:
+    the queue). role_restamps (2026-09-17) is the same map for refreshed roles,
+    each record built by _role_provenance_record() from the provenance marker in
+    the bytes that were actually written; it is merged in THIS SAME atomic write
+    so a role's content and its recorded provenance can never land separately.
+    Returns True on success, False on a genuine state-write failure — NEVER
+    raises, so a poisoned/unwritable state file cannot abort the drain; the
+    caller decides whether that failure is in-scope-fatal."""
+    role_restamps = role_restamps or {}
+    if not sop_restamps and not dept_restamps and not role_restamps:
         return True
     state_path = workspace / ".workforce-build-state.json"
     try:
@@ -550,12 +701,14 @@ def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: di
         ap = state.get("artifactProvenance")
         if not isinstance(ap, dict):
             ap = {}
-        ap.setdefault("roles", {})
         ap.setdefault("personas", {})
+        roles = dict(ap.get("roles") or {})
         sops = dict(ap.get("sops") or {})
         depts = dict(ap.get("depts") or {})
+        roles.update(role_restamps)
         sops.update(sop_restamps)
         depts.update(dept_restamps)
+        ap["roles"] = roles
         ap["sops"] = sops
         ap["depts"] = depts
         state["artifactProvenance"] = ap
@@ -634,7 +787,7 @@ def main(argv=None):
     skipped = 0
     failed_inscope = 0
     remaining_items = []
-    state_updates = {"sops": {}, "depts": {}}
+    state_updates = {"sops": {}, "depts": {}, "roles": {}}
 
     for it in items:
         if not isinstance(it, dict):
@@ -659,13 +812,35 @@ def main(argv=None):
 
             dept_slug, role_slug = key.split("/", 1)
             try:
-                ok, detail, retired = refresh_one(workspace, dept_slug, role_slug, it.get("label"), args.apply)
+                ok, detail, retired, prov = refresh_one(
+                    workspace, dept_slug, role_slug, it.get("label"), args.apply,
+                    it.get("current"))
             except Exception as e:  # a poisoned entry must NEVER abort the drain
-                ok, detail, retired = False, f"EXCEPTION refreshing '{key}': {e}", False
+                ok, detail, retired, prov = False, f"EXCEPTION refreshing '{key}': {e}", False, None
 
             if ok:
                 refreshed += 1
                 print(f"  refresh-stale-roles: REFRESHED {detail}")
+                # Rewriting how-to.md is only HALF the repair. detect-stale's
+                # fast path reads .workforce-build-state.json and nothing else,
+                # so without this restamp the refilled role is re-classified
+                # STALE on the very next roll and the D2 gate withholds the
+                # version stamp forever. Queued here and merged into the SAME
+                # atomic build-state write as the sop/dept restamps below.
+                if args.apply:
+                    if prov:
+                        state_updates["roles"][key] = prov
+                    else:
+                        # Defensive: try_library_fill() always stamps a marker,
+                        # so this needs BOTH an unreadable marker and a queue row
+                        # with no manifest sha. The bytes landed, but the role
+                        # would re-flag STALE forever -- say so, never swallow it.
+                        failed_inscope += 1
+                        print(f"  refresh-stale-roles: FAILED no usable content_sha to restamp "
+                              f"artifactProvenance.roles['{key}'] (no provenance marker in the "
+                              f"refilled content and no 'current' sha on the queue row) -- "
+                              f"how-to.md WAS refreshed but this role will re-flag STALE on the "
+                              f"next roll", file=sys.stderr)
             elif retired:
                 # The department carries a provenance-gated owner decline
                 # (2026-08-04 fix): its absence is the box's recorded intent,
@@ -817,11 +992,14 @@ def main(argv=None):
             print(f"  refresh-stale-roles: WARN could not rewrite queue file {queue_path}: {e}",
                   file=sys.stderr)
 
-    # Merge sop/dept provenance restamps AFTER the queue rewrite above (D2) --
-    # additive-only, never touches artifactProvenance.roles / .personas.
-    if state_updates["sops"] or state_updates["depts"]:
-        if not _apply_state_restamps(workspace, state_updates["sops"], state_updates["depts"]):
-            failed_inscope += len(state_updates["sops"]) + len(state_updates["depts"])
+    # Merge role/sop/dept provenance restamps AFTER the queue rewrite above --
+    # ONE atomic build-state write, additive-only, never touches
+    # artifactProvenance.personas or any unrelated key.
+    if state_updates["sops"] or state_updates["depts"] or state_updates["roles"]:
+        if not _apply_state_restamps(workspace, state_updates["sops"], state_updates["depts"],
+                                     state_updates["roles"]):
+            failed_inscope += (len(state_updates["sops"]) + len(state_updates["depts"])
+                               + len(state_updates["roles"]))
 
     # "role" belongs here. Omitting it was the second half of the silent-success
     # defect: with the role branch excluded, a run that failed to refresh EVERY

@@ -1,3 +1,5 @@
+## [v25.1.45]  -  2026-09-17  -  Rescue Rangers reachability train: 15 client-reported issues fixed, podcast activation, updater hardening, Command Center v7.4.1 pin
+
 ## [v25.1.44]  -  2026-09-17  -  The speech fallback fails over the CREDENTIAL, not just the model
 
 ### What Changed

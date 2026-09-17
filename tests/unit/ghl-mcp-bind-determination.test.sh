@@ -56,8 +56,12 @@ trap cleanup EXIT
 # it must RUN FROM THE BOX for the fixture pin (and its port) to win over the
 # repo's real one. Copying it there is also closer to how it runs on a box:
 # delivered into $OC_ROOT/scripts/ with $OC_ROOT/config/ as its sibling.
-mkdir -p "$BOX/mcp" "$BOX/config" "$BOX/logs" "$BOX/scripts"
+mkdir -p "$BOX/mcp" "$BOX/config" "$BOX/logs" "$BOX/scripts/lib"
 cp "$GATE" "$BOX/scripts/ghl-mcp-assert-runtime.sh"
+# The gate derives platform and paths from the shared library beside it and
+# refuses to guess when it is absent, so the simulated box carries it, in the
+# same shape a delivered $OC_ROOT/scripts/ tree has.
+cp "$(dirname "$GATE")/lib/ghl-mcp-paths.sh" "$BOX/scripts/lib/ghl-mcp-paths.sh"
 BOX_GATE="$BOX/scripts/ghl-mcp-assert-runtime.sh"
 
 pinfile() {  # pinfile <port>

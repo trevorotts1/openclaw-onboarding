@@ -415,12 +415,27 @@ build_pinned() {
   else
     _lock_sha="$(shasum -a 256 "$tmp/package-lock.json" 2>/dev/null | awk '{print $1}')"
   fi
+  #   * NODE_ENV MUST NOT REACH THE COMPILE INSTALL. npm >= 11.19 turns
+  #     NODE_ENV=production into `omit=dev`, so the compile install dropped
+  #     typescript and `npm run build` failed with "Cannot find package
+  #     'typescript'" on exactly the boxes whose npm had crossed that version.
+  #     Same fix and same reasoning as scripts/ghl-mcp-autostart.sh: unset it
+  #     for the compile, pass --include=dev (include beats omit), restore
+  #     NODE_ENV=production for the prune and for every launch surface.
   (
     cd "$tmp" || exit 1
-    npm ci --ignore-scripts --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
+    unset NODE_ENV
+    npm ci --include=dev --ignore-scripts --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
+    if [ ! -d node_modules/typescript ] && [ ! -x node_modules/.bin/tsc ]; then
+      exit 3
+    fi
     npm run build >>"$RUNLOG" 2>&1 || exit 1
-    npm ci --omit=dev --ignore-scripts --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
-  ) || rc=1
+    NODE_ENV=production npm ci --omit=dev --ignore-scripts --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
+  ) || rc=$?
+  if [ "$rc" = "3" ]; then
+    log "BUILD REFUSED: 'npm ci --include=dev' completed but node_modules/typescript is ABSENT. 'npm run build' would fail with \"Cannot find package 'typescript'\" (npm >= 11.19 NODE_ENV=production -> omit=dev). Existing dist/ left UNTOUCHED."
+    rm -rf "$tmp"; return 1
+  fi
   if [ "$rc" != "0" ] || [ ! -s "$tmp/dist/main.js" ] || ! grep -q 'connect(transport)' "$tmp/dist/main.js" 2>/dev/null; then
     log "BUILD FAILED or unusable dist — existing dist/ left UNTOUCHED"
     rm -rf "$tmp"; return 1

@@ -4,6 +4,59 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.0.2] - 2026-09-17: runtime checks derive the install path from the OpenClaw root, know linux-home, and build with dev dependencies
+
+### Fixed
+- **The runtime gate was failing healthy boxes.** Measured on two client
+  containers: the pm2 app was online under a root-persisted `PM2_HOME`,
+  `/health` answered with 43 tools, and the build stamp matched the pinned
+  commit, yet `scripts/ghl-mcp-assert-runtime.sh` exited 1 and the updater
+  exited 2 with "GHL MCP Tier 2 MISCONFIGURED". Three separate causes, all of
+  them in the checks rather than on the box.
+- **Install path is derived, not hardcoded.** Both scripts pinned the install
+  to `/data/mcp-servers` or `$HOME/mcp-servers`. On the client-container shape
+  only the OpenClaw root and its workspace are bind-mounted, so
+  `$HOME/mcp-servers` is destroyed on every recreate and the working installs
+  live under the root. The install directory now resolves as
+  `<OpenClaw root>/mcp-servers/ghl-community-mcp`, with both legacy locations
+  accepted when they carry a build stamp, so no box in the field is asked to
+  rebuild for a path change.
+- **The gate knew two platforms where the autostart script knew three.** Under
+  a comment claiming the derivations were identical, the gate had no
+  `linux-home` branch, so a Linux container with no `/data` was judged as a Mac
+  and failed for the absence of two launchd plists that nothing on it could
+  ever load. Platform, root, install directory, log directory and `PM2_HOME`
+  now come from one sourced library, `scripts/lib/ghl-mcp-paths.sh`, which also
+  canonicalizes the root so a `/data` that is really a symlink into `$HOME`
+  reads as the single physical root it is.
+- **`PM2_HOME` is part of the address of the app.** pm2 keeps one process list
+  per home, so inspecting with the default home reported "app not found" about
+  an app that was online. The autostart script now pins and creates the
+  root-persisted home before it starts pm2, carries it explicitly on the
+  `@reboot pm2 resurrect` cron line, and the gate exports it before inspecting.
+- **The build lost its dev dependencies on npm 11.19 and later.** npm 11.19
+  turns `NODE_ENV=production` into `omit=dev`; every launch surface this skill
+  writes sets `NODE_ENV=production`, so a roll that inherited it installed 106
+  packages instead of about 415 and the TypeScript build died with "Cannot find
+  package 'typescript'". npm 11.13 did not. The compile install now runs with
+  `NODE_ENV` unset and `--include=dev`, a guard fails loud when `typescript` is
+  absent afterwards, and the production prune and runtime stay on
+  `NODE_ENV=production`. Same fix in the VPS overlay start script.
+- **The periodic-probe check now reads both schedulers.** The autostart script
+  registers the probe in the OpenClaw cron store when a box has no usable
+  crontab, and the gate only ever looked at crontab.
+
+### Added
+- `scripts/lib/ghl-mcp-paths.sh`, the one derivation of platform and paths,
+  sourced by both consumers.
+- `tests/unit/ghl-mcp-paths-lib.test.sh`, covering the resolver (root-derived first,
+  stamped legacy fallback, unstamped legacy rejected, symlinked `/data`), the
+  three platforms, `PM2_HOME` selection, and a static assert that both scripts
+  still source the library.
+- `tests/unit/ghl-mcp-assert-runtime.test.sh` section (L), where a healthy
+  `linux-home` container must pass with no launchd assertion at all, an
+  unsupervised one must still fail, and a probe in the cron store counts.
+
 ## [2.0.1] - 2026-09-15 — liveness probe: no self-inflicted restarts, one alert per outage, operator off-switch
 
 ### Changed

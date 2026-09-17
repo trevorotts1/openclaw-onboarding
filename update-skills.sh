@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.44"
+ONBOARDING_VERSION="v25.1.45"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1821,7 +1821,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.44 - safe_json_edit
+# v25.1.45 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9297,7 +9297,43 @@ PYEOF
   _HARDENING="$_PERSIST_SCRIPTS/install-hardening.sh"
   [ -f "$_HARDENING" ] || _HARDENING="$ONBOARDING_DIR/scripts/install-hardening.sh"
   if [ -f "$_HARDENING" ]; then
-    bash "$_HARDENING" 2>&1 | tail -5 || true
+    # STREAMED, BRACKETED HARDENING LOG (defect fix, 2026-09-17).
+    # The old call was `bash "$_HARDENING" 2>&1 | tail -5 || true`. `tail` cannot
+    # emit a single byte until the producer exits, so when the hardening step
+    # wedged (an unbounded `brew install` blocked in a pseudo-terminal read) the
+    # roll log simply STOPPED -- not one hardening line, no marker, nothing to
+    # distinguish a hang from a slow step. Operators read a days-old stuck roll
+    # as "finished quietly".
+    #
+    # Fix, three parts:
+    #   1. A `[hardening] started` marker goes to the console AND the roll log
+    #      BEFORE the work, so the log always shows the step was entered.
+    #   2. Output streams through `tee` into a dedicated per-run hardening log
+    #      and on into the roll log. `tee` writes each chunk as it arrives, so a
+    #      hang now leaves a visible, growing, `tail -f`-able partial log instead
+    #      of silence.
+    #   3. A `[hardening] finished rc=<n>` marker closes the bracket. A started
+    #      marker with no finished marker IS the hang signature.
+    # The last 5 lines are still summarised to the console afterwards, which is
+    # all the old `tail -5` ever delivered.
+    _HARDENING_LOG="${LOG_FILE%.log}-hardening.log"
+    _HARDENING_RCFILE="${TMPDIR:-/tmp}/openclaw-hardening-rc.$$"
+    rm -f "$_HARDENING_RCFILE"
+    printf '  [hardening] started %s -> %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$_HARDENING_LOG" | tee -a "$LOG_FILE"
+    {
+      _HARDENING_RC_INNER=0
+      bash "$_HARDENING" 2>&1 || _HARDENING_RC_INNER=$?
+      echo "$_HARDENING_RC_INNER" > "$_HARDENING_RCFILE"
+    } | tee -a "$_HARDENING_LOG" >> "$LOG_FILE" || true
+    # An unreadable rc file means UNDETERMINED, not success -- say so, never
+    # print a rc=0 we did not observe.
+    _HARDENING_RC="$(cat "$_HARDENING_RCFILE" 2>/dev/null || true)"
+    [ -n "$_HARDENING_RC" ] || _HARDENING_RC="unknown"
+    rm -f "$_HARDENING_RCFILE"
+    printf '  [hardening] finished rc=%s\n' "$_HARDENING_RC" | tee -a "$LOG_FILE"
+    if [ -f "$_HARDENING_LOG" ]; then
+      tail -n 5 "$_HARDENING_LOG" 2>/dev/null | sed 's/^/    /' || true
+    fi
     echo "  ✓ Install hardening complete"
   else
     echo "  ℹ install-hardening.sh not in bundle — skipping (older bundle, harmless)"
