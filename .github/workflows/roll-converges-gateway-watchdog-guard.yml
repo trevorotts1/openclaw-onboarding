@@ -1,0 +1,127 @@
+name: roll-converges-gateway-watchdog-guard
+
+# Fails the build if the fleet roll stops converging the Mac gateway health
+# watchdog, or if the watchdog regresses on either of the two states it now
+# heals.
+#
+# THE INCIDENT. platform/mac/service-selfheal/install-service-remediate.sh lays
+# down remediate.sh, gateway-health-watchdog.sh and the
+# com.openclaw.service-remediate LaunchAgent that drives them every 5 minutes.
+# Only install.sh (first-time onboarding) and
+# 38-conversational-ai-system/scripts/14-install-cloudflared-service.sh ever ran
+# it. update-skills.sh, the one thing that touches every box on every release,
+# never did. A detached OpenClaw 2026.9.2 to 2026.9.4 upgrade stops the gateway
+# LaunchAgent for the whole update and restarts it only if the update finishes:
+# 10 to 20 minutes routinely, one box spent 8 minutes inside a single git clone,
+# and a third stalled and sat dark for about two hours with nothing restarting
+# it. On that box launchctl list showed no com.openclaw.service-remediate and
+# ~/.openclaw/service-env/ held no gateway-watchdog.sh at all.
+#
+# Two further defects the same suite locks:
+#   * kickstart -k against a BOOTED-OUT label does nothing, and installing the
+#     watchdog had REMOVED the gateway's only bootstrap (remediate.sh delegates
+#     its whole gateway leg to the watchdog the moment the watchdog exists).
+#   * OpenClaw 2026.9.x refuses to start the gateway while a legacy JSON session
+#     store is on disk, so restarting it just re-hits the same refusal.
+#
+# Fully offline: temp HOME, a fake checkout, and launchctl / curl / openclaw
+# stubs on PATH. No launchd, no network, no live box, no credentials.
+#
+# Security note: consumes only repo file content. No GitHub event fields reach
+# any run: block, so there is no workflow-injection surface here.
+
+on:
+  push:
+    paths:
+      - update-skills.sh
+      - platform/mac/service-selfheal/**
+      - tests/unit/roll-converges-gateway-watchdog.test.sh
+      - tests/unit/full-update-path-contract.test.sh
+      - .github/workflows/roll-converges-gateway-watchdog-guard.yml
+  pull_request:
+    paths:
+      - update-skills.sh
+      - platform/mac/service-selfheal/**
+      - tests/unit/roll-converges-gateway-watchdog.test.sh
+      - tests/unit/full-update-path-contract.test.sh
+      - .github/workflows/roll-converges-gateway-watchdog-guard.yml
+  workflow_dispatch:
+
+jobs:
+  roll-converges-gateway-watchdog-guard:
+    name: Fleet roll must converge the Mac gateway health watchdog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check every file in the blast radius
+        run: |
+          bash -n update-skills.sh
+          bash -n platform/mac/service-selfheal/install-service-remediate.sh
+          bash -n tests/unit/roll-converges-gateway-watchdog.test.sh
+          bash -n tests/unit/full-update-path-contract.test.sh
+          # These two are /bin/sh files. Check them with sh, not bash.
+          sh -n platform/mac/service-selfheal/gateway-health-watchdog.sh
+          sh -n platform/mac/service-selfheal/remediate.sh
+
+      - name: The roll converges the watchdog, and the watchdog heals both dead states
+        run: bash tests/unit/roll-converges-gateway-watchdog.test.sh
+
+      - name: The update-path contract still holds
+        run: bash tests/unit/full-update-path-contract.test.sh
+
+      - name: Meta-check 1 - removing the converge from the roll must go RED
+        run: |
+          cp update-skills.sh /tmp/us.orig
+          python3 - <<'PY'
+          p = "update-skills.sh"
+          lines = open(p, encoding="utf-8").read().split("\n")
+          a = lines.index("  # ---- BEGIN gateway-watchdog converge ----")
+          b = lines.index("  # ---- END gateway-watchdog converge ----")
+          open(p, "w", encoding="utf-8").write("\n".join(lines[:a] + lines[b + 1:]))
+          PY
+          if bash tests/unit/roll-converges-gateway-watchdog.test.sh >/dev/null 2>&1; then
+            echo "::error::VACUOUS TEST - the suite still passes with the converge block deleted from update-skills.sh."
+            cp /tmp/us.orig update-skills.sh
+            exit 1
+          fi
+          echo "OK: the suite goes RED when the roll stops converging the watchdog."
+          cp /tmp/us.orig update-skills.sh
+
+      - name: Meta-check 2 - reverting the watchdog to kickstart-only must go RED
+        run: |
+          cp platform/mac/service-selfheal/gateway-health-watchdog.sh /tmp/wd.orig
+          python3 - <<'PY'
+          p = "platform/mac/service-selfheal/gateway-health-watchdog.sh"
+          s = open(p, encoding="utf-8").read()
+          needle = '      if launchctl print "gui/$(id -u)/$lbl" >/dev/null 2>&1; then'
+          assert needle in s, "booted-out branch not found - update this meta-check"
+          s = s.replace(needle, "      if true; then", 1)
+          open(p, "w", encoding="utf-8").write(s)
+          PY
+          if bash tests/unit/roll-converges-gateway-watchdog.test.sh >/dev/null 2>&1; then
+            echo "::error::VACUOUS TEST - the suite still passes with a dead-and-booted-out gateway left unhealable."
+            cp /tmp/wd.orig platform/mac/service-selfheal/gateway-health-watchdog.sh
+            exit 1
+          fi
+          echo "OK: the suite goes RED when the booted-out bootstrap is removed."
+          cp /tmp/wd.orig platform/mac/service-selfheal/gateway-health-watchdog.sh
+
+      - name: Meta-check 3 - dropping the migration-gate clear must go RED
+        run: |
+          cp platform/mac/service-selfheal/gateway-health-watchdog.sh /tmp/wd2.orig
+          python3 - <<'PY'
+          p = "platform/mac/service-selfheal/gateway-health-watchdog.sh"
+          s = open(p, encoding="utf-8").read()
+          needle = "  clear_session_store_migration_gate || true\n"
+          assert s.count(needle) == 1, "migration-gate call not found - update this meta-check"
+          open(p, "w", encoding="utf-8").write(s.replace(needle, "", 1))
+          PY
+          if bash tests/unit/roll-converges-gateway-watchdog.test.sh >/dev/null 2>&1; then
+            echo "::error::VACUOUS TEST - the suite still passes with the 2026.9.x session-store gate never cleared."
+            cp /tmp/wd2.orig platform/mac/service-selfheal/gateway-health-watchdog.sh
+            exit 1
+          fi
+          echo "OK: the suite goes RED when the migration-gate clear is removed."
+          cp /tmp/wd2.orig platform/mac/service-selfheal/gateway-health-watchdog.sh

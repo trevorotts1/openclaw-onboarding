@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.45"
+ONBOARDING_VERSION="v25.1.46"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1821,7 +1821,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.45 - safe_json_edit
+# v25.1.46 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -8581,6 +8581,96 @@ with open('${_MANIFEST_TMP}', 'w') as f:
       echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
     fi
   fi
+
+  # ---- BEGIN gateway-watchdog converge ----
+  # (tests/unit/roll-converges-gateway-watchdog.test.sh extracts this block
+  #  verbatim between these two anchors and drives it. Keep the anchors.)
+  #
+  # CONVERGE: Mac SERVICE self-heal + gateway-health watchdog (no sudo).
+  #
+  # THE DEFECT THIS CLOSES. platform/mac/service-selfheal/install-service-remediate.sh
+  # lays down remediate.sh, gateway-health-watchdog.sh and the
+  # com.openclaw.service-remediate LaunchAgent that drives them every 5 minutes.
+  # Before this block, only install.sh (first-time onboarding) and
+  # 38-conversational-ai-system/scripts/14-install-cloudflared-service.sh ever
+  # ran it. The fleet roll, which is the only thing that touches every box on
+  # every release, never did. So a box onboarded before that installer shipped,
+  # or one whose LaunchAgent was booted out and never re-bootstrapped, rolls
+  # forever with no safety net over a dark gateway.
+  #
+  # That matters because a detached OpenClaw upgrade STOPS the gateway
+  # LaunchAgent for the whole update and only restarts it if the update
+  # finishes. Measured on Mac fleet boxes: 10 to 20 minutes routinely, one box
+  # spent 8 minutes inside a single git clone, and a third stalled outright and
+  # sat dark for about two hours with nothing restarting it.
+  #
+  # CONVERGENCE, NOT INSTALLATION. When remediate.sh and gateway-watchdog.sh on
+  # disk already match this bundle byte for byte, the plist exists, and the
+  # LaunchAgent is loaded, nothing is touched and the roll prints
+  # already-current. Otherwise the installer runs (it is itself fully
+  # idempotent) and the roll prints installed.
+  #
+  # SCOPE. Mac login user only. Skipped inside a container, on a VPS, and when
+  # running as root: com.openclaw.service-remediate is a per-user GUI-domain
+  # LaunchAgent, and gui/0 is not the client's session. The VPS equivalent is
+  # platform/vps/service-selfheal/install-host-watchdog-cron.sh, which an
+  # operator runs on the Docker host.
+  #
+  # FAIL-SOFT BY CONSTRUCTION. Every failure path prints state=warn and returns.
+  # It never fails the roll and never withholds the version stamp. No
+  # declaration key is involved: the rescue-tunnel converge this mirrors
+  # registers none either, because both artifacts are launchd jobs keyed by
+  # their own Label, not `openclaw cron` jobs keyed by a declaration key.
+  _GWWD_STATE="skipped-not-mac"
+  _GWWD_WHY=""
+  if [ "${OPENCLAW_PLATFORM:-}" != "mac" ]; then
+    _GWWD_WHY="platform=${OPENCLAW_PLATFORM:-unknown}"
+  elif [ -d "/data/.openclaw" ]; then
+    _GWWD_WHY="container: /data/.openclaw is present, so this is not a login-user Mac"
+  elif [ "$(id -u)" = "0" ]; then
+    _GWWD_WHY="running as root; the self-heal is a per-user GUI LaunchAgent and gui/0 is not the client session"
+  else
+    _SELFHEAL_DIR="$EXTRACTED_DIR/platform/mac/service-selfheal"
+    _SELFHEAL_INSTALLER="$_SELFHEAL_DIR/install-service-remediate.sh"
+    if [ ! -f "$_SELFHEAL_INSTALLER" ]; then
+      _GWWD_STATE="warn"
+      _GWWD_WHY="installer not in this bundle ($_SELFHEAL_INSTALLER); older onboarding bundle"
+    else
+      # $EXTRACTED_DIR is removed at Cleanup a few hundred lines below, so stage
+      # a persistent copy. Without it the remedy line in the warn case would
+      # name a path that no longer exists by the time anyone reads the log.
+      _GWWD_STAGED_DIR="$OC_CONFIG/scripts/service-selfheal"
+      mkdir -p "$_GWWD_STAGED_DIR" 2>/dev/null || true
+      for _gwwd_f in install-service-remediate.sh remediate.sh gateway-health-watchdog.sh com.openclaw.service-remediate.plist.template; do
+        if [ -f "$_SELFHEAL_DIR/$_gwwd_f" ]; then
+          cp -f "$_SELFHEAL_DIR/$_gwwd_f" "$_GWWD_STAGED_DIR/$_gwwd_f" 2>/dev/null || true
+        fi
+      done
+      chmod +x "$_GWWD_STAGED_DIR"/*.sh 2>/dev/null || true
+
+      _GWWD_SVC_DIR="$HOME/.openclaw/service-env"
+      _GWWD_PLIST="$HOME/Library/LaunchAgents/com.openclaw.service-remediate.plist"
+      if cmp -s "$_SELFHEAL_DIR/remediate.sh" "$_GWWD_SVC_DIR/remediate.sh" \
+         && cmp -s "$_SELFHEAL_DIR/gateway-health-watchdog.sh" "$_GWWD_SVC_DIR/gateway-watchdog.sh" \
+         && [ -f "$_GWWD_PLIST" ] \
+         && launchctl print "gui/$(id -u)/com.openclaw.service-remediate" >/dev/null 2>&1; then
+        _GWWD_STATE="already-current"
+        _GWWD_WHY="remediate.sh and gateway-watchdog.sh match this bundle and com.openclaw.service-remediate is loaded"
+      elif bash "$_SELFHEAL_INSTALLER" >>"$LOG_FILE" 2>&1; then
+        _GWWD_STATE="installed"
+        _GWWD_WHY="com.openclaw.service-remediate every 300s; gateway-watchdog.sh in $_GWWD_SVC_DIR"
+      else
+        _GWWD_STATE="warn"
+        _GWWD_WHY="install-service-remediate.sh returned non-zero (see $LOG_FILE); re-run by hand: bash $_GWWD_STAGED_DIR/install-service-remediate.sh"
+      fi
+    fi
+  fi
+  if [ -n "$_GWWD_WHY" ]; then
+    echo "  [GATEWAY-WATCHDOG] state=$_GWWD_STATE ($_GWWD_WHY)"
+  else
+    echo "  [GATEWAY-WATCHDOG] state=$_GWWD_STATE"
+  fi
+  # ---- END gateway-watchdog converge ----
 
   # ----------------------------------------------------------
   # LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root).
