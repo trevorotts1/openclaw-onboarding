@@ -2,6 +2,41 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-17 - fix(workforce): refresh-stale-roles restamps role provenance so refilled roles stop re-flagging STALE
+
+`refresh-stale-roles.py` rewrote a STALE role's `how-to.md` from the role
+library and reported `REFRESHED`, but restamped `.workforce-build-state.json`'s
+`artifactProvenance` for `kind=="sop"` and `kind=="dept"` rows only, never for
+`kind=="role"`. `detect-stale-artifacts.py`'s fast path reads that state file
+and nothing else (its own comment calls the path filesystem-blind), so the
+refilled role kept its OLD `source_content_sha`, was re-classified STALE on the
+very next run, and the roll's D2 completeness gate withheld the version stamp.
+One box sat on a single version with 10 roles looping this way across five
+consecutive rolls, every roll printing `REFRESHED` for them.
+
+- `refresh_one()` now returns the provenance record for the bytes it wrote,
+  built from the `workforce-provenance` marker `try_library_fill()` stamped into
+  those bytes (falling back to the queue row's own `current` manifest sha), in
+  the same record shape `build-workforce.py`'s
+  `_flush_artifact_provenance_to_state()` writes for a fresh build.
+- `_apply_state_restamps()` merges role restamps in the SAME atomic build-state
+  write as sop/dept, so content and provenance can never land separately.
+  `artifactProvenance.personas` and every unrelated state key are untouched.
+- A role refreshed with no establishable sha counts against the completeness
+  contract instead of being reported as a clean refresh.
+- ONE LIBRARY PER DRAIN: `create_role_workspaces.py` resolves the role-library
+  with different precedence than this consumer does (it probes the INSTALLED
+  skills dir; the consumer probes the directory it was run from), so a drain run
+  from any other tree refilled `how-to.md` out of a different library than the
+  queue it was consuming, producing `library_fill produced no usable content`
+  for exactly the roles the running tree had added. The consumer now pins
+  `ROLE_LIBRARY_PATH` to its own resolved `SKILL_DIR`, which an explicitly-set
+  operator value still overrides.
+- `tests/unit/refresh-stale-roles.test.sh` gains scenarios 17-22: end-to-end
+  refresh-then-`detect-stale-artifacts.py`-says-CURRENT, the sha landing in both
+  the marker and build state, a control proving sop/dept/persona records survive
+  byte-identical, dry-run restamps nothing, and the library-pin pair.
+
 ## v22.0.31 — durable jq resolution on container boxes
 
 - The container image does not ship `jq`, and a distro-installed `jq` vanishes on
