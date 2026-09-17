@@ -18,6 +18,14 @@
 #   (default) RESOLVE -- resolve every tier from the client's OWN openclaw.json and
 #                        write model-map.json into OUT_DIR (fail-closed, never a
 #                        <CLIENT_*> placeholder and never a guessed default).
+#                        OWNER PINS: a top-level "owner_pins" object in an existing
+#                        OUT_DIR/model-map.json ({"HEAVY-WRITER": "<client model id>"})
+#                        survives re-resolution. Each pin is validated like any
+#                        resolved link (Anthropic-deny + provider support + the
+#                        client's OWN inventory), placed at order 1 of that role's
+#                        chain with the auto-resolved links kept as fallbacks, and
+#                        carried forward verbatim. An invalid pin FAILS CLOSED
+#                        (exit 2, AF-AE-UNRESOLVED-MODELMAP); never silently dropped.
 #   --check           -- PRE-GATE: read an existing OUT_DIR/model-map.json and
 #                        fail-closed if it still carries <CLIENT_*> placeholders
 #                        (AF-AE-UNRESOLVED-MODELMAP) or an Anthropic-family id
@@ -442,6 +450,106 @@ if unresolved_optional:
           % ", ".join(sorted(unresolved_optional)),
           file=sys.stderr)
 
+# --------------------------------------------------------------------------
+# OWNER PINS. RESOLVE rewrites model-map.json unconditionally and update-skills.sh
+# re-runs preflight on every roll, so a hand-tuned chain was clobbered by the next
+# update. An owner may PIN a role to one of the CLIENT's OWN models by adding a
+# top-level "owner_pins" object to the resolved model-map.json:
+#
+#     "owner_pins": { "HEAVY-WRITER": "ollama/kimi-k2.6:0711-cloud" }
+#
+# Each pin is validated through the SAME checks an auto-resolved link passes
+# (Anthropic-deny, to_link provider support, and membership in the client's OWN
+# configured inventory), then placed at ORDER 1 of that role's chain with the
+# auto-resolved links kept behind it as ordered fallbacks. owner_pins is carried
+# forward verbatim into the written map so the NEXT roll honors it again. A pin
+# that fails any check FAILS CLOSED (exit 2, AF-AE-UNRESOLVED-MODELMAP); a pin is
+# never silently dropped, downgraded, or rewritten. Pins are applied BEFORE the
+# JUDGE-independence invariant, so a pin that collapses JUDGE onto HEAVY-WRITER is
+# caught here at resolve, never mid-run at S9 Gate B.
+# --------------------------------------------------------------------------
+existing_map = {}
+existing_path = os.path.join(OUT_DIR, "model-map.json")
+if os.path.isfile(existing_path):
+    try:
+        existing_map = json.load(open(existing_path, encoding="utf-8"))
+    except Exception as exc:
+        # An unreadable map is NOT fail-closed: the resolver's job is to write a good
+        # one, and a truncated map must still self-heal on the next roll exactly as it
+        # did before owner pins existed. Any pins it carried are unrecoverable, so say
+        # so LOUDLY rather than losing them quietly.
+        print("WARNING: the existing model-map.json at %s is unreadable or invalid JSON (%s). "
+              "It is being re-resolved from scratch. If it carried an owner_pins block, those "
+              "pins are GONE and must be re-added to the rewritten map."
+              % (existing_path, exc), file=sys.stderr)
+        existing_map = {}
+owner_pins = existing_map.get("owner_pins") if isinstance(existing_map, dict) else None
+if owner_pins is not None and not isinstance(owner_pins, dict):
+    print("AF-AE-UNRESOLVED-MODELMAP: owner_pins in %s must be an OBJECT mapping role name to "
+          "model id (got %s). Fix the block and re-run."
+          % (existing_path, type(owner_pins).__name__), file=sys.stderr)
+    sys.exit(2)
+owner_pins = owner_pins or {}
+inventory_by_low = {m.strip().lower(): m for m in inventory}
+pinnable = sorted(n for n in resolved_tiers if n != "IMAGE")
+
+for role, pinned in sorted(owner_pins.items()):
+    if not isinstance(pinned, str) or not pinned.strip():
+        print("AF-AE-UNRESOLVED-MODELMAP: owner pin for role %r is not a model-id string. "
+              "Each owner_pins value must be one of the client's OWN configured model ids."
+              % role, file=sys.stderr)
+        sys.exit(2)
+    pin = pinned.strip()
+    if role == "IMAGE":
+        print("AF-AE-UNRESOLVED-MODELMAP: owner_pins names the IMAGE tier, which is a Kie cover "
+              "route and not an LLM chain, so it carries no pinnable model. Remove "
+              "owner_pins.IMAGE and re-run. Pinnable roles on this box: %s."
+              % ", ".join(pinnable), file=sys.stderr)
+        sys.exit(2)
+    if role not in resolved_tiers:
+        print("AF-AE-UNRESOLVED-MODELMAP: owner_pins names role %r, which this box does not "
+              "resolve. Pinnable roles on this box: %s."
+              % (role, ", ".join(pinnable) or "(none)"), file=sys.stderr)
+        sys.exit(2)
+    if banned.search(pin):
+        # The denied id is deliberately NOT echoed back.
+        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin for %s names a DENIED model family. "
+              "The engine never runs an Anthropic-family model. Pin one of the client's OWN "
+              "non-Anthropic models and re-run." % role, file=sys.stderr)
+        sys.exit(2)
+    if pin.lower() not in inventory_by_low:
+        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin %s -> %s is NOT one of the client's OWN "
+              "configured models, so the engine refuses to route to it. Add the model to the "
+              "client's openclaw.json or pin one it already carries. Client models discovered: %s"
+              % (role, pin, ", ".join(inventory) or "(none)"), file=sys.stderr)
+        sys.exit(2)
+    link = to_link(inventory_by_low[pin.lower()])
+    if not link:
+        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin %s -> %s names a provider the anthology "
+              "router does not carry. Pin a model on one of: %s."
+              % (role, pin, ", ".join(sorted(PROVIDER_META))), file=sys.stderr)
+        sys.exit(2)
+
+    chain = resolved_tiers[role].get("chain", [])
+    pin_key = (link["provider"], link["model"])
+    # The template primary's maxTokens belongs to whichever link is primary, so it
+    # moves onto the pin rather than staying on the link the pin displaced.
+    carried_max = None
+    for existing_link in chain:
+        if existing_link.get("maxTokens"):
+            carried_max = existing_link.pop("maxTokens")
+            break
+    primary = dict(link)
+    if carried_max:
+        primary["maxTokens"] = carried_max
+    new_chain = [primary]
+    new_chain.extend(l for l in chain
+                     if (l.get("provider"), l.get("model")) != pin_key)
+    for i, l in enumerate(new_chain):
+        l["order"] = i + 1
+    resolved_tiers[role]["chain"] = new_chain
+    print("  owner pin honored: %s -> %s" % (role, pin))
+
 # Resolution-time JUDGE independence invariant (AF-AE-JUDGE-INDEPENDENCE). A judge
 # may not grade its own draft, so the JUDGE tier must NOT resolve to the same primary
 # model as HEAVY-WRITER. For a THIN single-model client the REQUIRED-tier fallback
@@ -473,6 +581,11 @@ resolved = {
     "tiers": resolved_tiers,
     "no_formatter_tier": True,
 }
+
+# Carry owner_pins forward VERBATIM so the next roll honors the same pins (the
+# resolver rewrites this file on every update; an unpreserved pin would be lost).
+if owner_pins:
+    resolved["owner_pins"] = owner_pins
 
 # Carry forward provider_caps from the template so the runtime cap is active.
 template_caps = tmpl.get("provider_caps")
