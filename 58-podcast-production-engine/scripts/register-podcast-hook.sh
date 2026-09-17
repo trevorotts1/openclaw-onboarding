@@ -66,6 +66,15 @@
 #     resolver walks the payload with an empty path list and JSON-stringifies
 #     the object it lands on. {{payload}} renders EMPTY (there is no whole-body
 #     alias); single fields are {{field}} or {{payload.field}}.
+#     PROVED BY EXECUTION on OpenClaw 2026.9.4, not by reading: importing the
+#     installed dist/hooks-*.mjs and calling its exported applyHookMappings with
+#     a flat survey body returns message "BODY=" for {{payload}} and the full
+#     JSON object for {{.}}. The reason is in resolveTemplateExpr: "payload" is
+#     not one of the special prefixes, so it falls through to
+#     getByPath(ctx.payload, "payload"), which looks for a key literally NAMED
+#     payload inside the body. Anyone "fixing" {{.}} to the more natural-looking
+#     {{payload}} ships a hook that wakes the agent with an empty payload block,
+#     and the failure is silent: the turn runs, the handler gets nothing.
 #   * hooks.enabled REQUIRES hooks.token, and when hooks.defaultSessionKey is
 #     unset the prefix allow-list MUST also contain "hook:" or the gateway
 #     refuses to start ("hooks.allowedSessionKeyPrefixes must include 'hook:'
@@ -236,7 +245,7 @@ log() { printf '%s\n' "$*" >&2; }
 die() { local code="$1"; shift; log "HARD STOP ($code): $*"; exit "$code"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$EX_REFUSED" "missing dependency: $1"; }
 
-usage() { sed -n '2,218p' "$0" | sed 's/^# \{0,1\}//' >&2; }
+usage() { sed -n '2,227p' "$0" | sed 's/^# \{0,1\}//' >&2; }
 
 
 # --------------------------------------------------------------------------- #
