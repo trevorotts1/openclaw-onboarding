@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # ghl-mcp-assert-runtime.sh — v21.6.0
 #
+# 2026-09-17 (skill 36 v2.0.2): THIS GATE WAS FAILING HEALTHY BOXES.
+# Measured on two client containers: pm2 app ghl-community-mcp online under a
+# root-persisted PM2_HOME, http://127.0.0.1:8765/health answering with 43 tools,
+# build stamp on the pinned commit, and this gate exited 1, so the updater
+# exited 2 with "GHL MCP Tier 2 MISCONFIGURED". Three causes, all of them in
+# the gate rather than on the box:
+#   * it derived the install path as /data/mcp-servers or $HOME/mcp-servers,
+#     neither of which is where a bind-mounted container keeps Tier 2;
+#   * it knew two platforms where the autostart script knew three, so a Linux
+#     container was judged as a Mac and failed for two absent launchd plists;
+#   * it inspected pm2 with the default PM2_HOME, which reports "app not found"
+#     about an app that is online under another home.
+# Paths and platform now come from scripts/lib/ghl-mcp-paths.sh, the same
+# library ghl-mcp-autostart.sh sources, and PM2_HOME comes from it too.
+#
 # RUNTIME conformance gate for the GHL Community MCP (Tier 2, skill 36).
 # It asserts what is ACTUALLY INSTALLED AND RUNNING ON THIS BOX.
 #
@@ -31,10 +46,15 @@
 # verdict — "FAIL" without the number it saw is not a diagnosis)
 #
 #   1  service definition present for this platform
-#      Mac  : ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist
-#      VPS  : pm2 app `ghl-community-mcp`, else /etc/systemd/system/ghl-mcp.service,
-#             else a LIVE FALLBACK B supervise loop AND a green /health (slim
-#             containers with neither pm2 nor systemd — PASS-with-warning)
+#      mac        : ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist  (Darwin only)
+#      vps and
+#      linux-home : pm2 app `ghl-community-mcp` (under the derived PM2_HOME),
+#             else /etc/systemd/system/ghl-mcp.service, else a LIVE FALLBACK B
+#             supervise loop AND a green /health (slim containers with neither
+#             pm2 nor systemd: PASS-with-warning). linux-home is a HOME-layout
+#             Linux box: a client container, or one whose /data is a symlink
+#             back into $HOME. It has no launchd, and ghl-mcp-autostart.sh never
+#             writes it a plist, so this gate must never ask for one.
 #   2  it launches the CRASH-ONLY LAUNCHER (.ghl-mcp-launch.sh), not node directly
 #   3  crash-only supervision:
 #      Mac  : KeepAlive is a DICT with SuccessfulExit=false — never <true/>
@@ -52,7 +72,9 @@
 #      qc-assert-ghl-mcp-supervised.sh CHECK 8 forbids re-registering it, and
 #      ghl-mcp-autostart.sh deregister_tier2() removes it on every run.)
 #  11  the periodic probe is installed AND its path exists (a cron line pointing
-#      at a deleted script is a silently dead probe)
+#      at a deleted script is a silently dead probe). Off Darwin, EITHER the OS
+#      crontab or the OpenClaw cron store counts, because autostart uses the store when
+#      the box has no usable crontab, which is the common container shape.
 #  12  no log in $LOG_DIR exceeds GHL_MCP_LOG_MAX_BYTES * 1.5
 #  13  the listener is bound to LOOPBACK, not 0.0.0.0  — WARN by default
 #      ⚠️ WARN, NOT FAIL, and deliberately so: the pinned upstream build binds
@@ -106,25 +128,51 @@ _info() { [ "$QUIET" = "0" ] && printf '[ghl-mcp-runtime] INFO  %s\n' "$*"; retu
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-# ── Platform + canonical paths (identical derivation to ghl-mcp-autostart.sh) ─
-if [ -f /data/.openclaw/openclaw.json ]; then
-  PLATFORM="vps"
-  OC_ROOT="/data/.openclaw"
-  MCP_DIR="/data/mcp-servers/ghl-community-mcp"
-  LOG_DIR="/data/logs"
-else
-  PLATFORM="mac"
-  OC_ROOT="$HOME/.openclaw"
-  MCP_DIR="$HOME/mcp-servers/ghl-community-mcp"
-  LOG_DIR="$HOME/Library/Logs/ghl-mcp"
+# ── Platform + canonical paths: THE SAME DERIVATION, not a copy of it ────────
+# This block used to be a hand-maintained duplicate of the one in
+# ghl-mcp-autostart.sh, introduced by a comment that said "identical derivation
+# to ghl-mcp-autostart.sh". It was not identical, and the difference was the
+# whole bug: autostart knew vps | mac | linux-home, this gate knew vps | mac, so
+# a Linux container with no /data was judged as a Mac and failed for not having
+# two launchd plists that nothing on it could ever run. Both scripts now SOURCE
+# scripts/lib/ghl-mcp-paths.sh; a future divergence has to be written into the
+# library, where it applies to both, instead of into one of two copies.
+_GHL_PATHS_LIB=""
+for _c in "${GHL_MCP_PATHS_LIB:-}" \
+          "$SELF_DIR/lib/ghl-mcp-paths.sh" \
+          "$HOME/.openclaw/scripts/lib/ghl-mcp-paths.sh" \
+          "$HOME/.openclaw/skills/scripts/lib/ghl-mcp-paths.sh" \
+          "$HOME/.openclaw/onboarding/scripts/lib/ghl-mcp-paths.sh" \
+          "/data/.openclaw/scripts/lib/ghl-mcp-paths.sh" \
+          "/data/.openclaw/skills/scripts/lib/ghl-mcp-paths.sh" \
+          "/data/.openclaw/onboarding/scripts/lib/ghl-mcp-paths.sh"; do
+  [ -n "$_c" ] && [ -f "$_c" ] && { _GHL_PATHS_LIB="$_c"; break; }
+done
+if [ -z "$_GHL_PATHS_LIB" ]; then
+  _fail "scripts/lib/ghl-mcp-paths.sh is not on this box, so the Tier 2 install path and the platform CANNOT be derived. This gate refuses to guess them rather than report a confident verdict about a directory it invented. Searched: $SELF_DIR/lib, \$HOME/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib, /data/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib. Re-run update-skills.sh or install.sh; both deliver the whole scripts/ tree recursively."
+  printf '[ghl-mcp-runtime] VERDICT: %s FATAL, %s warning(s), %s check(s)\n' "$FATAL_FAILURES" "$WARNINGS" "$CHECKS" >&2
+  exit 1
 fi
-# Test/override hook, same convention as GHL_MCP_DIR / GHL_MCP_PLIST below: lets
-# the VPS+pm2 branch (section B) be exercised in CI without a real /data mount.
-# Real boxes never set this — PLATFORM is always detected from the filesystem.
-PLATFORM="${GHL_MCP_PLATFORM_OVERRIDE:-$PLATFORM}"
-# Test/override hooks so this gate can be exercised against a simulated box.
-MCP_DIR="${GHL_MCP_DIR:-$MCP_DIR}"
-LOG_DIR="${GHL_MCP_LOG_DIR_OVERRIDE:-$LOG_DIR}"
+# shellcheck disable=SC1090
+. "$_GHL_PATHS_LIB"
+ghl_mcp_resolve_paths
+# The library reads GHL_MCP_PLATFORM_OVERRIDE, GHL_MCP_DIR and
+# GHL_MCP_LOG_DIR_OVERRIDE itself, so the documented test hooks below keep
+# working AND now apply identically to ghl-mcp-autostart.sh.
+PLATFORM="$GHL_MCP_RESOLVED_PLATFORM"
+OC_ROOT="$GHL_MCP_RESOLVED_ROOT"
+MCP_DIR="$GHL_MCP_RESOLVED_DIR"
+LOG_DIR="$GHL_MCP_RESOLVED_LOG_DIR"
+# PM2_HOME IS PART OF THE ADDRESS OF THE APP. pm2 keeps one process list per
+# PM2_HOME; on a client container the Tier 2 app is registered under the
+# root-persisted home (the bind-mounted directory) because $HOME/.pm2 does not
+# survive a recreate. Inspecting with the wrong home reports "app not found"
+# about an app that is online, which is half of the false MISCONFIGURED
+# verdict this release fixes. Exported ONLY when a candidate home actually exists: `pm2
+# describe` under a non-existent PM2_HOME SPAWNS a pm2 daemon, and a read-only
+# gate must never do that.
+_GHL_PM2_HOME="$(ghl_mcp_pm2_home_existing "$OC_ROOT")"
+[ -n "$_GHL_PM2_HOME" ] && export PM2_HOME="$_GHL_PM2_HOME"
 OC_JSON="${GHL_MCP_OC_JSON:-$OC_ROOT/openclaw.json}"
 PLIST="${GHL_MCP_PLIST:-$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist}"
 PROBE_PLIST="${GHL_MCP_PROBE_PLIST:-$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist}"
@@ -251,7 +299,11 @@ for a in apps:
 '
 
 # ═════════════════════════════════════════════════════════════════════════════
-# A. Mac / launchd
+# A. Mac / launchd: DARWIN ONLY
+#
+# launchd exists only on Darwin. Section B covers every other shape, including
+# the HOME-layout Linux container that this section used to capture and then
+# fail for the absence of two plists that nothing on it could load.
 # ═════════════════════════════════════════════════════════════════════════════
 if [ "$PLATFORM" = "mac" ]; then
   if [ "$_HAVE_MAC_SVC" = "0" ]; then
@@ -340,9 +392,17 @@ if [ "$PLATFORM" = "mac" ]; then
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# B. VPS / pm2, else systemd
+# B. VPS and linux-home / pm2, else systemd, else the supervised relaunch loop
+#
+# linux-home (a HOME-layout Linux box: a client container, or one whose /data is
+# a symlink back into $HOME) is here, NOT in section A, because that is where
+# ghl-mcp-autostart.sh actually puts it: start_service_vps is the supervisor
+# chain for both platforms (pm2 first, then systemd, then the setsid relaunch
+# loop), and neither ever writes a launchd plist off Darwin. The gate asserting
+# the wrong supervisor produced two FATALs on a container whose pm2 app was
+# online, its /health green with 43 tools, and its build stamp on the pin.
 # ═════════════════════════════════════════════════════════════════════════════
-if [ "$PLATFORM" = "vps" ]; then
+if [ "$PLATFORM" = "vps" ] || [ "$PLATFORM" = "linux-home" ]; then
   if [ "$_HAVE_PM2" = "1" ]; then
     # ── SECRET HYGIENE — the single choke point. Do not "simplify" this. ─────
     # A raw `pm2 jlist` record carries pm2_env, which is the process
@@ -449,19 +509,38 @@ if [ "$PLATFORM" = "vps" ]; then
     fi
   fi
 
-  # 11. periodic probe (cron) — and its target must EXIST
+  # 11. periodic probe, and its target must EXIST
+  #
+  # TWO SCHEDULERS, because ghl-mcp-autostart.sh uses two. Its first choice is
+  # the OS crontab; a HOME-layout container frequently has no crontab at all, so
+  # it falls back to the OpenClaw cron STORE, which the gateway runs with no OS
+  # cron involved. A gate that only ever looked at crontab reported "nothing
+  # would detect an alive-but-deaf MCP" on boxes whose probe was registered and
+  # running. Same class of confident-and-wrong verdict as the platform bug.
+  _PROBE_SCHEDULED=0
+  _CRON_PROBE=""
   if command -v crontab >/dev/null 2>&1; then
     _CRON="$(crontab -l 2>/dev/null || true)"
     _CRON_PROBE="$(printf '%s\n' "$_CRON" | sed -n 's|.*[[:space:]]\(/[^[:space:]]*ghl-mcp-probe\.sh\).*|\1|p' | head -1)"
-    if [ -z "$_CRON_PROBE" ]; then
-      _fail "no ghl-mcp-probe.sh line in this box's crontab — nothing would detect an alive-but-deaf MCP."
-    elif [ ! -f "$_CRON_PROBE" ]; then
-      _fail "the probe cron line points at $_CRON_PROBE, which DOES NOT EXIST — a stale path means a silently dead 15-minute probe."
-    else
-      _pass "periodic liveness probe cron installed and its target exists ($_CRON_PROBE)"
+    if [ -n "$_CRON_PROBE" ]; then
+      if [ ! -f "$_CRON_PROBE" ]; then
+        _fail "the probe cron line points at $_CRON_PROBE, which DOES NOT EXIST. A stale path means a silently dead 15-minute probe."
+        _PROBE_SCHEDULED=1   # answered: it IS scheduled, at a dead path
+      else
+        _pass "periodic liveness probe cron installed and its target exists ($_CRON_PROBE)"
+        _PROBE_SCHEDULED=1
+      fi
     fi
-  else
-    _warn "crontab not available — cannot verify the periodic probe is scheduled."
+  fi
+  if [ "$_PROBE_SCHEDULED" = "0" ]; then
+    if command -v openclaw >/dev/null 2>&1 \
+       && openclaw cron list --json 2>/dev/null | grep -q '"name": *"ghl-mcp-probe"'; then
+      _pass "periodic liveness probe registered in the OpenClaw cron store (the gateway runs it; this box has no usable crontab entry)"
+    elif command -v crontab >/dev/null 2>&1 || command -v openclaw >/dev/null 2>&1; then
+      _fail "no ghl-mcp-probe.sh line in this box's crontab and no 'ghl-mcp-probe' entry in the OpenClaw cron store. Nothing would detect an alive-but-deaf MCP. Re-run scripts/ghl-mcp-autostart.sh, which installs whichever of the two this box can use."
+    else
+      _warn "neither crontab nor the openclaw CLI is available here, so the periodic-probe schedule could NOT be determined (this is an undetermined answer, not a pass)."
+    fi
   fi
 fi
 
