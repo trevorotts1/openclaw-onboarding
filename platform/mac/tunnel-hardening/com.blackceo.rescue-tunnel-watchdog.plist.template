@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.blackceo.rescue-tunnel-watchdog.plist.template
+     Layer E: root LaunchDaemon for the reboot-stale rescue tunnel watchdog.
+
+     ROOT, not a user LaunchAgent, and deliberately so. The rescue connector is
+     a SYSTEM-domain daemon (com.blackceo.rescue-<slug>), and sshd lives in the
+     system domain too. A gui/ LaunchAgent cannot kickstart either of them, and
+     it does not run at all until a human logs in, which is exactly the window
+     this watchdog exists to cover.
+
+     StartInterval 120 (every 2 minutes) plus RunAtLoad, so the very first pass
+     happens at boot, which is when the stale-edge-address state is created.
+
+     install-rescue-tunnel-watchdog.sh installs this verbatim. There are no
+     placeholders to expand: every path here is fixed and root-owned.
+  -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.blackceo.rescue-tunnel-watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Library/BlackCEO/rescue-tunnel-watchdog.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>120</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/com.blackceo.rescue-tunnel-watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/com.blackceo.rescue-tunnel-watchdog.log</string>
+</dict>
+</plist>
