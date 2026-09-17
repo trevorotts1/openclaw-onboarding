@@ -343,7 +343,11 @@ heal() {
         action="launchctl kickstart -k gui/$(id -u)/$lbl"
       elif [ -f "$gwplist" ]; then
         log "BOOTED-OUT: $lbl is not bootstrapped in gui/$(id -u); bootstrapping from $gwplist before the kickstart"
-        action="launchctl bootstrap gui/$(id -u) $gwplist && launchctl kickstart -k gui/$(id -u)/$lbl"
+        # The plist path is embedded in a string that heal() runs through
+        # `sh -c`, so it is re-parsed as a shell word. Quote it: a HOME with a
+        # space in it would otherwise split into two arguments and bootstrap
+        # would fail on a path that exists.
+        action="launchctl bootstrap gui/$(id -u) '$gwplist' && launchctl kickstart -k gui/$(id -u)/$lbl"
       else
         log "ESCALATE: gateway label $lbl is not loaded AND there is no plist at $gwplist - nothing safe to bootstrap from"
         return 1

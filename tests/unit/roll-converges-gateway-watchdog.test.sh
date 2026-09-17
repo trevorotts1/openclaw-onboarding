@@ -343,6 +343,18 @@ case "$WCALLS" in
     ok "T6: launchctl bootstrap was issued against the plist" ;;
   *) bad "T6: no bootstrap issued; a booted-out gateway is still unhealable. calls: $WCALLS" ;;
 esac
+# The action string is re-parsed by `sh -c`, so the plist path must reach
+# launchctl as ONE argument even from a HOME with a space in it.
+WD_HOME_SPACE="$SANDBOX/t6 with space"
+mkdir -p "$WD_HOME_SPACE"
+SANDBOX_KEEP="$SANDBOX"; SANDBOX="$SANDBOX/t6 with space"
+WD_LOADED=0 WD_PLIST=1 WD_LIST="" run_watchdog inner
+SANDBOX="$SANDBOX_KEEP"
+case "$WCALLS" in
+  *"bootstrap gui/"*"/ai.openclaw.gateway.plist"*)
+    ok "T6: the plist survives a HOME containing a space as a single argument" ;;
+  *) bad "T6: a HOME with a space split the plist path. calls: $WCALLS" ;;
+esac
 case "$WCALLS" in
   *"launchctl kickstart -k gui/"*"ai.openclaw.gateway"*)
     ok "T6: the kickstart still follows the bootstrap" ;;

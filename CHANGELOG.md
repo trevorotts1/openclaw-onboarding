@@ -1,4 +1,4 @@
-## [v25.1.46]  -  2026-09-17  -  Fleet roll converges the Mac gateway health watchdog; watchdog clears the 2026.9.x session-store migration gate
+## [v25.1.47]  -  2026-09-17  -  Fleet roll converges the Mac gateway health watchdog; watchdog clears the 2026.9.x session-store migration gate
 
 ### What Changed
 - **The fleet roll never converged the one safety net that covers a dark gateway.** `platform/mac/service-selfheal/install-service-remediate.sh` installs `remediate.sh`, `gateway-health-watchdog.sh` and the `com.openclaw.service-remediate` LaunchAgent that drives them every 5 minutes. `grep -rn install-service-remediate` found it called from exactly two places: `install.sh` (first-time onboarding only) and `38-conversational-ai-system/scripts/14-install-cloudflared-service.sh`. `update-skills.sh`, the only thing that touches every box on every release, never ran it.
@@ -32,6 +32,7 @@
 - New: `tests/unit/roll-converges-gateway-watchdog.test.sh`, 50 assertions. It extracts the converge block verbatim from `update-skills.sh` between named anchors and drives it, and drives the real watchdog with `launchctl`, `curl` and `openclaw` stubbed on PATH. Proven non-vacuous: deleting the converge block, reverting the Mac heal to kickstart-only, and dropping the migration-gate clear each turn it red.
 - Wired by `.github/workflows/roll-converges-gateway-watchdog-guard.yml`, which carries all three of those mutations as meta-checks.
 - `tests/unit/full-update-path-contract.test.sh` now registers the new suite as a stage and asserts the converge sits before the temp-clone Cleanup.
+
 
 
 ## [v25.1.45]  -  2026-09-17  -  Rescue Rangers reachability train: 15 client-reported issues fixed, podcast activation, updater hardening, Command Center v7.4.1 pin
