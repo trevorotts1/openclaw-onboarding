@@ -1,3 +1,36 @@
+## [v25.1.43]  -  2026-09-16  -  A phase's work is registered on the board before its card is closed
+
+### What Changed
+- **PD-TEST-195 — the board refused the engine's own phase-done transition, so the Kanban silently disagreed with the run.** Measured live on `pres-operator-1d269693`:
+
+  ```
+  [cc_board/presentations] patch_phase P-STYLE-PREVIEW->done non-OK (HTTP 403):
+    {'error': 'Forbidden: cannot mark a task done with no completion evidence.',
+     'hint': '... Register it with POST /api/tasks/<id>/deliverables --
+              {"deliverable_type":"file","title":"<name>","path":"<absolute path>"} ...'}
+  ```
+
+  The phase had genuinely produced its artifacts — nine style samples and a manifest on disk — and the engine had already verified them, yet `child_report(..., "done", ...)` closed the child card **without ever telling the board what was produced**. The board refused, and the result was a board that **disagrees with the run**: the card showed the phase not-done while the engine held it `done` with artifacts on disk. It was also **silent** — `patch_phase` is fail-soft, so nothing stopped and nothing failed.
+
+- **The capability existed and was never called.** `cc_board.register_deliverable` has been there since FIX-12; the phase-completion path simply never invoked it. It also could not have registered a local artifact correctly, because it **hard-coded `deliverable_type="url"`** while `CreateDeliverableSchema`'s enum is `file|url|artifact|image` and a produced **file** must be registered as `file` with an **absolute path**.
+
+  **Fix:** `register_deliverable` takes a `deliverable_type` (default `"url"`, so every existing caller is untouched; unknown values degrade to `url` rather than 400-ing the board), and `child_report` takes an optional `deliverables` list which it registers as `file` deliverables **before** the terminal patch. The engine passes `sorted(shas.keys())` — the *same* mapping it checkpoints three lines earlier as `artifacts=`, so the board is told the exact set the phase is claiming rather than a re-derivation.
+
+  **Fail-soft throughout:** an artifact missing from disk is **skipped and reported** rather than claimed as evidence, a registration failure is reported, and in both cases the transition still happens. A board that cannot be told is not a reason to hold the deck.
+
+  **INDEPENDENT ADVERSARIAL REVIEW — SOUND WITH CAVEATS, no blocker, and it found TWO REAL DEFECTS IN THIS CHANGE, both now fixed.** The review verified every central claim by its own instrumentation (its own wire probe recorded the sequence `['POST','POST','PATCH']`, so registration genuinely precedes the transition) and matched every number exactly. It also **refuted my own idempotency claim**:
+
+  * **Idempotency was FALSE, and the comment asserting it was wrong.** The earlier text here said *"Registering is idempotent enough for this purpose."* It is not: the CC route (`command-center .../api/tasks/[id]/deliverables/route.ts`) mints a fresh `crypto.randomUUID()` and performs a plain `INSERT` **with no `ON CONFLICT` and no unique index** on `task_deliverables`, then broadcasts an SSE event. A re-run, a re-admission or a resume — **the exact path this engine is built around** — would therefore re-POST every artifact and accumulate duplicate rows (a re-admitted 9-sample phase leaves 18 rows, not 9), each POST also forcing the server to read and sha256 the whole file. **Fixed:** the client now dedupes against a per-run registry kept **on disk** (`working/checkpoints/cc-board-deliverables.json`), so the skip survives a resume — the case that actually produces the duplicates. A failed or unparseable registry returns empty and re-registers, which is the safe direction to fail in.
+  * **Delay, not a block.** One **sequential** POST per artifact, each with an 8 s default timeout, now sits in the phase-done path, so a phase with many artifacts can add N×8 s to a single transition. Confirmed non-blocking on **every** path (raise, non-2xx, timeout all fall through to `patch_phase`), and no sensitive data leaks (`meta` carries only a basename and the phase id). Recorded as a bounded, accepted cost rather than left unsaid.
+  * **Cosmetic, fixed:** `cc_board.py` logged `url=…` for a `file`-typed registration; it now logs `type=` and `path=`.
+
+  **Controls** (`tests/test_pd195_register_deliverables_before_done.py`, now 10 cases): removing the registration turns the suite **4 failed / 3 passed**; hard-coding the type back to `url` gives **1 failed / 6 passed**; removing the **dedupe** turns it **3 failed / 7 passed**. Neighbours: **106 passed**, with the single failure (`TestQCAggregatePhaseEndToEnd::test_flawless_six_reports_reach_done`) **verified pre-existing against the PR's actual diff parent `f708a0ece`** — a stronger check than the older commit this entry originally cited.
+
+  **Controls** (`tests/test_pd195_register_deliverables_before_done.py`, 10 cases): the ordering (register, register, patch — asserted as a sequence), absolute `file`-typed registration, non-`done` transitions registering nothing, a missing artifact skipped-but-not-blocking, a failing and a raising client both non-blocking, back-compat when no deliverables are passed, and the client's own type handling. Removing the registration turns the suite **4 failed / 3 passed**; hard-coding the type back to `url` turns it **1 failed / 6 passed**; removing the dedupe turns it **3 failed / 7 passed**. Neighbours: **106 passed**, with one failure in `tests/test_presentation_job.py::TestQCAggregatePhaseEndToEnd::test_flawless_six_reports_reach_done` that is **pre-existing** — verified to fail identically at BASE `dbd628c5d`.
+
+### Why It Mattered
+"Accurate Kanban progression" is part of what this run must demonstrate, and this was the live evidence that it was not happening: the department's own board was refusing the department's own progress reports. The failure was invisible because every layer is deliberately fail-soft — which is the right design for a board that must never block a deck, and exactly why the *pass* had to be verified rather than assumed.
+
 ## [v25.1.42]  -  2026-09-16  -  A substance park can finally be re-entered, so a repaired checker reaches it
 
 ### What Changed

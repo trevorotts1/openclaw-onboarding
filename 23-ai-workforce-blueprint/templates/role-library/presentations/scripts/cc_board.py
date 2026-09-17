@@ -1423,6 +1423,7 @@ def register_deliverable(
     meta: Optional[dict] = None,
     *,
     env: Optional[dict] = None,
+    deliverable_type: str = "url",
 ) -> bool:
     """Register a built artifact via ``POST /api/tasks/{id}/deliverables``.
 
@@ -1474,8 +1475,18 @@ def register_deliverable(
                 title = str(_val)
                 break
 
+    # PD-TEST-195: the CC server requires completion EVIDENCE before a task may
+    # be marked `done` ("cannot mark a task done with no completion evidence"),
+    # and CreateDeliverableSchema's enum is file|url|artifact|image. A phase that
+    # produces a LOCAL artifact must therefore register it as `file` with an
+    # absolute path; registering everything as `url` (the previous behaviour)
+    # left the board unable to see the work and the done-transition 403'd.
+    _dtype = (deliverable_type or "url").strip().lower()
+    if _dtype not in ("file", "url", "artifact", "image"):
+        _log(f"register_deliverable: unknown deliverable_type {_dtype!r}; using 'url'.")
+        _dtype = "url"
     payload: dict = {
-        "deliverable_type": "url",
+        "deliverable_type": _dtype,
         "title": title,
         "path": artifact_url,
     }
@@ -1495,8 +1506,8 @@ def register_deliverable(
         return False
 
     if 200 <= http_status < 300:
-        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
-             f"http={http_status}.")
+        _log(f"task {tid} deliverable registered: type={_dtype} "
+             f"path={artifact_url!r} http={http_status}.")
         return True
 
     _log(
