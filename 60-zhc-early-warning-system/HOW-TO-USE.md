@@ -39,6 +39,7 @@ skill directory:
 
 ```
 bash 60-zhc-early-warning-system/ews-entry.sh tick
+bash 60-zhc-early-warning-system/ews-entry.sh cron-tick    # what the cron runs, not you
 bash 60-zhc-early-warning-system/ews-entry.sh audit
 bash 60-zhc-early-warning-system/ews-entry.sh install
 bash 60-zhc-early-warning-system/ews-entry.sh verify
@@ -51,7 +52,15 @@ bash 60-zhc-early-warning-system/ews-entry.sh fleet        # operator box only
 
 - **`tick`** — runs one sentinel pass on this box right now, outside the cron. Use it
   after an install, after a manual config edit, or any time you want a fresh read
-  without waiting up to 15 minutes.
+  without waiting up to 15 minutes. It exits 10 when it found something, 0 when the
+  box is clean, and 1 or 2 when the tick itself broke.
+- **`cron-tick`**: the SCHEDULER's tick, and the command the installer registers.
+  It runs the identical sentinel pass, then reports exit 0 when the only thing wrong
+  was a finding. Findings are the system working, but the OpenClaw scheduler reads
+  any non-zero exit as a failed run and auto-disables a job after 10 consecutive
+  ones, so a box holding a standing finding used to switch its own sentinel off. A
+  tick that genuinely broke still exits non-zero and still fails the job. Run `tick`
+  by hand, never this one: you want the honest exit code.
 - **`audit`** — read-only. Prints a diff table of the live config against the pinned
   baseline: nothing is written, nothing is alerted, nothing changes. Your first move
   whenever you want to *look* before deciding whether to act.

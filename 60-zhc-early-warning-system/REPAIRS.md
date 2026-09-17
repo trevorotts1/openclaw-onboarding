@@ -20,9 +20,21 @@ first one that explains it.
    troubleshoot` inspects the box's cron inventory for the `ews-tick` entry. If it is
    missing, re-register it: `bash 60-zhc-early-warning-system/ews-entry.sh install`
    (safe to re-run; it will not touch an existing baseline).
-2. **Cron present but not firing?** Run a manual tick to see the real error instead of
-   guessing: `bash 60-zhc-early-warning-system/ews-entry.sh tick`. Read the output —
-   most manual-tick failures point straight at step 3 or step 4.
+1b. **Present but DISABLED, with `lastRunStatus: error` and `exitCode: 10`?** That is
+   the pre-v1.2.1 registration. The cron used to run `ews-entry.sh tick`, which passes
+   the sentinel's exit 10 (findings present) straight to the scheduler; the scheduler
+   reads any non-zero exit as a failed run and auto-disables a job after 10 consecutive
+   ones, so a box carrying a standing finding switched its own sentinel off every time.
+   From v1.2.1 the registered command is `ews-entry.sh cron-tick`, which maps 10 to 0
+   and leaves every real failure exit intact. Re-running `ews-entry.sh install` both
+   converges the command and switches a job the scheduler had disabled back on. Confirm
+   with `openclaw cron list --all --json` that the job carrying `declarationKey`
+   `skill60-ews-tick-<box>` is enabled and ends in `cron-tick`.
+2. **Cron present, enabled, but not firing?** Run a manual tick to see the real error
+   instead of guessing: `bash 60-zhc-early-warning-system/ews-entry.sh tick`. Use `tick`
+   here, not `cron-tick`: by hand you want the honest exit code, and exit 10 means the
+   tick ran fine and found something. Read the output. Most manual-tick failures point
+   straight at step 3 or step 4.
 3. **Ledger unreadable (SQLite-WAL corruption or a stale lock)?** The ledger is the
    single-writer state store (`~/.openclaw/ews/ews.db`, VPS `/data/.openclaw/ews/ews.db`).
    `troubleshoot` opens it read-only and reports the failure class. If the WAL file is

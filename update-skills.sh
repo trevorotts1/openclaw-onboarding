@@ -3731,6 +3731,34 @@ main() {
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
 
+  # DELIVER THE CANONICAL LIBRARY BESIDE THE SCRIPTS TREE.
+  #
+  # deliver_canonical_scripts_tree above copies repo scripts/ to
+  # $OC_CONFIG/scripts. lib-onboarding-state.sh lives at the REPO ROOT, not in
+  # scripts/, so nothing on this path ever delivered it. Box-side, the shim
+  # scripts/onboarding-state.sh and watchdog-onboarding-loop.sh looked for it at
+  # "$SELF_DIR/.." -- i.e. $OC_CONFIG/lib-onboarding-state.sh -- which no step
+  # has ever written. Result: the shim warned on every source and defined no
+  # oc_* at all, and the watchdog found no wave-goal functions.
+  #
+  # ~/.openclaw/onboarding does hold a full repo copy, but install.sh writes it
+  # ONCE at install and no later roll refreshes it, so it cannot be the delivery
+  # path for a fix that has to reach boxes already in the field.
+  #
+  # Copying it NEXT TO the delivered scripts makes the "./lib-onboarding-state.sh"
+  # candidate resolve on every box after the next roll. NON-FATAL by design: a
+  # missing or unwritable copy degrades the onboarding gate, it must not abort a
+  # roll that has already delivered skills.
+  if [ -f "$ONBOARDING_DIR/lib-onboarding-state.sh" ]; then
+    if cp -p "$ONBOARDING_DIR/lib-onboarding-state.sh" "$_OC_SCRIPTS_DEST/lib-onboarding-state.sh" 2>/dev/null; then
+      echo "  ✓ lib-onboarding-state.sh delivered to $_OC_SCRIPTS_DEST"
+    else
+      echo "  ⚠ could not deliver lib-onboarding-state.sh to $_OC_SCRIPTS_DEST -- the onboarding gate will fall back to its other candidates (~/.openclaw/onboarding, ~/.openclaw/skills)." >&2
+    fi
+  else
+    echo "  ⚠ lib-onboarding-state.sh absent from the pulled bundle ($ONBOARDING_DIR) -- onboarding gate oc_* functions will be unavailable box-side unless an older copy is still present." >&2
+  fi
+
 # Platform helpers are runtime dependencies of the delivered Skill32 resume command.
 if [ -d "$ONBOARDING_DIR/platform" ]; then
     mkdir -p "$SKILLS_DIR/../platform"

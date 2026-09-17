@@ -4,6 +4,65 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.1.2] - 2026-09-17 - fix: valid YAML frontmatter version, repacked .skill bundle, backfilled changelog
+
+### Why
+`SKILL.md` frontmatter carried `version: ""2.1.0""` with doubled double quotes. That is invalid
+YAML: a loader reading the block either errors or silently drops the field. The value was also
+stale against `skill-version.txt` (v2.1.1), and the packaged `agnes-image.skill` bundle still
+shipped an inner `SKILL.md` stamped `1.2.0`. Releases 2.1.0 and 2.1.1 shipped with no CHANGELOG
+entry at all.
+
+The repo-wide drift gate `scripts/qc-assert-skill-frontmatter-version.sh` could not catch any of
+this. It reads only a TOP-LEVEL `version:` at column 0, and this skill keeps its version nested
+under `metadata:`, so Skill 63 is reported as SKIPPED by that gate rather than checked.
+
+### What changed
+- **Valid frontmatter version**: `metadata.version` is now `"2.1.2"`, quoted in the same shape as
+  the `64-agnes-video` control, and it agrees with `skill-version.txt`.
+- **`skill-version.txt`**: v2.1.1 to v2.1.2.
+- **Repacked `agnes-image.skill`**: rebuilt from the folder so every bundled file matches the
+  folder byte for byte. The bundled `SKILL.md` now carries 2.1.2 instead of the stale 1.2.0, and
+  three files that drifted across the 2.1.0 and 2.1.1 releases were resynced: `models.json`,
+  `references/prompt-policy.md` and `scripts/validate_prompt.py`. Archive layout is unchanged:
+  the same 19 files in the same order at the same flat paths, with `CHANGELOG.md` and the bundle
+  itself excluded exactly as before.
+- **Backfilled changelog**: entries for 2.1.0 and 2.1.1 added below.
+
+### Not changed
+No behavioral change. No script, reference, registry, or prompt-policy content was touched.
+
+## [2.1.1] - 2026-09-10 - chore: prompt-policy reference follows the Kie GPT Image 2.5 migration
+
+### Why
+Backfilled. This release shipped with no CHANGELOG entry.
+
+### What changed
+- `references/prompt-policy.md`: the social-planner scoped override and the "no invented vendor
+  cap" note were restated for the Kie GPT Image 2.5 default (operator ruling 2026-09-09), with
+  legacy GPT Image 2 retained for aspect ratios 3:1, 1:3 and 9:21. The Agnes position is
+  unchanged: no published Agnes cap exists, so the house band governs.
+- `skill-version.txt`: v2.1.0 to v2.1.1, as part of the registry restamp for that migration.
+
+Source commits: `5070ba221` (prompt-policy text), `fdf4e7cb1` (version restamp).
+
+## [2.1.0] - 2026-09-08 - chore: version alignment for the W2 scoped prompt-policy batch
+
+### Why
+Backfilled. This release shipped with no CHANGELOG entry.
+
+### What changed
+- Version alignment only. The release commit records that the W2 scoped prompt-policy override
+  touched this skill (`references/prompt-policy.md`, `models.json`,
+  `scripts/validate_prompt.py`), but those content commits are not reachable in this repository's
+  available history, which is shallow. The entry is therefore recorded at the level the release
+  commits state and is not reconstructed further.
+- `skill-version.txt`: v2.0.x to v2.1.0.
+- `SKILL.md` frontmatter synced to the new version. That sync is what introduced the doubled
+  double quotes corrected in 2.1.2.
+
+Source commits: `956939292` (version bump), `abbf5fdab` (frontmatter sync).
+
 ## [2.0.0] - 2026-08-26 - fix: prompt policy alignment, remove invented 25K cap, add models.json registry and validators
 
 ### Why

@@ -2,7 +2,11 @@
 # ============================================================
 # lib-onboarding-state.sh — Onboarding honesty state-machine + verification gate
 # ------------------------------------------------------------
-# v10.16.48 — FIX 1 (ONBOARDING HONESTY)
+# history: v10.16.48 FIX 1 (ONBOARDING HONESTY) is the release that FIRST
+#          introduced this library. It is a historical marker only. It is NOT
+#          this library's current version and NOT the box's OpenClaw version;
+#          read /version for that. A client agent read this line as "the lib is
+#          v10.16.48" and reported a current box as years stale.
 #
 # WHY THIS EXISTS
 #   install.sh copies skill files to disk and pastes 5-Phase/Wave PROSE into
@@ -148,6 +152,36 @@ if not isinstance(skills, dict):
     fail('state file "skills" is %s, not a JSON object: %s'
          % (type(skills).__name__, sf))
 
+# ROLLBACK COPIES ARE NOT SKILLS.
+# A rollback rename beside the live skills ("02-x" -> "02-x.bak-20260901",
+# ".rollback", ".orig") still starts with a digit and is still a directory, so
+# the discovery loop below used to seed it as a skill. It ships no INSTALL.md
+# that anyone will run and no qc-*.sh that can pass, so it sat at "pending"
+# forever -- and because oc_state_summary / obs_gate_summary count the
+# DENOMINATOR straight off this state file, one such folder held the gate at
+# "N-1 of N" permanently and the resume cron never self-removed.
+#
+# SKIPPING at discovery is not enough on its own: an entry seeded by an EARLIER
+# run is already in the file and nothing would ever take it back out. So purge
+# matching entries too. This is the one deletion this seed performs, and it is
+# deliberately narrow -- only names this regex matches, never a real skill.
+# Mirrors _BACKUP_DIR_RE in 23-ai-workforce-blueprint/scripts/department-floor.py
+# so "what is a rollback folder" has one answer across the repo.
+_ROLLBACK_DIR_RE = re.compile(r"\.(bak|rollback|orig)(\b|[-_.]|$)", re.IGNORECASE)
+
+
+def _is_rollback_dirname(name):
+    return bool(_ROLLBACK_DIR_RE.search(name))
+
+
+_purged = [k for k in list(skills) if _is_rollback_dirname(k)]
+for _k in _purged:
+    del skills[_k]
+if _purged:
+    sys.stderr.write(
+        "oc_state_seed: purged %d rollback folder(s) from the gate denominator: %s\n"
+        % (len(_purged), ", ".join(sorted(_purged))))
+
 # A MISSING source dir is deliberately NOT fatal. oc_state_set seeds with
 # $OC_SKILLS_DIR, whose default (/data/.openclaw/skills) does not exist on Mac
 # boxes, and a gate may legitimately run before skills are copied. Failing here
@@ -159,6 +193,7 @@ if os.path.isdir(src):
         if not os.path.isdir(p): continue
         if not re.match(r"^\d", name): continue          # numbered skills only
         if name.endswith("-ARCHIVED"): continue          # skip archived
+        if _is_rollback_dirname(name): continue          # skip rollback copies
         has_core = os.path.isfile(os.path.join(p, "CORE_UPDATES.md"))
         # any qc-*.sh shipped with the skill
         has_qc = any(f.startswith("qc-") and f.endswith(".sh") for f in os.listdir(p))
@@ -233,7 +268,11 @@ PYEOF
 #   a skill as verified that had just failed its gate. A status write that did
 #   not happen is now nonzero and explains itself on stderr.
 oc_state_set() {
-  local skill="$1" status="$2" err="${3:-}"
+  # `st`, never `status`: `status` is a READ-ONLY special variable in zsh, and
+  # the onboarding resume prompt sources this library from the agent's shell,
+  # which is zsh on every Mac box. `local status=` there aborts the function
+  # before it writes anything, so no skill could ever reach qc-passed.
+  local skill="$1" st="$2" err="${3:-}"
   local _rc=0
   # ABSENT is normal on a fresh box -- oc_state_seed owns creation. A seed
   # FAILURE is not: without a state file there is nowhere to record this status,
@@ -241,11 +280,11 @@ oc_state_set() {
   if [ ! -f "$ONBOARDING_STATE_FILE" ]; then
     oc_state_seed "$OC_SKILLS_DIR" || {
       printf 'oc_state_set: cannot seed %s -- refusing to report a %s=%s write that did not happen\n' \
-        "$ONBOARDING_STATE_FILE" "$skill" "$status" >&2
+        "$ONBOARDING_STATE_FILE" "$skill" "$st" >&2
       return 1
     }
   fi
-  SKILL="$skill" STATUS="$status" ERR="$err" STATE_FILE="$ONBOARDING_STATE_FILE" \
+  SKILL="$skill" STATUS="$st" ERR="$err" STATE_FILE="$ONBOARDING_STATE_FILE" \
   NOW="$(oc_state_now)" python3 - <<'PYEOF' || _rc=$?
 import json, os, sys, tempfile
 sf=os.environ["STATE_FILE"]; skill=os.environ["SKILL"]; st=os.environ["STATUS"]
@@ -305,7 +344,7 @@ PYEOF
 
   if [ "$_rc" -ne 0 ]; then
     printf 'oc_state_set: FAILED (rc=%s) -- %s=%s was NOT recorded in %s\n' \
-      "$_rc" "$skill" "$status" "$ONBOARDING_STATE_FILE" >&2
+      "$_rc" "$skill" "$st" "$ONBOARDING_STATE_FILE" >&2
     return 1
   fi
   return 0
