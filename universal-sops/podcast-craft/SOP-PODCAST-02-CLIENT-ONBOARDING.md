@@ -28,7 +28,18 @@ Run `ghl_credential_gate.py --client <slug> --expected-location-id <id> --state-
 
 ### 2.2 Webhook route and secret
 
-Generate the route secret with `openssl rand -hex 32`; write it to the client's env store as `PODCAST_INTAKE_HOOK_SECRET` (verify SET in the LIVE process environment, not just in a file), or to `~/.openclaw/secrets/podcast-intake.secret` mode 0600 owned by the runtime user. Add the OpenClaw Webhooks plugin route: id `podcast-intake-<slug>`, bound sessionKey `podcast:intake:<slug>` (owned by this client's podcast department agent), SecretRef `source: env` pointing at `PODCAST_INTAKE_HOOK_SECRET`. Validate the route against the INSTALLED gateway's schema before applying (schema drift is a known trap; the installed contract keys the routes map at `plugins.entries.webhooks.config.routes` and the SecretRef is exactly `{ source, provider, id }`). Apply per the box's restart doctrine (Mac: the kickstart-then-stop sequence; VPS: compose recreate so env changes load), then confirm the gateway is healthy. The plaintext secret transits no chat, no document, no repo, no log.
+Generate the route secret with `openssl rand -hex 32`; write it to the client's env store as `PODCAST_INTAKE_HOOK_SECRET` (verify SET in the LIVE process environment, not just in a file), or to `~/.openclaw/secrets/podcast-intake.secret` mode 0600 owned by the runtime user. Then run, as the runtime user and never as root:
+
+    58-podcast-production-engine/scripts/register-podcast-hook.sh --client-slug <slug>
+
+It writes BOTH surfaces of the intake contract in one idempotent pass, and it is the only supported way to write them:
+
+1. **The TaskFlow control surface** (the Webhooks plugin route): id `podcast-intake-<slug>`, bound sessionKey `podcast:intake:<slug>` (owned by this client's podcast department agent), SecretRef `source: env` pointing at `PODCAST_INTAKE_HOOK_SECRET`, at `plugins.entries.webhooks.config.routes`. This route is driven from INSIDE the podcast agent's own turn and accepts only a `{"action":"create_flow", ...}` envelope. The upstream survey sender must never post here.
+2. **The gateway hook mapping** (the trigger the upstream sender actually posts to): `hooks.mappings[]` id `podcast-intake-<slug>`, `match.path` `podcast-intake-<slug>`, `action: agent`, `agentId` the podcast department agent, `sessionKey` `podcast:intake:<slug>`, `sessionMode: persistent`, `wakeMode: now`, `deliver: false`, `allowUnsafeExternalContent: false`, plus a deterministic `messageTemplate`. Without this mapping a submission lands, the ledger records `received`, and nothing ever advances.
+
+The same run enables the gateway hooks ingress and, when the box has no `hooks.token` yet, points it at the SAME env label as the route SecretRef (`${PODCAST_INTAKE_HOOK_SECRET}`), so onboarding manages ONE secret for both surfaces. When `hooks.token` is ALREADY set by another integration it is NEVER overwritten; the registrar says so in its output, and the upstream sender must then carry that existing box token instead. Recorded trade-off: the hooks token is box-wide, bounded by `hooks.allowedAgentIds` and `hooks.allowedSessionKeyPrefixes`, which the registrar keeps as tight as the box's other integrations allow.
+
+Prove the write with `register-podcast-hook.sh --verify --client-slug <slug>` (read-only, exit 0 PASS / 2 FAIL); it is the same read-back `provision-podcast-client.sh` gates activation on. The registrar also runs `openclaw config validate` and restores its own backup if the merged config is rejected. Apply per the box's restart doctrine (Mac: the kickstart-then-stop sequence; VPS: compose recreate so env changes load), then confirm the gateway is healthy. The plaintext secret transits no chat, no document, no repo, no log.
 
 ### 2.3 Cloudflare provisioning
 
@@ -68,7 +79,16 @@ The `book_teaser` custom field (Interview mode) may not exist in the client's ac
 
 ### 2.8 Upstream sender and sample payload
 
-Configure the ONE upstream sender the client actually uses (a Convert and Flow workflow webhook action, Make.com, or n8n): method POST, the public URL, header `Authorization: Bearer <secret>` (value pasted from the credential store, never from chat), a FLAT JSON body carrying the survey fields plus `contact_id`, `location_id`, `podcast_id`, mode, and style. Capture one real sample payload and add it to the mapper's test fixtures so the deterministic mapper stays covered for this pipeline family. Record route id, sessionKey, secret LOCATION (env var name or file path, never the value), upstream pipeline type, sample payload fixture path, and date in the setup notes.
+Configure the ONE upstream sender the client actually uses (a Convert and Flow workflow webhook action, Make.com, or n8n):
+
+- **Method:** POST.
+- **URL:** `https://<client-hooks-host>/hooks/podcast-intake-<slug>`. The `-<slug>` suffix is REQUIRED: it is the gateway hook mapping's `match.path`. Do NOT point the sender at `/plugins/webhooks/podcast-intake-<slug>`; that surface accepts only `{"action":"create_flow", ...}` and answers a flat survey body with HTTP 400 `action: Invalid discriminator value. Expected 'create_flow'`.
+- **Header:** `Authorization: Bearer <the box hooks token>` (value pasted from the credential store, never from chat). The gateway reads the token from `Authorization: Bearer` or `x-openclaw-token` and from NOWHERE ELSE, so a secret carried as a payload field or a query parameter is rejected. If a client's sender cannot set a header, that client's intake must be sent by one that can, and the substitution goes in the setup notes.
+- **Body:** a FLAT JSON object carrying the survey fields plus `contact_id`, `location_id`, `podcast_id`, mode, and style. No `action` wrapper.
+
+In the Convert and Flow snapshot this is custom value 4 (`podcast_intake_webhook_url`, the full per-slug `/hooks/` URL) and custom value 5 (`podcast_intake_hook_secret`, sent as the Bearer header), per `58-podcast-production-engine/PODCAST-SNAPSHOT-BUILD-MANIFEST.md` Section B.
+
+Capture one real sample payload and add it to the mapper's test fixtures so the deterministic mapper stays covered for this pipeline family. Record route id, hook mapping id, sessionKey, secret LOCATION (env var name or file path, never the value), upstream pipeline type, sample payload fixture path, and date in the setup notes.
 
 ### 2.9 Facebook-ads workflow activation (per-client, once the client connects Facebook)
 

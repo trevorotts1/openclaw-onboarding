@@ -31,6 +31,78 @@
 # U88-GK-26 crash-loop guard: a defaultSessionKey that stops matching the
 # prefix allowlist makes the gateway refuse to start).
 #
+# THE GATEWAY-NATIVE TRIGGER (the second surface this script writes). The plugin
+# route above is the TaskFlow CONTROL surface: it accepts the
+# {"action":"create_flow", ...} envelope and is driven BY THE PODCAST AGENT'S
+# OWN TURN, never by the upstream survey sender. A Convert and Flow workflow
+# posts a FLAT customData body, which that route rejects with
+# "action: Invalid discriminator value. Expected 'create_flow'". So the flat
+# upstream body lands on the GATEWAY HOOKS INGRESS instead:
+#
+#   POST /hooks/podcast-intake-<client-slug>
+#   Authorization: Bearer <the box hooks token>
+#   body: the flat survey JSON (no action wrapper)
+#
+# and this script registers the gateway hook MAPPING that turns that POST into
+# ONE turn of the client's podcast department agent:
+#
+#   hooks.mappings[]  id podcast-intake-<slug>, match.path podcast-intake-<slug>,
+#                     action agent, agentId <podcast agent>,
+#                     sessionKey podcast:intake:<slug>, sessionMode persistent,
+#                     wakeMode now, deliver false,
+#                     allowUnsafeExternalContent false, plus a deterministic
+#                     messageTemplate that runs intake_handler.py --mode
+#                     trigger-flow and then the deterministic step driver.
+#
+# SCHEMA VERIFIED against the INSTALLED platform (OpenClaw 2026.9.x,
+# dist/zod-schema-*.mjs HookMappingSchema and dist/hooks-*.mjs): the mapping
+# object is .strict() and accepts exactly id, match{path,source}, action,
+# wakeMode, name, agentId, sessionKey, sessionMode, messageTemplate,
+# textTemplate, forEach, deliver, allowUnsafeExternalContent, channel, to,
+# model, thinking, timeoutSeconds, transform. Four runtime facts this
+# registration depends on, each read out of the installed code, not assumed:
+#
+#   * TEMPLATE SYNTAX. The WHOLE request body renders as {{.}}: the template
+#     resolver walks the payload with an empty path list and JSON-stringifies
+#     the object it lands on. {{payload}} renders EMPTY (there is no whole-body
+#     alias); single fields are {{field}} or {{payload.field}}.
+#     PROVED BY EXECUTION on OpenClaw 2026.9.4, not by reading: importing the
+#     installed dist/hooks-*.mjs and calling its exported applyHookMappings with
+#     a flat survey body returns message "BODY=" for {{payload}} and the full
+#     JSON object for {{.}}. The reason is in resolveTemplateExpr: "payload" is
+#     not one of the special prefixes, so it falls through to
+#     getByPath(ctx.payload, "payload"), which looks for a key literally NAMED
+#     payload inside the body. Anyone "fixing" {{.}} to the more natural-looking
+#     {{payload}} ships a hook that wakes the agent with an empty payload block,
+#     and the failure is silent: the turn runs, the handler gets nothing.
+#   * hooks.enabled REQUIRES hooks.token, and when hooks.defaultSessionKey is
+#     unset the prefix allow-list MUST also contain "hook:" or the gateway
+#     refuses to start ("hooks.allowedSessionKeyPrefixes must include 'hook:'
+#     when hooks.defaultSessionKey is unset"). This script adds "hook:" in
+#     exactly that case and never removes it.
+#   * A STATIC mapping sessionKey needs no hooks.allowRequestSessionKey; only a
+#     templated one does. podcast:intake:<slug> is static by construction.
+#   * A mapped hook response is sent as soon as the agent run is ADMITTED, not
+#     when it completes, so a long episode turn never holds the upstream
+#     request open and the upstream never times out waiting for production.
+#
+# The mapping is PREPENDED so a pre-existing catch-all mapping (one with no
+# match.path, which matches every sub-path) can never shadow the podcast route;
+# it can never steal another route's traffic because its own match.path is exact.
+#
+# ONE SECRET, TWO SURFACES. The plugin route's SecretRef id and the gateway
+# hooks token are the SAME env label, PODCAST_INTAKE_HOOK_SECRET, so onboarding
+# generates and rotates one value. When hooks.token is unset this script writes
+# the env reference ${PODCAST_INTAKE_HOOK_SECRET} (the config loader resolves
+# ${VAR} at load time, so the plaintext never enters openclaw.json). When
+# hooks.token is ALREADY set to something else it is NEVER overwritten: the box
+# token belongs to whatever integration already holds it, and the operator is
+# told to paste that existing token into the upstream sender instead. Recorded
+# trade-off (webhook-design.md Section 1): the hooks token is box-wide, so the
+# upstream sender holding it can reach every hook endpoint on the box, bounded
+# by hooks.allowedAgentIds and hooks.allowedSessionKeyPrefixes, which this
+# script keeps as tight as the box's other integrations allow.
+#
 # This is the box-side helper provision-podcast-client.sh delegates the
 # "hook-mapping" step to, and the helper revoke-podcast-client.sh calls with
 # --remove. All three CLI shapes below are honored:
@@ -101,6 +173,7 @@
 #
 # USAGE:
 #   register-podcast-hook.sh --client-slug <slug> [flags]
+#   register-podcast-hook.sh --verify --client-slug <slug>
 #   register-podcast-hook.sh <slug> [<route-id>] [flags]
 #
 # FLAGS:
@@ -112,6 +185,14 @@
 #                         prefix from hooks.allowedSessionKeyPrefixes once no
 #                         podcast:* route remains. Every other route and key is
 #                         preserved.
+#   --verify              READ-ONLY activation read-back. Asserts the plugin
+#                         route, the gateway hook mapping, the two allow-lists,
+#                         the hooks ingress and its token are all present
+#                         exactly as this script writes them, and that no
+#                         earlier catch-all mapping shadows the podcast route.
+#                         Writes NOTHING (safe as any user, root included).
+#                         Exit 0 PASS, 2 FAIL. This is the surface
+#                         provision-podcast-client.sh gates activation on.
 #   --dry-run             Resolve + print the planned registration; write
 #                         nothing. Exits 0 when plannable.
 #   -h, --help            Show this help.
@@ -148,6 +229,10 @@ set -euo pipefail
 
 PROG="$(basename "$0")"
 WEBHOOK_DIR="$(cd "$(dirname "$0")/webhook" 2>/dev/null && pwd || true)"
+# Absolute skill root, resolved at registration time and embedded in the hook
+# mapping's messageTemplate so the dispatched turn runs the SHIPPED handler and
+# step driver, never a path it had to guess.
+SKILL_ROOT="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || true)"
 SECRET_LABEL="PODCAST_INTAKE_HOOK_SECRET"
 INBOUND_SECRET_LABEL="PODCAST_INTAKE_INBOUND_SECRET"
 SESSION_PREFIX="podcast:"
@@ -160,7 +245,7 @@ log() { printf '%s\n' "$*" >&2; }
 die() { local code="$1"; shift; log "HARD STOP ($code): $*"; exit "$code"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$EX_REFUSED" "missing dependency: $1"; }
 
-usage() { sed -n '2,146p' "$0" | sed 's/^# \{0,1\}//' >&2; }
+usage() { sed -n '2,227p' "$0" | sed 's/^# \{0,1\}//' >&2; }
 
 
 # --------------------------------------------------------------------------- #
@@ -175,6 +260,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --client-slug) CLIENT_SLUG="${2:-}"; shift 2 ;;
     --remove)      MODE="remove"; shift ;;
+    --verify)      MODE="verify"; shift ;;
     --dry-run)     DRY_RUN="1"; shift ;;
     -h|--help)     usage; exit "$EX_OK" ;;
     --) shift; while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done ;;
@@ -230,9 +316,82 @@ fi
 jq empty "$CONFIG_FILE" 2>/dev/null || die "$EX_REFUSED" "openclaw.json at $CONFIG_FILE is not valid JSON; refusing to touch it"
 
 # Root guard: config writes run as the node runtime user, never root (a
-# root-owned config file freezes the gateway). Dry-run is read-only and allowed.
-if [ "$DRY_RUN" != "1" ] && [ "$(id -u)" = "0" ]; then
+# root-owned config file freezes the gateway). Dry-run and --verify are
+# read-only and allowed.
+if [ "$DRY_RUN" != "1" ] && [ "$MODE" != "verify" ] && [ "$(id -u)" = "0" ]; then
   die "$EX_REFUSED" "running as root is refused; config writes must run as the node runtime user (re-run as the node user)"
+fi
+
+# --------------------------------------------------------------------------- #
+# Registration read-back: the ONE assertion surface. --verify runs it read-only
+# and the post-write verification below runs the SAME function, so what
+# provisioning gates on and what this script proves after a write can never
+# drift apart. Prints [PASS] / [MISS] lines; returns 0 only when every check
+# passes. Never prints a secret (presence and shape only).
+# --------------------------------------------------------------------------- #
+VERIFY_MISS=0
+vchk() {
+  local vlabel="$1" vfilter="$2"
+  if jq -e --arg rid "$ROUTE_ID" --arg sk "$SESSION_KEY" --arg label "$SECRET_LABEL" \
+       --arg agent "$AGENT_ID" "$vfilter" "$CONFIG_FILE" >/dev/null 2>&1; then
+    log "  [PASS] $vlabel"
+  else
+    log "  [MISS] $vlabel"
+    VERIFY_MISS=$((VERIFY_MISS+1))
+  fi
+}
+
+verify_registration() {
+  VERIFY_MISS=0
+  log ""
+  log "verify podcast intake activation for client '$CLIENT_SLUG' against $CONFIG_FILE"
+  vchk "plugin route $ROUTE_ID present once, bound sessionKey, SecretRef by label" '
+    .plugins.entries.webhooks.config.routes[$rid] as $r
+    | ($r != null)
+      and ($r.sessionKey == $sk)
+      and ($r.secret.source == "env")
+      and ($r.secret.provider == "default")
+      and ($r.secret.id == $label)
+      and ((($r | keys) - ["enabled","path","sessionKey","secret","controllerId","description"]) | length) == 0'
+  vchk "hooks.allowedAgentIds carries $AGENT_ID" \
+    '((.hooks.allowedAgentIds // []) | index($agent)) != null'
+  vchk "hooks.allowedSessionKeyPrefixes carries podcast:" \
+    '((.hooks.allowedSessionKeyPrefixes // []) | index("podcast:")) != null'
+  vchk "prefix allow-list satisfies the gateway hook: start-up rule" '
+    ((.hooks.defaultSessionKey // "") != "")
+    or (((.hooks.allowedSessionKeyPrefixes // []) | index("hook:")) != null)'
+  vchk "hooks ingress enabled (hooks.enabled true)" '.hooks.enabled == true'
+  vchk "hooks.token SET (plaintext or a \${LABEL} env reference the loader resolves)" \
+    '(((.hooks.token // "") | tostring) | length) > 0'
+  vchk "gateway hook mapping $ROUTE_ID present once, action agent, agentId $AGENT_ID" '
+    [(.hooks.mappings // [])[] | select((type == "object") and (.id == $rid))] as $m
+    | (($m | length) == 1)
+      and ($m[0].match.path == $rid)
+      and (($m[0].action // "agent") == "agent")
+      and ($m[0].agentId == $agent)
+      and ($m[0].sessionKey == $sk)
+      and ($m[0].sessionMode == "persistent")
+      and (($m[0].wakeMode // "now") == "now")
+      and ($m[0].deliver == false)
+      and ($m[0].allowUnsafeExternalContent == false)
+      and ((($m[0].messageTemplate // "") | length) > 0)'
+  vchk "no earlier catch-all mapping shadows $ROUTE_ID" '
+    (.hooks.mappings // []) as $ms
+    | ([$ms | to_entries[] | select((.value | type) == "object") | select(.value.id == $rid) | .key] | first) as $i
+    | if $i == null then false
+      else ([$ms[0:$i][] | select((type == "object") and (((.match.path // "") | tostring) == ""))] | length) == 0
+      end'
+  if [ "$VERIFY_MISS" -eq 0 ]; then
+    log "verify: PASS -- route, gateway hook mapping, allow-lists and hooks token are registered for $CLIENT_SLUG"
+    return 0
+  fi
+  log "verify: FAIL -- $VERIFY_MISS check(s) missed; re-run: $PROG --client-slug $CLIENT_SLUG"
+  return 1
+}
+
+if [ "$MODE" = "verify" ]; then
+  if verify_registration; then exit "$EX_OK"; fi
+  exit "$EX_REFUSED"
 fi
 
 # Preflight: the PODCAST_CLIENT_* onboarding env plus the route secret label.
@@ -437,6 +596,73 @@ ROUTE_JSON="$(jq -n \
     description: $desc
   }')"
 
+# --------------------------------------------------------------------------- #
+# The gateway hook mapping (the flat-body trigger). The messageTemplate is a
+# DETERMINISTIC instruction list, not a reasoning prompt: write the body to a
+# file, run the deterministic intake handler in trigger-flow mode, then drive
+# the step driver. {{.}} is the installed resolver's whole-body expression
+# (verified against dist/hooks-*.mjs; {{payload}} renders empty).
+# --------------------------------------------------------------------------- #
+ENGINE_STATE_DIR="$(dirname "$CONFIG_FILE")/state/podcast-engine"
+INTAKE_INBOX_DIR="${ENGINE_STATE_DIR}/intake-inbox"
+MESSAGE_TEMPLATE="PODCAST INTAKE (deterministic; no interpretation, no client-facing message).
+A Convert and Flow intake submission arrived on route ${ROUTE_ID} for client ${CLIENT_SLUG}.
+Do exactly these steps, in this order, in THIS turn, and nothing else.
+
+1. Create ${INTAKE_INBOX_DIR} if it does not exist (mode 0700) and write the JSON
+   object between the two INTAKE-PAYLOAD markers below, verbatim and unmodified,
+   to a new file in it named ${CLIENT_SLUG}-\$(date -u +%Y%m%dT%H%M%SZ)-\$RANDOM.json
+   (mode 0600). Do not reformat it, do not add fields, do not drop fields.
+2. Run, with that file path as PAYLOAD_FILE:
+   python3 ${SKILL_ROOT}/scripts/webhook/intake_handler.py handle --payload \"\$PAYLOAD_FILE\" --mode trigger-flow --json
+3. Read the JSON the handler printed. Its status decides the rest:
+   accepted            -> continue to step 4 using its job_id.
+   duplicate | test | needs_input | accepted-incomplete | quarantined | rejected
+                       -> STOP here. The handler already closed or parked the
+                          flow and wrote the operator alert. Never re-run the
+                          handler on the same payload; a re-run is a duplicate.
+   error               -> STOP and raise the operator alert path; do not retry blind.
+4. For an accepted job ONLY, advance the pipeline in this same tool-bearing turn
+   per SOP-PODCAST-01 Section 8: repeatedly run
+   python3 ${SKILL_ROOT}/scripts/podcast_step_driver.py next --job-id <job_id>
+   and execute EXACTLY the command the driver prints, recording every stage
+   change through podcast_state.py, until the driver reports the job is waiting,
+   complete, or failed. The driver is a tool you call, never a daemon.
+5. Send NO client-facing message. Convert and Flow owns every customer message.
+   Operator alerts go to the alert log the engine already writes.
+
+-----BEGIN INTAKE-PAYLOAD-----
+{{.}}
+-----END INTAKE-PAYLOAD-----"
+
+MAPPING_JSON="$(jq -n \
+  --arg rid "$ROUTE_ID" \
+  --arg sk "$SESSION_KEY" \
+  --arg agent "$AGENT_ID" \
+  --arg name "Podcast intake (${CLIENT_SLUG})" \
+  --arg tpl "$MESSAGE_TEMPLATE" \
+  '{
+    id: $rid,
+    match: { path: $rid },
+    action: "agent",
+    wakeMode: "now",
+    name: $name,
+    agentId: $agent,
+    sessionKey: $sk,
+    sessionMode: "persistent",
+    deliver: false,
+    allowUnsafeExternalContent: false,
+    messageTemplate: $tpl
+  }')"
+
+# hooks.token custody state, decided BEFORE the merge so the operator sees which
+# token the upstream sender must carry. Values are never read or printed.
+HOOKS_TOKEN_REF="\${${SECRET_LABEL}}"
+HOOKS_TOKEN_STATE="$(jq -r --arg ours "$HOOKS_TOKEN_REF" '
+  if (((.hooks.token // "") | tostring) | length) == 0 then "unset"
+  elif (.hooks.token == $ours) then "ours"
+  else "other" end' "$CONFIG_FILE" 2>/dev/null || printf 'unset')"
+
 log ""
 log "planned ${MODE} registration for client '$CLIENT_SLUG' against $CONFIG_FILE:"
 log "  route id                 : $ROUTE_ID"
@@ -446,6 +672,23 @@ log "  secret                   : SecretRef env label ${SECRET_LABEL} (value nev
 log "  controllerId             : $CONTROLLER_ID"
 log "  hooks.allowedAgentIds    + $AGENT_ID (podcast dept agent only)"
 log "  hooks.allowedSessionKeyPrefixes + ${SESSION_PREFIX} (podcast namespace only; pre-existing entries and defaultSessionKey preserved)"
+if [ "$MODE" = "add" ]; then
+  log "  gateway hook mapping     : hooks.mappings[] id $ROUTE_ID (prepended, upsert by id)"
+  log "    upstream endpoint      : POST /hooks/${ROUTE_ID} with Authorization: Bearer <hooks token>, FLAT survey body"
+  log "    dispatch               : action agent -> $AGENT_ID, session $SESSION_KEY (persistent), wakeMode now, deliver false, allowUnsafeExternalContent false"
+  log "    turn does              : intake_handler.py --mode trigger-flow, then podcast_step_driver.py next (no daemon)"
+  case "$HOOKS_TOKEN_STATE" in
+    unset)
+      log "  hooks.token              : NOT set on this box; this run writes the env reference $HOOKS_TOKEN_REF (plaintext never enters openclaw.json)"
+      log "    upstream Bearer        : the value of ${SECRET_LABEL} (same one secret as the plugin route's SecretRef)" ;;
+    ours)
+      log "  hooks.token              : already the $HOOKS_TOKEN_REF env reference; left untouched"
+      log "    upstream Bearer        : the value of ${SECRET_LABEL}" ;;
+    *)
+      log "  hooks.token              : ALREADY SET to a different value; it is NOT overwritten (another integration owns it)"
+      log "    upstream Bearer        : that EXISTING box hooks token, read from the box's own credential store, never from chat" ;;
+  esac
+fi
 if [ "$MODE" = "remove" ]; then
   log "  action                   : delete route $ROUTE_ID; drop $AGENT_ID and ${SESSION_PREFIX} once no podcast:* route remains; preserve everything else"
 fi
@@ -474,6 +717,22 @@ if [ "$MODE" = "add" ] && jq -e '.plugins.entries.webhooks.enabled == false' "$C
   die "$EX_REFUSED" "the webhooks plugin is explicitly disabled on this box; enable it before registering the podcast intake route"
 fi
 
+# Same fail-closed rule for the gateway hooks ingress: an explicit
+# "hooks": { "enabled": false } is a deliberate box decision. Flipping it
+# silently would open an ingress the box turned off, and leaving it off would
+# ship a mapping that can never fire. Refuse and name the key.
+if [ "$MODE" = "add" ] && jq -e '.hooks.enabled == false' "$CONFIG_FILE" >/dev/null 2>&1; then
+  die "$EX_REFUSED" "hooks.enabled is explicitly false on this box; the gateway hooks ingress is what the upstream survey sender posts to. Set hooks.enabled true (and keep hooks.token set) as the node user, then re-run this registrar"
+fi
+
+# hooks.enabled requires hooks.token, and this registration is the thing that
+# turns the ingress on. When no token exists we write the env reference; that
+# needs the label SET so the loader can resolve it. Fail closed rather than
+# enable an ingress whose token can never resolve.
+if [ "$MODE" = "add" ] && [ "$HOOKS_TOKEN_STATE" = "unset" ] && [ -z "${PODCAST_INTAKE_HOOK_SECRET:-}" ]; then
+  die "$EX_REFUSED" "hooks.token is unset on this box and ${SECRET_LABEL} is NOT SET in the live process environment, so the env reference $HOOKS_TOKEN_REF could never resolve and the gateway would refuse to start. Export ${SECRET_LABEL} (openssl rand -hex 32 at onboarding) and re-run"
+fi
+
 # --------------------------------------------------------------------------- #
 # Apply the merge (python3 stdlib: read, mutate, backup, atomic write). The
 # route secret is a SecretRef by label; no secret value can land in the file.
@@ -485,7 +744,9 @@ fi
 # ("$(... <<'PY' ... PY ...)") fails to parse on stock macOS bash 3.2.
 MERGE_OUT=$(REG_CONFIG="$CONFIG_FILE" REG_ROUTE_ID="$ROUTE_ID" REG_SESSION_KEY="$SESSION_KEY" \
   REG_AGENT_ID="$AGENT_ID" REG_CONTROLLER_ID="$CONTROLLER_ID" REG_DESCRIPTION="$DESCRIPTION" \
-  REG_MODE="$MODE" REG_ROUTE_JSON="$ROUTE_JSON" python3 - <<'PY'
+  REG_MODE="$MODE" REG_ROUTE_JSON="$ROUTE_JSON" REG_MAPPING_JSON="$MAPPING_JSON" \
+  REG_HOOKS_TOKEN_REF="$HOOKS_TOKEN_REF" REG_HOOKS_TOKEN_STATE="$HOOKS_TOKEN_STATE" \
+  python3 - <<'PY'
 import datetime, json, os, shutil, sys, tempfile
 
 cfg_path = os.environ["REG_CONFIG"]
@@ -565,10 +826,59 @@ if mode == "add":
         # matching hooks.allowedSessionKeyPrefixes or the gateway refuses to
         # start. Preserve the pre-existing default's own value.
         prefixes.append(default_sk)
+    # Start-up rule read out of the installed gateway (resolveHooksConfig in
+    # dist/hooks-*.mjs): with a prefix allow-list set and NO defaultSessionKey,
+    # the list must admit "hook:example" or the gateway throws
+    # "hooks.allowedSessionKeyPrefixes must include 'hook:' when
+    # hooks.defaultSessionKey is unset" and every hook on the box dies. Add it
+    # in exactly that case; never remove it (another integration may rely on it).
+    if not (isinstance(default_sk, str) and default_sk.strip()) and "hook:" not in prefixes:
+        prefixes.append("hook:")
     hooks["allowedSessionKeyPrefixes"] = prefixes
+
+    # The gateway hooks ingress: the surface the FLAT upstream survey body posts
+    # to. An explicit false was refused before we got here; unset means this
+    # registration turns it on, which the platform allows only with a token.
+    if hooks.get("enabled") is False:
+        sys.stderr.write("hooks.enabled is explicitly false on this box; enable it before registering the podcast intake mapping\n")
+        sys.exit(2)
+    hooks["enabled"] = True
+    token = hooks.get("token")
+    token_str = token.strip() if isinstance(token, str) else ""
+    if not token_str:
+        # One secret, two surfaces: the same env label the plugin route's
+        # SecretRef names. ${VAR} is resolved by the config loader at load time,
+        # so no plaintext ever lands in openclaw.json.
+        hooks["token"] = os.environ["REG_HOOKS_TOKEN_REF"]
+    # An existing token that is NOT ours is left exactly as it is: it belongs to
+    # whatever integration already holds it, and the operator was told to paste
+    # that value into the upstream sender instead.
+
+    # Gateway hook mapping, upsert by id, PREPENDED. Prepending keeps a
+    # pre-existing catch-all mapping (no match.path) from shadowing this route;
+    # the exact match.path means it can never shadow anyone else.
+    mapping = json.loads(os.environ["REG_MAPPING_JSON"])
+    raw_mappings = hooks.get("mappings")
+    if not isinstance(raw_mappings, list):
+        raw_mappings = []
+    kept = [
+        m for m in raw_mappings
+        if not (isinstance(m, dict) and m.get("id") == route_id)
+    ]
+    hooks["mappings"] = [mapping] + kept
 else:
     if route_id in routes:
         del routes[route_id]
+    # Symmetric teardown of the gateway hook mapping (this client's trigger).
+    # hooks.enabled and hooks.token are NEVER touched on removal: other
+    # integrations on the box may depend on the ingress, and dropping a token
+    # another sender holds is a fleet outage, not a revocation.
+    hooks_for_map = cfg.get("hooks")
+    if isinstance(hooks_for_map, dict) and isinstance(hooks_for_map.get("mappings"), list):
+        hooks_for_map["mappings"] = [
+            m for m in hooks_for_map["mappings"]
+            if not (isinstance(m, dict) and m.get("id") == route_id)
+        ]
     remaining_podcast = [
         rid for rid, r in routes.items()
         if isinstance(r, dict) and str(r.get("sessionKey") or "").startswith("podcast:")
@@ -638,20 +948,11 @@ BACKUP_FILE="${MERGE_OUT#WRITTEN }"
 # --------------------------------------------------------------------------- #
 VERIFY_RC=0
 if [ "$MODE" = "add" ]; then
-  jq -e --arg rid "$ROUTE_ID" --arg sk "$SESSION_KEY" --arg label "$SECRET_LABEL" --arg agent "$AGENT_ID" '
-    .plugins.entries.webhooks.config.routes[$rid] as $r
-    | ($r != null)
-      and ($r.sessionKey == $sk)
-      and ($r.secret.source == "env")
-      and ($r.secret.provider == "default")
-      and ($r.secret.id == $label)
-      and (($r | keys) - ["enabled","path","sessionKey","secret","controllerId","description"] | length == 0)
-      and ((.hooks.allowedAgentIds // []) | index($agent) != null)
-      and ((.hooks.allowedSessionKeyPrefixes // []) | index("podcast:") != null)
-  ' "$CONFIG_FILE" >/dev/null 2>&1 || VERIFY_RC=1
+  verify_registration || VERIFY_RC=1
 else
   jq -e --arg rid "$ROUTE_ID" --arg agent "$AGENT_ID" '
     (.plugins.entries.webhooks.config.routes[$rid] == null)
+    and (([(.hooks.mappings // [])[] | select((type == "object") and (.id == $rid))] | length) == 0)
     and (
       ([(.plugins.entries.webhooks.config.routes // {})[]
          | select(type=="object" and ((.sessionKey // "") | startswith("podcast:")))] | length) as $n
@@ -668,15 +969,15 @@ if [ "$VERIFY_RC" != "0" ]; then
     log "restored $CONFIG_FILE from $BACKUP_FILE"
   fi
   if [ "$MODE" = "add" ]; then
-    die "$EX_GATEWAY" "read-back verification FAILED: route $ROUTE_ID not present exactly as specified in $CONFIG_FILE"
+    die "$EX_GATEWAY" "read-back verification FAILED (see the [MISS] lines above): $CONFIG_FILE does not carry the route and its gateway hook mapping exactly as specified"
   else
-    die "$EX_GATEWAY" "read-back verification FAILED: route $ROUTE_ID still present (or podcast allow-list entries not dropped) in $CONFIG_FILE"
+    die "$EX_GATEWAY" "read-back verification FAILED: route $ROUTE_ID or its gateway hook mapping still present (or podcast allow-list entries not dropped) in $CONFIG_FILE"
   fi
 fi
 if [ "$MODE" = "add" ]; then
-  log "read-back verified: route $ROUTE_ID present exactly once; sessionKey $SESSION_KEY; secret SecretRef by label; allow-lists merged"
+  log "read-back verified: route $ROUTE_ID and gateway hook mapping $ROUTE_ID present exactly once; sessionKey $SESSION_KEY; secret SecretRef by label; allow-lists merged"
 else
-  log "read-back verified: route $ROUTE_ID removed; podcast agent id and podcast: prefix dropped from the allow-lists"
+  log "read-back verified: route $ROUTE_ID and its gateway hook mapping removed; podcast agent id and podcast: prefix dropped from the allow-lists"
 fi
 
 # Gateway config validation: gate only when the baseline validated (a box whose

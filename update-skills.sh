@@ -5824,6 +5824,54 @@ except Exception:
   # <<< U6C-SOP-LIBRARY-END
 
   # ----------------------------------------------------------
+  # Step U6c1b: universal-sops CRAFT-CLUSTER SOP ingest (ISSUE-12).
+  #
+  # WHY THIS IS SEPARATE FROM U6c ABOVE, and why it must run unconditionally.
+  # An engine whose operating SOPs live in universal-sops/<cluster>/ as markdown
+  # is in NEITHER source U6c knows about: not the shared sops.jsonl release
+  # asset, and not 23-ai-workforce-blueprint/templates/role-library/<dept>/sops/.
+  # The podcast engine is exactly that case (seven SOP-PODCAST-0*.md files,
+  # department 'podcast', and role-library/podcast/ ships roles but no sops/
+  # directory at all), so its entire runbook was invisible to the Command Center
+  # SOP library and to semantic SOP search on every box in the fleet.
+  #
+  # U6c cannot carry this: a box at or above canonical population takes its
+  # "touch NOTHING" branch and never invokes the ingester, and that is precisely
+  # the box that has been missing these rows the longest. This step reads its own
+  # signal and calls the ingester's --craft-clusters mode directly.
+  #
+  # Cost and safety: a local sqlite upsert keyed by slug. No download, no
+  # network, ZERO embedding API calls (so zero cost on the client's own key),
+  # no delete, and re-running is free. Additive: a non-zero exit is reported and
+  # never latches a U6c failure, because the shared library is unaffected by it.
+  #
+  # The DEPARTMENT itself needs no new wiring here: 'podcast' is
+  # universal_primary=true in department-naming-map.json's content-creator pack,
+  # so it is already on the 30-department universal floor that
+  # migrate-existing-workforce.sh's floor-fill and materialize-dept-agents.sh
+  # materialize on every box. The SOPs were the missing half, not the department.
+  # ----------------------------------------------------------
+  _U6C_CRAFT_PY="$SKILLS_DIR/32-command-center-setup/scripts/ingest-sop-library.py"
+  [ -f "$_U6C_CRAFT_PY" ] || _U6C_CRAFT_PY="$EXTRACTED_DIR/32-command-center-setup/scripts/ingest-sop-library.py"
+  echo ""
+  echo "  Step U6c1b: universal-sops craft-cluster SOP ingest..."
+  if [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
+    echo "  - craft-cluster SOPs: no mission-control.db on this box (Command Center not installed); SKIP (informational)."
+  elif [ ! -f "$_U6C_CRAFT_PY" ]; then
+    echo "  - craft-cluster SOPs: ingest-sop-library.py not found on this box; SKIP (Skill 32 install is partial)."
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "  - craft-cluster SOPs: python3 unavailable; SKIP."
+  else
+    if python3 "$_U6C_CRAFT_PY" --craft-clusters --db "$_U6C_DB" >>"$LOG_FILE" 2>&1; then
+      _U6C_CRAFT_N="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops WHERE department='podcast';")"
+      echo "  ✓ craft-cluster SOPs ingested (podcast department rows now: ${_U6C_CRAFT_N:-0}); see $LOG_FILE"
+    else
+      echo "  ⚠ craft-cluster SOP ingest returned non-zero (additive; the shared library is unaffected); see $LOG_FILE"
+    fi
+  fi
+  unset _U6C_CRAFT_PY _U6C_CRAFT_N
+
+  # ----------------------------------------------------------
   # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
   # Step U6c2: SOP-embeddings population check (Bug D).
   #
@@ -7990,6 +8038,57 @@ with open('${_MANIFEST_TMP}', 'w') as f:
       echo "  ✓ hooks/ library persisted to $_OC_HOOKS_DEST"
     else
       echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
+    fi
+  fi
+
+  # ----------------------------------------------------------
+  # LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root).
+  #
+  # Mirrors the install.sh block of the same name. It lives HERE, before the
+  # "# Cleanup" rm -rf of the temp clone, because the installer and the
+  # watchdog it lays down are repo artifacts under platform/mac/ and are gone
+  # the moment that clone is removed.
+  #
+  # The gap: the rescue connector com.blackceo.rescue-<slug> is a SYSTEM-domain
+  # daemon installed by an operator runbook. After a reboot it can hold a stale
+  # cached edge address and dial an RFC1918 address on port 7844 forever while
+  # launchd KeepAlive keeps the useless process alive. Alive is not registered,
+  # and no watchdog in this repo saw that state before Layer E. The same reboot
+  # sometimes leaves sshd disabled in the launchd system domain.
+  #
+  # Needs root, so this uses `sudo -n`. Without a passwordless sudo ticket the
+  # roll is NOT blocked: it prints the exact one-line command instead.
+  # Idempotent and fail-soft. An update must never be the thing that stops.
+  # ----------------------------------------------------------
+  if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
+    HERE_RESCUE_WD_DIR="$EXTRACTED_DIR/platform/mac/tunnel-hardening"
+    _RESCUE_WD_INSTALLER="$HERE_RESCUE_WD_DIR/install-rescue-tunnel-watchdog.sh"
+    if [ -f "$_RESCUE_WD_INSTALLER" ]; then
+      if sudo -n true 2>/dev/null; then
+        if sudo -n bash "$_RESCUE_WD_INSTALLER" >>"$LOG_FILE" 2>&1; then
+          echo "  ✓ rescue-tunnel reboot-stale watchdog installed (com.blackceo.rescue-tunnel-watchdog, every 120s)"
+        else
+          echo "  ⚠ rescue-tunnel watchdog install returned non-zero (see $LOG_FILE); advisory, does not fail the roll"
+        fi
+      else
+        # The installer lives in the temp clone, which is removed at Cleanup, so
+        # stage a persistent copy the client can actually run afterwards.
+        _RESCUE_WD_STAGED="$OC_CONFIG/scripts/install-rescue-tunnel-watchdog.sh"
+        mkdir -p "$OC_CONFIG/scripts" 2>/dev/null || true
+        if cp -f "$HERE_RESCUE_WD_DIR/rescue-tunnel-watchdog.sh" "$OC_CONFIG/scripts/rescue-tunnel-watchdog.sh" 2>/dev/null \
+           && cp -f "$HERE_RESCUE_WD_DIR/com.blackceo.rescue-tunnel-watchdog.plist.template" "$OC_CONFIG/scripts/com.blackceo.rescue-tunnel-watchdog.plist.template" 2>/dev/null \
+           && cp -f "$_RESCUE_WD_INSTALLER" "$_RESCUE_WD_STAGED" 2>/dev/null; then
+          chmod +x "$_RESCUE_WD_STAGED" "$OC_CONFIG/scripts/rescue-tunnel-watchdog.sh" 2>/dev/null || true
+          echo "  ℹ rescue-tunnel watchdog NOT installed: no passwordless sudo on this box (the roll continues normally)."
+          echo "    Run this ONE command here, entering your own password:"
+          echo "      sudo bash $_RESCUE_WD_STAGED"
+        else
+          echo "  ℹ rescue-tunnel watchdog NOT installed: no passwordless sudo, and the installer could not be staged for a later manual run."
+          echo "    Re-run install.sh on this box, which offers the same step."
+        fi
+      fi
+    else
+      echo "  ℹ rescue-tunnel watchdog installer not in this bundle; skipping (older onboarding bundle, harmless)"
     fi
   fi
 
