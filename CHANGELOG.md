@@ -1,3 +1,28 @@
+## [v25.1.44]  -  2026-09-17  -  The speech fallback fails over the CREDENTIAL, not just the model
+
+### What Changed
+- **PD-TEST-196 — "Ollama Cloud primary, OpenRouter fallback" was not a failover, and `P9-SPEECH` died on it.** `resolve_api_key()` returned the first **non-empty** name from a precedence list — a string, never a *working* credential — while `resolve_base_url()` chose the endpoint from a **different** list, so the two were picked independently. The only actual failover switched the **model** and reused the **same `api_key`**, so a 401 from a dead key was retried against the same endpoint with the same rejected credential and could only fail again.
+
+  Measured live on `pres-operator-1d269693`, on this box, through the department's own resolution path:
+
+  | sent | endpoint | result |
+  |---|---|---|
+  | `OLLAMA_API_KEY` (21 chars) | `ollama.com` | **HTTP 401** `{"error":{"message":"Unauthorized","type":"api_error","param":null,"code":null}}` |
+  | `OPENROUTER_API_KEY` (73 chars) | `openrouter.ai` | **HTTP 200** |
+
+  The 401 body is byte-for-byte the one in the live engine log. **A working key was in the same environment the whole time.**
+
+  **Fix:** `resolve_candidates()` returns ordered `(label, endpoint, key, model)` **pairs**. The primary stays first, so the happy path is unchanged; on a `HardAPIError` the transport advances to the next candidate **carrying its own endpoint, its own credential and its own model**.
+
+- **A credential pair alone is NOT sufficient, and I only found that by probing the real store.** With the primary's Ollama model name (`gpt-oss:120b`) against OpenRouter the answer is **HTTP 400, not 200** — the key is *accepted* and the *request* is wrong. So each fallback also carries a model valid for its endpoint (`deepseek/deepseek-chat`, `gpt-4o-mini`), overridable with `SPEECH_LLM_FALLBACK_MODEL`.
+
+  **The chain, probed for real:** primary → **401**; openrouter → **200** (first working, the run resumes here); openai → **200**. The old code retried the rejected key and re-quarantined.
+
+  **Controls** (`tests/test_pd196_speech_failover_paired_credential.py`, 6 cases): the primary is first (happy path unchanged), the OpenRouter candidate carries the OpenRouter key and endpoint (**the rejected key never travels to the other service**), every candidate is a paired endpoint+key, no alternative key means no phantom candidate, each fallback carries its own model with an override, and an explicit operator override still wins the primary slot.
+
+### Why It Mattered
+`P9-SPEECH` is a real deliverable (`working/deliverables/PRESENTERS-SPEECH.md`) and it had been quarantined across resumes on a credential the system never needed to use. The defect was not the dead key — that is the operator's to replace — but that a **fallback which cannot change the credential is not a fallback**, and it masked a working path that was sitting right beside it.
+
 ## [v25.1.43]  -  2026-09-16  -  A phase's work is registered on the board before its card is closed
 
 ### What Changed

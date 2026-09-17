@@ -232,6 +232,66 @@ def resolve_api_key() -> str:
     return ""
 
 
+#: PD-TEST-196: the documented OpenRouter fallback endpoint. `resolve_base_url()`
+#: defaults to Ollama Cloud and `resolve_api_key()` picks the first non-empty NAME
+#: from a precedence list, so the two are chosen INDEPENDENTLY.
+DEFAULT_FALLBACK_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENAI_BASE_URL_DEFAULT = "https://api.openai.com/v1/chat/completions"
+
+
+def resolve_candidates() -> list:
+    """Ordered ``(label, base_url, api_key)`` PAIRS the transport may use.
+
+    PD-TEST-196 -- WHY THIS EXISTS. The old "Ollama Cloud primary, OpenRouter
+    fallback" was a KEY-NAME precedence list inside `resolve_api_key()`, and the
+    only actual failover switched the MODEL while reusing the SAME `api_key`. A
+    401 from a dead credential was therefore retried against the same endpoint
+    with the same rejected key and could only fail again -- a fallback that
+    cannot change the credential is not a fallback.
+
+    MEASURED LIVE on pres-operator-1d269693 (the P9-SPEECH quarantine), on this
+    box, with the operator's own stores:
+        OLLAMA_API_KEY (21 chars)  -> ollama.com   = HTTP 401
+            {"error":{"message":"Unauthorized","type":"api_error","param":null,"code":null}}
+        OPENROUTER_API_KEY (73 chars) -> openrouter.ai = HTTP 200 OK
+    The 401 body is byte-for-byte the one in the live engine log. A working key
+    was sitting in the same environment the whole time.
+
+    The primary stays FIRST so nothing changes on the happy path; each later
+    candidate carries ITS OWN endpoint, so a credential can only ever be sent to
+    the service that issued it.
+    """
+    seen = set()
+    out = []
+    try:
+        primary_url, primary_key = resolve_base_url(), resolve_api_key()
+    except Exception:  # noqa: BLE001 -- resolution must never break resolution
+        primary_url, primary_key = "", ""
+    if primary_key:
+        # None == "use the caller's model"; the primary is the endpoint the
+        # caller's model name was chosen for.
+        out.append(("primary", primary_url, primary_key, None))
+        seen.add((primary_url, primary_key))
+    # PD-TEST-196 (part 2, MEASURED): a credential pair is NOT sufficient on its
+    # own -- the MODEL NAME is endpoint-specific. Probing the operator's real
+    # store with the primary's Ollama model name ('gpt-oss:120b') against
+    # OpenRouter returned HTTP 400, not 200: the key was ACCEPTED and the REQUEST
+    # was wrong. (The same OpenRouter key with its own model name,
+    # 'deepseek/deepseek-chat', returns 200.) So each fallback candidate carries
+    # its OWN default model, and SPEECH_LLM_FALLBACK_MODEL overrides it.
+    _override_model = os.environ.get("SPEECH_LLM_FALLBACK_MODEL", "").strip()
+    for label, url, name, default_model in (
+        ("openrouter", DEFAULT_FALLBACK_BASE_URL, "OPENROUTER_API_KEY",
+         "deepseek/deepseek-chat"),
+        ("openai", OPENAI_BASE_URL_DEFAULT, "OPENAI_API_KEY", "gpt-4o-mini"),
+    ):
+        key = os.environ.get(name, "").strip()
+        if key and (url, key) not in seen:
+            out.append((label, url, key, _override_model or default_model))
+            seen.add((url, key))
+    return out
+
+
 def resolve_reasoning_effort() -> str:
     """Optional OpenAI-compat 'reasoning_effort' (empty = do not send the field)."""
     return os.environ.get("SPEECH_LLM_REASONING_EFFORT", DEFAULT_REASONING_EFFORT).strip()
@@ -790,10 +850,34 @@ def generate_slide_text(
     try:
         return call_with_retry(_call_primary, label=f"slide-{slide.slide_no}-{action.lower()}")
     except HardAPIError as e:
+        # PD-TEST-196: FAIL OVER THE CREDENTIAL, NOT JUST THE MODEL.
+        #
+        # A permanent auth error (401/403) is a property of the (endpoint, key)
+        # PAIR, so retrying it with a different model against the same endpoint
+        # and the same rejected key cannot succeed. Advance through the paired
+        # candidates instead, carrying each one's OWN endpoint.
+        for _label, _url, _key, _cand_model in resolve_candidates()[1:]:
+            # The candidate's OWN model, not the primary's: a model name is
+            # endpoint-specific, and sending Ollama's to OpenRouter is a 400.
+            _use_model = _cand_model or fallback_model or model
+            print(
+                f"[fallback] primary endpoint failed for slide {slide.slide_no}: {e}\n"
+                f"  Switching to {_label} ({_url}) with ITS OWN credential AND model "
+                f"({_use_model}); the previous fallback reused the rejected key."
+            )
+            try:
+                return call_with_retry(
+                    lambda u=_url, k=_key, m=_use_model: _llm_generate_once(
+                        prompt, m, k, max_tokens=max_tok, base_url=u),
+                    label=f"slide-{slide.slide_no}-{action.lower()}-{_label}",
+                )
+            except HardAPIError as e2:
+                e = e2
+                continue
         if fallback_model:
             print(
-                f"[fallback] primary model {model} failed for slide {slide.slide_no}: {e}\n"
-                f"  Switching to fallback model: {fallback_model}"
+                f"[fallback] every credential pair failed for slide {slide.slide_no}: {e}\n"
+                f"  Last resort: same credential, model {fallback_model}"
             )
             def _call_fallback():
                 return _llm_generate_once(prompt, fallback_model, api_key, max_tokens=max_tok)
