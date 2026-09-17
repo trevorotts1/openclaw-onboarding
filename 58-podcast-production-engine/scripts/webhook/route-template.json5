@@ -2,7 +2,7 @@
 // PODCAST PRODUCTION ENGINE :: WEBHOOKS PLUGIN ROUTE TEMPLATE (per client)
 // webhook-design.md Section 2. One route per client, exactly one.
 // -----------------------------------------------------------------------------
-// LIVE-VERIFIED against the INSTALLED gateway (OpenClaw 2026.6.11,
+// LIVE-VERIFIED against the INSTALLED gateway (OpenClaw 2026.9.4,
 // dist/extensions/webhooks/index.js). The installed schema DIFFERS from the
 // design's illustrative sketch; this template matches the installed contract, not
 // the sketch (schema drift is a known trap and the design says to validate before

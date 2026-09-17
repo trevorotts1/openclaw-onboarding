@@ -11,7 +11,7 @@ call to the platform's own webhooks action API.
 
 ## Live-verified schema finding (schema drift is real; this layer matches the box)
 
-Verified against the INSTALLED gateway on the operator box, OpenClaw 2026.6.11
+Verified against the INSTALLED gateway on the operator box, OpenClaw 2026.9.4
 (`dist/extensions/webhooks/index.js`, `dist/.../secret-input`). The installed
 contract DIFFERS from the design document's illustrative sketch, so this layer
 follows the installed contract:

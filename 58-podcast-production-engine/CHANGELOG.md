@@ -1,5 +1,16 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## [1.0.4] - 2026-09-17 - re-pin the webhook layer's schema verification to the installed OpenClaw 2026.9.4
+
+The three files in `scripts/webhook/` that carry a LIVE-VERIFIED stamp still named OpenClaw 2026.6.11 while the fleet runs 2026.9.4. A stale stamp on a schema-drift note is worse than no stamp: it tells the next reader the contract was checked against a version that is no longer on any box. Re-verified against the installed package and re-pinned:
+
+- `flow_client.py`: `createFlowRequestSchema` is unchanged at 2026.9.4, still a `strictObject` of `{action, controllerId?, goal(req), status?, notifyPolicy?, currentStep?, stateJson?, waitJson?}`. Its handler still only calls `taskFlow.tryCreateManaged`, and that function is a pure store insert. The route CREATES a queued flow and dispatches NOTHING; the string `autoAdvance` appears nowhere in the installed package. That is recorded in the header now, because it is the reason the gateway hook mapping exists at all.
+- `route-template.json5` and `README.md`: route config schema unchanged, stamps moved to 2026.9.4.
+
+Also hardened the template-syntax note in `register-podcast-hook.sh`. The claim that `{{payload}}` embeds the whole body is wrong and the failure it causes is silent, so the note now records the EXECUTED proof rather than a reading: importing the installed `dist/hooks-*.mjs` and calling its exported `applyHookMappings` with a flat survey body returns `BODY=` for `{{payload}}` and the full JSON object for `{{.}}`. `resolveTemplateExpr` does not special-case the bare word `payload`, so it falls through to `getByPath(ctx.payload, "payload")` and looks for a key literally named `payload` inside the body. Anyone "correcting" `{{.}}` to the more natural-looking `{{payload}}` ships a hook that wakes the agent with an empty payload block.
+
+No behavior change: the shipped mapping already used `{{.}}`.
+
 ## [1.0.3] - 2026-09-17 - activation train: the engine now turns itself on, and the GHL contract points at a surface that answers
 
 Four defects that together meant a fully provisioned box could accept an intake and never produce an episode.
