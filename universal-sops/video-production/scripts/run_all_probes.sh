@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# bash >= 4 required (associative arrays / mapfile / case modifiers); macOS ships 3.2 at /bin/bash.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] && [ -z "${_OC_BASH_REEXEC:-}" ]; then
+  for _oc_b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$_oc_b" ] && _OC_BASH_REEXEC=1 exec "$_oc_b" "$0" "$@"
+  done
+  echo "FATAL: bash >= 4 required (macOS ships 3.2): brew install bash" >&2; exit 3
+fi
 # run_all_probes.sh — guard runner for the Personal Video Creator cluster
 # (universal-sops/video-production). Runs every deterministic probe against a project
 # directory and writes a probes-receipt.json the final-QC meta-gate can consume.

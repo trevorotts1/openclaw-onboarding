@@ -219,7 +219,7 @@ PYEOF
     exit $?
     ;;
   disable|enable)
-    log "${action^^} $*"
+    log "$(printf '%s' "$action" | tr '[:lower:]' '[:upper:]') $*"
     MOCK_STORE="$MOCK_STORE" MOCK_E_ID="${1:-}" MOCK_E_ON="$action" python3 -c '
 import json, os, sys
 store = os.environ["MOCK_STORE"]

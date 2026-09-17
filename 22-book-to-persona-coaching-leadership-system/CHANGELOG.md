@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v7.0.1 - 2026-09-17 - fix(shell): scripts/add-persona-from-source.sh re-execs under bash 4+ on macOS
+
+The script used the bash-4-only case modifier `${s,,}` behind a hard `#!/bin/bash`
+shebang, which is always bash 3.2 on macOS, so the source-type routing died with
+"bad substitution" on every client Mac. Shebang is now `#!/usr/bin/env bash` and a
+`_OC_BASH_REEXEC` guard re-execs through Homebrew bash, or exits 3 with a loud FATAL
+when none is installed. Locked by tests/unit/bash4-syntax-guard.test.sh.
+
 ## v6.19.4 - 2026-08-04 - fix: INSTALL.md Step 6 pointed at a retired script with a flag no updater ever implemented
 
 Step 6 ("Set Up Weekly Auto-Update") told the agent to run
