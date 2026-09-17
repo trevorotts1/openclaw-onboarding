@@ -292,6 +292,18 @@ That file is the master instruction file. It contains:
 
 ---
 
+## Document delivery: Google Drive, then Notion
+
+Skill 58's Step 12 renders the Episode Package and the Speech Script, then delivers them through a two-tier chain so the documents reach the client wherever the box is provisioned.
+
+1. **Google Drive**, through the client's own Skill 14 credentials (`GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`, plus `GCP_IMPERSONATE_USER` or `GWS_ACCOUNT`). Each document is uploaded as a Google Doc and shared anyone-with-the-link-can-edit.
+2. **Notion**, the client's own workspace, when Skill 14 is not configured on the box or the Drive call delivers nothing. Needs `NOTION_API_TOKEN` and an explicit client-owned parent page, the same contract `37-zhc-closeout` uses. One `Podcast Episodes` page, then one page per episode, created idempotently. The Notion API cannot upload a file, so the published audio is linked.
+3. **Intent only**, when neither is configured: the plan records what was owed and ONE log line names both prerequisites.
+
+No tier can fail the episode. Agency and operator credentials are refused on both tiers, and the `gws` binary is never invoked because a bare headless call wipes the box's credential store. Details in `58-podcast-production-engine/INSTALL.md` and `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` section 2.10.
+
+---
+
 ## What Is Inside a Skill Folder
 
 Each skill folder contains a subset of these files:

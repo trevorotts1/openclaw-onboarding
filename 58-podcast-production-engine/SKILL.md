@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: v1.0.5
+version: v1.0.6
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -507,14 +507,19 @@ client name first, then the episode title. The free tier is structurally refused
 STEP 12, DOCUMENTS. status `publishing`. Detect tooling (Google preferred, then Notion, then
 plain text last resort). Episode Package rich and fully rendered with no font below 12 point;
 Speech Script clean text only. Where Google is the destination, sharing is set to anyone with
-the link can edit. When the box holds the client's own Skill 14 Google Workspace credentials
-(`GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` plus
-`GCP_IMPERSONATE_USER` or `GWS_ACCOUNT`, with an optional `PODCAST_DRIVE_ROOT_FOLDER_ID`
-destination folder), Step 12 PERFORMS the Drive upload and the share itself over Drive REST and
-records each file id and link in the documents plan, so Step 16 LINK BACK writes real links.
-Without those credentials it logs one skip line naming Skill 14 and the episode continues
-unchanged. It never invokes the gws binary: a bare headless gws call wipes the box's credential
-store. See `modules/documents.md` and SOP-PODCAST-02 section 2.10.
+the link can edit. Step 12 PERFORMS the delivery as a two-tier chain and records every id and
+link in the documents plan, so Step 16 LINK BACK writes real links. TIER 1 is Google Drive
+through the client's own Skill 14 credentials (`GOOGLE_APPLICATION_CREDENTIALS` or
+`GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` plus `GCP_IMPERSONATE_USER` or `GWS_ACCOUNT`, with an
+optional `PODCAST_DRIVE_ROOT_FOLDER_ID` destination folder). TIER 2, when Skill 14 is not
+configured on the box or the Drive call delivers nothing, is the client's OWN Notion
+(`NOTION_API_TOKEN` plus an explicit client-owned parent page, the `37-zhc-closeout` contract):
+one `Podcast Episodes` page, then one page per episode, created idempotently, with the published
+audio LINKED because the Notion API cannot upload a file. TIER 3, neither configured, keeps the
+intent-only record and logs ONE line naming both prerequisites. No tier fails the episode. The
+agency token and agency parent page are refused, and the gws binary is never invoked because a
+bare headless gws call wipes the box's credential store. See `INSTALL.md`,
+`modules/documents.md` and SOP-PODCAST-02 section 2.10.
 
 STEP 12.5, SHOW NOTES. status `publishing`. Draft thorough, enticing show notes (800 to 2500
 characters) from the FROZEN research package and the blueprint alone -- thesis, power statements,

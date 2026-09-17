@@ -13,18 +13,29 @@ This renderer is deterministic and pure standard library. It calls NO model and
 NO MCP tool. It renders the two artifacts to disk and emits a machine-readable
 destination action plan.
 
-When the destination is Google AND this box holds the client's own Skill 14
-Google Workspace credentials, this renderer also PERFORMS the Drive half of that
-plan: it uploads each rendered document as a Google Doc, sets the sharing the
-plan describes, stamps every executed intent performed:true with its file id and
-link, and records the links under plan["links"] so Steps 16 and 17 reference real
-documents. Delivery speaks the Drive REST API directly with the client's own
-service account and NEVER invokes the gws binary, which self-wipes its credential
-store when it runs headless. With no credentials on the box the plan stays
-intent-only, one skip line is logged, and the episode carries on unchanged;
---no-deliver forces that intent-only path. Notion delivery is unchanged and is
-still executed by the podcast agent in its own turn over REST, never MCP.
-Delivery never changes this script's exit code.
+DELIVERY IS A TWO-TIER CHAIN, performed by this renderer:
+
+  Tier 1  Google Drive, through the client's own Skill 14 Google Workspace
+          credentials. Each rendered document is uploaded as a Google Doc, the
+          sharing the plan describes is applied, every executed intent is stamped
+          performed:true with its file id and link, and the links are recorded
+          under plan["links"] so Steps 16 and 17 reference real documents.
+  Tier 2  The client's OWN Notion workspace, tried when Skill 14 is not configured
+          on this box or the Drive call delivered nothing. Nearly every client box
+          already has Notion connected. One "Podcast Episodes" parent page per
+          client, then one page per episode, created idempotently: re-running
+          Step 12 for the same episode replaces that page's blocks and never
+          duplicates it. The Notion API cannot upload a file, so the published
+          audio from Step 15 is LINKED, never uploaded.
+  Tier 3  Today's intent-only record plus ONE log line naming both prerequisites.
+
+Drive speaks the Drive REST API directly with the client's own service account and
+NEVER invokes the gws binary, which self-wipes its credential store when it runs
+headless. Notion follows the repo's existing convention (37-zhc-closeout and the
+Skill 38 client-doc standard), including the client-ownership rule: the page lives
+in the CLIENT's Notion under the CLIENT's token, and the agency token and agency
+parent page are refused. No tier can fail the episode or change this script's exit
+code. --no-deliver forces the intent-only path.
 
 Google sharing rule (Google destination only): anyone with the link can edit,
 expressed as Drive permission role=writer, type=anyone. Notion has no identical
@@ -770,7 +781,6 @@ def perform_drive_delivery(plan: dict, creds: dict) -> dict:
         "documents": {},
         "errors": [],
     }
-    plan["delivery"] = delivery
     links: dict = plan.setdefault("links", {})
     captured: dict = {}
     root_folder_id = creds.get("_root_folder_id")
@@ -835,8 +845,12 @@ def perform_drive_delivery(plan: dict, creds: dict) -> dict:
     delivery["performed"] = bool(delivery["documents"])
     if delivery["errors"]:
         delivery["status"] = "partial" if delivery["performed"] else "error"
-    else:
+    elif delivery["performed"]:
         delivery["status"] = "performed"
+    else:
+        # Credentials resolved but the plan carried no Drive intent to execute.
+        delivery["status"] = "skipped"
+        delivery["reason"] = "the plan carries no Google Drive action to perform"
     return delivery
 
 
@@ -848,7 +862,7 @@ def _safe_error(exc: Exception) -> str:
 
 def record_drive_skip(plan: dict, creds: dict) -> dict:
     """Record the intent-only outcome when Skill 14 credentials are not configured."""
-    delivery = {
+    return {
         "channel": "google_drive",
         "attempted": False,
         "performed": False,
@@ -858,8 +872,568 @@ def record_drive_skip(plan: dict, creds: dict) -> dict:
         "documents": {},
         "errors": [],
     }
-    plan["delivery"] = delivery
-    return delivery
+
+
+# ---------------------------------------------------------------------------
+# Notion delivery (Tier 2, the client's OWN Notion workspace)
+# ---------------------------------------------------------------------------
+# Nearly every client box already has Notion connected, so Notion is the fallback
+# when Google Workspace is not configured on this box or the Drive call fails.
+# The convention here is the repo's existing one, not a new one:
+#   37-zhc-closeout/scripts/ensure-notion-parent-page.sh  token + parent + guards
+#   37-zhc-closeout/scripts/create-notion-closeout.sh     API version, block shapes,
+#                                                         idempotent child lookup
+#   38-conversational-ai-system/references/notion-client-doc-standard.md
+#                                                         the client-doc standard
+#
+# CLIENT OWNERSHIP (binding). The page must live in the CLIENT's Notion, under the
+# CLIENT's own token. Skill 37 refuses when the token equals ZHC_AGENCY_NOTION_TOKEN
+# or the parent equals ZHC_AGENCY_NOTION_PARENT_PAGE_ID; this module refuses on the
+# same two guards, and an explicit parent page is required because ownership is
+# never inferred from a workspace-wide search.
+#
+# NO FILE UPLOAD. The Notion API cannot upload a file. The published audio from
+# Step 15 is LINKED, never uploaded, and the rendered HTML and text artifacts stay
+# on disk as the durable base.
+#
+# IDEMPOTENT. One "Podcast Episodes" parent page per client, created once, then one
+# child page per episode keyed by the episode title. Re-running Step 12 for the same
+# episode REPLACES that page's blocks; it never creates a second page.
+
+# Skill 37 / Skill 38 Notion contract. NOTION_API_TOKEN is the repo's name; the two
+# that Step 12 already documented are kept so an existing box does not regress.
+NOTION_TOKEN_ENVS = ("NOTION_API_TOKEN", "NOTION_API_KEY", "NOTION_TOKEN")
+NOTION_PARENT_ENVS = ("NOTION_PODCAST_PARENT", "NOTION_PARENT_PAGE_ID",
+                      "NOTION_WORKSPACE_ROOT_ID")
+NOTION_AGENCY_TOKEN_ENV = "ZHC_AGENCY_NOTION_TOKEN"
+NOTION_AGENCY_PARENT_ENV = "ZHC_AGENCY_NOTION_PARENT_PAGE_ID"
+NOTION_VERSION_ENV = "NOTION_API_VERSION"
+NOTION_DEFAULT_VERSION = "2022-06-28"
+NOTION_HOST = "api.notion.com"
+
+# The one parent page every episode page hangs under, created once per client.
+NOTION_EPISODES_PAGE_TITLE = "Podcast Episodes"
+
+# Notion API limits: 100 children per request, 2000 characters per rich-text run.
+# Skill 37 chunks at 1900; the same margin is kept here.
+NOTION_MAX_BLOCKS_PER_REQUEST = 100
+NOTION_MAX_RICH_TEXT = 1900
+
+BOTH_TIERS_SKIP_LINE = (
+    "document delivery skipped: neither Google Workspace (Skill 14, see "
+    "14-google-workspace-integration/INSTALL.md) nor Notion (NOTION_API_TOKEN plus "
+    "an explicit client-owned parent page, see 37-zhc-closeout) is configured on "
+    "this box; the rendered files on disk are the deliverables")
+
+
+class NotionDeliveryError(Exception):
+    """A Notion delivery failure. Recorded on the plan; never fails the episode."""
+
+
+def resolve_notion_credentials() -> dict:
+    """Resolve the client's own Notion credentials, by label only.
+
+    Needs a token AND an explicit parent page. Ownership is never inferred from a
+    workspace-wide search, and the agency token and agency parent are refused.
+    """
+    token_env = _first_set_env(NOTION_TOKEN_ENVS)
+    parent_env = _first_set_env(NOTION_PARENT_ENVS)
+
+    report = {
+        "resolved": False,
+        "reason": "",
+        "token": "NOT SET",
+        "parent_page": "NOT SET",
+        "api_version": os.environ.get(NOTION_VERSION_ENV, "").strip() or NOTION_DEFAULT_VERSION,
+        "ownership": "client-owned parent required; agency token and agency parent refused",
+    }
+
+    if not token_env:
+        report["reason"] = "no Notion token (%s)" % " or ".join(NOTION_TOKEN_ENVS)
+        return report
+    token = os.environ[token_env].strip()
+    report["token"] = "SET (%s)" % token_env
+
+    agency_token = os.environ.get(NOTION_AGENCY_TOKEN_ENV, "").strip()
+    if agency_token and token == agency_token:
+        report["token"] = "REFUSED (agency token)"
+        report["reason"] = ("the configured token is the agency token; a client "
+                            "document is never published with an agency credential")
+        return report
+
+    if not parent_env:
+        report["reason"] = ("no explicit client-owned parent page (%s)"
+                            % " or ".join(NOTION_PARENT_ENVS))
+        return report
+    parent = os.environ[parent_env].strip()
+    report["parent_page"] = "SET (%s)" % parent_env
+
+    agency_parent = os.environ.get(NOTION_AGENCY_PARENT_ENV, "").strip()
+    if agency_parent and parent.replace("-", "") == agency_parent.replace("-", ""):
+        report["parent_page"] = "REFUSED (agency parent)"
+        report["reason"] = ("the configured parent page is the agency parent; a "
+                            "client document never lands in agency space")
+        return report
+
+    report["resolved"] = True
+    report["_token"] = token
+    report["_parent_page_id"] = parent
+    return report
+
+
+# ---------------------------------------------------------------------------
+# Markdown to Notion blocks
+# ---------------------------------------------------------------------------
+
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+
+
+def _rich_text_runs(text: str) -> list:
+    """Split text into Notion rich-text runs, turning markdown links into links.
+
+    Every run is capped at the rich-text character limit, so a very long paragraph
+    is carried as several runs inside ONE block rather than being truncated.
+    """
+    runs: list = []
+
+    def _plain(segment: str) -> None:
+        for start in range(0, len(segment), NOTION_MAX_RICH_TEXT):
+            piece = segment[start:start + NOTION_MAX_RICH_TEXT]
+            if piece:
+                runs.append({"type": "text", "text": {"content": piece}})
+
+    cursor = 0
+    for match in _MD_LINK_RE.finditer(text):
+        _plain(text[cursor:match.start()])
+        label = match.group(1)[:NOTION_MAX_RICH_TEXT]
+        runs.append({"type": "text",
+                     "text": {"content": label, "link": {"url": match.group(2)}}})
+        cursor = match.end()
+    _plain(text[cursor:])
+    return runs or [{"type": "text", "text": {"content": ""}}]
+
+
+def _block(kind: str, text: str) -> dict:
+    return {"object": "block", "type": kind, kind: {"rich_text": _rich_text_runs(text)}}
+
+
+def markdown_to_notion_blocks(markdown: str) -> list:
+    """Convert the subset of markdown this engine emits into Notion blocks.
+
+    Headings (# to ###), bulleted list items, links inside any line, and everything
+    else as paragraphs. Blank lines separate blocks and produce none of their own.
+    The engine never emits code fences, so none are handled.
+    """
+    blocks: list = []
+    for raw in (markdown or "").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("### "):
+            blocks.append(_block("heading_3", stripped[4:].strip()))
+        elif stripped.startswith("## "):
+            blocks.append(_block("heading_2", stripped[3:].strip()))
+        elif stripped.startswith("# "):
+            blocks.append(_block("heading_1", stripped[2:].strip()))
+        elif stripped.startswith(("- ", "* ", "+ ")):
+            blocks.append(_block("bulleted_list_item", stripped[2:].strip()))
+        else:
+            blocks.append(_block("paragraph", stripped))
+    return blocks
+
+
+def _md_escape(value: object) -> str:
+    """Flatten a value to one markdown-safe line."""
+    return " ".join(str(value).split())
+
+
+def render_package_markdown(m: dict) -> str:
+    """The Episode Package as markdown, from the SAME manifest the HTML uses.
+
+    Notion blocks are built from this rather than by parsing the rendered HTML, so
+    the structure stays exact and the two renderings never drift apart in meaning.
+    """
+    research = m.get("research") or {}
+    lines: list = []
+
+    def section(title: str, items: list, bullet: bool = True) -> None:
+        rows = [i for i in (items or []) if str(i).strip()]
+        if not rows:
+            return
+        lines.append("")
+        lines.append("## %s" % title)
+        for row in rows:
+            lines.append(("- %s" if bullet else "%s") % _md_escape(row))
+
+    lines.append("## Episode properties")
+    props = [
+        ("Title", m.get("title")),
+        ("Date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+        ("Style", m.get("style")),
+        ("Mode", m.get("mode")),
+        ("Runtime (minutes)", m.get("runtime_minutes")),
+        ("Spoken words", m.get("word_count")),
+        ("Guest", m.get("guest_first_name")),
+    ]
+    for label, value in props:
+        if str(value or "").strip():
+            lines.append("- %s: %s" % (label, _md_escape(value)))
+    # The Notion API cannot upload a file, so the published audio is LINKED.
+    audio = str(m.get("podbean_url") or "").strip()
+    if audio:
+        lines.append("- Published audio: [%s](%s)" % (_md_escape(m.get("title")), audio))
+
+    if str(m.get("thesis") or "").strip():
+        lines.append("")
+        lines.append("## Thesis")
+        lines.append(_md_escape(m.get("thesis")))
+
+    if str(m.get("description") or "").strip():
+        lines.append("")
+        lines.append("## Show notes")
+        for para in str(m["description"]).split("\n"):
+            if para.strip():
+                lines.append(_md_escape(para))
+
+    section("Key takeaways", research.get("key_takeaways"))
+    section("Power statements", research.get("power_statements"))
+
+    studies = [c for c in (research.get("case_studies") or []) if isinstance(c, dict)]
+    if studies:
+        lines.append("")
+        lines.append("## Case studies")
+        for case in studies:
+            lines.append("### %s" % _md_escape(case.get("title", "Case study")))
+            if str(case.get("summary") or "").strip():
+                lines.append(_md_escape(case["summary"]))
+            source = str(case.get("source") or "").strip()
+            if source:
+                lines.append("- Source: %s" % _md_escape(source))
+
+    section("Supporting findings", research.get("findings"))
+    section("Sources", research.get("sources"))
+
+    lines.append("")
+    lines.append("## Speech Script")
+    for para in str(m.get("_speech_script_text", "")).split("\n"):
+        if para.strip():
+            lines.append(_md_escape(para))
+
+    return "\n".join(lines).strip() + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Notion transport
+# ---------------------------------------------------------------------------
+
+class NotionTransport:
+    """Direct Notion REST with the client's own integration token.
+
+    Shapes and the API version follow 37-zhc-closeout/scripts/create-notion-closeout.sh.
+    """
+
+    def __init__(self, creds: dict) -> None:
+        self._token = creds["_token"]
+        self._version = creds.get("api_version") or NOTION_DEFAULT_VERSION
+
+    def _headers(self) -> dict:
+        return {
+            "Authorization": "Bearer %s" % self._token,
+            "Notion-Version": self._version,
+            "Content-Type": "application/json",
+        }
+
+    def _call(self, method: str, path: str, body=None, expect=(200,)) -> dict:
+        payload = json.dumps(body).encode("utf-8") if body is not None else None
+        status, raw = _https(method, NOTION_HOST, path, self._headers(), payload)
+        if status in expect:
+            if not raw:
+                return {}
+            try:
+                return json.loads(raw)
+            except Exception:
+                return {}
+        raise NotionDeliveryError(
+            "Notion %s returned HTTP %s. %s"
+            % (path.split("?")[0], status, _notion_error_detail(raw)))
+
+    def find_child_page(self, parent_id: str, title: str) -> str | None:
+        """Id of the direct child page with this exact title, else None.
+
+        Paginated. Uses the block-children listing, which is authoritative for
+        DIRECT children, so a workspace-wide search can never match a foreign page.
+        """
+        from urllib.parse import quote
+        cursor = None
+        while True:
+            path = ("/v1/blocks/%s/children?page_size=100"
+                    % quote(str(parent_id), safe=""))
+            if cursor:
+                path += "&start_cursor=%s" % quote(str(cursor), safe="")
+            data = self._call("GET", path)
+            for row in data.get("results", []) or []:
+                if not isinstance(row, dict) or row.get("type") != "child_page":
+                    continue
+                if (row.get("child_page") or {}).get("title") == title:
+                    return row.get("id")
+            if not data.get("has_more") or not data.get("next_cursor"):
+                return None
+            cursor = data["next_cursor"]
+
+    def create_page(self, parent_id: str, title: str, blocks: list) -> dict:
+        """Create a child page. Only the first request's worth of blocks is inline."""
+        body = {
+            "parent": {"page_id": parent_id},
+            "properties": {"title": {"title": [{"type": "text",
+                                                "text": {"content": title}}]}},
+            "children": blocks[:NOTION_MAX_BLOCKS_PER_REQUEST],
+        }
+        data = self._call("POST", "/v1/pages", body, expect=(200, 201))
+        page_id = data.get("id")
+        if not page_id:
+            raise NotionDeliveryError("Notion page create returned no page id")
+        if len(blocks) > NOTION_MAX_BLOCKS_PER_REQUEST:
+            self.append_blocks(page_id, blocks[NOTION_MAX_BLOCKS_PER_REQUEST:])
+        return {"id": page_id,
+                "url": data.get("url") or _notion_page_url(page_id)}
+
+    def append_blocks(self, page_id: str, blocks: list) -> None:
+        """Append blocks, chunked at the API's 100-children-per-request limit."""
+        from urllib.parse import quote
+        path = "/v1/blocks/%s/children" % quote(str(page_id), safe="")
+        for start in range(0, len(blocks), NOTION_MAX_BLOCKS_PER_REQUEST):
+            chunk = blocks[start:start + NOTION_MAX_BLOCKS_PER_REQUEST]
+            self._call("PATCH", path, {"children": chunk})
+
+    def clear_children(self, page_id: str) -> None:
+        """Delete every direct child block so an update replaces, never duplicates."""
+        from urllib.parse import quote
+        while True:
+            data = self._call(
+                "GET", "/v1/blocks/%s/children?page_size=100" % quote(str(page_id), safe=""))
+            rows = [r.get("id") for r in (data.get("results") or [])
+                    if isinstance(r, dict) and r.get("id")]
+            for block_id in rows:
+                self._call("DELETE", "/v1/blocks/%s" % quote(str(block_id), safe=""))
+            if not rows or not data.get("has_more"):
+                return
+
+    def update_page(self, page_id: str, blocks: list) -> dict:
+        """Replace an existing episode page's content in place."""
+        self.clear_children(page_id)
+        self.append_blocks(page_id, blocks)
+        return {"id": page_id, "url": _notion_page_url(page_id)}
+
+
+def _notion_page_url(page_id: str) -> str:
+    return "https://www.notion.so/%s" % str(page_id).replace("-", "")
+
+
+def _notion_error_detail(raw: bytes) -> str:
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    parts = [str(parsed.get("code", "")), str(parsed.get("message", ""))]
+    return " ".join(p for p in parts if p)[:180]
+
+
+def _make_notion_transport(creds: dict) -> NotionTransport:
+    """Transport factory. Tests replace this to exercise delivery without a network."""
+    return NotionTransport(creds)
+
+
+def perform_notion_delivery(plan: dict, creds: dict, manifest: dict) -> dict:
+    """Deliver the episode documents into the client's own Notion. Never raises.
+
+    One "Podcast Episodes" parent page per client, created idempotently, then one
+    child page per episode keyed by the episode title. Re-running Step 12 for the
+    same episode replaces that page's blocks instead of creating a second page.
+    """
+    record: dict = {
+        "channel": "notion",
+        "attempted": True,
+        "performed": False,
+        "status": "error",
+        "credentials": public_credential_report(creds),
+        "documents": {},
+        "errors": [],
+        "note": ("the Notion API cannot upload a file; the published audio is "
+                 "linked and the rendered files on disk remain the durable base"),
+    }
+    title = str(manifest.get("title") or "").strip() or "Podcast episode"
+
+    try:
+        transport = _make_notion_transport(creds)
+    except Exception as exc:  # noqa: BLE001
+        record["errors"].append("transport unavailable: %s" % _safe_error(exc))
+        return record
+
+    try:
+        blocks = markdown_to_notion_blocks(render_package_markdown(manifest))
+
+        episodes_id = transport.find_child_page(
+            creds["_parent_page_id"], NOTION_EPISODES_PAGE_TITLE)
+        if not episodes_id:
+            created = transport.create_page(
+                creds["_parent_page_id"], NOTION_EPISODES_PAGE_TITLE,
+                [_block("paragraph",
+                        "Every produced episode lands here as its own page.")])
+            episodes_id = created["id"]
+            record["episodes_page_created"] = True
+        else:
+            record["episodes_page_created"] = False
+        record["episodes_page_id"] = episodes_id
+
+        existing = transport.find_child_page(episodes_id, title)
+        if existing:
+            result = transport.update_page(existing, blocks)
+            record["action"] = "updated"
+        else:
+            result = transport.create_page(episodes_id, title, blocks)
+            record["action"] = "created"
+
+        record["documents"]["episode_page"] = {"page_id": result["id"],
+                                               "url": result["url"],
+                                               "blocks": len(blocks)}
+        record["performed"] = True
+        record["status"] = "performed"
+
+        # When the plan's primary destination was Notion it already carries
+        # notion.create_page intents. Stamp them exactly like the Drive ones so the
+        # episode record reads the same whichever tier delivered.
+        for action in plan.get("actions", []):
+            kind = action.get("action")
+            if kind == "notion.create_page":
+                action["performed"] = True
+                action["channel"] = "notion"
+                action["page_id"] = result["id"]
+                action["url"] = result["url"]
+            elif kind == "capture_link" and str(action.get("into", "")).startswith("links."):
+                key = str(action["into"]).split(".")[-1]
+                plan.setdefault("links", {})[key] = result["url"]
+                action["performed"] = True
+                action["channel"] = "notion"
+    except Exception as exc:  # noqa: BLE001 - never fails the episode
+        record["errors"].append(_safe_error(exc))
+        record["status"] = "partial" if record["documents"] else "error"
+    return record
+
+
+def record_notion_skip(creds: dict) -> dict:
+    """Record the not-configured outcome for the Notion tier."""
+    return {
+        "channel": "notion",
+        "attempted": False,
+        "performed": False,
+        "status": "skipped",
+        "reason": creds.get("reason", "credentials not configured"),
+        "credentials": public_credential_report(creds),
+        "documents": {},
+        "errors": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# The delivery chain: Google Drive, then Notion, then intent-only
+# ---------------------------------------------------------------------------
+
+# The tier order, stated once so it cannot drift between the code and the docs.
+DRIVE_TIER_ORDER = ("google_drive", "notion")
+
+def deliver_documents(plan: dict, manifest: dict, allow_delivery: bool = True) -> dict:
+    """Run the two-tier delivery chain and summarize it on the plan.
+
+    Tier 1 is Google Drive through the client's Skill 14 credentials. Tier 2 is the
+    client's own Notion, tried when Drive is not configured on this box or its call
+    delivered nothing. Tier 3 is today's intent-only record with ONE log line naming
+    both prerequisites. No tier can fail the episode or change the exit code.
+    """
+    summary: dict = {
+        "channel": None,
+        "performed": False,
+        "status": "skipped",
+        "documents": {},
+        "errors": [],
+        "tiers": {},
+        "log": [],
+    }
+    plan["delivery"] = summary
+
+    if not allow_delivery:
+        summary["status"] = "disabled"
+        summary["reason"] = "--no-deliver requested; the plan is intent-only"
+        return summary
+
+    # ---- Tier 1: Google Drive -------------------------------------------
+    has_drive_intent = any(a.get("action", "").startswith("drive.")
+                           for a in plan.get("actions", []))
+    drive_creds = resolve_drive_credentials()
+    if drive_creds["resolved"] and has_drive_intent:
+        drive = perform_drive_delivery(plan, drive_creds)
+    else:
+        drive = record_drive_skip(plan, drive_creds)
+        if drive_creds["resolved"] and not has_drive_intent:
+            drive["reason"] = "the plan carries no Google Drive action to perform"
+    summary["tiers"]["google_drive"] = drive
+    summary["errors"].extend(drive.get("errors", []))
+
+    # Drive counts as delivered when it landed at least one document. A permission
+    # that failed after a successful upload is partial, not a reason to fall back:
+    # the documents are already in the client's Drive.
+    if drive.get("performed"):
+        summary["channel"] = "google_drive"
+        summary["performed"] = True
+        summary["status"] = drive["status"]
+        summary["documents"] = drive["documents"]
+        summary["log"].append(
+            "drive delivery %s: %d document(s) uploaded and shared"
+            % (drive["status"], len(drive["documents"])))
+        return summary
+
+    if drive["status"] == "skipped":
+        summary["log"].append(SKIP_LINE)
+    else:
+        summary["log"].append(
+            "drive delivery failed; falling back to Notion. %s"
+            % "; ".join(drive.get("errors", [])[:2]))
+
+    # ---- Tier 2: Notion --------------------------------------------------
+    notion_creds = resolve_notion_credentials()
+    if notion_creds["resolved"]:
+        notion = perform_notion_delivery(plan, notion_creds, manifest)
+    else:
+        notion = record_notion_skip(notion_creds)
+    summary["tiers"]["notion"] = notion
+    summary["errors"].extend(notion.get("errors", []))
+
+    if notion.get("performed"):
+        summary["channel"] = "notion"
+        summary["performed"] = True
+        summary["status"] = notion["status"]
+        summary["documents"] = notion["documents"]
+        page = notion["documents"].get("episode_page", {})
+        plan.setdefault("links", {})["episode_page"] = page.get("url")
+        summary["log"].append(
+            "notion delivery performed: episode page %s" % notion.get("action", "written"))
+        return summary
+
+    # ---- Tier 3: intent only --------------------------------------------
+    if drive["status"] == "skipped" and notion["status"] == "skipped":
+        summary["status"] = "skipped"
+        summary["log"] = [BOTH_TIERS_SKIP_LINE]
+    else:
+        summary["status"] = "error"
+        if notion["status"] == "skipped":
+            summary["log"].append(
+                "notion fallback unavailable: %s" % notion.get("reason", "not configured"))
+        else:
+            summary["log"].append(
+                "notion delivery failed: %s" % "; ".join(notion.get("errors", [])[:2]))
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -969,31 +1543,15 @@ def cmd_render(args: argparse.Namespace) -> int:
 
     plan = build_plan(m, detection, destination, forced, package_path, speech_path)
 
-    # Step 12 owns the Drive delivery it plans. With the client's own Skill 14
-    # credentials on the box the intents above are EXECUTED here and stamped with
-    # the ids and links they produced; without them the plan stays intent-only and
-    # the episode carries on. Neither path ever changes this command's exit code.
-    if destination == "google" and not args.no_deliver:
-        creds = resolve_drive_credentials()
-        if creds["resolved"]:
-            delivery = perform_drive_delivery(plan, creds)
-            if delivery["status"] == "performed":
-                eprint("[render_documents] drive delivery performed: %d document(s) "
-                       "uploaded and shared" % len(delivery["documents"]))
-            else:
-                eprint("[render_documents][WARN] drive delivery %s; the episode "
-                       "continues and the plan records every error"
-                       % delivery["status"])
-                for err in delivery["errors"]:
-                    eprint("[render_documents][WARN]   %s" % err)
-        else:
-            record_drive_skip(plan, creds)
-            eprint("[render_documents] %s" % SKIP_LINE)
-    elif destination == "google" and args.no_deliver:
-        plan["delivery"] = {"channel": "google_drive", "attempted": False,
-                            "performed": False, "status": "disabled",
-                            "reason": "--no-deliver requested; plan is intent-only",
-                            "documents": {}, "errors": []}
+    # Step 12 owns the delivery it plans. The chain is Google Drive through the
+    # client's Skill 14 credentials, then the client's own Notion, then today's
+    # intent-only record. No tier can fail the episode or change the exit code.
+    delivery = deliver_documents(plan, m, allow_delivery=not args.no_deliver)
+    for line in delivery.get("log", []):
+        prefix = "[render_documents]" if delivery["performed"] else "[render_documents][WARN]"
+        eprint("%s %s" % (prefix, line))
+    for err in delivery.get("errors", []):
+        eprint("[render_documents][WARN]   %s" % err)
 
     plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
@@ -1008,16 +1566,21 @@ def cmd_render(args: argparse.Namespace) -> int:
 def cmd_detect(args: argparse.Namespace) -> int:
     detection = detect_destination()
     creds = resolve_drive_credentials()
+    notion_creds = resolve_notion_credentials()
     detection["drive_delivery"] = public_credential_report(creds)
+    detection["notion_delivery"] = public_credential_report(notion_creds)
     if args.json:
         print(json.dumps(detection, indent=2))
     else:
         print("Chosen destination: %s" % detection["chosen"])
         print("  google: available=%s gws_cli=%s"
               % (detection["google"]["available"], detection["google"]["gws_cli"]))
-        print("  drive delivery: resolved=%s key=%s user=%s folder=%s"
+        print("  tier 1 drive delivery: resolved=%s key=%s user=%s folder=%s"
               % (creds["resolved"], creds["service_account_key"],
                  creds["impersonated_user"], creds["root_folder"]))
+        print("  tier 2 notion delivery: resolved=%s token=%s parent=%s"
+              % (notion_creds["resolved"], notion_creds["token"],
+                 notion_creds["parent_page"]))
         print("  notion: available=%s token=%s parent_page=%s"
               % (detection["notion"]["available"], detection["notion"]["token"],
                  detection["notion"]["parent_page"]))

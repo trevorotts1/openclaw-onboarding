@@ -1,5 +1,30 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## [1.0.6] - 2026-09-17 - Step 12 document delivery gains a Notion fallback, so a box without Google Workspace still delivers
+
+Google Drive delivery (v1.0.5) only helps a box that has Skill 14 installed. Nearly every client box already has Notion connected, so document delivery is now a two-tier chain and a box without Google Workspace stops falling through to intent-only.
+
+### The chain
+- **Tier 1, Google Drive** through the client's own Skill 14 credentials, unchanged from v1.0.5.
+- **Tier 2, Notion** in the client's OWN workspace, tried when Skill 14 is not configured on the box or the Drive call delivered nothing. A permission that fails AFTER a successful upload is partial, not a fallback trigger: the documents are already in the client's Drive.
+- **Tier 3, intent only** when neither is configured, with ONE log line naming BOTH prerequisites instead of one line per tier.
+- `plan["delivery"]` is now the chain summary (`channel`, `performed`, `status`, `documents`, `errors`, `log`) with each tier's own record under `plan["delivery"].tiers`. No tier can fail the episode or change the exit code, and `render --no-deliver` still forces the intent-only path.
+
+### The Notion tier reuses the repo's convention and invents none
+- Token `NOTION_API_TOKEN` (also accepted: `NOTION_API_KEY`, `NOTION_TOKEN`); parent page `NOTION_PODCAST_PARENT`, else `NOTION_PARENT_PAGE_ID`, else `NOTION_WORKSPACE_ROOT_ID`; API version `NOTION_API_VERSION` defaulting to `2022-06-28`. These are the names and the default `37-zhc-closeout/scripts/ensure-notion-parent-page.sh` and `create-notion-closeout.sh` already use.
+- **Client ownership is binding**, exactly as Skill 37 enforces it: an EXPLICIT parent page is required because ownership is never inferred from a workspace-wide search, and the agency token (`ZHC_AGENCY_NOTION_TOKEN`) and agency parent (`ZHC_AGENCY_NOTION_PARENT_PAGE_ID`) are both refused. Page discovery uses the direct block-children listing, which is authoritative for direct children, so a search can never match a foreign page.
+- One `Podcast Episodes` page under the client's parent, created once, then one page per episode beneath it keyed by the episode title. **Idempotent:** re-running Step 12 for the same episode clears that page's children and rewrites them; it never creates a second page.
+- Blocks come from the same manifest the HTML renderer uses, through the new `render_package_markdown` and `markdown_to_notion_blocks` (headings, paragraphs, bulleted items, inline links), appended in chunks of 100, the API's children-per-request limit. Rich text is split into runs at 1900 characters so a long paragraph is carried whole rather than truncated.
+- Each page opens with an episode properties block carrying title, date, style, mode, runtime, spoken words and guest. A page parented by a page cannot carry arbitrary Notion properties, so these are page BLOCKS, which is what the API allows.
+- **No file upload.** The Notion API cannot upload a file, so the published audio URL from Step 15 is carried as a LINK. The rendered HTML and text files on disk remain the durable base.
+- The page id and url land in `delivery.tiers.notion.documents.episode_page` and `plan["links"].episode_page`, the same way the Drive ids are recorded. When the plan's primary destination was already Notion, its `notion.create_page` intents are stamped `performed: true, channel: notion` with that page id and url.
+
+### Verification
+- New `scripts/tests/test_render_documents_notion_fallback.py`, 28 stdlib tests, fully offline with the Notion HTTP layer injected: neither tier configured gives intent-only plus one combined line; Drive absent with Notion present creates the episode page with its properties and blocks and records the url; Drive present means the Notion transport is never even constructed; a Notion API error leaves the exit code at 0 with the error recorded and the local deliverables intact. Also covers idempotent re-runs, the 100-block chunking, the markdown converter, and the client-ownership refusals.
+- `scripts/tests/test_render_documents_drive_delivery.py` updated to read each tier's record from the chain; 29 tests, all passing.
+- Skill 58 suite: 458 passing before, 487 after, no regressions.
+- `render_documents.py detect` now prints a `tier 1 drive delivery:` line and a `tier 2 notion delivery:` line. New `58-podcast-production-engine/INSTALL.md` documents both tiers; `modules/documents.md`, `SKILL.md` Step 12, SOP-PODCAST-02 section 2.10 and the repo README all carry the two-tier chain.
+
 ## [1.0.5] - 2026-09-17 - Step 12 performs the Google Drive delivery it has only ever described (ISSUE-15)
 
 ### Drive delivery was an intent nothing executed

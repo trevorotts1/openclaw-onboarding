@@ -73,11 +73,24 @@ MANIFEST = {
     ),
 }
 
-# Every Google/Skill 14 env name the resolver consults, cleared per test so a
-# developer box with real credentials cannot change an outcome.
+# Every env name either delivery tier consults, cleared per test so a developer box
+# with real credentials cannot change an outcome.
 _GOOGLE_ENVS = (
     RD.SA_KEY_ENVS + RD.IMPERSONATE_ENVS + (RD.DRIVE_ROOT_FOLDER_ENV,)
+    + RD.NOTION_TOKEN_ENVS + RD.NOTION_PARENT_ENVS
+    + (RD.NOTION_AGENCY_TOKEN_ENV, RD.NOTION_AGENCY_PARENT_ENV, RD.NOTION_VERSION_ENV)
 )
+
+
+
+def DRIVE(plan):
+    """The Google Drive tier's own record inside the delivery chain."""
+    return plan["delivery"]["tiers"]["google_drive"]
+
+
+def NOTION(plan):
+    """The Notion tier's own record inside the delivery chain."""
+    return plan["delivery"]["tiers"]["notion"]
 
 
 class FakeTransport:
@@ -171,32 +184,46 @@ class CredentialsAbsentTest(DriveDeliveryTestBase):
     def test_plan_stays_intent_only(self):
         code, plan, stderr = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "skipped")
-        self.assertFalse(plan["delivery"]["performed"])
-        self.assertFalse(plan["delivery"]["attempted"])
-        self.assertEqual(plan["delivery"]["documents"], {})
+        self.assertEqual(DRIVE(plan)["status"], "skipped")
+        self.assertFalse(DRIVE(plan)["performed"])
+        self.assertFalse(DRIVE(plan)["attempted"])
+        self.assertEqual(DRIVE(plan)["documents"], {})
         self.assertNotIn("links", plan)
         for action in plan["actions"]:
             self.assertNotIn("performed", action,
                              "no intent is stamped performed without credentials")
             self.assertNotIn("file_id", action)
 
-    def test_exactly_one_skip_line_naming_skill_14(self):
-        _, _, stderr = self._render()
-        matches = [ln for ln in stderr.splitlines() if "drive delivery skipped" in ln]
+    def test_exactly_one_skip_line_naming_both_prerequisites(self):
+        # Tier 3: with neither tier configured the operator gets ONE line that
+        # names both prerequisites, not one line per tier.
+        _, plan, stderr = self._render()
+        matches = [ln for ln in stderr.splitlines() if "delivery skipped" in ln]
         self.assertEqual(len(matches), 1, "exactly one skip line, got %r" % matches)
         self.assertIn("14-google-workspace-integration/INSTALL.md", matches[0])
-        self.assertIn("Skill 14 Google Workspace credentials not configured",
-                      matches[0])
+        self.assertIn("Google Workspace (Skill 14", matches[0])
+        self.assertIn("Notion", matches[0])
+        self.assertIn("NOTION_API_TOKEN", matches[0])
+        self.assertEqual(plan["delivery"]["log"], [RD.BOTH_TIERS_SKIP_LINE])
+
+    def test_chain_summary_reports_no_channel(self):
+        _, plan, _ = self._render()
+        summary = plan["delivery"]
+        self.assertIsNone(summary["channel"])
+        self.assertFalse(summary["performed"])
+        self.assertEqual(summary["status"], "skipped")
+        self.assertEqual(summary["documents"], {})
+        self.assertEqual(summary["errors"], [])
+        self.assertEqual(NOTION(plan)["status"], "skipped")
 
     def test_missing_impersonated_user_alone_is_not_configured(self):
         self._install_fake_sa()
         os.environ.pop("GCP_IMPERSONATE_USER", None)
         code, plan, stderr = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "skipped")
-        self.assertIn("impersonated", plan["delivery"]["reason"])
-        self.assertEqual(plan["delivery"]["credentials"]["impersonated_user"],
+        self.assertEqual(DRIVE(plan)["status"], "skipped")
+        self.assertIn("impersonated", DRIVE(plan)["reason"])
+        self.assertEqual(DRIVE(plan)["credentials"]["impersonated_user"],
                          "NOT SET")
 
     def test_malformed_key_file_is_not_configured(self):
@@ -206,8 +233,8 @@ class CredentialsAbsentTest(DriveDeliveryTestBase):
         os.environ["GCP_IMPERSONATE_USER"] = "shows@example.com"
         code, plan, _ = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "skipped")
-        self.assertIn("not valid JSON", plan["delivery"]["reason"])
+        self.assertEqual(DRIVE(plan)["status"], "skipped")
+        self.assertIn("not valid JSON", DRIVE(plan)["reason"])
 
     def test_deliverables_still_render_without_credentials(self):
         code, _, _ = self._render()
@@ -271,7 +298,7 @@ class CredentialsPresentTest(DriveDeliveryTestBase):
         self.assertIn("speech_doc", plan["links"])
         for value in plan["links"].values():
             self.assertTrue(value.startswith("https://"))
-        documents = plan["delivery"]["documents"]
+        documents = DRIVE(plan)["documents"]
         self.assertEqual(sorted(documents), ["package_doc", "speech_doc"])
         for record in documents.values():
             self.assertTrue(record["file_id"])
@@ -280,25 +307,31 @@ class CredentialsPresentTest(DriveDeliveryTestBase):
     def test_delivery_status_and_exit_code(self):
         code, plan, stderr = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "performed")
-        self.assertTrue(plan["delivery"]["performed"])
-        self.assertTrue(plan["delivery"]["attempted"])
-        self.assertEqual(plan["delivery"]["errors"], [])
+        self.assertEqual(DRIVE(plan)["status"], "performed")
+        self.assertTrue(DRIVE(plan)["performed"])
+        self.assertTrue(DRIVE(plan)["attempted"])
+        self.assertEqual(DRIVE(plan)["errors"], [])
         self.assertIn("drive delivery performed", stderr)
+        summary = plan["delivery"]
+        self.assertEqual(summary["channel"], "google_drive")
+        self.assertTrue(summary["performed"])
+        self.assertEqual(summary["status"], "performed")
+        self.assertNotIn("notion", summary["tiers"],
+                         "Notion is never consulted once Drive delivered")
 
     def test_root_folder_env_is_honored(self):
         os.environ[RD.DRIVE_ROOT_FOLDER_ENV] = "folder-abc123"
         _, plan, _ = self._render()
         for upload in self.transport.uploads:
             self.assertEqual(upload["parent_folder_id"], "folder-abc123")
-        self.assertEqual(plan["delivery"]["credentials"]["root_folder"],
+        self.assertEqual(DRIVE(plan)["credentials"]["root_folder"],
                          "SET (%s)" % RD.DRIVE_ROOT_FOLDER_ENV)
 
     def test_no_root_folder_means_no_parent(self):
         _, plan, _ = self._render()
         for upload in self.transport.uploads:
             self.assertIsNone(upload["parent_folder_id"])
-        self.assertEqual(plan["delivery"]["credentials"]["root_folder"], "NOT SET")
+        self.assertEqual(DRIVE(plan)["credentials"]["root_folder"], "NOT SET")
 
     def test_no_deliver_flag_keeps_intent_only(self):
         code, plan, _ = self._render(extra_args=["--no-deliver"])
@@ -306,13 +339,15 @@ class CredentialsPresentTest(DriveDeliveryTestBase):
         self.assertEqual(self.transport.uploads, [])
         self.assertEqual(self.transport.permissions, [])
         self.assertEqual(plan["delivery"]["status"], "disabled")
+        self.assertEqual(plan["delivery"]["tiers"], {},
+                         "no tier is even consulted under --no-deliver")
 
     def test_inherited_permission_is_not_an_error(self):
         self.transport.inherited_permission = True
         code, plan, _ = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "performed")
-        self.assertEqual(plan["delivery"]["errors"], [])
+        self.assertEqual(DRIVE(plan)["status"], "performed")
+        self.assertEqual(DRIVE(plan)["errors"], [])
         perms = [a for a in plan["actions"] if a["action"] == "drive.set_permission"]
         for action in perms:
             self.assertTrue(action["performed"])
@@ -332,11 +367,13 @@ class DriveErrorTest(DriveDeliveryTestBase):
         RD._make_transport = lambda creds: transport
         code, plan, stderr = self._render()
         self.assertEqual(code, 0, "a Drive error never changes the exit code")
+        self.assertEqual(DRIVE(plan)["status"], "error")
+        self.assertFalse(DRIVE(plan)["performed"])
+        self.assertTrue(DRIVE(plan)["errors"])
+        self.assertIn("HTTP 503", " ".join(DRIVE(plan)["errors"]))
+        self.assertIn("drive delivery failed", stderr)
         self.assertEqual(plan["delivery"]["status"], "error")
-        self.assertFalse(plan["delivery"]["performed"])
-        self.assertTrue(plan["delivery"]["errors"])
-        self.assertIn("HTTP 503", " ".join(plan["delivery"]["errors"]))
-        self.assertIn("drive delivery error", stderr)
+        self.assertIsNone(plan["delivery"]["channel"])
 
     def test_upload_failure_leaves_the_local_deliverables_intact(self):
         transport = FakeTransport(fail_on="upload")
@@ -351,12 +388,12 @@ class DriveErrorTest(DriveDeliveryTestBase):
         RD._make_transport = lambda creds: transport
         code, plan, _ = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "partial")
-        self.assertTrue(plan["delivery"]["performed"],
+        self.assertEqual(DRIVE(plan)["status"], "partial")
+        self.assertTrue(DRIVE(plan)["performed"],
                         "the documents that did upload are still recorded")
-        self.assertEqual(sorted(plan["delivery"]["documents"]),
+        self.assertEqual(sorted(DRIVE(plan)["documents"]),
                          ["package_doc", "speech_doc"])
-        self.assertEqual(len(plan["delivery"]["errors"]), 2)
+        self.assertEqual(len(DRIVE(plan)["errors"]), 2)
         perms = [a for a in plan["actions"] if a["action"] == "drive.set_permission"]
         for action in perms:
             self.assertFalse(action["performed"])
@@ -368,15 +405,15 @@ class DriveErrorTest(DriveDeliveryTestBase):
         RD._make_transport = boom
         code, plan, _ = self._render()
         self.assertEqual(code, 0)
-        self.assertEqual(plan["delivery"]["status"], "error")
-        self.assertIn("transport unavailable", " ".join(plan["delivery"]["errors"]))
+        self.assertEqual(DRIVE(plan)["status"], "error")
+        self.assertIn("transport unavailable", " ".join(DRIVE(plan)["errors"]))
 
     def test_error_text_is_one_line_and_bounded(self):
         transport = FakeTransport(fail_on="upload",
                                   fail_message="line one\nline two " + ("x" * 500))
         RD._make_transport = lambda creds: transport
         _, plan, _ = self._render()
-        for err in plan["delivery"]["errors"]:
+        for err in DRIVE(plan)["errors"]:
             self.assertNotIn("\n", err)
             self.assertLessEqual(len(err), 240)
 
