@@ -1,5 +1,49 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.8 - 2026-09-17 - ISSUE-04: the Command Center self-heal watchdog is finally SCHEDULED
+
+The Command Center ships `scripts/watchdog-cc.sh` (a */5 self-heal for pm2 crash
+loops, EADDRINUSE, duplicate/legacy app-name zombies, `cc-start.sh` stale-build
+refusal receipts, and the scheduler-stalled class), and this installer's own pm2
+app-name contract block has NAMED that file since v16.1.7 - but no installer in
+this repo ever registered it as a cron. `mac-mini-bootstrap.sh` wires the pm2
+launchd job and nothing else. So the watchdog shipped to every box and fired on
+none of them: a live client Mac reported "healthy" for 41 hours with no card
+moving until an operator ran `pm2 restart` by hand. A self-heal that nothing
+schedules is the same as no self-heal.
+
+- `scripts/run-full-install.sh` now registers an openclaw cron named
+  `cc-watchdog` on `*/5 * * * *`, delivery none, with `WATCHDOG_SELF_HEAL=1`,
+  `WATCHDOG_PORT` and `WATCHDOG_CANONICAL_DIR` (the three variables
+  `watchdog-cc.sh` actually reads; it has no pm2-app-name variable, the
+  canonical name is compiled into both repos).
+- Registered as PHASE 6j, deliberately OUTSIDE the phase-6 if/elif/else, so all
+  three of its branches converge on it: a fresh full install, an `--update-only`
+  refresh, and the already-done skip all schedule the watchdog. It sits in
+  BLOCK A, above the interview gate, because a wedged board needs restarting
+  whether or not the client has finished their interview. Existing boxes pick it
+  up on the next fleet roll with no separate remediation pass.
+- Idempotent by `--declaration-key skill32-cc-watchdog` (the CLI's own
+  add-or-converge identity - `cron add` has no dedupe of its own, which is how
+  one box accumulated nine copies of the same tick). On a CLI without the flag,
+  an explicit remove-then-add by resolved job id reaches the same one-job end
+  state. A job found DISABLED is re-enabled; a durable tombstone is never
+  overridden.
+- The cron payload stays a single plain command string. Environment travels via
+  `--command-env` when the installed CLI advertises it, otherwise through a
+  generated wrapper at `$OC_ROOT/scripts/cc-watchdog-run.sh`.
+- Fail-soft, matching `install.sh`'s own cron registrars: no openclaw CLI, a
+  failing `cron add`, or a Command Center checkout too old to carry
+  `scripts/watchdog-cc.sh` each log a loud PENDING or SKIPPED line and let the
+  install continue. None of them fails the run.
+- `qc-command-center-setup.sh` now asserts the installer still carries the
+  registration, and warns when the job is not live on the box.
+- New coverage: `tests/unit/cc-watchdog-cron-registration.test.sh` (11 cases,
+  45 assertions) extracts the registrar and its helpers verbatim and drives
+  them against a fake openclaw CLI. Falsified against the pre-fix tree: 40
+  failures there, 0 after the fix. Enforced by
+  `.github/workflows/cc-watchdog-cron-guard.yml`.
+
 ## v12.9.57 — 2026-08-31 — FIX 26: non-self-issuable signoff + gated CC-API status writes (scripts/move-task.py)
 
 - `move-task.py` can no longer self-issue a signoff: any status write that would
