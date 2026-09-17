@@ -6494,8 +6494,7 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
         "$SOUL_FILE" "$IDENTITY_FILE" "$USER_FILE" \
         "$SENTINEL" "$SKILL_FOLDER" \
         "${CORE_UPDATES_STRICT:-0}" "$CU_MASTER_FILES_DIR" <<'PYEOF'
-# >>> CORE-UPDATES-PY-BEGIN  (extracted verbatim by tests/unit/updater-write-preflight-permission-block.test.sh)
-import sys, re, os, errno
+import sys, re, os, errno  # >>> CORE-UPDATES-PY-BEGIN (extracted verbatim by tests/unit/updater-write-preflight-permission-block.test.sh)
 
 
 def _oc_owner_pair(path):

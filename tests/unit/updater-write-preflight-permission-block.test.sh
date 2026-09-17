@@ -55,9 +55,16 @@ AM_ROOT=0
 [ "$(id -u)" = "0" ] && AM_ROOT=1
 
 # --- verbatim extraction between markers ------------------------------------
+# INCLUSIVE of the BEGIN line, exclusive of the END line. Inclusive matters:
+# the python program's BEGIN marker rides as a TRAILING COMMENT on its `import`
+# line, because two other extractors in this repo locate that program as the
+# text after "<<'PYEOF'" and require its first line to start with `import`. A
+# standalone marker comment there breaks them. On the shell block the BEGIN
+# marker is its own comment line, which an inclusive extractor carries along
+# harmlessly.
 extract_block() {
   awk -v b=">>> $1-BEGIN" -v e="<<< $1-END" '
-    index($0, b) { p=1; next }
+    index($0, b) { p=1 }
     index($0, e) { p=0 }
     p { print }
   ' "$TARGET"
