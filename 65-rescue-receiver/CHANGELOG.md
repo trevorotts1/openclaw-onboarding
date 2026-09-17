@@ -1,5 +1,68 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.4.9] - 2026-09-17 - the escalation INTAKE was never probed, so a stale secret was silent
+
+THE DEFECT. A box whose `RESCUE_RANGERS_WEBHOOK_SECRET` went stale after an operator-side
+rotation gets a 401 or a 403 on every escalation, silently, for as long as nobody happens to
+escalate and then check. Nothing on the box looked:
+
+  * `rr-readiness.sh` probes only the RETURN leg (`RR_RECEIVER_URL` with `RR_BOX_TOKEN`). A
+    box can sit at `VERIFIED` while every escalation it makes is refused. Readiness said
+    nothing about whether the box could still get INTO the queue.
+  * `scripts/lib/rescue_admission.py` DOES classify a 403 as an auth refusal
+    (`is_auth_refusal`, `_AUTH_REFUSAL_MARKERS`), but only during a real escalation, and
+    nothing scheduled a probe or wrote a durable flag afterwards.
+  * `scripts/rescue-escalation-section.md.tpl` already documents the exact self-check that
+    proves the channel with zero ticket residue: an `__AUTHTEST__` escalate body whose reply
+    is `{"accepted":true,"ticketId":null,"status":"test_suppressed"}`. It was a manual
+    paragraph for an agent to run by hand. Nothing ran it on a schedule.
+
+THE FIX: `rr-intake-auth-check.sh`, registered by `wire.sh` as the daily cron
+`rr-intake-auth-check` (23 7 local, delivery none). It sends the template's own
+`__AUTHTEST__` body with the credential in a 0600 `curl -H @file` header file inside a 0700
+private dir, exactly as the RR-028 safe probe does, and classifies:
+
+    test_suppressed            -> OK                 rc 0   flag REMOVED
+    401 / 403 / auth-refusal   -> RR_SECRET_STALE    rc 3   flag written
+    200 missing_message        -> RR_OLD_RELAY_URL   rc 4   flag written
+    no credential anywhere     -> RR_SECRET_MISSING  rc 5   flag written, NOTHING sent
+    transport / 429 / 5xx /
+    redirect / unknown 2xx     -> UNDETERMINED       rc 75
+
+UNDETERMINED IS NEVER REPORTED AS STALE, and an UNDETERMINED pass never overwrites a flag
+that already records a PROVEN class: an unproven result must not erase a proven one. Only an
+OK clears the flag, because only an OK is proof. The flag
+(`state/rr-intake-auth.flag`) records a class, an HTTP code, a timestamp and the remedy. It
+never records a value, and the credential is never printed, never in argv and never in the
+request body.
+
+THE DAILY SURFACE. There was no known-flags surface in this skill or in `shared-utils` to
+append to (grepped: none exists), so `rr-readiness.sh`'s HUMAN report now reads the flag file
+and prints it with its remedy. `--json` is untouched: it emits exactly one JSON object that
+callers parse with `json.load`, so an extra stdout line there would break every consumer.
+
+DELIVERY NONE IS NOT OPTIONAL. If the CLI refuses `--no-deliver`, `wire.sh` registers NOTHING
+and says so. A delivering daily cron would route operator-facing credential diagnostics into
+the client's chat. A missing check is a gap; a delivering one is client spam.
+
+ONE FALSE NEGATIVE CAUGHT IN REVIEW OF THIS OWN CHANGE. `rescue_env_get` returns rc 3 when the
+store carries malformed lines ANYWHERE, and the requested name may STILL be resolved on
+stdout (`shared-utils/rescue-env.sh`, the rc-3 branch prints the value before returning). The
+first draft discarded the value on any non-zero rc, so one unrelated bad line elsewhere in
+`secrets/.env` would have reported `RR_SECRET_MISSING` on a box that HAS a credential: the
+exact false negative this check exists to stop producing. The rc is now captured in the
+script's own shell (a helper's assignment would have been lost in the command-substitution
+subshell, which is how the first fix for it silently did nothing), the OUTPUT decides, and the
+malformed store is NAMED as a note rather than turned into a verdict. Covered by section 6b.
+
+TESTS: `65-rescue-receiver/tests/test_intake_auth_check.sh`, 31 assertions against a REAL
+local HTTP responder (`tests/stub-intake.py`) that journals what it received, so the
+credential's route is proven rather than asserted. It covers all four required
+classifications plus the missing-credential case, proves the value never reaches the body or
+the flag, proves an UNDETERMINED leaves a proven flag alone, and carries a control that the
+same harness yields 0 / 3 / 4 for the three server shapes, so a green suite cannot be green
+because the responder is broken.
+
 ## [23.4.8] - 2026-09-14 - a CLI that failed to answer is not a CLI that answered "none"
 
 MEASURED LIVE, not hypothesised. A capture loop ran the readiness reporter 40 times on this

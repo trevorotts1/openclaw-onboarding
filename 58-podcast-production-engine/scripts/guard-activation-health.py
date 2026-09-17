@@ -59,13 +59,26 @@
 #         action API per flow_client.py). Any HTTP answer counts as reachable;
 #         only a connection failure or timeout FAILS. No credential ever leaves
 #         this probe.
-#     B4. the intake route BINDING SHAPE: for every client slug in
-#         --client-slug / $PODCAST_CLIENT_SLUGS, the box openclaw.json carries
-#         plugins.entries.webhooks.config.routes["podcast-intake-<slug>"] with
-#         sessionKey "podcast:intake:<slug>" and a controllerId of the form
-#         "webhooks/podcast-intake-<slug>" (the controllerId runbook whose
-#         first step is the deterministic intake handler; the shape per
-#         scripts/webhook/route-template.json5). The scan tolerates JSON5
+#     B4. the intake BINDING SHAPE, BOTH HALVES. For every client slug in
+#         --client-slug / $PODCAST_CLIENT_SLUGS, the box openclaw.json must
+#         carry:
+#           (a) the CONTROL surface,
+#               plugins.entries.webhooks.config.routes["podcast-intake-<slug>"]
+#               with sessionKey "podcast:intake:<slug>" and a controllerId of
+#               the form "webhooks/podcast-intake-<slug>" (the controllerId
+#               runbook whose first step is the deterministic intake handler;
+#               the shape per scripts/webhook/route-template.json5); AND
+#           (b) the TRIGGER, hooks.mappings[] id "podcast-intake-<slug>" with
+#               match.path "podcast-intake-<slug>", action agent, a non-empty
+#               agentId, sessionKey "podcast:intake:<slug>", sessionMode
+#               persistent, deliver false, and a non-empty messageTemplate.
+#         (b) is what converts an inbound survey POST into a turn of the bound
+#         session. The route alone never did: it accepts only the
+#         {"action":"create_flow", ...} envelope and, even then, the flow it
+#         creates sits QUEUED until something dispatches the session. A box
+#         with (a) and not (b) accepts intake, records `received`, shows
+#         Received on the dashboard, and produces nothing, and this check used
+#         to call that PASS. The scan tolerates JSON5
 #         comments and only ever extracts route ids and two key values; a
 #         secret value is never parsed, stored, or printed. With no configured
 #         slugs this is a SKIP, not a failure.
@@ -293,9 +306,45 @@ def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
                                    "cannot read %s: %s" % (config_path, type(exc).__name__)))
             else:
                 shapes = scan_route_shapes(text)
+                maps = scan_hook_mapping_shapes(text)
                 problems = []
                 for slug in slugs:
                     route_id = ROUTE_ID_PREFIX + slug
+                    # The TRIGGER half. Without this mapping the route exists,
+                    # intake is accepted, the flow is created QUEUED, and the
+                    # bound session is never dispatched: the job stalls at
+                    # `received` forever. Registered by register-podcast-hook.sh.
+                    mapping = maps.get(route_id)
+                    if mapping is None:
+                        problems.append(
+                            "no gateway hook mapping %s in hooks.mappings[] "
+                            "(the route alone never triggers production; run "
+                            "register-podcast-hook.sh --client-slug %s)"
+                            % (route_id, slug))
+                    else:
+                        want = (
+                            ("match.path", mapping["matchPath"], route_id),
+                            ("action", mapping["action"], "agent"),
+                            ("sessionKey", mapping["sessionKey"],
+                             SESSION_KEY_PREFIX + slug),
+                            ("sessionMode", mapping["sessionMode"], "persistent"),
+                            ("deliver", mapping["deliver"], False),
+                        )
+                        for field, got, expect in want:
+                            if got != expect:
+                                problems.append(
+                                    "hook mapping %s %s is %r, want %r"
+                                    % (route_id, field, got, expect))
+                        if not (mapping["agentId"] or "").strip():
+                            problems.append(
+                                "hook mapping %s has no agentId (the podcast "
+                                "department agent that owns the session)"
+                                % route_id)
+                        if not (mapping["messageTemplate"] or "").strip():
+                            problems.append(
+                                "hook mapping %s has an empty messageTemplate "
+                                "(the dispatched turn would have no instruction)"
+                                % route_id)
                     shape = shapes.get(route_id)
                     if shape is None:
                         problems.append(
@@ -428,6 +477,51 @@ _ROUTE_KEY_RE = re.compile(
     r'"(podcast-intake-[A-Za-z0-9][A-Za-z0-9._-]*)"\s*:\s*\{')
 # JSON5 allows bare keys; strict JSON quotes them. Values are always quoted.
 _FIELD_RE = r'["\']?%s["\']?\s*:\s*"([^"]*)"'
+
+
+def scan_hook_mapping_shapes(text):
+    """Return {mapping_id: {field: value}} for every podcast-intake-<slug>
+    entry in hooks.mappings[].
+
+    Why this exists: the plugin route alone NEVER triggered production. It only
+    accepts the {"action":"create_flow", ...} envelope and, even then, creating
+    a flow dispatches nothing: the flow sits QUEUED until the bound session gets
+    a turn. The thing that gives it that turn is the gateway hook mapping, and
+    a box carrying the route but not the mapping used to report B4 PASS while
+    every intake stalled at `received`. That false green is the exact failure
+    class this guard exists to catch, so the mapping is part of B4 now.
+
+    JSON only: hooks.mappings is an array of objects, and a regex window scan
+    over an array cannot attribute a field to the right element reliably. A
+    config this guard cannot parse as JSON yields {} and the caller reports the
+    mapping as absent, which is the fail-closed answer, not a silent pass."""
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    mappings = (data.get("hooks") or {}).get("mappings")
+    if not isinstance(mappings, list):
+        return {}
+    shapes = {}
+    for obj in mappings:
+        if not isinstance(obj, dict):
+            continue
+        mid = obj.get("id")
+        if not (isinstance(mid, str) and mid.startswith(ROUTE_ID_PREFIX)):
+            continue
+        match = obj.get("match") if isinstance(obj.get("match"), dict) else {}
+        shapes[mid] = {
+            "matchPath": match.get("path"),
+            "action": obj.get("action", "agent"),
+            "agentId": obj.get("agentId"),
+            "sessionKey": obj.get("sessionKey"),
+            "sessionMode": obj.get("sessionMode"),
+            "deliver": obj.get("deliver"),
+            "messageTemplate": obj.get("messageTemplate"),
+        }
+    return shapes
 
 
 def scan_route_shapes(text):
@@ -798,14 +892,38 @@ def self_test():
         root = Path(td)
         skill = make_skill(root, with_files=True)
         config = root / "openclaw.json"
+        def _mapping(slug, **over):
+            m = {
+                "id": "podcast-intake-" + slug,
+                "match": {"path": "podcast-intake-" + slug},
+                "action": "agent",
+                "agentId": "dept-podcast",
+                "sessionKey": "podcast:intake:" + slug,
+                "sessionMode": "persistent",
+                "deliver": False,
+                "messageTemplate": "run the deterministic intake handler",
+            }
+            m.update(over)
+            return m
+
         config.write_text(json.dumps({
+            "hooks": {"mappings": [
+                _mapping("acme-media"),
+                _mapping("zeta-corp"),
+                # A route registered WITHOUT its trigger: the exact false-green
+                # this guard used to report as PASS while intake stalled at
+                # `received` forever.
+            ]},
             "plugins": {"entries": {"webhooks": {"config": {"routes": {
                 "podcast-intake-acme-media": {
                     "sessionKey": "podcast:intake:acme-media",
                     "controllerId": "webhooks/podcast-intake-acme-media"},
                 "podcast-intake-zeta-corp": {
                     "sessionKey": "podcast:intake:WRONG",
-                    "controllerId": "webhooks/podcast-intake-zeta-corp"}}}}}}}))
+                    "controllerId": "webhooks/podcast-intake-zeta-corp"},
+                "podcast-intake-no-trigger": {
+                    "sessionKey": "podcast:intake:no-trigger",
+                    "controllerId": "webhooks/podcast-intake-no-trigger"}}}}}}}))
         cronbin = root / "fake-crontab.sh"
         cronbin.write_text("#!/usr/bin/env bash\nexit 0\n")
         os.chmod(cronbin, 0o755)
@@ -828,6 +946,44 @@ def self_test():
             check("B4-wrong-session-key-fails", by_id["B4"]["status"] == FAIL)
             check("B4-detail-names-the-route",
                   "podcast-intake-zeta-corp" in by_id["B4"]["detail"])
+
+            # The route alone is NOT activation. A box with the plugin route
+            # and no gateway hook mapping accepts intake, creates a QUEUED
+            # flow, dispatches nothing, and used to report B4 PASS.
+            res = box_checks(skill, str(root / "agents"),
+                             "http://127.0.0.1:1", ["no-trigger"], 1,
+                             DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                             DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
+            by_id = {r["id"]: r for r in res}
+            check("B4-route-without-hook-mapping-fails",
+                  by_id["B4"]["status"] == FAIL)
+            check("B4-detail-names-the-missing-mapping",
+                  "no gateway hook mapping" in by_id["B4"]["detail"])
+
+            # A mapping that exists but would deliver into the client's chat,
+            # or run isolated, or carry no instruction, is not a working
+            # trigger either.
+            for bad, label in (
+                ({"deliver": True}, "deliver-true"),
+                ({"sessionMode": "isolated"}, "isolated-session"),
+                ({"messageTemplate": ""}, "empty-template"),
+                ({"action": "wake"}, "wake-action"),
+            ):
+                config.write_text(json.dumps({
+                    "hooks": {"mappings": [_mapping("acme-media", **bad)]},
+                    "plugins": {"entries": {"webhooks": {"config": {"routes": {
+                        "podcast-intake-acme-media": {
+                            "sessionKey": "podcast:intake:acme-media",
+                            "controllerId":
+                                "webhooks/podcast-intake-acme-media"}}}}}}}))
+                res = box_checks(skill, str(root / "agents"),
+                                 "http://127.0.0.1:1", ["acme-media"], 1,
+                                 DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                                 DEFAULT_INSTALLER_SCRIPT,
+                                 DEFAULT_DRIVER_SCRIPT)
+                by_id = {r["id"]: r for r in res}
+                check("B4-bad-mapping-%s-fails" % label,
+                      by_id["B4"]["status"] == FAIL)
         finally:
             os.environ.pop("PODCAST_CRONTAB_BIN", None)
             os.environ.pop("OPENCLAW_CONFIG", None)

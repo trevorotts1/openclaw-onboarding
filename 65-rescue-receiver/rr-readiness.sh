@@ -11,6 +11,10 @@
 #   rr-readiness.sh --reconcile    # reconcile the cron (add/edit/dedupe) then report
 #   rr-readiness.sh --probe        # safe test claim -> receipt, then report
 #
+# It ALSO surfaces state/rr-intake-auth.flag in the human report. That flag is
+# written by the daily rr-intake-auth-check.sh cron and covers the ESCALATION
+# INTAKE, the leg this tool does NOT probe.
+#
 # WHAT "SAFE TEST CLAIM" MEANS HERE (RR-028 required behaviour 7):
 #   * It is a CLAIM-shaped request with capacity 0 and mode dry_run, carrying a
 #     probe marker — the receiver is asked for a structured answer, not work.
@@ -138,6 +142,47 @@ if [ "$OCD_LOADED" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# rr_intake_auth_flag_line
+#
+# The daily-report surface for the ESCALATION INTAKE auth self-check. This tool
+# reports on the RETURN leg (RR_RECEIVER_URL with RR_BOX_TOKEN); it says nothing
+# about whether this box can still get INTO the queue. A box whose
+# RESCUE_RANGERS_WEBHOOK_SECRET went stale after an operator-side rotation can
+# sit at VERIFIED while every escalation it makes is refused.
+#
+# rr-intake-auth-check.sh (the daily cron) writes state/rr-intake-auth.flag when
+# it finds a non-OK class and removes it on an OK. This prints it so the flag
+# reaches an operator instead of sitting unread on disk. No flag means nothing
+# is printed: the absence of a flag is not a claim that the channel works, it is
+# only the absence of a recorded problem.
+#
+# HUMAN MODE ONLY. --json emits exactly one JSON object that callers parse with
+# json.load, so an extra stdout line there would break every consumer.
+# ---------------------------------------------------------------------------
+rr_intake_auth_flag_line() {
+  [ "$MODE" = "human" ] || return 0
+  _iaf="$RR_ROOT/state/rr-intake-auth.flag"
+  [ -r "$_iaf" ] || return 0
+  _iaf_class="$(sed -n 's/.*"class"[[:space:]]*:[[:space:]]*"\([A-Z_]*\)".*/\1/p' "$_iaf" 2>/dev/null | head -1)"
+  _iaf_http="$(sed -n 's/.*"http"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$_iaf" 2>/dev/null | head -1)"
+  _iaf_ts="$(sed -n 's/.*"ts"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_iaf" 2>/dev/null | head -1)"
+  [ -n "$_iaf_class" ] || _iaf_class="UNREADABLE"
+  echo "rr-readiness: FLAG intake-auth=$_iaf_class http=${_iaf_http:-none} since=${_iaf_ts:-unknown} file=$_iaf"
+  case "$_iaf_class" in
+    RR_SECRET_STALE|RR_SECRET_MISSING)
+      echo "rr-readiness: FLAG remedy: operator must re-provision RESCUE_RANGERS_WEBHOOK_SECRET on this box. Escalations from here are being refused."
+      ;;
+    RR_OLD_RELAY_URL)
+      echo "rr-readiness: FLAG remedy: RESCUE_RANGERS_WEBHOOK_URL points at the OLD relay on this box; re-provision the URL."
+      ;;
+    UNDETERMINED)
+      echo "rr-readiness: FLAG the last intake check could not establish anything (transport, throttle or 5xx). This is NOT a claim that the credential is stale."
+      ;;
+  esac
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # rrr_report <exit-mapped> — resolve inputs, run the state machine, print.
 # ---------------------------------------------------------------------------
 rr_report() {
@@ -147,6 +192,7 @@ rr_report() {
   fi
   rrr_evaluate
   if [ "$MODE" = "json" ]; then rrr_report_json; else rrr_report_line; fi
+  rr_intake_auth_flag_line
   case "$RRR_STATE" in
     VERIFIED)         return 0 ;;
     SCHEDULED)        return 1 ;;

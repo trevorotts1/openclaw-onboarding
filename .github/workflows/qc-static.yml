@@ -1312,21 +1312,27 @@ jobs:
           if [ -z "$nudge_section" ]; then
             echo "✗ Could not extract install_interview_nudge_cron() from install.sh"; exit 1
           fi
-          if ! echo "$nudge_section" | grep -q 'openclaw cron add'; then
+          # HERE-STRINGS, never `echo ... | grep -q`: with `set -o pipefail`,
+          # grep -q exits on its first match and closes the pipe while the
+          # producer is still writing, the producer takes SIGPIPE (141), and
+          # pipefail turns a PRESENT marker into an ABSENT one.
+          if ! grep -q 'openclaw cron add' <<<"$nudge_section"; then
             echo "✗ install.sh interview-nudge uses 'cron create' (announce mode) instead of 'cron add' (command mode)"; exit 1
           fi
-          if ! echo "$nudge_section" | grep -q -- '--command'; then
+          if ! grep -q -- '--command' <<<"$nudge_section"; then
             echo "✗ install.sh interview-nudge missing --command flag (silent command mode required)"; exit 1
           fi
-          if echo "$nudge_section" | grep 'openclaw cron' | grep -q -- '--channel telegram'; then
+          cron_lines="$(grep 'openclaw cron' <<<"$nudge_section" || true)"
+          if grep -q -- '--channel telegram' <<<"$cron_lines"; then
             echo "✗ install.sh interview-nudge cron contains --channel telegram (announce mode leak)"; exit 1
           fi
-          if echo "$nudge_section" | grep 'openclaw cron' | grep -qE '\-\-to [0-9]|\-\-to "\$'; then
+          if grep -qE '\-\-to [0-9]|\-\-to "\$' <<<"$cron_lines"; then
             echo "✗ install.sh interview-nudge cron contains --to <id> (announce mode leak)"; exit 1
           fi
+          nudge_cron_code="$(grep -v "^[[:space:]]*#" 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh || true)"
           for op_id in 5252140759 6663821679 6771245262; do
-            if grep -v "^[[:space:]]*#" 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh \
-                | grep -qE "\-\-to ['\"]?${op_id}['\"]?|\-\-target ['\"]?${op_id}['\"]?"; then
+            if grep -qE "\-\-to ['\"]?${op_id}['\"]?|\-\-target ['\"]?${op_id}['\"]?" \
+                <<<"$nudge_cron_code"; then
               echo "✗ interview-nudge-cron.sh routes to operator id ${op_id} (operator announce leak)"; exit 1
             fi
           done
@@ -1621,19 +1627,19 @@ jobs:
           echo "✓ migrate_zhc_runner.py syntax OK"
 
           # 3. Runner accepts --help without needing a real install
-          # NOTE: capture the output FIRST, then grep — never pipe directly into
-          # `grep -q`. With `set -o pipefail`, grep -q closes the pipe on its first
-          # match and the still-writing producer takes SIGPIPE (141), flaking the
-          # pipeline. Capturing the full output first removes the race entirely
-          # while keeping the assertion identical (output must contain the args).
+          # NOTE: capture the output FIRST, then match it with a HERE-STRING —
+          # never pipe into `grep -q`. With `set -o pipefail`, grep -q closes the
+          # pipe on its first match and the still-writing producer takes SIGPIPE
+          # (141), flaking the pipeline. A here-string is fed by bash itself, so
+          # there is no second process to kill and no race at all.
           RUNNER_HELP="$(python3 shared-utils/migrate_zhc_runner.py --help 2>&1 || true)"
-          echo "$RUNNER_HELP" | grep -q "shared-utils\|repo-root" \
+          grep -q "shared-utils\|repo-root" <<<"$RUNNER_HELP" \
             || { echo "✗ runner --help did not show expected args"; exit 1; }
           echo "✓ migrate_zhc_runner.py --help OK"
 
           # 4. Shell script is executable or can be run via bash (CI checkout may strip x bit)
           MIGRATE_HELP="$(bash scripts/migrate-zhc-to-master-files.sh --help 2>&1 || true)"
-          echo "$MIGRATE_HELP" | grep -q "dry-run\|apply" \
+          grep -q "dry-run\|apply" <<<"$MIGRATE_HELP" \
             || { echo "✗ migrate-zhc-to-master-files.sh --help output unexpected"; exit 1; }
           echo "✓ migrate-zhc-to-master-files.sh --help OK"
 

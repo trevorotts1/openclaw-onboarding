@@ -1,5 +1,10 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.9 - 2026-09-17 - universal-sops craft-cluster SOP ingest (ISSUE-12)
+
+`scripts/ingest-sop-library.py` gained a `--craft-clusters` mode that reads `universal-sops/<cluster>/SOP-*.md` and upserts each file into the Command Center SOP library, mapping `podcast-craft` to department `podcast`. Those SOPs were in neither source the ingester knew about: not the shared `sops.jsonl` release asset, and not `23-ai-workforce-blueprint/templates/role-library/<dept>/sops/` (role-library/podcast ships roles but no `sops/` directory), so the podcast department showed zero SOPs in the dashboard and in semantic SOP search on every box.
+
+Identity is the same `sop_ + sha256(slug)` the JSONL pass uses, so the ingest is idempotent by slug and cannot collide with a shared-library row. It performs a local sqlite upsert only: no download, no network, zero embedding API calls, and nothing is ever deleted. The caller is `update-skills.sh` step U6c1b, which runs on every roll regardless of what the shared-library check decided, so a box already at canonical population gets the rows too. `scripts/ingest-sop-library.sh` is deliberately left alone: its already-populated skip gate is a contractual no-write path, and `tests/unit/sop-library-update-path-ingest.test.sh` asserts the database is byte-identical after it.
 ## v13.1.8 - 2026-09-17 - ISSUE-04: the Command Center self-heal watchdog is finally SCHEDULED
 
 The Command Center ships `scripts/watchdog-cc.sh` (a */5 self-heal for pm2 crash
