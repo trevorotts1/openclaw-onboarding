@@ -128,15 +128,28 @@ run_gate() { ( activation_step "$@" ) 2>/dev/null; }
 die_code() { sed -n '1p' "$DIE_FILE" 2>/dev/null || true; }
 die_msg()  { sed -n '2,$p' "$DIE_FILE" 2>/dev/null | tr '\n' ' ' || true; }
 
-# Stub helpers honoring the activation contract: log every invocation; exit 0
-# unless the stub is built with a failure mode.
+# Stub helpers honoring the REAL activation contract: log every invocation,
+# answer --verify with the read-back result, and REJECT any unknown flag with
+# exit 2 exactly as both shipped helpers do. That rejection is the point: the
+# old contract verified with "--check <same args>", a flag neither helper has
+# ever accepted, so every provision died at activation:department with exit 22
+# after the install had already succeeded.
 make_stub() {
-  # make_stub <name> [run_rc] [check_rc]
-  local name="$1" run_rc="${2:-0}" check_rc="${3:-0}"
+  # make_stub <name> [run_rc] [verify_rc]
+  local name="$1" run_rc="${2:-0}" verify_rc="${3:-0}"
   cat > "$SCRIPT_DIR/$name" <<STUB
 #!/usr/bin/env bash
 if [ \$# -gt 0 ]; then printf '%s %s\n' "$name" "\$*" >> "$CALL_LOG"; else printf '%s\n' "$name" >> "$CALL_LOG"; fi
-if [ "\${1:-}" = "--check" ]; then exit $check_rc; fi
+MODE=install
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --client-slug)   shift 2 ;;
+    --prime-session) shift ;;
+    --verify)        MODE=verify; shift ;;
+    *) printf '%s UNKNOWN_FLAG %s\n' "$name" "\$1" >> "$CALL_LOG"; exit 2 ;;
+  esac
+done
+if [ "\$MODE" = "verify" ]; then exit $verify_rc; fi
 exit $run_rc
 STUB
   chmod +x "$SCRIPT_DIR/$name"
@@ -144,7 +157,7 @@ STUB
 
 # --- 5: missing helper fails closed naming the missing piece -----------------
 reset_harness
-rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" || rc=$?
+rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" --client-slug "tclient" --prime-session -- --verify --client-slug "tclient" || rc=$?
 [ "$rc" -eq 255 ] || fail "missing helper must die (subshell rc 255), got rc=$rc"
 [ "$(die_code)" = "22" ] || fail "missing helper must die 22, got code=$(die_code)"
 die_msg | grep -qi "department" \
@@ -156,7 +169,7 @@ pass "missing helper fails closed (die 22, names the missing piece)"
 reset_harness
 printf '#!/usr/bin/env bash\nexit 0\n' > "$SCRIPT_DIR/install-podcast-department.sh"
 chmod 644 "$SCRIPT_DIR/install-podcast-department.sh"
-rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" || rc=$?
+rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" --client-slug "tclient" --prime-session -- --verify --client-slug "tclient" || rc=$?
 [ "$rc" -eq 255 ] || fail "non-executable helper must die, got rc=$rc"
 [ "$(die_code)" = "22" ] || fail "non-executable helper must die 22, got code=$(die_code)"
 pass "present-but-not-executable helper fails closed"
@@ -165,43 +178,45 @@ rm -f "$SCRIPT_DIR/install-podcast-department.sh"
 # --- 7: helper run rc nonzero fails closed -----------------------------------
 reset_harness
 make_stub "install-podcast-department.sh" 1 0
-rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" || rc=$?
+rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" --client-slug "tclient" --prime-session -- --verify --client-slug "tclient" || rc=$?
 [ "$rc" -eq 255 ] || fail "nonzero run rc must die, got rc=$rc"
 [ "$(die_code)" = "22" ] || fail "nonzero run rc must die 22, got code=$(die_code)"
 pass "helper run rc nonzero fails closed"
 rm -f "$SCRIPT_DIR/install-podcast-department.sh"
 
-# --- 8: installs but --check reports NOT active -> fails closed ---------------
+# --- 8: installs but --verify reports NOT active -> fails closed --------------
 reset_harness
 make_stub "register-podcast-hook.sh" 0 1
-rc=0; run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" || rc=$?
-[ "$rc" -eq 255 ] || fail "inactive --check must die, got rc=$rc"
-[ "$(die_code)" = "23" ] || fail "inactive --check must die 23, got code=$(die_code)"
+rc=0; run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" -- --verify --client-slug "tclient" || rc=$?
+[ "$rc" -eq 255 ] || fail "inactive --verify must die, got rc=$rc"
+[ "$(die_code)" = "23" ] || fail "inactive --verify must die 23, got code=$(die_code)"
 die_msg | grep -qi "not active" \
   || fail "inactive-read-back die message must say the piece is not active, got: $(die_msg)"
-pass "install-ok-but-check-inactive fails closed"
+pass "install-ok-but-verify-inactive fails closed"
 rm -f "$SCRIPT_DIR/register-podcast-hook.sh"
 
 # --- 9: full sequence installs + verifies ACTIVE (exact call pattern) ---------
 reset_harness
 make_stub "install-podcast-department.sh" 0 0
 make_stub "register-podcast-hook.sh" 0 0
-run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" \
+run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" --client-slug "tclient" --prime-session -- --verify --client-slug "tclient" \
   || fail "healthy department step died: $(die_code) $(die_msg)"
-run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" \
+run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" -- --verify --client-slug "tclient" \
   || fail "healthy hook step died: $(die_code) $(die_msg)"
-EXPECTED_CALLS="install-podcast-department.sh
-install-podcast-department.sh --check
+EXPECTED_CALLS="install-podcast-department.sh --client-slug tclient --prime-session
+install-podcast-department.sh --verify --client-slug tclient
 register-podcast-hook.sh --client-slug tclient
-register-podcast-hook.sh --check --client-slug tclient"
+register-podcast-hook.sh --verify --client-slug tclient"
 [ "$(cat "$CALL_LOG")" = "$EXPECTED_CALLS" ] \
   || fail "activation call pattern wrong; got: $(tr '\n' '|' < "$CALL_LOG")"
-pass "full sequence: install once then --check once per piece; hook uses --client-slug"
+grep -q 'UNKNOWN_FLAG' "$CALL_LOG" \
+  && fail "activation sent a helper a flag it rejects: $(grep UNKNOWN_FLAG "$CALL_LOG" | head -1)"
+pass "full sequence: install once then --verify once per piece; both carry --client-slug"
 
 # --- 10: idempotency - re-running over already-active pieces passes -----------
-run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" \
+run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" --client-slug "tclient" --prime-session -- --verify --client-slug "tclient" \
   || fail "re-run over active pieces died: $(die_code) $(die_msg)"
-run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" \
+run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" -- --verify --client-slug "tclient" \
   || fail "re-run over active pieces died: $(die_code) $(die_msg)"
 pass "idempotent: re-running activation over active pieces passes"
 
@@ -209,8 +224,8 @@ pass "idempotent: re-running activation over active pieces passes"
 reset_harness
 rm -f "$SCRIPT_DIR/install-podcast-department.sh" "$SCRIPT_DIR/register-podcast-hook.sh"
 DRY_RUN="1"
-rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" || rc=$?
-rc=0; run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" || rc=$?
+rc=0; run_gate "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" --client-slug "tclient" --prime-session -- --verify --client-slug "tclient" || rc=$?
+rc=0; run_gate "activation:hook" 23 "the inbound hook registrar" "register-podcast-hook.sh" --client-slug "tclient" -- --verify --client-slug "tclient" || rc=$?
 DRY_RUN="0"
 [ -f "$DIE_FILE" ] && fail "dry-run must not die even with missing helpers, got: $(die_code) $(die_msg)"
 [ -s "$CALL_LOG" ] && fail "dry-run must never invoke helpers"
@@ -238,12 +253,18 @@ grep -q 'NO-DAEMON DOCTRINE' "$PROVISION" \
   || fail "provision must document the no-daemon doctrine at STEP 8"
 pass "no scheduler activation step (no-daemon doctrine holds)"
 
-# --- 14: revoke step 9d verifies legacy scheduler residue ----------------------
-grep -q 'scheduler STILL ACTIVE' "$REVOKE" \
-  || fail "9d-box-clean must detect a still-active scheduler"
-grep -q -- '--check --client-slug' "$REVOKE" \
-  || fail "9d must use the scheduler installer --check read-back"
-pass "revoke: step 9d verifies legacy scheduler residue is gone"
+# --- 14: revoke step 9d proves no dead-daemon cron residue ---------------------
+# The engine ships no scheduler installer to interrogate (the dead act-2/act-4
+# slice was removed). What 9d must still prove is that no cron naming either
+# dead daemon survives on the box, the same contract guard-cron-inventory.py
+# and guard-activation-health.py enforce.
+grep -q 'no-daemon violation' "$REVOKE" \
+  || fail "9d-box-clean must flag a surviving podcast daemon cron as a no-daemon violation"
+grep -qE "podcast\[-_ \]\?\(scheduler\|controller\)" "$REVOKE" \
+  || fail "9d must scan openclaw cron list for BOTH dead daemon names"
+grep -q 'install-podcast-scheduler' "$REVOKE" | grep -vE '^[[:space:]]*#' >/dev/null \
+  && fail "revoke must not invoke a scheduler installer that no longer ships"
+pass "revoke: step 9d proves no dead-daemon cron residue"
 
 # --- 15: revoke unregisters symmetrically via --remove --client-slug -----------
 grep -q -- '--remove --client-slug' "$REVOKE" \
