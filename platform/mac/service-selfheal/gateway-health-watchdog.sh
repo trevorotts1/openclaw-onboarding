@@ -35,6 +35,15 @@
 #     often NOT 18789 — read PORT / `openclaw gateway status`"
 #     (38-conversational-ai-system/references/VPS-VS-MAC-INSTALL.md). It honours an
 #     explicit GATEWAY_WATCHDOG_PORT first, else reads PORT / `openclaw gateway status`.
+#   * On a Mac it heals BOTH dead states, not just the hung one. A gateway
+#     LaunchAgent that is DEAD AND BOOTED OUT is bootstrapped from
+#     ~/Library/LaunchAgents/<label>.plist first, then kickstarted: kickstart
+#     alone against an unloaded label does nothing. Same threshold, same
+#     cooldown, same maintenance-lock stand-down as every other action.
+#   * Clears the OpenClaw 2026.9.x SESSION-STORE MIGRATION GATE when that is
+#     what is holding the gateway down. See the MIGRATION GATE block below for
+#     the exact refusal string and its source citation. The import it runs is
+#     non-destructive: the legacy JSON files stay on disk.
 #
 # Health signal references (v16.2.6)
 #   * /healthz returns HTTP 200 when the gateway is up
@@ -61,7 +70,7 @@ GATEWAY_LABEL="${GATEWAY_WATCHDOG_LABEL:-ai.openclaw.gateway}"  # Mac LaunchAgen
 case "${1:-}" in
   --report-only|--dry-run) DRYRUN=1 ;;
   --help|-h)
-    sed -n '2,49p' "$0"; exit 0 ;;
+    sed -n '2,59p' "$0"; exit 0 ;;
 esac
 
 # ---- Box-type + path detection ---------------------------------------------
@@ -94,6 +103,7 @@ mkdir -p "$STATE_DIR" 2>/dev/null || STATE_DIR="/tmp"
 LOG="$STATE_DIR/gateway-watchdog.log"
 STATE="$STATE_DIR/gateway-watchdog.state"          # holds: <consecutive_fail_count>
 LASTACT="$STATE_DIR/gateway-watchdog.lastaction"   # holds: epoch of last heal action
+LASTMIG="$STATE_DIR/gateway-watchdog.migration-lastrun" # holds: epoch of last migration-gate doctor run
 
 ts()  { date '+%Y-%m-%d %H:%M:%S'; }
 log() { echo "[$(ts)] $*" >> "$LOG" 2>/dev/null; }
@@ -194,6 +204,91 @@ is_healthy() {
   return 1
 }
 
+# ---- 2026.9.x SESSION-STORE MIGRATION GATE ---------------------------------
+# OpenClaw 2026.9.x REFUSES TO START the gateway while a legacy JSON session
+# store is still on disk. No amount of kickstarting or bootstrapping fixes
+# that: each restart re-reads the same gate and dies again, so a box can sit
+# dark indefinitely with a watchdog dutifully restarting it every cooldown.
+#
+# THE EXACT REFUSAL, from the OpenClaw 2026.9.4 build installed on the
+# operator box (npm root -g)/openclaw:
+#   dist/startup-migration-BQjPMV_C.mjs line 124
+#   (built from src/config/sessions/startup-migration.ts,
+#    function assertSessionStoreMigrationComplete):
+#
+#     if (legacyStore) throw new SessionStoreMigrationRequiredError(... :
+#       `Legacy session store requires migration: ${legacyStore}. Run
+#        "${formatCliCommand("openclaw doctor --fix", env)}" against the same
+#        state/config before starting OpenClaw.`);
+#
+#   The error class is line 26 of the same file (from
+#   src/config/sessions/migration-required.ts) and carries kind
+#   "legacy-session-store", whose reason string is "session store migration"
+#   in dist/startup-maintenance-required-ZkTp8BlW.mjs lines 3-11. The gateway
+#   run loop turns that into a startup_failed with code
+#   "gateway.maintenance_required" (dist/run-fzUO4BXB.mjs lines 1361-1366).
+#
+# MATCHED SUBSTRING: "Legacy session store requires migration" - the stable,
+# path-independent head of that message.
+#
+# THE COMMAND RUN HERE IS NOT THE ONE THE MESSAGE SUGGESTS, deliberately. The
+# message points at `openclaw doctor --fix`, which is the broad repair path
+# ("Apply recommended repairs", openclaw doctor --help). The narrow command
+# below is the one that actually unparked a stalled client Mac on 2026-09-17:
+# it IMPORTS the legacy JSON history into SQLite and LEAVES THE LEGACY FILES
+# ON DISK, which is what makes it safe for an unattended watchdog to run.
+#
+# GUARDRAILS. Only when the gateway is already unhealthy at the fail
+# threshold, only when the marker is in the live gateway log, only when the
+# `openclaw` CLI exists, at most once per COOLDOWN_SECS, and never under
+# DRYRUN. The maintenance-lock stand-down above has already exited the script
+# before this point, so an atomic upgrade window is never touched.
+MIGRATION_GATE_MARK="Legacy session store requires migration"
+
+# Mac writes the gateway LaunchAgent log to ~/Library/Logs/openclaw/gateway.log
+# (platform/mac/power-resilience/lib-power-resilience.sh renders exactly that
+# StandardOutPath). ~/.openclaw/logs/gateway.log is the documented fallback,
+# and /data/.openclaw/logs/gateway.log is its container equivalent.
+gateway_log_path() {
+  for gl in "$HOME/Library/Logs/openclaw/gateway.log" \
+            "$HOME/.openclaw/logs/gateway.log" \
+            "/data/.openclaw/logs/gateway.log"; do
+    if [ -f "$gl" ]; then echo "$gl"; return 0; fi
+  done
+  return 1
+}
+
+clear_session_store_migration_gate() {
+  glog="$(gateway_log_path)" || {
+    log "MIGRATION-GATE: no gateway log at ~/Library/Logs/openclaw/gateway.log, ~/.openclaw/logs/gateway.log or /data/.openclaw/logs/gateway.log - gate NOT checked (undetermined, not ruled out)"
+    return 1
+  }
+  if ! tail -n 500 "$glog" 2>/dev/null | grep -q "$MIGRATION_GATE_MARK"; then
+    return 1
+  fi
+  log "MIGRATION-GATE: '$MIGRATION_GATE_MARK' found in $glog - the 2026.9.x session-store gate is what is holding the gateway down"
+  if ! command -v openclaw >/dev/null 2>&1; then
+    log "MIGRATION-GATE: no 'openclaw' CLI on PATH, cannot clear it from here. Operator: openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes --non-interactive"
+    return 1
+  fi
+  lastmig="$(cat "$LASTMIG" 2>/dev/null)"
+  case "$lastmig" in ''|*[!0-9]*) lastmig=0 ;; esac
+  if [ "$(( $(now) - lastmig ))" -lt "$COOLDOWN_SECS" ]; then
+    log "MIGRATION-GATE: within the ${COOLDOWN_SECS}s cooldown of the last doctor import - not running it again this cycle"
+    return 1
+  fi
+  if [ "$DRYRUN" = "1" ]; then
+    log "MIGRATION-GATE DRYRUN: would run -> openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes --non-interactive"
+    return 0
+  fi
+  now > "$LASTMIG" 2>/dev/null || true
+  log "MIGRATION-GATE: running -> openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes --non-interactive (non-destructive: the legacy JSON files are left on disk)"
+  openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes --non-interactive >>"$LOG" 2>&1
+  mig_rc=$?
+  log "MIGRATION-GATE: doctor rc=$mig_rc (the normal heal follows either way)"
+  [ "$mig_rc" -eq 0 ] && return 0 || return 1
+}
+
 # ---- Heal actions (per box type). NEVER destructive. -----------------------
 in_cooldown() {
   last="$(cat "$LASTACT" 2>/dev/null)"; case "$last" in ''|*[!0-9]*) return 1 ;; esac
@@ -210,9 +305,53 @@ heal() {
     mac)
       # Resolve the live label (fleet fallback label is ai.openclaw.gateway).
       # Mirrors update-skills.sh gateway-restart dispatch.
-      lbl="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+      #
+      # The exclusion list is load-bearing. `launchctl list` output is not
+      # ordered, and a Mac commonly carries SIBLING labels that also contain
+      # both "openclaw" and "gateway": the operator box runs
+      # ai.openclaw.gateway-watchdog right next to ai.openclaw.gateway. The old
+      # first-match awk could therefore resolve to the watchdog and kickstart
+      # the wrong job while the gateway stayed dark.
+      lbl="$(launchctl list 2>/dev/null \
+             | awk '{print $3}' \
+             | grep -E 'openclaw.*gateway' \
+             | grep -vE 'watchdog|remediate|tunnel|monitor|selfheal' \
+             | head -1)"
       [ -z "$lbl" ] && lbl="$GATEWAY_LABEL"
-      action="launchctl kickstart -k gui/$(id -u)/$lbl"
+      gwplist="$HOME/Library/LaunchAgents/$lbl.plist"
+
+      # THE DEAD-AND-BOOTED-OUT CASE.
+      # `launchctl kickstart -k gui/<uid>/<label>` against a label that is not
+      # bootstrapped does NOTHING: it exits non-zero with "Could not find
+      # service". A detached OpenClaw upgrade stops the gateway LaunchAgent for
+      # the whole update and only restarts it if the update finishes, so a
+      # stalled upgrade leaves exactly this state.
+      #
+      # remediate.sh cannot cover it either. Its heal_label() does bootstrap a
+      # booted-out job, but the moment gateway-watchdog.sh exists on disk
+      # remediate.sh DELEGATES the entire gateway leg to this script and never
+      # calls heal_label for the gateway at all (remediate.sh, "Gateway:
+      # delegate to the watchdog when available"). Installing the watchdog was
+      # therefore REMOVING the only bootstrap the gateway had. This branch is
+      # what puts it back.
+      #
+      # Same rules as every other action here: it runs only inside heal(), so
+      # it is already behind the consecutive-failure threshold and the
+      # post-action cooldown, and the maintenance-lock stand-down at the top of
+      # the script has already exited before anything reaches this point.
+      if launchctl print "gui/$(id -u)/$lbl" >/dev/null 2>&1; then
+        action="launchctl kickstart -k gui/$(id -u)/$lbl"
+      elif [ -f "$gwplist" ]; then
+        log "BOOTED-OUT: $lbl is not bootstrapped in gui/$(id -u); bootstrapping from $gwplist before the kickstart"
+        # The plist path is embedded in a string that heal() runs through
+        # `sh -c`, so it is re-parsed as a shell word. Quote it: a HOME with a
+        # space in it would otherwise split into two arguments and bootstrap
+        # would fail on a path that exists.
+        action="launchctl bootstrap gui/$(id -u) '$gwplist' && launchctl kickstart -k gui/$(id -u)/$lbl"
+      else
+        log "ESCALATE: gateway label $lbl is not loaded AND there is no plist at $gwplist - nothing safe to bootstrap from"
+        return 1
+      fi
       ;;
     vps-host)
       cname="${OPENCLAW_CONTAINER_NAME:-$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E 'openclaw' | head -1)}"
@@ -262,6 +401,11 @@ fails="$(read_count)"; fails=$(( fails + 1 )); write_count "$fails"
 log "BAD: gateway probe failed on :${PORT_NUM} (consecutive=${fails}/${FAIL_THRESHOLD})"
 
 if [ "$fails" -ge "$FAIL_THRESHOLD" ]; then
+  # Clear the 2026.9.x session-store migration gate FIRST when that is what is
+  # holding the gateway down. A restart against an un-migrated store just hits
+  # the same refusal, so healing without this does nothing but burn cooldowns.
+  # No-ops silently on every box that is not gated. Never fails the cycle.
+  clear_session_store_migration_gate || true
   if heal; then
     # Leave the counter standing until the NEXT cycle re-probes and confirms;
     # a single heal does NOT pre-emptively reset (avoids masking a flapping box).

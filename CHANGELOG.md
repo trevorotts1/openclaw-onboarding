@@ -1,3 +1,40 @@
+## [v25.1.47]  -  2026-09-17  -  Fleet roll converges the Mac gateway health watchdog; watchdog clears the 2026.9.x session-store migration gate
+
+### What Changed
+- **The fleet roll never converged the one safety net that covers a dark gateway.** `platform/mac/service-selfheal/install-service-remediate.sh` installs `remediate.sh`, `gateway-health-watchdog.sh` and the `com.openclaw.service-remediate` LaunchAgent that drives them every 5 minutes. `grep -rn install-service-remediate` found it called from exactly two places: `install.sh` (first-time onboarding only) and `38-conversational-ai-system/scripts/14-install-cloudflared-service.sh`. `update-skills.sh`, the only thing that touches every box on every release, never ran it.
+
+  That mattered because a detached OpenClaw 2026.9.2 to 2026.9.4 upgrade **stops the gateway LaunchAgent for the whole update** and restarts it only if the update finishes. Measured on Mac fleet boxes: 10 to 20 minutes routinely, one box spent 8 minutes inside a single `git clone`, and a third stalled outright and sat dark for **about two hours** with nothing restarting it. On the affected box `launchctl list` showed no `com.openclaw.service-remediate`, `~/.openclaw/service-env/` held no `gateway-watchdog.sh`, and the only gateway watchdog present was a hand-installed May 2026 CPU-threshold script that logged `Gateway process not found; clearing state` every 5 minutes for 20 minutes without ever restarting anything.
+
+  **Fix:** `update-skills.sh` now converges the self-heal on its Mac leg on every roll, mirroring the Layer E rescue-tunnel converge that sits beside it. It is convergence, not installation: when `remediate.sh` and `gateway-watchdog.sh` on disk already match the bundle byte for byte, the plist exists and the LaunchAgent is loaded, nothing is touched. One greppable line per roll:
+
+  ```
+  [GATEWAY-WATCHDOG] state=installed | already-current | skipped-not-mac | warn
+  ```
+
+  Mac login user only (skipped inside a container, on a VPS, and as root, because `com.openclaw.service-remediate` is a per-user GUI-domain LaunchAgent and `gui/0` is not the client session). Deliberately fail-soft: every failure path prints `state=warn` and returns, so it never fails a roll and never withholds the version stamp. `warn` names a staged copy under `$OC_CONFIG/scripts/service-selfheal/` that outlives the temp clone.
+
+- **Installing the watchdog had REMOVED the gateway's only bootstrap.** `launchctl kickstart -k gui/<uid>/<label>` against a label that is not bootstrapped does nothing at all, and `remediate.sh` hands its entire gateway leg to `gateway-watchdog.sh` the moment that file exists on disk, so its own `heal_label` bootstrap stopped running for the gateway. A gateway that was **dead AND booted out**, which is exactly what a stalled detached upgrade leaves behind, was therefore unhealable.
+
+  **Fix:** on a Mac the watchdog now bootstraps from `~/Library/LaunchAgents/<label>.plist` first and then kickstarts, under the same consecutive-failure threshold, the same post-action cooldown, and the same maintenance-lock stand-down as every other action. Booted out with no plist escalates rather than guessing. Label resolution also stopped matching the siblings: a box commonly carries other labels containing both `openclaw` and `gateway` (an operator box runs `ai.openclaw.gateway-watchdog` right next to `ai.openclaw.gateway`) and `launchctl list` is not ordered, so the old first-match `awk` could kickstart the wrong job while the gateway stayed dark.
+
+- **OpenClaw 2026.9.x refuses to START the gateway while a legacy JSON session store is on disk**, so restarting it only re-hits the same refusal and a watchdog can restart a box forever without ever reviving it. From the 2026.9.4 build installed on the operator box, `dist/startup-migration-BQjPMV_C.mjs` line 124 (built from `src/config/sessions/startup-migration.ts`, `assertSessionStoreMigrationComplete`):
+
+  ```
+  Legacy session store requires migration: <path>. Run "openclaw doctor --fix"
+  against the same state/config before starting OpenClaw.
+  ```
+
+  The error class is line 26 of the same file, carries kind `legacy-session-store`, and the gateway run loop turns it into a `startup_failed` with code `gateway.maintenance_required`.
+
+  **Fix:** when the gateway is down and that string is in the gateway log (`~/Library/Logs/openclaw/gateway.log`, falling back to `~/.openclaw/logs/gateway.log` then `/data/.openclaw/logs/gateway.log`), the watchdog runs `openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes --non-interactive` once per cooldown, logs it, then applies the normal heal. That narrow import is the command that actually unparked the stalled box, and it is **non-destructive**: the legacy JSON files stay on disk. The message's own broader suggestion, `openclaw doctor --fix`, is deliberately not what runs unattended.
+
+### Tests
+- New: `tests/unit/roll-converges-gateway-watchdog.test.sh`, 50 assertions. It extracts the converge block verbatim from `update-skills.sh` between named anchors and drives it, and drives the real watchdog with `launchctl`, `curl` and `openclaw` stubbed on PATH. Proven non-vacuous: deleting the converge block, reverting the Mac heal to kickstart-only, and dropping the migration-gate clear each turn it red.
+- Wired by `.github/workflows/roll-converges-gateway-watchdog-guard.yml`, which carries all three of those mutations as meta-checks.
+- `tests/unit/full-update-path-contract.test.sh` now registers the new suite as a stage and asserts the converge sits before the temp-clone Cleanup.
+
+
+
 ## [v25.1.45]  -  2026-09-17  -  Rescue Rangers reachability train: 15 client-reported issues fixed, podcast activation, updater hardening, Command Center v7.4.1 pin
 
 ## [v25.1.44]  -  2026-09-17  -  The speech fallback fails over the CREDENTIAL, not just the model
