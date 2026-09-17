@@ -1,0 +1,68 @@
+name: CC watchdog cron registration guard
+
+# ISSUE-04 - fails the build if Skill 32's installer ever stops SCHEDULING the
+# Command Center self-heal watchdog.
+#
+# THE DEFECT THIS GUARDS. blackceo-command-center ships scripts/watchdog-cc.sh:
+# a */5 self-heal for pm2 crash loops, EADDRINUSE, duplicate/legacy app-name
+# zombies, cc-start.sh stale-build refusal receipts and the scheduler-stalled
+# class. Nothing in this repo ever registered it as a cron. The only mention was
+# a passing reference inside a comment in run-full-install.sh, and
+# mac-mini-bootstrap.sh wires only the pm2 launchd job. So every box carried a
+# self-heal that never fired: a live client Mac read "healthy" for 41 hours with
+# no card moving until pm2 was restarted by hand.
+#
+# The fix under guard: run-full-install.sh registers an openclaw cron named
+# cc-watchdog (declaration key skill32-cc-watchdog, */5, delivery none,
+# WATCHDOG_SELF_HEAL / WATCHDOG_PORT / WATCHDOG_CANONICAL_DIR) from a step that
+# runs on BOTH a full install and an --update-only refresh, re-enables the job
+# if it is found disabled, respects a durable tombstone, and fails SOFT with a
+# loud PENDING when the openclaw CLI is unavailable.
+#
+# tests/unit/cc-watchdog-cron-registration.test.sh extracts those functions
+# VERBATIM (name-anchored awk, no reimplementation) and drives them against a
+# fake openclaw CLI. Falsified: against origin/main before this fix it reports
+# 40 failures; against the fix, 0. No network, no gateway, no pm2, no box.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields such as PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "32-command-center-setup/qc-command-center-setup.sh"
+      - "tests/unit/cc-watchdog-cron-registration.test.sh"
+      - ".github/workflows/cc-watchdog-cron-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "32-command-center-setup/qc-command-center-setup.sh"
+      - "tests/unit/cc-watchdog-cron-registration.test.sh"
+      - ".github/workflows/cc-watchdog-cron-guard.yml"
+
+jobs:
+  cc-watchdog-cron-guard:
+    name: the CC self-heal watchdog is scheduled on install AND update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the installer and the skill QC script
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 32-command-center-setup/scripts/run-full-install.sh
+          bash -n 32-command-center-setup/qc-command-center-setup.sh
+          bash -n tests/unit/cc-watchdog-cron-registration.test.sh
+          echo "bash -n: PASS"
+
+      - name: Run the cc-watchdog registration suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/cc-watchdog-cron-registration.test.sh
+          echo "cc-watchdog-cron-guard: PASS"

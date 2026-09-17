@@ -26,15 +26,47 @@
 # the legacy ones.
 # ============================================================
 
-_SHIM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_OBS_CANONICAL="${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh"
+# WHERE AM I. ${BASH_SOURCE[0]} is EMPTY under zsh, and the onboarding resume
+# prompt sources this file from the agent's own shell -- zsh on every Mac box.
+# The old one-liner therefore resolved _SHIM_SCRIPT_DIR to $PWD there, and
+# "$PWD/../lib-onboarding-state.sh" is not this repo's library on any box.
+_OBS_SELF=""
+if [ -n "${BASH_SOURCE:-}" ]; then
+    _OBS_SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then
+    # Hidden behind eval so bash never has to expand a zsh-only prompt flag.
+    eval '_OBS_SELF="${(%):-%x}"'
+fi
+[ -n "$_OBS_SELF" ] || _OBS_SELF="$0"
+_SHIM_SCRIPT_DIR="$(cd "$(dirname "$_OBS_SELF")" 2>/dev/null && pwd)" || _SHIM_SCRIPT_DIR="."
 
-if [ -f "$_OBS_CANONICAL" ]; then
+# WHERE IS THE CANONICAL LIB. Box-side layouts, in the order they are likeliest:
+#   ../lib-...            repo / ~/.openclaw/onboarding checkout (scripts/ child)
+#   ./lib-...             delivered BESIDE the scripts tree by update-skills.sh
+#   ~/.openclaw/onboarding, ~/.openclaw/skills, /data/... (VPS)
+# The old code named exactly ONE candidate, ../lib-onboarding-state.sh, which
+# from the delivered ~/.openclaw/scripts resolves to ~/.openclaw/lib-onboarding-state.sh --
+# a path nothing has ever delivered. So every box warned on every source and
+# oc_* was undefined box-side.
+_OBS_CANONICAL=""
+for _obs_lib_cand in \
+    "${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh" \
+    "${_SHIM_SCRIPT_DIR}/lib-onboarding-state.sh" \
+    "$HOME/.openclaw/onboarding/lib-onboarding-state.sh" \
+    "$HOME/.openclaw/skills/lib-onboarding-state.sh" \
+    "/data/.openclaw/onboarding/lib-onboarding-state.sh"; do
+    if [ -n "$_obs_lib_cand" ] && [ -f "$_obs_lib_cand" ]; then
+        _OBS_CANONICAL="$_obs_lib_cand"; break
+    fi
+done
+unset _obs_lib_cand
+
+if [ -n "$_OBS_CANONICAL" ]; then
     # shellcheck source=/dev/null
     source "$_OBS_CANONICAL" || return 1
 else
-    echo "[onboarding-state shim] WARNING: lib-onboarding-state.sh not found at $_OBS_CANONICAL" >&2
-    echo "  Cannot provide onboarding state-machine (oc_*). Install may be incomplete." >&2
+    echo "[onboarding-state shim] WARNING: lib-onboarding-state.sh not found (looked beside and above $_SHIM_SCRIPT_DIR, in ~/.openclaw/onboarding, ~/.openclaw/skills and /data/.openclaw/onboarding)" >&2
+    echo "  Cannot provide onboarding state-machine (oc_*). The obs_* gate below still works. Install may be incomplete." >&2
 fi
 
 # ============================================================
@@ -152,7 +184,7 @@ obs_seed_state() {
   mkdir -p "$OBS_WORKSPACE" 2>/dev/null || true
   command -v python3 >/dev/null 2>&1 || { obs_log "python3 missing — cannot seed state"; return 1; }
   VERSION="$version" SRC_DIR="$src_dir" STATE_FILE="$OBS_STATE_FILE" python3 - <<'PYEOF'
-import json, os, glob, datetime
+import json, os, glob, re, datetime
 state_file = os.environ["STATE_FILE"]
 src_dir = os.environ["SRC_DIR"]
 version = os.environ["VERSION"]
@@ -168,6 +200,23 @@ state.setdefault("seededAt", now)
 state["lastSeedAt"] = now
 skills = state.setdefault("skills", {})
 
+# ROLLBACK COPIES ARE NOT SKILLS. A rename beside the live skills
+# ("02-x" -> "02-x.bak-20260901", ".rollback", ".orig") still matches the
+# [0-9]* glob and is still a directory, so it used to seed as a skill. It ships
+# nothing anyone will install and no qc-*.sh that can pass, so it parked at
+# "pending" forever -- and obs_gate_summary counts its DENOMINATOR straight off
+# this file, so one such folder pinned the gate below 100% permanently and the
+# resume cron never self-removed. Mirrors _BACKUP_DIR_RE in
+# 23-ai-workforce-blueprint/scripts/department-floor.py.
+rollback_re = re.compile(r"\.(bak|rollback|orig)(\b|[-_.]|$)", re.IGNORECASE)
+
+# Skipping at discovery cannot help an entry an EARLIER run already wrote, and
+# nothing else would ever remove it. Purge those too -- narrowly, by this regex
+# only, never a real skill.
+purged = [k for k in list(skills) if rollback_re.search(k)]
+for k in purged:
+    del skills[k]
+
 # Discover non-archived numbered skill folders in the source.
 found = []
 for d in sorted(glob.glob(os.path.join(src_dir, "[0-9]*"))):
@@ -175,6 +224,8 @@ for d in sorted(glob.glob(os.path.join(src_dir, "[0-9]*"))):
     if not os.path.isdir(d):
         continue
     if "ARCHIVED" in name:
+        continue
+    if rollback_re.search(name):
         continue
     found.append(name)
 
@@ -186,6 +237,8 @@ state["discoveredSkills"] = found
 json.dump(state, open(state_file, "w"), indent=2)
 open(state_file, "a").write("\n")
 print(f"  [onboarding-state] seeded {len(found)} skills (pending preserved/added) → {state_file}")
+if purged:
+    print(f"  [onboarding-state] purged {len(purged)} rollback folder(s) from the gate denominator: {', '.join(sorted(purged))}")
 PYEOF
 }
 
@@ -193,10 +246,14 @@ PYEOF
 # obs_set_status <folder> <status>   status in:
 #   pending|downloaded|wired|qc-passed|qc-failed|interview-pending
 obs_set_status() {
-  local folder="$1" status="$2"
+  # `st`, never `status`: `status` is a READ-ONLY special variable in zsh, and
+  # the onboarding resume prompt sources this shim from the agent's shell, which
+  # is zsh on every Mac box. `local status=` aborts the function there before it
+  # writes anything, so no skill could ever be recorded qc-passed.
+  local folder="$1" st="$2"
   command -v python3 >/dev/null 2>&1 || return 0
   [ -f "$OBS_STATE_FILE" ] || obs_seed_state >/dev/null 2>&1 || true
-  FOLDER="$folder" STATUS="$status" STATE_FILE="$OBS_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null || true
+  FOLDER="$folder" STATUS="$st" STATE_FILE="$OBS_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null || true
 import json, os, datetime
 sf = os.environ["STATE_FILE"]; folder = os.environ["FOLDER"]; status = os.environ["STATUS"]
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

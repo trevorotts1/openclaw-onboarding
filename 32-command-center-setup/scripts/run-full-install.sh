@@ -1301,6 +1301,220 @@ cc_launch_stage() {
     --app "$DASHBOARD_DIR" --root "$OC_ROOT" >>"$LOG_FILE" 2>&1
 }
 
+# ----------------------------------------------------------------------
+# ISSUE-04 - schedule the Command Center self-heal watchdog (cc-watchdog)
+# ----------------------------------------------------------------------
+# THE DEFECT THIS CLOSES. The Command Center repo ships scripts/watchdog-cc.sh:
+# a */5 self-heal for pm2 crash loops, EADDRINUSE, duplicate/legacy app-name
+# zombies, cc-start.sh stale-build refusal receipts, and (from the companion CC
+# change) a scheduler-stalled class that does one pm2 restart. This installer's
+# own pm2 app-name contract block has NAMED that file since v16.1.7 - but no
+# installer in this repo ever SCHEDULED it on any box. mac-mini-bootstrap.sh
+# registers only the pm2 launchd job. So the watchdog shipped to every client
+# and fired on none of them: on a live client Mac the board read "healthy" for
+# 41 hours with no card moving, until an operator ran pm2 restart by hand.
+# A self-heal that nothing schedules is the same as no self-heal.
+#
+# WHERE IT RUNS. Registered in BLOCK A immediately after Phase 6, so it lands on
+# BOTH a full install and an --update-only refresh, on every box, regardless of
+# interview state. Existing boxes therefore pick it up on the next fleet roll
+# without a separate remediation pass.
+#
+# FAIL-SOFT ON PURPOSE, matching install.sh's own cron registrars
+# (install_workforce_resume_cron / install_watchdog_loop_cron): no openclaw CLI
+# means a LOUD PENDING log and a continuing install, because a box with a
+# working board and no watchdog is strictly better than a box with neither.
+CC_WATCHDOG_CRON_NAME="cc-watchdog"
+CC_WATCHDOG_CRON_DECL="skill32-cc-watchdog"
+CC_WATCHDOG_CRON_EXPR="*/5 * * * *"
+CC_WATCHDOG_SCRIPT=""
+CC_WATCHDOG_WRAPPER=""
+
+# Durable-tombstone awareness so an operator who deliberately removed this cron
+# is never overridden by the next roll. Sourced from the shared lib when the
+# bundle carries it; when it does not, the inline stub fails OPEN (never
+# tombstoned) rather than block all registration, mirroring
+# 38-conversational-ai-system/scripts/04-register-crons.sh.
+_CC_CRON_LIB="$SKILL_DIR/../shared-utils/cron-lib.sh"
+[[ -f "$_CC_CRON_LIB" ]] || _CC_CRON_LIB="$SKILL_DIR/../../shared-utils/cron-lib.sh"
+if [[ -f "$_CC_CRON_LIB" ]]; then
+  # shellcheck source=/dev/null
+  source "$_CC_CRON_LIB" || true
+fi
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
+
+# cc_cron_add_supports <flag> - feature-probe `openclaw cron add --help` ONCE
+# for a flag this repo cannot assume every installed CLI carries. Same probe
+# shape install.sh uses for --command (_wbr_has_command). Never invents a flag
+# the help text does not literally advertise.
+cc_cron_add_supports() {
+  local flag="$1"
+  if [[ -z "${CC_CRON_ADD_HELP+x}" ]]; then
+    CC_CRON_ADD_HELP="$(openclaw cron add --help 2>&1 || true)"
+  fi
+  printf '%s' "$CC_CRON_ADD_HELP" | grep -qE -- "(^|[[:space:]])${flag}([[:space:]=<]|\$)"
+}
+
+# cc_watchdog_cron_lookup - print "<id>|<enabled>" for the cc-watchdog job, or
+# return 1 when it is absent / the listing is unreadable. JSON exact-name match
+# only: `cron list`'s TEXT table truncates names past ~22 chars, which is the
+# documented root cause of the 6x-duplicate-cron incident (see
+# shared-utils/cron-lib.sh). `--all` is feature-detected because DISABLED jobs
+# are omitted from the default listing on the CLI builds that have it, and a
+# disabled job is exactly the case this lookup has to see.
+cc_watchdog_cron_lookup() {
+  local raw list_flags=""
+  if openclaw cron list --help 2>&1 | grep -qE -- '(^|[[:space:]])--all([[:space:]=<]|$)'; then
+    list_flags="--all"
+  fi
+  raw=$(openclaw cron list --json $list_flags 2>/dev/null) || raw=""
+  [[ -n "$raw" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  OC_CRON_RAW="$raw" python3 - "$CC_WATCHDOG_CRON_NAME" 2>/dev/null <<'PYWD'
+import json, os, sys
+name = sys.argv[1]
+try:
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+for job in jobs:
+    if isinstance(job, dict) and job.get("name") == name:
+        enabled = job.get("enabled", True)
+        print("%s|%s" % (job.get("id", ""), "true" if enabled else "false"))
+        sys.exit(0)
+sys.exit(1)
+PYWD
+}
+
+# cc_watchdog_write_wrapper - env carrier for a CLI with no --command-env.
+# The cron payload contract is ONE plain command string: no `;`, no `||`, no
+# `VAR=x cmd` prefix (the gateway runs it through `sh -lc`, and an inline
+# assignment prefix is exactly the shape that silently becomes part of the
+# argv on the --command-argv path). So on an older CLI the environment moves
+# into a tiny generated wrapper instead. Values are quoted with printf %q, so a
+# path containing spaces survives verbatim.
+cc_watchdog_write_wrapper() {
+  local wrapper_dir="$OC_ROOT/scripts"
+  CC_WATCHDOG_WRAPPER="$wrapper_dir/cc-watchdog-run.sh"
+  mkdir -p "$wrapper_dir" 2>/dev/null || return 1
+  {
+    printf '%s\n' '#!/usr/bin/env bash'
+    printf '%s\n' '# GENERATED by 32-command-center-setup/scripts/run-full-install.sh (ISSUE-04).'
+    printf '%s\n' '# Env carrier for the cc-watchdog cron on an openclaw CLI without --command-env.'
+    printf '%s\n' '# Regenerated on every install/update run. Do not hand-edit.'
+    printf '%s\n' 'set -u'
+    printf 'export WATCHDOG_SELF_HEAL=1\n'
+    printf 'export WATCHDOG_PORT=%q\n' "$DASHBOARD_PORT"
+    printf 'export WATCHDOG_CANONICAL_DIR=%q\n' "$DASHBOARD_DIR"
+    printf 'exec bash %q\n' "$CC_WATCHDOG_SCRIPT"
+  } > "$CC_WATCHDOG_WRAPPER" || return 1
+  chmod +x "$CC_WATCHDOG_WRAPPER" 2>/dev/null || true
+  return 0
+}
+
+# cc_register_watchdog_cron - idempotent registration of the */5 self-heal cron.
+#
+# ENV CONTRACT. watchdog-cc.sh reads WATCHDOG_SELF_HEAL, WATCHDOG_PORT and
+# WATCHDOG_CANONICAL_DIR (plus optional WATCHDOG_ALERT_LOG / WATCHDOG_ALERT_HOOK
+# / WATCHDOG_STATE_DIR, all of which have working defaults). It does NOT read a
+# pm2-app-name variable: the canonical name is compiled into both repos
+# ("blackceo-command-center", $CC_PM2_NAME here), so passing one would be dead
+# weight the watchdog ignores. Only the three variables it actually reads are
+# passed.
+#
+# IDEMPOTENCY. `openclaw cron add` has no dedupe-by-name guard of its own - that
+# is how one box accumulated nine copies of the same tick. --declaration-key is
+# the CLI's add-or-converge identity: it updates the ONE job carrying that key
+# when anything differs, no-ops when nothing does, and creates exactly one job
+# the first time. On a CLI without the flag this falls back to an explicit
+# remove-then-add by resolved job id, which reaches the same single-job end
+# state. Never both.
+cc_register_watchdog_cron() {
+  CC_WATCHDOG_SCRIPT="$DASHBOARD_DIR/scripts/watchdog-cc.sh"
+
+  if [[ ! -f "$CC_WATCHDOG_SCRIPT" ]]; then
+    log "WARN" "phase=6j cc-watchdog: SKIPPED - $CC_WATCHDOG_SCRIPT is not present in this Command Center checkout (older pin). No cron registered; this box self-heals nothing until the checkout carries scripts/watchdog-cc.sh, at which point the next install/update run registers it."
+    return 0
+  fi
+  chmod +x "$CC_WATCHDOG_SCRIPT" 2>/dev/null || true
+
+  local manual_hint
+  manual_hint="openclaw cron add --name $CC_WATCHDOG_CRON_NAME --cron '$CC_WATCHDOG_CRON_EXPR' --declaration-key $CC_WATCHDOG_CRON_DECL --no-deliver --command-env WATCHDOG_SELF_HEAL=1 --command-env WATCHDOG_PORT=$DASHBOARD_PORT --command-env WATCHDOG_CANONICAL_DIR=$DASHBOARD_DIR --command 'bash $CC_WATCHDOG_SCRIPT'"
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    log "WARN" "phase=6j cc-watchdog: PENDING - the openclaw CLI is not on PATH, so the */5 self-heal cron was NOT registered. This box can sit wedged (crash loop, EADDRINUSE, stale-build refusal, stalled scheduler) with nothing to restart it. Register it by hand once the CLI is available: $manual_hint"
+    return 0
+  fi
+
+  if oc_cron_tombstoned "$CC_WATCHDOG_CRON_NAME"; then
+    log "WARN" "phase=6j cc-watchdog: TOMBSTONED (deliberately removed by an operator) - NOT re-registering. Un-tombstone with: bash scripts/tombstone-cron.sh --remove $CC_WATCHDOG_CRON_NAME"
+    return 0
+  fi
+
+  local -a add_args
+  add_args=( --name "$CC_WATCHDOG_CRON_NAME" --cron "$CC_WATCHDOG_CRON_EXPR" --no-deliver )
+
+  local idem_mode
+  if cc_cron_add_supports --declaration-key; then
+    add_args+=( --declaration-key "$CC_WATCHDOG_CRON_DECL" )
+    idem_mode="declaration-key converge ($CC_WATCHDOG_CRON_DECL)"
+  else
+    idem_mode="remove-then-add by name (CLI has no --declaration-key)"
+    local prior prior_id
+    if prior="$(cc_watchdog_cron_lookup)"; then
+      prior_id="${prior%%|*}"
+      if [[ -n "$prior_id" ]] && openclaw cron rm "$prior_id" >/dev/null 2>&1; then
+        log "INFO" "phase=6j cc-watchdog: removed the prior '$CC_WATCHDOG_CRON_NAME' job (id=$prior_id) before re-adding - no --declaration-key on this CLI"
+      fi
+    fi
+  fi
+
+  local env_mode
+  if cc_cron_add_supports --command-env; then
+    env_mode="--command-env"
+    add_args+=( --command-env "WATCHDOG_SELF_HEAL=1" \
+                --command-env "WATCHDOG_PORT=$DASHBOARD_PORT" \
+                --command-env "WATCHDOG_CANONICAL_DIR=$DASHBOARD_DIR" \
+                --command "bash $CC_WATCHDOG_SCRIPT" )
+  else
+    if ! cc_watchdog_write_wrapper; then
+      log "WARN" "phase=6j cc-watchdog: PENDING - this CLI has no --command-env and the wrapper at $OC_ROOT/scripts/cc-watchdog-run.sh could not be written, so the */5 self-heal cron was NOT registered and this box self-heals nothing. Fix the permissions on $OC_ROOT/scripts and re-run the installer. (Do NOT copy the --command-env remedy logged elsewhere in this phase: this CLI does not support that flag.)"
+      return 0
+    fi
+    env_mode="generated wrapper $CC_WATCHDOG_WRAPPER"
+    add_args+=( --command "bash $CC_WATCHDOG_WRAPPER" )
+  fi
+
+  if openclaw cron add "${add_args[@]}" >>"$LOG_FILE" 2>&1; then
+    log "INFO" "phase=6j cc-watchdog: registered - $CC_WATCHDOG_CRON_EXPR, self-heal ON, port=$DASHBOARD_PORT, dir=$DASHBOARD_DIR, env via $env_mode, idempotency via $idem_mode"
+  else
+    log "WARN" "phase=6j cc-watchdog: PENDING - 'openclaw cron add' FAILED (gateway down or unauthenticated?), so the */5 self-heal cron is NOT registered and this box self-heals nothing. See $LOG_FILE, then register by hand: $manual_hint"
+    return 0
+  fi
+
+  # ENABLE-IF-DISABLED. A converge writes the job's fields but does not flip a
+  # previously disabled job back on, and a disabled watchdog is indistinguishable
+  # from an absent one at 3am. An operator's DELIBERATE off-switch is the
+  # tombstone checked above, not a bare disable, so re-enabling here cannot
+  # override an intentional removal.
+  local state state_id state_enabled
+  if state="$(cc_watchdog_cron_lookup)"; then
+    state_id="${state%%|*}"
+    state_enabled="${state##*|}"
+    if [[ "$state_enabled" != "true" ]]; then
+      if [[ -n "$state_id" ]] && openclaw cron enable "$state_id" >>"$LOG_FILE" 2>&1; then
+        log "INFO" "phase=6j cc-watchdog: the job was DISABLED - re-enabled (id=$state_id)"
+      else
+        log "WARN" "phase=6j cc-watchdog: the job exists but is DISABLED and could not be re-enabled (id=${state_id:-unresolved}). It will never fire. Enable it by hand: openclaw cron enable ${state_id:-<id>}"
+      fi
+    fi
+  else
+    log "WARN" "phase=6j cc-watchdog: 'openclaw cron add' reported success but the job is not readable back from 'openclaw cron list --json'. Treating registration as UNPROVEN - verify with: openclaw cron list --all --json"
+  fi
+  return 0
+}
+
 # ---- preflight ----
 # --resume is the single recovery entry: preserve a valid existing checkout,
 # bootstrap an absent one, and never adopt an unrelated directory.
@@ -1613,6 +1827,24 @@ else
   state_set '.commandCenterPhase6Done = true'
   log "INFO" "phase=6 dashboard-deploy: done"
 fi
+
+# ----------------------------------------------------------------------
+# PHASE 6j - Command Center self-heal watchdog cron (ISSUE-04)
+# ----------------------------------------------------------------------
+# DELIBERATELY OUTSIDE the phase-6 if/elif/else above: all three of its branches
+# (--update-only refresh, already-done skip, fresh full install) converge here,
+# so the watchdog gets scheduled on every run in every mode. It is also ABOVE
+# the interview-complete gate, because a wedged board needs restarting whether
+# or not the client has finished their interview.
+#
+# NOT state-gated either. There is no commandCenterPhase6jDone flag on purpose:
+# the registration is a converge, so re-running it is a no-op, and a box whose
+# cron store was wiped (gateway re-provision, openclaw doctor --fix, a manual
+# cron rm) must be able to heal itself on the next roll rather than be skipped
+# forever by a stale "done" bit.
+log "INFO" "phase=6j cc-watchdog: starting"
+cc_register_watchdog_cron
+log "INFO" "phase=6j cc-watchdog: done"
 
 # ----------------------------------------------------------------------
 # PHASE 6h — Tunnel (n8n webhook + cloudflared)
