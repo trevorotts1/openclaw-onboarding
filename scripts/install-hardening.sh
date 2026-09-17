@@ -71,22 +71,141 @@ harden_brew_check() {
 # These tools power the YouTube/local-video branch of Skill 22's
 # add-persona-from-source.sh. They were not previously installed on Mac
 # by default. Use brew (Mac) — never apt.
+#
+# BOUNDED, NON-INTERACTIVE BREW (defect fix, 2026-09-17). `brew install` used to
+# run unbounded with inherited stdin. On a client Mac a dependency postinstall
+# wedged in a pseudo-terminal read loop and never returned: three generations of
+# orphaned Ruby processes, one pegging a core for two days, and because this
+# script never returned, the caller's EXIT trap never fired and the update lock
+# stayed held for days. Hardening is best-effort and must NEVER be able to hold
+# the roll open, so every brew install now runs:
+#   • NONINTERACTIVE=1                  -- brew never prompts
+#   • HOMEBREW_NO_AUTO_UPDATE=1         -- no implicit `brew update` (the slow path)
+#   • HOMEBREW_NO_INSTALL_CLEANUP=1     -- no post-install cleanup sweep
+#   • HOMEBREW_NO_ENV_HINTS=1           -- quiet
+#   • stdin from /dev/null              -- any read() gets EOF instead of blocking
+#   • a bounded watchdog                -- macOS ships no coreutils `timeout`
+# Timeout is HARDENING_BREW_TIMEOUT_SECS seconds (default 600).
+HARDENING_BREW_TIMEOUT_SECS="${HARDENING_BREW_TIMEOUT_SECS:-600}"
+
+# Kill a watchdogged brew and everything it forked.
+# Group-kills ONLY when the child is confirmed to be its own process-group
+# leader (pgid == pid). If that cannot be confirmed we must NOT group-kill:
+# that group would be the UPDATER'S OWN, and we would kill the caller.
+_brew_kill_tree() {
+    local pid="$1" sig="$2" pgid=""
+    # -dc '0-9' keeps digits ONLY. `tr -d '[:space:]'` is ambiguous across tr
+    # implementations (BSD vs GNU bracket handling); a pgid is digits, so ask
+    # for digits.
+    pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -dc '0-9')"
+    if [ -n "$pgid" ] && [ "$pgid" = "$pid" ]; then
+        kill "-${sig}" "-${pgid}" 2>/dev/null || true
+    else
+        pkill "-${sig}" -P "$pid" 2>/dev/null || true
+        kill "-${sig}" "$pid" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# _brew_install_bounded <pkg>
+# Returns the brew exit code, or 124 on timeout (mirrors coreutils `timeout`).
+# Never returns non-zero to a caller that is not prepared for it -- callers log.
+_brew_install_bounded() {
+    local pkg="$1"
+    local limit="$HARDENING_BREW_TIMEOUT_SECS"
+    case "$limit" in ''|*[!0-9]*) limit=600 ;; esac
+    [ "$limit" -gt 0 ] 2>/dev/null || limit=600
+
+    local rcfile
+    rcfile="$(mktemp "${TMPDIR:-/tmp}/install-hardening-brew.XXXXXX" 2>/dev/null)" || rcfile=""
+
+    # Job control ON only across the launch, so the subshell becomes its own
+    # process-group leader and _brew_kill_tree can reap the whole tree. Restore
+    # the caller's setting immediately -- the already-created job keeps its pgid.
+    local _had_monitor=""
+    case "$-" in *m*) _had_monitor=1 ;; esac
+    set -m 2>/dev/null || true
+    (
+        NONINTERACTIVE=1 \
+        HOMEBREW_NO_AUTO_UPDATE=1 \
+        HOMEBREW_NO_INSTALL_CLEANUP=1 \
+        HOMEBREW_NO_ENV_HINTS=1 \
+        brew install "$pkg" </dev/null >/dev/null 2>&1
+        _rc=$?
+        [ -n "$rcfile" ] && printf '%s\n' "$_rc" > "$rcfile" 2>/dev/null
+        exit "$_rc"
+    ) &
+    local pid=$!
+    [ -n "$_had_monitor" ] || set +m 2>/dev/null || true
+
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null; do
+        if [ "$waited" -ge "$limit" ]; then
+            _brew_kill_tree "$pid" TERM
+            local grace=0
+            while [ "$grace" -lt 5 ] && kill -0 "$pid" 2>/dev/null; do
+                sleep 1
+                grace=$((grace + 1))
+            done
+            _brew_kill_tree "$pid" KILL
+            wait "$pid" 2>/dev/null || true
+            [ -n "$rcfile" ] && rm -f "$rcfile" 2>/dev/null
+            _log "  brew install $pkg timed out after ${limit} s, skipped"
+            return 124
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    wait "$pid" 2>/dev/null || true
+
+    # Read the status the subshell recorded. `wait` on an already-reaped job is
+    # not a reliable status source here, and an EXIT-CODE FAILURE IS NOT AN
+    # EMPTY RESULT: an unreadable/absent rcfile means "unknown", not "success".
+    local rc=1
+    if [ -n "$rcfile" ] && [ -s "$rcfile" ]; then
+        rc="$(tr -dc '0-9' < "$rcfile" 2>/dev/null)"
+        case "$rc" in ''|*[!0-9]*) rc=1 ;; esac
+    fi
+    [ -n "$rcfile" ] && rm -f "$rcfile" 2>/dev/null
+    return "$rc"
+}
+
 harden_skill22_media_tools() {
     if [ "$(uname -s)" != "Darwin" ]; then return 0; fi
     if ! command -v brew >/dev/null 2>&1; then return 0; fi
 
     local need=()
     command -v yt-dlp     >/dev/null 2>&1 || need+=(yt-dlp)
-    command -v whisper-cpp >/dev/null 2>&1 || command -v whisper >/dev/null 2>&1 || need+=(whisper-cpp)
+    # The Homebrew FORMULA is named `whisper-cpp` (keg `whisper.cpp`), but the
+    # BINARIES it installs are whisper-cli, whisper-server, whisper-bench,
+    # whisper-stream, whisper-command, whisper-quantize, whisper-talk-llama,
+    # whisper-lsp, whisper-vad-speech-segments. Verified against an installed
+    # keg (whisper.cpp 1.9.2, `brew list whisper-cpp`): there is NO binary named
+    # `whisper-cpp`, and NO binary named `whisper`. A bare `whisper` on PATH
+    # comes from the SEPARATE `openai-whisper` formula, which most client boxes
+    # do not have. So on a box that already has whisper-cpp installed, the old
+    # `command -v whisper-cpp || command -v whisper` probe ALWAYS failed: `need`
+    # gained whisper-cpp every pass and `brew install whisper-cpp` re-fired on
+    # every roll, forever. Probe the real binary names, current first.
+    command -v whisper-cli >/dev/null 2>&1 \
+        || command -v whisper-cpp >/dev/null 2>&1 \
+        || command -v whisper     >/dev/null 2>&1 \
+        || need+=(whisper-cpp)
     command -v ffmpeg     >/dev/null 2>&1 || need+=(ffmpeg)
 
     if [ "${#need[@]}" -eq 0 ]; then
         return 0
     fi
 
-    _log "Skill 22 media tools missing on Mac: ${need[*]} — installing via brew (non-blocking)"
+    _log "Skill 22 media tools missing on Mac: ${need[*]} -- installing via brew (non-blocking, ${HARDENING_BREW_TIMEOUT_SECS}s cap each)"
     for pkg in "${need[@]}"; do
-        brew install "$pkg" >/dev/null 2>&1 || _log "  brew install $pkg failed (non-blocking)"
+        _brew_install_bounded "$pkg"
+        _brew_rc=$?
+        case "$_brew_rc" in
+            0)   _log "  brew install $pkg ok" ;;
+            124) : ;;  # already logged by the watchdog
+            *)   _log "  brew install $pkg failed rc=$_brew_rc (non-blocking)" ;;
+        esac
     done
     return 0
 }
