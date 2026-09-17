@@ -264,6 +264,36 @@ echo "$OUT" | grep -q "$BOX/secrets/.env" \
     || fail "6d: a request was sent with no credential"
 
 # =============================================================================
+# (6b) A malformed line ELSEWHERE in the store must not fake a missing credential
+# =============================================================================
+# rescue_env_get returns rc 3 when the store carries malformed lines, and the
+# requested name may STILL be resolved on stdout. Discarding the value on any
+# non-zero rc would turn one unrelated bad line into a false "no credential
+# here" and report RR_SECRET_MISSING on a box that has one. That is the exact
+# false negative this whole check exists to stop producing.
+echo "--- (6b) a malformed line elsewhere in the store is not a missing credential ---"
+{
+  printf 'this line has no equals sign\n'
+  printf 'RESCUE_RANGERS_WEBHOOK_SECRET=%s\n' "$FAKE_SECRET"
+} > "$BOX/secrets/.env"
+chmod 600 "$BOX/secrets/.env"
+rm -f "$FLAG"
+start_stub suppressed
+run_check "http://127.0.0.1:$PORT/webhook/rr-v2-intake"
+[ "$RC" -eq 0 ] \
+    && pass "6e: a resolvable credential in a store with an unrelated bad line still works (rc 0)" \
+    || fail "6e: a malformed line elsewhere faked a broken credential (rc=$RC)"
+echo "$OUT" | grep -q "malformed lines" \
+    && pass "6f: the malformed store is NAMED as a note, not swallowed and not turned into a verdict" \
+    || fail "6f: the malformed store was silently ignored"
+if echo "$OUT" | grep -q "RR_SECRET_MISSING"; then
+    fail "6g: a store with one bad line was reported as having NO credential"
+else
+    pass "6g: a store with one bad line is never reported as RR_SECRET_MISSING"
+fi
+new_store "$FAKE_SECRET"
+
+# =============================================================================
 # (7) CONTROL ON THE INSTRUMENT — the harness can produce every verdict
 # =============================================================================
 # Without this, a suite that only ever saw one class could be green because the

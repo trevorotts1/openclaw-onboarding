@@ -183,10 +183,23 @@ settle() {
 # ---- Resolve the intake URL and the credential -------------------------------
 # Both can live in the runtime env OR ONLY in the secrets store. The escalation
 # section is explicit that a box must read BOTH before claiming either is absent.
+#
+# rescue_env_get's contract: rc 0 resolved, rc 1 absent, rc 2 store unreadable,
+# rc 3 THE STORE HAS MALFORMED LINES SOMEWHERE AND THE REQUESTED NAME MAY STILL
+# BE RESOLVED ON STDOUT. Discarding a value on any non-zero rc would turn one
+# unrelated bad line elsewhere in the store into a false "no credential here",
+# which is the exact false negative this check exists to stop producing. So the
+# OUTPUT decides, and the rc only decides what gets SAID about it.
+# The rc is captured IN THIS SHELL, never inside a helper: a helper's assignment
+# to STORE_MALFORMED would happen in the command-substitution SUBSHELL and be
+# lost, so the note would never print.
+STORE_MALFORMED=0
+
 URL="${RESCUE_RANGERS_WEBHOOK_URL:-}"
 URL_SRC="env"
 if [ -z "$URL" ]; then
-  URL="$(rescue_env_get "$SECRETS" RESCUE_RANGERS_WEBHOOK_URL 2>/dev/null)" || URL=""
+  URL="$(rescue_env_get "$SECRETS" RESCUE_RANGERS_WEBHOOK_URL 2>/dev/null)"; _rc_url=$?
+  [ "$_rc_url" = "3" ] && STORE_MALFORMED=1
   URL_SRC="secrets-store"
 fi
 if [ -z "$URL" ]; then
@@ -197,11 +210,17 @@ fi
 SECRET="${RESCUE_RANGERS_WEBHOOK_SECRET:-}"
 SECRET_SRC="env"
 if [ -z "$SECRET" ]; then
-  SECRET="$(rescue_env_get "$SECRETS" RESCUE_RANGERS_WEBHOOK_SECRET 2>/dev/null)" || SECRET=""
+  SECRET="$(rescue_env_get "$SECRETS" RESCUE_RANGERS_WEBHOOK_SECRET 2>/dev/null)"; _rc_sec=$?
+  [ "$_rc_sec" = "3" ] && STORE_MALFORMED=1
   SECRET_SRC="secrets-store"
 fi
+if [ "$STORE_MALFORMED" = "1" ]; then
+  # Named, never fatal on its own. The parser already wrote the offending line
+  # NUMBERS to stderr (never the values).
+  say "rr-intake-auth-check: NOTE $SECRETS carries malformed lines (line numbers on stderr). The requested names were still read; this note is not a verdict."
+fi
 
-say "rr-intake-auth-check: url_source=$URL_SRC root=$RR_ROOT"
+say "rr-intake-auth-check: url_source=$URL_SRC credential_source=$SECRET_SRC root=$RR_ROOT"
 
 if [ -z "$SECRET" ]; then
   # Absence proven the same way presence is: both sources named, neither had it.

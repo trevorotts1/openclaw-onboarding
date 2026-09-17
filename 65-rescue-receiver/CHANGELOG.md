@@ -45,6 +45,16 @@ DELIVERY NONE IS NOT OPTIONAL. If the CLI refuses `--no-deliver`, `wire.sh` regi
 and says so. A delivering daily cron would route operator-facing credential diagnostics into
 the client's chat. A missing check is a gap; a delivering one is client spam.
 
+ONE FALSE NEGATIVE CAUGHT IN REVIEW OF THIS OWN CHANGE. `rescue_env_get` returns rc 3 when the
+store carries malformed lines ANYWHERE, and the requested name may STILL be resolved on
+stdout (`shared-utils/rescue-env.sh`, the rc-3 branch prints the value before returning). The
+first draft discarded the value on any non-zero rc, so one unrelated bad line elsewhere in
+`secrets/.env` would have reported `RR_SECRET_MISSING` on a box that HAS a credential: the
+exact false negative this check exists to stop producing. The rc is now captured in the
+script's own shell (a helper's assignment would have been lost in the command-substitution
+subshell, which is how the first fix for it silently did nothing), the OUTPUT decides, and the
+malformed store is NAMED as a note rather than turned into a verdict. Covered by section 6b.
+
 TESTS: `65-rescue-receiver/tests/test_intake_auth_check.sh`, 31 assertions against a REAL
 local HTTP responder (`tests/stub-intake.py`) that journals what it received, so the
 credential's route is proven rather than asserted. It covers all four required
