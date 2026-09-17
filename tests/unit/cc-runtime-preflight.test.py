@@ -29,7 +29,7 @@ from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version
 # endpoints: minVersion had to move WITH pinnedTag because /api/archify-runs is
 # a brand-new endpoint, so an older CC answers 404 (see cc-compat.json notes).
 CC_FLOOR = 'v7.4.0'
-CC_PIN = 'v7.4.0'
+CC_PIN = 'v7.4.1'
 CC_FLOOR_BARE = CC_FLOOR.lstrip('v')
 
 # Every released CC version BELOW the current floor. The boundary is tested
