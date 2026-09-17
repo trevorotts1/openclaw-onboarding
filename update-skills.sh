@@ -131,6 +131,25 @@ source "$_PLATFORM_BOOTSTRAP" || exit 1
 
 set -euo pipefail
 
+# ----------------------------------------------------------
+# NO BYTECODE, ANYWHERE THIS UPDATER REACHES.
+#
+# WHY (measured 2026-09-17, controlled reproduction on a Hostinger VPS): a
+# __pycache__ directory created by a python that ran as ROOT inside the
+# container cannot be removed by the node user this updater runs as, and the
+# skill install loop's removal step then fails. Exporting this here covers the
+# updater's own embedded python programs AND every per-skill installer it
+# invokes, because they inherit this environment. The updater must never be
+# the thing that lays that trap for its own next run.
+#
+# THIS IS NOT THE WHOLE FIX, and must not be read as one. Python run as root
+# ELSEWHERE on the box -- Command Center scripts, cron jobs, an operator's own
+# docker exec -- still creates root-owned bytecode this variable cannot reach.
+# The write pre-flight's skill-tree removability scan is the backstop for
+# those. This only stops the updater from adding to the problem.
+# ----------------------------------------------------------
+export PYTHONDONTWRITEBYTECODE=1
+
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -939,6 +958,163 @@ _ocwp_check_one() {
   return 1
 }
 
+# ----------------------------------------------------------
+# GUARDED TREE REMOVAL. Added 2026-09-17 after a controlled reproduction on a
+# Hostinger VPS.
+#
+# THE DEFECT. The skill install loop removed the old copy of each skill with a
+# bare `rm -rf "$SKILLS_DIR/$SKILL_NAME"`. This script runs under
+# `set -euo pipefail`. When ONE path in that tree cannot be unlinked, rm
+# deletes everything else it can, THEN returns 1, and `set -e` exits the whole
+# updater on the spot with no message of any kind. On the measured box python
+# had run as root inside the container and left root:root __pycache__
+# directories under skills/23-ai-workforce-blueprint/scripts/ and
+# skills/shared-utils/. The run died mid-loop, skill 23 was left holding 3 of
+# its 1934 files, no version stamp was written, and the log carried no error
+# text at all. A gutted skill is strictly worse than an untouched one.
+#
+# MECHANISM, stated precisely, because the obvious reading is wrong: on POSIX
+# the permission to unlink a file comes from write+execute on its PARENT
+# DIRECTORY. The file's own owner and mode are irrelevant. A root-owned .pyc
+# is therefore not itself the blocker; the root-owned __pycache__ DIRECTORY
+# holding it is. So the scan below probes DIRECTORIES, using the same REAL
+# write attempt the write pre-flight uses (create a probe file, remove it),
+# never `-w` and never ownership alone. Ownership is read only because it is
+# what the operator's chown remedy has to name.
+#
+# THE RULE: scan the tree BEFORE removing anything. A tree that cannot be
+# fully removed is refused whole and untouched, with one actionable line. It
+# is never half-deleted first.
+# ----------------------------------------------------------
+
+# How many blocked paths one report names before it summarises the rest.
+_OCWP_REPORT_CAP=10
+
+# Scan a tree for directories whose contents this user cannot unlink.
+# Sets _OCWP_BLOCKED_LIST (newline separated, capped at _OCWP_REPORT_CAP) and
+# _OCWP_BLOCKED_COUNT (the true total, uncapped).
+# Returns 0 when the whole tree is removable, 1 when it is not.
+# Never aborts: this function exists to PREVENT an abort, so it must not
+# become one. Paths containing a newline are not representable here and are
+# out of scope; no skill tree in this repo has ever contained one.
+_ocwp_scan_removable() {
+  local _dir="${1:-}" _d="" _uid=""
+  _OCWP_BLOCKED_LIST=""
+  _OCWP_BLOCKED_COUNT=0
+  { [ -n "$_dir" ] && [ -d "$_dir" ]; } || return 0
+  # uid 0 bypasses every DAC check and can unlink regardless of owner, so an
+  # ownership mismatch is NOT a block for root. Reporting one would refuse a
+  # run that would in fact have succeeded, and a false negative is still a lie.
+  _uid="$(id -u 2>/dev/null || printf '%s' "")"
+  if [ "$_uid" = "0" ]; then
+    return 0
+  fi
+  while IFS= read -r _d; do
+    [ -n "$_d" ] || continue
+    if ! _ocwp_can_write "$_d"; then
+      _OCWP_BLOCKED_COUNT=$((_OCWP_BLOCKED_COUNT + 1))
+      if [ "$_OCWP_BLOCKED_COUNT" -le "$_OCWP_REPORT_CAP" ]; then
+        _OCWP_BLOCKED_LIST="${_OCWP_BLOCKED_LIST}${_d}
+"
+      fi
+    fi
+  done <<EOF
+$(find "$_dir" -type d 2>/dev/null || true)
+EOF
+  [ "$_OCWP_BLOCKED_COUNT" -eq 0 ]
+}
+
+# ONE actionable line, in exactly the shape _ocwp_check_one prints, for a TREE
+# rather than a single file. The remedy is recursive because what is blocked is
+# a directory whose contents cannot be unlinked, and chowning the named
+# directory alone would leave its siblings blocked on the next run.
+# $1 = the blocked path to name. $2 = the tree root the remedy must repair.
+_ocwp_print_tree_block() {
+  local _p="${1:-}" _root="${2:-}" _owner="" _me="" _run_owner="" _container=""
+  [ -n "$_root" ] || _root="$_p"
+  _owner="$(_ocwp_owner "$_p")"
+  _me="${_OCWP_ME:-$(id -un 2>/dev/null || printf '%s' unknown)}"
+  _run_owner="${_OCWP_RUN_OWNER:-node:node}"
+  _container="${_OCWP_CONTAINER:-<container>}"
+  echo "  PERMISSION BLOCK: $_p is owned by $_owner but the updater runs as $_me; on a Docker box run: docker exec $_container chown -R $_run_owner $_root" >&2
+  echo "    (already inside the container: chown -R $_run_owner $_root)" >&2
+  return 0
+}
+
+# Name the blocked paths beyond the first, which the PERMISSION BLOCK line
+# already named. Plain indented lines, deliberately NOT more PERMISSION BLOCK
+# lines: the operator gets exactly ONE line to act on per refusal, which is the
+# whole point of the format PR 1187 established.
+_ocwp_print_blocked_rest() {
+  local _first="${1:-}" _d=""
+  while IFS= read -r _d; do
+    [ -n "$_d" ] || continue
+    if [ "$_d" != "$_first" ]; then
+      echo "    also not removable: $_d" >&2
+    fi
+  done <<EOF
+$_OCWP_BLOCKED_LIST
+EOF
+  if [ "${_OCWP_BLOCKED_COUNT:-0}" -gt "$_OCWP_REPORT_CAP" ]; then
+    echo "    ... and $((_OCWP_BLOCKED_COUNT - _OCWP_REPORT_CAP)) more (report capped at $_OCWP_REPORT_CAP)" >&2
+  fi
+  return 0
+}
+
+# Remove a tree this updater is about to replace, or REFUSE THE RUN.
+# $1 = directory. $2 = human label used in the message.
+# This never returns non-zero: it either removed the tree or exited 1 loudly.
+oc_remove_tree_guarded() {
+  local _dir="${1:-}" _what="${2:-tree}" _first=""
+  [ -n "$_dir" ] || return 0
+  [ -e "$_dir" ] || return 0
+
+  # PRE-SCAN. Nothing is deleted until the whole tree is proven removable, so
+  # a blocked tree is refused INTACT rather than gutted and then reported.
+  if ! _ocwp_scan_removable "$_dir"; then
+    _first="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
+    [ -n "$_first" ] || _first="$_dir"
+    echo "" >&2
+    _ocwp_print_tree_block "$_first" "$_dir"
+    _ocwp_print_blocked_rest "$_first"
+    {
+      echo "  UPDATE REFUSED BEFORE ANYTHING WAS DELETED."
+      echo "  The $_what at $_dir is INTACT: every file it had is still there."
+      echo "  Removing it would have deleted everything removable and then"
+      echo "  failed, leaving a gutted $_what with no version stamp and, before"
+      echo "  this guard existed, no error text at all. Fix the ownership named"
+      echo "  above and re-run."
+      echo ""
+    } >&2
+    exit 1
+  fi
+
+  if rm -rf "$_dir" 2>/dev/null; then
+    return 0
+  fi
+
+  # The scan passed and the removal still failed, so the tree changed
+  # underneath this run. The measured cause is python running as ROOT
+  # elsewhere on the box writing new bytecode mid-roll. This tree IS now
+  # partly deleted and that cannot be undone, so say so plainly and stop.
+  # Continuing into the copy is exactly what the bare `rm -rf` did silently.
+  _ocwp_scan_removable "$_dir" || true
+  _first="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
+  [ -n "$_first" ] || _first="$_dir"
+  echo "" >&2
+  _ocwp_print_tree_block "$_first" "$_dir"
+  _ocwp_print_blocked_rest "$_first"
+  {
+    echo "  UPDATE REFUSED AFTER A PARTIAL REMOVAL of the $_what at $_dir."
+    echo "  The pre-scan passed and the removal still failed, which means a"
+    echo "  path appeared underneath this run. This $_what is INCOMPLETE on"
+    echo "  disk right now. Fix the ownership named above and re-run: the"
+    echo "  re-run reinstalls it whole."
+    echo ""
+  } >&2
+  exit 1
+}
+
 oc_assert_write_preflight() {
   _OCWP_ME="$(id -un 2>/dev/null || printf '%s' "${USER:-unknown}")"
   _OCWP_ME_UID="$(id -u 2>/dev/null || printf '%s' "none")"
@@ -984,6 +1160,39 @@ oc_assert_write_preflight() {
   for _p in ${_soft[@]+"${_soft[@]}"}; do
     _ocwp_check_one "$_p" soft || true
   done
+
+  # THE SKILL TREES. The updater REMOVES each installed skill directory before
+  # copying the new version, and removal is a DIFFERENT permission from
+  # writing: $SKILLS_DIR can probe perfectly writable while a file inside a
+  # root-owned subdirectory of one skill cannot be unlinked at all. That exact
+  # case killed a roll on 2026-09-17 and left a skill holding 3 of its 1934
+  # files. Prove removability HERE, up front, so a box that cannot be updated
+  # says so before the first skill is touched. shared-utils/ and
+  # universal-sops/ are included because the same removal path covers them.
+  local _tree="" _tblocked=0 _tfirst=""
+  if [ -n "${SKILLS_DIR:-}" ] && [ -d "$SKILLS_DIR" ]; then
+    while IFS= read -r _tree; do
+      [ -n "$_tree" ] || continue
+      if ! _ocwp_scan_removable "$_tree"; then
+        _tblocked=$((_tblocked + 1))
+        if [ "$_tblocked" -le "$_OCWP_REPORT_CAP" ]; then
+          _tfirst="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
+          [ -n "$_tfirst" ] || _tfirst="$_tree"
+          _ocwp_print_tree_block "$_tfirst" "$_tree"
+        fi
+      fi
+    done <<EOF
+$(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
+EOF
+    if [ "$_tblocked" -gt "$_OCWP_REPORT_CAP" ]; then
+      echo "    ... and $((_tblocked - _OCWP_REPORT_CAP)) more blocked skill tree(s) (report capped at $_OCWP_REPORT_CAP)" >&2
+    fi
+    if [ "$_tblocked" -gt 0 ]; then
+      _blocked=$((_blocked + _tblocked))
+    else
+      echo "  [write-preflight] OK: every installed skill tree can be removed and replaced."
+    fi
+  fi
 
   if [ "$_blocked" -gt 0 ]; then
     {
@@ -5313,8 +5522,13 @@ print(state + " " + str(len(headers)))
       echo "  ============================================"
     fi
 
-    # Remove old version if exists
-    rm -rf "$SKILLS_DIR/$SKILL_NAME"
+    # Remove old version if exists.
+    # GUARDED (2026-09-17). A bare `rm -rf` here deleted everything it could,
+    # returned 1 on the one path it could not, and `set -e` then killed the
+    # updater silently with the skill already gutted. oc_remove_tree_guarded
+    # proves the tree is removable BEFORE it removes anything, so a blocked
+    # skill stays whole and the operator gets one actionable line.
+    oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
     # Copy new version.
     # IMPORTANT: strip the trailing slash from SKILL_DIR before passing to cp.
@@ -5400,7 +5614,11 @@ print(state + " " + str(len(headers)))
   # with a FATAL looking for funnel/presentation/video/ad SOPs.
   _UNIVERSALSOPS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/universal-sops" ]; then
-    rm -rf "$SKILLS_DIR/universal-sops"
+    # GUARDED: same class as the per-skill removal above, and this tree has no
+    # degrade path either. A partial removal leaves the box with FEWER SOPs
+    # than it started with, which is how the "✓ universal-sops refreshed" line
+    # below came to be printed over a truncated tree.
+    oc_remove_tree_guarded "$SKILLS_DIR/universal-sops" "SOP tree"
     if ! cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
       _UNIVERSALSOPS_STATUS="fail"
     fi
@@ -9743,7 +9961,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     _CC_DST_VER=$(tr -d '[:space:]' < "$SKILLS_DIR/32-command-center-setup/skill-version.txt" 2>/dev/null || echo "")
     if [ -n "$_CC_SRC_VER" ] && [ "$_CC_SRC_VER" != "$_CC_DST_VER" ]; then
       echo "  [D5-PRE] Refreshing on-box Skill 32 (${_CC_DST_VER:-none} -> ${_CC_SRC_VER}) before running the CC installer (stale-checkout guard)..."
-      rm -rf "$SKILLS_DIR/32-command-center-setup"
+      # GUARDED: same class again, and the likeliest of the three to be hit.
+      # Command Center scripts are the measured source of root-run python on
+      # these boxes, so Skill 32 is where root-owned __pycache__ appears first.
+      oc_remove_tree_guarded "$SKILLS_DIR/32-command-center-setup" "skill"
       cp -r "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
