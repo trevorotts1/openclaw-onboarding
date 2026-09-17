@@ -18,7 +18,7 @@ Every client box requires exactly one Convert and Flow credential PAIR:
 |-------|---------------|------------|
 | `CONVERT_AND_FLOW_PIT` | `pit-...` | The CLIENT's own private integration token (also aliased as `CONVERT_AND_FLOW_API_KEY`, `GOHIGHLEVEL_API_KEY`, `GOHIGHLEVEL_PIT`, `GHL_API_KEY`) |
 | `CONVERT_AND_FLOW_LOCATION_ID` | hex string | The CLIENT's own GoHighLevel Location (sub-account) ID (also aliased as `GOHIGHLEVEL_LOCATION_ID`, `GHL_LOCATION_ID`) |
-| `ANTHOLOGY_GATE_TOKEN_SECRET` | hex string | Per-client 64-char hex HMAC secret for minting and verifying scoped participant gate tokens/PINs (resolved from `~/.openclaw/secrets/secrets.env` by `caf_credential_gate.py`; gate_engine.py resolves it via live-process-env first) |
+| `ANTHOLOGY_GATE_TOKEN_SECRET` | hex string | Per-client 64-char hex HMAC secret for minting and verifying scoped participant gate tokens/PINs (resolved by `caf_credential_gate.py` over the live process env and the client env stores; gate_engine.py resolves it via live-process-env first). `install.sh` STEP 3 GENERATES it into the box's canonical 0600 secrets store when it does not already resolve, so a fresh box no longer stalls waiting on provisioning step 7. The value is never printed. |
 
 These are documented by LABEL only. No value is ever printed, committed, or revealed.
 
@@ -95,6 +95,52 @@ resolution time and again at call time.
 **JUDGE tier independence** is enforced at resolution time (AF-AE-JUDGE-INDEPENDENCE):
 the JUDGE tier cannot resolve to the same provider+model as HEAVY-WRITER. A single-model
 client must configure at least one additional model for independent QC.
+
+**Ollama Cloud id shapes.** The chain matchers accept every shape the fleet actually
+runs, not just a bare `:cloud` tag: a date-tagged build (`ollama/deepseek-v4-pro:0813-cloud`),
+a size-tagged build (`ollama/qwen3-vl:235b-cloud`), and the `ollama-cloud/` provider
+prefix. A family SUFFIX is a different model and never fills its base slot, so
+`ollama/kimi-k2.7-code:cloud` is not the Kimi chat model.
+
+---
+
+## 5a. Owner pins (a hand-tuned chain that survives a roll)
+
+`preflight.sh` RESOLVE rewrites `model-map.json` on every run, and `update-skills.sh`
+re-runs preflight on every fleet roll. A chain an owner tuned by hand was therefore
+clobbered by the next update. To make a choice durable, add a TOP-LEVEL `owner_pins`
+object to the box's RESOLVED `model-map.json`:
+
+```json
+{
+  "owner_pins": {
+    "HEAVY-WRITER": "ollama/kimi-k2.6:0711-cloud",
+    "JUDGE": "ollama/minimax-m3:cloud"
+  }
+}
+```
+
+Rules, all enforced at resolve time:
+
+- **Roles.** Any role preflight resolves: `HEAVY-WRITER`, `LIGHT`, `JUDGE`, `LONGCTX`.
+  `IMAGE` is a Kie cover route, not an LLM chain, so it is NOT pinnable.
+- **Validation.** A pin passes the SAME checks an auto-resolved link passes: the
+  Anthropic-family deny, router provider support, and membership in the CLIENT's OWN
+  `openclaw.json` inventory. The engine never routes to a model the client did not
+  configure.
+- **Placement.** The pin becomes ORDER 1 of that role's chain. The auto-resolved links
+  stay behind it as ordered fallbacks, and the template `maxTokens` moves onto the pin.
+- **Durability.** `owner_pins` is carried forward verbatim into the rewritten map, so
+  the next roll honors the same pins.
+- **Fail closed.** A pin that is denied, unknown, out of inventory, or on an unsupported
+  provider exits 2 with `AF-AE-UNRESOLVED-MODELMAP` and a message naming the role. A pin
+  is NEVER silently dropped, downgraded, or rewritten.
+- **Independence still applies.** Pins are applied BEFORE the JUDGE-independence
+  invariant, so a pin that collapses JUDGE onto HEAVY-WRITER fails closed now
+  (`AF-AE-JUDGE-INDEPENDENCE`), not mid-run at S9 Gate B.
+
+To drop a pin, delete its entry from `owner_pins` and re-resolve; that role returns to
+full auto-resolution.
 
 ---
 
