@@ -55,10 +55,10 @@ else
     HAS_PUSH=0; HAS_BRANCH_FILTER=0; IN_PUSH=0
     while IFS= read -r wfline; do
       if [ "$IN_PUSH" -eq 0 ]; then
-        echo "$wfline" | grep -qE '^[[:space:]]*push[[:space:]]*:' && { IN_PUSH=1; HAS_PUSH=1; }
+        grep -qE '^[[:space:]]*push[[:space:]]*:' <<<"$wfline" && { IN_PUSH=1; HAS_PUSH=1; }
       else
-        echo "$wfline" | grep -qE '^[[:space:]]*branches[[:space:]]*:' && HAS_BRANCH_FILTER=1
-        echo "$wfline" | grep -qE '^[a-zA-Z_-]+[[:space:]]*:' && ! echo "$wfline" | grep -qE '^[[:space:]]*branches[[:space:]]*:' && IN_PUSH=0
+        grep -qE '^[[:space:]]*branches[[:space:]]*:' <<<"$wfline" && HAS_BRANCH_FILTER=1
+        grep -qE '^[a-zA-Z_-]+[[:space:]]*:' <<<"$wfline" && ! grep -qE '^[[:space:]]*branches[[:space:]]*:' <<<"$wfline" && IN_PUSH=0
       fi
     done < "$wf_path"
     if [ "$HAS_PUSH" -eq 1 ] && [ "$HAS_BRANCH_FILTER" -eq 1 ]; then
