@@ -71,14 +71,26 @@ fi
 # Resolve this script's dir so it can source the gate library sibling.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 GATE_LIB=""
-# PRD 2.1 unified: canonical lib is lib-onboarding-state.sh at repo root,
-# with scripts/onboarding-state.sh as a compat shim. Search canonical first.
+# SHIM FIRST, canonical lib last -- the reverse of what this used to do, and the
+# reversal is the whole fix.
+#
+# This script's gate is obs_gate_summary. The canonical lib defines oc_* and
+# ZERO obs_* names; only scripts/onboarding-state.sh defines obs_*, and it
+# sources the canonical lib itself, so the shim yields BOTH namespaces while the
+# canonical lib yields only one. Searching canonical-first meant that in the
+# ~/.openclaw/onboarding layout -- where lib-onboarding-state.sh sits one level
+# above scripts/, i.e. every box -- GATE_LIB resolved to a library with no
+# obs_gate_summary in it. The `command -v obs_gate_summary` guard below then
+# failed, GATE_RC stayed 1, and the JSON fallback did NOT run because it was
+# conditioned on GATE_LIB being EMPTY rather than on no gate having resolved.
+# Net effect: the gate reported 0 of N verified forever and the resume cron
+# never self-removed, on a box where onboarding was genuinely finished.
 for _cand in \
-  "$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || echo "")/lib-onboarding-state.sh" \
   "$SCRIPT_DIR/onboarding-state.sh" \
   "$OC_ROOT/scripts/onboarding-state.sh" \
   "$OC_ROOT/onboarding/scripts/onboarding-state.sh" \
-  "$HOME/.openclaw/scripts/onboarding-state.sh"; do
+  "$HOME/.openclaw/scripts/onboarding-state.sh" \
+  "$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || echo "")/lib-onboarding-state.sh"; do
   [[ -n "$_cand" && -f "$_cand" ]] && GATE_LIB="$_cand" && break
 done
 
@@ -370,20 +382,43 @@ fi
 # self-remove. We do NOT trust any self-declared "done" or a hand-edited state.
 GATE_RC=1
 GATE_HUMAN=""
+GATE_RESOLVED=0     # 1 once a real gate FUNCTION ran; drives the JSON fallback
 if [[ -n "$GATE_LIB" ]]; then
   # shellcheck disable=SC1090
   source "$GATE_LIB" 2>/dev/null || true
   if command -v obs_gate_summary >/dev/null 2>&1; then
+    GATE_RESOLVED=1
     GATE_HUMAN="$(obs_gate_summary 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //')"
     if obs_gate_summary >/dev/null 2>&1; then GATE_RC=0; fi
+  elif command -v oc_onboarding_complete >/dev/null 2>&1 \
+    && command -v oc_state_summary >/dev/null 2>&1; then
+    # We sourced the CANONICAL lib (oc_* only, no obs_*). That is a complete
+    # gate under a different name -- use it rather than reporting "no gate".
+    GATE_RESOLVED=1
+    oc_state_summary 2>/dev/null || true
+    # The canonical lib defaults ONBOARDING_STATE_FILE to $OC_CONFIG/... while
+    # this script (and the obs_* gate) use $OC_ROOT/workspace/... Those are
+    # different files. If the lib's default held nothing and ours exists, point
+    # the lib at ours and re-read, so a complete box is not read as empty.
+    if [[ "${OC_TOTAL:-0}" -eq 0 && -f "$STATE_FILE" ]]; then
+      ONBOARDING_STATE_FILE="$STATE_FILE"
+      oc_state_summary 2>/dev/null || true
+    fi
+    GATE_HUMAN="${OC_VERIFIED:-0}/${OC_TOTAL:-0} skills verified-installed (oc_* gate)"
+    if oc_onboarding_complete >/dev/null 2>&1; then GATE_RC=0; fi
+    log "gate library $GATE_LIB defines oc_* but not obs_*; used oc_onboarding_complete instead"
+  else
+    log "gate library $GATE_LIB sourced but neither obs_gate_summary nor oc_onboarding_complete is defined; falling back to JSON status scan"
   fi
 else
   log "gate library not found — falling back to JSON status scan (no live skills-info check)"
 fi
 
-# Fallback gate when the library is unavailable: every skill must be qc-passed
-# or interview-pending in the JSON.
-if [[ -z "$GATE_LIB" ]] && command -v python3 >/dev/null 2>&1; then
+# Fallback gate when NO gate function resolved. This used to be conditioned on
+# "$GATE_LIB is empty", which is a different question: a library that was found
+# and sourced but exposed no usable gate left GATE_RC pinned at 1 with no
+# fallback, i.e. a permanent, silent "nothing is verified".
+if [[ "$GATE_RESOLVED" -eq 0 ]] && command -v python3 >/dev/null 2>&1; then
   GATE_RC=$(STATE_FILE="$STATE_FILE" python3 - <<'PYEOF'
 import json, os, sys
 try:
