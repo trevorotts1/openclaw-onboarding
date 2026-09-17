@@ -6,9 +6,12 @@
 # 1. preflight (python3/sqlite3, platform, root-refusal)
 # 2. create ews/ state dirs (0700), initialize the ledger, SNAPSHOT ZERO of config
 # 3. PIN the baseline (an approval - the operator eyes the printed table)
-# 4. register the ONE cron tick (--no-deliver; operator target only), on the
-#    operator box ALSO the hourly aggregator cron; verify the cron, fire a manual
-#    tick, confirm a ledger row landed
+# 4. register the ONE cron tick (--no-deliver; operator target only) as the
+#    `cron-tick` subcommand, NEVER bare `tick`: `cron-tick` maps the sentinel's
+#    exit 10 (findings present) to 0 so the scheduler cannot read a successful
+#    detection as a job failure and auto-disable the tick. On the operator box
+#    ALSO the hourly aggregator cron; verify the cron, fire a manual tick,
+#    confirm a ledger row landed
 # 5. one install-confirmation line to the operator (nothing to any client surface)
 # Re-running is safe: it re-verifies, upgrades scripts in place, and NEVER re-pins
 # the baseline (that is approve-baseline's job alone).
@@ -136,6 +139,76 @@ PY
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# reenable_cron_if_disabled DECL_KEY LABEL
+#
+# ROOT CAUSE OF "THE TICK CRON IS REGISTERED BUT NEVER FIRES" (fixed
+# 2026-09-17): the openclaw scheduler records any non-zero exit as a failed run
+# and auto-disables the job after 10 consecutive failures. The tick was
+# registered as bare `ews-entry.sh tick`, which passes the sentinel's exit 10
+# ("findings present" - the system working) straight through, so any box
+# carrying a standing finding failed every 15 minutes until the scheduler
+# switched its own sentinel off. A live client box was found with
+# lastRunStatus=error, exitCode=10, 61 findings, auto-disabled three times.
+#
+# The `cron-tick` registration below stops that happening again. It does NOT
+# undo it: `openclaw cron add --declaration-key` converges an existing job's
+# name, schedule and command, but it does not re-enable a job the scheduler
+# disabled. So every already-dark box would stay dark through any number of
+# installs and fleet rolls. This function is the repair half: after each
+# converge, look the job up by its declaration key and, if the scheduler had
+# switched it off, switch it back on.
+#
+# Fails soft by construction - openclaw missing, list failure, bad JSON, no
+# matching job, or a failed enable are all logged and swallowed. Only the
+# registration call itself can flip CRON_FAILURES.
+# ---------------------------------------------------------------------------
+reenable_cron_if_disabled() {
+    local decl="$1" label="$2"
+    command -v openclaw >/dev/null 2>&1 || return 0
+    local listfile
+    listfile="$(mktemp 2>/dev/null)" || return 0
+    if ! openclaw cron list --all --json >"$listfile" 2>/dev/null; then
+        echo "$TAG (re-enable check skipped for $label: 'openclaw cron list' failed)"
+        rm -f "$listfile"
+        return 0
+    fi
+    python3 - "$listfile" "$decl" "$label" "$TAG" <<'PY'
+import json, subprocess, sys
+listfile, decl, label, tag = sys.argv[1:5]
+try:
+    with open(listfile) as fh:
+        data = json.load(fh)
+except Exception as e:
+    print(f"{tag} (re-enable check skipped for {label}: could not parse cron list JSON: {e})")
+    sys.exit(0)
+jobs = data.get("jobs") if isinstance(data, dict) else data
+if not isinstance(jobs, list):
+    print(f"{tag} (re-enable check skipped for {label}: unexpected cron list shape)")
+    sys.exit(0)
+match = next((j for j in jobs
+              if isinstance(j, dict) and j.get("declarationKey") == decl), None)
+if match is None:
+    print(f"{tag} (re-enable check skipped for {label}: no job carries declarationKey={decl})")
+    sys.exit(0)
+if match.get("enabled") is not False:
+    sys.exit(0)  # already enabled (or the CLI does not report the field) - nothing to do
+jid = match.get("id")
+if not jid:
+    print(f"{tag} WARN: {label} is DISABLED but carries no id - cannot re-enable it")
+    sys.exit(0)
+r = subprocess.run(["openclaw", "cron", "enable", jid], capture_output=True, text=True)
+if r.returncode == 0:
+    print(f"{tag} {label} was DISABLED (the scheduler switched it off after repeated "
+          f"non-zero exits); re-enabled id={jid}")
+else:
+    err = ((r.stderr or r.stdout or "").strip().splitlines() or ["unknown error"])[0]
+    print(f"{tag} WARN: {label} is DISABLED and could NOT be re-enabled (id={jid}): {err}")
+PY
+    rm -f "$listfile"
+    return 0
+}
+
 do_install() {
     echo "$TAG preflight..."
     bash "$SELF_DIR/preflight.sh" --check || return $?
@@ -194,8 +267,22 @@ PY
         TICK_NAME="ews-tick-${BOX}"
         TICK_DECL="skill60-ews-tick-${BOX}"
         TICK_CRON_EXPR="*/15 * * * *"
-        TICK_COMMAND="bash $SELF_DIR/ews-entry.sh tick"
+        # The SCHEDULER target is `cron-tick`, never bare `tick`. `cron-tick`
+        # runs the identical sentinel tick and maps its exit 10 (findings
+        # present) to 0; the scheduler auto-disables a job after 10 consecutive
+        # non-zero exits, so registering bare `tick` made any box with a
+        # standing finding switch its own sentinel off. Keep this value a
+        # single plain "path + subcommand" string with no `;` or `||`:
+        # dedupe_legacy_cron_dupes compares it to a job's argv[-1] verbatim.
+        TICK_COMMAND="bash $SELF_DIR/ews-entry.sh cron-tick"
+        # The command string every install before this fix registered. It is
+        # still out there on every box, so it needs its own cleanup pass:
+        # dedupe_legacy_cron_dupes matches on the EXACT command, and a pass
+        # using only the new string would never see a pre-existing duplicate
+        # of the old one.
+        TICK_COMMAND_PRE_CRON_TICK="bash $SELF_DIR/ews-entry.sh tick"
 
+        dedupe_legacy_cron_dupes "$TICK_NAME" "$TICK_COMMAND_PRE_CRON_TICK" "$TICK_CRON_EXPR"
         dedupe_legacy_cron_dupes "$TICK_NAME" "$TICK_COMMAND" "$TICK_CRON_EXPR"
 
         echo "$TAG registering the 15-minute tick cron (--no-deliver, operator-only, declaration-keyed)..."
@@ -203,6 +290,7 @@ PY
                 --declaration-key "$TICK_DECL" \
                 --command "$TICK_COMMAND" >/dev/null 2>&1; then
             echo "$TAG tick cron registered (converged — no duplicate)"
+            reenable_cron_if_disabled "$TICK_DECL" "$TICK_NAME"
         else
             echo "$TAG ERROR: 'openclaw cron add' FAILED for ${TICK_NAME}" >&2
             CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}${TICK_NAME} "
@@ -211,6 +299,14 @@ PY
             AGG_NAME="ews-aggregator"
             AGG_DECL="skill60-ews-aggregator"
             AGG_CRON_EXPR="0 * * * *"
+            # NO exit remap for the aggregator, deliberately. `fleet cycle`
+            # runs ews_fleet.py, whose exit contract is 0 OK / 1 error / 2
+            # usage only - it has no "findings" code, so it never emits the
+            # non-zero-but-successful exit that the tick did. Its command
+            # string is also unchanged by this fix, so it needs no second
+            # dedupe pass either. It DOES get the re-enable pass below: a run
+            # of genuine errors can disable this job too, and a converge alone
+            # never switches a disabled job back on.
             AGG_COMMAND="bash $SELF_DIR/ews-entry.sh fleet cycle"
 
             dedupe_legacy_cron_dupes "$AGG_NAME" "$AGG_COMMAND" "$AGG_CRON_EXPR"
@@ -219,14 +315,18 @@ PY
                     --declaration-key "$AGG_DECL" \
                     --command "$AGG_COMMAND" >/dev/null 2>&1; then
                 echo "$TAG aggregator cron registered (operator box, converged — no duplicate)"
+                reenable_cron_if_disabled "$AGG_DECL" "$AGG_NAME"
             else
                 echo "$TAG ERROR: 'openclaw cron add' FAILED for ${AGG_NAME}" >&2
                 CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}${AGG_NAME} "
             fi
         fi
     else
-        echo "$TAG cron registration skipped (no gateway or --no-cron). Manual tick command:"
-        echo "  bash $SELF_DIR/ews-entry.sh tick"
+        echo "$TAG cron registration skipped (no gateway or --no-cron)."
+        echo "$TAG   by hand (true exit contract, 10 = findings present):"
+        echo "    bash $SELF_DIR/ews-entry.sh tick"
+        echo "$TAG   to register the cron later, the command MUST be cron-tick:"
+        echo "    bash $SELF_DIR/ews-entry.sh cron-tick"
     fi
 
     echo "$TAG firing a manual tick..."
@@ -249,7 +349,7 @@ PY
         echo "$TAG is ever checked and no alert can ever be raised. This exits" >&2
         echo "$TAG NON-ZERO on purpose: a silently dead guard is worse than none." >&2
         echo "$TAG Re-run the failing command by hand to see the real error:" >&2
-        echo "$TAG   openclaw cron add --name ews-tick-${BOX} --cron '*/15 * * * *' --declaration-key skill60-ews-tick-${BOX} --no-deliver --command 'bash $SELF_DIR/ews-entry.sh tick'" >&2
+        echo "$TAG   openclaw cron add --name ews-tick-${BOX} --cron '*/15 * * * *' --declaration-key skill60-ews-tick-${BOX} --no-deliver --command 'bash $SELF_DIR/ews-entry.sh cron-tick'" >&2
         echo "$TAG ============================================================" >&2
         return $EX_ERR
     fi
@@ -333,6 +433,75 @@ PY
     case "$cron_check" in
         OK*)   echo "  cron-flag case: PASS (${cron_check#OK	})" ;;
         *)     echo "$TAG self-test FAIL: ${cron_check#FAIL	}" >&2; return 1 ;;
+    esac
+
+    # cron-COMMAND case: the registered scheduler command must be `cron-tick`,
+    # never bare `tick`.
+    #
+    # ROOT CAUSE OF "THE TICK CRON AUTO-DISABLES ITSELF" (fixed 2026-09-17):
+    # the tick was registered as `ews-entry.sh tick`, which passes the
+    # sentinel's exit code through verbatim. The sentinel exits 10 when it HAS
+    # findings, which is the system working. The openclaw scheduler has no
+    # findings exit: it records any non-zero exit as a failed run and
+    # auto-disables the job after 10 consecutive failures. A live client box
+    # was found with lastRunStatus=error, exitCode=10, 61 findings, and the
+    # tick auto-disabled three times. Every install and fleet roll re-registered
+    # the same bare command, so the box healed and re-broke on a loop.
+    #
+    # The install cases above all run with NO_CRON=1 and never reach the
+    # registration lines, and the fake-CLI cases assert the STORE, so only a
+    # static check can prove the command SOURCE itself never regresses. It
+    # reconstructs each logical line (joining `\` continuations) so a flag on a
+    # continuation cannot hide, resolves a shell variable passed as the command
+    # back to its assignment, and refuses to pass on a command it cannot
+    # resolve - an unresolvable value is an unproven one, not a clean one.
+    local tickcmd_check
+    tickcmd_check="$(python3 - "$SELF_DIR/install.sh" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+logical = re.sub(r"\\\n[ \t]*", " ", src).splitlines()
+
+# Every simple NAME="..." assignment, so a --command passing $NAME resolves.
+assign = {m.group(1): m.group(2)
+          for m in re.finditer(r'^[ \t]*([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"[ \t]*$', src, re.M)}
+
+def command_values(line):
+    out = []
+    for m in re.finditer(r'--command[ \t]+(?:"([^"]*)"|\'([^\']*)\')', line):
+        out.append(m.group(1) if m.group(1) is not None else m.group(2))
+    return out
+
+# Every logical line that mentions a cron-add invocation: the real calls AND
+# the by-hand hints this installer prints, which get copy-pasted verbatim.
+add_lines = [l for l in logical if re.search(r"openclaw[ \t]+cron[ \t]+add\b", l)]
+checked, bad, unresolved = 0, [], []
+for line in add_lines:
+    for raw in command_values(line):
+        checked += 1
+        value, var = raw, re.fullmatch(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?', raw.strip())
+        if var:
+            if var.group(1) not in assign:
+                unresolved.append(raw.strip()[:80]); continue
+            value = assign[var.group(1)]
+        if re.search(r"ews-entry\.sh[ \t]+tick[ \t]*$", value):
+            bad.append(value.strip()[:100])
+if checked == 0:
+    print("FAIL\tno cron-add command value found to check"); raise SystemExit(0)
+if unresolved:
+    print("FAIL\tcron command variable(s) could not be resolved to an assignment, "
+          "so the registered command is unproven: " + " || ".join(unresolved))
+    raise SystemExit(0)
+if bad:
+    print("FAIL\tcron is registered with the bare tick subcommand, which passes the "
+          "sentinel's exit 10 (findings present) to the scheduler and gets the job "
+          "auto-disabled; use the cron-tick subcommand: " + " || ".join(bad))
+    raise SystemExit(0)
+print(f"OK\t{checked} cron command value(s) checked; none end in the bare tick subcommand")
+PY
+)"
+    case "$tickcmd_check" in
+        OK*)   echo "  cron-command case: PASS (${tickcmd_check#OK	})" ;;
+        *)     echo "$TAG self-test FAIL: ${tickcmd_check#FAIL	}" >&2; return 1 ;;
     esac
 
     # cron-FAILURE case: a cron that does not register must FAIL the install.
@@ -432,13 +601,13 @@ def cmd_add(argv):
 def cmd_list(argv):
     print(json.dumps({"jobs": load().get("jobs", [])})); return 0
 
-def cmd_disable(argv):
+def cmd_set_enabled(argv, value):
     if not argv:
         print("missing job id", file=sys.stderr); return 1
     jid = argv[0]; store = load()
     for j in store.get("jobs", []):
         if j.get("id") == jid:
-            j["enabled"] = False; save(store); return 0
+            j["enabled"] = value; save(store); return 0
     print(f"unknown cron job id: {jid}", file=sys.stderr); return 1
 
 def main():
@@ -448,7 +617,8 @@ def main():
     sub, rest = argv[1], argv[2:]
     if sub in ("add", "create"): return cmd_add(rest)
     if sub == "list": return cmd_list(rest)
-    if sub == "disable": return cmd_disable(rest)
+    if sub == "disable": return cmd_set_enabled(rest, False)
+    if sub == "enable": return cmd_set_enabled(rest, True)
     print(f"fake-openclaw: unsupported cron subcommand: {sub}", file=sys.stderr); return 1
 
 sys.exit(main())
@@ -499,7 +669,7 @@ PY
 import json
 d = json.load(open('$store3'))
 jobs = [j for j in d.get('jobs', []) if j.get('name') == 'ews-tick-dedupe-test-box']
-ok = len(jobs) == 1 and jobs[0]['payload']['argv'][-1].endswith('ews-entry.sh tick') and jobs[0]['schedule']['expr'] == '*/15 * * * *'
+ok = len(jobs) == 1 and jobs[0]['payload']['argv'][-1].endswith('ews-entry.sh cron-tick') and jobs[0]['schedule']['expr'] == '*/15 * * * *'
 print('OK' if ok else 'FAIL')
 ")"
     if [ "$drift_check" = "OK" ]; then
@@ -583,6 +753,57 @@ print('OK' if original is not None and original.get('enabled') is True else 'FAI
         rm -rf "$td5"; return 1
     fi
     rm -rf "$td5"
+
+    # re-enable case: a tick the SCHEDULER already auto-disabled must come back
+    # ON. `cron add --declaration-key` converges an existing job's name,
+    # schedule and command, but it never re-enables a disabled one - so without
+    # the re-enable pass every box the exit-10 bug already switched off would
+    # stay dark through any number of installs and fleet rolls, with the
+    # installer cheerfully reporting "converged" each time.
+    local td6 fakebin6 store6
+    td6="$(mktemp -d)"; fakebin6="$td6/bin"
+    write_fake_cron_bin "$fakebin6"
+    store6="$td6/store.json"
+    PATH="$fakebin6:$PATH" FAKE_CRON_STORE="$store6" NO_CRON=0 ROLE="client" BOX="disabled-test-box" do_install >/dev/null 2>&1
+    # the scheduler switches it off after 10 consecutive exit-10 runs
+    python3 - "$store6" <<'PY'
+import json, sys
+store = json.load(open(sys.argv[1]))
+hit = 0
+for j in store.get("jobs", []):
+    if j.get("declarationKey") == "skill60-ews-tick-disabled-test-box":
+        j["enabled"] = False; hit += 1
+assert hit == 1, f"fixture setup: expected 1 declaration-keyed job, found {hit}"
+json.dump(store, open(sys.argv[1], "w"))
+PY
+    local pre_check
+    pre_check="$(python3 -c "
+import json
+d = json.load(open('$store6'))
+j = [x for x in d.get('jobs', []) if x.get('declarationKey') == 'skill60-ews-tick-disabled-test-box']
+print('OK' if len(j) == 1 and j[0].get('enabled') is False else 'FAIL')
+")"
+    if [ "$pre_check" != "OK" ]; then
+        echo "$TAG self-test FAIL: could not stage a disabled tick job for the re-enable case" >&2
+        rm -rf "$td6"; return 1
+    fi
+    PATH="$fakebin6:$PATH" FAKE_CRON_STORE="$store6" NO_CRON=0 ROLE="client" BOX="disabled-test-box" do_install >/dev/null 2>&1
+    local reenable_check
+    reenable_check="$(python3 -c "
+import json
+d = json.load(open('$store6'))
+j = [x for x in d.get('jobs', []) if x.get('declarationKey') == 'skill60-ews-tick-disabled-test-box']
+ok = len(j) == 1 and j[0].get('enabled') is True and j[0]['payload']['argv'][-1].endswith('ews-entry.sh cron-tick')
+print('OK' if ok else f'FAIL jobs={len(j)} enabled={[x.get(\"enabled\") for x in j]}')
+")"
+    if [ "$reenable_check" = "OK" ]; then
+        echo "  re-enable case: PASS (a scheduler-disabled tick is switched back ON by the next install, still exactly 1 cron-tick job)"
+    else
+        echo "$TAG self-test FAIL: an auto-disabled tick stayed disabled across a re-install: $reenable_check" >&2
+        rm -rf "$td6"; return 1
+    fi
+    rm -rf "$td6"
+
     unset -f write_fake_cron_bin
 
     rm -rf "$td"
