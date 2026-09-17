@@ -1,17 +1,34 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
-## [1.0.6] - 2026-09-17 - Step 12 document delivery gains a Notion fallback, so a box without Google Workspace still delivers
+## [1.0.5] - 2026-09-17 - Step 12 DELIVERS the episode documents: Google Drive through the client's Skill 14 credentials, Notion when Workspace is not configured (ISSUE-15)
 
-Google Drive delivery (v1.0.5) only helps a box that has Skill 14 installed. Nearly every client box already has Notion connected, so document delivery is now a two-tier chain and a box without Google Workspace stops falling through to intent-only.
+`scripts/render_documents.py` Step 12 emitted `drive.upload_convert` and `drive.set_permission` as ACTION INTENTS carrying a `cli_hint` of "gws drive files upload (LIVE-VERIFY ...)", and read no delivery configuration at all. Nothing anywhere performed the upload, so a fully provisioned client box still finished an episode with its documents sitting on local disk and delivery logged as not provisioned. Step 16 LINK BACK then had no Episode Package link or Speech Script link to write into Convert and Flow.
 
-### The chain
-- **Tier 1, Google Drive** through the client's own Skill 14 credentials, unchanged from v1.0.5.
-- **Tier 2, Notion** in the client's OWN workspace, tried when Skill 14 is not configured on the box or the Drive call delivered nothing. A permission that fails AFTER a successful upload is partial, not a fallback trigger: the documents are already in the client's Drive.
-- **Tier 3, intent only** when neither is configured, with ONE log line naming BOTH prerequisites instead of one line per tier.
-- `plan["delivery"]` is now the chain summary (`channel`, `performed`, `status`, `documents`, `errors`, `log`) with each tier's own record under `plan["delivery"].tiers`. No tier can fail the episode or change the exit code, and `render --no-deliver` still forces the intent-only path.
+Step 12 now PERFORMS the delivery as a two-tier chain. `plan["delivery"]` is the chain summary (`channel`, `performed`, `status`, `documents`, `errors`, `log`) with each tier's own record under `plan["delivery"].tiers`. No tier can fail the episode or change the exit code, and `render --no-deliver` forces the intent-only path.
 
-### The Notion tier reuses the repo's convention and invents none
-- Token `NOTION_API_TOKEN` (also accepted: `NOTION_API_KEY`, `NOTION_TOKEN`); parent page `NOTION_PODCAST_PARENT`, else `NOTION_PARENT_PAGE_ID`, else `NOTION_WORKSPACE_ROOT_ID`; API version `NOTION_API_VERSION` defaulting to `2022-06-28`. These are the names and the default `37-zhc-closeout/scripts/ensure-notion-parent-page.sh` and `create-notion-closeout.sh` already use.
+| Tier | Channel | When |
+|---|---|---|
+| 1 | Google Drive, the client's own Skill 14 credentials | Skill 14 configured on the box |
+| 2 | Notion, the client's own workspace | Skill 14 absent, or the Drive call delivered nothing |
+| 3 | Intent only | Neither configured. ONE log line names BOTH prerequisites |
+
+### Tier 1: Google Drive
+
+- Each rendered document is uploaded to Drive converted to a Google Doc, the anyone-with-the-link-can-edit permission the intent describes is applied, every executed intent is stamped `performed: true` with its `file_id` and `link`, and both links are recorded under `plan["links"].package_doc` and `plan["links"].speech_doc`, which is what Steps 16 and 17 read. The intents themselves are kept, not replaced.
+- Credential resolution follows Skill 14 and invents no names. Service-account key: `GOOGLE_APPLICATION_CREDENTIALS`, else `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` (Skill 14 INSTALL.md Section 3 Option B), else Skill 14's documented default `~/clawd/secrets/gcp-service-account.json`. Impersonated Workspace user: `GCP_IMPERSONATE_USER`, else `GWS_ACCOUNT`. Both halves are required. The one new name is the optional destination folder `PODCAST_DRIVE_ROOT_FOLDER_ID`; unset, the documents land in the impersonated user's own Drive root.
+- Only the full Drive scope is requested. Domain-wide delegation rejects drive.file and drive.readonly for this grant with `unauthorized_client`.
+- An anyone-with-link grant inherited from a parent folder cannot be re-applied at file level; Drive answers 403 `cannotModifyInheritedPermission` and the document already carries the access, so that answer is recorded as inherited rather than treated as a failure.
+- A permission that fails AFTER a successful upload is recorded as partial, not a fallback trigger: the documents are already in the client's Drive.
+
+### The gws binary is never invoked
+
+Delivery speaks the Drive REST API directly with the client's service account. It does not shell out to `gws`, not even to test for credentials. A bare `gws` call in a headless shell cannot unlock its keyring and gws's own failure mode then rewrites `~/.config/gws/credentials.enc` to `credential_source: "none"`, wiping every account on the box. Step 12 runs headless by definition. `scripts/tests/test_render_documents_drive_delivery.py` parses the module's syntax tree and fails if any call would execute a binary named gws, or if the bare string reaches anything but `shutil.which`.
+
+### Tier 2: Notion
+
+Google Drive delivery only helps a box that has Skill 14 installed. Nearly every client box already has Notion connected, so Notion is the fallback and a box without Google Workspace stops falling through to an intent-only record.
+
+- The convention is the repo's existing one and invents none of it. Token `NOTION_API_TOKEN` (also accepted: `NOTION_API_KEY`, `NOTION_TOKEN`); parent page `NOTION_PODCAST_PARENT`, else `NOTION_PARENT_PAGE_ID`, else `NOTION_WORKSPACE_ROOT_ID`; API version `NOTION_API_VERSION` defaulting to `2022-06-28`. These are the names and the default that `37-zhc-closeout/scripts/ensure-notion-parent-page.sh` and `create-notion-closeout.sh` already use, and `38-conversational-ai-system/references/notion-client-doc-standard.md` is the doc contract.
 - **Client ownership is binding**, exactly as Skill 37 enforces it: an EXPLICIT parent page is required because ownership is never inferred from a workspace-wide search, and the agency token (`ZHC_AGENCY_NOTION_TOKEN`) and agency parent (`ZHC_AGENCY_NOTION_PARENT_PAGE_ID`) are both refused. Page discovery uses the direct block-children listing, which is authoritative for direct children, so a search can never match a foreign page.
 - One `Podcast Episodes` page under the client's parent, created once, then one page per episode beneath it keyed by the episode title. **Idempotent:** re-running Step 12 for the same episode clears that page's children and rewrites them; it never creates a second page.
 - Blocks come from the same manifest the HTML renderer uses, through the new `render_package_markdown` and `markdown_to_notion_blocks` (headings, paragraphs, bulleted items, inline links), appended in chunks of 100, the API's children-per-request limit. Rich text is split into runs at 1900 characters so a long paragraph is carried whole rather than truncated.
@@ -19,36 +36,19 @@ Google Drive delivery (v1.0.5) only helps a box that has Skill 14 installed. Nea
 - **No file upload.** The Notion API cannot upload a file, so the published audio URL from Step 15 is carried as a LINK. The rendered HTML and text files on disk remain the durable base.
 - The page id and url land in `delivery.tiers.notion.documents.episode_page` and `plan["links"].episode_page`, the same way the Drive ids are recorded. When the plan's primary destination was already Notion, its `notion.create_page` intents are stamped `performed: true, channel: notion` with that page id and url.
 
-### Verification
-- New `scripts/tests/test_render_documents_notion_fallback.py`, 28 stdlib tests, fully offline with the Notion HTTP layer injected: neither tier configured gives intent-only plus one combined line; Drive absent with Notion present creates the episode page with its properties and blocks and records the url; Drive present means the Notion transport is never even constructed; a Notion API error leaves the exit code at 0 with the error recorded and the local deliverables intact. Also covers idempotent re-runs, the 100-block chunking, the markdown converter, and the client-ownership refusals.
-- `scripts/tests/test_render_documents_drive_delivery.py` updated to read each tier's record from the chain; 29 tests, all passing.
-- Skill 58 suite: 458 passing before, 487 after, no regressions.
-- `render_documents.py detect` now prints a `tier 1 drive delivery:` line and a `tier 2 notion delivery:` line. New `58-podcast-production-engine/INSTALL.md` documents both tiers; `modules/documents.md`, `SKILL.md` Step 12, SOP-PODCAST-02 section 2.10 and the repo README all carry the two-tier chain.
-
-## [1.0.5] - 2026-09-17 - Step 12 performs the Google Drive delivery it has only ever described (ISSUE-15)
-
-### Drive delivery was an intent nothing executed
-- `scripts/render_documents.py` Step 12 emitted `drive.upload_convert` and `drive.set_permission` as ACTION INTENTS carrying a `cli_hint` of "gws drive files upload (LIVE-VERIFY ...)", and read no Drive configuration at all. Nothing anywhere performed the upload, so a client box with Skill 14 fully installed still finished an episode with its documents sitting on local disk and Drive delivery logged as not provisioned. Step 16 LINK BACK then had no Episode Package link or Speech Script link to write into GHL.
-- Step 12 now RESOLVES the client's own Skill 14 credentials and, when they are present, PERFORMS the plan: it uploads each rendered document to Drive converted to a Google Doc, applies the anyone-with-the-link-can-edit permission the intent describes, stamps every executed intent `performed: true` with its `file_id` and `link`, and records both links under `plan["links"].package_doc` and `plan["links"].speech_doc` plus `plan["delivery"].documents`, which is what Steps 16 and 17 read. The intents themselves are kept, not replaced.
-
-### Credential resolution follows Skill 14 and invents no names
-- Service-account key: `GOOGLE_APPLICATION_CREDENTIALS`, else `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` (Skill 14 INSTALL.md Section 3 Option B), else Skill 14's documented default location `~/clawd/secrets/gcp-service-account.json`. Impersonated Workspace user: `GCP_IMPERSONATE_USER`, else `GWS_ACCOUNT`. Both halves are required. The one new name is the optional destination folder `PODCAST_DRIVE_ROOT_FOLDER_ID`; unset, the documents land in the impersonated user's own Drive root. Every value stays per box, so a client box uses only its own client's Workspace.
-- Only the full Drive scope is requested. Domain-wide delegation rejects drive.file and drive.readonly for this grant with `unauthorized_client`.
-- An anyone-with-link grant inherited from a parent folder cannot be re-applied at the file level; Drive answers 403 `cannotModifyInheritedPermission` and the document already carries the access, so that answer is recorded as inherited rather than treated as a failure.
-
-### The gws binary is never invoked
-- Delivery speaks the Drive REST API directly with the client's service account. It does not shell out to `gws`, not even to test for credentials. A bare `gws` call in a headless shell cannot unlock its keyring and gws's own failure mode then rewrites `~/.config/gws/credentials.enc` to `credential_source: "none"`, wiping every account on the box. Step 12 runs headless by definition. `scripts/tests/test_render_documents_drive_delivery.py` parses the module's syntax tree and fails if any call would execute a binary named gws, or if the bare string reaches anything but `shutil.which`.
-
 ### Fail soft, always
-- No credentials: the plan stays intent-only and exactly one line is logged, `drive delivery skipped: Skill 14 Google Workspace credentials not configured on this box (see 14-google-workspace-integration/INSTALL.md)`.
-- A Drive API error, an unreachable endpoint, or a missing signing tool: the failure is recorded on the plan under `delivery.errors` and each failed intent's `error`, and the episode carries on. Uploads that did succeed keep their recorded ids.
-- Neither path changes the exit code. `render --no-deliver` forces the intent-only path. Credentials are reported by label and SET or NOT SET only; the key contents, the private key, the minted token and the impersonated address never reach the plan file, stdout or stderr.
+
+- Neither tier configured: the plan stays intent-only and exactly ONE line is logged naming both prerequisites, rather than one line per tier.
+- An API error on either tier, an unreachable endpoint, or a missing signing tool: the failure is recorded on the plan under `delivery.errors` and the failing intent's `error`, and the episode carries on. Work that did succeed keeps its recorded ids.
+- Credentials are reported by label and SET or NOT SET only. The key contents, the private key, the minted token, the Notion token, the parent page id and the impersonated address never reach the plan file, stdout or stderr.
 - Step 12 still writes NO engine state. `podcast_state.py` remains the sole writer; the documents plan file on disk is Step 12's own record of what it delivered.
 
 ### Verification
-- New `scripts/tests/test_render_documents_drive_delivery.py`, 28 stdlib tests, fully offline with the Drive transport injected: credentials absent gives intents only plus exactly one skip line; credentials present gives both documents uploaded and converted, both shared writer/anyone, intents stamped with ids, and links recorded; a Drive error leaves the exit code at 0 with the error recorded and the local deliverables intact. Also covers the root-folder env, `--no-deliver`, inherited permissions, and that no secret reaches the plan or the logs.
-- Skill 58 suite: 430 passing before, 458 after, no regressions.
-- `render_documents.py detect` gained a `drive delivery:` readiness line. `modules/documents.md`, `SKILL.md` Step 12 and SOP-PODCAST-02 section 2.10 document the Skill 14 prerequisite and the folder env.
+
+- New `scripts/tests/test_render_documents_drive_delivery.py` (29 tests) and `scripts/tests/test_render_documents_notion_fallback.py` (28 tests), stdlib only and fully offline with each transport injected. Between them: credentials absent on both tiers gives intents only plus one combined skip line; Drive present gives both documents uploaded, converted, shared and stamped with ids; Drive absent with Notion present creates the episode page with its properties and blocks and records the url; Drive present means the Notion transport is never even constructed; an API error on either tier leaves the exit code at 0 with the error recorded and the local deliverables intact. Also covers idempotent re-runs, the 100-block chunking, the markdown converter, the root-folder env, `--no-deliver`, inherited permissions, error-text bounding, the credential-name contracts, the agency refusals, and that no secret reaches the plan or the logs.
+- Skill 58 suite: 430 passing before, 487 after, no regressions.
+- `render_documents.py detect` now prints a `tier 1 drive delivery:` line and a `tier 2 notion delivery:` line. New `58-podcast-production-engine/INSTALL.md` documents activation and both tiers; `modules/documents.md`, `SKILL.md` Step 12, SOP-PODCAST-02 section 2.10 and the repo README all carry the two-tier chain.
+
 ## [1.0.4] - 2026-09-17 - re-pin the webhook layer's schema verification to the installed OpenClaw 2026.9.4
 
 The three files in `scripts/webhook/` that carry a LIVE-VERIFIED stamp still named OpenClaw 2026.6.11 while the fleet runs 2026.9.4. A stale stamp on a schema-drift note is worse than no stamp: it tells the next reader the contract was checked against a version that is no longer on any box. Re-verified against the installed package and re-pinned:
