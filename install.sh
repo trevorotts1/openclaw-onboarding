@@ -3750,7 +3750,41 @@ if [ ! -f "$SKILLS_DIR/$_PODCAST_ACTIVATION_SKILL/scripts/webhook/intake_handler
 else
     success "Podcast activation layer present in the skills dir (register-podcast-hook.sh, webhook/intake_handler.py, install-podcast-department.sh); no scheduler installed by design: the only recurring podcast cron is the daily smoke test"
 fi
+
 unset _PODCAST_ACTIVATION_SKILL _PODCAST_ACTIVATION_FILES _ACT_FILE _ACT_SRC _ACT_DEST
+
+# ----------------------------------------------------------
+# roll-3b: RUN the activation wiring, do not merely deliver it.
+#
+# The block above only ENSURES the activation files exist. Until this call,
+# nothing on any client box ever ACTIVATED the podcast engine: activation lived
+# solely inside provision-podcast-client.sh, so a box provisioned before the
+# activation layer shipped, or one whose provision aborted, stayed dark forever
+# (intake lands, the ledger says received, the dashboard says Received, and
+# nothing runs). 58-podcast-production-engine/wire.sh is the guarded entry point
+# and is the SAME file update-skills.sh's per-skill wiring loop picks up by
+# name, so the install path and the update path activate identically.
+#
+# It is safe on every box: with no podcast client slug and no intake secret it
+# prints a WARN naming SOP-PODCAST-07 and exits 0. It refuses to run as root
+# (a root-owned openclaw.json freezes the gateway) and never restarts the
+# gateway. A nonzero exit is a real activation failure on a box that HAS a
+# podcast client, and is surfaced as a WARN, never an aborted install.
+# ----------------------------------------------------------
+_PODCAST_WIRE="$SKILLS_DIR/58-podcast-production-engine/wire.sh"
+if [ -f "$_PODCAST_WIRE" ]; then
+    chmod +x "$_PODCAST_WIRE" 2>/dev/null || true
+    if [ "$(id -u)" = "0" ]; then
+        warn "Podcast activation: skipped wire.sh because this install is running as root; re-run it as the node user: sudo -u \"\${PODCAST_NODE_USER:-node}\" $_PODCAST_WIRE --idempotent"
+    elif bash "$_PODCAST_WIRE" --idempotent >>"$LOG_FILE" 2>&1; then
+        success "Podcast activation wiring ran (wire.sh --idempotent); see $LOG_FILE for the slug/secret resolution and the activation health result"
+    else
+        warn "Podcast activation wiring reported a failure for this box's podcast client (see $LOG_FILE). Run universal-sops/podcast-craft/SOP-PODCAST-07-ACTIVATION-RESCUE.md; intake will land and never advance until it is fixed"
+    fi
+else
+    warn "Podcast activation: 58-podcast-production-engine/wire.sh is not in this onboarding package; this box cannot self-activate the podcast engine (provision-podcast-client.sh remains the only activation path)"
+fi
+unset _PODCAST_WIRE
 
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 

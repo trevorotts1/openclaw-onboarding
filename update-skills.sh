@@ -5824,6 +5824,54 @@ except Exception:
   # <<< U6C-SOP-LIBRARY-END
 
   # ----------------------------------------------------------
+  # Step U6c1b: universal-sops CRAFT-CLUSTER SOP ingest (ISSUE-12).
+  #
+  # WHY THIS IS SEPARATE FROM U6c ABOVE, and why it must run unconditionally.
+  # An engine whose operating SOPs live in universal-sops/<cluster>/ as markdown
+  # is in NEITHER source U6c knows about: not the shared sops.jsonl release
+  # asset, and not 23-ai-workforce-blueprint/templates/role-library/<dept>/sops/.
+  # The podcast engine is exactly that case (seven SOP-PODCAST-0*.md files,
+  # department 'podcast', and role-library/podcast/ ships roles but no sops/
+  # directory at all), so its entire runbook was invisible to the Command Center
+  # SOP library and to semantic SOP search on every box in the fleet.
+  #
+  # U6c cannot carry this: a box at or above canonical population takes its
+  # "touch NOTHING" branch and never invokes the ingester, and that is precisely
+  # the box that has been missing these rows the longest. This step reads its own
+  # signal and calls the ingester's --craft-clusters mode directly.
+  #
+  # Cost and safety: a local sqlite upsert keyed by slug. No download, no
+  # network, ZERO embedding API calls (so zero cost on the client's own key),
+  # no delete, and re-running is free. Additive: a non-zero exit is reported and
+  # never latches a U6c failure, because the shared library is unaffected by it.
+  #
+  # The DEPARTMENT itself needs no new wiring here: 'podcast' is
+  # universal_primary=true in department-naming-map.json's content-creator pack,
+  # so it is already on the 30-department universal floor that
+  # migrate-existing-workforce.sh's floor-fill and materialize-dept-agents.sh
+  # materialize on every box. The SOPs were the missing half, not the department.
+  # ----------------------------------------------------------
+  _U6C_CRAFT_PY="$SKILLS_DIR/32-command-center-setup/scripts/ingest-sop-library.py"
+  [ -f "$_U6C_CRAFT_PY" ] || _U6C_CRAFT_PY="$EXTRACTED_DIR/32-command-center-setup/scripts/ingest-sop-library.py"
+  echo ""
+  echo "  Step U6c1b: universal-sops craft-cluster SOP ingest..."
+  if [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
+    echo "  - craft-cluster SOPs: no mission-control.db on this box (Command Center not installed); SKIP (informational)."
+  elif [ ! -f "$_U6C_CRAFT_PY" ]; then
+    echo "  - craft-cluster SOPs: ingest-sop-library.py not found on this box; SKIP (Skill 32 install is partial)."
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "  - craft-cluster SOPs: python3 unavailable; SKIP."
+  else
+    if python3 "$_U6C_CRAFT_PY" --craft-clusters --db "$_U6C_DB" >>"$LOG_FILE" 2>&1; then
+      _U6C_CRAFT_N="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops WHERE department='podcast';")"
+      echo "  ✓ craft-cluster SOPs ingested (podcast department rows now: ${_U6C_CRAFT_N:-0}); see $LOG_FILE"
+    else
+      echo "  ⚠ craft-cluster SOP ingest returned non-zero (additive; the shared library is unaffected); see $LOG_FILE"
+    fi
+  fi
+  unset _U6C_CRAFT_PY _U6C_CRAFT_N
+
+  # ----------------------------------------------------------
   # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
   # Step U6c2: SOP-embeddings population check (Bug D).
   #

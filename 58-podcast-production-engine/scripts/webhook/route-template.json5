@@ -69,8 +69,21 @@
                 provider: "default",
                 id: "PODCAST_INTAKE_HOOK_SECRET"
               },
-              // Controller id for the managed flows this route creates. The
-              // controller runbook's FIRST step is the deterministic intake
+              // Controller id for the managed flows created against this route.
+              //
+              // WHO POSTS HERE: the podcast department agent, from inside its own
+              // turn. NOT the upstream survey sender. This route accepts ONLY the
+              // {"action":"create_flow", ...} envelope, so a flat Convert and Flow
+              // customData body gets HTTP 400
+              //   action: Invalid discriminator value. Expected 'create_flow'
+              // The upstream sender posts to the GATEWAY HOOKS INGRESS instead,
+              // POST /hooks/podcast-intake-<client-slug> with
+              // Authorization: Bearer <box hooks token> and a flat body; the
+              // gateway hook mapping that register-podcast-hook.sh writes into
+              // hooks.mappings[] is what turns that POST into ONE turn of this
+              // same bound session.
+              //
+              // The controller runbook's FIRST step is the deterministic intake
               // handler (a single Bash call to scripts/webhook/intake_handler.py),
               // which maps, tenant-checks, dedup-claims, persists, and then either
               // advances to Step 1 or closes the flow for a duplicate / needs_input

@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: v1.0.2
+version: v1.0.3
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -230,6 +230,28 @@ and the failure mode when any piece is absent is the worst one the engine can
 show a client: intake succeeds, the card says Received, and nothing is ever
 produced.
 
+WHAT ACTUALLY GIVES THE SESSION THAT TURN (the piece this section used to leave
+unnamed, and the reason the two statements below it used to contradict each
+other). The inbound POST from the client's Convert and Flow workflow lands on
+the GATEWAY HOOKS INGRESS, `POST /hooks/podcast-intake-<client-slug>`, carrying
+a flat survey body and an `Authorization: Bearer <hooks token>` header. A
+gateway hook MAPPING, written by `register-podcast-hook.sh` into
+`hooks.mappings[]`, matches that path and dispatches ONE turn of the client's
+podcast department agent in session `podcast:intake:<client-slug>`
+(`action: agent`, `sessionMode: persistent`, `wakeMode: now`, `deliver: false`).
+That turn is the trigger: it writes the payload to a file, runs
+`webhook/intake_handler.py --mode trigger-flow`, and then drives
+`podcast_step_driver.py next` per SOP-PODCAST-01 Section 8. The gateway answers
+the POST as soon as the turn is ADMITTED, never when the episode is finished, so
+the upstream sender is never held open.
+
+The Webhooks plugin route (`POST /plugins/webhooks/podcast-intake-<slug>`) is a
+DIFFERENT surface with a different job: it is the durable TaskFlow CONTROL
+surface, used from inside the agent's own turn, and it accepts only the
+`{"action":"create_flow", ...}` envelope. The upstream survey sender must never
+post there; a flat body gets
+`action: Invalid discriminator value. Expected 'create_flow'`.
+
 NO-DAEMON DESIGN (binding, per webhook-design.md Section 7). There is NO
 controller daemon, NO scheduler daemon, and NO queue poller. The podcast
 department agent that owns session podcast:intake:<client-slug> advances each
@@ -251,7 +273,7 @@ files make up the activation layer, in dependency order:
 
 | Component | What it does | Concrete pointer |
 |---|---|---|
-| `register-podcast-hook.sh` | Installs the per-client intake route and binds it to the podcast session | `scripts/webhook/route-template.json5` (the live-verified route schema) |
+| `register-podcast-hook.sh` | Installs the per-client intake route, the gateway hook MAPPING that turns an inbound POST into one turn of the podcast session, and the allow-list bindings | `scripts/webhook/route-template.json5` (the live-verified route schema) |
 | `install-podcast-department.sh` | Installs and binds the podcast department agent (director-of-podcast) that owns the bound session | wiring.json `department` and `session_binding` blocks |
 | `webhook/intake_handler.py` | The deterministic first step of the controllerId runbook: maps, tenant-checks, dedup-claims, persists the payload to the intake ledger, BRIDGES it into the SQLite job roster via `podcast_state.py create --job-key` (accepted AND test paths; idempotent; a failed bridge never fails the fast-ACK — it parks the flow, raises the sqlite_bridge_failed operator alert, and writes a repair instruction into the ledger note), then advances the flow into Step 1 (or closes it for duplicate / needs_input / test) | `scripts/webhook/route-template.json5` controllerId runbook plus `scripts/webhook/flow_client.py` |
 
@@ -268,7 +290,21 @@ files make up the activation layer, in dependency order:
    written as the node user, never root (a root-owned config freezes the
    gateway). `--remove <slug>` is the symmetric unregistration that churn calls
    (SOP-PODCAST-03; scripts/revoke-podcast-client.sh invokes it).
-   scripts/provision-podcast-client.sh delegates its hook-mapping step to it.
+   It ALSO writes the gateway hook mapping that actually triggers production:
+   hooks.mappings[] id podcast-intake-<client-slug>, match.path
+   podcast-intake-<client-slug>, action agent, agentId dept-podcast,
+   sessionKey podcast:intake:<client-slug>, sessionMode persistent, wakeMode
+   now, deliver false, allowUnsafeExternalContent false, and a deterministic
+   messageTemplate. That mapping is the only thing that converts a Convert and
+   Flow survey POST into a podcast agent turn; the plugin route alone never
+   did, because it only accepts the {"action":"create_flow"} envelope while the
+   survey sender posts a flat body. It also enables the hooks ingress and, when
+   no hooks token exists, points hooks.token at the SAME env label as the
+   route's SecretRef (${PODCAST_INTAKE_HOOK_SECRET}), so onboarding manages ONE
+   secret. An existing hooks token belonging to another integration is never
+   overwritten. scripts/provision-podcast-client.sh delegates its hook-mapping
+   step to it, and verifies it with `register-podcast-hook.sh --verify
+   --client-slug <slug>`.
 2. install-podcast-department.sh, DIRECTOR AGENT. Installs the client's podcast
    department agent, the agent that owns session podcast:intake:<client-slug>
    and embodies director-of-podcast. wiring.json forbids a second podcast
@@ -311,9 +347,11 @@ The 18-step advance contract stays with the agent's own turn:
    rule binds here: the Step 9 judge persona and judge tier are never the
    drafting persona or the writer tier.
 
-No scheduler daemon, no heartbeat poller. Advancement is EVENT-DRIVEN: an
-accepted intake fires the route's controllerId runbook in the bound session,
-and the platform's own flow machinery resumes set_waiting flows. Furnace
+No scheduler daemon, no heartbeat poller. Advancement is EVENT-DRIVEN: the
+inbound POST matches the gateway hook mapping, which dispatches ONE turn of the
+bound session; that turn runs the deterministic intake handler and then the
+step driver, and the platform's own flow machinery resumes set_waiting
+flows. Furnace
 constraint (guard-cron-inventory.py is binding): this engine registers NO
 per-client cron, never adds a second cron, a queue poller, a per-job watcher,
 or anything sub-daily; the client's ONE recurring job remains the daily smoke
