@@ -7994,6 +7994,57 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   fi
 
   # ----------------------------------------------------------
+  # LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root).
+  #
+  # Mirrors the install.sh block of the same name. It lives HERE, before the
+  # "# Cleanup" rm -rf of the temp clone, because the installer and the
+  # watchdog it lays down are repo artifacts under platform/mac/ and are gone
+  # the moment that clone is removed.
+  #
+  # The gap: the rescue connector com.blackceo.rescue-<slug> is a SYSTEM-domain
+  # daemon installed by an operator runbook. After a reboot it can hold a stale
+  # cached edge address and dial an RFC1918 address on port 7844 forever while
+  # launchd KeepAlive keeps the useless process alive. Alive is not registered,
+  # and no watchdog in this repo saw that state before Layer E. The same reboot
+  # sometimes leaves sshd disabled in the launchd system domain.
+  #
+  # Needs root, so this uses `sudo -n`. Without a passwordless sudo ticket the
+  # roll is NOT blocked: it prints the exact one-line command instead.
+  # Idempotent and fail-soft. An update must never be the thing that stops.
+  # ----------------------------------------------------------
+  if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
+    HERE_RESCUE_WD_DIR="$EXTRACTED_DIR/platform/mac/tunnel-hardening"
+    _RESCUE_WD_INSTALLER="$HERE_RESCUE_WD_DIR/install-rescue-tunnel-watchdog.sh"
+    if [ -f "$_RESCUE_WD_INSTALLER" ]; then
+      if sudo -n true 2>/dev/null; then
+        if sudo -n bash "$_RESCUE_WD_INSTALLER" >>"$LOG_FILE" 2>&1; then
+          echo "  ✓ rescue-tunnel reboot-stale watchdog installed (com.blackceo.rescue-tunnel-watchdog, every 120s)"
+        else
+          echo "  ⚠ rescue-tunnel watchdog install returned non-zero (see $LOG_FILE); advisory, does not fail the roll"
+        fi
+      else
+        # The installer lives in the temp clone, which is removed at Cleanup, so
+        # stage a persistent copy the client can actually run afterwards.
+        _RESCUE_WD_STAGED="$OC_CONFIG/scripts/install-rescue-tunnel-watchdog.sh"
+        mkdir -p "$OC_CONFIG/scripts" 2>/dev/null || true
+        if cp -f "$HERE_RESCUE_WD_DIR/rescue-tunnel-watchdog.sh" "$OC_CONFIG/scripts/rescue-tunnel-watchdog.sh" 2>/dev/null \
+           && cp -f "$HERE_RESCUE_WD_DIR/com.blackceo.rescue-tunnel-watchdog.plist.template" "$OC_CONFIG/scripts/com.blackceo.rescue-tunnel-watchdog.plist.template" 2>/dev/null \
+           && cp -f "$_RESCUE_WD_INSTALLER" "$_RESCUE_WD_STAGED" 2>/dev/null; then
+          chmod +x "$_RESCUE_WD_STAGED" "$OC_CONFIG/scripts/rescue-tunnel-watchdog.sh" 2>/dev/null || true
+          echo "  ℹ rescue-tunnel watchdog NOT installed: no passwordless sudo on this box (the roll continues normally)."
+          echo "    Run this ONE command here, entering your own password:"
+          echo "      sudo bash $_RESCUE_WD_STAGED"
+        else
+          echo "  ℹ rescue-tunnel watchdog NOT installed: no passwordless sudo, and the installer could not be staged for a later manual run."
+          echo "    Re-run install.sh on this box, which offers the same step."
+        fi
+      fi
+    else
+      echo "  ℹ rescue-tunnel watchdog installer not in this bundle; skipping (older onboarding bundle, harmless)"
+    fi
+  fi
+
+  # ----------------------------------------------------------
   # UN-WIRE the removed CEO intent-gate (2026-08-05, Trevor).
   #
   # The hook staging above is COPY-ONLY: `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`

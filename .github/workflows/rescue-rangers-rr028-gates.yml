@@ -11,6 +11,15 @@ name: rescue-rangers-rr028-gates
 # is never reported as receiver-ready. Also re-runs the RR-027 credential gates
 # and the RR-025 receiver battery this change sits on top of.
 #
+# It additionally gates the ESCALATION INTAKE auth self-check
+# (65-rescue-receiver/rr-intake-auth-check.sh), the leg the readiness reporter
+# does NOT probe: a box whose RESCUE_RANGERS_WEBHOOK_SECRET went stale after an
+# operator-side rotation 401s silently while readiness still says VERIFIED. The
+# test runs the real script against a real local HTTP responder and proves all
+# four classifications, that a transport error is never reported as a stale
+# credential, that an unproven result never overwrites a proven flag, and that
+# the credential never reaches the request body, the flag file or any log.
+#
 # Triggered whenever any guarded file changes.
 
 on:
@@ -19,6 +28,8 @@ on:
       - "shared-utils/rr-readiness.sh"
       - "65-rescue-receiver/wire.sh"
       - "65-rescue-receiver/rr-readiness.sh"
+      - "65-rescue-receiver/rr-intake-auth-check.sh"
+      - "65-rescue-receiver/tests/**"
       - "65-rescue-receiver/skill-version.txt"
       - "update-skills.sh"
       - "tests/rescue/RR-028/**"
@@ -29,6 +40,8 @@ on:
       - "shared-utils/rr-readiness.sh"
       - "65-rescue-receiver/wire.sh"
       - "65-rescue-receiver/rr-readiness.sh"
+      - "65-rescue-receiver/rr-intake-auth-check.sh"
+      - "65-rescue-receiver/tests/**"
       - "65-rescue-receiver/skill-version.txt"
       - "update-skills.sh"
       - "tests/rescue/RR-028/**"
@@ -49,6 +62,11 @@ jobs:
           sh -n shared-utils/rr-readiness.sh
           bash -n 65-rescue-receiver/wire.sh
           bash -n 65-rescue-receiver/rr-readiness.sh
+          sh -n 65-rescue-receiver/rr-readiness.sh
+          bash -n 65-rescue-receiver/rr-intake-auth-check.sh
+          sh -n 65-rescue-receiver/rr-intake-auth-check.sh
+          bash -n 65-rescue-receiver/tests/test_intake_auth_check.sh
+          python3 -c "import ast; ast.parse(open('65-rescue-receiver/tests/stub-intake.py').read())"
           bash -n tests/rescue/RR-028/lib-readiness-harness.sh
           bash -n tests/rescue/RR-028/test_readiness_states.sh
           bash -n tests/rescue/RR-028/test_safe_probe.sh
@@ -65,6 +83,10 @@ jobs:
       - name: Installer-vs-ready, duplicate/field reconciliation, version independence
         run: |
           bash tests/rescue/RR-028/test_wire_install_vs_ready.sh
+
+      - name: Escalation INTAKE auth self-check (4 classifications + credential route)
+        run: |
+          bash 65-rescue-receiver/tests/test_intake_auth_check.sh
 
       - name: RR-027 credential gates (this change consumes the shared parser)
         run: |

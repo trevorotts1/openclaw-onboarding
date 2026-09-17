@@ -8577,6 +8577,48 @@ if [ "$OC_PLATFORM" = "mac" ]; then
 fi
 
 # ----------------------------------------------------------
+# LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root, sudo).
+# ----------------------------------------------------------
+# A separate gap from the self-heal block above, and the block above cannot
+# cover it. The rescue cloudflared connector on a client Mac is a SYSTEM-domain
+# daemon named com.blackceo.rescue-<slug>, installed by an operator runbook, not
+# by this repo. After a reboot it can come back holding a stale cached edge
+# address and dial the LAN router (RFC1918 address on port 7844) forever. The
+# process is ALIVE, so launchd KeepAlive keeps it, install-watchdog-agent.sh's
+# pgrep check reports OK, and the box is dark to the operator until someone
+# notices by hand. The same reboot sometimes comes back with Remote Login off in
+# the launchd system domain, which removes the last way in.
+#
+# "Alive" is not "registered". Layer E reads the connector's own log and acts
+# only on the positive evidence of the stale state (repeated RFC1918:7844 dial
+# targets with ZERO "Registered tunnel connection" lines), then kicks the daemon
+# and, separately, re-enables sshd when the authoritative
+# `launchctl print-disabled system` view says it is off.
+#
+# It needs root (system-domain launchctl), so this uses `sudo -n`: if a
+# passwordless sudo ticket is not available the install is NOT blocked. It warns
+# with the exact one-line command instead. Fail-soft by design, exactly like the
+# self-heal block above.
+if [ "$OC_PLATFORM" = "mac" ]; then
+    step "Installing Mac rescue-tunnel reboot-stale watchdog (com.blackceo.rescue-tunnel-watchdog, needs sudo)"
+    _RESCUE_WD_INSTALLER="$ONBOARDING_DIR/platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh"
+    if [ -f "$_RESCUE_WD_INSTALLER" ]; then
+        if sudo -n true 2>/dev/null; then
+            if sudo -n bash "$_RESCUE_WD_INSTALLER" 2>&1 | tee -a "$LOG_FILE"; then
+                success "Rescue-tunnel watchdog installed (every 120s, root LaunchDaemon)"
+            else
+                warn "install-rescue-tunnel-watchdog.sh returned non-zero - watchdog NOT confirmed. Re-run by hand: sudo bash $_RESCUE_WD_INSTALLER"
+            fi
+        else
+            warn "No passwordless sudo, so the rescue-tunnel watchdog was NOT installed (the install continues normally). Run this ONE command on this box, entering your own password:"
+            warn "    sudo bash $_RESCUE_WD_INSTALLER"
+        fi
+    else
+        note "rescue-tunnel watchdog installer not in bundle ($_RESCUE_WD_INSTALLER) - skipping (older onboarding bundle, harmless)"
+    fi
+fi
+
+# ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
 # ----------------------------------------------------------
 note "Restarting OpenClaw gateway..."
