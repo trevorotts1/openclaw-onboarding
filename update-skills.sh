@@ -898,6 +898,14 @@ _ocwp_can_write() {
 _ocwp_check_one() {
   local _p="${1:-}" _mode="${2:-hard}"
   local _owner _owner_uid _fixed=0 _label="PERMISSION BLOCK"
+  # Every shared value is read through a default. This whole function exists to
+  # stop the run aborting on a permission problem; it must not become the thing
+  # that aborts it, and under `set -u` a single unset name would do exactly
+  # that. Its caller always sets these, so the defaults are belt, not braces.
+  local _me="${_OCWP_ME:-$(id -un 2>/dev/null || printf '%s' unknown)}"
+  local _me_uid="${_OCWP_ME_UID:-none}"
+  local _run_owner="${_OCWP_RUN_OWNER:-node:node}"
+  local _container="${_OCWP_CONTAINER:-<container>}"
   [ -n "$_p" ] || return 0
   if _ocwp_can_write "$_p"; then
     return 0
@@ -906,28 +914,28 @@ _ocwp_check_one() {
   _owner_uid="$(_ocwp_owner_uid "$_p")"
 
   # SELF-HEAL, in the only two shapes that can honestly work.
-  if [ -n "$_owner_uid" ] && [ "$_owner_uid" = "${_OCWP_ME_UID:-none}" ]; then
+  if [ -n "$_owner_uid" ] && [ "$_owner_uid" = "$_me_uid" ]; then
     # We own it; only the write bit is missing.
     chmod u+w "$_p" 2>/dev/null || true
     if _ocwp_can_write "$_p"; then _fixed=1; fi
-  elif [ "${_OCWP_ME_UID:-none}" = "0" ]; then
+  elif [ "$_me_uid" = "0" ]; then
     # Running as root on a bare box: take ownership back to the runtime user.
-    chown "$_OCWP_RUN_OWNER" "$_p" 2>/dev/null || true
+    chown "$_run_owner" "$_p" 2>/dev/null || true
     chmod u+w "$_p" 2>/dev/null || true
     if _ocwp_can_write "$_p"; then _fixed=1; fi
   fi
   if [ "$_fixed" = "1" ]; then
-    echo "  FIXED: $_p ownership (was $_owner, now writable by $_OCWP_ME)"
+    echo "  FIXED: $_p ownership (was $_owner, now writable by $_me)"
     return 0
   fi
 
   [ "$_mode" = "soft" ] && _label="PERMISSION DEFERRED"
-  echo "  $_label: $_p is owned by $_owner but the updater runs as $_OCWP_ME; on a Docker box run: docker exec $_OCWP_CONTAINER chown $_OCWP_RUN_OWNER $_p" >&2
+  echo "  $_label: $_p is owned by $_owner but the updater runs as $_me; on a Docker box run: docker exec $_container chown $_run_owner $_p" >&2
   if [ "$_mode" = "soft" ]; then
     echo "    (advisory only: this path has a degrade path and does NOT block the run or the version stamp)" >&2
     return 0
   fi
-  echo "    (already inside the container: chown $_OCWP_RUN_OWNER $_p)" >&2
+  echo "    (already inside the container: chown $_run_owner $_p)" >&2
   return 1
 }
 
