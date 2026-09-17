@@ -94,27 +94,129 @@ self-verifies both deliverables and fails closed on any violation.
 
 ---
 
-## Data-plane doctrine: the agent executes the plan, not the renderer
+## Document delivery: Google Drive, then Notion
 
-The renderer is deterministic and never touches an external service. Publishing to
-Google or Notion happens in the podcast agent's OWN turn, using the client's own
-credentials, over gws or direct REST. Sub-agents get no MCP injection, so no MCP tier
-is ever used for this step. The plan is machine-readable intent the agent consumes:
+Delivery is PERFORMED by this step, not merely planned, and it is a two-tier chain
+so the documents reach the client wherever the box is provisioned:
+
+1. **Google Drive**, through the client's own Skill 14 credentials.
+2. **Notion**, the client's own workspace, when Skill 14 is not configured on this
+   box or the Drive call delivered nothing. Nearly every client box already has
+   Notion connected.
+3. **Intent only**, when neither is configured: the existing plan record plus ONE
+   log line naming both prerequisites.
+
+Whichever tier delivers records its ids and links in the plan, and the chain is
+summarized under `plan["delivery"]` with a per-tier record under
+`plan["delivery"].tiers`. No tier can fail the episode or change the exit code.
+`--no-deliver` forces the intent-only path.
+
+### Tier 1: Google Drive
+
+The prerequisite is Skill 14 (`14-google-workspace-integration`) installed with the
+client's own service account. Resolution uses Skill 14's own names and invents none:
+
+- **Service-account key:** `GOOGLE_APPLICATION_CREDENTIALS`, else
+  `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`, else the Skill 14 default location
+  `~/clawd/secrets/gcp-service-account.json`.
+- **Impersonated Workspace user:** `GCP_IMPERSONATE_USER`, else `GWS_ACCOUNT`.
+- **Destination folder (optional):** `PODCAST_DRIVE_ROOT_FOLDER_ID`. Unset, the
+  documents land in the impersonated user's own Drive root.
+
+Both the key and the user are required. With either missing the Drive tier is
+skipped and the chain falls through to Notion. A Drive API error is recorded under
+`delivery.tiers.google_drive.errors` and also falls through to Notion.
+
+When the Drive tier runs, each rendered document is uploaded and converted to a
+Google Doc, the anyone-with-the-link-can-edit permission is applied, every executed
+intent is stamped `performed: true` with its `file_id` and `link`, and the links are
+written to `plan["links"].package_doc` and `plan["links"].speech_doc` so Step 16 LINK
+BACK writes real document links into GHL. A permission that fails AFTER a successful
+upload is partial, not a fallback trigger: the documents are already in the client's
+Drive.
+
+### Tier 2: Notion
+
+The convention here is the repo's existing one, not a new one: the token, the
+explicit parent page, the client-ownership guards and the block shapes all come from
+`37-zhc-closeout/scripts/ensure-notion-parent-page.sh`,
+`37-zhc-closeout/scripts/create-notion-closeout.sh` and the Skill 38 reference
+`notion-client-doc-standard.md`.
+
+- **Integration token:** `NOTION_API_TOKEN`, else `NOTION_API_KEY`, else
+  `NOTION_TOKEN`. The CLIENT's own token.
+- **Parent page:** `NOTION_PODCAST_PARENT`, else `NOTION_PARENT_PAGE_ID`, else
+  `NOTION_WORKSPACE_ROOT_ID`. Explicit and client-owned.
+- **API version (optional):** `NOTION_API_VERSION`, default `2022-06-28`.
+
+**Client ownership is binding.** The page lives in the CLIENT's Notion under the
+CLIENT's token. An explicit parent is required because ownership is never inferred
+from a workspace-wide search, and the agency token (`ZHC_AGENCY_NOTION_TOKEN`) and
+agency parent (`ZHC_AGENCY_NOTION_PARENT_PAGE_ID`) are both refused, exactly as
+Skill 37 refuses them.
+
+One `Podcast Episodes` page is created under the client's parent, once, and one page
+per episode beneath it, keyed by the episode title. **Idempotent:** re-running Step
+12 for the same episode clears that page's children and rewrites them, so it never
+duplicates. Blocks are built from the same manifest the HTML renderer uses, through
+`render_package_markdown` and `markdown_to_notion_blocks` (headings, paragraphs,
+bullets, links), and appended in chunks of 100, the API's children-per-request limit.
+Each page opens with an episode properties block (title, date, style, mode, runtime,
+spoken words, guest). A page parented by a page cannot carry arbitrary Notion
+properties, so these are page BLOCKS, which is what the API allows.
+
+**No file upload.** The Notion API cannot upload a file. The published audio from
+Step 15 is carried as a LINK, never an upload, and the rendered HTML and text files
+on disk remain the durable base.
+
+The page id and url land in `delivery.tiers.notion.documents.episode_page` and in
+`plan["links"].episode_page`. When the plan's primary destination was already Notion,
+its `notion.create_page` intents are stamped `performed: true, channel: notion` with
+the same page id and url, so the episode record reads the same whichever tier
+delivered.
+
+### Tier 3 and the exit code
+
+With neither tier configured the plan stays intent-only and exactly one line is
+logged, naming both prerequisites. The plan file on disk is Step 12's own record of
+what it delivered; this step still writes NO engine state, because podcast_state.py
+remains the sole writer.
+
+**gws safety:** delivery speaks the Drive REST API directly with the client's service
+account and NEVER invokes the gws binary, not even to test for credentials. A bare gws
+call in a headless shell cannot unlock its keyring and gws's own failure mode then
+rewrites the default credential store to `credential_source: "none"`, wiping every
+account on the box. Step 12 runs headless by definition. Only the full Drive scope is
+requested; domain-wide delegation rejects the narrow drive.file and drive.readonly
+scopes for this grant.
+
+Report readiness with `render_documents.py detect`, which prints a
+`tier 1 drive delivery:` line and a `tier 2 notion delivery:` line, each SET or NOT
+SET by label and never a value.
+
+---
+
+## Data-plane doctrine
+
+The renderer calls no model and no MCP tool. Its only external surfaces are the two
+delivery tiers above, both over direct REST with the client's own credentials.
+Sub-agents get no MCP injection, so no MCP tier is ever used for this step. The plan
+is machine-readable intent:
 
 - **Google actions:** upload-and-convert the package HTML to a Google Doc
   (application/vnd.google-apps.document), upload-and-convert the speech text to a
   Google Doc, then set each doc's permission to role=writer, type=anyone, and capture
   both document links back into the episode record (links.package_doc,
-  links.speech_doc). The exact gws flags are marked LIVE-VERIFY against the client's
-  gws CLI at wiring time.
+  links.speech_doc). Step 12 PERFORMS these itself over Drive REST when the client's
+  Skill 14 credentials resolve; see "Drive delivery" above.
 - **Notion actions:** create a page per deliverable under the parent page via REST
-  (never MCP), then capture both page URLs into the episode record.
+  (never MCP), then capture both page URLs into the episode record. Step 12 PERFORMS
+  these itself as tier 2 of the delivery chain; see "Document delivery" above.
 - **Local actions:** none; the on-disk files are the deliverables.
 
 **gws safety:** never invoke a bare gws call in headless mode. A bare headless gws
-call self-wipes the default credential. Always pass an explicit account and
-subcommand. The renderer never calls gws; this warning binds the agent turn that
-executes the Google plan.
+call self-wipes the default credential. The renderer never calls gws at all: its
+Google tier speaks the Drive REST API directly with the client's service account.
 
 Example (operator box, local last-resort run):
 
