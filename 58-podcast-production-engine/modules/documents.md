@@ -94,19 +94,62 @@ self-verifies both deliverables and fails closed on any violation.
 
 ---
 
-## Data-plane doctrine: the agent executes the plan, not the renderer
+## Drive delivery
 
-The renderer is deterministic and never touches an external service. Publishing to
-Google or Notion happens in the podcast agent's OWN turn, using the client's own
-credentials, over gws or direct REST. Sub-agents get no MCP injection, so no MCP tier
-is ever used for this step. The plan is machine-readable intent the agent consumes:
+Google delivery is PERFORMED by this step, not merely planned, whenever the box
+holds the client's own Google Workspace credentials. The prerequisite is Skill 14
+(`14-google-workspace-integration`) installed with the client's own service account.
+Resolution uses Skill 14's own names and invents none:
+
+- **Service-account key:** `GOOGLE_APPLICATION_CREDENTIALS`, else
+  `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`, else the Skill 14 default location
+  `~/clawd/secrets/gcp-service-account.json`.
+- **Impersonated Workspace user:** `GCP_IMPERSONATE_USER`, else `GWS_ACCOUNT`.
+- **Destination folder (optional):** `PODCAST_DRIVE_ROOT_FOLDER_ID`. Unset, the
+  documents land in the impersonated user's own Drive root.
+
+Both the key and the user are required. With either missing, Step 12 keeps today's
+intent-only behavior, logs exactly one line reading `drive delivery skipped: Skill 14
+Google Workspace credentials not configured on this box (see
+14-google-workspace-integration/INSTALL.md)`, and the episode continues. A Drive API
+error is recorded on the plan under `delivery.errors` and never fails the episode.
+Neither path changes the exit code. `--no-deliver` forces the intent-only path.
+
+When delivery runs, each rendered document is uploaded and converted to a Google Doc,
+the anyone-with-the-link-can-edit permission is applied, every executed intent is
+stamped `performed: true` with its `file_id` and `link`, and the links are written to
+`plan["links"].package_doc` and `plan["links"].speech_doc` so Step 16 LINK BACK writes
+real document links into GHL. The plan file on disk is Step 12's own record of what it
+delivered; this step still writes NO engine state, because podcast_state.py remains
+the sole writer.
+
+**gws safety:** delivery speaks the Drive REST API directly with the client's service
+account and NEVER invokes the gws binary, not even to test for credentials. A bare gws
+call in a headless shell cannot unlock its keyring and gws's own failure mode then
+rewrites the default credential store to `credential_source: "none"`, wiping every
+account on the box. Step 12 runs headless by definition. Only the full Drive scope is
+requested; domain-wide delegation rejects the narrow drive.file and drive.readonly
+scopes for this grant.
+
+Report readiness with `render_documents.py detect`, which prints a `drive delivery:`
+line reporting SET or NOT SET by label and never a value.
+
+---
+
+## Data-plane doctrine: the agent executes the rest of the plan
+
+The renderer calls no model and no MCP tool, and its only external surface is the
+Drive delivery described above. Notion publishing still happens in the podcast agent's
+OWN turn over direct REST, using the client's own credentials. Sub-agents get no MCP
+injection, so no MCP tier is ever used for this step. The plan is machine-readable
+intent:
 
 - **Google actions:** upload-and-convert the package HTML to a Google Doc
   (application/vnd.google-apps.document), upload-and-convert the speech text to a
   Google Doc, then set each doc's permission to role=writer, type=anyone, and capture
   both document links back into the episode record (links.package_doc,
-  links.speech_doc). The exact gws flags are marked LIVE-VERIFY against the client's
-  gws CLI at wiring time.
+  links.speech_doc). Step 12 PERFORMS these itself over Drive REST when the client's
+  Skill 14 credentials resolve; see "Drive delivery" above.
 - **Notion actions:** create a page per deliverable under the parent page via REST
   (never MCP), then capture both page URLs into the episode record.
 - **Local actions:** none; the on-disk files are the deliverables.

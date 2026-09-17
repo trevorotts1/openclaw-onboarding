@@ -9,12 +9,22 @@ Destination is detected in priority order: Google first, then Notion, then
 plain text as the last resort. Detection is by tooling and credential PRESENCE
 only; this script reports SET or NOT SET and never prints a secret value.
 
-This renderer is deterministic and pure standard library. It calls NO model, NO
-MCP tool, and NO external API. It renders the two artifacts to disk and emits a
-machine-readable destination action plan. The podcast agent then executes that
-plan in its OWN turn using the client's own Google (gws) or Notion (REST)
-credentials, keeping the pipeline MCP-free (sub-agents get no MCP injection) and
-keeping this step fully testable in isolation.
+This renderer is deterministic and pure standard library. It calls NO model and
+NO MCP tool. It renders the two artifacts to disk and emits a machine-readable
+destination action plan.
+
+When the destination is Google AND this box holds the client's own Skill 14
+Google Workspace credentials, this renderer also PERFORMS the Drive half of that
+plan: it uploads each rendered document as a Google Doc, sets the sharing the
+plan describes, stamps every executed intent performed:true with its file id and
+link, and records the links under plan["links"] so Steps 16 and 17 reference real
+documents. Delivery speaks the Drive REST API directly with the client's own
+service account and NEVER invokes the gws binary, which self-wipes its credential
+store when it runs headless. With no credentials on the box the plan stays
+intent-only, one skip line is logged, and the episode carries on unchanged;
+--no-deliver forces that intent-only path. Notion delivery is unchanged and is
+still executed by the podcast agent in its own turn over REST, never MCP.
+Delivery never changes this script's exit code.
 
 Google sharing rule (Google destination only): anyone with the link can edit,
 expressed as Drive permission role=writer, type=anyone. Notion has no identical
@@ -27,7 +37,7 @@ backtick fences in any produced output.
 
 Subcommands:
   render        --manifest <json> --out-dir <dir> [--force-destination X]
-                [--speech-script-file <f>]
+                [--speech-script-file <f>] [--no-deliver]
   detect        [--json]
   check         --package <html.file>         (font-floor 12pt self-check)
   check-script  --script <txt.file>           (clean-text sanity guard)
@@ -38,6 +48,7 @@ Exit codes: 0 ok; 2 bad arguments or input; 3 render or validation failure.
 from __future__ import annotations
 
 import argparse
+import base64
 import html
 import json
 import os
@@ -395,6 +406,463 @@ def build_plan(m: dict, detection: dict, destination: str, forced: bool,
 
 
 # ---------------------------------------------------------------------------
+# Drive delivery (performed here, with the client's OWN Skill 14 credentials)
+# ---------------------------------------------------------------------------
+# Step 12 used to emit drive.upload_convert and drive.set_permission as ACTION
+# INTENTS that nothing ever executed, so a fully provisioned client box still
+# logged Drive delivery as not provisioned. The intents stay (they remain the
+# machine-readable record of what Step 12 owes the episode), but when the box
+# actually holds Google Workspace credentials this module now PERFORMS them and
+# stamps each intent performed:true with the resulting file id and link.
+#
+# CREDENTIALS. Resolution follows Skill 14 (14-google-workspace-integration) and
+# invents no new names. Skill 14 documents the service-account plus domain-wide
+# delegation path as the one that succeeds for Drive upload: point
+# GOOGLE_APPLICATION_CREDENTIALS (or Skill 14 Section 3 Option B's
+# GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE) at the gcp-service-account.json, and
+# name the impersonated Workspace user in GCP_IMPERSONATE_USER. Skill 14's
+# documented default key location is used as the last resort. The destination
+# folder is optional and comes from PODCAST_DRIVE_ROOT_FOLDER_ID; with no folder
+# the documents land in the impersonated user's own My Drive root.
+#
+# gws SAFETY. This module speaks the Drive REST API directly and NEVER invokes
+# the gws binary, not even to test for credentials. A bare gws call in a headless
+# shell cannot unlock its keyring and gws's own failure mode then rewrites the
+# default credential store to credential_source "none", wiping every account on
+# the box. Step 12 runs headless by definition, so shelling out to gws is
+# forbidden here. Presence is decided from env names and a readable key file.
+#
+# SCOPE. The full Drive scope is the only one that works for this grant; the
+# narrow drive.file and drive.readonly scopes are rejected by domain-wide
+# delegation with unauthorized_client.
+#
+# FAIL SOFT. No credential, no key file, an unreachable API, or a Drive error
+# never fails the episode. The renderer records what happened and returns the
+# same exit code it would have returned with delivery switched off.
+#
+# SECRECY. Credentials are reported by LABEL and SET or NOT SET only. The key
+# file contents, the private key, the minted token, and the impersonated user's
+# address are never printed.
+
+# Skill 14 credential contract. Every name below is Skill 14's own.
+SA_KEY_ENVS = ("GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE")
+SA_DEFAULT_PATH = "~/clawd/secrets/gcp-service-account.json"
+IMPERSONATE_ENVS = ("GCP_IMPERSONATE_USER", "GWS_ACCOUNT")
+
+# Podcast-owned, optional: the Drive folder the episode documents land in.
+DRIVE_ROOT_FOLDER_ENV = "PODCAST_DRIVE_ROOT_FOLDER_ID"
+
+DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+GOOGLE_API_HOST = "www.googleapis.com"
+OAUTH_HOST = "oauth2.googleapis.com"
+MIME_GOOGLE_DOC = "application/vnd.google-apps.document"
+
+SKIP_LINE = ("drive delivery skipped: Skill 14 Google Workspace credentials not "
+             "configured on this box (see 14-google-workspace-integration/INSTALL.md)")
+
+_HTTP_TIMEOUT = 60
+_HTTP_RETRIES = 3
+_HTTP_BACKOFF = 1.5
+
+
+class DriveDeliveryError(Exception):
+    """A Drive delivery failure. Recorded on the plan; never fails the episode."""
+
+
+def _first_set_env(names: tuple) -> str | None:
+    return next((n for n in names if _env_set(n)), None)
+
+
+def resolve_drive_credentials() -> dict:
+    """Resolve the client's Skill 14 Drive credentials, by label only.
+
+    Returns a report dict carrying `resolved`. Resolution needs BOTH a readable
+    service-account key file (client_email plus private_key) AND an impersonation
+    subject. Anything less is NOT configured and Step 12 stays intent-only.
+    """
+    key_env = _first_set_env(SA_KEY_ENVS)
+    if key_env:
+        key_path = Path(os.path.expanduser(os.environ[key_env].strip()))
+        key_source = key_env
+    else:
+        key_path = Path(os.path.expanduser(SA_DEFAULT_PATH))
+        key_source = "Skill 14 default path"
+
+    subject_env = _first_set_env(IMPERSONATE_ENVS)
+    folder_env = DRIVE_ROOT_FOLDER_ENV if _env_set(DRIVE_ROOT_FOLDER_ENV) else None
+
+    report = {
+        "resolved": False,
+        "reason": "",
+        "service_account_key": "NOT SET",
+        "impersonated_user": "NOT SET",
+        "root_folder": "NOT SET",
+        "scope": DRIVE_SCOPE,
+        "transport": "drive REST v3 (the gws binary is never invoked)",
+    }
+    if folder_env:
+        report["root_folder"] = "SET (%s)" % folder_env
+
+    if not key_path.is_file():
+        report["reason"] = ("no readable service-account key file (%s)" % key_source)
+        return report
+    try:
+        sa = json.loads(key_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - surface the class, never the contents
+        report["reason"] = ("service-account key file is not valid JSON (%s)"
+                            % type(exc).__name__)
+        return report
+    if not isinstance(sa, dict) or not sa.get("client_email") or not sa.get("private_key"):
+        report["reason"] = "service-account key file is missing client_email or private_key"
+        return report
+    report["service_account_key"] = "SET (%s)" % key_source
+
+    if not subject_env:
+        report["reason"] = ("no impersonated Workspace user (%s)"
+                            % " or ".join(IMPERSONATE_ENVS))
+        return report
+    report["impersonated_user"] = "SET (%s)" % subject_env
+
+    report["resolved"] = True
+    report["_sa"] = sa
+    report["_subject"] = os.environ[subject_env].strip()
+    report["_root_folder_id"] = os.environ[DRIVE_ROOT_FOLDER_ENV].strip() if folder_env else None
+    return report
+
+
+def public_credential_report(creds: dict) -> dict:
+    """The credential report with every private field stripped, safe to serialize."""
+    return {k: v for k, v in creds.items() if not k.startswith("_")}
+
+
+def _b64u(raw: object) -> str:
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _rsa_sign_sha256(signing_input: bytes, private_key_pem: str) -> bytes:
+    """RS256-sign the JWT input. Prefers the cryptography library, else openssl.
+
+    The private key never lands in argv; the openssl fallback writes it to a
+    0600 temp file that is unlinked immediately.
+    """
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        key = serialization.load_pem_private_key(
+            private_key_pem.encode("utf-8"), password=None)
+        return key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    except ImportError:
+        pass
+    import subprocess
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False)
+    try:
+        os.chmod(tmp.name, 0o600)
+        tmp.write(private_key_pem)
+        tmp.close()
+        proc = subprocess.run(
+            ["openssl", "dgst", "-sha256", "-sign", tmp.name, "-binary"],
+            input=signing_input, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            raise DriveDeliveryError(
+                "RS256 signing failed: neither the cryptography library nor the "
+                "openssl CLI could sign the assertion")
+        return proc.stdout
+    except FileNotFoundError:
+        raise DriveDeliveryError(
+            "RS256 signing failed: neither the cryptography library nor the "
+            "openssl CLI is available")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
+def _https(method: str, host: str, path: str, headers: dict, body=None):
+    """One HTTPS round trip with a bounded retry on genuinely transient states."""
+    import http.client
+    import socket
+    import time
+    last = None
+    for attempt in range(_HTTP_RETRIES):
+        try:
+            conn = http.client.HTTPSConnection(host, timeout=_HTTP_TIMEOUT)
+            try:
+                conn.request(method, path, body=body, headers=headers)
+                resp = conn.getresponse()
+                raw = resp.read()
+                status = resp.status
+            finally:
+                conn.close()
+        except (socket.gaierror, socket.timeout, ConnectionError, OSError) as exc:
+            last = exc
+            time.sleep(_HTTP_BACKOFF ** attempt)
+            continue
+        if status in (429, 500, 502, 503, 504) and attempt < _HTTP_RETRIES - 1:
+            time.sleep(_HTTP_BACKOFF ** attempt)
+            last = None
+            continue
+        return status, raw
+    raise DriveDeliveryError(
+        "Google API host %s unreachable after %d attempts (%s)"
+        % (host, _HTTP_RETRIES, type(last).__name__ if last else "transient"))
+
+
+def _api_error_detail(raw: bytes) -> str:
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    err = parsed.get("error")
+    if isinstance(err, dict):
+        reasons = [str(d.get("reason", "")) for d in err.get("errors", [])
+                   if isinstance(d, dict)]
+        message = str(err.get("message", ""))
+        joined = " ".join([r for r in reasons if r] + ([message] if message else ""))
+        return joined[:180]
+    return ""
+
+
+class DriveTransport:
+    """Direct Drive v3 REST over the Skill 14 service account and DWD subject.
+
+    The gws binary is never invoked. Tokens are minted in process, cached for the
+    process lifetime, and never printed.
+    """
+
+    def __init__(self, creds: dict) -> None:
+        self._sa = creds["_sa"]
+        self._subject = creds["_subject"]
+        self._token = None
+        self._token_expiry = 0
+
+    def _access_token(self) -> str:
+        import time
+        now = int(time.time())
+        if self._token and self._token_expiry - 60 > now:
+            return self._token
+        header = _b64u(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")))
+        payload = _b64u(json.dumps({
+            "iss": self._sa["client_email"],
+            "sub": self._subject,
+            "aud": "https://%s/token" % OAUTH_HOST,
+            "iat": now,
+            "exp": now + 3600,
+            "scope": DRIVE_SCOPE,
+        }, separators=(",", ":")))
+        signing_input = ("%s.%s" % (header, payload)).encode("ascii")
+        signature = _b64u(_rsa_sign_sha256(signing_input, self._sa["private_key"]))
+        assertion = "%s.%s.%s" % (header, payload, signature)
+        body = ("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer"
+                "&assertion=" + assertion).encode("ascii")
+        status, raw = _https(
+            "POST", OAUTH_HOST, "/token",
+            {"Content-Type": "application/x-www-form-urlencoded"}, body)
+        if status != 200:
+            raise DriveDeliveryError(
+                "token endpoint returned HTTP %s; confirm domain-wide delegation "
+                "authorizes the full Drive scope (no secret shown)" % status)
+        try:
+            token = json.loads(raw)["access_token"]
+        except Exception:
+            raise DriveDeliveryError("token endpoint response carried no access_token")
+        self._token = token
+        self._token_expiry = now + 3600
+        return token
+
+    def upload_convert(self, source: str, name: str, mime_import: str,
+                       mime_target: str, parent_folder_id: str | None = None) -> dict:
+        """Multipart-upload one rendered file, converting it to a Google Doc.
+
+        Drive performs the conversion when the metadata mimeType is a Google type
+        and the media part carries the source type. Returns {id, link}.
+        """
+        import uuid
+        src = Path(source)
+        if not src.is_file():
+            raise DriveDeliveryError("upload source not found: %s" % source)
+        data = src.read_bytes()
+        metadata: dict = {"name": name}
+        if mime_target:
+            metadata["mimeType"] = mime_target
+        if parent_folder_id:
+            metadata["parents"] = [parent_folder_id]
+        boundary = "podcast-step12-%s" % uuid.uuid4().hex
+        pre = ("--%s\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n%s\r\n"
+               "--%s\r\nContent-Type: %s\r\n\r\n"
+               % (boundary, json.dumps(metadata), boundary, mime_import)).encode("utf-8")
+        post = ("\r\n--%s--" % boundary).encode("utf-8")
+        headers = {
+            "Authorization": "Bearer %s" % self._access_token(),
+            "Content-Type": "multipart/related; boundary=%s" % boundary,
+        }
+        path = ("/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
+                "&fields=id,name,mimeType,webViewLink")
+        status, raw = _https("POST", GOOGLE_API_HOST, path, headers, pre + data + post)
+        if status not in (200, 201):
+            raise DriveDeliveryError(
+                "Drive upload returned HTTP %s. %s" % (status, _api_error_detail(raw)))
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            raise DriveDeliveryError("Drive upload response was not JSON")
+        file_id = parsed.get("id")
+        if not file_id:
+            raise DriveDeliveryError("Drive upload response carried no file id")
+        return {"id": file_id,
+                "link": parsed.get("webViewLink")
+                or "https://docs.google.com/document/d/%s/edit" % file_id}
+
+    def set_permission(self, file_id: str, role: str, type_: str) -> dict:
+        """Grant the link-only permission the intent describes.
+
+        An anyone-with-link grant inherited from the parent folder cannot be set
+        again at the file level; Drive answers 403 cannotModifyInheritedPermission
+        and the document already carries the access, so that answer is reported as
+        inherited rather than treated as a failure.
+        """
+        from urllib.parse import quote
+        path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
+                "&fields=id,type,role" % quote(str(file_id), safe=""))
+        headers = {"Authorization": "Bearer %s" % self._access_token(),
+                   "Content-Type": "application/json"}
+        body = json.dumps({"role": role, "type": type_,
+                           "allowFileDiscovery": False}).encode("utf-8")
+        status, raw = _https("POST", GOOGLE_API_HOST, path, headers, body)
+        if status in (200, 201):
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                parsed = {}
+            return {"permission_id": parsed.get("id"), "inherited": False}
+        detail = _api_error_detail(raw)
+        if status == 403 and "cannotModifyInheritedPermission" in detail:
+            return {"permission_id": None, "inherited": True}
+        raise DriveDeliveryError(
+            "Drive permission returned HTTP %s. %s" % (status, detail))
+
+
+def _make_transport(creds: dict) -> DriveTransport:
+    """Transport factory. Tests replace this to exercise delivery without a network."""
+    return DriveTransport(creds)
+
+
+def perform_drive_delivery(plan: dict, creds: dict) -> dict:
+    """Execute the plan's Drive intents in place. Never raises.
+
+    Each executed intent is stamped performed:true and carries the id and link it
+    produced. The captured links are written to plan["links"] so Steps 16 and 17
+    (GHL completion) reference real documents instead of a promise. This function
+    writes NO engine state: podcast_state.py remains the sole writer, and the
+    documents plan file on disk is Step 12's own record of what it delivered.
+    """
+    delivery: dict = {
+        "channel": "google_drive",
+        "attempted": True,
+        "performed": False,
+        "status": "error",
+        "credentials": public_credential_report(creds),
+        "documents": {},
+        "errors": [],
+    }
+    plan["delivery"] = delivery
+    links: dict = plan.setdefault("links", {})
+    captured: dict = {}
+    root_folder_id = creds.get("_root_folder_id")
+
+    try:
+        transport = _make_transport(creds)
+    except Exception as exc:  # noqa: BLE001
+        delivery["errors"].append("transport unavailable: %s" % _safe_error(exc))
+        return delivery
+
+    for action in plan.get("actions", []):
+        kind = action.get("action")
+        try:
+            if kind == "drive.upload_convert":
+                result = transport.upload_convert(
+                    source=action["source"],
+                    name=action["name"],
+                    mime_import=action.get("mime_import", "text/plain"),
+                    mime_target=action.get("mime_target", MIME_GOOGLE_DOC),
+                    parent_folder_id=root_folder_id,
+                )
+                capture = action.get("capture")
+                if capture:
+                    captured[capture] = result
+                action["performed"] = True
+                action["file_id"] = result["id"]
+                action["link"] = result["link"]
+
+            elif kind == "drive.set_permission":
+                ref = action.get("target_ref")
+                target = captured.get(ref)
+                if not target:
+                    raise DriveDeliveryError(
+                        "permission target %s was never captured" % ref)
+                result = transport.set_permission(
+                    file_id=target["id"],
+                    role=action.get("role", "writer"),
+                    type_=action.get("type", "anyone"),
+                )
+                action["performed"] = True
+                action["file_id"] = target["id"]
+                action["permission_id"] = result.get("permission_id")
+                action["inherited_permission"] = bool(result.get("inherited"))
+
+            elif kind == "capture_link":
+                ref = action.get("from")
+                target = captured.get(ref)
+                if not target:
+                    raise DriveDeliveryError("link source %s was never captured" % ref)
+                key = str(action.get("into", "")).split(".")[-1]
+                if key:
+                    links[key] = target["link"]
+                    delivery["documents"][key] = {"file_id": target["id"],
+                                                  "link": target["link"]}
+                action["performed"] = True
+
+        except Exception as exc:  # noqa: BLE001 - one intent failing never fails the episode
+            action["performed"] = False
+            action["error"] = _safe_error(exc)
+            delivery["errors"].append("%s: %s" % (kind, _safe_error(exc)))
+
+    delivery["performed"] = bool(delivery["documents"])
+    if delivery["errors"]:
+        delivery["status"] = "partial" if delivery["performed"] else "error"
+    else:
+        delivery["status"] = "performed"
+    return delivery
+
+
+def _safe_error(exc: Exception) -> str:
+    """One-line error text with no secret and no newline."""
+    text = str(exc) or type(exc).__name__
+    return " ".join(text.split())[:200]
+
+
+def record_drive_skip(plan: dict, creds: dict) -> dict:
+    """Record the intent-only outcome when Skill 14 credentials are not configured."""
+    delivery = {
+        "channel": "google_drive",
+        "attempted": False,
+        "performed": False,
+        "status": "skipped",
+        "reason": creds.get("reason", "credentials not configured"),
+        "credentials": public_credential_report(creds),
+        "documents": {},
+        "errors": [],
+    }
+    plan["delivery"] = delivery
+    return delivery
+
+
+# ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
 
@@ -500,6 +968,33 @@ def cmd_render(args: argparse.Namespace) -> int:
         return 3
 
     plan = build_plan(m, detection, destination, forced, package_path, speech_path)
+
+    # Step 12 owns the Drive delivery it plans. With the client's own Skill 14
+    # credentials on the box the intents above are EXECUTED here and stamped with
+    # the ids and links they produced; without them the plan stays intent-only and
+    # the episode carries on. Neither path ever changes this command's exit code.
+    if destination == "google" and not args.no_deliver:
+        creds = resolve_drive_credentials()
+        if creds["resolved"]:
+            delivery = perform_drive_delivery(plan, creds)
+            if delivery["status"] == "performed":
+                eprint("[render_documents] drive delivery performed: %d document(s) "
+                       "uploaded and shared" % len(delivery["documents"]))
+            else:
+                eprint("[render_documents][WARN] drive delivery %s; the episode "
+                       "continues and the plan records every error"
+                       % delivery["status"])
+                for err in delivery["errors"]:
+                    eprint("[render_documents][WARN]   %s" % err)
+        else:
+            record_drive_skip(plan, creds)
+            eprint("[render_documents] %s" % SKIP_LINE)
+    elif destination == "google" and args.no_deliver:
+        plan["delivery"] = {"channel": "google_drive", "attempted": False,
+                            "performed": False, "status": "disabled",
+                            "reason": "--no-deliver requested; plan is intent-only",
+                            "documents": {}, "errors": []}
+
     plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
     if forced and not plan["ready"]:
@@ -512,12 +1007,17 @@ def cmd_render(args: argparse.Namespace) -> int:
 
 def cmd_detect(args: argparse.Namespace) -> int:
     detection = detect_destination()
+    creds = resolve_drive_credentials()
+    detection["drive_delivery"] = public_credential_report(creds)
     if args.json:
         print(json.dumps(detection, indent=2))
     else:
         print("Chosen destination: %s" % detection["chosen"])
         print("  google: available=%s gws_cli=%s"
               % (detection["google"]["available"], detection["google"]["gws_cli"]))
+        print("  drive delivery: resolved=%s key=%s user=%s folder=%s"
+              % (creds["resolved"], creds["service_account_key"],
+                 creds["impersonated_user"], creds["root_folder"]))
         print("  notion: available=%s token=%s parent_page=%s"
               % (detection["notion"]["available"], detection["notion"]["token"],
                  detection["notion"]["parent_page"]))
@@ -562,6 +1062,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("--force-destination", choices=["google", "notion", "local"],
                           help="override destination detection")
     p_render.add_argument("--speech-script-file", help="path to the clean speech script text file")
+    p_render.add_argument("--no-deliver", action="store_true",
+                          help="render and plan only; never perform the Google Drive "
+                               "delivery even when Skill 14 credentials are configured")
     p_render.set_defaults(func=cmd_render)
 
     p_detect = sub.add_parser("detect", help="report destination detection only")

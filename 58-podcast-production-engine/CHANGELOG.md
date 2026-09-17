@@ -1,5 +1,29 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## [1.0.5] - 2026-09-17 - Step 12 performs the Google Drive delivery it has only ever described (ISSUE-15)
+
+### Drive delivery was an intent nothing executed
+- `scripts/render_documents.py` Step 12 emitted `drive.upload_convert` and `drive.set_permission` as ACTION INTENTS carrying a `cli_hint` of "gws drive files upload (LIVE-VERIFY ...)", and read no Drive configuration at all. Nothing anywhere performed the upload, so a client box with Skill 14 fully installed still finished an episode with its documents sitting on local disk and Drive delivery logged as not provisioned. Step 16 LINK BACK then had no Episode Package link or Speech Script link to write into GHL.
+- Step 12 now RESOLVES the client's own Skill 14 credentials and, when they are present, PERFORMS the plan: it uploads each rendered document to Drive converted to a Google Doc, applies the anyone-with-the-link-can-edit permission the intent describes, stamps every executed intent `performed: true` with its `file_id` and `link`, and records both links under `plan["links"].package_doc` and `plan["links"].speech_doc` plus `plan["delivery"].documents`, which is what Steps 16 and 17 read. The intents themselves are kept, not replaced.
+
+### Credential resolution follows Skill 14 and invents no names
+- Service-account key: `GOOGLE_APPLICATION_CREDENTIALS`, else `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` (Skill 14 INSTALL.md Section 3 Option B), else Skill 14's documented default location `~/clawd/secrets/gcp-service-account.json`. Impersonated Workspace user: `GCP_IMPERSONATE_USER`, else `GWS_ACCOUNT`. Both halves are required. The one new name is the optional destination folder `PODCAST_DRIVE_ROOT_FOLDER_ID`; unset, the documents land in the impersonated user's own Drive root. Every value stays per box, so a client box uses only its own client's Workspace.
+- Only the full Drive scope is requested. Domain-wide delegation rejects drive.file and drive.readonly for this grant with `unauthorized_client`.
+- An anyone-with-link grant inherited from a parent folder cannot be re-applied at the file level; Drive answers 403 `cannotModifyInheritedPermission` and the document already carries the access, so that answer is recorded as inherited rather than treated as a failure.
+
+### The gws binary is never invoked
+- Delivery speaks the Drive REST API directly with the client's service account. It does not shell out to `gws`, not even to test for credentials. A bare `gws` call in a headless shell cannot unlock its keyring and gws's own failure mode then rewrites `~/.config/gws/credentials.enc` to `credential_source: "none"`, wiping every account on the box. Step 12 runs headless by definition. `scripts/tests/test_render_documents_drive_delivery.py` parses the module's syntax tree and fails if any call would execute a binary named gws, or if the bare string reaches anything but `shutil.which`.
+
+### Fail soft, always
+- No credentials: the plan stays intent-only and exactly one line is logged, `drive delivery skipped: Skill 14 Google Workspace credentials not configured on this box (see 14-google-workspace-integration/INSTALL.md)`.
+- A Drive API error, an unreachable endpoint, or a missing signing tool: the failure is recorded on the plan under `delivery.errors` and each failed intent's `error`, and the episode carries on. Uploads that did succeed keep their recorded ids.
+- Neither path changes the exit code. `render --no-deliver` forces the intent-only path. Credentials are reported by label and SET or NOT SET only; the key contents, the private key, the minted token and the impersonated address never reach the plan file, stdout or stderr.
+- Step 12 still writes NO engine state. `podcast_state.py` remains the sole writer; the documents plan file on disk is Step 12's own record of what it delivered.
+
+### Verification
+- New `scripts/tests/test_render_documents_drive_delivery.py`, 28 stdlib tests, fully offline with the Drive transport injected: credentials absent gives intents only plus exactly one skip line; credentials present gives both documents uploaded and converted, both shared writer/anyone, intents stamped with ids, and links recorded; a Drive error leaves the exit code at 0 with the error recorded and the local deliverables intact. Also covers the root-folder env, `--no-deliver`, inherited permissions, and that no secret reaches the plan or the logs.
+- Skill 58 suite: 430 passing before, 458 after, no regressions.
+- `render_documents.py detect` gained a `drive delivery:` readiness line. `modules/documents.md`, `SKILL.md` Step 12 and SOP-PODCAST-02 section 2.10 document the Skill 14 prerequisite and the folder env.
 ## [1.0.4] - 2026-09-17 - re-pin the webhook layer's schema verification to the installed OpenClaw 2026.9.4
 
 The three files in `scripts/webhook/` that carry a LIVE-VERIFIED stamp still named OpenClaw 2026.6.11 while the fleet runs 2026.9.4. A stale stamp on a schema-drift note is worse than no stamp: it tells the next reader the contract was checked against a version that is no longer on any box. Re-verified against the installed package and re-pinned:

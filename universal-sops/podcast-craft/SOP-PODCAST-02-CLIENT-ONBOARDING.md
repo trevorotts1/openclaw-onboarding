@@ -121,6 +121,39 @@ afterward and confirm the required 4 still PASS. Record the activation date
 and the Facebook ad-account id (never the token) in the per-client setup
 notes.
 
+### 2.10 Drive delivery (Step 12 documents)
+
+Step 12 renders the Episode Package and the Speech Script, and when this box holds
+the client's own Google Workspace credentials it also DELIVERS them: each document
+is uploaded to Drive as a Google Doc, shared anyone-with-the-link-can-edit, and its
+file id and link are recorded in the documents plan so Step 16 writes real links
+into GHL instead of placeholders.
+
+The prerequisite is Skill 14 (`14-google-workspace-integration`) installed on this
+box with the client's OWN service account. Delivery needs both halves of the Skill
+14 service-account path and resolves nothing else:
+
+| Setting | Env | Notes |
+|---|---|---|
+| Service-account key | `GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` | Falls back to the Skill 14 default location `~/clawd/secrets/gcp-service-account.json`. |
+| Impersonated user | `GCP_IMPERSONATE_USER` or `GWS_ACCOUNT` | The Workspace user the service account acts as through domain-wide delegation. |
+| Destination folder | `PODCAST_DRIVE_ROOT_FOLDER_ID` | OPTIONAL. Unset, the documents land in the impersonated user's own Drive root. |
+
+Never an operator key and never a shared operator Drive root: each box points at
+its own client's Workspace.
+
+Confirm readiness with `python3 58-podcast-production-engine/scripts/render_documents.py detect`,
+which prints a `drive delivery:` line reporting SET or NOT SET by label and never a
+value. When either half is missing, Step 12 logs one line reading
+`drive delivery skipped: Skill 14 Google Workspace credentials not configured on
+this box` and carries on; the episode still completes and the rendered files on
+disk remain the deliverables. A Drive API error is recorded on the plan and never
+fails the episode either. Delivery speaks the Drive REST API directly and never
+invokes the `gws` binary, because a bare headless `gws` call wipes the box's
+credential store.
+
+---
+
 ## 3. TEST-SUBMISSION VERIFICATION (T1 to T9; all must pass before go-live)
 
 Execute `verify-t1-t9.sh` and observe every result. T1 through T8 exercise the loopback path; T9 re-runs the T4 case through the real public Cloudflare URL to prove the tunnel and edge, not just local wiring.
