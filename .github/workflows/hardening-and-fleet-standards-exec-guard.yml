@@ -1,0 +1,105 @@
+name: hardening bounded-brew + fleet-standards legacy exec.mode guard
+
+# Fails the build if any of four defects proven live on client Macs on
+# 2026-09-17 can come back.
+#
+#   1. scripts/install-hardening.sh probes for a binary named `whisper-cpp`,
+#      which the Homebrew formula never installs (it installs whisper-cli and
+#      friends). A permanent false negative that re-ran `brew install
+#      whisper-cpp` on every roll, forever.
+#   2. That brew install ran unbounded with inherited stdin. A dependency
+#      postinstall wedged in a pseudo-terminal read loop, orphaned Ruby
+#      processes pegged a core for two days, the updater's EXIT trap never
+#      fired, and the update lock was held for days.
+#   3. update-skills.sh piped the hardening step into `tail`, which emits
+#      nothing until the producer exits, so the hang produced a roll log that
+#      simply stopped with no hardening lines at all.
+#   4. scripts/apply-fleet-standards.sh deep-merged {security, ask} into a
+#      tools.exec block still carrying the legacy `mode` key. OpenClaw rejects
+#      that combination, so the script rolled back the WHOLE fleet-standards
+#      write on every box carrying the legacy key, on every roll.
+#
+# TWO RUNNERS ON PURPOSE. The structural legs run everywhere. The legs that
+# actually exercise the watchdog (kill a hung brew, reap its forked helper,
+# leave the caller alive) and the real whisper probe are Darwin-only code, so
+# they get a macOS runner. A guard whose most important assertions never
+# execute in CI is a comment, not a gate.
+#
+# Security note: consumes only repo file content and its own sandbox fixtures.
+# No GitHub event fields reach any run: block, so there is no workflow-injection
+# surface. No network, no credentials, no fleet box, no real Homebrew call.
+
+on:
+  push:
+    paths:
+      - scripts/install-hardening.sh
+      - scripts/apply-fleet-standards.sh
+      - update-skills.sh
+      - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+      - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
+  pull_request:
+    paths:
+      - scripts/install-hardening.sh
+      - scripts/apply-fleet-standards.sh
+      - update-skills.sh
+      - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+      - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
+
+jobs:
+  structural:
+    name: structural gates (brew bounds, streamed log, exec.mode translation)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Bounded non-interactive brew + whisper probe + streamed log
+        run: |
+          chmod +x tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+          bash tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+
+      - name: Fleet standards translates legacy tools.exec.mode
+        run: |
+          chmod +x tests/unit/fleet-standards-legacy-exec-mode.test.sh
+          bash tests/unit/fleet-standards-legacy-exec-mode.test.sh
+
+      - name: Both scripts parse
+        run: |
+          bash -n scripts/install-hardening.sh
+          bash -n scripts/apply-fleet-standards.sh
+          bash -n update-skills.sh
+
+      - name: install-hardening.sh is bash 3.2 safe (macOS /bin/bash)
+        run: |
+          # macOS ships bash 3.2 at /bin/bash and cron/launchd resolve
+          # `env bash` straight back to it, so this script must parse there.
+          # ubuntu has no bash 3.2, so assert the portability constraint the
+          # only way a linux runner honestly can: no bash-4-only syntax.
+          bash tests/unit/bash4-syntax-guard.test.sh
+
+  live-darwin:
+    name: LIVE watchdog + whisper probe (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: bash 3.2 parses the hardening script
+        run: /bin/bash -n scripts/install-hardening.sh
+
+      - name: LIVE -- hung brew is killed, helper reaped, caller survives
+        run: |
+          chmod +x tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+          bash tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+
+      - name: Fleet standards translates legacy tools.exec.mode
+        run: |
+          chmod +x tests/unit/fleet-standards-legacy-exec-mode.test.sh
+          bash tests/unit/fleet-standards-legacy-exec-mode.test.sh

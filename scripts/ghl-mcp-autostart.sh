@@ -1,6 +1,40 @@
 #!/usr/bin/env bash
 # ghl-mcp-autostart.sh — v21.6.0
 #
+# 2026-09-17 (skill 36 v2.0.2): THREE DEFECTS, all diagnosed on two live
+# client containers whose Tier 2 runtime was provably healthy (pm2 app online
+# under a root-persisted PM2_HOME, /health answering with 43 tools, build stamp
+# on the pinned commit) while the updater exited 2 with "GHL MCP Tier 2
+# MISCONFIGURED". A gate that reports a healthy box as broken is worse than no
+# gate: it trains an operator to ignore it.
+#
+#   1. INSTALL PATH WAS HARDCODED. This script and the runtime gate both pinned
+#      the install to /data/mcp-servers (vps) or $HOME/mcp-servers (everything
+#      else). On the client-container shape ONLY the OpenClaw root, its
+#      workspace and $HOME/.config/openclaw are bind-mounted, so $HOME/mcp-servers
+#      is in the container layer and is destroyed on every recreate; the working
+#      installs live under the OpenClaw root and neither script could see them.
+#      FIX: scripts/lib/ghl-mcp-paths.sh derives <root>/mcp-servers/ghl-community-mcp
+#      from the resolved OpenClaw root, keeps the legacy locations as fallbacks
+#      when they carry a build stamp (so no existing box is asked to rebuild),
+#      and is SOURCED by both scripts so the derivation cannot drift again.
+#      PM2_HOME is derived the same way and persisted under the root.
+#
+#   2. THE GATE KNEW TWO PLATFORMS TO THIS SCRIPT'S THREE. Under a comment
+#      claiming "identical derivation", ghl-mcp-assert-runtime.sh had no
+#      linux-home branch, so a Linux container with no /data was judged as a Mac
+#      and asked for two launchd plists nothing could ever run. Both platform
+#      functions now come from the shared library, which also canonicalizes the
+#      root so a /data that is really a symlink into $HOME reads as one root.
+#
+#   3. npm >= 11.19 TURNS NODE_ENV=production INTO omit=dev. Every launch
+#      surface here sets NODE_ENV=production; a roll inheriting it made
+#      `npm ci` install 106 packages instead of ~415 and the build died on
+#      "Cannot find package 'typescript'". npm 11.13 did not. FIX: the compile
+#      install runs with NODE_ENV unset and --include=dev, a guard fails loud
+#      when typescript is absent afterwards, and the prune + runtime stay on
+#      NODE_ENV=production.
+#
 # v21.6.0 (R1 + R9): the v21.5.0 release above declared config/ghl-mcp-pin.env
 # the "single source of truth" — and never delivered it to a single box.
 # update-skills.sh copied scripts/ and nothing else, then deleted its temp
@@ -151,47 +185,57 @@ log() { printf '  [ghl-mcp-autostart] %s\n' "$*"; }
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-# ── Platform + paths ─────────────────────────────────────────────────────────
-# A box is "VPS-shaped" if its config lives under /data/.openclaw (Hostinger
-# VPS / canonical containers) OR if the OPENCLAW_ROOT env / cli is data-rooted.
-# Otherwise it's "Mac-shaped" — which also covers Linux containers whose config
-# lives under $HOME/.openclaw (e.g. oc-fixture-client-i: HOME layout, no launchd,
-# no pm2). The VPS branches hardcode /data/logs and assume pm2/systemd; the
-# Mac branches default to $HOME/Library/Logs/ghl-mcp. A Linux container with a
-# HOME-rooted config MUST fall into the Mac branch AND survive without launchd
-# — FALLBACK B (setsid supervised loop) covers that path with $HOME/logs.
-if [ -f /data/.openclaw/openclaw.json ] || [ "${OPENCLAW_ROOT:-}" = "/data/.openclaw" ]; then
-  PLATFORM="vps"
-  OC_ROOT="/data/.openclaw"
-  MCP_DIR="/data/mcp-servers/ghl-community-mcp"
-  LOG_DIR="/data/logs"
-else
-  PLATFORM="mac"
-  OC_ROOT="$HOME/.openclaw"
-  MCP_DIR="$HOME/mcp-servers/ghl-community-mcp"
-  LOG_DIR="$HOME/Library/Logs/ghl-mcp"
-fi
-OC_JSON="$OC_ROOT/openclaw.json"
-SECRETS_ENV="$OC_ROOT/secrets/.env"
-# Third shape: Mac-path layout on LINUX (config under $HOME/.openclaw, no
-# launchd). start_service_mac would write plists nothing will ever run — the
-# exact silent failure oc-fixture-client-i hit live (2026-08-25): autostart
-# reported STARTED_UNHEALTHY forever while zero supervisors existed. Route
-# these boxes to the HOME-path setsid supervised loop instead.
-if [ "$PLATFORM" = "mac" ] && [ "$(uname -s)" != "Darwin" ]; then
-  PLATFORM="linux-home"
-  LOG_DIR="$HOME/logs"
-fi
-mkdir -p "$LOG_DIR" 2>/dev/null || true
-
 # ── STATUS reporter (callers grep this line; honest, never "done" on a gap) ──
-# Declared BEFORE the pin resolution below because R9's fail-closed refusals
-# report through it.
+# Declared BEFORE the path/pin resolution below because their fail-closed
+# refusals report through it.
 STATUS="UNKNOWN"
 report() {
   STATUS="$1"; shift
   printf 'STATUS: ghl-mcp-autostart=%s %s\n' "$STATUS" "$*"
 }
+
+# ── Platform + paths: ONE derivation, shared with the runtime gate ───────────
+# scripts/lib/ghl-mcp-paths.sh owns platform detection, the OpenClaw root, the
+# Tier 2 install dir, the log dir and PM2_HOME. It used to be duplicated here
+# and in ghl-mcp-assert-runtime.sh under a comment claiming the two were
+# identical; they were not (the gate knew two platforms to this script's three)
+# and both hardcoded an install path that does not survive a client-container
+# recreate. See the header of the library for the full defect.
+#
+# The library is delivered by the SAME recursive scripts/ copy that delivers
+# this file (update-skills.sh deliver_canonical_scripts_tree, install.sh
+# `cp -r .../scripts`), so a box that has this script has the library too. If it
+# genuinely is not there we refuse rather than guess a path: guessing is what
+# produced a confident, wrong verdict about a healthy box.
+_GHL_PATHS_LIB=""
+for _c in "${GHL_MCP_PATHS_LIB:-}" \
+          "$SELF_DIR/lib/ghl-mcp-paths.sh" \
+          "$HOME/.openclaw/scripts/lib/ghl-mcp-paths.sh" \
+          "$HOME/.openclaw/skills/scripts/lib/ghl-mcp-paths.sh" \
+          "$HOME/.openclaw/onboarding/scripts/lib/ghl-mcp-paths.sh" \
+          "/data/.openclaw/scripts/lib/ghl-mcp-paths.sh" \
+          "/data/.openclaw/skills/scripts/lib/ghl-mcp-paths.sh" \
+          "/data/.openclaw/onboarding/scripts/lib/ghl-mcp-paths.sh"; do
+  [ -n "$_c" ] && [ -f "$_c" ] && { _GHL_PATHS_LIB="$_c"; break; }
+done
+if [ -z "$_GHL_PATHS_LIB" ]; then
+  log "REFUSING: scripts/lib/ghl-mcp-paths.sh not found in any delivered location"
+  report "PATHS_LIB_MISSING" \
+    "(scripts/lib/ghl-mcp-paths.sh was not delivered to this box, so the Tier 2 install path and platform cannot be derived, so it refuses to guess. Re-run update-skills.sh or install.sh; both deliver the whole scripts/ tree recursively. Looked in: $SELF_DIR/lib, \$HOME/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib, /data/.openclaw/{scripts,skills/scripts,onboarding/scripts}/lib)"
+  exit 0
+fi
+# shellcheck disable=SC1090
+. "$_GHL_PATHS_LIB"
+ghl_mcp_resolve_paths
+PLATFORM="$GHL_MCP_RESOLVED_PLATFORM"
+OC_ROOT="$GHL_MCP_RESOLVED_ROOT"
+MCP_DIR="$GHL_MCP_RESOLVED_DIR"
+LOG_DIR="$GHL_MCP_RESOLVED_LOG_DIR"
+GHL_MCP_PM2_HOME="$GHL_MCP_RESOLVED_PM2_HOME"
+OC_JSON="$OC_ROOT/openclaw.json"
+SECRETS_ENV="$OC_ROOT/secrets/.env"
+log "platform=$PLATFORM root=$OC_ROOT install=$MCP_DIR logs=$LOG_DIR (paths lib: $_GHL_PATHS_LIB)"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 # ── Pin + profile: ONE source of truth (config/ghl-mcp-pin.env) ──────────────
 # R1 (v21.6.0): the pin file used to exist ONLY in the repo. update-skills.sh
@@ -665,12 +709,37 @@ build_pinned() {
   fi
   (
     cd "$tmp" || exit 1
+    # ── NODE_ENV MUST NOT REACH THE COMPILE INSTALL (npm >= 11.19) ───────────
+    # npm 11.19 made NODE_ENV=production imply `omit=dev`. Every launch surface
+    # this script writes sets NODE_ENV=production, and a roll invoked from one
+    # of them inherits it, so `npm ci` installed 106 packages instead of ~415,
+    # typescript was never installed, and `npm run build` died with
+    # "Cannot find package 'typescript'". npm 11.13 installed the full tree from
+    # the identical command, which is why this appeared as a box-specific fault
+    # rather than a version boundary. Two belts, deliberately:
+    #   unset NODE_ENV   : nothing implies omit=dev for the compile install
+    #   --include=dev    : include beats omit in npm's own precedence rules, so
+    #                      the tree is right even under an .npmrc that sets
+    #                      production=true or an npm_config_omit in the env.
+    # The RUNTIME still runs under NODE_ENV=production: the prune below restores
+    # it explicitly, and every generated launch surface sets it independently.
+    unset NODE_ENV
     # No `|| npm install` fallback, by design. --ignore-scripts on BOTH installs.
-    npm ci --ignore-scripts --no-audit --no-fund >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
+    npm ci --include=dev --ignore-scripts --no-audit --no-fund >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
+    # FAIL LOUD, not at the compiler. Without this the only evidence is a
+    # "Cannot find package 'typescript'" three screens into a build log, which
+    # reads as an upstream problem rather than a dev-dependency that was omitted.
+    if [ ! -d node_modules/typescript ] && [ ! -x node_modules/.bin/tsc ]; then
+      exit 3
+    fi
     npm run build >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
     # Prune to production deps IN THE TEMP DIR, still pinned, still no scripts.
-    npm ci --omit=dev --ignore-scripts --no-audit --no-fund >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
-  ) || rc=1
+    NODE_ENV=production npm ci --omit=dev --ignore-scripts --no-audit --no-fund >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || exit 1
+  ) || rc=$?
+  if [ "$rc" = "3" ]; then
+    log "BUILD REFUSED: 'npm ci --include=dev' completed but node_modules/typescript is ABSENT, so 'npm run build' would fail with \"Cannot find package 'typescript'\". This is the npm >= 11.19 NODE_ENV=production -> omit=dev behaviour (npm $(npm --version 2>/dev/null || echo '?')). Existing dist/ left UNTOUCHED."
+    rm -rf "$tmp"; return 1
+  fi
   if [ "$rc" != "0" ] || [ ! -s "$tmp/dist/main.js" ] || ! grep -q 'connect(transport)' "$tmp/dist/main.js" 2>/dev/null; then
     log "BUILD FAILED or produced an unusable dist — existing dist/ left UNTOUCHED (never rm -rf before a good build)"
     rm -rf "$tmp"; return 1
@@ -1419,7 +1488,17 @@ start_service_vps() {
   # ── PRIMARY: pm2 (the fleet-standard supervisor; survives container restart via
   #    `pm2 save` + a reboot-resurrect hook). NEVER a bare nohup. ──────────────
   if command -v pm2 >/dev/null 2>&1; then
-    log "starting GHL MCP under pm2 (ecosystem.config.js, PORT=${GHL_MCP_PORT}, profile=${GHL_MCP_TOOL_PROFILE})"
+    # PM2_HOME IS PART OF THE ADDRESS OF THIS APP. pm2 keeps one process list
+    # per PM2_HOME, so an app registered under the default $HOME/.pm2 is
+    # invisible to any later `pm2 describe` that runs with a different home,
+    # and on a client container $HOME/.pm2 lives in the ephemeral layer and is
+    # gone after a recreate, taking the registration with it. Pin it under the
+    # OpenClaw root (the bind-mounted directory) so the registration survives,
+    # and so the runtime gate, which derives the same value from the same
+    # library, inspects the same daemon this branch writes to.
+    export PM2_HOME="$GHL_MCP_PM2_HOME"
+    mkdir -p "$PM2_HOME" 2>/dev/null || true
+    log "starting GHL MCP under pm2 (ecosystem.config.js, PORT=${GHL_MCP_PORT}, profile=${GHL_MCP_TOOL_PROFILE}, PM2_HOME=${PM2_HOME})"
 
     # D2 (see the GHL-MCP-PM2-REGISTRATION-MISMATCH block above for the full
     # defect writeup): detect before assuming startOrReload is safe.
@@ -1538,8 +1617,11 @@ install_vps_reboot_resurrect() {
   # containers, which is fine — the @reboot cron + container command cover those).
   pm2 startup >/dev/null 2>&1 || true
   # Idempotent @reboot cron entry (covers bare containers + plain VPS reboots).
+  # PM2_HOME is carried EXPLICITLY: cron runs with a near-empty environment, so
+  # a bare `pm2 resurrect` there would resurrect whatever the DEFAULT home holds
+  # (usually nothing) and silently leave the real app down after a reboot.
   if command -v crontab >/dev/null 2>&1; then
-    local LINE="@reboot ${PM2_BIN} resurrect >${LOG_DIR}/pm2-resurrect.log 2>&1 ${CRON_TAG_RESURRECT}"
+    local LINE="@reboot PM2_HOME=${GHL_MCP_PM2_HOME} ${PM2_BIN} resurrect >${LOG_DIR}/pm2-resurrect.log 2>&1 ${CRON_TAG_RESURRECT}"
     upsert_cron_line "$CRON_TAG_RESURRECT" "$LINE" \
       && log "installed/refreshed @reboot 'pm2 resurrect' cron (reboot-surviving)"
   fi

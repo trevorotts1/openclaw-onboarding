@@ -35,6 +35,7 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE_SRC="$REPO_ROOT/scripts/ghl-mcp-assert-runtime.sh"
+LIB_SRC="$REPO_ROOT/scripts/lib/ghl-mcp-paths.sh"
 PASS=0
 FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -44,6 +45,7 @@ echo "=== ghl-mcp-runtime-stop-exit-codes.test.sh ==="
 echo ""
 
 [ -f "$GATE_SRC" ] || { echo "  FAIL: gate not found at $GATE_SRC"; exit 1; }
+[ -f "$LIB_SRC" ] || { echo "  FAIL: shared path library not found at $LIB_SRC"; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "  FAIL: python3 required"; exit 1; }
 
 # ── PART A: the embedded filter, in isolation ────────────────────────────────
@@ -118,8 +120,12 @@ else
   _make_vps_box() {
     local sec_frag="$1" tmp
     tmp="$(mktemp -d)"
-    mkdir -p "$tmp/bin" "$tmp/scripts" "$tmp/config" "$tmp/mcp" "$tmp/logs"
+    mkdir -p "$tmp/bin" "$tmp/scripts/lib" "$tmp/config" "$tmp/mcp" "$tmp/logs"
     cp "$GATE_SRC" "$tmp/scripts/ghl-mcp-assert-runtime.sh"
+    # The gate derives its paths from the shared library and refuses to guess
+    # when it is absent, so a simulated box carries it exactly as a delivered
+    # scripts/ tree does.
+    cp "$LIB_SRC" "$tmp/scripts/lib/ghl-mcp-paths.sh"
 
     cat > "$tmp/config/ghl-mcp-pin.env" <<EOF
 GHL_MCP_VETTED_COMMIT="$SIM_COMMIT"
