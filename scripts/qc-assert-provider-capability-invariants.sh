@@ -139,7 +139,7 @@ else:
 PYEOF
 ) || ANALYSIS_RESULT="PARSE_ERROR:python3_failed"
 
-if printf '%s' "$ANALYSIS_RESULT" | grep -q "^PARSE_ERROR:"; then
+if grep -q "^PARSE_ERROR:" <<<"$ANALYSIS_RESULT"; then
   _fail "cannot parse openclaw.json: $(printf '%s' "$ANALYSIS_RESULT" | grep "^PARSE_ERROR:" | head -1)"
   exit 1
 fi
@@ -152,7 +152,7 @@ _info "embed fallback: ${EMBED_FALLBACK:-<not set>}"
 
 # ─── I1: fallback != "none" ───────────────────────────────────────────────────
 _info "I1: agents.defaults.memorySearch.fallback must not be \"none\""
-if printf '%s' "$ANALYSIS_RESULT" | grep -q "^I1_FAIL:"; then
+if grep -q "^I1_FAIL:" <<<"$ANALYSIS_RESULT"; then
   I1_MSG=$(printf '%s' "$ANALYSIS_RESULT" | grep "^I1_FAIL:" | cut -d: -f2-)
   _fail "I1: INVARIANT VIOLATED — $I1_MSG. A config with fallback=none has no recovery path when the primary embedding provider fails; memory search silently dies. This config MUST NOT ship. Set fallback to a working text-embedding provider (e.g. \"openai\", \"openrouter\")."
   FAILURES=$((FAILURES + 1))
@@ -171,7 +171,7 @@ if [ -n "$I2_FAIL_LINES" ]; then
     FAILURES=$((FAILURES + 1))
   done <<< "$I2_FAIL_LINES"
 else
-  if printf '%s' "$ANALYSIS_RESULT" | grep -q "^I2_PASS:"; then
+  if grep -q "^I2_PASS:" <<<"$ANALYSIS_RESULT"; then
     _pass "I2: no multimodal.enabled=true against a text-only provider"
   fi
 fi

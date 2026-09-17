@@ -124,7 +124,7 @@ fi
 # The stamp uses "mac", "mac-legacy", "vps-hostinger", "vps-contabo", "vps-unknown".
 # We accept any stamp that STARTS WITH the detected platform prefix.
 # (e.g. stamp="vps-hostinger" matches detected="vps")
-if echo "$STAMPED_PLATFORM" | grep -qE "^${DETECTED_PLATFORM}"; then
+if grep -qE "^${DETECTED_PLATFORM}" <<<"$STAMPED_PLATFORM"; then
   echo "PASS — PLATFORM_FACTS_V1 present in $AGENTS_FILE (platform=${STAMPED_PLATFORM}, detected=${DETECTED_PLATFORM})"
   exit 0
 else
