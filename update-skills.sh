@@ -791,6 +791,214 @@ oc_file_size_bytes() {
 }
 
 # ----------------------------------------------------------
+# WRITE PRE-FLIGHT: prove every path this updater must write is writable BY
+# THIS USER, before any content step runs.
+# ----------------------------------------------------------
+# THE DEFECT THIS KILLS (measured 2026-09-17, nine Hostinger VPS boxes). Inside
+# each openclaw container, /data/.openclaw/workspace/AGENTS.md was root:root
+# 0644 while /data/.openclaw and /data/.openclaw/workspace are node:node 0700
+# and the updater runs as uid 1000 (node). AGENTS.md was therefore READABLE and
+# NOT WRITABLE, so every read-side gate passed, the content gate PASSED, and
+# then the CORE_UPDATES merge, hundreds of lines into an embedded python
+# program, opened AGENTS.md for append and died with
+#   PermissionError: [Errno 13] Permission denied: .../workspace/AGENTS.md
+# The run exited 1 halfway through, the version stamp was WITHHELD, and the
+# operator got a python traceback buried in the middle of a very long log with
+# a green content gate printed above it. Nine boxes sat STALE.
+#
+# The analogous root-owned $OC_ROOT/scripts directory was already handled by
+# deliver_canonical_scripts_tree. This closes the same class for the workspace
+# content files, which is where it actually bit.
+#
+# HOW IT PROVES A NEGATIVE. A permission claim made from `-w` alone is a claim,
+# not a fact: it is wrong under ACLs, read-only mounts and container user
+# mapping. Every verdict here comes from a REAL WRITE ATTEMPT that changes no
+# content: an existing file is opened for APPEND and given zero bytes, a
+# directory gets a probe file created and immediately removed.
+#
+# WHAT IT DOES per path: probe, then try to self-heal (chmod u+w when we
+# already own it, chown to the runtime owner when we are root), then, if it
+# still cannot write, print ONE actionable PERMISSION BLOCK line naming the
+# owner, the user and the exact remedy, and exit 1 BEFORE any content is
+# touched, so the failure is the FIRST thing in the log rather than a traceback
+# in the middle of it.
+#
+# SCOPE NOTE, DELIBERATE: $OC_ROOT/scripts, $OC_ROOT/config and
+# $OC_ROOT/onboarding are REPORTED but NOT hard-blocked.
+# deliver_canonical_scripts_tree already DEGRADES on those (return 2) so an
+# ownership quirk cannot withhold the version stamp. Hard-failing them here
+# would silently reverse that decision. The workspace content files have no
+# such degrade path: an unwritable AGENTS.md aborts the run either way, so
+# blocking early is strictly better than crashing late.
+# ----------------------------------------------------------
+
+# >>> WRITE-PREFLIGHT-BEGIN  (extracted verbatim by tests/unit/updater-write-preflight-permission-block.test.sh)
+# owner as "user:group" for a path, both stat flavours (VPS form first, then
+# the Mac form), validated so the BSD stat filesystem report can never be
+# mistaken for an answer. Prints "unknown" rather than failing. Never aborts.
+_ocwp_owner() {
+  local _p="${1:-}" _o=""
+  { [ -n "$_p" ] && [ -e "$_p" ]; } || { printf '%s' "unknown"; return 0; }
+  _o="$(stat -L -c '%U:%G' "$_p" 2>/dev/null | head -1 || true)"
+  case "$_o" in '' | *' '* | *"$(printf '\t')"*) _o="" ;; *:*) : ;; *) _o="" ;; esac
+  if [ -z "$_o" ]; then
+    _o="$(stat -L -f '%Su:%Sg' "$_p" 2>/dev/null | head -1 || true)"
+    case "$_o" in '' | *' '* | *"$(printf '\t')"*) _o="" ;; *:*) : ;; *) _o="" ;; esac
+  fi
+  [ -n "$_o" ] || _o="unknown"
+  printf '%s' "$_o"
+  return 0
+}
+
+# numeric owner uid for a path, or empty when it cannot be read. Never aborts.
+_ocwp_owner_uid() {
+  local _p="${1:-}" _u=""
+  { [ -n "$_p" ] && [ -e "$_p" ]; } || { printf '%s' ""; return 0; }
+  _u="$(stat -L -c '%u' "$_p" 2>/dev/null | head -1 || true)"
+  case "$_u" in '' | *[!0-9]*) _u="" ;; esac
+  if [ -z "$_u" ]; then
+    _u="$(stat -L -f '%u' "$_p" 2>/dev/null | head -1 || true)"
+    case "$_u" in '' | *[!0-9]*) _u="" ;; esac
+  fi
+  printf '%s' "$_u"
+  return 0
+}
+
+# REAL write probe. Returns 0 when this user can actually write the path.
+# Non-destructive by construction: `: >> file` opens for append and writes
+# nothing (it does NOT truncate, which `>` would), and the directory probe
+# removes its own file. A path that does not exist yet defers to its parent,
+# because that is what the updater will have to create it in.
+_ocwp_can_write() {
+  local _p="${1:-}" _probe="" _parent=""
+  [ -n "$_p" ] || return 0
+  if [ -d "$_p" ]; then
+    _probe="$_p/.oc-write-preflight.$$"
+    if ( : > "$_probe" ) 2>/dev/null; then
+      rm -f "$_probe" 2>/dev/null || true
+      return 0
+    fi
+    return 1
+  fi
+  if [ -e "$_p" ]; then
+    if ( : >> "$_p" ) 2>/dev/null; then
+      return 0
+    fi
+    return 1
+  fi
+  _parent="$(dirname "$_p")"
+  # Parent absent too: a later `mkdir -p` owns that case, and judging it here
+  # would be a guess. UNDETERMINED is reported as "not blocked".
+  [ -d "$_parent" ] || return 0
+  _ocwp_can_write "$_parent"
+}
+
+# Check one path. $2 is "hard" (blocks the run) or "soft" (reported only).
+# Returns 1 ONLY for a hard path that is still unwritable after self-heal.
+_ocwp_check_one() {
+  local _p="${1:-}" _mode="${2:-hard}"
+  local _owner _owner_uid _fixed=0 _label="PERMISSION BLOCK"
+  [ -n "$_p" ] || return 0
+  if _ocwp_can_write "$_p"; then
+    return 0
+  fi
+  _owner="$(_ocwp_owner "$_p")"
+  _owner_uid="$(_ocwp_owner_uid "$_p")"
+
+  # SELF-HEAL, in the only two shapes that can honestly work.
+  if [ -n "$_owner_uid" ] && [ "$_owner_uid" = "${_OCWP_ME_UID:-none}" ]; then
+    # We own it; only the write bit is missing.
+    chmod u+w "$_p" 2>/dev/null || true
+    if _ocwp_can_write "$_p"; then _fixed=1; fi
+  elif [ "${_OCWP_ME_UID:-none}" = "0" ]; then
+    # Running as root on a bare box: take ownership back to the runtime user.
+    chown "$_OCWP_RUN_OWNER" "$_p" 2>/dev/null || true
+    chmod u+w "$_p" 2>/dev/null || true
+    if _ocwp_can_write "$_p"; then _fixed=1; fi
+  fi
+  if [ "$_fixed" = "1" ]; then
+    echo "  FIXED: $_p ownership (was $_owner, now writable by $_OCWP_ME)"
+    return 0
+  fi
+
+  [ "$_mode" = "soft" ] && _label="PERMISSION DEFERRED"
+  echo "  $_label: $_p is owned by $_owner but the updater runs as $_OCWP_ME; on a Docker box run: docker exec $_OCWP_CONTAINER chown $_OCWP_RUN_OWNER $_p" >&2
+  if [ "$_mode" = "soft" ]; then
+    echo "    (advisory only: this path has a degrade path and does NOT block the run or the version stamp)" >&2
+    return 0
+  fi
+  echo "    (already inside the container: chown $_OCWP_RUN_OWNER $_p)" >&2
+  return 1
+}
+
+oc_assert_write_preflight() {
+  _OCWP_ME="$(id -un 2>/dev/null || printf '%s' "${USER:-unknown}")"
+  _OCWP_ME_UID="$(id -u 2>/dev/null || printf '%s' "none")"
+
+  local _root="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && _root="/data/.openclaw"
+
+  # The user the runtime actually runs as, READ FROM the OpenClaw root rather
+  # than hardcoded, so this says "node:node" in a container and the login user
+  # on a Mac without knowing which it is.
+  _OCWP_RUN_OWNER="$(_ocwp_owner "$_root")"
+  [ "$_OCWP_RUN_OWNER" = "unknown" ] && _OCWP_RUN_OWNER="node:node"
+
+  # Container name for the remedy line. The compose name is not knowable from
+  # inside, so name the shape instead of guessing a slug.
+  _OCWP_CONTAINER="${OPENCLAW_CONTAINER_NAME:-<container>}"
+  if [ "$_OCWP_CONTAINER" = "<container>" ] && { [ -f /.dockerenv ] || [ -d /data/.openclaw ]; }; then
+    _OCWP_CONTAINER="<slug>-openclaw-1"
+  fi
+
+  echo ""
+  echo "  [write-preflight] proving every path this run must write is writable by $_OCWP_ME (uid $_OCWP_ME_UID)"
+
+  local _hard=() _soft=() _p _f _blocked=0
+
+  # The workspace content files. THIS is the class that bit: no degrade path,
+  # and the writer is hundreds of lines inside an embedded python program.
+  if oc_resolve_workspace_announced "write pre-flight"; then
+    _hard+=("$OC_WS_RESOLVED")
+    for _f in AGENTS.md TOOLS.md MEMORY.md SOUL.md IDENTITY.md USER.md; do
+      _hard+=("$OC_WS_RESOLVED/$_f")
+    done
+  else
+    echo "  [write-preflight] workspace UNRESOLVED (reason above). Skipping the workspace file probes; every writer below refuses on its own rather than guessing a path." >&2
+  fi
+  _hard+=("$_root" "$_root/AGENTS.md")
+  [ -n "${SKILLS_DIR:-}" ] && _hard+=("$SKILLS_DIR")
+  _soft+=("$_root/scripts" "$_root/config" "$_root/onboarding")
+
+  for _p in ${_hard[@]+"${_hard[@]}"}; do
+    _ocwp_check_one "$_p" hard || _blocked=$((_blocked + 1))
+  done
+  for _p in ${_soft[@]+"${_soft[@]}"}; do
+    _ocwp_check_one "$_p" soft || true
+  done
+
+  if [ "$_blocked" -gt 0 ]; then
+    {
+      echo ""
+      echo "  =============================================================="
+      echo "  UPDATE REFUSED BEFORE ANY CONTENT WAS TOUCHED."
+      echo "  $_blocked path(s) this updater MUST write are not writable by $_OCWP_ME."
+      echo "  Nothing was installed, nothing was modified, and NO version stamp"
+      echo "  was written. Fix the ownership named above and re-run. The run"
+      echo "  then completes instead of crashing halfway through the"
+      echo "  CORE_UPDATES merge with a permission traceback."
+      echo "  =============================================================="
+      echo ""
+    } >&2
+    exit 1
+  fi
+  echo "  [write-preflight] OK: every required path is writable."
+  echo ""
+  return 0
+}
+# <<< WRITE-PREFLIGHT-END
+
+# ----------------------------------------------------------
 # _strip_update_pending_sections <AGENTS_FILE>
 #
 # Removes EVERY "## … UPDATE PENDING …" / "## … ONBOARDING PENDING …" section
@@ -811,9 +1019,41 @@ _strip_update_pending_sections() {
   # NOTE the command form: no `2>/dev/null`, no `|| true`. The real error has to
   # reach the operator, and a refusal has to be detectable by the caller.
   AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' || rc=$?
-import os, re, sys, time
+import errno, os, re, sys, time
 
 p = os.environ["AGENTS_FILE"]
+
+
+def permission_block(path):
+    """The SAME one-line contract the shell write pre-flight prints, so an
+    operator greps for one string and finds every permission refusal in the
+    log regardless of which step hit it."""
+    def pair(q):
+        try:
+            st = os.stat(q)
+        except Exception:
+            return "unknown"
+        try:
+            import pwd, grp
+            return pwd.getpwuid(st.st_uid).pw_name + ":" + grp.getgrgid(st.st_gid).gr_name
+        except Exception:
+            return str(st.st_uid) + ":" + str(st.st_gid)
+    try:
+        import pwd
+        me = pwd.getpwuid(os.geteuid()).pw_name
+    except Exception:
+        me = str(os.geteuid())
+    run_owner = pair(os.path.dirname(path) or ".")
+    if run_owner == "unknown":
+        run_owner = "node:node"
+    sys.stderr.write("PERMISSION BLOCK: " + path + " is owned by " + pair(path)
+                     + " but the updater runs as " + me
+                     + "; on a Docker box run: docker exec <container> chown "
+                     + run_owner + " " + path + "\n")
+
+
+def is_permission_error(exc):
+    return getattr(exc, "errno", None) in (errno.EACCES, errno.EPERM, errno.EROFS)
 
 
 def die(msg):
@@ -893,6 +1133,8 @@ if original != "":
         with open(backup, "w", encoding="utf-8", errors="surrogateescape") as fh:
             fh.write(original)
     except Exception as exc:
+        if is_permission_error(exc):
+            permission_block(backup)
         die("could not WRITE the backup " + backup + ": " + repr(exc) + "\n"
             "Refusing to rewrite the file with no backup in hand. Nothing was written.")
     try:
@@ -939,6 +1181,10 @@ try:
     with open(p, "w", encoding="utf-8", errors="surrogateescape") as fh:
         fh.write(new)
 except Exception as exc:
+    # A permission refusal gets the SAME one-line remedy the write pre-flight
+    # prints, ahead of the refusal banner, so the operator reads the fix first.
+    if is_permission_error(exc):
+        permission_block(p)
     die("the write itself FAILED: " + repr(exc)
         + (("\nThe verified backup is at " + backup) if backup else ""))
 
@@ -3561,6 +3807,14 @@ main() {
     echo "       Nothing was installed and no version stamp was written." >&2
     exit 78
   fi
+
+  # WRITE PRE-FLIGHT. Placement is load-bearing: AFTER the two read-only gates
+  # above (so their baseline still sees the box exactly as it was found) and
+  # BEFORE every content step, every early exit and the version gate. A path
+  # this run must write but cannot is a failure that belongs at the TOP of the
+  # log, not as a python traceback in the middle of the CORE_UPDATES merge with
+  # a passing content gate printed above it. See oc_assert_write_preflight.
+  oc_assert_write_preflight
 
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
@@ -6232,7 +6486,59 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
         "$SOUL_FILE" "$IDENTITY_FILE" "$USER_FILE" \
         "$SENTINEL" "$SKILL_FOLDER" \
         "${CORE_UPDATES_STRICT:-0}" "$CU_MASTER_FILES_DIR" <<'PYEOF'
-import sys, re, os
+# >>> CORE-UPDATES-PY-BEGIN  (extracted verbatim by tests/unit/updater-write-preflight-permission-block.test.sh)
+import sys, re, os, errno
+
+
+def _oc_owner_pair(path):
+    """"user:group" for a path, falling back to numeric ids, then to unknown."""
+    try:
+        st = os.stat(path)
+    except Exception:
+        return 'unknown'
+    try:
+        import pwd, grp
+        return pwd.getpwuid(st.st_uid).pw_name + ':' + grp.getgrgid(st.st_gid).gr_name
+    except Exception:
+        return str(st.st_uid) + ':' + str(st.st_gid)
+
+
+def _oc_me():
+    try:
+        import pwd
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except Exception:
+        return str(os.geteuid())
+
+
+def _oc_write_failed(path, exc):
+    """ONE actionable line instead of a traceback, then a clean exit 1.
+
+    THE DEFECT THIS REPLACES. On nine VPS boxes the append below hit a
+    root-owned workspace/AGENTS.md and raised
+      PermissionError: [Errno 13] Permission denied: .../workspace/AGENTS.md
+    as a bare traceback in the middle of a multi-thousand-line log, hundreds of
+    lines into this program, with a PASSING content gate printed above it. The
+    run exited 1 and the version stamp was withheld. The fix that matters is
+    the shell WRITE PRE-FLIGHT in update-skills.sh, which now refuses at the top
+    of the log. This is the belt to that braces: if a path somehow becomes
+    unwritable after the pre-flight passed, the operator still gets a sentence
+    naming the owner, the user and the remedy, not a stack trace.
+    """
+    if getattr(exc, 'errno', None) in (errno.EACCES, errno.EPERM, errno.EROFS):
+        run_owner = _oc_owner_pair(os.path.dirname(path) or '.')
+        if run_owner == 'unknown':
+            run_owner = 'node:node'
+        print('PERMISSION BLOCK: ' + path + ' is owned by ' + _oc_owner_pair(path)
+              + ' but the updater runs as ' + _oc_me()
+              + '; on a Docker box run: docker exec <container> chown '
+              + run_owner + ' ' + path, file=sys.stderr)
+    else:
+        print('[CORE_UPDATES] FATAL: could not write ' + path + ': ' + repr(exc),
+              file=sys.stderr)
+    print('[CORE_UPDATES] nothing further was written and NO version stamp follows. '
+          'Fix the cause above and re-run.', file=sys.stderr)
+    raise SystemExit(1)
 
 (cu_path, agents_f, tools_f, memory_f, soul_f,
  identity_f, user_f, sentinel, skill_folder, strict_mode,
@@ -6570,11 +6876,15 @@ for (m, target, directive) in real_sections:
                 file=sys.stderr,
             )
 
-    # Append wrapped block
-    with open(target_file, 'a', encoding='utf-8') as fh:
-        fh.write(f'\n\n{begin_marker}\n')
-        fh.write(block)
-        fh.write(f'\n{end_marker}\n')
+    # Append wrapped block. GUARDED: an unwritable target is a one-line
+    # PERMISSION BLOCK, never a traceback. See _oc_write_failed above.
+    try:
+        with open(target_file, 'a', encoding='utf-8') as fh:
+            fh.write(f'\n\n{begin_marker}\n')
+            fh.write(block)
+            fh.write(f'\n{end_marker}\n')
+    except OSError as exc:
+        _oc_write_failed(target_file, exc)
 
     merged_count += 1
 
@@ -6594,9 +6904,15 @@ try:
 except Exception:
     existing = ''
 if sentinel not in existing:
-    with open(agents_f, 'a', encoding='utf-8') as fh:
-        fh.write('\n' + sentinel + '\n')
+    # GUARDED for the same reason as the append above: this stamp lands on
+    # AGENTS.md, which is exactly the file that was found root-owned.
+    try:
+        with open(agents_f, 'a', encoding='utf-8') as fh:
+            fh.write('\n' + sentinel + '\n')
+    except OSError as exc:
+        _oc_write_failed(agents_f, exc)
 
+# <<< CORE-UPDATES-PY-END
 PYEOF
     # v14.3.15 dual-write: stamp sentinel to the 2026.x agent dir AGENTS.md too.
     # On VPS boxes that have a legacy $HOME/clawd/ (or /data/clawd/), the Python
