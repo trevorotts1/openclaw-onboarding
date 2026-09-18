@@ -72,6 +72,63 @@ PYEOF
   printf '%s' "$v"
 }
 OPERATOR_BOT_TOKEN="$(_get_var OPERATOR_TELEGRAM_BOT_TOKEN)"
+
+# ── REFUSE A SHARED BOT TOKEN (one poller per bot, fleet-wide) ───────────────
+#
+# Telegram permits exactly ONE active long-poll consumer per bot token. Two
+# boxes holding the same token do not share the update stream, they RACE for it:
+# each getUpdates invalidates the other's, so messages go to whichever box
+# polled last and are LOST to the other, and both answer as the same identity.
+#
+# This shipped twice as a live fleet incident (2026-09-11/12 across client
+# boxes; 2026-09-17/18 inside a containerised VPS box) and both times looked
+# like duplicated and dropped operator messages rather than a config error,
+# which is exactly why it must be refused mechanically instead of documented.
+#
+# THE TEST is the bot ID — the digits BEFORE the colon. It is the bot's public
+# identity, it is not a secret, and comparing it never requires handling the
+# secret half of the token. The secret half is never read, compared, logged or
+# printed here.
+#
+# The operator box's own bot id comes from OPERATOR_BOX_BOT_ID when the box
+# declares one; failing that, from the bot id of the token already recorded as
+# belonging to the operator box. If neither is known this check cannot conclude
+# anything and says so rather than passing silently.
+_bot_id() { printf '%s' "${1%%:*}"; }
+
+_OP_BOX_BOT_ID="$(_get_var OPERATOR_BOX_BOT_ID)"
+if [ -z "$_OP_BOX_BOT_ID" ]; then
+  _OP_BOX_TOKEN="$(_get_var OPERATOR_BOX_TELEGRAM_BOT_TOKEN)"
+  [ -n "$_OP_BOX_TOKEN" ] && _OP_BOX_BOT_ID="$(_bot_id "$_OP_BOX_TOKEN")"
+  unset _OP_BOX_TOKEN
+fi
+
+if [ -n "$OPERATOR_BOT_TOKEN" ] && [ -n "$_OP_BOX_BOT_ID" ]; then
+  _THIS_BOT_ID="$(_bot_id "$OPERATOR_BOT_TOKEN")"
+  # IS this box the operator box? Then the shared id is its own and correct.
+  _IS_OPERATOR_BOX="$(_get_var OPERATOR_BOX)"
+  if [ "$_THIS_BOT_ID" = "$_OP_BOX_BOT_ID" ] && \
+     [ "$_IS_OPERATOR_BOX" != "1" ] && [ "$_IS_OPERATOR_BOX" != "true" ]; then
+    log "REFUSING to write this operator bot token."
+    log "  Its bot id (${_THIS_BOT_ID}) is the OPERATOR BOX's own bot."
+    log "  Telegram allows ONE poller per bot: this box and the operator box would"
+    log "  race for the same update stream and each would silently lose messages."
+    log "  Fix: create a SEPARATE bot for this box in BotFather, then set"
+    log "  OPERATOR_TELEGRAM_BOT_TOKEN to that new token and re-run this script."
+    log "  (Set OPERATOR_BOX=1 only on the operator box itself.)"
+    printf 'STATUS: operator-telegram=REFUSED_SHARED_BOT_TOKEN (bot id %s is the operator box'"'"'s own bot; per-box tokens are mandatory)\n' \
+      "$_THIS_BOT_ID"
+    exit 2
+  fi
+  unset _THIS_BOT_ID _IS_OPERATOR_BOX
+elif [ -n "$OPERATOR_BOT_TOKEN" ] && [ -z "$_OP_BOX_BOT_ID" ]; then
+  # UNDETERMINED is the honest answer. Never report a pass we cannot back up.
+  log "shared-token check UNDETERMINED — neither OPERATOR_BOX_BOT_ID nor"
+  log "  OPERATOR_BOX_TELEGRAM_BOT_TOKEN is set on this box, so this script cannot tell"
+  log "  whether this token belongs to the operator box. Set OPERATOR_BOX_BOT_ID (the"
+  log "  digits before the colon — not a secret) to make this check conclusive."
+fi
+unset _OP_BOX_BOT_ID
 # Operator escalation/help chat id (where maintenance / drive output goes).
 # CO-MINGLING GUARD (v12.4.0): this destination is OPT-IN and CONFIGURABLE. We
 # NEVER bake in a personal chat id. Resolve from (in order):

@@ -250,12 +250,14 @@ obs_set_status() {
   # the onboarding resume prompt sources this shim from the agent's shell, which
   # is zsh on every Mac box. `local status=` aborts the function there before it
   # writes anything, so no skill could ever be recorded qc-passed.
-  local folder="$1" st="$2"
+  local folder="$1" st="$2" reason="${3:-}"
   command -v python3 >/dev/null 2>&1 || return 0
   [ -f "$OBS_STATE_FILE" ] || obs_seed_state >/dev/null 2>&1 || true
-  FOLDER="$folder" STATUS="$st" STATE_FILE="$OBS_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null || true
+  FOLDER="$folder" STATUS="$st" REASON="$reason" STATE_FILE="$OBS_STATE_FILE" \
+    python3 - <<'PYEOF' 2>/dev/null || true
 import json, os, datetime
 sf = os.environ["STATE_FILE"]; folder = os.environ["FOLDER"]; status = os.environ["STATUS"]
+reason = os.environ.get("REASON", "").strip()
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 try:
     state = json.load(open(sf))
@@ -264,8 +266,42 @@ except Exception:
 sk = state.setdefault("skills", {}).setdefault(folder, {})
 sk["status"] = status
 sk["updatedAt"] = now
+# RECORD THE REASON. A negative verdict with no reason moves the whole diagnostic
+# burden onto whoever reads the file later. Measured 2026-09-18: a live box
+# carried 68/68 "qc-failed" with no reason field on any entry, so the state file
+# could not say whether the skills were broken or the gate was — and they were
+# not broken (`openclaw skills info` returned Ready, all 49 CORE_UPDATES
+# sentinels were present, and the sampled qc-*.sh scripts exited 0).
+if status == "qc-failed" and reason:
+    sk["reason"] = reason
+else:
+    sk.pop("reason", None)
 json.dump(state, open(sf, "w"), indent=2); open(sf, "a").write("\n")
 PYEOF
+}
+
+# ── Is a failure reason an ENVIRONMENT failure rather than a skill failure? ───
+# obs_reason_is_environmental <reason-string>
+#
+# THE DEFECT THIS EXISTS FOR. obs_verify_skill fails CLOSED when it cannot find
+# the openclaw CLI (correct — unverifiable is not verified). But obs_set_status
+# lets qc-failed overwrite qc-passed unconditionally, so ONE run under a minimal
+# PATH — a cron, a launchd job, a non-login shell, none of which get
+# ~/.local/bin — rewrites EVERY skill to qc-failed and nothing ever restores
+# them. obs_gate_summary then never returns 0, so the "## UPDATE PENDING"
+# section that update-skills.sh removes only when the gate passes becomes
+# PERMANENT. Measured on a live box 2026-09-18: 66 skills rewritten to qc-failed
+# in a SIX-SECOND window with zero QC diagnostics written, while the box's own
+# CLI, sentinels and qc scripts all passed when run by hand.
+#
+# A reason that names the ENVIRONMENT is not evidence about the skill. It must
+# not be allowed to demote a verdict that was previously PROVEN.
+obs_reason_is_environmental() {
+  case "$1" in
+    *openclaw-cli:absent*|*deadline-runner-failed*|*skills-info:agent-required*)
+      return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 obs_get_status() {
@@ -324,6 +360,25 @@ obs_verify_skill() {
   # oc_skill_registered() in lib-onboarding-state.sh: require a positive
   # registration signal AND check negative signals against SPECIFIC phrases
   # only (never a bare "error" substring).
+  # FIND THE CLI BEFORE DECLARING IT ABSENT. `command -v` proves only that a
+  # NAME resolves on the CURRENT PATH, and the PATH that matters here is usually
+  # cron's or launchd's, which carries none of the directories an OpenClaw
+  # install actually uses. Declaring "absent" from that is a claim about the
+  # environment of the CHECK, not about the box. Look in the known install
+  # locations first, and only then say it cannot be found.
+  if ! command -v openclaw >/dev/null 2>&1; then
+    local _obs_cand
+    for _obs_cand in "$HOME/.local/bin/openclaw" "$HOME/.npm-global/bin/openclaw" \
+                     /usr/local/bin/openclaw /opt/homebrew/bin/openclaw \
+                     /usr/bin/openclaw; do
+      if [ -x "$_obs_cand" ]; then
+        PATH="$(dirname "$_obs_cand"):$PATH"; export PATH
+        break
+      fi
+    done
+    unset _obs_cand
+  fi
+
   if command -v openclaw >/dev/null 2>&1; then
     local info_out info_err _obs_agent _obs_agent_flag
     _obs_agent="$(obs_default_agent)"
@@ -436,7 +491,17 @@ obs_verify_skill() {
   fi
 
   if [ -n "$reasons" ]; then
-    obs_set_status "$folder" "qc-failed"
+    # An ENVIRONMENT failure must not demote a skill that was previously PROVEN
+    # to pass. See obs_reason_is_environmental for the incident this prevents:
+    # one cron run without the CLI on PATH rewrote 66 verified skills to
+    # qc-failed in six seconds and made the UPDATE PENDING notice permanent.
+    # This is NOT fail-open — a skill that has never reached qc-passed still
+    # fails, and the reason is still recorded and still returned to the caller.
+    if obs_reason_is_environmental "$reasons" && [ "$(obs_get_status "$folder")" = "qc-passed" ]; then
+      printf 'ENVIRONMENT-ONLY (prior qc-passed KEPT): %s' "${reasons% }"
+      return 1
+    fi
+    obs_set_status "$folder" "qc-failed" "${reasons% }"
     printf '%s' "${reasons% }"
     return 1
   fi

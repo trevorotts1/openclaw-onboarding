@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.47"
+ONBOARDING_VERSION="v25.1.48"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1821,7 +1821,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.47 - safe_json_edit
+# v25.1.48 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -8912,6 +8912,34 @@ PY
   # for un-registered skills. The "complete" Telegram below is CONDITIONAL on
   # this gate. ONBOARDING_GATE_OK / _SUMMARY drive the honest report.
   # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # LEAN BOOTSTRAP — pointerize managed blocks before the gate runs.
+  #
+  # wire_core_updates() above appends each skill's CORE_UPDATES text in full
+  # between <!-- BEGIN skill:NN:target --> markers, and its sentinel guard makes
+  # every later roll a no-op — so once a block is in AGENTS.md at full length it
+  # stays there, and AGENTS.md is re-billed to the model on EVERY turn. Sweeping
+  # here (rather than only in apply-fleet-standards.sh) means a block wired by
+  # THIS roll is compact by the END of this roll, not one roll later.
+  #
+  # Non-fatal by design: a failure leaves a correct, merely larger AGENTS.md,
+  # which must never fail an update.
+  if [ -f "$_SCRIPT_DIR/scripts/bootstrap-pointerize.py" ] && [ -n "${OC_WS_RESOLVED:-}" ]; then
+    # shellcheck source=/dev/null
+    [ -f "$_SCRIPT_DIR/scripts/lib-bootstrap-pointer.sh" ] && . "$_SCRIPT_DIR/scripts/lib-bootstrap-pointer.sh"
+    if command -v bp_mode >/dev/null 2>&1 && [ "$(bp_mode)" != "full" ]; then
+      for _bp_f in AGENTS.md TOOLS.md MEMORY.md; do
+        [ -f "$OC_WS_RESOLVED/$_bp_f" ] || continue
+        python3 "$_SCRIPT_DIR/scripts/bootstrap-pointerize.py" sweep \
+          --bootstrap "$OC_WS_RESOLVED/$_bp_f" \
+          --ref-file "$(bp_reference_for "$_bp_f")" >/dev/null 2>&1 \
+          && echo "  ✓ lean-bootstrap: $_bp_f pointerized (full text in $(bp_reference_for "$_bp_f"))" \
+          || true
+      done
+      unset _bp_f
+    fi
+  fi
+
   ONBOARDING_GATE_OK="unknown"
   ONBOARDING_GATE_SUMMARY=""
   if command -v obs_verify_skill >/dev/null 2>&1; then

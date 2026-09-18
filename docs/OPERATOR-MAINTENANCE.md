@@ -57,8 +57,25 @@ STATUS: operator-telegram=STRUCTURE_ONLY_NEEDS_TOKEN
 
 To finish provisioning an existing box:
 
-1. Create an operator bot in BotFather (one operator bot can be reused across
-   the fleet, or one per box — operator's choice).
+1. Create an operator bot in BotFather. **One bot per box. Never reuse a token
+   across boxes — this is not a preference, it is a protocol limit.**
+
+   Telegram allows exactly ONE active long-poll consumer per bot token. When two
+   boxes hold the same token they do not share the stream, they *race* for it:
+   each `getUpdates` call invalidates the other's, so messages are delivered to
+   whichever box polled last and are **lost** to the other. Every box also ends
+   up answering as the same bot identity, so replies land in the wrong box's
+   conversation.
+
+   This has happened twice on the live fleet and both times presented as a
+   storm of duplicated and dropped operator messages rather than as an obvious
+   configuration error:
+   - 2026-09-11/12 — a shared operator token across client boxes had every box
+     fighting the operator box for the same update stream.
+   - 2026-09-17/18 — the same failure inside a containerised VPS box.
+
+   `configure-operator-telegram.sh` now REFUSES a token whose bot id matches the
+   operator box's own bot, so this cannot be re-introduced by hand.
 2. Set the token on the box:
    ```bash
    echo 'OPERATOR_TELEGRAM_BOT_TOKEN=<token>' >> ~/.openclaw/secrets/.env
