@@ -20,11 +20,15 @@ def public_origin(value):
         raise ValueError('an explicit public HTTPS origin is required')
     if p.hostname == 'localhost' or p.hostname.endswith(('.localhost', '.local')):
         raise ValueError('local hostname is not a public invitation origin')
+    # Cloudflare answers direct IP access with error 1003, so an IP literal
+    # mints an interview link that cannot be opened even when the address is
+    # globally routable. A private literal was already refused here; a public
+    # one is refused now, for the same reason: the link has to open.
     try:
-        address = ipaddress.ip_address(p.hostname)
+        ipaddress.ip_address(p.hostname)
     except ValueError: pass
     else:
-        if not address.is_global: raise ValueError('non-public address is not an invitation origin')
+        raise ValueError('an IP literal is not an invitation origin')
     return 'https://' + p.netloc.lower()
 
 

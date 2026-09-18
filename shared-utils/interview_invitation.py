@@ -46,12 +46,20 @@ def public_origin(value):
     if p.scheme != 'https' or not p.hostname or p.username or p.password or p.query or p.fragment or p.path not in ('','/'):
         raise Pending('public HTTPS origin required')
     host = p.hostname.lower()
+    # An IP literal is never an invitation origin. Cloudflare answers direct IP
+    # access with error 1003, so a link minted on one is dead on arrival even
+    # when the address is globally routable and answers from the operator's own
+    # network. Every literal is refused, v4 and v6, public and private alike,
+    # and it is refused before the loopback and gateway shapes are read so the
+    # refusal names the real reason rather than the range it happens to fall in.
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise Pending('public origin cannot be an IP literal')
     if host == 'localhost' or host.endswith(('.localhost','.local')) or '.' not in host or p.port == 18789:
         raise Pending('public origin cannot be loopback or gateway')
-    try:
-        if not ipaddress.ip_address(host).is_global: raise Pending('public origin cannot be private')
-    except ValueError as exc:
-        if isinstance(exc, Pending): raise
     return 'https://' + p.netloc.lower().rstrip('/'), host
 
 def expected_identity(state, env):

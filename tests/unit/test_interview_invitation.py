@@ -166,6 +166,17 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_loopback_private_gateway_and_malformed_urls(self):
         for value in ['http://localhost:4000','https://127.0.0.1','https://[::1]','https://10.0.0.1','https://client.example.com:18789','https://user:secret@client.example.com','https://client.example.com/path','https://client.example.com?token=secret']:
             with self.subTest(url=value),self.assertRaises(m.Pending):self.resolve(state=dict(self.state,commandCenterUrl=value))
+    def test_public_ip_literal_origin_is_refused_and_a_real_hostname_is_not(self):
+        # Cloudflare answers direct IP access with error 1003, so an origin that
+        # is an IP literal mints an interview link nobody can open. A globally
+        # routable literal is exactly the case the private-range check never
+        # covered: it is not loopback, not private, and it passed.
+        for value in ['https://104.21.79.227','https://104.21.79.227:8443','https://[2606:4700:3037::6815:1e8b]','https://[2606:4700:3037::6815:1e8b]:8443','https://[::ffff:104.21.79.227]','https://127.0.0.1','https://10.0.0.1']:
+            with self.subTest(url=value),self.assertRaisesRegex(m.Pending,'IP literal'):m.public_origin(value)
+        self.assertEqual(m.public_origin('https://nicole.zerohumanworkforce.com'),('https://nicole.zerohumanworkforce.com','nicole.zerohumanworkforce.com'))
+        resolved=self.resolve(state=dict(self.state,commandCenterUrl='https://nicole.zerohumanworkforce.com'),receipt=dict(self.receipt,host='nicole.zerohumanworkforce.com'))
+        self.assertEqual(resolved['origin'],'https://nicole.zerohumanworkforce.com')
+        with self.assertRaisesRegex(m.Pending,'IP literal'):self.resolve(state=dict(self.state,commandCenterUrl='https://104.21.79.227'))
     def test_missing_and_conflicting_origins_are_pending(self):
         for state,env in [(dict(self.state,commandCenterUrl=None),self.env),(self.state,dict(self.env,OPENCLAW_DASHBOARD_URL='https://other.example.com')),(self.state,dict(self.env,INTERVIEW_GATE_URL='https://other.example.com')),(self.state,dict(self.env,MC_COMPANY_ID='foreign'))]:
             with self.subTest(state=state,env=env),self.assertRaises(m.Pending):self.resolve(state=state,env=env)

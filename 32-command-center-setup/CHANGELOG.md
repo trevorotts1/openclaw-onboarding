@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.13 - 2026-09-18 - A bare IP address is not an interview origin
+
+`scripts/interview-launch.py` accepted any globally routable IP literal as the client's Command Center URL. The check it ran asked only whether the address was private, so `10.0.0.1` was refused and `104.21.79.227` was written into the build state as `commandCenterUrl` and carried into the minted link. Cloudflare answers direct IP access with error 1003, so that link could not be opened by the client it was sent to, and nothing before delivery would have said so. Every IP literal is now refused, v4 and v6, public and private alike, because the reason is the same in each case: a literal is not a name Cloudflare fronts. A hostname such as `https://nicole.zerohumanworkforce.com` is unaffected. Test: `tests/unit/interview-launch.test.py`.
+
 ## v13.1.12 - 2026-09-18 - Cross-reference the paired Command Center pull request, not its version
 
 Documentation only. The paired Command Center release was renumbered five times while both pull requests were open, because that repo shipped several patches from unrelated branches. Every line naming the number went stale within minutes. The entries now point at the pull request, which does not move.

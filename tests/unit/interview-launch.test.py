@@ -213,4 +213,18 @@ STUB
         self.assertLess(gate.index('verify-tenant-readiness.py'),gate.index('cc_launch_stage invite'))
         self.assertLess(gate.index('cc_launch_stage invite'),gate.index('exit 0'))
         self.assertIn('cc_launch_stage bind-database',s)
+    def test_public_ip_literal_is_not_an_invitation_origin(self):
+        # Cloudflare answers direct IP access with error 1003, so a link minted
+        # on an IP literal cannot be opened. The private-range check never saw a
+        # globally routable address, so one reached the state file as the
+        # client's Command Center URL and the link was dead on arrival.
+        for value in ['https://104.21.79.227','https://104.21.79.227:8443','https://[2606:4700:3037::6815:1e8b]','https://[::ffff:104.21.79.227]','https://127.0.0.1','https://10.0.0.1']:
+            with self.subTest(url=value),self.assertRaisesRegex(ValueError,'IP literal'):m.public_origin(value)
+        self.assertEqual(m.public_origin('https://nicole.zerohumanworkforce.com'),'https://nicole.zerohumanworkforce.com')
+        accepted=self.root/'accepted/.workforce-build-state.json'
+        m.initialize(accepted,'nicole','Nicole','owner@example.test',{'MC_TENANT_PUBLIC_URL':'https://nicole.zerohumanworkforce.com'})
+        self.assertEqual(json.loads(accepted.read_text())['commandCenterUrl'],'https://nicole.zerohumanworkforce.com')
+        refused=self.root/'refused/.workforce-build-state.json'
+        with self.assertRaisesRegex(ValueError,'IP literal'):m.initialize(refused,'nicole','Nicole','owner@example.test',{'MC_TENANT_PUBLIC_URL':'https://104.21.79.227'})
+
 if __name__=='__main__':unittest.main()

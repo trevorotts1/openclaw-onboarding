@@ -1,3 +1,19 @@
+## [v25.1.52]  -  2026-09-18  -  A bare IP address is not an interview origin
+
+### Why
+Both interview-link origin validators refused a private address and accepted a public one. The question they asked was whether the address was routable, and a routable address is precisely the case that fails: Cloudflare answers direct IP access with error 1003, so an interview link minted on `https://104.21.79.227` reaches the client, looks exactly like a working link, and cannot be opened. Nothing before delivery said so, because everything before delivery had agreed the origin was public.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** - `public_origin()` now refuses every IP literal, v4 and v6, public and private alike, and refuses it before the loopback and gateway shapes are read so the refusal names the real reason rather than the range the address happens to fall in. The `is_global` test it replaces covered only the private half of the class.
+- **`32-command-center-setup/scripts/interview-launch.py`** - the same refusal in the launcher's own `public_origin()`. This is the copy that writes `commandCenterUrl` into the build state on a fresh install, so a literal passed in `MC_TENANT_PUBLIC_URL` was previously stored as the client's Command Center URL and carried from there into the link.
+
+### Risk
+Low. A hostname origin such as `https://nicole.zerohumanworkforce.com` is untouched, and no box is configured with an IP literal today: this closes the shape before one is. Nothing else in the origin contract moved, and a refused origin is Pending, the same fail-closed state every other unmet precondition already produces.
+
+### Tests
+- `tests/unit/test_interview_invitation.py` - `https://104.21.79.227`, a port-bearing form, a bracketed IPv6 literal, an IPv4-mapped IPv6 literal, and the loopback and private addresses are all refused with the literal reason; the hostname resolves and carries through the real authenticated resolver; and the IP literal is refused there too.
+- `tests/unit/interview-launch.test.py` - the same literals are refused by the launcher; a hostname in `MC_TENANT_PUBLIC_URL` is stored as `commandCenterUrl` on a fresh initialize, and a public IP literal in the same variable is refused instead of stored.
+
 ## [v25.1.51]  -  2026-09-18  -  The interview link is not spent by being used either: it re-opens until the interview is complete
 
 ### Why
