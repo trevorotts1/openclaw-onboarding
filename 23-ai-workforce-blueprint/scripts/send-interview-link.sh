@@ -162,7 +162,7 @@ MASKED="…${CHAT_ID: -4}"
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
   echo "----- preview only: enrollment is issued at send time -----"
-  sed 's/{{INVITATION_VALIDITY}}/The exact expiry is included when the private sign-in link is issued./g' "$TMP_MSG"
+  sed 's/{{INVITATION_VALIDITY}}/The link'"'"'s validity is stated in the message when the private sign-in link is issued./g' "$TMP_MSG"
   echo "-------------------"
   exit 0
 fi

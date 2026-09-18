@@ -21,7 +21,13 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 PROTOCOL = 'interview-launch.v1'
-# CC issues at most 24 hours; allow a small bounded clock skew, not arbitrary TTLs.
+# An interview link is valid until the interview is complete; it does not expire
+# on a clock. A Command Center that implements that contract says so in the
+# receipt, and then there is no deadline to enforce or to quote to the client.
+# Older issuers still in the field really do expire their links, so a receipt
+# without the marker is still held to the bounded TTL it was minted under: at
+# most 24 hours, plus a small bounded clock skew, never an arbitrary TTL.
+INVITATION_VALID_UNTIL_COMPLETE = 'interview-complete'
 MAX_INVITATION_TTL_SECONDS = 24 * 60 * 60
 INVITATION_CLOCK_SKEW_SECONDS = 10
 class Pending(ValueError):
@@ -150,6 +156,32 @@ def resolve_public_origin(state, env, fetch=None):
         raise Pending('standard foundation verification pending')
     return dict(expected,origin=origin,host=host,protocol=PROTOCOL,receipt=receipt)
 
+def invitation_expiry(receipt):
+    """The deadline to enforce and to quote, or None when there is not one.
+
+    A receipt marked valid until interview completion carries no deadline: the
+    link stays usable until the interview is finished, so there is nothing here
+    to bound and nothing truthful to promise the client about a date. Every
+    other receipt came from an issuer that really does expire the link, and its
+    stated expiry is still bounded exactly as before, so a short legacy TTL and
+    a full 24-hour one are both accepted and anything unbounded is refused.
+    """
+    if receipt.get('validUntil') == INVITATION_VALID_UNTIL_COMPLETE:
+        return None
+    expiry = receipt.get('expiresAt')
+    if type(expiry) is not int or not time.time() < expiry <= time.time() + MAX_INVITATION_TTL_SECONDS + INVITATION_CLOCK_SKEW_SECONDS:
+        raise Pending('invitation expiry invalid')
+    return expiry
+
+
+def invitation_validity_sentence(expiry):
+    """What the client is told about how long the private link lasts."""
+    if expiry is None:
+        return 'This private sign-in link stays valid until your interview is complete.'
+    from datetime import datetime, timezone
+    return 'This private sign-in link expires on '+datetime.fromtimestamp(expiry,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')+'.'
+
+
 def issue_invitation(resolved, env, target, metadata=None):
     config=curl_auth_config(env)
     body=json.dumps({'recipientHash':hashlib.sha256(target.encode()).hexdigest()})
@@ -163,8 +195,7 @@ def issue_invitation(resolved, env, target, metadata=None):
         for key in ['tenantId','companyId','installationId','host']:
             if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
         if receipt.get('protocol')!='interview-invitation.v1' or receipt.get('oneUse') is not True: raise Pending('invitation protocol mismatch')
-        expiry=receipt.get('expiresAt')
-        if type(expiry) is not int or not time.time()<expiry<=time.time()+MAX_INVITATION_TTL_SECONDS+INVITATION_CLOCK_SKEW_SECONDS: raise Pending('invitation expiry invalid')
+        expiry=invitation_expiry(receipt)
         url=receipt.get('url','');parsed=urlsplit(url)
         if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview' or parsed.query or not parsed.fragment.startswith('enroll='):
             raise Pending('invitation URL binding invalid')
@@ -357,11 +388,9 @@ def main():
             if private_entry not in text:
                 raise Pending('private invitation link missing from message')
             url=issue_invitation(resolved,env,args.target,delivery_context)
-            from datetime import datetime, timezone
-            deadline=datetime.fromtimestamp(delivery_context['invitationExpiresAt'],timezone.utc).strftime('%b %d, %Y at %H:%M UTC')
             # Replace only the primary sign-in link: the later authenticated
             # resume bookmark must remain stable and must never carry a ticket.
-            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}','This private sign-in link expires on '+deadline+'.')
+            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}',invitation_validity_sentence(delivery_context['invitationExpiresAt']))
         code,receipt=send_gateway(message,args.target,args.ledger,delivery_context,os.environ.get('FORCE')=='1',prepare_message=enroll)
         print(json.dumps(receipt));return code
     except (Pending,ValueError,OSError) as exc:
