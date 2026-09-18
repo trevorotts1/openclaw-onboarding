@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.1.48"
+ONBOARDING_VERSION="v25.1.49"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3878,6 +3878,22 @@ for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.s
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
         success "Installed memory-health cron script: $SCRIPT"
+    fi
+done
+
+# LEAN BOOTSTRAP (docs/COMPACT-CORE-SOP.md): the daily measure, the weekly
+# compaction, the engine they both drive and the validator that owns the lean
+# targets. Persisted to the same dir for the same reason as the block above —
+# ensure-pipeline-crons.sh resolves cron scripts from $OC_ROOT/scripts, and a
+# registered cron has to keep resolving after the temp clone is cleaned up.
+# update-skills.sh delivers the whole scripts/ tree and needs no list; install.sh
+# copies by name, so these four have to be named here or a FRESH box would
+# register two crons pointing at scripts that were never installed.
+for SCRIPT in bootstrap-validate-daily.sh bootstrap-compact-weekly.sh compact-bootstrap.py validate-core-references.py bootstrap-pointerize.py; do
+    if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
+        cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
+        chmod +x "$SCRIPTS_DIR/$SCRIPT"
+        success "Installed lean-bootstrap script: $SCRIPT"
     fi
 done
 

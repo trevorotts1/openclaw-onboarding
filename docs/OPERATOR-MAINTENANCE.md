@@ -125,6 +125,49 @@ self-pings use the **operator** account / session key. Never the reverse.
 
 ---
 
+## Lean bootstrap: the compact-core cadence
+
+Bootstrap files (`AGENTS.md`, `TOOLS.md`, `MEMORY.md`, `USER.md`, `SOUL.md`,
+`IDENTITY.md`) are re-billed to the model on **every turn**, and every fleet roll
+stamps more into them. Two standing jobs keep them lean, both registered fleet-wide
+by `scripts/ensure-pipeline-crons.sh`, both **COMMAND-kind crons** (zero LLM tokens,
+no delivery to any chat, no model invoked):
+
+| Cron | Schedule | What it does |
+|---|---|---|
+| `bootstrap-validate-daily` | 05:00 daily | Measures only. Budgets, marker balance, pointer targets, ledger hashes. Exits non-zero on any failure. Writes nothing. |
+| `bootstrap-compact-weekly` | Sun 04:30 America/New_York | Moves owner-authored cold content out verbatim behind a four-line pointer. Gated by a switch that defaults to **report**. |
+
+The timezone on the weekly job is load-bearing: it has to land after
+`weekly-onboarding-update` (`0 3 * * 0 America/New_York`), the skill update that
+rewrites these very files.
+
+**The switch.** The weekly job writes nothing until an operator turns it on, so a
+box's first scheduled week produces a reviewable plan rather than a surprise edit:
+
+```bash
+# Read the plan first (this is also what the cron does by default):
+bash "$OC_ROOT/scripts/bootstrap-compact-weekly.sh"
+
+# Then turn on applying, per box:
+echo apply > "$OC_ROOT/bootstrap-compact.conf"
+```
+
+Resolution order is `$OPENCLAW_BOOTSTRAP_COMPACT_MODE`, then that file, then
+`agents.defaults.bootstrapCompactMode`, then `report`. Template and rationale:
+`config/bootstrap-compact.conf.example`.
+
+**Hot sections and script-owned blocks are never moved by that job.** Script-owned
+bulk is made lean at the source instead, by `scripts/bootstrap-pointerize.py` during
+the roll (switch: `config/bootstrap-pointer.conf.example`). An over-target file that
+has run out of movable content gets a proposal in `pending-updates.md`, which is a
+question for the owner, not a plan.
+
+Full procedure, per-platform paths, the pointer standard, the collision rule, the
+ledger and rollback: **[docs/COMPACT-CORE-SOP.md](COMPACT-CORE-SOP.md)**.
+
+---
+
 ## Mac-tunnel Keepalive Hardening -- Existing-Fleet Remediation Playbook
 
 **Background:** Every Wi-Fi Mac-tunnel client is exposed to repeated CF-1033 tunnel drops
