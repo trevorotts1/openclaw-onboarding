@@ -20,11 +20,15 @@ def public_origin(value):
         raise ValueError('an explicit public HTTPS origin is required')
     if p.hostname == 'localhost' or p.hostname.endswith(('.localhost', '.local')):
         raise ValueError('local hostname is not a public invitation origin')
+    # An IP literal is never an invitation origin, global or not: it cannot
+    # present a certificate for the registered tenant hostname. Testing only
+    # is_global let a public address such as 8.8.8.8 through.
     try:
-        address = ipaddress.ip_address(p.hostname)
-    except ValueError: pass
+        ipaddress.ip_address(p.hostname)
+    except ValueError:
+        pass
     else:
-        if not address.is_global: raise ValueError('non-public address is not an invitation origin')
+        raise ValueError('an invitation origin must be a hostname, not an IP address')
     return 'https://' + p.netloc.lower()
 
 

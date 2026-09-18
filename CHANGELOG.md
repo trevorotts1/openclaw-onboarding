@@ -1,3 +1,20 @@
+## [v25.1.52]  -  2026-09-18  -  An interview origin must be a hostname, never an IP address
+
+### Why
+Both copies of the origin rule asked only whether an IP literal was globally routable. `https://8.8.8.8`, `https://1.1.1.1` and any other public address therefore passed as a legitimate interview origin. No certificate exists for an address under the hostname the tenant registry selects configuration by, so an accepted literal would have carried a client's private sign-in link to an origin no tenant is registered under. Rejecting only private addresses was the wrong axis: the question is not whether an address is routable, it is whether an address can be a tenant at all.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** - `public_origin()` refuses every IP literal, loopback, private and global alike. The `is_global` test it replaces is gone, so there is no routable-address branch left to pass.
+- **`32-command-center-setup/scripts/interview-launch.py`** - the launcher's own copy of the rule, held to the same bar. Two copies drifting apart is how one of them keeps a hole after the other is fixed.
+
+Hostnames are unaffected, so nothing about an ordinary client origin changes.
+
+### Risk
+Low. No fleet box is configured with an IP-literal Command Center origin: the installer writes a tunnel hostname, and `cc-compat.json` and the tenant registry are keyed by hostname. A box that somehow held a literal was already unable to serve a valid certificate for it.
+
+### Tests
+`tests/unit/test_interview_invitation.py` - eight literals across IPv4, IPv6, loopback, private and public ranges are refused, a real hostname still resolves, and a literal is refused before any network call is attempted. `tests/unit/interview-launch.test.py` - the same battery against the launcher's copy.
+
 ## [v25.1.51]  -  2026-09-18  -  The interview link is not spent by being used either: it re-opens until the interview is complete
 
 ### Why

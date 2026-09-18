@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.13 - 2026-09-18 - An invitation origin must be a hostname, never an IP address
+
+`scripts/interview-launch.py`'s `public_origin()` asked only whether an IP literal was globally routable, so `https://8.8.8.8` and any other public address were accepted as an invitation origin. No certificate exists for an address under the hostname the tenant registry selects configuration by, so an accepted literal would have carried a client's private sign-in link to an origin no tenant is registered under. Every literal is now refused, loopback and private ones included; hostnames are unaffected. Test added in `tests/unit/interview-launch.test.py`.
+
 ## v13.1.12 - 2026-09-18 - Cross-reference the paired Command Center pull request, not its version
 
 Documentation only. The paired Command Center release was renumbered five times while both pull requests were open, because that repo shipped several patches from unrelated branches. Every line naming the number went stale within minutes. The entries now point at the pull request, which does not move.

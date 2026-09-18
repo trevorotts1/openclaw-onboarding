@@ -178,6 +178,18 @@ STUB
         with patch.object(m,'__file__',fake_location):
             with self.assertRaisesRegex(ValueError,'sender exit 9'):m.invite(self.state,self.root)
         self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['status'],'invitation-pending')
+    def test_invitation_origin_must_be_a_hostname_never_an_ip_address(self):
+        """The launcher's own copy of the origin rule, held to the same bar.
+
+        Only is_global was tested before, so a routable literal such as 8.8.8.8
+        was accepted as an invitation origin even though no certificate exists
+        for it under the registered tenant hostname.
+        """
+        for literal in ('https://8.8.8.8','https://1.1.1.1','https://203.0.113.7','https://[2001:4860:4860::8888]','https://127.0.0.1','https://10.0.0.5','https://[::1]'):
+            with self.subTest(origin=literal),self.assertRaises(ValueError):
+                m.public_origin(literal)
+        self.assertEqual(m.public_origin('https://client.example.com'),'https://client.example.com')
+
     def test_tunnel_ambiguous_transport_posts_once(self):
         import subprocess
         bindir=self.root/'bin';bindir.mkdir();calls=self.root/'calls'

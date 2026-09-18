@@ -568,4 +568,26 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertIn('stays valid until your interview is complete.',message)
         self.assertNotIn('open it again',message)
 
+    def test_origin_must_be_a_hostname_never_an_ip_address(self):
+        """A public IP literal is not a weaker origin, it is a different tenant.
+
+        The old check only asked whether the address was global, so 8.8.8.8 and
+        any other routable literal passed. No certificate exists for an address
+        under the hostname the tenant registry selects configuration by, so an
+        accepted literal would carry a client's private sign-in link to an
+        origin no tenant is registered under.
+        """
+        for literal in ('https://8.8.8.8','https://1.1.1.1','https://203.0.113.7','https://[2001:4860:4860::8888]','https://127.0.0.1','https://10.0.0.5','https://[::1]','https://192.168.1.10'):
+            with self.subTest(origin=literal),self.assertRaisesRegex(m.Pending,'hostname|loopback|private'):
+                m.public_origin(literal)
+        # A real hostname is still accepted, so the guard bites only literals.
+        self.assertEqual(m.public_origin('https://client.example.com')[0],'https://client.example.com')
+
+    def test_ip_literal_origin_is_refused_before_any_network_call(self):
+        for key,literal in [('commandCenterUrl','https://8.8.8.8'),('commandCenterUrl','https://203.0.113.7')]:
+            with self.subTest(literal=literal),patch.object(m.subprocess,'run') as run:
+                with self.assertRaisesRegex(m.Pending,'hostname'):
+                    m.resolve_public_origin(dict(self.state,**{key:literal}),self.env)
+                run.assert_not_called()
+
 if __name__=='__main__':unittest.main()

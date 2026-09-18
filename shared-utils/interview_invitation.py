@@ -48,10 +48,17 @@ def public_origin(value):
     host = p.hostname.lower()
     if host == 'localhost' or host.endswith(('.localhost','.local')) or '.' not in host or p.port == 18789:
         raise Pending('public origin cannot be loopback or gateway')
+    # An IP literal is never an interview origin, global or not. A public
+    # address still cannot present a certificate for the tenant hostname the
+    # registry selects configuration by, so accepting one would let an origin
+    # no tenant is registered under carry a client's private sign-in link.
+    # Testing only is_global was the whole check before, which let 8.8.8.8 pass.
     try:
-        if not ipaddress.ip_address(host).is_global: raise Pending('public origin cannot be private')
-    except ValueError as exc:
-        if isinstance(exc, Pending): raise
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise Pending('public origin must be a hostname, not an IP address')
     return 'https://' + p.netloc.lower().rstrip('/'), host
 
 def expected_identity(state, env):
