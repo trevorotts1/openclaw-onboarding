@@ -27,6 +27,10 @@
 #   7. disk-usage-alert                (hourly, COMMAND)     — disk >85% alert (item 6)
 #   8. pre-july14-embed-migrate        (daily, COMMAND)      — flags any box still on dying gemini-embedding-001 (item 7)
 #   9. ghl-token-liveness              (daily 08:00 UTC, COMMAND) — Skills 44+46 Firebase token daily health check; notifies CLIENT if expired
+#  10. bootstrap-validate-daily        (05:00 daily, COMMAND)     — lean-bootstrap MEASURE: budgets, pointers, ledger. Writes nothing.
+#  11. bootstrap-compact-weekly        (Sun 04:30 America/New_York, COMMAND) — lean-bootstrap ACT: moves owner-authored cold content
+#                                                                    behind pointers. Switch defaults to REPORT (writes nothing) until an
+#                                                                    operator sets apply. See docs/COMPACT-CORE-SOP.md.
 #
 # SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons): EVERY cron above is
 #   now non-announcing. NONE wires `--channel/--to/--announce`. The COMMAND-mode
@@ -96,7 +100,17 @@
 #   swept cron is never immediately re-added. Also adds completion guards to
 #   _ensure_interview_nudge() and _ensure_closeout_watchdog() to prevent
 #   re-registration on already-complete boxes.
-ENSURE_PIPELINE_CRONS_VERSION="v14.1.7"
+# v14.2.0 — LEAN BOOTSTRAP CADENCE: registers bootstrap-validate-daily (05:00
+#   daily, measure only) and bootstrap-compact-weekly (Sun 04:30
+#   America/New_York, gated by a switch that defaults to report). Both are
+#   COMMAND kind — zero LLM tokens, no delivery, no model name anywhere in
+#   either job. _register_command_cron / _ensure_health_cron gain an optional
+#   TIMEZONE argument for this: the weekly compaction has to land AFTER
+#   weekly-onboarding-update's `0 3 * * 0 America/New_York`, and "04:30 local" is
+#   not reliably after "03:00 New York" on a box set to another zone. A CLI that
+#   rejects --tz is retried without it, because a cron in the wrong zone still
+#   beats no cron at all.
+ENSURE_PIPELINE_CRONS_VERSION="v14.2.0"
 
 set -u
 
@@ -327,7 +341,17 @@ _oc_cron_silent_main() {
 #   $3 script      absolute path to the bash script the cron must run
 #   $4 uuid_key    build-state key to persist the returned uuid into (optional)
 #   $5 reg_at_key  build-state key to stamp the registration time (optional)
+#   $6 tz          IANA timezone for the schedule (optional)
 # Returns 0 on present-or-registered, 1 on a real registration failure.
+#
+# THE TIMEZONE ARGUMENT exists because ORDERING can be the whole point of a
+# schedule. bootstrap-compact-weekly must run AFTER weekly-onboarding-update,
+# which is pinned to `0 3 * * 0 America/New_York`. "04:30 in whatever the box's
+# local zone happens to be" is not after "03:00 New York" on a box set to another
+# zone — it can land hours BEFORE it, compacting files the skill update is about
+# to rewrite. So the zone travels with the expression. It is passed only when
+# non-empty, and a CLI that rejects `--tz` is retried without it rather than
+# losing the registration: a cron in the wrong zone still beats no cron.
 #
 # IDEMPOTENT: guarded by `openclaw cron list | grep -q <name>` (caller already
 # checked, but we re-guard so the helper is safe standalone).
@@ -335,12 +359,23 @@ _oc_cron_silent_main() {
 # script exits 3 → qc-closeout-wiring.sh / installer surfaces the gap).
 _register_command_cron() {
   local name="$1" schedule="$2" script="$3" uuid_key="${4:-}" reg_at_key="${5:-}"
+  local tz="${6:-}"
   local out uuid
+  local -a _tz_flags=()
+  [[ -n "$tz" ]] && _tz_flags=(--tz "$tz")
 
   if _cli_supports_command; then
     # 2026.6.x+ : native command-mode job. --cron (NOT --schedule).
     out=$(openclaw cron add --name "$name" --cron "$schedule" \
+            ${_tz_flags[@]+"${_tz_flags[@]}"} \
             --command "bash $script" --json 2>/dev/null) || out=""
+    # A CLI build that does not know --tz rejects the whole call. Retry without
+    # it rather than silently registering nothing.
+    if [[ -z "$out" && ${#_tz_flags[@]} -gt 0 ]]; then
+      _log "WARN $name: this CLI rejected --tz $tz — retrying in the box's local timezone"
+      out=$(openclaw cron add --name "$name" --cron "$schedule" \
+              --command "bash $script" --json 2>/dev/null) || out=""
+    fi
   else
     # 2026.5.x : no --command. Register an AGENT MESSAGE job that runs the SAME
     # script through the shell. Silent (no --channel/--to) so it never announces
@@ -360,10 +395,22 @@ _register_command_cron() {
     local msg
     msg="[PIPELINE-CRON ${name}] Run this exact shell command now and report only on failure: bash ${script}"
     out=$(openclaw cron add --name "$name" --cron "$schedule" \
+            ${_tz_flags[@]+"${_tz_flags[@]}"} \
             --agent main --light-context --no-deliver \
             --message "$msg" --json 2>/dev/null) || out=""
     # Some 5.x builds reject --json; retry without it (cron still registers).
     if [[ -z "$out" ]]; then
+      if openclaw cron add --name "$name" --cron "$schedule" \
+            ${_tz_flags[@]+"${_tz_flags[@]}"} \
+            --agent main --light-context --no-deliver \
+            --message "$msg" >/dev/null 2>&1; then
+        out="{}"
+      fi
+    fi
+    # Last resort on a build that knows neither --json nor --tz: register in the
+    # box's local timezone rather than not at all.
+    if [[ -z "$out" && ${#_tz_flags[@]} -gt 0 ]]; then
+      _log "WARN $name: this CLI rejected --tz $tz — retrying in the box's local timezone"
       if openclaw cron add --name "$name" --cron "$schedule" \
             --agent main --light-context --no-deliver \
             --message "$msg" >/dev/null 2>&1; then
@@ -416,12 +463,14 @@ _find_health_script() {
   return 1
 }
 
-# Register ONE memory-health cron. $1 name, $2 schedule, $3 bare script name.
+# Register ONE memory-health cron. $1 name, $2 schedule, $3 bare script name,
+# $4 IANA timezone (optional — pass it only when ORDER against another scheduled
+# job matters, see _register_command_cron's timezone note).
 # Resolves the script from the persistent scripts dir; SKIPs (returns 1) if the
 # script is not present (older bundle). Reuses the CLI-portable command-cron
 # registrar so it works on both the 2026.5.x and 2026.6.x CLI lines.
 _ensure_health_cron() {
-  local name="$1" schedule="$2" script_name="$3"
+  local name="$1" schedule="$2" script_name="$3" tz="${4:-}"
   if oc_cron_tombstoned "$name"; then
     _log "SKIP $name — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove $name"
     return 0
@@ -437,8 +486,8 @@ _ensure_health_cron() {
     return 1
   fi
   chmod +x "$script" 2>/dev/null || true
-  if _register_command_cron "$name" "$schedule" "$script"; then
-    _log "DONE $name cron registered ($schedule, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback'))"
+  if _register_command_cron "$name" "$schedule" "$script" "" "" "$tz"; then
+    _log "DONE $name cron registered ($schedule${tz:+ $tz}, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback'))"
     return 0
   fi
   _log "FAIL $name cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
@@ -1131,6 +1180,36 @@ main() {
   # */10 / agentTurn / announce reapers on already-deployed boxes.
   _ensure_health_cron "agent-browser-reaper"     "13 * * * *" "agent-browser-reaper.sh"                   || fails=$((fails + 1))
 
+  # ── LEAN BOOTSTRAP: the daily measure and the weekly compaction ─────────────
+  # Bootstrap files (AGENTS.md / TOOLS.md / MEMORY.md / USER.md / SOUL.md /
+  # IDENTITY.md) are re-billed to the model on EVERY turn, and every roll stamps
+  # more into them. Two jobs, both COMMAND kind (zero LLM tokens, no delivery to
+  # any chat, no model invoked — neither job hardcodes a model name because
+  # neither job uses one):
+  #
+  #   bootstrap-validate-daily   05:00 daily. MEASURES ONLY. Runs the validator
+  #     and the pointer/ledger check against every workspace and exits non-zero
+  #     when a file is over its lean target, a pointer dangles, or a stored block
+  #     has drifted from its ledgered sha256. It never writes to a bootstrap file.
+  #
+  #   bootstrap-compact-weekly   Sunday 04:30 America/New_York. The acting half.
+  #     Moves owner-authored COLD/ARCHIVE/DEDUPE sections out verbatim behind a
+  #     four-line pointer. Gated by a switch that DEFAULTS TO REPORT
+  #     (config/bootstrap-compact.conf.example), so a box's first scheduled week
+  #     produces a reviewable plan and writes nothing; an operator flips it to
+  #     apply. It never touches a hot section or a script-owned block.
+  #
+  # THE TIMEZONE IS THE POINT, not decoration. weekly-onboarding-update — the
+  # skill update that REWRITES these very files — is pinned to
+  # `0 3 * * 0 America/New_York`. Compacting before it finishes just means
+  # compacting a file that is about to be rewritten, so 04:30 has to be 04:30 in
+  # the SAME zone, not in whatever zone the box happens to be set to. Sunday
+  # order: proactive-suggestions Sat 23:00, weekly-tune-up 02:00,
+  # weekly-onboarding-update 03:00 New York, bootstrap-compact-weekly 04:30
+  # New York. Re-check that order whenever a weekly job is added or moved.
+  _ensure_health_cron "bootstrap-validate-daily" "0 5 * * *"   "bootstrap-validate-daily.sh"               || fails=$((fails + 1))
+  _ensure_health_cron "bootstrap-compact-weekly" "30 4 * * 0"  "bootstrap-compact-weekly.sh" "America/New_York" || fails=$((fails + 1))
+
   # ── GHL TOKEN LIVENESS (Skills 44 + 46) ─────────────────────────────────────
   # Daily at 08:00 UTC: checks if the client's GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
   # is still exchangeable at securetoken.googleapis.com. On INVALID, the check
@@ -1152,7 +1231,8 @@ main() {
   local _n
   for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
             "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate" \
-            "toolsearch-drift-guard" "agent-browser-reaper" "ghl-token-liveness"; do
+            "toolsearch-drift-guard" "agent-browser-reaper" "ghl-token-liveness" \
+            "bootstrap-validate-daily" "bootstrap-compact-weekly"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space
