@@ -162,6 +162,18 @@ STUB
             with self.assertRaisesRegex(ValueError,'renewal-required'):m.invite(self.state,self.root)
         self.assertEqual((self.state.parent/'invocations').read_text().splitlines(),['called'])
         self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['invitation']['status'],'renewal-required')
+        # A Command Center whose links stay valid until the interview is
+        # complete records no deadline at all. The launcher must read that as a
+        # live invitation, not as one that has run out; a missing field still
+        # means renewal, so absence and null stay distinguishable.
+        completion_bound=json.loads(receipt_path.read_text());completion_bound['invitationExpiresAt']=None;receipt_path.write_text(json.dumps(completion_bound))
+        with patch.object(m,'__file__',fake_location):m.invite(self.state,self.root)
+        launch=json.loads(self.state.read_text())['interviewLaunch']['invitation']
+        self.assertEqual(launch['status'],'accepted');self.assertIsNone(launch['invitationExpiresAt'])
+        self.assertEqual((self.state.parent/'invocations').read_text().splitlines(),['called'])
+        unstamped=json.loads(receipt_path.read_text());unstamped.pop('invitationExpiresAt');receipt_path.write_text(json.dumps(unstamped))
+        with patch.object(m,'__file__',fake_location):
+            with self.assertRaisesRegex(ValueError,'renewal-required'):m.invite(self.state,self.root)
         receipt_path.unlink();sender.write_text('#!/bin/bash\nexit 9\n')
         with patch.object(m,'__file__',fake_location):
             with self.assertRaisesRegex(ValueError,'sender exit 9'):m.invite(self.state,self.root)

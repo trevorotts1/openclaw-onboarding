@@ -1,3 +1,19 @@
+## [v25.1.50]  -  2026-09-18  -  The interview link is valid until the interview is complete, not for 24 hours
+
+### Why
+A client who opened their Telegram interview link the morning after it was sent was refused. The link carried a 24-hour deadline (15 minutes before the paired Command Center release), and the interview it opened was not finished, so the refusal bought nothing and cost an operator a fresh mint and a second message. Validity now belongs to the job: the link works until the interview is complete, and only then is it refused.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** — new `invitation_expiry()` reads the issuer's contract instead of assuming one. A receipt marked `validUntil: "interview-complete"` has no deadline to police: whatever `expiresAt` it carries (long past, far future, wrong type, or absent) is accepted, and `invitationExpiresAt` is recorded as null. Every other receipt came from an issuer that really does expire its links, so its stated expiry is bounded exactly as before — a legacy 900-second TTL and a full 24-hour one are both accepted, anything unbounded is still refused. Only the exact marker string lifts the bound; a near miss does not. New `invitation_validity_sentence()` is what the client is told, so a completion-bound link says it stays valid until the interview is complete and never quotes a date it does not have.
+- **`32-command-center-setup/scripts/interview-launch.py`** — the automatic launcher read a missing deadline as an expired one and would have declared `renewal-required` on a link that had just been accepted and delivered. A recorded null now means live. A stated deadline is honoured as before, and a missing field, a wrong type or a time already past still means the client needs a fresh link.
+- **`23-ai-workforce-blueprint/scripts/send-interview-link.sh`** — the `--dry-run` preview no longer promises "the exact expiry"; it says the link's validity is stated in the message when the link is issued, which is true of both issuers.
+- **`23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/INSTRUCTIONS.md`** — the 24-hour claim is replaced with the completion contract, with the older bounded issuer described as the compatibility case it now is.
+
+### Risk
+Low, and bounded by the marker. A Command Center that does not send `validUntil` is validated byte-for-byte as before, which is every box on the fleet until the paired Command Center v7.6.15 lands. The signature, identity, origin, one-use and URL-binding checks are untouched; only the deadline check learned that a deadline can be absent. The one way a link can still stop working before the interview is complete is its one-use redemption ledger on the Command Center side, which is a replay protection and not a clock; the documented recovery — ask the Telegram assistant to resume the interview — mints a fresh link and is unchanged.
+
+### Tests
+`tests/unit/test_interview_invitation.py` — a completion-bound receipt is accepted with any stamp or none and records no deadline; only the exact marker lifts the legacy bound; identity, host, protocol, one-use and URL binding are still refused when wrong; the delivered message says the link stays valid until the interview is complete and never quotes a date; the passage of time alone never reissues it; a completed interview still refuses `--renew`. `tests/unit/interview-launch.test.py` — the launcher accepts a null deadline as live and still demands renewal when the field is missing entirely.
 ## [v25.1.49]  -  2026-09-18  -  Compact core: the SOP and the tool that shrink OWNER-authored bootstrap text, on a schedule, on every box
 
 ### What Changed

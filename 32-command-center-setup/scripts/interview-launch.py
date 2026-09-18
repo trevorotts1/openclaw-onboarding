@@ -301,8 +301,14 @@ def invite(path, root):
     result_code=result.returncode
     receipt=accepted() if result_code in (0,7,10) else None
     import time
-    expiry=receipt.get('invitationExpiresAt') if receipt else None
-    if receipt is None or type(expiry) is not int or expiry<=time.time():
+    # A receipt that records no deadline came from a Command Center whose links
+    # stay valid until the interview is complete: there is no clock on it and
+    # nothing has run out. A stated deadline is still honoured exactly as
+    # before, and anything else -- a missing field, a wrong type, a time already
+    # past -- still means this client needs a fresh link.
+    expiry=receipt.get('invitationExpiresAt','absent') if receipt else 'absent'
+    usable=expiry is None or (type(expiry) is int and expiry>time.time())
+    if receipt is None or not usable:
         reason='renewal-required' if receipt else 'pending'
         update(path,lambda current: current.setdefault('interviewLaunch',{}).update(status='invitation-pending',invitation={'status':reason,'senderExitCode':result_code,'checkedAt':now()}))
         raise ValueError('invitation '+reason+'; sender exit '+str(result_code)+' (inspect scoped delivery receipt; unknown acceptance is never retried blindly)')
