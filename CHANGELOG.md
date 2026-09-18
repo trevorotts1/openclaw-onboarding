@@ -1,3 +1,21 @@
+## [v25.1.51]  -  2026-09-18  -  The interview link is not spent by being used either: it re-opens until the interview is complete
+
+### Why
+v25.1.50 took the clock off the interview link. A clock was not the only thing killing it early. The Command Center burned the link's nonce on first redemption, so the moment a client opened it on their phone and later reached for a laptop, or cleared cookies, or came back after the 30-day browser session lapsed, the same link answered "already used" on an interview nobody had finished. That is the same failure as an expiry, reached by a different route, and the ruling covers both: the link does not stop working until the job is done.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** - a receipt must now declare a redemption contract this sender understands, and either answer is accepted: `redeemable: "until-interview-complete"` from a current Command Center, or `oneUse: true` from an older one. A receipt declaring neither is refused rather than delivered on a guess.
+- **`shared-utils/interview_invitation.py`** - `invitation_validity_sentence()` gained the issuer's redemption contract, and the delivery receipt records it as `invitationReopenable`. A client is told they can open the link again **only when the issuer actually allows it**. Promising reopening against a Command Center that burns the link would strand the client at exactly the moment they trusted the sentence.
+- **`23-ai-workforce-blueprint/SKILL.md`, `INSTRUCTIONS.md`** - state that the link is not spent by being used, with the single-use issuer described as the compatibility case.
+
+### Risk
+Low, and bounded by the marker, exactly as in v25.1.50. An older Command Center sends no `redeemable` field, still satisfies the contract check through `oneUse`, and its client is never promised reopening. The signature, identity, origin, expiry and URL-binding checks are untouched.
+
+The behaviour this depends on lives in the paired Command Center release (blackceo-command-center#366): a link is only genuinely re-openable once that box stops burning the nonce. Until it is deployed, this release changes what the client is told, not what the link does.
+
+### Tests
+`tests/unit/test_interview_invitation.py` - a receipt declaring either contract is accepted and one declaring neither is refused; `invitationReopenable` is recorded only when the issuer declares it; the validity sentence promises reopening only for a reopenable issuer; the delivered message says so end to end through the real shell; and a single-use issuer's message never promises it.
+
 ## [v25.1.50]  -  2026-09-18  -  The interview link is valid until the interview is complete, not for 24 hours
 
 ### Why
@@ -10,7 +28,7 @@ A client who opened their Telegram interview link the morning after it was sent 
 - **`23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/INSTRUCTIONS.md`** — the 24-hour claim is replaced with the completion contract, with the older bounded issuer described as the compatibility case it now is.
 
 ### Risk
-Low, and bounded by the marker. A Command Center that does not send `validUntil` is validated byte-for-byte as before, which is every box on the fleet until the paired Command Center v7.6.18 lands. The signature, identity, origin, one-use and URL-binding checks are untouched; only the deadline check learned that a deadline can be absent. The one way a link can still stop working before the interview is complete is its one-use redemption ledger on the Command Center side, which is a replay protection and not a clock; the documented recovery — ask the Telegram assistant to resume the interview — mints a fresh link and is unchanged.
+Low, and bounded by the marker. A Command Center that does not send `validUntil` is validated byte-for-byte as before, which is every box on the fleet until the paired Command Center release lands (blackceo-command-center#366; its version number moved repeatedly while both PRs were open, so the PR is the stable reference, not the number). The signature, identity, origin, one-use and URL-binding checks are untouched; only the deadline check learned that a deadline can be absent. The one way a link can still stop working before the interview is complete is its one-use redemption ledger on the Command Center side, which is a replay protection and not a clock; the documented recovery — ask the Telegram assistant to resume the interview — mints a fresh link and is unchanged.
 
 ### Tests
 `tests/unit/test_interview_invitation.py` — a completion-bound receipt is accepted with any stamp or none and records no deadline; only the exact marker lifts the legacy bound; identity, host, protocol, one-use and URL binding are still refused when wrong; the delivered message says the link stays valid until the interview is complete and never quotes a date; the passage of time alone never reissues it; a completed interview still refuses `--renew`. `tests/unit/interview-launch.test.py` — the launcher accepts a null deadline as live and still demands renewal when the field is missing entirely.

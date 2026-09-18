@@ -1,12 +1,16 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.12 - 2026-09-18 - Cross-reference the paired Command Center pull request, not its version
+
+Documentation only. The paired Command Center release was renumbered five times while both pull requests were open, because that repo shipped several patches from unrelated branches. Every line naming the number went stale within minutes. The entries now point at the pull request, which does not move.
+
 ## v13.1.11 - 2026-09-18 - Correct the paired Command Center release number
 
-Documentation only. The v13.1.10 entry named Command Center v7.6.15 as the paired release; the Command Center released v7.6.15 through v7.6.17 from unrelated branches while the paired PR was open, so it now carries v7.6.18. No script, no behaviour change.
+Documentation only. The v13.1.10 entry named a paired Command Center version that kept moving: that repo released several patches from unrelated branches while the paired PR was open. The entry now points at the pull request instead of a number that rots. No script, no behaviour change.
 
 ## v13.1.10 - 2026-09-18 - The automatic launcher reads a deadline-free interview link as live
 
-`scripts/interview-launch.py` decided an invitation was spent by requiring `invitationExpiresAt` to be an integer in the future. A Command Center whose links stay valid until the interview is complete records no deadline at all, so a link the sender had just minted and delivered successfully would have been declared `renewal-required` and the launch would have raised. A recorded null now means live. A stated deadline is honoured exactly as before, and a missing field, a wrong type or a time already past still mean this client needs a fresh link, so absence and null stay distinguishable. Paired with onboarding v25.1.50 and Command Center v7.6.18.
+`scripts/interview-launch.py` decided an invitation was spent by requiring `invitationExpiresAt` to be an integer in the future. A Command Center whose links stay valid until the interview is complete records no deadline at all, so a link the sender had just minted and delivered successfully would have been declared `renewal-required` and the launch would have raised. A recorded null now means live. A stated deadline is honoured exactly as before, and a missing field, a wrong type or a time already past still mean this client needs a fresh link, so absence and null stay distinguishable. Paired with onboarding v25.1.50 and the Command Center release in blackceo-command-center#366.
 
 ## v13.1.9 - 2026-09-17 - universal-sops craft-cluster SOP ingest (ISSUE-12)
 
