@@ -1,3 +1,46 @@
+## [v25.1.48]  -  2026-09-18  -  Lean bootstrap: the roll stamps POINTERS, not full text; environment failure can no longer ratchet every skill to qc-failed
+
+### What Changed
+- **Every fleet roll was stamping full rule text into files that are re-billed to the model on EVERY turn, and nothing ever took it back out.** Measured on a live box, `AGENTS.md` was 92,068 characters, of which the managed blocks were: 13,171 in seven `<!-- BEGIN skill:NN:agents -->` blocks written by `wire_core_updates()`, 9,726 in six sections whose own headings say "stamped by apply-fleet-standards.sh — do NOT edit manually", 3,140 in a `## UPDATE PENDING` notice, and 3,039 in "## Managed skill blocks (do not remove)". Moving any of it out by hand does not hold: every stamper guards itself with `grep -qF "<marker>"`, so a hand-cleaned box simply has the full text re-appended on the next roll.
+
+  **Fix:** `scripts/bootstrap-pointerize.py` plus `scripts/lib-bootstrap-pointer.sh`. Each managed block is written as a compact POINTER — heading, one-line summary, the trigger phrases and hard gates that must bind inline, and ONE absolute path — while the VERBATIM full text is written to `<master-files>/bootstrap-references/<FILE>` under its own `<!-- BEGIN REF ... -->` pair. Marker names are unchanged, so every idempotency guard, pair-balance check and dedup pass in the repo keeps working untouched.
+
+  Because fixing only the writers would leave every already-wired box fat forever, the change ships as a marker-driven SWEEP that runs at the end of `scripts/apply-fleet-standards.sh` and again in `update-skills.sh` before the verification gate. Measured on a copy of a live box's workspace:
+
+  ```
+  AGENTS.md   89,872 -> 61,988 chars   (25 blocks pointerized)
+  TOOLS.md    12,265 ->  4,877 chars   ( 5 blocks)
+  MEMORY.md    6,427 ->  5,885 chars   ( 1 block)
+  ```
+
+  Second run byte-identical on all three. Every substantial line of moved text was verified verbatim against the original file: zero content lost.
+
+- **What the sweep deliberately will not touch.** A block already written as a pointer; a block under `OPENCLAW_BOOTSTRAP_POINTER_MIN_CHARS` (default 800), where a pointer would cost more than it saves; and any sentinel that owns a matching `<!-- END NAME -->`. That last exclusion is not caution, it is a bug that was caught in test: `PRESENTATION_ROUTING_REFLEX_V2`, `SKILL_INTENT_ROUTING_REFLEX_V1` and `CEO_ROUTING_NO_LOOPHOLES_V3` are rewritten wholesale on every roll by the strip/upgrade branches in `apply-fleet-standards.sh`, which regex on that pair — the first cut of the sweep ran the body to the next `##` heading and SWALLOWED the END marker, orphaning the pair.
+
+- **Trigger extraction harvested prose fragments.** Also caught in test: matching a bare "NEVER" anywhere in a line pulled mid-sentence fragments out of wrapped prose and joined them into a `**Triggers:**` line that read as gibberish. A pointer that garbles the rule it points at is worse than the bloat it replaces. The test is now anchored to the START of a line and capped.
+
+- **Fail-closed.** If the reference file cannot be written, the pointer is NOT stamped and the bootstrap file is left exactly as it was — a pointer to a file that does not exist is worse than the text it replaced. Both sweep call sites are non-fatal: a failure leaves a correct, merely larger file and never fails a roll.
+
+- **Box-level override.** `OPENCLAW_BOOTSTRAP_POINTER_MODE`, else `$OC_CONFIG/bootstrap-pointer.conf`, else `agents.defaults.bootstrapPointerMode`, else `pointer`. `full` restores the previous behaviour verbatim. An unrecognised value is treated as `pointer` and warns, because honouring a typo as `full` would silently re-bloat the box. Sample config in `config/bootstrap-pointer.conf.example`.
+
+- **One cron run without the CLI on PATH permanently marked EVERY skill qc-failed, and that is why `## UPDATE PENDING` never went away.** `update-skills.sh` removes that notice only when `obs_gate_summary` returns 0, which requires every skill at `qc-passed`. On a live box, 66 skills were rewritten to `qc-failed` inside a SIX-SECOND window with zero QC diagnostics written — while the box itself was healthy: `openclaw skills info` returned `✓ Ready`, all 49 `CORE_UPDATES` sentinels were present, and the sampled `qc-*.sh` scripts exited 0. `run-with-deadline.py` creates its diagnostics directory unconditionally before running anything, so a run that produced no diagnostics never executed check (a) or check (c) at all — the only reason it could have collected is the CLI-absent branch, which is the one branch that fails without invoking the helper. `command -v openclaw` fails under a cron or launchd PATH, which carries none of the directories an OpenClaw install uses.
+
+  Three fixes, none of which weaken the fail-closed doctrine:
+  1. `obs_verify_skill` now LOOKS for the CLI in the known install locations before declaring it absent. `command -v` proves only that a name resolves on the current PATH; declaring "absent" from that is a claim about the environment of the check, not about the box.
+  2. An ENVIRONMENT failure can no longer demote a skill that previously reached `qc-passed`. This is not fail-open: a skill that has never passed still fails, and the reason is still recorded and still returned to the caller.
+  3. `obs_set_status` now RECORDS the reason. The live state file carried 68 `qc-failed` entries with no reason on any of them, so it could not say whether the skills were broken or the gate was.
+
+- **Operator Telegram: per-box tokens are now mandatory and enforced.** `docs/OPERATOR-MAINTENANCE.md` said one operator bot "can be reused across the fleet, or one per box — operator's choice". Reuse is not a choice, it is broken: Telegram allows exactly ONE active long-poll consumer per bot token, so two boxes holding the same token race for the stream, each `getUpdates` invalidates the other's, and messages are silently lost to whichever box polled second. This shipped twice as a live incident (2026-09-11/12 across client boxes, 2026-09-17/18 inside a containerised VPS box) and both times looked like duplicated and dropped operator messages rather than a config error. `scripts/configure-operator-telegram.sh` now REFUSES a token whose bot id matches the operator box's own, exiting 2 with `STATUS: operator-telegram=REFUSED_SHARED_BOT_TOKEN`. The comparison uses only the bot ID — the digits before the colon, which are public — so the secret half of the token is never read, compared, logged or printed. When neither `OPERATOR_BOX_BOT_ID` nor `OPERATOR_BOX_TELEGRAM_BOT_TOKEN` is known the script says the check is UNDETERMINED rather than reporting a pass it cannot back up.
+
+- **The lean-bootstrap check now ships with the repo** instead of living only on one box. `scripts/validate-core-references.py` checks per-file budgets, marker balance, fence balance, and that every referenced path actually exists; budgets are overridable by `--budget NAME=CHARS`, `--budget-file`, `OPENCLAW_BOOTSTRAP_BUDGETS`, or `--from-config` (reads `agents.defaults.bootstrapMaxChars`). It also validates POINTER targets specifically, which is what makes pointer stamping safe to ship. `scripts/bootstrap-validate-daily.sh` runs it against every workspace on the box and reads the real caps from `openclaw.json` rather than hardcoding them. **No cron is wired by this repo** — the scripts ship, scheduling stays the operator's call.
+
+### QC
+- New `tests/unit/bootstrap-pointerize.test.sh`: 10 passed, 0 failed. Covers shrinkage, marker preservation, the swallowed-END defect, zero content loss, absolute-and-existing pointer targets, byte-identical idempotency, the size floor, the prose-fragment defect, `mode=full`, and fail-closed on an unwritable reference.
+- `tests/unit/onboarding-state-obs-api.test.sh` 18/0 · `tests/unit/install-state-fail-open.test.sh` 12/0 · `tests/unit/dedup-agents-md.test.sh` 29/0 · `scripts/test-single-update-skills-entrypoint.sh` 17/0.
+- `scripts/check-embedded-python-syntax.py`: 984 shell files, 900 heredocs, 963 `python -c` bodies, 0 parse failures.
+- `qc-assert-platform-facts-stamped.sh`, `qc-assert-fail-closed-doctrine.sh`, `qc-assert-no-secret-printing-grep.sh`, `qc-assert-telegram-streaming-mode.sh`, `qc-assert-no-full-env-dump.py`, `qc-assert-no-type-f-census.py`, `check-docs-language.py`: all pass.
+- Dangling-pointer detection proven with a known-good control: with the reference present the validator returns `ok: true`; with it removed it reports 25 dangling pointers.
+
 ## [v25.1.47]  -  2026-09-17  -  Fleet roll converges the Mac gateway health watchdog; watchdog clears the 2026.9.x session-store migration gate
 
 ### What Changed

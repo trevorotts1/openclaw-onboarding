@@ -3297,6 +3297,67 @@ if [ -n "${N8N_API_KEY:-}" ]; then
   fi
 fi
 
+# ─── LEAN BOOTSTRAP: pointerize managed blocks (runs LAST, after every stamp) ─
+#
+# WHY HERE. Every stamper above is append-and-guard: it writes its block once,
+# then `grep -qF "<!-- NAME_V1 -->"` makes every later roll a no-op. That is
+# correct for correctness and wrong for SIZE — the full rule text lands in
+# AGENTS.md, which is re-billed to the model on EVERY turn, and once it is there
+# no stamper ever revisits it. Moving a block out by hand does not hold either:
+# the guard stops matching and the next roll re-appends the whole thing.
+#
+# So the sweep runs at the END of the roll, after every block exists, and
+# rewrites the ones that are still full text as compact POINTERS whose full text
+# it first writes to this box's master-files reference. Measured on one live box
+# (2026-09-18): AGENTS.md 92,068 -> 64,159 characters, 25 blocks pointerized,
+# zero content lost, second run byte-identical.
+#
+# WHAT IT WILL NOT TOUCH
+#   - a block already written as a pointer (no double-work, no drift)
+#   - a block under OPENCLAW_BOOTSTRAP_POINTER_MIN_CHARS (default 800) — already lean
+#   - any sentinel that owns a matching `<!-- END NAME -->`: those blocks
+#     (PRESENTATION_ROUTING_REFLEX_*, SKILL_INTENT_ROUTING_REFLEX_*,
+#     CEO_ROUTING_NO_LOOPHOLES_*) are rewritten WHOLESALE by the strip/upgrade
+#     branches above, which regex on that pair. Pointerizing one would be undone
+#     on the next roll at best, and orphan the pair at worst.
+#   - anything at all when the box sets mode=full (see lib-bootstrap-pointer.sh)
+#
+# NON-FATAL BY DESIGN. A failure here leaves a correct, merely larger AGENTS.md.
+# That must never fail a roll, so every exit path below returns success.
+_BP_LIB="$(dirname "${BASH_SOURCE[0]}")/lib-bootstrap-pointer.sh"
+if [ -f "$_BP_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$_BP_LIB"
+  _BP_MODE="$(bp_mode)"
+  if [ "$_BP_MODE" = "full" ]; then
+    echo "[apply-fleet-standards] bootstrap pointer mode=full — leaving managed blocks verbatim"
+  else
+    _BP_REF="$(bp_reference_for AGENTS.md)"
+    for _bp_target in "$AGENTS_FILE" "$AGENTS_FILE_EARLY"; do
+      [ -n "$_bp_target" ] && [ -f "$_bp_target" ] || continue
+      _BP_OUT="$(python3 "$(dirname "${BASH_SOURCE[0]}")/bootstrap-pointerize.py" sweep \
+                   --bootstrap "$_bp_target" --ref-file "$_BP_REF" 2>&1)" || true
+      _BP_STATUS="$(printf '%s' "$_BP_OUT" | sed -n 's/.*"status": "\([a-z-]*\)".*/\1/p' | head -1)"
+      case "$_BP_STATUS" in
+        written)
+          echo "[apply-fleet-standards] lean-bootstrap: $(basename "$_bp_target") $(printf '%s' "$_BP_OUT" | sed -n 's/.*"before_chars": \([0-9]*\).*/\1/p' | head -1) -> $(printf '%s' "$_BP_OUT" | sed -n 's/.*"after_chars": \([0-9]*\).*/\1/p' | head -1) chars; full text in $_BP_REF"
+          ;;
+        unchanged)
+          echo "[apply-fleet-standards] lean-bootstrap: $(basename "$_bp_target") already compact — no-op"
+          ;;
+        *)
+          echo "[apply-fleet-standards] lean-bootstrap: SKIPPED for $(basename "$_bp_target") (status=${_BP_STATUS:-unknown}) — file left unchanged, roll continues"
+          ;;
+      esac
+      # The same workspace can be reached by both variables; sweep it once.
+      [ "$AGENTS_FILE" = "$AGENTS_FILE_EARLY" ] && break
+    done
+    unset _BP_REF _BP_OUT _BP_STATUS _bp_target
+  fi
+  unset _BP_MODE
+fi
+unset _BP_LIB
+
 echo ""
 echo "[apply-fleet-standards] DONE"
 echo "[apply-fleet-standards] Backup: $OC_BACKUP"
