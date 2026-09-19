@@ -1,5 +1,37 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.5.0] - 2026-09-19 - a nonempty agent reply was being treated as a repair
+
+THE DEFECT. The receiver's `delivered` verdict meant that `openclaw agent`
+exited 0 and produced text. That transport observation was too easily read as
+“the incident is fixed.” A response that restored one service but left the
+original acceptance check blocked was also classified by escalation-like prose,
+which discarded the partial result instead of preserving it.
+
+THE FIX. Each turn now receives a result-v3 prompt and the receiver writes a
+normalized structured result into the ACK. The receiver owns the claim identity
+and transport receipt; agent-provided repair state must be one of the contract
+values and `repaired` is downgraded to `partial` unless it includes a verified,
+receiver-bound original-symptom acceptance check (`incident_id`, `attempt_id`,
+`check_id`, `passed`, `evidence_ref`) and an authorized fix card. A missing or
+malformed result becomes `not_repaired` / `unverified` with
+`structured_result_missing`, so a nonempty reply never promotes a repair. The
+dedup record retains the exact result for a later ACK replay.
+
+User notification is recorded separately as initial and final statuses, each
+with an optional channel, message receipt, and failure reason. The prompt asks
+for message receipts only where the ticket authorizes a user-facing update and
+the agent has the originating conversation. Without a receipt the status is
+`unavailable` or `unconfirmed`; text claiming “I told the user” is not delivery
+evidence. This receiver has no channel-owned receipt integration, so even an
+agent-supplied message ID remains `unconfirmed` until one exists. Notification
+recovery is a separate obligation, so a failed final message never causes the
+verified repair to run again.
+
+TESTS: `tests/rescue/RR-029/test_structured_result.sh` exercises the real
+receiver result builder for fallback, partial, unverified repaired, and
+notification-receipt cases.
+
 ## [23.4.9] - 2026-09-17 - the escalation INTAKE was never probed, so a stale secret was silent
 
 THE DEFECT. A box whose `RESCUE_RANGERS_WEBHOOK_SECRET` went stale after an operator-side

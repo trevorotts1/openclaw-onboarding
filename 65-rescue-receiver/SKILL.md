@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.4.8"
+  version: "v23.5.0"
   priority: HIGH
 ---
 
@@ -20,18 +20,28 @@ The box-side half of the Rescue Rangers coaching loop. When the fleet's n8n
 Relay Brain mints a ticket and the RR-07 receiver gateway queues a coaching
 instruction for THIS box in `rr_outbox`, this skill's `rescue-poll.sh`
 (registered as a `kind:command` cron, every 2 minutes) claims it, runs the
-pre-proven local delivery command, and acks the verdict.
+pre-proven local delivery command, and acks separate transport and repair
+facts.
 
 ## The HONESTY CONTRACT
 
-- `delivered` ONLY when the delivery command exited 0 AND a non-empty reply was
-  extracted.
-- everything else acks `failed`. Ambiguous is never fixed.
-- receiver v1.3.0: an exit-0 non-empty reply whose text matches
-  escalation/deferral language ("could not", "unable to", "human intervention",
-  "I don't have", "needs human", "failed to") acks `failed` with
-  fail_reason `escalation_language` and a `reply_excerpt` of the text — a
-  turn that says it failed is a failure, never a delivery.
+- `delivered` means only that the local agent turn exited 0 and returned a
+  non-empty reply. It is a transport fact, never a repair claim.
+- Every turn asks for a result-v3 object. The receiver supplies authenticated
+  identity and transport fields, and accepts a repair claim only with valid
+  structured repair, verification, evidence, and (for `repaired`) an
+  incident/attempt-bound original-symptom acceptance check plus fix-card proof.
+  Missing or invalid JSON becomes `not_repaired` / `unverified` with an explicit
+  remaining blocker.
+- A partial repair remains `partial`; wording such as “needs human” does not
+  erase completed work or turn the report into a transport failure.
+- Initial “received/applying” and final outcome updates are expected only when
+  the ticket explicitly authorizes a user-facing update and the agent has the
+  real originating conversation. `end_user_notification` records each update
+  as `attempted`, `delivered` with a message receipt, `unavailable`, or
+  `unconfirmed`. This receiver can record `delivered` only from a
+  receiver-owned/channel-owned receipt; agent-provided prose or JSON remains
+  `unconfirmed` even when it names a message ID.
 - a box that stays silent leaves its ticket non-terminal — the fleet SLA sweep
   re-pages it. Silence is never success.
 
