@@ -2381,12 +2381,12 @@ for r in d.get("pending_reports",[]):
  print(base64.b64encode(json.dumps(r,separators=(",",":")).encode()).decode())
 ' | while IFS= read -r _rn_b64; do
         [ -n "$_rn_b64" ] || continue
-        _rn_body=$(printf '%s' "$_rn_b64" | base64 -d 2>/dev/null) || continue
+        _rn_body=$(printf '%s' "$_rn_b64" | base64 -d 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); d["box_slug"]=sys.argv[1]; print(json.dumps(d,separators=(",",":")))' "$RR_BOX_SLUG" 2>/dev/null) || continue
         _rn_resp=$(_post "$_rn_body") || continue
         _rn_op=$(printf '%s' "$_rn_body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("operation_id", ""))' 2>/dev/null)
         # Endpoint response must bind the exact operation; never mark a local
         # report settled from a bare 2xx or somebody else's receipt.
-        _rn_ok=$(printf '%s' "$_rn_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("ok") and d.get("operation_id") else "no")' 2>/dev/null)
+        _rn_ok=$(printf '%s' "$_rn_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); op=sys.argv[1]; print("yes" if d.get("ok") is True and d.get("operation_id")==op and d.get("receipt") is not None and d.get("notification_state") in ("confirmed","pending","failed") else "no")' "$_rn_op" 2>/dev/null)
         [ "$_rn_ok" = yes ] && python3 "$_rn_worker" report-confirm --state-dir "$_STATE/notifications" --operation-id "$_rn_op" >/dev/null 2>&1 || true
     done
 }
