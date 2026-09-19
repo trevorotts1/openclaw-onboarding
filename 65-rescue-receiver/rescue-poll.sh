@@ -508,7 +508,7 @@ _rr_build_result() {
     printf '%s' "$_rb_reply" | python3 -c '
 import hashlib, json, re, sys
 
-out_path, incident_id, instruction_id, attempt_id, runtime_id, exit_code, reply_chars, excerpt, operation_id, attempt_generation = sys.argv[1:]
+out_path, incident_id, instruction_id, attempt_id, runtime_id, exit_code, reply_chars, excerpt, operation_id, attempt_generation, expected_check, trusted_evidence = sys.argv[1:]
 text = sys.stdin.read()
 
 def candidate_from_text(value):
@@ -551,9 +551,9 @@ repair_is_valid = (repair != "repaired" or (
     isinstance(fix_card.get("card_id") if fix_card else None, str) and
     isinstance(fix_card.get("card_version") if fix_card else None, str) and
     fix_card.get("scope_authorized") is True and
-    isinstance(acceptance.get("check_id") if acceptance else None, str) and bool(acceptance.get("check_id")) and
+    bool(expected_check) and acceptance.get("check_id") == expected_check and
     acceptance.get("passed") is True and
-    isinstance(acceptance.get("evidence_ref") if acceptance else None, str) and bool(acceptance.get("evidence_ref"))
+    acceptance.get("evidence_ref") == trusted_evidence and bool(trusted_evidence)
 ))
 if not repair_is_valid:
     repair = "partial"
@@ -650,7 +650,7 @@ result["outcome_digest"] = hashlib.sha256(digest_input).hexdigest()
 with open(out_path, "w", encoding="utf-8") as handle:
     json.dump(result, handle, separators=(",", ":"), sort_keys=True)
     handle.write("\n")
-' "$RR_RESULT_JSON" "${INCIDENT_ID:-$TICKET_ID}" "$INSTRUCTION_ID" "${ATTEMPT_ID:-$ATTEMPT_REF}" "${RR_RUNTIME_ID:-$RR_BOX_SLUG}" "$_rb_exit" "$_rb_chars" "$_rb_excerpt" "${_op_id:-}" "${ATTEMPT_GENERATION:-}" 2>/dev/null
+' "$RR_RESULT_JSON" "${INCIDENT_ID:-$TICKET_ID}" "$INSTRUCTION_ID" "${ATTEMPT_ID:-$ATTEMPT_REF}" "${RR_RUNTIME_ID:-$RR_BOX_SLUG}" "$_rb_exit" "$_rb_chars" "$_rb_excerpt" "${_op_id:-}" "${ATTEMPT_GENERATION:-}" "${RR_ACCEPTANCE_CHECK_ID:-}" "${RR_ACCEPTANCE_EVIDENCE_REF:-}" 2>/dev/null
     _rb_rc=$?
     chmod 600 "$RR_RESULT_JSON" 2>/dev/null || true
     if [ "$_rb_rc" -ne 0 ] || [ ! -s "$RR_RESULT_JSON" ]; then
@@ -1170,6 +1170,10 @@ _parse_claim() {
     SCHEMA_VERSION=$(_json_field "$_pc_resp" "schema_version")
     LEASE_SECONDS=$(_json_field "$_pc_resp" "lease_seconds")
     CAPABILITY=$(_json_field "$_pc_resp" "capability")
+    # Server-persisted claim binding. Agent reply JSON cannot select either.
+    RR_ACCEPTANCE_CHECK_ID=$(_json_get "$_pc_resp" "acceptance.check_id")
+    RR_ACCEPTANCE_KIND=$(_json_get "$_pc_resp" "acceptance.kind")
+    RR_ACCEPTANCE_URL=$(_json_get "$_pc_resp" "acceptance.url")
 
     # --- member TYPES (mistype QC) -----------------------------------------
     # ONE probe, then every member the envelope relies on is checked for its
@@ -2568,6 +2572,25 @@ REPLY_CHARS=$(printf '%s' "$REPLY_TRIM" | wc -c 2>/dev/null | tr -dc '0-9')
 REPLY_EXCERPT=""
 if [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
     REPLY_EXCERPT=$(_bounded_excerpt "$REPLY_TRIM")
+fi
+
+# Receiver-owned verification.  Only the server-persisted `gateway_http`
+# criterion is executable: it is a bounded HTTPS GET through curl, never an
+# agent-provided shell command or path.  The result proof uses a deterministic
+# identity-bound reference generated here; claimed evidence text is ignored.
+RR_ACCEPTANCE_EVIDENCE_REF=""
+if [ "${RR_ACCEPTANCE_KIND:-}" = "gateway_http" ] && [ -n "${RR_ACCEPTANCE_CHECK_ID:-}" ] && [ -n "${RR_ACCEPTANCE_URL:-}" ]; then
+    case "$RR_ACCEPTANCE_URL" in
+        https://*)
+            _rr_verify_code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 --connect-timeout 5 "$RR_ACCEPTANCE_URL" 2>/dev/null || true)
+            case "$_rr_verify_code" in
+                2??)
+                    _rr_verify_hash=$(_rr_hash "${INCIDENT_ID:-$TICKET_ID}|${ATTEMPT_ID:-$ATTEMPT_REF}|$RR_ACCEPTANCE_CHECK_ID|$_rr_verify_code" 2>/dev/null || true)
+                    [ -n "$_rr_verify_hash" ] && RR_ACCEPTANCE_EVIDENCE_REF="receiver:gateway_http:${INCIDENT_ID:-$TICKET_ID}:${ATTEMPT_ID:-$ATTEMPT_REF}:${RR_ACCEPTANCE_CHECK_ID}:${_rr_verify_hash}"
+                    ;;
+            esac
+            ;;
+    esac
 fi
 
 # Build a structured result before recording or acknowledging the turn.  A
