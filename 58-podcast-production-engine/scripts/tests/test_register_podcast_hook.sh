@@ -581,8 +581,10 @@ if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
   printf '%s' "$TPL" | grep -q '{{payload}}' && ok=1
   printf '%s' "$TPL" | grep -q 'intake_handler.py handle --payload' || ok=1
   printf '%s' "$TPL" | grep -q -- '--mode trigger-flow' || ok=1
-  printf '%s' "$TPL" | grep -q 'podcast_step_driver.py next --job-id' || ok=1
-  check "hook mapping: messageTemplate carries {{.}} and drives handler then step driver" "$ok"
+  printf '%s' "$TPL" | grep -q 'podcast_step_driver.py --json next --job-id' || ok=1
+  printf '%s' "$TPL" | grep -q 'checkpoint.begin_command' || ok=1
+  printf '%s' "$TPL" | grep -q 'record-show-notes' || ok=1
+  check "hook mapping: messageTemplate carries {{.}} and drives checkpointed handler/step worker" "$ok"
 
   # hooks ingress on, and ONE secret across both surfaces.
   ok=0

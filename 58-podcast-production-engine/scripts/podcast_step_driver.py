@@ -80,6 +80,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -157,6 +158,7 @@ STATUS_BY_STEP = {
     10: "generating_art",
     11: "producing_audio",
     12: "publishing",
+    "12.5": "publishing",
     13: "publishing",
     14: "publishing",
     15: "publishing",
@@ -173,7 +175,7 @@ STEPS_BY_STATUS = {
     "in_qc": [9],
     "generating_art": [10],
     "producing_audio": [11],
-    "publishing": [12, 13, 14, 15, 16],
+    "publishing": [12, "12.5", 13, 14, 15, 16],
     "enrolling": [17],
     "complete": [18],
 }
@@ -192,6 +194,7 @@ STEP_NAMES = {
     10: "Cover art",
     11: "Audio",
     12: "Documents",
+    "12.5": "Show notes",
     13: "Book teaser",
     14: "Store media",
     15: "Publish to Podbean",
@@ -206,7 +209,7 @@ STEP_NAMES = {
 # (select engines) is deterministic (blend_voice_governance.py) and is NOT
 # content; Step 9 QC is both deterministic (Tier-1 mechanical) and content
 # (judge tier), so it is listed for the judge-route emission.
-CONTENT_STEPS = {3, 4, 5, 6, 7, 8, 9}
+CONTENT_STEPS = {3, 4, 5, 6, 7, 8, 9, "12.5"}
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +225,33 @@ def _model_router() -> str:
 
 def _state_writer() -> str:
     return _script("podcast_state.py")
+
+
+def _checkpoint(job_id: str, step) -> dict:
+    """Build the durable action claim the registered worker must use.
+
+    The receipt is deliberately stored by podcast_state.py.  This driver only
+    hands the worker exact, stable commands; it never becomes a second writer
+    or scheduler.  The stable key is safe to reuse after a process crash and is
+    also the key that provider-facing scripts must use for their own idempotency.
+    """
+    label = STEP_NAMES.get(step, "step").lower().replace(" ", "-")
+    action = "show-notes" if step == "12.5" else label
+    key = "podcast:%s:%s:%s" % (job_id, step, action)
+    base = "%s --json receipt" % shlex.quote(_state_writer())
+    shared = ("--job-id %s --step %s --action %s --idempotency-key %s" % (
+        shlex.quote(job_id), shlex.quote(str(step)), shlex.quote(action),
+        shlex.quote(key)))
+    return {
+        "step": str(step), "action": action, "idempotency_key": key,
+        "begin_command": "%s begin %s" % (base, shared),
+        "complete_command": "%s complete %s --result-file <local-evidence-file>"
+                            % (base, shared),
+        "recovery_rule": (
+            "begin disposition acquired: execute once; recovery: query/retry the "
+            "provider with this same idempotency_key; already_complete: do not dispatch"
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +329,7 @@ def _produces_media(flags: dict) -> bool:
                ("render_audio", "publish_podbean", "store_media"))
 
 
-def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
+def _current_step(ps, db_path, job_id, row, flags=None) -> int | str | None:
     """Derive the CURRENT pipeline step from the job's recorded status + outputs
     + PRESET FLAGS (config/presets.json, resolved exactly like the writer).
 
@@ -310,7 +340,8 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
       writing  (2,4,5,6,7,8): a recorded title means blueprint (5) is done; a
                recorded writing_model means draft (6) is done; otherwise the
                runbook is at the top of the writing block (2 select engines).
-      publishing (12..16): documents done => 12 recorded; teaser done => 13
+      publishing (12..16): documents done => 12 recorded; show notes (12.5)
+               are persisted before any teaser/media/publish action; teaser done => 13
                recorded (interview only); media URLs recorded => 14 done;
                permalink recorded => 15 done; otherwise 16 (link back) is next.
 
@@ -395,6 +426,12 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
         teaser_required = bool(flags.get("book_teaser") is True)
         if not row.get("episode_package_url"):
             return 12  # documents not yet rendered
+        # Step 12.5 is an actual publish input, not a documentation note.  The
+        # state writer refuses a media-producing job at its terminal gate without
+        # it, so emit it before every later publishing action and make recovery
+        # deterministic from the stored output.
+        if _produces_media(flags) and not row.get("episode_description"):
+            return "12.5"
         if teaser_required and not row.get("book_teaser_url"):
             return 13  # book teaser pending (interview preset)
         # Steps 14/15/16 are preset-gated (N1): a document-only preset owes no
@@ -411,7 +448,7 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
     return steps[0]
 
 
-def _next_step(ps, db_path, job_id, row, current: int | None) -> int | None:
+def _next_step(ps, db_path, job_id, row, current: int | str | None) -> int | str | None:
     """Return the next step the runbook must execute, or None when no step
     applies (an unknown status). If the current status still has runbook work,
     next == current (the driver re-emits the SAME step's command, idempotently,
@@ -449,7 +486,7 @@ def _next_step(ps, db_path, job_id, row, current: int | None) -> int | None:
 # ---------------------------------------------------------------------------
 # Command emission
 # ---------------------------------------------------------------------------
-def _emit_content_command(step: int, job_id: str, row: dict) -> str:
+def _emit_content_command(step, job_id: str, row: dict) -> str:
     """Emit the model_router.py route for a content step. The department agent
     fills the runbook prompt and executes the route in its OWN turn."""
     tier = "qc_judge" if step == 9 else "content"
@@ -458,13 +495,23 @@ def _emit_content_command(step: int, job_id: str, row: dict) -> str:
         "mode": row.get("mode") or "",
         "style": row.get("style") or "",
     }
+    if step == "12.5":
+        prompt = (
+            "Draft 800-2500 character podcast show notes from the frozen research "
+            "package and approved blueprint for this job. Include thesis, power "
+            "statements, takeaways, and case studies. Return only the show notes: "
+            "no em dashes and no triple-backtick/code-fence markers. This output is "
+            "the sole Podbean description and must be saved before publishing."
+        )
+    else:
+        prompt = "<Step %s %s prompt: fill from the runbook>" % (
+            step, STEP_NAMES.get(step, ""))
     payload = {
         "tier": tier,
         "messages": [
             {
                 "role": "user",
-                "content": "<Step %d %s prompt: fill from the runbook>"
-                % (step, STEP_NAMES.get(step, "")),
+                "content": prompt,
             }
         ],
         "context": context,
@@ -475,7 +522,7 @@ def _emit_content_command(step: int, job_id: str, row: dict) -> str:
     )
 
 
-def _emit_step_command(step: int, job_id: str, row: dict, payload: dict,
+def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
                        flags: dict) -> str:
     """Emit the EXACT next command for a deterministic step."""
     title = row.get("episode_title") or "<episode-title>"
@@ -526,6 +573,14 @@ def _emit_step_command(step: int, job_id: str, row: dict, payload: dict,
             "%s render --manifest <episode-manifest.json> --out-dir <out>"
             % (_script("render_documents.py"))
         )
+
+    if step == "12.5":
+        route = _emit_content_command(step, job_id, row)
+        record = (
+            "%s record-show-notes --job-id %s --file <show-notes.txt>"
+            % (Path(__file__).resolve(), job_id)
+        )
+        return "%s\n\n# Persist the exact response after saving it to a local file:\n%s" % (route, record)
 
     if step == 13:
         return (
@@ -670,6 +725,66 @@ def _verify_outputs(ps, db_path, job_id, row):
 # ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
+def cmd_record_show_notes(args) -> int:
+    """Persist Step 12.5 output and close its previously acquired receipt.
+
+    The agent saves the model response locally, then this command validates the
+    SOP contract, delegates the actual state mutation to podcast_state.py, and
+    hashes that same file as the completion evidence.  Re-running after an
+    interruption is safe: identical stored notes are retained; conflicting
+    notes are refused instead of silently changing a pending publish.
+    """
+    path = Path(args.file)
+    if not path.is_file():
+        raise UsageError("--file must name the local show-notes response")
+    try:
+        notes = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise UsageError("could not read --file: %s" % exc) from exc
+    if not 800 <= len(notes) <= 2500:
+        raise UsageError("show notes must be 800-2500 characters")
+    if "\u2014" in notes or "```" in notes:
+        raise UsageError("show notes may not contain em dashes or code-fence markers")
+
+    ps = _podcast_state()
+    db_path = args.db_path or ps.resolve_db_path()
+    row = _load_job_row(ps, db_path, args.job_id)
+    existing = (row.get("episode_description") or "").strip()
+    if existing and existing != notes:
+        raise StepDriverError(
+            "show notes already persisted with different content; refusing to replace "
+            "the pending publish description"
+        )
+    if not existing:
+        result = subprocess.run(
+            [sys.executable, _state_writer(), "--db-path", db_path, "output",
+             "--job-id", args.job_id, "--field", "episode_description", "--value", notes],
+            text=True, capture_output=True, check=False,
+        )
+        if result.returncode != 0:
+            raise StepDriverError("podcast_state rejected show-notes output: %s" %
+                                  (result.stderr.strip() or "unknown error"))
+
+    checkpoint = _checkpoint(args.job_id, "12.5")
+    result = subprocess.run(
+        [sys.executable, _state_writer(), "--db-path", db_path, "--json", "receipt",
+         "complete", "--job-id", args.job_id, "--step", "12.5", "--action",
+         checkpoint["action"], "--idempotency-key", checkpoint["idempotency_key"],
+         "--result-file", str(path)],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise StepDriverError("show-notes receipt was not completed: %s" %
+                              (result.stderr.strip() or "unknown error"))
+    out = {"job_id": args.job_id, "step": "12.5", "recorded": True,
+           "receipt": json.loads(result.stdout or "{}")}
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False))
+    else:
+        print("SHOW NOTES RECORDED: %s (Step 12.5 receipt complete)" % args.job_id)
+    return EXIT_OK
+
+
 def cmd_next(args) -> int:
     ps = _podcast_state()
     db_path = args.db_path or ps.resolve_db_path()
@@ -751,6 +866,7 @@ def cmd_next(args) -> int:
         "step_status": step_status,
         "command": command,
         "content_step": step in CONTENT_STEPS,
+        "checkpoint": _checkpoint(args.job_id, step),
     }
     if args.json:
         print(json.dumps(out, ensure_ascii=False))
@@ -758,7 +874,7 @@ def cmd_next(args) -> int:
         kind = "CONTENT" if step in CONTENT_STEPS else "DETERMINISTIC"
         # Show the JOB's own status (the state machine's truth); the step's
         # owning status rides along in the JSON as step_status.
-        line = "STEP %d %s [%s | job status %s" % (
+        line = "STEP %s %s [%s | job status %s" % (
             step, name.upper(), kind, row.get("status"))
         if step_status != row.get("status"):
             line += ", step %s's status %s" % (step, step_status)
@@ -808,7 +924,7 @@ def cmd_list_steps(args) -> int:
             "next_step": next_step,
         })
     else:
-        for step in range(1, 19):
+        for step in list(range(1, 13)) + ["12.5"] + list(range(13, 19)):
             rows.append({
                 "step": step,
                 "name": STEP_NAMES.get(step, ""),
@@ -825,7 +941,7 @@ def cmd_list_steps(args) -> int:
         else:
             for r in rows:
                 kind = "content" if r["content"] else "deterministic"
-                print("  Step %2d  %-38s  %-16s  %s"
+                print("  Step %4s  %-38s  %-16s  %s"
                       % (r["step"], r["name"], r["status"], kind))
     return EXIT_OK
 
@@ -840,13 +956,15 @@ def cmd_self_test(args) -> int:
         ok = ok and bool(cond)
         print("  [%s] %s" % ("PASS" if cond else "FAIL", label))
 
-    check("18 steps defined", len(STEP_NAMES) == 18)
+    check("18 canonical steps plus persisted Step 12.5", \
+          len([s for s in STEP_NAMES if isinstance(s, int)]) == 18
+          and "12.5" in STEP_NAMES)
     check("status mapping covers 2..18",
           all(n in STATUS_BY_STEP for n in range(2, 19)))
     check("writing hosts the content block",
           STEPS_BY_STATUS["writing"] == [2, 4, 5, 6, 7, 8])
-    check("publishing hosts 12..16",
-          STEPS_BY_STATUS["publishing"] == [12, 13, 14, 15, 16])
+    check("publishing hosts 12, 12.5, and 13..16",
+          STEPS_BY_STATUS["publishing"] == [12, "12.5", 13, 14, 15, 16])
 
     # Step resolution against a fake row (no DB).
     fake = {
@@ -854,6 +972,7 @@ def cmd_self_test(args) -> int:
         "style": "vulnerable", "episode_title": None, "writing_model": None,
         "episode_package_url": None, "book_teaser_url": None,
         "mp3_media_url": None, "cover_image_url": None, "podbean_permalink": None,
+        "episode_description": None,
     }
     check("writing starts at step 2", _current_step(None, "", "", fake) == 2)
     fake2 = dict(fake, episode_title="A title", writing_model="kimi-2.6")
@@ -873,8 +992,11 @@ def cmd_self_test(args) -> int:
     SOLO = {"render_audio": True, "publish_podbean": True, "book_teaser": False,
             "store_media": True, "link_back": True,
             "workflow_enrollment": False, "running_spreadsheet_update": True}
-    check("publishing with media but no permalink -> 15",
-          _current_step(None, "", "", pub2, SOLO) == 15)
+    check("publishing with documents but no show notes -> 12.5",
+          _current_step(None, "", "", pub2, SOLO) == "12.5")
+    pub3 = dict(pub2, episode_description="x" * 800)
+    check("publishing with media and show notes but no permalink -> 15",
+          _current_step(None, "", "", pub3, SOLO) == 15)
     SEASON = {"render_audio": False, "publish_podbean": False,
               "book_teaser": False, "store_media": False, "link_back": False,
               "workflow_enrollment": False, "running_spreadsheet_update": False}
@@ -889,9 +1011,10 @@ def cmd_self_test(args) -> int:
     check("N1: season_strategy without docs still renders them (12)",
           _current_step(None, "", "", dict(pub), SEASON) == 12)
     check("N1: episode_asset_pack skips publish, still links back (16)",
-          _current_step(None, "", "", pub2, ASSET) == 16)
+          _current_step(None, "", "", dict(pub2, episode_description="x" * 800), ASSET) == 16)
     check("N1: episode_asset_pack still stores regenerated media (14)",
-          _current_step(None, "", "", dict(pub, episode_package_url="https://x/p"),
+          _current_step(None, "", "", dict(pub, episode_package_url="https://x/p",
+                                              episode_description="x" * 800),
                         ASSET) == 14)
     art_off = dict(pub, status="generating_art")
     audio_off = dict(pub, status="producing_audio")
@@ -937,6 +1060,12 @@ def cmd_self_test(args) -> int:
           "blend_voice_governance.py" in _emit_step_command(2, "j", row, {}, {}))
     check("content step emits model_router route",
           "model_router.py route" in _emit_content_command(5, "j", row))
+    show_notes = _emit_step_command("12.5", "j", row, {}, {})
+    check("Step 12.5 emits content route and executable persistence command",
+          "model_router.py route" in show_notes and "record-show-notes" in show_notes)
+    cp = _checkpoint("pj_1", "12.5")
+    check("Step 12.5 checkpoint has a stable idempotency key",
+          cp["idempotency_key"] == "podcast:pj_1:12.5:show-notes")
     check("step 9 emits judge route",
           "model_router.py route" in _emit_step_command(9, "j", row, {}, {})
           and "qc_judge" in _emit_step_command(9, "j", row, {}, {}))
@@ -996,6 +1125,11 @@ def build_parser() -> argparse.ArgumentParser:
                                       "next transition (fail loud, exit 3)")
     v.add_argument("--job-id", required=True)
     v.set_defaults(func=cmd_verify)
+
+    sn = sub.add_parser("record-show-notes", help="validate and persist Step 12.5 notes, then complete its receipt")
+    sn.add_argument("--job-id", required=True)
+    sn.add_argument("--file", required=True, help="local 800-2500 character show-notes text file")
+    sn.set_defaults(func=cmd_record_show_notes)
 
     l = sub.add_parser("list-steps", help="show the step table or a job's position")
     l.add_argument("--job-id", default=None)

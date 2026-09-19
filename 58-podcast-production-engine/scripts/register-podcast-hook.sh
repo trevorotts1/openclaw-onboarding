@@ -624,10 +624,17 @@ Do exactly these steps, in this order, in THIS turn, and nothing else.
    error               -> STOP and raise the operator alert path; do not retry blind.
 4. For an accepted job ONLY, advance the pipeline in this same tool-bearing turn
    per SOP-PODCAST-01 Section 8: repeatedly run
-   python3 ${SKILL_ROOT}/scripts/podcast_step_driver.py next --job-id <job_id>
-   and execute EXACTLY the command the driver prints, recording every stage
-   change through podcast_state.py, until the driver reports the job is waiting,
-   complete, or failed. The driver is a tool you call, never a daemon.
+   python3 ${SKILL_ROOT}/scripts/podcast_step_driver.py --json next --job-id <job_id>
+   and execute the returned command. BEFORE any external/provider action, run
+   checkpoint.begin_command from that JSON. acquired means execute once;
+   recovery means query/retry using the SAME idempotency_key; already_complete
+   means DO NOT dispatch it again. After a successful action, save local evidence
+   and run checkpoint.complete_command. Step 12.5 is mandatory: save the content
+   response and run podcast_step_driver.py record-show-notes --job-id JOB_ID
+   --file SHOW_NOTES_FILE; it validates, persists episode_description, and
+   completes that receipt. Record stage changes only through podcast_state.py,
+   then call next again until the driver reports waiting, complete, or failed.
+   The driver is a tool you call, never a daemon.
 5. Send NO client-facing message. Convert and Flow owns every customer message.
    Operator alerts go to the alert log the engine already writes.
 

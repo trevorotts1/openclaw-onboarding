@@ -288,7 +288,8 @@ pass "audit hook: provision records advancement=own-turn"
 # --- 18: public ingress gate probes the mapped /hooks endpoint ----------------
 # The TaskFlow control endpoint at /plugins/webhooks/<route> accepts only action
 # envelopes. A flat survey body must be tested against /hooks/<route>, which is
-# the mapping that admits the podcast department's worker turn. Exercise the
+# the mapping that reaches the authenticated intake handler. The test payload is
+# terminal by design, so this is deliberately not a worker-run proof. Exercise the
 # extracted gate with a local curl stub so no network or real secret is used.
 GATE_HOOK_SRC="$(sed -n '/^gate_hook() {/,/^}/p' "$PROVISION")"
 [ -n "$GATE_HOOK_SRC" ] || fail "could not extract gate_hook from provision script"
@@ -327,7 +328,7 @@ grep -q -- 'https://hooks.example.test/hooks/podcast-intake-tclient' "$GATE_CURL
 grep -q -- '/plugins/webhooks/' "$GATE_CURL_LOG" && ok=1
 grep -q '^gate:signed-hook|PASS|' "$GATE_STEPS" || ok=1
 if [ "$ok" -eq 0 ]; then
-  pass "signed-hook gate probes public mapping endpoint and accepts admission"
+  pass "signed-hook gate probes the public mapping endpoint and proves handler reachability"
 else
   fail "signed-hook gate did not probe the public mapping endpoint correctly"
 fi

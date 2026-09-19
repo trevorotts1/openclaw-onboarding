@@ -996,10 +996,13 @@ gate_302() {
 gate_302
 
 # G2: signed public-ingress test POST. The upstream survey submits a flat body
-# to /hooks/<route>, where the registered hook mapping admits the podcast
-# department turn. The similarly named /plugins/webhooks/<route> endpoint is
+# to /hooks/<route>, where the registered hook mapping reaches the authenticated
+# intake handler. The similarly named /plugins/webhooks/<route> endpoint is
 # the internal TaskFlow control surface and rejects that flat body; probing it
-# cannot prove worker admission.
+# cannot prove public handler reachability. The deliberately test-gated payload
+# is terminal in intake_handler.py, so a 2xx is NOT evidence that a production
+# worker run was dispatched; the registered mapping/runtime verification owns
+# that separate acceptance gate.
 gate_hook() {
   if [ "$DRY_RUN" = "1" ]; then ledger_step "gate:signed-hook" "DRY-RUN" "skipped in dry-run"; return 0; fi
   local tok=""
@@ -1008,7 +1011,7 @@ gate_hook() {
     tok="$(runas bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_SECRET:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
   fi
   if [ -z "$tok" ]; then
-    ledger_step "gate:signed-hook" "FAIL" "intake token unavailable; cannot prove public ingress admits the mapped worker turn"
+    ledger_step "gate:signed-hook" "FAIL" "intake token unavailable; cannot prove authenticated public handler reachability"
     GATE_HARD_FAIL="1"
     return 0
   fi
@@ -1019,9 +1022,9 @@ gate_hook() {
     --data '{"_test":true,"source":"provision-gate"}' 2>/dev/null || echo "000")"
   unset tok
   if printf '%s' "$code" | grep -Eq '^2[0-9][0-9]$'; then
-    ledger_step "gate:signed-hook" "PASS" "signed public ingress POST admitted (HTTP $code)"
+    ledger_step "gate:signed-hook" "PASS" "signed public ingress handler reachable (HTTP $code; test payload is terminal)"
   else
-    ledger_step "gate:signed-hook" "FAIL" "public hook mapping did not admit the worker turn (HTTP $code)"
+    ledger_step "gate:signed-hook" "FAIL" "public hook mapping did not reach the authenticated handler (HTTP $code)"
     GATE_HARD_FAIL="1"
   fi
 }

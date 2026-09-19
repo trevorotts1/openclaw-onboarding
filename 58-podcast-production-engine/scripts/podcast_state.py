@@ -411,6 +411,24 @@ CREATE TABLE IF NOT EXISTS podcast_job_payloads (
   stored_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A durable, provider-neutral checkpoint for an individual runbook action.
+-- The state writer, not an agent prompt or a second scheduler, owns these
+-- claims.  A process that dies after `begin` retains the same idempotency key
+-- on recovery; a completed action is never dispatched again.
+CREATE TABLE IF NOT EXISTS podcast_step_receipts (
+  job_id          TEXT NOT NULL REFERENCES podcast_jobs(job_id) ON DELETE CASCADE,
+  step            TEXT NOT NULL,
+  action          TEXT NOT NULL,
+  state           TEXT NOT NULL CHECK (state IN ('begun','complete')),
+  idempotency_key TEXT NOT NULL,
+  result_sha256   TEXT,
+  provider_ref    TEXT,
+  begun_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at    TEXT,
+  PRIMARY KEY (job_id, step, action)
+);
+CREATE INDEX IF NOT EXISTS idx_psr_job ON podcast_step_receipts(job_id, begun_at);
+
 CREATE TABLE IF NOT EXISTS podcast_dashboard_tokens (
   token_id     TEXT PRIMARY KEY,
   client_id    TEXT NOT NULL,
@@ -1306,6 +1324,119 @@ def cmd_output(conn, args):
     _emit(args, {"job_id": args.job_id, "field": field, "set": True})
 
 
+_RECEIPT_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _receipt_token(label: str, value: str) -> str:
+    """Validate an opaque checkpoint component before it reaches SQLite.
+
+    Provider response bodies, prompts, media URLs, and raw request payloads do
+    not belong in the receipt table.  The caller supplies only a stable action
+    label, idempotency key, and optionally an opaque provider-side reference.
+    """
+    if not value or not _RECEIPT_TOKEN_RE.fullmatch(value):
+        raise UsageError(
+            f"{label} must be an opaque 1-128 character token "
+            "([A-Za-z0-9._:-]); do not put content, URLs, or secrets in a receipt"
+        )
+    return value
+
+
+def _sha256_file(path: str) -> str:
+    if not path or not os.path.isfile(path):
+        raise UsageError("--result-file must name a readable local evidence file")
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            while True:
+                block = fh.read(1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+    except OSError as exc:
+        raise UsageError(f"could not read --result-file: {exc}") from exc
+    return digest.hexdigest()
+
+
+def cmd_receipt(conn, args):
+    """Claim or complete one idempotent runbook action.
+
+    This is intentionally a tiny state-writer primitive, not a worker daemon.
+    A registered agent calls `begin` before an external action, performs the
+    action using this stable key, then records only an evidence digest with
+    `complete`. A crashed worker sees `recovery` on the next begin and must use
+    the same provider idempotency key rather than create a second publish.
+    """
+    row = _load_job(conn, args.job_id)
+    _assert_active(conn, row["client_id"])
+    step = _receipt_token("step", args.step)
+    action = _receipt_token("action", args.action)
+    key = _receipt_token("idempotency key", args.idempotency_key)
+    provider_ref = (_receipt_token("provider ref", args.provider_ref)
+                    if args.provider_ref else None)
+    evidence_hash = _sha256_file(args.result_file) if args.result_file else None
+    if args.receipt_action == "complete" and evidence_hash is None:
+        raise UsageError("receipt complete requires --result-file (only its SHA-256 is stored)")
+    if args.receipt_action == "begin" and (args.result_file or args.provider_ref):
+        raise UsageError("receipt begin accepts no --result-file or --provider-ref")
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = conn.execute(
+            "SELECT state, idempotency_key, result_sha256, provider_ref "
+            "FROM podcast_step_receipts WHERE job_id = ? AND step = ? AND action = ?",
+            (args.job_id, step, action),
+        ).fetchone()
+        if existing and existing["idempotency_key"] != key:
+            raise TransitionError(
+                "duplicate dispatch refused: existing receipt has a different idempotency key"
+            )
+
+        if args.receipt_action == "begin":
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO podcast_step_receipts "
+                    "(job_id, step, action, state, idempotency_key, begun_at) "
+                    "VALUES (?, ?, ?, 'begun', ?, ?)",
+                    (args.job_id, step, action, key, iso(now_utc())),
+                )
+                disposition = "acquired"
+                _append_event(conn, args.job_id, row["status"], row["status"],
+                              f"receipt begun: step={step} action={action}")
+            elif existing["state"] == "complete":
+                disposition = "already_complete"
+            else:
+                disposition = "recovery"
+            conn.execute("COMMIT")
+            _emit(args, {"job_id": args.job_id, "step": step, "action": action,
+                         "disposition": disposition, "idempotency_key": key})
+            return
+
+        if existing is None:
+            raise TransitionError("receipt complete refused: action was never begun")
+        if existing["state"] == "complete":
+            if existing["result_sha256"] != evidence_hash or existing["provider_ref"] != provider_ref:
+                raise TransitionError("duplicate completion refused: receipt evidence differs")
+            conn.execute("COMMIT")
+            _emit(args, {"job_id": args.job_id, "step": step, "action": action,
+                         "disposition": "already_complete", "idempotency_key": key})
+            return
+        conn.execute(
+            "UPDATE podcast_step_receipts SET state = 'complete', result_sha256 = ?, "
+            "provider_ref = ?, completed_at = ? WHERE job_id = ? AND step = ? AND action = ?",
+            (evidence_hash, provider_ref, iso(now_utc()), args.job_id, step, action),
+        )
+        _append_event(conn, args.job_id, row["status"], row["status"],
+                      f"receipt complete: step={step} action={action}")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    _emit(args, {"job_id": args.job_id, "step": step, "action": action,
+                 "disposition": "completed", "idempotency_key": key,
+                 "result_sha256": evidence_hash})
+
+
 def _coerce(value: str, kind: str):
     if value is None:
         return None
@@ -1981,6 +2112,21 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--field", required=True, choices=sorted(OUTPUT_COLUMNS))
     o.add_argument("--value", required=True)
     o.set_defaults(func=cmd_output)
+
+    rc = sub.add_parser("receipt", help="claim or complete one idempotent runbook action")
+    rc.add_argument("receipt_action", choices=["begin", "complete"])
+    rc.add_argument("--job-id", required=True)
+    rc.add_argument("--step", required=True,
+                    help="runbook step label, for example 12.5")
+    rc.add_argument("--action", required=True,
+                    help="opaque action label, for example show-notes")
+    rc.add_argument("--idempotency-key", required=True,
+                    help="stable key reused after interruption")
+    rc.add_argument("--result-file", default=None,
+                    help="local evidence file; complete stores only its SHA-256")
+    rc.add_argument("--provider-ref", default=None,
+                    help="optional opaque provider-side reference, never a URL or content")
+    rc.set_defaults(func=cmd_receipt)
 
     h = sub.add_parser("hold", help="hold a job on the credit-out queue")
     h.add_argument("--job-id", required=True)
