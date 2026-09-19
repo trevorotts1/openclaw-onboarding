@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[3]; WORKER=ROOT/'65-rescue-receiver/rescue
 class Worker(unittest.TestCase):
  def setUp(self):
   self.t=tempfile.TemporaryDirectory(); self.d=Path(self.t.name); self.state=self.d/'state'; self.fake=self.d/'openclaw'; self.log=self.d/'calls'
-  self.fake.write_text('#!/bin/sh\necho "$*" >> "$CALLS"\ncase "$MODE" in ok) echo \'{"messageId":"m-7","channel":"telegram","account":"trusted","target":"42"}\';; invalid) echo \'{"receipt":{"messageId":"old"}}\';; negative) echo \'{"ok":false,"messageId":"old"}\';; timeout) sleep 2;; fail) exit 9;; esac\n');self.fake.chmod(0o755)
+  self.fake.write_text('#!/bin/sh\necho "$*" >> "$CALLS"\ncase "$MODE" in ok) echo \'{"action":"send","channel":"telegram","dryRun":false,"messageId":"m-7","payload":{"accountId":"trusted","chatId":"42"}}\';; invalid) echo \'{"receipt":{"messageId":"old"}}\';; negative) echo \'{"action":"send","channel":"telegram","dryRun":false,"ok":false,"messageId":"old"}\';; mismatch) echo \'{"action":"send","channel":"telegram","dryRun":false,"messageId":"old","payload":{"accountId":"foreign"}}\';; timeout) sleep 2;; fail) exit 9;; esac\n');self.fake.chmod(0o755)
   self.env={**os.environ,'CALLS':str(self.log),'MODE':'ok'}
  def tearDown(self): self.t.cleanup()
  def call(self,*a,env=None,input=None): return subprocess.run(['python3',str(WORKER),*a],text=True,input=input,capture_output=True,env=env or self.env,check=True)
@@ -28,4 +28,7 @@ class Worker(unittest.TestCase):
  def test_negative_message_id_and_crash_sending_are_unconfirmed_or_failed(self):
   self.enqueue(); got=self.tick({**self.env,'MODE':'negative'},'--max-retries','1'); self.assertEqual(got['pending_reports'][0]['notification']['status'],'failed')
   op=self.enqueue({'authorized':True,'channel':'telegram','account':'trusted','target':'43'}); p=self.state/'operations'/f"{op['operation_id']}.json"; row=json.loads(p.read_text()); row['state']='sending';p.write_text(json.dumps(row)); got=self.tick(); self.assertIn('pending', [x['notification']['status'] for x in got['pending_reports']])
+ def test_known_cli_shape_and_route_mismatch(self):
+  self.enqueue(); self.assertEqual(self.tick()['pending_reports'][0]['notification']['status'],'confirmed')
+  self.enqueue({'authorized':True,'channel':'telegram','account':'trusted','target':'43'}); got=self.tick({**self.env,'MODE':'mismatch'},'--max-retries','1'); self.assertEqual(next(x for x in got['pending_reports'] if x['notification']['target']=='43')['notification']['status'],'failed')
 if __name__=='__main__': unittest.main()

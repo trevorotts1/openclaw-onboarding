@@ -6,6 +6,7 @@ the origin and body, and this journal witnesses the gateway invocation itself.
 """
 from __future__ import annotations
 import argparse, fcntl, hashlib, json, os, re, subprocess, sys, tempfile, time
+from contextlib import contextmanager
 from pathlib import Path
 
 MAX_RETRIES = 3
@@ -16,6 +17,14 @@ def now(): return time.time()
 
 def private_dir(path):
     path.mkdir(parents=True, exist_ok=True); os.chmod(path, 0o700)
+@contextmanager
+def state_lock(root, nonblocking=False):
+    lock=Path(root)/"tick.lock"; private_dir(lock.parent)
+    with lock.open("a+") as f:
+        os.chmod(lock,0o600)
+        try: fcntl.flock(f, fcntl.LOCK_EX | (fcntl.LOCK_NB if nonblocking else 0))
+        except BlockingIOError: yield False; return
+        yield True
 
 def atomic(path, value):
     private_dir(path.parent)
@@ -57,22 +66,30 @@ def operation(args):
 
 def enqueue(args):
     op, item=operation(args); p=path_for(args.state_dir,op)
-    exists=p.exists()
-    if exists: item=read(p)
-    else: atomic(p,item)
+    with state_lock(args.state_dir):
+        exists=p.exists()
+        if exists: item=read(p)
+        else: atomic(p,item)
     print(canon({"operation_id":item["operation_id"], "state":item["state"], "created":not exists}))
 
 def message_id(value, origin):
     # Accept only the CLI's affirmative envelope, never a diagnostic/nested
     # historic receipt which happens to carry an id.
-    if not isinstance(value,dict) or value.get("ok") is False or value.get("dry_run") is True: return None
+    if not isinstance(value,dict) or value.get("action") != "send" or value.get("channel") != "telegram": return None
+    if value.get("ok") is False or value.get("dry_run") is True or value.get("dryRun") is not False: return None
     result=value.get("result",value)
-    if not isinstance(result,dict) or result.get("ok") is False or result.get("dry_run") is True: return None
+    if not isinstance(result,dict) or result.get("ok") is False or result.get("dry_run") is True or result.get("dryRun") is True: return None
     mid=result.get("messageId",result.get("message_id"))
-    if not isinstance(mid,(str,int)) or not str(mid): return None
-    if result.get("channel") not in (None,"telegram"): return None
-    if result.get("account") not in (None,origin["account"]): return None
-    if result.get("target",result.get("chatId")) not in (None,origin["target"]): return None
+    if isinstance(mid,bool) or not isinstance(mid,(str,int)) or not str(mid): return None
+    # The installed CLI has action/channel/dryRun/messageId/payload at top
+    # level.  If any echoed route field is present, it must bind our request.
+    for candidate in (value, result, value.get("payload")):
+        if not isinstance(candidate,dict): continue
+        if candidate.get("channel") not in (None,"telegram"): return None
+        if candidate.get("account",candidate.get("accountId")) not in (None,origin["account"]): return None
+        if candidate.get("target",candidate.get("to",candidate.get("chatId"))) not in (None,origin["target"]): return None
+        if "thread_id" in origin and candidate.get("threadId") not in (None,origin["thread_id"]): return None
+        if "reply_to" in origin and candidate.get("replyTo",candidate.get("reply_to")) not in (None,origin["reply_to"]): return None
     return str(mid)
 
 def invoke(item, executable, timeout):
@@ -104,11 +121,8 @@ def public(item):
 
 def tick(args):
     root=Path(args.state_dir)/"operations"; private_dir(root); out=[]; reports=[]
-    lock=Path(args.state_dir)/"tick.lock"; private_dir(lock.parent)
-    with lock.open("a+") as lockfile:
-     os.chmod(lock,0o600)
-     try: fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
-     except BlockingIOError:
+    with state_lock(args.state_dir, nonblocking=True) as acquired:
+     if not acquired:
         print(canon({"operations":[],"pending_reports":[],"busy":True})); return
      sent=False
      for p in sorted(root.glob("*.json")):
@@ -136,8 +150,11 @@ def tick(args):
 def confirm(args):
     if not re.fullmatch(r"[0-9a-f]{64}",args.operation_id): raise SystemExit("invalid operation")
     p=path_for(args.state_dir,args.operation_id)
-    if not p.exists(): raise SystemExit("unknown operation")
-    item=read(p); item["report_state"]="confirmed"; item["report_confirmed_at"]=now(); atomic(p,item)
+    with state_lock(args.state_dir):
+        if not p.exists(): raise SystemExit("unknown operation")
+        item=read(p)
+        if item["state"] not in ("delivered","unconfirmed") and not (item["state"] == "failed" and item["send_attempts"] >= MAX_RETRIES): raise SystemExit("operation is not reportable terminal state")
+        item["report_state"]="confirmed"; item["report_confirmed_at"]=now(); atomic(p,item)
     print(canon({"operation_id":args.operation_id,"report_state":"confirmed"}))
 
 def main():
