@@ -71,13 +71,19 @@ def main():
         checkpoint = work["checkpoint"]
         key = checkpoint["idempotency_key"]
 
-        # First dispatch claims the work, then a credit interruption occurs
-        # before the local model response is persisted.
-        claim = json.loads(state(
-            db, "receipt", "begin", "--job-id", job, "--step", "12.5",
-            "--action", "show-notes", "--idempotency-key", key,
-        ).stdout)
-        assert claim["disposition"] == "acquired", claim
+        # Two wakeups may race. SQLite BEGIN IMMEDIATE allows exactly one
+        # acquisition; the other receives recovery with the same provider key.
+        receipt_cmd = [sys.executable, str(STATE), "--db-path", db, "--json", "receipt",
+                       "begin", "--job-id", job, "--step", "12.5", "--action",
+                       "show-notes", "--idempotency-key", key]
+        first = subprocess.Popen(receipt_cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        second = subprocess.Popen(receipt_cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        claims = []
+        for proc in (first, second):
+            stdout, stderr = proc.communicate(timeout=10)
+            assert proc.returncode == 0, stderr
+            claims.append(json.loads(stdout))
+        assert sorted(c["disposition"] for c in claims) == ["acquired", "recovery"], claims
         state(db, "hold", "--job-id", job, "--service", "fish_audio")
         state(db, "resume", "--job-id", job)
         recovered = json.loads(state(

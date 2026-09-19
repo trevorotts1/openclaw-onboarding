@@ -211,6 +211,20 @@ STEP_NAMES = {
 # (judge tier), so it is listed for the judge-route emission.
 CONTENT_STEPS = {3, 4, 5, 6, 7, 8, 9, "12.5"}
 
+# These are executable model-turn instructions, not markers for an operator to
+# replace. The tool-bearing department agent supplies the already-persisted
+# intake/research artifacts from its job workspace and saves the response as
+# local evidence before completing the checkpoint returned by `next --json`.
+CONTENT_INSTRUCTIONS = {
+    3: "Create a frozen research package. Preserve respondent intent; extract three power statements in their voice, takeaways, findings, and at most three verified case studies. Name sources/tool honestly. Return JSON with research_package and sources only.",
+    4: "Choose a seven to fifteen minute runtime at 140 spoken words per minute; default to about ten minutes unless material is thin. Return JSON with runtime_minutes, target_word_count, and rationale. Never pad material.",
+    5: "Create the internal blueprint: immutable compelling title, one-sentence thesis, verbatim style signature, arc beats with word budgets summing to target, transparency placement, case-study/power-statement placement, opening and final lines. Return JSON only.",
+    6: "Write the complete speakable Final Draft script from the frozen research and approved blueprint. Spell out numbers/symbols; include valid Fish Audio square-bracket delivery tags at pivots. Return the script only.",
+    7: "Improve the supplied draft for clarity, disruption, and emotional pull without changing title, thesis, transparency beat, verified facts, or word target. Return the revised script only.",
+    8: "Perform a read-aloud pass on the supplied draft. Fix awkward spoken phrasing while preserving title, thesis, facts, transparency, and valid tags. Return the final script only.",
+    9: "Perform independent semantic QC: fabrication, mode perspective, pronouns, all ten rubric dimensions at least eight, and targeted repair instructions. Return JSON with pass boolean, rubric, and issues. Do not draft the episode.",
+}
+
 
 # ---------------------------------------------------------------------------
 # Script path helpers (relative to this file's directory).
@@ -504,8 +518,9 @@ def _emit_content_command(step, job_id: str, row: dict) -> str:
             "the sole Podbean description and must be saved before publishing."
         )
     else:
-        prompt = "<Step %s %s prompt: fill from the runbook>" % (
-            step, STEP_NAMES.get(step, ""))
+        prompt = CONTENT_INSTRUCTIONS.get(step)
+        if prompt is None:
+            raise StepDriverError("no executable content contract for step %s" % step)
     payload = {
         "tier": tier,
         "messages": [
@@ -1060,6 +1075,9 @@ def cmd_self_test(args) -> int:
           "blend_voice_governance.py" in _emit_step_command(2, "j", row, {}, {}))
     check("content step emits model_router route",
           "model_router.py route" in _emit_content_command(5, "j", row))
+    check("content steps carry concrete contracts, not fill-in placeholders",
+          all("fill from the runbook" not in _emit_content_command(step, "j", row)
+              for step in (3, 4, 5, 6, 7, 8, 9)))
     show_notes = _emit_step_command("12.5", "j", row, {}, {})
     check("Step 12.5 emits content route and executable persistence command",
           "model_router.py route" in show_notes and "record-show-notes" in show_notes)
