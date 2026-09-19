@@ -19,6 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / "podcast_state.py"
 DRIVER = ROOT / "podcast_step_driver.py"
+sys.path.insert(0, str(ROOT))
+import cc_board  # noqa: E402
 
 
 def run(path, *parts, env=None, ok=True):
@@ -92,7 +94,10 @@ with tempfile.TemporaryDirectory(prefix="podcast-interview-harness-") as tmp:
         8: "This is a sufficiently long read aloud fixture draft that remains clean, speakable and deterministic.",
     }
     for step in range(3, 9):
-        assert data(driver("next", "--job-id", job))["step"] == step
+        work_order = data(driver("next", "--job-id", job))
+        assert work_order["step"] == step
+        assert "model_router.py route" in work_order["command"]
+        assert "record-content --job-id" in work_order["command"]
         assert claim(job, step)["disposition"] == "acquired"
         count(log, "model" if step != 8 else "judge-ready-script")
         result_file = TMP / ("step-%d-model.json" % step)
@@ -156,19 +161,50 @@ with tempfile.TemporaryDirectory(prefix="podcast-interview-harness-") as tmp:
     env = dict(os.environ, PODCAST_HARNESS_LOG=str(log),
                PODCAST_FIELD_LAYER_CMD="%s %s field" % (sys.executable, fake),
                PODCAST_ENROLLMENT_CMD="%s %s enroll" % (sys.executable, fake))
-    assert data(driver("next", "--job-id", job))["step"] == 16
+    step16_order = data(driver("next", "--job-id", job))
+    assert step16_order["step"] == 16 and " link-back --job-id " in step16_order["command"]
     assert claim(job, 16)["disposition"] == "acquired"
     assert data(driver("link-back", "--job-id", job, "--state-dir", TMP / "client-state", env=env))["link_back_verified"] is True
     state("advance", "--job-id", job, "--to", "enrolling")
-    assert data(driver("next", "--job-id", job))["step"] == 17
+    step17_order = data(driver("next", "--job-id", job))
+    assert step17_order["step"] == 17 and " terminal-action --job-id " in step17_order["command"]
     assert claim(job, 17)["disposition"] == "acquired"
     terminal = data(driver("terminal-action", "--job-id", job, "--state-dir", TMP / "client-state", env=env))
     assert terminal["kind"] == "workflow-enrollment"
     effects = json.loads(log.read_text())
     assert effects.count("field") == 1 and effects.count("enroll") == 1
 
-    # Command Center is represented as a deterministic completion boundary in
-    # this hermetic harness; its HTTP lifecycle has dedicated cc_board tests.
+    # Exercise the real CC adapter lifecycle against a deterministic HTTP
+    # boundary: source-owned card creation, deliverable registration, then the
+    # required backlog -> review -> done transition. This is not a direct
+    # state shortcut and therefore catches an adapter contract drift.
+    cc_requests = []
+    original_request = cc_board._request_with_retry
+    original_dir, original_file = cc_board._STATE_DIR, cc_board._STATE_FILE
+    cc_board._STATE_DIR = TMP / "cc-state"
+    cc_board._STATE_FILE = cc_board._STATE_DIR / "board-map.json"
+    def fake_cc_request(method, url, payload, _cfg):
+        cc_requests.append((method, url, payload))
+        if method == "POST" and url.endswith("/api/tasks/ingest"):
+            return 201, {"task_id": "cc-fixture-task"}
+        if method == "POST" and url.endswith("/deliverables"):
+            return 201, {"ok": True}
+        if method == "GET":
+            return 200, {"status": "backlog"}
+        if method == "PATCH":
+            return 200, {"ok": True}
+        raise AssertionError("unexpected CC request: %s %s" % (method, url))
+    cc_board._request_with_retry = fake_cc_request
+    cc_env = {"CC_BASE_URL": "https://cc.fixture"}
+    try:
+        assert cc_board.create_board_card(job, "Test Client", "A Test Episode", env=cc_env) == "cc-fixture-task"
+        assert cc_board.register_deliverable(job, permalink="https://fixture/published", env=cc_env)
+        assert cc_board.patch_board_card(job, phase="complete", status="done", env=cc_env)
+    finally:
+        cc_board._request_with_retry = original_request
+        cc_board._STATE_DIR, cc_board._STATE_FILE = original_dir, original_file
+    assert cc_requests[0][2]["source"] == "podcast-engine"
+    assert [request[2].get("status") for request in cc_requests if request[0] == "PATCH"] == ["review", "done"]
     count(log, "command-center-complete")
     # The real writer deliberately refuses a TEST job's terminal live state;
     # CC completion is therefore a fake boundary assertion here, not a claim
