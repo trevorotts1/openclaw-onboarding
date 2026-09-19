@@ -32,6 +32,7 @@ extract_fn() {
 
 {
   extract_fn _json_str
+  extract_fn _rr_hash
   extract_fn _rr_result_prompt
   extract_fn _rr_build_result
 } > "$FIX/functions.sh"
@@ -54,6 +55,8 @@ ATTEMPT_GENERATION="2"
 _op_id="op-1"
 RR_RUNTIME_ID="runtime-1"
 RR_BOX_SLUG="box-1"
+RR_ACCEPTANCE_CHECK_ID="${RR029_CHECK:-}"
+RR_ACCEPTANCE_EVIDENCE_REF="${RR029_EVIDENCE:-}"
 _rr_build_result "$RR029_REPLY" 0 42 "safe reply excerpt"
 cat "$RR_RESULT_JSON"
 EOF
@@ -104,13 +107,13 @@ assert 'fix_card' not in d
 PY
 if [ "$?" -eq 0 ]; then ok "unverified repaired claim is downgraded to partial"; else bad "repaired downgrade" "$downgraded"; fi
 
-verified_repaired=$'```json\n{"repair_status":"repaired","verification_status":"verified","evidence_refs":["dispatch:execution-7"],"fix_card":{"card_id":"pm2-restart","card_version":"1","scope_authorized":true},"acceptance_check":{"check_id":"task-dispatch","passed":true,"evidence_ref":"dispatch:execution-7"}}\n```'
-repaired="$(run_case verified-repaired "$verified_repaired")"
+verified_repaired=$'```json\n{"repair_status":"repaired","verification_status":"verified","evidence_refs":["receiver:gateway_http:incident-1:attempt-1:task-dispatch:proof"],"fix_card":{"card_id":"pm2-restart","card_version":"1","scope_authorized":true},"acceptance_check":{"check_id":"task-dispatch","passed":true,"evidence_ref":"receiver:gateway_http:incident-1:attempt-1:task-dispatch:proof"}}\n```'
+repaired="$(RR029_CHECK=task-dispatch RR029_EVIDENCE=receiver:gateway_http:incident-1:attempt-1:task-dispatch:proof run_case verified-repaired "$verified_repaired")"
 python3 - "$repaired" <<'PY' >/dev/null 2>&1
 import json, sys
 d=json.loads(sys.argv[1])
 assert d['repair_status'] == 'repaired'
-assert d['acceptance_check'] == {'incident_id':'incident-1', 'attempt_id':'attempt-1', 'check_id':'task-dispatch', 'passed':True, 'evidence_ref':'dispatch:execution-7'}
+assert d['acceptance_check'] == {'incident_id':'incident-1', 'attempt_id':'attempt-1', 'check_id':'task-dispatch', 'passed':True, 'evidence_ref':'receiver:gateway_http:incident-1:attempt-1:task-dispatch:proof'}
 PY
 if [ "$?" -eq 0 ]; then ok "verified repair carries receiver-bound acceptance proof"; else bad "verified repaired result" "$repaired"; fi
 
