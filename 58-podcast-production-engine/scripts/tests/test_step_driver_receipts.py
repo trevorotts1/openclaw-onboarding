@@ -72,7 +72,7 @@ def main():
         key = checkpoint["idempotency_key"]
 
         # Two wakeups may race. SQLite BEGIN IMMEDIATE allows exactly one
-        # acquisition; the other receives recovery with the same provider key.
+        # acquisition; the other is explicitly non-runnable while it is live.
         receipt_cmd = [sys.executable, str(STATE), "--db-path", db, "--json", "receipt",
                        "begin", "--job-id", job, "--step", "12.5", "--action",
                        "show-notes", "--idempotency-key", key]
@@ -83,14 +83,14 @@ def main():
             stdout, stderr = proc.communicate(timeout=10)
             assert proc.returncode == 0, stderr
             claims.append(json.loads(stdout))
-        assert sorted(c["disposition"] for c in claims) == ["acquired", "recovery"], claims
+        assert sorted(c["disposition"] for c in claims) == ["acquired", "in_progress"], claims
         state(db, "hold", "--job-id", job, "--service", "fish_audio")
         state(db, "resume", "--job-id", job)
-        recovered = json.loads(state(
+        interrupted = json.loads(state(
             db, "receipt", "begin", "--job-id", job, "--step", "12.5",
             "--action", "show-notes", "--idempotency-key", key,
         ).stdout)
-        assert recovered["disposition"] == "recovery", recovered
+        assert interrupted["disposition"] == "in_progress", interrupted
 
         # The fake provider result is local evidence only. record-show-notes
         # validates/persists it and closes the durable receipt.
@@ -102,6 +102,11 @@ def main():
         assert recorded["receipt"]["disposition"] == "completed", recorded
         after = json.loads(driver(db, "next", "--job-id", job).stdout)
         assert after["step"] == 13, after
+        repeated = json.loads(state(
+            db, "receipt", "begin", "--job-id", job, "--step", "12.5",
+            "--action", "show-notes", "--idempotency-key", key,
+        ).stdout)
+        assert repeated["disposition"] == "already_complete", repeated
 
         # A second worker with a different key cannot re-dispatch or overwrite.
         duplicate = state(

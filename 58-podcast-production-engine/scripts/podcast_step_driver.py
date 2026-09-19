@@ -262,8 +262,9 @@ def _checkpoint(job_id: str, step) -> dict:
         "complete_command": "%s complete %s --result-file <local-evidence-file>"
                             % (base, shared),
         "recovery_rule": (
-            "begin disposition acquired: execute once; recovery: query/retry the "
-            "provider with this same idempotency_key; already_complete: do not dispatch"
+            "begin disposition acquired: execute once; in_progress: do not dispatch "
+            "or replay, reconcile provider readback/idempotency evidence then complete; "
+            "already_complete: do not dispatch"
         ),
     }
 

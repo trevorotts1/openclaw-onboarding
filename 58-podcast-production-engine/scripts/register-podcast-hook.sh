@@ -627,7 +627,8 @@ Do exactly these steps, in this order, in THIS turn, and nothing else.
    python3 ${SKILL_ROOT}/scripts/podcast_step_driver.py --json next --job-id <job_id>
    and execute the returned command. BEFORE any external/provider action, run
    checkpoint.begin_command from that JSON. acquired means execute once;
-   recovery means query/retry using the SAME idempotency_key; already_complete
+   in_progress means DO NOT dispatch or replay: reconcile supported provider
+   readback/idempotency evidence, then complete the receipt; already_complete
    means DO NOT dispatch it again. After a successful action, save local evidence
    and run checkpoint.complete_command. Step 12.5 is mandatory: save the content
    response and run podcast_step_driver.py record-show-notes --job-id JOB_ID

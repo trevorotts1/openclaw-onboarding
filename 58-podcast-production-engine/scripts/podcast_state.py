@@ -1364,8 +1364,10 @@ def cmd_receipt(conn, args):
     This is intentionally a tiny state-writer primitive, not a worker daemon.
     A registered agent calls `begin` before an external action, performs the
     action using this stable key, then records only an evidence digest with
-    `complete`. A crashed worker sees `recovery` on the next begin and must use
-    the same provider idempotency key rather than create a second publish.
+    `complete`. A live begun receipt is deliberately NON-RUNNABLE to every
+    later invocation. We cannot distinguish a dead worker from one that is
+    between a remote side effect and its receipt, so replay is unsafe; reconcile
+    the provider's supported idempotency/readback result before completing it.
     """
     row = _load_job(conn, args.job_id)
     _assert_active(conn, row["client_id"])
@@ -1406,7 +1408,7 @@ def cmd_receipt(conn, args):
             elif existing["state"] == "complete":
                 disposition = "already_complete"
             else:
-                disposition = "recovery"
+                disposition = "in_progress"
             conn.execute("COMMIT")
             _emit(args, {"job_id": args.job_id, "step": step, "action": action,
                          "disposition": disposition, "idempotency_key": key})
