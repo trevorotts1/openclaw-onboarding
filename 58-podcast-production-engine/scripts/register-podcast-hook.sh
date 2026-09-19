@@ -614,10 +614,10 @@ Do exactly these steps, in this order, in THIS turn, and nothing else.
    to a new file in it named ${CLIENT_SLUG}-\$(date -u +%Y%m%dT%H%M%SZ)-\$RANDOM.json
    (mode 0600). Do not reformat it, do not add fields, do not drop fields.
 2. Run, with that file path as PAYLOAD_FILE:
-   python3 ${SKILL_ROOT}/scripts/webhook/intake_handler.py handle --payload \"\$PAYLOAD_FILE\" --mode trigger-flow --json
+   python3 ${SKILL_ROOT}/scripts/webhook/intake_handler.py handle --payload \"\$PAYLOAD_FILE\" --mode trigger-flow --trusted-gateway --json
 3. Read the JSON the handler printed. Its status decides the rest:
    accepted            -> continue to step 4 using its job_id.
-   duplicate | test | needs_input | accepted-incomplete | quarantined | rejected
+   duplicate | test | needs_input | accepted-incomplete | bridge_failed | quarantined | rejected
                        -> STOP here. The handler already closed or parked the
                           flow and wrote the operator alert. Never re-run the
                           handler on the same payload; a re-run is a duplicate.

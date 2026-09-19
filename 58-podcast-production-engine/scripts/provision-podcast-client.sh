@@ -948,10 +948,20 @@ if [ "$SKIP_ACTIVATION" = "1" ]; then
   ledger_fact "activation" "skipped"
   ledger_step "activation" "SKIPPED" "--skip-activation operator override; the processor is NOT confirmed active for $SLUG (the fleet audit will flag this client)"
 else
-  activation_step "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" \
-    --client-slug "$SLUG" --prime-session -- --verify --client-slug "$SLUG"
+  # The registrar creates the podcast session namespace.  On a fresh box it
+  # must exist before the department's readiness read-back can succeed.
+  if ! runas "$SCRIPT_DIR/install-podcast-department.sh" --client-slug "$SLUG" --prime-session; then
+    ledger_step "activation:department-install" "FAIL" "department installer returned nonzero"
+    die 22 "podcast department installation failed for client '$SLUG'."
+  fi
+  ledger_step "activation:department-install" "OK" "department installed; readiness follows hook namespace registration"
   activation_step "activation:hook"        23 "the inbound hook registrar"       "register-podcast-hook.sh" \
     --client-slug "$SLUG" -- --verify --client-slug "$SLUG"
+  if ! runas "$SCRIPT_DIR/install-podcast-department.sh" --verify --client-slug "$SLUG"; then
+    ledger_step "activation:department-ready" "FAIL" "department read-back failed after hook registration"
+    die 22 "podcast department is not ready after hook registration for client '$SLUG'."
+  fi
+  ledger_step "activation:department-ready" "OK" "department verified active after hook namespace registration"
   # NO-DAEMON DOCTRINE: there is no scheduler installer and no activation step for
   # one. The department agent advances TaskFlows in its own turn via
   # podcast_step_driver.py; the former scheduler is dead by design
