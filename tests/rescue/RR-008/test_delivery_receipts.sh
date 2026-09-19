@@ -74,7 +74,7 @@ if printf 'case "$c" in\n  2*|3*) ok ;;\nesac\n' | _no_comments /dev/stdin | gre
 else
   say_fail "control" "detector cannot see a planted arm - the check above proves nothing"
 fi
-for fn in _op_id_for _journal_put _pending_put _receipt_match _ack_send _resend_pending _gc_journal _post_class _json_get; do
+for fn in _op_id_for _journal_put _pending_put _receipt_match _ack_send _resend_pending _gc_journal _post_class _json_get _json_type; do
   grep -q "^${fn}() {" "$POLL" && say_ok "$fn present" || say_fail "$fn missing"
 done
 ver="$(grep -E '^RECEIVER_VERSION=' "$POLL" | head -1 | cut -d'"' -f2)"
@@ -110,7 +110,7 @@ extract_fn() {  # extract_fn <file> <fn-name>
 }
 
 {
-  for fn in _json_str _json_field _json_get _post_class _sha _rr_hash _now_iso _op_id_for \
+  for fn in _json_str _json_field _json_get _json_type _post_class _sha _rr_hash _now_iso _op_id_for \
             _journal_put _journal_phase _pending_put _receipt_match _ack_send \
             _resend_pending _gc_journal _post _ack _write_done _reack_cached; do
     extract_fn "$POLL" "$fn" || echo "echo 'EXTRACT FAILED: $fn' >&2"
@@ -272,7 +272,7 @@ if [ "$(field "$r" POST)" = "1" ] && [ "$(field "$r" CLASS)" = "redirect" ]; the
 else
   say_fail "T1 302 classification" "$r"
 fi
-mkjson '{"status":"ok","receipt":{"operation_id":"op_x","attempt_id":"t","state_revision":"receipt_only"}}'
+mkjson '{"status":"ok","receipt":{"operation_id":"op_x","attempt_id":"t","state_revision":7}}'
 r="$(post_class 200 "$FIX/body-json")"
 if [ "$(field "$r" POST)" = "0" ] && [ "$(field "$r" CLASS)" = "ok_json" ]; then
   say_ok "T2 2xx JSON -> _post ok and classes as 'ok_json'"
@@ -321,15 +321,15 @@ out="$(run_ack "200|$FIX/body-json")"
 { [ "$(field "$out" JOURNAL)" = "ack_pending" ] && printf '%s' "$out" | grep -q 'no_receipt_operation_id'; } \
   && say_ok "T4 200 + no receipt -> UNCONFIRMED (no_receipt_operation_id)" || say_fail "T4 no receipt" "$out"
 
-mkjson '{"status":"ok","receipt":{"operation_id":"op_OTHER","attempt_id":"tok-syn-123","state_revision":"receipt_only"}}'
+mkjson '{"status":"ok","receipt":{"operation_id":"op_OTHER","attempt_id":"tok-syn-123","state_revision":7}}'
 out="$(run_ack "200|$FIX/body-json")"
 { [ "$(field "$out" JOURNAL)" = "ack_pending" ] && printf '%s' "$out" | grep -q 'receipt_operation_mismatch'; } \
   && say_ok "T4 200 + WRONG operation_id -> UNCONFIRMED (receipt_operation_mismatch)" || say_fail "T4 wrong op" "$out"
 
-mkjson '{"status":"ok","receipt":{"operation_id":"op_placeholder","attempt_id":"tok-OTHER","state_revision":"receipt_only"}}'
+mkjson '{"status":"ok","receipt":{"operation_id":"op_placeholder","attempt_id":"tok-OTHER","state_revision":7}}'
 # use the box's real op id: derive it first
 OPID="$(_op_id_for_test() { :; }; printf 'op_%s' "$(printf '%s' "rr-delivery|idem-syn-1|tok-syn-123|2" | shasum -a 256 | cut -d' ' -f1)")"
-mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-OTHER\",\"state_revision\":\"receipt_only\"}}"
+mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-OTHER\",\"state_revision\":7}}"
 out="$(run_ack "200|$FIX/body-json")"
 { [ "$(field "$out" JOURNAL)" = "ack_pending" ] && printf '%s' "$out" | grep -q 'receipt_attempt_mismatch'; } \
   && say_ok "T4 200 + WRONG attempt -> UNCONFIRMED (receipt_attempt_mismatch)" || say_fail "T4 wrong attempt" "$out"
@@ -339,18 +339,25 @@ out="$(run_ack "200|$FIX/body-json")"
 { [ "$(field "$out" JOURNAL)" = "ack_pending" ] && printf '%s' "$out" | grep -q 'no_receipt_state_revision'; } \
   && say_ok "T4 200 + receipt without state_revision -> UNCONFIRMED (no_receipt_state_revision)" || say_fail "T4 no revision" "$out"
 
+for bad_revision in '"receipt_only"' '-1' '1.5' 'true'; do
+  mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":$bad_revision}}"
+  out="$(run_ack "200|$FIX/body-json")"
+  { [ "$(field "$out" JOURNAL)" = "ack_pending" ] && printf '%s' "$out" | grep -q 'invalid_receipt_state_revision'; } \
+    && say_ok "T4 invalid state_revision=$bad_revision -> UNCONFIRMED" || say_fail "T4 invalid revision=$bad_revision" "$out"
+done
+
 # ---------------------------------------------------------------------------
 # T5/T6 — a matching receipt settles; the replay is byte-identical
 # ---------------------------------------------------------------------------
 echo ""
 echo "T5/T6: matching receipt settles; replay bytes identical, one operation id"
-mkjson "{\"status\":\"ok\",\"recorded\":true,\"receipt\":{\"receipt_version\":1,\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":\"receipt_only\",\"recorded\":true}}"
+mkjson "{\"status\":\"ok\",\"recorded\":true,\"receipt\":{\"receipt_version\":1,\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":7,\"recorded\":true}}"
 out="$(run_ack "200|$FIX/body-json")"
 { [ "$(field "$out" JOURNAL)" = "ack_confirmed" ] && [ "$(field "$out" PENDING)" = "0" ]; } \
   && say_ok "T5 matching receipt -> journal=ack_confirmed, ack-pending/ entry REMOVED" || say_fail "T5 settle" "$out"
 
 # replay: fail once, then succeed; compare the two sent bodies byte-for-byte.
-mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":\"receipt_only\"}}"
+mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":7}}"
 # capture bodies: wrap the curl stub to log each body
 cat > "$FIX/bin/curl.hook" <<'HOOK'
 HOOK
@@ -405,7 +412,7 @@ echo ""
 echo "T7: crash before/after every step, then recover"
 for CUT in 1 2 3 4 5 6; do
   rm -rf "$FIX/state"; mkdir -p "$FIX/state/tmp" "$FIX/logs"
-  mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":\"receipt_only\"}}"
+  mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":7}}"
   printf '200|%s\n' "$FIX/body-json" > "$FIX/scenario"
   : > "$FIX/count"
   cat > "$FIX/cut.sh" <<CUTEOF
@@ -443,7 +450,7 @@ VT="\$(_ack_send "\$BODY" "\$OP" "tok-syn-123" ack)"
 [ "\$CUT" -le 5 ] && { echo "CUT vt=\$VT"; exit 0; }
 # step 6: settle on the receipt
 case "\$VT" in
-  confirmed:*) _journal_put "\$OP" ack_confirmed '{"state_revision":"receipt_only"}' ; rm -f "\$_STATE/ack-pending/\$OP" ;;
+  confirmed:*) _journal_put "\$OP" ack_confirmed '{"state_revision":7}' ; rm -f "\$_STATE/ack-pending/\$OP" ;;
 esac
 echo "CUT"
 CUTEOF
@@ -530,7 +537,7 @@ out="$(run_blocked "$FIX/state/ack-pending")"
 echo ""
 echo "T10: cached re-ack replays the original evidence"
 rm -rf "$FIX/state"; mkdir -p "$FIX/state/tmp" "$FIX/logs" "$FIX/state/done"
-mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":\"receipt_only\"}}"
+mkjson "{\"status\":\"ok\",\"receipt\":{\"operation_id\":\"$OPID\",\"attempt_id\":\"tok-syn-123\",\"state_revision\":7}}"
 printf '200|%s\n' "$FIX/body-json" > "$FIX/scenario"
 : > "$FIX/count"
 cat > "$FIX/reack.sh" <<RAEOF
