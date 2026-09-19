@@ -2576,24 +2576,26 @@ if [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
     REPLY_EXCERPT=$(_bounded_excerpt "$REPLY_TRIM")
 fi
 
-# Receiver-owned verification.  Only the server-persisted `gateway_http`
-# criterion is executable: it is a bounded HTTPS GET through curl, never an
-# agent-provided shell command or path.  The result proof uses a deterministic
-# identity-bound reference generated here; claimed evidence text is ignored.
-RR_ACCEPTANCE_EVIDENCE_REF=""
-if [ "${RR_ACCEPTANCE_KIND:-}" = "gateway_http" ] && [ -n "${RR_ACCEPTANCE_CHECK_ID:-}" ] && [ -n "${RR_ACCEPTANCE_URL:-}" ]; then
+_rr_run_acceptance_verifier() {
+    # Receiver-owned verification. Only server-persisted gateway_http is
+    # executable: bounded HTTPS GET, never an agent command or agent path.
+    RR_ACCEPTANCE_EVIDENCE_REF=""
+    [ "${RR_ACCEPTANCE_KIND:-}" = "gateway_http" ] && [ -n "${RR_ACCEPTANCE_CHECK_ID:-}" ] && [ -n "${RR_ACCEPTANCE_URL:-}" ] || return 1
     case "$RR_ACCEPTANCE_URL" in
         https://*)
             _rr_verify_code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 --connect-timeout 5 "$RR_ACCEPTANCE_URL" 2>/dev/null || true)
             case "$_rr_verify_code" in
                 2??)
-                    _rr_verify_hash=$(_rr_hash "${INCIDENT_ID:-$TICKET_ID}|${ATTEMPT_ID:-$ATTEMPT_REF}|$RR_ACCEPTANCE_CHECK_ID|$_rr_verify_code" 2>/dev/null || true)
+                    _rr_verify_hash=$(printf '%s' "${INCIDENT_ID:-$TICKET_ID}|${ATTEMPT_ID:-$ATTEMPT_REF}|$RR_ACCEPTANCE_CHECK_ID|$_rr_verify_code" | _rr_hash 2>/dev/null || true)
                     [ -n "$_rr_verify_hash" ] && RR_ACCEPTANCE_EVIDENCE_REF="receiver:gateway_http:${INCIDENT_ID:-$TICKET_ID}:${ATTEMPT_ID:-$ATTEMPT_REF}:${RR_ACCEPTANCE_CHECK_ID}:${_rr_verify_hash}"
                     ;;
             esac
             ;;
     esac
-fi
+    [ -n "$RR_ACCEPTANCE_EVIDENCE_REF" ]
+}
+
+_rr_run_acceptance_verifier || true
 
 # Build a structured result before recording or acknowledging the turn.  A
 # missing agent JSON becomes a conservative fallback; a build failure merely

@@ -32,6 +32,7 @@ extract_fn() {
 
 {
   extract_fn _json_str
+  extract_fn _rr_hash
   extract_fn _rr_result_prompt
   extract_fn _rr_build_result
 } > "$FIX/functions.sh"
