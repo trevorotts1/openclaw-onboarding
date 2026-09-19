@@ -232,15 +232,19 @@ DRY_RUN="0"
 grep -q 'DRY-RUN' "$STEPS_LOG" || fail "dry-run must log DRY-RUN steps"
 pass "dry-run: helpers never invoked, nothing dies"
 
-# --- 12: stage exit codes 22/23 are wired; NO scheduler code exists ------------
-for pair in "22:install-podcast-department.sh" "23:register-podcast-hook.sh"; do
-  code="${pair%%:*}"; helper="${pair#*:}"
-  grep -E "activation_step \"activation:[a-z]+\"[[:space:]]+${code}[[:space:]].*${helper}" "$PROVISION" >/dev/null \
-    || fail "STEP 8 must call activation_step with exit code $code for $helper"
-done
+# --- 12: activation exits 22/23 are wired; NO scheduler code exists ------------
+# The department install must precede hook registration because --verify needs
+# the podcast: namespace that the registrar creates. It therefore has an
+# explicit install/readiness pair rather than the generic activation_step helper.
+grep -q 'die 22 "podcast department installation failed' "$PROVISION" \
+  || fail "STEP 8 must fail department installation with exit code 22"
+grep -q 'die 22 "podcast department is not ready after hook registration' "$PROVISION" \
+  || fail "STEP 8 must fail post-hook department readiness with exit code 22"
+grep -E 'activation_step "activation:hook"[[:space:]]+23[[:space:]].*register-podcast-hook\.sh' "$PROVISION" >/dev/null \
+  || fail "STEP 8 must call activation_step with exit code 23 for register-podcast-hook.sh"
 grep -E 'activation_step[[:space:]]+"[^"]*"[[:space:]]+24\b' "$PROVISION" >/dev/null \
   && fail "STEP 8 must NOT wire exit code 24 (no-daemon doctrine retired it)"
-pass "stage exit codes wired: 22 department, 23 hook; code 24 retired"
+pass "activation exits wired: 22 department, 23 hook; code 24 retired"
 
 # --- 13: NO-DAEMON doctrine - no scheduler activation step in provision --------
 if grep -q 'install-podcast-scheduler\.sh' "$PROVISION"; then
@@ -281,7 +285,80 @@ grep -q 'ledger_fact "advancement" "own-turn"' "$PROVISION" \
   || fail "provision must record facts.advancement=own-turn on successful activation"
 pass "audit hook: provision records advancement=own-turn"
 
-# --- 18: zero em dashes (Skill 58 convention) ----------------------------------
+# --- 18: public ingress gate probes the mapped /hooks endpoint ----------------
+# The TaskFlow control endpoint at /plugins/webhooks/<route> accepts only action
+# envelopes. A flat survey body must be tested against /hooks/<route>, which is
+# the mapping that admits the podcast department's worker turn. Exercise the
+# extracted gate with a local curl stub so no network or real secret is used.
+GATE_HOOK_SRC="$(sed -n '/^gate_hook() {/,/^}/p' "$PROVISION")"
+[ -n "$GATE_HOOK_SRC" ] || fail "could not extract gate_hook from provision script"
+GATE_HOOK_LIB="$STATE_DIR/gate_hook.sh"
+printf '%s\n' "$GATE_HOOK_SRC" > "$GATE_HOOK_LIB"
+GATE_BIN="$STATE_DIR/gate-bin"
+GATE_CURL_LOG="$STATE_DIR/gate-curl.log"
+GATE_SECRETS="$STATE_DIR/gate-secrets.env"
+mkdir -p "$GATE_BIN"
+printf 'PODCAST_INTAKE_HOOK_SECRET=fixture-hook-token\n' > "$GATE_SECRETS"
+cat > "$GATE_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$GATE_CURL_LOG"
+printf '%s' "${GATE_CURL_CODE:-202}"
+EOF
+chmod +x "$GATE_BIN/curl"
+GATE_STEPS="$STATE_DIR/gate-steps"
+gate_ledger_step() { printf '%s|%s|%s\n' "$1" "$2" "${3:-}" >> "$GATE_STEPS"; }
+gate_runas() { "$@"; }
+(
+  PATH="$GATE_BIN:$PATH"
+  export PATH GATE_CURL_LOG
+  DRY_RUN=0
+  HOOKS_HOST="hooks.example.test"
+  INTAKE_MAPPING="podcast-intake-tclient"
+  SECRETS_ENV_FILE="$GATE_SECRETS"
+  GATE_HARD_FAIL=0
+  ledger_step() { gate_ledger_step "$@"; }
+  runas() { gate_runas "$@"; }
+  # shellcheck source=/dev/null
+  source "$GATE_HOOK_LIB"
+  gate_hook
+) || fail "stubbed public ingress gate returned nonzero"
+ok=0
+grep -q -- 'https://hooks.example.test/hooks/podcast-intake-tclient' "$GATE_CURL_LOG" || ok=1
+grep -q -- '/plugins/webhooks/' "$GATE_CURL_LOG" && ok=1
+grep -q '^gate:signed-hook|PASS|' "$GATE_STEPS" || ok=1
+if [ "$ok" -eq 0 ]; then
+  pass "signed-hook gate probes public mapping endpoint and accepts admission"
+else
+  fail "signed-hook gate did not probe the public mapping endpoint correctly"
+fi
+
+# A rejected public ingress fails the provision gate. Reporting processor
+# activation without proving worker admission leaves a valid intake requiring
+# manual recovery, so this cannot be a soft pending result.
+: > "$GATE_STEPS"
+(
+  PATH="$GATE_BIN:$PATH"
+  export PATH GATE_CURL_LOG
+  GATE_CURL_CODE=503
+  export GATE_CURL_CODE
+  DRY_RUN=0
+  HOOKS_HOST="hooks.example.test"
+  INTAKE_MAPPING="podcast-intake-tclient"
+  SECRETS_ENV_FILE="$GATE_SECRETS"
+  GATE_HARD_FAIL=0
+  ledger_step() { gate_ledger_step "$@"; }
+  runas() { gate_runas "$@"; }
+  # shellcheck source=/dev/null
+  source "$GATE_HOOK_LIB"
+  gate_hook
+  printf '%s' "$GATE_HARD_FAIL" > "$STATE_DIR/gate-hard-fail"
+) || fail "stubbed rejected public ingress gate returned nonzero"
+grep -q '^gate:signed-hook|FAIL|' "$GATE_STEPS" \
+  && [ "$(cat "$STATE_DIR/gate-hard-fail")" = "1" ] \
+  && pass "signed-hook gate fails a rejected public mapping" \
+  || fail "signed-hook gate did not fail a rejected public mapping"
+
+# --- 19: zero em dashes (Skill 58 convention) ----------------------------------
 if grep -q $'\xe2\x80\x94' "$PROVISION" "$REVOKE"; then
   fail "em dash found in provision or revoke script"
 fi

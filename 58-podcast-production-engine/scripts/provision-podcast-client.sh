@@ -995,7 +995,11 @@ gate_302() {
 }
 gate_302
 
-# G2: signed hook test POST (requires the box-side mapping + token; PENDING if not wired).
+# G2: signed public-ingress test POST. The upstream survey submits a flat body
+# to /hooks/<route>, where the registered hook mapping admits the podcast
+# department turn. The similarly named /plugins/webhooks/<route> endpoint is
+# the internal TaskFlow control surface and rejects that flat body; probing it
+# cannot prove worker admission.
 gate_hook() {
   if [ "$DRY_RUN" = "1" ]; then ledger_step "gate:signed-hook" "DRY-RUN" "skipped in dry-run"; return 0; fi
   local tok=""
@@ -1004,19 +1008,21 @@ gate_hook() {
     tok="$(runas bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_SECRET:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
   fi
   if [ -z "$tok" ]; then
-    ledger_step "gate:signed-hook" "PENDING" "intake token not available here; run once the hook mapping and token are wired on the box"
+    ledger_step "gate:signed-hook" "FAIL" "intake token unavailable; cannot prove public ingress admits the mapped worker turn"
+    GATE_HARD_FAIL="1"
     return 0
   fi
   local code
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
-    -X POST "https://${HOOKS_HOST}/plugins/webhooks/${INTAKE_MAPPING}" \
+    -X POST "https://${HOOKS_HOST}/hooks/${INTAKE_MAPPING}" \
     -H "Authorization: Bearer ${tok}" -H "Content-Type: application/json" \
     --data '{"_test":true,"source":"provision-gate"}' 2>/dev/null || echo "000")"
   unset tok
   if printf '%s' "$code" | grep -Eq '^2[0-9][0-9]$'; then
-    ledger_step "gate:signed-hook" "PASS" "signed test POST accepted (HTTP $code)"
+    ledger_step "gate:signed-hook" "PASS" "signed public ingress POST admitted (HTTP $code)"
   else
-    ledger_step "gate:signed-hook" "PENDING" "hook not accepting yet (HTTP $code); confirm the mapping is registered on the box"
+    ledger_step "gate:signed-hook" "FAIL" "public hook mapping did not admit the worker turn (HTTP $code)"
+    GATE_HARD_FAIL="1"
   fi
 }
 gate_hook
