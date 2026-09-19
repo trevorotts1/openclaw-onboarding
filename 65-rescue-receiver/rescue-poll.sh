@@ -2701,8 +2701,10 @@ fi
 # delivery the box cannot replay.
 RR_NOTIFICATION_FINAL_BODY=$(python3 -c 'import json,sys
 try:
- r=json.load(open(sys.argv[1])); b=r.get("remaining_blocker") or {}
- print("Recovery verified." if r.get("repair_status")=="repaired" else "Recovery is not verified. Remaining blocker: "+str(b.get("reason") or "operator review required"))
+ r=json.load(open(sys.argv[1])); b=r.get("remaining_blocker") or {}; reply=((r.get("reply") or {}).get("text") or "").replace("\n"," ").replace("\r"," ")[:500]
+ status="Repair status: %s. Verification: %s."%(r.get("repair_status") or "not_repaired",r.get("verification_status") or "unverified")
+ blocker=" Remaining blocker: %s. Owner: %s. Next action: %s."%(str(b.get("reason") or "none")[:200],str(b.get("owner") or "operator")[:120],str(b.get("next_action") or "review the recovery outcome")[:300])
+ print((reply+" " if reply else "")+status+blocker)
 except Exception: print("Recovery outcome is pending verification.")' "$RR_RESULT_JSON" 2>/dev/null)
 if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
     _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
