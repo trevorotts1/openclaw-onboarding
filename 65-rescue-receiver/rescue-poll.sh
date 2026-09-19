@@ -1176,6 +1176,11 @@ _parse_claim() {
     RR_ACCEPTANCE_CHECK_ID=$(_json_get "$_pc_resp" "acceptance.check_id")
     RR_ACCEPTANCE_KIND=$(_json_get "$_pc_resp" "acceptance.kind")
     RR_ACCEPTANCE_URL=$(_json_get "$_pc_resp" "acceptance.url")
+    RR_NOTIFICATION_ORIGIN=$(printf '%s' "$_pc_resp" | python3 -c 'import json,sys
+try:
+ d=json.load(sys.stdin); o=d.get("notification_origin")
+ if isinstance(o,dict) and o.get("authorized") is True and o.get("channel")=="telegram" and isinstance(o.get("account"),str) and isinstance(o.get("target"),str): print(json.dumps(o,sort_keys=True,separators=(",",":")))
+except Exception: pass' 2>/dev/null)
 
     # --- member TYPES (mistype QC) -----------------------------------------
     # ONE probe, then every member the envelope relies on is checked for its
@@ -2371,7 +2376,7 @@ _resend_pending
 # journal: a notification retry can never re-run the agent turn or alter an ACK.
 _rr_notification_tick() {
     _rn_worker="$(dirname "$0")/rescue-notification.py"
-    [ -x "$_rn_worker" ] || return 0
+    [ -f "$_rn_worker" ] || return 0
     _rn_out=$(python3 "$_rn_worker" tick --state-dir "$_STATE/notifications" --openclaw-bin "$_OC_BIN" 2>/dev/null) || return 0
     printf '%s' "$_rn_out" | python3 -c '
 import base64,json,sys
@@ -2389,6 +2394,13 @@ for r in d.get("pending_reports",[]):
         _rn_ok=$(printf '%s' "$_rn_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); op=sys.argv[1]; print("yes" if d.get("ok") is True and d.get("operation_id")==op and d.get("receipt") is not None and d.get("notification_state") in ("confirmed","pending","failed") else "no")' "$_rn_op" 2>/dev/null)
         [ "$_rn_ok" = yes ] && python3 "$_rn_worker" report-confirm --state-dir "$_STATE/notifications" --operation-id "$_rn_op" >/dev/null 2>&1 || true
     done
+}
+_rr_notification_enqueue() {
+    _rne_stage="$1"; _rne_body="$2"; _rne_worker="$(dirname "$0")/rescue-notification.py"
+    [ -f "$_rne_worker" ] || return 0
+    [ -n "${RR_NOTIFICATION_ORIGIN:-}" ] || return 0
+    printf '%s' "$_rne_body" | python3 "$_rne_worker" enqueue --state-dir "$_STATE/notifications" --origin-json "$RR_NOTIFICATION_ORIGIN" --incident-id "${INCIDENT_ID:-$TICKET_ID}" --instruction-id "$INSTRUCTION_ID" --attempt-id "${ATTEMPT_ID:-$ATTEMPT_REF}" --attempt-generation "${ATTEMPT_GENERATION:-1}" --idempotency-key "$IDEMPOTENCY_KEY" --stage "$_rne_stage" >/dev/null 2>&1 || return 0
+    _rr_notification_tick
 }
 _rr_notification_tick
 
@@ -2466,6 +2478,8 @@ fi
 if _reack_cached "$RR_CACHE_KEY"; then
     exit 0
 fi
+
+_rr_notification_enqueue initial "Rescue Rangers received your request and is applying the authorized recovery."
 
 # Decode the payload and run the local delivery command. The message is
 # base64-transported (never shell-quoted, never executed as shell).
@@ -2666,6 +2680,12 @@ if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed
     _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
     exit 0
 fi
+_rr_final_note=$(python3 -c 'import json,sys
+try:
+ r=json.load(open(sys.argv[1])); b=r.get("remaining_blocker") or {}
+ print("Recovery verified." if r.get("repair_status")=="repaired" else "Recovery is not verified. Remaining blocker: "+str(b.get("reason") or "operator review required"))
+except Exception: print("Recovery outcome is pending verification.")' "$RR_RESULT_JSON" 2>/dev/null)
+_rr_notification_enqueue final "$_rr_final_note"
 _ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"
 
 # The durable done/pending ledgers now carry the result. Do not leave this

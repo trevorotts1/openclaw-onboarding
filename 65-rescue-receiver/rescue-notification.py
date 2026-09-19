@@ -59,9 +59,10 @@ def operation(args):
     except (ValueError,json.JSONDecodeError) as e: raise SystemExit("invalid trusted origin: %s" % e)
     ids={k:getattr(args,k) for k in ("incident_id","instruction_id","attempt_id","attempt_generation","idempotency_key")}
     if not all(isinstance(v,str) and v for v in ids.values()) or not args.body: raise SystemExit("identity and body are required")
-    op=digest("\0".join([*ids.values(), canon(trusted), args.body]))
+    if args.stage not in ("initial","final"): raise SystemExit("stage must be initial or final")
+    op=digest("\0".join([*ids.values(), args.stage, canon(trusted), args.body]))
     return op, {"schema":1,"operation_id":op,"identity":ids,"origin":trusted,"body":args.body,
-                "body_digest":digest(args.body),"created_at":now(),"state":"pending","send_attempts":0,
+                "stage":args.stage,"body_digest":digest(args.body),"created_at":now(),"state":"pending","send_attempts":0,
                 "next_retry_at":now(),"report_state":"pending"}
 
 def enqueue(args):
@@ -115,7 +116,7 @@ def public(item):
     o=item["origin"]; e=item.get("gateway_evidence",{})
     report_state={"delivered":"confirmed","unconfirmed":"pending","failed":"failed"}.get(item["state"],"pending")
     identity=dict(item["identity"]); identity["generation"]=identity.pop("attempt_generation")
-    return {"action":"notification", **identity, "operation_id":item["operation_id"], "notification":{
+    return {"action":"notification", **identity, "operation_id":item["operation_id"], "stage":item["stage"], "notification":{
       "status":report_state,"channel":"telegram","account":o["account"],"target":o["target"],
       "thread_id":o.get("thread_id"),"reply_to":o.get("reply_to"),"message_id":e.get("message_id"),"body_digest":item["body_digest"],"delivered_at":e.get("finished_at"),"failure_reason":e.get("failure_reason")}}
 
@@ -159,7 +160,7 @@ def confirm(args):
 
 def main():
     ap=argparse.ArgumentParser(); sub=ap.add_subparsers(dest="command",required=True)
-    e=sub.add_parser("enqueue"); e.add_argument("--state-dir",required=True); e.add_argument("--origin-json",required=True); e.add_argument("--incident-id",required=True); e.add_argument("--instruction-id",required=True); e.add_argument("--attempt-id",required=True); e.add_argument("--attempt-generation",required=True); e.add_argument("--idempotency-key",required=True); e.set_defaults(func=enqueue)
+    e=sub.add_parser("enqueue"); e.add_argument("--state-dir",required=True); e.add_argument("--origin-json",required=True); e.add_argument("--incident-id",required=True); e.add_argument("--instruction-id",required=True); e.add_argument("--attempt-id",required=True); e.add_argument("--attempt-generation",required=True); e.add_argument("--idempotency-key",required=True); e.add_argument("--stage",required=True,choices=("initial","final")); e.set_defaults(func=enqueue)
     t=sub.add_parser("tick"); t.add_argument("--state-dir",required=True); t.add_argument("--openclaw-bin",required=True); t.add_argument("--timeout-seconds",type=float,default=15); t.add_argument("--max-retries",type=int,default=MAX_RETRIES); t.set_defaults(func=tick)
     c=sub.add_parser("report-confirm"); c.add_argument("--state-dir",required=True); c.add_argument("--operation-id",required=True); c.set_defaults(func=confirm)
     args=ap.parse_args()

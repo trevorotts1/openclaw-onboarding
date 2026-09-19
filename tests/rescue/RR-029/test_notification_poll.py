@@ -20,7 +20,7 @@ _rr_notification_tick
   self.enqueue()
  def tearDown(self): self.t.cleanup()
  def enqueue(self):
-  args=['python3',str(self.worker),'enqueue','--state-dir',str(self.state/'notifications'),'--origin-json','{"authorized":true,"channel":"telegram","account":"acct","target":"chat"}','--incident-id','inc','--instruction-id','inst','--attempt-id','attempt','--attempt-generation','1','--idempotency-key','key']
+  args=['python3',str(self.worker),'enqueue','--state-dir',str(self.state/'notifications'),'--origin-json','{"authorized":true,"channel":"telegram","account":"acct","target":"chat"}','--incident-id','inc','--instruction-id','inst','--attempt-id','attempt','--attempt-generation','1','--idempotency-key','key','--stage','initial']
   out=subprocess.run(args,input='body',text=True,capture_output=True,check=True).stdout; self.op=json.loads(out)['operation_id']
  def execute(self, response, ok=True):
   env={**os.environ,'FUNCS':str(self.d/'functions.sh'),'STATE':str(self.state),'CLI':str(self.cli),'CALLS':str(self.calls),'REQUEST':str(self.request),'POST_RESPONSE':response,'POST_OK':'yes' if ok else 'no'}

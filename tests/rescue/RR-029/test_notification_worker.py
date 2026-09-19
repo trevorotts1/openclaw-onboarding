@@ -11,7 +11,7 @@ class Worker(unittest.TestCase):
  def call(self,*a,env=None,input=None): return subprocess.run(['python3',str(WORKER),*a],text=True,input=input,capture_output=True,env=env or self.env,check=True)
  def enqueue(self,origin=None):
   o=origin or {'authorized':True,'channel':'telegram','account':'trusted','target':'42'}
-  answer=json.loads(self.call('enqueue','--state-dir',str(self.state),'--origin-json',json.dumps(o),'--incident-id','i','--instruction-id','n','--attempt-id','a','--attempt-generation','1','--idempotency-key','k',input='hello').stdout)
+  answer=json.loads(self.call('enqueue','--state-dir',str(self.state),'--origin-json',json.dumps(o),'--incident-id','i','--instruction-id','n','--attempt-id','a','--attempt-generation','1','--idempotency-key','k','--stage','initial',input='hello').stdout)
   return answer
  def tick(self,env=None,*extra): return json.loads(self.call('tick','--state-dir',str(self.state),'--openclaw-bin',str(self.fake),'--timeout-seconds','.1',*extra,env=env).stdout)
  def test_success_restart_and_report_confirm_do_not_resend(self):
@@ -24,7 +24,7 @@ class Worker(unittest.TestCase):
  def test_timeout_is_ambiguous_and_never_retried(self):
   self.enqueue(); got=self.tick({**self.env,'MODE':'timeout'}); self.assertEqual(got['pending_reports'][0]['notification']['status'],'pending'); self.tick({**self.env,'MODE':'ok'}); self.assertEqual(self.log.read_text().count('\n'),1)
  def test_foreign_origin_rejected(self):
-  p=subprocess.run(['python3',str(WORKER),'enqueue','--state-dir',str(self.state),'--origin-json','{"channel":"signal","account":"x","target":"y"}','--incident-id','i','--instruction-id','n','--attempt-id','a','--attempt-generation','1','--idempotency-key','k'],text=True,input='hello',capture_output=True); self.assertNotEqual(p.returncode,0)
+  p=subprocess.run(['python3',str(WORKER),'enqueue','--state-dir',str(self.state),'--origin-json','{"channel":"signal","account":"x","target":"y"}','--incident-id','i','--instruction-id','n','--attempt-id','a','--attempt-generation','1','--idempotency-key','k','--stage','initial'],text=True,input='hello',capture_output=True); self.assertNotEqual(p.returncode,0)
  def test_negative_message_id_and_crash_sending_are_unconfirmed_or_failed(self):
   self.enqueue(); got=self.tick({**self.env,'MODE':'negative'},'--max-retries','1'); self.assertEqual(got['pending_reports'][0]['notification']['status'],'failed')
   op=self.enqueue({'authorized':True,'channel':'telegram','account':'trusted','target':'43'}); p=self.state/'operations'/f"{op['operation_id']}.json"; row=json.loads(p.read_text()); row['state']='sending';p.write_text(json.dumps(row)); got=self.tick(); self.assertIn('pending', [x['notification']['status'] for x in got['pending_reports']])
