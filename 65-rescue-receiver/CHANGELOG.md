@@ -1,5 +1,18 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.5.1] - 2026-09-19 - a receipt revision string could settle an acknowledgement
+
+THE DEFECT. `_receipt_match` required the receipt's operation ID and attempt
+identity, but accepted any nonempty `state_revision`. A server response with a
+string such as `"receipt_only"` could therefore settle the durable ACK even
+though the result-v3 contract requires a nonnegative integer revision.
+
+THE FIX. The receiver now checks both the JSON type and decimal representation:
+only a numeric, nonnegative integer revision settles an ACK. Strings, negative
+numbers, fractions, booleans, missing values, and malformed receipts remain in
+`ack-pending` for reconciliation. RR-008 adds regression cases for each of
+those invalid shapes.
+
 ## [23.5.0] - 2026-09-19 - a nonempty agent reply was being treated as a repair
 
 THE DEFECT. The receiver's `delivered` verdict meant that `openclaw agent`

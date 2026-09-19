@@ -81,7 +81,7 @@
 # contract: public receiver changes pair with additive server support FIRST;
 # old servers that omit the fields keep working because the fields simply echo
 # as empty strings).
-RECEIVER_VERSION="1.7.0"
+RECEIVER_VERSION="1.7.1"
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -837,6 +837,47 @@ elif isinstance(o, str):
     print(o)
 else:
     sys.exit(0)
+' 2>/dev/null
+        return 0
+    fi
+    return 0
+}
+
+# _json_type <json> <dotted-path> -> JSON type at that path, or nothing.
+# A receipt revision is an integer in the wire contract. `_json_get` alone
+# cannot distinguish JSON 7 from JSON "7", so the receipt matcher uses this
+# companion probe before accepting a revision as a settlement proof.
+_json_type() {
+    _jt_json="$1"
+    _jt_path="$2"
+    [ -n "$_jt_json" ] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$_jt_json" | jq -r --arg p "$_jt_path" '
+          ($p | split(".")) as $k
+          | getpath($k)
+          | if . == null then "null" else type end' 2>/dev/null
+        return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$_jt_json" | JT_PATH="$_jt_path" python3 -c '
+import json, os, sys
+try:
+    value = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for key in os.environ.get("JT_PATH", "").split("."):
+    if not key:
+        continue
+    if not isinstance(value, dict) or key not in value:
+        sys.exit(0)
+    value = value[key]
+if value is None: print("null")
+elif isinstance(value, bool): print("boolean")
+elif isinstance(value, int): print("number")
+elif isinstance(value, float): print("number")
+elif isinstance(value, str): print("string")
+elif isinstance(value, list): print("array")
+elif isinstance(value, dict): print("object")
 ' 2>/dev/null
         return 0
     fi
@@ -1671,8 +1712,9 @@ f=open(sys.argv[1],"rb"); os.fsync(f.fileno()); f.close()' "$_pp_tmp" 2>/dev/nul
 
 # _receipt_match <response-body> <op_id> <attempt_id>
 # Prints "match" when the body carries an ACCEPTABLE structured receipt for
-# THIS operation and attempt; otherwise prints the reason it did not.
-# An expected 2xx alone is NEVER a confirmation (RR-008).
+# THIS operation and attempt and carries a JSON nonnegative-integer
+# state_revision; otherwise prints the reason it did not. An expected 2xx
+# alone is NEVER a confirmation (RR-008).
 _receipt_match() {
     _rm_body="$1"
     _rm_op="$2"
@@ -1681,8 +1723,13 @@ _receipt_match() {
     _rm_op_seen=$(_json_get "$_rm_body" "receipt.operation_id")
     _rm_attempt_seen=$(_json_get "$_rm_body" "receipt.attempt_id")
     _rm_rev=$(_json_get "$_rm_body" "receipt.state_revision")
+    _rm_rev_type=$(_json_type "$_rm_body" "receipt.state_revision")
     [ -n "$_rm_op_seen" ]    || { printf 'no_receipt_operation_id'; return 0; }
     [ -n "$_rm_rev" ]        || { printf 'no_receipt_state_revision'; return 0; }
+    [ "$_rm_rev_type" = "number" ] || { printf 'invalid_receipt_state_revision'; return 0; }
+    case "$_rm_rev" in
+        *[!0-9]*) printf 'invalid_receipt_state_revision'; return 0 ;;
+    esac
     if [ -n "$_rm_op" ] && [ "$_rm_op_seen" != "$_rm_op" ]; then
         printf 'receipt_operation_mismatch'; return 0
     fi
