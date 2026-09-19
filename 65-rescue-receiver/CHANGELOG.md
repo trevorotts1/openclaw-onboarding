@@ -731,3 +731,9 @@ later, only after the additive server contract is confirmed fleet-wide
 ## [23.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
+## [23.5.2] - 2026-09-19 - RR-029 durable Telegram notification intents
+
+Authorized server-supplied Telegram origins now create deterministic initial and
+final notification jobs. Final intent is retained with the done record and is
+recreated on cached replay after a crash; no repair turn is rerun. Confirmation
+records gateway provider acceptance only.

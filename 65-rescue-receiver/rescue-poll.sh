@@ -2045,6 +2045,17 @@ _write_done() {
         # replay the original result rather than an inferred replacement.
         [ -n "$_wd_result" ] && _wd_result_json=",\"result\":$_wd_result"
     fi
+    # Final notification intent is retained in the same atomic done record as
+    # the result. A crash before enqueue can therefore be replayed without a
+    # second repair turn or a newly invented destination/body.
+    _wd_notify_json=""
+    if [ -n "${RR_NOTIFICATION_ORIGIN:-}" ] && [ -n "${RR_NOTIFICATION_FINAL_BODY:-}" ]; then
+        _wd_notify=$(python3 -c 'import json,sys
+try:
+ o=json.loads(sys.argv[1]); assert isinstance(o,dict); print(json.dumps({"origin":o,"body":sys.argv[2]},separators=(",",":")))
+except Exception: pass' "$RR_NOTIFICATION_ORIGIN" "$RR_NOTIFICATION_FINAL_BODY" 2>/dev/null)
+        [ -n "$_wd_notify" ] && _wd_notify_json=",\"notification_final\":$_wd_notify"
+    fi
     # RR-021/RR-025: collision-resistant done-file identity. The old
     # tr-normalization ALIASED distinct keys (a/b and a_b both -> key-a_b),
     # so one ticket's cached verdict could satisfy another's dedup check.
@@ -2062,7 +2073,7 @@ _write_done() {
     chmod 600 "$_tmp" 2>/dev/null
     printf '{"verdict":"%s","exit_code":%s,"reply_chars":%s,"fail_reason":%s,"elapsed_s":%s%s%s%s%s%s,"written_at":"%s"}\n' \
         "$_wd_verdict" "$_wd_exit" "$_wd_chars" "$_fr_json" "$_wd_elapsed" \
-        "$_wd_excerpt_json" "$_wd_op_json" "$_wd_attempt_json" "$_wd_ids_json" "$_wd_result_json" "$(_now_iso)" > "$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
+        "$_wd_excerpt_json" "$_wd_op_json" "$_wd_attempt_json" "$_wd_ids_json" "$_wd_result_json$_wd_notify_json" "$(_now_iso)" > "$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
     # RR-021: the claimed instruction's record must be DURABLY on disk before
     # the poll proceeds — a crash or a lost ACK must never lose the work item.
     # fsync the record (python3 is present on every supported box; `sync` is
@@ -2161,6 +2172,17 @@ except Exception:
     if [ -z "$_rc_op" ]; then
         _rc_op=$(_op_id_for "$1" "$_rc_attempt" "$_rc_gen")
         _log "re-ack cache predates operation ids; derived op=$_rc_op key=$_rc_safe"
+    fi
+    _rc_notify=$(printf '%s' "$_rc_body" | python3 -c 'import json,sys
+try:
+ d=json.load(sys.stdin); n=d.get("notification_final");
+ if isinstance(n,dict) and isinstance(n.get("origin"),dict) and isinstance(n.get("body"),str): print(json.dumps(n["origin"],separators=(",",":"))); print(n["body"])
+except Exception: pass' 2>/dev/null)
+    if [ -n "$_rc_notify" ]; then
+        _rc_origin=$(printf '%s\n' "$_rc_notify" | sed -n '1p')
+        _rc_note=$(printf '%s\n' "$_rc_notify" | sed -n '2p')
+        RR_NOTIFICATION_ORIGIN="$_rc_origin"
+        _rr_notification_enqueue final "$_rc_note"
     fi
     _ack "$_rc_verdict" "$_rc_exit" "$_rc_chars" "$_rc_reason" "$_rc_elapsed" "$_rc_excerpt"
     _rc_rc=$?
@@ -2676,16 +2698,16 @@ fi
 # checked: a done record that did not land means the dedup this box relies on
 # does not exist, so no ack is sent that would let the server settle a
 # delivery the box cannot replay.
-if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
-    _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
-    exit 0
-fi
-_rr_final_note=$(python3 -c 'import json,sys
+RR_NOTIFICATION_FINAL_BODY=$(python3 -c 'import json,sys
 try:
  r=json.load(open(sys.argv[1])); b=r.get("remaining_blocker") or {}
  print("Recovery verified." if r.get("repair_status")=="repaired" else "Recovery is not verified. Remaining blocker: "+str(b.get("reason") or "operator review required"))
 except Exception: print("Recovery outcome is pending verification.")' "$RR_RESULT_JSON" 2>/dev/null)
-_rr_notification_enqueue final "$_rr_final_note"
+if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
+    _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
+    exit 0
+fi
+_rr_notification_enqueue final "$RR_NOTIFICATION_FINAL_BODY"
 _ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"
 
 # The durable done/pending ledgers now carry the result. Do not leave this

@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.5.0"
+  version: "v23.5.2"
   priority: HIGH
 ---
 
@@ -22,6 +22,11 @@ instruction for THIS box in `rr_outbox`, this skill's `rescue-poll.sh`
 (registered as a `kind:command` cron, every 2 minutes) claims it, runs the
 pre-proven local delivery command, and acks separate transport and repair
 facts.
+
+For a claim carrying an authorized Telegram `notification_origin`, the receiver
+durably queues an initial received/applying update and a final verified outcome
+or blocker update. Provider acceptance is recorded only from the local gateway
+CLI's matching JSON response; it is not proof that a user read the message.
 
 ## The HONESTY CONTRACT
 
