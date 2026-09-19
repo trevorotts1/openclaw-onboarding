@@ -551,9 +551,11 @@ repair_is_valid = (repair != "repaired" or (
     isinstance(fix_card.get("card_id") if fix_card else None, str) and
     isinstance(fix_card.get("card_version") if fix_card else None, str) and
     fix_card.get("scope_authorized") is True and
-    bool(expected_check) and acceptance.get("check_id") == expected_check and
-    acceptance.get("passed") is True and
-    acceptance.get("evidence_ref") == trusted_evidence and bool(trusted_evidence)
+    isinstance(acceptance, dict) and bool(expected_check) and
+    acceptance.get("check_id") == expected_check and acceptance.get("passed") is True and
+    # The agent names the original criterion only.  Its evidence_ref is never
+    # trusted: the receiver substitutes the probe result it just observed.
+    bool(trusted_evidence)
 ))
 if not repair_is_valid:
     repair = "partial"
@@ -576,7 +578,7 @@ if repair in {"partial", "not_repaired"}:
     }
 
 if repair == "repaired" and acceptance:
-    acceptance_evidence = acceptance["evidence_ref"]
+    acceptance_evidence = trusted_evidence
     if acceptance_evidence not in evidence:
         evidence.append(acceptance_evidence)
 
@@ -639,7 +641,7 @@ if repair == "repaired":
         "attempt_id": attempt_id,
         "check_id": acceptance["check_id"][:200],
         "passed": True,
-        "evidence_ref": acceptance["evidence_ref"][:500],
+        "evidence_ref": trusted_evidence[:500],
     }
 if repair == "advice_delivered":
     outcome_type = candidate.get("outcome_type")
