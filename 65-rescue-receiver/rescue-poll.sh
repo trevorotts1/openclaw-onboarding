@@ -2367,6 +2367,31 @@ _sleep_jitter
 # ---------------------------------------------------------------------------
 _resend_pending
 
+# Drain notification work before claiming a repair.  This is a separate durable
+# journal: a notification retry can never re-run the agent turn or alter an ACK.
+_rr_notification_tick() {
+    _rn_worker="$(dirname "$0")/rescue-notification.py"
+    [ -x "$_rn_worker" ] || return 0
+    _rn_out=$(python3 "$_rn_worker" tick --state-dir "$_STATE/notifications" --openclaw-bin "$_OC_BIN" 2>/dev/null) || return 0
+    printf '%s' "$_rn_out" | python3 -c '
+import base64,json,sys
+try: d=json.load(sys.stdin)
+except Exception: d={}
+for r in d.get("pending_reports",[]):
+ print(base64.b64encode(json.dumps(r,separators=(",",":")).encode()).decode())
+' | while IFS= read -r _rn_b64; do
+        [ -n "$_rn_b64" ] || continue
+        _rn_body=$(printf '%s' "$_rn_b64" | base64 -d 2>/dev/null) || continue
+        _rn_resp=$(_post "$_rn_body") || continue
+        _rn_op=$(printf '%s' "$_rn_body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("operation_id", ""))' 2>/dev/null)
+        # Endpoint response must bind the exact operation; never mark a local
+        # report settled from a bare 2xx or somebody else's receipt.
+        _rn_ok=$(printf '%s' "$_rn_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("ok") and d.get("operation_id") else "no")' 2>/dev/null)
+        [ "$_rn_ok" = yes ] && python3 "$_rn_worker" report-confirm --state-dir "$_STATE/notifications" --operation-id "$_rn_op" >/dev/null 2>&1 || true
+    done
+}
+_rr_notification_tick
+
 # Build the claim body once. No token appears here — the token rides in a header
 # file (see _post).
 _claim_body="{\"action\":\"claim\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",\"receiver_version\":\"$(_json_str "$RECEIVER_VERSION")\",\"capacity\":1}"
