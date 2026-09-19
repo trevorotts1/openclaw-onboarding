@@ -429,6 +429,21 @@ CREATE TABLE IF NOT EXISTS podcast_step_receipts (
 );
 CREATE INDEX IF NOT EXISTS idx_psr_job ON podcast_step_receipts(job_id, begun_at);
 
+-- Immutable local evidence for worker-owned content and boundary actions.
+-- Later steps need frozen research, blueprints and scripts after a restart.
+-- The state writer owns the row so an approved artifact cannot be silently
+-- replaced during recovery.
+CREATE TABLE IF NOT EXISTS podcast_step_artifacts (
+  job_id          TEXT NOT NULL REFERENCES podcast_jobs(job_id) ON DELETE CASCADE,
+  step            TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  sha256          TEXT NOT NULL,
+  content_json    TEXT NOT NULL,
+  recorded_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (job_id, step, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_psa_job ON podcast_step_artifacts(job_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS podcast_dashboard_tokens (
   token_id     TEXT PRIMARY KEY,
   client_id    TEXT NOT NULL,
@@ -1439,6 +1454,50 @@ def cmd_receipt(conn, args):
                  "result_sha256": evidence_hash})
 
 
+def cmd_artifact(conn, args):
+    """Record one immutable, local worker artifact as canonical JSON."""
+    row = _load_job(conn, args.job_id)
+    _assert_active(conn, row["client_id"])
+    step = _receipt_token("step", args.step)
+    kind = _receipt_token("artifact kind", args.kind)
+    if not args.file or not os.path.isfile(args.file):
+        raise UsageError("artifact record requires a readable --file")
+    try:
+        with open(args.file, "rb") as handle:
+            parsed = json.loads(handle.read().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise UsageError("artifact --file must contain UTF-8 JSON") from exc
+    canonical = json.dumps(parsed, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"))
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = conn.execute(
+            "SELECT sha256 FROM podcast_step_artifacts WHERE job_id = ? AND step = ? AND kind = ?",
+            (args.job_id, step, kind),
+        ).fetchone()
+        if existing is not None and existing["sha256"] != digest:
+            raise TransitionError(
+                "artifact replacement refused: existing step artifact has different content"
+            )
+        if existing is None:
+            conn.execute(
+                "INSERT INTO podcast_step_artifacts (job_id, step, kind, sha256, content_json) VALUES (?, ?, ?, ?, ?)",
+                (args.job_id, step, kind, digest, canonical),
+            )
+            _append_event(conn, args.job_id, row["status"], row["status"],
+                          f"artifact recorded: step={step} kind={kind}")
+            disposition = "recorded"
+        else:
+            disposition = "already_recorded"
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    _emit(args, {"job_id": args.job_id, "step": step, "kind": kind,
+                 "sha256": digest, "disposition": disposition})
+
+
 def _coerce(value: str, kind: str):
     if value is None:
         return None
@@ -2129,6 +2188,15 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("--provider-ref", default=None,
                     help="optional opaque provider-side reference, never a URL or content")
     rc.set_defaults(func=cmd_receipt)
+
+    ar = sub.add_parser("artifact", help="record immutable local worker evidence")
+    ar.add_argument("--job-id", required=True)
+    ar.add_argument("--step", required=True)
+    ar.add_argument("--kind", required=True,
+                    help="opaque artifact kind, for example research-package")
+    ar.add_argument("--file", required=True,
+                    help="UTF-8 JSON evidence file; canonical JSON and SHA-256 are stored")
+    ar.set_defaults(func=cmd_artifact)
 
     h = sub.add_parser("hold", help="hold a job on the credit-out queue")
     h.add_argument("--job-id", required=True)

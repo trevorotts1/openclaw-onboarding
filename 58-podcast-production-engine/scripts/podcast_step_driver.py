@@ -80,6 +80,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -250,6 +251,11 @@ def _checkpoint(job_id: str, step) -> dict:
     also the key that provider-facing scripts must use for their own idempotency.
     """
     label = STEP_NAMES.get(step, "step").lower().replace(" ", "-")
+    # Receipt tokens are intentionally opaque and portable across the SQLite
+    # writer and provider adapters.  Canonical display names include punctuation
+    # (notably Step 9's parenthetical), so normalize rather than emitting an
+    # unusable action key.
+    label = re.sub(r"[^a-z0-9._:-]+", "-", label).strip("-")
     action = "show-notes" if step == "12.5" else label
     key = "podcast:%s:%s:%s" % (job_id, step, action)
     base = "%s --json receipt" % shlex.quote(_state_writer())
@@ -329,6 +335,30 @@ def _resolve_preset(ps, db_path, job_id, row):
 
 def _resolve_preset_flags(ps, db_path, job_id, row) -> dict:
     return ps.preset_flags(_resolve_preset(ps, db_path, job_id, row))
+
+
+def _artifact_exists(ps, db_path: str, job_id: str, step, kind: str) -> bool:
+    conn = ps.connect(db_path)
+    try:
+        return conn.execute(
+            "SELECT 1 FROM podcast_step_artifacts WHERE job_id = ? AND step = ? AND kind = ?",
+            (job_id, str(step), kind),
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _receipt_complete(ps, db_path: str, job_id: str, step) -> bool:
+    checkpoint = _checkpoint(job_id, step)
+    conn = ps.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT state FROM podcast_step_receipts WHERE job_id = ? AND step = ? AND action = ?",
+            (job_id, str(step), checkpoint["action"]),
+        ).fetchone()
+        return row is not None and row["state"] == "complete"
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -428,11 +458,28 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | str | None:
         return 18
 
     if status == "writing":
-        if row.get("writing_model"):
-            return 6  # draft done -> improvement pass (7) is the next content step
-        if row.get("episode_title"):
-            return 6  # blueprint done -> draft
-        return 2  # top of the writing block: select engines
+        # Each content pass has durable, immutable evidence.  The old
+        # title/model heuristic skipped sizing, blueprint, improvement and the
+        # read-aloud pass after a restart; use the writer-owned artifact rows as
+        # the actual checkpoint sequence.
+        # Static self-test calls this pure resolver without a state module;
+        # retain its legacy row-only expectation there.  Real next calls always
+        # pass podcast_state and therefore use durable artifacts.
+        if ps is None:
+            if row.get("writing_model") or row.get("episode_title"):
+                return 6
+            return 2
+        if not _artifact_exists(ps, db_path, job_id, 4, "sizing"):
+            return 4
+        if not _artifact_exists(ps, db_path, job_id, 5, "blueprint"):
+            return 5
+        if not _artifact_exists(ps, db_path, job_id, 6, "draft"):
+            return 6
+        if not _artifact_exists(ps, db_path, job_id, 7, "improvement"):
+            return 7
+        if not _artifact_exists(ps, db_path, job_id, 8, "read-aloud"):
+            return 8
+        return None
 
     if status == "publishing":
         # book_teaser is interview-only: a preset whose book_teaser flag is not
@@ -456,7 +503,7 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | str | None:
             return 14  # store media not yet done
         if flags.get("publish_podbean") is True and not row.get("podbean_permalink"):
             return 15  # publish not yet done
-        if flags.get("link_back") is True:
+        if flags.get("link_back") is True and (ps is None or not _receipt_complete(ps, db_path, job_id, 16)):
             return 16  # everything else done -> link back
         return None  # preset requires no further publishing-block step
 
@@ -477,13 +524,10 @@ def _next_step(ps, db_path, job_id, row, current: int | str | None) -> int | str
     if status == "complete":
         return 18
     if status == "writing":
+        if current is None:
+            return None
         if current == 2:
             return 2
-        if current == 6:
-            # draft done -> improvement pass; but there is no distinct persisted
-            # output for 7/8, so the runbook continues 7 then 8 within the same
-            # status. Re-emit the content route for the writing block.
-            return 6
         return current
     if status == "publishing":
         if current is None:
@@ -532,10 +576,21 @@ def _emit_content_command(step, job_id: str, row: dict) -> str:
         ],
         "context": context,
     }
-    return "%s route <<'JSON'\n%s\nJSON" % (
-        _model_router(),
-        json.dumps(payload, ensure_ascii=False),
-    )
+    route = "%s route" % _model_router()
+    if step in _CONTENT_ARTIFACT_KIND:
+        # A content result is not an operator note: save the exact public router
+        # result and atomically hand it back to the driver for artifact/state
+        # persistence.  PODCAST_JOB_WORK_DIR is intentionally per-job, supplied
+        # by the registered worker, never a shared scratch directory.
+        result_file = "${PODCAST_JOB_WORK_DIR:?set a per-job work directory}/step-%s-model.json" % step
+        return (
+            "set -e\nmkdir -p \"${PODCAST_JOB_WORK_DIR:?set a per-job work directory}\"\n"
+            "%s > \"%s\" <<'JSON'\n%s\nJSON\n"
+            "%s record-content --job-id %s --step %s --file \"%s\""
+            % (route, result_file, json.dumps(payload, ensure_ascii=False),
+               Path(__file__).resolve(), shlex.quote(job_id), step, result_file)
+        )
+    return "%s <<'JSON'\n%s\nJSON" % (route, json.dumps(payload, ensure_ascii=False))
 
 
 def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
@@ -629,26 +684,23 @@ def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
 
     if step == 16:
         return (
-            "STEP 16 LINK BACK (deterministic runbook directive): write title, "
-            "description, Episode Package link, and Speech Script link in ONE "
-            "GHL batch, then write the episode URL field ALONE and LAST; read "
-            "back every field byte-for-byte. Run in the agent's own turn."
+            "%s link-back --job-id %s --state-dir "
+            "\"${PODCAST_ENGINE_STATE_DIR:?set the client-owned state directory}\""
+            % (Path(__file__).resolve(), shlex.quote(job_id))
         )
 
     if step == 17:
         mode = row.get("mode") or "personal_podcast_style"
         if mode == "personal_podcast_style":
             return (
-                "%s append --state-dir <state-dir> --client-id %s "
-                "--record-file <episode-record.json> --mode personal_podcast_style"
-                % (_script("personal_spreadsheet.py"), row.get("client_id") or job_id)
+                "%s terminal-action --job-id %s --state-dir "
+                "\"${PODCAST_ENGINE_STATE_DIR:?set the client-owned state directory}\""
+                % (Path(__file__).resolve(), shlex.quote(job_id))
             )
         return (
-            "STEP 17 TRIGGER AND ENROLL (interview, deterministic runbook "
-            "directive): verify the URL write already field-triggered the "
-            "'podcast is completed' workflow, enroll explicitly only if not, "
-            "enroll 'podcast episode is ready', verify both via CAF reads. "
-            "Personal mode refuses workflow enrollment (hard mode guard)."
+            "%s terminal-action --job-id %s --state-dir "
+            "\"${PODCAST_ENGINE_STATE_DIR:?set the client-owned state directory}\""
+            % (Path(__file__).resolve(), shlex.quote(job_id))
         )
 
     if step == 18:
@@ -798,6 +850,320 @@ def cmd_record_show_notes(args) -> int:
         print(json.dumps(out, ensure_ascii=False))
     else:
         print("SHOW NOTES RECORDED: %s (Step 12.5 receipt complete)" % args.job_id)
+    return EXIT_OK
+
+
+_CONTENT_ARTIFACT_KIND = {
+    3: "research-package", 4: "sizing", 5: "blueprint", 6: "draft",
+    7: "improvement", 8: "read-aloud",
+}
+
+
+def _result_text(data: object) -> tuple[str, str]:
+    """Extract the public model-router response without trusting its shape."""
+    if isinstance(data, dict):
+        text = data.get("text")
+        model = data.get("model") or ""
+        if isinstance(text, str) and text.strip():
+            return text.strip(), str(model)
+    if isinstance(data, str) and data.strip():
+        return data.strip(), ""
+    raise UsageError("content result must be a model_router JSON response with non-empty text")
+
+
+def _json_text(text: str, label: str) -> dict:
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise UsageError("%s must be JSON" % label) from exc
+    if not isinstance(value, dict):
+        raise UsageError("%s must be a JSON object" % label)
+    return value
+
+
+def _set_output_once(ps, db_path: str, job_id: str, field: str, value) -> None:
+    """Use the sole writer and refuse a conflicting recovery result."""
+    row = _load_job_row(ps, db_path, job_id)
+    current = row.get(field)
+    wanted = str(value)
+    if current not in (None, ""):
+        if str(current) != wanted:
+            raise StepDriverError(
+                "refusing to replace already-recorded %s during content recovery" % field
+            )
+        return
+    result = subprocess.run(
+        [sys.executable, _state_writer(), "--db-path", db_path, "output",
+         "--job-id", job_id, "--field", field, "--value", wanted],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise StepDriverError("podcast_state rejected %s: %s" %
+                              (field, result.stderr.strip() or "unknown error"))
+
+
+def cmd_record_content(args) -> int:
+    """Persist a content turn, its derived state, and its claimed receipt.
+
+    The caller supplies the unmodified public JSON emitted by model_router.  A
+    receipt must already be acquired, which means a resumed worker can never
+    invoke a model again just to reconstruct local state.
+    """
+    try:
+        step = int(args.step)
+    except ValueError as exc:
+        raise UsageError("--step must be an integer content step") from exc
+    if step not in _CONTENT_ARTIFACT_KIND:
+        raise UsageError("record-content supports only Steps 3 through 8")
+    path = Path(args.file)
+    if not path.is_file():
+        raise UsageError("--file must name the saved model_router response")
+    try:
+        result_data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise UsageError("--file must contain model_router JSON") from exc
+    text_value, model = _result_text(result_data)
+    ps = _podcast_state()
+    db_path = args.db_path or ps.resolve_db_path()
+    checkpoint = _checkpoint(args.job_id, step)
+    conn = ps.connect(db_path)
+    try:
+        receipt = conn.execute(
+            "SELECT state FROM podcast_step_receipts WHERE job_id = ? AND step = ? AND action = ?",
+            (args.job_id, str(step), checkpoint["action"]),
+        ).fetchone()
+    finally:
+        conn.close()
+    if receipt is None:
+        raise StepDriverError("record-content requires the step receipt to be begun first")
+    if receipt["state"] == "complete":
+        out = {"job_id": args.job_id, "step": step, "disposition": "already_complete"}
+        print(json.dumps(out, ensure_ascii=False) if args.json else "CONTENT ALREADY RECORDED")
+        return EXIT_OK
+
+    derived = {}
+    if step == 3:
+        package = _json_text(text_value, "research package")
+        if not package.get("research_package"):
+            raise UsageError("research package must contain research_package")
+        derived["research_tool"] = "model_router:" + (model or "content")
+    elif step == 4:
+        sizing = _json_text(text_value, "sizing result")
+        runtime = sizing.get("runtime_minutes")
+        if not isinstance(runtime, (int, float)) or not 7 <= float(runtime) <= 15:
+            raise UsageError("sizing result runtime_minutes must be between 7 and 15")
+        derived["runtime_minutes"] = runtime
+    elif step == 5:
+        blueprint = _json_text(text_value, "blueprint")
+        title = blueprint.get("title") or blueprint.get("episode_title")
+        if not isinstance(title, str) or not title.strip():
+            raise UsageError("blueprint must contain a non-empty title")
+        derived["episode_title"] = title.strip()
+    elif step == 6:
+        if len(text_value) < 40:
+            raise UsageError("draft is too short to persist")
+        derived["writing_model"] = model or "model_router:content"
+    elif len(text_value) < 40:
+        raise UsageError("content pass is too short to persist")
+
+    artifact = {"step": step, "kind": _CONTENT_ARTIFACT_KIND[step],
+                "text": text_value, "model": model}
+    artifact_path = path.with_suffix(path.suffix + ".artifact.json")
+    artifact_path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, _state_writer(), "--db-path", db_path, "--json", "artifact",
+         "--job-id", args.job_id, "--step", str(step), "--kind",
+         _CONTENT_ARTIFACT_KIND[step], "--file", str(artifact_path)],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise StepDriverError("artifact persistence refused: %s" %
+                              (result.stderr.strip() or "unknown error"))
+    for field, value in derived.items():
+        _set_output_once(ps, db_path, args.job_id, field, value)
+    completed = subprocess.run(
+        [sys.executable, _state_writer(), "--db-path", db_path, "--json", "receipt",
+         "complete", "--job-id", args.job_id, "--step", str(step), "--action",
+         checkpoint["action"], "--idempotency-key", checkpoint["idempotency_key"],
+         "--result-file", str(path)], text=True, capture_output=True, check=False,
+    )
+    if completed.returncode != 0:
+        raise StepDriverError("content receipt was not completed: %s" %
+                              (completed.stderr.strip() or "unknown error"))
+    out = {"job_id": args.job_id, "step": step, "recorded": True,
+           "derived": derived, "artifact": json.loads(result.stdout or "{}"),
+           "receipt": json.loads(completed.stdout or "{}")}
+    print(json.dumps(out, ensure_ascii=False) if args.json else "CONTENT RECORDED")
+    return EXIT_OK
+
+
+def _claim_is_runnable(ps, db_path: str, job_id: str, step) -> bool:
+    checkpoint = _checkpoint(job_id, step)
+    conn = ps.connect(db_path)
+    try:
+        receipt = conn.execute(
+            "SELECT state FROM podcast_step_receipts WHERE job_id = ? AND step = ? AND action = ?",
+            (job_id, str(step), checkpoint["action"]),
+        ).fetchone()
+    finally:
+        conn.close()
+    if receipt is None:
+        raise StepDriverError("Step %s requires its receipt to be begun first" % step)
+    return receipt["state"] != "complete"
+
+
+def _complete_checkpoint(db_path: str, job_id: str, step, evidence: Path) -> dict:
+    checkpoint = _checkpoint(job_id, step)
+    result = subprocess.run(
+        [sys.executable, _state_writer(), "--db-path", db_path, "--json", "receipt",
+         "complete", "--job-id", job_id, "--step", str(step), "--action",
+         checkpoint["action"], "--idempotency-key", checkpoint["idempotency_key"],
+         "--result-file", str(evidence)], text=True, capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise StepDriverError("Step %s receipt was not completed: %s" %
+                              (step, result.stderr.strip() or "unknown error"))
+    return json.loads(result.stdout or "{}")
+
+
+def _record_boundary_artifact(db_path: str, job_id: str, step, kind: str,
+                              evidence: Path) -> dict:
+    result = subprocess.run(
+        [sys.executable, _state_writer(), "--db-path", db_path, "--json", "artifact",
+         "--job-id", job_id, "--step", str(step), "--kind", kind, "--file", str(evidence)],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise StepDriverError("Step %s artifact was refused: %s" %
+                              (step, result.stderr.strip() or "unknown error"))
+    return json.loads(result.stdout or "{}")
+
+
+def _job_record(ps, db_path: str, job_id: str, *, link_back_verified: bool = False) -> dict:
+    row = _load_job_row(ps, db_path, job_id)
+    return {key: value for key, value in row.items() if value is not None} | {
+        "job_id": job_id,
+        "field_writeback_verified": link_back_verified,
+    }
+
+
+def _boundary_command(env_name: str, default: list[str]) -> list[str]:
+    """Client-owned executable override used only for controlled harnesses.
+
+    Production leaves these variables unset and reaches the canonical CAF /
+    enrollment modules.  The override makes a hermetic acceptance harness test
+    the driver's real work-order and receipt paths without provider calls.
+    """
+    configured = os.environ.get(env_name, "").strip()
+    return shlex.split(configured) if configured else default
+
+
+def cmd_link_back(args) -> int:
+    """Execute the established CAF field-layer Step 16, with no prose shim."""
+    ps = _podcast_state()
+    db_path = args.db_path or ps.resolve_db_path()
+    if not _claim_is_runnable(ps, db_path, args.job_id, 16):
+        print(json.dumps({"job_id": args.job_id, "step": 16,
+                          "disposition": "already_complete"}))
+        return EXIT_OK
+    row = _load_job_row(ps, db_path, args.job_id)
+    required = ("episode_title", "episode_description", "episode_package_url",
+                "speech_script_url", "podbean_permalink")
+    missing = [field for field in required if not row.get(field)]
+    if missing:
+        raise StepDriverError("Step 16 cannot build link-back values; missing: " + ", ".join(missing))
+    values = {
+        "contact.podcast_survey_episode_title": row["episode_title"],
+        "contact.podcast_survey_episode_description": row["episode_description"],
+        "contact.finish_podcast_google_doc_link": row["episode_package_url"],
+        "contact.podcast_transcript_link": row["speech_script_url"],
+        "contact.podcast_survey_episode_url": row["podbean_permalink"],
+    }
+    if row.get("book_teaser_url"):
+        values["contact.book_teaser"] = row["book_teaser_url"]
+    work_dir = Path(args.work_dir or (Path(args.state_dir) / "jobs" / args.job_id))
+    work_dir.mkdir(parents=True, exist_ok=True)
+    values_file = work_dir / "step-16-link-back-values.json"
+    values_file.write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")
+    command = _boundary_command("PODCAST_FIELD_LAYER_CMD",
+                                [sys.executable, "-m", "caf.field_layer.cli"]) + ["--json", "--state-dir",
+               args.state_dir, "--payload-location-id", row["location_id"], "write-back",
+               "--contact-id", row["contact_id"], "--values-file", str(values_file)]
+    result = subprocess.run(command, cwd=str(_SCRIPTS_DIR), text=True,
+                            capture_output=True, check=False)
+    try:
+        public = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        public = {}
+    if result.returncode != 0 or public.get("status") != "ok" or public.get("read_back_pass") is not True:
+        raise StepDriverError("Step 16 field write/read-back failed: " +
+                              (result.stderr.strip() or result.stdout.strip() or "unknown error"))
+    evidence = work_dir / "step-16-link-back-result.json"
+    evidence.write_text(json.dumps(public, ensure_ascii=False), encoding="utf-8")
+    artifact = _record_boundary_artifact(db_path, args.job_id, 16, "link-back", evidence)
+    receipt = _complete_checkpoint(db_path, args.job_id, 16, evidence)
+    out = {"job_id": args.job_id, "step": 16, "link_back_verified": True,
+           "artifact": artifact, "receipt": receipt}
+    print(json.dumps(out, ensure_ascii=False) if args.json else "LINK-BACK RECORDED")
+    return EXIT_OK
+
+
+def cmd_terminal_action(args) -> int:
+    """Run Step 17's mode-owned terminal action from durable job state."""
+    ps = _podcast_state()
+    db_path = args.db_path or ps.resolve_db_path()
+    if not _claim_is_runnable(ps, db_path, args.job_id, 17):
+        print(json.dumps({"job_id": args.job_id, "step": 17,
+                          "disposition": "already_complete"}))
+        return EXIT_OK
+    row = _load_job_row(ps, db_path, args.job_id)
+    work_dir = Path(args.work_dir or (Path(args.state_dir) / "jobs" / args.job_id))
+    work_dir.mkdir(parents=True, exist_ok=True)
+    if row.get("mode") == "personal_podcast_style":
+        record_file = work_dir / "step-17-episode-record.json"
+        record_file.write_text(json.dumps(_job_record(ps, db_path, args.job_id), ensure_ascii=False),
+                               encoding="utf-8")
+        command = _boundary_command("PODCAST_PERSONAL_SPREADSHEET_CMD",
+                                    [sys.executable, _script("personal_spreadsheet.py")]) + ["--state-dir", args.state_dir,
+                   "--json", "append", "--client-id", row["client_id"], "--record-file",
+                   str(record_file), "--mode", "personal_podcast_style"]
+        kind = "running-spreadsheet"
+    else:
+        conn = ps.connect(db_path)
+        try:
+            proof = conn.execute(
+                "SELECT 1 FROM podcast_step_artifacts WHERE job_id = ? AND step = '16' AND kind = 'link-back'",
+                (args.job_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if proof is None:
+            raise StepDriverError("Step 17 enrollment refused: no verified Step 16 link-back artifact")
+        job_file = work_dir / "step-17-enrollment-job.json"
+        job_file.write_text(json.dumps(_job_record(ps, db_path, args.job_id,
+                                                   link_back_verified=True), ensure_ascii=False),
+                            encoding="utf-8")
+        command = _boundary_command("PODCAST_ENROLLMENT_CMD",
+                                    [sys.executable, _script("caf", "enrollment", "enroll.py")]) + ["enroll",
+                   "--job", str(job_file), "--state", str(Path(args.state_dir) / "ghl-state.json")]
+        kind = "workflow-enrollment"
+    result = subprocess.run(command, text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise StepDriverError("Step 17 terminal action failed: " +
+                              (result.stderr.strip() or result.stdout.strip() or "unknown error"))
+    evidence = work_dir / "step-17-terminal-result.json"
+    try:
+        public = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise StepDriverError("Step 17 returned non-JSON evidence") from exc
+    if row.get("mode") == "interview_style_podcast" and public.get("verified") is not True:
+        raise StepDriverError("Step 17 enrollment returned without verified evidence")
+    evidence.write_text(json.dumps(public, ensure_ascii=False), encoding="utf-8")
+    artifact = _record_boundary_artifact(db_path, args.job_id, 17, kind, evidence)
+    receipt = _complete_checkpoint(db_path, args.job_id, 17, evidence)
+    out = {"job_id": args.job_id, "step": 17, "kind": kind,
+           "artifact": artifact, "receipt": receipt}
+    print(json.dumps(out, ensure_ascii=False) if args.json else "TERMINAL ACTION RECORDED")
     return EXIT_OK
 
 
@@ -1149,6 +1515,24 @@ def build_parser() -> argparse.ArgumentParser:
     sn.add_argument("--job-id", required=True)
     sn.add_argument("--file", required=True, help="local 800-2500 character show-notes text file")
     sn.set_defaults(func=cmd_record_show_notes)
+
+    content = sub.add_parser("record-content", help="persist Steps 3-8 model evidence and derived state")
+    content.add_argument("--job-id", required=True)
+    content.add_argument("--step", required=True, choices=[str(n) for n in range(3, 9)])
+    content.add_argument("--file", required=True, help="saved public JSON emitted by model_router")
+    content.set_defaults(func=cmd_record_content)
+
+    lb = sub.add_parser("link-back", help="execute and verify the Step 16 CAF field write")
+    lb.add_argument("--job-id", required=True)
+    lb.add_argument("--state-dir", required=True, help="client-owned field-layer state directory")
+    lb.add_argument("--work-dir", default=None, help="per-job local evidence directory")
+    lb.set_defaults(func=cmd_link_back)
+
+    terminal = sub.add_parser("terminal-action", help="execute Step 17 enrollment or personal spreadsheet action")
+    terminal.add_argument("--job-id", required=True)
+    terminal.add_argument("--state-dir", required=True, help="client-owned enrollment/spreadsheet state directory")
+    terminal.add_argument("--work-dir", default=None, help="per-job local evidence directory")
+    terminal.set_defaults(func=cmd_terminal_action)
 
     l = sub.add_parser("list-steps", help="show the step table or a job's position")
     l.add_argument("--job-id", default=None)
