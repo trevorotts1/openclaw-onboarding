@@ -133,7 +133,7 @@ class TestF16VerifierDetectsViolations(unittest.TestCase):
             export = json.load(f)
         for n in export["nodes"]:
             if n["name"] == "Set Anyone Can Edit":
-                n["parameters"]["permissionsUi"]["permissionsValues"]["role"] = "reader"
+                n["parameters"]["jsonBody"] = n["parameters"]["jsonBody"].replace("role:'writer'", "role:'reader'")
         with open(path, "w") as f:
             json.dump(export, f)
         proc = run_verifier(dst)

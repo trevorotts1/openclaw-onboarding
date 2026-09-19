@@ -70,7 +70,7 @@ class CreateGraph(unittest.TestCase):
    else:state['sheets']['created_1']['headers']['Posts'][0]='wrong'
    self.assertEqual(run(state=state)['runs'][0]['response']['status'],'error')
  def test_missing_share_is_repaired_without_reformatting(self):
-  state=run()['state'];state['files'][0]['shared']=False
+  state=run()['state'];state['files'][0]['shared']=False;state['files'][0]['permissions']=[]
   r=run(state=state);self.assertEqual(r['runs'][0]['response']['status'],'success');self.assertTrue(r['state']['files'][0]['shared'])
   self.assertFalse(any(x['name']=='Provision Formatting (F25 batchUpdate)' for x in r['writes']))
  def test_invalid_template_fails_before_creating_file(self):
