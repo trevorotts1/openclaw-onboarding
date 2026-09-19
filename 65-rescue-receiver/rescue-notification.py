@@ -164,8 +164,9 @@ def main():
     t=sub.add_parser("tick"); t.add_argument("--state-dir",required=True); t.add_argument("--openclaw-bin",required=True); t.add_argument("--timeout-seconds",type=float,default=15); t.add_argument("--max-retries",type=int,default=MAX_RETRIES); t.set_defaults(func=tick)
     c=sub.add_parser("report-confirm"); c.add_argument("--state-dir",required=True); c.add_argument("--operation-id",required=True); c.set_defaults(func=confirm)
     args=ap.parse_args()
-    # Notification text is deliberately stdin only: it must not be exposed in
-    # process listings or command logs while a poll is running.
+    # Notification text enters from stdin so the poll's enqueue command does
+    # not expose it in argv. The downstream trusted OpenClaw CLI still uses
+    # its documented --message argument during the bounded send invocation.
     if args.command == "enqueue": args.body=sys.stdin.read()
     args.func(args)
 if __name__ == "__main__": main()
