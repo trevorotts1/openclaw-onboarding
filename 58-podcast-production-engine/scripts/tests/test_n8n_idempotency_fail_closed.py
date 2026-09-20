@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Static regression for the n8n lookup-error safety boundary.
+"""Static regression for the n8n idempotency-error safety boundary.
 
 This does not claim exactly-once delivery: n8n Data Table get/upsert is not an
-atomic claim.  It does ensure a lookup failure cannot become an empty lookup
-and proceed to Podbean.
+atomic claim.  It ensures lookup/write failures stop before Podbean: a lookup
+failure cannot become an empty lookup, and a lost claim write cannot proceed
+as unseen.
 """
 
 import json
@@ -24,6 +25,14 @@ class IdempotencyLookupSafetyTest(unittest.TestCase):
         self.assertEqual(lookup["onError"], "stopWorkflow")
         self.assertTrue(lookup["alwaysOutputData"], "successful no-match must still reach verdict")
         self.assertIn("NOT an atomic claim", lookup["notes"])
+
+    def test_claim_write_errors_stop_before_podbean(self):
+        for name in ("Idempotency  --  Upsert Row Received", "Idempotency  --  Mark In Flight"):
+            node = self.nodes[name]
+            self.assertEqual(node["onError"], "stopWorkflow", name)
+            self.assertTrue(node["alwaysOutputData"], name)
+            self.assertIn("FAIL-CLOSED", node["notes"], name)
+            self.assertIn("NOT an atomic compare-and-set", node["notes"], name)
 
     def test_verdict_does_not_describe_lookup_error_as_an_empty_lookup(self):
         source = self.nodes["Idempotency  --  Determine Verdict"]["parameters"]["jsCode"]

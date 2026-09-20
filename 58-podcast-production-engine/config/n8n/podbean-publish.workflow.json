@@ -1150,8 +1150,9 @@
         },
         "options": {}
       },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "onError": "stopWorkflow",
+      "alwaysOutputData": true,
+      "notes": "FAIL-CLOSED claim write: a Data Table write error stops this execution before any Podbean action, so a lost claim can never proceed as unseen. Lookup plus upsert is NOT an atomic compare-and-set claim; concurrent first requests remain a durable-backend limitation."
     },
     {
       "id": "5619645b-7bbb-4691-b938-607fb6b99ff9",
@@ -1187,8 +1188,9 @@
         },
         "options": {}
       },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "onError": "stopWorkflow",
+      "alwaysOutputData": true,
+      "notes": "FAIL-CLOSED claim write: a Data Table write error stops this execution before any Podbean action, so a lost claim can never proceed as unseen. Lookup plus upsert is NOT an atomic compare-and-set claim; concurrent first requests remain a durable-backend limitation."
     },
     {
       "id": "09843737-418c-4cd3-9a70-38f2919381ee",
