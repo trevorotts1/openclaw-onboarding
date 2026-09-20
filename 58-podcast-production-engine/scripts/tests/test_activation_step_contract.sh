@@ -166,15 +166,19 @@ else
 fi
 SITES="$(grep -c 'activation_step "activation:' "$PROVISION" || true)"
 VERIFIED="$(grep -A2 'activation_step "activation:' "$PROVISION" | grep -c -- '-- --verify --client-slug' || true)"
-if [ "${SITES:-0}" -ge 2 ] && [ "${VERIFIED:-0}" = "${SITES:-0}" ]; then
-  pass "T6: all $SITES activation call sites pass -- --verify --client-slug"
+if [ "${SITES:-0}" -ge 1 ] && [ "${VERIFIED:-0}" = "${SITES:-0}" ]; then
+  pass "T6: all $SITES generic activation call sites pass -- --verify --client-slug"
 else
   fail "T6: $SITES call site(s), $VERIFIED with a -- --verify read-back"
 fi
-if grep -q 'install-podcast-department.sh" \\' "$PROVISION" && grep -q -- '--client-slug "\$SLUG" --prime-session -- --verify' "$PROVISION"; then
-  pass "T6: the department step installs with --client-slug and --prime-session"
+# Department install/readiness intentionally straddles hook registration: the
+# registrar creates the namespace the department's verify needs. It cannot use
+# one generic run-then-verify helper call without verifying too early.
+if grep -q 'install-podcast-department.sh" --client-slug "\$SLUG" --prime-session' "$PROVISION" \
+  && grep -q 'install-podcast-department.sh" --verify --client-slug "\$SLUG"' "$PROVISION"; then
+  pass "T6: the department install and post-hook read-back both carry --client-slug"
 else
-  fail "T6: the department step does not pass --client-slug/--prime-session"
+  fail "T6: the department step lacks its install or post-hook --verify invocation"
 fi
 
 # --- T7: the REAL helpers implement the contract ---------------------------

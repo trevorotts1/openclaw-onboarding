@@ -948,10 +948,20 @@ if [ "$SKIP_ACTIVATION" = "1" ]; then
   ledger_fact "activation" "skipped"
   ledger_step "activation" "SKIPPED" "--skip-activation operator override; the processor is NOT confirmed active for $SLUG (the fleet audit will flag this client)"
 else
-  activation_step "activation:department" 22 "the podcast department installer" "install-podcast-department.sh" \
-    --client-slug "$SLUG" --prime-session -- --verify --client-slug "$SLUG"
+  # The registrar creates the podcast session namespace.  On a fresh box it
+  # must exist before the department's readiness read-back can succeed.
+  if ! runas "$SCRIPT_DIR/install-podcast-department.sh" --client-slug "$SLUG" --prime-session; then
+    ledger_step "activation:department-install" "FAIL" "department installer returned nonzero"
+    die 22 "podcast department installation failed for client '$SLUG'."
+  fi
+  ledger_step "activation:department-install" "OK" "department installed; readiness follows hook namespace registration"
   activation_step "activation:hook"        23 "the inbound hook registrar"       "register-podcast-hook.sh" \
     --client-slug "$SLUG" -- --verify --client-slug "$SLUG"
+  if ! runas "$SCRIPT_DIR/install-podcast-department.sh" --verify --client-slug "$SLUG"; then
+    ledger_step "activation:department-ready" "FAIL" "department read-back failed after hook registration"
+    die 22 "podcast department is not ready after hook registration for client '$SLUG'."
+  fi
+  ledger_step "activation:department-ready" "OK" "department verified active after hook namespace registration"
   # NO-DAEMON DOCTRINE: there is no scheduler installer and no activation step for
   # one. The department agent advances TaskFlows in its own turn via
   # podcast_step_driver.py; the former scheduler is dead by design
@@ -985,7 +995,14 @@ gate_302() {
 }
 gate_302
 
-# G2: signed hook test POST (requires the box-side mapping + token; PENDING if not wired).
+# G2: signed public-ingress test POST. The upstream survey submits a flat body
+# to /hooks/<route>, where the registered hook mapping reaches the authenticated
+# intake handler. The similarly named /plugins/webhooks/<route> endpoint is
+# the internal TaskFlow control surface and rejects that flat body; probing it
+# cannot prove public handler reachability. The deliberately test-gated payload
+# is terminal in intake_handler.py, so a 2xx is NOT evidence that a production
+# worker run was dispatched; the registered mapping/runtime verification owns
+# that separate acceptance gate.
 gate_hook() {
   if [ "$DRY_RUN" = "1" ]; then ledger_step "gate:signed-hook" "DRY-RUN" "skipped in dry-run"; return 0; fi
   local tok=""
@@ -994,19 +1011,21 @@ gate_hook() {
     tok="$(runas bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_SECRET:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
   fi
   if [ -z "$tok" ]; then
-    ledger_step "gate:signed-hook" "PENDING" "intake token not available here; run once the hook mapping and token are wired on the box"
+    ledger_step "gate:signed-hook" "FAIL" "intake token unavailable; cannot prove authenticated public handler reachability"
+    GATE_HARD_FAIL="1"
     return 0
   fi
   local code
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
-    -X POST "https://${HOOKS_HOST}/plugins/webhooks/${INTAKE_MAPPING}" \
+    -X POST "https://${HOOKS_HOST}/hooks/${INTAKE_MAPPING}" \
     -H "Authorization: Bearer ${tok}" -H "Content-Type: application/json" \
     --data '{"_test":true,"source":"provision-gate"}' 2>/dev/null || echo "000")"
   unset tok
   if printf '%s' "$code" | grep -Eq '^2[0-9][0-9]$'; then
-    ledger_step "gate:signed-hook" "PASS" "signed test POST accepted (HTTP $code)"
+    ledger_step "gate:signed-hook" "PASS" "signed public ingress handler reachable (HTTP $code; test payload is terminal)"
   else
-    ledger_step "gate:signed-hook" "PENDING" "hook not accepting yet (HTTP $code); confirm the mapping is registered on the box"
+    ledger_step "gate:signed-hook" "FAIL" "public hook mapping did not reach the authenticated handler (HTTP $code)"
+    GATE_HARD_FAIL="1"
   fi
 }
 gate_hook

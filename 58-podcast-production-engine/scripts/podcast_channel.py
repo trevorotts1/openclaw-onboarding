@@ -175,9 +175,10 @@ def resolve_channel(
 ) -> Tuple[str, str]:
     """Resolve the mode-selected Podbean Channel ID (the payload's podcast_id).
 
-    Precedence: an explicit non-empty payload_podcast_id wins as-is (the
-    controller already resolved it, or the operator overrode it; the value is
-    never guessed here anyway). Otherwise the env var for the mode is read:
+    The configured mode channel is authoritative.  An explicit payload value
+    is accepted only when it equals that configured channel, preventing a
+    stale shared snapshot value from routing an interview to the personal show.
+    The env var for the mode is read:
     PODBEAN_PODCAST_ID for personal mode, PODBEAN_PODCAST_ID_<SHOW_SLUG> for
     interview mode.
 
@@ -189,19 +190,22 @@ def resolve_channel(
     wrong show.
     """
     key = channel_env_key(mode, show_name)
-    value = (payload_podcast_id or "").strip()
-    if value:
-        return value, key
     store = os.environ if env is None else env
-    value = str(store.get(key) or "").strip()
-    if not value:
+    configured = str(store.get(key) or "").strip()
+    if not configured:
         raise ChannelError(
             "%s is not set; the two-show convention requires it for mode %s "
             "(capture the channel at onboarding; the resolver never guesses "
             "and never borrows the other show's channel)"
             % (key, normalize_mode(mode))
         )
-    return value, key
+    supplied = (payload_podcast_id or "").strip()
+    if supplied and supplied != configured:
+        raise ChannelError(
+            "payload podcast_id does not match %s for mode %s; refusing cross-show publish"
+            % (key, normalize_mode(mode))
+        )
+    return configured, key
 
 
 def _build_parser() -> argparse.ArgumentParser:

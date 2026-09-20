@@ -105,6 +105,14 @@ def test_mapping_is_deterministic(sut, load_fixture, tenant_location_id):
     assert first == second
 
 
+def test_personal_survey_uses_dedicated_selector_over_stale_shared_field(sut, load_fixture, tenant_location_id):
+    payload = load_fixture("convertflow_personal_counterintuitive.json")
+    payload["customData"]["podcast_survey_writing_style"] = "Vulnerable"
+    result = sut.map_payload(payload, tenant_location_id)
+    assert result.status == "accepted"
+    assert result.canonical["style"] == "counter_intuitive"
+
+
 def test_interview_fixture_requires_and_finds_show_and_host(sut, load_fixture, tenant_location_id):
     result = sut.map_payload(load_fixture("convertflow_interview_provocative.json"),
                              tenant_location_id)
@@ -119,7 +127,7 @@ def test_value_shape_rejects_implausible_values(sut, load_fixture, tenant_locati
     payload = load_fixture("convertflow_personal_counterintuitive.json")
     bad = copy.deepcopy(payload)
     bad["customData"]["podcast_mode"] = "totally unrelated words"
-    bad["customData"]["podcast_survey_writing_style"] = "not a real style"
+    bad["customData"]["select_your_presentation_style_personal_podcast"] = "not a real style"
     bad["contact_id"] = "maria@example.com"
     bad["customData"]["date_for_release"] = "sometime next quarter"
     result = sut.map_payload(bad, tenant_location_id)

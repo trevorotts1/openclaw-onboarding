@@ -174,6 +174,19 @@ def map_payload(raw, tenant_location_id, aliases=None, style_transparency_slot=N
     canonical: dict = {}
     alerts: list = []
 
+    # Personal survey style is owned by its dedicated selector. A shared
+    # Interview selector can be stale contact data and must not override a
+    # Personal response. Generic transport aliases remain supported.
+    mode_value, _mode_key = _resolve(flat, aliases.get("mode", []))
+    mode_token = normalize_mode(mode_value) if mode_value is not None else None
+    if mode_token == "personal_podcast_style":
+        aliases = dict(aliases)
+        aliases["style"] = ["select_your_presentation_style_personal_podcast"] + [
+            alias for alias in aliases.get("style", [])
+            if alias not in ("select_your_presentation_style_personal_podcast",
+                             "podcast_survey_writing_style")
+        ]
+
     for field_name, alias_keys in aliases.items():
         value, _matched = _resolve(flat, alias_keys)
         if value is None:

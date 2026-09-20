@@ -990,8 +990,8 @@
         "returnAll": true,
         "options": {}
       },
-      "notes": "U8  --  SERVER-SIDE IDEMPOTENCY. Placed after the U6 entry guard, before the U5 standing/identity gate (spec Section 5 U8). Looks up podcast_publish_ledger by idempotency_key. onError=continueRegularOutput + alwaysOutputData=true (same fix required by U5/U13) so a no-match or table error always yields exactly one output item, never a silently-halted execution.",
-      "onError": "continueRegularOutput",
+      "notes": "U8  --  SERVER-SIDE IDEMPOTENCY. Placed before every Podbean action. A no-match still emits one empty item for the verdict node, but a Data Table read error stops this execution fail-closed. Data Table lookup plus upsert is NOT an atomic claim primitive: concurrent first requests remain a durable-backend limitation.",
+      "onError": "stopWorkflow",
       "alwaysOutputData": true
     },
     {
@@ -1004,7 +1004,7 @@
         850
       ],
       "parameters": {
-        "jsCode": "// U8  --  SERVER-SIDE IDEMPOTENCY (spec Section 5 U8 / Section 8). Runs AFTER the U6 entry\n// guard, BEFORE the U5 standing/identity gate -- earliest possible point once the payload\n// is known well-formed, so a duplicate idempotency_key never reaches the roster lookup or\n// any Podbean call. Classifies exactly one of: replay | in_flight | proceed.\n// Fail-open on a genuine table-read error (the lookup node has onError=continueRegularOutput\n// + alwaysOutputData=true, so an error surfaces here as zero matched rows, same as\n// \"never seen this key before\") -- the box's own client-side ledger-permalink skip\n// (podbean_publish.sh lines 363-377) is the SECOND, independent guard against a true\n// double-publish (spec Section 8); refusing a legitimate new publish because the ledger\n// table briefly errored would be worse than the rare risk this covers.\n\nconst wh = $('Webhook  --  Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\nconst idempotency_key = (body.idempotency_key || '').toString().trim();\n\nconst rows = $input.all().map(item => item.json).filter(r => r && r.idempotency_key);\n\nlet verdict = 'proceed';\nlet stored_permalink_url = '';\nlet stored_episode_number = '';\n\nif (rows.length > 0) {\n  const row = rows[0];\n  const status = (row.status || '').toString();\n  if (status === 'completed') {\n    verdict = 'replay';\n    stored_permalink_url = row.permalink_url || '';\n    stored_episode_number = row.episode_number || '';\n  } else if (status === 'received' || status === 'in_flight') {\n    verdict = 'in_flight';\n  } else {\n    // 'failed' / 'refused' / unknown status: safe to retry with the same key\n    // (spec Section 8: \"Podbean 5xx: workflow fails -> ledger failed -> box retries same key (safe)\").\n    verdict = 'proceed';\n  }\n}\n\nreturn [{\n  json: {\n    idempotency_key,\n    idempotency_verdict: verdict,\n    idempotency_is_replay: verdict === 'replay',\n    idempotency_is_in_flight: verdict === 'in_flight',\n    stored_permalink_url,\n    stored_episode_number,\n    raw_channel_id: (body.podcast_id || '').toString().trim(),\n    raw_source: (body.source || 'unknown').toString()\n  }\n}];"
+        "jsCode": "// U8  --  SERVER-SIDE IDEMPOTENCY (spec Section 5 U8 / Section 8). Runs after the\n// entry guard and before every Podbean action. A Data Table read failure is stopped by\n// the lookup node, so it cannot be mistaken for an unseen key. This is fail-closed\n// mitigation only: Data Table lookup plus upsert is not an atomic compare-and-set\n// claim, so concurrent first requests still require a durable claim backend.\n\nconst wh = $('Webhook  --  Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\nconst idempotency_key = (body.idempotency_key || '').toString().trim();\nconst rows = $input.all().map(item => item.json).filter(r => r && r.idempotency_key);\nlet verdict = 'proceed';\nlet stored_permalink_url = '';\nlet stored_episode_number = '';\nif (rows.length > 0) {\n  const row = rows[0];\n  const status = (row.status || '').toString();\n  if (status === 'completed') {\n    verdict = 'replay';\n    stored_permalink_url = row.permalink_url || '';\n    stored_episode_number = row.episode_number || '';\n  } else if (status === 'received' || status === 'in_flight') {\n    verdict = 'in_flight';\n  }\n}\nreturn [{ json: {\n  idempotency_key,\n  idempotency_verdict: verdict,\n  idempotency_is_replay: verdict === 'replay',\n  idempotency_is_in_flight: verdict === 'in_flight',\n  stored_permalink_url,\n  stored_episode_number,\n  raw_channel_id: (body.podcast_id || '').toString().trim(),\n  raw_source: (body.source || 'unknown').toString()\n} }];"
       }
     },
     {
@@ -1150,8 +1150,9 @@
         },
         "options": {}
       },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "onError": "stopWorkflow",
+      "alwaysOutputData": true,
+      "notes": "FAIL-CLOSED claim write: a Data Table write error stops this execution before any Podbean action, so a lost claim can never proceed as unseen. Lookup plus upsert is NOT an atomic compare-and-set claim; concurrent first requests remain a durable-backend limitation."
     },
     {
       "id": "5619645b-7bbb-4691-b938-607fb6b99ff9",
@@ -1187,8 +1188,9 @@
         },
         "options": {}
       },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "onError": "stopWorkflow",
+      "alwaysOutputData": true,
+      "notes": "FAIL-CLOSED claim write: a Data Table write error stops this execution before any Podbean action, so a lost claim can never proceed as unseen. Lookup plus upsert is NOT an atomic compare-and-set claim; concurrent first requests remain a durable-backend limitation."
     },
     {
       "id": "09843737-418c-4cd3-9a70-38f2919381ee",

@@ -370,10 +370,11 @@ def _bridge_to_sqlite(jk, canonical, base, config):
     payload_file = str(ledger.payload_path(jk, base))
     if not os.path.isfile(payload_file):
         return False, "ledger payload file missing (%s)" % payload_file
-    argv = [sys.executable or "python3", STATE_BRIDGE_SCRIPT, "create",
+    argv = [sys.executable or "python3", STATE_BRIDGE_SCRIPT, "--json", "create",
             "--client-id", client_id, "--location-id", location_id,
             "--contact-id", contact_id, "--mode", mode, "--style", style,
-            "--payload-file", payload_file, "--job-key", jk, "--json"]
+            "--payload-file", payload_file, "--job-key", jk,
+            "--ledger-dir", str(base)]
     if not os.path.isfile(STATE_BRIDGE_SCRIPT):
         return False, "state writer absent (%s)" % STATE_BRIDGE_SCRIPT
     try:
@@ -480,7 +481,9 @@ def handle(body, config, tables=None, client=None):
         return verdict
 
     if initial_state == "test":
-        verdict["status"] = "accepted"
+        # A designated canary is terminal at intake.  It is not a production
+        # acceptance and the route must not hand it to the step driver.
+        verdict["status"] = "test"
         verdict["test"] = True
         _bridge_and_record(jk, canonical, base, config, verdict, client)
         _short_circuit_flow(client, config,
@@ -492,6 +495,15 @@ def handle(body, config, tables=None, client=None):
     if decision == "retry":
         verdict["retry"] = True
     _bridge_and_record(jk, canonical, base, config, verdict, client)
+    if verdict.get("bridge") != "ok":
+        # The ledger claim is durable, but a missing canonical SQLite job means
+        # there is no valid execution owner.  Never run production from a
+        # bridge_error placeholder.
+        verdict["status"] = "bridge_failed"
+        _short_circuit_flow(client, config,
+                            {"podcast_webhook_terminal": "bridge_failed", "job_key": jk},
+                            base, verdict, waiting=True, current_step="bridge_failed")
+        return verdict
     _launch_pipeline(client, config, jk, base, verdict)
     return verdict
 
@@ -531,6 +543,8 @@ def main(argv=None):
     ap.add_argument("--base", help="ledger base dir (default ~/.openclaw/state/podcast-engine)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--signature", help="X-Podcast-Intake-Signature header value for HMAC verification")
+    ap.add_argument("--trusted-gateway", action="store_true",
+                    help="accept only the post-Bearer gateway handoff used by the registered trigger-flow route")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -555,12 +569,20 @@ def main(argv=None):
               (len(raw_bytes), max_bytes, ENV_MAX_PAYLOAD_BYTES), file=sys.stderr)
         return EXIT_HANDLER_ERROR
 
-    # Inbound HMAC-SHA256 signature verification (before any parsing).
+    # Inbound HMAC-SHA256 verification (before any parsing).  The registered
+    # /hooks mapping is already authenticated by the gateway Bearer token and
+    # cannot retain the original external header, so it uses this explicit,
+    # narrowly scoped trusted handoff instead of pretending an absent HMAC
+    # traversed the mapping.
     secret = os.environ.get(ENV_INBOUND_SECRET)
     sig_header = os.environ.get(SIGNATURE_HEADER)
     if args.signature:
         sig_header = args.signature  # CLI override for testing
-    if secret is not None:
+    if args.trusted_gateway:
+        if args.mode != "trigger-flow" or not os.environ.get(ENV_ROUTE, "").startswith("podcast-intake-"):
+            print("REJECT: trusted gateway handoff is only valid for a registered trigger-flow route", file=sys.stderr)
+            return EXIT_HANDLER_ERROR
+    elif secret is not None:
         if not _verify_signature(raw_bytes, sig_header, secret):
             print("REJECT: inbound signature missing or invalid", file=sys.stderr)
             return EXIT_HANDLER_ERROR
@@ -660,7 +682,7 @@ def self_test():
     test_cfg = dict(base_cfg); test_cfg["test_contact_id"] = "CNTdesignatedtest01"
     vt = handle(full_payload(contactId="CNTdesignatedtest01", **{"_test": "true"}),
                 dict(test_cfg), tables)
-    check("test-gated payload -> state test", vt["state"] == "test" and vt.get("test") is True)
+    check("test-gated payload -> terminal test", vt["status"] == "test" and vt["state"] == "test" and vt.get("test") is True)
     # a stray _test from a NON-test contact is ignored (treated as real)
     vt2 = handle(full_payload(contactId="CNTrealcontact00001", **{"_test": "true"}),
                  dict(test_cfg), tables)

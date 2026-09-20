@@ -157,13 +157,23 @@ class TestResolveChannel(unittest.TestCase):
         with self.assertRaises(pc.ChannelError):
             pc.resolve_channel("personal_podcast_style", env=env)
 
-    def test_payload_podcast_id_wins_as_is(self):
+    def test_matching_payload_podcast_id_is_accepted(self):
         env = {"PODBEAN_PODCAST_ID": "chan-env"}
         channel, key = pc.resolve_channel(
-            "personal_podcast_style", env=env, payload_podcast_id="chan-from-payload"
+            "personal_podcast_style", env=env, payload_podcast_id="chan-env"
         )
-        self.assertEqual(channel, "chan-from-payload")
+        self.assertEqual(channel, "chan-env")
         self.assertEqual(key, "PODBEAN_PODCAST_ID")
+
+    def test_wrong_mode_payload_channel_is_refused(self):
+        env = {
+            "PODBEAN_PODCAST_ID": "chan-personal",
+            "PODBEAN_PODCAST_ID_SOFT_GIRL_ERA": "chan-interview",
+        }
+        with self.assertRaises(pc.ChannelError) as ctx:
+            pc.resolve_channel("interview", "Soft Girl Era", env=env,
+                               payload_podcast_id="chan-personal")
+        self.assertIn("PODBEAN_PODCAST_ID_SOFT_GIRL_ERA", str(ctx.exception))
 
     def test_resolution_is_mode_specific_for_same_box(self):
         # A fully provisioned two-show box resolves a DIFFERENT channel per
@@ -230,7 +240,7 @@ class TestCli(unittest.TestCase):
     def test_payload_podcast_id_override(self):
         res = _run_cli(
             ["--mode", "personal", "--payload-podcast-id", "chan-override", "--check"],
-            {},  # env empty: the explicit payload value must win
+            {"PODBEAN_PODCAST_ID": "chan-override"},
         )
         self.assertEqual(res.returncode, 0, res.stderr)
 

@@ -3,8 +3,11 @@
 
 Re-GETs the four required workflows in the podcast TEMPLATE sub-account via the
 GHL internal rail (Firebase JWT -- the same backend.leadconnectorhq.com rail the
-Skill-44 caf builder uses) and ASSERTS each is:
-  * status == "published"
+Skill-44 caf builder uses) and ASSERTS each is configured for its release role:
+  * the two intake workflows are published
+  * the two client-notification placeholder workflows are draft in a template
+    (or published only when --notification-status=published is explicitly used
+    to verify a client that has replaced both placeholder messages)
   * has exactly one trigger, active == True, of the EXPECTED trigger type
   * has >= 1 action step
 
@@ -37,10 +40,10 @@ DEFAULT_LOC = "CjxATjhv9Gt21qSqURIt"
 # name-substring -> (expected trigger type, human label). Matched against the live
 # workflow name so the gate is resilient to id changes across snapshot imports.
 EXPECTED = [
-    ("01-Podcast Intake Submitted (Interview)", "survey_submission", "Survey Submitted (Interview)"),
-    ("02-Podcast Intake Submitted (Personal)",  "survey_submission", "Survey Submitted (Personal)"),
-    ("04-Podcast is Completed",                 "contact_changed",   "Custom Field Changed (episode url)"),
-    ("06-Podcast_Episode_Is_Ready",             "contact_tag",       "Contact Tag Added"),
+    ("01-Podcast Intake Submitted (Interview)", "survey_submission", "Survey Submitted (Interview)", "published"),
+    ("02-Podcast Intake Submitted (Personal)",  "survey_submission", "Survey Submitted (Personal)", "published"),
+    ("04-Podcast is Completed",                 "contact_changed",   "Custom Field Changed (episode url)", "notification"),
+    ("06-Podcast_Episode_Is_Ready",             "contact_tag",       "Contact Tag Added", "notification"),
 ]
 
 
@@ -88,6 +91,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--location", default=os.environ.get("GHL_LOCATION_ID") or os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or "")
     ap.add_argument("--token-env", default="PODCAST_ENGINE_GHL_FIREBASE_REFRESH_TOKEN,GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN")
+    ap.add_argument(
+        "--notification-status", choices=("draft", "published"), default="draft",
+        help="expected status for 04/06; draft is the safe source-template default",
+    )
     args = ap.parse_args()
     loc = args.location or DEFAULT_LOC
     if not args.location and loc == DEFAULT_LOC:
@@ -117,7 +124,7 @@ def main() -> int:
 
     print(f"== LIVE podcast-workflow QC -- location {loc} ({len(rows)} workflows) ==")
     all_ok = True
-    for name_sub, exp_type, label in EXPECTED:
+    for name_sub, exp_type, label, expected_status in EXPECTED:
         match = next((r for n, r in by_name.items() if name_sub in n), None)
         if not match:
             print(f"[FAIL] missing workflow: {name_sub!r}")
@@ -129,12 +136,15 @@ def main() -> int:
         _, trigs = _get(tok, f"/workflow/{loc}/trigger?workflowId={wid}")
         trigs = trigs if isinstance(trigs, list) else []
         t = trigs[0] if trigs else {}
-        ok = (wf.get("status") == "published" and len(trigs) >= 1
-              and t.get("active") is True and t.get("type") == exp_type and len(steps) >= 1)
+        expected_status = args.notification_status if expected_status == "notification" else expected_status
+        expected_active = expected_status == "published"
+        ok = (wf.get("status") == expected_status and len(trigs) >= 1
+              and t.get("active") is expected_active and t.get("type") == exp_type and len(steps) >= 1)
         all_ok = all_ok and ok
         print(f"[{'PASS' if ok else 'FAIL'}] {name_sub}")
-        print(f"        status={wf.get('status')} steps={len(steps)} "
-              f"trigger(count={len(trigs)}, type={t.get('type')}, active={t.get('active')}) expect={exp_type} ({label})")
+        print(f"        status={wf.get('status')} expected-status={expected_status} steps={len(steps)} "
+              f"trigger(count={len(trigs)}, type={t.get('type')}, active={t.get('active')}, expected-active={expected_active}) "
+              f"expect={exp_type} ({label})")
 
     print("\nRESULT:", "ALL PASS" if all_ok else "FAILURES PRESENT")
     return 0 if all_ok else 1

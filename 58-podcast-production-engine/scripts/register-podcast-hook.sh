@@ -614,20 +614,28 @@ Do exactly these steps, in this order, in THIS turn, and nothing else.
    to a new file in it named ${CLIENT_SLUG}-\$(date -u +%Y%m%dT%H%M%SZ)-\$RANDOM.json
    (mode 0600). Do not reformat it, do not add fields, do not drop fields.
 2. Run, with that file path as PAYLOAD_FILE:
-   python3 ${SKILL_ROOT}/scripts/webhook/intake_handler.py handle --payload \"\$PAYLOAD_FILE\" --mode trigger-flow --json
+   python3 ${SKILL_ROOT}/scripts/webhook/intake_handler.py handle --payload \"\$PAYLOAD_FILE\" --mode trigger-flow --trusted-gateway --json
 3. Read the JSON the handler printed. Its status decides the rest:
    accepted            -> continue to step 4 using its job_id.
-   duplicate | test | needs_input | accepted-incomplete | quarantined | rejected
+   duplicate | test | needs_input | accepted-incomplete | bridge_failed | quarantined | rejected
                        -> STOP here. The handler already closed or parked the
                           flow and wrote the operator alert. Never re-run the
                           handler on the same payload; a re-run is a duplicate.
    error               -> STOP and raise the operator alert path; do not retry blind.
 4. For an accepted job ONLY, advance the pipeline in this same tool-bearing turn
    per SOP-PODCAST-01 Section 8: repeatedly run
-   python3 ${SKILL_ROOT}/scripts/podcast_step_driver.py next --job-id <job_id>
-   and execute EXACTLY the command the driver prints, recording every stage
-   change through podcast_state.py, until the driver reports the job is waiting,
-   complete, or failed. The driver is a tool you call, never a daemon.
+   python3 ${SKILL_ROOT}/scripts/podcast_step_driver.py --json next --job-id <job_id>
+   and execute the returned command. BEFORE any external/provider action, run
+   checkpoint.begin_command from that JSON. acquired means execute once;
+   in_progress means DO NOT dispatch or replay: reconcile supported provider
+   readback/idempotency evidence, then complete the receipt; already_complete
+   means DO NOT dispatch it again. After a successful action, save local evidence
+   and run checkpoint.complete_command. Step 12.5 is mandatory: save the content
+   response and run podcast_step_driver.py record-show-notes --job-id JOB_ID
+   --file SHOW_NOTES_FILE; it validates, persists episode_description, and
+   completes that receipt. Record stage changes only through podcast_state.py,
+   then call next again until the driver reports waiting, complete, or failed.
+   The driver is a tool you call, never a daemon.
 5. Send NO client-facing message. Convert and Flow owns every customer message.
    Operator alerts go to the alert log the engine already writes.
 

@@ -113,8 +113,12 @@ PIT_ALIASES: List[str] = [
 ]
 
 LOCATION_ALIASES: List[str] = [
-    # The Podcast Engine's OWN GHL subaccount location id (engine tenant).
-    # Checked FIRST so the engine tenant always wins over generic ids.
+    # The per-client runtime tenant id written by install-podcast-department.sh
+    # and register-podcast-hook.sh.  It must outrank ambient generic ids: this
+    # gate is run for the named client's box, not for a shared operator tenant.
+    "PODCAST_CLIENT_LOCATION_ID",
+    # Legacy engine-specific location id.  Kept for existing installs, after
+    # the client runtime contract and before generic aliases.
     "PODCAST_ENGINE_GHL_LOCATION_ID",
     "GHL_LOCATION_ID",
     "GOHIGHLEVEL_LOCATION_ID",
@@ -182,6 +186,11 @@ FISH_AUDIO_API_KEY_KEYS = ["FISH_AUDIO_API_KEY", "FISH_AUDIO_KEY", "FISH_API_KEY
 # synthesis can run.
 FISH_AUDIO_REFERENCE_ID_KEYS = [
     "FISH_AUDIO_REFERENCE_ID",
+    # Skill 30 and the shared credential store use VOICE_ID for this same Fish
+    # API request field.  Preserve that legacy client contract rather than
+    # treating a valid voice/reference id as missing.
+    "FISH_AUDIO_VOICE_ID",
+    "FISHAUDIO_VOICE_ID",
     "FISH_REFERENCE_ID",
     "FISH_AUDIO_REFERENCE",
     "FISH_AUDIO_REF",
@@ -901,6 +910,7 @@ class CredentialGate:
         api_base: Optional[str] = None,
         http_get: Optional[Callable[..., HttpResult]] = None,
         stores: Optional[List[Tuple[str, Dict[str, str]]]] = None,
+        unknown_name_sweep: Optional[Callable[[], List[str]]] = None,
         strict_rate_header: bool = False,
     ) -> None:
         self.client = client
@@ -913,6 +923,7 @@ class CredentialGate:
         self.api_base = api_base or os.environ.get("GHL_API_BASE", DEFAULT_API_BASE)
         self.http_get = http_get or (lambda path, token: default_http_get(self.api_base, path, token, {}))
         self._stores = stores  # injectable for the self-test.
+        self._unknown_name_sweep = unknown_name_sweep or _unknown_name_sweep
         self.strict_rate_header = strict_rate_header
         self.verdict = Verdict()
 
@@ -938,7 +949,7 @@ class CredentialGate:
             "winner_alias": pit_res["winner_alias"],
             "winner_store": pit_res["winner_store"],
             "audit": pit_res["audit"],
-            "unknown_name_sweep": [] if pit else _unknown_name_sweep(),
+            "unknown_name_sweep": [] if pit else self._unknown_name_sweep(),
         }
         if not pit:
             return v.finish(
@@ -1374,6 +1385,11 @@ def _selftest() -> int:
         return [("live-process-env(self)", kv)]
 
     with tempfile.TemporaryDirectory() as td:
+        # Keep every self-test fingerprint write inside the temporary sandbox.
+        # The real per-client registry is a runtime artifact, never test input.
+        selftest_registry = os.path.join(td, "fingerprint-registry.json")
+        original_registry = os.environ.get("GHL_FINGERPRINT_REGISTRY")
+        os.environ["GHL_FINGERPRINT_REGISTRY"] = selftest_registry
         # 1. PASS full with fields + healthy rate.
         g = CredentialGate(
             "acme", GOOD_LOC, os.path.join(td, "acme"), mode="full", check_fields=True,
@@ -1387,6 +1403,7 @@ def _selftest() -> int:
             "acme", GOOD_LOC, os.path.join(td, "acme2"), mode="full",
             http_get=fake_http(list(all_fields.values()), 190000),
             stores=stores_with(None, GOOD_LOC),
+            unknown_name_sweep=lambda: [],
         )
         check("missing pit", g.run().exit_code, EXIT_MISSING)
 
@@ -1398,6 +1415,39 @@ def _selftest() -> int:
         )
         check("pairing 401 isolation", g.run().exit_code, EXIT_ISOLATION)
 
+        # 3b. ISOLATION: a token that cannot access the named client's runtime
+        # Location must fail closed.  PODCAST_CLIENT_LOCATION_ID is the intake
+        # handler's installed tenant contract, so this also proves it is used
+        # before ambient generic Location aliases.
+        client_runtime_pairing: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_API_KEY": FAKE_PIT,
+                "GHL_LOCATION_ID": "LOC_AMBIENT_OTHER",
+                "PODCAST_CLIENT_LOCATION_ID": GOOD_LOC,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "test-kie-key",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                "FISH_AUDIO_REFERENCE_ID": "test-ref-id",
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme3b"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000, pair_status=403),
+            stores=client_runtime_pairing,
+        )
+        v3b = g.run()
+        client_loc = (v3b.to_dict()["checks"].get("location") or {}).get("winner_alias")
+        client_loc_ok = client_loc == "PODCAST_CLIENT_LOCATION_ID"
+        reports.append(
+            f"[{'PASS' if client_loc_ok else 'FAIL'}] client runtime location wins over ambient generic id "
+            f"(winner_alias={client_loc})"
+        )
+        passed += int(client_loc_ok)
+        failed += int(not client_loc_ok)
+        check("wrong-client token/client location pairing isolation", v3b.exit_code, EXIT_ISOLATION)
+
         # 4. ISOLATION: webhook location != env location.
         g = CredentialGate(
             "acme", GOOD_LOC, os.path.join(td, "acme4"), mode="full",
@@ -1406,6 +1456,15 @@ def _selftest() -> int:
             stores=stores_with(FAKE_PIT, GOOD_LOC),
         )
         check("webhook/env mismatch isolation", g.run().exit_code, EXIT_ISOLATION)
+
+        # 4b. MISSING: a token without any configured client Location cannot
+        # borrow a Location from a request or another client configuration.
+        g = CredentialGate(
+            "acme", "from-env", os.path.join(td, "acme4b"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_with(FAKE_PIT, None),
+        )
+        check("missing client location", g.run().exit_code, EXIT_MISSING)
 
         # 5. FIELDS: drop the double-underscore key, keep the single-underscore trap.
         trimmed = [
@@ -1449,6 +1508,7 @@ def _selftest() -> int:
         reg = os.path.join(td, "registry.json")
         with open(reg, "w", encoding="utf-8") as fh:
             json.dump({_fingerprint(FAKE_PIT): "other-client"}, fh)
+        registry_before_case_8 = os.environ.get("GHL_FINGERPRINT_REGISTRY")
         os.environ["GHL_FINGERPRINT_REGISTRY"] = reg
         try:
             g = CredentialGate(
@@ -1458,7 +1518,10 @@ def _selftest() -> int:
             )
             check("commingling isolation", g.run().exit_code, EXIT_ISOLATION)
         finally:
-            os.environ.pop("GHL_FINGERPRINT_REGISTRY", None)
+            if registry_before_case_8 is None:
+                os.environ.pop("GHL_FINGERPRINT_REGISTRY", None)
+            else:
+                os.environ["GHL_FINGERPRINT_REGISTRY"] = registry_before_case_8
 
         # 9. SECRECY: the PIT value never appears in the JSON verdict.
         g = CredentialGate(
@@ -1663,6 +1726,37 @@ def _selftest() -> int:
         )
         check("media gate reference_id alias resolves", g.run().exit_code, EXIT_PASS)
 
+        # 17b. MEDIA PROVIDERS: Skill 30's legacy voice-id name is the same
+        # Fish reference_id used by synthesis and must remain supported.
+        stores_voice_alias: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "test-kie-key",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                "FISH_AUDIO_VOICE_ID": "legacy-voice-id",
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme17b"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_voice_alias,
+        )
+        v17b = g.run()
+        fish = ((v17b.to_dict()["checks"].get("media_providers") or {})
+                .get("details", {}).get("FISH_AUDIO_REFERENCE_ID", {}))
+        fish_alias_ok = fish.get("winner_alias") == "FISH_AUDIO_VOICE_ID"
+        reports.append(
+            f"[{'PASS' if fish_alias_ok else 'FAIL'}] legacy Fish voice alias resolves "
+            f"(winner_alias={fish.get('winner_alias')})"
+        )
+        passed += int(fish_alias_ok)
+        failed += int(not fish_alias_ok)
+        check("media gate legacy Fish voice alias resolves", v17b.exit_code, EXIT_PASS)
+
         # 18. MEDIA PROVIDERS: a placeholder KIE_API_KEY value fails (behavior probe).
         # (merged from unit 1.5-1.8, renumbered from 14-18 to 15-18 to coexist with
         #  unit 1.3's case 14 F1 two-store incident repro above)
@@ -1684,6 +1778,11 @@ def _selftest() -> int:
             stores=stores_kie_placeholder,
         )
         check("media gate placeholder KIE_API_KEY", g.run().exit_code, EXIT_MISSING)
+
+        if original_registry is None:
+            os.environ.pop("GHL_FINGERPRINT_REGISTRY", None)
+        else:
+            os.environ["GHL_FINGERPRINT_REGISTRY"] = original_registry
 
     for line in reports:
         REDACTOR.out(line)
