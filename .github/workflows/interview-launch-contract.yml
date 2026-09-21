@@ -23,6 +23,7 @@ on:
       - 'shared-utils/secret_names.json'
       - 'shared-utils/test_f25_llm_score_secrets.py'
       - 'shared-utils/test_ollama_cloud_endpoint_and_key.py'
+      - 'shared-utils/test_llm_score_fallback_chain.py'
       - 'tests/unit/test_intake_poll_plist.py'
       - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py'
       - 'tests/unit/test_shared_client_paths.py'
@@ -107,6 +108,12 @@ jobs:
       # here, next to the resolver test it depends on.
       - name: Ollama Cloud endpoint, model tag and provider-key fallback
         run: python3 -m pytest -q shared-utils/test_ollama_cloud_endpoint_and_key.py
+      # The chain those steps live in. v25.1.56 turned it into a data table
+      # walked by one transport, which made the ORDER, the per-step key gating
+      # and the LLM_SCORE_CHAIN override assertable for the first time. A
+      # table nothing checks drifts straight back into hard-coded lambdas.
+      - name: Scoring fallback chain order, key gating and override
+        run: python3 -m pytest -q shared-utils/test_llm_score_fallback_chain.py
       - name: Shared client paths and credential isolation
         run: python3 tests/unit/test_shared_client_paths.py
       - name: GHL credential aliases through the delivered shared library

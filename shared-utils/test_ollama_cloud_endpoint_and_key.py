@@ -43,6 +43,13 @@ WHAT IS PINNED HERE:
                   key, and a 401 with no second key does not retry.
   5. REDACTION -- neither key ever appears in the returned dict, in its
                   reasoning or error string, or in env_report().
+  NOTE (v25.1.56) -- the returned `model` is now the STEP LABEL,
+                  "ollama-cloud/<tag>", because the chain carries TWO Ollama
+                  Cloud steps and a label naming only the family could not say
+                  which one served a score. ollama_cloud_model_id() is
+                  unchanged and still reports the "ollama/<tag>" form for the
+                  callers that are not chain steps. The chain itself is pinned
+                  by test_llm_score_fallback_chain.py.
   6. CONTROL   -- an env-NAME in the apiKey field ("${OLLAMA_CLOUD_API_KEY}",
                   the bare SHOUTING_NAME) is NOT a credential and must not be
                   sent; with only that in openclaw.json, nothing resolves.
@@ -178,7 +185,7 @@ def test_request_body_carries_the_live_flash_tag(box, monkeypatch):
     assert result["ok"] is True and result["score"] == 0.77
     assert calls[0]["body"]["model"] == "deepseek-v4.1-flash"
     assert calls[0]["url"] == "https://ollama.com/v1/chat/completions"
-    assert result["model"] == "ollama/deepseek-v4.1-flash"
+    assert result["model"] == "ollama-cloud/deepseek-v4.1-flash"
 
 
 def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
@@ -197,7 +204,7 @@ def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
     assert calls[0]["body"]["model"] == "deepseek-v4-pro:0813"
-    assert result["model"] == "ollama/deepseek-v4-pro:0813"
+    assert result["model"] == "ollama-cloud/deepseek-v4-pro:0813"
 
 
 def test_the_override_resolves_from_the_secrets_store_too(box):
@@ -328,5 +335,5 @@ def test_no_key_anywhere_degrades_without_a_call(box, monkeypatch):
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
     assert result["ok"] is False
-    assert result["model"] == "ollama/deepseek-v4.1-flash"
+    assert result["model"] == "ollama-cloud/deepseek-v4.1-flash"
     assert calls == []
