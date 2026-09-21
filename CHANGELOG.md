@@ -1,3 +1,26 @@
+## [v25.1.58]  -  2026-09-21  -  A read timeout on one scoring step stops killing the whole selection, and Stage-D stops outbidding the fleet for Ollama Cloud
+
+### Why
+Two findings from one client Mac running Python 3.9.6 on the v25.1.56 chain.
+
+**A. `socket.timeout` escaped the per-step handler on Python 3.9.** `_attempt_chat`'s except tuple named `TimeoutError` but not `OSError`. On 3.9 `socket.timeout` is an `OSError` and **not** a `TimeoutError` — the two were unified only in 3.10. So an Ollama Cloud read timeout on step 1 did not return a failed-step dict; it propagated out of `_attempt_chat`, out of `executor.map` in the persona selector's `score_personas`, and killed the entire persona selection with rc 1. The chain has five more steps and never got to try one of them. A transport error on one provider must cost that provider's turn, never the run.
+
+**B. Stage-D's 6-wide scoring burst was bidding against the rest of the fleet.** Ollama Cloud's concurrency limit is **account-wide** (10), and the operator's standing ceiling is 8 shared by every running agent on every box — it is not a per-process budget. Six concurrent scoring calls therefore queued behind whatever agents were already live and step 1 timed out. Measured on the client box: 0 of 3 scoring calls were served by `ollama-cloud/minimax-m3`; all fell through to OpenRouter and Agnes at 4-20s each. Defect A is what turned that queueing into a crash.
+
+### What changed
+- **`shared-utils/llm_score.py`** — `OSError` added to `_attempt_chat`'s per-step except tuple, with a comment naming the 3.9/3.10 `socket.timeout` split so nobody narrows it back to `TimeoutError`. `OSError` covers `socket.timeout` on **every** Python version and takes the connection-reset family with it, which was never caught on any version either. `urllib.error.HTTPError` is still caught first and keeps its own 401-advances / 400-404-model-fallback path, and the returned dict already carries `type(e).__name__`, so the step outcome names the transport error without a new field. The failed step returns a dict, `score_layer` walks to the next one, and the run survives.
+- **`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`** — `PERSONA_SCORE_WORKERS` default 6 → 3, with the account-wide-ceiling reasoning in the comment. Three is wide enough to hide per-call latency without spending the fleet's shared concurrency. The env override is unchanged, and `PERSONA_SCORE_WORKERS=1` is still the literal sequential escape hatch.
+- **The PRES-053 vendored copy** of `llm_score.py` re-vendored byte-identical (both SHA-1 `67afec3445d63f542150cdfb0f23a694c0d926ff`, verified with `diff`).
+
+### Not changed, deliberately
+`socket` is not imported into `llm_score.py`. Catching `OSError` already covers `socket.timeout` on 3.9 and on 3.10+, so an explicit `socket.timeout` in the tuple would be a redundant name and a redundant import; the comment carries the reason instead. The scoring chain, its order, the credential resolvers, the 20s per-step timeout and the cache are all untouched — this release changes only what happens when a step's socket gives up.
+
+### Risk
+Low. Defect A's fix strictly widens an existing except clause, so the only behaviour change is that a transport failure that used to raise now degrades the way every other step failure already did. Defect B's fix makes Stage-D ask for less shared capacity, never more; the worst case is that six personas score in two waves instead of one, about 0.2s of added wall clock against 4-20s of fallback latency it avoids.
+
+### Tests
+`shared-utils/test_llm_score_fallback_chain.py` 31 → 34: a `socket.timeout` on step 1 is served by step 2; a version-aware control asserting `socket.timeout` is an `OSError` and, below 3.10, is **not** a `TimeoutError` (the relationship the fix turns on, asserted rather than assumed from the runner's version); and a leg walking `socket.timeout`, `ConnectionResetError`, `OSError` and `TimeoutError` that requires each to return a dict and to let the full six-step chain run. **Mutation-proved**: deleting the `OSError` line makes that last leg fail with `ConnectionResetError: peer reset` raised out of the call, which is the exact escape the client hit; restoring it returns 34/34. On a 3.10+ runner the `socket.timeout` leg alone would pass without the fix, so the `ConnectionResetError` case is what gives this suite teeth on a modern CI box. `tests/unit/stage-d-parallel-scoring.test.py` 5 → 6: the overlap test now runs at the **shipped default** instead of a pinned 6, so a default that stops overlapping fails here rather than passing against a width nothing ships (6 personas × 0.2s at 3 workers is ~0.4s, inside the unchanged 0.6s bound — verified), plus one assertion pinning the default at 3 with the account-wide-ceiling reason. Green alongside: `test_f25_llm_score_secrets.py` and `test_ollama_cloud_endpoint_and_key.py` (82 passed across the three llm_score suites), `persona-fallback-invariant` 8/8, `model-selector` 37/37, `persona-grounding-health-probe` 21/21. `engine_script_drift_guard.py` output is byte-identical to pristine main after the re-vendor. `py_compile` clean on every edited file.
+
 ## [v25.1.57]  -  2026-09-21  -  An update-only roll stops writing welcome cards, and a wrapped departments.json stops becoming departments
 
 ### Why
