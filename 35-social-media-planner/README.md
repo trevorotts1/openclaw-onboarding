@@ -30,7 +30,7 @@ Every week, this skill automatically:
 - Skill 31 (Upgraded Memory System) for memory-core integration
 - GoHighLevel (Convert and Flow) account with Private Integration Token and Social Planner API access
 - kie.ai API access (Nano Banana 2 for images, Veo 3.1 Lite for videos)
-- Google Sheets (**created automatically via n8n webhook - no client action needed**)
+- Google Sheets (created via the configured n8n workflow; private mode requires an explicitly granted Google account for client access)
 - Telegram for notifications (email and SMS as fallback)
 - FFmpeg and ImageMagick installed locally
 

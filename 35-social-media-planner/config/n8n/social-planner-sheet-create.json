@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// One request, one verified caller company. Never interpolate unchecked Drive query values.\nif ($input.all().length !== 1) throw new Error('Exactly one provisioning request is required');\nconst body = $input.first().json.body;\nif (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid request body');\nfor (const field of ['brandName','clientEmail','company_id','planner_kind','templateSheetId']) {\n  if (typeof body[field] !== 'string' || !body[field].trim()) throw new Error('missing required field: '+field);\n}\nfor (const field of ['company_id','planner_kind','templateSheetId']) {\n  if (!/^[A-Za-z0-9_-]+$/.test(body[field])) throw new Error('Invalid identity: '+field);\n}\nconst provisioningKey = body.company_id+'::'+body.planner_kind;\n// Google Drive property key + value is limited to 124 bytes.\nif (provisioningKey.length + 'skill35_provisioning_key'.length > 124) throw new Error('Provisioning identity is too long');\nconst timezone=body.timezone || 'UTC';\nnew Intl.DateTimeFormat('en-US',{timeZone:timezone}).format();\nreturn [{json:{...body,body,timezone,provisioningKey,\n  sheetName:body.brandName.trim()+' Social Media Planner',\n  readbackQuery:\"appProperties has { key='skill35_provisioning_key' and value='\"+provisioningKey+\"' } and trashed = false\"}}];\n"
+        "jsCode": "// One request, one verified caller company. Never interpolate unchecked Drive query values.\nif ($input.all().length !== 1) throw new Error('Exactly one provisioning request is required');\nconst body = $input.first().json.body;\nif (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid request body');\nfor (const field of ['brandName','clientEmail','company_id','planner_kind','templateSheetId']) {\n  if (typeof body[field] !== 'string' || !body[field].trim()) throw new Error('missing required field: '+field);\n}\nfor (const field of ['company_id','planner_kind','templateSheetId']) {\n  if (!/^[A-Za-z0-9_-]+$/.test(body[field])) throw new Error('Invalid identity: '+field);\n}\nif (body.sharing !== undefined && !['private','anyone'].includes(body.sharing)) throw new Error('Invalid sharing policy');\nconst provisioningKey = body.company_id+'::'+body.planner_kind;\n// Google Drive property key + value is limited to 124 bytes.\nif (provisioningKey.length + 'skill35_provisioning_key'.length > 124) throw new Error('Provisioning identity is too long');\nconst timezone=body.timezone || 'UTC';\nnew Intl.DateTimeFormat('en-US',{timeZone:timezone}).format();\nreturn [{json:{...body,body,timezone,provisioningKey,\n  sheetName:body.brandName.trim()+' Social Media Planner',\n  readbackQuery:\"appProperties has { key='skill35_provisioning_key' and value='\"+provisioningKey+\"' } and trashed = false\"}}];\n"
       },
       "id": "code-validate-create",
       "name": "Validate + Build Provisioning Key",
@@ -241,7 +241,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({appProperties:{skill35_provisioning_state:'ready'} }) }}"
+        "jsonBody": "={{ JSON.stringify({appProperties:{skill35_provisioning_state:'ready',skill35_sharing:$('Sheet Context').first().json.sharing || $('Sheet Context').first().json.existingFile?.appProperties?.skill35_sharing || 'anyone'} }) }}"
       },
       "id": "http-tag-key",
       "name": "Tag Provisioning Key",
@@ -255,24 +255,22 @@
     },
     {
       "parameters": {
-        "operation": "share",
-        "fileId": {
-          "__rl": true,
-          "value": "={{ $('Sheet Context').first().json.sheetId }}",
-          "mode": "id"
-        },
-        "permissionsUi": {
-          "permissionsValues": {
-            "role": "writer",
-            "type": "anyone"
-          }
-        },
-        "options": {}
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Sheet Context').first().json.sheetId }}/permissions?sendNotificationEmail=false&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ (()=>{const c=$('Sheet Context').first().json;const privateMode=(c.sharing || c.existingFile?.appProperties?.skill35_sharing)==='private';return JSON.stringify(privateMode?{type:'user',role:'writer',emailAddress:c.clientEmail}:{type:'anyone',role:'writer'});})() }}",
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "drive-share-anyone",
       "name": "Set Anyone Can Edit",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1540,
         160
@@ -358,7 +356,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ (()=>{const c=$('Sheet Context').first().json;return JSON.stringify({status:'success',deduped:c.deduped,sheetId:c.sheetId,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.sheetId+'/edit',sheetName:c.sheetName,sharedWith:'anyone with the link can edit',provisioning_key:c.provisioningKey,company_id:c.company_id,planner_kind:c.planner_kind,schema_version:'1.1.0',template_schema:'1.2.0'});})() }}",
+        "responseBody": "={{ (()=>{const c=$('Sheet Context').first().json;return JSON.stringify({status:'success',deduped:c.deduped,sheetId:c.sheetId,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.sheetId+'/edit',sheetName:c.sheetName,sharedWith:(c.sharing || c.existingFile?.appProperties?.skill35_sharing)==='private'?'private':'anyone with the link can edit',provisioning_key:c.provisioningKey,company_id:c.company_id,planner_kind:c.planner_kind,schema_version:'1.1.0',template_schema:'1.2.0'});})() }}",
         "options": {}
       },
       "id": "respond-created",
@@ -373,7 +371,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ (()=>{const c=$('Sheet Context').first().json;return JSON.stringify({status:'success',deduped:c.deduped,sheetId:c.sheetId,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.sheetId+'/edit',sheetName:c.sheetName,sharedWith:'anyone with the link can edit',provisioning_key:c.provisioningKey,company_id:c.company_id,planner_kind:c.planner_kind,schema_version:'1.1.0',template_schema:'1.2.0'});})() }}",
+        "responseBody": "={{ (()=>{const c=$('Sheet Context').first().json;return JSON.stringify({status:'success',deduped:c.deduped,sheetId:c.sheetId,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.sheetId+'/edit',sheetName:c.sheetName,sharedWith:(c.sharing || c.existingFile?.appProperties?.skill35_sharing)==='private'?'private':'anyone with the link can edit',provisioning_key:c.provisioningKey,company_id:c.company_id,planner_kind:c.planner_kind,schema_version:'1.1.0',template_schema:'1.2.0'});})() }}",
         "options": {}
       },
       "id": "respond-existing",
@@ -573,7 +571,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Sheet Context').first().json.sheetId }}/permissions?fields=nextPageToken,permissions(id,type,role)&pageSize=100&supportsAllDrives=true",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Sheet Context').first().json.sheetId }}/permissions?fields=nextPageToken,permissions(id,type,role,emailAddress)&pageSize=100&supportsAllDrives=true",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleDriveOAuth2Api",
         "options": {
@@ -595,7 +593,7 @@
         750
       ],
       "parameters": {
-        "jsCode": "const p=$input.first().json;if(!Array.isArray(p.permissions)||p.nextPageToken)throw new Error('Sharing readback incomplete');return [{json:{shared:p.permissions.some(x=>x.type==='anyone'&&x.role==='writer')}}];"
+        "jsCode": "const p=$input.first().json;\nif(!Array.isArray(p.permissions)||p.nextPageToken)throw new Error('Sharing readback incomplete');\nconst c=$('Sheet Context').first().json;\nconst policy=c.sharing || c.existingFile?.appProperties?.skill35_sharing || 'anyone';\nif(policy==='private') {\n if(p.permissions.some(x=>x.type==='anyone'||x.type==='domain'))throw new Error('Existing planner has public sharing; explicit sharing repair required');\n if(!p.permissions.some(x=>x.role==='owner'))throw new Error('Private planner owner not verified');\n const email=String(c.clientEmail || '').trim().toLowerCase();\n if(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email))throw new Error('Private planner requires a verified client email');\n const shared=p.permissions.some(x=>['owner','writer'].includes(x.role)&&String(x.emailAddress || '').toLowerCase()===email);\n if(!shared && $('Set Anyone Can Edit').isExecuted)throw new Error('Private sharing readback did not confirm client access');\n return [{json:{shared}}];\n}\nconst shared=p.permissions.some(x=>x.type==='anyone'&&x.role==='writer');\nif(!shared && $('Set Anyone Can Edit').isExecuted)throw new Error('Sharing readback did not confirm access');\nreturn [{json:{shared}}];"
       },
       "onError": "continueErrorOutput"
     },
@@ -920,7 +918,7 @@
       "main": [
         [
           {
-            "node": "Tag Provisioning Key",
+            "node": "Read Sharing Permission",
             "type": "main",
             "index": 0
           }
