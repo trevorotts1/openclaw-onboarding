@@ -67,6 +67,31 @@ def test_departments_key_holding_a_non_department_map_is_refused(bad):
     assert "/box/acme/departments.json" in str(exc.value)
 
 
+# This module is MIRRORED rule for rule with blackceo-command-center's
+# shared-utils/departments_payload.py (CC v7.6.30, 8828dec6e). The two repos
+# read the SAME artifact off the SAME box, so the refusal an operator sees must
+# read the same in both. These pin the two distinct messages; if either is
+# reworded here without re-mirroring there, this fails.
+def test_object_under_departments_key_gets_the_department_map_wording():
+    with pytest.raises(dp.MalformedDepartmentsError) as exc:
+        dp.normalize_departments({"departments": {"marketing": "yes"}},
+                                 path="/box/acme/departments.json")
+    assert str(exc.value) == (
+        "departments.json: 'departments' key holds an object that is not a "
+        "department map (it is empty, or a value is not an object); expected a "
+        "list, or an object keyed by department slug whose values are all "
+        "objects (path: /box/acme/departments.json)")
+
+
+def test_non_object_under_departments_key_gets_the_short_wording():
+    with pytest.raises(dp.MalformedDepartmentsError) as exc:
+        dp.normalize_departments({"departments": 42},
+                                 path="/box/acme/departments.json")
+    assert str(exc.value) == (
+        "departments.json: 'departments' key holds int, expected a list "
+        "(path: /box/acme/departments.json)")
+
+
 def test_metadata_only_object_is_refused_with_path_and_type():
     with pytest.raises(dp.MalformedDepartmentsError) as exc:
         dp.normalize_departments(
