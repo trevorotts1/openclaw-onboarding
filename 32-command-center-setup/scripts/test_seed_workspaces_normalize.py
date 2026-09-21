@@ -271,14 +271,17 @@ _CLIENT_MAP = {
                                     "folder": "account-management"},
         "audio-dept": {"name": "Audio", "folder": "audio"},
         "legal-dept": {"name": "Legal"},          # no folder: key, minus -dept
+        # folder DELIBERATELY unequal to the key stem, so folding on the key
+        # gives a DIFFERENT answer and the precedence is actually exercised.
+        "client-success-dept": {"name": "Client Success", "folder": "accounts"},
     },
 }
 
 
 def test_entry_folder_beats_the_map_key():
     out = normalize(_CLIENT_MAP)
-    assert [d["id"] for d in out] == ["account-management", "audio", "legal"]
-    assert [d["slug"] for d in out] == ["account-management", "audio", "legal"]
+    assert [d["id"] for d in out] == ["account-management", "audio", "legal", "accounts"]
+    assert [d["slug"] for d in out] == ["account-management", "audio", "legal", "accounts"]
     assert not any(str(d["id"]).endswith("-dept") for d in out), out
 
 
@@ -332,7 +335,7 @@ def test_seed_writes_bare_slugs_and_a_second_run_adds_no_duplicates(tmp_path):
     conn = sqlite3.connect(db)
     first = sorted(r[0] for r in conn.execute("SELECT id FROM workspaces").fetchall())
     conn.close()
-    assert first == ["account-management", "audio", "legal"], first
+    assert first == ["account-management", "accounts", "audio", "legal"], first
     assert not any(s.endswith("-dept") for s in first), first
 
     _sw.seed(str(db), depts, company_info)
@@ -364,7 +367,8 @@ def test_pre_fix_key_fold_needed_a_reader_to_rescue_it():
     old_fold = [dict(v, **{"id": v.get("id", k), "slug": v.get("slug", k)})
                 for k, v in _CLIENT_MAP["departments"].items()]
     raw = [d["id"] for d in old_fold]
-    assert raw == ["account-management-dept", "audio-dept", "legal-dept"], raw
+    assert raw == ["account-management-dept", "audio-dept", "legal-dept",
+                   "client-success-dept"], raw
     assert any(d["id"] != _sw._canonical_dept_slug(d["id"]) for d in old_fold), \
         "pre-fix fold produced canonical slugs — the control does not reproduce"
     # and the two folds disagree on every department, which is the drift

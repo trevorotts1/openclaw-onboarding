@@ -1,5 +1,21 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.17 - 2026-09-21 - Archived departments stay archived, a renamed one stays one column, and the company split is legible
+
+Four findings from one client box during a v7.6.35 roll, measured by diffing the Command Center DB against the pre-deploy backup.
+
+**48 agents were seeded into 12 ARCHIVED workspaces.** `scripts/materialize-dept-agents.sh` picks departments two ways and neither filtered `archived_at`: the workspaces query, and the manifest path which resolves by slug and never touches that query. The query gains `AND archived_at IS NULL`, and a per-workspace check sits after `ws_id` resolution so it covers both paths with one guard. An archived department gets no agents and no head link. Nothing writes `archived_at` — skipping is the fix; un-archiving would be a different bug.
+
+**A renamed department became two columns.** `scripts/seed-workspaces.py` now looks for the same department already on the board by case-insensitive NAME, scoped to this company, before inserting. A hit UPDATES that row. No alias table was added: `shared-utils/canonical_slug.py` already maps `billing` → `billing-finance` and `legal-compliance` → `legal`, which is both pairs the client hit, and a second table would be a duplicate rule to drift.
+
+**The company guard fired with nothing to act on.** The DB held three company rows (`default`, `wakeuphappysis`, `wake-up-happy-sis`). The seeder now prints ONE `[company-split]` line naming every company owning live workspaces, which owns the catch-all, and whether that differs from the id being seeded as. The guard itself is unchanged.
+
+**The installer mirrored `MC_COMPANY_ID=default`** while live workspaces sat 31 under `wakeuphappysis` and 9 under `default`; the CC's ingest is company-scoped, so the catch-all `general-task` became unresolvable and routed tasks landed unrouted. `scripts/run-full-install.sh` now compares the mirrored value against the catch-all's owner after the cc-env mirror step, prints one loud `[cc-env] MC_COMPANY_ID MISMATCH` line and a state marker, corrects it on a FULL install, and in `--update-only` warns without touching it.
+
+**Not done here:** the hard DELETE of 22 archived rows is in the Command Center's `scripts/sync-departments-from-build-state.py` (`--prune`, line 658; duplicate collapse, line 539), not in onboarding, and Phase 6c never passes `--prune`. A test pins that no installer script here gains a workspace delete.
+
+New: `scripts/test_seed_workspaces_installer_hardening.py`, 15 assertions on real sqlite fixtures, wired into `full-funnel-pipeline.yml`, mutation-proved three ways.
+
 ## v13.1.16 - 2026-09-21 - A department's own slug beats the map key, so the board stops gaining a twin per department
 
 The client artifact's department map is keyed `<name>-dept` while each entry names its real folder (`"account-management-dept": {"folder": "account-management", ...}`). v25.1.61 folded on the KEY, so all 34 departments were slugged `…-dept` while readers that take the slug off the entry produced the bare name.

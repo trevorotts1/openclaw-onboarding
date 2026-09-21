@@ -835,6 +835,13 @@ if not db_path:
     sys.exit(0)
 
 # Read manifest written by Phase 1
+def _ws_has_archived_at(conn):
+    try:
+        return any(r[1] == "archived_at" for r in conn.execute("PRAGMA table_info(workspaces)"))
+    except Exception:
+        return False
+
+
 manifest_path = os.path.join(OC_ROOT, ".materialize-dept-agents.manifest")
 if not os.path.isfile(manifest_path):
     # Manifest was already consumed by Phase 2 scaffolder -- try workspaces table
@@ -842,6 +849,7 @@ if not os.path.isfile(manifest_path):
         db = sqlite3.connect(db_path)
         cur = db.execute(
             "SELECT id, name, slug FROM workspaces WHERE type != 'main' AND type != 'system'"
+            + (" AND archived_at IS NULL" if _ws_has_archived_at(db) else "")
         )
         rows = cur.fetchall()
         db.close()
@@ -863,6 +871,15 @@ total_healer = 0
 total_qc = 0
 total_research = 0
 total_da = 0
+skipped_archived = 0
+
+# archived_at is absent on older schemas; probe once rather than per workspace.
+try:
+    _HAS_ARCHIVED_AT = any(
+        r[1] == "archived_at" for r in db.execute("PRAGMA table_info(workspaces)")
+    )
+except Exception:
+    _HAS_ARCHIVED_AT = False
 
 for ws_id_or_none, dept_name, dept_slug in entries:
     if not dept_name:
@@ -879,6 +896,26 @@ for ws_id_or_none, dept_name, dept_slug in entries:
         ws_id = row[0]
     else:
         ws_id = ws_id_or_none
+
+    # An ARCHIVED workspace gets nothing. Measured on a client box during a
+    # roll: 48 head/qc/research/devils-advocate rows were re-seeded into 12
+    # workspaces whose archived_at was set, because neither the workspaces
+    # query above nor the manifest path filtered on it. Archiving is the
+    # client's decision; re-populating an archived department silently undoes
+    # it. This guard sits AFTER ws_id resolution on purpose, so it covers both
+    # entry paths (workspaces table and manifest) with one check, and it never
+    # writes archived_at -- nothing here un-archives anything.
+    if _HAS_ARCHIVED_AT:
+        try:
+            arow = db.execute(
+                "SELECT archived_at FROM workspaces WHERE id=? LIMIT 1", (ws_id,)
+            ).fetchone()
+        except Exception:
+            arow = None
+        if arow and arow[0]:
+            skipped_archived += 1
+            print(f"  [materialize] SKIP {dept_slug}: workspace is archived (archived_at={arow[0]}) -- no agents, no head link")
+            continue
 
     try:
         counts = ensure_trio_quad_rows(db, ws_id, dept_name, dept_slug, "")
@@ -899,6 +936,7 @@ print(
     f" +{total_research} research,"
     f" +{total_da} da"
     f" (idempotent)"
+    + (f"; {skipped_archived} archived workspace(s) skipped" if skipped_archived else "")
 )
 PHASE3EOF
 fi
