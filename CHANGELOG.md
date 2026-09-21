@@ -1,7 +1,28 @@
+## [v25.1.68]  -  2026-09-21  -  The v25.1.67 prose uses the standard vocabulary, so the docs-language guard goes green
+
+### Why
+v25.1.67 merged with the term this repo retired in U93 still present in its CHANGELOG entries, one code comment, and one test header. The **Docs-language guard** is red on `main` as a result.
+
+The guard was not bypassed and nothing about it is wrong: the repo retired that word in U93's doctrine scrub, and the standard replacement is "the operator box". The reword had been written and pushed to the branch before the merge, but the pull request was merged at its previous head, so the corrected commit never landed.
+
+### What changed
+Prose only. Six lines across five files swap the retired term for "the operator's own box" / "the operator box":
+
+- `CHANGELOG.md` (the v25.1.67 entry, two lines)
+- `32-command-center-setup/CHANGELOG.md` (one line)
+- `32-command-center-setup/scripts/run-full-install.sh` (one comment line)
+- `shared-utils/resolve-oc-root.sh` (one comment, reflowed)
+- `tests/unit/build-state-path-resolution.test.sh` (header and one echo label)
+
+**No behaviour changes.** No resolver logic, no test assertion, no installer step. The v25.1.67 fix stands exactly as merged.
+
+### Tests
+`scripts/check-docs-language.py`: **PASS, 0 new unexplained occurrences** (it was the failing gate). `tests/unit/build-state-path-resolution.test.sh` 14/14 with the reworded label. `32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py` 17/17. `bash -n` clean on both touched shell files.
+
 ## [v25.1.67]  -  2026-09-21  -  The installer finds the build state where it actually is, not where openclaw.json says it should be
 
 ### Why
-Verified on the operator canary. `run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there: `~/clawd`). The real file lives at `~/.openclaw/workspace/.workforce-build-state.json`.
+Verified on the operator's own box. `run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there: `~/clawd`). The real file lives at `~/.openclaw/workspace/.workforce-build-state.json`.
 
 With no state file found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null`, and the run **exited 8 demanding an interactive interview on a fully built box**. Control: the same inspector returns `false, blackceo` against the real path. Exporting `OPENCLAW_WORKSPACE_PATH` by hand fixed that one run, which is the workaround, not the fix.
 
@@ -27,7 +48,7 @@ The name fallback added in v25.1.66 could match an **archived** workspace and UP
 ### Tests
 **`tests/unit/build-state-path-resolution.test.sh`, 14 assertions, new**, wired into the existing `resolve-oc-root-guard` workflow alongside the resolver it extends. It extracts the function verbatim and exits 2 if it is renamed.
 
-The canary shape resolves to the workspace that has the file, not the configured one; the configured path still wins when it really holds the file; the `~/.openclaw` fallback is reached; nothing anywhere returns non-zero AND reports all four searched paths; a duplicate candidate is searched once; all three shell readers route through the resolver; and the fresh-install write target plus its searched-paths message are both still present.
+The operator-box shape resolves to the workspace that has the file, not the configured one; the configured path still wins when it really holds the file; the `~/.openclaw` fallback is reached; nothing anywhere returns non-zero AND reports all four searched paths; a duplicate candidate is searched once; all three shell readers route through the resolver; and the fresh-install write target plus its searched-paths message are both still present.
 
 **Mutation-proved**: replacing the file check with `if true` (take the first candidate blindly, the pre-fix behaviour) turns **6 assertions red**, including the not-found case and every searched-path report.
 

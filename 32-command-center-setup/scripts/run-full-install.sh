@@ -128,7 +128,7 @@ _OC_ROOT_RESOLVER="$SKILL_DIR/../shared-utils/resolve-oc-root.sh"
 # Prefer the workspace that ACTUALLY holds the build state over the one
 # openclaw.json configures. oc_set_platform_paths just set
 # OPENCLAW_WORKSPACE_PATH from agents.defaults.workspace; on the operator
-# canary that is ~/clawd while the real file lives under
+# operator box that is a legacy directory while the real file lives under
 # ~/.openclaw/workspace, so --update-only found no state, the launch inspector
 # returned requiresInitialization:true / companySlug:null, and the run exited 8
 # demanding an interactive interview on a fully built box.
