@@ -101,7 +101,15 @@ fi
 # pre-interview is exactly the "rogue/default board" failure. REPORT and exit 0
 # (not an error) so callers/crons see "interview not completed yet", not a crash.
 # --dry-run is exempt (it mutates nothing and is used for inspection).
-_MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# Same resolution as run-full-install.sh: the workspace that ACTUALLY holds the
+# file wins over the one openclaw.json configures (resolve-oc-root.sh is
+# already sourced above).
+if declare -F resolve_build_state_workspace >/dev/null 2>&1 \
+   && _MATERIALIZE_WS="$(resolve_build_state_workspace)"; then
+  _MATERIALIZE_STATE_FILE="$_MATERIALIZE_WS/.workforce-build-state.json"
+else
+  _MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+fi
 if [[ $DRY_RUN -eq 0 ]]; then
   if [[ ! -f "$_MATERIALIZE_STATE_FILE" ]] || \
      [[ "$(python3 -c "import json,sys; sys.stdout.write('true' if json.load(open('$_MATERIALIZE_STATE_FILE')).get('interviewComplete') is True else 'false')" 2>/dev/null || echo false)" != "true" ]]; then

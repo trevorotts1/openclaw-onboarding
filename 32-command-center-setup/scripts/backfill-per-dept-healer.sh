@@ -66,7 +66,16 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # ---- Interview-complete gate (B.2.1) ---------------------------------------
-WF_STATE="$OC_ROOT/workspace/.workforce-build-state.json"
+# The workspace that ACTUALLY holds the file wins over the configured one.
+_BFH_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_BFH_RESOLVER" ]] && source "$_BFH_RESOLVER"
+if declare -F resolve_build_state_workspace >/dev/null 2>&1 \
+   && _BFH_WS="$(resolve_build_state_workspace)"; then
+  WF_STATE="$_BFH_WS/.workforce-build-state.json"
+else
+  WF_STATE="$OC_ROOT/workspace/.workforce-build-state.json"
+fi
 
 interview_complete=false
 if [[ -f "$WF_STATE" ]]; then

@@ -223,3 +223,39 @@ def test_the_installer_never_hard_deletes_a_workspace(sql):
     for f in ("run-full-install.sh", "seed-workspaces.py", "materialize-dept-agents.sh"):
         p = os.path.join(os.path.dirname(os.path.abspath(__file__)), f)
         assert sql not in open(p).read(), f
+
+
+# ─── An archived row is never a match target (v25.1.67) ─────────────────────
+
+def test_name_match_never_resurrects_an_archived_workspace(tmp_path):
+    # The back door v25.1.66 left open: the name fallback could match an
+    # ARCHIVED row and UPDATE it, putting a department the client archived
+    # back on the board under its old id.
+    db = _db(tmp_path)
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO workspaces (id,name,slug,company_id,archived_at) VALUES "
+                "('ws-old','Partner Success','ws-old','test-co','2026-09-01T00:00:00Z')")
+    con.commit(); con.close()
+
+    _sw.seed(str(db), [{"id": "partner-success", "name": "Partner Success"}], _COMPANY)
+
+    con = sqlite3.connect(db)
+    rows = dict(con.execute("SELECT id, archived_at FROM workspaces").fetchall())
+    con.close()
+    assert rows["ws-old"] == "2026-09-01T00:00:00Z"   # still archived, untouched
+    assert "partner-success" in rows                  # a live row seeded instead
+    assert rows["partner-success"] is None
+
+
+def test_archived_slug_collision_does_not_block_a_live_seed(tmp_path):
+    # Same for an exact slug hit: an archived row must not be adopted.
+    db = _db(tmp_path)
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO workspaces (id,name,slug,company_id,archived_at) VALUES "
+                "('marketing','Marketing','marketing','test-co','2026-09-01T00:00:00Z')")
+    con.commit(); con.close()
+    _sw.seed(str(db), [{"id": "marketing", "name": "Marketing"}], _COMPANY)
+    con = sqlite3.connect(db)
+    arch = con.execute("SELECT archived_at FROM workspaces WHERE id='marketing'").fetchone()[0]
+    con.close()
+    assert arch == "2026-09-01T00:00:00Z"   # never un-archived

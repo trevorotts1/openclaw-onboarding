@@ -39,3 +39,34 @@ resolve_oc_root() {
   fi
   return 1
 }
+
+# resolve_build_state_workspace — echo the workspace dir that ACTUALLY holds
+# .workforce-build-state.json, or return 1 having searched everywhere.
+#
+# WHY: platform/common.sh sets OPENCLAW_WORKSPACE_PATH from openclaw.json's
+# agents.defaults.workspace. On the operator's own box that points at a legacy
+# directory, while the real state file lives at
+# ~/.openclaw/workspace/.workforce-build-state.json.
+# run-full-install.sh built STATE_FILE from that configured path, found no
+# file, and the launch inspector returned requiresInitialization:true with
+# companySlug:null — so `--update-only` exited 8 demanding an interactive
+# interview on a fully built box. A configured path is a hint, not evidence:
+# pick the first candidate that actually has the file.
+#
+# Sets OC_BUILD_STATE_SEARCHED to every path tried, so a caller that finds
+# nothing can NAME what it checked instead of asserting a bare absence.
+resolve_build_state_workspace() {
+  local f=".workforce-build-state.json" c
+  OC_BUILD_STATE_SEARCHED=""
+  for c in "${OPENCLAW_WORKSPACE_PATH:-}" "${OC_ROOT:-}/workspace" \
+           "$HOME/.openclaw/workspace" "/data/.openclaw/workspace"; do
+    [ -n "$c" ] && [ "$c" != "/workspace" ] || continue
+    case " $OC_BUILD_STATE_SEARCHED " in *" $c "*) continue ;; esac
+    OC_BUILD_STATE_SEARCHED="${OC_BUILD_STATE_SEARCHED:+$OC_BUILD_STATE_SEARCHED }$c"
+    if [ -f "$c/$f" ]; then
+      printf '%s' "$c"
+      return 0
+    fi
+  done
+  return 1
+}

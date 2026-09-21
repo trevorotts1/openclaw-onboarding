@@ -1,3 +1,43 @@
+## [v25.1.67]  -  2026-09-21  -  The installer finds the build state where it actually is, not where openclaw.json says it should be
+
+### Why
+Verified on the operator's own box. `run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there: `~/clawd`). The real file lives at `~/.openclaw/workspace/.workforce-build-state.json`.
+
+With no state file found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null`, and the run **exited 8 demanding an interactive interview on a fully built box**. Control: the same inspector returns `false, blackceo` against the real path. Exporting `OPENCLAW_WORKSPACE_PATH` by hand fixed that one run, which is the workaround, not the fix.
+
+A configured path is a hint, not evidence. The installer trusted it and never checked whether the file was there.
+
+### What changed
+- **`shared-utils/resolve-oc-root.sh`** gains `resolve_build_state_workspace()`, which returns the FIRST candidate that actually contains `.workforce-build-state.json`, trying in order: `OPENCLAW_WORKSPACE_PATH` (which carries `agents.defaults.workspace`), `$OC_ROOT/workspace`, `~/.openclaw/workspace`, `/data/.openclaw/workspace`. Duplicates are searched once. It sets `OC_BUILD_STATE_SEARCHED` to every path tried, so a caller that finds nothing can NAME what it checked instead of asserting a bare absence.
+
+  It went here because this file is already the one shared root resolver and is already sourced by ten scripts. A new module would have been a second place to drift.
+
+- **`run-full-install.sh`** resolves through it, and logs which workspace won whenever that differs from the configured one. When NO candidate has the file it falls back to the configured path and says so, naming every path searched. That fallback is deliberate: a genuinely fresh install has no state file anywhere, and the configured path is the correct place to WRITE one. Only then does the inspector legitimately demand initialization.
+
+- **`materialize-dept-agents.sh`** and **`backfill-per-dept-healer.sh`** use the same resolver instead of hard-coding `$OC_ROOT/workspace`, so no two scripts can read different copies.
+
+### Also, carried from v25.1.66
+The name fallback added in v25.1.66 could match an **archived** workspace and UPDATE it, putting a department the client archived back on the board under its old id. Both lookups in `_find_existing_workspace` now exclude `archived_at IS NOT NULL`, schema-tolerantly. That was the one place v25.1.66's archived rule had a back door: the agent seeder was guarded, the match path was not.
+
+### Not changed
+`company-config.json` readers. `backfill-dept-agent-personalization.sh` already walks an ordered candidate list (company dir, then `workspace/zero-human-company/`, then legacy `workspace/`), and `seed-dashboard-content.py` already tries the VPS path then `~/.openclaw`. Both already do what this release adds elsewhere; a rewrite would be churn.
+
+`platform/common.sh` still sets `OPENCLAW_WORKSPACE_PATH` from `agents.defaults.workspace`. That value is a legitimate default for everything else on the box, and the fix belongs at the point that needs a file to exist, not in the general workspace default.
+
+### Tests
+**`tests/unit/build-state-path-resolution.test.sh`, 14 assertions, new**, wired into the existing `resolve-oc-root-guard` workflow alongside the resolver it extends. It extracts the function verbatim and exits 2 if it is renamed.
+
+The operator-box shape resolves to the workspace that has the file, not the configured one; the configured path still wins when it really holds the file; the `~/.openclaw` fallback is reached; nothing anywhere returns non-zero AND reports all four searched paths; a duplicate candidate is searched once; all three shell readers route through the resolver; and the fresh-install write target plus its searched-paths message are both still present.
+
+**Mutation-proved**: replacing the file check with `if true` (take the first candidate blindly, the pre-fix behaviour) turns **6 assertions red**, including the not-found case and every searched-path report.
+
+`32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py` 15 to 17: an archived row is never resurrected by a name match, and an archived slug collision is never un-archived.
+
+`bash -n` clean on the resolver and all three readers. Green alongside: `resolve-oc-root`, `cc-currency-untracked-is-not-dirty`, `test-updater-traps-1-and-3` 48/48, `content-recheck-convergence-probes` 61/61, both `materialize-dept-agents` suites.
+
+### Pre-existing, untouched
+Four failures reproduce identically on pristine `844c2f184`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `tests/unit/test_interview_invitation.py`.
+
 ## [v25.1.66]  -  2026-09-21  -  The installer stops re-seeding archived departments, stops duplicating a renamed one, and says which company owns the board
 
 ### Why
