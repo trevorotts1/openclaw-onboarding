@@ -8,9 +8,9 @@ Returns a single float in [0.0, 1.0] with a short reasoning string.
 Per company policy (memory: feedback-no-anthropic-for-subagents) no
 Anthropic models are used in this pipeline. The model chain is:
 
-    1. Ollama Cloud  — DeepSeek V4 Pro (primary, cheap + 1M context)
-       Model:    deepseek-v4-pro:0813   (deepseek-v4-pro:cloud was deleted
-                 from Ollama Cloud on 2026-08-17)
+    1. Ollama Cloud  — DeepSeek V4.1 Flash (primary, cheap + 1M context)
+       Model:    deepseek-v4.1-flash, overridable with
+                 OLLAMA_CLOUD_SCORING_MODEL
        Endpoint: <OLLAMA_CLOUD_URL>/chat/completions, default base
                  https://ollama.com/v1 — NOT /api, which 404s
        Env: OLLAMA_CLOUD_API_KEY, OLLAMA_CLOUD_URL
@@ -18,7 +18,9 @@ Anthropic models are used in this pipeline. The model chain is:
             back 401, the gateway's OWN provider key from openclaw.json is
             tried once as a last resort — see ollama_cloud_api_keys().
 
-    2. OpenRouter    — DeepSeek V4 Pro (same model, paid fallback)
+    2. OpenRouter    — DeepSeek V4.1 Flash (same model, paid fallback)
+       Model: deepseek/deepseek-v4.1-flash, overridable with
+              OPENROUTER_SCORING_MODEL
        Env: OPENROUTER_API_KEY
 
     3. OpenRouter    — Gemini 3.1 Flash Lite (cheapest last-resort)
@@ -70,12 +72,33 @@ from pathlib import Path
 #: /v1 rather than left broken -- see ollama_cloud_chat_url().
 OLLAMA_CLOUD_DEFAULT_URL = "https://ollama.com/v1"
 
-#: The cloud tag deepseek-v4-pro:cloud was deleted fleet-wide on 2026-08-17.
-#: GET https://ollama.com/api/tags on 2026-09-21 lists deepseek-v4-pro:0813,
-#: deepseek-v4-flash:0731 and deepseek-v4.1-flash. Pro stays this chain's
-#: documented primary, now under its dated tag.
-OLLAMA_CLOUD_MODEL = "deepseek-v4-pro:0813"
-OLLAMA_CLOUD_MODEL_ID = "ollama/" + OLLAMA_CLOUD_MODEL
+#: DEFAULTS, not hard-codes. A provider renaming or retiring a tag must be a
+#: config change on the box, never a code change and a fleet roll -- the cloud
+#: tag deepseek-v4-pro:cloud was deleted out from under this chain on
+#: 2026-08-17 and every scoring call failed silently until someone read a
+#: 404. GET https://ollama.com/api/tags on 2026-09-21 lists exactly
+#: deepseek-v4.1-flash, deepseek-v4-flash:0731 and deepseek-v4-pro:0813;
+#: openrouter.ai/api/v1/models lists deepseek/deepseek-v4.1-flash at 1048576
+#: context, $0.15/M prompt and $0.60/M completion. Flash is the scoring
+#: chain's model on both steps: these calls are 200-token judgements, not
+#: generation.
+OLLAMA_CLOUD_MODEL_DEFAULT = "deepseek-v4.1-flash"
+OPENROUTER_MODEL_DEFAULT = "deepseek/deepseek-v4.1-flash"
+
+
+def ollama_cloud_model() -> str:
+    """Step-1 model tag; OLLAMA_CLOUD_SCORING_MODEL overrides the default."""
+    return _env("OLLAMA_CLOUD_SCORING_MODEL", OLLAMA_CLOUD_MODEL_DEFAULT)
+
+
+def ollama_cloud_model_id() -> str:
+    """The provider-qualified id this module REPORTS for a step-1 answer."""
+    return "ollama/" + ollama_cloud_model()
+
+
+def openrouter_model() -> str:
+    """Step-2 model id; OPENROUTER_SCORING_MODEL overrides the default."""
+    return _env("OPENROUTER_SCORING_MODEL", OPENROUTER_MODEL_DEFAULT)
 
 CACHE_TTL_SECONDS = 30 * 24 * 60 * 60   # 30 days
 HTTP_TIMEOUT_SECONDS = 30
@@ -782,17 +805,18 @@ def ollama_cloud_api_keys() -> list:
 
 def _attempt_ollama_cloud(prompt: str) -> dict:
     keys = ollama_cloud_api_keys()
+    model_id = ollama_cloud_model_id()
     if not keys:
         return {"ok": False, "error": "OLLAMA_CLOUD_API_KEY not set",
-                "model": OLLAMA_CLOUD_MODEL_ID}
+                "model": model_id}
     url = ollama_cloud_chat_url()
     body = {
-        "model": OLLAMA_CLOUD_MODEL,
+        "model": ollama_cloud_model(),
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 200,
     }
-    outcome = {"ok": False, "error": "no attempt made", "model": OLLAMA_CLOUD_MODEL_ID}
+    outcome = {"ok": False, "error": "no attempt made", "model": model_id}
     for index, api_key in enumerate(keys):
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -805,20 +829,20 @@ def _attempt_ollama_cloud(prompt: str) -> dict:
             # .code. 401 means this key is rejected, not that the provider is
             # down, so fall through to the next candidate exactly once.
             outcome = {"ok": False, "error": f"HTTPError: {e}",
-                       "model": OLLAMA_CLOUD_MODEL_ID}
+                       "model": model_id}
             if e.code == 401 and index + 1 < len(keys):
                 continue
             return outcome
         except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}",
-                    "model": OLLAMA_CLOUD_MODEL_ID}
+                    "model": model_id}
         text = _extract_message(payload)
         parsed = _parse_score_json(text)
         if parsed["score"] is None:
             return {"ok": False, "error": f"unparseable: {parsed['reasoning']}",
-                    "model": OLLAMA_CLOUD_MODEL_ID}
+                    "model": model_id}
         return {"ok": True, "score": parsed["score"], "reasoning": parsed["reasoning"],
-                "model": OLLAMA_CLOUD_MODEL_ID}
+                "model": model_id}
     return outcome
 
 
@@ -890,8 +914,8 @@ def score_layer(
     prompt = _build_prompt(layer, persona_id, persona_blueprint_summary, context)
 
     chain = [
-        ("ollama-cloud-deepseek-pro", lambda: _attempt_ollama_cloud(prompt)),
-        ("openrouter-deepseek-pro",   lambda: _attempt_openrouter(prompt, "deepseek/deepseek-v4-pro")),
+        ("ollama-cloud-deepseek-flash", lambda: _attempt_ollama_cloud(prompt)),
+        ("openrouter-deepseek-flash", lambda: _attempt_openrouter(prompt, openrouter_model())),
         ("openrouter-gemini-lite",    lambda: _attempt_openrouter(prompt, "google/gemini-3.1-flash-lite")),
     ]
 
