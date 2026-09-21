@@ -1,3 +1,39 @@
+## [v25.1.60]  -  2026-09-21  -  Skill 58's two version files agree again, turning the frontmatter drift guard green
+
+### Why
+The "SKILL.md frontmatter vs skill-version.txt drift guard" has been red on `main` since commit `e6ac726`, with exactly one finding:
+
+```
+58-podcast-production-engine   SKILL.md version=1.0.6   != skill-version.txt=1.0.7
+```
+
+`e6ac726` ("bump skill 58 to v1.0.7 for podcast universal fix") moved `58-podcast-production-engine/skill-version.txt` to `v1.0.7` and left the SKILL.md frontmatter at `v1.0.6`. The skill loader reads the frontmatter; CI G3 in `version-consistency.yml` only enforces `skill-version.txt`. That is the precise gap `scripts/qc-assert-skill-frontmatter-version.sh` exists to close, and it closed it. The gate fired correctly and then stayed red, because nobody rolled the other half.
+
+A permanently red required check is worse than no check. It trains everyone to read red as normal, so the next real drift lands unnoticed.
+
+### What changed
+Both of Skill 58's version files roll together to **v1.0.8**:
+
+- **`58-podcast-production-engine/SKILL.md`** - frontmatter `version: v1.0.6` to `version: v1.0.8`.
+- **`58-podcast-production-engine/skill-version.txt`** - `v1.0.7` to `v1.0.8`.
+
+Rolling both is the drift guard's own documented remedy ("roll each SKILL.md frontmatter `version:` to match its skill-version.txt, **or bump both together**"), and here it is the only remedy that is not a lie. Touching SKILL.md alone was tried first and CI G3 rejected it: G3 requires a skill's `skill-version.txt` to move in the same diff as any other file in that skill directory, so a frontmatter-only edit trades a red drift guard for a red G3. The other direction, rolling `skill-version.txt` back to `v1.0.6`, would have satisfied both gates by undoing a deliberate bump and telling every box the podcast universal fix was never shipped. A shared bump to `v1.0.8` satisfies both gates and keeps the recorded history honest.
+
+The `v` prefix is kept on both files: the guard normalizes one leading `v` before comparing, and the two files have always been spelled the same way.
+
+- **Repo version v25.1.59 to v25.1.60** via `scripts/bump-version.sh`, which rolls all 10 tracked markers plus the `06-ghl-install-pages` and agent-browser version strings it maintains.
+
+### Not changed, deliberately
+No Skill 58 behaviour: no pipeline step, no prompt, no module, no script, no test. Only the two numbers that describe the skill moved. `58-podcast-production-engine/CHANGELOG.md` is left alone as well; it still tops out at `[1.0.6]` because `e6ac726` added no entry for `1.0.7`, and inventing release notes for someone else's shipped change would be worse than the gap. No CI gate covers the per-skill changelog, so this is a known gap, recorded here rather than papered over.
+
+The guard script itself is untouched. Editing a gate to silence its own finding is how a fleet loses a gate.
+
+### Risk
+None to runtime. Both changed values are metadata strings that no executable path branches on. Boxes on the weekly roll will see Skill 58 report `v1.0.8` instead of `v1.0.7` with byte-identical content underneath.
+
+### Tests
+`bash scripts/qc-assert-skill-frontmatter-version.sh` on this branch: **exit 0**, `PASS - 23 skill(s) checked; every SKILL.md frontmatter version == skill-version.txt` (47 skills skipped as designed, having no top-level frontmatter `version:`). The same command on the pre-fix tree returns **exit 1** with the single `58-podcast-production-engine` line quoted above, so the fix is the measured difference between two runs rather than an assumption about one. The gate's own `--self-test` passes both fixtures - exit 0 on the match tree, exit 1 on the mismatch tree - which is the control proving the gate went green by losing the drift and not by losing its teeth. `bash -n` clean on the gate script. `scripts/bump-version.sh --check`: all 10 version markers agree at v25.1.60. `scripts/check-docs-language.py`: PASS, 0 new unexplained occurrences. G3 was confirmed red against the frontmatter-only attempt (run 35615023876) and both of Skill 58's files are in this diff, which is the condition G3 tests.
+
 ## [v25.1.59]  -  2026-09-21  -  Name socket.timeout in the tuple, and mark a timed-out step as a transport failure
 
 ### Why
