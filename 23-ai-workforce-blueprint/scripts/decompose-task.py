@@ -527,7 +527,7 @@ def llm_decompose(task_text: str, max_subtasks: int) -> "list | None":
             return None
         url = _llm.ollama_cloud_chat_url()
         body = {
-            "model": _llm.OLLAMA_CLOUD_MODEL,
+            "model": _llm.ollama_cloud_model(),
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
             "max_tokens": 400,

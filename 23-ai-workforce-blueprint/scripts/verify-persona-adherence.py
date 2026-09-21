@@ -43,7 +43,8 @@ try:
     # (llm_score) so this script cannot drift back onto the dead /api path or
     # the deleted :cloud tag.
     from llm_score import (  # type: ignore
-        OLLAMA_CLOUD_MODEL, ollama_cloud_api_keys, ollama_cloud_chat_url,
+        ollama_cloud_api_keys, ollama_cloud_chat_url, ollama_cloud_model,
+        openrouter_model,
     )
     LLM_AVAILABLE = True
 except ImportError:
@@ -160,8 +161,8 @@ def call_llm_for_adherence(prompt: str) -> dict:
             "_fallback": True,
         }
     for name, fn in (
-        ("ollama-cloud-deepseek-pro", lambda: _attempt_ollama_cloud(prompt)),
-        ("openrouter-deepseek-pro",   lambda: _attempt_openrouter(prompt, "deepseek/deepseek-v4-pro")),
+        ("ollama-cloud-deepseek-flash", lambda: _attempt_ollama_cloud(prompt)),
+        ("openrouter-deepseek-flash", lambda: _attempt_openrouter(prompt, openrouter_model())),
         ("openrouter-gemini-lite",    lambda: _attempt_openrouter(prompt, "google/gemini-3.1-flash-lite")),
     ):
         result = fn()
@@ -227,14 +228,14 @@ def _manual_call(prompt: str) -> dict:
     # the first key simply advances to the second.
     for ocld_key in ollama_cloud_api_keys():
         attempts.append((
-            "ollama-cloud-deepseek-pro",
+            "ollama-cloud-deepseek-flash",
             ollama_cloud_chat_url(),
             {"Authorization": f"Bearer {ocld_key}", "Content-Type": "application/json"},
-            OLLAMA_CLOUD_MODEL,
+            ollama_cloud_model(),
         ))
     or_key = _env("OPENROUTER_API_KEY")
     if or_key:
-        for model in ("deepseek/deepseek-v4-pro", "google/gemini-3.1-flash-lite"):
+        for model in (openrouter_model(), "google/gemini-3.1-flash-lite"):
             attempts.append((
                 f"openrouter/{model}",
                 "https://openrouter.ai/api/v1/chat/completions",

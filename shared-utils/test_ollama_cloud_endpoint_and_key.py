@@ -13,9 +13,12 @@ value was read or printed by the measurement):
     silently fell through to paid OpenRouter at ~4s a call.
 
   * The model tag `deepseek-v4-pro:cloud` was deleted from Ollama Cloud on
-    2026-08-17. `GET https://ollama.com/api/tags` on 2026-09-21 lists
-    `deepseek-v4-pro:0813`, `deepseek-v4-flash:0731` and
-    `deepseek-v4.1-flash`.
+    2026-08-17 and every call for it failed silently. `GET
+    https://ollama.com/api/tags` on 2026-09-21 lists exactly
+    `deepseek-v4.1-flash`, `deepseek-v4-flash:0731` and
+    `deepseek-v4-pro:0813`. A tag a provider can retire under us belongs in
+    config, not in a constant, so both scoring model ids are env-overridable:
+    OLLAMA_CLOUD_SCORING_MODEL and OPENROUTER_SCORING_MODEL.
 
   * The key `_env("OLLAMA_CLOUD_API_KEY")` resolves answered 401 on that box,
     while the key the OpenClaw gateway itself uses -- `models.providers.<name>
@@ -30,8 +33,10 @@ WHAT IS PINNED HERE:
                   default AND when OLLAMA_CLOUD_URL still carries the old
                   https://ollama.com/api base. Any other override is honoured
                   verbatim.
-  2. MODEL     -- the request body carries deepseek-v4-pro:0813, and the dead
-                  :cloud tag appears nowhere in the module.
+  2. MODEL     -- the request body carries deepseek-v4.1-flash by default,
+                  OLLAMA_CLOUD_SCORING_MODEL overrides it, step 2 defaults to
+                  deepseek/deepseek-v4.1-flash with OPENROUTER_SCORING_MODEL
+                  overriding, and the dead :cloud tag appears nowhere.
   3. FALLBACK  -- with no OLLAMA_CLOUD_API_KEY anywhere, the gateway's
                   provider key from openclaw.json is what gets sent.
   4. 401 RETRY -- a 401 on the env key retries exactly once, with the provider
@@ -72,7 +77,7 @@ PROVIDER_KEY = "sk-ollama-GATEWAY-PROVIDER-KEY-SENTINEL-0123456789abcdef"
 _SCRUB = (
     "OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY", "OLLAMA_KEY", "OLLAMA_TOKEN",
     "OLLAMA_CLOUD_URL", "OPENCLAW_SECRETS", "OC_ROOT", "OC_CONFIG",
-    "OPENROUTER_API_KEY",
+    "OPENROUTER_API_KEY", "OLLAMA_CLOUD_SCORING_MODEL", "OPENROUTER_SCORING_MODEL",
 )
 
 _SCORE_REPLY = {
@@ -166,14 +171,43 @@ def test_a_real_override_is_honoured_verbatim(box, monkeypatch):
 # 2. MODEL
 # ---------------------------------------------------------------------------
 
-def test_request_body_carries_the_live_pro_tag(box, monkeypatch):
+def test_request_body_carries_the_live_flash_tag(box, monkeypatch):
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
     assert result["ok"] is True and result["score"] == 0.77
-    assert calls[0]["body"]["model"] == "deepseek-v4-pro:0813"
+    assert calls[0]["body"]["model"] == "deepseek-v4.1-flash"
     assert calls[0]["url"] == "https://ollama.com/v1/chat/completions"
+    assert result["model"] == "ollama/deepseek-v4.1-flash"
+
+
+def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
+    """A provider renaming a tag must be a config change on the box, never a
+    code change and a fleet roll. That is the whole lesson of :cloud."""
+    assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash"
+    assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash"
+
+    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4-pro:0813")
+    monkeypatch.setenv("OPENROUTER_SCORING_MODEL", "deepseek/deepseek-v4-pro")
+    assert llm_score.ollama_cloud_model() == "deepseek-v4-pro:0813"
+    assert llm_score.ollama_cloud_model_id() == "ollama/deepseek-v4-pro:0813"
+    assert llm_score.openrouter_model() == "deepseek/deepseek-v4-pro"
+
+    monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
+    calls = capture_posts(monkeypatch, [_SCORE_REPLY])
+    result = llm_score._attempt_ollama_cloud("score this")
+    assert calls[0]["body"]["model"] == "deepseek-v4-pro:0813"
     assert result["model"] == "ollama/deepseek-v4-pro:0813"
+
+
+def test_the_override_resolves_from_the_secrets_store_too(box):
+    """CONTROL: the overrides go through the same F25 chain as every other
+    name, so a box that carries one in its store and nothing in its
+    environment -- launchd, the openclaw cron -- still honours it."""
+    store = box / ".openclaw" / "secrets" / ".env"
+    store.write_text("OLLAMA_CLOUD_SCORING_MODEL=deepseek-v4-flash:0731\n",
+                     encoding="utf-8")
+    assert llm_score.ollama_cloud_model() == "deepseek-v4-flash:0731"
 
 
 def test_the_deleted_cloud_tag_is_gone_from_the_module():
@@ -294,5 +328,5 @@ def test_no_key_anywhere_degrades_without_a_call(box, monkeypatch):
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
     assert result["ok"] is False
-    assert result["model"] == "ollama/deepseek-v4-pro:0813"
+    assert result["model"] == "ollama/deepseek-v4.1-flash"
     assert calls == []

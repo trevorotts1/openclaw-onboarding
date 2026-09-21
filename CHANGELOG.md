@@ -1,3 +1,25 @@
+## [v25.1.55]  -  2026-09-21  -  The scoring chain runs on V4.1 Flash, and both model ids are now config
+
+### Why
+v25.1.54 fixed the Ollama Cloud endpoint and moved step 1 off the tag Ollama Cloud deleted on 2026-08-17, landing on `deepseek-v4-pro:0813`. Two corrections on top of that, both verified live on 2026-09-21.
+
+`GET https://ollama.com/api/tags` lists exactly `deepseek-v4.1-flash`, `deepseek-v4-flash:0731` and `deepseek-v4-pro:0813`. `https://openrouter.ai/api/v1/models` lists `deepseek/deepseek-v4.1-flash` at 1,048,576 context, $0.15/M prompt and $0.60/M completion. Flash is the right model on both steps: these calls are 200-token judgements against a rubric, not generation, so Pro's price buys nothing the scorer can use.
+
+And the deeper lesson of the deleted tag is not which tag replaces it. A provider can retire a tag out from under this chain at any time, and when that happened every scoring call failed silently for five weeks. A model id that a third party controls belongs in configuration, not in a constant that needs a code change and a fleet roll to correct.
+
+### What changed
+- **`shared-utils/llm_score.py`** - `OLLAMA_CLOUD_MODEL_DEFAULT` is `deepseek-v4.1-flash` and `OPENROUTER_MODEL_DEFAULT` is `deepseek/deepseek-v4.1-flash`. They are DEFAULTS: `ollama_cloud_model()` and `openrouter_model()` resolve `OLLAMA_CLOUD_SCORING_MODEL` and `OPENROUTER_SCORING_MODEL` through the same F25 precedence chain every other name uses, so an override set in a box's secrets store works under launchd and the openclaw cron, where the process environment is empty. Step 3 is unchanged at `google/gemini-3.1-flash-lite`. The endpoint is unchanged at `https://ollama.com/v1/chat/completions`, as is the provider-key fallback and its single 401 retry.
+- **`23-ai-workforce-blueprint/scripts/decompose-task.py`** and **`23-ai-workforce-blueprint/scripts/verify-persona-adherence.py`** - both take the ids from those resolvers, so an override set for the scorer applies to sub-task decomposition and adherence verification in the same breath.
+- **`shared-utils/model-capabilities.json`** - `ollama/deepseek-v4.1-flash` and `openrouter/deepseek/deepseek-v4.1-flash` added to `verified_slugs` as deepseek-flash.
+- **`.github/workflows/model-selector-guard.yml`** - the repair-sweep inventory fixture carries `ollama/deepseek-v4.1-flash`.
+- The PRES-053 vendored copies are re-vendored byte-identical to their canonicals.
+
+### Risk
+Low. The chain's shape, endpoint, credential resolution and retry behaviour are all untouched; only the two model ids move, and each now has an escape hatch that does not require a release. A box that sets neither override sees the new defaults. A box that sets one gets exactly what it asked for.
+
+### Tests
+`shared-utils/test_ollama_cloud_endpoint_and_key.py` grew to 17 hermetic cases: the request body carries `deepseek-v4.1-flash` and the reported id is `ollama/deepseek-v4.1-flash`; both overrides are honoured, including a round trip that sets `OLLAMA_CLOUD_SCORING_MODEL` and proves the overridden tag reaches the request body and the reported id; and a control that an override in the secrets store resolves with nothing in the process environment. The two override names are scrubbed from the environment by the fixture, so no leg can pass because of a value on the developer's box. Pre-existing suites re-run green: `test_f25_llm_score_secrets` (31/31), `tests/unit/model-selector.test.py` (37/37), `stage-d-parallel-scoring` (5/5), `persona-fallback-invariant` (8/8), `persona-grounding-health-probe` (21/21), `test_pres053_persona_service` (18/18). The model-selector-guard repair-sweep smoke test was re-run locally against the new fixture with `--shared-utils` pinned to this checkout: 3 offenders, graphics -> vision, gate clean after apply.
+
 ## [v25.1.54]  -  2026-09-21  -  Ollama Cloud scoring never once worked: wrong path, deleted tag, rejected key
 
 ### Why
