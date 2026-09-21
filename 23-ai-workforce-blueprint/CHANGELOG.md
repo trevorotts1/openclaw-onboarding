@@ -2,6 +2,29 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-21 - fix(persona-selector): Stage-D stops outbidding the fleet for Ollama Cloud
+
+`PERSONA_SCORE_WORKERS` default 6 -> 3. Ollama Cloud's concurrency limit is
+ACCOUNT-WIDE (10) and the operator's standing ceiling is 8, shared by every
+running agent on every box — not a per-process budget. A 6-wide scoring burst
+queued behind whatever agents were already live and step 1 of the scoring chain
+timed out: measured on a client Mac, 0 of 3 scoring calls reached
+`ollama-cloud/minimax-m3` and all fell through to OpenRouter/Agnes at 4-20s.
+Three is wide enough to hide per-call latency without spending the fleet's
+shared concurrency.
+
+The env override is unchanged, and `PERSONA_SCORE_WORKERS=1` is still the
+literal sequential path with no thread created.
+
+`tests/unit/stage-d-parallel-scoring.test.py` now runs its overlap leg at the
+SHIPPED default rather than a pinned 6, so a default that stops overlapping
+fails there instead of passing against a width nothing ships (6 personas x 0.2s
+at 3 workers is ~0.4s, inside the unchanged 0.6s bound), and pins the default at
+3 with the reason. Paired with the `shared-utils/llm_score.py` OSError fix in
+onboarding v25.1.58: on Python 3.9 a `socket.timeout` is not a `TimeoutError`,
+so a step timeout escaped the per-step handler, propagated out of `pool.map` in
+`score_personas`, and killed the whole selection instead of advancing the chain.
+
 ## [Unreleased] - 2026-09-21 - fix(departments): a wrapped departments.json is read, not folded into departments
 
 `<company_dir>/departments.json` legitimately ships in two top-level shapes: the

@@ -17,8 +17,11 @@ Proves, hermetically (score_persona is monkeypatched — no DB, no network):
      exactly the list the old comprehension produced. Forced by making the
      LAST persona the FASTEST — under a completion-ordered implementation it
      would come back first.
-  2. THE WAITS OVERLAP. Six personas that each block 0.2s finish well inside
-     0.6s with six workers (1.2s if they were still sequential).
+  2. THE WAITS OVERLAP. Six personas that each block 0.2s run in two waves at
+     the SHIPPED default of 3 workers — ~0.4s, well inside the 0.6s bound
+     (1.2s if they were still sequential). The test uses the module default
+     rather than pinning a number, so a default that stops overlapping fails
+     here instead of passing against a width nothing ships.
   3. THE ESCAPE HATCH IS LITERAL. PERSONA_SCORE_WORKERS=1 runs on the CALLING
      thread — no pool, no worker — so an operator who suspects the threads can
      take a byte-identical sequential path.
@@ -91,7 +94,8 @@ class StageDParallelScoring(unittest.TestCase):
 
     def test_order_preserved_and_waits_overlap(self):
         self._install_blocking_stub()
-        sel.PERSONA_SCORE_WORKERS = 6
+        # The SHIPPED default, not a pinned 6 — this test guards what runs.
+        sel.PERSONA_SCORE_WORKERS = self._real_workers
 
         started = time.monotonic()
         scored = self._run(PERSONAS)
@@ -102,9 +106,25 @@ class StageDParallelScoring(unittest.TestCase):
         self.assertLess(
             elapsed, 0.6,
             f"6 personas blocking {BLOCK_SECONDS}s each took {elapsed:.2f}s "
-            f"with 6 workers — sequential would be ~1.2s")
+            f"with {self._real_workers} workers — sequential would be ~1.2s")
         self.assertGreater(len({s["thread"] for s in scored}), 1,
                            "work must actually be spread across threads")
+
+    def test_default_width_respects_the_shared_ollama_ceiling(self):
+        """The default is 3, not 6.
+
+        Ollama Cloud's concurrency limit is ACCOUNT-WIDE (10) and the
+        operator's standing ceiling is 8, shared by every running agent on
+        every box. A 6-wide scoring burst queues behind whatever agents are
+        already live and step 1 of the chain times out — measured on a client
+        Mac, 0 of 3 scoring calls reached ollama-cloud/minimax-m3 and all fell
+        through to OpenRouter/Agnes at 4-20s. This pins the shipped width so a
+        future "make it faster" edit has to argue with the shared ceiling.
+        """
+        self.assertEqual(
+            self._real_workers, 3,
+            "PERSONA_SCORE_WORKERS default must stay at 3 — the Ollama Cloud "
+            "concurrency ceiling is account-wide and shared across the fleet")
 
     # ── 3: the escape hatch creates no thread at all ────────────────────────
 

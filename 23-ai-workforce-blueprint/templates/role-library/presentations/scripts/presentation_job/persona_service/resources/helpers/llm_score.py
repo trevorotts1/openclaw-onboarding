@@ -981,6 +981,17 @@ def _attempt_chat(provider: str, model: str, prompt: str, url: str, keys: list,
                                      keys[index:], extra_headers, extra_body)
             return outcome
         except (urllib.error.URLError, json.JSONDecodeError, TimeoutError,
+                # OSError, NOT socket.timeout: on Python 3.9 `socket.timeout`
+                # is an OSError but NOT a TimeoutError — they were unified only
+                # in 3.10. A read timeout on a step therefore ESCAPED this
+                # handler on 3.9, propagated out of pool.map in the selector's
+                # score_personas, and killed the whole persona selection (rc 1)
+                # instead of falling through to the next step in the chain.
+                # OSError covers socket.timeout on EVERY version, plus the
+                # connection-reset family. Do not narrow it back to
+                # TimeoutError. urllib.error.HTTPError is caught above, so it
+                # still takes its own 401/400/404 path.
+                OSError,
                 AttributeError, KeyError, TypeError) as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}",
                     "model": label}

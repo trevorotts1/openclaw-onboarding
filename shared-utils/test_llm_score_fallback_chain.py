@@ -47,6 +47,7 @@ make a call. Nothing here touches the network.
 from __future__ import annotations
 
 import json
+import socket
 import sys
 import urllib.error
 from pathlib import Path
@@ -237,6 +238,64 @@ def test_the_first_parseable_200_wins_and_later_steps_are_not_called(box, monkey
     assert result["model"] == "openrouter/minimax/minimax-m3", (
         "the returned model must name the WINNING STEP, not a family")
     assert len(calls) == 2, models_called(calls)
+
+
+def test_a_socket_timeout_on_a_step_advances_instead_of_killing_the_run(box, monkeypatch):
+    """THE PYTHON 3.9 LEG. `socket.timeout` is an OSError on every version but
+    a TimeoutError only from 3.10 — they were unified in 3.10. The per-step
+    except tuple used to name TimeoutError without OSError, so on a 3.9 box an
+    Ollama Cloud read timeout ESCAPED _attempt_chat, propagated out of
+    pool.map in the selector's score_personas, and killed the whole persona
+    selection (rc 1) instead of falling through to step 2.
+
+    Raising the real `socket.timeout` is the point: on 3.10+ it IS
+    TimeoutError and this passes either way, so the leg only has teeth
+    alongside the control below, which proves the class relationship this fix
+    turns on rather than assuming the runner's version.
+    """
+    all_keys(monkeypatch)
+    calls = capture_posts(monkeypatch, [socket.timeout("timed out"), _SCORE_REPLY])
+
+    result = score()
+
+    assert result["score"] == 0.77 and result["fallback"] is False
+    assert result["model"] == "openrouter/minimax/minimax-m3", (
+        "step 2 must serve the score after step 1 times out")
+    assert len(calls) == 2, models_called(calls)
+
+
+def test_socket_timeout_is_an_oserror_which_is_why_the_tuple_names_oserror():
+    """CONTROL for the leg above. It is OSError, not TimeoutError, that makes
+    the handler catch a 3.9 socket.timeout — so assert the relationship the
+    fix depends on. On 3.9 the second assert is the whole bug: socket.timeout
+    is NOT a TimeoutError there, and a tuple naming only TimeoutError misses
+    it.
+    """
+    assert issubclass(socket.timeout, OSError)
+    if sys.version_info < (3, 10):
+        assert not issubclass(socket.timeout, TimeoutError), (
+            "on <3.10 socket.timeout must NOT be a TimeoutError — that is the "
+            "defect this fix exists for")
+    else:
+        assert socket.timeout is TimeoutError
+
+
+def test_every_transport_error_returns_a_dict_rather_than_raising(box, monkeypatch):
+    """The whole chain must survive each transport failure class: a raise from
+    any of these is what took the selector down, so none may escape.
+    ConnectionResetError and OSError are OSErrors that are not TimeoutErrors
+    on ANY version — they were never caught before this fix.
+    """
+    for exc in (socket.timeout("timed out"),
+                ConnectionResetError("peer reset"),
+                OSError("transport went away"),
+                TimeoutError("slow")):
+        all_keys(monkeypatch)
+        calls = capture_posts(monkeypatch, [exc])
+        result = score(persona_id=f"probe-{type(exc).__name__}")
+        assert result["fallback"] is True, f"{exc!r} did not degrade cleanly"
+        assert len(calls) == len(EXPECTED_DEFAULT_CHAIN), (
+            f"{exc!r} stopped the chain after {len(calls)} step(s)")
 
 
 def test_an_unparseable_200_advances_instead_of_winning(box, monkeypatch):
