@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/build-state-path-resolution.test.sh
 # ---------------------------------------------------------------------------
-# Verified on the operator canary: `run-full-install.sh --update-only` built
+# Verified on the operator's own box: `run-full-install.sh --update-only` built
 # STATE_FILE from OPENCLAW_WORKSPACE_PATH, which oc_set_platform_paths sets
 # from openclaw.json's agents.defaults.workspace (there: ~/clawd). The real
 # file lives at ~/.openclaw/workspace/.workforce-build-state.json. With no
@@ -36,7 +36,7 @@ bash -n "$RESOLVER" || { echo "FATAL: resolver does not parse"; exit 2; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "== (1) the canary: openclaw.json points elsewhere, real file under OC_ROOT/workspace =="
+echo "== (1) the operator box: openclaw.json points elsewhere, real file under OC_ROOT/workspace =="
 mkdir -p "$WORK/clawd" "$WORK/oc/workspace" "$WORK/home/.openclaw/workspace"
 : > "$WORK/oc/workspace/.workforce-build-state.json"
 got="$(OPENCLAW_WORKSPACE_PATH="$WORK/clawd" OC_ROOT="$WORK/oc" HOME="$WORK/home" \

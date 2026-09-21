@@ -44,8 +44,9 @@ resolve_oc_root() {
 # .workforce-build-state.json, or return 1 having searched everywhere.
 #
 # WHY: platform/common.sh sets OPENCLAW_WORKSPACE_PATH from openclaw.json's
-# agents.defaults.workspace. On the operator canary that is ~/clawd, while the
-# real state file lives at ~/.openclaw/workspace/.workforce-build-state.json.
+# agents.defaults.workspace. On the operator's own box that points at a legacy
+# directory, while the real state file lives at
+# ~/.openclaw/workspace/.workforce-build-state.json.
 # run-full-install.sh built STATE_FILE from that configured path, found no
 # file, and the launch inspector returned requiresInitialization:true with
 # companySlug:null — so `--update-only` exited 8 demanding an interactive

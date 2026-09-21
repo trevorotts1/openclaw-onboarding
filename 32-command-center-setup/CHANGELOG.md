@@ -2,7 +2,7 @@
 
 ## v13.1.18 - 2026-09-21 - The installer finds the build state where it actually is
 
-Verified on the operator canary: `scripts/run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there `~/clawd`), while the real file lives at `~/.openclaw/workspace/.workforce-build-state.json`. With no state found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null` and the run exited 8 demanding an interactive interview on a fully built box.
+Verified on the operator's own box: `scripts/run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there `~/clawd`), while the real file lives at `~/.openclaw/workspace/.workforce-build-state.json`. With no state found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null` and the run exited 8 demanding an interactive interview on a fully built box.
 
 A configured path is a hint, not evidence. `shared-utils/resolve-oc-root.sh` gains `resolve_build_state_workspace()`, which returns the first candidate that actually contains the file — `OPENCLAW_WORKSPACE_PATH`, `$OC_ROOT/workspace`, `~/.openclaw/workspace`, `/data/.openclaw/workspace` — and records every path tried. `run-full-install.sh`, `scripts/materialize-dept-agents.sh` and `scripts/backfill-per-dept-healer.sh` all resolve through it, so no two scripts read different copies.
 
