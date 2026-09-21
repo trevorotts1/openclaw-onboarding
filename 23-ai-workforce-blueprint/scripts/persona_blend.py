@@ -72,11 +72,6 @@ GUARDRAIL_CLAUSE = (
 # The exact question we ASK when the audience is unknown / ambiguous.
 AUDIENCE_CONFIRM_PROMPT = "What audience are we dealing with?"
 
-# Departments whose content tasks HARD-HOLD on confirm-window expiry (D23, as
-# corrected 2026-07-16: the ruling's `funnels` is not a department and could
-# never fire, so it reads `marketing`). These still always confirm.
-AUDIENCE_HARD_HOLD_DEPARTMENTS = frozenset({"marketing", "web-development"})
-
 # usable_as enum + the design default when the field is absent.
 USABLE_AS_ENUM = ("audience", "topic", "task")
 USABLE_AS_DEFAULT = ("topic", "task")
@@ -523,42 +518,21 @@ def resolve_conversion_goal(conversion_goal: str = "", goal_source: str = "") ->
 
 
 def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
-                     audience_override: str = "", department: str = "") -> dict:
+                     audience_override: str = "") -> dict:
     """Resolve the audience + whether the operator must confirm before writing.
 
-    Confirm only on REAL ambiguity:
-      • operator_confirmed (OPENCLAW_AUDIENCE / explicit override) → False.
-      • explicit `audience: none` → False (the caller already said there is none).
-      • department in AUDIENCE_HARD_HOLD_DEPARTMENTS → True, always.
-      • 2+ ICP descriptors → True (genuinely ambiguous; the ask enumerates them).
-      • exactly 1 ICP descriptor → False (nothing to disambiguate).
-      • 0 descriptors → False (nothing to confirm; an operator/internal lane
-        lands here too).
-
-    Previously EVERY branch but the override returned confirm_required=True, so
-    a company with one ICP -- or none at all -- parked every content task at the
-    audience gate for the full confirm window before it could write anything.
-    The `ask` text is still returned in the 0/1 cases so a caller that WANTS to
-    prompt still can; it just is not forced to.
+    ALWAYS-confirm doctrine:
+      • operator_confirmed (OPENCLAW_AUDIENCE / explicit override) → confirm_required=False.
+      • single ICP descriptor → source 'onboarding_icp', confidence 'high',
+        confirm_required=True (a confirm PROMPT — clients have >1 audience).
+      • multiple ICP descriptors → source 'asked', confirm_required=True,
+        ask = "What audience are we dealing with?" enumerating the known ones.
+      • none → source 'asked', confidence 'none', confirm_required=True, same ASK.
 
     Returns {source, candidates[], confidence, label, ask, confirm_required}.
     Candidates carry the proposed audience persona per known audience. Never
     fabricates an audience (candidates=[] when the ICP yields nothing).
     """
-    _dept = str(department or "").strip().lower()
-    _hold = _dept in AUDIENCE_HARD_HOLD_DEPARTMENTS
-
-    # An explicit "none" is an ANSWER, not a missing value: do not re-ask it.
-    if str(audience_override or "").strip().lower() in ("none", "no audience"):
-        return {
-            "source": "operator_confirmed",
-            "candidates": [],
-            "confidence": "none",
-            "label": None,
-            "ask": None,
-            "confirm_required": _hold,
-        }
-
     if audience_override and str(audience_override).strip():
         label = _clean_descriptor(audience_override)
         ap = match_audience_persona(catalog, label)
@@ -582,7 +556,7 @@ def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
             "label": descriptors[0],
             "ask": (f'Onboarding ICP says the audience is "{descriptors[0]}". '
                     f"Confirm this audience before I write, or tell me the audience."),
-            "confirm_required": _hold,
+            "confirm_required": True,
         }
     if len(descriptors) > 1:
         enum = "; ".join(f'"{d}"' for d in descriptors)
@@ -592,7 +566,7 @@ def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
             "confidence": "medium",
             "label": descriptors[0],  # top proposal; ASK still required
             "ask": f"{AUDIENCE_CONFIRM_PROMPT} Known from onboarding: {enum}.",
-            "confirm_required": True,   # 2+ candidates is the real ambiguity
+            "confirm_required": True,
         }
     return {
         "source": "asked",
@@ -601,7 +575,7 @@ def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
         "label": None,
         "ask": (f"{AUDIENCE_CONFIRM_PROMPT} No audience is on file in the "
                 f"onboarding ICP — name the audience so I can pick the voice."),
-        "confirm_required": _hold,
+        "confirm_required": True,
     }
 
 

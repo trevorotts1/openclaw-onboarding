@@ -1,3 +1,33 @@
+## [v25.1.71]  -  2026-09-21  -  The audience-rule change is reverted; a NO-WEAKENING lock guards the doctrine it relaxed
+
+### Why
+v25.1.70 shipped a narrowing of `persona_blend.resolve_audience()` so a company with one ICP, or none, would stop parking every content task at the audience gate. It merged at a commit that predated its own revert, and `main` is RED as a result.
+
+**Two required checks fail on it**, `Persona-blend matcher` and `Communication trigger + audience-confirmation prompt`, and the finding names the guard by its own label:
+
+```
+23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py:211
+  [FAIL] NO-WEAKENING failed: single ICP auto-proceeded without confirm_required
+```
+
+That assertion exists specifically to stop a single high-confidence ICP from auto-writing without confirmation, which is exactly what the change enables. `shared-utils/comms_audience_trigger.py` describes the same rule as `resolve_audience`'s "own always-confirm resolution verbatim".
+
+Silencing a guard named NO-WEAKENING in order to land the change it was written to stop is not a call a release train gets to make. CI proved the conflict; it was not a judgement call about style.
+
+### What changed
+`23-ai-workforce-blueprint/scripts/persona_blend.py` is reverted **byte-identical to v25.1.69** (`diff` against `c55bd9edc` is empty). `AUDIENCE_HARD_HOLD_DEPARTMENTS`, the `department=` parameter and the relaxed `confirm_required` branches are all gone.
+
+`tests/unit/test_bundle_v25_1_70.py` drops the ten audience assertions and gains one that pins the revert, so it cannot drift back in unnoticed. **Delete that test first** in whichever release decides the doctrine.
+
+### Not changed
+The other four items v25.1.70 shipped, all of which are unaffected and stay: the safe env loader and its eight converted readers, the contract-check hook, Skill 59's `agents.entries` roster shape, and the explicit `agents.defaults.maxConcurrent`.
+
+### The decision this leaves open
+The original complaint is real: a single-ICP or no-ICP company still waits out the full confirm window on every content task. Resolving it means amending the ALWAYS-confirm doctrine and the two locks that encode it, deliberately and in one place, not as a side effect of a bundle.
+
+### Tests
+`23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py` **57/57**. `tests/unit/u116-comms-audience-trigger-proof.test.py`, `tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py` and `23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py` all pass. `tests/unit/test_bundle_v25_1_70.py` 37/37.
+
 ## [v25.1.70]  -  2026-09-21  -  Content stops parking at an audience gate with nothing to ask, a client's env file stops being executed, and four other findings
 
 ### 1. The audience gate asked when there was nothing to ask

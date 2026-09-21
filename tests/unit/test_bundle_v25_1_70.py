@@ -24,68 +24,24 @@ def _load(name, relpath):
     return mod
 
 
-pb = _load("persona_blend_under_test", "23-ai-workforce-blueprint/scripts/persona_blend.py")
+# ─── 1. The audience gate — HELD, not shipped ───────────────────────────────
+# The audience-rule change was built and then REVERTED before merge. Two
+# existing regression locks encode the ALWAYS-confirm doctrine it would relax,
+# one of them an explicit anti-weakening assertion:
+#
+#   23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py:211
+#     "NO-WEAKENING failed: single ICP auto-proceeded without confirm_required"
+#
+# Silencing a guard named NO-WEAKENING to land the change it was written to
+# stop is not a call this train gets to make. persona_blend.py is untouched at
+# origin/main's version. This test pins that, so the revert cannot drift back
+# in unnoticed; delete it in the release that decides the doctrine.
 
-
-# ─── 1. The audience gate confirms only on real ambiguity ───────────────────
-# persona_blend.resolve_audience returned confirm_required=True on EVERY branch
-# but an explicit override, so a company with one ICP — or none — parked every
-# content task at the audience gate for the full confirm window.
-
-_CAT = {"personas": []}
-
-
-def _cfg(*icps):
-    # "audiences" is one of persona_blend._ICP_LIST_KEYS.
-    return {"audiences": list(icps)} if icps else {}
-
-
-def test_no_icp_does_not_require_confirmation():
-    out = pb.resolve_audience(_CAT, _cfg(), "")
-    assert out["confirm_required"] is False
-    assert out["candidates"] == []
-
-
-def test_single_icp_does_not_require_confirmation():
-    out = pb.resolve_audience(_CAT, _cfg("small business owners"), "")
-    assert out["confirm_required"] is False
-    assert out["source"] == "onboarding_icp"
-    assert out["ask"], "the prompt is still offered for a caller that wants it"
-
-
-def test_two_icps_still_require_confirmation():
-    out = pb.resolve_audience(_CAT, _cfg("small business owners", "enterprise buyers"), "")
-    assert out["confirm_required"] is True
-    assert len(out["candidates"]) == 2
-
-
-def test_explicit_override_does_not_require_confirmation():
-    out = pb.resolve_audience(_CAT, _cfg("a", "b"), "", audience_override="enterprise buyers")
-    assert out["confirm_required"] is False
-    assert out["source"] == "operator_confirmed"
-
-
-@pytest.mark.parametrize("word", ["none", "None", " NO AUDIENCE "])
-def test_explicit_audience_none_is_an_answer_not_a_gap(word):
-    out = pb.resolve_audience(_CAT, _cfg("a", "b"), "", audience_override=word)
-    assert out["confirm_required"] is False
-    assert out["label"] is None
-    assert out["ask"] is None
-
-
-@pytest.mark.parametrize("dept", ["marketing", "web-development", "Marketing"])
-def test_hard_hold_department_always_confirms(dept):
-    # D23 (as corrected 2026-07-16) hard-holds these departments' content tasks.
-    for cfg in (_cfg(), _cfg("one icp")):
-        out = pb.resolve_audience(_CAT, cfg, "", department=dept)
-        assert out["confirm_required"] is True, (dept, cfg)
-    out = pb.resolve_audience(_CAT, _cfg(), "", audience_override="none", department=dept)
-    assert out["confirm_required"] is True
-
-
-def test_a_normal_department_does_not_confirm_on_a_single_icp():
-    out = pb.resolve_audience(_CAT, _cfg("one icp"), "", department="audio")
-    assert out["confirm_required"] is False
+def test_audience_always_confirm_doctrine_is_still_in_force():
+    src = open(os.path.join(_ROOT, "23-ai-workforce-blueprint/scripts/persona_blend.py")).read()
+    assert "AUDIENCE_HARD_HOLD_DEPARTMENTS" not in src, \
+        "the audience rule landed without the NO-WEAKENING lock being resolved"
+    assert "ALWAYS-confirm doctrine" in src
 
 
 # ─── 2. The safe env loader ─────────────────────────────────────────────────
