@@ -119,7 +119,34 @@ fi
 source "$_PLATFORM_COMMON" || exit 8
 oc_set_platform_paths || exit 8
 
-STATE_FILE="${OPENCLAW_WORKSPACE_PATH:-$OC_ROOT/workspace}/.workforce-build-state.json"
+# resolve_build_state_workspace() — the ONE build-state path resolver.
+_OC_ROOT_RESOLVER="$SKILL_DIR/../shared-utils/resolve-oc-root.sh"
+[[ -f "$_OC_ROOT_RESOLVER" ]] || _OC_ROOT_RESOLVER="$SKILL_DIR/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+
+# Prefer the workspace that ACTUALLY holds the build state over the one
+# openclaw.json configures. oc_set_platform_paths just set
+# OPENCLAW_WORKSPACE_PATH from agents.defaults.workspace; on the operator
+# canary that is ~/clawd while the real file lives under
+# ~/.openclaw/workspace, so --update-only found no state, the launch inspector
+# returned requiresInitialization:true / companySlug:null, and the run exited 8
+# demanding an interactive interview on a fully built box.
+# When NO candidate has the file this falls back to the configured path, which
+# is the correct WRITE target for a genuinely fresh install.
+_BUILD_STATE_WS=""
+if declare -F resolve_build_state_workspace >/dev/null 2>&1; then
+  _BUILD_STATE_WS="$(resolve_build_state_workspace || true)"
+fi
+if [[ -n "$_BUILD_STATE_WS" ]]; then
+  STATE_FILE="$_BUILD_STATE_WS/.workforce-build-state.json"
+  [[ "$_BUILD_STATE_WS" == "${OPENCLAW_WORKSPACE_PATH:-}" ]] \
+    || echo "[run-full-install] build state resolved to $_BUILD_STATE_WS (openclaw.json configures ${OPENCLAW_WORKSPACE_PATH:-unset}); searched: ${OC_BUILD_STATE_SEARCHED:-}"
+else
+  STATE_FILE="${OPENCLAW_WORKSPACE_PATH:-$OC_ROOT/workspace}/.workforce-build-state.json"
+  [[ -z "${OC_BUILD_STATE_SEARCHED:-}" ]] \
+    || echo "[run-full-install] no .workforce-build-state.json found; searched: $OC_BUILD_STATE_SEARCHED — treating this as a fresh install and writing to $STATE_FILE"
+fi
 LOG_FILE="$(dirname "$STATE_FILE")/.command-center-install.log"
 mkdir -p "$(dirname "$STATE_FILE")"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

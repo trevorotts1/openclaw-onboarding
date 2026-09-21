@@ -13,6 +13,8 @@ on:
     paths:
       - shared-utils/resolve-oc-root.sh
       - tests/unit/resolve-oc-root.test.sh
+      - tests/unit/build-state-path-resolution.test.sh
+      - 32-command-center-setup/scripts/run-full-install.sh
       - update-skills.sh
       - 37-zhc-closeout/scripts/run-closeout.sh
       - 37-zhc-closeout/scripts/resume-closeout-cron.sh
@@ -27,6 +29,8 @@ on:
     paths:
       - shared-utils/resolve-oc-root.sh
       - tests/unit/resolve-oc-root.test.sh
+      - tests/unit/build-state-path-resolution.test.sh
+      - 32-command-center-setup/scripts/run-full-install.sh
       - update-skills.sh
       - 37-zhc-closeout/scripts/run-closeout.sh
       - 37-zhc-closeout/scripts/resume-closeout-cron.sh
@@ -50,6 +54,8 @@ jobs:
           for f in \
             shared-utils/resolve-oc-root.sh \
             tests/unit/resolve-oc-root.test.sh \
+            tests/unit/build-state-path-resolution.test.sh \
+            32-command-center-setup/scripts/run-full-install.sh \
             update-skills.sh \
             37-zhc-closeout/scripts/run-closeout.sh \
             37-zhc-closeout/scripts/resume-closeout-cron.sh \
@@ -63,3 +69,6 @@ jobs:
 
       - name: Resolver equivalence + wiring test
         run: bash tests/unit/resolve-oc-root.test.sh
+
+      - name: Build-state path resolution (the workspace that HAS the file wins)
+        run: bash tests/unit/build-state-path-resolution.test.sh
