@@ -2,6 +2,33 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-21 - fix(departments): a slug-keyed "departments" object is folded, not refused
+
+A client Mac's real `departments.json` is `{"company": ..., "total_departments":
+34, "total_roles": N, "departments": {"<slug>": {...}, ...}}` — the `departments`
+KEY holds an OBJECT keyed by slug. The shared envelope normalizer accepted a
+slug-keyed object only at the top level, so 34 real departments read as a hard
+`MalformedDepartmentsError` instead.
+
+`shared-utils/departments_payload.py` now folds a slug-keyed object of
+department objects in BOTH positions, under the `departments` key and at the
+top level, with the key filling `id`/`slug` only when the entry lacks its own
+and file order preserved. The fold still refuses unless EVERY value is an
+object, so a metadata envelope's keys can never become departments.
+
+The `except ImportError` fallbacks in `scripts/materialize-missing-departments.py`
+(strict), `scripts/department-floor.py`, `scripts/prove-zhe.py`,
+`scripts/prove-board-join.py` and `scripts/upgrade-company-config.py` (lenient)
+carry the identical rule, so a box predating the shared module does not report
+zero departments on a file the module reads fine.
+
+No writer here emits that shape: `scripts/build-workforce.py` writes a bare
+list (`generate_departments_json`) or `{removedWithProvenance, departments:
+[list]}` (`_make_artifact_payload`), and `scripts/retire-confirmed-decline.sh`
+writes a list. The dict-keyed `departments` built by
+`scripts/register-library-additions.py` belongs to
+`templates/role-library/_index.json`, a different file. No writer was changed.
+
 ## [Unreleased] - 2026-09-21 - fix(persona-selector): Stage-D stops outbidding the fleet for Ollama Cloud
 
 `PERSONA_SCORE_WORKERS` default 6 -> 3. Ollama Cloud's concurrency limit is

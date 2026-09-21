@@ -140,12 +140,22 @@ except ImportError:  # pragma: no cover - box predating shared-utils/departments
         pass
 
     def _unwrap_departments(data, path=None):  # type: ignore[misc]
+        # KEEP IN SYNC with shared-utils/departments_payload.py. A slug-keyed
+        # object of department objects folds to a list (the key fills id/slug
+        # only when missing); anything with a non-object value is a metadata
+        # envelope whose keys are never departments, so it still refuses.
         if data is None:
             return None
         if isinstance(data, list):
             return data
-        if isinstance(data, dict) and isinstance(data.get("departments"), list):
-            return data["departments"]
+        if isinstance(data, dict):
+            wrapped = data.get("departments", data)
+            if isinstance(wrapped, list):
+                return wrapped
+            if (isinstance(wrapped, dict) and wrapped
+                    and all(isinstance(v, dict) for v in wrapped.values())):
+                return [dict(v, **{"id": v.get("id", k), "slug": v.get("slug", k)})
+                        for k, v in wrapped.items()]
         raise MalformedDepartmentsError(
             f"departments.json: expected a list, or an object with a 'departments' "
             f"list; got {type(data).__name__}" + (f" (path: {path})" if path else "")

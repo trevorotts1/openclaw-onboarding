@@ -125,9 +125,53 @@ def test_envelope_without_departments_key_fails_loudly():
     assert "'company'" in msg  # the offending keys are named for the operator
 
 
-def test_departments_key_that_is_not_a_list_fails_loudly():
-    with pytest.raises(_sw.MalformedDepartmentsError):
-        normalize({"departments": {"marketing": {}}}, path="/x/departments.json")
+def test_departments_key_holding_a_slug_keyed_map_is_folded():
+    # The shape the client Mac actually carries: the envelope's "departments"
+    # key holds an OBJECT keyed by slug, not a list. 34 real departments used
+    # to read as a hard refusal here.
+    out = normalize({
+        "company": "Acme Industries",
+        "total_departments": 2,
+        "total_roles": 18,
+        "departments": {
+            "account-management-dept": {"name": "Account Management"},
+            "audio-dept": {"name": "Audio"},
+        },
+    }, path="/box/zero-human-company/acme/departments.json")
+    assert [d["id"] for d in out] == ["account-management-dept", "audio-dept"]
+    assert [d["slug"] for d in out] == ["account-management-dept", "audio-dept"]
+    assert [d["name"] for d in out] == ["Account Management", "Audio"]
+
+
+def test_folded_entry_keeps_its_own_id_and_slug():
+    out = normalize({"departments": {"acct": {"id": "dept-account",
+                                              "slug": "account",
+                                              "name": "Account"}}})
+    assert out[0]["id"] == "dept-account"
+    assert out[0]["slug"] == "account"
+
+
+def test_departments_key_holding_a_non_object_map_fails_loudly():
+    # A scalar value is what separates a metadata envelope from a department
+    # map. Refuse it rather than seeding a workspace named after a role count.
+    for bad in ({"marketing": "not-an-object"}, {}, 42, "marketing"):
+        with pytest.raises(_sw.MalformedDepartmentsError):
+            normalize({"departments": bad}, path="/x/departments.json")
+
+
+def test_client_envelope_metadata_never_becomes_a_workspace():
+    # The lead regression, stated against the real file shape: folding the
+    # "departments" map must not drag company / total_departments / total_roles
+    # in as departments. These are the four bogus workspaces seen on the board.
+    out = normalize({
+        "company": "Acme", "total_departments": 34, "total_roles": 416,
+        "departments": {"marketing-dept": {"name": "Marketing"}},
+    })
+    produced = {d.get("id") for d in out} | {d.get("name") for d in out}
+    assert produced.isdisjoint(_BOGUS_NAMES)
+    assert produced.isdisjoint({"company", "total_departments", "total_roles",
+                                "departments"})
+    assert produced == {"marketing-dept", "Marketing"}
 
 
 def test_envelope_keys_never_become_department_names():
