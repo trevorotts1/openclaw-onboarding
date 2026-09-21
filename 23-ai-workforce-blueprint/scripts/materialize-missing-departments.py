@@ -154,8 +154,18 @@ except ImportError:  # pragma: no cover - box predating shared-utils/departments
                 return wrapped
             if (isinstance(wrapped, dict) and wrapped
                     and all(isinstance(v, dict) for v in wrapped.values())):
-                return [dict(v, **{"id": v.get("id", k), "slug": v.get("slug", k)})
-                        for k, v in wrapped.items()]
+                out = []
+                for k, v in wrapped.items():
+                    e = dict(v)
+                    r = next((x.strip() for x in (e.get("id"), e.get("slug"),
+                              e.get("folder")) if isinstance(x, str) and x.strip()), None)
+                    if r is None:
+                        r = k.strip()
+                        if r.endswith("-dept") and len(r) > 5:
+                            r = r[:-5]
+                    e.setdefault("id", r); e.setdefault("slug", r)
+                    out.append(e)
+                return out
         raise MalformedDepartmentsError(
             f"departments.json: expected a list, or an object with a 'departments' "
             f"list; got {type(data).__name__}" + (f" (path: {path})" if path else "")

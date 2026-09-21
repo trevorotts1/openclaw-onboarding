@@ -2,6 +2,25 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-21 - fix(departments): a department's own slug beats the map key it is filed under
+
+A client artifact keys its department map `<name>-dept` while each entry names
+its real folder. v25.1.61 folded on the KEY, slugging all 34 departments
+`…-dept` while readers that take the slug off the entry produced the bare name
+— one department with two identities, and a duplicate workspace row for each.
+
+`shared-utils/departments_payload.py` now resolves entry identity by
+precedence `id` -> `slug` -> `folder` -> the map key, using the key only when
+the entry carries none of the three, and stripping a trailing `-dept` only
+from a key-derived slug. An entry's own value is never rewritten. Mirrored
+byte for byte with blackceo-command-center at f73ae663 (CC v7.6.35).
+
+The `except ImportError` fallbacks in `scripts/materialize-missing-departments.py`
+(strict), `scripts/department-floor.py`, `scripts/prove-zhe.py`,
+`scripts/prove-board-join.py` and `scripts/upgrade-company-config.py`
+(lenient) carry the identical precedence; all were executed against the client
+shape and the four precedence cases and agree with the shared module.
+
 ## [Unreleased] - 2026-09-21 - fix(departments): a slug-keyed "departments" object is folded, not refused
 
 A client Mac's real `departments.json` is `{"company": ..., "total_departments":

@@ -80,18 +80,52 @@ def _is_department_map(obj):
         isinstance(v, dict) for v in obj.values())
 
 
+_DEPT_SUFFIX = "-dept"
+
+
+def _first_slug(*values):
+    """The first value that is a non-empty string, stripped. ``None`` if none is."""
+    for v in values:
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
 def _fold_keyed(obj):
     """Fold a slug-keyed department map into a list, PRESERVING key order.
 
-    The key is the department's slug, so it fills ``id`` and ``slug`` — but only
-    when the entry carries none of its own. An entry's own ``id`` always wins;
-    the key never overwrites it.
+    The ENTRY'S OWN IDENTITY WINS, in this precedence:
+
+        id  ->  slug  ->  folder  ->  the map key
+
+    The map key is used ONLY when the entry carries none of the three, and a
+    slug taken FROM THE KEY has a trailing ``-dept`` removed. An entry's own
+    value is NEVER rewritten — not trimmed, not stripped.
+
+    Why the key loses: a real client artifact is keyed ``<name>-dept`` while each
+    entry names its actual folder, e.g. key ``account-management-dept`` holding
+    ``{"name": "Account Management", "folder": "account-management", ...}``.
+    Folding on the key alone slugged all 34 departments ``…-dept`` while
+    seed-workspaces.py read the bare slug off the entry — two readers, two slugs
+    for one department. `_canonical_dept_slug()` only strips a ``dept-`` PREFIX,
+    so nothing collapsed the pair and the board gained a duplicate workspace row
+    for every department (40 columns became 74).
+
+    ``id`` and ``slug`` are filled from the resolved slug only when the entry
+    carries none of its own.
     """
     folded = []
     for key, value in obj.items():
         entry = dict(value)
-        entry.setdefault("id", key)
-        entry.setdefault("slug", key)
+        resolved = _first_slug(entry.get("id"), entry.get("slug"), entry.get("folder"))
+        if resolved is None:
+            resolved = key.strip()
+            if resolved.endswith(_DEPT_SUFFIX) and len(resolved) > len(_DEPT_SUFFIX):
+                resolved = resolved[:-len(_DEPT_SUFFIX)]
+        if _first_slug(entry.get("id")) is None:
+            entry["id"] = resolved
+        if _first_slug(entry.get("slug")) is None:
+            entry["slug"] = resolved
         folded.append(entry)
     return folded
 
@@ -111,8 +145,8 @@ def normalize_departments(data, path=None):
         box ships: ``{company, total_departments: 34, total_roles: N,
         departments: {"account-management-dept": {...}, ...}}``.
       * ``{"<slug>": {...}, ...}``              -> dict-of-dicts keyed by slug, folded
-        into a list with the key as ``id`` — ONLY when the dict is non-empty and
-        EVERY value is a dict
+        into a list — ONLY when the dict is non-empty and EVERY value is a dict.
+        The ENTRY's ``id``/``slug``/``folder`` wins over the key; see `_fold_keyed`.
 
     Raises:
       MalformedDepartmentsError — for any other dict (an envelope whose keys are
@@ -200,10 +234,22 @@ def _demo():
          "departments": depts}
     ) == depts
 
-    # dict-of-dicts keyed by slug
+    # dict-of-dicts keyed by slug: no entry identity, so the key is used
     folded = normalize_departments({"marketing": {"name": "Marketing"}})
     assert folded == [
         {"name": "Marketing", "id": "marketing", "slug": "marketing"}], folded
+
+    # the client shape: the entry's own folder beats the "-dept" map key
+    folded = normalize_departments(
+        {"account-management-dept": {"name": "Account Management",
+                                     "folder": "account-management"}})
+    assert folded == [{"name": "Account Management", "folder": "account-management",
+                       "id": "account-management", "slug": "account-management"}], folded
+
+    # key-only, and the key carries the suffix: strip it (key-derived slugs ONLY)
+    folded = normalize_departments({"billing-dept": {"name": "Billing"}})
+    assert folded == [
+        {"name": "Billing", "id": "billing", "slug": "billing"}], folded
 
     # the envelope a real client box ships: the 'departments' KEY holds the map
     assert normalize_departments(
@@ -211,16 +257,16 @@ def _demo():
          "departments": {"account-management-dept": {"name": "Account Management"},
                          "app-development-dept": {"name": "App Development"}}}
     ) == [
-        {"name": "Account Management", "id": "account-management-dept",
-         "slug": "account-management-dept"},
-        {"name": "App Development", "id": "app-development-dept",
-         "slug": "app-development-dept"},
+        {"name": "Account Management", "id": "account-management",
+         "slug": "account-management"},
+        {"name": "App Development", "id": "app-development",
+         "slug": "app-development"},
     ]
 
-    # an entry's own id wins; the key only fills what is missing
+    # an entry's own id wins over the key, and supplies the missing slug
     assert normalize_departments(
         {"departments": {"marketing": {"id": "dept-marketing", "name": "Marketing"}}}
-    ) == [{"id": "dept-marketing", "name": "Marketing", "slug": "marketing"}]
+    ) == [{"id": "dept-marketing", "name": "Marketing", "slug": "dept-marketing"}]
 
     # metadata-only envelope: refuse, never fold the keys in as departments
     for bad in (

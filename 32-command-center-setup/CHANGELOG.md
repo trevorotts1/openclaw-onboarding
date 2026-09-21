@@ -1,5 +1,15 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.16 - 2026-09-21 - A department's own slug beats the map key, so the board stops gaining a twin per department
+
+The client artifact's department map is keyed `<name>-dept` while each entry names its real folder (`"account-management-dept": {"folder": "account-management", ...}`). v25.1.61 folded on the KEY, so all 34 departments were slugged `…-dept` while readers that take the slug off the entry produced the bare name.
+
+`scripts/seed-workspaces.py` never showed it: `_canonical_dept_slug()` strips a trailing `-dept`, so this reader rescued the bad slug on the way to the insert. The Command Center's `phase=6c sync-departments`, which does not canonicalise, wrote `…-dept` verbatim. One department, two identities, a duplicate workspace for each, and 40 board columns became 74.
+
+The fold now resolves identity by precedence `id` → `slug` → `folder` → the map key, using the key only when the entry carries none of the three and stripping a trailing `-dept` only from a key-derived slug. The inline `except ImportError` fallback in `scripts/seed-workspaces.py` carries the identical rule.
+
+The fold's output is now canonical on the way OUT, so no reader has to rescue it and no two readers can disagree — which is the condition `seed-workspaces.py` and the `phase=6c` sync were failing, and what the client's `department company belongs to a different company` refusal was standing on.
+
 ## v13.1.15 - 2026-09-21 - A departments.json whose "departments" key holds an object keyed by slug now seeds
 
 Verified on a client Mac: the real `departments.json` on the box is

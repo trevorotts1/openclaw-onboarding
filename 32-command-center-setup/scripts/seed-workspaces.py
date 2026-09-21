@@ -48,7 +48,11 @@ except ImportError:
     def _fold_slug_keyed(mapping):  # type: ignore[misc]
         # A slug-keyed object of department objects folds to a list; anything
         # else (empty, or any non-object value) is a metadata envelope whose
-        # keys are NEVER departments. The key fills id/slug only when missing.
+        # keys are NEVER departments. The ENTRY's own identity wins over the
+        # map key: id -> slug -> folder -> key, and a slug taken FROM the key
+        # loses a trailing "-dept". A real client artifact is keyed
+        # "<name>-dept" while each entry names its actual folder, and folding
+        # on the key gave this reader a different slug from every other one.
         if not isinstance(mapping, dict) or not mapping:
             return None
         if not all(isinstance(v, dict) for v in mapping.values()):
@@ -56,8 +60,16 @@ except ImportError:
         out = []
         for k, v in mapping.items():
             entry = dict(v)
-            entry.setdefault("id", k)
-            entry.setdefault("slug", k)
+            resolved = next(
+                (x.strip() for x in (entry.get("id"), entry.get("slug"),
+                                     entry.get("folder"))
+                 if isinstance(x, str) and x.strip()), None)
+            if resolved is None:
+                resolved = k.strip()
+                if resolved.endswith("-dept") and len(resolved) > 5:
+                    resolved = resolved[:-5]
+            entry.setdefault("id", resolved)
+            entry.setdefault("slug", resolved)
             out.append(entry)
         return out
 
