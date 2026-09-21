@@ -1,3 +1,54 @@
+## [v25.1.70]  -  2026-09-21  -  Content stops parking at an audience gate with nothing to ask, a client's env file stops being executed, and four other findings
+
+### 1. The audience gate asked when there was nothing to ask
+`persona_blend.resolve_audience()` returned `confirm_required=True` on every branch but an explicit override. A company with ONE ICP, or none at all, parked every content task at the audience gate for the full confirm window before it could write a word. A gate that fires when there is nothing to disambiguate is not a gate, it is a delay.
+
+Confirmation is now required only on real ambiguity:
+
+| Situation | Before | Now |
+|---|---|---|
+| 2+ ICP descriptors | confirm | confirm |
+| department in the hard-hold list | confirm | confirm |
+| exactly 1 ICP descriptor | confirm | no confirm |
+| 0 descriptors (an operator or internal lane lands here) | confirm | no confirm |
+| explicit `audience: none` | confirm | no confirm |
+
+`AUDIENCE_HARD_HOLD_DEPARTMENTS` is `marketing` + `web-development`, the list D23 ratified as corrected on 2026-07-16 (the ruling's original `funnels` is not a department and could never fire). An explicit `audience: none` is treated as an ANSWER, not a missing value, so it is never re-asked. The `ask` text is still returned in the 0 and 1 cases, so a caller that wants to prompt still can; it just is not forced to. `resolve_audience` gains an optional `department=` argument and is otherwise signature-compatible.
+
+### 2. A client's env file was being executed, not read
+Eight scripts read a client-owned secrets file with `set -a; . "$file"; set +a`. That hands the file to the SHELL: every line runs, a stray backtick or `$(...)` executes, and a malformed line reaches the log on its way to failing. Worse, `. file` cannot represent a key the shell will not accept, so a line like `9R_GATEWAY_KEY=...` is a syntax error that stops the load THERE and silently drops every key after it.
+
+**`shared-utils/env-load.sh`** parses instead. Only `^[A-Za-z_][A-Za-z0-9_]*=` lines become variables; anything else is skipped and COUNTED, never printed, so an operator learns the file has junk without the junk landing in a receipt. `env_valid_key` lets a WRITER reject an identifier the shell cannot export before it writes one.
+
+Converted, each keeping an inline fallback so an older box still loads: `38-conversational-ai-system/scripts/{14,15,24,26,28,29}`, `35-social-media-planner/qc-skill35.sh`, and the presentations `board-reconcile-sweep.sh`.
+
+### 3. The contract check runs before the refresh it checks
+`update-skills.sh` now runs the Command Center's `scripts/openclaw-contract-check.mjs` before refreshing, WARN-only, because a code-only roll must not be blocked by it. `run-full-install.sh` runs the same check and makes it FATAL on a FULL install: a fresh box must not ship against a contract it fails. A Command Center that does not carry the script, or a box without node, is reported and skipped, never failed.
+
+### 4. Skill 59 wired a department the gateway could not see
+`provision-anthology-client.sh` step 3.6 appended to `agents.list` while the box carries `agents.entries` (measured: 100 entries, 66 `dept-` prefixed, matching 66 runtime dirs). The gateway prefers entries, so the entry was written and ignored. It also set `workspace` to `workspace/departments/<slug>` where every live sibling points at `workspaces/command-center/<slug>`, and wrote a flat `memorySearch` where live entries use nested `memory.search`.
+
+Step 3.6 now writes whichever shape the box already has, entries preferred, with the live workspace path and the nested memory block, and drops a stale flat `memorySearch` when it migrates an entry. **It pins no model**: sibling `dept-` entries carry none and inherit `agents.defaults`, so hardcoding one would tie this department to a model the client never chose. The read-back verifies the shape it actually wrote.
+
+### 5. An explicit agents.defaults.maxConcurrent, where the runtime has that key
+OpenClaw 2026.9.5 changes this key's DEFAULT from `clamp(8..16, cpus)` to `max(8, cpus*4)` with no ceiling. On a 12-core box an absent key silently goes from 12 to 48 the moment the fleet rolls onto 9.5.
+
+**This is not written unconditionally, and that is deliberate.** `install.sh` and `scripts/capacity-monitor.sh` both already document a PRESENT-ONLY rule for this key, because `AgentDefaultsSchema` is `.strict()`: creating it on a runtime that predates it makes that runtime reject the client's ENTIRE config. So the installer creates it only when the installed runtime is **>= 2026.9.5**, where the key provably exists, and on anything older leaves it absent, which is still correct there. An existing value is ALWAYS preserved, since it is an operator choice or a capacity-monitor heal.
+
+The version gate is a real probe of `openclaw --version`, not an assumption.
+
+### Tests
+**`tests/unit/test_bundle_v25_1_70.py`, 47 assertions, new.**
+
+Every audience branch including the hard-hold list and a normal department; the loader's self-check, a bad key not stopping the file, a command in the file NOT executing, a skipped line never reaching the log, a missing file returning non-zero, `env_valid_key` across six inputs, and all eight converted readers routing through the loader; the contract check running before the refresh, fatal only on a full install, and absent-script tolerated; Skill 59's entries mode, workspace path, nested memory, no model pin, and shape-aware read-back; the maxConcurrent preserve path, the version gate's existence, and the 2026.9.5 boundary across seven versions.
+
+`shared-utils/env-load.sh` also carries its own runnable self-check (`bash shared-utils/env-load.sh`).
+
+**Mutation-proved**: restoring always-confirm and making the loader `eval` its input turns **7 assertions red**. `bash -n` clean on all ten edited shell files; `py_compile` clean on `persona_blend.py`.
+
+### Pre-existing, untouched
+Five failures reproduce identically on pristine `c55bd9edc`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `tests/unit/test_interview_invitation.py`, one in `test_dept_scripts_suffix_coverage.py`.
+
 ## [v25.1.69]  -  2026-09-21  -  The parity guard can see the roster it is checking, and a department folder stops becoming a doubled agent id
 
 ### Why

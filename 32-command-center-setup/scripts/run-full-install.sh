@@ -2332,6 +2332,32 @@ fi
 # Idempotent -- safe to re-run on every install/resume/update.
 # In --update-only mode this is the #109 fix: demo departments can never
 # resurrect because the real build-state always wins.
+# ── CONTRACT CHECK ──────────────────────────────────────────────────────────
+# The CC ships scripts/openclaw-contract-check.mjs, proving the config/runtime
+# contract the installer just built against. FATAL on a FULL install (a fresh
+# box must not ship against a contract it fails); WARN on --update-only, which
+# is a code-only roll and must not be blocked by it.
+CC_CONTRACT_CHECK="$DASHBOARD_DIR/scripts/openclaw-contract-check.mjs"
+if [[ -f "$CC_CONTRACT_CHECK" ]] && command -v node >/dev/null 2>&1; then
+  if ( cd "$DASHBOARD_DIR" && node "$CC_CONTRACT_CHECK" >>"$LOG_FILE" 2>&1 ); then
+    log "INFO" "contract-check: PASS"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = true'; fi
+  else
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = false'; fi
+    if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+      log "WARN" "contract-check: FAILED on an update roll -- reported, not fatal (see $LOG_FILE)"
+      echo "  ⚠ CC contract check reported issues (WARN on an update roll; see $LOG_FILE)." >&2
+    else
+      fail_install "contract-check: $CC_CONTRACT_CHECK failed on a FULL install; refusing to ship a box that fails its own config/runtime contract (see $LOG_FILE)"
+    fi
+  fi
+elif [[ -f "$CC_CONTRACT_CHECK" ]]; then
+  log "WARN" "contract-check: node not on PATH -- skipped (not a failure)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = "node-missing"'; fi
+else
+  log "INFO" "contract-check: $CC_CONTRACT_CHECK not present in this CC version -- skipping"
+fi
+
 log "INFO" "phase=6c sync-departments: starting"
 SYNC_SCRIPT="$DASHBOARD_DIR/scripts/sync-departments-from-build-state.py"
 if [[ -f "$SYNC_SCRIPT" ]]; then

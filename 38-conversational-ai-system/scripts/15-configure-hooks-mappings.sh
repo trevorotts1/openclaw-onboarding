@@ -2,13 +2,20 @@
 # 15-configure-hooks-mappings.sh
 # Step 3 (hooks.mappings) + Step 3.5 (Model Selection Wizard) + Step 4 (E2E test).
 # Playbook v5.14 lines 1089-1395. Idempotent.
+# Safe env reader: parses KEY=VALUE, never sources a client-owned file.
+_ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/env-load.sh"
+[ -f "$_ENVLOAD" ] || _ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../shared-utils/env-load.sh"
+# shellcheck source=/dev/null
+[ -f "$_ENVLOAD" ] && . "$_ENVLOAD"
+_env_read() { if declare -F env_load >/dev/null 2>&1; then env_load "$1"; else [ -f "$1" ] && { set -a; . "$1"; set +a; }; fi; }
+
 set -euo pipefail
 
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
 CONFIG_FILE="${CONFIG_FILE:-$HOME/.openclaw/openclaw.json}"
 GATEWAY_PORT="${GATEWAY_PORT:-18789}"
 
-[[ -f "$SECRETS_ENV_FILE" ]] && set -a && . "$SECRETS_ENV_FILE" && set +a || true
+_env_read "$SECRETS_ENV_FILE" || true
 [[ -f "$CONFIG_FILE" ]] || { echo "openclaw config not found: $CONFIG_FILE" >&2; exit 2; }
 
 : "${ROUTE_ID:?ROUTE_ID missing — set in env or in secrets.env}"

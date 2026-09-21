@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.1.69"
+ONBOARDING_VERSION="v25.1.70"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3093,6 +3093,9 @@ success "State carryover initialized at $RESUME_FILE"
 note "Configuring canonical sub-agent + bootstrap settings (v9.7.8 spec)..."
 backup_config_file "$OCJSON"
 
+# Installed runtime version, for the agents.defaults.maxConcurrent decision below.
+_OC_RUNTIME_VERSION="$(openclaw --version 2>/dev/null | tr -d '\r' | head -n1 | tr -d '[:space:]' || true)"
+
 python3 << PYEOF
 import json, os, sys
 
@@ -3144,6 +3147,37 @@ try:
 except (TypeError, ValueError):
     prev_concurrent = None
 sub['maxConcurrent'] = cap_ceiling if (prev_concurrent is None or prev_concurrent > cap_ceiling) else prev_concurrent
+
+# agents.defaults.maxConcurrent — EXPLICIT, so a runtime default cannot move it.
+#
+# OpenClaw 2026.9.5 changes this key's DEFAULT from clamp(8..16, cpus) to
+# max(8, cpus*4) with NO ceiling. On a 12-core box an absent key silently goes
+# from 12 to 48 the moment the fleet rolls onto 9.5 — a quadrupling nobody
+# asked for and nothing logs.
+#
+# The PRESENT-ONLY rule above (and in scripts/capacity-monitor.sh) exists
+# because AgentDefaultsSchema is .strict(): creating this key on a runtime that
+# PREDATES it makes that runtime reject the client's ENTIRE config. So the key
+# is created only when the installed runtime is >= 2026.9.5, where it provably
+# exists; on anything older an absent key is still correct and is left alone.
+# An existing value is ALWAYS preserved — it is an operator choice or a
+# capacity-monitor heal, and this must never clobber it.
+_oc_ver = "$_OC_RUNTIME_VERSION"
+def _ver_ge_9_5(v):
+    parts = (v or "").lstrip("vV").split(".")
+    try:
+        nums = [int(x) for x in parts[:3]]
+    except ValueError:
+        return False
+    return len(nums) == 3 and tuple(nums) >= (2026, 9, 5)
+if 'maxConcurrent' in defaults:
+    print("  OK agents.defaults.maxConcurrent preserved at %s (explicit; 9.5's new default cannot move it)" % defaults['maxConcurrent'])
+elif _ver_ge_9_5(_oc_ver):
+    defaults['maxConcurrent'] = 8
+    print("  OK Set agents.defaults.maxConcurrent=8 explicitly (runtime %s >= 2026.9.5, whose default is max(8, cpus*4) with no ceiling)" % _oc_ver)
+else:
+    print("  -- agents.defaults.maxConcurrent left ABSENT (runtime %s predates 2026.9.5; AgentDefaultsSchema is strict and would reject the config)" % (_oc_ver or "unknown"))
+
 # Hard set thinking level
 sub['thinking'] = 'high'
 
