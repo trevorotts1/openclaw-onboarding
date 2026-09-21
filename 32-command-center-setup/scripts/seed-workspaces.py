@@ -45,6 +45,22 @@ except ImportError:
     class MalformedDepartmentsError(ValueError):  # type: ignore[no-redef]
         pass
 
+    def _fold_slug_keyed(mapping):  # type: ignore[misc]
+        # A slug-keyed object of department objects folds to a list; anything
+        # else (empty, or any non-object value) is a metadata envelope whose
+        # keys are NEVER departments. The key fills id/slug only when missing.
+        if not isinstance(mapping, dict) or not mapping:
+            return None
+        if not all(isinstance(v, dict) for v in mapping.values()):
+            return None
+        out = []
+        for k, v in mapping.items():
+            entry = dict(v)
+            entry.setdefault("id", k)
+            entry.setdefault("slug", k)
+            out.append(entry)
+        return out
+
     def _unwrap_departments(data, path=None):  # type: ignore[misc]
         if data is None:
             return None
@@ -57,8 +73,13 @@ except ImportError:
                 wrapped = data["departments"]
                 if isinstance(wrapped, list):
                     return wrapped
-            elif all(isinstance(v, dict) for v in data.values()):
-                return [dict(v, **{"id": v.get("id", k)}) for k, v in data.items()]
+                folded = _fold_slug_keyed(wrapped)
+                if folded is not None:
+                    return folded
+            else:
+                folded = _fold_slug_keyed(data)
+                if folded is not None:
+                    return folded
         raise MalformedDepartmentsError(
             f"departments.json: expected a list, or an object with a 'departments' "
             f"list; got {type(data).__name__}"
@@ -164,6 +185,9 @@ def _normalize_departments(data, path=None):
       4. wrapped     : {"departments": [...], ...}            (retire-confirmed-decline.sh
                        writes {removedWithProvenance, departments}; a build envelope
                        adds company / total_departments / total_roles alongside)
+      5. wrapped map : {"departments": {"<slug>": {...}}, ...}  (a real client Mac —
+                       the envelope's "departments" key holds an OBJECT keyed by
+                       slug, not a list; folded to a list by the shared normalizer)
 
     Previously seed() assumed shape (1) and called dept.get('id') on every entry,
     so a string entry from shape (2)/(3) raised

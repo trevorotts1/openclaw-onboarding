@@ -1,3 +1,54 @@
+## [v25.1.61]  -  2026-09-21  -  A departments.json whose "departments" key holds an object keyed by slug now reads, instead of being refused
+
+### Why
+Verified on a client Mac. The real `departments.json` written on the box is:
+
+```
+{"company": ..., "total_departments": 34, "total_roles": N,
+ "departments": {"account-management-dept": {...}, "audio-dept": {...}, ...}}
+```
+
+The `departments` KEY holds an OBJECT keyed by slug. It is not a list. v25.1.57's `shared-utils/departments_payload.py` accepted a slug-keyed object only at the TOP level, and under the `departments` key it accepted a list and nothing else. So a real file carrying 34 real departments raised
+
+```
+departments.json: 'departments' key holds dict, expected a list
+```
+
+and every reader that routes through the normalizer, the seeder included, got a hard error instead of 34 departments.
+
+### What changed
+- **`shared-utils/departments_payload.py`** - the slug-keyed fold moved into one helper, `_fold_slug_keyed`, and is now applied in BOTH positions: to the value of the `departments` key, and to the top-level object when there is no such key. The key fills `id` and `slug` only when the entry does not already carry its own, so an entry that names itself keeps its identity, and insertion order is preserved so the folded list reads in the file's own order.
+
+  The fold refuses, and the loud `MalformedDepartmentsError` stands, unless EVERY value is an object. A scalar value is exactly what marks an object as a metadata envelope, and an envelope's keys are never departments. An empty object is refused too: the shipped empty default is `[]`, and the provisioning completeness gate treats `{}` as invalid on purpose.
+
+- **Six vendored copies re-synced.** The `except ImportError` fallbacks that run on a box whose shared-utils predates the module all carry the identical rule now: `32-command-center-setup/scripts/seed-workspaces.py` and `23-ai-workforce-blueprint/scripts/materialize-missing-departments.py` (strict, still raise), and `department-floor.py`, `prove-zhe.py`, `prove-board-join.py` and `upgrade-company-config.py` (lenient, still degrade to `[]`). A stale copy would have made a box silently report zero departments on a file the shared module reads fine, which is the same false negative in a new place.
+
+### The writer
+**No writer in this repository emits that shape.** Named, so the claim can be checked:
+
+- `23-ai-workforce-blueprint/scripts/build-workforce.py:7612` `generate_departments_json()` returns a bare LIST of `{id, emoji, name, headTitle, workspacePath, slug?}` with `dept-` PREFIXED ids.
+- `23-ai-workforce-blueprint/scripts/build-workforce.py:1925` `_make_artifact_payload()` returns that list, or `{removedWithProvenance: [...], departments: [...]}` where `departments` is a LIST.
+- `23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh:507` writes `departments` as a LIST.
+
+The three places that DO build `"departments"` as a dict keyed by slug all write `23-ai-workforce-blueprint/templates/role-library/_index.json`, which is the ROLE LIBRARY index and a different file: `register-library-additions.py:329`, `32-command-center-setup/scripts/add-department.sh:532`, `working/wire-index.py:100`. That file has no `company` key and its keys are bare slugs (`account-management`), where the client file is `account-management-dept`.
+
+So the client shape is **not canonical and not produced here**. It is a foreign or client-side producer, and per instruction no writer was changed. Searched: every `*.py`, `*.sh`, `*.js` and `*.ts` in the repo for `total_departments`, for `departments.json` write sites, and for `"company"` near `depart`. NOT searched: the blackceo-command-center repo, and anything generated on a client box that does not live in this repo.
+
+### seed-workspaces.py
+The `ValueError: department company belongs to a different company or an active/custom system queue` the client hit is that guard doing its job on damage an OLDER key-folding bug had already written: bogus workspaces named `company`, `total_departments`, `total_roles` and `departments` sitting under company_id `default`. **The guard is untouched.** What changes is that a correct file can no longer hand it a department named `company`: when the `departments` key is present its value is folded and returned before any top-level key is iterated, so the envelope's metadata keys are never candidates. Proven end to end through `seed-workspaces.py`'s own `_normalize_departments` plus `_canonical_dept_slug` on a 34-department envelope: 34 departments out, first canonical ids `account-management`, `audio`, `marketing`, and zero of the four metadata names. The stale rows already on a client board are data, not code, and are out of scope here.
+
+### Tests
+`shared-utils/test_departments_payload.py` and `32-command-center-setup/scripts/test_seed_workspaces_normalize.py`: **18 to 27 passing**. New: the envelope whose `departments` key is a slug-keyed map folds, with ids AND slugs from the keys and file order preserved; an entry carrying its own `id`/`slug` keeps them rather than being overwritten by the key; a non-object value, an empty map, an int and a string under the `departments` key are each still refused with the path named; and the lead regression restated against the real shape, asserting the output contains `marketing-dept` and nothing named `company`, `total_departments`, `total_roles` or `departments`.
+
+One pre-existing test was replaced, not deleted: `test_departments_key_that_is_not_a_list_fails_loudly` asserted that `{"departments": {"marketing": {}}}` must raise. That is the shape this release deliberately accepts, so it is now `test_departments_key_holding_a_slug_keyed_map_is_folded` plus a refusal test covering the cases that must still fail.
+
+**Mutation-proved**: deleting the two-line fold call under the `departments` key makes the module self-check die with `MalformedDepartmentsError: 'departments' key holds dict`, which is the client's exact error; restoring it returns all checks green. The pre-fix module was run against the same payload and refused it, so the fix is the measured difference between two runs. All six vendored copies were extracted and executed against the client shape: both strict copies fold it and still refuse a metadata envelope, and all four lenient copies fold it and still return `[]` for one.
+
+`py_compile` clean on every edited file. `scripts/bump-version.sh --check`: all 10 markers agree at v25.1.61.
+
+### Not changed, deliberately
+The writer, per instruction. `seed-workspaces.py`'s shared-client mutation guard. `shared-utils/engine-script-drift-baseline.json`, which reports 7 unreviewed drifts in `58-podcast/` and `59-anthology/` scripts. Those pre-date this branch, none of the files here are among the 3 it tracks, and accepting someone else's unreviewed drift with `--update-baseline` is not this train's call. `shared-utils/test_e10_engine_drift_guard.py` fails 3 of 7 on pristine `0a908cf40` as well, so that is also pre-existing and untouched.
+
 ## [v25.1.60]  -  2026-09-21  -  Skill 58's two version files agree again, turning the frontmatter drift guard green
 
 ### Why

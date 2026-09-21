@@ -1,5 +1,23 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.15 - 2026-09-21 - A departments.json whose "departments" key holds an object keyed by slug now seeds
+
+Verified on a client Mac: the real `departments.json` on the box is
+
+```
+{"company": ..., "total_departments": 34, "total_roles": N,
+ "departments": {"account-management-dept": {...}, ...}}
+```
+
+The `departments` KEY holds an OBJECT keyed by slug, not a list. The shared envelope normalizer refused that outright, so 34 real departments read as a hard error and `seed-workspaces.py` could not seed the board.
+
+A slug-keyed object of department objects now folds into a list wherever it appears, under the `departments` key or at the top level. The key fills `id` and `slug` only when the entry does not carry its own, and file order is preserved. The fold is refused unless EVERY value is an object, which is what keeps a metadata envelope from ever being read as a department map.
+
+`scripts/seed-workspaces.py`'s inline `except ImportError` fallback (the copy marked KEEP IN SYNC, used on a box whose shared-utils predates the module) carries the identical rule.
+
+**The metadata keys can no longer reach the board.** When `departments` is present its value is folded and returned before any top-level key is iterated, so `company`, `total_departments` and `total_roles` are never candidates. That is the guarantee behind the four bogus workspaces named "Company", "Total Departments", "Total Roles" and "Departments" that an older key-folding bug put on a live client board. `seed-workspaces.py`'s shared-client mutation guard is untouched; a correct file simply stops handing it a department named `company`.
+
+
 ## v13.1.14 - 2026-09-21 - Starter cards are for a new board only, and a wrapped departments.json is not a list of departments
 
 Two defects seen together on one client Mac.

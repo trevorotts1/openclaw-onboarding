@@ -348,9 +348,19 @@ try:
     from departments_payload import departments_or_empty as _departments_or_empty  # type: ignore
 except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
     def _departments_or_empty(data, path=None):  # type: ignore[misc]
+        # KEEP IN SYNC with shared-utils/departments_payload.py. A slug-keyed
+        # object of department objects folds to a list (the key fills id/slug
+        # only when missing); anything with a non-object value is a metadata
+        # envelope whose keys are never departments.
         if isinstance(data, dict):
-            wrapped = data.get("departments")
-            return wrapped if isinstance(wrapped, list) else []
+            wrapped = data.get("departments", data)
+            if isinstance(wrapped, list):
+                return wrapped
+            if (isinstance(wrapped, dict) and wrapped
+                    and all(isinstance(v, dict) for v in wrapped.values())):
+                return [dict(v, **{"id": v.get("id", k), "slug": v.get("slug", k)})
+                        for k, v in wrapped.items()]
+            return []
         return data if isinstance(data, list) else []
 
 

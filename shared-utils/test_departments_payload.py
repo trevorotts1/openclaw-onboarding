@@ -31,6 +31,42 @@ def test_envelope_is_unwrapped_not_folded():
     assert out == depts
 
 
+def test_departments_key_holding_a_slug_keyed_map_is_folded():
+    # The shape a real client Mac carries. Keys become id/slug, file order is
+    # preserved, and the envelope's metadata keys are never folded in.
+    out = dp.normalize_departments({
+        "company": "Acme", "total_departments": 2, "total_roles": 18,
+        "departments": {
+            "account-management-dept": {"name": "Account Management"},
+            "audio-dept": {"name": "Audio"},
+        },
+    })
+    assert out == [
+        {"name": "Account Management", "id": "account-management-dept",
+         "slug": "account-management-dept"},
+        {"name": "Audio", "id": "audio-dept", "slug": "audio-dept"},
+    ]
+
+
+def test_folded_entry_that_names_itself_keeps_its_own_identity():
+    out = dp.normalize_departments(
+        {"departments": {"acct": {"id": "dept-account", "slug": "account"}}})
+    assert out == [{"id": "dept-account", "slug": "account"}]
+
+
+@pytest.mark.parametrize("bad", [
+    {"marketing": "not-an-object"},   # a scalar value marks a metadata envelope
+    {},                               # the shipped empty default is [], never {}
+    42,
+    "marketing",
+])
+def test_departments_key_holding_a_non_department_map_is_refused(bad):
+    with pytest.raises(dp.MalformedDepartmentsError) as exc:
+        dp.normalize_departments({"departments": bad},
+                                 path="/box/acme/departments.json")
+    assert "/box/acme/departments.json" in str(exc.value)
+
+
 def test_metadata_only_object_is_refused_with_path_and_type():
     with pytest.raises(dp.MalformedDepartmentsError) as exc:
         dp.normalize_departments(
