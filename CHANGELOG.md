@@ -1,3 +1,35 @@
+## [v25.1.64]  -  2026-09-21  -  The dirty-checkout rule moves back inline, because a helper is an undefined command inside the blocks that carry it
+
+### Why
+v25.1.63 narrowed "dirty" to tracked files and factored the rule into a top-level `cc_tracked_changes()`. That release turned `main` RED on `.clawdbot pre-clear refuses on a live box; CC bootstrap never clones a second board`, whose job runs `scripts/test-updater-traps-1-and-3.sh`: **43 pass, 5 fail**, including the assertion that the installer is never invoked against a dirty checkout.
+
+All three Command Center gates live inside marker-delimited blocks that the repo's own suites extract VERBATIM and source STANDALONE — `TRAP3-CC-GUARD-HELPERS` and `TRAP3-CC-BOOTSTRAP-BRANCH` for the traps suite, `CONTENT-RECHECK-CONVERGENCE-PROBES` for the convergence suite. A call to a function defined at the top of `update-skills.sh` is an **undefined command** in that context. It does not merely error: the command substitution yields an EMPTY string, which the gate reads as "clean" and lets through. The failure is silent and it fails in the least conservative direction, which is the opposite of what a refusal gate is for.
+
+On a live box the shipped script runs whole, so the helper was defined and the gates behaved correctly. The defect was confined to the extraction suites, which is exactly what they exist to catch, and they caught it.
+
+### What changed
+- **`update-skills.sh`** — the rule is written out at each of the three gates and the top-level helpers are gone:
+
+  ```
+  git -C "$DIR" status --porcelain 2>/dev/null | grep -v '^??' || true
+  ```
+
+  The `[CC CURRENCY]` probe, the fast-path `reset --hard` repair, and the DIRTY-CHECKOUT GUARD each carry it, each with a comment naming why it is not factored out. The header comment at the top of the file now records the canonical spelling, the silent-empty-result failure mode, and the measured evidence, so the next reader does not re-derive the helper and re-break the suites.
+
+  Behaviour is unchanged from v25.1.63: dirty still means modified or staged TRACKED files, untracked files are still an INFO count, and the refusal for genuinely modified tracked files still stands.
+
+- **`tests/unit/cc-currency-untracked-is-not-dirty.test.sh`** — 17 to 18 assertions. It no longer extracts helper functions (there are none). It LIFTS the expression out of the DIRTY-CHECKOUT GUARD and runs that against the fixtures, so it judges the shipped rule. Section 7 now asserts all three gates carry the inline rule **and that no gate depends on a top-level helper**, which is the assertion that would have caught v25.1.63 before it merged.
+
+### Not changed
+The narrowing itself, the INFO lines, the operator-facing wording, and the v25.1.63 CHANGELOG entry, which is tagged and shipped and describes a real release.
+
+### Tests
+`scripts/test-updater-traps-1-and-3.sh`: **43/5 on `main` at v25.1.63, 48/0 on this branch.** Its CASE 10 dirties its fixture by appending to a COMMITTED `package.json`, so it is independent confirmation that narrowing the definition did not cost the real protection.
+
+`tests/unit/cc-currency-untracked-is-not-dirty.test.sh` 18/18. `tests/unit/content-recheck-convergence-probes.test.sh` 61/61. Green alongside: `update-skills-full-scripts-tree`, `update-skills-pending-flag-staleness`, `update-skills-resume-cron`, `update-skills-u6c-set-e-continuation`, `cc-done-degraded-retry-gate`, `cc-tunnel-ingress-guard`, `cc-watchdog-cron-registration`. `bash -n` clean on `update-skills.sh` and `run-full-install.sh`.
+
+**Pre-existing and untouched**: `scripts/test-fleet-refresh.sh` passes once on a fresh tree and then fails at "Test 3: Mac layout — dry-run is inert" on every later run in the same checkout. Reproduced three times in a row on pristine `7f6b230e2` with none of this branch's changes present, so it is state left behind between runs, not a regression from here.
+
 ## [v25.1.63]  -  2026-09-21  -  Untracked files are not dirt, so a box with stray files finally gets its Command Center refresh
 
 ### Why
