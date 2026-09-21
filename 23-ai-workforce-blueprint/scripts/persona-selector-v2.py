@@ -55,6 +55,7 @@ import random
 import re
 import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -383,6 +384,23 @@ DEPT_VARIETY_HIGH_VOLUME_PER_DAY = 6.0  # > 6 selections/day -> narrow
 # task embed reused across personas), so the full survivor list still scores
 # there and selection quality on bounded boxes is preserved.
 STAGE_D_LLM_FINALIST_CAP = max(1, int(os.environ.get("STAGE_D_LLM_FINALIST_CAP", "12")))
+
+# ─── STAGE-D CONCURRENCY (the spawn-budget kill) ────────────────────────────
+# Stage-D scoring is NETWORK-bound, not CPU-bound: in `llm` mode each finalist
+# costs FOUR sequential HTTPS chat calls (llm_score.score_layer, one per
+# Layer 1-4). cProfile on a live box, `--blend`, 5 sub-tasks x ~7 finalists:
+# 43.7s of 46.6s wall (94%) sat inside _post_chat waiting on the socket; other
+# runs measured 206s and 258s, past the Command Center's spawn budget, so the
+# selector was killed and the blend never landed.
+#
+# Threads overlap those waits. Nothing in score_persona writes (the only DB
+# touch, apply_weight_overrides, is a read on its own per-call connection) and
+# executor.map PRESERVES INPUT ORDER, so every downstream stage sees the same
+# list it always did — see score_personas().
+#
+# PERSONA_SCORE_WORKERS=1 is the escape hatch: it takes the literal sequential
+# path with NO thread created at all, byte-identical to the pre-fix loop.
+PERSONA_SCORE_WORKERS = max(1, int(os.environ.get("PERSONA_SCORE_WORKERS", "6")))
 
 # ─── PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel) ─────────────────────
 # Stage A: governing-personas.md → candidate pool (or all personas fallback)
@@ -2115,6 +2133,44 @@ def score_persona(persona_id: str, task_text: str, owner_profile: str,
     }
 
 
+def score_personas(personas: list, task_text: str, owner_profile: str,
+                   department_id: str, weights: dict, paths: dict, db_path: Path,
+                   scoring_mode: str = None) -> list:
+    """Stage-D: score every finalist, CONCURRENTLY. Order is preserved.
+
+    `executor.map` yields results in INPUT order regardless of completion
+    order, so the returned list is element-for-element what the old sequential
+    list comprehension produced. Variety sampling, bonuses and tie-breaks
+    downstream are therefore untouched — this changes WHEN the HTTPS waits
+    happen, never WHAT gets scored or in what order.
+
+    Thread safety of the per-persona path (audited, PERSONA_SCORE_WORKERS):
+      • score_persona WRITES NOTHING. apply_weight_overrides is a read on its
+        own per-call sqlite connection; llm_score's score cache likewise opens
+        and closes a connection per call and swallows sqlite3.Error.
+      • llm_score._post_chat builds its own urllib request per call.
+      • _COMPANY_CONFIG_CACHE is keyed by the one config path every thread in a
+        selection shares, so the worst race is a duplicate file read.
+      • semantic_task_fit's task-embedding cache is the one piece that needed a
+        lock — without it N threads would each embed the SAME task text and
+        break the G13 "one embed per selection" contract. Locked in that module.
+
+    PERSONA_SCORE_WORKERS=1 takes the sequential path with no thread at all.
+    """
+    workers = max(1, min(PERSONA_SCORE_WORKERS, len(personas)))
+    if workers == 1:
+        return [score_persona(p, task_text, owner_profile, department_id,
+                              weights, paths, db_path, scoring_mode=scoring_mode)
+                for p in personas]
+
+    def _one(persona_id):
+        return score_persona(persona_id, task_text, owner_profile, department_id,
+                             weights, paths, db_path, scoring_mode=scoring_mode)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_one, personas))
+
+
 def select_persona(task: str, department: str, mode: str, weights: dict,
                    paths: dict, db_path: Path, variety: bool = True,
                    match_text: str = None, sop_hints: list = None) -> dict:
@@ -2210,9 +2266,8 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
 
     # Stage D: 5-layer scoring on funnel survivors only. Layer-5 embeds `mt` —
     # the SAME string Stage-C embedded — so the shared cache stays at one embed.
-    scored = [score_persona(p, mt, owner_profile, department, weights, paths,
-                            db_path, scoring_mode=effective_scoring_mode)
-              for p in personas]
+    scored = score_personas(personas, mt, owner_profile, department, weights,
+                            paths, db_path, scoring_mode=effective_scoring_mode)
 
     task_category = infer_task_category(mt)
 

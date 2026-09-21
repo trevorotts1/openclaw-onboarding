@@ -2,6 +2,36 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-21 - perf(persona-selector): Stage-D scores finalists concurrently
+
+Stage-D scored its finalists one at a time. In `llm` mode each finalist costs
+four sequential HTTPS chat calls, one per scoring layer, so a profiled
+`--blend` run spent 43.7s of its 46.6s wall clock blocked in
+`llm_score._post_chat` (other runs: 206s, 258s). The Command Center killed the
+selector at its spawn budget and the blend never landed.
+
+- `score_personas()` replaces the Stage-D list comprehension and maps
+  `score_persona` over the finalists on a `ThreadPoolExecutor`. `executor.map`
+  yields in INPUT order, so the scored list is element-for-element what the
+  comprehension produced and variety sampling, the bonus passes and the
+  tie-breaks are untouched.
+- `PERSONA_SCORE_WORKERS` (default 6) sets the width, capped at the finalist
+  count. `PERSONA_SCORE_WORKERS=1` takes a literal sequential path with no
+  thread created, as the escape hatch.
+- `shared-utils/semantic_task_fit.py` locks the task-embedding cache behind one
+  `_task_embed()` so the G13 "one embed per selection" contract holds with
+  concurrent callers instead of becoming one embed per finalist.
+- `shared-utils/llm_score.py` sets `_secret_helper()`'s latch only after the
+  module reference is final, closing a window where a racing thread degraded to
+  exact-name-only credential resolution.
+
+`decompose-task.py`'s sub-task loop stays sequential on purpose: each
+sub-task's `record_selection` write is what the next sub-task's variety penalty
+and sticky-assignment read.
+
+Tests: `tests/unit/stage-d-parallel-scoring.test.py` (5 cases, hermetic,
+fail-first proven at 1.19s against the 0.6s bound).
+
 ## [Unreleased] - 2026-09-17 - fix(workforce): refresh-stale-roles restamps role provenance so refilled roles stop re-flagging STALE
 
 `refresh-stale-roles.py` rewrote a STALE role's `how-to.md` from the role

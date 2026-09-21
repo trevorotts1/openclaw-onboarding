@@ -150,11 +150,18 @@ def _secret_helper():
     Returns the module, or None when it cannot be imported. Fails OPEN by
     design: a missing or broken canon degrades resolution to the exact name,
     it never raises and never takes scoring down.
+
+    THREAD SAFETY. score_layer() now runs concurrently (persona-selector-v2
+    scores its finalists on a thread pool), so _SECRET_HELPER_TRIED is set only
+    AFTER _SECRET_HELPER has its final value. Setting it first left a window in
+    which a second thread saw TRIED=True with the module still None and
+    silently degraded to exact-name-only resolution -- a key stored under an
+    ALIAS would not have resolved for that one call. A racing thread now simply
+    redoes the import, which sys.modules makes free and idempotent.
     """
     global _SECRET_HELPER, _SECRET_HELPER_TRIED
     if _SECRET_HELPER_TRIED:
         return _SECRET_HELPER
-    _SECRET_HELPER_TRIED = True
     try:
         here = os.path.dirname(os.path.abspath(__file__))
         if here not in sys.path:
@@ -163,6 +170,7 @@ def _secret_helper():
         _SECRET_HELPER = secret_helper
     except Exception:
         _SECRET_HELPER = None
+    _SECRET_HELPER_TRIED = True
     return _SECRET_HELPER
 
 
