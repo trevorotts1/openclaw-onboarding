@@ -1,3 +1,24 @@
+## [v25.1.59]  -  2026-09-21  -  Name socket.timeout in the tuple, and mark a timed-out step as a transport failure
+
+### Why
+v25.1.58 fixed the Python 3.9 escape by adding `OSError` to `_attempt_chat`'s per-step except tuple. That is correct and complete — `socket.timeout` is an `OSError` on 3.9 and, from 3.10, an alias of `TimeoutError` which is itself an `OSError` — but it is **not findable**. The obvious verification a reviewer runs is `grep socket.timeout shared-utils/llm_score.py`, and on v25.1.58 that returns nothing but a comment. A fix nobody can confirm by the obvious check gets re-reported as missing, which is exactly what happened.
+
+The failed-step record had the same problem in miniature: a timed-out step and an HTTP 500 both produced a bare `<Type>: <message>` string, so a degraded run's reasoning could not tell "the socket gave up" from "the provider answered with a status".
+
+### What changed
+- **`shared-utils/llm_score.py`** — `import socket`, and `socket.timeout` named alongside `OSError` in the per-step except tuple. Redundant by class, deliberate by intent: the grep now lands on the code. `OSError` stays, because it is what additionally catches the connection-reset family, which escaped on every Python version and still would if the tuple named only the timeout.
+- **The step outcome is recorded as a transport failure** — that branch's error string is now `transport: <Type>: <message>`. `score_layer` already folds each failed step's error into `last_error` and then into the degraded reasoning, so the marker surfaces without a new field and without a new consumer. `urllib.error.HTTPError` is caught in its own clause **above** the tuple, so a 401/400/404/500 keeps its key-advance and model-fallback paths and never picks up the marker.
+- **The PRES-053 vendored copy** re-vendored byte-identical (both SHA-1 `acfc5b24352f8ca61e69d861449d4f5164f0f271`, verified with `diff`).
+
+### Not changed
+No behaviour. Every exception the widened tuple catches was already caught by v25.1.58's `OSError`; this release changes which NAMES appear in the source and what the failed-step string says. `PERSONA_SCORE_WORKERS` is already 3 (v25.1.58) and is untouched here.
+
+### Risk
+None to the chain's control flow. The one observable change is the `transport: ` prefix in a degraded run's `reasoning`, which nothing parses — the two existing reasoning assertions match on a model name and on `"zero steps"`, both unaffected.
+
+### Tests
+`shared-utils/test_llm_score_fallback_chain.py` 34 → 36. A timed-out step's degraded reasoning must carry `transport:`; and a CONTROL that an HTTP 500 must **not** — and must still walk the full six-step chain. That control is the real guard on this edit: `HTTPError` is a `URLError`, hence an `OSError`, so widening the tuple could have swallowed it and silently killed the 401 and 400/404 paths. **Mutation-proved both ways.** Removing `socket.timeout, OSError` fails the transport leg with `ConnectionResetError: peer reset` raised out of the call. Disabling the `HTTPError` clause so status codes fall into the transport tuple fails 5 tests, the new control among them, at the `"transport:" not in reasoning` assertion. Restoring returns 36/36. Green alongside: `test_f25_llm_score_secrets.py` and `test_ollama_cloud_endpoint_and_key.py` (84 passed across the three suites), `stage-d-parallel-scoring` 6/6. `engine_script_drift_guard.py` byte-identical to pristine after the re-vendor. `py_compile` clean on every edited file.
+
 ## [v25.1.58]  -  2026-09-21  -  A read timeout on one scoring step stops killing the whole selection, and Stage-D stops outbidding the fleet for Ollama Cloud
 
 ### Why
