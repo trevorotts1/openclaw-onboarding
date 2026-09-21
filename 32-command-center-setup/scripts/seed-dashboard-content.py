@@ -25,8 +25,19 @@ and tasks if the workspace has none yet (so re-running won't pile up duplicates)
 Schema-tolerant: reads PRAGMA table_info for each table and only INSERTs
 columns that actually exist. This survives schema drift between dashboard
 repo versions.
+
+STARTER TASKS — `--no-starter-tasks` / SEED_STARTER_TASKS=0
+  The "Welcome to <workspace>" card exists to make a BRAND-NEW board render
+  something on first load. On a MATURE board it is noise with consequences: the
+  per-workspace guard is "this workspace has zero tasks", which is true of every
+  department a client has simply never used yet, so an --update-only code roll
+  dropped fresh welcome cards into a live backlog months after install — and the
+  Command Center's grooming loop then spawned "Author SOP: Welcome to X" follow-on
+  work off them, which failed. run-full-install.sh Phase 6e therefore passes
+  --no-starter-tasks in --update-only mode. Companies and dept-head agent rows are
+  still ensured either way: those are idempotent identity/runtime rows, not content.
 """
-import sqlite3, json, os, sys, secrets, subprocess
+import argparse, sqlite3, json, os, sys, secrets, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -228,7 +239,24 @@ def insert_company(db, info):
     return company_id
 
 
-def insert_agents_and_tasks(db, info):
+def starter_tasks_enabled(argv=None):
+    """False when --no-starter-tasks is passed or SEED_STARTER_TASKS is 0/false/no/off.
+
+    The CLI flag wins over the env var; the default is ON, so a full install and
+    every existing caller keep today's behaviour.
+    """
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--no-starter-tasks", action="store_true", default=False)
+    args, _ = ap.parse_known_args(sys.argv[1:] if argv is None else argv)
+    if args.no_starter_tasks:
+        return False
+    env = os.environ.get("SEED_STARTER_TASKS", "").strip().lower()
+    if env in ("0", "false", "no", "off"):
+        return False
+    return True
+
+
+def insert_agents_and_tasks(db, info, starter_tasks=True):
     ws_cols = [r[1] for r in db.execute("PRAGMA table_info(workspaces)")]
     if not ws_cols:
         print("WARN: workspaces table missing — run seed-workspaces.py first", file=sys.stderr)
@@ -294,6 +322,11 @@ def insert_agents_and_tasks(db, info):
             ).fetchone()
             ag_id = row[0] if row else None
 
+        # Starter tasks off (an --update-only roll): the agent row above is all
+        # this workspace needs. Never drop a welcome card into a live backlog.
+        if not starter_tasks:
+            continue
+
         # Skip if this workspace already has tasks
         existing_tasks = db.execute(
             "SELECT COUNT(*) FROM tasks WHERE workspace_id = ?", (ws_id,)
@@ -353,16 +386,21 @@ def main():
         sys.exit(1)
 
     info = find_company_config()
+    starter_tasks = starter_tasks_enabled()
     print(f"DB: {db_path}")
     print(f"Company: {info['name']!r} (slug={info['slug']})")
     print(f"Brand: primary={info['primary']} accent={info['accent']}")
     print()
     print("Seeding dashboard content...")
+    if not starter_tasks:
+        print("  starter tasks: DISABLED — companies + dept-head agent rows only "
+              "(no 'Welcome to <workspace>' cards)")
 
     db = sqlite3.connect(db_path)
     try:
         company_id = insert_company(db, info)
-        agents_added, tasks_added = insert_agents_and_tasks(db, info)
+        agents_added, tasks_added = insert_agents_and_tasks(
+            db, info, starter_tasks=starter_tasks)
         db.commit()
         print(f"  agents added: {agents_added}")
         print(f"  tasks added:  {tasks_added}")
@@ -379,7 +417,10 @@ def main():
         a = db.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
         t = db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         print(f"\nFinal counts: companies={c} workspaces={w} agents={a} tasks={t}")
-        if c >= 1 and w >= 1 and a >= 1 and t >= 1:
+        # With starter tasks disabled an empty tasks table is the INTENDED
+        # outcome, not a warning — the board's cards are the client's own work.
+        ok = c >= 1 and w >= 1 and a >= 1 and (t >= 1 or not starter_tasks)
+        if ok:
             print("OK — Kanban will render cards on next dashboard load.")
         else:
             print("WARN — one or more tables still empty; check logs above", file=sys.stderr)

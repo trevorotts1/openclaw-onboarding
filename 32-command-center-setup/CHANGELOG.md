@@ -1,5 +1,17 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.14 - 2026-09-21 - Starter cards are for a new board only, and a wrapped departments.json is not a list of departments
+
+Two defects seen together on one client Mac.
+
+`scripts/seed-dashboard-content.py` seeds a "Welcome to <workspace>" card so a brand-new board renders something on first load. Its guard is "this workspace has zero tasks", which on a mature board is true of every department the client has never used, and `scripts/run-full-install.sh` Phase 6e ran the seeder in `--update-only` mode too. A routine code roll therefore dropped ten fresh welcome cards into a live backlog months after install, and the Command Center's grooming loop spawned failing "Author SOP: Welcome to X" work off them. The seeder now takes `--no-starter-tasks` (or `SEED_STARTER_TASKS=0`) and Phase 6e passes it whenever `UPDATE_ONLY=true`, logging one INFO line that says so. Companies and per-department head-agent rows are still ensured either way — those are idempotent identity and runtime rows, not board content. A full install is unchanged.
+
+`scripts/seed-workspaces.py` folded EVERY key of a dict-shaped departments.json in as a department id. `<company_dir>/departments.json` legitimately ships wrapped — `23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh` writes `{removedWithProvenance, departments}` and `build-workforce.py` preserves that shape — and the client's file carried `{company, total_departments, total_roles, departments}`. The board gained four bogus workspaces named "Company", "Total Departments", "Total Roles" and "Departments"; install phases 6b and 6c exited non-zero and the 6e2 department-runtime-parity guard failed listing those four. The envelope layer now goes through one shared normalizer, `shared-utils/departments_payload.py`: a list is used, an object with a `departments` list is unwrapped, and anything else fails loudly naming the path and the top-level type. A dict's keys are never departments.
+
+The Command Center's own `scripts/sync-departments-from-build-state.py` reads the same file and calls `.get("id")` per item, which on a dict yields string keys — the `'str' object has no attribute 'get'` behind Phase 6c's non-zero exit. That script lives in blackceo-command-center and is not changed here.
+
+Tests: `scripts/test_seed_dashboard_starter_tasks.py` (new, 17) and `scripts/test_seed_workspaces_normalize.py` (7 -> 14, including an end-to-end `seed()` on the client's exact envelope). Onboarding v25.1.57.
+
 ## v13.1.13 - 2026-09-18 - An invitation origin must be a hostname, never an IP address
 
 `scripts/interview-launch.py`'s `public_origin()` asked only whether an IP literal was globally routable, so `https://8.8.8.8` and any other public address were accepted as an invitation origin. No certificate exists for an address under the hostname the tenant registry selects configuration by, so an accepted literal would have carried a client's private sign-in link to an origin no tenant is registered under. Every literal is now refused, loopback and private ones included; hostnames are unaffected. Test added in `tests/unit/interview-launch.test.py`.
