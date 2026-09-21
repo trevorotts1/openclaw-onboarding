@@ -22,6 +22,7 @@ on:
       - 'shared-utils/secret_helper.py'
       - 'shared-utils/secret_names.json'
       - 'shared-utils/test_f25_llm_score_secrets.py'
+      - 'shared-utils/test_ollama_cloud_endpoint_and_key.py'
       - 'tests/unit/test_intake_poll_plist.py'
       - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py'
       - 'tests/unit/test_shared_client_paths.py'
@@ -99,6 +100,13 @@ jobs:
       # directory away -- so it is gated here, next to its sibling.
       - name: Scoring helper resolves credentials from the box secrets store
         run: python3 -m pytest -q shared-utils/test_f25_llm_score_secrets.py
+      # The other half of the same step-1 failure: credentials that DO resolve
+      # were being sent to a path that does not exist (/api/chat/completions,
+      # HTTP 404) for a model tag deleted from Ollama Cloud on 2026-08-17. A
+      # check nothing runs is not a check, so the regression test is gated
+      # here, next to the resolver test it depends on.
+      - name: Ollama Cloud endpoint, model tag and provider-key fallback
+        run: python3 -m pytest -q shared-utils/test_ollama_cloud_endpoint_and_key.py
       - name: Shared client paths and credential isolation
         run: python3 tests/unit/test_shared_client_paths.py
       - name: GHL credential aliases through the delivered shared library

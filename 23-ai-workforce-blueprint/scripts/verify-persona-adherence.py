@@ -39,6 +39,12 @@ from resolve_db import find_dashboard_db  # type: ignore  # PRD 1.3: single shar
 try:
     from llm_score import _build_prompt, _attempt_ollama_cloud, _attempt_openrouter  # type: ignore
     from llm_score import summarize_persona_blueprint, _cache_path  # type: ignore
+    # Endpoint, model tag and key order for Ollama Cloud live in ONE place
+    # (llm_score) so this script cannot drift back onto the dead /api path or
+    # the deleted :cloud tag.
+    from llm_score import (  # type: ignore
+        OLLAMA_CLOUD_MODEL, ollama_cloud_api_keys, ollama_cloud_chat_url,
+    )
     LLM_AVAILABLE = True
 except ImportError:
     LLM_AVAILABLE = False
@@ -215,13 +221,16 @@ def _manual_call(prompt: str) -> dict:
         return None
 
     attempts = []
-    ocld_key = _env("OLLAMA_CLOUD_API_KEY")
-    if ocld_key:
+    # One entry per Ollama Cloud credential: the resolved OLLAMA_CLOUD_API_KEY
+    # first, then the gateway's own provider key from openclaw.json as a last
+    # resort. The loop below already falls through on any failure, so a 401 on
+    # the first key simply advances to the second.
+    for ocld_key in ollama_cloud_api_keys():
         attempts.append((
             "ollama-cloud-deepseek-pro",
-            _env("OLLAMA_CLOUD_URL", "https://ollama.com/api").rstrip("/") + "/chat/completions",
+            ollama_cloud_chat_url(),
             {"Authorization": f"Bearer {ocld_key}", "Content-Type": "application/json"},
-            "deepseek-v4-pro:cloud",
+            OLLAMA_CLOUD_MODEL,
         ))
     or_key = _env("OPENROUTER_API_KEY")
     if or_key:

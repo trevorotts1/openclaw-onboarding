@@ -9,8 +9,14 @@ Per company policy (memory: feedback-no-anthropic-for-subagents) no
 Anthropic models are used in this pipeline. The model chain is:
 
     1. Ollama Cloud  — DeepSeek V4 Pro (primary, cheap + 1M context)
+       Model:    deepseek-v4-pro:0813   (deepseek-v4-pro:cloud was deleted
+                 from Ollama Cloud on 2026-08-17)
+       Endpoint: <OLLAMA_CLOUD_URL>/chat/completions, default base
+                 https://ollama.com/v1 — NOT /api, which 404s
        Env: OLLAMA_CLOUD_API_KEY, OLLAMA_CLOUD_URL
-            (default: https://ollama.com/api)
+       Key: OLLAMA_CLOUD_API_KEY first; if that is unset or the call comes
+            back 401, the gateway's OWN provider key from openclaw.json is
+            tried once as a last resort — see ollama_cloud_api_keys().
 
     2. OpenRouter    — DeepSeek V4 Pro (same model, paid fallback)
        Env: OPENROUTER_API_KEY
@@ -52,6 +58,24 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+#: Ollama Cloud's OpenAI-compatible chat surface lives under /v1, never /api.
+#: The default here used to be https://ollama.com/api, so step 1 of the chain
+#: POSTed to /api/chat/completions -- measured on a live client box 2026-09-21,
+#: that path answers HTTP 404 `path "/api/chat/completions" not found`, while
+#: the identical request to /v1/chat/completions answers 200 in 0.7s. Step 1 of
+#: this chain had therefore NEVER once succeeded: every scoring call fell
+#: through to paid OpenRouter at ~4s. OLLAMA_CLOUD_URL is still honoured, but a
+#: box still pinned to the old https://ollama.com/api default is normalised to
+#: /v1 rather than left broken -- see ollama_cloud_chat_url().
+OLLAMA_CLOUD_DEFAULT_URL = "https://ollama.com/v1"
+
+#: The cloud tag deepseek-v4-pro:cloud was deleted fleet-wide on 2026-08-17.
+#: GET https://ollama.com/api/tags on 2026-09-21 lists deepseek-v4-pro:0813,
+#: deepseek-v4-flash:0731 and deepseek-v4.1-flash. Pro stays this chain's
+#: documented primary, now under its dated tag.
+OLLAMA_CLOUD_MODEL = "deepseek-v4-pro:0813"
+OLLAMA_CLOUD_MODEL_ID = "ollama/" + OLLAMA_CLOUD_MODEL
 
 CACHE_TTL_SECONDS = 30 * 24 * 60 * 60   # 30 days
 HTTP_TIMEOUT_SECONDS = 30
@@ -660,32 +684,142 @@ def _parse_score_json(text: str) -> dict:
 # Provider attempts
 # ───────────────────────────────────────────────────────────────────────
 
+def ollama_cloud_chat_url() -> str:
+    """The Ollama Cloud chat-completions URL for THIS box.
+
+    OLLAMA_CLOUD_URL is honoured verbatim except for one normalisation: a box
+    still carrying this module's OLD default, https://ollama.com/api, is
+    rewritten to /v1. That old base makes the request 404 (see
+    OLLAMA_CLOUD_DEFAULT_URL), so honouring it literally would leave every
+    already-provisioned box on the broken path this fix exists to close.
+    """
+    base = _env("OLLAMA_CLOUD_URL", OLLAMA_CLOUD_DEFAULT_URL).rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")] + "/v1"
+    return base + "/chat/completions"
+
+
+#: An apiKey field that NAMES an environment variable instead of carrying a
+#: secret: "${OLLAMA_CLOUD_API_KEY}", "$OLLAMA_CLOUD_API_KEY", "env:NAME", or
+#: the bare SHOUTING_NAME. Resolving one of those as a bearer token would send
+#: the literal string to the provider and earn a 401.
+_ENV_REF_RE = re.compile(r"^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$")
+_SHOUTING_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _is_literal_key(value: str) -> bool:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return False
+    if _ENV_REF_RE.match(candidate):
+        return False
+    if candidate.lower().startswith(("env:", "secret:", "file:")):
+        return False
+    if _SHOUTING_NAME_RE.match(candidate):
+        return False
+    return True
+
+
+def _openclaw_provider_key(host_fragment: str, environ=None) -> str:
+    """The gateway's OWN apiKey for the provider whose baseUrl names `host_fragment`.
+
+    Read from models.providers in the openclaw.json of the SAME installation
+    _openclaw_roots() selects -- no new file discovery, and a pinned root still
+    confines the search to one client. Both shapes the config takes are
+    accepted: providers as a NAME -> config mapping, and providers as a list of
+    configs. Only a LITERAL key counts (_is_literal_key); a field that merely
+    names an env var is not a credential. Returns "" when there is nothing to
+    return, and NEVER logs or raises -- the value goes straight into an
+    Authorization header and nowhere else.
+    """
+    for root in _openclaw_roots(environ):
+        path = os.path.join(root, "openclaw.json")
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path) as handle:
+                data = json.load(handle)
+            providers = ((data.get("models") or {}).get("providers") or {})
+            entries = providers.values() if isinstance(providers, dict) else providers
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                base = str(entry.get("baseUrl") or entry.get("base_url") or "")
+                if host_fragment not in base:
+                    continue
+                key = str(entry.get("apiKey") or entry.get("api_key") or "").strip()
+                if _is_literal_key(key):
+                    return key
+        except Exception:
+            continue
+    return ""
+
+
+def ollama_cloud_api_keys() -> list:
+    """Bearer tokens to try against Ollama Cloud, best first.
+
+    1. OLLAMA_CLOUD_API_KEY through the F25 chain (process env, aliases, the
+       box's secrets stores, the openclaw.json env block).
+    2. LAST RESORT -- the key the OpenClaw gateway itself uses for its
+       ollama.com provider, from models.providers in openclaw.json.
+
+    Measured on a live client box 2026-09-21: the resolved OLLAMA_CLOUD_API_KEY
+    answered 401 on ollama.com while the gateway's provider key answered 200
+    for the identical request. The gateway key is the proven-working one, so it
+    is tried when the first name resolves nothing AND when the first key is
+    rejected -- see _attempt_ollama_cloud. This is RESOLUTION ONLY: nothing is
+    written back to any env file or store.
+    """
+    keys = []
+    env_key = _env("OLLAMA_CLOUD_API_KEY")
+    if env_key:
+        keys.append(env_key)
+    provider_key = _openclaw_provider_key("ollama.com")
+    if provider_key and provider_key not in keys:
+        keys.append(provider_key)
+    return keys
+
+
 def _attempt_ollama_cloud(prompt: str) -> dict:
-    api_key = _env("OLLAMA_CLOUD_API_KEY")
-    if not api_key:
-        return {"ok": False, "error": "OLLAMA_CLOUD_API_KEY not set", "model": "ollama/deepseek-v4-pro:cloud"}
-    base_url = _env("OLLAMA_CLOUD_URL", "https://ollama.com/api")
-    url = base_url.rstrip("/") + "/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    keys = ollama_cloud_api_keys()
+    if not keys:
+        return {"ok": False, "error": "OLLAMA_CLOUD_API_KEY not set",
+                "model": OLLAMA_CLOUD_MODEL_ID}
+    url = ollama_cloud_chat_url()
     body = {
-        "model": "deepseek-v4-pro:cloud",
+        "model": OLLAMA_CLOUD_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 200,
     }
-    try:
-        payload = _post_chat(url, headers, body)
+    outcome = {"ok": False, "error": "no attempt made", "model": OLLAMA_CLOUD_MODEL_ID}
+    for index, api_key in enumerate(keys):
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            payload = _post_chat(url, headers, body)
+        except urllib.error.HTTPError as e:
+            # HTTPError before URLError: it is a SUBCLASS, and only it carries
+            # .code. 401 means this key is rejected, not that the provider is
+            # down, so fall through to the next candidate exactly once.
+            outcome = {"ok": False, "error": f"HTTPError: {e}",
+                       "model": OLLAMA_CLOUD_MODEL_ID}
+            if e.code == 401 and index + 1 < len(keys):
+                continue
+            return outcome
+        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}",
+                    "model": OLLAMA_CLOUD_MODEL_ID}
         text = _extract_message(payload)
         parsed = _parse_score_json(text)
         if parsed["score"] is None:
-            return {"ok": False, "error": f"unparseable: {parsed['reasoning']}", "model": "ollama/deepseek-v4-pro:cloud"}
+            return {"ok": False, "error": f"unparseable: {parsed['reasoning']}",
+                    "model": OLLAMA_CLOUD_MODEL_ID}
         return {"ok": True, "score": parsed["score"], "reasoning": parsed["reasoning"],
-                "model": "ollama/deepseek-v4-pro:cloud"}
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError) as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}", "model": "ollama/deepseek-v4-pro:cloud"}
+                "model": OLLAMA_CLOUD_MODEL_ID}
+    return outcome
 
 
 def _attempt_openrouter(prompt: str, model_id: str) -> dict:
