@@ -1,19 +1,18 @@
-## [v25.1.70]  -  2026-09-21  -  Content stops parking at an audience gate with nothing to ask, a client's env file stops being executed, and four other findings
+## [v25.1.70]  -  2026-09-21  -  A client's env file stops being executed, Skill 59 wires a department the gateway can see, and the audience-gate change is held
 
-### 1. The audience gate asked when there was nothing to ask
-`persona_blend.resolve_audience()` returned `confirm_required=True` on every branch but an explicit override. A company with ONE ICP, or none at all, parked every content task at the audience gate for the full confirm window before it could write a word. A gate that fires when there is nothing to disambiguate is not a gate, it is a delay.
+### 1. The audience gate change is HELD, not shipped
+`persona_blend.resolve_audience()` returns `confirm_required=True` on every branch but an explicit override, so a company with ONE ICP or none parks every content task at the audience gate for the full confirm window. The narrowing was written, and then reverted before merge.
 
-Confirmation is now required only on real ambiguity:
+**Two existing regression locks encode the ALWAYS-confirm doctrine it relaxes, one of them an explicit anti-weakening assertion:**
 
-| Situation | Before | Now |
-|---|---|---|
-| 2+ ICP descriptors | confirm | confirm |
-| department in the hard-hold list | confirm | confirm |
-| exactly 1 ICP descriptor | confirm | no confirm |
-| 0 descriptors (an operator or internal lane lands here) | confirm | no confirm |
-| explicit `audience: none` | confirm | no confirm |
+```
+23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py:211
+  bad("NO-WEAKENING failed: single ICP auto-proceeded without confirm_required")
+```
 
-`AUDIENCE_HARD_HOLD_DEPARTMENTS` is `marketing` + `web-development`, the list D23 ratified as corrected on 2026-07-16 (the ruling's original `funnels` is not a department and could never fire). An explicit `audience: none` is treated as an ANSWER, not a missing value, so it is never re-asked. The `ask` text is still returned in the 0 and 1 cases, so a caller that wants to prompt still can; it just is not forced to. `resolve_audience` gains an optional `department=` argument and is otherwise signature-compatible.
+CI proved it, not theory: the change turned `Persona-blend matcher` and `Communication trigger + audience-confirmation prompt` red, with `[FAIL] NO-WEAKENING failed: single ICP auto-proceeded without confirm_required` among the findings. Silencing a guard named NO-WEAKENING in order to land the change it was written to stop is not a call this release gets to make. `persona_blend.py` is byte-identical to `origin/main`.
+
+A new test pins the revert, so it cannot drift back in unnoticed. **The doctrine decision is owed**, and when it is made, that test is the thing to delete first.
 
 ### 2. A client's env file was being executed, not read
 Eight scripts read a client-owned secrets file with `set -a; . "$file"; set +a`. That hands the file to the SHELL: every line runs, a stray backtick or `$(...)` executes, and a malformed line reaches the log on its way to failing. Worse, `. file` cannot represent a key the shell will not accept, so a line like `9R_GATEWAY_KEY=...` is a syntax error that stops the load THERE and silently drops every key after it.
@@ -38,13 +37,13 @@ OpenClaw 2026.9.5 changes this key's DEFAULT from `clamp(8..16, cpus)` to `max(8
 The version gate is a real probe of `openclaw --version`, not an assumption.
 
 ### Tests
-**`tests/unit/test_bundle_v25_1_70.py`, 47 assertions, new.**
+**`tests/unit/test_bundle_v25_1_70.py`, 37 assertions, new.**
 
-Every audience branch including the hard-hold list and a normal department; the loader's self-check, a bad key not stopping the file, a command in the file NOT executing, a skipped line never reaching the log, a missing file returning non-zero, `env_valid_key` across six inputs, and all eight converted readers routing through the loader; the contract check running before the refresh, fatal only on a full install, and absent-script tolerated; Skill 59's entries mode, workspace path, nested memory, no model pin, and shape-aware read-back; the maxConcurrent preserve path, the version gate's existence, and the 2026.9.5 boundary across seven versions.
+The loader's self-check, a bad key not stopping the file, a command in the file NOT executing, a skipped line never reaching the log, a missing file returning non-zero, `env_valid_key` across six inputs, and all eight converted readers routing through the loader; the contract check running before the refresh, fatal only on a full install, and absent-script tolerated; Skill 59's entries mode, workspace path, nested memory, no model pin, and shape-aware read-back; the maxConcurrent preserve path, the version gate's existence, and the 2026.9.5 boundary across seven versions.
 
 `shared-utils/env-load.sh` also carries its own runnable self-check (`bash shared-utils/env-load.sh`).
 
-**Mutation-proved**: restoring always-confirm and making the loader `eval` its input turns **7 assertions red**. `bash -n` clean on all ten edited shell files; `py_compile` clean on `persona_blend.py`.
+**Mutation-proved**: making the loader `eval` its input instead of assigning turns its self-check and the no-execute assertion red. `bash -n` clean on all ten edited shell files. `23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py` 57/57 with `persona_blend.py` reverted.
 
 ### Pre-existing, untouched
 Five failures reproduce identically on pristine `c55bd9edc`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `tests/unit/test_interview_invitation.py`, one in `test_dept_scripts_suffix_coverage.py`.
