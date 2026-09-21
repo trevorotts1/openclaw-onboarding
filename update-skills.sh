@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.68"
+ONBOARDING_VERSION="v25.1.69"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1860,7 +1860,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.68 - safe_json_edit
+# v25.1.69 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -10263,6 +10263,22 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
           exit 2
         fi
         echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
+        # Refresh outcome and parity outcome are separate facts. The installer
+        # no longer fails an --update-only roll on a parity finding, so surface
+        # it here as its own line instead of letting a green refresh imply a
+        # reconciled roster.
+        _CC_PARITY_N="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    v=d.get('commandCenterDeptRuntimeParity')
+    print('' if v is True or v is None else ('script-missing' if v=='script-missing' else 'warn'))
+except Exception:
+    print('')
+" "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" 2>/dev/null || echo "")"
+        if [ "${_CC_PARITY_N:-}" = "warn" ]; then
+          echo "    CC refreshed to $(cat "$_CC_DIR/package.json" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version","?"))' 2>/dev/null || echo "?"); parity guard WARN: department(s) on the board have no matching runtime entry — run materialize-dept-agents.sh to reconcile (the app itself is current)."
+        fi
         # Schema 133 is available only AFTER the verified CC upgrade. This scoped
         # synchronizer never seeds identities or binds another company's runtime.
         _CC_BINDING_SYNC="$SKILLS_DIR/shared-utils/sync_ceo_runtime_bindings.py"

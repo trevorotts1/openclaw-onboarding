@@ -252,6 +252,27 @@ CONFIG_FILE = os.environ["OC_CONFIG_FILE"]
 OC_ROOT = os.environ["OC_ROOT_PATH"]
 DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
 DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].split()
+SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
+
+# STRIP A DEPT AFFIX, nothing else.
+#
+# A department FOLDER can be named "<name>-dept" (the same key-vs-folder shape
+# that produced "-dept" slugs in phase 6c). This block keys the registry on
+# f"dept-{slug}", so that folder became "dept-app-development-dept" -- 22 such
+# rows on a client box, none of which the parity guard could match to its
+# workspace.
+#
+# Deliberately NOT canonical_dept_slug(): every OTHER normalisation (case,
+# spaces, "&", collision detection) is already done downstream where the
+# entries key is built, and doing it here instead drops folders that step
+# knows how to rescue. Affix only.
+def _strip_dept_affix(raw):
+    t = (raw or "").strip()
+    if t.lower().startswith("dept-"):
+        t = t[5:]
+    if t.lower().endswith("-dept"):
+        t = t[:-5]
+    return t.strip("-") or (raw or "")
 
 # Pretty-name map: dept slug → friendly C-suite-style role title.
 # For any slug not listed, we titlecase the slug ('-' → ' ').
@@ -305,6 +326,40 @@ def is_valid_dept_dir(p: Path) -> bool:
 # first — canonical master-files ZHC build output, then the command-center
 # workspace root, then the legacy workspace/departments root last — is the
 # one that sticks. Do not reorder DEPT_ROOTS without keeping this rule true.
+def _live_workspace_slugs():
+    """Canonical slugs of workspaces that are on the board, or None if unknown.
+
+    None means "could not determine" -- the caller then writes every discovered
+    department, i.e. exactly the pre-v25.1.69 behaviour. Never fail closed here:
+    a missing DB must not silently empty a client's runtime roster.
+    """
+    import sqlite3
+    for cand in (os.environ.get("DASHBOARD_DB_PATH"), os.environ.get("DATABASE_PATH"),
+                 "/data/projects/command-center/mission-control.db",
+                 os.path.expanduser("~/projects/command-center/mission-control.db")):
+        if not cand or not os.path.isfile(cand):
+            continue
+        try:
+            con = sqlite3.connect(cand)
+            cols = [r[1] for r in con.execute("PRAGMA table_info(workspaces)")]
+            if not cols:
+                con.close()
+                continue
+            where = " WHERE archived_at IS NULL" if "archived_at" in cols else ""
+            rows = con.execute("SELECT slug, id FROM workspaces" + where).fetchall()
+            con.close()
+        except sqlite3.Error:
+            continue
+        out = set()
+        for slug, wid in rows:
+            for v in (slug, wid):
+                c = _strip_dept_affix(v).lower() if isinstance(v, str) else ""
+                if c:
+                    out.add(c)
+        return out or None
+    return None
+
+
 discovered = {}  # slug → absolute workspace path
 for root in DEPT_ROOTS:
     rp = Path(root)
@@ -313,7 +368,9 @@ for root in DEPT_ROOTS:
     for child in sorted(rp.iterdir()):
         if not is_valid_dept_dir(child):
             continue
-        discovered.setdefault(child.name, str(child.resolve()))
+        # Canonical slug, never the raw folder name: a "<name>-dept" folder
+        # must not become the agent id "dept-<name>-dept".
+        discovered.setdefault(_strip_dept_affix(child.name), str(child.resolve()))
 
 if not discovered:
     print(f"[materialize-dept-agents] WARN: no department folders found under {DEPT_ROOTS} — nothing to materialize")
@@ -477,7 +534,16 @@ updated = 0
 
 manifest_rows = []  # (roster_key, pretty name, workspace path, dept slug)
 
-for slug, workspace_path in discovered.items():
+# A department with no LIVE workspace row gets no runtime entry. Measured on a
+# client box: entries were written for departments whose workspace was archived
+# or absent, and two of them were attributed to the `default` workspace. Absent
+# or unreadable DB => write everything, exactly as before: the folder scan is
+# the primary source and this is an extra guard, never a new dependency.
+_live = _live_workspace_slugs()
+for slug, workspace_path in sorted(discovered.items()):
+    if _live is not None and slug not in _live:
+        print(f"[materialize-dept-agents] SKIP {slug}: no ACTIVE workspace row on the board -- no runtime entry written (archived, or never seeded)")
+        continue
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
 

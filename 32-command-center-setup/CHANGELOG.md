@@ -1,5 +1,23 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.20 - 2026-09-21 - The parity guard can see agents.entries, and a dept folder stops becoming a doubled agent id
+
+Three findings from the client box at the v25.1.66 skills roll.
+
+**The parity guard was blind to the roster.** `scripts/guard-department-runtime-parity.py` read only `agents.list`; the box carries `agents.entries` (100 entries, 66 `dept-` prefixed). On an entries-mode box it saw ZERO agent ids and reported EVERY department as having no runtime, failing the roll. It now reads both shapes, taking the object key and each entry's own `id`. A genuinely missing runtime is still a FAIL.
+
+The archived exclusion was already correct — `archived_at IS NOT NULL` rows have been excluded with `"reason": "archived"` since migration 095's guard. Proven with a fixture rather than assumed.
+
+**The runtime materializer wrote doubled agent ids.** `scripts/materialize-dept-agents.sh` keys on the raw department FOLDER name and builds `f"dept-{slug}"`; the client's folders are named `<name>-dept`, so 22 rows landed as `dept-app-development-dept`. The scan now strips a leading `dept-` or trailing `-dept`.
+
+That is an affix strip, NOT `canonical_dept_slug()`. The first attempt used the full canonicaliser and broke `materialize-dept-agents-roster-shape.test.sh` T4, dropping a folder named `Sales & Marketing`: case, spaces, `&` and collision detection are already handled downstream where the entries key is built.
+
+**A department with no ACTIVE workspace row now gets no runtime entry**, with one log line naming it. Absent or unreadable board means write everything, as before.
+
+**A parity finding is no longer a failed refresh.** On `--update-only`, `scripts/run-full-install.sh` WARNs and lets the roll finish; a FULL install still refuses.
+
+New: `scripts/test_runtime_parity_and_slug.py`, 16 assertions on real sqlite boards, mutation-proved (4 red).
+
 ## v13.1.18 - 2026-09-21 - The installer finds the build state where it actually is
 
 Verified on the operator's own box: `scripts/run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there `~/clawd`), while the real file lives at `~/.openclaw/workspace/.workforce-build-state.json`. With no state found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null` and the run exited 8 demanding an interactive interview on a fully built box.
