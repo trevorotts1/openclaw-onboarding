@@ -79,6 +79,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sqlite3
 import sys
 import time
@@ -981,19 +982,30 @@ def _attempt_chat(provider: str, model: str, prompt: str, url: str, keys: list,
                                      keys[index:], extra_headers, extra_body)
             return outcome
         except (urllib.error.URLError, json.JSONDecodeError, TimeoutError,
-                # OSError, NOT socket.timeout: on Python 3.9 `socket.timeout`
-                # is an OSError but NOT a TimeoutError — they were unified only
-                # in 3.10. A read timeout on a step therefore ESCAPED this
-                # handler on 3.9, propagated out of pool.map in the selector's
+                # socket.timeout AND OSError. On Python 3.9 `socket.timeout` is
+                # an OSError but NOT a TimeoutError — they were unified only in
+                # 3.10. A read timeout on a step therefore ESCAPED this handler
+                # on 3.9, propagated out of pool.map in the selector's
                 # score_personas, and killed the whole persona selection (rc 1)
                 # instead of falling through to the next step in the chain.
-                # OSError covers socket.timeout on EVERY version, plus the
-                # connection-reset family. Do not narrow it back to
-                # TimeoutError. urllib.error.HTTPError is caught above, so it
-                # still takes its own 401/400/404 path.
-                OSError,
+                #
+                # OSError alone would cover socket.timeout on every version;
+                # socket.timeout is named anyway so the fix is findable by the
+                # obvious grep. OSError is what additionally catches the
+                # connection-reset family, which escaped on EVERY version. Do
+                # not narrow either back to TimeoutError.
+                #
+                # urllib.error.HTTPError is caught ABOVE, so a 401/400/404/500
+                # still takes its own key-advance / model-fallback path and is
+                # never recorded as a transport failure.
+                socket.timeout, OSError,
                 AttributeError, KeyError, TypeError) as e:
-            return {"ok": False, "error": f"{type(e).__name__}: {e}",
+            # Recorded as a TRANSPORT failure: score_layer folds this string
+            # into last_error and then into the degraded reasoning, so the
+            # marker is what distinguishes "the socket gave up" from an
+            # HTTP status or an unparseable 200 when reading a failed run.
+            return {"ok": False,
+                    "error": f"transport: {type(e).__name__}: {e}",
                     "model": label}
         text = _extract_message(payload)
         parsed = _parse_score_json(text)

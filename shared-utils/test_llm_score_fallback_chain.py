@@ -264,6 +264,41 @@ def test_a_socket_timeout_on_a_step_advances_instead_of_killing_the_run(box, mon
     assert len(calls) == 2, models_called(calls)
 
 
+def test_a_timed_out_step_is_recorded_as_a_transport_failure(box, monkeypatch):
+    """The step OUTCOME must say the socket gave up. score_layer folds each
+    failed step's error into last_error and then into the degraded reasoning,
+    so the marker is what separates "transport" from an HTTP status or an
+    unparseable 200 when reading back a failed run.
+    """
+    all_keys(monkeypatch)
+    capture_posts(monkeypatch, [socket.timeout("timed out")])
+
+    result = score()
+
+    assert result["fallback"] is True
+    assert "transport:" in result["reasoning"], result["reasoning"]
+
+
+def test_an_http_error_is_never_recorded_as_a_transport_failure(box, monkeypatch):
+    """CONTROL for the marker AND for the HTTPError path. HTTPError is caught
+    in its OWN clause above the transport tuple, so a status code must keep
+    its key-advance / model-fallback behaviour and must NOT pick up the
+    transport marker. Without this leg, widening the tuple could have
+    swallowed HTTPError (it is a URLError, hence an OSError) and silently
+    killed the 401 and 400/404 paths.
+    """
+    all_keys(monkeypatch)
+    calls = capture_posts(monkeypatch, [http_error(500, "Server Error")])
+
+    result = score()
+
+    assert result["fallback"] is True
+    assert "transport:" not in result["reasoning"], result["reasoning"]
+    assert "HTTPError" in result["reasoning"], result["reasoning"]
+    # the whole chain still ran, exactly as it did before the tuple widened
+    assert models_called(calls) == [m for _, m in EXPECTED_DEFAULT_CHAIN]
+
+
 def test_socket_timeout_is_an_oserror_which_is_why_the_tuple_names_oserror():
     """CONTROL for the leg above. It is OSError, not TimeoutError, that makes
     the handler catch a 3.9 socket.timeout — so assert the relationship the
