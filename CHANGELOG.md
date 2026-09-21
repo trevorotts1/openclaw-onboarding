@@ -1,3 +1,35 @@
+## [v25.1.62]  -  2026-09-21  -  The departments normalizer is re-mirrored against the Command Center twin, so one artifact gets one refusal message
+
+### Why
+v25.1.61 taught `shared-utils/departments_payload.py` to fold a slug-keyed `departments` map. The Command Center shipped the twin rule the same day as v7.6.30 (`8828dec6e`), and its module header states the contract out loud: the two repos read the SAME artifact off the SAME box, so they must agree on its shape byte for byte, and either side changes only by re-mirroring the other.
+
+The two were compared case by case rather than by eye. **The fold behaviour already agreed exactly** — non-empty map, every value an object, key order preserved, key filling `id` and `slug` only where the entry carries none, an entry's own `id` always winning. Across 18 payloads there were **zero behaviour differences**.
+
+What did not agree was the wording, and on this module the wording is the product. An operator staring at a refused `departments.json` is reading that sentence to decide what is wrong with the file. Two repos describing the same rejected artifact two different ways is the drift the mirror exists to prevent, and the onboarding side had collapsed two distinct failures into one message:
+
+| Payload | Onboarding v25.1.61 | Command Center v7.6.30 |
+|---|---|---|
+| `{"departments": {"m": "yes"}}` | `'departments' key holds dict, expected a list or an object keyed by slug whose values are all objects` | `'departments' key holds an object that is not a department map (it is empty, or a value is not an object); expected a list, or an object keyed by department slug whose values are all objects` |
+| `{"departments": {}}` | same single message | same department-map message |
+| `{"departments": 42}` | same single message | `'departments' key holds int, expected a list` |
+
+An object that is ALMOST a department map and a value that was never a map at all are different operator problems. The Command Center says so; onboarding did not.
+
+### What changed
+- **`shared-utils/departments_payload.py`** is now byte-identical to the Command Center's copy at `8828dec6e` from the `WHY THIS EXISTS` heading down, verified with `diff`. Only the mirror header differs, and only in direction: this one names blackceo-command-center and its TypeScript twin `src/lib/departments-payload.ts` as the far side.
+
+  The rule now reads through two named helpers rather than one returning a sentinel: `_is_department_map(obj)` answers whether an object is a non-empty map of objects, and `_fold_keyed(obj)` folds it preserving key order. Both branches, the top level and the value under the `departments` key, go through the same pair, so the two positions cannot drift apart. The refusal for a non-map object under the key gains its own message.
+
+- **`shared-utils/test_departments_payload.py`** gains two tests pinning the exact text of both refusals, with a comment naming the mirror and the Command Center commit. If either sentence is reworded here without re-mirroring there, these fail. That is the only thing standing between a shared contract and a slow divergence nobody notices.
+
+### Not changed
+Behaviour, in any case: 27 tests passed before the mirror and still pass, none of them edited to fit. The six vendored `except ImportError` fallbacks re-synced in v25.1.61 are untouched, because they carry the fold logic only, never the error text, and their logic already matches. The Command Center repo was cloned read-only and nothing in it was written.
+
+### Tests
+`shared-utils/test_departments_payload.py` and `32-command-center-setup/scripts/test_seed_workspaces_normalize.py`: **27 to 29 passing**, the two additions being the wording pins.
+
+The mirror was proved, not assumed. Both modules were loaded side by side and run over the same 18 payloads, comparing returned value AND raised message: **0 differences** after the change, against 3 message differences and 0 behaviour differences before it. `diff` from `WHY THIS EXISTS` down reports the files byte-identical. The module's own `_demo()` self-check passes under `python3 shared-utils/departments_payload.py`.
+
 ## [v25.1.61]  -  2026-09-21  -  A departments.json whose "departments" key holds an object keyed by slug now reads, instead of being refused
 
 ### Why

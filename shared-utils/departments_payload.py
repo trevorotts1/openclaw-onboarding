@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """departments_payload.py — the ONE normalizer every departments.json reader uses.
 
+MIRRORED, RULE FOR RULE, with blackceo-command-center `shared-utils/departments_payload.py`
+(and its TypeScript twin `src/lib/departments-payload.ts`). The two repos read the
+SAME artifact from the SAME box, so they must agree on its shape byte for byte;
+change one only by re-mirroring the other.
+
 WHY THIS EXISTS
 ---------------
 `<company_dir>/departments.json` ships in two legitimate top-level shapes:
@@ -20,18 +25,10 @@ WHY THIS EXISTS
          {"company": ..., "total_departments": N, "total_roles": N,
           "departments": [...]}.
 
-The envelope's "departments" key is not always a LIST. On a real client Mac it
-holds an OBJECT keyed by department slug:
-
-    {"company": ..., "total_departments": 34, "total_roles": N,
-     "departments": {"account-management-dept": {...}, ...}}
-
-That file is valid and must seed. Before v25.1.61 it was refused outright, so
-34 real departments read as a hard error. A slug-keyed object is now folded
-into a list wherever it appears — under the "departments" key or at the top
-level — with the key filling "id"/"slug" only when the entry lacks its own.
-The fold is refused unless EVERY value is an object, which is what keeps a
-metadata envelope from ever being mistaken for a department map.
+     The "departments" key holds a LIST in some builds and a MAP KEYED BY
+     DEPARTMENT SLUG in others — {"account-management-dept": {...},
+     "app-development-dept": {...}, ...} is what a real 34-department client box
+     ships. Both are valid; the map is folded into a list here.
 
 Every reader used to gate on `isinstance(data, list)` and silently treat shape
 2 as "no departments" — a false negative on a perfectly valid artifact. One
@@ -71,27 +68,27 @@ def _describe(data):
     return t
 
 
-def _fold_slug_keyed(mapping):
-    """Fold a slug-keyed object of department objects into a list, else ``None``.
+def _is_department_map(obj):
+    """True when ``obj`` is a NON-EMPTY dict whose every value is a dict.
 
-    ``None`` means "this is not a department map, refuse it": anything that is
-    not a dict, an EMPTY dict, or a dict with any non-object value. A scalar
-    value (a company name, a role count) is what marks an object as a metadata
-    envelope, and an envelope's keys are never departments — that is the whole
-    bug this module exists to make impossible. An empty dict is not a department
-    map either: the shipped empty default is ``[]``, and the provisioning
+    A scalar value (a company name, a role count) marks the object as a metadata
+    envelope, never a department map. An EMPTY dict is not a department map
+    either: the shipped empty default is ``[]``, and the provisioning
     completeness gate treats ``{}`` as invalid on purpose.
-
-    The key fills ``id`` and ``slug`` only when the entry does not already carry
-    its own, so an entry that names itself keeps its own identity. Insertion
-    order is preserved, so the folded list reads in the file's own order.
     """
-    if not isinstance(mapping, dict) or not mapping:
-        return None
-    if not all(isinstance(v, dict) for v in mapping.values()):
-        return None
+    return isinstance(obj, dict) and bool(obj) and all(
+        isinstance(v, dict) for v in obj.values())
+
+
+def _fold_keyed(obj):
+    """Fold a slug-keyed department map into a list, PRESERVING key order.
+
+    The key is the department's slug, so it fills ``id`` and ``slug`` — but only
+    when the entry carries none of its own. An entry's own ``id`` always wins;
+    the key never overwrites it.
+    """
     folded = []
-    for key, value in mapping.items():
+    for key, value in obj.items():
         entry = dict(value)
         entry.setdefault("id", key)
         entry.setdefault("slug", key)
@@ -109,11 +106,13 @@ def normalize_departments(data, path=None):
       * ``{"departments": [entry, ...], ...}``  -> the wrapped list (retire-script
         ``{removedWithProvenance, departments}`` shape, and any metadata envelope
         such as ``{company, total_departments, total_roles, departments}``)
-      * ``{"departments": {"<slug>": {...}, ...}, ...}`` -> the wrapped map, folded
-        to a list. This is the shape a real client box carries: the envelope's
-        ``departments`` key holds an OBJECT keyed by slug, not a list.
-      * ``{"<slug>": {...}, ...}``              -> the same map at the top level,
-        folded the same way — ONLY when every value is an object
+      * ``{"departments": {"<slug>": {...}, ...}, ...}`` -> the wrapped department
+        MAP, folded the same way as a top-level one. This is what a real client
+        box ships: ``{company, total_departments: 34, total_roles: N,
+        departments: {"account-management-dept": {...}, ...}}``.
+      * ``{"<slug>": {...}, ...}``              -> dict-of-dicts keyed by slug, folded
+        into a list with the key as ``id`` — ONLY when the dict is non-empty and
+        EVERY value is a dict
 
     Raises:
       MalformedDepartmentsError — for any other dict (an envelope whose keys are
@@ -131,18 +130,25 @@ def normalize_departments(data, path=None):
             wrapped = data["departments"]
             if isinstance(wrapped, list):
                 return wrapped
-            folded = _fold_slug_keyed(wrapped)
-            if folded is not None:
-                return folded
+            # The envelope a real client box ships carries its 34 departments as
+            # a MAP KEYED BY SLUG under this key, not as a list. Fold it by the
+            # same rule as a top-level map — one rule, so the two cannot drift.
+            if _is_department_map(wrapped):
+                return _fold_keyed(wrapped)
+            if isinstance(wrapped, dict):
+                raise MalformedDepartmentsError(
+                    f"departments.json: 'departments' key holds an object that is "
+                    f"not a department map (it is empty, or a value is not an "
+                    f"object); expected a list, or an object keyed by department "
+                    f"slug whose values are all objects{_where(path)}"
+                )
             raise MalformedDepartmentsError(
                 f"departments.json: 'departments' key holds "
-                f"{type(wrapped).__name__}, expected a list or an object keyed by "
-                f"slug whose values are all objects"
+                f"{type(wrapped).__name__}, expected a list"
                 f"{_where(path)}"
             )
-        folded = _fold_slug_keyed(data)
-        if folded is not None:
-            return folded
+        if _is_department_map(data):
+            return _fold_keyed(data)
         raise MalformedDepartmentsError(
             f"departments.json: expected a list, or an object with a 'departments' "
             f"list; got {_describe(data)}{_where(path)}"
@@ -194,36 +200,34 @@ def _demo():
          "departments": depts}
     ) == depts
 
-    # dict-of-dicts keyed by slug, at the top level
+    # dict-of-dicts keyed by slug
     folded = normalize_departments({"marketing": {"name": "Marketing"}})
     assert folded == [
         {"name": "Marketing", "id": "marketing", "slug": "marketing"}], folded
 
-    # the shape a real client box carries: the ENVELOPE's "departments" key
-    # holds an object keyed by slug, not a list. The metadata keys around it
-    # (company / total_departments / total_roles) must never become departments.
-    client = normalize_departments({
-        "company": "Acme", "total_departments": 2, "total_roles": 18,
-        "departments": {
-            "account-management-dept": {"name": "Account Management"},
-            "audio-dept": {"name": "Audio"},
-        },
-    })
-    assert [d["id"] for d in client] == ["account-management-dept", "audio-dept"], client
-    assert all(d["slug"] == d["id"] for d in client), client
-    for meta in ("company", "total_departments", "total_roles", "departments"):
-        assert meta not in [d["id"] for d in client], meta
+    # the envelope a real client box ships: the 'departments' KEY holds the map
+    assert normalize_departments(
+        {"company": "Acme", "total_departments": 2, "total_roles": 18,
+         "departments": {"account-management-dept": {"name": "Account Management"},
+                         "app-development-dept": {"name": "App Development"}}}
+    ) == [
+        {"name": "Account Management", "id": "account-management-dept",
+         "slug": "account-management-dept"},
+        {"name": "App Development", "id": "app-development-dept",
+         "slug": "app-development-dept"},
+    ]
 
-    # an entry that names itself keeps its own id/slug; the key never overrides
-    own = normalize_departments(
-        {"departments": {"acct": {"id": "dept-account", "slug": "account"}}})
-    assert own == [{"id": "dept-account", "slug": "account"}], own
+    # an entry's own id wins; the key only fills what is missing
+    assert normalize_departments(
+        {"departments": {"marketing": {"id": "dept-marketing", "name": "Marketing"}}}
+    ) == [{"id": "dept-marketing", "name": "Marketing", "slug": "marketing"}]
 
     # metadata-only envelope: refuse, never fold the keys in as departments
     for bad in (
         {"company": "Acme", "total_departments": 34, "total_roles": 416},
-        {"departments": {"marketing": "not-an-object"}},
-        {"departments": {}},   # empty is not a department map; [] is the default
+        {"departments": {"marketing": "yes"}},   # a value that is not an object
+        {"departments": {}},                     # empty is not a department map
+        {"departments": 42},
         {},          # the shipped empty default is [], never {} — see the
                      # provisioning-completeness gate's "object departments" case
         "marketing",
