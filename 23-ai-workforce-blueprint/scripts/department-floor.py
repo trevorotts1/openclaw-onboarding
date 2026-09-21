@@ -107,6 +107,21 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 
+# The ONE departments.json envelope normalizer. The chosen artifact legitimately
+# ships as a bare LIST *or* as an object wrapping that list under "departments"
+# (retire-confirmed-decline.sh's {removedWithProvenance, departments}; a build
+# envelope adding company / total_departments / total_roles). Gating on
+# isinstance(data, list) reported source "none" on a perfectly good artifact.
+sys.path.insert(0, str(SKILL_DIR.parent / "shared-utils"))
+try:
+    from departments_payload import departments_or_empty as _departments_or_empty  # type: ignore
+except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
+    def _departments_or_empty(data, path=None):  # type: ignore[misc]
+        if isinstance(data, dict):
+            wrapped = data.get("departments")
+            return wrapped if isinstance(wrapped, list) else []
+        return data if isinstance(data, list) else []
+
 # ── SHARED DECLINE READER (Issue #2 / Bulletproofing a) ──────────────────────
 # Import the ONE normalizer + provenance-gated decline reader so this floor
 # checker and build-workforce.py compare declines in the SAME normalized space
@@ -667,6 +682,7 @@ def read_chosen_departments(build_state=None, departments_dir=None):
             data = json.loads(artifact.read_text())
         except (OSError, json.JSONDecodeError):
             return [], "none"
+        data = _departments_or_empty(data, path=str(artifact))
         out, seen = [], set()
         for entry in (data if isinstance(data, list) else []):
             s = entry.get("slug") or entry.get("id") if isinstance(entry, dict) else None

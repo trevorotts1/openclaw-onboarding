@@ -2,6 +2,37 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-21 - fix(departments): a wrapped departments.json is read, not folded into departments
+
+`<company_dir>/departments.json` legitimately ships in two top-level shapes: the
+bare LIST `generate_departments_json()` returns, and an OBJECT wrapping that
+list under a `departments` key. This skill writes the second one itself —
+`scripts/retire-confirmed-decline.sh` emits
+`{removedWithProvenance, departments}` and `build-workforce.py`'s
+`_make_artifact_payload` deliberately preserves it so the retirement audit trail
+survives every later apply-diff build. A client Mac additionally carried a build
+envelope of the same family, `{company, total_departments, total_roles,
+departments}`.
+
+Every reader here gated on `isinstance(data, list)` and read the object shape as
+"no departments" — a false negative on an artifact this skill wrote. The envelope
+layer now goes through one shared normalizer,
+`shared-utils/departments_payload.py`: a list is used, an object carrying a
+`departments` list is unwrapped, and anything else fails loudly naming the path
+and the top-level type. A dict's keys are never iterated as departments.
+
+- `scripts/materialize-missing-departments.py` also closed a DATA-LOSS path. It
+  fell back to `existing = []` on the object shape and then wrote the merged list
+  back, overwriting the client's real departments and destroying
+  `removedWithProvenance`. It now unwraps, writes back in the shape it read, and
+  REFUSES to touch an artifact it cannot read rather than clobbering it.
+- `scripts/prove-zhe.py` (sr-b) no longer scores a wrapped artifact "present but
+  lists no departments"; `scripts/prove-board-join.py` and
+  `scripts/department-floor.py` no longer report chosen-source "none" on one;
+  `scripts/upgrade-company-config.py` no longer emits an empty `dept_kpis` block.
+
+Neither writer changed. Onboarding v25.1.57.
+
 ## [Unreleased] - 2026-09-21 - perf(persona-selector): Stage-D scores finalists concurrently
 
 Stage-D scored its finalists one at a time. In `llm` mode each finalist costs

@@ -2275,11 +2275,29 @@ fi
 # Phase 6b-seed (workspaces exist) in BOTH full and --update-only. Idempotent:
 # only inserts agents/tasks for workspaces that have none yet, so a built box is
 # never duplicated. WARN-only + state-recorded.
+#
+# STARTER TASKS ARE FULL-INSTALL ONLY. The seeder's per-workspace guard is "this
+# workspace has zero tasks", which on a MATURE board is true of every department
+# the client has simply never used. An --update-only code roll therefore dropped
+# fresh "Welcome to <dept>" cards into a live backlog months after install, and
+# the Command Center's grooming loop spawned failing "Author SOP: Welcome to X"
+# follow-on work off them. So --update-only passes --no-starter-tasks: companies
+# and dept-head agent rows are still ensured (idempotent identity/runtime rows),
+# but no content card is ever written into a board the client is already using.
 log "INFO" "phase=6e seed-dashboard-content: starting"
 SEED_DASH="$SKILL_DIR/scripts/seed-dashboard-content.py"
+SEED_DASH_ARGS=()
+if [[ "$UPDATE_ONLY" == "true" ]]; then
+  SEED_DASH_ARGS+=(--no-starter-tasks)
+  log "INFO" "phase=6e seed-dashboard-content: starter tasks SKIPPED -- update-only roll (companies + head agents still ensured; no welcome cards into a live backlog)"
+fi
 if [[ -f "$SEED_DASH" ]] && command -v python3 >/dev/null 2>&1; then
-  if COMPANY_NAME="${COMPANY_NAME:-}" python3 "$SEED_DASH" >>"$LOG_FILE" 2>&1; then
-    log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents + starter tasks seeded (Kanban non-empty)"
+  if COMPANY_NAME="${COMPANY_NAME:-}" python3 "$SEED_DASH" ${SEED_DASH_ARGS+"${SEED_DASH_ARGS[@]}"} >>"$LOG_FILE" 2>&1; then
+    if [[ "$UPDATE_ONLY" == "true" ]]; then
+      log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents ensured (starter tasks skipped: update-only)"
+    else
+      log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents + starter tasks seeded (Kanban non-empty)"
+    fi
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDashboardContentSeeded = true'; fi
   else
     log "WARN" "phase=6e seed-dashboard-content: exited non-zero (see $LOG_FILE) -- board may render empty columns"

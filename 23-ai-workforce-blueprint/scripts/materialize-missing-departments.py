@@ -122,6 +122,35 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+# The ONE departments.json envelope normalizer (shared-utils/departments_payload.py).
+# departments.json legitimately ships as a bare LIST *or* as an object wrapping
+# that list under "departments" (retire-confirmed-decline.sh's
+# {removedWithProvenance, departments}; a build envelope adding company /
+# total_departments / total_roles). Reading the object shape as "no departments"
+# here was a data-loss path: `existing` fell back to [] and the merged write
+# below then OVERWROTE the client's real artifact with only the appended ids.
+sys.path.insert(0, str(SCRIPT_DIR.parent.parent / "shared-utils"))
+try:
+    from departments_payload import (  # type: ignore
+        MalformedDepartmentsError,
+        normalize_departments as _unwrap_departments,
+    )
+except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
+    class MalformedDepartmentsError(ValueError):  # type: ignore[no-redef]
+        pass
+
+    def _unwrap_departments(data, path=None):  # type: ignore[misc]
+        if data is None:
+            return None
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("departments"), list):
+            return data["departments"]
+        raise MalformedDepartmentsError(
+            f"departments.json: expected a list, or an object with a 'departments' "
+            f"list; got {type(data).__name__}" + (f" (path: {path})" if path else "")
+        )
+
 
 def _load_module(mod_name, filename):
     """Import a hyphenated sibling script as a module (mirrors
@@ -256,12 +285,24 @@ def sync_chosen_artifact(departments_dir, closed_ids):
     bw = _load_module("build_workforce__materialize_join", "build-workforce.py")
     company_dir = Path(departments_dir).parent
     artifact_path = company_dir / "departments.json"
+    envelope = None
     try:
-        existing = json.loads(artifact_path.read_text(encoding="utf-8"))
+        loaded = json.loads(artifact_path.read_text(encoding="utf-8"))
+        # Preserve the wrapper when the artifact is the retire-script / envelope
+        # dict shape, so appending never discards removedWithProvenance.
+        if isinstance(loaded, dict) and isinstance(loaded.get("departments"), list):
+            envelope = loaded
+        existing = _unwrap_departments(loaded, path=str(artifact_path))
         if not isinstance(existing, list):
             existing = []
-    except (OSError, ValueError):
+    except (OSError, json.JSONDecodeError):
         existing = []
+    except MalformedDepartmentsError as exc:
+        # The artifact exists but carries no readable department list. Writing a
+        # merged list here would CLOBBER whatever it really holds. Refuse.
+        print(f"[materialize] refusing to touch the chosen artifact: {exc}",
+              file=sys.stderr)
+        return []
 
     known = set()
     for e in existing:
@@ -292,9 +333,12 @@ def sync_chosen_artifact(departments_dir, closed_ids):
     if not appended:
         return []
 
+    # Write back in the shape we read: a wrapped artifact stays wrapped so the
+    # retire-script's removedWithProvenance audit trail survives the append.
+    payload = dict(envelope, departments=merged) if envelope is not None else merged
     try:
         company_dir.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        artifact_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except OSError:
         return []  # fail-soft: a chosen-artifact write failure must never abort remediation
 

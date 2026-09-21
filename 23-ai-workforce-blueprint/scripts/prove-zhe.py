@@ -336,6 +336,23 @@ except Exception:
     # per AF3; detect_platform handles it when importable).
     _SECRETS_FILES = [os.path.expanduser("~/.openclaw/secrets/.env")]
 
+# The ONE departments.json envelope normalizer. The chosen artifact legitimately
+# ships as a bare LIST *or* as an object wrapping that list under "departments"
+# (retire-confirmed-decline.sh's {removedWithProvenance, departments}; a build
+# envelope adding company / total_departments / total_roles). Gating on
+# isinstance(data, list) scored the object shape as "present but lists no
+# departments" — a RED verdict on a valid artifact.
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils"))
+try:
+    from departments_payload import departments_or_empty as _departments_or_empty  # type: ignore
+except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
+    def _departments_or_empty(data, path=None):  # type: ignore[misc]
+        if isinstance(data, dict):
+            wrapped = data.get("departments")
+            return wrapped if isinstance(wrapped, list) else []
+        return data if isinstance(data, list) else []
+
 
 def _load_secrets():
     global _SECRETS_CACHE
@@ -1069,6 +1086,7 @@ def check_standard_ready_chosen_artifact(fs, company_dir, departments_dir):
             "pass": False, "artifact_present": True, "artifact_path": artifact,
             "detail": "departments.json is unparseable",
         }
+    data = _departments_or_empty(data, path=artifact)
     slugs = []
     if isinstance(data, list):
         for entry in data:

@@ -64,6 +64,26 @@ def find_zhc_company_dir() -> Path | None:
     return best[1] if best else None
 
 
+def _unwrap_departments(data, path=None) -> list:
+    """The ONE departments.json envelope normalizer (shared-utils/departments_payload.py).
+
+    departments.json legitimately ships as a bare LIST *or* as an object wrapping
+    that list under "departments" (retire-confirmed-decline.sh's
+    {removedWithProvenance, departments}; a build envelope adding company /
+    total_departments / total_roles). Gating on isinstance(data, list) read the
+    object shape as "no departments" and emitted an empty dept_kpis block.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared-utils"))
+    try:
+        from departments_payload import departments_or_empty  # type: ignore
+    except ImportError:  # pragma: no cover - box predating departments_payload.py
+        if isinstance(data, dict):
+            wrapped = data.get("departments")
+            return wrapped if isinstance(wrapped, list) else []
+        return data if isinstance(data, list) else []
+    return departments_or_empty(data, path=path)
+
+
 def find_departments_json(company_dir: Path | None) -> list:
     """Try to load departments.json. Returns list of dept entry dicts."""
     candidates: list[Path] = []
@@ -78,7 +98,7 @@ def find_departments_json(company_dir: Path | None) -> list:
     for p in candidates:
         if p.exists():
             try:
-                data = json.loads(p.read_text())
+                data = _unwrap_departments(json.loads(p.read_text()), path=str(p))
                 if isinstance(data, list) and data:
                     return data
             except Exception:

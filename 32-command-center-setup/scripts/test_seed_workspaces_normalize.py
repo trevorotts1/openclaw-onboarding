@@ -2,9 +2,16 @@
 
 Guards the fix for the `sync-extensions.sh --converge` Step-4 crash:
 `'str' object has no attribute 'get'` raised when departments.json contained
-string entries instead of dicts. The normalizer must accept all three real-world
-shapes (list-of-dicts, list-of-strings, dict-of-dicts) and emit list-of-dicts
-with an `id` and a derived `name` on every entry.
+string entries instead of dicts. The normalizer must accept all four real-world
+shapes (list-of-dicts, list-of-strings, dict-of-dicts, and an object WRAPPING the
+list under "departments") and emit list-of-dicts with an `id` and a derived
+`name` on every entry.
+
+It also guards the second defect: the old dict branch folded EVERY key of a
+wrapped/envelope payload in as a department id, which seeded bogus workspaces
+named "Company", "Total Departments", "Total Roles" and "Departments" onto a live
+client board. An object that carries no department list must now FAIL LOUDLY —
+naming the path and the top-level type — never quietly become departments.
 """
 import importlib.util
 import os
@@ -54,9 +61,88 @@ def test_dict_with_slug_key_only():
     assert out[0]["name"] == "Operations"
 
 
-def test_none_and_non_list_return_safely():
+def test_none_returns_safely():
+    # None means "nothing was loaded" — not malformed. Still a quiet None.
     assert normalize(None) is None
-    assert normalize(42) is None
+
+
+def test_scalar_payload_fails_loudly():
+    # A bare scalar at the top level of departments.json is a malformed file,
+    # not an empty one. It must name the path and the top-level type, never
+    # return a quiet None that a caller reads as "no departments".
+    with pytest.raises(_sw.MalformedDepartmentsError) as exc:
+        normalize(42, path="/box/zero-human-company/acme/departments.json")
+    assert "int" in str(exc.value)
+    assert "/box/zero-human-company/acme/departments.json" in str(exc.value)
+
+
+# ─── The wrapped-object (envelope) shape ─────────────────────────────────────
+# A client Mac carried
+#   {"company": ..., "total_departments": 34, "total_roles": 416,
+#    "departments": [...]}
+# The old dict branch folded EVERY key in as a department id, so the board got
+# four bogus workspaces named "Company", "Total Departments", "Total Roles" and
+# "Departments". These guard that it can never happen again.
+
+_REAL_DEPTS = [
+    {"id": "dept-ceo", "slug": "ceo", "name": "CEO"},
+    {"id": "dept-marketing", "slug": "marketing", "name": "Marketing"},
+]
+_BOGUS_NAMES = {"Company", "Total Departments", "Total Roles", "Departments"}
+
+
+def test_envelope_with_departments_list_is_unwrapped():
+    out = normalize({
+        "company": "Acme Industries",
+        "total_departments": 2,
+        "total_roles": 18,
+        "departments": _REAL_DEPTS,
+    })
+    assert [d["id"] for d in out] == ["dept-ceo", "dept-marketing"]
+    assert _BOGUS_NAMES.isdisjoint({d["name"] for d in out})
+
+
+def test_retire_script_provenance_shape_is_unwrapped():
+    # retire-confirmed-decline.sh writes {removedWithProvenance, departments};
+    # build-workforce.py preserves that dict shape on later builds.
+    out = normalize({
+        "removedWithProvenance": [{"slug": "legal", "retiredAt": "2026-08-07"}],
+        "departments": _REAL_DEPTS,
+    })
+    assert [d["slug"] for d in out] == ["ceo", "marketing"]
+    assert "Removed With Provenance" not in {d["name"] for d in out}
+
+
+def test_envelope_without_departments_key_fails_loudly():
+    with pytest.raises(_sw.MalformedDepartmentsError) as exc:
+        normalize(
+            {"company": "Acme", "total_departments": 34, "total_roles": 416},
+            path="/box/zero-human-company/acme/departments.json",
+        )
+    msg = str(exc.value)
+    assert "/box/zero-human-company/acme/departments.json" in msg
+    assert "dict" in msg
+    assert "'company'" in msg  # the offending keys are named for the operator
+
+
+def test_departments_key_that_is_not_a_list_fails_loudly():
+    with pytest.raises(_sw.MalformedDepartmentsError):
+        normalize({"departments": {"marketing": {}}}, path="/x/departments.json")
+
+
+def test_envelope_keys_never_become_department_names():
+    # The exact regression: whatever happens, no normalizer output may carry a
+    # department derived from an envelope's metadata key.
+    for payload in (
+        {"company": "Acme", "total_departments": 2, "total_roles": 18,
+         "departments": _REAL_DEPTS},
+        {"removedWithProvenance": [], "departments": _REAL_DEPTS},
+    ):
+        out = normalize(payload)
+        produced = {d.get("id") for d in out} | {d.get("name") for d in out}
+        assert produced.isdisjoint(_BOGUS_NAMES)
+        assert produced.isdisjoint({"company", "total_departments", "total_roles",
+                                    "departments", "removedWithProvenance"})
 
 
 def test_seed_loop_does_not_crash_on_bare_strings(monkeypatch, tmp_path):
@@ -84,3 +170,41 @@ def test_seed_loop_does_not_crash_on_bare_strings(monkeypatch, tmp_path):
     rows = {r[0] for r in conn.execute("SELECT id FROM workspaces").fetchall()}
     conn.close()
     assert {"marketing", "sales", "operations"} <= rows
+
+
+def test_seed_loop_never_writes_envelope_keys_as_workspaces(tmp_path):
+    # End-to-end: the envelope shape that put "Company" / "Total Departments" /
+    # "Total Roles" / "Departments" workspaces on a live client board must now
+    # seed the REAL departments and nothing else.
+    import sqlite3
+    db = tmp_path / "mc.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT, slug TEXT, industry TEXT, config TEXT);
+        CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT UNIQUE,
+            description TEXT, icon TEXT, company_id TEXT);
+        """
+    )
+    conn.commit()
+    conn.close()
+    company_info = {
+        "name": "Test Co", "slug": "test-co", "industry": "",
+        "brand_primary": "#000", "brand_accent": "#fff", "brand_text": "#111",
+    }
+    payload = {
+        "company": "Test Co",
+        "total_departments": 2,
+        "total_roles": 18,
+        "departments": [
+            {"id": "dept-marketing", "slug": "marketing", "name": "Marketing"},
+            {"id": "dept-legal", "slug": "legal", "name": "Legal"},
+        ],
+    }
+    _sw.seed(str(db), normalize(payload), company_info)
+
+    conn = sqlite3.connect(db)
+    names = {r[0] for r in conn.execute("SELECT name FROM workspaces").fetchall()}
+    conn.close()
+    assert names == {"Marketing", "Legal"}, names
+    assert _BOGUS_NAMES.isdisjoint(names)
