@@ -1,3 +1,22 @@
+## [v25.1.53]  -  2026-09-21  -  Stage-D scores its finalists concurrently, so the selector stops dying at the spawn budget
+
+### Why
+A `--blend` run of the persona selector was profiled on a live client box. 43.7 seconds of its 46.6-second wall clock, 94%, sat inside `llm_score._post_chat` waiting on a socket: 22 sequential HTTPS chat calls, four per finalist, one per scoring layer. Other runs measured 206 and 258 seconds. The Command Center kills the selector at its spawn budget, so the blend never landed and content tasks stalled behind it. The work was never CPU-bound; it was a queue of network waits taken one at a time.
+
+### What changed
+- **`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`** - Stage-D's scoring list comprehension is now `score_personas()`, which maps `score_persona` over the finalists on a `ThreadPoolExecutor`. `executor.map` yields in INPUT order, not completion order, so the returned list is element-for-element what the comprehension produced and every downstream stage (variety sampling, perspective and craft bonuses, tie-breaks) is untouched. `PERSONA_SCORE_WORKERS` sets the width, default 6, capped at the finalist count; `PERSONA_SCORE_WORKERS=1` takes a literal sequential path that creates no thread at all.
+- **`shared-utils/semantic_task_fit.py`** - the task-embedding cache gained a lock, reached through one new `_task_embed()` used by both `semantic_task_fit()` and `semantic_persona_ids()`. Unlocked, every worker would have missed the cache at the same instant and fired its own Gemini embed call, turning the G13 "one embed per selection" contract into one embed per finalist. The lock also removes a race in which `_task_cache_get`'s `move_to_end` could hit a key an eviction had just popped.
+- **`shared-utils/llm_score.py`** - `_secret_helper()` sets its `_SECRET_HELPER_TRIED` latch only after `_SECRET_HELPER` holds its final value. Setting it first left a window where a second thread saw the latch with the module still `None` and silently degraded to exact-name-only credential resolution, so a key stored under an alias would not have resolved for that call.
+- The PRES-053 vendored copies under `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/` are re-vendored, so they stay byte-identical to their canonicals as `docs/LEGACY-RETIREMENT.md` requires and the presentation department gets the same fix.
+
+`decompose-task.py`'s sub-task loop is deliberately NOT parallelised. Its own comment states the ordering it depends on: each sub-task's `record_selection` write is what the NEXT sub-task's variety penalty and sticky-assignment read sees. Running the sub-tasks concurrently would have every one of them read a database missing its predecessors' picks, so the whole decomposition could converge on a single persona. That is a behaviour change, not a speed-up.
+
+### Risk
+Low. Nothing on the per-persona path writes: `apply_weight_overrides` is a read on its own per-call sqlite connection, and `llm_score`'s score cache likewise opens and closes a connection per call and swallows `sqlite3.Error`. `_COMPANY_CONFIG_CACHE` is keyed by the one config path every thread in a selection shares, so its worst race is a duplicate file read. An exception from a scorer still propagates rather than being absorbed by the pool. Heuristic mode gains the same overlap and loses nothing, since it makes no network calls.
+
+### Tests
+`tests/unit/stage-d-parallel-scoring.test.py` - five cases, hermetic: input order survives when the LAST persona is made the FASTEST; six personas that each block 0.2s finish inside 0.6s with six workers; `PERSONA_SCORE_WORKERS=1` runs on the calling thread; an empty and a single-persona list never ask for a pool; `scoring_mode` reaches the scorer on both paths; a raised exception still reaches the caller. Fail-first proven against the pre-fix comprehension: 1.19s, over the 0.6s bound. Pre-existing suites re-run green: `tests/unit/semantic-task-fit-lru.test.py` (8/8), `tests/unit/semantic-task-fit-failure-cache.test.py` (17/17), `tests/unit/persona-fallback-invariant.test.py` (8/8), `tests/unit/persona-grounding-health-probe.test.py` (21/21), `shared-utils/test_f25_llm_score_secrets.py` (31/31).
+
 ## [v25.1.52]  -  2026-09-18  -  An interview origin must be a hostname, never an IP address
 
 ### Why
