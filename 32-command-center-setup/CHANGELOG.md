@@ -1,5 +1,15 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.18 - 2026-09-21 - The installer finds the build state where it actually is
+
+Verified on the operator canary: `scripts/run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there `~/clawd`), while the real file lives at `~/.openclaw/workspace/.workforce-build-state.json`. With no state found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null` and the run exited 8 demanding an interactive interview on a fully built box.
+
+A configured path is a hint, not evidence. `shared-utils/resolve-oc-root.sh` gains `resolve_build_state_workspace()`, which returns the first candidate that actually contains the file — `OPENCLAW_WORKSPACE_PATH`, `$OC_ROOT/workspace`, `~/.openclaw/workspace`, `/data/.openclaw/workspace` — and records every path tried. `run-full-install.sh`, `scripts/materialize-dept-agents.sh` and `scripts/backfill-per-dept-healer.sh` all resolve through it, so no two scripts read different copies.
+
+When NO candidate has the file the installer falls back to the configured path and names every path searched. That is deliberate: a fresh install has no state file anywhere and the configured path is the correct place to write one.
+
+Also: v25.1.66's name fallback could match an ARCHIVED workspace and update it, resurrecting a department the client archived. Both lookups in `_find_existing_workspace` now exclude archived rows.
+
 ## v13.1.17 - 2026-09-21 - Archived departments stay archived, a renamed one stays one column, and the company split is legible
 
 Four findings from one client box during a v7.6.35 roll, measured by diffing the Command Center DB against the pre-deploy backup.

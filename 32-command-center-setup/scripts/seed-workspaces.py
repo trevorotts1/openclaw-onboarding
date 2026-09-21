@@ -666,15 +666,23 @@ def _find_existing_workspace(cur, dept_id, dept_name, company_id):
     name match can never reach across a tenant boundary.
     Returns (row id, how) or (None, None).
     """
+    # An ARCHIVED row is never a match. Updating one would resurrect a
+    # department the client archived, through the back door of a name match.
+    try:
+        live = " AND archived_at IS NULL" if any(
+            r[1] == "archived_at" for r in cur.execute("PRAGMA table_info(workspaces)")
+        ) else ""
+    except Exception:
+        live = ""
     row = cur.execute(
-        "SELECT id FROM workspaces WHERE (id=? OR slug=?) AND company_id=? LIMIT 1",
+        "SELECT id FROM workspaces WHERE (id=? OR slug=?) AND company_id=?" + live + " LIMIT 1",
         (dept_id, dept_id, company_id),
     ).fetchone()
     if row:
         return row[0], "slug"
     if dept_name:
         row = cur.execute(
-            "SELECT id FROM workspaces WHERE lower(name)=lower(?) AND company_id=? LIMIT 1",
+            "SELECT id FROM workspaces WHERE lower(name)=lower(?) AND company_id=?" + live + " LIMIT 1",
             (dept_name, company_id),
         ).fetchone()
         if row:
