@@ -1,3 +1,50 @@
+## [v25.1.65]  -  2026-09-21  -  A department's own slug beats the map key it is filed under, so one department stops being two
+
+### Why
+Verified on a client box. The artifact's department map is keyed `<name>-dept` while each entry names its actual folder:
+
+```
+"departments": {
+  "account-management-dept": {"name": "Account Management",
+                              "folder": "account-management", ...},
+  ...
+}
+```
+
+v25.1.61 folded that map using the KEY as the entry's `id` and `slug`. So all 34 departments were slugged `…-dept`, while readers that take the slug off the entry produced the bare name. One department, two identities.
+
+Nothing collapsed the pair. `_canonical_dept_slug()` in this repo does strip a trailing `-dept`, so `seed-workspaces.py` happened to write the bare slug and looked fine. The reader that does not canonicalise, the Command Center's `phase=6c sync-departments`, wrote `…-dept` verbatim. The board gained a duplicate workspace for every department: **40 columns became 74**.
+
+That split is also what the client's `department company belongs to a different company` refusal was standing on. Two readers disagreeing about a department's identity is the whole defect; one of them masking it locally is not a fix.
+
+### What changed
+- **`shared-utils/departments_payload.py`** is re-mirrored against the Command Center twin at `f73ae663` (CC v7.6.35), byte-identical from the `WHY THIS EXISTS` heading down. The fold now resolves identity by precedence:
+
+  ```
+  id  ->  slug  ->  folder  ->  the map key
+  ```
+
+  The key is used ONLY when the entry carries none of the three, and a slug taken FROM the key loses a trailing `-dept`. An entry's own value is never rewritten, never trimmed, never stripped: an entry whose own slug really is `legal-dept` keeps it. `id` and `slug` are filled from the resolved slug only when the entry carries none of its own.
+
+- **All six vendored `except ImportError` copies** carry the same precedence: `seed-workspaces.py` and `materialize-missing-departments.py` (strict), and `department-floor.py`, `prove-zhe.py`, `prove-board-join.py`, `upgrade-company-config.py` (lenient). Each was extracted and executed against the client shape and four precedence cases; all six agree with the shared module, difference count zero.
+
+### The fix belongs in the fold, not in the readers
+`seed-workspaces.py` never showed the duplicate, because `_canonical_dept_slug()` rescued the bad slug on the way to the insert. That is exactly why the fold is where this is fixed: its output is canonical on the way OUT, so no reader has to rescue it and no reader can disagree. Both sides of the client's board now derive the same slug from the same module, which is the condition the `phase=6c` sync and `seed-workspaces.py` were failing.
+
+### Tests
+`shared-utils/test_departments_payload.py` and `32-command-center-setup/scripts/test_seed_workspaces_normalize.py`: **27 to 43 passing.**
+
+New: the real client artifact folds to `account-management` / `audio`; the full precedence table as four parametrised cases (own `id` wins over slug, folder and key; own `slug` wins over folder and key; `folder` wins over the key; a bare key is used as-is); `-dept` stripped ONLY when the slug came from the key, proven both ways in one test; a key that is only the suffix is kept whole; seeding the real artifact twice on a hermetic sqlite tree yields bare slugs and an identical row set on the second run; and the invariant that the fold's output already equals `_canonical_dept_slug()` of itself, so every reader agrees without rescuing anything.
+
+**Negative control**: the old key-wins fold is rerun on the same artifact and must produce `account-management-dept`, `audio-dept`, `legal-dept`, values that are NOT canonical and disagree with the new fold on every department. That is the drift, reproduced in the suite.
+
+Three assertions written in v25.1.61 asserted the key-wins behaviour and were updated rather than deleted; each now carries a comment pointing at the precedence test that covers the client shape.
+
+The reconcile path was checked directly: `reconcile_command_center_runtime.py` and `fleet_refresh_runner.py` both import the shared module and both return `account-management`, `audio`, `legal` for the client artifact.
+
+### Pre-existing, untouched
+Five failures reproduce identically on pristine `c718291ca`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `test_dept_scripts_suffix_coverage.py`, one in `tests/unit/test_interview_invitation.py`.
+
 ## [v25.1.64]  -  2026-09-21  -  The dirty-checkout rule moves back inline, because a helper is an undefined command inside the blocks that carry it
 
 ### Why

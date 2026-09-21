@@ -41,10 +41,13 @@ def test_departments_key_holding_a_slug_keyed_map_is_folded():
             "audio-dept": {"name": "Audio"},
         },
     })
+    # No entry carries id/slug/folder, so the key is the only identity — minus
+    # its "-dept" suffix. See test_entry_identity_beats_the_map_key for the
+    # client artifact where the entry DOES name its folder.
     assert out == [
-        {"name": "Account Management", "id": "account-management-dept",
-         "slug": "account-management-dept"},
-        {"name": "Audio", "id": "audio-dept", "slug": "audio-dept"},
+        {"name": "Account Management", "id": "account-management",
+         "slug": "account-management"},
+        {"name": "Audio", "id": "audio", "slug": "audio"},
     ]
 
 
@@ -107,3 +110,47 @@ def test_lenient_wrapper_never_raises_but_stays_loud(capsys):
                                   path="/x/departments.json")
     assert out == []
     assert "/x/departments.json" in capsys.readouterr().err
+
+
+# ─── Entry identity beats the map key (mirrors CC v7.6.35) ──────────────────
+# Precedence: id -> slug -> folder -> the map key. The key is used ONLY when
+# the entry carries none of the three, and a slug taken FROM the key loses a
+# trailing "-dept". An entry's own value is never rewritten.
+
+def test_entry_identity_beats_the_map_key():
+    # The real client artifact: keyed "<name>-dept", each entry naming its folder.
+    out = dp.normalize_departments({
+        "company": "Acme", "total_departments": 2, "total_roles": 34,
+        "departments": {
+            "account-management-dept": {"name": "Account Management",
+                                        "folder": "account-management"},
+            "audio-dept": {"name": "Audio", "folder": "audio"},
+        },
+    })
+    assert [d["id"] for d in out] == ["account-management", "audio"]
+    assert [d["slug"] for d in out] == ["account-management", "audio"]
+
+
+@pytest.mark.parametrize("entry,want_id,want_slug", [
+    ({"id": "dept-m", "slug": "mkt", "folder": "f"}, "dept-m", "mkt"),
+    ({"slug": "mkt", "folder": "f"},                 "mkt",    "mkt"),
+    ({"folder": "f"},                                "f",      "f"),
+    ({"name": "M"},                                  "m",      "m"),
+])
+def test_fold_precedence_id_slug_folder_key(entry, want_id, want_slug):
+    out = dp.normalize_departments({"departments": {"m-dept": entry}})
+    assert out[0]["id"] == want_id
+    assert out[0]["slug"] == want_slug
+
+
+def test_dept_suffix_stripped_only_when_the_slug_came_from_the_key():
+    # An entry's OWN value keeps its suffix; only a key-derived slug loses it.
+    own = dp.normalize_departments({"departments": {"x": {"slug": "legal-dept"}}})
+    assert own[0]["slug"] == "legal-dept"
+    from_key = dp.normalize_departments({"departments": {"legal-dept": {"name": "L"}}})
+    assert from_key[0]["slug"] == "legal"
+
+
+def test_a_key_that_is_only_the_suffix_is_kept_whole():
+    out = dp.normalize_departments({"departments": {"-dept": {"name": "Odd"}}})
+    assert out[0]["id"] == "-dept"

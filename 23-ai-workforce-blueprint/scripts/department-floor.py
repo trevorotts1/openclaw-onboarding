@@ -118,17 +118,28 @@ try:
 except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
     def _departments_or_empty(data, path=None):  # type: ignore[misc]
         # KEEP IN SYNC with shared-utils/departments_payload.py. A slug-keyed
-        # object of department objects folds to a list (the key fills id/slug
-        # only when missing); anything with a non-object value is a metadata
-        # envelope whose keys are never departments.
+        # object of department objects folds to a list; the ENTRY's own
+        # id/slug/folder wins over the map key, and a slug taken FROM the key
+        # loses a trailing "-dept". Anything with a non-object value is a
+        # metadata envelope whose keys are never departments.
         if isinstance(data, dict):
             wrapped = data.get("departments", data)
             if isinstance(wrapped, list):
                 return wrapped
             if (isinstance(wrapped, dict) and wrapped
                     and all(isinstance(v, dict) for v in wrapped.values())):
-                return [dict(v, **{"id": v.get("id", k), "slug": v.get("slug", k)})
-                        for k, v in wrapped.items()]
+                out = []
+                for k, v in wrapped.items():
+                    e = dict(v)
+                    r = next((x.strip() for x in (e.get("id"), e.get("slug"),
+                              e.get("folder")) if isinstance(x, str) and x.strip()), None)
+                    if r is None:
+                        r = k.strip()
+                        if r.endswith("-dept") and len(r) > 5:
+                            r = r[:-5]
+                    e.setdefault("id", r); e.setdefault("slug", r)
+                    out.append(e)
+                return out
             return []
         return data if isinstance(data, list) else []
 
