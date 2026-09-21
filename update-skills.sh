@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.69"
+ONBOARDING_VERSION="v25.1.70"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1860,7 +1860,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.69 - safe_json_edit
+# v25.1.70 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -10246,6 +10246,21 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       echo "    then re-run the updater to pick up the Command Center refresh." >&2
       echo "    Skills content is current; the rest of this update continues normally." >&2
     else
+      # CONTRACT CHECK (WARN-only on an update roll). The CC ships
+      # scripts/openclaw-contract-check.mjs, which proves the config/runtime
+      # contract this updater is about to refresh against. A code-only roll
+      # must never be blocked by it -- report and continue; run-full-install.sh
+      # is where a FULL install makes it fatal.
+      _CC_CONTRACT="$_CC_DIR/scripts/openclaw-contract-check.mjs"
+      if [ -f "$_CC_CONTRACT" ] && command -v node >/dev/null 2>&1; then
+        if node "$_CC_CONTRACT" >>"$LOG_FILE" 2>&1; then
+          echo "  ✓ CC contract check passed"
+        else
+          echo "  ⚠ CC contract check reported issues (WARN on an update roll; see $LOG_FILE). Refresh continues." >&2
+        fi
+      elif [ -f "$_CC_CONTRACT" ]; then
+        echo "  — CC contract check present but node is not on PATH — skipped (not a failure)."
+      fi
       echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
       # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
       # layouts silently refreshed $HOME/projects/command-center instead (or did

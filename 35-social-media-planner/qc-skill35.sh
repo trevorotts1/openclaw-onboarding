@@ -42,11 +42,23 @@ warn_only() {
   fi
 }
 
+# Safe env reader: parses KEY=VALUE, never sources a client-owned file.
+_ENVLOAD_C=""
+for _c in "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../shared-utils/env-load.sh" \
+          "$HOME/.openclaw/skills/shared-utils/env-load.sh" \
+          "/data/.openclaw/skills/shared-utils/env-load.sh"; do
+  [ -f "$_c" ] && { _ENVLOAD_C="$_c"; break; }
+done
+# shellcheck source=/dev/null
+[ -n "$_ENVLOAD_C" ] && . "$_ENVLOAD_C"
+
 if [ -f "$SECRETS_ENV" ]; then
   set +u
-  set -a
-  . "$SECRETS_ENV" 2>/dev/null || true
-  set +a
+  if declare -F env_load >/dev/null 2>&1; then
+    env_load "$SECRETS_ENV" || true
+  else
+    set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a
+  fi
   set -u
 fi
 # Default unset vars to empty so set -u doesn't blow up
