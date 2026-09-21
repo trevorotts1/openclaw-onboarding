@@ -1,3 +1,57 @@
+## [v25.1.63]  -  2026-09-21  -  Untracked files are not dirt, so a box with stray files finally gets its Command Center refresh
+
+### Why
+Verified on a client Mac. `update-skills.sh` printed
+
+```
+✗ [CC CURRENCY] state=dirty head=bc06e9c0 — Command Center has UNCOMMITTED
+  changes, so it cannot fast-forward and will NOT be refreshed
+```
+
+against a checkout whose `git status --porcelain` showed **zero modified tracked files**. All ten entries were untracked (`??`): old database safety copies, a leftover script, a scratch markdown. The Command Center's own `update.sh` pulled that same tree five times the same day, stashing and restoring around those files without complaint.
+
+Three separate Command Center gates each spelled "dirty" as `[ -n "$(git status --porcelain)" ]`. Porcelain lists untracked files too. So any box that had ever accumulated a stray file stopped receiving a Command Center refresh through the updater, silently and permanently, while every log line insisted the operator had uncommitted work to deal with.
+
+Untracked files cannot cause what those gates are protecting against. A fast-forward does not touch them. `reset --hard` does not touch them. A pull refuses only when it would overwrite one by name. The gates were refusing on a condition that was never the hazard.
+
+### What changed
+- **`update-skills.sh` — one definition of dirty, at the top of the file.** `cc_tracked_changes()` returns the porcelain lines for tracked changes only, and `cc_untracked_count()` counts the `??` entries. Dirty now means modified or staged TRACKED files. Untracked files are reported as a one-line INFO count and block nothing.
+
+  Single-sourced deliberately: the bug was three copies of the definition, so the fix is one definition the copies call.
+
+- **The three gates**, all in `update-skills.sh`:
+  - the `[CC CURRENCY]` probe, which reported `state=dirty` and wrote that state into the marker file post-roll readers consume;
+  - the fast-path repair, which skipped its `reset --hard` to `origin/main`;
+  - the DIRTY-CHECKOUT GUARD, the one that actually skips the refresh before `run-full-install.sh --update-only` runs its `git pull`.
+
+  The first and third call `cc_tracked_changes()`. The fast-path carries the identical rule **inline** rather than calling it, because that block is extracted verbatim and sourced standalone by `tests/unit/content-recheck-convergence-probes.test.sh` and must stay self-contained. A comment at the inline copy names the helper as the definition of record, and the new test asserts the inline rule is present, so the two cannot quietly diverge.
+
+- **Both operator-facing refusals now say TRACKED**, so the message matches what the gate actually tested.
+
+### Not changed, deliberately
+The refusal for genuinely modified tracked files. That protection is correct and is asserted by three of the new tests: a modified file, a staged file, and a mixed tree where an untracked file must not mask a real tracked edit.
+
+`update-skills.sh`'s self-sync check on the **onboarding** checkout (the one guarding a `git reset --hard` of this repo) still treats any porcelain output as dirty. It is a different repository, a different hazard, and was not part of the report.
+
+`32-command-center-setup/scripts/run-full-install.sh` has **no** porcelain or dirty check to align. Searched: every `status --porcelain` occurrence in every `*.sh` in the repo. The only production hits are the four in `update-skills.sh`; the DIRTY-CHECKOUT GUARD that mentions `run-full-install.sh` lives in `update-skills.sh` and guards the call into it.
+
+### Tests
+**`tests/unit/cc-currency-untracked-is-not-dirty.test.sh`, 17 assertions, new.** It extracts both helpers verbatim from `update-skills.sh` and fails loudly (exit 2) if either is renamed, so it cannot silently test nothing. Fixtures are real `git init` repositories, so the assertions run against real porcelain output rather than a mocked string.
+
+- untracked-only, rebuilt with the same ten strays the client box carried: no tracked changes, count 10, refresh proceeds;
+- modified tracked file: still dirty, refusal still fires;
+- staged tracked file: dirty;
+- clean tree: clean;
+- mixed tree: the tracked edit still refuses while the untracked file is counted separately;
+- every gate is checked at source level for the tracked-only rule, and no gate may assign unfiltered porcelain;
+- both refusal messages and both INFO lines are asserted by exact string.
+
+**Pre-fix control**: the old one-line definition is rerun against the same untracked-only fixture and must still call it dirty. It does, which is the live incident reproduced in the suite, and test 1 is what proves the fix no longer does it.
+
+Wired into `qc-static.yml` beside the sibling Command Center regression lock. An unwired test never runs.
+
+Green alongside on this branch: `update-skills-full-scripts-tree`, `update-skills-pending-flag-staleness`, `update-skills-resume-cron`, `update-skills-u6c-set-e-continuation`, `cc-done-degraded-retry-gate`, `cc-tunnel-ingress-guard`, `cc-watchdog-cron-registration`, and `content-recheck-convergence-probes` 61/61. That last one **failed 13 assertions** on the first attempt at this fix, because routing the fast-path through a top-level helper broke the self-contained block it extracts. That is what the inline copy is for, and it is why the comment there exists. `bash -n` clean on `update-skills.sh` and `run-full-install.sh`.
+
 ## [v25.1.62]  -  2026-09-21  -  The departments normalizer is re-mirrored against the Command Center twin, so one artifact gets one refusal message
 
 ### Why

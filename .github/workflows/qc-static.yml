@@ -1347,6 +1347,13 @@ jobs:
           bash tests/unit/cc-done-degraded-retry-gate.test.sh
           echo "✓ cc-done-degraded-retry-gate.test.sh (Issue #12) all pass"
 
+      - name: "CC currency gate: untracked files are not dirt (v25.1.63)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/cc-currency-untracked-is-not-dirty.test.sh
+          echo "✓ cc-currency-untracked-is-not-dirty.test.sh all pass"
+
       - name: "qc-completeness silent-maintenance guard regression lock (v17.0.18)"
         shell: bash
         run: |
