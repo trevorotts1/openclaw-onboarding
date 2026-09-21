@@ -1,3 +1,39 @@
+## [v25.1.69]  -  2026-09-21  -  The parity guard can see the roster it is checking, and a department folder stops becoming a doubled agent id
+
+### Why
+Three findings from the client box at the v25.1.66 skills roll.
+
+**1. The parity guard was blind to the roster.** `guard-department-runtime-parity.py` read only `agents.list`. The box carries `agents.entries` (100 entries, 66 of them `dept-` prefixed). On an entries-mode box the guard therefore saw **zero** agent ids and reported **every** department as having no runtime, which failed the roll. That is the whole reason phase 6e2 was red, and it is a bigger defect than the archived handling it was blamed on.
+
+  The archived exclusion was already correct: `archived_at IS NOT NULL` rows have been excluded with `"reason": "archived"` since migration 095's guard landed. Proven with a fixture rather than assumed.
+
+**2. The runtime materializer wrote doubled agent ids.** `materialize-dept-agents.sh` keys `discovered` on the raw department FOLDER name and builds `f"dept-{slug}"`. The client's folders are named `<name>-dept`, the same key-vs-folder shape phase 6c had, so 22 rows landed as `dept-app-development-dept`. Nothing could match those to a workspace.
+
+**3. A department with no live workspace still got a runtime entry**, and two were attributed to the `default` workspace because `engineering` and `master-orchestrator` had no matching active row.
+
+### What changed
+- **`guard-department-runtime-parity.py`** reads `agents.entries` as well as `agents.list`, taking both the object KEY and each entry's own `id`. A genuinely missing runtime is still a FAIL, asserted by its own test.
+
+- **`materialize-dept-agents.sh`** strips a leading `dept-` or trailing `-dept` from the folder name at the scan, so the agent id can never carry the affix twice.
+
+  This is **`_strip_dept_affix()`, not `canonical_dept_slug()`**, and the difference is load-bearing. The first attempt used the full canonicaliser and broke `materialize-dept-agents-roster-shape.test.sh` T4: a folder named `Sales & Marketing` was DROPPED, because case, spaces, `&` and agent-id collision detection are already handled downstream where the entries key is built, and normalising early takes that step's input away. Affix only; everything else stays where it already worked. A test pins that `Sales & Marketing` survives this step untouched.
+
+- **The materializer skips a department with no ACTIVE workspace row**, with one log line naming it. The board is read through the same archived-aware query; when no database is readable it writes everything, exactly as before, because a missing database must never silently empty a client's runtime roster.
+
+- **A parity finding is no longer a failed refresh.** On an `--update-only` roll, `run-full-install.sh` now WARNs and lets the roll finish; the updater prints `parity guard WARN: <n> department(s) ... CC refresh itself SUCCEEDED` instead of `Command Center refresh failed or rolled back`. The pull, build and restart had all succeeded; saying the app was broken when only the roster disagreed sent the operator after the wrong thing. A FULL install still refuses, because a fresh box must not ship a board whose departments have no runtime.
+
+### Tests
+**`32-command-center-setup/scripts/test_runtime_parity_and_slug.py`, 16 assertions, new.** Real sqlite boards and real openclaw.json files.
+
+The guard reads entries, still reads list, reads an entry whose `id` differs from its key, and still fails on a genuinely missing runtime; an archived workspace is ignored rather than counted missing, and an archived-only board passes; the affix strip handles the client's shape, an already-prefixed name, a bare name and a mixed-case affix, and leaves `Sales & Marketing` alone; the scan uses the stripper; the no-live-workspace skip runs before the entry is written and is conditional on having read the board; the update-only WARN and the full-install refusal both exist, in that order.
+
+**Mutation-proved**: removing the entries reader and restoring the raw folder name turns **4 assertions red**, including the archived case, which is only green because the guard can now see the roster at all.
+
+Green alongside: `materialize-dept-agents-roster-shape` (the suite that caught the over-normalisation), `materialize-dept-agents-company-scope`, `test-updater-traps-1-and-3` 48/48, `content-recheck-convergence-probes` 61/61, `build-state-path-resolution` 14/14, `cc-currency-untracked-is-not-dirty`. 304 Python tests pass across Skill 32 and shared-utils. `bash -n` clean on both edited shell files.
+
+### Pre-existing, untouched
+Three failures in `shared-utils/test_e10_engine_drift_guard.py` reproduce on pristine `c31a6b1c0`.
+
 ## [v25.1.68]  -  2026-09-21  -  The v25.1.67 prose uses the standard vocabulary, so the docs-language guard goes green
 
 ### Why

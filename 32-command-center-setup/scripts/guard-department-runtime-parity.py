@@ -239,14 +239,33 @@ def load_agent_ids(config_path):
     except (json.JSONDecodeError, OSError) as e:
         return False, None, f"openclaw.json unreadable/malformed ({config_path}): {e}"
 
-    agent_list = (cfg.get("agents") or {}).get("list") or []
-    if not isinstance(agent_list, list):
-        return False, None, f"openclaw.json agents.list is not a list ({config_path})"
-
+    agents = cfg.get("agents") or {}
     ids = set()
+
+    # agents.entries is the MODERN roster: an object keyed by agent id. Reading
+    # only agents.list saw ZERO agents on every entries-mode box, so the guard
+    # reported EVERY department as missing its runtime and failed the roll --
+    # measured on a client box carrying 100 entries, 66 of them dept-prefixed.
+    entries = agents.get("entries")
+    if isinstance(entries, dict):
+        for key, rec in entries.items():
+            if key:
+                ids.add(str(key).strip().lower())
+            if isinstance(rec, dict) and rec.get("id"):
+                ids.add(str(rec["id"]).strip().lower())
+
+    agent_list = agents.get("list") or []
+    if not isinstance(agent_list, list):
+        if not isinstance(entries, dict):
+            return False, None, f"openclaw.json agents.list is not a list ({config_path})"
+        agent_list = []
     for a in agent_list:
         if isinstance(a, dict) and a.get("id"):
             ids.add(str(a["id"]).strip().lower())
+
+    if not isinstance(entries, dict) and not agents.get("list"):
+        # Neither roster shape present: report the shapes checked, not a bare zero.
+        return True, ids, None
     return True, ids, None
 
 

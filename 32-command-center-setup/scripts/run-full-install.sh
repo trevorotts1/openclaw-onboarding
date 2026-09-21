@@ -2458,9 +2458,29 @@ try:
 except Exception:
     sys.stdout.write('<unparseable guard output -- see log>')
 " 2>/dev/null || echo "<unparseable guard output -- see log>")"
-    log "ERROR" "phase=6e2 department-runtime-parity: FAIL (rc=$DEPT_PARITY_RC) -- department(s) with no matching runtime: $DEPT_PARITY_NAMES"
+    DEPT_PARITY_N="$(printf '%s' "$DEPT_PARITY_OUT" | python3 -c "
+import json, sys
+try:
+    sys.stdout.write(str(len(json.load(sys.stdin).get('mismatches', []))))
+except Exception:
+    sys.stdout.write('?')
+" 2>/dev/null || echo "?")"
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = false'; fi
-    fail_install "phase=6e2: department-runtime-parity guard found department(s) with a board row but NO matching OpenClaw runtime entry: ${DEPT_PARITY_NAMES} (rc=$DEPT_PARITY_RC; see $LOG_FILE for full detail; run materialize-dept-agents.sh then re-run install)"
+    # A parity finding is NOT a failed refresh. On an --update-only roll the
+    # pull, build and restart all succeeded; reporting that as "Command Center
+    # refresh failed or rolled back" told the operator the app was broken when
+    # only the runtime roster disagreed with the board. Measured on a client
+    # box, where every department was reported missing because the guard could
+    # not read agents.entries at all. Warn, record, and let the roll finish; a
+    # FULL install still refuses, because a fresh box must not ship a board
+    # whose departments have no runtime.
+    if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+      log "WARN" "phase=6e2 department-runtime-parity: WARN (rc=$DEPT_PARITY_RC) -- ${DEPT_PARITY_N} department(s) with no matching runtime: $DEPT_PARITY_NAMES. The Command Center itself refreshed successfully; run materialize-dept-agents.sh to reconcile."
+      echo "  ⚠ parity guard WARN: ${DEPT_PARITY_N} department(s) have a board row but no matching runtime entry (${DEPT_PARITY_NAMES}). CC refresh itself SUCCEEDED." >&2
+    else
+      log "ERROR" "phase=6e2 department-runtime-parity: FAIL (rc=$DEPT_PARITY_RC) -- department(s) with no matching runtime: $DEPT_PARITY_NAMES"
+      fail_install "phase=6e2: department-runtime-parity guard found department(s) with a board row but NO matching OpenClaw runtime entry: ${DEPT_PARITY_NAMES} (rc=$DEPT_PARITY_RC; see $LOG_FILE for full detail; run materialize-dept-agents.sh then re-run install)"
+    fi
   fi
 else
   log "WARN" "phase=6e2 department-runtime-parity: $DEPT_PARITY_GUARD not found (or python3 missing) -- skipping (Skill 32 not at the version that ships this guard)"
