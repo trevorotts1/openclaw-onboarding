@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.63"
+ONBOARDING_VERSION="v25.1.64"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -186,7 +186,7 @@ LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 # ============================================================
 
 # ============================================================
-#  WHAT "DIRTY" MEANS FOR A CHECKOUT WE REFUSE TO TOUCH
+#  WHAT "DIRTY" MEANS FOR A COMMAND CENTER CHECKOUT WE REFUSE TO TOUCH
 #
 #  A checkout is dirty when TRACKED files are modified or staged. Untracked
 #  files are NOT dirt. `git status --porcelain` lists both, and three separate
@@ -197,27 +197,32 @@ LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 #  modified tracked files, ten untracked, refresh skipped every run, while the
 #  Command Center's own update.sh pulled that same tree five times the same day.
 #
-#  Untracked files cannot block what these gates are protecting against: a
-#  fast-forward does not touch them, and a pull only refuses when it would
-#  overwrite one by name. The refusal for genuinely modified TRACKED files
-#  stands unchanged -- uncommitted client work is load-bearing.
+#  Untracked files cannot block what these gates protect against: a
+#  fast-forward does not touch them, `reset --hard` does not touch them, and a
+#  pull refuses only when it would overwrite one by name. The refusal for
+#  genuinely modified TRACKED files stands unchanged -- uncommitted client work
+#  is load-bearing.
 #
-#  Single-sourced here on purpose: the bug was three copies of the definition.
+#  THE CANONICAL SPELLING, used verbatim at all three gates:
+#
+#      git -C "$DIR" status --porcelain 2>/dev/null | grep -v '^??' || true
+#
+#  It is written INLINE at each gate rather than factored into a function on
+#  purpose. All three gates live inside marker-delimited blocks that
+#  scripts/test-updater-traps-1-and-3.sh and
+#  tests/unit/content-recheck-convergence-probes.test.sh extract VERBATIM and
+#  source STANDALONE; a call to a top-level helper is an undefined command
+#  there, which silently evaluates to "clean" and lets the gate through. That
+#  was measured, not guessed: routing them through a helper failed 13
+#  assertions in one suite and 5 in the other.
+#
+#  tests/unit/cc-currency-untracked-is-not-dirty.test.sh is what keeps the
+#  three copies honest -- it asserts each gate carries this exact rule and that
+#  no gate assigns unfiltered porcelain.
+#
+#  `|| true` is load-bearing: grep exits 1 when nothing matches, and under
+#  `set -o pipefail` that would sink the whole command substitution.
 # ============================================================
-
-# Echo the porcelain lines for TRACKED changes only (empty = tree is clean).
-# `|| true` twice: grep exits 1 when nothing matches, and under `set -o
-# pipefail` that would sink the whole substitution.
-cc_tracked_changes() {
-    git -C "$1" status --porcelain 2>/dev/null | grep -v '^??' || true
-}
-
-# Count untracked (`??`) entries. Reported as INFO, never a reason to refuse.
-cc_untracked_count() {
-    local _n
-    _n="$(git -C "$1" status --porcelain 2>/dev/null | grep -c '^??' || true)"
-    printf '%s' "${_n:-0}" | tr -d '[:space:]'
-}
 
 fleet_standing_resolve_slug() {
     # 1. explicit env  2. openclaw.json env.vars  3. hostname
@@ -1855,7 +1860,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.63 - safe_json_edit
+# v25.1.64 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4646,10 +4651,12 @@ u009_presentations_sync_check() {
     esac
 
     if _head="$(git -C "$_d" rev-parse --short HEAD 2>/dev/null)"; then :; else _head=""; fi
-    # TRACKED changes only — see cc_tracked_changes(). Untracked files are
-    # reported and do not make the checkout dirty.
-    _dirty="$(cc_tracked_changes "$_d")"
-    _untracked="$(cc_untracked_count "$_d")"
+    # TRACKED changes only — the canonical spelling, inline because this block
+    # must stay self-contained (see the header comment near the top of this
+    # file). Untracked files are reported and never make a checkout dirty.
+    _dirty="$(git -C "$_d" status --porcelain 2>/dev/null | grep -v '^??' || true)"
+    _untracked="$(git -C "$_d" status --porcelain 2>/dev/null | grep -c '^??' || true)"
+    _untracked="$(printf '%s' "${_untracked:-0}" | tr -d '[:space:]')"
 
     if [ -n "$_dirty" ]; then
       echo "  ✗ [CC CURRENCY] state=dirty head=${_head:-unknown} dir=$_d"
@@ -5297,13 +5304,11 @@ print(state + " " + str(len(headers)))
           [ -d "$_fast_p/.git" ] || continue
           _fast_remote="$(git -C "$_fast_p" remote get-url origin 2>/dev/null || true)"
           case "$_fast_remote" in *command-center*) : ;; *) continue ;; esac
-          # TRACKED changes only. `reset --hard` does not touch untracked
-          # files, so stray `??` entries are no reason to refuse the repair.
-          # Spelled inline, NOT via cc_tracked_changes(): this whole block is
-          # extracted verbatim and sourced standalone by
-          # tests/unit/content-recheck-convergence-probes.test.sh, so it must
-          # stay self-contained. cc_tracked_changes() is the definition of
-          # record; keep this `grep -v '^??'` identical to it.
+          # TRACKED changes only — the canonical spelling, inline because this
+          # block is extracted verbatim and sourced standalone by
+          # tests/unit/content-recheck-convergence-probes.test.sh.
+          # `reset --hard` does not touch untracked files, so stray `??`
+          # entries are no reason to refuse the repair.
           _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null | grep -v '^??' || true)"
           if [ -n "$_fast_dirty" ]; then
             echo "    [fast-path] CC checkout $_fast_p has uncommitted changes to TRACKED files (load-bearing) — NOT reset; full pass will surface the same state."
@@ -10221,10 +10226,13 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # the genuine installer-failure / not-on-origin-main cases below (U005
     # exit-2 advisory, unchanged) -- those remain fatal-to-this-section by
     # design; a dirty tree is a different, recoverable, expected condition.
-    # TRACKED changes only — see cc_tracked_changes(). A tree whose only
-    # difference is untracked files pulls fine, so it is refreshed, not skipped.
-    _CC_DIRTY_STATUS="$(cc_tracked_changes "$_CC_DIR")"
-    _CC_UNTRACKED_N="$(cc_untracked_count "$_CC_DIR")"
+    # TRACKED changes only — the canonical spelling, inline because this block
+    # is extracted verbatim and sourced standalone by
+    # scripts/test-updater-traps-1-and-3.sh. A tree whose only difference is
+    # untracked files pulls fine, so it is refreshed, not skipped.
+    _CC_DIRTY_STATUS="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null | grep -v '^??' || true)"
+    _CC_UNTRACKED_N="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null | grep -c '^??' || true)"
+    _CC_UNTRACKED_N="$(printf '%s' "${_CC_UNTRACKED_N:-0}" | tr -d '[:space:]')"
     [ "${_CC_UNTRACKED_N:-0}" = "0" ] || \
       echo "  Command Center checkout has $_CC_UNTRACKED_N untracked file(s) — not dirt, refresh proceeds."
     if [ -n "$_CC_DIRTY_STATUS" ]; then

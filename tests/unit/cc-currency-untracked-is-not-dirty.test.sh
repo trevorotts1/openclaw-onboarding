@@ -16,17 +16,26 @@
 # untracked files too, so any box carrying stray `??` files never received a
 # Command Center refresh through this updater.
 #
-# THE FIX. One top-level definition, cc_tracked_changes(), filters `^??` so
-# dirty means modified-or-staged TRACKED files only; cc_untracked_count()
-# reports the rest as INFO. All three gates call it. The refusal for genuinely
-# modified tracked files is unchanged — uncommitted client work is load-bearing.
+# THE FIX. Each gate filters `^??`, so dirty means modified-or-staged TRACKED
+# files only and untracked files are reported as an INFO count. The refusal for
+# genuinely modified tracked files is unchanged — uncommitted client work is
+# load-bearing.
 #
-# METHOD. Like the sibling update-skills tests, this does NOT reimplement the
-# helpers: it extracts them VERBATIM from update-skills.sh and sources them. If
-# they are renamed or removed the suite fails loudly rather than testing
-# nothing. Fixtures are real `git init` repos, so the assertions run against
-# real porcelain output, not a mocked string. A PRE-FIX control reruns the old
-# one-line definition on the same fixture and must reproduce the live incident.
+# WHY THE RULE IS INLINE AND NOT A FUNCTION. All three gates sit inside
+# marker-delimited blocks that scripts/test-updater-traps-1-and-3.sh and
+# tests/unit/content-recheck-convergence-probes.test.sh extract VERBATIM and
+# source STANDALONE. A call to a top-level helper is an undefined command
+# there, which evaluates to "clean" and lets the gate through silently. That
+# was measured: routing them through a helper failed 13 assertions in one suite
+# and 5 in the other. So the rule is written out at each gate, and THIS suite
+# is what keeps the three copies honest.
+#
+# METHOD. It does NOT retype the rule: it LIFTS the expression out of
+# update-skills.sh's DIRTY-CHECKOUT GUARD and runs that against real `git init`
+# fixtures, so the assertions judge the shipped rule and real porcelain output
+# rather than a mocked string. Section 7 then asserts all three gates carry it.
+# A PRE-FIX control reruns the old one-line definition on the same fixture and
+# must reproduce the live incident.
 #
 # FULLY OFFLINE. No remote, no network, no box.
 # ---------------------------------------------------------------------------
@@ -44,17 +53,23 @@ bad() { FAIL=$((FAIL+1)); echo "  FAIL $*"; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# ── Extract the two helpers VERBATIM ────────────────────────────────────────
-awk '/^cc_tracked_changes\(\) \{/,/^\}/' "$UPDATER"  > "$WORK/helpers.sh"
-awk '/^cc_untracked_count\(\) \{/,/^\}/'  "$UPDATER" >> "$WORK/helpers.sh"
+# ── The canonical rule, LIFTED FROM update-skills.sh, not retyped ───────────
+# All three gates spell it inline (they sit in blocks other suites extract and
+# source standalone, where a top-level helper would be an undefined command).
+# So this suite lifts the expression out of the DIRTY-CHECKOUT GUARD and runs
+# THAT against real fixtures — if the shipped rule changes, this runs the new
+# one and the fixture assertions below are what judge it.
+CANON_TRACKED="$(grep -oE 'git -C "\$_CC_DIR" status --porcelain 2>/dev/null \| grep -v .\^\?\?. \|\| true' "$UPDATER" | head -n1)"
+[ -n "$CANON_TRACKED" ] || {
+  echo "FATAL: could not lift the tracked-changes rule out of update-skills.sh's DIRTY-CHECKOUT GUARD"
+  echo "       (marker drift, or the gate stopped filtering '^??')"; exit 2; }
 
-grep -q '^cc_tracked_changes() {' "$WORK/helpers.sh" \
-  || { echo "FATAL: cc_tracked_changes() not found in update-skills.sh — renamed or removed?"; exit 2; }
-grep -q '^cc_untracked_count() {' "$WORK/helpers.sh" \
-  || { echo "FATAL: cc_untracked_count() not found in update-skills.sh — renamed or removed?"; exit 2; }
-bash -n "$WORK/helpers.sh" || { echo "FATAL: extracted helpers do not parse"; exit 2; }
-# shellcheck disable=SC1090
-. "$WORK/helpers.sh"
+cc_tracked_changes() { _CC_DIR="$1"; eval "$CANON_TRACKED"; }
+cc_untracked_count() {
+  local _n
+  _n="$(git -C "$1" status --porcelain 2>/dev/null | grep -c '^??' || true)"
+  printf '%s' "${_n:-0}" | tr -d '[:space:]'
+}
 
 # ── Fixture: a real git repo with one committed file ────────────────────────
 mkfixture() {
@@ -142,21 +157,22 @@ else
 fi
 
 echo "== (7) every Command Center gate uses the tracked-only definition =="
-for pat in '_dirty="$(cc_tracked_changes "$_d")"' \
-           '_CC_DIRTY_STATUS="$(cc_tracked_changes "$_CC_DIR")"'; do
-  if grep -qF -- "$pat" "$UPDATER"; then
-    ok "(7) gate uses the shared helper: $pat"
+# Every gate lives in a block some suite extracts and sources standalone, so
+# each must carry the rule INLINE. Assert all three, by variable name.
+for v in _dirty:_d _fast_dirty:_fast_p _CC_DIRTY_STATUS:_CC_DIR; do
+  _var="${v%%:*}"; _dirvar="${v##*:}"
+  if grep -qF "${_var}=\"\$(git -C \"\$${_dirvar}\" status --porcelain 2>/dev/null | grep -v '^??' || true)\"" "$UPDATER"; then
+    ok "(7) gate \$${_var} carries the canonical tracked-only rule inline"
   else
-    bad "(7) gate NOT routed through cc_tracked_changes (raw porcelain back?): $pat"
+    bad "(7) gate \$${_var} does not carry the canonical inline rule (helper call or raw porcelain back?)"
   fi
 done
-# The fast-path lives inside the block that content-recheck-convergence-probes
-# extracts and sources STANDALONE, so it cannot call a top-level helper. It
-# must still carry the identical rule inline.
-if grep -qF '_fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null | grep -v '"'"'^??'"'"' || true)"' "$UPDATER"; then
-  ok "(7) fast-path carries the tracked-only rule inline (block must stay self-contained)"
+# A top-level helper would be an undefined command inside those extracted
+# blocks, which evaluates to "clean" and lets the gate through silently.
+if grep -qE '(_dirty|_fast_dirty|_CC_DIRTY_STATUS)="\$\(cc_tracked_changes' "$UPDATER"; then
+  bad "(7) a gate calls a top-level helper — undefined when its block is sourced standalone"
 else
-  bad "(7) fast-path does not carry the inline tracked-only rule"
+  ok "(7) no gate depends on a top-level helper"
 fi
 # No Command Center gate may assign UNFILTERED porcelain.
 if grep -E '(_dirty|_fast_dirty|_CC_DIRTY_STATUS)="\$\(git -C [^)]*status --porcelain[^)]*\)"' "$UPDATER" \
