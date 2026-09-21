@@ -1274,6 +1274,83 @@ cc_load_launch_environment() {
     value="$(cc_env_get "$DASHBOARD_DIR/.env.local" "$key")" || fail_install "Invalid client service environment; startup stopped"
     [[ -n "$value" ]] && export "$key=$value"
   done
+  cc_check_company_id_against_board
+}
+
+# ── Does the mirrored MC_COMPANY_ID match the company that owns the board? ───
+# Measured on a client box: this mirror wrote MC_COMPANY_ID=default while the
+# CC DB's live workspaces sat 31 under 'wakeuphappysis' and 9 under 'default'.
+# The Command Center's ingest is company-scoped, so the catch-all `general-task`
+# (owned by wakeuphappysis) became unresolvable and every routed task landed
+# unrouted. The catch-all's owner is the authority; absent a catch-all, the
+# company owning the most live workspaces is.
+#
+# FULL install corrects the value. --update-only is a code-only roll, so it
+# WARNS and changes nothing: rewriting a client's tenant id during a routine
+# code roll is the kind of surprise this whole guard exists to avoid.
+cc_check_company_id_against_board() {
+  local db="${DATABASE_PATH:-$DASHBOARD_DIR/mission-control.db}" owner split env_id
+  [[ -f "$db" ]] || return 0
+  env_id="${MC_COMPANY_ID:-}"
+  [[ -n "$env_id" ]] || return 0
+  local out
+  out="$(python3 - "$db" <<'PYCID'
+import sqlite3, sys
+try:
+    con = sqlite3.connect(sys.argv[1])
+    cols = [r[1] for r in con.execute("PRAGMA table_info(workspaces)")]
+    if "company_id" not in cols:
+        raise SystemExit(0)
+    where = " WHERE archived_at IS NULL" if "archived_at" in cols else ""
+    rows = con.execute(
+        "SELECT company_id, COUNT(*) FROM workspaces" + where + " GROUP BY 1 ORDER BY 2 DESC"
+    ).fetchall()
+    if not rows:
+        raise SystemExit(0)
+    owner = None
+    hit = con.execute(
+        "SELECT company_id FROM workspaces WHERE slug IN ('general-task','dept-general-task','general') "
+        "OR id IN ('general-task','dept-general-task','general') LIMIT 1"
+    ).fetchone()
+    if hit:
+        owner = hit[0]
+    if owner is None:
+        owner = rows[0][0]
+    print(owner or "")
+    print(", ".join(f"{c or 'NULL'}={n}" for c, n in rows))
+except sqlite3.Error:
+    raise SystemExit(0)
+PYCID
+)" || return 0
+  owner="$(printf '%s\n' "$out" | sed -n '1p')"
+  split="$(printf '%s\n' "$out" | sed -n '2p')"
+  [[ -n "$owner" ]] || return 0
+  if [[ "$owner" == "$env_id" ]]; then
+    log "INFO" "[cc-env] MC_COMPANY_ID=$env_id matches the company owning the board (split: $split)"
+    return 0
+  fi
+  echo "[cc-env] MC_COMPANY_ID MISMATCH: env=$env_id but workspaces/catch-all belong to $owner (split: $split)" >&2
+  log "WARN" "[cc-env] MC_COMPANY_ID MISMATCH: env=$env_id but workspaces/catch-all belong to $owner (split: $split)"
+  [[ -f "$STATE_FILE" ]] && state_set ".commandCenterCompanyIdMismatch = \"env=$env_id owner=$owner\""
+  if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+    log "WARN" "[cc-env] --update-only: MC_COMPANY_ID left as-is (code-only roll). Operator action required."
+    return 0
+  fi
+  # Full install: strip the key so the existing writer treats it as absent.
+  local envf="$DASHBOARD_DIR/.env.local"
+  if [[ -f "$envf" ]] && grep -vE "^[[:space:]]*#?[[:space:]]*MC_COMPANY_ID=" "$envf" > "$envf.tmp.$$" 2>/dev/null \
+     && mv "$envf.tmp.$$" "$envf"; then
+    chmod 600 "$envf" 2>/dev/null || true
+    if cc_env_set_if_absent "$envf" MC_COMPANY_ID "$owner"; then
+      export MC_COMPANY_ID="$owner"
+      log "INFO" "[cc-env] full install: MC_COMPANY_ID rewritten to $owner"
+    else
+      log "WARN" "[cc-env] full install: MC_COMPANY_ID rewrite FAILED; env still says $env_id"
+    fi
+  else
+    rm -f "$envf.tmp.$$" 2>/dev/null || true
+    log "WARN" "[cc-env] full install: could not rewrite MC_COMPANY_ID; env still says $env_id"
+  fi
 }
 
 cc_prepare_database_environment() {

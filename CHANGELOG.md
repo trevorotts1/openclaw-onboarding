@@ -1,3 +1,46 @@
+## [v25.1.66]  -  2026-09-21  -  The installer stops re-seeding archived departments, stops duplicating a renamed one, and says which company owns the board
+
+### Why
+All four findings were measured on one client box during a v7.6.35 roll, by diffing the Command Center database against the pre-deploy backup.
+
+**1. 48 agents were seeded into 12 ARCHIVED workspaces.** `materialize-dept-agents.sh` selects departments two ways, and neither filtered `archived_at`: the workspaces query (`WHERE type != 'main' AND type != 'system'`) and the manifest path, which resolves a workspace by slug and never touches that query. Archiving is the client's decision; silently re-populating an archived department undoes it.
+
+**2. A renamed department became two board columns.** A board row whose slug matches nothing in the source, but whose NAME is the same department, was inserted a second time.
+
+**3. The company guard fired with nothing to act on.** The database held three company rows (`default`, `wakeuphappysis`, `wake-up-happy-sis`) and the operator saw only `department X belongs to a different company`, with no way to see the split.
+
+**4. The installer mirrored `MC_COMPANY_ID=default`** into the Command Center's `.env.local` while the live workspaces sat 31 under `wakeuphappysis` and 9 under `default`. The Command Center's ingest is company-scoped, so the catch-all `general-task` (owned by `wakeuphappysis`) became unresolvable and every routed task landed unrouted.
+
+### What changed
+- **`32-command-center-setup/scripts/materialize-dept-agents.sh`** - the workspaces query gains `AND archived_at IS NULL`, and a per-workspace check sits AFTER `ws_id` resolution so it covers the manifest path too, which that query never reaches. An archived department gets no agents and no head link, the run prints one SKIP line naming its `archived_at`, and the summary counts them. Nothing here writes `archived_at`: skipping is the fix, un-archiving would be a different bug. Both probes are schema-tolerant, since `archived_at` is absent on older boards.
+
+- **`32-command-center-setup/scripts/seed-workspaces.py`** - before inserting, the seeder looks for the same department already on the board under a different slug, by case-insensitive NAME, scoped to this company. A hit UPDATES that row instead of inserting, and the summary reports it separately from inserts.
+
+  **No alias table was added.** `shared-utils/canonical_slug.py` already maps `billing` to `billing-finance` and `legal-compliance` to `legal`, and every id here already goes through it, so both pairs the client hit were already collapsed. A second table would have been a duplicate rule to drift. What was genuinely missing is the case no slug alias can cover, and that is what the name fallback adds. A test pins the canonical map so the pairs cannot quietly fall out of it.
+
+  It also prints ONE `[company-split]` line naming every company id that owns live workspaces, which one owns the catch-all, and whether that differs from the id being seeded as. **The company guard itself is unchanged** - it was correct, and the problem was that its refusal was unreadable.
+
+- **`32-command-center-setup/scripts/run-full-install.sh`** - after the cc-env mirror loop, when a Command Center database exists, the installer compares the mirrored `MC_COMPANY_ID` against the company that owns the catch-all (or, absent a catch-all, the most live workspaces). A mismatch prints one loud `[cc-env] MC_COMPANY_ID MISMATCH: env=<a> but workspaces/catch-all belong to <b> (split: …)` line and writes a state marker. A FULL install then corrects the value; `--update-only` warns and changes nothing, because rewriting a client's tenant id during a routine code roll is exactly the kind of surprise this guard exists to prevent. The rewrite reuses the existing `cc_env_set_if_absent` writer rather than duplicating its encoding.
+
+### Not done, and why: the hard DELETE of 22 archived rows
+**It is not in this repository.** The delete lives in the Command Center's `scripts/sync-departments-from-build-state.py`, at its `--prune` path (line 658) and its duplicate-collapse path (line 539). Searched: every `DELETE FROM workspaces` in every `*.py` and `*.sh` here; the only matches are inside one test fixture, `23-ai-workforce-blueprint/scripts/test-board-join-chain.sh`.
+
+Onboarding also never triggers it: Phase 6c invokes that script as `python3 "$SYNC_SCRIPT" --company-slug "$CLIENT_SLUG"`, with no `--prune`, and `--prune` appears nowhere in `run-full-install.sh` or `update-skills.sh`. Stopped on this item per instruction; it needs a Command Center change.
+
+A regression test pins that no onboarding installer script gains a workspace delete.
+
+### Also: the v25.1.65 fold fixtures now discriminate
+v25.1.65's headline client-shape tests used departments whose `folder` equalled the key minus `-dept`, so folding on the key produced the same answer and an id-only mutation passed them. Each now carries a department whose `folder` deliberately differs from its key stem (`client-success-dept` holding `folder: accounts`). Re-running the same mutation takes the suites from **3 red to 6 red**, including both headline tests.
+
+### Tests
+**`32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py`, 15 assertions, new**, wired into `full-funnel-pipeline.yml`. Fixtures are real sqlite databases.
+
+Name match updates instead of inserting, and is case-insensitive; a genuinely new department still inserts; a name match never reaches across a company boundary; both client slug pairs stay one column; the `[company-split]` line names every company and the catch-all owner, stays quiet when aligned, and never raises on a board with no `archived_at` column; the archived guard excludes archived rows from the query AND carries a reachable per-workspace check that runs before any agent row is written; nothing writes `archived_at`; no installer script hard-deletes a workspace.
+
+**Mutation-proved**, three separate mutations: disabling the name fallback turns 2 tests red; dropping `AND archived_at IS NULL` turns 1 red; making the per-workspace guard unreachable with `if False:` turns 1 red. That last one initially slipped past a source-level string check, so the assertion was tightened to pin the whole reachable guard and its position before `ensure_trio_quad_rows`.
+
+`bash -n` clean on `run-full-install.sh` and `materialize-dept-agents.sh`; `py_compile` clean on `seed-workspaces.py`. The two normalizer suites stay at 43 passing.
+
 ## [v25.1.65]  -  2026-09-21  -  A department's own slug beats the map key it is filed under, so one department stops being two
 
 ### Why

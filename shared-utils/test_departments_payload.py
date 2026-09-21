@@ -125,10 +125,15 @@ def test_entry_identity_beats_the_map_key():
             "account-management-dept": {"name": "Account Management",
                                         "folder": "account-management"},
             "audio-dept": {"name": "Audio", "folder": "audio"},
+            # folder DELIBERATELY unequal to the key stem: where folder ==
+            # key-minus-dept, folding on the key gives the same answer and an
+            # id-only mutation passes. This one discriminates.
+            "client-success-dept": {"name": "Client Success",
+                                    "folder": "accounts"},
         },
     })
-    assert [d["id"] for d in out] == ["account-management", "audio"]
-    assert [d["slug"] for d in out] == ["account-management", "audio"]
+    assert [d["id"] for d in out] == ["account-management", "audio", "accounts"]
+    assert [d["slug"] for d in out] == ["account-management", "audio", "accounts"]
 
 
 @pytest.mark.parametrize("entry,want_id,want_slug", [
