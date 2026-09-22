@@ -29,6 +29,24 @@ name: podcast-engine-fail-closed-guard
 #        changes nothing on the running automation host. This suite proves the
 #        FILE is right, never that the host is running it. **
 #
+#   T0-23 — the DAILY smoke test reported success while blind. Its stale-job
+#     sweep caught sqlite3.Error and returned [], so a podcast_jobs database that
+#     existed and would not open rendered as "zero stale jobs"; do_run() then
+#     wrapped the sweep in `except Exception` and substituted {"stale_count": 0}
+#     as well, so even a raise became a clean zero. Separately, load_endpoints()
+#     ended in `data.get("providers", data)` and the shipped smoke-endpoints.json
+#     has no "providers" key, so every run probed one imaginary provider named
+#     after the config wrapper ("podcast_engine": "UNKNOWN" in the stored
+#     diagnostic) and the five real pinned providers were never probed at all.
+#     And a job that had already DIED carries status 'failed', which is terminal,
+#     so the stale sweep skipped it at any threshold and nothing looked at failed
+#     jobs anywhere. Guarded by
+#     tests/unit/podcast-smoke-test-blind-not-green.test.py, which drives the REAL
+#     CLI against temp WAL databases and asserts the pair that matters: a healthy
+#     WAL database IS read, and an existing-but-unreadable one fails loudly rather
+#     than reporting zero. It carries its own known-good control (the same file,
+#     made readable, yields its row) so an empty result can never pass as proof.
+#
 #   T0-22 — podcast_state.py could not tell "no ledger configured" from "the
 #     linkage is broken"; both were silent and the advance reported success while
 #     the atomic-claim record was never updated. Guarded by
@@ -49,6 +67,10 @@ on:
       - "tests/unit/podcast-engine-fail-closed.test.sh"
       - "tests/unit/podcast-state-ledger-linkage.test.py"
       - "tests/unit/podbean-publish-workflow-response-ordering.test.py"
+      - "58-podcast-production-engine/scripts/podcast-smoke-test.py"
+      - "58-podcast-production-engine/config/smoke-endpoints.json"
+      - "58-podcast-production-engine/config/furnace.json"
+      - "tests/unit/podcast-smoke-test-blind-not-green.test.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   pull_request:
     branches: [main]
@@ -60,12 +82,16 @@ on:
       - "tests/unit/podcast-engine-fail-closed.test.sh"
       - "tests/unit/podcast-state-ledger-linkage.test.py"
       - "tests/unit/podbean-publish-workflow-response-ordering.test.py"
+      - "58-podcast-production-engine/scripts/podcast-smoke-test.py"
+      - "58-podcast-production-engine/config/smoke-endpoints.json"
+      - "58-podcast-production-engine/config/furnace.json"
+      - "tests/unit/podcast-smoke-test-blind-not-green.test.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   workflow_dispatch:
 
 jobs:
   podcast-engine-fail-closed:
-    name: Channel scoping + loudness + webhook ordering + ledger linkage
+    name: Channel scoping + loudness + webhook ordering + ledger linkage + smoke-test blindness
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -90,6 +116,10 @@ jobs:
           python3 -m py_compile 58-podcast-production-engine/scripts/podcast_state.py
           python3 -m py_compile tests/unit/podcast-state-ledger-linkage.test.py
           python3 -m py_compile tests/unit/podbean-publish-workflow-response-ordering.test.py
+          python3 -m py_compile 58-podcast-production-engine/scripts/podcast-smoke-test.py
+          python3 -m py_compile tests/unit/podcast-smoke-test-blind-not-green.test.py
+          python3 -c 'import json; json.load(open("58-podcast-production-engine/config/smoke-endpoints.json"))'
+          python3 -c 'import json; json.load(open("58-podcast-production-engine/config/furnace.json"))'
           python3 -c 'import json; json.load(open("58-podcast-production-engine/config/n8n/podbean-publish.workflow.json"))'
           # `bash -n` does NOT parse heredoc bodies. The generator embeds Python
           # in `python3 - <<PYEOF` blocks; compile each body on its own.
@@ -131,3 +161,13 @@ jobs:
         shell: bash
         timeout-minutes: 5
         run: python3 tests/unit/podbean-publish-workflow-response-ordering.test.py
+
+      - name: T0-23 — a blind daily smoke test is not a green one
+        shell: bash
+        timeout-minutes: 8
+        run: python3 tests/unit/podcast-smoke-test-blind-not-green.test.py
+
+      - name: T0-23 — the smoke test's own hermetic self-test still passes
+        shell: bash
+        timeout-minutes: 8
+        run: python3 58-podcast-production-engine/scripts/podcast-smoke-test.py --self-test
