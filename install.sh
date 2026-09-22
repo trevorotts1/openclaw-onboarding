@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.1.73"
+ONBOARDING_VERSION="v25.1.74"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2374,6 +2374,162 @@ discover_skills() {
 # by content hash (read back + compare) before being counted as a success.
 # File mode/ownership are preserved across the rewrite.
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# v25.1.74 — reclaim_unify_backups (end-of-roll global .bak-unify reclaim)
+#
+# WHY THIS EXISTS ON TOP OF _lsc_prune_baks. The per-target pruner added in
+# v25.1.72/73 only ever reaches a path the unify scan ENUMERATED. That scan
+# builds its list from $OC_ROOT/workspaces, <workspace>/agents and
+# <workspace>/departments, keeping only dirs that still carry a live
+# AGENTS.md / IDENTITY.md / SOUL.md. Three populations are therefore never
+# reclaimed — all three measured on client boxes 2026-09-22:
+#
+#   1. ORPHANS — a role folder whose live core files were deleted or moved
+#      still holds its .bak-unify backlog but fails the scan filter, so
+#      nothing ever reaches it. Hidden archive dot-dirs (for example a
+#      .billing-LEGACY-DUPLICATE-ARCHIVED folder) are the same shape.
+#   2. OUT OF TREE — <workspace>/zero-human-company/<co>/departments/... and
+#      ~/clawd/zero-human-company/<co>/departments/... sit under neither
+#      agents/ nor departments/, so the scan never descends into them.
+#   3. AN EARLY EXIT — a roll whose unify step refuses (workspace unresolved),
+#      is skipped, or filters a workspace out bounds nothing at all.
+#
+# Fleet total when this was written: 71,805 *.bak-unify-* files / ~8.4 GB
+# across 6 client boxes, oldest 2026-06-07, still growing.
+#
+# WHAT IT DOES. ONE pass at the end of every roll over the resolved OpenClaw
+# root(s), the resolved workspace and ~/clawd: group every backup by its
+# target prefix and keep only the newest $UNIFY_BAK_KEEP (default 3 — the same
+# single knob _lsc_prune_baks and the python writer already honour). Reports
+# the count reclaimed. ALWAYS returns 0: a reclaim must never be the thing
+# that fails a roll. The per-target prune is unchanged and still runs first.
+#
+# SAFETY. A file is deletable ONLY when its basename matches
+#     <target>.bak-unify-<8 digits>-<6 digits>[-<n>]
+# exactly — the -<n> tail being the python writer's same-second de-dupe
+# suffix. A live AGENTS.md / TOOLS.md / USER.md cannot match that pattern, and
+# neither can a hand-made .bak-manual or an AGENTS.md.bak-unify-notatimestamp
+# decoy. Symlinks and non-regular files are never unlinked.
+#
+# UNIFY_BAK_KEEP=0 keeps none. That is the meaning it ALREADY carries in both
+# shipped pruners and in docs/SHARED-CORE-FILES.md, so this pass does not give
+# the one knob a second meaning. It is safe because the pattern above makes a
+# live core file unmatchable: 0 can empty the backup set, never the tree.
+#
+# python3 is already a hard dependency of the unify step (_lsc_sha256 and the
+# content-preservation pass both use it); if it is absent the reclaim reports
+# a skip and the per-target prune still applies. bash 3.2 / BSD-safe: no
+# associative arrays, no mapfile, no `find -printf`, no `head -n -N`.
+# ----------------------------------------------------------
+reclaim_unify_backups() {
+  local _keep="${UNIFY_BAK_KEEP:-3}"
+  case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    note "[unify-reclaim] SKIP: no python3 on PATH (the per-target prune still applied)"
+    return 0
+  fi
+
+  # Every root this box could hold a .bak-unify population under. Missing ones
+  # are dropped here; the pass below de-dupes what is left by realpath, so a
+  # symlinked workspace is never walked twice.
+  local _oc_root=""
+  if declare -F resolve_oc_root >/dev/null 2>&1; then
+    _oc_root="$(resolve_oc_root 2>/dev/null || echo '')"
+  fi
+  if [ -z "$_oc_root" ]; then
+    _oc_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _oc_root="/data/.openclaw"
+  fi
+
+  # $HOME/.openclaw covers the Docker /home/node layout (HOME is /home/node
+  # there) and _oc_root covers the VPS /data layout, so neither is listed as a
+  # literal -- every root below is derived from THIS box's own resolution.
+  # ~/clawd and ~/.clawdbot are both LIVE workspace roots on real boxes (see
+  # the TRAP 1 pre-clear note: one box's ~/.openclaw/workspace is a symlink
+  # INTO ~/.clawdbot/workspace), and both hold measured .bak-unify populations.
+  local _roots="" _r
+  for _r in \
+      "$_oc_root" \
+      "$HOME/.openclaw" \
+      "$HOME/clawd" \
+      "$HOME/.clawdbot" \
+      "${OC_WS_RESOLVED:-}" \
+      "${WORKSPACE_DIR:-}"; do
+    [ -n "$_r" ] || continue
+    [ -d "$_r" ] || continue
+    _roots="${_roots}${_r}
+"
+  done
+
+  if [ -z "$_roots" ]; then
+    note "[unify-reclaim] no existing root to scan -- nothing to do"
+    return 0
+  fi
+
+  local _n=""
+  _n="$(UNIFY_RECLAIM_KEEP="$_keep" UNIFY_RECLAIM_ROOTS="$_roots" python3 - 2>/dev/null <<'PYEOF' || echo ''
+import os, re
+
+keep  = int(os.environ.get("UNIFY_RECLAIM_KEEP", "3"))
+roots = [r for r in os.environ.get("UNIFY_RECLAIM_ROOTS", "").split("\n") if r]
+
+# The ONLY deletable shape. A live core file cannot match it.
+PAT  = re.compile(r"^(?P<target>.+)\.bak-unify-\d{8}-\d{6}(?:-\d+)?$")
+SKIP = (".git", "node_modules", ".venv", "venv", "__pycache__")
+
+# Roots nest (the workspace usually lives INSIDE the OpenClaw root), so the
+# same subtree is walked more than once. Collecting each group as a SET keyed
+# on the real directory makes a second visit a no-op instead of doubling the
+# list and over-deleting.
+groups = {}
+for root in roots:
+    try:
+        real = os.path.realpath(root)
+    except OSError:
+        continue
+    if not os.path.isdir(real):
+        continue
+    for dirpath, dirnames, filenames in os.walk(real, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in SKIP]
+        try:
+            realdir = os.path.realpath(dirpath)
+        except OSError:
+            realdir = dirpath
+        for fn in filenames:
+            m = PAT.match(fn)
+            if m:
+                groups.setdefault((realdir, m.group("target")), set()).add(fn)
+
+deleted = 0
+for (parent, _target), nameset in groups.items():
+    if keep and len(nameset) <= keep:
+        continue
+    names = sorted(nameset)         # %Y%m%d-%H%M%S sorts chronologically
+    doomed = names if keep == 0 else names[:-keep]
+    for n in doomed:
+        p = os.path.join(parent, n)
+        if not PAT.match(os.path.basename(p)):      # belt and braces
+            continue
+        if os.path.islink(p) or not os.path.isfile(p):
+            continue
+        try:
+            os.unlink(p)
+            deleted += 1
+        except OSError:
+            pass
+print(deleted)
+PYEOF
+)"
+  case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+  if [ "$_n" -gt 0 ]; then
+    note "[unify-reclaim] RECLAIMED $_n orphaned/out-of-tree .bak-unify backup(s) (keep=$_keep)"
+  else
+    note "[unify-reclaim] nothing to reclaim (keep=$_keep)"
+  fi
+  return 0
+}
+
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
 
@@ -6252,6 +6408,12 @@ fi
 # ----------------------------------------------------------
 step "Step 10a: Unifying shared core files (AGENTS/TOOLS/USER copied from this box's canonical)"
 link_shared_core_files "$WORKSPACE_DIR" || warn "link_shared_core_files reported warnings (install continues)"
+
+# END-OF-ROLL GLOBAL RECLAIM. The per-target prune inside the step above only
+# reaches paths the unify scan enumerated; this bounds the orphaned +
+# out-of-tree populations it cannot see, and runs even when that step refused.
+# See reclaim_unify_backups() for the three shapes and the safety pattern.
+reclaim_unify_backups || true
 
 # ----------------------------------------------------------
 # Step 10b: Seed Core.md Terminology into MEMORY.md (idempotent)

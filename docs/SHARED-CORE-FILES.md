@@ -129,11 +129,70 @@ whose content **differs** from canonical, the unifier:
    a target that is absent (its `AGENTS.md` deleted by the U053 disposition
    pass) or already byte-identical to canonical. No operator action is needed.
 
-   To reclaim them immediately, without waiting for the next roll:
+   **A roll also reclaims what the scan cannot see (v25.1.74).** The
+   per-target prune above only ever reaches a path the unify **scan**
+   enumerated, and that scan reads `$OC_ROOT/workspaces`,
+   `<workspace>/agents` and `<workspace>/departments`, keeping only dirs that
+   still carry a live `AGENTS.md` / `IDENTITY.md` / `SOUL.md`. Three
+   populations are structurally invisible to it, all three measured on client
+   boxes 2026-09-22 (71,805 files / ~8.4 GB across 6 boxes, oldest
+   2026-06-07):
+
+   | Population | Why the per-target prune never reached it |
+   |---|---|
+   | **Orphans** — a role folder whose live core files were deleted or moved, and hidden archive dot-dirs | It fails the scan's live-file filter, so it is never enumerated |
+   | **Out of tree** — `<workspace>/zero-human-company/<co>/departments/...` and `~/clawd/zero-human-company/<co>/departments/...` | Under neither `agents/` nor `departments/`, so the scan never descends into it |
+   | **An early exit** — the unify step refused (workspace unresolved), was skipped, or filtered a workspace out | Nothing bounded that run at all |
+
+   `reclaim_unify_backups()` therefore runs **once at the end of every roll**
+   in both `install.sh` and `update-skills.sh`, after the unify step and
+   **regardless of whether that step succeeded**. It walks this box's own
+   resolved roots (the OpenClaw root, the resolved workspace, `~/clawd`,
+   `~/.clawdbot`), groups every backup by its target prefix and keeps the
+   newest `$UNIFY_BAK_KEEP`, then reports the count reclaimed. It always
+   returns success — a reclaim must never be the thing that fails a roll.
+
+   **What it will refuse to delete.** A file is deletable only when its
+   basename matches `<target>.bak-unify-<8 digits>-<6 digits>[-<n>]` exactly
+   (the `-<n>` tail is the python writer's same-second de-dupe suffix). A live
+   `AGENTS.md` / `TOOLS.md` / `USER.md` cannot match that pattern, and neither
+   can a hand-made `.bak-manual` or an `AGENTS.md.bak-unify-notatimestamp`.
+   Symlinks and non-regular files are never unlinked.
+
+### `UNIFY_BAK_KEEP` — the single retention knob
+
+   | Value | Meaning |
+   |---|---|
+   | unset | keep the newest **3** backups per target |
+   | *N* ≥ 1 | keep the newest *N* |
+   | `0` | keep **none** — every backup of every target is removed |
+   | anything non-numeric | falls back to the default **3** |
+
+   The same variable governs the per-target prune, the end-of-roll reclaim,
+   and the python department-tree writer, so one value means one thing
+   everywhere. `0` is safe despite emptying the backup set: the pattern above
+   makes a live core file unmatchable, so `0` can empty the backups, never the
+   tree.
+
+   **Reclaiming an existing box's backlog.** A normal roll now does it —
+   `reclaim_unify_backups()` runs at the end of every `update-skills.sh` and
+   every `install.sh`, so no operator action is required:
 
    ```bash
-   find ~/.openclaw -name '*.bak-unify-*' -type f -mtime +7 -delete
+   bash ~/openclaw-onboarding/update-skills.sh
    ```
+
+   To run the reclaim on its own, without a full roll, source the shipped
+   function and call it (tested as written; `note` is the logger `install.sh`
+   defines):
+
+   ```bash
+   note(){ echo "$@"; }; . <(sed -n "/^reclaim_unify_backups() {/,/^}$/p" ~/openclaw-onboarding/install.sh); reclaim_unify_backups
+   ```
+
+   It prints the count reclaimed, honours `UNIFY_BAK_KEEP`, and touches
+   nothing but timestamped `.bak-unify` backups.
+
 2. **Preserves unique content**: any block in the agent's file that is **not
    already present** in `CANON_DIR/<file>` is **appended** (additive only) to
    that agent's **own `IDENTITY.md`**, under a guarded marker:

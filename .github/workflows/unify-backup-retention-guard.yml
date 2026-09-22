@@ -18,10 +18,23 @@ name: unify-backup-retention-guard
 # not widen to "anything else may be deleted": only the target's OWN
 # .bak-unify-<ts> siblings are ever touched, which the suite asserts directly.
 #
-# ANTI-FALSE-POSITIVE CONTROL: the suite runs the REAL extracted
-# link_shared_core_files() and the REAL _unify_backup(), not a re-implementation.
-# Proven to discriminate before merge: with the pruner reverted the suite fails,
-# and with the pruner defined but its call site neutered it still fails 4 legs.
+# v25.1.74 -- THE SECOND HALF OF THE CONTRACT. The per-target pruner only ever
+# reaches a path the unify SCAN enumerated, and the scan is structurally blind
+# to orphaned role folders (every live core file gone, so the dir fails the
+# filter), to hidden archive dot-dirs, and to the out-of-tree
+# zero-human-company trees under <workspace>/ and ~/clawd/. Measured across 6
+# client boxes 2026-09-22: 71,805 *.bak-unify-* files / ~8.4 GB, oldest
+# 2026-06-07, still growing. reclaim_unify_backups() now runs ONCE at the end
+# of every roll in both scripts and bounds those populations too. The second
+# suite below locks that, including that neither call site may be removed.
+#
+# ANTI-FALSE-POSITIVE CONTROL: both suites run the REAL extracted
+# link_shared_core_files(), reclaim_unify_backups() and _unify_backup(), not a
+# re-implementation. Proven to discriminate before merge: with the pruner
+# reverted the first suite fails, and with the pruner defined but its call site
+# neutered it still fails 4 legs; for the reclaim, deleting its call from
+# install.sh fails 1 leg, deleting it from update-skills.sh fails 1 leg, and
+# neutering its body to `return 0` fails 12 of 31.
 #
 # Hermetic: mktemp -d sandboxes with HOME redirected. No network, no ~/.openclaw,
 # no fleet box, no writes into the checkout.
@@ -37,6 +50,7 @@ on:
       - "update-skills.sh"
       - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
       - "tests/unit/unify-backup-retention.test.sh"
+      - "tests/unit/unify-backup-global-reclaim.test.sh"
       - "tests/unit/unify_backup_retention_py.py"
       - ".github/workflows/unify-backup-retention-guard.yml"
   pull_request:
@@ -46,12 +60,13 @@ on:
       - "update-skills.sh"
       - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
       - "tests/unit/unify-backup-retention.test.sh"
+      - "tests/unit/unify-backup-global-reclaim.test.sh"
       - "tests/unit/unify_backup_retention_py.py"
       - ".github/workflows/unify-backup-retention-guard.yml"
 
 jobs:
   unify-backup-retention-guard:
-    name: .bak-unify backups are bounded (25,604-file / 4.3 GB furnace)
+    name: .bak-unify backups are bounded (71,805-file / 8.4 GB fleet furnace)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -64,10 +79,15 @@ jobs:
           bash -n install.sh
           bash -n update-skills.sh
           bash -n tests/unit/unify-backup-retention.test.sh
+          bash -n tests/unit/unify-backup-global-reclaim.test.sh
           python3 -m py_compile 23-ai-workforce-blueprint/scripts/create_role_workspaces.py
           python3 -m py_compile tests/unit/unify_backup_retention_py.py
           echo "syntax OK"
 
-      - name: Bounded .bak-unify retention suite
+      - name: Bounded .bak-unify retention suite (per-target prune)
         shell: bash
         run: bash tests/unit/unify-backup-retention.test.sh
+
+      - name: End-of-roll global .bak-unify reclaim suite (orphans + out-of-tree)
+        shell: bash
+        run: bash tests/unit/unify-backup-global-reclaim.test.sh
