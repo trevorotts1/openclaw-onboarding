@@ -1,0 +1,135 @@
+# .github/workflows/cron-announce-fail-closed-guard.yml
+#
+# Cron announce fail-closed guard (v25.1.78).
+#
+# Keeps two things true forever:
+#
+#   1. BIRTH. _register_command_cron's --command branch passes --no-deliver.
+#      `openclaw cron add` DEFAULTS a job to delivery announce+last; omitting
+#      the flag registers a LOUD cron, not a silent one.
+#
+#   2. LOCKSTEP. Every cron name the registrars manage also appears in
+#      MANAGED_RECONCILE_CRONS. That list is the ONLY thing allowed to REPAIR
+#      an existing cron's delivery — a name missing from it is born loud and is
+#      never repaired on any box that already has it. This is exactly how
+#      bootstrap-validate-daily ended up failing 4x on rescue-leanne-dolce
+#      while refusing to announce ("Refusing implicit isolated cron delivery").
+#
+# Check 2 is the one that regresses: it is a human lockstep rule in a comment.
+# It is enforced here mechanically instead.
+
+name: cron-announce-fail-closed-guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cron-announce-fail-closed:
+    name: Cron delivery born silent + reconcile lockstep
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: C1 — command-cron registration passes --no-deliver (static)
+        run: |
+          H="scripts/ensure-pipeline-crons.sh"
+          # Every `openclaw cron add ... --command` in the registrar must carry
+          # --no-deliver. The only exemption is the documented last-resort retry
+          # for a CLI that rejects the flag, which logs a WARN naming reconcile.
+          if ! grep -q -- '--no-deliver' "$H"; then
+            echo "FAIL C1: no --no-deliver anywhere in $H — command crons are born announce+last and fail-close on 2026.9.x"
+            exit 1
+          fi
+          if ! grep -B2 -A2 -- '--command "bash \$script" --json' "$H" | grep -q -- '--no-deliver'; then
+            echo "FAIL C1: the --command registration path does not pass --no-deliver"
+            echo "  -> every command cron is born LOUD; a failing job cannot report itself."
+            exit 1
+          fi
+          echo "PASS C1: --command registration passes --no-deliver"
+
+      - name: C2 — registrar/reconcile lockstep (no managed cron left unrepairable)
+        run: |
+          # Extract the names main() audits (the authoritative managed set) and
+          # the names MANAGED_RECONCILE_CRONS may repair; every audited name
+          # must be reconcilable. A name in one list and not the other is the
+          # defect class this guard exists for.
+          python3 - <<'PY'
+          import re, sys
+          src = open("scripts/ensure-pipeline-crons.sh").read()
+
+          m = re.search(r'MANAGED_RECONCILE_CRONS=\(\n(.*?)\n\)', src, re.S)
+          if not m:
+              print("FAIL C2: MANAGED_RECONCILE_CRONS block not found"); sys.exit(1)
+          reconcile = set(re.findall(r'^\s*"([^"]+)"', m.group(1), re.M))
+
+          a = re.search(r'for _n in ((?:"[^"]+"\s*\\?\s*)+); do', src)
+          if not a:
+              print("FAIL C2: main() audit list not found"); sys.exit(1)
+          audited = set(re.findall(r'"([^"]+)"', a.group(1)))
+
+          missing = sorted(audited - reconcile)
+          if missing:
+              print("FAIL C2: managed cron(s) absent from MANAGED_RECONCILE_CRONS: " + ", ".join(missing))
+              print("  -> the registrars only ADD a missing cron. Only MANAGED_RECONCILE_CRONS")
+              print("     REPAIRS an existing one, so these are born announce+last and stay that")
+              print("     way on every box that already has them. A failing job then refuses to")
+              print("     announce: 'Refusing implicit isolated cron delivery'.")
+              sys.exit(1)
+          print("PASS C2: all %d audited managed crons are reconcilable" % len(audited))
+          PY
+
+      - name: C3 — a failing validation is never silently swallowed (static)
+        run: |
+          H="scripts/bootstrap-validate-daily.sh"
+          MISS=""
+          grep -q 'ALERT-UNDELIVERED' "$H"            || MISS="$MISS no-loud-unescalated-path"
+          grep -q 'RESCUE_RANGERS_WEBHOOK_URL' "$H"   || MISS="$MISS no-operator-escalation"
+          # A technical alert must never reach a client chat.
+          if grep -qE 'message send|channels\.telegram|sendMessage' "$H"; then
+            MISS="$MISS client-chat-send-path"
+          fi
+          if [ -n "$MISS" ]; then
+            echo "FAIL C3: bootstrap-validate-daily.sh failure reporting:$MISS"
+            exit 1
+          fi
+          echo "PASS C3: failing runs escalate to the operator webhook, or say so loudly; no client path"
+
+      - name: C4 — acceptance tests (offline, hermetic)
+        run: |
+          chmod +x tests/unit/cron-announce-fail-closed.test.sh
+          bash tests/unit/cron-announce-fail-closed.test.sh
+
+      - name: C5 — existing cron-fixture consumers still green (no weakened tests)
+        run: |
+          # The fixture now models delivery. Re-run every consumer so that
+          # change can never silently break one.
+          FAILED=""
+          for t in pipeline-cron-idempotency cron-tombstone-durability \
+                   closeout-resume-cron-routing weekly-cron-message-refresh \
+                   standard-first-cron-awareness workforce-resume-cheap-command-mode; do
+            if ! bash "tests/unit/$t.test.sh" >/tmp/"$t".log 2>&1; then
+              FAILED="$FAILED $t"
+              echo "--- $t ---"; tail -20 /tmp/"$t".log
+            fi
+          done
+          if [ -n "$FAILED" ]; then
+            echo "FAIL C5: fixture-consuming tests regressed:$FAILED"
+            exit 1
+          fi
+          echo "PASS C5: all cron-fixture consumers still green"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "cron-announce-fail-closed guard complete."
+          echo "C1 born-silent registration; C2 registrar/reconcile lockstep;"
+          echo "C3 loud failure + operator-only escalation; C4 acceptance tests;"
+          echo "C5 no existing fixture consumer weakened."

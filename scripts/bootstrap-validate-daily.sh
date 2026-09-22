@@ -14,8 +14,18 @@
 # that was erroring on every run (a rejected model override) with a zero-token
 # host-level script.
 #
-# NOT WIRED TO A CRON BY THIS REPO — deliberately. It ships so an operator can
-# run it by hand or schedule it per box. Nothing here schedules itself.
+# WIRED TO A CRON BY THIS REPO since ensure-pipeline-crons.sh v14.2.0:
+# `bootstrap-validate-daily`, 05:00 daily, COMMAND kind. (The old "not wired —
+# nothing here schedules itself" note was left behind by that change and was
+# wrong for every box rolled since.) It still runs by hand identically.
+#
+# HOW A FAILURE IS HEARD. The cron is SILENT by design — a maintenance job must
+# never auto-announce into the box owner's chat. Silent must not mean unheard,
+# so a FAILING run escalates here, in the script, on the OPERATOR path only:
+# the Rescue Rangers webhook, the same channel scripts/disk-usage-alert.sh
+# escalates on. No client chat is ever a destination. When no webhook is
+# configured the run says so LOUDLY on stderr instead of failing quietly —
+# an unescalated failure is still a visible one.
 #
 # PLATFORM. Paths follow the same convention every installer in this repo uses:
 #   VPS  (/data/.openclaw/openclaw.json exists) -> /data/.openclaw, /data/clawd
@@ -144,6 +154,38 @@ done
 if [ "$CHECKED_ANY" -eq 0 ]; then
   echo "FAIL: no workspace found to check (looked in: $OC_WORKSPACES)" >&2
   exit 2
+fi
+
+# ── OPERATOR ESCALATION ──────────────────────────────────────────────────────
+# A failing run must reach a human. It goes to the OPERATOR (Rescue Rangers),
+# never to the box owner: this is an internal maintenance defect, not client
+# news. Mirrors the escalation in scripts/disk-usage-alert.sh — same webhook,
+# same headers, same non-fatal posture. Escalation NEVER changes the exit code;
+# the validator's verdict is the validator's alone.
+if [ "$OVERALL_EXIT" -ne 0 ]; then
+  _BOX="$(hostname 2>/dev/null || echo box)"
+  _ESC_MSG="[bootstrap-validate] ${_BOX}: lean-bootstrap validation FAILED (exit ${OVERALL_EXIT}). Core files are over cap, a pointer dangles, or a ledgered block drifted. Run: bash ${BASH_SOURCE[0]:-bootstrap-validate-daily.sh}"
+  if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
+    _ESC_JSON_MSG="${_ESC_MSG//\\/\\\\}"; _ESC_JSON_MSG="${_ESC_JSON_MSG//\"/\\\"}"
+    if curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+         -H 'Content-Type: application/json' \
+         ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
+         -d "{\"action\":\"escalate\",\"client\":\"${_BOX}\",\"agent\":\"bootstrap-validate-daily\",\"message\":\"${_ESC_JSON_MSG}\"}" \
+         --max-time 15 >/dev/null 2>&1; then
+      echo "ESCALATED to operator (rescue-rangers): ${_ESC_MSG}" >&2
+    else
+      # The escalation itself failed. That is the silent-failure class this
+      # block exists to kill, so it is reported LOUDLY rather than swallowed.
+      echo "ALERT-UNDELIVERED: bootstrap validation FAILED and the operator escalation POST did not succeed." >&2
+      echo "ALERT-UNDELIVERED: ${_ESC_MSG}" >&2
+    fi
+  else
+    # No operator route configured on this box. Refusing to invent one — a
+    # client chat is never a fallback — but the failure is still made loud.
+    echo "ALERT-UNDELIVERED: bootstrap validation FAILED and no operator escalation route is configured on this box." >&2
+    echo "ALERT-UNDELIVERED: set RESCUE_RANGERS_WEBHOOK_URL to route this to the operator. No client chat is ever used as a fallback." >&2
+    echo "ALERT-UNDELIVERED: ${_ESC_MSG}" >&2
+  fi
 fi
 
 say "=== done, exit=$OVERALL_EXIT ==="

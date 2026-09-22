@@ -110,7 +110,7 @@
 #   not reliably after "03:00 New York" on a box set to another zone. A CLI that
 #   rejects --tz is retried without it, because a cron in the wrong zone still
 #   beats no cron at all.
-ENSURE_PIPELINE_CRONS_VERSION="v14.2.0"
+ENSURE_PIPELINE_CRONS_VERSION="v14.2.1"
 
 set -u
 
@@ -366,15 +366,44 @@ _register_command_cron() {
 
   if _cli_supports_command; then
     # 2026.6.x+ : native command-mode job. --cron (NOT --schedule).
+    #
+    # --no-deliver IS LOAD-BEARING, not decoration (fix/cron-announce-fail-closed).
+    # `openclaw cron add` DEFAULTS a new job to delivery mode "announce" with
+    # channel "last". Omitting the flag does not create a silent cron — it
+    # creates a LOUD one, and the header's "Silent (no --channel/--to)" comment
+    # was only ever true because _reconcile_managed_crons later stripped it.
+    # Any managed cron missing from MANAGED_RECONCILE_CRONS was therefore born
+    # announce+last and stayed that way forever. On 2026.9.x the runner
+    # fail-CLOSES on that shape for an isolated cron ("Refusing implicit
+    # isolated cron delivery ... the target would be inherited from the shared
+    # agent-main session bucket's last recipient"), so the job cannot report its
+    # own failure. Born-silent here; reconcile remains the repair path for the
+    # boxes already carrying the old shape.
     out=$(openclaw cron add --name "$name" --cron "$schedule" \
             ${_tz_flags[@]+"${_tz_flags[@]}"} \
+            --no-deliver \
             --command "bash $script" --json 2>/dev/null) || out=""
     # A CLI build that does not know --tz rejects the whole call. Retry without
     # it rather than silently registering nothing.
     if [[ -z "$out" && ${#_tz_flags[@]} -gt 0 ]]; then
       _log "WARN $name: this CLI rejected --tz $tz — retrying in the box's local timezone"
       out=$(openclaw cron add --name "$name" --cron "$schedule" \
+              --no-deliver \
               --command "bash $script" --json 2>/dev/null) || out=""
+    fi
+    # Last resort: a build that rejects --no-deliver on a command job. A LOUD
+    # cron the reconcile pass can silence beats NO cron at all, so drop the flag
+    # rather than register nothing — and say so, because this box is then
+    # relying on reconcile for its silence.
+    # `! _cron_present` is load-bearing: an empty $out does NOT prove nothing was
+    # registered (a build that rejects --json registers the cron and prints
+    # nothing). Retrying blind would then add a SECOND copy — the 6x-duplicate
+    # class tests/unit/pipeline-cron-idempotency.test.sh exists to prevent.
+    if [[ -z "$out" ]] && ! _cron_present "$name"; then
+      out=$(openclaw cron add --name "$name" --cron "$schedule" \
+              ${_tz_flags[@]+"${_tz_flags[@]}"} \
+              --command "bash $script" --json 2>/dev/null) || out=""
+      [[ -n "$out" ]] && _log "WARN $name: this CLI rejected --no-deliver — registered with default delivery; _reconcile_managed_crons must silence it"
     fi
   else
     # 2026.5.x : no --command. Register an AGENT MESSAGE job that runs the SAME
@@ -846,6 +875,15 @@ MANAGED_RECONCILE_CRONS=(
   # or python3 absent), the reconcile pass here catches any remaining announce-
   # mode or non-empty `to` delivery and silences it via --no-deliver.
   "weekly-onboarding-update"
+  # v14.2.1 — THE LOCKSTEP MISS (fix/cron-announce-fail-closed). v14.2.0 added
+  # these two to the registrars AND to main()'s audit list, but NOT here. The
+  # registrars only ADD a missing cron; this list is the only thing that REPAIRS
+  # an existing one. So on every box that already carried them they stayed in
+  # the born-loud announce+last shape the reconcile pass exists to strip, and
+  # bootstrap-validate-daily could not announce its own failure. Confirmed live
+  # on 3 of 3 Macs carrying the cron, 2026-09-22.
+  "bootstrap-validate-daily"
+  "bootstrap-compact-weekly"
 )
 
 # Emit one TSV row per managed cron that currently exists, with the fields the
