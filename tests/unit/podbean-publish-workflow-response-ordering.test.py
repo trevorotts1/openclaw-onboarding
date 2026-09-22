@@ -40,10 +40,10 @@ assert _WF.is_file(), f"workflow not found at {_WF}"
 
 WF = json.loads(_WF.read_text(encoding="utf-8"))
 
-GATE = "IF — Episode Created Successfully"
-COMPLETION = "Idempotency — Mark Completed"
-RESPONSE = "Respond — Publish Success"
-NOTIFY = "Gmail — Success Notification"
+GATE = "IF  --  Episode Created Successfully"
+COMPLETION = "Idempotency  --  Mark Completed"
+RESPONSE = "Respond  --  Publish Success"
+NOTIFY = "Gmail  --  Success Notification"
 
 CONNECTIONS = WF["connections"]
 NODES = {n["name"]: n for n in WF["nodes"]}
@@ -138,8 +138,8 @@ class TestTheCompletionWriteCannotBeSkipped(unittest.TestCase):
     def test_the_failure_branch_is_untouched(self):
         """The fix must not quietly change what happens when the publish fails."""
         failure_targets = _targets(GATE, 1)
-        self.assertIn("Respond — Publish Failure", failure_targets)
-        self.assertIn("Idempotency — Mark Failed", failure_targets)
+        self.assertIn("Respond  --  Publish Failure", failure_targets)
+        self.assertIn("Idempotency  --  Mark Failed", failure_targets)
 
 
 if __name__ == "__main__":
