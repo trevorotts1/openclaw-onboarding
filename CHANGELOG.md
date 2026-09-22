@@ -37,7 +37,7 @@ The HTTP probe helpers still return `None` on a network error, which `probe_prov
 
 The pair that matters is asserted together: a healthy WAL database that exists and holds rows IS read, and an existing-but-unreadable one fails loudly rather than reporting zero. It carries its own known-good control - the same unreadable file, made readable, yields its row - so an empty result can never pass as proof, and it skips rather than fakes the unreadable case when run as root, where `chmod` does not bite.
 
-**39/39.** Proven non-vacuous: revert the source to untouched `origin/main`, keep the suite, and **33 of the 39 cases turn red**; the 6 that stay green are the controls that must pass either way. Restored, all 39 pass.
+**39/39.** Proven non-vacuous: revert the source to untouched `origin/main`, keep the suite, and the suite reports **7/39** - **32 cases turn red**. The 7 that stay green are the controls that must pass either way: the WAL fixture really is in WAL mode; a readable WAL database with rows IS read (pre-fix too, which is what makes the unreadable case a real difference rather than a broken probe); a readable run is not blind on the sweep; the same unreadable file made readable yields its row; a failed job is terminal for the stale sweep; a 5h-hung step was NOT caught at the old 24h threshold; and an absent config file is a clean default. Restored, all 39 pass.
 
 The script's own self-test goes 20 checks to **29/29**. One existing assertion was **strengthened**, not weakened: `rc == EXIT_OK` became `rc == EXIT_BLIND`, because that fixture's two providers have deliberately unset keys and the run genuinely cannot tell whether the client has credit. It passing while blind was the defect in miniature.
 
