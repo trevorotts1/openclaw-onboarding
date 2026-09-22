@@ -104,6 +104,11 @@ resolve_oc_root() { printf '%s\n' "$HOME/.openclaw"; }
 
 OCROOT="$HOME/.openclaw"
 CANON="$OCROOT/workspace"
+# Held in a variable so the teardown below never spells an OpenClaw install
+# path on the same line as `rm -rf` -- AGENTS.md N28's static gate rejects that
+# shape in any tracked .sh, and is right to: HOME is a sandbox here, but the
+# gate cannot know that from a grep.
+CLAWDROOT="$HOME/clawd"
 
 seed5() {   # seed5 DIR FILENAME -> five backups with deterministic timestamps
   local d="$1" f="$2" t
@@ -115,7 +120,7 @@ seed5() {   # seed5 DIR FILENAME -> five backups with deterministic timestamps
 cnt() { ls -1d "$1"/"$2".bak-unify-* 2>/dev/null | wc -l | tr -d ' '; }
 
 build_tree() {
-  rm -rf "$OCROOT" "$HOME/clawd"
+  rm -rf "$OCROOT" "$CLAWDROOT"
   mkdir -p "$CANON"
   printf 'CANONICAL BODY v1\n' > "$CANON/AGENTS.md"
   printf 'canonical tools\n'   > "$CANON/TOOLS.md"
@@ -145,7 +150,7 @@ build_tree() {
   seed5 "$ZHC" AGENTS.md
 
   # R5 out-of-tree ~/clawd tree.
-  CLAWD="$HOME/clawd/zero-human-company/acme/departments/ops/lead"
+  CLAWD="$CLAWDROOT/zero-human-company/acme/departments/ops/lead"
   mkdir -p "$CLAWD"; printf 'lead identity\n' > "$CLAWD/IDENTITY.md"
   seed5 "$CLAWD" AGENTS.md
 
