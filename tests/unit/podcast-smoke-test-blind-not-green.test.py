@@ -272,12 +272,58 @@ def main():
     check("[6] an optional provider the client never wired is NOT blind",
           optional_unset.get("blind") is False)
 
+    # -- 8. Same pattern, two more places the audit turned up. ----------------
+    # 8a. self_meter() returned 0.0 on EVERY failure path, and the caller computes
+    #     overspend = run_cost > max_cost -- so a broken or absent cost ledger
+    #     silently disarmed the one guard that catches a paid call wired into the
+    #     free health check. An unmeasurable cost is not a zero cost.
+    import shutil as _shutil
+    scripts_dir = os.path.join(REPO, "58-podcast-production-engine", "scripts")
+    fake_scripts = os.path.join(tmp, "scripts")
+    _shutil.copytree(scripts_dir, fake_scripts)
+    os.remove(os.path.join(fake_scripts, "podcast-cost-ledger.py"))
+    state_nm = os.path.join(tmp, "state-nometer")
+    os.makedirs(state_nm, exist_ok=True)
+    env = dict(os.environ)
+    env["HOME"] = tmp
+    proc = subprocess.run(
+        [sys.executable, os.path.join(fake_scripts, "podcast-smoke-test.py"),
+         "--offline", "--state-dir", state_nm, "--client", "t023",
+         "--db-path", os.path.join(tmp, "absent.db")],
+        capture_output=True, text=True, timeout=120, env=env)
+    try:
+        nm = json.loads(proc.stdout)
+    except ValueError:
+        nm = {}
+    check("[8a] an unmeasurable run cost is not reported as a measured zero",
+          nm.get("run_cost_measured") is False
+          and nm.get("run_cost_usd_estimate") is None)
+    check("[8a] an unmeasurable run cost is named as a blind spot",
+          any(b["check"] == "run_cost" for b in nm.get("blind_spots", [])))
+    check("[8a] the run does not pass while its own cost is unknown",
+          nm.get("overall") == "BLIND" and proc.returncode != 0)
+
+    # 8b. A config file that EXISTS and will not parse silently fell back to the
+    #     embedded defaults, so the run used thresholds nobody chose while looking
+    #     exactly like a healthy one.
+    bad_cfg = os.path.join(tmp, "broken-config.json")
+    with open(bad_cfg, "w", encoding="utf-8") as fh:
+        fh.write("{ this is not valid json")
+    cfg = mod.load_run_config(bad_cfg)
+    check("[8b] an unparseable config file is reported, not silently defaulted",
+          cfg.get("config_unreadable") == bad_cfg)
+    check("[8b] an ABSENT config file is still a clean default, not a blind spot",
+          mod.load_run_config(os.path.join(tmp, "no-such-config.json"))
+          .get("config_unreadable") is None)
+
     # -- 7. The source may not regrow the swallow. -----------------------------
     src = open(SCRIPT, encoding="utf-8").read()
     check("[7] no handler turns a sqlite error into an empty job list",
           "except sqlite3.Error as exc:\n        _eprint" not in src)
     check("[7] the sweep failure path no longer substitutes stale_count 0",
           '{"stale_count": 0, "stale_jobs": [], "error": str(exc)}' not in src)
+    check("[7] self_meter no longer reports 0.0 for an unmeasurable cost",
+          'could not self-meter (%s)" % exc)\n        return 0.0' not in src)
     # Behavioural, not textual: the old fallback is quoted in this file's own
     # docstring, so a grep would match the explanation as well as the bug.
     weird = os.path.join(tmp, "weird-endpoints.json")

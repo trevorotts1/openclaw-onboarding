@@ -263,7 +263,15 @@ def load_run_config(config_path):
     stale_hours = DEFAULT_STALE_JOB_ALERT_HOURS
     stale_hours_by_status = {}
     failed_lookback_hours = DEFAULT_FAILED_JOB_LOOKBACK_HOURS
-    cfg = _load_mapping(_find_skill_config(config_path))
+    cfg_path = _find_skill_config(config_path)
+    cfg = _load_mapping(cfg_path)
+    # A config file that is ABSENT is fine: the embedded defaults are the
+    # documented fallback. A config file that EXISTS and will not parse is not
+    # fine -- the run then uses thresholds nobody chose while looking identical
+    # to a healthy one. Report it rather than quietly substituting defaults.
+    config_unreadable = None
+    if cfg_path and os.path.exists(cfg_path) and not isinstance(cfg, dict):
+        config_unreadable = cfg_path
     if isinstance(cfg, dict):
         node = cfg.get("podcast_engine", cfg)
         if isinstance(node, dict):
@@ -290,6 +298,7 @@ def load_run_config(config_path):
         "stale_job_alert_hours": stale_hours,
         "stale_job_alert_hours_by_status": stale_hours_by_status,
         "failed_job_lookback_hours": failed_lookback_hours,
+        "config_unreadable": config_unreadable,
     }
 
 
@@ -504,9 +513,19 @@ def _apply_force_status(services, force_status):
 # Self-metering through the cost ledger (single source of price truth)
 # ---------------------------------------------------------------------------
 def self_meter(state_dir, client, probe_count, config_path):
+    """Record this run's cost to the daily ledger. Returns the recorded dollars,
+    or None when the cost could not be measured at all.
+
+    None, not 0.0. Every failure path here used to return 0.0, and the caller
+    computes `overspend = run_cost > max_cost` -- so a broken or missing ledger
+    silently DISARMED the overspend canary, the one guard that exists to catch
+    somebody wiring a paid call into the free health check. An unmeasurable cost
+    is not a zero cost. The caller turns None into a blind spot."""
     ledger = os.path.join(_script_dir(), "podcast-cost-ledger.py")
     if not os.path.exists(ledger):
-        return 0.0
+        _eprint("smoke-test: cost ledger not present at %s; run cost is "
+                "UNMEASURED and the overspend canary cannot fire" % ledger)
+        return None
     cmd = [sys.executable, ledger, "--state-dir", state_dir]
     if config_path:
         cmd += ["--config", config_path]
@@ -517,11 +536,13 @@ def self_meter(state_dir, client, probe_count, config_path):
         if out.returncode in (0, 2):  # ok or advisory soft
             data = json.loads(out.stdout or "{}")
             return float(data.get("recorded_usd", 0.0))
-        _eprint("smoke-test: ledger record returned %d" % out.returncode)
-        return 0.0
+        _eprint("smoke-test: ledger record returned %d; run cost is UNMEASURED"
+                % out.returncode)
+        return None
     except Exception as exc:
-        _eprint("smoke-test: could not self-meter (%s)" % exc)
-        return 0.0
+        _eprint("smoke-test: could not self-meter (%s); run cost is UNMEASURED"
+                % exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1025,21 +1046,44 @@ def do_run(args):
                     "source": endpoints_path,
                 })
 
-    # Self-meter to the daily ledger (price truth lives in the ledger).
-    run_cost = self_meter(state_dir, client, probe_count, args.config)
+    if run_cfg["config_unreadable"]:
+        blind_spots.append({
+            "check": "run_config",
+            "reason": "config file exists but could not be parsed; this run used "
+                      "embedded default thresholds, not the configured ones",
+            "source": run_cfg["config_unreadable"],
+        })
+
+    # Self-meter to the daily ledger (price truth lives in the ledger). None
+    # means the cost could not be measured, which disarms the overspend canary.
+    measured_cost = self_meter(state_dir, client, probe_count, args.config)
+    cost_measured = measured_cost is not None
+    run_cost = measured_cost if cost_measured else 0.0
+    if not cost_measured:
+        route_alert(state_dir, client, "smoke_test", "cost_unmeasured", "status",
+                    "Daily smoke test could not measure its own run cost, so the "
+                    "overspend canary could not fire on this run.")
+        blind_spots.append({
+            "check": "run_cost",
+            "reason": "run cost could not be measured; the overspend canary "
+                      "could not fire",
+            "source": os.path.join(_script_dir(), "podcast-cost-ledger.py"),
+        })
 
     # Write health BEFORE alerting so the dashboard always reflects the latest.
     health = {
         "checked_at": _now_iso(),
         "client": client,
         "services": services,
-        "run_cost_usd_estimate": round(run_cost, 6),
+        "run_cost_usd_estimate": round(run_cost, 6) if cost_measured else None,
+        "run_cost_measured": cost_measured,
         "probes": probe_count,
     }
     _atomic_write_json(health_path, health)
 
-    # Overspend canary: fire to the OPERATOR, never the client.
-    overspend = run_cost > max_cost
+    # Overspend canary: fire to the OPERATOR, never the client. Only meaningful
+    # when the cost was actually measured; an unmeasured run is blind, above.
+    overspend = cost_measured and run_cost > max_cost
     if overspend:
         route_alert(state_dir, client, "smoke_test", "smoke_test_overspend",
                     "canary",
@@ -1092,7 +1136,8 @@ def do_run(args):
     summary = {
         "checked_at": health["checked_at"],
         "client": client,
-        "run_cost_usd_estimate": round(run_cost, 6),
+        "run_cost_usd_estimate": round(run_cost, 6) if cost_measured else None,
+        "run_cost_measured": cost_measured,
         "run_budget_usd": max_cost,
         "overspend_canary": overspend,
         "services": {n: s["status"] for n, s in services.items()},

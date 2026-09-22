@@ -1,3 +1,51 @@
+## [v25.1.77]  -  2026-09-22  -  A blind daily smoke test is not a green one: Skill 58 stops rendering "could not check" as "checked, found nothing"
+
+### Why
+The Skill 58 daily smoke test is the ONLY recurring job this skill ships, one cron per client at 06:00. It has been reporting success while blind, on every box, every day.
+
+Recorded on a live client box: the run stored status `ok`, and its own stored diagnostic contained, at the same moment, `"services": {"podcast_engine": "UNKNOWN"}`, `"stale_jobs": {"stale_count": 0, "stale_jobs": []}` on stdout and, on stderr, `smoke-test: stale-job sweep could not read .../podcast-engine.db (unable to open database file)`. An episode job died the same day and no check ever mentioned it.
+
+Reproduced here from untouched `origin/main` before anything was changed, with a known-good control: a WAL database seeded with 2 job rows, made unreadable, produced exactly that stdout, that stderr and exit 0; opening the same file read-write at the same moment returned both rows, one of them dead. The database was healthy; the check was not.
+
+Four independent mechanisms, each of which alone turns "I could not check" into "checked, found nothing":
+
+1. **`find_stale_jobs()` caught `sqlite3.Error`, warned to stderr and returned `[]`.** An unreadable database became "zero stale jobs".
+2. **`do_run()` wrapped the sweep in `except Exception` and substituted `{"stale_count": 0}`**, so even a raise became a clean zero.
+3. **`load_endpoints()` ended in `data.get("providers", data)`.** The shipped `config/smoke-endpoints.json` has no `"providers"` key, so the whole file was used as the provider map. Its only dict-valued top-level key is the config wrapper `podcast_engine`, so every run probed one imaginary provider by that name, found it had no url, marked it UNKNOWN and exited 0. **The five real pinned providers - ollama_cloud, openrouter, kie_ai, fish_audio, perplexity - were never probed on any box on any day.** That is the `podcast_engine: UNKNOWN` in the diagnostic: not a provider at all, a config key cosplaying as one.
+4. **A job that had already DIED was structurally invisible.** `failed` is in `_JOB_TERMINAL_STATES`, so the stale sweep skips it before any threshold is consulted, and nothing in the script looked at failed jobs anywhere. Lowering the threshold would not have caught it at any value.
+
+An audit for the same pattern found two more: `self_meter()` returned `0.0` on every failure path, and the caller computes `overspend = run_cost > max_cost`, so a broken or absent cost ledger silently **disarmed the overspend canary** - the one guard that catches a paid call wired into the free health check; and `load_run_config()` fell back to embedded defaults when a config file existed but would not parse, so a run could use thresholds nobody chose while looking exactly like a healthy one.
+
+### What changed
+Every `podcast_jobs` read now routes through one `_read_podcast_jobs()` chokepoint that raises `PodcastDbUnreadable` carrying filesystem diagnostics (modes, ownership, sidecar presence - metadata only, never file content, so it cannot leak a value). An **absent** database still returns `[]`: that is the unprovisioned case and a real answer. A database that EXISTS and will not open is a finding.
+
+The run now carries a `blind_spots` ledger and an `overall` field that is never `PASS` while that list is non-empty, and exits a new `EXIT_BLIND` (6). Provider `FAIL` and stale/failed job findings remain DATA routed through alert-dedup and still exit 0 - those are things the check SAW. Only "could not check" fails the run.
+
+`UNKNOWN` no longer coexists with a pass. Each probe result carries `blind`: false means unknown-by-design (no free endpoint pinned, `--offline`, an optional provider the client never wired), true means we were supposed to be able to check and could not. `ollama_cloud`'s only method 2 is a **billed POST**, so it is deliberately not mapped to a probe - UNKNOWN by policy, never spend, exactly as the file's own `unknown_provider_policy` requires.
+
+`find_failed_jobs()` reports jobs that have already died, within a lookback window so an old corpse stops re-alerting. `self_meter()` returns `None` rather than `0.0` when the cost cannot be measured, and the summary reports `run_cost_measured` so an unmeasured run can never read as a measured zero.
+
+`config/furnace.json` was **unreachable** by `_find_skill_config()` - it was absent from the candidate list - so every box silently used the embedded defaults and no operator could tune a threshold by editing the file that documents it. Added. The stale threshold drops 24h to 4h: every status this sweep looks at is machine-driven and the slowest legitimate step is under an hour, so 24h meant a stage runner could die minutes after the daily check and the next morning was the first moment anything could notice.
+
+### Not changed
+`mode=ro` is kept, deliberately, against the report that prompted this work. The claim that a read-only URI cannot read a WAL database was **measured against sqlite 3.53.4 and is false**: `mode=ro` opened a WAL database with no `-wal`/`-shm` sidecars present and returned its rows, creating the `-shm` itself. Every condition that DOES produce `unable to open database file` - db file unreadable, `-wal` sidecar unreadable, containing directory not searchable - produces the **identical** error under `mode=rw`. Switching the access mode fixes nothing and would only trade away the read-only guarantee this sweep is supposed to hold. The measurement is recorded in the source so the line is not "fixed" again. The bug was never the access mode; it was swallowing the error.
+
+The HTTP probe helpers still return `None` on a network error, which `probe_provider()` turns into `FAIL`, never into a pass - that is fail-closed already and was left alone. The alert-dedup invocation failure path still leaves the alert spooled, which is the designed durable queue, not a swallowed result. Provider `FAIL` semantics, the single-writer doctrine, the cost budget, and what the run is allowed to spend are all unchanged.
+
+### Tests
+`tests/unit/podcast-smoke-test-blind-not-green.test.py` (T0-23), wired into the existing `podcast-engine-fail-closed-guard` workflow alongside the four fail-closed suites it belongs with, plus a step that runs the script's own hermetic self-test. It drives the REAL CLI against temp WAL databases with `HOME` redirected: no network, no client data, no live database, no secret read or printed.
+
+The pair that matters is asserted together: a healthy WAL database that exists and holds rows IS read, and an existing-but-unreadable one fails loudly rather than reporting zero. It carries its own known-good control - the same unreadable file, made readable, yields its row - so an empty result can never pass as proof, and it skips rather than fakes the unreadable case when run as root, where `chmod` does not bite.
+
+**39/39.** Proven non-vacuous: revert the source to untouched `origin/main`, keep the suite, and **33 of the 39 cases turn red**; the 6 that stay green are the controls that must pass either way. Restored, all 39 pass.
+
+The script's own self-test goes 20 checks to **29/29**. One existing assertion was **strengthened**, not weakened: `rc == EXIT_OK` became `rc == EXIT_BLIND`, because that fixture's two providers have deliberately unset keys and the run genuinely cannot tell whether the client has credit. It passing while blind was the defect in miniature.
+
+Pre-existing suites unchanged and green: `pytest 58-podcast-production-engine/scripts/tests` **404 passed**; `guard-no-anthropic-runtime` PASS; `guard-cron-inventory --self-test` PASS.
+
+### Fleet note, not executed here
+This is a repo change only. No box was touched, no updater was run, no podcast job was triggered. When it rolls, a box whose cron environment does not carry the provider keys will now report BLIND instead of a false green - that is the true answer, and it is the signal that the daily check was never able to verify credit on that box.
+
 ## [v25.1.75]  -  2026-09-22  -  The installer repairs the company id the Command Center actually reads, on every install path
 
 ### Why
