@@ -39,10 +39,18 @@
 #     provider and takes no model turn.
 #
 # EXIT CODES:
-#    0  ran (health computed and written); provider health is DATA, routed via
-#       alert-dedup, not signalled by the exit code, so the cron stays green.
+#    0  ran AND every check this run is responsible for actually ran. Provider
+#       health is DATA, routed via alert-dedup, not signalled by the exit code,
+#       so a FAIL provider or a stale/failed job finding still exits 0: those
+#       are things the check SAW.
 #    3  usage or hard input error.
 #    5  overspend canary tripped (run cost estimate crossed the run budget).
+#    6  BLIND. At least one check could not be performed at all (an existing
+#       podcast_jobs DB that would not open, a provider whose credit state is
+#       unverifiable, a missing/unparseable pinned-endpoint file). A health
+#       check that could not look is NEVER a pass. "Checked and found none" and
+#       "could not check" are different answers and this script will not let the
+#       second render as the first.
 # =============================================================================
 
 """Podcast Production Engine daily credit smoke test - bounded, self-metered."""
@@ -61,6 +69,7 @@ import urllib.request
 EXIT_OK = 0
 EXIT_USAGE = 3
 EXIT_OVERSPEND = 5
+EXIT_BLIND = 6
 
 # Embedded fallbacks so the run is always bounded even before the per-client
 # config lands. The skill config overrides these.
@@ -91,7 +100,19 @@ HELD_STAGES = ("queued", "cost_hold", "credit_out", "credit_hold", "held")
 # -----------------------------------------------------------------------------
 _JOB_TERMINAL_STATES = frozenset({"complete", "failed"})
 _JOB_HOLDING_STATES = frozenset({"queued_credit_out"})
-DEFAULT_STALE_JOB_ALERT_HOURS = 24
+# 4h, not 24h. Every status this sweep looks at is MACHINE-driven: a stage runner
+# is expected to move the row inside a single run, and the slowest legitimate step
+# (producing_audio) is under an hour. A 24h threshold meant a stage runner could
+# die at 06:05 and the 06:00 check the next morning was the first thing that could
+# possibly notice -- a whole day of an episode sitting dead. Per-status overrides
+# live in furnace.json smoke_test.stale_job_alert_hours_by_status.
+DEFAULT_STALE_JOB_ALERT_HOURS = 4
+# A row that has ALREADY died (status 'failed') is terminal, so the stale sweep
+# skips it forever no matter how low the threshold goes. It is still the single
+# most important thing a daily health check can report, and until now nothing in
+# this script looked at it at all. Reported for this many hours after death, so a
+# fresh corpse is surfaced once and an old one stops re-alerting.
+DEFAULT_FAILED_JOB_LOOKBACK_HOURS = 48
 
 
 # ---------------------------------------------------------------------------
@@ -223,8 +244,13 @@ def _find_skill_config(explicit):
     if env:
         return env
     root = _skill_root()
+    # furnace.json is where this skill actually ships smoke_test.* (thresholds,
+    # budgets). It was absent from this list, so load_run_config() silently fell
+    # through to the embedded defaults on every box and no operator could tune a
+    # threshold by editing the file that documents it.
     for name in ("podcast-engine.yaml", "podcast-engine.yml",
-                 "podcast-engine.json", "config.yaml", "config.json"):
+                 "podcast-engine.json", "config.yaml", "config.json",
+                 "furnace.json"):
         candidate = os.path.join(root, "config", name)
         if os.path.exists(candidate):
             return candidate
@@ -236,6 +262,7 @@ def load_run_config(config_path):
     hold_days = DEFAULT_QUEUE_MAX_HOLD_DAYS
     stale_hours = DEFAULT_STALE_JOB_ALERT_HOURS
     stale_hours_by_status = {}
+    failed_lookback_hours = DEFAULT_FAILED_JOB_LOOKBACK_HOURS
     cfg = _load_mapping(_find_skill_config(config_path))
     if isinstance(cfg, dict):
         node = cfg.get("podcast_engine", cfg)
@@ -252,6 +279,8 @@ def load_run_config(config_path):
                     str(k): float(v)
                     for k, v in smoke["stale_job_alert_hours_by_status"].items()
                 }
+            if isinstance(smoke, dict) and "failed_job_lookback_hours" in smoke:
+                failed_lookback_hours = float(smoke["failed_job_lookback_hours"])
             limits = node.get("limits", {})
             if isinstance(limits, dict) and "queue_max_hold_days" in limits:
                 hold_days = int(limits["queue_max_hold_days"])
@@ -260,6 +289,7 @@ def load_run_config(config_path):
         "queue_max_hold_days": hold_days,
         "stale_job_alert_hours": stale_hours,
         "stale_job_alert_hours_by_status": stale_hours_by_status,
+        "failed_job_lookback_hours": failed_lookback_hours,
     }
 
 
@@ -277,15 +307,85 @@ def _resolve_podcast_db_path(explicit=None):
     )
 
 
+def _normalize_pinned_provider(name, spec):
+    """Translate ONE provider from the shape config/smoke-endpoints.json actually
+    ships into the flat spec probe_provider() consumes.
+
+    A paid method is never translated. smoke-endpoints.json's ollama_cloud has no
+    balance endpoint and only a method_2_capped_turn, which is a POST that BILLS.
+    probe_provider only issues a free GET or HEAD and sends no body, so a capped
+    turn is deliberately not mapped: that provider comes back UNKNOWN with
+    no_free_probe set, exactly as the file's own unknown_provider_policy requires
+    ("mark that provider status UNKNOWN and skip. Do not spend to find out")."""
+    optional = bool(spec.get("optional"))
+    for key, probe_kind in (("method_1_balance", "balance"),
+                            ("method_1_reachability", "reachability"),
+                            ("method_2_reachability", "reachability")):
+        method = spec.get(key)
+        if not isinstance(method, dict):
+            continue
+        if method.get("available") is False:
+            continue
+        url = method.get("url")
+        if not url:
+            continue
+        out = {
+            "probe": probe_kind,
+            "url": url,
+            "method": str(method.get("http_method", "GET")).upper(),
+            "ok_status": method.get("ok_status", [200]),
+            "timeout_s": float(method.get("timeout_seconds", 15)),
+            "optional": optional,
+        }
+        auth = method.get("auth")
+        if isinstance(auth, dict):
+            header = str(auth.get("header", "Authorization"))
+            scheme = str(auth.get("scheme", "")).lower()
+            key_env = [e for e in ([auth.get("key_env")] +
+                                   list(auth.get("key_env_aliases") or [])) if e]
+            out["key_env"] = key_env
+            if header.lower() != "authorization":
+                out["auth"] = "header"
+                out["header_name"] = header
+            elif scheme == "bearer":
+                out["auth"] = "bearer"
+            else:
+                out["auth"] = "token"
+        else:
+            out["auth"] = "none"
+        return out
+    return {"probe": "balance", "no_free_probe": True, "optional": optional}
+
+
 def load_endpoints(endpoints_path):
+    """Return (providers, path), or (None, path) when no pinned provider set could
+    be read at all.
+
+    This used to end in `providers = data.get("providers", data)`. The shipped
+    config/smoke-endpoints.json has no top-level "providers" key, so that fallback
+    handed back the WHOLE FILE as the provider map. Its only dict-valued top-level
+    key is the config wrapper "podcast_engine", so the run probed exactly one
+    imaginary provider called podcast_engine, found it had no url, marked it
+    UNKNOWN and exited 0 -- while ollama_cloud, openrouter, kie_ai, fish_audio and
+    perplexity, the five providers the file exists to pin, were never probed on any
+    box on any day. That is the `"services": {"podcast_engine": "UNKNOWN"}` in the
+    stored diagnostic. A shape this function does not recognise is now None (which
+    raises endpoints_missing and blinds the run), never a config key cosplaying as
+    a provider."""
     path = endpoints_path or os.path.join(_skill_root(), "config", "smoke-endpoints.json")
     data = _load_mapping(path)
     if not isinstance(data, dict):
         return None, path
-    providers = data.get("providers", data)
-    if not isinstance(providers, dict):
-        return None, path
-    return providers, path
+    # Flat shape: {"providers": {name: spec}} (tests, and any hand-pinned override).
+    if isinstance(data.get("providers"), dict):
+        return data["providers"], path
+    # Shipped shape: {"podcast_engine": {"smoke_endpoints": {name: spec}}}.
+    node = data.get("podcast_engine")
+    if isinstance(node, dict) and isinstance(node.get("smoke_endpoints"), dict):
+        pinned = node["smoke_endpoints"]
+        return ({n: _normalize_pinned_provider(n, sp)
+                 for n, sp in pinned.items() if isinstance(sp, dict)}, path)
+    return None, path
 
 
 # ---------------------------------------------------------------------------
@@ -318,16 +418,33 @@ def probe_provider(name, spec, offline=False):
     ok_status = spec.get("ok_status", [200])
     timeout_s = float(spec.get("timeout_s", 15))
 
-    result = {"status": "UNKNOWN", "checked_at": _now_iso(), "detail": ""}
+    # "blind" separates the two kinds of UNKNOWN that used to look identical in
+    # health.json. FALSE means unknown-by-design: the config itself declares this
+    # provider cannot be checked for free, or the operator asked for --offline.
+    # TRUE means we were SUPPOSED to be able to check and could not -- a
+    # provisioning gap. Only a blind UNKNOWN can fail the run.
+    result = {"status": "UNKNOWN", "checked_at": _now_iso(), "detail": "",
+              "blind": False}
+
+    if spec.get("no_free_probe"):
+        result["detail"] = ("no free balance or reachability endpoint pinned "
+                            "(policy: skip, never spend to find out)")
+        return result
 
     if not url:
         result["detail"] = "no url pinned"
+        result["blind"] = True
         return result
 
     # An auth-bearing balance probe needs a key. Report SET or NOT SET only.
     needs_key = auth in ("bearer", "header", "token")
     if needs_key and not _key_is_set(key_env):
         result["detail"] = "key not set"
+        # An optional provider the client never wired is genuinely not a finding.
+        # A REQUIRED provider with no key means this run cannot tell whether the
+        # client still has credit, which is the exact thing this cron exists to
+        # answer. That is blindness, not health.
+        result["blind"] = not bool(spec.get("optional"))
         return result
 
     if offline:
@@ -378,6 +495,9 @@ def _apply_force_status(services, force_status):
         if status in VALID_STATUS and name in services:
             services[name]["status"] = status
             services[name]["detail"] = "forced " + status
+            # An operator who forces a status has answered the question by hand;
+            # the run is no longer blind on this provider.
+            services[name]["blind"] = False
 
 
 # ---------------------------------------------------------------------------
@@ -635,29 +755,98 @@ def run_queue_duties(state_dir, client, hold_days, recovered_services):
 # ---------------------------------------------------------------------------
 # E8: stuck non-terminal-job sweep (read-only; alert-only, never auto-fail/resume)
 # ---------------------------------------------------------------------------
+class PodcastDbUnreadable(Exception):
+    """The podcast_jobs database EXISTS and could not be read.
+
+    This is deliberately an exception and not an empty list. The whole class of
+    bug this replaces is a health check that opened a database, failed, printed a
+    warning nobody reads, returned [] and reported a clean zero. "Zero stale
+    jobs" and "I could not look" are different answers; only the first is a pass.
+    """
+
+
+def _db_diagnostics(db_path):
+    """Filesystem facts that explain an open failure, so the operator can fix the
+    box instead of guessing. Metadata only: modes, sizes and sidecar presence.
+    Never opens, reads or echoes any file CONTENT, so this can never leak a value."""
+    facts = []
+    try:
+        st = os.stat(db_path)
+        facts.append("mode %s" % oct(st.st_mode & 0o777))
+        facts.append("size %d" % st.st_size)
+        facts.append("owned by this user: %s"
+                     % ("yes" if st.st_uid == os.geteuid() else "no"))
+        facts.append("readable by this user: %s"
+                     % ("yes" if os.access(db_path, os.R_OK) else "no"))
+    except OSError as exc:
+        facts.append("stat failed (%s)" % exc)
+    parent = os.path.dirname(db_path) or "."
+    facts.append("dir searchable: %s" % ("yes" if os.access(parent, os.X_OK) else "no"))
+    facts.append("dir writable: %s" % ("yes" if os.access(parent, os.W_OK) else "no"))
+    for suffix in ("-wal", "-shm"):
+        side = db_path + suffix
+        if os.path.exists(side):
+            try:
+                facts.append("%s present, mode %s, readable %s"
+                             % (suffix, oct(os.stat(side).st_mode & 0o777),
+                                "yes" if os.access(side, os.R_OK) else "no"))
+            except OSError:
+                facts.append("%s present, unstattable" % suffix)
+        else:
+            facts.append("%s absent" % suffix)
+    return "; ".join(facts)
+
+
+def _read_podcast_jobs(db_path):
+    """THE single chokepoint every podcast_jobs read in this script goes through.
+
+    Returns a list of sqlite3.Row, or raises PodcastDbUnreadable. It never returns
+    an empty list to mean "the open failed" -- an empty list here always means the
+    table really is empty.
+
+    On the read-only URI: `mode=ro` is kept deliberately. The claim that a
+    `mode=ro` URI cannot read a WAL database was MEASURED against sqlite 3.53.4
+    and is false -- `mode=ro` opened a WAL database with no -wal/-shm sidecars
+    present and returned its rows, creating the -shm itself. Every condition that
+    DOES produce "unable to open database file" (db file unreadable, -wal sidecar
+    unreadable, containing directory not searchable) produces the identical error
+    under `mode=rw`, so switching the access mode fixes nothing and would only
+    trade away the read-only guarantee this sweep is supposed to hold. The bug was
+    never the access mode; it was swallowing the error. Do not "fix" this line."""
+    uri = "file:%s?mode=ro" % urllib.request.pathname2url(db_path)
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise PodcastDbUnreadable(
+            "could not open %s (%s) [%s]" % (db_path, exc, _db_diagnostics(db_path)))
+    try:
+        conn.row_factory = sqlite3.Row
+        return conn.execute(
+            "SELECT job_id, client_id, status, updated_at FROM podcast_jobs"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise PodcastDbUnreadable(
+            "could not read podcast_jobs from %s (%s) [%s]"
+            % (db_path, exc, _db_diagnostics(db_path)))
+    finally:
+        conn.close()
+
+
 def find_stale_jobs(db_path, default_hours, by_status_hours=None, now=None):
     """Read-only SELECT over podcast_jobs for rows sitting in a non-terminal,
-    non-held status past their (possibly per-status) age threshold. Returns a
-    list of dicts; never raises on a missing/corrupt/absent DB (fail-soft: an
-    unprovisioned or not-yet-created DB is not a stale-job finding)."""
+    non-held status past their (possibly per-status) age threshold.
+
+    Returns a list of dicts. An ABSENT database returns [] -- that is the
+    unprovisioned case, and it is a real answer: there are no jobs because there
+    is no engine here yet. A database that EXISTS and will not open raises
+    PodcastDbUnreadable, because at that point this function has no idea whether
+    there are stale jobs and must not pretend it does."""
     by_status_hours = by_status_hours or {}
     now = now or _dt.datetime.now(_dt.timezone.utc)
     if not db_path or not os.path.exists(db_path):
         return []
     stale = []
-    try:
-        uri = "file:%s?mode=ro" % urllib.request.pathname2url(db_path)
-        conn = sqlite3.connect(uri, uri=True)
-        try:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT job_id, client_id, status, updated_at FROM podcast_jobs"
-            ).fetchall()
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        _eprint("smoke-test: stale-job sweep could not read %s (%s)" % (db_path, exc))
-        return []
+    rows = _read_podcast_jobs(db_path)
 
     for row in rows:
         status = row["status"]
@@ -686,12 +875,55 @@ def find_stale_jobs(db_path, default_hours, by_status_hours=None, now=None):
     return stale
 
 
-def run_stale_job_sweep(state_dir, client, db_path, default_hours, by_status_hours=None):
-    """Alert-only: a stale job never gets auto-failed or auto-resumed here (SKILL.md
-    forbids per-job watchers/actuation outside the sole writer). Each finding routes
-    exactly ONE deduped operator alert through alert-dedup (dedup key includes the
-    job_id, so a still-stuck job reminds again only after alert-dedup's own window;
-    a resolved job simply stops matching the SELECT on the next daily run)."""
+def find_failed_jobs(db_path, lookback_hours, now=None):
+    """Rows that have ALREADY died: podcast_jobs.status == 'failed', within the
+    lookback window.
+
+    The stale sweep cannot see these and never could: 'failed' is in
+    _JOB_TERMINAL_STATES, so it is skipped before any threshold is consulted. That
+    left the single most important daily signal -- an episode that died -- with no
+    check looking at it anywhere in this script. Lowering the stale threshold would
+    not have helped: a dead job is skipped at ANY threshold.
+
+    Same contract as find_stale_jobs: absent DB -> [], unreadable DB -> raises."""
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    if not db_path or not os.path.exists(db_path):
+        return []
+    failed = []
+    for row in _read_podcast_jobs(db_path):
+        if row["status"] != "failed":
+            continue
+        updated_at = row["updated_at"]
+        if not updated_at:
+            continue
+        try:
+            since = _dt.datetime.strptime(updated_at, "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=_dt.timezone.utc
+            )
+        except ValueError:
+            continue
+        age_hours = (now - since).total_seconds() / 3600.0
+        if age_hours <= float(lookback_hours):
+            failed.append({
+                "job_id": row["job_id"],
+                "client_id": row["client_id"],
+                "status": row["status"],
+                "updated_at": updated_at,
+                "age_hours": round(age_hours, 2),
+            })
+    return failed
+
+
+def run_stale_job_sweep(state_dir, client, db_path, default_hours, by_status_hours=None,
+                        failed_lookback_hours=DEFAULT_FAILED_JOB_LOOKBACK_HOURS):
+    """Alert-only: a stale or failed job never gets auto-failed or auto-resumed here
+    (SKILL.md forbids per-job watchers/actuation outside the sole writer). Each
+    finding routes exactly ONE deduped operator alert through alert-dedup (dedup key
+    includes the job_id, so a still-stuck job reminds again only after alert-dedup's
+    own window; a resolved job simply stops matching the SELECT on the next run).
+
+    Raises PodcastDbUnreadable rather than returning a zeroed result when the
+    database exists and will not open. The caller turns that into a BLIND run."""
     stale = find_stale_jobs(db_path, default_hours, by_status_hours)
     for job in stale:
         route_alert(
@@ -700,7 +932,21 @@ def run_stale_job_sweep(state_dir, client, db_path, default_hours, by_status_hou
             "crashed/hung stage runner; the job has not been touched."
             % (job["job_id"], job["status"], job["age_hours"], job["threshold_hours"]),
         )
-    return {"stale_count": len(stale), "stale_jobs": [j["job_id"] for j in stale]}
+    failed = find_failed_jobs(db_path, failed_lookback_hours)
+    for job in failed:
+        route_alert(
+            state_dir, client, "episode_failed", job["job_id"], "status",
+            "Job %s is in status 'failed' (died %.1fh ago). The episode did not "
+            "complete and nothing will retry it on its own."
+            % (job["job_id"], job["age_hours"]),
+        )
+    return {
+        "checked": True,
+        "stale_count": len(stale),
+        "stale_jobs": [j["job_id"] for j in stale],
+        "failed_count": len(failed),
+        "failed_jobs": [j["job_id"] for j in failed],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -735,10 +981,17 @@ def do_run(args):
     hold_days = run_cfg["queue_max_hold_days"]
     stale_hours = run_cfg["stale_job_alert_hours"]
     stale_hours_by_status = run_cfg["stale_job_alert_hours_by_status"]
+    failed_lookback_hours = run_cfg["failed_job_lookback_hours"]
 
     providers, endpoints_path = load_endpoints(args.endpoints)
     health_path = os.path.join(state_dir, "health.json")
     prev_health = _read_json(health_path, None)
+
+    # Every check this run could NOT perform lands here. A non-empty list is the
+    # difference between "healthy" and "did not look", and it is what makes the
+    # run exit non-zero. Nothing in this function may append to it silently: each
+    # entry names the check, why it could not run, and where to go look.
+    blind_spots = []
 
     services = {}
     probe_count = 0
@@ -748,6 +1001,11 @@ def do_run(args):
         route_alert(state_dir, client, "smoke_test", "endpoints_missing", "status",
                     "Smoke test found no pinned balance endpoints. Provision "
                     "config/smoke-endpoints.json.")
+        blind_spots.append({
+            "check": "provider_endpoints",
+            "reason": "no pinned provider endpoints could be read from this file",
+            "source": endpoints_path,
+        })
     else:
         for name in sorted(providers.keys()):
             spec = providers[name]
@@ -759,6 +1017,13 @@ def do_run(args):
                                                  "offline (skipped)"):
                 probe_count += 1
         _apply_force_status(services, args.force_status)
+        for name in sorted(services):
+            if services[name].get("blind"):
+                blind_spots.append({
+                    "check": "provider:" + name,
+                    "reason": services[name]["detail"],
+                    "source": endpoints_path,
+                })
 
     # Self-meter to the daily ledger (price truth lives in the ledger).
     run_cost = self_meter(state_dir, client, probe_count, args.config)
@@ -796,16 +1061,33 @@ def do_run(args):
     # Queue duties: age-out and drain, in the SAME run (no second cron).
     queue_result = run_queue_duties(state_dir, client, hold_days, recovered)
 
-    # E8: stuck non-terminal-job sweep, in the SAME run (no second cron). Read-only;
-    # never fails the smoke-test run itself (a DB read error degrades to "no findings").
+    # E8: stuck/failed job sweep, in the SAME run (no second cron). Read-only.
+    # A DB that exists and will not open no longer "degrades to no findings" -- it
+    # is recorded as a blind spot and the run exits non-zero. That degrade is the
+    # entire defect this block used to ship: the sweep printed "could not read" to
+    # stderr, returned {"stale_count": 0}, and the scheduler stored the run as ok.
+    db_path = _resolve_podcast_db_path(args.db_path)
     try:
-        db_path = _resolve_podcast_db_path(args.db_path)
         stale_result = run_stale_job_sweep(
-            state_dir, client, db_path, stale_hours, stale_hours_by_status
+            state_dir, client, db_path, stale_hours, stale_hours_by_status,
+            failed_lookback_hours,
         )
+    except PodcastDbUnreadable as exc:
+        _eprint("smoke-test: job sweep could not read the database: %s" % exc)
+        route_alert(state_dir, client, "smoke_test", "job_db_unreadable", "status",
+                    "Daily smoke test could not read the podcast job database, so "
+                    "stale and failed episodes went unchecked: %s" % exc)
+        stale_result = {"checked": False, "reason": str(exc)}
+        blind_spots.append({"check": "job_sweep", "reason": str(exc),
+                            "source": db_path})
     except Exception as exc:  # pragma: no cover - defensive, never crash the tick
-        _eprint("smoke-test: stale-job sweep failed (%s)" % exc)
-        stale_result = {"stale_count": 0, "stale_jobs": [], "error": str(exc)}
+        _eprint("smoke-test: job sweep failed (%s)" % exc)
+        route_alert(state_dir, client, "smoke_test", "job_sweep_failed", "status",
+                    "Daily smoke test job sweep raised and could not complete: %s"
+                    % exc)
+        stale_result = {"checked": False, "reason": str(exc)}
+        blind_spots.append({"check": "job_sweep", "reason": str(exc),
+                            "source": db_path})
 
     summary = {
         "checked_at": health["checked_at"],
@@ -820,9 +1102,19 @@ def do_run(args):
         "queue": queue_result,
         "stale_jobs": stale_result,
         "endpoints_source": endpoints_path,
+        # The two fields a reader should look at FIRST. overall is never "PASS"
+        # while blind_spots is non-empty, by construction below.
+        "overall": "BLIND" if blind_spots else "PASS",
+        "blind_spots": blind_spots,
     }
     sys.stdout.write(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    return EXIT_OVERSPEND if overspend else EXIT_OK
+    if overspend:
+        return EXIT_OVERSPEND
+    if blind_spots:
+        _eprint("smoke-test: BLIND -- %d check(s) could not be performed; this run "
+                "is NOT a pass" % len(blind_spots))
+        return EXIT_BLIND
+    return EXIT_OK
 
 
 # ---------------------------------------------------------------------------
@@ -899,13 +1191,21 @@ def do_self_test(_args):
         sys.stdout = real_stdout
         devnull.close()
 
-    check("run exits ok (no overspend on free probes)", rc == EXIT_OK)
+    # Both fixture providers are auth-bearing with a deliberately unset key, so
+    # this run genuinely CANNOT tell whether the client has credit. It must say so
+    # and exit EXIT_BLIND. (fish-audio is force-statused below, which clears its
+    # blindness; ollama-cloud is left blind on purpose.) This assertion was
+    # rc == EXIT_OK and passed while the run was blind -- that is the defect.
+    check("run exits BLIND when a required provider key is unset", rc == EXIT_BLIND)
+    check("no overspend on free probes", rc != EXIT_OVERSPEND)
 
     health = _read_json(os.path.join(state_dir, "health.json"), {})
     check("health.json written with services",
           isinstance(health.get("services"), dict) and health["services"])
     check("unset-key provider marked UNKNOWN",
           health.get("services", {}).get("ollama-cloud", {}).get("status") == "UNKNOWN")
+    check("unset-key provider flagged blind, not merely UNKNOWN",
+          health.get("services", {}).get("ollama-cloud", {}).get("blind") is True)
     check("run cost estimate is zero on free probes",
           float(health.get("run_cost_usd_estimate", 1)) == 0.0)
 
@@ -1075,10 +1375,80 @@ def do_self_test(_args):
             # do_run() call above via ns.db_path pointing at a nonexistent file).
             check("absent DB yields zero findings, not an error",
                   find_stale_jobs(os.path.join(tmp, "no-such.db"), 24) == [])
+
+            # REGRESSION (the defect): a DB that EXISTS, is in WAL mode and holds
+            # rows must be READ, not reported as zero. Control for the case below.
+            wal_db = os.path.join(tmp, "wal.db")
+            cw = sqlite3.connect(wal_db)
+            cw.execute("PRAGMA journal_mode=WAL")
+            cw.execute("CREATE TABLE podcast_jobs (job_id TEXT, client_id TEXT, "
+                       "status TEXT, updated_at TEXT)")
+            old_utc = (_now() - _dt.timedelta(hours=30)).astimezone(
+                _dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            recent_utc = (_now() - _dt.timedelta(hours=2)).astimezone(
+                _dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            cw.execute("INSERT INTO podcast_jobs VALUES ('w-stuck','c','writing',?)",
+                       (old_utc,))
+            cw.execute("INSERT INTO podcast_jobs VALUES ('w-dead','c','failed',?)",
+                       (recent_utc,))
+            cw.commit()
+            cw.close()
+            for _suffix in ("-wal", "-shm"):
+                _side = wal_db + _suffix
+                if os.path.exists(_side):
+                    os.remove(_side)
+            wal_found = {f["job_id"] for f in find_stale_jobs(wal_db, 24)}
+            check("WAL DB with rows is READ by the sweep, not reported as zero",
+                  "w-stuck" in wal_found)
+            dead = {f["job_id"] for f in find_failed_jobs(
+                wal_db, DEFAULT_FAILED_JOB_LOOKBACK_HOURS)}
+            check("a job that DIED (status failed) is reported", "w-dead" in dead)
+            check("a failed job is still skipped by the stale sweep (terminal)",
+                  "w-dead" not in wal_found)
+
+            # REGRESSION (the defect): a DB that exists and will NOT open must
+            # raise, never return []. os.chmod is a no-op for root, so the check
+            # is skipped rather than faked when the self-test runs as root.
+            unreadable = os.path.join(tmp, "unreadable.db")
+            cu = sqlite3.connect(unreadable)
+            cu.execute("CREATE TABLE podcast_jobs (job_id TEXT, client_id TEXT, "
+                       "status TEXT, updated_at TEXT)")
+            cu.execute("INSERT INTO podcast_jobs VALUES ('u1','c','writing',?)",
+                       (old_utc,))
+            cu.commit()
+            cu.close()
+            os.chmod(unreadable, 0o000)
+            if os.access(unreadable, os.R_OK):
+                check("unreadable-DB check skipped (running as root)", True)
+            else:
+                raised = False
+                try:
+                    find_stale_jobs(unreadable, 24)
+                except PodcastDbUnreadable:
+                    raised = True
+                check("an existing but unreadable DB RAISES, never returns zero",
+                      raised)
+            os.chmod(unreadable, 0o644)
         except Exception as exc:
             check("stale-job sweep drivable (%s)" % exc, False)
+
     else:
         check("podcast_state.py present (stale-job sweep)", False)
+    # The shipped pinned-endpoint file must parse into the five REAL providers,
+    # never into one imaginary provider named after the config wrapper key.
+    shipped = os.path.join(_skill_root(), "config", "smoke-endpoints.json")
+    if os.path.exists(shipped):
+        pinned, _p = load_endpoints(shipped)
+        names = set(pinned or {})
+        check("shipped endpoints parse into real providers, not the wrapper key",
+              "podcast_engine" not in names)
+        check("shipped endpoints expose the pinned providers",
+              {"openrouter", "kie_ai", "fish_audio"}.issubset(names))
+        check("a provider with no free endpoint is UNKNOWN but NOT blind",
+              probe_provider("ollama_cloud", pinned.get("ollama_cloud", {}),
+                             offline=True).get("blind") is False)
+    else:
+        check("config/smoke-endpoints.json present", False)
 
     total = len(passed) + len(failed)
     report = {
