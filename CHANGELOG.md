@@ -1,3 +1,46 @@
+## [v25.1.74]  -  2026-09-22  -  A roll reclaims the `.bak-unify` backlog the unify scan cannot see: orphans, hidden archives and the out-of-tree company trees
+
+### Why
+v25.1.72 bounded each target's backup set; v25.1.73 made the prune run on every branch, so a roll reclaims the backlog it wrote. Both prune in the same place: **inside** `link_shared_core_files()`, once per enumerated `LINKPATH`. The pruner can therefore only ever reach a path the unify **scan** enumerated — and that scan is structurally blind to most of the fleet's remaining backlog.
+
+The scan builds its list from `$OC_ROOT/workspaces`, `<workspace>/agents` and `<workspace>/departments`, keeping only dirs that still carry a live `AGENTS.md` / `IDENTITY.md` / `SOUL.md`. Measured across 6 client boxes on 2026-09-22: **71,805** `*.bak-unify-*` files, **~8.4 GB**, oldest **2026-06-07**, still growing. It sits in three populations the scan never visits:
+
+1. **Orphans.** A role folder whose live core files were all deleted or moved still holds its backlog, but now fails the scan's live-file filter, so it is never enumerated and nothing ever reclaims it. Hidden archive dot-dirs (a `.billing-LEGACY-DUPLICATE-ARCHIVED` folder) are the same shape.
+2. **Out of tree.** `<workspace>/zero-human-company/<co>/departments/...` (~400 files on one box) and `~/clawd/zero-human-company/<co>/departments/...` sit under neither `agents/` nor `departments/`, so the scan never descends into them.
+3. **An early exit.** A roll whose unify step refuses (workspace unresolved), is skipped, or filters a workspace out bounds nothing at all for that run.
+
+Each was reproduced against the shipped v25.1.73 code before the fix: a seeded backlog of 5 came back as 5 in all four shapes, while the scanned control dir correctly came back as 3. The control proves the probe discriminates.
+
+### What changed
+A new `reclaim_unify_backups()` is defined in **both** `install.sh` and `update-skills.sh` — mirrored the way `_lsc_prune_baks` already is — and called **once at the end of every roll**, right after the unify step and regardless of whether that step succeeded.
+
+It walks this box's own resolved roots (the OpenClaw root, the resolved workspace, `~/clawd`, `~/.clawdbot`), groups every backup by its target prefix and keeps the newest `$UNIFY_BAK_KEEP`, then reports the count reclaimed. It always returns success: a reclaim must never be the thing that fails a roll. Roots nest, so groups are collected per real directory — a second visit to the same subtree is a no-op rather than a doubled list that over-deletes.
+
+A file is deletable **only** when its basename matches `<target>.bak-unify-<8 digits>-<6 digits>[-<n>]` exactly (the `-<n>` tail is the python writer's same-second de-dupe suffix). A live `AGENTS.md` / `TOOLS.md` / `USER.md` cannot match that pattern, and neither can a `.bak-manual` or an `AGENTS.md.bak-unify-notatimestamp`. Symlinks and non-regular files are never unlinked.
+
+`UNIFY_BAK_KEEP` stays the single knob and is now documented as a table in `docs/SHARED-CORE-FILES.md`: unset → 3, *N* → *N*, `0` → keep none, non-numeric → 3. `0` keeps the meaning it already carried in both shipped pruners; it is safe because the pattern above makes a live core file unmatchable, so `0` can empty the backup set, never the tree.
+
+### Not changed
+The per-target prune, the retention default, the python writer's de-dupe, and what unify writes to `AGENTS.md` are all exactly as v25.1.73 shipped. This adds a pass; it removes none.
+
+One suspected gap was **not** real and nothing was changed for it: CI already fails if an unconditional backup write is reintroduced (`tests/unit/unify-backup-retention.test.sh` T1 asserts a second roll over unchanged content creates zero new backups) or if the per-target prune call is removed (T6), both gated by `.github/workflows/unify-backup-retention-guard.yml`. Only the **new** end-of-roll call needed a guard.
+
+### Tests
+`tests/unit/unify-backup-global-reclaim.test.sh` — 31 legs, sitting beside the v25.1.72/73 retention suite and wired into the same workflow. It runs the REAL extracted `link_shared_core_files()` and `reclaim_unify_backups()` out of `install.sh`, never a re-implementation, in a `mktemp -d` sandbox with `HOME` redirected and `resolve_oc_root` pinned to it.
+
+Orphan dir → 3; hidden dot-dir archive → 3; the `workspaces/` (plural) tree reached; the in-workspace and `~/clawd` `zero-human-company` trees both reached; the `-<n>` de-dupe suffix counted and ordered correctly; `AGENTS.md.bak-unify-notatimestamp`, `.bak-manual` and `.bak` decoys all survive; a live `AGENTS.md` beside 5 backups survives with the backups at 3 and the 3 **newest** kept; `UNIFY_BAK_KEEP=1` → 1, `=0` → none with every live file and every decoy intact, garbage → 3; nested roots do not over-delete; and a second identical roll writes zero new backups.
+
+**31/31**, and the v25.1.72/73 suite still **18/18**.
+
+Proven non-vacuous three ways before merge: delete the reclaim call from `install.sh` → 1 leg red; delete it from `update-skills.sh` → 1 leg red; neuter the body to `return 0` → **12 of 31** red. Restored, all 31 pass.
+
+### Reclaiming an existing box
+A normal roll now does it. To run the reclaim alone (tested as written):
+
+```bash
+note(){ echo "$@"; }; . <(sed -n "/^reclaim_unify_backups() {/,/^}$/p" ~/openclaw-onboarding/install.sh); reclaim_unify_backups
+```
+
 ## [v25.1.73]  -  2026-09-22  -  A roll now reclaims the `.bak-unify` backlog it already wrote, and v25.1.72 gets its CHANGELOG entry
 
 ### Why
