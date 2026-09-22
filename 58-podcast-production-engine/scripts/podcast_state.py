@@ -765,6 +765,275 @@ def _is_publish_required_preset(preset: str | None) -> bool:
     return bool(flags.get("publish_podbean")) or bool(flags.get("store_media"))
 
 
+# ---------------------------------------------------------------------------
+# Client-safety release gates (duplicate guest / rescue-advanced / no source).
+#
+# The near-miss these close: a guest whose episode had ALREADY been published
+# was queued a second time and sat one step from re-publishing to a live client
+# feed. Three holes lined up.
+#
+#   1. The create-time duplicate guard compared ONLY `submission_fingerprint`,
+#      and that column holds TWO DIFFERENT FORMATS -- the webhook's canonical
+#      job_key when one is supplied, and the local content sha256 otherwise
+#      (see cmd_create, SK2-14). The two hash different field sets and can
+#      never be compared to each other, so the same guest stored one way was
+#      invisible to a submission stored the other way. A guard that only
+#      catches byte-identical fingerprints is not a guard. `contact_id` is the
+#      guest's real identity and was never compared at all.
+#   2. A rescue/activation proof advances a REAL job parked in `received`
+#      (SOP-PODCAST-07 Section 3 names that the PREFERRED proof path) and left
+#      no marker behind, so a job a test pushed into the live queue was
+#      indistinguishable from one its own production run advanced.
+#   3. A package with no source material could walk all the way to a publish
+#      step without anything stopping it.
+#
+# All three now fail CLOSED and require a per-job human release. The release is
+# deliberately NOT a boolean: PODCAST_OPERATOR_RELEASE names the job_id (or, at
+# create time, the guest identity) being released, so a stray `=1` left in a
+# shell profile cannot silently disarm every gate on every job forever.
+# ---------------------------------------------------------------------------
+
+OPERATOR_RELEASE_ENV = "PODCAST_OPERATOR_RELEASE"
+
+#: Transitions that put client-facing content in front of an audience. These
+#: are the only ones the gates below stop; earlier production stages stay free
+#: to move so a blocked job can still be worked on.
+PUBLISH_WARD_STATUSES = frozenset({"publishing", "enrolling", "complete"})
+
+
+def canonical_guest_id(contact_id) -> str:
+    """Canonical, comparable form of a contact identifier.
+
+    Case and punctuation carry no identity: `MayaRandleGuest01`,
+    `mayarandleguest01` and `maya-randle-guest-01` are ONE guest. Folding them
+    together is what lets the duplicate guard match a guest across the two
+    stored fingerprint formats, which it could never do by comparing the
+    fingerprints themselves.
+
+    This deliberately over-matches rather than under-matches: it feeds a BLOCK,
+    and a false stop costs a human release while a false pass costs a client a
+    duplicate episode on a live feed.
+    """
+    return re.sub(r"[^a-z0-9]+", "", str(contact_id or "").lower())
+
+
+def _release_granted(token: str) -> bool:
+    """True when the operator explicitly released THIS job / guest.
+
+    The env var holds a comma- or whitespace-separated list of job ids or guest
+    ids. Matching is canonical so the operator never has to reproduce
+    punctuation exactly, and an empty or unset value never releases anything.
+    """
+    raw = os.environ.get(OPERATOR_RELEASE_ENV, "")
+    if not raw.strip() or not token:
+        return False
+    wanted = canonical_guest_id(token)
+    if not wanted:
+        return False
+    return any(canonical_guest_id(part) == wanted
+               for part in re.split(r"[,\s]+", raw) if part)
+
+
+def published_jobs_for_guest(conn, client_id: str, contact_id: str,
+                             exclude_job_id: str | None = None) -> list:
+    """Jobs for the SAME client and the SAME canonical guest that already
+    reached an audience: a publish timestamp, a Podbean permalink, or status
+    `complete`. Any one of those means an episode for this guest is live.
+
+    The canonical fold happens in Python, not SQL: SQLite's LOWER() is
+    ASCII-only and cannot strip punctuation. The candidate set is one client's
+    already-published episodes, which is small and indexed (idx_pj_contact).
+    """
+    wanted = canonical_guest_id(contact_id)
+    if not wanted:
+        return []
+    rows = conn.execute(
+        "SELECT job_id, contact_id, episode_title, podbean_permalink, "
+        "publish_timestamp, status FROM podcast_jobs WHERE client_id = ? AND ("
+        "publish_timestamp IS NOT NULL OR podbean_permalink IS NOT NULL "
+        "OR status = 'complete')",
+        (client_id,),
+    ).fetchall()
+    return [r for r in rows
+            if r["job_id"] != exclude_job_id
+            and canonical_guest_id(r["contact_id"]) == wanted]
+
+
+#: Canonical marker `advance --rescue-proof` stamps on the job event log.
+RESCUE_ADVANCE_MARKER = "FORCE-ADVANCED BY RESCUE/TEST PATH"
+
+#: Free-text notes that MEAN the same thing but predate the marker. The rows
+#: this fix exists for were labelled by hand, so detection has to read what was
+#: actually written, not only what we stamp from now on. A forward-only
+#: structured marker would leave every already-queued job unguarded.
+_RESCUE_NOTE_PATTERNS = (
+    RESCUE_ADVANCE_MARKER.lower(),
+    "sop-podcast-07",
+    "activation rescue",
+    "rescue proof",
+    "proof flow",
+    "force-advanced",
+    "force advanced",
+)
+
+
+def rescue_advance_notes(conn, job_id: str) -> list:
+    """Event notes showing this job was advanced by a rescue or test path
+    rather than by its own production run."""
+    try:
+        rows = conn.execute(
+            "SELECT note FROM podcast_job_events WHERE job_id = ? AND note IS NOT NULL",
+            (job_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    found = []
+    for r in rows:
+        low = str(r["note"]).lower()
+        if any(p in low for p in _RESCUE_NOTE_PATTERNS):
+            found.append(r["note"])
+    return found
+
+
+#: Payload keys carrying the guest's own words -- the source material an
+#: episode is written FROM. q1..q10 mirror compute_fingerprint's canonical set.
+_SOURCE_ANSWER_KEYS = tuple(f"q{i}_answer" for i in range(1, 11)) + (
+    "additional_info", "transcript", "interview_transcript", "raw_transcript",
+)
+
+#: Phrases a research package uses to admit it had nothing to work from. A
+#: package that says this about itself must never reach a publish step quietly.
+_NO_SOURCE_ADMISSIONS = (
+    "no raw interview transcript",
+    "no interview transcript",
+    "no transcript was provided",
+    "no transcript provided",
+    "transcript not provided",
+    "no transcript available",
+    "no source material",
+    "without a transcript",
+)
+
+
+def source_material_verdict(conn, job_id: str) -> tuple:
+    """(verdict, detail) for whether this job has source material to write from.
+
+    verdict is "present", "absent" or "unknown".
+
+    Only a POSITIVE admission blocks: a recorded research package (or the stored
+    intake payload) that SAYS in so many words that no transcript / no source
+    material was provided. Absence of answers is deliberately NOT treated as
+    absence of source material -- the engine accepts minimal payloads, so a
+    "nothing found, therefore nothing exists" rule would false-stop legitimate
+    jobs. UNKNOWN is a real and correct answer here, and it does not block.
+    """
+    # 1. A recorded research package that admits it had no source material.
+    try:
+        rows = conn.execute(
+            "SELECT kind, content_json FROM podcast_step_artifacts WHERE job_id = ?",
+            (job_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        rows = []
+    for r in rows:
+        low = str(r["content_json"] or "").lower()
+        for phrase in _NO_SOURCE_ADMISSIONS:
+            if phrase in low:
+                return ("absent",
+                        "the recorded '%s' artifact states: \"%s\"" % (r["kind"], phrase))
+
+    # 2. The same admission carried on the stored intake payload.
+    try:
+        r = conn.execute(
+            "SELECT payload_json FROM podcast_job_payloads WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return ("unknown", "payload table unreadable")
+    if not r or not r[0]:
+        return ("unknown", "no stored intake payload (scrubbed, or never stored)")
+    raw_low = str(r[0]).lower()
+    for phrase in _NO_SOURCE_ADMISSIONS:
+        if phrase in raw_low:
+            return ("absent", "the stored intake payload states: \"%s\"" % phrase)
+
+    # 3. Positively confirm the guest's own words are present, when they are.
+    try:
+        payload = json.loads(r[0])
+    except (TypeError, ValueError):
+        return ("unknown", "intake payload is not readable JSON")
+    if not isinstance(payload, dict):
+        return ("unknown", "intake payload is not a JSON object")
+    nested = payload.get("answers")
+    answers = nested if isinstance(nested, dict) else {}
+    for key in _SOURCE_ANSWER_KEYS:
+        val = payload.get(key)
+        if val is None:
+            val = answers.get(key)
+        if isinstance(val, str):
+            if val.strip():
+                return ("present", "payload carries %s" % key)
+        elif val not in (None, "", [], {}):
+            return ("present", "payload carries %s" % key)
+    # ponytail: no answers found is UNKNOWN, never "absent". Tighten to a block
+    # only if intake is ever guaranteed to carry answers for every preset.
+    return ("unknown", "no answers found, but absence is not an admission")
+
+
+def assert_release_gates(conn, job_id: str, row, to_status: str) -> list:
+    """The ONE client-safety chokepoint every forward mover routes through.
+
+    Called by `advance` AND by `resume` -- a held job resumes straight back to
+    its recorded resume_stage, which can itself BE `publishing`, and that path
+    previously had no gate of any kind.
+
+    Returns the list of findings that an explicit operator release OVERRODE, so
+    the caller can record them inside its own transaction (the audit note and
+    the transition then commit together, or neither does). Raises WriterRefused
+    when there is no release: these are hard stops, not warnings.
+    """
+    if to_status not in PUBLISH_WARD_STATUSES:
+        return []
+
+    blocks = []
+
+    prior = published_jobs_for_guest(conn, row["client_id"], row["contact_id"],
+                                     exclude_job_id=job_id)
+    if prior:
+        first = prior[0]
+        where = (first["podbean_permalink"] or first["publish_timestamp"]
+                 or "already marked complete")
+        blocks.append(
+            "an episode for this guest (contact %s) is ALREADY PUBLISHED as job "
+            "%s (%s); publishing this job would duplicate it on a live client feed"
+            % (row["contact_id"], first["job_id"], where)
+        )
+
+    rescue = rescue_advance_notes(conn, job_id)
+    if rescue:
+        blocks.append(
+            "this job was FORCE-ADVANCED by a rescue/test path rather than by its "
+            "own production run (%r); a job a test moved into the live queue is not "
+            "publishable without a human saying so" % (rescue[0],)
+        )
+
+    verdict, detail = source_material_verdict(conn, job_id)
+    if verdict == "absent":
+        blocks.append(
+            "this job has NO source material to write an episode from: %s" % detail
+        )
+
+    if not blocks:
+        return []
+    if _release_granted(job_id):
+        return blocks
+    raise WriterRefused(
+        "advance to '%s' refused for %s -- %s.  These are hard stops, not "
+        "warnings. Release requires a human: set %s=%s for THIS run."
+        % (to_status, job_id, "; ".join(blocks), OPERATOR_RELEASE_ENV, job_id)
+    )
+
+
 def check_transition(row: sqlite3.Row, to_status: str, preset: str | None = None,
                      waiver: bool = False) -> None:
     """Raise TransitionError if row.status -> to_status is not legal.
@@ -1114,6 +1383,26 @@ def cmd_create(conn, args):
         _board_mirror_create(job_id, row["client_id"], row["show_name"])
         return
 
+    # Guest-identity duplicate guard (client safety). The fingerprint lookup
+    # above compares BYTES, and submission_fingerprint holds two different hash
+    # formats (the webhook job_key vs the local content sha256), so it cannot
+    # see the same guest stored the other way. Compare the guest's real,
+    # canonical identity instead. An ALREADY PUBLISHED episode for this guest is
+    # a hard stop, not a warning the pipeline may walk past.
+    already = published_jobs_for_guest(conn, args.client_id, args.contact_id)
+    if already and not _release_granted(args.contact_id):
+        first = already[0]
+        where = (first["podbean_permalink"] or first["publish_timestamp"]
+                 or "already marked complete")
+        raise WriterRefused(
+            "create refused: an episode for guest '%s' is ALREADY PUBLISHED as job "
+            "%s (%s). This submission's fingerprint differs from that job's, so the "
+            "byte-comparison idempotency check could not see it -- the guest identity "
+            "did. Release requires a human: set %s=%s for THIS run."
+            % (args.contact_id, first["job_id"], where,
+               OPERATOR_RELEASE_ENV, args.contact_id)
+        )
+
     job_id = new_job_id()
     ts = iso(now_utc())
     conn.execute("BEGIN IMMEDIATE")
@@ -1255,6 +1544,12 @@ def cmd_advance(conn, args):
                 "job is not a test job."
             )
 
+    # Client-safety release gates (duplicate guest / rescue-advanced / no
+    # source material). Hard stops on any publish-ward transition; an explicit
+    # operator release returns the findings so they are audited below inside
+    # the same transaction as the transition itself.
+    overridden = assert_release_gates(conn, args.job_id, row, to_status)
+
     frm = row["status"]
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -1287,6 +1582,18 @@ def cmd_advance(conn, args):
             _append_event(conn, args.job_id, frm, to_status,
                           "required-outputs WAIVED via --force-waiver [reason: %s]: %s"
                           % (waiver_reason, ", ".join(waived)))
+
+        # A rescue/activation proof advances a REAL job (SOP-PODCAST-07 Section
+        # 3). Stamp a durable marker so the job can never later reach a publish
+        # step as though its own production run had moved it.
+        if getattr(args, "rescue_proof", False):
+            _append_event(conn, args.job_id, frm, to_status, RESCUE_ADVANCE_MARKER)
+
+        # Audit an operator release so a gate lifted by hand is never silent.
+        for finding in overridden:
+            _append_event(conn, args.job_id, frm, to_status,
+                          "release gate OVERRIDDEN via %s: %s"
+                          % (OPERATOR_RELEASE_ENV, finding))
 
         if to_status == "complete":
             conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (args.job_id,))
@@ -1561,6 +1868,9 @@ def cmd_resume(conn, args):
     target = row["resume_stage"]
     if not target:
         raise TransitionError("held job has no resume_stage recorded")
+    # A held job resumes DIRECTLY to its recorded stage, which can itself be a
+    # publish-ward stage. Same chokepoint as advance; this path had no gate.
+    overridden = assert_release_gates(conn, args.job_id, row, target)
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(
@@ -1570,6 +1880,10 @@ def cmd_resume(conn, args):
         )
         _append_event(conn, args.job_id, "queued_credit_out", target,
                       "credit restored; resumed from queue")
+        for finding in overridden:
+            _append_event(conn, args.job_id, "queued_credit_out", target,
+                          "release gate OVERRIDDEN via %s: %s"
+                          % (OPERATOR_RELEASE_ENV, finding))
         # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT.
         ledger_sync = _sync_ledger(args.job_id, target, "resumed")
         if ledger_sync == "broken":
@@ -2166,6 +2480,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "optionally with an operator REASON string "
                         "(`--force-waiver \"<reason>\"`); the waiver and its reason "
                         "are recorded to the job event log (audited)")
+    a.add_argument("--rescue-proof", dest="rescue_proof", action="store_true",
+                   help="this advance is a rescue/activation PROOF on a real job "
+                        "(SOP-PODCAST-07 Section 3), not a production step; stamps a "
+                        "durable marker so the job can never reach a publish step "
+                        "without an explicit human release")
     a.set_defaults(func=cmd_advance)
 
     o = sub.add_parser("output", help="set an output column")
