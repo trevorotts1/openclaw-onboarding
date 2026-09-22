@@ -1,3 +1,29 @@
+## [v25.1.75]  -  2026-09-22  -  The installer repairs the company id the Command Center actually reads, on every install path
+
+### Why
+`cc_check_company_id_against_board()` in `32-command-center-setup/scripts/run-full-install.sh` already detects that the mirrored company id disagrees with the company owning the Command Center's workspaces. It repaired ONE copy: the `MC_COMPANY_ID` scalar in `.env.local`.
+
+That is not the copy in use. The Command Center resolves a request's tenant through `tenantRegistration()` (`src/lib/auth/tenant-context.ts`), which reads the per-host `companyId` inside `MC_TENANT_REGISTRY_JSON`. `interview-launch.py` stamps that registry once from the launch state and then refuses to rebind a registered host, so a wrong value is sticky and no later install corrected it.
+
+Measured on a client box: six registered hosts all still carried `companyId: default` after an install that reported success. Paired with the company-resolver defect fixed in blackceo-command-center v7.6.60, the client's board rendered zero of their 40 active departments while they sat fully logged in.
+
+The second half: the repair ran on FULL installs only. `--update-only` warned and changed nothing, on the reasoning that rewriting a client's tenant id during a routine code roll is a surprise. That reasoning was sound and it was outweighed — the state it declined to repair is a blank board, and a code roll is frequently the only thing that ever runs on a provisioned box again.
+
+### Fixed
+- **Both copies of the company id are repaired, in one atomic write of `.env.local`.** New `cc_repair_company_id()` rewrites `MC_COMPANY_ID` AND the `companyId` on every registration inside `MC_TENANT_REGISTRY_JSON`. Values are re-encoded through the shared `service_env` writer (the same encoder `interview-launch.py` and `cc_env_set_if_absent` use), so a value carrying a newline, a `$` or a `#` survives losslessly, every other assignment is carried through untouched, and nothing is echoed — the file holds the client's API token and session secret.
+- **The repair runs on every install path,** `--update-only` included. It only ever moves the id to the company that demonstrably owns the rows in that box's own database, it is a no-op when both copies already agree, and it is logged and stamped on the state file either way.
+- **It fails closed rather than half-repairing.** An unparseable `MC_TENANT_REGISTRY_JSON` rewrites NOTHING — not even the scalar — and says so at WARN. A half-repair that moved the scalar while leaving the registry behind is the exact state that produced the blank board; the repair is not allowed to recreate it from the other direction.
+- The old "strip the key with `grep -v` into `$envf.tmp.$$`, then `cc_env_set_if_absent`" dance is gone. It rewrote the file twice, left a temp file behind on a partial failure, and could not express a two-key change at all.
+
+### Tests
+- `tests/unit/cc-company-id-registry-repair.test.sh` (new, 19 assertions, hermetic — stdlib python3 + bash, no network, no box, no real credentials): the shipping `cc_repair_company_id` is extracted VERBATIM from the real installer by function-name-anchored awk, never reimplemented. Asserts both copies repaired across all six registered hosts; the `--update-only` path repairing too; every neighbouring assignment surviving byte-for-byte including the API token and session secret; no secret value reaching the log; the registry's other identity fields (`kind`, `tenantId`, `installationId`) untouched; mode still 0600; already-correct input producing a byte-identical file and saying so; an unparseable registry rewriting nothing and reporting it; an absent `.env.local` never created; and an in-suite MUTATION PROOF that a scalar-only repair (the shipped behaviour) leaves all six hosts wrong.
+- Mutation-proved by RUNNING each revert, not by assertion. Reverting the installer entirely: the suite FATALs at extraction (exit 2) rather than passing vacuously on a missing function. Disabling only the registry repair: 3 assertions red. Restoring only the `--update-only` early return: 2 assertions red. All restored, 19/19 green.
+- `.github/workflows/cc-company-id-registry-repair-guard.yml` (new) runs it on every push and PR touching the installer, the shared env writer, the test, or the workflow.
+
+### Not changed
+- `interview-launch.py`'s refusal to rebind a registered host is left alone. It is the right posture for provisioning — a host silently changing identity mid-flight is a real hazard — and the repair path deliberately sits outside it, after the board itself has been consulted about who owns the rows.
+- The owner-detection logic is untouched: the catch-all workspace's owner is the authority, and absent a catch-all, the company owning the most live workspaces is.
+
 ## [v25.1.74]  -  2026-09-22  -  A roll reclaims the `.bak-unify` backlog the unify scan cannot see: orphans, hidden archives and the out-of-tree company trees
 
 ### Why
