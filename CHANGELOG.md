@@ -1,3 +1,26 @@
+## [v25.1.81]  -  2026-09-22  -  Fail closed on the podcast publish success response (T0-21)
+
+### Why
+The success branch of `IF -- Episode Created Successfully` in the shipped n8n publish workflow fanned out to three siblings in PARALLEL: the client Gmail notification, the caller-facing `Respond -- Publish Success` node, and `Idempotency -- Mark Completed` — the durable row that prevents a repeat publish. The workflow is synchronous (`responseMode: responseNode`), the response node had no dependency on the completion write, and that write carried `onError: continueRegularOutput`. An episode could publish to a live client feed, the caller could be told it succeeded, and the ledger row recording it as `completed` could silently never land. `Idempotency -- Determine Verdict` only returns `replay` for `status === 'completed'`, so a lost write leaves the row `in_flight`: a requeue with a new idempotency key finds no completed row and republishes the same episode to the live feed a second time — the exact near-miss that prompted this fix.
+
+`settings.executionOrder: v1` sequences siblings by canvas y-coordinate, and the completion write (y=1250) likely ran before the response (y=1400) already — that ordering does not save it. `onError: continueRegularOutput` defeats it regardless of order (a failed write continued silently and the 200 was sent anyway, which is the actual fail-open), and the ordering itself was incidental — two y-coordinates on a canvas, not a structural guarantee, and dragging a node in the n8n UI would silently reverse it with nothing to notice.
+
+### What changed
+- `Respond -- Publish Success` moved out of the gate's parallel fan-out and chained BEHIND `Idempotency -- Mark Completed`, so the caller cannot be told the publish succeeded before the durable row lands.
+- Removed `onError: continueRegularOutput` from `Idempotency -- Mark Completed`. With the response now downstream, continue-on-error would let a FAILED write flow straight into a 200; removing it restores n8n's default (`stopWorkflow`), matching the sibling claim nodes (`Lookup By Key`, `Upsert Row Received`, `Mark In Flight`). A lost record now surfaces as an execution error instead of a false success.
+- `Respond -- Publish Success`'s response body re-pointed at `$('Podbean -- Publish Episode').first()`, required by the reorder: downstream of the data-table node, `$json` is now the updated row (no `.episode`), which would have silently emptied `permalink_url` and returned the row id as `episode_id`.
+- Deliberately not changed: the Gmail notification stays a sibling of the gate (a courtesy email, not a durability claim); the false/failure branch is left parallel, since a lost `Idempotency -- Mark Failed` write leaves the row `in_flight` and the next attempt is refused (already fail-closed in that direction — hardening it further would convert a recoverable stuck row into a hard error for no safety gain).
+
+### Tests
+`tests/unit/podbean-publish-workflow-response-ordering.test.py` was not detecting this defect at all. Its four node-name constants used an em dash; the workflow had been re-exported with double-hyphen names, and the constants were never updated, so `_targets(GATE, 0)` returned `[]` and the assertion guarding this exact defect (`test_the_gate_does_not_answer_the_caller_directly`) was passing VACUOUSLY — the suite was red only on a node-not-found check. Six string literals corrected; no assertion, message, threshold, or test body changed.
+
+Proof of non-vacuity: with the graph fix applied, 9/9 pass. With the graph change reverted and the corrected test kept, 4 fail (matching this repo's own prior "4 FAILED against untouched origin/main" record), naming the defect directly: *"the success gate still answers the webhook in parallel with the completion write — the caller can be told the publish succeeded while the idempotency row never landed."* Restored, 9/9 again.
+
+Also run: `validate_n8n_workflow.py` on the edited export (`VALID: version=1.0.0 nodes=70 connections=43`); `scripts/tests/test_validate_n8n_workflow.py` (14 passed); `scripts/tests/test_n8n_idempotency_fail_closed.py` (3 passed); `scripts/qc-assert-no-n8n-plaintext-secrets.sh` (PASS, 17 files); `podcast-smoke-test-blind-not-green.test.py` (39/39, control proving the runner itself works).
+
+### Not changed here
+A repo file that is never imported changes nothing on a host. The corrected graph still needs importing to the live n8n instance — a separate operator decision, deliberately not done here. Verified read-only against the live instance: the ACTIVE publish workflow still carries the parallel fan-out and `continueRegularOutput` as of this writing.
+
 ## [v25.1.80]  -  2026-09-22  -  test(podcast): repair the channel-scoping suite the engine outgrew (T0-19), plus two more drifted tests (T0-21, T0-22)
 
 ### Why
