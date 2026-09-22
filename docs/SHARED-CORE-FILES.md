@@ -111,8 +111,24 @@ workflow, not account agents, and must keep their own files.
 When an agent workspace has a **real** `AGENTS.md` / `TOOLS.md` / `USER.md`
 whose content **differs** from canonical, the unifier:
 
-1. **Backs it up** to `<file>.bak-unify-<timestamp>` — the original is **never
-   deleted**.
+1. **Backs it up** to `<file>.bak-unify-<timestamp>` — the original is never
+   discarded, it is retired into a backup.
+
+   **Retention is bounded (2026-09-21).** Only the newest `$UNIFY_BAK_KEEP`
+   backups (default **3**) are kept per target; older ones are deleted
+   oldest-first. Set `UNIFY_BAK_KEEP` to change the count (`0` keeps none).
+   Before this, the set was unbounded: a canonical file that differs between
+   rolls left one FULL-SIZE copy per target per roll, forever. Measured live on
+   a client Mac Mini: 25,604 `AGENTS.md.bak-unify-*` files / 4.3 GB across the
+   department tree, written daily since 2026-06-23, with the disk at 95%. Only
+   a target's OWN `.bak-unify-<timestamp>` siblings are ever pruned — no other
+   file is touched.
+
+   To reclaim the old backups on a box already carrying them:
+
+   ```bash
+   find ~/.openclaw -name '*.bak-unify-*' -type f -mtime +7 -delete
+   ```
 2. **Preserves unique content**: any block in the agent's file that is **not
    already present** in `CANON_DIR/<file>` is **appended** (additive only) to
    that agent's **own `IDENTITY.md`**, under a guarded marker:

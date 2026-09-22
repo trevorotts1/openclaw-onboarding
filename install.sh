@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.1.71"
+ONBOARDING_VERSION="v25.1.72"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2481,6 +2481,34 @@ except Exception:
     fi
   }
 
+  # _lsc_prune_baks PATH -> echoes the number of old backups it deleted.
+  # Keeps only the $UNIFY_BAK_KEEP newest <PATH>.bak-unify-<ts> siblings
+  # (default 3; 0 keeps none), deleting oldest-first. The unify backup used to
+  # be UNBOUNDED: a canonical file that differs between rolls leaves one
+  # FULL-SIZE backup per agent per roll, forever. Measured live on a client Mac
+  # Mini 2026-09-21: 25,604 AGENTS.md.bak-unify-* files / 4.3 GB across the
+  # department tree, written daily since 2026-06-23, disk at 95%. Only this
+  # target's OWN timestamped unify backups are ever touched -- nothing else is
+  # deleted, and the newest $UNIFY_BAK_KEEP are always kept, so the
+  # "never deleted" promise becomes "the last N are never deleted".
+  # Timestamps are %Y%m%d-%H%M%S, so a lexicographic sort is chronological.
+  # bash 3.2 / BSD-safe: no `head -n -N`, no associative arrays.
+  _lsc_prune_baks() {
+    local _p="$1" _keep="${UNIFY_BAK_KEEP:-3}" _list="" _n=0 _cut=0 _old="" _pruned=0
+    case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+    _list="$(ls -1d "$_p".bak-unify-* 2>/dev/null | sort || true)"
+    if [ -z "$_list" ]; then echo 0; return 0; fi
+    _n="$(printf '%s\n' "$_list" | wc -l | tr -d ' ')"
+    _cut=$(( _n - _keep ))
+    if [ "$_cut" -le 0 ]; then echo 0; return 0; fi
+    while IFS= read -r _old; do
+      [ -n "$_old" ] || continue
+      if rm -f "$_old" 2>/dev/null; then _pruned=$(( _pruned + 1 )); fi
+    done < <(printf '%s\n' "$_list" | sed -n "1,${_cut}p")
+    echo "$_pruned"
+    return 0
+  }
+
   # Precompute each canonical file's hash ONCE (not per-workspace; this repo
   # targets bash 3.2 on Mac, so no associative arrays -- three scalars).
   # FAIL-OPEN: a canonical file that is missing/unreadable/EMPTY skips every
@@ -2538,7 +2566,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
 
   local W
   while IFS= read -r W; do
@@ -2610,9 +2638,21 @@ PYEOF
         # this agent's OWN IDENTITY.md (additive only), then overwrite with
         # canonical content -- as a real file, not a symlink.
         local BAK="$LINKPATH.bak-unify-$TS"
-        cp -p "$LINKPATH" "$BAK" 2>/dev/null \
-          && { note "[link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
-          || { warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"; continue; }
+        if cp -p "$LINKPATH" "$BAK" 2>/dev/null; then
+          note "[link-shared] BACKUP $LINKPATH -> $BAK"
+          BACKED_UP=$((BACKED_UP + 1))
+          # Bound the backup set for THIS target (see _lsc_prune_baks).
+          local _NPRUNED
+          _NPRUNED="$(_lsc_prune_baks "$LINKPATH")"
+          case "$_NPRUNED" in ''|*[!0-9]*) _NPRUNED=0 ;; esac
+          if [ "$_NPRUNED" -gt 0 ]; then
+            note "[link-shared] PRUNE $_NPRUNED stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+            PRUNED=$((PRUNED + _NPRUNED))
+          fi
+        else
+          warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"
+          continue
+        fi
 
         local AGENT_NAME
         AGENT_NAME="$(basename "$W_REAL")"
@@ -2679,7 +2719,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP failed=$FAILED"
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then

@@ -3,7 +3,7 @@
 > **v25.0.16 — Private interview renewal and pause/resume on Mac and VPS.** Resume partial onboarding without replacing client identity; preserve service configuration, migrate the correct database and reconcile the client’s standard board foundation. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.1.5**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.1.71.
+> **Version:** see `/version` - this repo at v25.1.72.
 
 
 
@@ -158,7 +158,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.1.71** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.1.72** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
@@ -352,9 +352,10 @@ and `HEARTBEAT.md`.
 - **Nested workflow agent exemption:** internal workflow micro-agents (`*/workflows/*/agents/*`)
   are never touched.
 - **Non-destructive + idempotent:** real files are backed up
-  (`*.bak-unify-<ts>`, never deleted) and any unique content is preserved into
+  (`*.bak-unify-<ts>`) and any unique content is preserved into
   the agent's own `IDENTITY.md` before linking; correct symlinks are no-ops on
-  re-run.
+  re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
+  kept per target, oldest deleted first.
 
 Runs automatically at install (`install.sh` Step 10a) and on every update
 (`update-skills.sh`), and is QC-enforced (check 9.9 in
