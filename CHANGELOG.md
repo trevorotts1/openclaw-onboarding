@@ -1,3 +1,27 @@
+## [v25.1.80]  -  2026-09-22  -  test(podcast): repair the channel-scoping suite the engine outgrew (T0-19), plus two more drifted tests (T0-21, T0-22)
+
+### Why
+`tests/unit/podcast-engine-fail-closed.test.sh` (T0-19/T0-20) had been red on main for two months, and the job's masking of later steps kept T0-21 and T0-22 invisible the whole time. Verdict: the guard in `podbean_publish.sh` is intact and working — the TEST drifted. Three mandatory preconditions landed on the script after the suite was written (`PODBEAN_LOCAL_MODE_OK=1` 2026-08-01, `--description` >= 200 chars 2026-08-05, `--cover` in the same hardening wave). Every one of them aborts before the isolation guard ever runs, so all five scenarios died in argument/mode validation having issued zero HTTP requests — and the suite reported that silence as a dead guard. The `(got: )` diagnostics were `${OUT: -200}`, which yields the empty string on a negative offset larger than the string in bash (zsh returns the whole string, which is why the code read as correct); every refusal message is under 200 chars, so all three printed empty. The script was talking the whole time.
+
+Corrected timeline: last green was `9b48985d7` (2026-07-23T23:46:23Z) — two months, not seven weeks. The very next run was the first red, and in THAT run this shell suite was 19/19 — the job failed on the next step, T0-22. The shell suite only started failing later, once the precondition hardening landed. Two different causes produced one unbroken red bar.
+
+### What changed — test files only, no source file touched
+- **`tests/unit/podcast-engine-fail-closed.test.sh`** (19 -> 23 assertions): supplies the three now-mandatory preconditions plus `PODBEAN_RETRY_BASE_DELAY=0` (retry count unchanged, sleeps removed); `tail_of()` replaces the broken `${OUT: -200}`; fake curl now records `<METHOD> <url>` so an episode-count GET can no longer satisfy an episode-create assertion (both hit the same URL, differing only by method); fake curl's `-K` config read is fixed to survive being read twice (a process-substitution pipe empties on the second read); every refusal fixture now answers the whole downstream happy path, since without it a refusal run starved at `uploadAuthorize` regardless of the guard and made every "no episode-create request was sent" assertion vacuously true; 4 new assertions confirm each refusal actually reached the guard (issued at least one request), so a future mandatory flag will name itself instead of printing `(got: )`.
+- **`tests/unit/podbean-publish-workflow-response-ordering.test.py`**: six node-name constants re-spelled from an em dash to the shipped double-hyphen form the graph actually uses.
+- **`tests/unit/podcast-state-ledger-linkage.test.py`** (T0-22, a third drifted test): `podcast_state.py` is safer than the suite expected — `cmd_advance` now rolls back a broken ledger linkage transition instead of committing it with a `ledger_sync: broken` marker, so the old assertions expecting a committed-but-marked record no longer apply. Replaced with what the code now guarantees: no record is emitted, and the job is still in its previous status, read straight from SQLite (strictly stronger, since it checks the database rather than CLI output).
+
+### Counts
+| step | before | after |
+|---|---|---|
+| T0-19/T0-20 channel scoping + loudness | 15 passed, 4 failed | 23 passed, 0 failed |
+| T0-21 webhook ordering | 8 failures + 1 error (bogus "node not found") | 4 failures (real, see below) |
+| T0-22 ledger linkage | 9 passed, 1 error | 10 passed, 0 errors |
+
+### Proof
+Mutation-proved on `podbean_publish.sh`, each applied then reverted (source is byte-identical to origin/main on this branch): reintroducing the original T0-19 defect (every listing failure warns and carries on) turns 5 red; letting a scoped-token failure carry on with the account-wide token turns 4 red; removing the single-channel branch's proof-of-scope turns 2 red the other direction (a healthy account must still publish); simulating a new mandatory flag landing (the exact class of change that caused this drift) turns 8 red, each naming the precondition it died on instead of printing empty. `podcast_state.py` mutation-proved for T0-22: dropping the `LedgerLinkageError` so a broken linkage commits reports "a broken ledger linkage still reported a clean advance"; committing instead of rolling back while keeping the raise names the exact roster/ledger split-brain.
+
+### Not fixed here — a live defect, found not repaired
+Repairing the T0-21 node lookups made the suite report what it exists to detect: the shipped n8n workflow's success branch fans `IF -- Episode Created Successfully` out in PARALLEL to the client notification, the caller-facing response, AND the durable idempotency write — and that write has no outgoing dependency and `onError: continueRegularOutput`. The caller can be told "published" while the completion write that prevents a duplicate publish never lands. This is the exact duplicate-publish fail-open a 2026-07-21 commit claimed to close; it is not closed. Changing the shipped n8n graph is a separate decision (the guard workflow's own header already notes a repo file that is never imported changes nothing on the running host, so the real repair is a fleet action, not a file edit) — tracked and fixed in the next PR.
 ## [v25.1.79]  -  2026-09-22  -  The duplicate guard compares the GUEST, not two incompatible fingerprint formats
 
 ### Why
