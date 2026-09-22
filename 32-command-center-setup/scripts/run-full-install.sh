@@ -1304,17 +1304,36 @@ cc_load_launch_environment() {
   cc_check_company_id_against_board
 }
 
-# ── Does the mirrored MC_COMPANY_ID match the company that owns the board? ───
+# ── Does the mirrored company id match the company that owns the board? ──────
 # Measured on a client box: this mirror wrote MC_COMPANY_ID=default while the
-# CC DB's live workspaces sat 31 under 'wakeuphappysis' and 9 under 'default'.
-# The Command Center's ingest is company-scoped, so the catch-all `general-task`
-# (owned by wakeuphappysis) became unresolvable and every routed task landed
-# unrouted. The catch-all's owner is the authority; absent a catch-all, the
-# company owning the most live workspaces is.
+# CC DB's live workspaces sat 31 under one real company id and 9 under
+# 'default'. The Command Center's ingest is company-scoped, so the catch-all
+# `general-task` became unresolvable and every routed task landed unrouted. The
+# catch-all's owner is the authority; absent a catch-all, the company owning the
+# most live workspaces is.
 #
-# FULL install corrects the value. --update-only is a code-only roll, so it
-# WARNS and changes nothing: rewriting a client's tenant id during a routine
-# code roll is the kind of surprise this whole guard exists to avoid.
+# TWO CORRECTIONS, BOTH MEASURED ON A LATER BOX, BOTH IN cc_repair_company_id:
+#
+#   1. THE REPAIRED COPY WAS NOT THE COPY THAT GETS READ. This function rewrote
+#      MC_COMPANY_ID and nothing else. But the Command Center resolves a
+#      request's tenant through tenantRegistration(), which reads the per-host
+#      `companyId` inside MC_TENANT_REGISTRY_JSON — NOT the env scalar. Six
+#      hosts on that box all still carried `companyId: default` after an install
+#      that reported success, because interview-launch.py stamps the registry
+#      once from the launch state and then refuses to rebind a registered host.
+#      So the value that was repaired was not the value in use, and the board
+#      stayed blank. Both copies are now repaired together, in one atomic write.
+#
+#   2. --update-only USED TO WARN AND CHANGE NOTHING. The reasoning was sound —
+#      rewriting a client's tenant id during a routine code roll is a surprise.
+#      It was outweighed: the state it declined to repair is a client sitting
+#      logged in at a board showing zero of their 40 departments, and a code roll
+#      is frequently the only thing that ever runs on that box again. A surprise
+#      that restores a client's own data beats a silence that leaves it hidden.
+#      The repair now runs on EVERY install path. It only ever moves the id to
+#      the company that demonstrably owns the rows in that box's own database,
+#      it is a no-op when they already agree, and it is logged and stamped on
+#      the state file either way.
 cc_check_company_id_against_board() {
   local db="${DATABASE_PATH:-$DASHBOARD_DIR/mission-control.db}" owner split env_id
   [[ -f "$db" ]] || return 0
@@ -1359,25 +1378,95 @@ PYCID
   echo "[cc-env] MC_COMPANY_ID MISMATCH: env=$env_id but workspaces/catch-all belong to $owner (split: $split)" >&2
   log "WARN" "[cc-env] MC_COMPANY_ID MISMATCH: env=$env_id but workspaces/catch-all belong to $owner (split: $split)"
   [[ -f "$STATE_FILE" ]] && state_set ".commandCenterCompanyIdMismatch = \"env=$env_id owner=$owner\""
-  if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
-    log "WARN" "[cc-env] --update-only: MC_COMPANY_ID left as-is (code-only roll). Operator action required."
+  cc_repair_company_id "$DASHBOARD_DIR/.env.local" "$owner" "$env_id"
+}
+
+# cc_repair_company_id — point BOTH copies of the company id at the company that
+# owns the board, in ONE atomic write of .env.local.
+#
+#   • MC_COMPANY_ID                — the env scalar (what this function used to
+#                                    repair, alone).
+#   • MC_TENANT_REGISTRY_JSON      — the per-host `companyId` on EVERY
+#                                    registration. This is the copy
+#                                    tenantRegistration() actually reads, and
+#                                    repairing the scalar without it is what made
+#                                    a "successful" install leave a blank board.
+#
+# Values are re-encoded through the shared service_env writer (the same encoder
+# interview-launch.py and cc_env_set_if_absent use), so a value carrying a
+# newline, a `$` or a `#` survives losslessly. Every other assignment in the file
+# is carried through untouched and NOTHING is echoed — the file holds the client's
+# API token and session secret.
+#
+# Idempotent: already-correct copies produce no write at all. Prints one status
+# line naming only the key(s) changed and the host COUNT, never a host, never a
+# value other than the company ids already being logged by the caller.
+cc_repair_company_id() {
+  local envf="$1" owner="$2" env_id="$3" result
+  if [[ ! -f "$envf" ]]; then
+    log "WARN" "[cc-env] company-id repair skipped: $envf is absent; env still says $env_id"
     return 0
   fi
-  # Full install: strip the key so the existing writer treats it as absent.
-  local envf="$DASHBOARD_DIR/.env.local"
-  if [[ -f "$envf" ]] && grep -vE "^[[:space:]]*#?[[:space:]]*MC_COMPANY_ID=" "$envf" > "$envf.tmp.$$" 2>/dev/null \
-     && mv "$envf.tmp.$$" "$envf"; then
-    chmod 600 "$envf" 2>/dev/null || true
-    if cc_env_set_if_absent "$envf" MC_COMPANY_ID "$owner"; then
+  result="$(python3 - "$SKILL_DIR/../shared-utils" "$envf" "$owner" <<'PYCOMPANYID'
+import json, os, sys, tempfile
+sys.path.insert(0, sys.argv[1])
+from service_env import read_env, encode_assignment
+
+path, owner = sys.argv[2], sys.argv[3]
+values = read_env(path)
+updates = {}
+
+if values.get('MC_COMPANY_ID', '') != owner:
+    updates['MC_COMPANY_ID'] = owner
+
+# The registry is the copy tenantRegistration() reads. Repair every registration
+# that names a different company: this box serves ONE tenant, so a host on it
+# registered to another company is the defect, not a second customer.
+try:
+    registry = json.loads(values.get('MC_TENANT_REGISTRY_JSON') or '{}')
+except ValueError:
+    registry = None
+hosts = 0
+if isinstance(registry, dict):
+    for host, registration in registry.items():
+        if isinstance(registration, dict) and registration.get('companyId') != owner:
+            registration['companyId'] = owner
+            hosts += 1
+    if hosts:
+        updates['MC_TENANT_REGISTRY_JSON'] = json.dumps(registry, separators=(',', ':'))
+elif registry is None:
+    print('registry-unparseable 0')
+    raise SystemExit(0)
+
+if not updates:
+    print('already-correct 0')
+    raise SystemExit(0)
+
+text = open(path, encoding='utf-8').read()
+lines = [line for line in text.splitlines() if line.split('=', 1)[0].strip() not in updates]
+lines.extend(encode_assignment(key, value) for key, value in updates.items())
+handle_fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path) or '.', prefix='.cc-company-id-')
+with os.fdopen(handle_fd, 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(lines) + '\n')
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, path)
+os.chmod(path, 0o600)
+print('%s %d' % ('+'.join(sorted(updates)), hosts))
+PYCOMPANYID
+)" || {
+    log "WARN" "[cc-env] company-id repair FAILED; env still says $env_id and the registry is unchanged"
+    return 0
+  }
+  case "$result" in
+    already-correct*)
+      log "INFO" "[cc-env] company-id repair: both copies already name $owner (no write)" ;;
+    registry-unparseable*)
+      log "WARN" "[cc-env] company-id repair: MC_TENANT_REGISTRY_JSON is not parseable JSON; NOTHING was rewritten (env still says $env_id). Operator action required." ;;
+    *)
       export MC_COMPANY_ID="$owner"
-      log "INFO" "[cc-env] full install: MC_COMPANY_ID rewritten to $owner"
-    else
-      log "WARN" "[cc-env] full install: MC_COMPANY_ID rewrite FAILED; env still says $env_id"
-    fi
-  else
-    rm -f "$envf.tmp.$$" 2>/dev/null || true
-    log "WARN" "[cc-env] full install: could not rewrite MC_COMPANY_ID; env still says $env_id"
-  fi
+      log "INFO" "[cc-env] company-id repaired to $owner on ${UPDATE_ONLY:-false}-update path (rewrote: $result registry host(s))" ;;
+  esac
 }
 
 cc_prepare_database_environment() {
