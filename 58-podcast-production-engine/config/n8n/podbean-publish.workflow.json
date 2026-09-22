@@ -938,7 +938,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: true, permalink_url: $json.episode?.permalink_url || '', episode_id: $json.episode?.id || $json.id || '', episode_number: $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number, scheduled: $('Set Upload Keys  --  Assemble Publish Payload').item.json.publish_timestamp > Math.floor(Date.now() / 1000), idempotent_replay: false } }}",
+        "responseBody": "={{ { ok: true, permalink_url: $('Podbean  --  Publish Episode').first().json.episode?.permalink_url || '', episode_id: $('Podbean  --  Publish Episode').first().json.episode?.id || $('Podbean  --  Publish Episode').first().json.id || '', episode_number: $('Set Upload Keys  --  Assemble Publish Payload').first().json.episode_number, scheduled: $('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000), idempotent_replay: false } }}",
         "options": {
           "responseCode": 200
         }
@@ -1266,8 +1266,7 @@
           }
         },
         "options": {}
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "id": "d6b095a8-6243-4ccf-9d69-4fa13f55a33d",
@@ -2123,11 +2122,6 @@
             "index": 0
           },
           {
-            "node": "Respond  --  Publish Success",
-            "type": "main",
-            "index": 0
-          },
-          {
             "node": "Idempotency  --  Mark Completed",
             "type": "main",
             "index": 0
@@ -2146,6 +2140,17 @@
           },
           {
             "node": "Idempotency  --  Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Idempotency  --  Mark Completed": {
+      "main": [
+        [
+          {
+            "node": "Respond  --  Publish Success",
             "type": "main",
             "index": 0
           }
