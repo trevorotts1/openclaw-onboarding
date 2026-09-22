@@ -1,3 +1,76 @@
+## [v25.1.78]  -  2026-09-22  -  A scheduled job that fails four times and cannot tell anyone: the cron announce route was fail-closed
+
+### Why
+
+On `rescue-leanne-dolce`, `bootstrap-validate-daily` had failed **four times** and its delivery read:
+
+```
+announce -> last (last -> no route, will fail-closed: Refusing implicit isolated cron delivery ...)
+```
+
+The job was doing its job correctly — it found 11 real bootstrap-file defects and exited 1. It simply could not tell anyone. OpenClaw 2026.9.x refuses to deliver an isolated cron whose target would be inherited from the shared agent-main session bucket's last recipient, because that target is ambiguous across conversations and can deliver to the wrong room. So the alert was dropped, every time, by design.
+
+Two causes, both in `scripts/ensure-pipeline-crons.sh`, and the second is why it could never self-heal:
+
+1. **Born loud.** `openclaw cron add` DEFAULTS a new job to delivery mode `announce`, channel `last`. This is not inference — it is OpenClaw's own create-time contract (`src/cron/service/initial-delivery.ts`, *"Resolves create-time default delivery for new cron jobs"*), gated by:
+
+```js
+function shouldDefaultCronDeliveryToAnnounce(params) {
+  if (params.payloadKind !== "agentTurn" && params.payloadKind !== "command" && params.payloadKind !== "script") return false;
+  return params.sessionTarget === "isolated" || params.sessionTarget === "current" || ...
+}
+```
+
+A **command**-kind job with sessionTarget **isolated** — exactly what `_register_command_cron` creates — takes the announce default whenever the caller omits explicit delivery. `_register_command_cron`'s modern `--command` branch never passed `--no-deliver`, so every command cron it registered was born in the fail-closing shape. The code's own `Silent (no --channel/--to)` comment was only ever true because `_reconcile_managed_crons` stripped the delivery afterwards.
+
+2. **Never repaired.** `MANAGED_RECONCILE_CRONS` is the only list the reconcile pass may edit, and its header says *"Keep in lockstep with the registrars + main() audit list above."* When v14.2.0 added `bootstrap-validate-daily` and `bootstrap-compact-weekly`, they went into the registrars and into the audit list — but not into that list. The registrars only ADD a missing cron; only reconcile REPAIRS an existing one. So those two were born loud and were never touched again.
+
+Measured 2026-09-22 across 8 boxes, every probe with a known-good control (total job count, non-empty):
+
+| Box | Platform | State |
+|---|---|---|
+| rescue-leanne-dolce | Mac | both crons `announce -> last`, validate = **error (4x)** |
+| rescue-karen-vaughn | Mac | both crons `announce -> last`, validate = **error** |
+| rescue-stephanie-wall | Mac | both crons `announce -> last`, validate = **error** |
+| rescue-star-bobatoon | Mac | crons absent |
+| openclaw-a3go, openclaw-hy5t | Hostinger VPS | crons absent |
+| oc-janet-pinkney, oc-donna-izzard | Contabo | crons absent |
+
+**3 of 3 boxes that carry the cron are broken.** It is not box-local. The same 19 crons on Karen Vaughn's box sit at `mode=none, channel=last` and are all `ok` — a vestigial channel string with mode `none` is harmless, which is exactly why the inner reconcile gate is correct as written and was left alone.
+
+### What changed
+
+**`scripts/ensure-pipeline-crons.sh` (v14.2.1)**
+
+- `_register_command_cron` passes `--no-deliver` on the `--command` path, so a command cron is born silent instead of relying on a later reconcile. A CLI that rejects the flag falls back to registering without it and logs a WARN naming reconcile as the silencer — a loud cron that can be repaired beats no cron at all.
+- `bootstrap-validate-daily` and `bootstrap-compact-weekly` added to `MANAGED_RECONCILE_CRONS`, so the ~3 Macs already carrying the broken shape converge on their next roll.
+
+**`scripts/bootstrap-validate-daily.sh`**
+
+Silence must not mean unheard. A failing run now escalates to the **operator** — the Rescue Rangers webhook, the same channel `scripts/disk-usage-alert.sh` already escalates on. A client chat is never a destination for a technical failure and is never used as a fallback. With no operator route configured the run prints `ALERT-UNDELIVERED` on stderr instead of failing quietly. Escalation never changes the exit code.
+
+Its header also said *"NOT WIRED TO A CRON BY THIS REPO — deliberately. Nothing here schedules itself."* That has been wrong since v14.2.0 wired it at 05:00 daily. Corrected.
+
+### Proof
+
+`tests/unit/cron-announce-fail-closed.test.sh` — 12 cases, hermetic (private `$HOME`, fake `openclaw` and `curl`, no network). Reverting only the two source files turns **8 of 12 red**:
+
+- A1, A1b — command crons registered with `mode=announce`; no `--no-deliver` on any add
+- A2 x2 — both bootstrap crons left at `mode=announce`, reconcile never touched them
+- A3 — the regression case: a cron remains in the unresolvable `announce -> last` shape, so a failing run is silently refused rather than reported
+- A4b — a failing validation with no operator route is silently swallowed
+- A5a, A5b — nothing reaches the operator webhook
+
+A4a, A5c, A5d and A6 stay green by design: the exit code was always right, no client-leak path ever existed (those two are guards against introducing one), and reconcile was already convergent.
+
+`tests/fixtures/fake-openclaw-cron.py` now models what the real CLI does — a job born `announce`/`last`, `--no-deliver` silencing it, and `cron edit --no-deliver` actually applying. Purely additive; all 9 existing consumers of the fixture were re-run and are unchanged.
+
+`.github/workflows/cron-announce-fail-closed-guard.yml` enforces both causes mechanically, including C2, which derives the managed set from `main()`'s audit list and fails when any name is missing from `MANAGED_RECONCILE_CRONS`. The lockstep rule was a comment; it is now a gate.
+
+### Not fixed here
+
+`cloud-backup-daily` on `rescue-leanne-dolce` also shows `error`, but its stored cause is `cron: job interrupted by gateway restart` — an interrupted run, not a script fault, and its delivery is already silent. It has **no definition anywhere in this repo** (`git log --all -S"cloud-backup-daily"` returns nothing) and is absent from all 7 other boxes probed. It is box-local and out of scope for a repo fix.
+
 ## [v25.1.77]  -  2026-09-22  -  A blind daily smoke test is not a green one: Skill 58 stops rendering "could not check" as "checked, found nothing"
 
 ### Why

@@ -101,6 +101,13 @@ def cmd_cron_add(rest):
         "name": "", "cron": "", "agent": "", "message": "", "command": "",
         "kind": "agentTurn", "id": "",
     }
+    # DELIVERY DEFAULT — mirrors the real CLI (verified against OpenClaw
+    # 2026.9.4, `openclaw cron add --help`): a new job is born with fallback
+    # delivery ENABLED (mode "announce", channel "last"). Omitting the delivery
+    # flags does NOT create a silent cron. --no-deliver is what silences it.
+    # Modelling this is the whole point: a registrar that forgets the flag ships
+    # a cron that fail-closes on 2026.9.x and cannot report its own failure.
+    delivery = {"mode": "announce", "channel": "last", "to": None}
     i = 0
     while i < len(rest):
         a = rest[i]
@@ -118,7 +125,16 @@ def cmd_cron_add(rest):
             job["command"] = rest[i + 1]; job["kind"] = "command"; i += 2
         elif a in ("--tz", "--session", "--session-target"):
             i += 2
-        elif a in ("--no-deliver", "--light-context", "--best-effort-deliver", "--json"):
+        elif a == "--no-deliver":
+            delivery = {"mode": "none", "channel": "last", "to": None}
+            i += 1
+        elif a == "--announce":
+            delivery["mode"] = "announce"; i += 1
+        elif a == "--channel":
+            delivery["channel"] = rest[i + 1]; i += 2
+        elif a in ("--to", "--target"):
+            delivery["to"] = rest[i + 1]; i += 2
+        elif a in ("--light-context", "--best-effort-deliver", "--json"):
             i += 1
         else:
             i += 1
@@ -126,6 +142,13 @@ def cmd_cron_add(rest):
         return 1
     jobs = load_jobs()
     job["id"] = "fake-%03d" % (len(jobs) + 1)
+    job["delivery"] = delivery
+    # Nested shapes the real `cron list --json` emits and that the reconcile
+    # pass reads (payload.kind / schedule.expr). The flat "kind"/"cron" keys
+    # above are kept verbatim so existing consumers of this fixture are
+    # unaffected.
+    job["payload"] = {"kind": job["kind"]}
+    job["schedule"] = {"expr": job["cron"]}
     jobs.append(job)
     save_jobs(jobs)
     if "--json" in rest:
@@ -171,6 +194,46 @@ def cmd_cron_list(rest):
     return 0
 
 
+def cmd_cron_edit(rest):
+    """`cron edit <id> [--no-deliver] [--command <c>] [--cron <expr>]`.
+
+    Only the dimensions the reconcile pass actually edits are applied. An id
+    that matches nothing is an error (rc 1) — the real CLI fails too, and a
+    silent success here would let a broken reconcile look green.
+    """
+    if not rest:
+        return 1
+    job_id, flags = rest[0], rest[1:]
+    jobs = load_jobs()
+    target = next((j for j in jobs if j.get("id") == job_id), None)
+    if target is None:
+        return 1
+    i = 0
+    while i < len(flags):
+        a = flags[i]
+        if a == "--no-deliver":
+            d = target.setdefault("delivery", {})
+            # Mirrors the real CLI: mode goes to none, the vestigial channel
+            # string is LEFT BEHIND. Harmless (nothing is delivered at mode
+            # none) but reconcile must stay convergent in its presence.
+            d["mode"] = "none"
+            d["to"] = None
+            i += 1
+        elif a == "--command":
+            target["command"] = flags[i + 1]
+            target["kind"] = "command"
+            target["payload"] = {"kind": "command"}
+            i += 2
+        elif a == "--cron":
+            target["cron"] = flags[i + 1]
+            target["schedule"] = {"expr": flags[i + 1]}
+            i += 2
+        else:
+            i += 1
+    save_jobs(jobs)
+    return 0
+
+
 def cmd_cron_rm_or_delete():
     # Best-effort: not exercised by presence/idempotency assertions here.
     return 0
@@ -188,7 +251,9 @@ def main():
             return cmd_cron_add(rest)
         if sub == "list":
             return cmd_cron_list(rest)
-        if sub in ("rm", "delete", "edit"):
+        if sub == "edit":
+            return cmd_cron_edit(rest)
+        if sub in ("rm", "delete"):
             return cmd_cron_rm_or_delete()
         return 0
     if argv[0] == "message" and len(argv) > 1 and argv[1] == "send":
