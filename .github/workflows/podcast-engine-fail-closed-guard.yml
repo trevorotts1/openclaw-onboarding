@@ -203,10 +203,14 @@ jobs:
         run: |
           set -uo pipefail
           failed=0
+          # A temp file, never the checkout: this repo has gates that fail on an
+          # untracked file appearing in the working tree.
+          summary="$(mktemp)"
+          trap 'rm -f "$summary"' EXIT
           {
             echo "| suite | result |"
             echo "|---|---|"
-          } > summary.md
+          } > "$summary"
           report() {
             # $1 = label, $2 = outcome. An empty outcome means the step never
             # ran at all, which is a failure of this workflow, not a pass.
@@ -217,14 +221,14 @@ jobs:
               *)       mark="FAIL"; failed=1 ;;
             esac
             printf '%-8s %s\n' "$mark" "$label"
-            echo "| $label | $mark |" >> summary.md
+            echo "| $label | $mark |" >> "$summary"
           }
           report "T0-19 / T0-20  channel scoping and loudness" "$T0_19_20"
           report "T0-22  ledger linkage is not a clean advance" "$T0_22"
           report "T0-21  success response downstream of the write" "$T0_21"
           report "T0-23  a blind daily smoke test is not a green one" "$T0_23_BLIND"
           report "T0-23  smoke test hermetic self-test" "$T0_23_SELFTEST"
-          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
           if [ "$failed" -ne 0 ]; then
             echo ""
             echo "At least one suite failed. Each suite's own result is above and in the"
