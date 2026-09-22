@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.72"
+ONBOARDING_VERSION="v25.1.73"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1860,7 +1860,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.72 - safe_json_edit
+# v25.1.73 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2232,6 +2232,23 @@ PYEOF
       esac
       if [ -z "$TARGET_HASH" ]; then
         continue
+      fi
+
+      # BACKLOG PRUNE. Bound this target's existing .bak-unify set on EVERY
+      # run, before deciding what to do with the file itself. Pruning only
+      # after writing a NEW backup would never reach the case that actually
+      # holds the fleet's 4.3 GB: a role folder whose AGENTS.md was since
+      # deleted (U053 disposition) still carries thousands of backups and
+      # takes the "absent -> leave absent" path below, so a roll would walk
+      # straight past them forever. Here it covers every branch -- symlink,
+      # identical, divergent and absent. A backup written further down prunes
+      # again, so the set still lands on exactly $UNIFY_BAK_KEEP.
+      local _NBACKLOG
+      _NBACKLOG="$(_lsc_prune_baks "$LINKPATH")"
+      case "$_NBACKLOG" in ''|*[!0-9]*) _NBACKLOG=0 ;; esac
+      if [ "$_NBACKLOG" -gt 0 ]; then
+        echo "  [link-shared] PRUNE $_NBACKLOG stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+        PRUNED=$((PRUNED + _NBACKLOG))
       fi
 
       if [ -L "$LINKPATH" ]; then

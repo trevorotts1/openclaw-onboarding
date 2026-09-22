@@ -124,7 +124,12 @@ whose content **differs** from canonical, the unifier:
    a target's OWN `.bak-unify-<timestamp>` siblings are ever pruned — no other
    file is touched.
 
-   To reclaim the old backups on a box already carrying them:
+   **A roll reclaims the backlog on its own (v25.1.73).** The prune runs for
+   every target on every run, before the file is inspected, so it also reaches
+   a target that is absent (its `AGENTS.md` deleted by the U053 disposition
+   pass) or already byte-identical to canonical. No operator action is needed.
+
+   To reclaim them immediately, without waiting for the next roll:
 
    ```bash
    find ~/.openclaw -name '*.bak-unify-*' -type f -mtime +7 -delete

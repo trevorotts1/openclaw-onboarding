@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.1.72"
+ONBOARDING_VERSION="v25.1.73"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2604,6 +2604,23 @@ PYEOF
       esac
       if [ -z "$TARGET_HASH" ]; then
         continue
+      fi
+
+      # BACKLOG PRUNE. Bound this target's existing .bak-unify set on EVERY
+      # run, before deciding what to do with the file itself. Pruning only
+      # after writing a NEW backup would never reach the case that actually
+      # holds the fleet's 4.3 GB: a role folder whose AGENTS.md was since
+      # deleted (U053 disposition) still carries thousands of backups and
+      # takes the "absent -> leave absent" path below, so a roll would walk
+      # straight past them forever. Here it covers every branch -- symlink,
+      # identical, divergent and absent. A backup written further down prunes
+      # again, so the set still lands on exactly $UNIFY_BAK_KEEP.
+      local _NBACKLOG
+      _NBACKLOG="$(_lsc_prune_baks "$LINKPATH")"
+      case "$_NBACKLOG" in ''|*[!0-9]*) _NBACKLOG=0 ;; esac
+      if [ "$_NBACKLOG" -gt 0 ]; then
+        note "[link-shared] PRUNE $_NBACKLOG stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+        PRUNED=$((PRUNED + _NBACKLOG))
       fi
 
       if [ -L "$LINKPATH" ]; then

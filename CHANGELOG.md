@@ -1,3 +1,62 @@
+## [v25.1.73]  -  2026-09-22  -  A roll now reclaims the `.bak-unify` backlog it already wrote, and v25.1.72 gets its CHANGELOG entry
+
+### Why
+v25.1.72 bounded the `.bak-unify` backup set to the newest `$UNIFY_BAK_KEEP` (default 3) per target. It pruned in one place only: immediately after writing a NEW backup. That leaves the shape that actually holds the fleet's 4.3 GB untouched.
+
+A role folder's `AGENTS.md` is **deleted** by the U053 disposition pass in `create_role_workspaces.py`. On the next roll the unify step finds no file there and takes its `absent -> leave absent` branch, writing no backup — while the folder still carries thousands of `AGENTS.md.bak-unify-<ts>` files. A pruner that only fires after a new backup walks straight past them, forever. The same is true of the no-op path, where the file is already byte-identical to canonical.
+
+So v25.1.72 capped future growth but reclaimed none of the 25,604 files already on disk. An operator still had to run `find` by hand on every box.
+
+Separately, v25.1.72 merged and was auto-tagged **without a CHANGELOG entry**, which turned `main` RED on gate G2 ("every v11+ annotated tag must have a CHANGELOG entry") and, because `version-consistency.yml` also runs on `pull_request`, would have failed G2 on every other open PR in the repo. The entry should have ridden in that PR via `scripts/bundle-release-in-branch.sh`; it did not.
+
+### What changed
+`link_shared_core_files()` in `install.sh` and `update-skills.sh` now prunes each target's existing `.bak-unify` set **on every run**, before deciding what to do with the file — covering all four branches: symlink, byte-identical, divergent, and absent. The post-backup prune stays, so a run that writes a new backup still lands on exactly `$UNIFY_BAK_KEEP`.
+
+A roll therefore reclaims the backlog it created, on its own, with no operator action.
+
+The missing **v25.1.72** CHANGELOG entry is added below, repairing G2 on `main`.
+
+### Not changed
+The retention count, the `UNIFY_BAK_KEEP` override, the python writer's de-dupe, and what unify writes to `AGENTS.md` are all exactly as v25.1.72 shipped. Only a target's OWN `.bak-unify-<ts>` siblings are ever pruned.
+
+### Tests
+`tests/unit/unify-backup-retention.test.sh` gains T8, which seeds five leftover backups and runs the real unify step twice: once with the target file **absent** (the U053 shape) and once with it **unchanged**. Both must come back at 3, and the absent target must stay absent. **18/18.**
+
+Proven to discriminate: run against v25.1.72's `install.sh`, T8 fails both legs with 5 backups still on disk.
+
+## [v25.1.72]  -  2026-09-21  -  The `.bak-unify` backup set is bounded; a 25,604-file / 4.3 GB disk furnace stops
+
+### Why
+The shared-core-file unification (N29) backed up a divergent `AGENTS.md` / `TOOLS.md` / `USER.md` to `<file>.bak-unify-<ts>` and kept **every** backup forever. Nothing in any code path ever deleted one.
+
+Measured live on a client Mac Mini, 2026-09-21: **25,604** `AGENTS.md.bak-unify-<ts>` files totalling **4.3 GB** across the department tree, written daily since 2026-06-23, with the disk at 95%.
+
+The loop that fed it runs on every roll. `create_role_workspaces.py` creates each role folder's `AGENTS.md` as a **symlink** to the workspace-root canonical. `link_shared_core_files()` then MIGRATES every symlink to a **real copy**, because the runtime's workspace-root boundary guard rejects symlinks. The same script's U053 disposition pass then finds a real `AGENTS.md` in a role folder, backs it up and deletes it. Next roll, repeat: one full-size copy of canonical `AGENTS.md`, per role folder, per roll, retained forever.
+
+Four writers produced the files, not one: `install.sh`, `update-skills.sh`, and three sites in `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`.
+
+### What changed
+**Retention is bounded.** After a backup is written, only the `$UNIFY_BAK_KEEP` newest `.bak-unify-<ts>` siblings of that target are kept — default **3**, `0` keeps none — deleted oldest-first. Only that target's OWN timestamped unify backups are ever touched.
+
+**The python writer de-dupes.** When the newest existing backup is byte-identical to the file being retired, no second copy of the same bytes is written. The file is still removed; its content is still fully preserved, in the backup that already holds it. This is the leg that collapses the daily loop above, where the same canonical bytes were re-backed-up every roll.
+
+**Same-second collision guard.** Two python calls in one second previously landed on the same backup name and silently overwrote it, which is the one thing a backup function must never do. They now take a `-<n>` suffix that still sorts newest-last.
+
+### Not changed
+What unify **writes** to `AGENTS.md` is untouched. `install.sh` / `update-skills.sh` already skipped the backup entirely when the target was byte-identical to canonical, via the sha256 fast path; that guard is left exactly as-is.
+
+"Never deleted" narrows to "the last N are never deleted". It does **not** widen: no file outside `<target>.bak-unify-<ts>` is ever removed. `AGENTS.md` (N29), `README.md` and `docs/SHARED-CORE-FILES.md` are corrected to say so.
+
+The three-writer disposition conflict itself is **left open** and recorded here: N29 says every agent workspace carries a real copy of the core files, U053 says role folders must not carry `AGENTS.md`. Bounding the backups caps the cost of that disagreement; it does not settle it.
+
+### Tests
+`tests/unit/unify-backup-retention.test.sh` + `.github/workflows/unify-backup-retention-guard.yml`. The suite runs the **real** extracted `link_shared_core_files()` and the **real** `_unify_backup()`, not a re-implementation: a second run over an unchanged tree creates no backup, a real change does create one, the 5th prunes to the 3 newest, `UNIFY_BAK_KEEP` overrides the count and garbage falls back to 3, and a sibling file's backups plus a non-unify backup both survive. **14/14 at the time it shipped.**
+
+Proven to discriminate: with the pruner reverted the suite fails outright, and with the pruner present but its call site neutered it still fails four legs.
+
+### Known gap, fixed in v25.1.73
+The prune fired only after a NEW backup was written, so the 25,604 files already on disk were never reclaimed by a roll. See the v25.1.73 entry above.
+
 ## [v25.1.71]  -  2026-09-21  -  The audience-rule change is reverted; a NO-WEAKENING lock guards the doctrine it relaxed
 
 ### Why
