@@ -53,7 +53,20 @@ name: podcast-engine-fail-closed-guard
 #     tests/unit/podcast-state-ledger-linkage.test.py, which drives the REAL CLI
 #     end to end in both directions against a temp database.
 #
-# All three suites are hermetic: fake curl on PATH, scratch HOME/TMPDIR, temp
+#   Duplicate guest / release gates — the create-time dedup compared ONLY
+#     `submission_fingerprint`, a column that holds TWO hash formats (the
+#     webhook job_key and the local content sha256). The same guest stored one
+#     way was invisible to a submission stored the other way, and `contact_id`
+#     was never compared at all, so an ALREADY PUBLISHED guest could be queued
+#     again and advanced to publishing. A rescue/activation proof (SOP-PODCAST-07
+#     Section 3 advances a REAL job) left no marker, and a research package that
+#     admitted it had no transcript could reach a publish step. Guarded by
+#     58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py,
+#     which drives the REAL CLI end to end against a temp database and asserts
+#     the refusals AND that a clean first-time guest still creates and advances,
+#     so the fix is not "refuse everything".
+#
+# All suites are hermetic: fake curl on PATH, scratch HOME/TMPDIR, temp
 # SQLite. No network, no Podbean account, no client data.
 
 on:
@@ -71,6 +84,7 @@ on:
       - "58-podcast-production-engine/config/smoke-endpoints.json"
       - "58-podcast-production-engine/config/furnace.json"
       - "tests/unit/podcast-smoke-test-blind-not-green.test.py"
+      - "58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   pull_request:
     branches: [main]
@@ -86,6 +100,7 @@ on:
       - "58-podcast-production-engine/config/smoke-endpoints.json"
       - "58-podcast-production-engine/config/furnace.json"
       - "tests/unit/podcast-smoke-test-blind-not-green.test.py"
+      - "58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   workflow_dispatch:
 
@@ -115,6 +130,7 @@ jobs:
           bash -n tests/unit/podcast-engine-fail-closed.test.sh
           python3 -m py_compile 58-podcast-production-engine/scripts/podcast_state.py
           python3 -m py_compile tests/unit/podcast-state-ledger-linkage.test.py
+          python3 -m py_compile 58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py
           python3 -m py_compile tests/unit/podbean-publish-workflow-response-ordering.test.py
           python3 -m py_compile 58-podcast-production-engine/scripts/podcast-smoke-test.py
           python3 -m py_compile tests/unit/podcast-smoke-test-blind-not-green.test.py
@@ -182,6 +198,13 @@ jobs:
         timeout-minutes: 8
         run: python3 58-podcast-production-engine/scripts/podcast-smoke-test.py --self-test
 
+      - name: Duplicate guest / rescue-advanced / no-source-material release gates
+        id: dup_guest
+        continue-on-error: true
+        shell: bash
+        timeout-minutes: 8
+        run: python3 -m unittest discover -s 58-podcast-production-engine/scripts/tests -p "test_duplicate_guest_guard.py" -v
+
       # Every suite above runs to completion and reports its OWN result, instead
       # of the first failure aborting the job and hiding the rest. That masking
       # is not hypothetical: T0-19/T0-20 failed from 2026-07-23 to 2026-09-22 and
@@ -200,6 +223,7 @@ jobs:
           T0_21:          ${{ steps.t0_21.outcome }}
           T0_23_BLIND:    ${{ steps.t0_23_blind.outcome }}
           T0_23_SELFTEST: ${{ steps.t0_23_selftest.outcome }}
+          DUP_GUEST:      ${{ steps.dup_guest.outcome }}
         run: |
           set -uo pipefail
           failed=0
@@ -224,6 +248,7 @@ jobs:
           report "T0-21  success response downstream of the write" "$T0_21"
           report "T0-23  a blind daily smoke test is not a green one" "$T0_23_BLIND"
           report "T0-23  smoke test hermetic self-test" "$T0_23_SELFTEST"
+          report "Duplicate guest / rescue-advanced / no-source-material release gates" "$DUP_GUEST"
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
           if [ "$failed" -ne 0 ]; then
             echo ""

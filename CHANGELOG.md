@@ -119,6 +119,57 @@ Pre-existing suites unchanged and green: `pytest 58-podcast-production-engine/sc
 ### Fleet note, not executed here
 This is a repo change only. No box was touched, no updater was run, no podcast job was triggered. When it rolls, a box whose cron environment does not carry the provider keys will now report BLIND instead of a false green - that is the true answer, and it is the signal that the daily check was never able to verify credit on that box.
 
+## [v25.1.76]  -  2026-09-22  -  The duplicate guard compares the GUEST, not two incompatible fingerprint formats
+
+### Why
+A podcast job was queued for a guest whose episode had **already been published**, and it sat one advance away from re-publishing to a live client feed. It was caught by hand. Three holes had to line up, and all three were in `58-podcast-production-engine/scripts/podcast_state.py`, the engine's declared SOLE writer.
+
+**1. The duplicate guard compared bytes, not identity.** `cmd_create` keys idempotency off a single exact-match lookup on `(client_id, submission_fingerprint)` — but that column holds **two different hash formats**:
+
+```
+fingerprint = job_key if job_key else compute_fingerprint(args.contact_id, args.style, payload)
+```
+
+A submission arriving through the webhook stores the webhook's canonical `job_key`; a standalone CLI create stores a local sha256 over a narrower field set (`contact_id + style + q1..q10 + additional_info`). The two hash different things and can never be equal, so the same guest stored one way was **invisible** to a submission stored the other way. The swap itself was deliberate (SK2-14, closing a never-create hole) — the gap is that a byte-comparison was left as the only guard. `contact_id`, the guest's actual identity and already indexed (`idx_pj_contact`), was never compared at all.
+
+**2. A rescue-advanced job was indistinguishable from an organic one.** SOP-PODCAST-07 Section 3 names advancing a **real** job parked in `received` as the *preferred* activation-proof path. That advance left no marker, so a job a test pushed into the live queue looked exactly like one its own production run had moved.
+
+**3. Nothing stopped a package that admitted it had no source material** from reaching a publish step.
+
+And `resume` had no gate of any kind: a held job restores `status = resume_stage` directly, and that stage can itself be `publishing`.
+
+### What changed
+One new section in `podcast_state.py` plus three gated call sites. The fix is at the sole writer, so every caller (`podcast_step_driver.py`, `credit_queue.py`, `podbean_publish.sh`, the intake webhook) inherits it without a single call site changing.
+
+- **`canonical_guest_id()`** folds case and punctuation, so `MayaRandleGuest01`, `mayarandleguest01` and `maya-randle-guest-01` are ONE guest. This is what lets the guard match across the two fingerprint formats, which cannot be compared to each other directly. It deliberately over-matches: it feeds a BLOCK, and a false stop costs a human release while a false pass costs a client a duplicate episode.
+- **`published_jobs_for_guest()`** finds any job for the same client and canonical guest already carrying a publish timestamp, a Podbean permalink, or status `complete`. Scoped to one client — another client's episode is never this client's duplicate.
+- **`assert_release_gates()`** is the ONE chokepoint, called by both `advance` and `resume`. On any publish-ward transition (`publishing`, `enrolling`, `complete`) it hard-stops on an already-published guest, on a rescue/force-advanced job, and on a package that admits it had no transcript. Earlier production stages stay free to move, so a blocked job is still workable.
+- **`rescue_advance_notes()`** reads the free-text labels actually recorded (`SOP-PODCAST-07`, `activation rescue`, `rescue proof`, …) as well as the new canonical marker. A forward-only structured marker would have left every already-queued job unguarded — precisely the population this fix exists for.
+- **`advance --rescue-proof`** stamps that durable marker so future rescue advances are structurally identifiable.
+- **Release is per-job, never a boolean.** `PODCAST_OPERATOR_RELEASE` must NAME the job id (or, at create time, the guest) being released. A stray `=1` in a shell profile releases nothing, and every lifted gate is audited to the job event log inside the same transaction as the transition.
+
+`source_material_verdict()` blocks only on a POSITIVE admission ("no raw interview transcript was provided"). Absence of answers returns **unknown**, which does not block — the engine accepts minimal payloads, and a "nothing found, therefore nothing exists" rule would false-stop legitimate jobs.
+
+### Proof
+`58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py` — 27 tests, stdlib unittest, hermetic (temp SQLite, no network, no client data), wired into `podcast-engine-fail-closed-guard.yml`, which already triggers on `podcast_state.py`.
+
+Reverting **only** the source and re-running proves the suite is not vacuous. Five cases fail on the shipped code for behavioural reasons:
+
+| case | on v25.1.74 |
+|---|---|
+| `test_create_refuses_a_second_submission_for_a_published_guest` | exit `0` — the duplicate was created |
+| `test_advance_to_publishing_refused_with_exit_4` | exit `0`, `from=producing_audio to=publishing` — **the near-miss itself** |
+| `test_resume_into_publishing_is_gated_too` | exit `0`, `resumed_to=publishing` |
+| `test_rescue_proof_flag_stamps_a_durable_marker` | exit `2` — no such flag |
+| `test_named_release_lets_a_blocked_advance_through_and_audits_it` | `0` audit events — a lifted gate was silent |
+
+`test_create_still_works_for_a_guest_with_no_published_episode` **passes on both**: the known-good control proving the suite discriminates rather than failing everything. The remaining 21 error on v25.1.74 with `AttributeError` because they unit-test functions the fix introduces.
+
+The engine's Python suite goes 396 -> 423, all green; no existing test was weakened, changed or deleted.
+
+### Known gap (not introduced here)
+`58-podcast-production-engine/scripts/tests/` is wired into **no** CI workflow — those 423 tests have never run in CI. This change wires only the new suite. `tests/unit/podcast-state-ledger-linkage.test.py` carries one pre-existing local failure, identical with and without this change (verified on a clean checkout).
+
 ## [v25.1.75]  -  2026-09-22  -  The installer repairs the company id the Command Center actually reads, on every install path
 
 ### Why
