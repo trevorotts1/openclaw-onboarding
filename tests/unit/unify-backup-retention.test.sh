@@ -20,6 +20,9 @@
 #   T5  ANTI-FALSE-POSITIVE: the pruner touches ONLY this target's own
 #       .bak-unify-* files (a sibling file's backups and a non-unify backup
 #       both survive)
+#   T8  BACKLOG: a roll prunes an existing backlog even when it writes no new
+#       backup -- the target absent (deleted by the U053 pass) or unchanged.
+#       This is the shape that holds the fleet's 4.3 GB.
 #   T6  PARITY: update-skills.sh carries the same helper AND calls it
 #   T7  the python department-tree writer de-dupes and prunes the same way
 #
@@ -172,12 +175,45 @@ N4B="$(count_baks)"
                  || bad "T4: garbage UNIFY_BAK_KEEP -> expected 3, got $N4B"
 
 # -----------------------------------------------------------------------------
+hdr "T8 -- BACKLOG: a roll prunes leftovers even when the file is gone or unchanged"
+# This is the shape that actually holds the fleet's 4.3 GB. A role folder's
+# AGENTS.md is deleted by the U053 disposition pass, so the unify step takes
+# the "absent -> leave absent" branch and writes no new backup -- yet the
+# folder still carries thousands of .bak-unify files. A pruner that only ran
+# after writing a NEW backup would walk straight past them forever.
+# -----------------------------------------------------------------------------
+reset_tree
+rm -f "$TARGET"                      # AGENTS.md deleted by the U053 pass
+for t in 20250101-000001 20250101-000002 20250101-000003 20250101-000004 20250101-000005; do
+  printf 'leftover %s\n' "$t" > "$TARGET.bak-unify-$t"
+done
+run_unify
+N8="$(count_baks)"
+[ "$N8" = "3" ] && ok "T8: backlog pruned to 3 with the target file ABSENT" \
+                || bad "T8: absent target kept its backlog (expected 3, got $N8)"
+[ -e "$TARGET" ] && bad "T8: an absent target was recreated" \
+                 || ok "T8: an absent target stayed absent"
+
+reset_tree
+printf 'CANONICAL BODY v1\n' > "$TARGET"   # already byte-identical to canonical
+for t in 20250101-000001 20250101-000002 20250101-000003 20250101-000004 20250101-000005; do
+  printf 'leftover %s\n' "$t" > "$TARGET.bak-unify-$t"
+done
+run_unify
+N8B="$(count_baks)"
+[ "$N8B" = "3" ] && ok "T8: backlog pruned to 3 on the unchanged (no-op) path" \
+                 || bad "T8: no-op path kept its backlog (expected 3, got $N8B)"
+
+# -----------------------------------------------------------------------------
 hdr "T6 -- PARITY: update-skills.sh carries the same helper and calls it"
 # -----------------------------------------------------------------------------
 US="$REPO_ROOT/update-skills.sh"
 grep -q '_lsc_prune_baks() {' "$US" \
   && ok "T6: update-skills.sh defines _lsc_prune_baks" \
   || bad "T6: update-skills.sh has NO _lsc_prune_baks (the two copies drifted)"
+grep -q '_NBACKLOG="$(_lsc_prune_baks "$LINKPATH")"' "$US" \
+  && ok "T6: update-skills.sh prunes the backlog on every target" \
+  || bad "T6: update-skills.sh has no backlog prune"
 grep -q '_NPRUNED="$(_lsc_prune_baks "$LINKPATH")"' "$US" \
   && ok "T6: update-skills.sh calls the pruner after a backup" \
   || bad "T6: update-skills.sh never calls _lsc_prune_baks"
