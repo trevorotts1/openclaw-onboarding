@@ -1,3 +1,46 @@
+## [v25.1.72]  -  2026-09-21  -  The `.bak-unify` backup set is bounded; a 25,604-file / 4.3 GB disk furnace stops
+
+### Why
+The shared-core-file unification (N29) backed up a divergent `AGENTS.md` / `TOOLS.md` / `USER.md` to `<file>.bak-unify-<ts>` and kept **every** backup forever. Nothing in any code path ever deleted one.
+
+Measured live on a client Mac Mini, 2026-09-21:
+
+```
+25,604  AGENTS.md.bak-unify-<ts> files
+  4.3 GB  across the department tree
+ written daily since 2026-06-23, disk at 95%
+```
+
+The loop that fed it runs on every roll. `create_role_workspaces.py` creates each role folder's `AGENTS.md` as a **symlink** to the workspace-root canonical. `link_shared_core_files()` then MIGRATES every symlink to a **real copy**, because the runtime's workspace-root boundary guard rejects symlinks. The same script's U053 disposition pass then finds a real `AGENTS.md` in a role folder, backs it up and deletes it. Next roll, repeat. One full-size copy of canonical `AGENTS.md`, per role folder, per roll, retained forever.
+
+Four writers produced the files, not one: `install.sh`, `update-skills.sh`, and three sites in `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`.
+
+### What changed
+**Retention is bounded.** After a backup is written, only the `$UNIFY_BAK_KEEP` newest `.bak-unify-<ts>` siblings of that target are kept — default **3**, `0` keeps none — deleted oldest-first. Only that target's OWN timestamped unify backups are ever touched.
+
+**The python writer de-dupes.** When the newest existing backup is byte-identical to the file being retired, no second copy of the same bytes is written. The file is still removed; its content is still fully preserved, in the backup that already holds it. This is the leg that collapses the daily loop above, where the same canonical bytes were re-backed-up every roll.
+
+**Same-second collision guard.** Two python calls in one second previously landed on the same backup name and silently overwrote it, which is the one thing a backup function must never do. They now take a `-<n>` suffix that still sorts newest-last.
+
+### Not changed
+What unify **writes** to `AGENTS.md` is untouched. `install.sh` / `update-skills.sh` already skipped the backup entirely when the target was byte-identical to canonical, via the sha256 fast path; that guard is left exactly as-is.
+
+"Never deleted" narrows to "the last N are never deleted". It does **not** widen: no file outside `<target>.bak-unify-<ts>` is ever removed. `AGENTS.md` (N29), `README.md` and `docs/SHARED-CORE-FILES.md` are corrected to say so.
+
+The three-writer disposition conflict itself is **left open** and documented here: N29 says every agent workspace carries a real copy of the core files, U053 says role folders must not carry `AGENTS.md`. Bounding the backups caps the cost of that disagreement; it does not settle it.
+
+### Tests
+`tests/unit/unify-backup-retention.test.sh` + `.github/workflows/unify-backup-retention-guard.yml`. The suite runs the **real** extracted `link_shared_core_files()` and the **real** `_unify_backup()`, not a re-implementation: a second run over an unchanged tree creates no backup, a real change does create one, the 5th prunes to the 3 newest, `UNIFY_BAK_KEEP` overrides the count and garbage falls back to 3, and a sibling file's backups plus a non-unify backup both survive. **14/14.**
+
+Proven to discriminate before merge: with the pruner reverted the suite fails outright, and with the pruner present but its call site neutered it still fails four legs.
+
+### Operator note
+To reclaim the backups on a box already carrying them:
+
+```bash
+find ~/.openclaw -name '*.bak-unify-*' -type f -mtime +7 -delete
+```
+
 ## [v25.1.71]  -  2026-09-21  -  The audience-rule change is reverted; a NO-WEAKENING lock guards the doctrine it relaxed
 
 ### Why
