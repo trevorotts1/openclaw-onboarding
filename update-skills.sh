@@ -1154,6 +1154,77 @@ oc_remove_tree_guarded() {
   exit 1
 }
 
+# ----------------------------------------------------------
+# SKILL BOX STATE. Added 2026-09-23.
+#
+# THE DEFECT. The skill install loop replaces every numbered skill WHOLESALE:
+# oc_remove_tree_guarded, then cp -r from the release. Skill 59 keeps its
+# per-box resolved tier map, INCLUDING the owner's owner_pins, at
+# 59-anthology-engine/model-map.json, inside that wiped folder. Every update
+# deleted the pins, the wiring pass then re-resolved with no pins, HEAVY-WRITER
+# and JUDGE fell to the same model, and the re-resolve FAILED CLOSED
+# (AF-AE-JUDGE-INDEPENDENCE). preflight.sh carries owner_pins forward across
+# rolls, but only out of a map that still exists when it runs.
+#
+# THE RULE. An explicit allow-list of box-local files, relative to the skill
+# folder, is copied out before the wipe and put back after the copy. The
+# wiring pass then re-runs the skill's own re-resolve (preflight.sh), which
+# honors the pins and refreshes every non-pinned tier. A path the new release
+# SHIPS is never overwritten: a shipped default always beats stale box state.
+# ----------------------------------------------------------
+# >>> SKILL-BOX-STATE-BEGIN  (extracted verbatim by tests/unit/updater-preserves-skill-box-state.test.sh)
+oc_skill_box_state_paths() {
+  case "${1:-}" in
+    59-anthology-engine) echo "model-map.json" ;;
+  esac
+  return 0
+}
+
+# Copy skill $1's allow-listed state out of live dir $2. Sets
+# _OC_BOXSTATE_STASH to the stash dir, or empty when there was nothing to keep.
+oc_skill_box_state_save() {
+  local _name="${1:-}" _live="${2:-}" _rel
+  _OC_BOXSTATE_STASH=""
+  for _rel in $(oc_skill_box_state_paths "$_name"); do
+    [ -f "$_live/$_rel" ] || continue
+    if [ -z "$_OC_BOXSTATE_STASH" ]; then
+      _OC_BOXSTATE_STASH="$(mktemp -d "${TMPDIR:-/tmp}/oc-skill-box-state.XXXXXX" 2>/dev/null || true)"
+      if [ -z "$_OC_BOXSTATE_STASH" ]; then
+        echo "    ! box state NOT saved (mktemp failed): $_name/$_rel -- it will be lost by this update" >&2
+        return 0
+      fi
+    fi
+    mkdir -p "$_OC_BOXSTATE_STASH/$(dirname "$_rel")"
+    cp -p "$_live/$_rel" "$_OC_BOXSTATE_STASH/$_rel" \
+      || echo "    ! box state NOT saved (copy failed): $_name/$_rel -- it will be lost by this update" >&2
+  done
+  return 0
+}
+
+# Put the stash back into the freshly copied skill dir $2, then drop it.
+oc_skill_box_state_restore() {
+  local _name="${1:-}" _live="${2:-}" _rel _keep=0
+  [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
+  for _rel in $(oc_skill_box_state_paths "$_name"); do
+    [ -f "$_OC_BOXSTATE_STASH/$_rel" ] || continue
+    if [ -e "$_live/$_rel" ]; then
+      echo "    box state NOT restored, the release now ships it: $_name/$_rel"
+      continue
+    fi
+    mkdir -p "$_live/$(dirname "$_rel")"
+    if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel"; then
+      echo "    box state preserved across update: $_name/$_rel"
+    else
+      echo "    ! box state NOT restored (copy failed): $_name/$_rel -- saved copy kept at $_OC_BOXSTATE_STASH/$_rel" >&2
+      _keep=1
+    fi
+  done
+  [ "$_keep" = 1 ] || rm -rf "$_OC_BOXSTATE_STASH"
+  _OC_BOXSTATE_STASH=""
+  return 0
+}
+# <<< SKILL-BOX-STATE-END
+
 oc_assert_write_preflight() {
   _OCWP_ME="$(id -un 2>/dev/null || printf '%s' "${USER:-unknown}")"
   _OCWP_ME_UID="$(id -u 2>/dev/null || printf '%s' "none")"
@@ -5793,6 +5864,9 @@ print(state + " " + str(len(headers)))
     # updater silently with the skill already gutted. oc_remove_tree_guarded
     # proves the tree is removable BEFORE it removes anything, so a blocked
     # skill stays whole and the operator gets one actionable line.
+    # Box-local state on the allow-list (owner pins) is saved first and put
+    # back after the copy; see oc_skill_box_state_paths.
+    oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME"
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
     # Copy new version.
@@ -5804,6 +5878,7 @@ print(state + " " + str(len(headers)))
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
+    oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME"
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
