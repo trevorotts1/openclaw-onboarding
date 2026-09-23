@@ -7,12 +7,18 @@
 # confirmed decline must UN-BUILD, not just skip-at-creation. For each
 # PROVENANCED decline this script performs the four steps of the master plan:
 #
-#   1. Deregister the agents.list row (dept-<slug>) from openclaw.json — only
-#      when one was lazily registered (backup first; config safety protocol).
+#   1. Deregister the dept-<slug> agent from openclaw.json — from
+#      agents.entries (OpenClaw 2026.9.x, keyed by id) and/or the legacy
+#      agents.list[] — only when one was lazily registered (backup first;
+#      config safety protocol).
 #   2. ARCHIVE the department tree: departments/<slug> ->
 #      company_dir/.retired/<slug>-<ts>/  (the master plan's rename-to-archive
 #      step; NEVER delete — APFS snapshot doctrine; `mv` keeps the APFS
-#      snapshots pinning the history).
+#      snapshots pinning the history). When the workspace departments dir
+#      (<oc-root>/workspace/departments/<slug> — the tree the phase-3b
+#      vertical-derivation gate reads) holds a SEPARATE folder rather than a
+#      link to the company tree, that folder is archived too, to
+#      <oc-root>/workspace/.retired/<slug>-<ts>/.
 #   3. Remove the board lane + Command Center workspaces row via the Command
 #      Center's EXISTING DELETE surface — src/lib/workspaces/department-optout.ts
 #      archiveDepartment() (PHASE 6): a SOFT archive (workspaces.archived_at +
@@ -56,8 +62,16 @@
 #                            default: ~/.openclaw/workspace/ or
 #                            /data/.openclaw/workspace/ live state)
 #   --company-dir <dir>      ZHC company dir holding departments/ (default:
-#                            resolved from the live companySlug / clientSlug)
-#   --oc-config <path>       explicit openclaw.json for the agents.list
+#                            resolved from the live companySlug / clientSlug;
+#                            with neither, the ONE company dir under the
+#                            zero-human-company roots — never a guess between
+#                            several)
+#   --workspace-departments-dir <dir>
+#                            the workspace departments tree to also archive
+#                            from (default: <oc-root>/workspace/departments,
+#                            but only for a LIVE build-state — a scratch run
+#                            never touches the live workspace)
+#   --oc-config <path>       explicit openclaw.json for the agent
 #                            deregistration (default: the box's own live
 #                            config — but with a SCRATCH --build-state-file the
 #                            step is SKIPPED unless this is passed explicitly;
@@ -114,6 +128,7 @@ DEPTS=()
 STATE_FILE=""
 COMPANY_DIR=""
 OC_CONFIG_OVERRIDE=""
+WS_DEPTS_OVERRIDE=""
 DB_PATH="${DASHBOARD_DB_PATH:-${DATABASE_PATH:-}}"
 SKIP_CC=0
 DRY_RUN=0
@@ -124,6 +139,7 @@ while [[ $# -gt 0 ]]; do
     --build-state-file)  STATE_FILE="$2"; shift 2 ;;
     --company-dir)       COMPANY_DIR="$2"; shift 2 ;;
     --oc-config)         OC_CONFIG_OVERRIDE="$2"; shift 2 ;;
+    --workspace-departments-dir) WS_DEPTS_OVERRIDE="$2"; shift 2 ;;
     --db)                DB_PATH="$2"; shift 2 ;;
     --skip-cc)           SKIP_CC=1; shift ;;
     --dry-run)           DRY_RUN=1; shift ;;
@@ -163,12 +179,28 @@ except (OSError, ValueError):
     sys.exit(0)
 sys.stdout.write((d.get('companySlug') or d.get('clientSlug') or '').strip())
 " 2>/dev/null || true)"
+  _ZHC_ROOTS=("$HOME/Downloads/openclaw-master-files/zero-human-company"
+              "/data/openclaw-master-files/zero-human-company"
+              "$HOME/clawd/zero-human-company")
   if [[ -n "$_SLUG" ]]; then
-    for _root in "$HOME/Downloads/openclaw-master-files/zero-human-company" \
-                 "/data/openclaw-master-files/zero-human-company" \
-                 "$HOME/clawd/zero-human-company"; do
+    for _root in "${_ZHC_ROOTS[@]}"; do
       if [[ -d "$_root/$_SLUG" ]]; then COMPANY_DIR="$_root/$_SLUG"; break; fi
     done
+  else
+    # Build state without companySlug/clientSlug (older interview states):
+    # take the company dir only when exactly ONE exists — never guess between
+    # several. The identity check below still verifies it.
+    _found=()
+    for _root in "${_ZHC_ROOTS[@]}"; do
+      for _d in "$_root"/*/; do
+        [[ -d "${_d}departments" ]] && _found+=("${_d%/}")
+      done
+    done
+    if [[ ${#_found[@]} -eq 1 ]]; then
+      COMPANY_DIR="${_found[0]}"
+    elif [[ ${#_found[@]} -gt 1 ]]; then
+      echo "[retire-confirmed-decline] build-state has no companySlug and ${#_found[@]} company dirs exist (${_found[*]}) — pass --company-dir" >&2
+    fi
   fi
 fi
 
@@ -252,16 +284,18 @@ FAILURES=0
 COMPANY_ID="$(python3 - "$STATE_FILE" "$COMPANY_DIR" "$DB_PATH" "$SKIP_CC" <<'PYIDENTITY'
 import json, pathlib, re, sys, sqlite3
 state=json.loads(pathlib.Path(sys.argv[1]).read_text())
-slug=state.get('companySlug') or state.get('clientSlug')
+folder=pathlib.Path(sys.argv[2])
+config=folder/'company-config.json'
+data=json.loads(config.read_text()) if sys.argv[2] and config.is_file() else {}
+# A build state without companySlug/clientSlug falls back to the company's own
+# config slug, then the company folder name; every check below still applies.
+slug=state.get('companySlug') or state.get('clientSlug') or data.get('slug') or (folder.name if sys.argv[2] else None)
 if not isinstance(slug,str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*',slug):
     raise SystemExit('retirement requires canonical company identity')
-folder=pathlib.Path(sys.argv[2])
 if not sys.argv[2] or folder.name != slug:
     raise SystemExit('retirement company directory/state mismatch')
-config=folder/'company-config.json'
 company_id=state.get('companyId')
 if config.is_file():
-    data=json.loads(config.read_text())
     if data.get('slug') and data['slug'] != slug:
         raise SystemExit('retirement company config/state mismatch')
     ids={str(data[k]) for k in ('companyId','company_id','id') if data.get(k)}
@@ -306,6 +340,19 @@ fi
 # NEVER delete. Runs FIRST so a declined tree can never linger on the board's
 # provisioned layer after the lane is dropped.
 TS="$(date +%Y%m%d-%H%M%S)"
+# SCRATCH ISOLATION (explicit-signal-only, same doctrine as the prebuild
+# driver): a build-state file that is NOT one of the box's two live locations
+# is a scratch run — it never touches the live config (step 1) or the live
+# workspace tree (step 2b) unless the path is passed explicitly.
+_SCRATCH_STATE=1
+if [[ "$STATE_FILE" == "/data/.openclaw/workspace/.workforce-build-state.json" \
+   || "$STATE_FILE" == "$HOME/.openclaw/workspace/.workforce-build-state.json" ]]; then
+  _SCRATCH_STATE=0
+fi
+WS_DEPTS="$WS_DEPTS_OVERRIDE"
+if [[ -z "$WS_DEPTS" && "$_SCRATCH_STATE" -eq 0 ]]; then
+  WS_DEPTS="$(dirname "$STATE_FILE")/departments"
+fi
 if [[ -n "$COMPANY_DIR" && -d "$COMPANY_DIR/departments" ]]; then
   while IFS= read -r SLUG; do
     [[ -z "$SLUG" ]] && continue
@@ -327,19 +374,44 @@ else
   echo "[retire-confirmed-decline] step 2 SKIPPED: no company dir with departments/ resolvable ($COMPANY_DIR)" >&2
 fi
 
-# ── STEP 1: deregister agents.list rows (only if lazily registered) ─────────
-# SCRATCH ISOLATION (explicit-signal-only, same doctrine as the prebuild
-# driver): when the build-state file is NOT one of the box's two live
-# locations, the agents.list deregistration is SKIPPED unless an explicit
-# --oc-config was passed — a scratch run must never touch the live config
-# (a scratch test once deregistered a live box's dept row for exactly this
-# reason; the guard is the fix).
-OC_CONFIG=""
-_SCRATCH_STATE=1
-if [[ "$STATE_FILE" == "/data/.openclaw/workspace/.workforce-build-state.json" \
-   || "$STATE_FILE" == "$HOME/.openclaw/workspace/.workforce-build-state.json" ]]; then
-  _SCRATCH_STATE=0
+# ── STEP 2b: the workspace departments tree the vertical-derivation gate reads ──
+# run-full-install.sh phase 3b audits <oc-root>/workspace/departments. On boxes
+# where that is a SEPARATE folder (not a link into the company tree), archiving
+# only the company copy left the declined department on disk there, so the gate
+# kept counting it. Archive it the same way (mv, never delete). A symlink or a
+# path that resolves into the company tree is the company copy — already moved.
+if [[ -n "$WS_DEPTS" && -d "$WS_DEPTS" ]]; then
+  _company_real=""
+  [[ -n "$COMPANY_DIR" ]] && _company_real="$(cd "$COMPANY_DIR" 2>/dev/null && pwd -P)"
+  while IFS= read -r SLUG; do
+    [[ -z "$SLUG" ]] && continue
+    WSRC="$WS_DEPTS/$SLUG"
+    if [[ -L "$WSRC" || ! -d "$WSRC" ]]; then
+      continue
+    fi
+    _wreal="$(cd "$WSRC" 2>/dev/null && pwd -P)"
+    if [[ -n "$_company_real" && "$_wreal" == "$_company_real"/* ]]; then
+      continue
+    fi
+    WDEST="$(dirname "$WS_DEPTS")/.retired/$SLUG-$TS"
+    mkdir -p "$(dirname "$WDEST")"
+    if mv "$WSRC" "$WDEST"; then
+      echo "[retire-confirmed-decline] step 2b: archived workspace copy $WSRC -> $WDEST (NEVER deleted)" >&2
+    else
+      echo "[retire-confirmed-decline] step 2b FAILED for '$SLUG': could not move $WSRC -> $WDEST" >&2
+      FAILURES=$((FAILURES + 1))
+    fi
+  done < <(echo "$TARGETS_JSON" | python3 -c "import json,sys; [print(s) for s in json.load(sys.stdin)]")
+elif [[ -z "$WS_DEPTS" ]]; then
+  echo "[retire-confirmed-decline] step 2b SKIPPED: scratch build-state without an explicit --workspace-departments-dir (live workspace never touched by a scratch run)" >&2
 fi
+
+# ── STEP 1: deregister dept agents (only if lazily registered) ─────────────
+# SCRATCH ISOLATION (see step 2): with a scratch build-state the deregistration
+# is SKIPPED unless an explicit --oc-config was passed — a scratch run must
+# never touch the live config (a scratch test once deregistered a live box's
+# dept row for exactly this reason; the guard is the fix).
+OC_CONFIG=""
 if [[ -n "$OC_CONFIG_OVERRIDE" ]]; then
   OC_CONFIG="$OC_CONFIG_OVERRIDE"
 elif [[ "$_SCRATCH_STATE" -eq 0 ]]; then
@@ -362,10 +434,16 @@ try:
 except (OSError, ValueError) as exc:
     print(f"[retire-confirmed-decline] step 1 FAILED: cannot read openclaw.json: {exc}", file=sys.stderr)
     sys.exit(1)
-agents = (cfg.get("agents") or {}).get("list") or []
-keep, removed = [], []
-for row in agents:
-    if isinstance(row, dict) and norm(row.get("id", "")) in keys:
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x — the id is the KEY,
+# never a field) and legacy agents.list[]. Same union as update-skills.sh
+# _registry_snapshot(); each shape is rewritten in place, never converted.
+agents_cfg = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+entries = agents_cfg.get("entries") if isinstance(agents_cfg.get("entries"), dict) else None
+agents = agents_cfg.get("list") if isinstance(agents_cfg.get("list"), list) else None
+rows = [(k, v) for k, v in (entries or {}).items()] + [(r.get("id", "") if isinstance(r, dict) else "", r) for r in (agents or [])]
+keep, removed, removed_keys = [], [], set()
+for rid, row in rows:
+    if isinstance(row, dict) and norm(rid) in keys:
         workspace=row.get('workspace')
         declared=row.get('companyId') or row.get('company_id')
         scoped=False
@@ -376,24 +454,27 @@ for row in agents:
             except ValueError:pass
         else:
             raise SystemExit('Retirement pending: agent company ownership is unverified')
-        if scoped:removed.append(row.get("id"))
+        if scoped:removed.append(rid);removed_keys.add(id(row))
         else:keep.append(row)
     else:
         keep.append(row)
 if not removed:
-    print("[retire-confirmed-decline] step 1: no agents.list rows were lazily registered — nothing to deregister", file=sys.stderr)
+    print("[retire-confirmed-decline] step 1: no dept agents were lazily registered — nothing to deregister", file=sys.stderr)
     sys.exit(0)
 # Backup FIRST (config safety protocol; mirrors the build's backup discipline).
 bak_dir = os.path.join(os.path.dirname(config_path), "backups")
 os.makedirs(bak_dir, exist_ok=True)
 bak = os.path.join(bak_dir, f"openclaw-backup-{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}-pre-retire.json")
 shutil.copy2(config_path, bak)
-cfg["agents"]["list"] = keep
+if entries is not None:
+    agents_cfg["entries"] = {k: v for k, v in entries.items() if id(v) not in removed_keys}
+if agents is not None:
+    agents_cfg["list"] = [r for r in agents if id(r) not in removed_keys]
 commit(config_path, cfg)
-print(f"[retire-confirmed-decline] step 1: deregistered {removed} from agents.list (backup: {bak})", file=sys.stderr)
+print(f"[retire-confirmed-decline] step 1: deregistered {removed} from the agent roster (backup: {bak})", file=sys.stderr)
 PY
   then
-    echo "[retire-confirmed-decline] step 1 FAILED (agents.list deregistration)" >&2
+    echo "[retire-confirmed-decline] step 1 FAILED (agent deregistration)" >&2
     FAILURES=$((FAILURES + 1))
   fi
 else
