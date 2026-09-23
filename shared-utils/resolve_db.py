@@ -108,13 +108,15 @@ def resolve_cc_db(skipped: "list | None" = None) -> Path:
     """The mission-control.db the running Command Center uses, or Path("").
 
     Order: $DASHBOARD_DB_PATH, $DATABASE_PATH, a CC app dir's .env.local
-    DATABASE_PATH (all explicit -- taken when the file is non-empty), then the
-    install-layout candidates. A 0-byte file is ALWAYS skipped (a stray `touch`
-    or a failed open leaves one that would otherwise shadow the live board). A
-    layout candidate is only taken when it has a `workspaces` table; if none
-    does, the first non-empty layout candidate is returned (a fresh CC that has
-    not migrated yet). Read-only: never creates a DB. `skipped`, when given,
-    collects "<path>: <why>" for every candidate passed over.
+    DATABASE_PATH, then the install-layout candidates. An EXPLICIT path that
+    exists is taken as-is, even at 0 bytes: it is the file the app opens (a
+    fresh DB the seeder is about to migrate), and answering with any other file
+    is the DATA-08 app/scripts mismatch. A LAYOUT candidate is never taken at 0
+    bytes (a stray `touch` or a failed open there shadowed the live board) and
+    only with a `workspaces` table; if none has one, the first non-empty layout
+    candidate is returned (a CC that has not migrated yet). Read-only: never
+    creates a DB. `skipped`, when given, collects "<path>: <why>" for every
+    candidate passed over.
     """
     notes = skipped if skipped is not None else []
     explicit = [os.environ.get(k, "").strip() for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH")]
@@ -134,10 +136,12 @@ def resolve_cc_db(skipped: "list | None" = None) -> Path:
                 continue
             if not p.is_file():
                 continue
+            if authoritative:
+                return p
             if size == 0:
                 notes.append(f"{p}: 0-byte")
                 continue
-            if authoritative or _has_workspaces_table(p):
+            if _has_workspaces_table(p):
                 return p
             notes.append(f"{p}: no workspaces table")
             fallback = fallback or p

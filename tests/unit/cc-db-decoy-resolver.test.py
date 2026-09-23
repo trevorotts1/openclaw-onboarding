@@ -6,7 +6,9 @@ materialize-dept-agents.sh, qc-system-integrity.sh, the persona probe, the
 runtime-parity guard and the embedding probe all route through. It used to
 return the FIRST EXISTING candidate, so a 0-byte `mission-control.db` (a stray
 touch, a failed open) earlier in the list shadowed the live board, and an env
-value of "" or "~/..." was taken literally. Every case below fails on main.
+value of "" or "~/..." was taken literally. Every case below fails on main
+except the explicit-empty-path guard, which pins the one behaviour that must
+NOT change.
 
 Hermetic: each case runs the resolver in a subprocess with HOME = a temp dir
 and the DB env vars cleared.
@@ -63,10 +65,13 @@ class DecoyResolver(unittest.TestCase):
             db.execute("CREATE TABLE unrelated(x)")
         self.assertEqual(self.resolve(), str(self.live))
 
-    def test_zero_byte_env_path_is_skipped(self):
-        empty = self.home / "empty.db"
+    def test_explicit_env_path_is_honored_even_when_empty(self):
+        # Not a decoy: it is the file the app opens (a fresh DB the seeder is
+        # about to migrate). Answering with another file is the DATA-08
+        # app/scripts mismatch. Regression guard (passes on main too).
+        empty = self.home / "fresh.db"
         empty.touch()
-        self.assertEqual(self.resolve(DATABASE_PATH=str(empty)), str(self.live))
+        self.assertEqual(self.resolve(DATABASE_PATH=str(empty)), str(empty))
 
     def test_blank_env_var_is_ignored(self):
         self.assertEqual(self.resolve(DASHBOARD_DB_PATH=""), str(self.live))
