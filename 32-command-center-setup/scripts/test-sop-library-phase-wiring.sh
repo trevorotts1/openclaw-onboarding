@@ -273,6 +273,16 @@ else
   fail "ROLE_LIBRARY_PATH provisioning does not preserve an existing operator value"
 fi
 
+# The central-vectors provisioning must come AFTER the converge in Phase 6i:
+# importRoleLibrary() rows exist only once the converge has run.
+CONV_LN="$(echo "$PHASE_BLOCK" | grep -n 'api/system/converge' | head -1 | cut -d: -f1)"
+PROV_LN="$(echo "$PHASE_BLOCK" | grep -n 'provision_sop_embeddings.py" \\' | head -1 | cut -d: -f1)"
+if [[ -n "$CONV_LN" && -n "$PROV_LN" && "$PROV_LN" -gt "$CONV_LN" ]]; then
+  pass "post-converge vectors: provision_sop_embeddings.py runs after the converge (line $PROV_LN > $CONV_LN)"
+else
+  fail "provision_sop_embeddings.py is not invoked after the converge in PHASE 6i (converge=$CONV_LN provision=$PROV_LN)"
+fi
+
 # ─── Test 2: full-script syntax check ─────────────────────────────────────
 echo "$P Test 2: bash -n syntax check on the full orchestrator..."
 if bash -n "$RFI" 2>/tmp/rfi-syntax-err.$$; then
@@ -333,6 +343,9 @@ else
       # $8 role how-to.md files on disk under $OC_ROOT/workspace/departments
       local scenario="$1" rows="$2" role_rows="$3" ingest_rc="$4" bootseed="$5" expect_fail="$6"
       local converge_json="${7:-}" role_howtos="${8:-0}" preserved_rl="${9:-}"
+      # $10 role-library rows the fake CC writes ONLY when the converge POST
+      #     arrives (importRoleLibrary() stand-in), so they exist only after it.
+      local cc_role_rows="${10:-0}"
       local SBOX FAIL_MARKER SKILL_ROOT
       SBOX="$(mktemp -d)"
       # Mirror the REAL repo depth (assert-sop-library-populated.py resolves
@@ -348,6 +361,15 @@ else
       # Real row-count gate script + the real shared resolver, unmodified.
       cp "$ASSERT_PY" "$SKILL_ROOT/scripts/assert-sop-library-populated.py"
       cp "$REPO_SHARED_UTILS/resolve_db.py" "$SBOX/repo/shared-utils/resolve_db.py"
+      # Stub provisioner: records how many role-library rows exist WHEN it runs.
+      # Non-zero == the post-converge vectors step (2b) ran AFTER the converge.
+      mkdir -p "$SBOX/repo/shared-utils/sop-embed-once"
+      cat > "$SBOX/repo/shared-utils/sop-embed-once/provision_sop_embeddings.py" <<PROVEOF
+import sqlite3, sys
+n = sqlite3.connect(sys.argv[2]).execute("SELECT COUNT(*) FROM sops WHERE source='role-library'").fetchone()[0]
+open("$SBOX/provision_saw_role_rows", "w").write(str(n))
+print("[provision-sop-embeddings] STUB: saw %d role-library row(s)" % n)
+PROVEOF
 
       # CC boot-seed: autoSeedStarterSOPs has ALREADY run (CC booted in Phase
       # 6), so `sops` is NEVER empty by the time this phase's gate runs. This
@@ -418,12 +440,19 @@ STUBEOF
       local CC_PID="" CC_PORT="1"
       if [[ -n "$converge_json" ]]; then
         cat > "$SBOX/fakecc.py" <<'CCEOF'
-import sys
+import sqlite3, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 body = sys.argv[1].encode()
+db_path, role_n = sys.argv[3], int(sys.argv[4])
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        conn = sqlite3.connect(db_path)
+        for i in range(role_n):
+            conn.execute("INSERT OR REPLACE INTO sops (id, slug, source) VALUES (?, ?, ?)",
+                         (f"cc_role_{i}", f"role-library:dept/role-{i}", "role-library"))
+        conn.commit()
+        conn.close()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -436,7 +465,7 @@ with open(sys.argv[2], 'w') as f:
     f.write(str(srv.server_port))
 srv.serve_forever()
 CCEOF
-        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" &
+        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" "$SBOX/mission-control.db" "$cc_role_rows" &
         CC_PID=$!
         for _ in $(seq 1 60); do [[ -s "$SBOX/ccport" ]] && break; sleep 0.1; done
         CC_PORT="$(cat "$SBOX/ccport" 2>/dev/null || echo 1)"
@@ -497,6 +526,15 @@ HARNESSEOF
           fail "$scenario: fail_install unexpectedly called: $(cat "$FAIL_MARKER"), stdout tail: $(tail -3 "$SBOX/stdout.log")"
         fi
       fi
+      if [[ "$cc_role_rows" -gt 0 ]]; then
+        local saw
+        saw="$(cat "$SBOX/provision_saw_role_rows" 2>/dev/null || echo none)"
+        if [[ "$saw" == "$cc_role_rows" ]]; then
+          pass "$scenario: central vectors provisioned AFTER the converge (provisioner saw $saw role-library row(s))"
+        else
+          fail "$scenario: provisioner did not run after the converge (saw: $saw, expected $cc_role_rows)"
+        fi
+      fi
       rm -rf "$SBOX"
     }
 
@@ -553,6 +591,15 @@ HARNESSEOF
                                                                   2555  0     0    54    "yes" \
                                                                   '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
                                                                   "preserved-empty-role-lib"
+
+    # 4k: importRoleLibrary() rows carry NO embedding (CC #416); their vectors come
+    # from the central asset. The provisioning inside ingest-sop-library.sh runs
+    # BEFORE the converge, so Phase 6i must provision again AFTER it -- otherwise
+    # the rows the converge just wrote never get vectors on this run.
+    _run_sandbox "4k POST-CONVERGE VECTORS (converge writes 690 role rows; provisioning must see them)" \
+                                                                  2555  0     0    54    "no" \
+                                                                  '{"ok":true,"sops":{"imported":690,"updated":0}}' 12 \
+                                                                  "" 690
   fi
 fi
 

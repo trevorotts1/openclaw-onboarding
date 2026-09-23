@@ -13,6 +13,8 @@ import hashlib
 import importlib.util
 import json
 import re
+import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -146,6 +148,123 @@ class ManifestPins(unittest.TestCase):
     def test_dept_sop_inventory_matches_index(self):
         index = json.loads((_ROLE_LIB / "_index.json").read_text())
         self.assertEqual(len(bsl.dept_sop_files(_ROLE_LIB)), len(index["sops"]))
+
+
+_EMBED_DIR = _REPO / "shared-utils" / "sop-embed-once"
+_rspec = importlib.util.spec_from_file_location("role_library_vectors", _EMBED_DIR / "role_library_vectors.py")
+rlv = importlib.util.module_from_spec(_rspec)
+sys.path.insert(0, str(_EMBED_DIR))
+_rspec.loader.exec_module(rlv)
+_pspec = importlib.util.spec_from_file_location("provision_sop_embeddings", _EMBED_DIR / "provision_sop_embeddings.py")
+prov = importlib.util.module_from_spec(_pspec)
+_pspec.loader.exec_module(prov)
+
+# Golden embed texts produced by the Command Center's own TypeScript
+# (parseRoleHowTo + buildSOPEmbedText, blackceo-command-center main, 2026-09-23).
+GOLDEN = [
+    ("sales", "appointment-setter",
+     "# Appointment Setter How-To\n\nBook qualified calls for the team.\n\n## 9. SOPs\n\n"
+     "### SOP 9.1 Qualify the lead\nConfirm budget.\n\n### SOP 9.2: Book the appointment\nOffer two slots.\n",
+     "Appointment Setter How-To | Book qualified calls for the team. | "
+     "appointment-setter,sales,appointment,setter | 1. Qualify the lead; 2. Book the appointment"),
+    ("billing", "devils-advocate",
+     "> note\n# Devil's Advocate\n\n- Challenge every plan.\n\n## 9 things to know\nx\n\n"
+     "## Stress-test the plan\ny\n\n## Devil's Advocate\nz\n",
+     "Devil's Advocate | Challenge every plan. | devils-advocate,billing,devils,advocate | "
+     "1. 9 things to know; 2. Stress-test the plan"),
+    ("engineering", "qc-specialist", "Plain text with no headings at all.\r\nSecond line.\r\n",
+     "Qc Specialist | Plain text with no headings at all. | qc-specialist,engineering,specialist | "
+     "Follow qc-specialist how-to"),
+]
+
+
+def _vec(n=3072, v=0.5):
+    return [v] * n
+
+
+class RoleLibraryVectors(unittest.TestCase):
+    def test_parser_matches_the_command_center_byte_for_byte(self):
+        from embed_sop_library import build_sop_embed_text
+        for dept, role, md, want in GOLDEN:
+            rec = rlv.parse_role_howto(md, dept, role)
+            self.assertEqual(rec["slug"], f"role-library:{dept}/{role}")
+            self.assertEqual(build_sop_embed_text(rec), want)
+
+    def test_aliases_cover_the_folder_names_boxes_use(self):
+        e = {"slug": "devils-advocate--billing", "dept": "billing", "title": "Devil's Advocate"}
+        self.assertEqual(rlv.role_slug_aliases(e, lambda t: "devil-s-advocate"),
+                         {"devils-advocate--billing", "devils-advocate-billing",
+                          "devil-s-advocate", "devils-advocate"})
+
+    def test_embed_is_hash_skipped_and_retired_aliases_are_dropped(self):
+        conn = sqlite3.connect(":memory:")
+        recs = [rlv.parse_role_howto(md, d, r) for d, r, md, _ in GOLDEN]
+        calls = []
+        fake = lambda t: calls.append(t) or _vec()  # noqa: E731
+        self.assertEqual(rlv.embed_roles(conn, recs, embed_fn=fake)["embedded"], 3)
+        again = rlv.embed_roles(conn, recs[:2], embed_fn=fake)
+        self.assertEqual((again["embedded"], again["skipped_unchanged"], again["removed_stale"]), (0, 2, 1))
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(rlv.verify(conn, "gemini-embedding-2", 3072)[0])
+
+
+class ProvisionRoleRowsBySlug(unittest.TestCase):
+    """importRoleLibrary() rows have random ids: the shipped vector must land on the
+    LOCAL sops.id by exact slug, and a converge that adds role rows re-arms it."""
+
+    def _asset(self, tmp):
+        shipped = Path(tmp) / "shipped.sqlite"
+        c = sqlite3.connect(shipped)
+        c.executescript(
+            "CREATE TABLE sop_embeddings (sop_id TEXT PRIMARY KEY, embedding BLOB, embedding_model TEXT,"
+            " embedding_dims INTEGER, embedded_at TEXT, source_content_md5 TEXT);" + rlv.SCHEMA_SQL)
+        blob = bytes(3072 * 4)
+        c.execute("INSERT INTO sop_embeddings VALUES ('sop_lib_one', ?, 'gemini-embedding-2', 3072, 'now', 'x')", (blob,))
+        for slug in ("role-library:sales/appointment-setter", "role-library:billing/devils-advocate"):
+            c.execute("INSERT INTO role_library_embeddings VALUES (?, ?, 'gemini-embedding-2', 3072, 'now', 'x')",
+                      (slug, blob))
+        c.commit(); c.close()
+        gz = Path(tmp) / "sop-embeddings.sqlite.gz"
+        gz.write_bytes(gzip.compress(shipped.read_bytes()))
+        manifest = Path(tmp) / "m.json"
+        manifest.write_text(json.dumps({
+            "release_tag": "t1", "asset_url": gz.as_uri(), "sha256": hashlib.sha256(gz.read_bytes()).hexdigest(),
+            "sop_count": 1, "role_library_count": 2, "model": "gemini-embedding-2", "dims": 3072}))
+        return manifest
+
+    def _box(self, tmp):
+        db = Path(tmp) / "mc.db"
+        c = sqlite3.connect(db)
+        c.executescript(
+            "CREATE TABLE sops (id TEXT PRIMARY KEY, slug TEXT UNIQUE, source TEXT, deleted_at TEXT);"
+            "CREATE TABLE sop_embeddings (sop_id TEXT PRIMARY KEY, embedding BLOB NOT NULL,"
+            " embedding_model TEXT NOT NULL, embedding_dims INTEGER NOT NULL, embedded_at TEXT NOT NULL);"
+            "INSERT INTO sops VALUES ('sop_lib_one', 'lib-one', NULL, NULL);"
+            "INSERT INTO sops VALUES ('uuid-1', 'role-library:sales/appointment-setter', 'role-library', NULL);"
+            "INSERT INTO sops VALUES ('uuid-9', 'role-library:sales/custom-role', 'role-library', NULL);")
+        c.commit(); c.close()
+        return db
+
+    def test_role_rows_get_vectors_by_exact_slug_and_rearm_on_new_rows(self):
+        with tempfile.TemporaryDirectory() as t:
+            manifest, db = self._asset(t), self._box(t)
+            first = prov.provision_sop_embeddings(str(manifest), str(db), dry_run=False)
+            self.assertEqual(first["status"], "IMPORTED", first)
+            c = sqlite3.connect(db)
+            have = {r[0] for r in c.execute("SELECT sop_id FROM sop_embeddings")}
+            self.assertEqual(have, {"sop_lib_one", "uuid-1"}, "custom role with no shipped slug stays unembedded")
+            c.close()
+
+            self.assertEqual(prov.provision_sop_embeddings(str(manifest), str(db), dry_run=False)["status"], "SKIP")
+
+            c = sqlite3.connect(db)  # a later converge adds a library role row
+            c.execute("INSERT INTO sops VALUES ('uuid-2', 'role-library:billing/devils-advocate', 'role-library', NULL)")
+            c.commit(); c.close()
+            third = prov.provision_sop_embeddings(str(manifest), str(db), dry_run=False)
+            self.assertEqual(third["status"], "IMPORTED", "new role rows must re-arm provisioning")
+            c = sqlite3.connect(db)
+            self.assertIn("uuid-2", {r[0] for r in c.execute("SELECT sop_id FROM sop_embeddings")})
+            c.close()
 
 
 class PublishScript(unittest.TestCase):

@@ -167,7 +167,7 @@ echo "  ✓ expected embedded rows (distinct sop_id after 60-char truncation): $
 
 # ── 3) Incremental embed (HASH-SKIP embeds ONLY new/changed SOPs) ────────────
 echo "→ [3/6] incremental embed — HASH-SKIP guard embeds ONLY new/changed SOPs (NO full furnace)"
-EMBED_ARGS=(--jsonl "$STAGED_JSONL" --db "$STAGED_DB")
+EMBED_ARGS=(--jsonl "$STAGED_JSONL" --db "$STAGED_DB" --role-library "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library")
 if [ "${#SOP_SLUGS[@]}" -gt 0 ]; then
     for _s in "${SOP_SLUGS[@]}"; do EMBED_ARGS+=(--sop-slug "$_s"); done
 fi
@@ -210,6 +210,7 @@ if command -v sha256sum >/dev/null 2>&1; then NEW_SHA="$(sha256sum "$REBUILT_GZ"
 GZ_BYTES="$(wc -c < "$REBUILT_GZ" | tr -d ' ')"
 DB_BYTES="$(wc -c < "$STAGED_DB" | tr -d ' ')"
 ROW_COUNT="$(python3 -c 'import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);print(c.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0])' "$STAGED_DB")"
+ROLE_COUNT="$(python3 -c 'import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);print(c.execute("SELECT COUNT(*) FROM role_library_embeddings").fetchone()[0])' "$STAGED_DB")"
 echo "  sop_embeddings row_count=$ROW_COUNT  expected=$SOP_COUNT_SRC (from $SOP_RECORDS_SRC source records)"
 
 # Triad guard — refuse to publish a mismatched asset (mirrors the persona
@@ -239,9 +240,9 @@ PY
 fi
 NEW_URL="https://github.com/${REPO_SLUG}/releases/download/${NEW_TAG}/sop-embeddings.sqlite.gz"
 echo "→ [5/6] bumping manifest → release_tag=$NEW_TAG sop_count=$ROW_COUNT"
-python3 - "$MANIFEST" "$ROW_COUNT" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$JSONL_TAG" <<'PY'
+python3 - "$MANIFEST" "$ROW_COUNT" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$JSONL_TAG" "$ROLE_COUNT" <<'PY'
 import json, sys, datetime
-(mp, sop_count, sha, tag, url, gz, db, jsonl_tag) = sys.argv[1:9]
+(mp, sop_count, sha, tag, url, gz, db, jsonl_tag, role_count) = sys.argv[1:10]
 m = json.load(open(mp))
 today = datetime.date.today().isoformat()
 m["model"] = "gemini-embedding-2"
@@ -249,6 +250,7 @@ m["dims"] = 3072
 m["provider"] = "gemini"
 m["sop_count"] = int(sop_count)
 m["chunk_count"] = int(sop_count)   # one row per SOP — chunk_count == sop_count for this corpus
+m["role_library_count"] = int(role_count)  # role_library_embeddings rows (one per box role slug)
 m["sha256"] = sha
 m["release_tag"] = tag
 m["asset_url"] = url

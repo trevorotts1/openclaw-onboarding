@@ -27,7 +27,7 @@ instead of re-embedded on every dispatch. See
 | 2 | Persona matching at runtime | cosine over corpus 1 + category/keyword ladder | same DB + `persona-categories.json` | provider/model row filter + dim guard + keyword fallback |
 | 3 | Role library (426 roles) | deterministic `_index.json` lookup — **no embeddings by design** | `23-ai-workforce-blueprint/templates/role-library/_index.json` | `content_sha` (CONTENT-HASH) via `hash-content-manifest.py`, CI `library-lockstep` |
 | 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (145) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
-| 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057) | real-vector hard gate (`embed_sop_library.py --verify`) + sha256 asset gate + dual-surface row-count reconciliation |
+| 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057); shipped asset also carries `role_library_embeddings` (by slug) | real-vector hard gate (`embed_sop_library.py --verify`, both tables) + sha256 asset gate + dual-surface row-count reconciliation |
 | 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors, one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
 
 ## Non-negotiable invariants (EMBED-1..9)
@@ -181,6 +181,15 @@ keys, dept-scoped) — never semantic. Integrity: `content_sha` per role/dept in
 fail `check_manifest` (CI `library-lockstep`, repo gate
 `qc-assert-repo-consistency.py` rc 6). Do not add an embedding index here
 without updating this page and the gates.
+
+The role *lookup* above stays deterministic. Separately, the Command Center
+imports each role's how-to.md as a `sops` row (`importRoleLibrary()`, slug
+`role-library:<dept>/<role>`, no per-box embed). Those rows get their vectors
+from the central Corpus 5 asset: `role_library_vectors.py` renders every role
+through the same `fill_tokens()` a box uses (neutral values), parses it exactly
+as the CC does, and ships one vector per role-folder slug a box build is known
+to use (`role_library_embeddings`); `provision_sop_embeddings.py` maps them onto
+the box's rows by exact slug.
 
 ## Corpus 4 — SOP libraries (no embeddings BY DESIGN)
 
