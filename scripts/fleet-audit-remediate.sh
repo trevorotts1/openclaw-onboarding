@@ -5,8 +5,10 @@
 set -euo pipefail
 
 FLEET_AUDIT_VERSION="v1.0.0"
-if [[ -d /data/.openclaw ]]; then OC_ROOT="/data/.openclaw"; PLATFORM="vps"
-elif [[ -d "${HOME}/.openclaw" ]]; then OC_ROOT="${HOME}/.openclaw"; PLATFORM="mac"
+# Label = the OS (platform/common.sh oc_detect_platform); root = /data first.
+case "$(uname -s)" in Linux) PLATFORM="vps" ;; *) PLATFORM="mac" ;; esac
+if [[ -d /data/.openclaw ]]; then OC_ROOT="/data/.openclaw"
+elif [[ -d "${HOME}/.openclaw" ]]; then OC_ROOT="${HOME}/.openclaw"
 else echo "ERROR: no OpenClaw root" >&2; exit 2; fi
 
 WORKSPACE="${OC_ROOT}/workspace"; SKILLS_DIR="${OC_ROOT}/skills"

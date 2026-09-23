@@ -7,10 +7,14 @@ set -euo pipefail
 
 FLEET_AUDIT_VERSION="v1.0.0"
 
+# Root: /data/.openclaw when present, else ~/.openclaw. Platform LABEL: the
+# OS, as platform/common.sh oc_detect_platform (a Linux box with ~/.openclaw
+# is "vps", never "mac").
+case "$(uname -s)" in Linux) PLATFORM="vps" ;; *) PLATFORM="mac" ;; esac
 if [[ -d /data/.openclaw ]]; then
-  OC_ROOT="/data/.openclaw"; PLATFORM="vps"
+  OC_ROOT="/data/.openclaw"
 elif [[ -d "${HOME}/.openclaw" ]]; then
-  OC_ROOT="${HOME}/.openclaw"; PLATFORM="mac"
+  OC_ROOT="${HOME}/.openclaw"
 else
   echo "[fleet-audit-remediate] ERROR: no OpenClaw root found" >&2; exit 2
 fi
