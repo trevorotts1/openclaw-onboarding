@@ -209,7 +209,13 @@ def scan_config(openclaw_json_path=None):
     defaults = agents.get("defaults", {})
     if defaults.get("model"):
         entries.append(("agents.defaults", defaults.get("model")))
-    for a in agents.get("list", []):
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id) and
+    # the legacy agents.list[].
+    _entries = agents.get("entries")
+    for k, a in (_entries.items() if isinstance(_entries, dict) else ()):
+        if isinstance(a, dict):
+            entries.append((k, a.get("model")))
+    for a in (agents.get("list") if isinstance(agents.get("list"), list) else []):
         if isinstance(a, dict):
             entries.append((a.get("id", "?"), a.get("model")))
 

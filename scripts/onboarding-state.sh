@@ -97,13 +97,17 @@ obs_resolve_workspace() {
 import json, os
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
-            print(os.path.expanduser(ag["workspace"])); break
-    else:
-        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
-        if ws:
-            print(os.path.expanduser(ws))
+    # The main agent workspace: agents.entries (OpenClaw 2026.9.x, keyed by id)
+    # or the legacy agents.list[], then agents.defaults.workspace.
+    a = cfg.get("agents", {}) or {}
+    e = a.get("entries") if isinstance(a.get("entries"), dict) else {}
+    lst = a.get("list") if isinstance(a.get("list"), list) else []
+    ws = ((e.get("main") or {}).get("workspace")
+          or next((x.get("workspace") for x in lst
+                   if isinstance(x, dict) and x.get("id") == "main" and x.get("workspace")), None)
+          or (a.get("defaults") or {}).get("workspace"))
+    if ws:
+        print(os.path.expanduser(ws))
 except (OSError, ValueError, AttributeError, TypeError) as exc:
     raise SystemExit('Cannot resolve configured client workspace: '+str(exc))
 PYEOF

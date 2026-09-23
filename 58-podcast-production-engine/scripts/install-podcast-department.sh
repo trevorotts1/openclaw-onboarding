@@ -209,7 +209,11 @@ try:
 except Exception:
     raise SystemExit(0)
 agents = cfg.get("agents", {})
-lst = agents.get("list", []) if isinstance(agents, dict) else []
+agents = agents if isinstance(agents, dict) else {}
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id) wins.
+_e = agents.get("entries") if isinstance(agents.get("entries"), dict) else {}
+lst = [dict(v, id=k) for k, v in _e.items() if isinstance(v, dict)]
+lst += agents.get("list", []) if isinstance(agents.get("list"), list) else []
 for a in lst:
     if isinstance(a, dict) and a.get("id") == agent_id:
         print(a.get("agentDir", ""))
@@ -217,7 +221,7 @@ for a in lst:
 PYEOF
 }
 
-# Exit 0 when AGENT_ID is present in agents.list, 1 otherwise.
+# Exit 0 when AGENT_ID is registered (agents.entries or agents.list), 1 otherwise.
 entry_present() {
   python3 <<'PYEOF'
 import json, os
@@ -228,8 +232,10 @@ try:
 except Exception:
     raise SystemExit(1)
 agents = cfg.get("agents", {})
-lst = agents.get("list", []) if isinstance(agents, dict) else []
-found = any(isinstance(a, dict) and a.get("id") == agent_id for a in lst)
+agents = agents if isinstance(agents, dict) else {}
+_e = agents.get("entries") if isinstance(agents.get("entries"), dict) else {}
+lst = agents.get("list", []) if isinstance(agents.get("list"), list) else []
+found = agent_id in _e or any(isinstance(a, dict) and a.get("id") == agent_id for a in lst)
 raise SystemExit(0 if found else 1)
 PYEOF
 }
