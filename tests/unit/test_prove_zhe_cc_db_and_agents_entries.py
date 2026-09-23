@@ -144,3 +144,38 @@ def test_rescue_rangers_exempt_from_client_lane_only(pz, tmp_path):
     # ...but it is still held to agent registration.
     r = pz.check_depts_registered(fs, root, pz.load_openclaw_config(fs, root))
     assert r["files_without_agent"] == ["rescue-rangers"]
+
+
+# --- "~" is expanded for every DB source ------------------------------------
+# A receipt showed db_path "~/projects/command-center/mission-control.db" with
+# has_workspaces_table=false: the probe opened the literal "~" path.
+
+def test_tilde_layout_candidate_is_expanded(pz, tmp_path):
+    root = _oc_root(tmp_path, {"entries": {}})
+    real = str(tmp_path / "home" / "projects" / "command-center" / "mission-control.db")
+    _real_db(real)
+    r = pz.check_command_center(pz.LocalFS(root), root, ["marketing", "sales"])
+    assert r["pass"], r["detail"]
+    assert r["db_path"] == real
+
+
+def test_tilde_database_path_env_is_expanded(pz, tmp_path, monkeypatch):
+    root = _oc_root(tmp_path, {"entries": {}})
+    live = str(tmp_path / "home" / "custom" / "mission-control.db")
+    _real_db(live)
+    monkeypatch.setenv("DATABASE_PATH", "~/custom/mission-control.db")
+    r = pz.check_command_center(pz.LocalFS(root), root, ["marketing", "sales"])
+    assert r["pass"], r["detail"]
+    assert r["db_path"] == live
+
+
+def test_tilde_env_local_database_path_is_expanded(pz, tmp_path):
+    root = _oc_root(tmp_path, {"entries": {}})
+    cc = tmp_path / "home" / "projects" / "command-center"
+    _real_db(str(cc / "mission-control.db"), lanes=("other",))
+    live = str(tmp_path / "home" / "custom" / "mission-control.db")
+    _real_db(live)
+    (cc / ".env.local").write_text("DATABASE_PATH=~/custom/mission-control.db\n")
+    r = pz.check_command_center(pz.LocalFS(root), root, ["marketing", "sales"])
+    assert r["pass"], r["detail"]
+    assert r["db_path"] == live

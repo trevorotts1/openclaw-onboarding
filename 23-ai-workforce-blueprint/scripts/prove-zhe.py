@@ -917,7 +917,8 @@ def env_local_db(d):
             line = line[7:].lstrip()
         if line.startswith("DATABASE_PATH="):
             v = line.split("=", 1)[1].strip().strip("'\\"")
-    return os.path.join(d, v or "mission-control.db")
+    # Expand "~" BEFORE the join: a "~/..." value is home-relative, never app-dir-relative.
+    return os.path.join(d, os.path.expanduser(v) if v else "mission-control.db")
 
 cands = [(os.environ.get(k, "").strip(), True) for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH")]
 cands += [(env_local_db(os.path.expanduser(d)), True) for d in app_dirs]
