@@ -9,7 +9,8 @@ pattern on ~/clawd/fleet-prover/prove-floor.py (which this file does NOT edit).
 
 It proves, with receipts, the four ZHE wrappings the spec/plan name (spec §1 steps 4–7):
   (a) FLOOR DEPARTMENTS present AND registered as agents — built-as-files AND
-      registered-as-agents in openclaw.json agents.list[] (not just folders on disk).
+      registered-as-agents in openclaw.json agents.entries / agents.list[] (not just
+      folders on disk).
   (b) PERSONAS CANONICAL — the full canonical persona roster (count DERIVED from the
       persona-categories.json index, not a fixed literal) + canonical persona-categories.json
       + a section-tagged coaching-personas index (gemini-index.sqlite, ~4413 rows,
@@ -57,14 +58,16 @@ falls through to the FULL ZHE (the apply-diff build has run; the full sequence a
   • READS / ASSERTS AGAINST (real call sites it is built to verify):
       - interview state .workforce-build-state.json  (schema: 23-ai-workforce-blueprint/
         build-state-schema.json; key `interviewComplete`) → EXEMPTION
-      - openclaw.json agents.list[] entries `id: dept-<slug>` written by
+      - openclaw.json agents.entries keys / legacy agents.list[] ids `dept-<slug>` written by
         32-command-center-setup/scripts/materialize-dept-agents.sh:221-262   → check (a)
       - personas dir + index: shared-utils/embedding_engine.py:133-134
         (WORKSPACE_ROOT/data/coaching-personas/{personas,gemini-index.sqlite});
         section tags written by 23-ai-workforce-blueprint/scripts/section-tag-migration.py
         (embeddings.mode / embeddings.section_number); canonical categories
         persona-categories.json (PRD 2.7 canonical: workspace/data/coaching-personas/)  → (b)
-      - mission-control.db candidates: materialize-dept-agents.sh:436-438 (+ projects/*)
+      - mission-control.db: the running CC's DATABASE_PATH (env, then the CC app dir's
+        .env.local, else its cwd default), then layout candidates
+        materialize-dept-agents.sh:436-438 (+ projects/*); 0-byte decoys skipped
         `workspaces` table rows = board lanes                                  → check (c)
       - AGENTS.md at WORKSPACE/AGENTS.md (apply-fleet-standards.sh:530) with markers:
           routing:   CEO_ORCHESTRATOR_RULE_V* / CEO_ROUTING_NO_LOOPHOLES_V1
@@ -599,13 +602,26 @@ def discover_departments(fs, oc_root):
 # CHECK (a): floor departments present AND registered as agents (not just files)
 # ---------------------------------------------------------------------------
 
+def registered_agent_ids(cfg):
+    """Agent ids from BOTH roster shapes: `agents.entries` (object keyed by id, the
+    OpenClaw 2026.9.x post-migration schema) and legacy `agents.list[]`. Union of the
+    two, same as update-skills.sh _registry_snapshot()."""
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return set()
+    ids = set()
+    entries = agents.get("entries")
+    if isinstance(entries, dict):
+        ids.update(str(k) for k, v in entries.items() if isinstance(v, dict))
+    for a in (agents.get("list") if isinstance(agents.get("list"), list) else []):
+        if isinstance(a, dict) and a.get("id"):
+            ids.add(str(a["id"]))
+    return ids
+
+
 def check_depts_registered(fs, oc_root, cfg):
     depts = discover_departments(fs, oc_root)
-    agent_ids = set()
-    if isinstance(cfg, dict):
-        for a in (((cfg.get("agents") or {}).get("list")) or []):
-            if isinstance(a, dict) and a.get("id"):
-                agent_ids.add(a["id"])
+    agent_ids = registered_agent_ids(cfg)
     # materialize-dept-agents.sh registers each dept as agent id "dept-<slug>".
     registered, unregistered = [], []
     for slug in sorted(depts):
@@ -788,8 +804,16 @@ print(json.dumps(r))
 # CHECK (c): Command Center board reachable + dept lanes present
 # ---------------------------------------------------------------------------
 
-def check_command_center(fs, oc_root, dept_slugs):
-    candidates = [
+# The Command Center app dirs. The running CC opens DATABASE_PATH from its own
+# .env.local, else <app dir>/mission-control.db (src/lib/db/index.ts getDbPath;
+# mirrored by run-full-install.sh cc_prepare_database_environment).
+_CC_APP_DIRS = ("~/projects/command-center", "/data/projects/command-center")
+
+
+def _cc_db_layout_candidates(oc_root):
+    # Fallbacks when no CC app dir / env override names the DB
+    # (materialize-dept-agents.sh:436-438 + projects/*).
+    return [
         os.path.join(oc_root, "workspaces", "command-center", "mission-control.db"),
         os.path.join(oc_root, "workspace", "mission-control.db"),
         os.path.join(oc_root, "data", "mission-control.db"),
@@ -798,21 +822,52 @@ def check_command_center(fs, oc_root, dept_slugs):
         "~/projects/mission-control/mission-control.db",
         "/opt/mission-control/mission-control.db",
     ]
-    db_path = next((c for c in candidates if fs.isfile(c)), None)
-    if db_path is None:
+
+
+def resolve_cc_db(fs, oc_root):
+    """Find the mission-control.db the running Command Center uses, probed inside the
+    box (read-only; never creates a DB). Order: $DASHBOARD_DB_PATH / $DATABASE_PATH
+    (shared-utils/resolve_db.py), then each CC app dir's configured DB, then the layout
+    candidates. A 0-byte file is always skipped; a layout candidate is only taken if it
+    has a `workspaces` table (a stray decoy must not shadow the live board). Returns the
+    probe dict: db (path or None), tables, workspace_rows, lane_blob, skipped, error."""
+    return box_python(fs, _SQL_CC_RESOLVE.format(
+        app_dirs=repr(list(_CC_APP_DIRS)), layout=repr(_cc_db_layout_candidates(oc_root))))
+
+
+def _canonical_dept_slug_fn():
+    """The board-join gate's slug normalizer (shared-utils/canonical_slug.py), so the
+    lane check and the standalone gate can never normalize differently."""
+    bj = _load_board_join_module()
+    try:
+        return bj._load_canonical_slug()
+    except Exception:  # noqa: BLE001
+        return lambda s: s
+
+
+def check_command_center(fs, oc_root, dept_slugs):
+    cc = resolve_cc_db(fs, oc_root)
+    db_path = cc.get("db")
+    if not db_path:
         return {
-            "pass": False, "db_found": False, "db_candidates": candidates,
-            "detail": "mission-control.db not found among candidates (CC not provisioned)",
+            "pass": False, "db_found": False,
+            "db_candidates": _cc_db_layout_candidates(oc_root),
+            "db_skipped": cc.get("skipped", []),
+            "detail": ("mission-control.db not found among candidates (CC not provisioned)"
+                       if cc else "mission-control.db probe did not run on the box "
+                                  "(python3 failed) — undetermined, not proven absent"),
         }
-    cc = box_python(fs, _SQL_CC_PROBE.format(db=repr(db_path)))
     tables = cc.get("tables", []) or []
     rows = int(cc.get("workspace_rows", 0) or 0)
     lane_blob = cc.get("lane_blob", []) or []
-    # dept lanes present: each discovered dept slug appears in some workspaces row.
+    # dept lanes present: each discovered dept slug appears in some workspaces row,
+    # as-is or under its canonical slug (the seeder writes workspaces.slug through
+    # canonical_dept_slug, e.g. folder legal-compliance -> lane "legal").
+    canon = _canonical_dept_slug_fn()
     lanes_missing = []
     for slug in sorted(dept_slugs):
-        needle = slug.lower()
-        if not any(needle in blob for blob in lane_blob):
+        needles = {slug.lower(), (canon(slug) or slug).lower()}
+        if not any(n in blob for n in needles for blob in lane_blob):
             lanes_missing.append(slug)
     has_ws_table = "workspaces" in tables
     board_live = has_ws_table and rows > 0
@@ -820,12 +875,13 @@ def check_command_center(fs, oc_root, dept_slugs):
         "pass": bool(board_live and not lanes_missing),
         "db_found": True,
         "db_path": db_path,
+        "db_skipped": cc.get("skipped", []),
         "has_workspaces_table": has_ws_table,
         "workspace_rows": rows,
         "dept_lanes_missing": lanes_missing,
         "cc_error": cc.get("error"),
         "detail": (
-            "workspaces table absent" if not has_ws_table
+            f"workspaces table absent in {db_path}" if not has_ws_table
             else "board has 0 workspace rows (dead board)" if rows == 0
             else (f"{len(lanes_missing)} dept lane(s) missing: {', '.join(lanes_missing)}"
                   if lanes_missing else f"board live: {rows} lane(s), all depts present")
@@ -833,22 +889,70 @@ def check_command_center(fs, oc_root, dept_slugs):
     }
 
 
-_SQL_CC_PROBE = """
+_SQL_CC_RESOLVE = """
 import sqlite3, json, os
-p = {db}
-r = {{}}
-try:
-    c = sqlite3.connect(p, timeout=30.0); cur = c.cursor()
-    tabs = [x[0] for x in cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-    r["tables"] = tabs
-    if "workspaces" in tabs:
+app_dirs = {app_dirs}
+layout = {layout}
+
+def env_local_db(d):
+    try:
+        with open(os.path.join(d, ".env.local"), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    v = ""
+    for line in lines:
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if line.startswith("DATABASE_PATH="):
+            v = line.split("=", 1)[1].strip().strip("'\\"")
+    return os.path.join(d, v or "mission-control.db")
+
+cands = [(os.environ.get(k, "").strip(), True) for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH")]
+cands += [(env_local_db(os.path.expanduser(d)), True) for d in app_dirs]
+cands += [(p, False) for p in layout]
+
+r = {{"db": None, "skipped": []}}
+seen, fallback = set(), None
+for p, authoritative in cands:
+    if not p:
+        continue
+    p = os.path.expanduser(p)
+    real = os.path.realpath(p)
+    if real in seen:
+        continue
+    seen.add(real)
+    try:
+        if os.path.getsize(p) == 0:
+            r["skipped"].append(p + ": 0-byte")
+            continue
+    except OSError:
+        continue
+    try:
+        c = sqlite3.connect(p, timeout=30.0)
+        tabs = [x[0] for x in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        c.close()
+    except Exception as e:
+        tabs = []
+        r.setdefault("error", str(e))
+    if authoritative or "workspaces" in tabs:
+        r["db"], r["tables"] = p, tabs
+        break
+    r["skipped"].append(p + ": no workspaces table")
+    fallback = fallback or (p, tabs)
+if r["db"] is None and fallback:
+    r["db"], r["tables"] = fallback
+if r["db"] and "workspaces" in r["tables"]:
+    try:
+        c = sqlite3.connect(r["db"], timeout=30.0); cur = c.cursor()
         r["workspace_rows"] = cur.execute("SELECT count(*) FROM workspaces").fetchone()[0]
-        rows = cur.execute("SELECT * FROM workspaces").fetchall()
-        r["lane_blob"] = [" ".join(str(v) for v in row).lower() for row in rows]
-    c.close()
-except Exception as e:
-    r["error"] = str(e)
+        r["lane_blob"] = [" ".join(str(v) for v in row).lower()
+                          for row in cur.execute("SELECT * FROM workspaces").fetchall()]
+        c.close()
+    except Exception as e:
+        r["error"] = str(e)
 print(json.dumps(r))
 """
 
@@ -1152,17 +1256,9 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
             "pass": False,
             "detail": "no company/departments dir resolved — cannot run the board join",
         }
-    # Locate the CC db with the SAME candidate list check (c) uses, plus the board-join
+    # Locate the CC db with the SAME resolver check (c) uses, plus the board-join
     # module's own resolver as a last resort.
-    db_path = None
-    for cand in (
-        os.path.join(oc_root, "workspaces", "command-center", "mission-control.db"),
-        os.path.join(oc_root, "workspace", "mission-control.db"),
-        os.path.join(oc_root, "data", "mission-control.db"),
-    ):
-        if fs.isfile(cand):
-            db_path = cand
-            break
+    db_path = resolve_cc_db(fs, oc_root).get("db")
     if db_path is None:
         try:
             db_path = str(bj.resolve_db() or "") or None
@@ -1826,6 +1922,11 @@ def standard_ready_selftest():
       prebuilt-broken  -> STANDARD_READY fail (exit 1)
     Exit 0 iff all three expectations hold."""
     import tempfile, shutil
+    # Hermetic: prove the fixture's board, never this machine's live Command Center.
+    global _CC_APP_DIRS
+    _CC_APP_DIRS = ()
+    for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        os.environ.pop(k, None)
     tmp = tempfile.mkdtemp(prefix="zhe-standard-ready-")
     results = []
     all_ok = True
