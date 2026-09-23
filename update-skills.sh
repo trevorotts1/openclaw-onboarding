@@ -1173,6 +1173,8 @@ oc_remove_tree_guarded() {
 # SHIPS is never overwritten: a shipped default always beats stale box state.
 # ----------------------------------------------------------
 # >>> SKILL-BOX-STATE-BEGIN  (extracted verbatim by tests/unit/updater-preserves-skill-box-state.test.sh)
+# One relative path per line. Consumers read it line by line, so a path may
+# contain spaces.
 oc_skill_box_state_paths() {
   case "${1:-}" in
     59-anthology-engine) echo "model-map.json" ;;
@@ -1181,11 +1183,16 @@ oc_skill_box_state_paths() {
 }
 
 # Copy skill $1's allow-listed state out of live dir $2. Sets
-# _OC_BOXSTATE_STASH to the stash dir, or empty when there was nothing to keep.
+# _OC_BOXSTATE_STASH to the stash dir, or empty when there was nothing to keep,
+# and remembers $1/$2 so oc_skill_box_state_on_exit can finish the job if the
+# run dies before oc_skill_box_state_restore is reached.
 oc_skill_box_state_save() {
   local _name="${1:-}" _live="${2:-}" _rel
   _OC_BOXSTATE_STASH=""
-  for _rel in $(oc_skill_box_state_paths "$_name"); do
+  _OC_BOXSTATE_NAME="$_name"
+  _OC_BOXSTATE_LIVE="$_live"
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
     [ -f "$_live/$_rel" ] || continue
     if [ -z "$_OC_BOXSTATE_STASH" ]; then
       _OC_BOXSTATE_STASH="$(mktemp -d "${TMPDIR:-/tmp}/oc-skill-box-state.XXXXXX" 2>/dev/null || true)"
@@ -1194,33 +1201,52 @@ oc_skill_box_state_save() {
         return 0
       fi
     fi
-    mkdir -p "$_OC_BOXSTATE_STASH/$(dirname "$_rel")"
+    mkdir -p "$_OC_BOXSTATE_STASH/$(dirname "$_rel")" 2>/dev/null || true
     cp -p "$_live/$_rel" "$_OC_BOXSTATE_STASH/$_rel" \
       || echo "    ! box state NOT saved (copy failed): $_name/$_rel -- it will be lost by this update" >&2
-  done
+  done <<EOF
+$(oc_skill_box_state_paths "$_name")
+EOF
   return 0
 }
 
-# Put the stash back into the freshly copied skill dir $2, then drop it.
+# Put the stash back into skill dir $2 wherever the file is missing, then drop
+# the stash. An existing file is never overwritten: after a normal copy it is
+# one the release ships; after a refused removal it is the untouched original.
+# The stash is kept ONLY when a copy back failed, because it is then the last
+# copy of the owner's state, and the log names where it is.
 oc_skill_box_state_restore() {
   local _name="${1:-}" _live="${2:-}" _rel _keep=0
   [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
-  for _rel in $(oc_skill_box_state_paths "$_name"); do
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
     [ -f "$_OC_BOXSTATE_STASH/$_rel" ] || continue
     if [ -e "$_live/$_rel" ]; then
-      echo "    box state NOT restored, the release now ships it: $_name/$_rel"
+      echo "    box state NOT restored over an existing file: $_name/$_rel"
       continue
     fi
-    mkdir -p "$_live/$(dirname "$_rel")"
-    if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel"; then
+    mkdir -p "$_live/$(dirname "$_rel")" 2>/dev/null || true
+    if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel" 2>/dev/null; then
       echo "    box state preserved across update: $_name/$_rel"
     else
       echo "    ! box state NOT restored (copy failed): $_name/$_rel -- saved copy kept at $_OC_BOXSTATE_STASH/$_rel" >&2
       _keep=1
     fi
-  done
+  done <<EOF
+$(oc_skill_box_state_paths "$_name")
+EOF
   [ "$_keep" = 1 ] || rm -rf "$_OC_BOXSTATE_STASH"
   _OC_BOXSTATE_STASH=""
+  return 0
+}
+
+# EXIT-trap hook (wired in main). If the run dies between save and restore --
+# oc_remove_tree_guarded refusing with exit 1, or cp -r failing under set -e --
+# put back whatever the partial removal took and drop the stash, so neither
+# the owner's pins nor a temp dir is left behind. A no-op on a normal run.
+oc_skill_box_state_on_exit() {
+  [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
+  oc_skill_box_state_restore "${_OC_BOXSTATE_NAME:-}" "${_OC_BOXSTATE_LIVE:-}" >&2
   return 0
 }
 # <<< SKILL-BOX-STATE-END
@@ -4151,7 +4177,7 @@ main() {
   # Sunday crontab entry that would double-fire with the OpenClaw cron.
   # ----------------------------------------------------------
   acquire_update_lock
-  trap release_update_lock EXIT
+  trap 'oc_skill_box_state_on_exit; release_update_lock' EXIT
   retire_legacy_sunday_crontab
 
   # ----------------------------------------------------------

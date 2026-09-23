@@ -22,13 +22,20 @@
 #      reason (a config that never needed the pin).
 #   4. A path the release SHIPS is never overwritten by preserved box state.
 #   5. A file NOT on the allow-list is still removed by the wholesale replace.
+#   6. The stash can never be orphaned. When the run dies between save and
+#      restore -- oc_remove_tree_guarded refusing with exit 1 on an intact
+#      tree, refusing after a PARTIAL removal, or cp -r failing under set -e --
+#      main's EXIT trap puts back whatever was taken and removes the stash.
+#   7. An allow-listed path containing spaces is preserved intact.
 #
 # METHOD. The wipe+copy step is EXTRACTED VERBATIM from the updater's skill
 # install loop (between the "# Remove old version if exists." anchor and the
 # "Updated: $SKILL_NAME" echo, both present since before the fix), so running
 # this suite with UPDATER_UNDER_TEST=<old update-skills.sh> reproduces the
-# defect. oc_remove_tree_guarded is stubbed to a plain rm -rf: its own guard
-# has its own suite, this one tests what survives the replace.
+# defect. main's `trap ... EXIT` line is extracted verbatim too, so the exit
+# cases exercise the real trap wiring. oc_remove_tree_guarded is stubbed (a
+# plain rm -rf, or a simulated refusal): its own guard has its own suite, this
+# one tests what survives the replace.
 #
 # SAFETY. Everything runs inside mktemp -d with HOME pointed there, so
 # preflight.sh never sources the real box secrets file. No network, no box.
@@ -55,6 +62,7 @@ trap 'rm -rf "$WORK"' EXIT
 LIB="$WORK/lib.sh"
 {
   echo 'oc_remove_tree_guarded() { rm -rf "$1"; }'
+  echo 'release_update_lock() { :; }'
   # The helpers exist only after the fix; absent on the old updater, which is
   # fine because its install step never calls them.
   awk '/^# >>> SKILL-BOX-STATE-BEGIN/{on=1} on{print} /^# <<< SKILL-BOX-STATE-END/{on=0}' "$TARGET"
@@ -65,6 +73,9 @@ LIB="$WORK/lib.sh"
 grep -q 'cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"' "$LIB" \
   || { echo "FATAL: install-loop anchors drifted; nothing extracted from $TARGET"; exit 2; }
 bash -n "$LIB" || { echo "FATAL: extracted block does not parse"; exit 2; }
+# main's EXIT trap, verbatim (the only `trap ... EXIT` in main).
+TRAP_LINE="$(awk '/^main\(\) *\{/{on=1} on && /^  trap .* EXIT$/{print; exit}' "$TARGET")"
+[ -n "$TRAP_LINE" ] || { echo "FATAL: main's EXIT trap not found in $TARGET"; exit 2; }
 
 # --- fixture: a box with skill 59 installed and its model map pinned ----------
 # Two client models. Unpinned, JUDGE falls onto the HEAVY-WRITER model; the
@@ -75,7 +86,9 @@ mkdir -p "$WORK/home"
 cat > "$WORK/openclaw.json" <<EOF
 {"agents":{"defaults":{"model":"$HW"},"list":[]},"models":{"list":[{"id":"$JG"}]}}
 EOF
+mkdir -p "$WORK/tmp"
 export HOME="$WORK/home" OPENCLAW_CONFIG="$WORK/openclaw.json" KIE_API_KEY=dummy-kie-not-a-real-secret
+export TMPDIR="$WORK/tmp"
 
 new_box() {  # $1 = box dir. Installs the current skill + shared-utils.
   mkdir -p "$1/skills"
@@ -87,12 +100,20 @@ mkdir -p "$RELEASE"
 cp -R "$REPO/$SKILL" "$RELEASE/"
 rm -f "$RELEASE/$SKILL/model-map.json"
 
-simulate_update() {  # $1 = box dir, $2 = release dir
-  ( set -euo pipefail
+# $1 = box dir, $2 = release dir, $3 = optional replacement body for
+# oc_remove_tree_guarded (simulates the guard refusing), $4 = skill name.
+simulate_update() {
+  # bash runs a subshell's EXIT trap with the caller's redirections already
+  # undone, so the log redirect lives inside the subshell.
+  ( exec >>"$WORK/sim.log" 2>&1
+    set -euo pipefail
     . "$LIB"
-    SKILLS_DIR="$1/skills" SKILL_DIR="$2/$SKILL/" SKILL_NAME="$SKILL"
+    [ -z "${3:-}" ] || eval "oc_remove_tree_guarded() { $3; }"
+    eval "$TRAP_LINE"
+    SKILLS_DIR="$1/skills" SKILL_DIR="$2/${4:-$SKILL}/" SKILL_NAME="${4:-$SKILL}"
     install_one_skill )
 }
+stash_left() { ls -d "$TMPDIR"/oc-skill-box-state.* 2>/dev/null | wc -l | tr -d ' '; }
 
 pins_of() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get("owner_pins"), sort_keys=True))' "$1" 2>/dev/null || echo MISSING; }
 WANT_PINS="$(python3 -c 'import json,sys; print(json.dumps({"HEAVY-WRITER":sys.argv[1],"JUDGE":sys.argv[2]}, sort_keys=True))' "$HW" "$JG")"
@@ -117,13 +138,14 @@ bash "$BOX/skills/$SKILL/preflight.sh" >/dev/null 2>&1 \
   || { echo "FATAL: seeded map lost its pins before the update"; exit 2; }
 echo stray > "$BOX/skills/$SKILL/stray-not-allow-listed.txt"
 
-simulate_update "$BOX" "$RELEASE" >"$WORK/update.log" 2>&1 || { cat "$WORK/update.log"; bad "simulated update exited non-zero"; }
+simulate_update "$BOX" "$RELEASE" || { cat "$WORK/sim.log"; bad "simulated update exited non-zero"; }
 got="$(pins_of "$BOX/skills/$SKILL/model-map.json")"
 if [ "$got" = "$WANT_PINS" ]; then
   ok "model-map.json still carries owner_pins after the update"
 else
   bad "owner_pins lost by the update (got: $got)"
 fi
+[ "$(stash_left)" = 0 ] && ok "no stash dir left after a normal update" || bad "stash dir left after a normal update"
 
 out="$(bash "$BOX/skills/$SKILL/preflight.sh" 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "post-update re-resolve PASSES"; else bad "post-update re-resolve failed (rc=$rc): $(printf '%s' "$out" | grep -m1 AF-AE || true)"; fi
@@ -152,12 +174,68 @@ BOX2="$WORK/box2"; new_box "$BOX2"
 printf '{"owner_pins": %s, "marker": "stale-box"}\n' "$WANT_PINS" > "$BOX2/skills/$SKILL/model-map.json"
 RELEASE2="$WORK/release2"; mkdir -p "$RELEASE2"; cp -R "$RELEASE/$SKILL" "$RELEASE2/"
 echo '{"marker": "shipped"}' > "$RELEASE2/$SKILL/model-map.json"
-simulate_update "$BOX2" "$RELEASE2" >/dev/null 2>&1
+simulate_update "$BOX2" "$RELEASE2"
 if grep -q '"shipped"' "$BOX2/skills/$SKILL/model-map.json"; then
   ok "shipped model-map.json kept; stale box copy not restored over it"
 else
   bad "stale box state overwrote a shipped file"
 fi
+
+# --- 6. the stash is never orphaned when the run dies mid-step ----------------
+pinned_box() {  # $1 = box dir, installed with a pinned map
+  new_box "$1"
+  printf '{"owner_pins": %s}\n' "$WANT_PINS" > "$1/skills/$SKILL/model-map.json"
+}
+
+hdr "guard refuses an INTACT tree (exit 1 before removing anything)"
+BOX3="$WORK/box3"; pinned_box "$BOX3"; rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOX3" "$RELEASE" 'exit 1'; rc=$?
+[ "$rc" -eq 1 ] && ok "run exits 1 as the guard does" || bad "expected rc=1, got rc=$rc"
+[ "$(stash_left)" = 0 ] && ok "stash removed by the EXIT trap" || bad "stash dir ORPHANED after guard refusal: $(ls -d "$TMPDIR"/oc-skill-box-state.* 2>/dev/null)"
+[ "$(pins_of "$BOX3/skills/$SKILL/model-map.json")" = "$WANT_PINS" ] && ok "original map untouched" || bad "original map changed"
+
+hdr "guard refuses after a PARTIAL removal (map already deleted)"
+BOX4="$WORK/box4"; pinned_box "$BOX4"; rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOX4" "$RELEASE" 'rm -f "$1/model-map.json" "$1/SKILL.md"; exit 1'; rc=$?
+[ "$rc" -eq 1 ] && ok "run exits 1 as the guard does" || bad "expected rc=1, got rc=$rc"
+[ "$(stash_left)" = 0 ] && ok "stash removed by the EXIT trap" || bad "stash dir ORPHANED after partial removal"
+[ "$(pins_of "$BOX4/skills/$SKILL/model-map.json")" = "$WANT_PINS" ] \
+  && ok "EXIT trap put the pinned map back for the next run" || bad "pins lost on partial removal"
+
+hdr "cp -r fails under set -e after the wipe"
+BOX5="$WORK/box5"; pinned_box "$BOX5"; rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOX5" "$WORK/no-such-release"; rc=$?
+[ "$rc" -ne 0 ] && ok "run dies on the failed copy (rc=$rc)" || bad "failed copy did not stop the run"
+[ "$(stash_left)" = 0 ] && ok "stash removed by the EXIT trap" || bad "stash dir ORPHANED after failed copy"
+[ "$(pins_of "$BOX5/skills/$SKILL/model-map.json")" = "$WANT_PINS" ] \
+  && ok "EXIT trap put the pinned map back for the next run" || bad "pins lost on failed copy"
+
+# --- 7. allow-listed paths with spaces ---------------------------------------
+hdr "an allow-listed path with spaces survives intact"
+# Append a test-only allow-list entry. The real function is still the one
+# called; this only widens what it returns for a fake skill.
+SP_SKILL="98-space-test"
+cat >> "$LIB" <<'EOF'
+eval "_orig_$(declare -f oc_skill_box_state_paths)"
+oc_skill_box_state_paths() {
+  case "${1:-}" in
+    98-space-test) printf '%s\n' "state dir/owner pins.json" "plain.json" ;;
+    *) _orig_oc_skill_box_state_paths "$@" ;;
+  esac
+}
+EOF
+BOX6="$WORK/box6"; mkdir -p "$BOX6/skills/$SP_SKILL/state dir" "$WORK/release6/$SP_SKILL"
+echo pins-with-spaces > "$BOX6/skills/$SP_SKILL/state dir/owner pins.json"
+echo plain > "$BOX6/skills/$SP_SKILL/plain.json"
+echo shipped > "$WORK/release6/$SP_SKILL/SKILL.md"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOX6" "$WORK/release6" "" "$SP_SKILL" || bad "space-path update exited non-zero: $(cat "$WORK/sim.log")"
+[ "$(cat "$BOX6/skills/$SP_SKILL/state dir/owner pins.json" 2>/dev/null)" = pins-with-spaces ] \
+  && ok "file under 'state dir/owner pins.json' preserved" || bad "path with spaces lost or split"
+[ "$(cat "$BOX6/skills/$SP_SKILL/plain.json" 2>/dev/null)" = plain ] && ok "second entry preserved" || bad "second entry lost"
+[ ! -e "$BOX6/skills/$SP_SKILL/state" ] && [ ! -e "$BOX6/skills/$SP_SKILL/dir" ] \
+  && ok "no word-split fragments created" || bad "word-split fragments created"
+[ "$(stash_left)" = 0 ] && ok "no stash dir left" || bad "stash dir left"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
