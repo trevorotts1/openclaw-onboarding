@@ -1,0 +1,141 @@
+name: script defect classes guard (roster shape, CC DB decoys, GNU stat, retire, update path, embedding probe, platform)
+
+# One regression test per defect class fixed together:
+#   A  agents.entries roster (OpenClaw 2026.9.x) read AND written by the scripts
+#      that only knew agents.list[]           -> agents-entries-roster-readers
+#   B  mission-control.db resolver skips 0-byte / no-board decoys
+#                                              -> cc-db-decoy-resolver (+ test-resolve-db.sh)
+#   C  GNU `stat -c` first (BSD-first chains print filesystem status on Linux)
+#                                              -> gnu-stat-first (native GNU here)
+#   D  retire-confirmed-decline.sh: entries roster, the workspace departments
+#      tree the vertical gate reads, build states without companySlug
+#                                              -> retire-decline-separate-workspace
+#   E  a verified update.sh run stamps commandCenterBuildFresh
+#                                              -> cc-update-path-build-fresh
+#   F  embedding probe judges shipped-asset rows by release, not build date
+#                                              -> embedding-probe-shipped-asset
+#   G  platform label / root agree with platform/common.sh
+#                                              -> platform-detection-parity
+#
+# Hermetic: every test sandboxes HOME, clears the DB env vars and stubs
+# openclaw / curl / uname where a script would call them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
+      - "23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh"
+      - "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+      - "scripts/verify-model-pins.py"
+      - "scripts/dedup-agents-md.py"
+      - "scripts/pre-july14-embedding-migration-check.sh"
+      - "scripts/ensure-heartbeat-defaults.sh"
+      - "scripts/reconcile-rr-agent-map.sh"
+      - "scripts/u126-remediate.sh"
+      - "scripts/fleet-audit-remediate.sh"
+      - "scripts/qc-system-integrity.sh"
+      - "shared-utils/resolve_injected_core_files.py"
+      - "shared-utils/resolve_db.py"
+      - "shared-utils/test-resolve-db.sh"
+      - "shared-utils/check-credential.sh"
+      - "shared-utils/fleet-heartbeat-persona-probe.sh"
+      - "38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh"
+      - "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh"
+      - "38-conversational-ai-system/scripts/28-configure-pixel-hook.sh"
+      - "32-command-center-setup/scripts/backfill-per-dept-healer.sh"
+      - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "32-command-center-setup/scripts/heartbeat-embedding-probe.py"
+      - "15-blackceo-team-management/scripts/lib/rr-config-lock.sh"
+      - "15-blackceo-team-management/scripts/lib/rr-promote-atomic.sh"
+      - "41-build-with-ai-playbook/scripts/06-verify-agent-browser.sh"
+      - "platform/common.sh"
+      - "install.sh"
+      - "update-skills.sh"
+      - "tests/unit/agents-entries-roster-readers.test.py"
+      - "tests/unit/cc-db-decoy-resolver.test.py"
+      - "tests/unit/gnu-stat-first.test.sh"
+      - "tests/unit/retire-decline-separate-workspace.test.py"
+      - "tests/unit/cc-update-path-build-fresh.test.sh"
+      - "tests/unit/embedding-probe-shipped-asset.test.py"
+      - "tests/unit/platform-detection-parity.test.sh"
+      - ".github/workflows/script-defect-classes-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
+      - "23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh"
+      - "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+      - "scripts/verify-model-pins.py"
+      - "scripts/dedup-agents-md.py"
+      - "scripts/pre-july14-embedding-migration-check.sh"
+      - "scripts/ensure-heartbeat-defaults.sh"
+      - "scripts/reconcile-rr-agent-map.sh"
+      - "scripts/u126-remediate.sh"
+      - "scripts/fleet-audit-remediate.sh"
+      - "scripts/qc-system-integrity.sh"
+      - "shared-utils/resolve_injected_core_files.py"
+      - "shared-utils/resolve_db.py"
+      - "shared-utils/test-resolve-db.sh"
+      - "shared-utils/check-credential.sh"
+      - "shared-utils/fleet-heartbeat-persona-probe.sh"
+      - "38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh"
+      - "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh"
+      - "38-conversational-ai-system/scripts/28-configure-pixel-hook.sh"
+      - "32-command-center-setup/scripts/backfill-per-dept-healer.sh"
+      - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "32-command-center-setup/scripts/heartbeat-embedding-probe.py"
+      - "15-blackceo-team-management/scripts/lib/rr-config-lock.sh"
+      - "15-blackceo-team-management/scripts/lib/rr-promote-atomic.sh"
+      - "41-build-with-ai-playbook/scripts/06-verify-agent-browser.sh"
+      - "platform/common.sh"
+      - "install.sh"
+      - "update-skills.sh"
+      - "tests/unit/agents-entries-roster-readers.test.py"
+      - "tests/unit/cc-db-decoy-resolver.test.py"
+      - "tests/unit/gnu-stat-first.test.sh"
+      - "tests/unit/retire-decline-separate-workspace.test.py"
+      - "tests/unit/cc-update-path-build-fresh.test.sh"
+      - "tests/unit/embedding-probe-shipped-asset.test.py"
+      - "tests/unit/platform-detection-parity.test.sh"
+      - ".github/workflows/script-defect-classes-guard.yml"
+
+jobs:
+  defect-classes:
+    name: defect classes A-G stay fixed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: A — agents.entries roster readers/writers
+        run: python3 tests/unit/agents-entries-roster-readers.test.py -v
+
+      - name: B — mission-control.db decoy resolver
+        run: |
+          python3 tests/unit/cc-db-decoy-resolver.test.py -v
+          bash shared-utils/test-resolve-db.sh
+
+      - name: C — GNU stat first (native GNU on this runner)
+        run: bash tests/unit/gnu-stat-first.test.sh
+
+      - name: D — retire on a separate workspace departments tree
+        run: python3 tests/unit/retire-decline-separate-workspace.test.py -v
+
+      - name: E — update.sh path stamps commandCenterBuildFresh
+        run: |
+          bash tests/unit/cc-update-path-build-fresh.test.sh
+          bash tests/unit/cc-done-degraded-retry-gate.test.sh
+
+      - name: F — embedding probe vs shipped asset
+        run: python3 tests/unit/embedding-probe-shipped-asset.test.py -v
+
+      - name: G — platform detection parity
+        run: bash tests/unit/platform-detection-parity.test.sh
