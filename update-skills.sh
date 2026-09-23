@@ -1235,18 +1235,22 @@ oc_skill_box_state_restore() {
   done <<EOF
 $(oc_skill_box_state_paths "$_name")
 EOF
-  [ "$_keep" = 1 ] || rm -rf "$_OC_BOXSTATE_STASH"
+  if [ "$_keep" != 1 ]; then
+    rm -rf "$_OC_BOXSTATE_STASH" 2>/dev/null \
+      || echo "    ! box state stash cleanup failed, left at $_OC_BOXSTATE_STASH" >&2
+  fi
   _OC_BOXSTATE_STASH=""
   return 0
 }
 
-# EXIT-trap hook (wired in main). If the run dies between save and restore --
-# oc_remove_tree_guarded refusing with exit 1, or cp -r failing under set -e --
+# EXIT-trap hook, called guarded by oc_update_exit_trap. If the run dies
+# between save and restore -- oc_remove_tree_guarded refusing with exit 1, or
+# cp -r failing under set -e --
 # put back whatever the partial removal took and drop the stash, so neither
 # the owner's pins nor a temp dir is left behind. A no-op on a normal run.
 oc_skill_box_state_on_exit() {
   [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
-  oc_skill_box_state_restore "${_OC_BOXSTATE_NAME:-}" "${_OC_BOXSTATE_LIVE:-}" >&2
+  oc_skill_box_state_restore "${_OC_BOXSTATE_NAME:-}" "${_OC_BOXSTATE_LIVE:-}" >&2 || true
   return 0
 }
 # <<< SKILL-BOX-STATE-END
@@ -4122,6 +4126,17 @@ release_update_lock() {
   fi
 }
 
+# main()'s EXIT trap. The box-state hook runs GUARDED, so nothing inside it
+# can abort the trap under set -e and skip the lock release; the lock is then
+# ALWAYS released; and the script exits with the status it was already
+# exiting with, never the hook's.
+oc_update_exit_trap() {
+  local _rc=$?
+  oc_skill_box_state_on_exit || true
+  release_update_lock || true
+  exit "$_rc"
+}
+
 # Detect a legacy Unix crontab entry `0 3 * * 0` (system-local timezone)
 # that collides with the OpenClaw cron weekly-onboarding-update
 # (0 3 * * 0 America/New_York). Returns 0 when at least one such entry
@@ -4177,7 +4192,7 @@ main() {
   # Sunday crontab entry that would double-fire with the OpenClaw cron.
   # ----------------------------------------------------------
   acquire_update_lock
-  trap 'oc_skill_box_state_on_exit; release_update_lock' EXIT
+  trap oc_update_exit_trap EXIT
   retire_legacy_sunday_crontab
 
   # ----------------------------------------------------------
@@ -5892,7 +5907,7 @@ print(state + " " + str(len(headers)))
     # skill stays whole and the operator gets one actionable line.
     # Box-local state on the allow-list (owner pins) is saved first and put
     # back after the copy; see oc_skill_box_state_paths.
-    oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME"
+    oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
     # Copy new version.
@@ -5904,7 +5919,7 @@ print(state + " " + str(len(headers)))
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
-    oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME"
+    oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
