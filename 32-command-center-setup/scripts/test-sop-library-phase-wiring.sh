@@ -80,10 +80,11 @@ else
   fail "PHASE 6i marker missing"
 fi
 
-if grep -qE 'bash "\$INGEST_SOP_SH" "\$CLIENT_SLUG"' "$RFI"; then
-  pass "ingest-sop-library.sh invoked with \$CLIENT_SLUG"
+if grep -qE 'bash "\$INGEST_SOP_SH" "\$SOP_INGEST_SLUG"' "$RFI" \
+   && grep -qE 'SOP_INGEST_SLUG="\$\{CLIENT_SLUG:-default\}"' "$RFI"; then
+  pass "ingest-sop-library.sh invoked with the client slug (falls back to 'default' like U6c)"
 else
-  fail "ingest-sop-library.sh invocation with \$CLIENT_SLUG not found"
+  fail "ingest-sop-library.sh is not invoked with \${CLIENT_SLUG:-default}"
 fi
 
 if grep -q '"scope":"sops"' "$RFI"; then
@@ -333,6 +334,9 @@ else
       # $8 role how-to.md files on disk under $OC_ROOT/workspace/departments
       local scenario="$1" rows="$2" role_rows="$3" ingest_rc="$4" bootseed="$5" expect_fail="$6"
       local converge_json="${7:-}" role_howtos="${8:-0}" preserved_rl="${9:-}"
+      # $10 client slug handed to the phase ("" = none resolved; default test-client)
+      # $11 "symlink" => every role how-to.md is a SYMLINK (shared-core layout)
+      local client_slug="${10-test-client}" howto_mode="${11:-}"
       local SBOX FAIL_MARKER SKILL_ROOT
       SBOX="$(mktemp -d)"
       # Mirror the REAL repo depth (assert-sop-library-populated.py resolves
@@ -372,6 +376,7 @@ PYEOF
 #!/usr/bin/env bash
 set -euo pipefail
 CLIENT="\${1:?usage}"
+printf '%s' "\$CLIENT" > "$SBOX/ingest_slug"
 echo "[sop-library] client=\$CLIENT  tag=stub"
 echo "[sop-library] downloading https://example.invalid/sops-library-v2.jsonl.gz"
 if [[ "$ingest_rc" -ne 0 ]]; then
@@ -406,8 +411,14 @@ STUBEOF
       local _i
       for (( _i = 0; _i < role_howtos; _i++ )); do
         mkdir -p "$OCROOT/workspace/departments/dept-$_i/01-role"
-        printf '# How-To\n\n### SOP: do the thing\n1. step\n' \
-          > "$OCROOT/workspace/departments/dept-$_i/01-role/how-to.md"
+        if [[ "$howto_mode" == "symlink" ]]; then
+          mkdir -p "$SBOX/shared-core"
+          printf '# How-To\n\n### SOP: do the thing\n1. step\n' > "$SBOX/shared-core/how-to-$_i.md"
+          ln -s "$SBOX/shared-core/how-to-$_i.md" "$OCROOT/workspace/departments/dept-$_i/01-role/how-to.md"
+        else
+          printf '# How-To\n\n### SOP: do the thing\n1. step\n' \
+            > "$OCROOT/workspace/departments/dept-$_i/01-role/how-to.md"
+        fi
       done
 
       # Fake Command Center. Answers POST /api/system/converge with a SCRIPTED body,
@@ -421,9 +432,11 @@ STUBEOF
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 body = sys.argv[1].encode()
+marker = sys.argv[3]
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        open(marker, 'w').write('called')
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -436,7 +449,7 @@ with open(sys.argv[2], 'w') as f:
     f.write(str(srv.server_port))
 srv.serve_forever()
 CCEOF
-        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" &
+        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" "$SBOX/converge_called" &
         CC_PID=$!
         for _ in $(seq 1 60); do [[ -s "$SBOX/ccport" ]] && break; sleep 0.1; done
         CC_PORT="$(cat "$SBOX/ccport" 2>/dev/null || echo 1)"
@@ -469,7 +482,7 @@ fail_install() {
   exit 1
 }
 SKILL_DIR="$SKILL_ROOT"
-CLIENT_SLUG="test-client"
+CLIENT_SLUG="$client_slug"
 DASHBOARD_DIR="$SKILL_ROOT/dashboard"
 DASHBOARD_PORT="$CC_PORT"
 CC_PM2_NAME="blackceo-command-center"
@@ -496,6 +509,15 @@ HARNESSEOF
         else
           fail "$scenario: fail_install unexpectedly called: $(cat "$FAIL_MARKER"), stdout tail: $(tail -3 "$SBOX/stdout.log")"
         fi
+      fi
+      if [[ -z "$client_slug" ]]; then
+        local got_slug; got_slug="$(cat "$SBOX/ingest_slug" 2>/dev/null || echo none)"
+        [[ "$got_slug" == "default" ]] \
+          && pass "$scenario: no slug -> ingest ran with the 'default' slug (like U6c)" \
+          || fail "$scenario: no slug -> ingest did not run with 'default' (got: $got_slug)"
+        [[ -f "$SBOX/converge_called" ]] \
+          && pass "$scenario: no slug -> converge(scope=sops) was still called" \
+          || fail "$scenario: no slug -> converge(scope=sops) was NEVER called (phase skipped)"
       fi
       rm -rf "$SBOX"
     }
@@ -553,6 +575,21 @@ HARNESSEOF
                                                                   2555  0     0    54    "yes" \
                                                                   '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
                                                                   "preserved-empty-role-lib"
+
+    # 4l: NO CLIENT_SLUG (live 2026-09-23 on Karen Vaughn's and LeAnne Dolce's
+    # boxes). The slug only scopes client_template_vars, so the phase must still
+    # ingest (slug 'default', like U6c), call the converge, and run the gate.
+    _run_sandbox "4l NO CLIENT_SLUG (converge + gate still run; ingest uses 'default')" \
+                                                                  2555  107   0    54    "no" \
+                                                                  '{"ok":true,"sops":{"imported":107,"updated":0}}' 12 \
+                                                                  "" ""
+    # 4m: role how-to.md files are SYMLINKS (live on Angeleen Harris's box: 448
+    # of them, 0 counted without -L). A converge that imports nothing must still
+    # FAIL -- counting 0 how-tos would drop the role floor to 0 (fail-open).
+    _run_sandbox "4m SYMLINKED how-to.md + converge 0-imported (must fail, not floor 0)" \
+                                                                  2555  0     0    54    "yes" \
+                                                                  '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
+                                                                  "" "test-client" "symlink"
   fi
 fi
 
