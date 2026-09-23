@@ -26,7 +26,7 @@ instead of re-embedded on every dispatch. See
 | 1 | Coaching personas (Skill 22 blueprints) | Gemini vectors, section-level | `workspace/data/coaching-personas/gemini-index.sqlite` | real-vector hard gate + `--verify` + count triad |
 | 2 | Persona matching at runtime | cosine over corpus 1 + category/keyword ladder | same DB + `persona-categories.json` | provider/model row filter + dim guard + keyword fallback |
 | 3 | Role library (426 roles) | deterministic `_index.json` lookup — **no embeddings by design** | `23-ai-workforce-blueprint/templates/role-library/_index.json` | `content_sha` (CONTENT-HASH) via `hash-content-manifest.py`, CI `library-lockstep` |
-| 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (131) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
+| 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (145) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
 | 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057) | real-vector hard gate (`embed_sop_library.py --verify`) + sha256 asset gate + dual-surface row-count reconciliation |
 | 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors, one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
 
@@ -185,8 +185,11 @@ without updating this page and the gates.
 ## Corpus 4 — SOP libraries (no embeddings BY DESIGN)
 
 Two DIFFERENT things — never conflate the counts:
-- **Dept SOPs (131)**: `templates/role-library/<dept>/sops/*.md`, covered by
-  `_index.json sops[]` + CONTENT-HASH (same pipeline as roles).
+- **Dept SOPs (145)**: `templates/role-library/<dept>/sops/*.md`, covered by
+  `_index.json sops[]` + CONTENT-HASH (same pipeline as roles). Since
+  `sop-library-v3.0.0` each one also ships as a row of the Command Center SOP
+  library (built by `shared-utils/sop-library/build_sop_library.py`), so its
+  vector comes from the central Corpus 5 asset -- never a per-box embed.
 - **universal-sops craft clusters**: routed by content
   (`how_to_use_department.py`, routing docs), integrity-covered by
   `universal-sops/_content-manifest.json` — regenerate with

@@ -21,8 +21,10 @@
 #                                                     [--sop-slug <slug> ...]
 #                                                     [--dry-run]
 #
-#   --jsonl-tag   which onboarding release carries the canonical sops-library-v2.jsonl.gz
-#                 asset (default: the tag ingest-sop-library.sh currently pins).
+#   --jsonl-tag   which onboarding release carries the canonical SOP library asset
+#                 (default: release_tag + asset from shared-utils/sop-library/
+#                 SOP-LIBRARY-MANIFEST.json -- the SAME pin ingest-sop-library.sh
+#                 uses, sha256-verified against that manifest).
 #   --sop-slug    embed ONLY this SOP (repeatable). Default: consider every SOP
 #                 (still incremental — HASH-SKIP skips unchanged rows).
 #   --new-tag     release tag for the rebuilt asset. Default: auto-bump the
@@ -42,7 +44,9 @@ REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 MANIFEST="$SELF_DIR/SOP-EMBEDDINGS-MANIFEST.json"
 EMBEDDER="$SELF_DIR/embed_sop_library.py"
 REPO_SLUG="trevorotts1/openclaw-onboarding"
-SOP_ASSET_NAME="sops-library-v2.jsonl.gz"
+LIB_MANIFEST="$SELF_DIR/../sop-library/SOP-LIBRARY-MANIFEST.json"
+_libmf() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2]) or "")' "$LIB_MANIFEST" "$1" 2>/dev/null || true; }
+SOP_ASSET_NAME="$(_libmf asset)"; SOP_ASSET_NAME="${SOP_ASSET_NAME:-sops-library-v2.jsonl.gz}"
 
 NEW_TAG=""
 JSONL_TAG=""
@@ -109,7 +113,9 @@ fi
 
 # ── 2) Download the canonical shared SOP library (sops.jsonl) ────────────────
 echo "→ [2/6] resolving canonical sops.jsonl (the SAME content ingest-sop-library.sh downloads)"
-DEFAULT_JSONL_TAG="v10.13.29"
+DEFAULT_JSONL_TAG="$(_libmf release_tag)"; DEFAULT_JSONL_TAG="${DEFAULT_JSONL_TAG:-v10.13.29}"
+EXPECT_JSONL_SHA=""
+[ -z "$JSONL_TAG" ] && EXPECT_JSONL_SHA="$(_libmf sha256)"
 JSONL_TAG="${JSONL_TAG:-$DEFAULT_JSONL_TAG}"
 JSONL_URL="https://github.com/${REPO_SLUG}/releases/download/${JSONL_TAG}/${SOP_ASSET_NAME}"
 STAGED_JSONL_GZ="$BUILD_DIR/${SOP_ASSET_NAME}"
@@ -121,6 +127,11 @@ if [ "$DRY_RUN" = "1" ] && ! curl -L --fail -sS -o "$STAGED_JSONL_GZ" "$JSONL_UR
       > "$STAGED_JSONL"
 elif [ ! -f "$STAGED_JSONL_GZ" ]; then
     curl -L --retry 3 --retry-delay 5 --fail -H "Accept: application/octet-stream" "$JSONL_URL" -o "$STAGED_JSONL_GZ"
+    if [ -n "$EXPECT_JSONL_SHA" ]; then
+        if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "$STAGED_JSONL_GZ" | awk '{print $1}')"; else GOT="$(shasum -a 256 "$STAGED_JSONL_GZ" | awk '{print $1}')"; fi
+        [ "$GOT" = "$EXPECT_JSONL_SHA" ] || { echo "ERROR: $SOP_ASSET_NAME sha256 $GOT != SOP-LIBRARY-MANIFEST pin $EXPECT_JSONL_SHA — refusing to embed a different library than boxes ingest" >&2; exit 1; }
+        echo "  ✓ $SOP_ASSET_NAME sha256 matches SOP-LIBRARY-MANIFEST.json"
+    fi
     gunzip -c "$STAGED_JSONL_GZ" > "$STAGED_JSONL"
 else
     gunzip -c "$STAGED_JSONL_GZ" > "$STAGED_JSONL"
@@ -261,7 +272,9 @@ cp -f "$REBUILT_GZ" "$UP_GZ"
 if gh release view "$NEW_TAG" -R "$REPO_SLUG" >/dev/null 2>&1; then
     gh release upload "$NEW_TAG" "$UP_GZ" --clobber -R "$REPO_SLUG"
 else
-    gh release create "$NEW_TAG" "$UP_GZ" -R "$REPO_SLUG" \
+    # --latest=false: an asset-only release must never take the repo's "Latest"
+    # badge from the newest version tag (scripts/release.sh keeps them in lockstep).
+    gh release create "$NEW_TAG" "$UP_GZ" -R "$REPO_SLUG" --latest=false \
         --title "$NEW_TAG" --notes "Incremental SOP-embeddings rebuild: $ROW_COUNT SOPs (delta-embedded, HASH-SKIP, gemini-embedding-2 @3072)."
 fi
 rm -f "$UP_GZ" "$REBUILT_GZ"
