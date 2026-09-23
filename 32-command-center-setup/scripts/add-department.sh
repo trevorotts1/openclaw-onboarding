@@ -733,8 +733,12 @@ def wire_department_runtime(slug, head_name):
             cfg = json.load(open(cfg_path))
         except (json.JSONDecodeError, OSError):
             return False
-        agents_list = cfg.get("agents", {}).get("list", []) if isinstance(cfg.get("agents"), dict) else []
-        has_entry = any(isinstance(a, dict) and a.get("id") == agent_id for a in agents_list)
+        agents_cfg = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+        entries = agents_cfg.get("entries") if isinstance(agents_cfg.get("entries"), dict) else {}
+        agents_list = agents_cfg.get("list") if isinstance(agents_cfg.get("list"), list) else []
+        # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the key).
+        has_entry = agent_id in entries or any(
+            isinstance(a, dict) and a.get("id") == agent_id for a in agents_list)
         return has_entry and agent_dir.is_dir()
 
     materializer = Path(SCRIPT_DIR) / "materialize-dept-agents.sh"
@@ -782,7 +786,12 @@ def wire_department_runtime(slug, head_name):
 
     if not isinstance(cfg.get("agents"), dict):
         cfg["agents"] = {"list": []}
-    if not isinstance(cfg["agents"].get("list"), list):
+    # ROSTER SHAPE (same rule as materialize-dept-agents.sh): a config with
+    # agents.entries (OpenClaw 2026.9.x) is written there -- id as the KEY,
+    # memory search at memory.search. Creating agents.list on such a box is
+    # `agents: Unrecognized key "list"` and the gateway will not start.
+    entries_mode = isinstance(cfg["agents"].get("entries"), dict) and bool(cfg["agents"]["entries"])
+    if not entries_mode and not isinstance(cfg["agents"].get("list"), list):
         cfg["agents"]["list"] = []
 
     workspace_path = str(Path(OC_ROOT) / "workspace" / "departments" / slug)
@@ -797,16 +806,33 @@ def wire_department_runtime(slug, head_name):
             "fallback": "openai",
         },
     }
-    agent_list = cfg["agents"]["list"]
-    by_id = {a.get("id"): a for a in agent_list if isinstance(a, dict) and a.get("id")}
-    existing_entry = by_id.get(agent_id)
-    if existing_entry is None:
-        agent_list.append(desired_entry)
+    if entries_mode:
+        roster = cfg["agents"]["entries"]
+        ms = desired_entry.pop("memorySearch")
+        desired_entry.pop("id")
+        existing_entry = roster.get(agent_id)
+        if not isinstance(existing_entry, dict):
+            desired_entry["memory"] = {"search": ms}
+            roster[agent_id] = desired_entry
+        else:
+            for k in ("name", "workspace", "agentDir"):
+                if existing_entry.get(k) != desired_entry[k]:
+                    existing_entry[k] = desired_entry[k]
+            existing_entry.setdefault("memory", {}).setdefault("search", ms)
+        if (len(roster) > 1 and "ownership" not in cfg["agents"]
+                and not any(isinstance(v, dict) and v.get("default") is True for v in roster.values())):
+            cfg["agents"]["ownership"] = "explicit"
     else:
-        for k in ("name", "workspace", "agentDir"):
-            if existing_entry.get(k) != desired_entry[k]:
-                existing_entry[k] = desired_entry[k]
-        existing_entry.setdefault("memorySearch", desired_entry["memorySearch"])
+        agent_list = cfg["agents"]["list"]
+        by_id = {a.get("id"): a for a in agent_list if isinstance(a, dict) and a.get("id")}
+        existing_entry = by_id.get(agent_id)
+        if existing_entry is None:
+            agent_list.append(desired_entry)
+        else:
+            for k in ("name", "workspace", "agentDir"):
+                if existing_entry.get(k) != desired_entry[k]:
+                    existing_entry[k] = desired_entry[k]
+            existing_entry.setdefault("memorySearch", desired_entry["memorySearch"])
 
     # Backup (best-effort) + atomic write. Never as root -- the bash guard at
     # the top of this script already refused a root invocation before this

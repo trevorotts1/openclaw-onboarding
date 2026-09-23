@@ -531,7 +531,9 @@ cc_resolve_sovereign_model() {
   local candidates cand
   candidates="$(jq -r '
     [ .agents.defaults.model.primary?,
+      .agents.entries.main.model.primary?,
       ( (.agents.list // []) | map(select(.name=="Main" or .name=="main")) | .[0].model.primary? ),
+      ( [(.agents.entries // {})[]] | .[0].model.primary? ),
       .agents.list[0].model.primary?,
       ( (.agents.defaults.model.fallbacks? // [])[] ),
       .agents.defaults.model?
@@ -624,8 +626,8 @@ cc_resolve_judge_model() {
       (.models.providers["ollama"].models[]?.id),
       (.agents.defaults.model.primary?),
       ((.agents.defaults.model.fallbacks? // [])[]),
-      ((.agents.list // []) | map(.model.primary?) | .[]),
-      ((.agents.list // []) | map(.model.fallbacks? // []) | add // [] | .[])
+      ((.agents.list // []) + [(.agents.entries // {})[]] | map(.model.primary?) | .[]),
+      ((.agents.list // []) + [(.agents.entries // {})[]] | map(.model.fallbacks? // []) | add // [] | .[])
     ] | map(select(type=="string" and . != "")) | unique | .[]
   ' "$OC_CONFIG" 2>/dev/null)"
   local fam id lid
@@ -2372,12 +2374,15 @@ else
   if ! bash "$SKILL32_MATERIALIZE" >>"$LOG_FILE" 2>&1; then
     fail_install "phase=4: materialize-dept-agents.sh exited non-zero (see $LOG_FILE)"
   fi
-  AGENT_COUNT=$(python3 -c 'import json,sys; sys.stdout.write(str(len(json.load(open(sys.argv[1]))["agents"]["list"])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
+  # Count BOTH roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id)
+  # and legacy agents.list[]. Reading only ["agents"]["list"] raised KeyError on
+  # an entries box, counted 0 and failed every fresh install there.
+  AGENT_COUNT=$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("agents") or {}; e=a.get("entries"); l=a.get("list"); sys.stdout.write(str(len(e if isinstance(e, dict) else {}) + len(l if isinstance(l, list) else [])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
   if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
-    fail_install "phase=4: agents.list[] has only ${AGENT_COUNT:-0} entries after materialize"
+    fail_install "phase=4: the agent roster has only ${AGENT_COUNT:-0} entries after materialize"
   fi
   state_set ".agentsMaterializedCount = $AGENT_COUNT | .commandCenterPhase4Done = true"
-  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in agents.list[])"
+  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in the roster)"
 fi
 
 # ----------------------------------------------------------------------

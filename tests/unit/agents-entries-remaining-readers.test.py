@@ -116,5 +116,57 @@ class RemainingReaders(unittest.TestCase):
         self.assertIn("already registered (agent id: dept-podcast)", r.stdout + r.stderr)
 
 
+    def test_run_full_install_phase4_counts_entries(self):
+        self.write({"agents": {"entries": {"main": {}, "dept-sales": {}, "dept-ops": {}}}})
+        text = (REPO / "32-command-center-setup/scripts/run-full-install.sh").read_text()
+        code = re.search(r"AGENT_COUNT=\$\(python3 -c '(.*?)' \"\$OC_ROOT/openclaw.json\"", text).group(1)
+        r = subprocess.run([sys.executable, "-c", code, str(self.cfg)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.stdout, "3", r.stderr)
+
+    def test_verify_wiring_registration_reads_entries(self):
+        self.write({"agents": {"entries": {"dept-sales": {"workspace": "/w/sales"}}}})
+        text = (REPO / "23-ai-workforce-blueprint/scripts/verify-wiring.sh").read_text()
+        ids_f = re.search(r"AGENT_IDS_IN_CFG=\$\(jq -r '(.*?)' ", text).group(1)
+        ws_f = re.search(r"REG_WORKSPACE=\$\(jq -r --arg aid \"\$EXPECTED_AGENT_ID\" \\\n\s*'(.*?)' \\", text).group(1)
+        ids = subprocess.run(["jq", "-r", ids_f, str(self.cfg)], capture_output=True, text=True).stdout.split()
+        ws = subprocess.run(["jq", "-r", "--arg", "aid", "dept-sales", ws_f, str(self.cfg)],
+                            capture_output=True, text=True).stdout.strip()
+        self.assertEqual((ids, ws), (["dept-sales"], "/w/sales"))
+
+    def test_qc_system_integrity_counts_entries_directors(self):
+        self.write({"agents": {"entries": {"main": {}, "dept-sales": {}, "dept-ops": {}}}})
+        text = (REPO / "scripts/qc-system-integrity.sh").read_text()
+        code = re.search(r'DIR_AGENTS=\$\(OC_JSON="\$OCJSON" python3 -c "(.*?)" 2>/dev/null\)', text).group(1)
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                           env=dict(os.environ, OC_JSON=str(self.cfg)), timeout=30)
+        self.assertEqual(r.stdout.strip(), "2", r.stderr)
+
+    def test_podcast_installer_sees_entries_agent(self):
+        self.write({"agents": {"entries": {"dept-podcast": {"agentDir": "/a/dept-podcast"}}}})
+        text = (REPO / "58-podcast-production-engine/scripts/install-podcast-department.sh").read_text()
+        code = text.split("entry_present() {", 1)[1].split("<<'PYEOF'\n", 1)[1].split("\nPYEOF", 1)[0]
+        env = dict(os.environ, IPC_CONFIG_FILE=str(self.cfg), IPC_AGENT_ID="dept-podcast")
+        self.assertEqual(self.py(code, **{k: env[k] for k in ("IPC_CONFIG_FILE", "IPC_AGENT_ID")}).returncode, 0)
+
+    def test_add_department_inline_fallback_writes_entries_never_list(self):
+        if Path("/data/.openclaw").exists():
+            self.skipTest("/data/.openclaw exists on this host")
+        sys.path.insert(0, str(REPO / "32-command-center-setup" / "scripts"))
+        import test_add_department_runtime as t
+        home = self.tmp / "home"
+        oc_root, _db = t._make_fixture(home)
+        (oc_root / "openclaw.json").write_text(json.dumps(
+            {"agents": {"entries": {"main": {"workspace": "/x/main"}}}}))
+        script = t._isolated_scripts_copy(home, drop="materialize-dept-agents.sh")
+        r = t._run_add_department(home, "podcast", "Podcast", script=script)
+        agents = json.loads((oc_root / "openclaw.json").read_text())["agents"]
+        self.assertNotIn("list", agents, r.stdout + r.stderr)
+        entry = agents["entries"].get("dept-podcast")
+        self.assertIsInstance(entry, dict, r.stdout + r.stderr)
+        self.assertNotIn("id", entry)
+        self.assertNotIn("memorySearch", entry)
+        self.assertIn("search", entry.get("memory", {}))
+        self.assertEqual(agents.get("ownership"), "explicit")
+
 if __name__ == "__main__":
     unittest.main()
