@@ -15,7 +15,8 @@ WHY this exists (the duck-saga v11.3.2 bug):
     by this function rather than constructing paths itself.
 
 The 3-step injected-workspace priority (mirrors the OpenClaw gateway):
-    1. openclaw.json agents.list[id==agent_id].workspace  (per-agent override)
+    1. openclaw.json agents.entries[agent_id] / agents.list[id==agent_id]
+       .workspace                                          (per-agent override)
     2. openclaw.json agents.defaults.workspace             (fleet default)
     3. <openclaw_root>/workspace                           (canonical default)
 
@@ -106,13 +107,11 @@ def resolve_injected_core_files(
     if openclaw_config is not None and openclaw_config.is_file():
         try:
             cfg = json.loads(openclaw_config.read_text())
-            for ag in (cfg.get("agents", {}).get("list") or []):
-                if isinstance(ag, dict) and ag.get("id") == agent_id:
-                    ws_str = ag.get("workspace")
-                    if ws_str:
-                        workspace = Path(os.path.expanduser(ws_str))
-                        resolved_from = f"agents.list[{agent_id}].workspace"
-                    break
+            shape, ag = find_agent_entry(cfg, agent_id)
+            ws_str = ag.get("workspace") if ag else None
+            if ws_str:
+                workspace = Path(os.path.expanduser(ws_str))
+                resolved_from = f"agents.{shape}[{agent_id}].workspace"
         except Exception:
             pass
 
@@ -153,6 +152,29 @@ def resolve_injected_core_files(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def find_agent_entry(cfg, agent_id: str):
+    """("entries"|"list", entry) for agent_id, or (None, None).
+
+    OpenClaw 2026.9.x keeps the roster in `agents.entries` (object keyed by
+    id, no "id" inside the body); older builds in `agents.list[]`. entries
+    wins when both carry the id -- same precedence as update-skills.sh
+    _registry_snapshot(). Ids compare case-insensitively (the gateway
+    lowercases them)."""
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return None, None
+    want = str(agent_id).lower()
+    entries = agents.get("entries")
+    for k, v in (entries.items() if isinstance(entries, dict) else ()):
+        if str(k).lower() == want and isinstance(v, dict):
+            return "entries", v
+    lst = agents.get("list")
+    for a in (lst if isinstance(lst, list) else ()):
+        if isinstance(a, dict) and str(a.get("id", "")).lower() == want:
+            return "list", a
+    return None, None
+
 
 def _find_openclaw_root() -> Path:
     """

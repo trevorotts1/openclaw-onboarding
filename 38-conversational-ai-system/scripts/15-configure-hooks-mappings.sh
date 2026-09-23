@@ -175,7 +175,7 @@ echo "==> Step 3.5: Model Selection Wizard" >&2
 # persisted to SECRETS_ENV_FILE as ASYNC_MODEL / BATCH_MODEL so downstream consumers
 # (e.g. 04-register-crons.sh, which reads $BATCH_MODEL) honor the operator's selection
 # WITHOUT writing an invalid config key.
-RT_SET="$(jq -r '(.agents.list // []) | map(select(.id=="main")) | .[0].model // empty' "$CONFIG_FILE")"
+RT_SET="$(jq -r '(.agents.entries.main.model? // ((.agents.list // []) | map(select(.id=="main")) | .[0].model)) // empty' "$CONFIG_FILE")"
 ASYNC_SET="$( { grep -E '^ASYNC_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- ; } || true)"
 ASYNC_SET="${ASYNC_SET:-${ASYNC_MODEL:-}}"
 BATCH_SET="$( { grep -E '^BATCH_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- ; } || true)"
@@ -284,15 +284,22 @@ else
   # async/batch tier choices are persisted to SECRETS_ENV_FILE instead (read by crons).
   # `.agents = (.agents // {})` / `.agents.list = (.agents.list // [])` replace the
   # jq-1.7-invalid `//=` top-level form (see the hooks-merge note above).
+  # ROSTER SHAPE: OpenClaw 2026.9.x keeps agents in `agents.entries` (keyed by
+  # id); writing `agents.list` there is `agents: Unrecognized key "list"` and the
+  # gateway will not start. Write into whichever shape the box already has.
   UPDATED="$(jq \
     --arg rt "$RT_SET" \
     '.agents = (.agents // {}) |
-     .agents.list = (.agents.list // []) |
-     (if (.agents.list | map(.id == "main") | any) then
-        .agents.list |= map(if .id == "main" then .model = $rt else . end)
-      else
-        .agents.list += [{id:"main", model:$rt}]
-      end)' "$CONFIG_FILE")"
+     if (.agents.entries | type) == "object" then
+       .agents.entries.main = ((.agents.entries.main // {}) + {model:$rt})
+     else
+       .agents.list = (.agents.list // []) |
+       (if (.agents.list | map(.id == "main") | any) then
+          .agents.list |= map(if .id == "main" then .model = $rt else . end)
+        else
+          .agents.list += [{id:"main", model:$rt}]
+        end)
+     end' "$CONFIG_FILE")"
   write_config "$UPDATED"
   # Persist the async + batch tier choices to the secrets env file (NOT to the
   # config) so 04-register-crons.sh and other consumers honor them.

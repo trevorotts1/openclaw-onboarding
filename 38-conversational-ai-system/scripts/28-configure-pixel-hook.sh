@@ -114,20 +114,33 @@ else
 fi
 
 # -------- Register the scoped Pixel Concierge agent (idempotent) --------
-HAS_AGENT="$(jq --arg id "$PIXEL_AGENT_ID" '(.agents.list // []) | map(.id == $id) | any' "$CONFIG_FILE")"
+HAS_AGENT="$(jq --arg id "$PIXEL_AGENT_ID" '((.agents.entries // {}) | has($id)) or ((.agents.list // []) | map(.id == $id) | any)' "$CONFIG_FILE")"
 if [ "$HAS_AGENT" = "true" ]; then
-  echo "agent $PIXEL_AGENT_ID already present in agents.list — skipping" >&2
+  echo "agent $PIXEL_AGENT_ID already registered — skipping" >&2
 else
   backup_config
-  # SCHEMA-SAFE: only add the agent to agents.list with an id + model. The behavioral
+  # SCHEMA-SAFE: only add the agent with an id + model. The behavioral
   # allow-list is enforced via hooks.allowedAgentIds + allowedSessionKeyPrefixes above
   # and the AGENTS.md Step 1.45 protocol — we do NOT write any .strict()-rejected key.
+  # ROSTER SHAPE: on OpenClaw 2026.9.x (agents.entries, keyed by id) the agent
+  # goes in as entries[$id] with no "id" in the body — writing agents.list
+  # there is `Unrecognized key "list"`. A roster that becomes multi-agent needs
+  # agents.ownership="explicit" unless one entry carries default=true (same rule
+  # as materialize-dept-agents.sh); an existing ownership value is kept.
   UPDATED="$(jq \
     --arg id "$PIXEL_AGENT_ID" \
     --arg model "$PIXEL_MODEL" \
     '.agents = (.agents // {}) |
-     .agents.list = (.agents.list // []) |
-     .agents.list += [{id:$id, model:$model, name:"Pixel Concierge"}]' "$CONFIG_FILE")"
+     if (.agents.entries | type) == "object" then
+       .agents.entries[$id] = {model:$model, name:"Pixel Concierge"} |
+       if (.agents.ownership == null)
+          and ((.agents.entries | length) > 1)
+          and ([.agents.entries[] | select(.default == true)] | length) == 0
+       then .agents.ownership = "explicit" else . end
+     else
+       .agents.list = (.agents.list // []) |
+       .agents.list += [{id:$id, model:$model, name:"Pixel Concierge"}]
+     end' "$CONFIG_FILE")"
   write_config "$UPDATED"
   echo "registered scoped agent: $PIXEL_AGENT_ID (model=$PIXEL_MODEL)" >&2
 fi
