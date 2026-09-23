@@ -809,6 +809,14 @@ print(json.dumps(r))
 # mirrored by run-full-install.sh cc_prepare_database_environment).
 _CC_APP_DIRS = ("~/projects/command-center", "/data/projects/command-center")
 
+# Departments whose board is the OPERATOR's Command Center, not the client's: they are
+# exempt from the client board-lane requirement ONLY (still discovered, still held to
+# agent registration). rescue-rangers is the fleet escalation department — its tickets
+# are boarded on the operator's CC by the operator receiver/poller
+# (role-library/rescue-rangers/scripts/rescue_cc_board.py), it is never in a client's
+# chosen departments.json, and seed-workspaces.py never gives it a client lane.
+OPERATOR_BOARD_DEPTS = {"rescue-rangers"}
+
 
 def _cc_db_layout_candidates(oc_root):
     # Fallbacks when no CC app dir / env override names the DB
@@ -866,6 +874,8 @@ def check_command_center(fs, oc_root, dept_slugs):
     canon = _canonical_dept_slug_fn()
     lanes_missing = []
     for slug in sorted(dept_slugs):
+        if slug in OPERATOR_BOARD_DEPTS:
+            continue
         needles = {slug.lower(), (canon(slug) or slug).lower()}
         if not any(n in blob for n in needles for blob in lane_blob):
             lanes_missing.append(slug)

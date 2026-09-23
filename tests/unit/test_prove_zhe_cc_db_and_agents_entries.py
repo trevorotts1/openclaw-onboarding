@@ -1,13 +1,14 @@
 """prove-zhe.py must measure the box's REAL board and REAL agent roster.
 
-Three false FAILs seen at phase 7z on an OpenClaw 2026.9.x Mac box:
+Four false FAILs seen at phase 7z on an OpenClaw 2026.9.x Mac box:
   * a stray 0-byte <oc_root>/workspace/mission-control.db sat ahead of the
     Command Center's real DB in the candidate list, so check (c) opened the
     decoy and reported "workspaces table absent";
   * openclaw.json carried the migrated `agents.entries` roster (object keyed by
     agent id) and no `agents.list`, so check (a) saw zero registered agents;
   * the lane check matched folder slugs literally, so folder legal-compliance
-    missed its canonical board lane "legal".
+    missed its canonical board lane "legal";
+  * rescue-rangers (operator-side board) was held to a client board lane.
 """
 import importlib.util
 import json
@@ -130,3 +131,16 @@ def test_alias_folder_matches_its_canonical_lane(pz, tmp_path):
              lanes=("legal",))
     r = pz.check_command_center(pz.LocalFS(root), root, ["legal-compliance", "sales"])
     assert r["dept_lanes_missing"] == ["sales"]
+
+
+def test_rescue_rangers_exempt_from_client_lane_only(pz, tmp_path):
+    # Operator-side escalation dept: no client board lane required...
+    root = _oc_root(tmp_path, {"entries": {"dept-marketing": {}}},
+                    depts=("marketing", "rescue-rangers"))
+    _real_db(str(tmp_path / "home" / "projects" / "command-center" / "mission-control.db"),
+             lanes=("marketing",))
+    fs = pz.LocalFS(root)
+    assert pz.check_command_center(fs, root, ["marketing", "rescue-rangers"])["pass"]
+    # ...but it is still held to agent registration.
+    r = pz.check_depts_registered(fs, root, pz.load_openclaw_config(fs, root))
+    assert r["files_without_agent"] == ["rescue-rangers"]
