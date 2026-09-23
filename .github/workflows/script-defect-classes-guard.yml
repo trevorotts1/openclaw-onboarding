@@ -2,7 +2,8 @@ name: script defect classes guard (roster shape, CC DB decoys, GNU stat, retire,
 
 # One regression test per defect class fixed together:
 #   A  agents.entries roster (OpenClaw 2026.9.x) read AND written by the scripts
-#      that only knew agents.list[]           -> agents-entries-roster-readers
+#      that only knew agents.list[]           -> agents-entries-roster-readers,
+#                                                 agents-entries-remaining-readers
 #   B  mission-control.db resolver skips 0-byte / no-board decoys
 #                                              -> cc-db-decoy-resolver
 #   C  GNU `stat -c` first (BSD-first chains print filesystem status on Linux)
@@ -53,6 +54,21 @@ on:
       - "install.sh"
       - "update-skills.sh"
       - "tests/unit/agents-entries-roster-readers.test.py"
+      - "07-kie-setup/wire.sh"
+      - "63-agnes-image/wire.sh"
+      - "64-agnes-video/wire.sh"
+      - "66-kie-image/wire.sh"
+      - "67-kie-video/wire.sh"
+      - "68-kie-audio/wire.sh"
+      - "scripts/onboarding-state.sh"
+      - "scripts/grant-ceo-consent.sh"
+      - "scripts/qc-assert-platform-facts-stamped.sh"
+      - "scripts/qc-assert-provider-capability-invariants.sh"
+      - "scripts/smoke-test-provider-capabilities.sh"
+      - "shared-utils/select_model.py"
+      - "shared-utils/assert_model_sovereignty.py"
+      - "32-command-center-setup/scripts/register-routing-dept.py"
+      - "tests/unit/agents-entries-remaining-readers.test.py"
       - "tests/unit/cc-db-decoy-resolver.test.py"
       - "tests/unit/gnu-stat-first.test.sh"
       - "tests/unit/retire-decline-separate-workspace.test.py"
@@ -92,6 +108,21 @@ on:
       - "install.sh"
       - "update-skills.sh"
       - "tests/unit/agents-entries-roster-readers.test.py"
+      - "07-kie-setup/wire.sh"
+      - "63-agnes-image/wire.sh"
+      - "64-agnes-video/wire.sh"
+      - "66-kie-image/wire.sh"
+      - "67-kie-video/wire.sh"
+      - "68-kie-audio/wire.sh"
+      - "scripts/onboarding-state.sh"
+      - "scripts/grant-ceo-consent.sh"
+      - "scripts/qc-assert-platform-facts-stamped.sh"
+      - "scripts/qc-assert-provider-capability-invariants.sh"
+      - "scripts/smoke-test-provider-capabilities.sh"
+      - "shared-utils/select_model.py"
+      - "shared-utils/assert_model_sovereignty.py"
+      - "32-command-center-setup/scripts/register-routing-dept.py"
+      - "tests/unit/agents-entries-remaining-readers.test.py"
       - "tests/unit/cc-db-decoy-resolver.test.py"
       - "tests/unit/gnu-stat-first.test.sh"
       - "tests/unit/retire-decline-separate-workspace.test.py"
@@ -114,7 +145,9 @@ jobs:
           python-version: "3.11"
 
       - name: A — agents.entries roster readers/writers
-        run: python3 tests/unit/agents-entries-roster-readers.test.py -v
+        run: |
+          python3 tests/unit/agents-entries-roster-readers.test.py -v
+          python3 tests/unit/agents-entries-remaining-readers.test.py -v
 
       # (shared-utils/test-resolve-db.sh is not run here: its selector case
       # needs an installed persona library and is not hermetic on a bare runner.)

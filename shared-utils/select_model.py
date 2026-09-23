@@ -552,10 +552,14 @@ def _list_available_models(cfg: dict) -> list:
     _take(defaults.get("model"))
     _take(defaults.get("subagents", {}).get("model"))
 
-    for entry in agents.get("list", []):
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x) and agents.list[].
+    _entries = agents.get("entries")
+    _roster = list(_entries.values()) if isinstance(_entries, dict) else []
+    _roster += agents.get("list", []) if isinstance(agents.get("list"), list) else []
+    for entry in _roster:
         if isinstance(entry, dict):
             _take(entry.get("model"))
-            _take(entry.get("subagents", {}).get("model"))
+            _take((entry.get("subagents") or {}).get("model"))
 
     return [m for m in found if not _is_forbidden(m)]
 
