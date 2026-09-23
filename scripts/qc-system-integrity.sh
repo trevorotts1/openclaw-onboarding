@@ -455,10 +455,14 @@ sys.exit(1)
 # ─── CHECK 7: Task Assignments / Kanban ──────────────────────────────────────
 echo
 blue "── CHECK 7: Task Assignments (Kanban / Command Center) ──"
-CC_DB=""
-for c in "$HOME/projects/command-center/mission-control.db" "$HOME/projects/mission-control/mission-control.db" "/opt/mission-control/mission-control.db"; do
-  [ -f "$c" ] && CC_DB="$c" && break
-done
+# The shared resolver is the DB the running CC uses (env/.env.local first,
+# 0-byte decoys skipped). Fallback: the old list, non-empty files only.
+CC_DB="$(python3 "$ROOT/shared-utils/resolve_db.py" --path 2>/dev/null || true)"
+if [ -z "$CC_DB" ]; then
+  for c in "$HOME/projects/command-center/mission-control.db" "$HOME/projects/mission-control/mission-control.db" "/opt/mission-control/mission-control.db"; do
+    [ -s "$c" ] && CC_DB="$c" && break
+  done
+fi
 if [ -n "$CC_DB" ]; then
   green "  ✓ 7.0  Mission Control DB present at $CC_DB"; PASS=$((PASS+1))
   # 7.1 — dept count in DB matches departments.json

@@ -239,6 +239,14 @@ export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
 export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
+# The Command Center DB, resolved ONCE by the shared resolver
+# (shared-utils/resolve_db.py: env/.env.local first, 0-byte decoys skipped,
+# layout candidates only with a `workspaces` table). Empty when unresolvable;
+# both Python blocks below then fall back to their own candidate lists.
+_RESOLVE_DB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/resolve_db.py"
+OC_CC_DB=""
+[[ -f "$_RESOLVE_DB" ]] && OC_CC_DB="$(python3 "$_RESOLVE_DB" --path 2>/dev/null || true)"
+export OC_CC_DB
 
 python3 <<'PYEOF'
 import json
@@ -334,10 +342,12 @@ def _live_workspace_slugs():
     a missing DB must not silently empty a client's runtime roster.
     """
     import sqlite3
-    for cand in (os.environ.get("DASHBOARD_DB_PATH"), os.environ.get("DATABASE_PATH"),
+    for cand in (os.environ.get("OC_CC_DB"),
+                 os.environ.get("DASHBOARD_DB_PATH"), os.environ.get("DATABASE_PATH"),
                  "/data/projects/command-center/mission-control.db",
-                 os.path.expanduser("~/projects/command-center/mission-control.db")):
-        if not cand or not os.path.isfile(cand):
+                 "~/projects/command-center/mission-control.db"):
+        cand = os.path.expanduser(cand.strip()) if cand else ""
+        if not cand or not os.path.isfile(cand) or os.path.getsize(cand) == 0:
             continue
         try:
             con = sqlite3.connect(cand)
@@ -900,7 +910,8 @@ if not db_path:
         "/app/mission-control.db",
         "/data/projects/command-center/mission-control.db",
     ]:
-        if os.path.isfile(c):
+        # Never a 0-byte decoy (a stray `touch` shadowing the live board).
+        if os.path.isfile(c) and os.path.getsize(c) > 0:
             db_path = c
             break
 

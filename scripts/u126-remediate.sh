@@ -243,7 +243,12 @@ check_f4_decoy_db() {
   _log "F4: checking for 0-byte mission-control.db decoys..."
   local decoy_paths=()
   local candidate
-  for candidate in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db"; do
+  # Includes the layout paths DB consumers probe FIRST ($OC_ROOT/workspaces/
+  # command-center, $OC_ROOT/data): a 0-byte file there shadows the live board.
+  # The CC's own configured DB is never a decoy, even while still 0 bytes.
+  for candidate in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db" \
+                   "${OC_ROOT}/workspaces/command-center/mission-control.db" "${OC_ROOT}/data/mission-control.db"; do
+    [[ "$candidate" == "${DATABASE_PATH:-}" || "$candidate" == "${DASHBOARD_DB_PATH:-}" ]] && continue
     if [[ -f "$candidate" ]]; then
       local sz; sz=$(stat -f%z "$candidate" 2>/dev/null || stat -c%s "$candidate" 2>/dev/null || echo "1")
       if [[ "$sz" == "0" ]]; then decoy_paths+=("$candidate"); fi
