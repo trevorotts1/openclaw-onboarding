@@ -2216,8 +2216,12 @@ except Exception:
   _lsc_mode_owner() {
     local _p="$1" _m="" _o=""
     [ -e "$_p" ] || return 0
-    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
-    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    # GNU first: GNU reads `-f FMT` as filesystem status and prints it before
+    # failing (multi-line junk on Linux); BSD rejects -c with no stdout.
+    _m="$(stat -c '%a' "$_p" 2>/dev/null || stat -f '%OLp' "$_p" 2>/dev/null)"
+    [[ "$_m" =~ ^[0-7]+$ ]] || _m=""
+    _o="$(stat -c '%u:%g' "$_p" 2>/dev/null || stat -f '%u:%g' "$_p" 2>/dev/null)"
+    [[ "$_o" =~ ^[0-9]+:[0-9]+$ ]] || _o=""
     printf '%s|%s' "$_m" "$_o"
   }
 

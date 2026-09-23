@@ -37,7 +37,9 @@ rr_config_unlock() {
 _rr_lock_age() {
   local lockdir="$1" now mtime
   now="$(date +%s)"
-  mtime="$(stat -f %m "$lockdir" 2>/dev/null || stat -c %Y "$lockdir" 2>/dev/null || echo 0)"
+  # GNU `stat -c` first (GNU `stat -f` prints filesystem status, not a number).
+  mtime="$(stat -c %Y "$lockdir" 2>/dev/null || stat -f %m "$lockdir" 2>/dev/null)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
   echo $(( now - mtime ))
 }
 

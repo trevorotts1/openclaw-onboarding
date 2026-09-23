@@ -2599,14 +2599,17 @@ except Exception:
   }
 
   # _lsc_mode_owner PATH -> "<mode>|<uid>:<gid>" for an existing file, or ""
-  # if PATH doesn't exist. Tries BSD stat(1) syntax (Mac) then GNU stat(1)
-  # syntax (Linux/VPS/Docker) — the same fallback pattern already used
-  # elsewhere in this file (see the INSTALL_FLAG lock-age check).
+  # if PATH doesn't exist. GNU stat(1) syntax FIRST (Linux/VPS/Docker), then
+  # BSD (Mac): GNU reads `-f FMT` as "filesystem status of FMT and PATH" and
+  # prints that block to stdout before failing, so a BSD-first chain handed
+  # chmod/chown a multi-line value on Linux. BSD rejects -c with no stdout.
   _lsc_mode_owner() {
     local _p="$1" _m="" _o=""
     [ -e "$_p" ] || return 0
-    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
-    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    _m="$(stat -c '%a' "$_p" 2>/dev/null || stat -f '%OLp' "$_p" 2>/dev/null)"
+    [[ "$_m" =~ ^[0-7]+$ ]] || _m=""
+    _o="$(stat -c '%u:%g' "$_p" 2>/dev/null || stat -f '%u:%g' "$_p" 2>/dev/null)"
+    [[ "$_o" =~ ^[0-9]+:[0-9]+$ ]] || _o=""
     printf '%s|%s' "$_m" "$_o"
   }
 
@@ -3029,7 +3032,12 @@ fi
 # Stale-lock auto-clear: if the lock file exists but is > 60 minutes old,
 # the previous run crashed mid-install. Wipe it instead of blocking.
 if [ -f "$INSTALL_FLAG" ]; then
-    LOCK_AGE_MINS=$(( ( $(date +%s) - $(stat -f %m "$INSTALL_FLAG" 2>/dev/null || stat -c %Y "$INSTALL_FLAG" 2>/dev/null || echo 0) ) / 60 ))
+    # GNU `stat -c` FIRST: on Linux `stat -f` is filesystem status and prints
+    # several lines before failing over, which broke this arithmetic. BSD
+    # rejects -c with no stdout. Integer guard, as run-full-install.sh _cc_mtime.
+    _lock_mtime="$(stat -c %Y "$INSTALL_FLAG" 2>/dev/null || stat -f %m "$INSTALL_FLAG" 2>/dev/null)"
+    [[ "$_lock_mtime" =~ ^[0-9]+$ ]] || _lock_mtime=0
+    LOCK_AGE_MINS=$(( ( $(date +%s) - _lock_mtime ) / 60 ))
     if [ "$LOCK_AGE_MINS" -gt 60 ] 2>/dev/null; then
         warn "Stale install lock detected (${LOCK_AGE_MINS} min old) — auto-clearing and continuing"
         rm -f "$INSTALL_FLAG"
