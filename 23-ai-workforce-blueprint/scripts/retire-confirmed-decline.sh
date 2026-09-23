@@ -287,8 +287,9 @@ state=json.loads(pathlib.Path(sys.argv[1]).read_text())
 folder=pathlib.Path(sys.argv[2])
 config=folder/'company-config.json'
 data=json.loads(config.read_text()) if sys.argv[2] and config.is_file() else {}
-# A build state without companySlug/clientSlug falls back to the company's own
-# config slug, then the company folder name; every check below still applies.
+# A build state without companySlug/clientSlug falls back to the slug in
+# company-config.json, then the company folder name; every check below still
+# applies. (No apostrophes in this heredoc: bash 3.2 mis-parses them in $(...).)
 slug=state.get('companySlug') or state.get('clientSlug') or data.get('slug') or (folder.name if sys.argv[2] else None)
 if not isinstance(slug,str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*',slug):
     raise SystemExit('retirement requires canonical company identity')
