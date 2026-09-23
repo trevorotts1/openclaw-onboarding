@@ -4,7 +4,7 @@ name: script defect classes guard (roster shape, CC DB decoys, GNU stat, retire,
 #   A  agents.entries roster (OpenClaw 2026.9.x) read AND written by the scripts
 #      that only knew agents.list[]           -> agents-entries-roster-readers
 #   B  mission-control.db resolver skips 0-byte / no-board decoys
-#                                              -> cc-db-decoy-resolver (+ test-resolve-db.sh)
+#                                              -> cc-db-decoy-resolver
 #   C  GNU `stat -c` first (BSD-first chains print filesystem status on Linux)
 #                                              -> gnu-stat-first (native GNU here)
 #   D  retire-confirmed-decline.sh: entries roster, the workspace departments
@@ -37,7 +37,6 @@ on:
       - "scripts/qc-system-integrity.sh"
       - "shared-utils/resolve_injected_core_files.py"
       - "shared-utils/resolve_db.py"
-      - "shared-utils/test-resolve-db.sh"
       - "shared-utils/check-credential.sh"
       - "shared-utils/fleet-heartbeat-persona-probe.sh"
       - "38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh"
@@ -77,7 +76,6 @@ on:
       - "scripts/qc-system-integrity.sh"
       - "shared-utils/resolve_injected_core_files.py"
       - "shared-utils/resolve_db.py"
-      - "shared-utils/test-resolve-db.sh"
       - "shared-utils/check-credential.sh"
       - "shared-utils/fleet-heartbeat-persona-probe.sh"
       - "38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh"
@@ -118,10 +116,10 @@ jobs:
       - name: A — agents.entries roster readers/writers
         run: python3 tests/unit/agents-entries-roster-readers.test.py -v
 
+      # (shared-utils/test-resolve-db.sh is not run here: its selector case
+      # needs an installed persona library and is not hermetic on a bare runner.)
       - name: B — mission-control.db decoy resolver
-        run: |
-          python3 tests/unit/cc-db-decoy-resolver.test.py -v
-          bash shared-utils/test-resolve-db.sh
+        run: python3 tests/unit/cc-db-decoy-resolver.test.py -v
 
       - name: C — GNU stat first (native GNU on this runner)
         run: bash tests/unit/gnu-stat-first.test.sh
