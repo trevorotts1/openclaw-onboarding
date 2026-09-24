@@ -1,3 +1,34 @@
+## [v25.1.86]  -  2026-09-24  -  Nudge links use the configured public interview page, gateway receipts verified, state dir via canonical resolver
+
+### Why
+Reminder ("nudge") links carried no usable ticket: the worker built a placeholder bot URL, or a resume-slug path the invitation lane forbids, and fell back to a localhost-configured dashboard value. A gateway rc==0 was counted as delivered without reading the acknowledgement receipt, and the scan recorded the nudge before delivery was proven. `update-interview-state.sh` hand-rolled its own /data-else-HOME workspace choice, so it could stamp a different state file than the installer, sender, and Command Center route use.
+
+### What changed
+- `shared-utils/nudge-incomplete-interviews.py`: new `resolve_interview_link()` builds the stable `/interview` link from the configured public origin only (verified `commandCenterPublicOrigin` record, `MC_TENANT_PUBLIC_URL`, `commandCenterUrl`, `OPENCLAW_DASHBOARD_URL`; all present sources must agree); unknown, conflicting, non-HTTPS, loopback, or IP-literal origins are skip-with-reason, never a fabricated link. Gateway send adds `--json` and accepts only an acknowledged receipt (`_gateway_ack`, same contract as `interview_invitation.py acknowledgement()`); unverified sends are not recorded as sent and increment a new `send_failed` count beside `skipped_no_link` in the run summary.
+- `23-ai-workforce-blueprint/scripts/update-interview-state.sh`: STATE_DIR prefers the canonical `platform/common.sh oc_set_platform_paths` workspace when it holds the state file, with the legacy /data-else-HOME check as fallback; the fail-closed error is unchanged.
+- `scripts/update-skills.sh` + root `update-skills.sh`: verified — the scripts-path copy is the retired loud-failing shim (17/17 entrypoint-guard checks pass) and the root copy is the maintained updater; the flagged Contabo comment regions are accurate path notes, no defect; no edits made.
+- `docs/interview-state-source-of-truth.md`: does not exist at `origin/main` (verified against the tree); recorded as NOT-DONE.
+- New tests: `tests/unit/test_nudge_interview_link.py` (11 tests: resolver sources/conflicts/refusals, skip-before-gateway, rc==0-without-ack failure, acknowledged send, operator rejection), `tests/unit/test_state_dir_resolver.py` (3 tests: canonical resolver, legacy fallback, fail-closed error).
+
+### Tests
+`tests/unit/test_nudge_interview_link.py`: 11 passed. `tests/unit/test_state_dir_resolver.py`: 3 passed. `tests/unit/test_interview_invitation.py`: 60 passed. `tests/unit/interview-launch.test.py`: 20 run, OK (1 skipped, pre-existing). `test-interview-experience.sh`: 19 passed, 0 failed. `build-state-path-resolution.test.sh`: 14 passed, 0 failed. `cron-owner-chat-guard.test.sh`: 167 passed, 0 failed. `standard-first-cron-awareness.test.sh`: 44 passed, 0 failed. `test-single-update-skills-entrypoint.sh`: 17 passed, 0 failed. `scripts/bump-version.sh --check`: 10 markers agree.
+
+## [v25.1.85]  -  2026-09-24  -  Interview invitation link is query-form, reusable until complete (skill 32 v13.1.28)
+
+### Why
+The paired Command Center (v7.6.65) mints enrollment links as `/interview?enroll=<ticket>`, but the onboarding validator accepted only the legacy `/interview#enroll=<ticket>` fragment form and rejected an empty or missing URL with a crash-shaped error instead of a Pending refusal. The CI contract still pinned Command Center v7.1.5, which mints only fragment links. Client-facing copy promised a fresh link on re-sign-in and quoted a 24-hour clock, while the actual contract is reusable until the interview is complete.
+
+### What changed
+- `shared-utils/interview_invitation.py`: `issue_invitation` accepts the canonical `/interview?enroll=<ticket>` query form and keeps the legacy `/interview#enroll=<ticket>` fragment form for older issuers; exactly one ticket in exactly one place, nothing else beside it. Missing, empty, and non-string URLs are refused as Pending.
+- `tests/unit/test_interview_invitation.py`: all minted fixtures use the query form; the legacy fragment form is covered by a dedicated case plus mixed-form and empty-URL rejections. Fixture guard allows the PATH-resolved `bash` interpreter entrypoint (Homebrew on operator Macs, system bash on Linux).
+- `.github/workflows/interview-launch-contract.yml`: paired Command Center pin v7.1.5 to v7.6.65; new step asserts the paired `invitation.ts` mints query-form, the `send-link` route requires query `enroll`, and the minted URL passes this repo's validator.
+- `23-ai-workforce-blueprint/scripts/send-interview-link.sh`: sign-in lines now say to re-open the same link (valid until the interview is complete, re-openable on any device) instead of promising a fresh link on expiry.
+- `docs/interview-launch-recovery.md`, `32-command-center-setup/SKILL.md`, `23-ai-workforce-blueprint/INSTRUCTIONS.md`: link copy updated to reusable-until-complete with `?enroll=` canonical and legacy `#enroll=` noted; `TENANT-CONFIGURATION.md` needed no link-lifetime copy. `docs/tenant-interview-rollout.md` and `docs/interview-state-source-of-truth.md` do not exist in this repo (verified against `origin/main` tree), recorded as NOT-DONE.
+- Skill 32 v13.1.27 to v13.1.28.
+
+### Tests
+`tests/unit/test_interview_invitation.py`: 60 passed, 99 subtests passed. `send-interview-link.sh --dry-run` path covered inside that suite. Workflow YAML parses (29 steps). Contract assertion proven locally against CC v7.6.65 sources.
+
 ## [v25.1.84]  -  2026-09-24  -  Interview sign-in works on fresh installs (skill 32 v13.1.27)
 
 ### Why

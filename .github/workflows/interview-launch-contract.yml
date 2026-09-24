@@ -69,7 +69,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: trevorotts1/blackceo-command-center
-          ref: v7.1.5
+          ref: v7.6.65
           path: paired-command-center
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -159,6 +159,30 @@ jobs:
         run: python3 tests/unit/interview-launch.test.py
       - name: Authenticated public origin and acknowledged gateway invitation fixtures
         run: python3 tests/unit/test_interview_invitation.py
+      - name: Paired Command Center invitation URL passes onboarding validator
+        run: |
+          python3 - <<'PY'
+          import importlib.util, json, subprocess, time
+          from pathlib import Path
+          from unittest.mock import patch
+          src = Path('paired-command-center/src/lib/interview/invitation.ts').read_text()
+          assert '/interview?enroll=' in src, 'paired CC no longer mints query-form enrollment URL'
+          assert '/interview#enroll=' not in src, 'paired CC regressed to fragment-form enrollment URL'
+          route = Path('paired-command-center/src/app/api/interview/send-link/route.ts').read_text()
+          assert "searchParams.get('enroll')" in route, 'paired CC send-link route no longer requires query enroll'
+          spec = importlib.util.spec_from_file_location('invitation', 'shared-utils/interview_invitation.py')
+          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          receipt = {'protocol': 'interview-invitation.v1', 'tenantId': 'tenant-a', 'companyId': 'client-a',
+                     'installationId': 'install-a', 'host': 'client.example.com',
+                     'expiresAt': int(time.time()) + 900, 'oneUse': True,
+                     'url': 'https://client.example.com/interview?enroll=fixture.signature'}
+          resolved = {'origin': 'https://client.example.com', 'host': 'client.example.com',
+                      'companyId': 'client-a', 'tenantId': 'tenant-a', 'installationId': 'install-a'}
+          with patch.object(module.subprocess, 'run',
+                             return_value=subprocess.CompletedProcess([], 0, json.dumps(receipt) + '\n200', '')):
+              assert module.issue_invitation(resolved, {'MC_API_TOKEN': 'fixture-secret'}, '123456789') == receipt['url']
+          print('paired CC query-form invitation accepted by onboarding validator')
+          PY
       - name: Canonical company identity through real post-interview builder
         run: python3 tests/unit/test_build_company_identity.py
       - name: Client-owned Notion creation and recovery with isolated transport
