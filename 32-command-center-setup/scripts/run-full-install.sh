@@ -2783,6 +2783,19 @@ else
   # the library grows/shrinks across releases). No count parsed => no floor =>
   # FAIL, never a silent degrade.
   SOP_DOWNLOADED_COUNT="$(printf '%s' "$SOP_INGEST_OUT" | grep -oE 'downloaded [0-9]+ SOP records' | grep -oE '[0-9]+' | head -n1 || true)"
+  # ALREADY-POPULATED SKIP (every already-rolled box). The ingester verified the
+  # box holds >= its canonical population and prints "downloaded 0 SOP records
+  # (skipped — already populated)". That 0 is NOT an empty asset: take the
+  # canonical count it verified as this run's floor. Reading it as empty used to
+  # fail_install here, BEFORE step (2), so converge(scope=sops) ->
+  # importRoleLibrary() never ran on any existing box and the fleet held ZERO
+  # source='role-library' rows. No canonical count parsed => stays 0 => FAIL below.
+  if [[ "$SOP_DOWNLOADED_COUNT" == "0" ]] \
+     && printf '%s' "$SOP_INGEST_OUT" | grep -q 'downloaded 0 SOP records (skipped'; then
+    SOP_DOWNLOADED_COUNT="$(printf '%s' "$SOP_INGEST_OUT" | grep -oE '>= canonical [0-9]+' | grep -oE '[0-9]+' | head -n1 || true)"
+    SOP_DOWNLOADED_COUNT="${SOP_DOWNLOADED_COUNT:-0}"
+    log "INFO" "phase=6i sop-library-ingestion: ingest skipped (box already at canonical population $SOP_DOWNLOADED_COUNT) -- proceeding to converge(scope=sops)"
+  fi
   if [[ -z "$SOP_DOWNLOADED_COUNT" ]]; then
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopConvergeStatus = "not-reached"'; fi
     fail_install "phase=6i: ingest-sop-library.sh exited 0 but printed NO 'downloaded N SOP records' line -- there is no trustworthy row floor for this run, and a relaxed gate would rubber-stamp the CC boot-seed ghost as a healthy library. This means the ingester changed its output contract or half-completed. See $LOG_FILE, then re-run install. Last output: ${SOP_INGEST_TAIL}"

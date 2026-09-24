@@ -332,11 +332,19 @@ else
       # $6 expected fail_install: "no" or "yes"
       # $7 scripted CC converge response body ("" => no .env.local, converge skipped)
       # $8 role how-to.md files on disk under $OC_ROOT/workspace/departments
+      # $9 preserved ROLE_LIBRARY_PATH dir (relative to the sandbox) or ""
+      # $12 "skip" => the stub ingest takes the real script's ALREADY-POPULATED
+      #     SKIP GATE (prints its exact skip lines, writes nothing, exits 0), and
+      #     the $3 role-library rows are written by the fake CC ONLY when the
+      #     converge POST actually arrives -- so they land only if the phase
+      #     really reaches step (2).
       local scenario="$1" rows="$2" role_rows="$3" ingest_rc="$4" bootseed="$5" expect_fail="$6"
       local converge_json="${7:-}" role_howtos="${8:-0}" preserved_rl="${9:-}"
       # $10 client slug handed to the phase ("" = none resolved; default test-client)
       # $11 "symlink" => every role how-to.md is a SYMLINK (shared-core layout)
-      local client_slug="${10-test-client}" howto_mode="${11:-}"
+      local client_slug="${10-test-client}" howto_mode="${11:-}" ingest_mode="${12:-}"
+      local stub_role_rows="$role_rows" cc_role_rows=0
+      if [[ "$ingest_mode" == "skip" ]]; then stub_role_rows=0; cc_role_rows="$role_rows"; fi
       local SBOX FAIL_MARKER SKILL_ROOT
       SBOX="$(mktemp -d)"
       # Mirror the REAL repo depth (assert-sop-library-populated.py resolves
@@ -378,12 +386,19 @@ set -euo pipefail
 CLIENT="\${1:?usage}"
 printf '%s' "\$CLIENT" > "$SBOX/ingest_slug"
 echo "[sop-library] client=\$CLIENT  tag=stub"
+if [[ "$ingest_mode" == "skip" ]]; then
+  echo "[sop-library] db=\$DASHBOARD_DB_PATH  current sops rows=$bootseed  canonical=$rows"
+  echo "[sop-library] SKIP — this box already holds $bootseed sops rows (>= canonical $rows) and canonical membership verified."
+  echo "[sop-library] Nothing downloaded, nothing written, DB untouched. (SOP_LIB_FORCE=1 to re-ingest anyway.)"
+  echo "[sop-library] downloaded 0 SOP records (skipped — already populated)"
+  exit 0
+fi
 echo "[sop-library] downloading https://example.invalid/sops-library-v2.jsonl.gz"
 if [[ "$ingest_rc" -ne 0 ]]; then
   echo "curl: (22) The requested URL returned error: 404" >&2
   exit $ingest_rc
 fi
-python3 - "\$DASHBOARD_DB_PATH" "$rows" "$role_rows" <<'PYEOF'
+python3 - "\$DASHBOARD_DB_PATH" "$rows" "$stub_role_rows" <<'PYEOF'
 import sqlite3, sys
 db_path, n, role_n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 conn = sqlite3.connect(db_path)
@@ -429,14 +444,21 @@ STUBEOF
       local CC_PID="" CC_PORT="1"
       if [[ -n "$converge_json" ]]; then
         cat > "$SBOX/fakecc.py" <<'CCEOF'
-import sys
+import sqlite3, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 body = sys.argv[1].encode()
-marker = sys.argv[3]
+marker, db_path, role_n = sys.argv[3], sys.argv[4], int(sys.argv[5])
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers.get('Content-Length') or 0))
         open(marker, 'w').write('called')
+        # importRoleLibrary() stand-in: role rows land only when converge is called.
+        conn = sqlite3.connect(db_path)
+        for i in range(role_n):
+            conn.execute("INSERT OR REPLACE INTO sops (id, slug, source) VALUES (?, ?, ?)",
+                         (f"cc_role_{i}", f"role-library:dept/role-{i}", "role-library"))
+        conn.commit()
+        conn.close()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -449,7 +471,7 @@ with open(sys.argv[2], 'w') as f:
     f.write(str(srv.server_port))
 srv.serve_forever()
 CCEOF
-        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" "$SBOX/converge_called" &
+        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" "$SBOX/converge_called" "$SBOX/mission-control.db" "$cc_role_rows" &
         CC_PID=$!
         for _ in $(seq 1 60); do [[ -s "$SBOX/ccport" ]] && break; sleep 0.1; done
         CC_PORT="$(cat "$SBOX/ccport" 2>/dev/null || echo 1)"
@@ -518,6 +540,15 @@ HARNESSEOF
         [[ -f "$SBOX/converge_called" ]] \
           && pass "$scenario: no slug -> converge(scope=sops) was still called" \
           || fail "$scenario: no slug -> converge(scope=sops) was NEVER called (phase skipped)"
+      fi
+      if [[ "$ingest_mode" == "skip" && "$cc_role_rows" -gt 0 ]]; then
+        local landed
+        landed="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT COUNT(*) FROM sops WHERE source=?", ("role-library",)).fetchone()[0])' "$SBOX/mission-control.db" 2>/dev/null || echo 0)"
+        if [[ "$landed" -eq "$cc_role_rows" ]]; then
+          pass "$scenario: converge(scope=sops) was reached -- $landed role-library row(s) landed"
+        else
+          fail "$scenario: converge(scope=sops) never ran -- $landed role-library row(s) landed, expected $cc_role_rows"
+        fi
       fi
       rm -rf "$SBOX"
     }
@@ -590,6 +621,23 @@ HARNESSEOF
                                                                   2555  0     0    54    "yes" \
                                                                   '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
                                                                   "" "test-client" "symlink"
+    # 4i is the live fleet shape (2026-09-23: 2,585 `sops` rows, ZERO with
+    # source='role-library'). Every already-rolled box holds the full JSONL
+    # library, so ingest-sop-library.sh takes its ALREADY-POPULATED SKIP GATE and
+    # prints "downloaded 0 SOP records (skipped — already populated)". Phase 6i
+    # used to read that 0 as "empty asset" and fail_install BEFORE step (2), so
+    # converge(scope=sops) -> importRoleLibrary() never ran on any existing box.
+    # The skip must use the box's canonical floor and still reach the converge.
+    _run_sandbox "4i ALREADY-POPULATED SKIP (2578 rows present, ingest skips, converge imports 690 role rows)" \
+                                                                  2555  690   0    2578  "no" \
+                                                                  '{"ok":true,"sops":{"imported":690,"updated":0}}' 12 \
+                                                                  "" "test-client" "" "skip"
+    # 4j: the same skip path must not become a new fail-open -- a converge that
+    # imports nothing while role how-tos sit on disk is still the C2 ghost.
+    _run_sandbox "4j ALREADY-POPULATED SKIP, converge imports 0 with 12 how-tos on disk (ghost still caught)" \
+                                                                  2555  0     0    2578  "yes" \
+                                                                  '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
+                                                                  "" "test-client" "" "skip"
   fi
 fi
 
