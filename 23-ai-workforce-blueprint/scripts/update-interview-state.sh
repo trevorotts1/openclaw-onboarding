@@ -35,14 +35,37 @@ UPD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$UPD_SCRIPT_DIR/lib-interview-rate-limit.sh"
 source "$UPD_SCRIPT_DIR/lib-workforce-state.sh"
 
-# Resolve state file path (VPS: /data/.openclaw/workspace; Mac: $HOME/.openclaw/workspace)
-if [ -d /data/.openclaw/workspace ]; then
-  STATE_DIR=/data/.openclaw/workspace
-elif [ -d "$HOME/.openclaw/workspace" ]; then
-  STATE_DIR="$HOME/.openclaw/workspace"
-else
-  echo "ERROR: cannot find .openclaw/workspace directory" >&2
-  exit 1
+# Resolve state file path through the canonical platform resolver
+# (platform/common.sh oc_set_platform_paths), with the legacy
+# /data-else-HOME directory check as fallback.
+# The resolver derives the workspace from OPENCLAW_WORKSPACE_PATH /
+# OPENCLAW_WORKSPACE_ROOT / openclaw.json agents.defaults.workspace, which is
+# the same answer run-full-install.sh, send-interview-link.sh and the Command
+# Center route use — hand-rolling /data-else-HOME here resolved a DIFFERENT
+# workspace (and a different .workforce-build-state.json) on boxes whose
+# configured workspace is not the default. The legacy check stays as fallback
+# so a box without a resolvable configured path behaves exactly as before.
+UPD_PLATFORM_HELPER="$UPD_SCRIPT_DIR/../../platform/common.sh"
+if [ ! -f "$UPD_PLATFORM_HELPER" ]; then UPD_PLATFORM_HELPER="$UPD_SCRIPT_DIR/../../../platform/common.sh"; fi
+if [ -f "$UPD_PLATFORM_HELPER" ]; then
+  # shellcheck source=/dev/null
+  source "$UPD_PLATFORM_HELPER" || true
+  if declare -F oc_set_platform_paths >/dev/null 2>&1 && oc_set_platform_paths 2>/dev/null; then
+    _UPD_CANONICAL_WS="${OC_WORKSPACE_DEFAULT:-${OPENCLAW_WORKSPACE_PATH:-}}"
+    if [ -n "$_UPD_CANONICAL_WS" ] && [ -f "$_UPD_CANONICAL_WS/.workforce-build-state.json" ]; then
+      STATE_DIR="$_UPD_CANONICAL_WS"
+    fi
+  fi
+fi
+if [ -z "${STATE_DIR:-}" ]; then
+  if [ -d /data/.openclaw/workspace ]; then
+    STATE_DIR=/data/.openclaw/workspace
+  elif [ -d "$HOME/.openclaw/workspace" ]; then
+    STATE_DIR="$HOME/.openclaw/workspace"
+  else
+    echo "ERROR: cannot find .openclaw/workspace directory" >&2
+    exit 1
+  fi
 fi
 STATE="$STATE_DIR/.workforce-build-state.json"
 

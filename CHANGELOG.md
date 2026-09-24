@@ -1,3 +1,18 @@
+## [v25.1.86]  -  2026-09-24  -  Nudge links use the configured public interview page, gateway receipts verified, state dir via canonical resolver
+
+### Why
+Reminder ("nudge") links carried no usable ticket: the worker built a placeholder bot URL, or a resume-slug path the invitation lane forbids, and fell back to a localhost-configured dashboard value. A gateway rc==0 was counted as delivered without reading the acknowledgement receipt, and the scan recorded the nudge before delivery was proven. `update-interview-state.sh` hand-rolled its own /data-else-HOME workspace choice, so it could stamp a different state file than the installer, sender, and Command Center route use.
+
+### What changed
+- `shared-utils/nudge-incomplete-interviews.py`: new `resolve_interview_link()` builds the stable `/interview` link from the configured public origin only (verified `commandCenterPublicOrigin` record, `MC_TENANT_PUBLIC_URL`, `commandCenterUrl`, `OPENCLAW_DASHBOARD_URL`; all present sources must agree); unknown, conflicting, non-HTTPS, loopback, or IP-literal origins are skip-with-reason, never a fabricated link. Gateway send adds `--json` and accepts only an acknowledged receipt (`_gateway_ack`, same contract as `interview_invitation.py acknowledgement()`); unverified sends are not recorded as sent and increment a new `send_failed` count beside `skipped_no_link` in the run summary.
+- `23-ai-workforce-blueprint/scripts/update-interview-state.sh`: STATE_DIR prefers the canonical `platform/common.sh oc_set_platform_paths` workspace when it holds the state file, with the legacy /data-else-HOME check as fallback; the fail-closed error is unchanged.
+- `scripts/update-skills.sh` + root `update-skills.sh`: verified — the scripts-path copy is the retired loud-failing shim (17/17 entrypoint-guard checks pass) and the root copy is the maintained updater; the flagged Contabo comment regions are accurate path notes, no defect; no edits made.
+- `docs/interview-state-source-of-truth.md`: does not exist at `origin/main` (verified against the tree); recorded as NOT-DONE.
+- New tests: `tests/unit/test_nudge_interview_link.py` (11 tests: resolver sources/conflicts/refusals, skip-before-gateway, rc==0-without-ack failure, acknowledged send, operator rejection), `tests/unit/test_state_dir_resolver.py` (3 tests: canonical resolver, legacy fallback, fail-closed error).
+
+### Tests
+`tests/unit/test_nudge_interview_link.py`: 11 passed. `tests/unit/test_state_dir_resolver.py`: 3 passed. `tests/unit/test_interview_invitation.py`: 60 passed. `tests/unit/interview-launch.test.py`: 20 run, OK (1 skipped, pre-existing). `test-interview-experience.sh`: 19 passed, 0 failed. `build-state-path-resolution.test.sh`: 14 passed, 0 failed. `cron-owner-chat-guard.test.sh`: 167 passed, 0 failed. `standard-first-cron-awareness.test.sh`: 44 passed, 0 failed. `test-single-update-skills-entrypoint.sh`: 17 passed, 0 failed. `scripts/bump-version.sh --check`: 10 markers agree.
+
 ## [v25.1.85]  -  2026-09-24  -  Interview invitation link is query-form, reusable until complete (skill 32 v13.1.28)
 
 ### Why
