@@ -180,7 +180,7 @@ bad=[]
 for j in jobs:
     d=j.get("delivery") or {}
     # An isolated cron with an unresolvable route: the runner refuses to
-    # deliver, so the job's own failure is never surfaced to anyone.
+    # deliver, so a failure of the job itself is never surfaced to anyone.
     if d.get("mode")=="announce" and d.get("channel")=="last" and not d.get("to"):
         bad.append(j.get("name",""))
 print(",".join(sorted(bad)))

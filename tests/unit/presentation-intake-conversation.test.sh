@@ -223,7 +223,7 @@ turns = [
     {"role": "assistant", "text": frame_prompt, "qid": "frame_selection"},
     {"role": "owner", "text": "rulebook", "qid": "frame_selection"},
 ]
-# Build the signed driver envelope via the checker's own canonical producer
+# Build the signed driver envelope via the canonical producer of the checker itself
 # (51-signature-presentation/scripts/intake_trace_check.py, resolved from $SPEC).
 cand = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(sys.argv[1])),
                                      "..", "scripts", "intake_trace_check.py"))

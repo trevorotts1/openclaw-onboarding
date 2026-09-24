@@ -406,7 +406,7 @@ src = open(sys.argv[1], encoding="utf-8").read()
 # Join backslash-continuations so each invocation is ONE logical line.
 logical = re.sub(r"\\\n[ \t]*", " ", src).splitlines()
 # Only real invocations: the statement must START the line (after whitespace or
-# a shell operator like `if`), never a comment or a diagnostic string.
+# a shell operator like if), never a comment or a diagnostic string.
 calls = [l for l in logical
          if re.match(r"^[ \t]*(if[ \t]+)?openclaw[ \t]+cron[ \t]+add\b", l)]
 if not calls:
@@ -419,10 +419,10 @@ missing = [l.strip()[:120] for l in calls if not re.search(r"(?<![\w-])--cron\b"
 if missing:
     print("FAIL\tinvocation(s) pass NO --cron flag: " + " || ".join(missing))
     raise SystemExit(0)
-# ROOT CAUSE OF "N IDENTICAL TICK CRONS" (fixed 2026-09-03): `openclaw cron add`
+# ROOT CAUSE OF "N IDENTICAL TICK CRONS" (fixed 2026-09-03): openclaw cron add
 # has no dedupe-by-name guard, so an invocation missing --declaration-key
 # creates a fresh duplicate registration on every run. Every real invocation
-# must declare one so the CLI's own add-or-converge path applies.
+# must declare one so the add-or-converge path of the CLI itself applies.
 undeclared = [l.strip()[:120] for l in calls if not re.search(r"(?<![\w-])--declaration-key\b", l)]
 if undeclared:
     print("FAIL\tinvocation(s) pass NO --declaration-key flag (will duplicate on every re-run): " + " || ".join(undeclared))
@@ -467,7 +467,8 @@ assign = {m.group(1): m.group(2)
 
 def command_values(line):
     out = []
-    for m in re.finditer(r'--command[ \t]+(?:"([^"]*)"|\'([^\']*)\')', line):
+    # \x27 = apostrophe (a literal one in this heredoc breaks bash 3.2 parsing)
+    for m in re.finditer(r'--command[ \t]+(?:"([^"]*)"|' "\\\x27" r'([^' "\\\x27" r']*)' "\\\x27" r')', line):
         out.append(m.group(1) if m.group(1) is not None else m.group(2))
     return out
 
@@ -493,7 +494,7 @@ if unresolved:
     raise SystemExit(0)
 if bad:
     print("FAIL\tcron is registered with the bare tick subcommand, which passes the "
-          "sentinel's exit 10 (findings present) to the scheduler and gets the job "
+          "sentinel\x27s exit 10 (findings present) to the scheduler and gets the job "
           "auto-disabled; use the cron-tick subcommand: " + " || ".join(bad))
     raise SystemExit(0)
 print(f"OK\t{checked} cron command value(s) checked; none end in the bare tick subcommand")
