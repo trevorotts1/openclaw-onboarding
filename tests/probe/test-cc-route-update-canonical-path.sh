@@ -46,7 +46,7 @@ _extract() {
 {
   echo '#!/usr/bin/env bash'
   awk '/^cc_pm2_start_canonical\(\) \{/{flag=1} flag{print} /^}/{if(flag){print ""; exit}}' "$SRC"
-  awk '/^_cc_mtime\(\) \{/{print; exit}' "$SRC"
+  awk '/^_cc_mtime\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$SRC"
   echo ""
   awk '/^cc_ensure_fresh_build\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$SRC"
   echo ""

@@ -96,13 +96,13 @@ class TestManifestPin(unittest.TestCase):
     def test_manifest_exists_and_pins_a_canonical_count(self):
         self.assertTrue(MANIFEST.is_file(), f"missing manifest: {MANIFEST}")
         data = json.loads(MANIFEST.read_text())
-        self.assertEqual(data["canonical_sop_count"], 2555)
-        self.assertEqual(data["release_tag"], "v10.13.29")
-        self.assertEqual(data["asset"], "sops-library-v2.jsonl.gz")
+        self.assertEqual(data["canonical_sop_count"], 2762)
+        self.assertEqual(data["release_tag"], "sop-library-v3.0.0")
+        self.assertEqual(data["asset"], "sops-library-v3.jsonl.gz")
         self.assertEqual(len(data["sha256"]), 64)
 
     def test_health_check_reads_the_same_pin(self):
-        self.assertEqual(mod._canonical_sop_count(), 2555)
+        self.assertEqual(mod._canonical_sop_count(), 2762)
 
 
 class TestDemoFixtureSizedTableNowFails(unittest.TestCase):
@@ -124,13 +124,13 @@ class TestDemoFixtureSizedTableNowFails(unittest.TestCase):
         self.assertIs(res["leg_d_sop_coverage"], False)
         self.assertFalse(
             res["pass"],
-            "REGRESSION: a box holding a 24-row demo fixture against a 2555-row canonical "
+            "REGRESSION: a box holding a 24-row demo fixture against a 2762-row canonical "
             "library must never report overall pass.",
         )
         joined = " ".join(res["errors"])
         self.assertIn("coverage", joined.lower())
         self.assertIn("24", joined)
-        self.assertIn("2555", joined)
+        self.assertIn("2762", joined)
         self.assertIn("DEMO-FIXTURE-SIZED", joined)
 
     @patch.object(mod, "_attempt_smoke_embed", return_value=(True, "smoke ok (mocked)"))
@@ -161,15 +161,22 @@ class TestFullyPopulatedBoxPasses(unittest.TestCase):
     must not punish the boxes that are already right."""
 
     @patch.object(mod, "_attempt_smoke_embed", return_value=(True, "smoke ok (mocked)"))
-    def test_2578_row_box_passes_coverage(self, _m):
-        # 2578 = 2555 library + 23 CC starter seeds, the real populated-box number.
-        res = check_cc_sop_index(_make_cc_dir(2578, 2578), GOOGLE_JSON, generative_provider="anthropic")
+    def test_2785_row_box_passes_coverage(self, _m):
+        # 2785 = 2762 v3 library rows + 23 CC starter seeds.
+        res = check_cc_sop_index(_make_cc_dir(2785, 2785), GOOGLE_JSON, generative_provider="anthropic")
         self.assertIs(res["leg_d_sop_coverage"], True)
         self.assertTrue(res["pass"], res)
 
     @patch.object(mod, "_attempt_smoke_embed", return_value=(True, "smoke ok (mocked)"))
+    def test_v2_only_2578_row_box_is_flagged_until_it_ingests_v3(self, _m):
+        # 2578 = the pre-v3 populated shape (2555 + 23): missing the 145
+        # department SOPs, so coverage must say so until U6c ingests v3.
+        res = check_cc_sop_index(_make_cc_dir(2578, 2578), GOOGLE_JSON, generative_provider="anthropic")
+        self.assertIs(res["leg_d_sop_coverage"], False)
+
+    @patch.object(mod, "_attempt_smoke_embed", return_value=(True, "smoke ok (mocked)"))
     def test_exactly_canonical_passes(self, _m):
-        res = check_cc_sop_index(_make_cc_dir(2555, 2555), GOOGLE_JSON, generative_provider="anthropic")
+        res = check_cc_sop_index(_make_cc_dir(2762, 2762), GOOGLE_JSON, generative_provider="anthropic")
         self.assertIs(res["leg_d_sop_coverage"], True)
         self.assertTrue(res["pass"], res)
 

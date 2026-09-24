@@ -6490,8 +6490,8 @@ except Exception:
   #     if bash "$_CC_RUN_INSTALL" --update-only ... ; then ✓ else ⚠ fi
   # -- a phase-6i fail_install is swallowed into an advisory "⚠ reported errors"
   # line that neither latches a gate, nor withholds the stamp, nor fails the
-  # run. Phase 6i additionally SKIPS itself entirely (exit 0) when no CLIENT_SLUG
-  # resolves, and is a documented NO-OP whenever this box's CC checkout is not at
+  # run. Phase 6i additionally SKIPPED itself entirely (exit 0) when no CLIENT_SLUG
+  # resolved (until 2026-09-23; it now falls back to 'default' like U6c), and is a documented NO-OP whenever this box's CC checkout is not at
   # the installer's hardcoded DASHBOARD_DIR. Three independent silent paths to
   # "green with an empty library". This step is the fail-CLOSED backstop.
   #
@@ -6633,7 +6633,7 @@ except Exception:
       _U6C_SLUG=""
       _U6C_STATE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
       if [ -f "$_U6C_STATE" ]; then
-        _U6C_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_U6C_STATE" 2>/dev/null || echo "")
+        _U6C_SLUG=$(jq -r '.companySlug // .clientSlug // .slug // ""' "$_U6C_STATE" 2>/dev/null || echo "")
       fi
       [ -n "$_U6C_SLUG" ] || _U6C_SLUG="default"
       echo "  → Ingesting SOP V2 library (box is under-populated: $_U6C_BEFORE < $_U6C_CANON)..."
@@ -10478,7 +10478,7 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # P1-3: build-workforce.py now writes the slug as `companySlug` (canonical) and
     # `clientSlug` (transition alias). Read companySlug first, fall back to clientSlug,
     # so both build-state generations resolve. jq fallback chain (was: clientSlug-only).
-    _CC_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_STATE_FILE" 2>/dev/null || echo "")
+    _CC_SLUG=$(jq -r '.companySlug // .clientSlug // .slug // ""' "$_STATE_FILE" 2>/dev/null || echo "")
     _CC_COMPANY=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("companyName",""))' "$_STATE_FILE" 2>/dev/null || echo "")
     _CC_EMAIL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("contactEmail",""))' "$_STATE_FILE" 2>/dev/null || echo "")
   fi

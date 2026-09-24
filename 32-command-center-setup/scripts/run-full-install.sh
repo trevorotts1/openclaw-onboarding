@@ -476,7 +476,16 @@ cc_pm2_start_canonical() {
 # ----------------------------------------------------------------------
 
 # _cc_mtime — epoch mtime of a file, portable across BSD (Mac) and GNU (Linux).
-_cc_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+# GNU form FIRST: on Linux, `stat -f` means FILESYSTEM status and prints six
+# lines to stdout before failing over, and under `set -u` the callers' `-gt`
+# comparison then dies on "File: unbound variable" (every VPS box, run silently
+# ending after "update.sh reported success"). BSD rejects `-c` with no stdout.
+# Always prints a plain integer.
+_cc_mtime() {
+  local m
+  m="$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)"
+  [[ "$m" =~ ^[0-9]+$ ]] && echo "$m" || echo 0
+}
 
 # _cc_gen_secret — a strong random hex secret (openssl -> python3 -> urandom).
 _cc_gen_secret() {
@@ -909,7 +918,7 @@ cc_write_env_local() {
     # than importing 0 rows behind a green check.
     rl_status="preserved(existing)"
   elif [[ -d "$rl_dir" ]]; then
-    rl_howtos="$(find "$rl_dir" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    rl_howtos="$(find -L "$rl_dir" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
     if [[ "${rl_howtos:-0}" -ge 1 ]]; then
       cc_env_set_if_absent "$envf" ROLE_LIBRARY_PATH "$rl_dir" >/dev/null
       rl_status="set($rl_dir; $rl_howtos role how-to.md)"
@@ -1773,7 +1782,7 @@ if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FI
   # P1-3: read companySlug (canonical, written by build-workforce.py) with a
   # transition fallback to the legacy clientSlug alias. state_get appends `// empty`,
   # so this resolves companySlug → clientSlug → empty across both state generations.
-  CLIENT_SLUG=$(state_get '.companySlug // .clientSlug')
+  CLIENT_SLUG=$(state_get '.companySlug // .clientSlug // .slug')
   COMPANY_NAME=$(state_get '.companyName')
   CONTACT_EMAIL=$(state_get '.contactEmail')
   [[ -n "$CLIENT_SLUG" ]] && log "INFO" "update-only: read client slug from state file: $CLIENT_SLUG"
@@ -2730,15 +2739,6 @@ if [[ ! -f "$INGEST_SOP_SH" ]]; then
   # even attempted is the C2 ghost, and it must never ship with a green check.
   if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibrarySkipReason = "ingest-script-missing"'; fi
   fail_install "phase=6i: $INGEST_SOP_SH not found -- the SOP V2 library ingester is missing from this Skill 32 install, so the library would never be ingested and the Command Center would ship the boot-seed ghost. Re-run update-skills.sh to repair the skill dir, then re-run install."
-elif [[ -z "${CLIENT_SLUG:-}" ]]; then
-  # Reachable ONLY in --update-only mode (a full install hard-exits on a missing
-  # slug during arg parsing) on a box whose state file records no companySlug.
-  # Left non-fatal: this is a pre-existing box-state anomaly, not a library
-  # defect, and hard-failing every slug-less update-only re-run is out of C2's
-  # scope. It is recorded FALSY + with a reason, so nothing downstream can read
-  # it as a successful ingest.
-  log "WARN" "phase=6i sop-library-ingestion: no CLIENT_SLUG resolved -- SKIPPING the SOP library ingest (ingest-sop-library.sh requires a client slug). The SOP library is NOT verified on this run; re-run with the slug once known."
-  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibrarySkipReason = "no-client-slug"'; fi
 else
   # ---- (1) direct JSONL-asset ingest -> `sops` table -------------------
   # FAIL-CLOSED. ingest-sop-library.sh runs under `set -euo pipefail` and only
@@ -2755,7 +2755,20 @@ else
   # trustworthy floor -- so we do not guess one, we FAIL THE INSTALL. Both
   # writers are idempotent upserts, so the operator just re-runs once the
   # asset/network is reachable again.
-  SOP_INGEST_OUT="$(bash "$INGEST_SOP_SH" "$CLIENT_SLUG" 2>&1)"; SOP_INGEST_RC=$?
+  #
+  # NO SLUG IS NOT A SKIP. The client slug only scopes the ingester's
+  # client_template_vars rows -- the SOP rows, the converge(scope=sops) role
+  # import and the gates below need none. This used to be an `elif` that skipped
+  # the WHOLE phase (ingest + converge + gate) whenever no slug resolved, which
+  # measured live 2026-09-23 on two Mac boxes whose build state carries no
+  # companySlug/clientSlug: every run logged "no CLIENT_SLUG resolved -- SKIPPING"
+  # and the role library never reached the board. Fall back exactly like
+  # update-skills.sh Step U6c does.
+  SOP_INGEST_SLUG="${CLIENT_SLUG:-default}"
+  if [[ -z "${CLIENT_SLUG:-}" ]]; then
+    log "WARN" "phase=6i sop-library-ingestion: no CLIENT_SLUG resolved -- ingesting with slug 'default' (it only scopes client_template_vars; the SOP rows, converge and gates run as normal)"
+  fi
+  SOP_INGEST_OUT="$(bash "$INGEST_SOP_SH" "$SOP_INGEST_SLUG" 2>&1)"; SOP_INGEST_RC=$?
   printf '%s\n' "$SOP_INGEST_OUT" >> "$LOG_FILE"
   SOP_INGEST_TAIL="$(printf '%s' "$SOP_INGEST_OUT" | tail -n 3 | tr '\n' ' ')"
 
@@ -2883,6 +2896,30 @@ except Exception:
   # carries the reason even when the gate then fail_install()s on it.
   state_set_arg '.commandCenterSopConvergeStatus = $val' "$SOP_CONVERGE_STATUS"
 
+  # ---- (2b) central vectors for the rows the converge just wrote ---------
+  # importRoleLibrary() writes role-library rows with NO embedding (CC #416: a
+  # per-box embed bills the client's key); their vectors ship centrally in the
+  # SOP-embeddings asset (role_library_embeddings, matched by exact slug). The
+  # provisioning inside ingest-sop-library.sh ran BEFORE this converge, and
+  # update-skills U6c2 runs before the whole CC refresh -- so without this call
+  # the new role rows stay unembedded. Additive: never fails the install.
+  SOP_EMBED_DIR="$SKILL_DIR/../shared-utils/sop-embed-once"
+  if [[ -f "$SOP_EMBED_DIR/provision_sop_embeddings.py" ]]; then
+    SOP_PROV_DB="$(python3 - "$SKILL_DIR/../shared-utils" <<'PYDB' 2>/dev/null || true
+import sys
+sys.path.insert(0, sys.argv[1])
+from resolve_db import find_dashboard_db, is_db_found
+p = find_dashboard_db()
+print(p if is_db_found(p) else "")
+PYDB
+)"
+    if [[ -n "$SOP_PROV_DB" ]]; then
+      SOP_PROV_OUT="$(python3 "$SOP_EMBED_DIR/provision_sop_embeddings.py" \
+          "$SOP_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json" "$SOP_PROV_DB" 2>&1 | tail -n 1)"
+      log "INFO" "phase=6i sop-library-ingestion: post-converge vectors: ${SOP_PROV_OUT:-no output}"
+    fi
+  fi
+
   # ---- (3) fail-loud row-count gate (BOTH writers, independently) -------
   # The gate script itself is now fail-closed (--min-total has no default: it
   # exits 3 rather than assume a floor). Belt AND braces: this phase must never
@@ -2941,11 +2978,11 @@ except Exception:
   [[ -z "$SOP_ROLE_SRC_DIR" ]] && SOP_ROLE_SRC_DIR="$SOP_ROLE_DEFAULT_DIR"
   SOP_ROLE_SRC_COUNT=0
   if [[ -d "$SOP_ROLE_SRC_DIR" ]]; then
-    SOP_ROLE_SRC_COUNT="$(find "$SOP_ROLE_SRC_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    SOP_ROLE_SRC_COUNT="$(find -L "$SOP_ROLE_SRC_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
   fi
   SOP_ROLE_DEFAULT_COUNT=0
   if [[ "$SOP_ROLE_SRC_DIR" != "$SOP_ROLE_DEFAULT_DIR" && -d "$SOP_ROLE_DEFAULT_DIR" ]]; then
-    SOP_ROLE_DEFAULT_COUNT="$(find "$SOP_ROLE_DEFAULT_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    SOP_ROLE_DEFAULT_COUNT="$(find -L "$SOP_ROLE_DEFAULT_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
     SOP_ROLE_SRC_COUNT=$(( SOP_ROLE_SRC_COUNT + SOP_ROLE_DEFAULT_COUNT ))
   fi
 
