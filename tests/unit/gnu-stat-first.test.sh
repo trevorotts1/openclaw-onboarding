@@ -23,7 +23,8 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 FILES=(install.sh update-skills.sh scripts/reconcile-rr-agent-map.sh
        15-blackceo-team-management/scripts/lib/rr-config-lock.sh
        15-blackceo-team-management/scripts/lib/rr-promote-atomic.sh
-       23-ai-workforce-blueprint/scripts/resume-workforce-build.sh)
+       23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+       38-conversational-ai-system/scripts/09-install-conversation-workflows.sh)
 for f in "${FILES[@]}"; do
   hits="$(grep -nE "stat -f ['\"]?%[^|]*\|\| *stat -c" "$ROOT/$f" || true)"
   [[ -z "$hits" ]] && pass "$f: no BSD-first stat chain" || fail "$f: BSD-first stat chain: $hits"
@@ -44,6 +45,8 @@ grep -A3 '^MODE="$(stat' "$ROOT/15-blackceo-team-management/scripts/lib/rr-promo
   | sed -n '1,2p' > "$TMP/promote-mode.sh"
 grep -A3 '    m="$(stat -c %Y "$INTERVIEW_REPORT_MARKER"' "$ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" \
   | sed -n '1,3p' > "$TMP/report-age.sh"
+grep '^CURRENT_OWNER="$(stat' "$ROOT/38-conversational-ai-system/scripts/09-install-conversation-workflows.sh" \
+  > "$TMP/logs-owner.sh"
 
 mkdir -p "$TMP/lockdir"; touch "$TMP/f"; chmod 640 "$TMP/f"
 
@@ -77,6 +80,10 @@ for f in "${FLAVOURS[@]}"; do
   out="$(run 'INTERVIEW_REPORT_MARKER="$2"; source "$1"; age_h=$(( ( $(date -u +%s) - m ) / 3600 )); echo "$age_h"' "$TMP/report-age.sh" "$TMP/f")"
   [[ "$out" == "0" ]] && pass "$name: resume-workforce-build marker age -> ${out}h" \
     || fail "$name: resume-workforce-build marker age -> $(printf '%s' "$out" | head -2 | tr '\n' ' ')"
+
+  out="$(run 'LOGS_DIR="$2"; source "$1"; printf %s "$CURRENT_OWNER"' "$TMP/logs-owner.sh" "$TMP/lockdir")"
+  [[ "$out" == "$(id -un)" ]] && pass "$name: 09-install-conversation-workflows owner -> $out" \
+    || fail "$name: 09-install-conversation-workflows owner -> $(printf '%s' "$out" | head -2 | tr '\n' ' ')"
 done
 
 echo "$P Results: $PASS passed, $FAIL failed"
