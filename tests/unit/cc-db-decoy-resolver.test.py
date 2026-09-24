@@ -99,6 +99,31 @@ class DecoyResolver(unittest.TestCase):
                            text=True, env=self.env, timeout=30)
         self.assertEqual((r.returncode, r.stdout.strip()), (1, ""))
 
+    def fast_path_dbs(self, **env):
+        """update-skills.sh's convergence fast path: the DB its SOP-library
+        and SOP-embedding repairs gate on (ingest-sop-library.sh / embed-sops.sh)."""
+        text = (REPO / "update-skills.sh").read_text()
+        sop = text.index("# --- SOP library under-populated (U6c)")
+        start = text.rindex("\n        done\n", 0, sop) + len("\n        done\n")
+        body = text[start:text.index('if [ -n "$_fast_sop_db" ]', start)]
+        emb = text.index("# --- SOP-embeddings under-populated (U6c2)", start)
+        body += text[emb:text.index('if [ -n "$_fast_emb_db" ]', emb)]
+        body = "\n".join(l for l in body.splitlines()
+                         if "_U6C_SOPLIB_FAIL" not in l and l.strip() != "else")
+        r = subprocess.run(["bash", "-c", "set -u\n" + body + '\nprintf "%s|%s" "$_fast_sop_db" "$_fast_emb_db"'],
+                           capture_output=True, text=True, env=dict(self.env, **env), timeout=30)
+        return r.stdout
+
+    def test_update_skills_fast_path_skips_zero_byte_decoy(self):
+        if Path("/data/projects/command-center/mission-control.db").exists():
+            self.skipTest("/data/projects/command-center/mission-control.db exists on this host")
+        live = board(self.home / "data" / "mission-control.db")
+        self.live.unlink()
+        self.live.touch()  # 0-byte decoy where the old pick looked
+        self.assertEqual(self.fast_path_dbs(SKILLS_DIR=str(REPO)), f"{live}|{live}")
+        # Resolver absent: the legacy pair, non-empty files only.
+        self.assertEqual(self.fast_path_dbs(SKILLS_DIR=str(self.home / "none"),
+                                            EXTRACTED_DIR=str(self.home / "none")), "|")
 
 if __name__ == "__main__":
     unittest.main()

@@ -5539,11 +5539,27 @@ print(state + " " + str(len(headers)))
           fi
           break
         done
+        # --- the Command Center DB both SOP repairs below read ---------------
+        # The shared resolver (shared-utils/resolve_db.py) is the DB the running
+        # CC uses: env/.env.local first, 0-byte decoys skipped, layout candidates
+        # only with a `workspaces` table. The old "first existing file" pick
+        # took a 0-byte decoy over the live board. Fallback (resolver absent):
+        # the legacy pair, non-empty files only.
+        _fast_cc_db=""
+        _fast_resolve_db="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/resolve_db.py"
+        [ -f "$_fast_resolve_db" ] || _fast_resolve_db="${EXTRACTED_DIR:-}/shared-utils/resolve_db.py"
+        if [ -f "$_fast_resolve_db" ]; then
+          _fast_cc_db="$(python3 "$_fast_resolve_db" --path 2>/dev/null || true)"
+        fi
+        if [ -z "$_fast_cc_db" ]; then
+          for _fast_c in "/data/projects/command-center/mission-control.db" "$HOME/projects/command-center/mission-control.db"; do
+            if [ -s "$_fast_c" ]; then _fast_cc_db="$_fast_c"; break; fi
+          done
+        fi
         # --- SOP library under-populated (U6c) ------------------------------
         if [ -n "${_U6C_SOPLIB_FAIL:-}" ]; then : # probe reported missing ingester / no reader — full pass handles it
         else
-          _fast_sop_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
-                        || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+          _fast_sop_db="$_fast_cc_db"
           if [ -n "$_fast_sop_db" ] && [ -f "$_fast_sop_db" ]; then
             _fast_sop_canon="${_U6C_CANON:-2555}"
             _fast_sop_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_sop_db" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
@@ -5561,8 +5577,7 @@ print(state + " " + str(len(headers)))
           fi
         fi
         # --- SOP-embeddings under-populated (U6c2) --------------------------
-        _fast_emb_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
-                       || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+        _fast_emb_db="$_fast_cc_db"
         if [ -n "$_fast_emb_db" ] && [ -f "$_fast_emb_db" ]; then
           _fast_emb_canon="${_U6C_EMB_CANON:-0}"
           if [ "${_fast_emb_canon:-0}" -gt 0 ] 2>/dev/null; then
