@@ -1154,6 +1154,107 @@ oc_remove_tree_guarded() {
   exit 1
 }
 
+# ----------------------------------------------------------
+# SKILL BOX STATE. Added 2026-09-23.
+#
+# THE DEFECT. The skill install loop replaces every numbered skill WHOLESALE:
+# oc_remove_tree_guarded, then cp -r from the release. Skill 59 keeps its
+# per-box resolved tier map, INCLUDING the owner's owner_pins, at
+# 59-anthology-engine/model-map.json, inside that wiped folder. Every update
+# deleted the pins, the wiring pass then re-resolved with no pins, HEAVY-WRITER
+# and JUDGE fell to the same model, and the re-resolve FAILED CLOSED
+# (AF-AE-JUDGE-INDEPENDENCE). preflight.sh carries owner_pins forward across
+# rolls, but only out of a map that still exists when it runs.
+#
+# THE RULE. An explicit allow-list of box-local files, relative to the skill
+# folder, is copied out before the wipe and put back after the copy. The
+# wiring pass then re-runs the skill's own re-resolve (preflight.sh), which
+# honors the pins and refreshes every non-pinned tier. A path the new release
+# SHIPS is never overwritten: a shipped default always beats stale box state.
+# ----------------------------------------------------------
+# >>> SKILL-BOX-STATE-BEGIN  (extracted verbatim by tests/unit/updater-preserves-skill-box-state.test.sh)
+# One relative path per line. Consumers read it line by line, so a path may
+# contain spaces.
+oc_skill_box_state_paths() {
+  case "${1:-}" in
+    59-anthology-engine) echo "model-map.json" ;;
+  esac
+  return 0
+}
+
+# Copy skill $1's allow-listed state out of live dir $2. Sets
+# _OC_BOXSTATE_STASH to the stash dir, or empty when there was nothing to keep,
+# and remembers $1/$2 so oc_skill_box_state_on_exit can finish the job if the
+# run dies before oc_skill_box_state_restore is reached.
+oc_skill_box_state_save() {
+  local _name="${1:-}" _live="${2:-}" _rel
+  _OC_BOXSTATE_STASH=""
+  _OC_BOXSTATE_NAME="$_name"
+  _OC_BOXSTATE_LIVE="$_live"
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
+    [ -f "$_live/$_rel" ] || continue
+    if [ -z "$_OC_BOXSTATE_STASH" ]; then
+      _OC_BOXSTATE_STASH="$(mktemp -d "${TMPDIR:-/tmp}/oc-skill-box-state.XXXXXX" 2>/dev/null || true)"
+      if [ -z "$_OC_BOXSTATE_STASH" ]; then
+        echo "    ! box state NOT saved (mktemp failed): $_name/$_rel -- it will be lost by this update" >&2
+        return 0
+      fi
+    fi
+    mkdir -p "$_OC_BOXSTATE_STASH/$(dirname "$_rel")" 2>/dev/null || true
+    cp -p "$_live/$_rel" "$_OC_BOXSTATE_STASH/$_rel" \
+      || echo "    ! box state NOT saved (copy failed): $_name/$_rel -- it will be lost by this update" >&2
+  done <<EOF
+$(oc_skill_box_state_paths "$_name")
+EOF
+  return 0
+}
+
+# Put the stash back into skill dir $2 wherever the file is missing, then drop
+# the stash. An existing file is never overwritten: after a normal copy it is
+# one the release ships; after a refused removal it is the untouched original.
+# The stash is kept ONLY when a copy back failed, because it is then the last
+# copy of the owner's state, and the log names where it is.
+oc_skill_box_state_restore() {
+  local _name="${1:-}" _live="${2:-}" _rel _keep=0
+  [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
+    [ -f "$_OC_BOXSTATE_STASH/$_rel" ] || continue
+    if [ -e "$_live/$_rel" ]; then
+      echo "    box state NOT restored over an existing file: $_name/$_rel"
+      continue
+    fi
+    mkdir -p "$_live/$(dirname "$_rel")" 2>/dev/null || true
+    if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel" 2>/dev/null; then
+      echo "    box state preserved across update: $_name/$_rel"
+    else
+      echo "    ! box state NOT restored (copy failed): $_name/$_rel -- saved copy kept at $_OC_BOXSTATE_STASH/$_rel" >&2
+      _keep=1
+    fi
+  done <<EOF
+$(oc_skill_box_state_paths "$_name")
+EOF
+  if [ "$_keep" != 1 ]; then
+    rm -rf "$_OC_BOXSTATE_STASH" 2>/dev/null \
+      || echo "    ! box state stash cleanup failed, left at $_OC_BOXSTATE_STASH" >&2
+  fi
+  _OC_BOXSTATE_STASH=""
+  return 0
+}
+
+# EXIT-trap hook, called guarded by oc_update_exit_trap. If the run dies
+# between save and restore -- oc_remove_tree_guarded refusing with exit 1, or
+# cp -r failing under set -e --
+# put back whatever the partial removal took and drop the stash, so neither
+# the owner's pins nor a temp dir is left behind. A no-op on a normal run.
+oc_skill_box_state_on_exit() {
+  [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
+  oc_skill_box_state_restore "${_OC_BOXSTATE_NAME:-}" "${_OC_BOXSTATE_LIVE:-}" >&2 || true
+  return 0
+}
+# <<< SKILL-BOX-STATE-END
+
 oc_assert_write_preflight() {
   _OCWP_ME="$(id -un 2>/dev/null || printf '%s' "${USER:-unknown}")"
   _OCWP_ME_UID="$(id -u 2>/dev/null || printf '%s' "none")"
@@ -4025,6 +4126,17 @@ release_update_lock() {
   fi
 }
 
+# main()'s EXIT trap. The box-state hook runs GUARDED, so nothing inside it
+# can abort the trap under set -e and skip the lock release; the lock is then
+# ALWAYS released; and the script exits with the status it was already
+# exiting with, never the hook's.
+oc_update_exit_trap() {
+  local _rc=$?
+  oc_skill_box_state_on_exit || true
+  release_update_lock || true
+  exit "$_rc"
+}
+
 # Detect a legacy Unix crontab entry `0 3 * * 0` (system-local timezone)
 # that collides with the OpenClaw cron weekly-onboarding-update
 # (0 3 * * 0 America/New_York). Returns 0 when at least one such entry
@@ -4080,7 +4192,7 @@ main() {
   # Sunday crontab entry that would double-fire with the OpenClaw cron.
   # ----------------------------------------------------------
   acquire_update_lock
-  trap release_update_lock EXIT
+  trap oc_update_exit_trap EXIT
   retire_legacy_sunday_crontab
 
   # ----------------------------------------------------------
@@ -5793,6 +5905,9 @@ print(state + " " + str(len(headers)))
     # updater silently with the skill already gutted. oc_remove_tree_guarded
     # proves the tree is removable BEFORE it removes anything, so a blocked
     # skill stays whole and the operator gets one actionable line.
+    # Box-local state on the allow-list (owner pins) is saved first and put
+    # back after the copy; see oc_skill_box_state_paths.
+    oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
     # Copy new version.
@@ -5804,6 +5919,7 @@ print(state + " " + str(len(headers)))
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
+    oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
