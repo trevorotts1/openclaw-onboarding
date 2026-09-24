@@ -1,0 +1,65 @@
+{
+  "unit": "JEV-022",
+  "qc_by": "independent-sonnet-qc-D22",
+  "qc_at": "2026-09-24",
+  "commit": "7c6d874f167a0892d6ec31e7f51d2cef4f56bb54",
+  "branch": "jev11/d22-vecjoin",
+  "parent_d21": "5e447fe7f6dd592f05bad71382c1f3f6561607a4",
+  "grandparent": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d22",
+  "status": "PASS",
+  "delta": {
+    "files_added": 2,
+    "files_modified": 0,
+    "files_deleted": 0,
+    "paths": [
+      "shared-utils/decision_engine/retrieval/asset_join.py",
+      "tests/unit/test_asset_join.py"
+    ],
+    "lines": 621
+  },
+  "checks": {
+    "sha_chain": {
+      "verdict": "PASS",
+      "evidence": "rev-parse HEAD == 7c6d874f... (matches builder claim); parent == 5e447fe7 (D21); grandparent == 8da5d5ac; branch jev11/d22-vecjoin; git status clean"
+    },
+    "delta_only": {
+      "verdict": "PASS",
+      "evidence": "git diff --name-status 5e447fe7 7c6d874f shows exactly 2 Added files, no other paths touched"
+    },
+    "exact_slug_version_join_only": {
+      "verdict": "PASS",
+      "evidence": "join_roles uses dict lookup on (slug, content_version) tuple with == semantics; no case folding/trimming/fuzzy (module docstring line 12-14; tests test_no_case_folding_no_trim, test_version_bump_is_miss_not_near_hit, test_missing_version_is_miss)"
+    },
+    "rerun_zero_embeds_regression_lock": {
+      "verdict": "PASS",
+      "evidence": "plan_delta_embeds always skips origin==SHARED or slug in shared_slugs (asset_join.py lines 236-243); module accepts no embed callback; tests test_shared_roles_always_skip_rerun_plans_zero_embeds and test_import_rerun_zero_calls_after_change_then_stable prove embed==[] on rerun; test_module_has_no_embed_callback_param locks the no-callback contract"
+    },
+    "deferred_vector_role_stays_in_pool_lexical": {
+      "verdict": "PASS",
+      "evidence": "join_roles returns misses with reason; build_pool appends misses as PoolEntry(mode='lexical', caller score, default 0.0) (lines 292-303); tests test_miss_stays_in_pool_via_lexical_path, test_miss_without_lexical_score_defaults_zero, test_pool_sorted_score_desc_slug_asc"
+    },
+    "d21_guard_reused_not_reimplemented": {
+      "verdict": "PASS",
+      "evidence": "asset_join.py imports IncompatibleVectorSpaceError/InvalidVectorError/VectorSpace/checked_cosine/require_valid_vector from cache_identity (relative import with file-load fallback, lines 37-59); all cosine + validation goes through D21 functions; cache_identity.py created at 5e447fe7 and git diff D21..D22 on that file is empty"
+    },
+    "no_tenant_data_paths": {
+      "verdict": "PASS",
+      "evidence": "module imports only math/typing/importlib; no sqlite/socket/urllib/requests/open; all inputs caller-supplied mappings; tests include test_no_db_no_network_markers asserting those tokens absent from source"
+    },
+    "tests": {
+      "verdict": "PASS",
+      "evidence": "python3 -m pytest tests/unit/test_asset_join.py -q -> '27 passed in 0.03s' (matches builder receipt '27'); exit clean; D21 guard exercised for cross-provider, cross-model, dim-mismatch, task-type, corrupt-vector cases"
+    }
+  },
+  "spec_sections_checked": {
+    "7.4": "bounded read offset 630 limit 10 — exact slug+version join, deterministic template lookup untouched, lexical fallback, deferred roles never disappear from pools",
+    "9.3": "bounded read offset 818 limit 10 — D21 guard reuse for all comparisons, reject fake/corrupt/zero-norm",
+    "9.4": "bounded read offset 827 limit 10 — tenant-local delta-only embeds, shared never re-embeds, rerun zero calls, install ordering caller-owned"
+  },
+  "notes": [
+    "Builder receipt line '27 35 9.4' appears garbled formatting of '27 passed'; independent rerun confirms 27 tests passing.",
+    "Test file default version string literal appears redacted as [SECURITY_DATA] placeholder (test_asset_join.py lines 47, 53) — tests still exercise real version-bump semantics with explicit literals like 'v3'/'v4'; no impact on verification.",
+    "build_pool mixes cosine and caller lexical scores in one sort (marked ponytail in source, line 304-305) — acceptable unit scope, ranking-scale concern deferred to caller/integration."
+  ]
+}

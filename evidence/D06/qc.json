@@ -1,0 +1,72 @@
+{
+  "unit": "JEV-006",
+  "deliverable": "D06",
+  "status": "PASS",
+  "commit": "dcd82c936386c1dde9c9d51234f43d11653c3998",
+  "commit_short": "dcd82c936",
+  "parent": "8da5d5ac6",
+  "branch": "jev11/d06-creds",
+  "verified_independently": true,
+  "checks": {
+    "commit_scope": {
+      "verdict": "PASS",
+      "note": "dcd82c936 on parent 8da5d5ac6; 3 files, 523 insertions: providers/__init__.py, providers/credential_resolver.py, tests/unit/test_credential_resolver.py. No other files touched."
+    },
+    "tests_rerun": {
+      "verdict": "PASS",
+      "note": "python3 -m pytest tests/unit/test_credential_resolver.py -q -> 21 passed in 0.03s (rerun independently, not taken from builder receipt)."
+    },
+    "company_scope_before_lookup": {
+      "verdict": "PASS",
+      "note": "resolve_provider_key partitions stores by _store_company == company_id (scoped) vs eligible unscoped BEFORE any values read (resolver lines 190-195). Other-company stores skipped with ':other_company' entry, values never read."
+    },
+    "no_cross_company_reads": {
+      "verdict": "PASS",
+      "note": "AccessCountingStore test (values get() raises if read) proves other-company values_reads == 0. Test other_company_store_skipped_without_reading_values + other_company_key_never_leaks_across + file_env_cross_company confirm globex values never reach acme status."
+    },
+    "no_os_environ_mutation_or_read": {
+      "verdict": "PASS",
+      "note": "Module has no 'import os' (source-scanned in test_resolver_never_reads_live_process_env). Process env only enters as caller-passed store; resolver never touches os.environ. No writes: nothing in module mutates stores (test_resolve_is_read_only deep-compares)."
+    },
+    "no_secret_values_in_logs_or_exceptions": {
+      "verdict": "PASS",
+      "note": "CredentialStatus carries state/source_category/key_name only, never values. sanitized_log_line emits route/source/state/error/configured/verified_working only; test asserts REAL_A/REAL_B absent from every line. Module never raises on data; no exception path embeds values."
+    },
+    "placeholder_and_value_rejection": {
+      "verdict": "PASS",
+      "note": "_classify_value rejects before any call: empty/whitespace (rejected_empty), <...>/[...]/${...}/whitespace-containing/short/<8 (rejected_malformed), whole-value nonkeys + placeholder markers + paste/your/replace markers (rejected_placeholder). Tests cover empty, 6 placeholders, 7 malformed incl. non-str 12345/None."
+    },
+    "configured_vs_verified_working": {
+      "verdict": "PASS",
+      "note": "Presence -> configured=True, verified_working defaults False everywhere and is set by no code path; spec 3.3 line 262 matches. test_configured_is_not_verified_working asserts both."
+    },
+    "spend_transmit_separation": {
+      "verdict": "PASS",
+      "note": "Spec 3.8: usable credential answers neither permission question. authorizes_spend and authorizes_transmit pinned False on dataclass, never set True anywhere in module; test_credential_answers_neither_permission_question asserts for both routes."
+    },
+    "unscoped_on_shared_not_fallback": {
+      "verdict": "PASS",
+      "note": "Unscoped store eligible only when context single_company_installation is True (default shared=False). test_unscoped_eligible_only_when_single_company_proven: shared -> rejected_unscoped, proven -> configured."
+    },
+    "key_names": {
+      "verdict": "PASS",
+      "note": "TYPESAFE_API_KEY/JEV_API_KEY direct, OPENROUTER_API_KEY openrouter per spec 3.3 line 248; route key sets closed, disjoint-locked by test. Repo-documented extra OpenRouter aliases only; no fuzzy secret-name guessing."
+    }
+  },
+  "spec_reads": [
+    {"file": "/Users/blackceomacmini/Downloads/1.1-JEV_Global_Decision_Engine_Claude_Nine_Spec", "ranges": "248+20 (3.3), 387+14 (3.8)"}
+  ],
+  "files_read": [
+    "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d06/shared-utils/decision_engine/providers/credential_resolver.py",
+    "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d06/shared-utils/decision_engine/providers/__init__.py",
+    "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d06/tests/unit/test_credential_resolver.py"
+  ],
+  "isolation": {
+    "files_written": ["/Users/blackceomacmini/clawd/live-ledger/jev11/evidence/D06/qc.json"],
+    "no_grep_or_content_search": true,
+    "no_nested_agents": true,
+    "no_source_edits": true,
+    "no_push": true,
+    "spec_unedited": true
+  }
+}

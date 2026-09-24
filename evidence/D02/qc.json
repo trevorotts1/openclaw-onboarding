@@ -1,0 +1,104 @@
+{
+  "unit": "D02",
+  "kind": "artifact-recheck",
+  "reviewer": "sonnet-chain (D02-reviewer-recheck1)",
+  "date": "2026-09-24",
+  "candidate_commit": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "branch": "jev11/d02-contracts",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-contracts",
+  "worktree_clean": true,
+  "prior_qc": {
+    "agent": "ab4dc7543131af94b",
+    "verdict": "NON-CONFORMING",
+    "reason": "reviewed spec text, never verified commit; F1-F5 were unverified claims",
+    "F2-F5_note": "verbatim F2-F5 text never recorded anywhere on disk (sources checked: evidence/D02 (empty pre-recheck), /tmp/jev-review-20260924/workflows (3 files, no findings), all scratchpad lanes, session transcript 9be9c09e ledger events). F2-F5 here are the checks enumerated by the recheck harness task; every verdict below is grounded in actual code regardless."
+  },
+  "commit_verification": {
+    "git_show_stat": "9 files changed, 1217 insertions: evidence/D02/contract-interface.json, decision_engine/__init__.py, contracts/__init__.py, contracts/schema.py, 4 fixtures, tests/unit/test_decision_contracts.py",
+    "reviewed_text_is_commit": true,
+    "proof": "sha256(working-tree schema.py) == sha256(git show 8da5d5ac:schema.py) == 57236a17996571554a6e20ac97f1325a7219eb7aa9c61470a3926de8792b52e2"
+  },
+  "rerun": {
+    "pytest": "python3 -m pytest tests/unit/test_decision_contracts.py -q -> 20 passed, rc=0",
+    "check_envelope_committed": "OK, rc=0",
+    "check_envelope_mechanical": "OK, rc=0"
+  },
+  "spec_10_1_envelope": {
+    "required_fields": 42,
+    "committed_fixture_top_level_keys": 42,
+    "mechanical_fixture_top_level_keys": 42,
+    "missing_in_either_fixture": [],
+    "nullable_only_where_spec_allows": true,
+    "enums": "status/intent/executionMode/configuredMode all constrained to spec 10.1 literals",
+    "cross_field": "failed requires fallbackReason; committed requires personaBundle object"
+  },
+  "spec_10_2_roundtrip": {
+    "mechanism": "normalize_envelope/normalize_bundle are verbatim deep copies; canonical_envelope_json sorted-keys compact JSON; unknown optional fields preserved (test_unknown_optional_fields_preserved_not_stripped)",
+    "semantics_checked": {
+      "persona_mirror_and_mode": "schema.py:508-516 persona_id must mirror voice winner; mode must be blend (452-453)",
+      "audience_provenance_and_confirm": "resolved_audience.source enum, candidates, confirm_required + lockstep with bundle.confirm_required (370-391, 498-506)",
+      "voice_topic_collapse_rationale": "voice.collapsed/collapsed_persona_id rules (345-367); rationale preserved object (492-494)",
+      "task_personas_and_slots": "seq int unique, persona_id required, no_persona_required exclusion, 10-row cap (394-418); 'part' preserved verbatim by roundtrip (not field-validated - observation, not a gap: spec requires preservation, which holds)",
+      "page_part_scope_ordering": "scopeId required on envelope; seq ordering enforced; part/stage names preserved",
+      "goal_and_confirmation": "conversion_goal/goal_source/goal_confirm_required/resolved_goal with source lockstep (477-490)",
+      "catalog_versions_hashes": "catalog_version, bundle_version major-gate, envelope candidateCatalogVersion/bundleHash/policyVersion required",
+      "final_directive": "blend_directive required with mandatory style-inspired-NOT-impersonation guardrail (467-471)",
+      "mechanical_flag_and_governance_id": "no_persona_required=true forces persona_id/persona_name null AND governance_persona_id non-empty (439-447); mechanical fixture carries covey-7-habits; content fixture carries governance via fallbacks.governance",
+      "decision_model_provider_versions_evidence": "providerUsed required non-null, providerRequested/modelRequested/modelReturned nullable strings, retrievalEvidence/judgments/supportingEvidenceRefs/candidateIds/stageTimings typed lists, judgments question_id required"
+    }
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "claim": "null personaBundle leaves governance homeless",
+      "verdict": "REJECTED",
+      "status": "already_solved_in_code",
+      "evidence": "schema.py:329-330 status='committed' requires personaBundle object, so a committed decision can never carry null bundle; schema.py:439-447 mechanical bundles must carry non-empty governance_persona_id; null bundle is only valid pre-commit (proposed/pending_confirmation) where governance binding is not yet due per spec 10.4. Content (non-mechanical) fixture carries governance via fallbacks.governance=covey-7-habits."
+    },
+    {
+      "id": "F2",
+      "claim": "invalid/malformed JSON crashes validator",
+      "verdict": "REJECTED",
+      "status": "already_solved_in_code",
+      "evidence": "validate_envelope/validate_persona_bundle are fail-closed never-raise (schema.py:319-325, 524-525); --check catches unreadable/unparsable files (565-571); test_validator_never_raises_on_garbage passes on None/str/int/list/partial-dict"
+    },
+    {
+      "id": "F3",
+      "claim": "non-finite floats accepted",
+      "verdict": "REJECTED",
+      "status": "already_solved_in_code",
+      "evidence": "_find_nonfinite rejects NaN/Inf in both envelope (261-263) and bundle (431-433); canonical_envelope_json allow_nan=False fail-closed serialization (546-552); test_nonfinite_float_rejected passes"
+    },
+    {
+      "id": "F4",
+      "claim": "company mismatch not checked",
+      "verdict": "REJECTED",
+      "status": "already_solved_in_code",
+      "evidence": "COMPANY_ID_KEYS (companyId/company_id/company/tenant_id/tenantId) scanned against envelope companyId (519-522); bundle validated with company_id=env companyId (337); test_company_mismatch_rejected passes"
+    },
+    {
+      "id": "F5",
+      "claim": "schema-version incompatibility not gated",
+      "verdict": "REJECTED",
+      "status": "already_solved_in_code",
+      "evidence": "major-version gate on envelope schemaVersion (265-269) and bundle bundle_version (435-437); unparsable/non-string versions rejected; explicit extension strategy in module docstring (unknown optional fields preserved, new required fields need new major); test_incompatible_envelope_version_rejected and test_incompatible_bundle_version_rejected pass"
+    }
+  ],
+  "verdict": "PASS",
+  "summary": "Commit 8da5d5ac verified against its own content (hash match), 20/20 tests pass, both envelope fixtures pass --check, 42/42 envelope fields present in both fixtures, spec 10.2 preservation semantics verified mechanically including mechanical/no-persona flag AND governance id. All five prior QC findings (F1-F5) are REJECTED as already solved in the actual code.",
+  "residual_observations": [
+    "task_personas rows: 'part' (declared slot identifier) is preserved verbatim by roundtrip but not field-validated as non-empty string; preservation is what spec 10.2 requires, so no defect. Tighten if later phases want slot validation.",
+    "blueprint/appendix load references live as envelope evidence refs + effectivePath within D02 scope; renderer-side load enforcement is D06 territory, not this contract."
+  ],
+  "file_hashes": {
+    "schema.py": "57236a17996571554a6e20ac97f1325a7219eb7aa9c61470a3926de8792b52e2",
+    "tests/unit/test_decision_contracts.py": "0f81270939fcfdd2a3f0541f9edb8b07b978ef523d220566d5c2dbeb5458239e",
+    "fixtures/envelope_committed.json": "700760017365857588d2cec3c9e2c5e0672d59de5346cc96c31a064efd03e32c",
+    "fixtures/envelope_mechanical.json": "f0e9a104ce2c1ec92311461ee940d5dc38f62caa02afa37c9607262eaf33c3e9",
+    "fixtures/bundle_content_blend.json": "83e108cde98c6fad489bb4f51684f40a0a8167c728ff1c8b09a1d3ae6e07153b",
+    "fixtures/bundle_mechanical.json": "d79e23ad78791e8066fcc2572264e3940d687b5feef5b41682bb0cac1343e8d2",
+    "contracts/__init__.py": "e1e853c63c45d90ce773df6aa30a5df244b83e16b25376502b58eba485dcec8a",
+    "decision_engine/__init__.py": "a536345f16002a035bdcf8b28c5a2df3550716de728aec23334e4b4c0cdd52f7"
+  },
+  "not_done": ["no push", "no merge", "no source edits", "spec untouched (2 bounded reads only: 887+75, 961+120)", "no nested agents", "no temp files written outside permitted paths"]
+}

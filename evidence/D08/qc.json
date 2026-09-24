@@ -1,0 +1,54 @@
+{
+  "id": "JEV-008",
+  "qc": "D08-independent-Sonnet",
+  "sha": "95c861a83077f5e66513f257b281730f164e0ab3",
+  "branch": "jev11/d08-nojev",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d08",
+  "checks": {
+    "parent_chain": {
+      "verdict": "PASS",
+      "evidence": "HEAD 95c861a83 parent 0498fa39a (JEV-003/D03) grandparent 8da5d5ac6 (D02), from git log %P"
+    },
+    "clean_tree": {
+      "verdict": "PASS",
+      "evidence": "git status --porcelain empty; only gitignored .pytest_cache from test run"
+    },
+    "files_exact": {
+      "verdict": "PASS",
+      "evidence": "git show --stat HEAD: exactly 2 new files, 556 insertions, 0 deletes elsewhere: shared-utils/decision_engine/fallback/__init__.py (276), tests/unit/test_nojev_fallback.py (280); both fully read"
+    },
+    "tests_rerun": {
+      "verdict": "PASS",
+      "evidence": "python3 -m pytest tests/unit/test_nojev_fallback.py -q -> 20 passed in 0.02s"
+    },
+    "legacy_off_byte_identical_property_test_real": {
+      "verdict": "PASS",
+      "evidence": "test_legacy_off_byte_identical_normalized calls real fb.select twice (legacy/off), compares fb.canonical_result_json of fb.normalized_decision outputs, asserts equal AND asserts raw JSONs differ (labels only); implementation normalized_decision strips only configuredMode/skipReason via deepcopy. Test exercises implementation, no reimplemented logic"
+    },
+    "zero_jev_traffic_in_legacy_off": {
+      "verdict": "PASS",
+      "evidence": "test_zero_traffic_counters_all_modes asserts jevCalls/probeCalls/shadowRemoteCalls == 0 in all four modes incl legacy/off; select() hardcodes all three counters to 0 in result"
+    },
+    "provenance_fields_sec_3_6": {
+      "verdict": "PASS",
+      "evidence": "Spec line 373 persist configured mode, effective path, policy/config revision, skip reason. Result carries configuredMode/effectivePath/policyVersion/configRevision/skipReason; tests assert all (test_result_carries_policy_and_config_revisions, test_effective_path_is_non_jev_for_fallback, SkipReasons suite)"
+    },
+    "four_sec_9_8_paths": {
+      "verdict": "PASS",
+      "evidence": "test_all_four_combinations_route covers (T,T)->jev_hybrid, (T,F)->jev_lexical, (F,T)->nojev_semantic, (F,F)->nojev_catalog_rule matching spec 9.8 table lines 870-875; plus select-level path checks and non-bool ValueError test"
+    },
+    "no_new_credential": {
+      "verdict": "PASS",
+      "evidence": "validate_config({}) valid per test_no_key_required_empty_config_valid; fallback_model optional, annotated never invoked; imports stdlib only (copy/json/re)"
+    },
+    "network_denied": {
+      "verdict": "PASS",
+      "evidence": "Full file read: no socket/http/urllib/requests/subprocess imports; counters hardcoded 0; module docstring and read-only contract confirm no calls emitted"
+    }
+  },
+  "nits_not_blocking": [
+    "tests/unit/test_nojev_fallback.py:89 kw dict assigned never used (dead variable)",
+    "test_legacy_off_byte_identical_normalized has dead kw variable while passing args positionally-duplicated"
+  ],
+  "verdict": "PASS"
+}

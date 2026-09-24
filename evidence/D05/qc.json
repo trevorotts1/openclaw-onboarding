@@ -1,0 +1,27 @@
+{
+  "unit": "JEV-005",
+  "deliverable": "D05",
+  "qc": "independent",
+  "sha": "5485e935ae90d52f727196918ed3b524ace8f092",
+  "branch": "jev11/d05-openrouter",
+  "parent": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "verdict": "PASS",
+  "files_changed": [
+    "shared-utils/decision_engine/providers/openrouter_decisions.py",
+    "tests/unit/test_openrouter_transport.py"
+  ],
+  "checks": {
+    "parent_sha_confirmed": "PASS — git rev-parse of HEAD~1 = 8da5d5ac60ac8a8508de15618e8065d234a172be",
+    "only_two_files": "PASS — git diff --name-only HEAD~1 HEAD lists exactly the 2 receipt files, no contract files touched",
+    "tests_rerun": "PASS — python3 -m pytest tests/unit/test_openrouter_transport.py -q -> 16 passed in 0.03s",
+    "regression": "PASS — tests/unit/test_decision_contracts.py -q -> 20 passed",
+    "sec_3_2_endpoint_model_key": "PASS — ENDPOINT https://openrouter.ai/api/alpha/decisions, REQUESTED_MODEL typesafe/jev-1.13, API_KEY_NAME OPENROUTER_API_KEY bearer; verified against spec line 244",
+    "decisions_api_not_chat": "PASS — body only {model,state,questions}; FORBIDDEN_BODY_KEYS strips messages/reasoning_effort/temperature/tools/tool_calls; no chat-completion semantics anywhere in module",
+    "sec_3_4_status_mapping": "PASS — 401/403 auth_rejected, 422 request_defect, 429 retry_later, 500/502/503/529 overload, other transport_error; tests prove single attempt, no retry loop",
+    "sec_3_7_checks": "PASS — required question IDs, answer types (choice/score/distribution), score bounds [0,levels) not hardcoded 0-10, candidate allow-list, exact probability key sets, finite numerics (NaN/Inf rejected), [0,1] bounds, unit-sum with PROBABILITY_SUM_TOLERANCE 1e-6 documented, 24k conservative packing target with over_budget short-circuit, extra metadata preserved verbatim, validators never raise (fail-closed)",
+    "snapshot_mapping": "PASS — model_in_family accepts equal string and requested+separator-suffix (typesafe/jev-1.13-20260901, :dated); rejects jev-1.130, jev-1.12, jev-2.0, other providers, non-strings; validator routes foreign to model_foreign outcome",
+    "no_secret_output": "PASS — resolve_key never echoes value; send_decisions returns key_source label only; Authorization header built from key, never logged; test asserts key material absent from payload",
+    "network_denied": "PASS — every test injects a transport; default _urllib_transport never invoked in tests; send_decisions makes no retry/network call in test suite (offline by construction)"
+  },
+  "notes": "Spec quotes verified by bounded Reads of /Users/blackceomacmini/Downloads/1.1-JEV_Global_Decision_Engine_Claude_Nine_Spec (ss 3.1/3.2 lines 237-279, 3.3, 3.7 lines 377-385). Builder narrative matched actual code on every checked claim."
+}

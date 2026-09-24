@@ -1,0 +1,23 @@
+{
+ "unit": "D29",
+ "kind": "correction1-qc",
+ "verdict": "PASS",
+ "reviewer_route": "sonnet-chain",
+ "reviewer": "wf_2b09d367-8d3 QC agent a5c1cadf31fdcf76c (sonnet-chain)",
+ "sha": "5e42cdd3924628ded5df2d7275e024403768bdf0",
+ "parent_sha": "a342ce2d85b54b1efd25b08079151951dec5a742",
+ "branch": "jev11/d29-evaluation",
+ "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-evaluation",
+ "checks": {
+  "distinct_norm": 650,
+  "floor": 500,
+  "sec44_rows": 20,
+  "heldout_fingerprint": "b8beb8468ddf0e36bada05eee593c3184985c33e8e63124944ace151d6be73c8",
+  "pytest": "1312 passed in 0.32s",
+  "label_source": "all human-, zero JEV-derived",
+  "splits": "heldout126/train398/calibration126"
+ },
+ "known_note": "commit trailer omits Claude Code name (cosmetic; SHA rewrite prohibited)",
+ "journal": "/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/9be9c09e-9efd-437f-876f-b553517b60b8/subagents/workflows/wf_2b09d367-8d3/journal.jsonl",
+ "date": "2026-09-24"
+}

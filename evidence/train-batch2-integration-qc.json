@@ -1,0 +1,103 @@
+{
+  "id": "JEV-034",
+  "verdict": "PASS",
+  "role": "independent integration QC, batch-2 candidate (batch trevorotts1/openclaw-onboarding-1790273700)",
+  "reviewer": "sonnet-chain (independent QC subagent, no helpers)",
+  "verified_at": "2026-09-24",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/jevr11-batch2-candidate",
+  "manifest_source": "/Users/blackceomacmini/clawd/live-ledger/jev11/control/trains/onboarding/train_state.json (batches key 'trevorotts1/openclaw-onboarding/trevorotts1/openclaw-onboarding-1790273700')",
+  "checks": {
+    "a_manifest": {
+      "verify_manifest": true,
+      "verify_manifest_method": "ran shared-utils/decision_engine_train/train.py verify_manifest() (from worktrees/onb-trains) against the batch record — returned (True, '')",
+      "unit_ids": ["D02", "D03", "D04", "D05", "D06", "D08", "D13", "D16", "D21", "D22", "D29"],
+      "units": 11,
+      "feature_shas": 11,
+      "qc_receipts": 11,
+      "receipts_all_pass": true,
+      "receipts_reviewer_route": "sonnet-chain (all 11)",
+      "receipt_shas_match_manifest": true,
+      "receipt_files_on_disk_sha_matched": "11/11 (evidence/D02..D22/qc.json + evidence/d29-qc.json; D04 via 'qc_revision', D16 via 'head', D22 via 'commit')",
+      "base_main_sha": "200043d78b8102ec95782df04cffb18a1a6e8f37",
+      "policy_version": "decision-policy-v1",
+      "schema_version": "1.0",
+      "compat_version": "1.0",
+      "integration_sha": "86ab2c84a5c85fc7c0fa39929b7c52135864d5ef",
+      "test_results": [
+        "pytest full tests/unit suite: pass — 1860 passed, 1 skipped, 194 subtests passed in 25.71s",
+        "pytest corpus suite: pass — 1312 passed in 0.34s"
+      ],
+      "excluded": [],
+      "note": "integration_qc field currently null — this evidence attaches to it; promotion null, correct pre-promotion"
+    },
+    "b_candidate_worktree": {
+      "head": "86ab2c84a5c85fc7c0fa39929b7c52135864d5ef",
+      "head_equals_manifest_integration_sha": true,
+      "worktree_state": "detached HEAD, status --porcelain 0 bytes (clean incl. untracked)",
+      "commits_on_top_of_base": 12,
+      "parent_chain_reaches_base": true,
+      "base": "200043d78b8102ec95782df04cffb18a1a6e8f37",
+      "cherry_picks": {
+        "trailers_present_10_of_11": "(cherry picked commit <sha>) notes on 0f7830b3b/D02, 8c4c4ca50/D03, 433d01e45/D04, 8c33047d4/D05, c58c68e43/D06, 1816d7229/D08, 36468f391/D13, d8aec755a/D16, ce69a4036/D21, 399fb538a/D22",
+        "d29_pair_no_trailer_expected": "86ab2c84a (JEV-029 fix, scratch-composed atop intermediate 7b1808b6c) — no -x trailer; commit message byte-identical to receipted 5e42cdd3 message; patch-id MATCH (b53ebb24417c1ad3)",
+        "patch_id_matches": "11/11 candidate commits vs originals (git patch-id --stable)"
+      },
+      "d29_substrate_supersession": {
+        "substrate_sha": "a342ce2d85b54b1efd25b08079151951dec5a742 (parent 258da9281, the pre-receipt D29 fix substrate)",
+        "carried_before_receipted": true,
+        "order": "7b1808b6c (JEV-029 corpus original; test blob 616c7c55ccc5 == substrate a342ce2d8 blob) precedes 86ab2c84a (carries receipted content)",
+        "corpus_files_byte_identical_to_receipted_5e42cdd3": "git diff 5e42cdd3924628ded5df2d7275e024403768bdf0 HEAD -- tests/unit/test_decision_corpus.py tests/unit/decision_corpus_heldout.sha256 is EMPTY (0 bytes)",
+        "head_blobs": {
+          "tests/unit/test_decision_corpus.py": "eb2c39366433... == 5e42cdd3 blob, != substrate 616c7c55ccc5",
+          "tests/unit/decision_corpus_heldout.sha256": "ca802c136be6... == 5e42cdd3 blob (file absent at substrate, rc 128)"
+        },
+        "substrate_content_final_nowhere": true
+      },
+      "conflict_file_union": "shared-utils/decision_engine/providers/__init__.py HEAD blob 25bc417a49f020f54a75ec1c0ea3367165a4442e == canonical union file in worktrees/onb-d07 (byte-identical); JEV-006's own files (credential_resolver.py, test_credential_resolver.py) blobs identical to original dcd82c93 — c58c68e43 patch-id DIFFER vs original is solely this documented union, not a content drift"
+    },
+    "c_delta": {
+      "method": "git diff-tree -r --name-only -z 86ab2c84a 200043d78 (NUL-delimited plumbing; line-oriented git output on this box is decorated by an output shim)",
+      "file_count": 38,
+      "foreign_files": [],
+      "all_paths_belong_to_batch_units": true,
+      "per_unit_paths": {
+        "D02": ["evidence/D02/contract-interface.json", "shared-utils/decision_engine/__init__.py", "shared-utils/decision_engine/contracts/__init__.py", "shared-utils/decision_engine/contracts/schema.py", "shared-utils/decision_engine/contracts/fixtures/bundle_content_blend.json", "shared-utils/decision_engine/contracts/fixtures/bundle_mechanical.json", "shared-utils/decision_engine/contracts/fixtures/envelope_committed.json", "shared-utils/decision_engine/contracts/fixtures/envelope_mechanical.json", "tests/unit/test_decision_contracts.py"],
+        "D03": ["shared-utils/decision_engine/policies/__init__.py", "shared-utils/decision_engine/policies/control_pack.json", "shared-utils/decision_engine/policies/mixed_pack.json", "shared-utils/decision_engine/policies/packs.d.ts", "shared-utils/decision_engine/policies/question_pack.json", "shared-utils/decision_engine/policies/task_pack.json", "tests/unit/test_decision_policies.py"],
+        "D04": ["shared-utils/decision_engine/providers/typesafe_direct.py", "tests/unit/test_typesafe_transport.py"],
+        "D05": ["shared-utils/decision_engine/providers/openrouter_decisions.py", "tests/unit/test_openrouter_transport.py"],
+        "D06": ["shared-utils/decision_engine/providers/__init__.py", "shared-utils/decision_engine/providers/credential_resolver.py", "tests/unit/test_credential_resolver.py"],
+        "D08": ["shared-utils/decision_engine/fallback/__init__.py", "tests/unit/test_nojev_fallback.py"],
+        "D13": ["shared-utils/decision_engine/profiles/__init__.py", "shared-utils/decision_engine/profiles/profiles.py", "tests/unit/test_selection_profiles.py"],
+        "D16": ["shared-utils/decision_engine/personas/__init__.py", "shared-utils/decision_engine/personas/evidence_profiles.py", "tests/unit/test_evidence_profiles.py"],
+        "D21": ["shared-utils/decision_engine/retrieval/cache_identity.py", "tests/unit/test_cache_identity.py"],
+        "D22": ["shared-utils/decision_engine/retrieval/asset_join.py", "tests/unit/test_asset_join.py"],
+        "D29": ["tests/unit/test_decision_corpus.py", "tests/unit/decision_corpus_heldout.sha256"]
+      }
+    },
+    "d_test_rerun": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/unit/ -q at HEAD 86ab2c84a",
+      "my_result": "1860 passed, 1 skipped, 194 subtests passed in 25.44s (2nd run 26.34s)",
+      "manifest_claim": "1860 passed, 1 skipped, 194 subtests passed in 25.71s",
+      "totals_match": true,
+      "corpus_rerun": "PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/unit/test_decision_corpus.py -q -p no:cacheprovider -> 1312 passed in 0.34s == manifest exactly"
+    },
+    "e_isolation": {
+      "remote_refs": "859 refs/remotes/origin; ZERO point at any of the 11 feature SHAs, candidate 86ab2c84a, or substrate a342ce2d8",
+      "origin_main": "c586388d7e82687449e086e7d43eae5208ebc702",
+      "candidate_merged": false,
+      "reflog": "13 entries, cherry-pick only; no reset/force/push",
+      "feature_branches_pristine": "refs/heads/jev11/d02-contracts..d22-vecjoin still at exact receipted SHAs (10/11 batch SHAs on jev11/* branches; D29 branch d29-evaluation at 5e42cdd3); d07-ladder at 66abbbafc3 (D07, batch-3, untouched)",
+      "candidate_tree_clean": true
+    },
+    "f_origin_main_drift": {
+      "observed_origin_main": "c586388d7e82687449e086e7d43eae5208ebc702",
+      "manifest_base": "200043d78b8102ec95782df04cffb18a1a6e8f37",
+      "base_is_ancestor_of_current_main": true,
+      "main_advanced_by": "commits for PR #1248 (ilf/ilf-002-onboarding-docker) etc. — 9 files drifted on main since base",
+      "overlap_with_candidate_delta": [],
+      "reconcile": "clean, no conflicting paths; PR-stage rebase/update-branch required, manifest base stays 200043d78"
+    }
+  },
+  "isolated_writes": ["/Users/blackceomacmini/clawd/live-ledger/jev11/evidence/train-batch2-integration-qc.json"],
+  "method_note": "line-oriented git output on this operator box passes through a display shim that regroups lines; all file-list and ref checks re-derived via NUL-delimited plumbing (diff-tree -z) and python subprocess to raw /usr/bin/git before classifying"
+}

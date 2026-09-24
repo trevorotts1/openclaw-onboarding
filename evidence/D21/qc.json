@@ -1,0 +1,52 @@
+{
+  "unit": "JEV-021",
+  "qc_agent": "independent Sonnet D21",
+  "verdict": "PASS",
+  "sha": "5e447fe7f6dd592f05bad71382c1f3f6561607a4",
+  "branch": "jev11/d21-vecid",
+  "parent": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d21",
+  "checks": {
+    "sha_and_parent_verified": {
+      "verdict": "PASS",
+      "evidence": "git rev-parse HEAD=5e447fe7f6dd592f05bad71382c1f3f6561607a4, HEAD^=8da5d5ac60ac8a8508de15618e8065d234a172be, branch jev11/d21-vecid, worktree clean"
+    },
+    "files_exact_revision": {
+      "verdict": "PASS",
+      "evidence": "git diff --stat 8da5d5ac..HEAD: only 3 new files (shared-utils/decision_engine/retrieval/__init__.py 6+, cache_identity.py 590+, tests/unit/test_cache_identity.py 337+), 933 insertions, 0 deletions, no existing-file modifications"
+    },
+    "six_key_builders_spec_identity": {
+      "verdict": "PASS",
+      "evidence": "cache_identity.py defines shared_doc_key (content_hash, provider, model, dim, preprocessing_version, asset_generation), department_key (company, department, effective name/purpose/keywords/content hash, provider, model, dim), query_key (company, text_hash, purpose, provider, model, dim), alignment_evidence_key (company, mission_version, values_version, persona_content_hash, rubric_version, model_version), same_task_decision_key (task_id, scope_id, input_revision, preferences_hash, audience_version, sop_version, catalog_version, policy_version, model_version), provider_health_key (company, provider, credential_version, config_version) — all fields match spec 9.5 table rows exactly; test_six_builders_deterministic proves 6 distinct namespaces + determinism, test_each_spec_field_invalidates_its_key proves per-field invalidation"
+    },
+    "vector_space_guard": {
+      "verdict": "PASS",
+      "evidence": "9.3 gates: spaces_compatible requires provider+model+dim+preprocessing_version equal, task_type equal or the single legitimate retrieval_query/retrieval_document pair; validate_vector rejects None, wrong-dim, non-numeric, non-finite (nan/inf), bools, zero-norm; test_validate_vector_rejections covers all rejections; test_checked_cosine_gates proves cross-provider raises IncompatibleVectorSpaceError and zero-norm raises InvalidVectorError"
+    },
+    "singleflight_counts_embed_calls": {
+      "verdict": "PASS",
+      "evidence": "test_singleflight_concurrent_identical_query_one_call: 8 threads, calls list appended inside _embed under lock, asserts len(calls)==1 (actual call count, not result equality), all 8 waiters get [1.0,0.0,0.0], counters requested=8 unique=1. test_singleflight_failure_one_attempt_n_waiters: 5 threads on raising _boom, len(calls)==1, 5 errors all 'embedder down', counters requested=5 unique=1"
+    },
+    "failure_latch_no_n_retries": {
+      "verdict": "PASS",
+      "evidence": "embed(): exception caught once at leader, inflight.error set, event.set(), all waiters raise the SAME exception instance without calling embed_fn again (lock not held while embedding, per-key event not global lock); latch (BoundedCache, opt-in failure_cooldown_s>0) stores exception per key so next caller after latch expiry gets fresh attempt; test proves len(calls)==1 with 5 waiters; failed/invalid vector never cached as value (test_singleflight_failure re-attempt raises InvalidVectorError again)"
+    },
+    "counters_present": {
+      "verdict": "PASS",
+      "evidence": "QueryEmbeddingCache.counters property returns {'requested': N, 'unique': M}; requested incremented per embed() call, unique incremented only at leader branch (real embed_fn launch); test_counters_requested_vs_unique: 3 requested 2 unique"
+    },
+    "tests_pass": {
+      "verdict": "PASS",
+      "evidence": "python3 -m pytest tests/unit/test_cache_identity.py -q: 15 passed in 0.42s"
+    },
+    "existing_files_untouched": {
+      "verdict": "PASS",
+      "evidence": "diff --stat shows 0 deletions, 0 modifications to existing files; only additive new files"
+    },
+    "spec_reads": {
+      "verdict": "PASS",
+      "evidence": "spec lines 821-836 (9.3 pinned model contract), 835-861 (9.5 cache design, 9.6 single-flight), 852-861 re-read — verified against implementation"
+    }
+  },
+  "notes": "BoundedCache LRU+TTL thread-safe, per-instance (test_caches_are_per_instance_not_process_global proves no shared globals). Raw query text never in key (sha256 only). Cross-model refused before spending embed call (index_space gate + cached-space refusal). No source edits, no push performed by QC."
+}

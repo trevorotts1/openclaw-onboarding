@@ -1,0 +1,36 @@
+{
+  "unit": "JEV-013",
+  "qc": "independent-sonnet",
+  "status": "PASS",
+  "commit": "6375dccb7c660120abc012f89f0260d1556254d2",
+  "parent": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "branch": "jev11/d13-profiles",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d13",
+  "tree_clean": true,
+  "files": {
+    "shared-utils/decision_engine/profiles/profiles.py": "af00384d72c80e56b23af226a597fc6ef9a9bbe2cd5e501128efe8947686f1d1",
+    "shared-utils/decision_engine/profiles/__init__.py": "fca2d51844956d0cbfa151eddc648dad60aa4b544a68028edbfba38648dbf1b5",
+    "tests/unit/test_selection_profiles.py": "64a2b7e8f0da13025d3a653bf8ac2797bd1d15abf7e9ff0266a3b877f6034843"
+  },
+  "checks": {
+    "parent_commit_is_8da5d5ac": "PASS - git log confirms 6375dccb parent = 8da5d5ac60ac8a8508de15618e8065d234a172be",
+    "tests_rerun": "PASS - python3 -m pytest tests/unit/test_selection_profiles.py -q: 26 passed in 0.04s",
+    "profile_fields_match_spec_72": "PASS - ROLE_PROFILE_FIELDS covers spec 7.2 list exactly: role_id+slug, company_id+department_id, responsibilities+owned outcomes, deliverable_types, capabilities, exclusions, sources (file/section/content_hash), availability{status,eligible_worker_ids}, profile_version; test_role_fields_exactly_spec_72 asserts set equality against ROLE_PROFILE_FIELDS",
+    "source_ids_and_hashes_present": "PASS - _source_entries emits {file, section, content_hash}; independently recomputed sha256 of raw source text matches, and profile_hash matches sha256 of canonical_json (sorted keys, compact separators)",
+    "hashes_recompute": "PASS - raw hashlib.sha256 recompute verified: source hash exact match, profile hash exact match, deterministic across rebuilds, changes when role_id or source_text changes (tests + independent script)",
+    "derivation_consumes_caller_data": "PASS - build_department_candidate and build_role_profile take caller dicts; module-level constants inspected: only version/outcome/reason/field-name strings, no dict-list roster constant; two fake companies (custom aquaculture + observatory rosters, sizes 2 and 31) flow through same path; no 17/26/96 hardcoded roster",
+    "owner_preference_overrides_semantics": "PASS - resolve_department_selection owner_preferred outranks score when >= threshold; unresolvable owner_preferred raises ValueError, never quietly replaced (spec 6.1)",
+    "sec_63_outcomes": "PASS - NONE_SUITABLE ('none_suitable') distinct from NEEDS_MULTIPLE_DEPARTMENTS ('needs_multiple_departments'); split scores 0.9 vs 0.89 without explicit judgment resolve to winner, never multi; multi only via explicit multi_department=True",
+    "sec_64_ranking_not_acceptance": "PASS - accept_role refuses ranked winner below absolute threshold, returns NONE_SUITABLE; empty ranked list returns NONE_SUITABLE",
+    "sec_71_fit_input": "PASS - CapabilityFitInput carries outcome, artifact_type, constraints, department_id, sop_context, worker_responsibilities (full spec 7.1 input list)",
+    "capability_vs_load_separated": "PASS - CapabilityFitInput has no queue_depth/available/worker_id; WorkerLoad is a separate NamedTuple (worker_id, available, queue_depth); idle unqualified never beats qualified busy in rank_roles test",
+    "sec_73_exclusions_all_tested": "PASS - foreign_company, worker_offline (offline+retired), runtime_unauthorized, qc_only_production each tested via exclusion_for; busy/queue_depth is NOT an exclusion (test_busy_is_not_an_exclusion)",
+    "owner_direct_exception": "PASS - eligible_workers(owner_direct=True) is its own path: all four otherwise-excluded workers pass, excluded list empty, owner_direct_exception flag recorded true; production path reports per-worker reasons sorted by id",
+    "qc_runner_clean": "PASS - 26 tests pass, no warnings emitted in tail"
+  },
+  "spec_reads": [
+    "offset 547 limit 46 (sec 6, 6.1-6.4)",
+    "offset 594 limit 44 (sec 7, 7.1-7.4)"
+  ],
+  "notes": "No source edits, no push, no nested agents. Only file written: /Users/blackceomacmini/clawd/live-ledger/jev11/evidence/D13/qc.json. First roster-constant scan hit DEPT_CANDIDATE_FIELDS name-match false positive; refined scan of constant VALUES confirms no roster data."
+}

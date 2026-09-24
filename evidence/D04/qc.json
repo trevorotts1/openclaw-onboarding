@@ -1,0 +1,61 @@
+{
+  "unit": "JEV-004",
+  "deliverable": "D04",
+  "qc_revision": "b5e62d85cb6aeaee66ad3e989328dcac24d68106",
+  "parent": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "branch": "jev11/d04-typesafe",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d04",
+  "status": "PASS",
+  "checks": {
+    "git_provenance": {
+      "verdict": "PASS",
+      "evidence": "HEAD b5e62d85cb6aeaee66ad3e989328dcac24d68106, parent 8da5d5ac60ac8a8508de15618e8065d234a172be, branch jev11/d04-typesafe, clean tree. Commit touches exactly 3 files, 897 insertions: providers/__init__.py (5), providers/typesafe_direct.py (503), tests/unit/test_typesafe_transport.py (389). Matches builder receipt."
+    },
+    "spec_3_2_endpoint_model": {
+      "verdict": "PASS",
+      "evidence": "TYPESAFE_ENDPOINT == 'https://api.typesafe.ai/v1/systemone', TYPESAFE_MODEL == 'jev-1.13.0' (typesafe_direct.py:42-43, asserted in tests). POST with method='POST' and Bearer auth (_default_http_post:408-409, sender asserts Authorization prefix)."
+    },
+    "decisions_api_shape_no_chat_fields": {
+      "verdict": "PASS",
+      "evidence": "REQUIRED_BODY_KEYS = (model, state, questions). FORBIDDEN_BODY_KEYS = {messages, reasoning_effort, temperature, tools, tool_calls, functions, function_call}. check_body_clean flags intersection; post_decisions returns integration_defect without sending on dirty body. Test test_forbidden_chat_keys_flagged proves each chat key rejected; fake sender asserts set(parsed) == {model, state, questions}."
+    },
+    "spec_3_7_validation_checks": {
+      "verdict": "PASS",
+      "evidence": "normalize_response enforces: required question IDs (missing_answer), matching answer types (type_mismatch), allowed candidate IDs (wrong_candidate), finite numbers (_find_nonfinite -> nonfinite), bounds [0,1] (out_of_bounds), complete expected probability keys (incomplete_prob_keys), unit-sum within UNIT_SUM_TOLERANCE=1e-6 (unit_sum_fail). Score validated against caller-supplied ordered levels (levels param; test proves level 11 valid in [7,9,11] and 10 rejected — no hardcoded 0-10). Noul carries probability, no confidence synthesized (out.pop('confidence')). Unknown extra metadata preserved verbatim. All covered by tests."
+    },
+    "spec_3_4_error_categories": {
+      "verdict": "PASS",
+      "evidence": "post_decisions outcomes: ok, not_configured, integration_defect, auth_rejected (401), rate_limited (429), overloaded (529/500s), network_error (OSError), timeout (TimeoutError), invalid_response (200 non-dict). 422 and generic 4xx map to integration_defect. Bad judgment rejected with diagnostics, never coerced (returns False, None, diags). ONE attempt per call (test_single_attempt_per_call); no retry loop. Low-confidence is warning diagnostic, not a second-endpoint trigger."
+    },
+    "no_coercion": {
+      "verdict": "PASS",
+      "evidence": "Every bad path in normalize_response returns (False, None, diagnostics); winner never fabricated from rejected judgment. Proven by test_malformed_payload, test_missing_answer_wrong_type, test_wrong_candidate_rejected, test_nonfinite_rejected, test_out_of_bounds_and_incomplete_keys, test_unit_sum_boundary."
+    },
+    "no_secret_printing": {
+      "verdict": "PASS",
+      "evidence": "Module has no logging/print of key values; results carry machine-code reason only. test_key_material_never_in_result asserts secret absent from serialized outcome. Placeholder/reference values ($-prefixed, ref:, PASTE, etc.) rejected before any call. Module performs no os.environ reads (verified in source; test_no_network_or_environ_at_import re-imports with env snapshot equality)."
+    },
+    "network_denied_test": {
+      "verdict": "PASS",
+      "evidence": "All HTTP paths inject fake http_post (_sender); no socket import (test asserts 'import socket' absent from source). test_absent_key_never_calls_http and test_integration_defect_on_dirty_body assert calls == []. Real network never used; suite runs in 0.04s offline."
+    },
+    "one_repack_bound": {
+      "verdict": "PASS",
+      "evidence": "MAX_REPACKS = 1 documented (typesafe_direct.py:66, packing_verdict['max_repacks'], asserted). Packing bounds 24000 target / 64000 state+all / 32000 state+longest match spec 3.7. batch_questions is greedy bounded; module never loops retries; post_decisions docstring states caller owns budget."
+    },
+    "tests_rerun": {
+      "verdict": "PASS",
+      "evidence": "python3 -m pytest tests/unit/test_typesafe_transport.py -q -> 34 passed in 0.04s. Direct unittest run -> 34 tests OK. Sibling test_decision_contracts.py still green: 20 passed."
+    }
+  },
+  "sources_verified": [
+    "git rev-parse HEAD / git log --format parent / git branch / git status in worktree",
+    "git show --stat b5e62d85",
+    "full Read of shared-utils/decision_engine/providers/typesafe_direct.py (503 lines)",
+    "full Read of tests/unit/test_typesafe_transport.py (389 lines)",
+    "full Read of shared-utils/decision_engine/providers/__init__.py (5 lines)",
+    "bounded spec Reads at lines 237-281, 264-283, 375-388 of 1.1-JEV_Global_Decision_Engine_Claude_Nine_Spec",
+    "pytest + unittest reruns executed by QC agent, not taken from builder narrative"
+  ],
+  "notes": "QC ran in worktree /Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d04. Only file written: /Users/blackceomacmini/clawd/live-ledger/jev11/evidence/D04/qc.json. No nested agents, no source edits, no push, no secret values printed."
+}

@@ -1,0 +1,26 @@
+{
+  "unit": "JEV-016",
+  "qc": "D16 independent Sonnet QC",
+  "head": "66e00fbf6fccc151dd152de707fdc7dda0ff428d",
+  "parent": "0498fa39a902793bdd5ee980fa29fb7b3b52434c",
+  "worktree": "/Users/blackceomacmini/clawd/live-ledger/jev11/worktrees/onb-d16",
+  "status": "PASS",
+  "checks": {
+    "five_responsibilities_kept_separate": "PASS - RESPONSIBILITIES tuple (audience/voice/topic/task_part/outcome); build_evidence_set requires exactly 5, rejects shared-object merged pool (id() dedupe), rejects duplicate responsibility; probe: build_evidence_set([one]*5) -> False 'merged pool'",
+    "pool_merge_test_real": "PASS - test_shared_object_rejected_as_merged_pool asserts ok=False + 'merged pool' error against real implementation",
+    "sec_8_2_all_five_examples": "PASS - tests: sales email -> blend; Python script -> task_only not audience_facing; podcast file path -> mechanical_only; chat explanation -> answer_only; mixed chmod -> mixed with audience_facing+task_persona_needed",
+    "keyword_triggers_never_force_voice": "PASS - KEYWORD_TRIGGERS (write/script/post/video); probe: assess_blend_applicability('write') -> mode unresolved reason keyword-alone-insufficient, audience_facing False, task_persona_needed False",
+    "audience_priority_order": "PASS - resolve_audience: explicit > prior (requires scope_match=True AND data_unchanged=True) > company_proposal (confirm_required=True) > needs_clarification; probes: explicit beats prior+company; stale/moved prior falls to company_proposal",
+    "confidence_is_not_consent": "PASS - confidence recorded only; probe: company_proposal with confidence='high' still confirm_required=True; needs_clarification with confidence='high' still confirm_required=True; validator enforces confirm_required lockstep; no confirmation auto-granted anywhere",
+    "no_demographic_logic": "PASS - no demographic routing in blend/task logic; voice_basis_ok rejects demographic_tags alone (empty/blank suitability -> False)",
+    "slot_cap_10": "PASS - MAX_TASK_PERSONAS=10 equals D02 schema.py MAX_TASK_PERSONAS=10 (parity probe True); 11 rows rejected, 10 rows pass D02 validate_persona_bundle",
+    "d02_bundle_shape_compatible": "PASS - rows {seq:int auto 1..n unique, part, persona_id-or-null, why, no_persona_required, governance_persona_id, task_category}; no_persona rows carry governance and never persona_id (probe: governance+persona_id rejected); validated against real D02 validator via envelope_committed.json personaBundle fixture",
+    "answer_never_fills_slots": "PASS - build_task_persona_rows(intent='answer_only') with parts -> (False, [], error); empty parts -> (True, [], [])",
+    "tests_rerun": "PASS - python3 -m pytest tests/unit/test_evidence_profiles.py -q -> 26 passed in 0.03s",
+    "worktree_clean": "PASS - git status --porcelain empty",
+    "contracts_schema_untouched": "PASS - git diff 0498fa39..HEAD shared-utils/decision_engine/contracts/ empty; new files only (3 files, 761 insertions)",
+    "spec_reads": "PASS - bounded reads lines 640-684 (8.1/8.2/8.3) and 940-958 (10.2) of spec file"
+  },
+  "fail_closed": "validators never raise (validate_profile, build_task_persona_rows, build_evidence_set, assess_blend_applicability, voice_basis_ok all wrap try/except returning ok=False/errors); builders make_profile/resolve_audience raise ValueError on bad enums only",
+  "notes": "lexical signal lists are declared heuristic ceiling via ponytail comment; upgrade path named. No source edits, no push, no nested agents performed by QC."
+}

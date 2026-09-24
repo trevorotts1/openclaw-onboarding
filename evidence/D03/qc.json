@@ -1,0 +1,22 @@
+{
+  "unit": "JEV-003",
+  "qc_id": "D03",
+  "sha": "0498fa39a902793bdd5ee980fa29fb7b3b52434c",
+  "branch": "jev11/d03-packs",
+  "base_parent": "8da5d5ac60ac8a8508de15618e8065d234a172be",
+  "status": "PASS",
+  "checks": {
+    "sha_and_base_parent": "PASS - HEAD 0498fa39a..., parent is 8da5d5ac6 (D02)",
+    "files_match_receipt": "PASS - 7 files exactly: policies/__init__.py, question_pack.json, task_pack.json, mixed_pack.json, control_pack.json, packs.d.ts, tests/unit/test_decision_policies.py; 606 insertions, 0 deletions",
+    "tests_pass": "PASS - 15 passed (pytest test_decision_policies.py); combined D03+D02: 35 passed",
+    "fixture_44_coverage": "PASS - all 20 spec 4.4 rows present across 4 packs, verified verbatim by test_all_spec_44_rows_resolve and manual read",
+    "fail_closed": "PASS - verified live: bad pack_version 9.9.9 -> ok=False + error; bad schemaVersion 2.0 -> ok=False; missing questions -> ok=False; validator never raises (caught except); scoring helpers raise ValueError on None/'x'/2.5/True/NaN and out-of-range levels (tested)",
+    "canonical_json_parity": "PASS - sorted keys proven (pack_id < pack_version < policy_version order), byte-stable across reversed key order, output revalidates; allow_nan=False rejects NaN",
+    "rubric_descriptive_levels": "PASS - task_method_fit exactly matches spec 8.6 5-level example; all rubrics >= 2 distinct non-empty descriptive levels; no numeric 1-10 scale anywhere",
+    "no_ts_duplicate_definitions": "PASS - packs.d.ts is type definitions + one normalizeScore helper mirroring the loader; no business/rubric data duplicated as TS (packs are JSON, loaded/validated by Python loader)",
+    "contracts_untouched": "PASS - git diff 8da5d5ac6..0498fa39a shows zero changes under shared-utils/decision_engine/contracts/ and no changes to test_decision_contracts.py",
+    "dts_typecheck": "PASS with caveat - tsc --ignoreConfig as .ts body: 0 errors; as .d.ts standalone: 3 ambient-context errors (TS1183/TS1036) on the normalizeScore implementation - cosmetic for a no-tsconfig repo, no duplicate-definition issue, logic itself typechecks clean"
+  },
+  "verdict": "PASS",
+  "notes": "Builder receipt SHA matches actual HEAD; worktree clean; only the named qc.json file written by QC per scratch isolation."
+}
