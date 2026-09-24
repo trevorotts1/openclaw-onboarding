@@ -168,5 +168,22 @@ class RemainingReaders(unittest.TestCase):
         self.assertIn("search", entry.get("memory", {}))
         self.assertEqual(agents.get("ownership"), "explicit")
 
+    def test_activate_memory_stack_corpus_lands_on_entries_main_never_list(self):
+        code = heredoc("31-upgraded-memory-system/scripts/activate-memory-stack.sh",
+                       r'OC_CORPUS_DIR="\$CORPUS_DIR" python3 -', "PYEOF")
+        self.write({"agents": {"entries": {"dept-x": {}, "main": {"workspace": "/w"}}}})
+        r = self.py(code, str(self.cfg), OC_CORPUS_DIR="/corpus")
+        agents = json.loads(self.cfg.read_text())["agents"]
+        self.assertNotIn("list", agents, r.stdout + r.stderr)
+        self.assertEqual(agents["entries"]["main"]["memory"]["search"]["extraPaths"], ["/corpus"])
+        self.assertNotIn("memorySearch", agents["entries"]["main"])
+        # Legacy agents.list box: unchanged behaviour.
+        self.write({"agents": {"list": [{"id": "main"}]}})
+        self.py(code, str(self.cfg), OC_CORPUS_DIR="/corpus")
+        agents = json.loads(self.cfg.read_text())["agents"]
+        self.assertEqual(agents["list"][0]["memorySearch"]["extraPaths"], ["/corpus"])
+        self.assertNotIn("entries", agents)
+
+
 if __name__ == "__main__":
     unittest.main()

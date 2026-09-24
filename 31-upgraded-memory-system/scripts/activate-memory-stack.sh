@@ -446,8 +446,9 @@ fi
 # Why: the corpus must be embedded ONCE, into a single index, not unioned into
 # every department's DB. agents.defaults.memorySearch.extraPaths is left EMPTY
 # (step 2 above) precisely because the runtime unions defaults onto every agent.
-# Here we place the corpus path on the single agents.list[] entry with id="main"
-# (and create that entry if it is somehow absent), so exactly one DB embeds it.
+# Here we place the corpus path on the single main agent -- agents.entries.main
+# (memory.search) on OpenClaw 2026.9.x, else the agents.list[] entry with
+# id="main" (created if absent there) -- so exactly one DB embeds it.
 #
 # Corpus discovery (in priority order, first hit wins):
 #   1. $OC_ROOT/.skill-38-master-files-dir  (pointer file written by Skill 38)
@@ -486,17 +487,37 @@ cfg = json.loads(cfg_path.read_text())
 before = json.dumps(cfg, sort_keys=True)
 
 agents = cfg.setdefault("agents", {})
-agent_list = agents.setdefault("list", [])
-if not isinstance(agent_list, list):
-    agent_list = []
-    agents["list"] = agent_list
+# ROSTER SHAPE (same rule as materialize-dept-agents.sh): a config with
+# agents.entries (OpenClaw 2026.9.x) is written there -- id as the KEY, memory
+# search at memory.search. Creating agents.list on such a box is
+# `agents: Unrecognized key "list"` and the gateway will not start.
+entries = agents.get("entries")
+if isinstance(entries, dict) and entries:
+    main = entries.get("main")
+    if not isinstance(main, dict):
+        main = next((v for v in entries.values() if isinstance(v, dict) and v.get("default") is True), None)
+    if main is None:
+        print("[activate-memory-stack] WARN: agents.entries has no main (or default) agent — corpus NOT attached")
+        sys.exit(0)
+    mem = main.setdefault("memory", {})
+    if not isinstance(mem, dict):
+        mem = {}
+        main["memory"] = mem
+    ms = mem.setdefault("search", {})
+    ms_label = "agents.entries[main].memory.search.extraPaths"
+else:
+    agent_list = agents.setdefault("list", [])
+    if not isinstance(agent_list, list):
+        agent_list = []
+        agents["list"] = agent_list
 
-main = next((a for a in agent_list if isinstance(a, dict) and a.get("id") == "main"), None)
-if main is None:
-    main = {"id": "main"}
-    agent_list.insert(0, main)
+    main = next((a for a in agent_list if isinstance(a, dict) and a.get("id") == "main"), None)
+    if main is None:
+        main = {"id": "main"}
+        agent_list.insert(0, main)
 
-ms = main.setdefault("memorySearch", {})
+    ms = main.setdefault("memorySearch", {})
+    ms_label = "agents.list[main].memorySearch.extraPaths"
 paths = ms.setdefault("extraPaths", [])
 if not isinstance(paths, list):
     paths = []
@@ -520,7 +541,7 @@ cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 if before == after:
     print("[activate-memory-stack] corpus attachment already canonical — no change")
 else:
-    print("[activate-memory-stack] corpus staged onto agents.list[main].memorySearch.extraPaths")
+    print(f"[activate-memory-stack] corpus staged onto {ms_label}")
 PYEOF
   if [ $? -ne 0 ]; then
     echo "ERROR: staging the corpus attachment failed — the live configuration was NOT touched." >&2
