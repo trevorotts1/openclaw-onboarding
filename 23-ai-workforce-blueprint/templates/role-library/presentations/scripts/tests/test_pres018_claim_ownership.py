@@ -201,7 +201,10 @@ def test_stale_owner_output_quarantined_not_published(tmp_path, monkeypatch):
         with variant_lock:
             variant_n["count"] += 1
             n = variant_n["count"]
-        return (json.dumps({"id": f"v{n}", "style_directive": f"style {n}",
+        # The reducer's public contract admits only A/B/C.  Keep this fixture
+        # valid so the test reaches the publication claim fence it is meant to
+        # exercise, rather than failing during per-unit schema validation.
+        return (json.dumps({"id": ("A", "B", "C")[n - 1], "style_directive": f"style {n}",
                             "representative_slide": 1}),
                 {"request_id": f"r{n}"}, {"provider": "stub", "model": "stub-1"})
     monkeypatch.setattr(d, "dispatch_complete", _variant_stub)

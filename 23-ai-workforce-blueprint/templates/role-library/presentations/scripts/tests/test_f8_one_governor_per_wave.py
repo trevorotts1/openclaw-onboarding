@@ -119,8 +119,10 @@ def test_wave_units_share_one_governor(wave_env, monkeypatch):
     seen_pids: list[int] = []
     seen_threads: set[int] = set()
 
+    # PD-TEST-189: the seam gained an OPTIONAL `prior_reasons`; an existing
+    # 6-arg implementation must accept it or every attempt dies with TypeError.
     def _governed_provider(slide, routing, attempt, run_dir_, owning_role,
-                           n_slides):
+                           n_slides, prior_reasons=None):
         lease = governor.acquire(PROBE_PROVIDER, timeout_s=20)
         try:
             with seen_lock:

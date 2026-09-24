@@ -30,7 +30,7 @@
       "verifier_failed",
       "pending"
     ],
-    "sha256": "c12c7ef6a1c7d96eca30bc878fb7fcc691d28acfd39fb43ae6020a0ccf22876b"
+    "sha256": "3b5bfdf6f1faef156a10d44623a602cd42f19a11cebd85528f2567b11744de4f"
   },
   "x-mirror": {
     "repo": "openclaw-onboarding",
@@ -124,6 +124,18 @@
       },
       "description": "Referenced evidence (symptom check, preflight, revert, execution receipt, verification receipt)."
     },
+    "acceptance_check": {
+      "type": "object",
+      "description": "Typed proof that the incident's original symptom check passed for this exact repair attempt. Availability alone, such as an HTTP 200, is not sufficient unless it is the incident's stated acceptance check.",
+      "required": ["incident_id", "attempt_id", "check_id", "passed", "evidence_ref"],
+      "properties": {
+        "incident_id": { "type": "string", "minLength": 1 },
+        "attempt_id": { "type": "string", "minLength": 1 },
+        "check_id": { "type": "string", "minLength": 1 },
+        "passed": { "const": true },
+        "evidence_ref": { "type": "string", "minLength": 1 }
+      }
+    },
     "verifier": {
       "type": "object",
       "properties": {
@@ -212,6 +224,26 @@
           "type": "integer",
           "minimum": 0
         },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The acknowledgement operation identifier echoed by the ledger receipt."
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The leased attempt identity echoed by the ledger receipt."
+        },
+        "attempt_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The lease generation for the echoed attempt identity."
+        },
+        "state_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The persisted outbox revision after recording this transport receipt."
+        },
         "receipt_state": {
           "enum": [
             "receipt_confirmed",
@@ -221,6 +253,14 @@
           ],
           "description": "receipt_confirmed = the server returned a matching structured receipt for THIS operation+attempt. receipt_only_unverified = the transport delivered but no v3 repair proof was attached (legacy ACK: readable as delivered-only until upgraded)."
         }
+      }
+    },
+    "end_user_notification": {
+      "type": "object",
+      "description": "A separate, durable reporting outcome. It does not change repair or verification status; a missing or failed final notification creates a notification-only recovery obligation.",
+      "properties": {
+        "initial": { "$ref": "#/$defs/notification_outcome" },
+        "final": { "$ref": "#/$defs/notification_outcome" }
       }
     },
     "reply": {
@@ -258,7 +298,8 @@
       "then": {
         "required": [
           "fix_card",
-          "evidence_refs"
+          "evidence_refs",
+          "acceptance_check"
         ],
         "properties": {
           "verification_status": {
@@ -274,6 +315,12 @@
               "scope_authorized": {
                 "const": true
               }
+            }
+          },
+          "acceptance_check": {
+            "required": ["incident_id", "attempt_id", "check_id", "passed", "evidence_ref"],
+            "properties": {
+              "passed": { "const": true }
             }
           }
         }
@@ -302,6 +349,37 @@
           }
         }
       }
+    },
+    {
+      "description": "Partial and failed repairs retain the blocker, its owner, and a next action so receipt delivery cannot hide unresolved work.",
+      "if": {
+        "properties": {
+          "repair_status": {
+            "enum": ["partial", "not_repaired"]
+          }
+        },
+        "required": ["repair_status"]
+      },
+      "then": {
+        "required": ["remaining_blocker"],
+        "properties": {
+          "remaining_blocker": {
+            "required": ["reason", "owner", "next_action"]
+          }
+        }
+      }
     }
-  ]
+  ],
+  "$defs": {
+    "notification_outcome": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["attempted", "delivered", "unavailable", "unconfirmed"] },
+        "channel": { "type": "string", "minLength": 1 },
+        "message_receipt": { "type": "string", "minLength": 1 },
+        "failure_reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
 }

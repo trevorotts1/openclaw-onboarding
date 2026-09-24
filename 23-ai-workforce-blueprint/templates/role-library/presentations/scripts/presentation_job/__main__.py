@@ -19,7 +19,7 @@ from .state import (
 from . import lease as lease_mod
 from .lease import DEFAULT_TTL_S as LEASE_TTL_S, HEARTBEAT_INTERVAL_S as LEASE_HEARTBEAT_S
 from .manifest import Manifest, resolve_manifest
-from .phases import Engine
+from .phases import Engine, readmit_retryable_phases
 from .report import dispatch
 # F13: cmd_sweep_undeliverable_roots below resolves its root list exactly the
 # way watchdog() and reconcile_sweep() do, and reports it with the same audit
@@ -121,6 +121,27 @@ def build_parser() -> argparse.ArgumentParser:
                         "(manifest.repin history + manifest_sha256_prev), so --resume can "
                         "continue under the bumped manifest instead of dying with exit 7. "
                         "Mutually exclusive with every other mode.")
+    m.add_argument("--invalidate-phase", metavar="PHASE_ID", default=None,
+                   help="OPERATOR repair action (PD-TEST-132 Gap 2): discard a COMPLETED "
+                        "phase's recorded artifacts and set it back to pending, so "
+                        "--run --phase PHASE_ID re-authors it. Exists because a gate that did "
+                        "not exist (or was not known) when a phase ran can condemn its "
+                        "artifact AFTER the phase is done, and nothing else in the product can "
+                        "replace a completed phase's work: --resume re-admits failed/"
+                        "quarantined/substance-blocked phases but never a done one, "
+                        "_revalidate_banked re-runs only when validation FAILS, and there is no "
+                        "other verb for it. Requires --reason and --confirm. Audited; does NOT "
+                        "clear the durable paid-attempt ledger, so the retry caps still bind.")
+    # NOTE: --reason/--confirm go on the PARSER, not the mutually-exclusive mode
+    # group, because they are MODIFIERS of --invalidate-phase, not modes: adding
+    # them to the group made argparse reject `--invalidate-phase X --reason Y`
+    # with "argument --reason: not allowed with argument --invalidate-phase".
+    p.add_argument("--reason", default=None,
+                   help="mandatory with --invalidate-phase: why the completed artifact must be "
+                        "discarded. Recorded verbatim in the run's audit trail.")
+    p.add_argument("--confirm", action="store_true",
+                   help="with --invalidate-phase: actually perform the invalidation. Without "
+                        "it the command prints exactly what it would discard and exits.")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
     m.add_argument("--reconcile-board", action="store_true",
@@ -379,6 +400,154 @@ def cmd_repin(args, scripts_dir: Path) -> int:
           + (f" {added}" if added else ""))
     print("  resume with: presentation_job.py --resume --run-dir "
           f"{run_dir}")
+    return EXIT_OK
+
+
+
+def cmd_invalidate_phase(args, scripts_dir: Path) -> int:
+    """Discard a COMPLETED phase's banked artifacts so it re-authors (PD-TEST-132 Gap 2).
+
+    WHY THIS EXISTS. A phase can be finished before the rule that condemns its
+    artifact is known. Measured on run pres-operator-1d269693: P3-ARC is
+    status=done and working/copy/arc_allocation.json carries `cost_of_inaction`
+    in substantive values, while `build_deck._chk_pitch_leak` sits on the RENDER
+    preflight path (build_deck.py:10504) and fails on it. The contract that would
+    have prevented the token was corrected afterwards (so the NEXT run is fine),
+    but the existing artifact cannot be replaced by anything the product offers:
+      * --resume re-admits failed/quarantined/substance-blocked phases, never a
+        done one (`_READMITTABLE_PHASE_STATUSES`);
+      * `_revalidate_banked` re-runs a done phase only when validation FAILS, and
+        P3-ARC's own verifier returns ok=True, so it never fires;
+      * there is no other verb for it.
+    The only remaining routes were hand-editing the artifact, deleting it so the
+    phase re-runs, or amending the client's sealed intake -- all forbidden.
+
+    WHAT IT DOES. Renames each recorded artifact aside to
+    `<name>.invalidated-<utc-stamp>` and clears the phase's artifacts/sha256,
+    setting it back to pending. The artifact is MOVED, not deleted: presence must
+    genuinely fail, or a presence-based "already satisfied" check would short-
+    circuit the re-run and the invalidation would silently do nothing -- but the
+    bytes are preserved at a recorded path for the audit.
+
+    GUARDS. Refuses a phase that is not `done`, a phase with no recorded
+    artifacts, a missing --reason, and (without --confirm) performs nothing at
+    all. Records operator_uid, the prior shas and the reason verbatim in both the
+    phase's `invalidations` and the run-level `phase_invalidations`.
+
+    IT DELIBERATELY DOES NOT TOUCH the durable paid-attempt ledger: reopening a
+    phase must not become a way to buy more paid calls than the caps allow."""
+    run_dir = args.run_dir.expanduser().resolve()
+    store = StateStore(run_dir)
+    if not store.exists():
+        die(EXIT_USAGE, f"no job state in {run_dir} — nothing to invalidate")
+    pid = str(args.invalidate_phase).strip()
+    reason = str(args.reason or "").strip()
+    if not reason:
+        die(EXIT_USAGE, "--reason is required with --invalidate-phase: an operator action "
+                        "that discards completed work must state why, in the run's own audit "
+                        "trail")
+    state = store.load()
+    ps = next((r for r in (state.get("phases") or []) if r.get("id") == pid), None)
+    if ps is None:
+        die(EXIT_USAGE, f"phase {pid!r} is not in this run's state")
+    prior = ps.get("status")
+    if prior != "done":
+        die(EXIT_USAGE, f"phase {pid!r} is {prior!r}, not 'done' — --invalidate-phase only "
+                        "discards a COMPLETED phase's artifacts. Failed, quarantined and "
+                        "substance-parked phases are already re-admitted by --resume.")
+    artifacts = [a for a in (ps.get("artifacts") or []) if a]
+    if not artifacts:
+        die(EXIT_USAGE, f"phase {pid!r} is done but records no artifacts — nothing to discard")
+    sha_now = ps.get("sha256") or {}
+
+    # DEFECT 3 (review): artifact paths are recorded data, not trusted input. A
+    # corrupt or hostile state.json must not turn this operator verb into an
+    # arbitrary-path renamer, so every recorded path must stay INSIDE the run
+    # dir. normpath (not realpath) is used deliberately: it blocks `..` and
+    # absolute paths without following a final symlink, so a symlinked artifact
+    # is still moved as the symlink it is, leaving its target untouched (which
+    # the review confirmed is the safe behaviour).
+    root = os.path.normpath(str(run_dir))
+    for a in artifacts:
+        joined = os.path.normpath(os.path.join(root, a))
+        if not (joined == root or joined.startswith(root + os.sep)):
+            die(EXIT_USAGE, f"{a!r} is recorded on {pid} but resolves OUTSIDE the run "
+                            f"directory ({joined}) — refusing to rename a path this run does "
+                            "not own; the run's state and disk disagree, investigate first")
+    # DEFECT 1 (review): the existence guard used to run INSIDE the move loop, so
+    # a multi-artifact phase whose SECOND artifact was missing had the first one
+    # already moved while state.json stayed unchanged -- leaving state and disk
+    # disagreeing and the phase permanently un-invalidatable. Pre-flight the whole
+    # set before touching anything.
+    missing = [a for a in artifacts if not (run_dir / a).exists()]
+    if missing:
+        die(EXIT_USAGE, f"{', '.join(missing)} recorded on {pid} but not on disk — refusing to "
+                        "invalidate a phase whose state and disk disagree; investigate first")
+
+    stamp = utcnow().replace(":", "").replace("-", "")
+
+    # DEFECT 2 (review): os.replace silently clobbers an existing destination, and
+    # a non-empty directory destination raised an uncaught OSError traceback. The
+    # natural collision window is one microsecond, but silent byte loss in an
+    # operator repair is not acceptable, so a taken name is suffixed instead.
+    def _free_dst(name: str) -> str:
+        if not (run_dir / name).exists():
+            return name
+        n = 2
+        while (run_dir / f"{name}-{n}").exists():
+            n += 1
+        return f"{name}-{n}"
+
+    moves = [(a, _free_dst(f"{a}.invalidated-{stamp}")) for a in artifacts]
+    if not args.confirm:
+        print(f"invalidate-phase {pid}: would move {len(moves)} artifact(s) aside and set the "
+              f"phase back to pending:")
+        for src, dst in moves:
+            print(f"  {src}  ->  {dst}")
+        print(f"reason: {reason}")
+        print("Nothing was changed. Re-run with --confirm to proceed.")
+        return EXIT_OK
+
+    # All-or-nothing: if any move fails, put back the ones that succeeded rather
+    # than leaving a half-invalidated phase whose state.json was never saved.
+    done_moves = []
+    try:
+        for src, dst in moves:
+            sp, dp = run_dir / src, run_dir / dst
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(sp, dp)
+            done_moves.append((src, dst))
+    except OSError as exc:
+        for src, dst in reversed(done_moves):
+            try:
+                os.replace(run_dir / dst, run_dir / src)
+            except OSError:
+                pass
+        die(EXIT_USAGE, f"could not move {src!r}: {exc} — rolled back {len(done_moves)} "
+                        "move(s); NOTHING was invalidated and state.json is unchanged")
+
+    rec = {
+        "at": utcnow(),
+        "phase": pid,
+        "prior_status": prior,
+        "moved": [{"from": s, "to": d} for s, d in done_moves],
+        "prior_sha256": {a: sha_now.get(a) for a in artifacts},
+        "operator_uid": os.getuid(),
+        "reason": reason,
+    }
+    ps.setdefault("invalidations", []).append(rec)
+    state.setdefault("phase_invalidations", []).append(rec)
+    ps["artifacts"] = []
+    ps["sha256"] = {}
+    ps["status"] = "pending"
+    ps["invalidated_at"] = rec["at"]
+    ps["invalidated_reason"] = reason
+    store.save(state)
+
+    print(f"invalidated {pid}: moved {len(done_moves)} artifact(s) aside, phase is now pending.")
+    for s, d in done_moves:
+        print(f"  {s} -> {d}")
+    print(f"next: python3 presentation_job.py --run-dir {run_dir} --run --phase {pid}")
     return EXIT_OK
 
 
@@ -795,10 +964,49 @@ def _reset_parked_state(state: Dict[str, Any]) -> Dict[str, Any]:
               f"-- those phases will re-run", flush=True)
     else:
         print("resume: all banked artifacts re-validated", flush=True)
+    # PD-TEST-060: a unit that ended failed/quarantined is re-admitted as
+    # pending (unless the dispatcher's own durable park owns it), so a resume
+    # re-enters it exactly as _fail_unit's docstring promises. Without this the
+    # ready queue could never admit it again, its descendants stayed withheld
+    # by _phase_terminal_bad, and every resume re-parked the run identically.
+    # PD-TEST-080: "owns it" now means the dispatcher that wrote the marker is
+    # STILL ALIVE -- a marker left behind by a dispatcher that exited is
+    # adjudicated as orphaned and retired, so a code repair can actually reach
+    # the phases it repaired. The durable paid-attempt ledger is not touched.
+    readmitted = readmit_retryable_phases(state)
+    state["last_resume_readmissions"] = readmitted
+    if readmitted:
+        print(f"resume: re-admitted {len(readmitted)} failed/quarantined "
+              f"phase(s) for retry: "
+              + ", ".join(r["phase"] for r in readmitted), flush=True)
+        orphaned = [r for r in readmitted if r.get("orphaned_park_marker")]
+        if orphaned:
+            print("resume: " + "; ".join(
+                f"{r['phase']} was parked by a dispatcher that is no longer "
+                f"running [{r['orphaned_park_marker']}]"
+                + (" -- orphaned park marker retired"
+                   if r.get("orphaned_park_marker_retired")
+                   else " -- orphaned park marker could not be retired")
+                for r in orphaned)
+                + " (PD-TEST-080; the phase's durable paid-attempt ledger is "
+                  "unchanged and still binds)", flush=True)
     return prior
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # PD-066 -- load the box env store into THIS process before anything else.
+    # This is the third sanctioned entry point (the two launchd shells and
+    # intake_bridge are the others). Without it, an engine launched directly
+    # from an operator/agent shell inherits COMMAND_CENTER_URL but NOT
+    # MC_API_TOKEN / WEBHOOK_SECRET, so every CC board registration is posted
+    # unsigned and rejected 401 ("run continues ungrouped"). Reported with the
+    # redacted report, never fatal: a credential problem must not kill a run.
+    from .env_store import load_into_process, redacted_report
+    _env_report = load_into_process()
+    print("[env-store/engine-entry] "
+          + redacted_report(_env_report).replace("\n", " | "),
+          file=sys.stderr, flush=True)
+
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
 
@@ -919,6 +1127,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # to cure. cmd_repin does its own state load/save under its own reads.
     if args.repin:
         return cmd_repin(args, scripts_dir)
+    # PD-TEST-132 Gap 2: like repin, this mutates state under its own load/save and
+    # must run BEFORE the RunLock block (which verify_pin()s and takes the lease).
+    if getattr(args, "invalidate_phase", None):
+        return cmd_invalidate_phase(args, scripts_dir)
 
     # -----------------------------------------------------------------------
     # FIX 18 — the engine refuses to run without a lease it holds.
@@ -939,7 +1151,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     _signal_handlers_prev = []  # FIX 105: armed only on the run path below
     if args.new or args.status or args.capacity or args.workingset is not None \
             or args.sweep_undeliverable or args.diagnose_only \
-            or getattr(args, "relay_status", False):
+            or getattr(args, "relay_status", False) \
+            or getattr(args, "invalidate_phase", None):
         pass  # read-only / creation / diagnosis modes do not need the run lease
     else:
         # FIX 105: arm the SIGTERM/SIGINT handlers for the run about to start.
@@ -1040,7 +1253,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             engine.report.event(
                 "job.resume",
                 "resuming from checkpoint; banked artifacts reused" +
-                (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else ""))
+                (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else "") +
+                (f"; re-admitted {len(state.get('last_resume_readmissions') or [])} "
+                 f"failed/quarantined phase(s) for retry"
+                 if state.get("last_resume_readmissions") else ""))
         elif args.run:
             # FIX 22 — --run on a parked job resets like --resume. The door
             # always invokes --run; before this branch a parked run kept
@@ -1058,7 +1274,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     "job.run_reset",
                     "--run on a parked job: cleared terminal/blocked like --resume" +
                     (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}"
-                     if prior else ""),
+                     if prior else "") +
+                    (f"; re-admitted {len(state.get('last_resume_readmissions') or [])} "
+                     f"failed/quarantined phase(s) for retry"
+                     if state.get("last_resume_readmissions") else ""),
                     phase_id=(prior or {}).get("phase"))
 
         # PRES-052 — reconcile pending relay events on resume BEFORE the

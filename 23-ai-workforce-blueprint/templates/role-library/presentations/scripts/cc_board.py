@@ -757,6 +757,28 @@ def ingest_deck_task(
         )
         return None
 
+    # PD-066 — an enabled board with NO credentials is not "enabled" in any
+    # useful sense: _request() below would attach neither the Bearer nor the
+    # HMAC, and the Command Center's middleware rejects the write 401
+    # ('missing-header') before the route's own signature check is reached.
+    # Name the missing variables HERE, so the operator gets a diagnosable line
+    # instead of a bare 401 that looks like a wrong-secret fault. This does NOT
+    # change control flow: the attempt still runs and still fails soft, and no
+    # auth check anywhere is weakened or bypassed.
+    if not cfg["token"] or not cfg["secret"]:
+        _missing = []
+        if not cfg["token"]:
+            _missing.append("MC_API_TOKEN/CC_API_TOKEN")
+        if not cfg["secret"]:
+            _missing.append("WEBHOOK_SECRET/CC_WEBHOOK_SECRET")
+        _log(
+            "board enabled but credentials missing from THIS process env "
+            f"({', '.join(_missing)}) — the CC will reject the registration "
+            "401. The sanctioned fix is the entry-point env store "
+            "(presentation_job.env_store.load_into_process). "
+            "cc_register_attempted=True already logged."
+        )
+
     # FIX 57 — per-run parent identity. With a run_id the card's source_ref
     # (its ``Ref:`` line) and external_session_id (its ``Session:`` line) are
     # BOTH the run id, so (a) the idempotency key sha256(source_ref + title)
@@ -1401,6 +1423,7 @@ def register_deliverable(
     meta: Optional[dict] = None,
     *,
     env: Optional[dict] = None,
+    deliverable_type: str = "url",
 ) -> bool:
     """Register a built artifact via ``POST /api/tasks/{id}/deliverables``.
 
@@ -1452,8 +1475,18 @@ def register_deliverable(
                 title = str(_val)
                 break
 
+    # PD-TEST-195: the CC server requires completion EVIDENCE before a task may
+    # be marked `done` ("cannot mark a task done with no completion evidence"),
+    # and CreateDeliverableSchema's enum is file|url|artifact|image. A phase that
+    # produces a LOCAL artifact must therefore register it as `file` with an
+    # absolute path; registering everything as `url` (the previous behaviour)
+    # left the board unable to see the work and the done-transition 403'd.
+    _dtype = (deliverable_type or "url").strip().lower()
+    if _dtype not in ("file", "url", "artifact", "image"):
+        _log(f"register_deliverable: unknown deliverable_type {_dtype!r}; using 'url'.")
+        _dtype = "url"
     payload: dict = {
-        "deliverable_type": "url",
+        "deliverable_type": _dtype,
         "title": title,
         "path": artifact_url,
     }
@@ -1473,8 +1506,8 @@ def register_deliverable(
         return False
 
     if 200 <= http_status < 300:
-        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
-             f"http={http_status}.")
+        _log(f"task {tid} deliverable registered: type={_dtype} "
+             f"path={artifact_url!r} http={http_status}.")
         return True
 
     _log(

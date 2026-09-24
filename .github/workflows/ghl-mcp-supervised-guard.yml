@@ -193,6 +193,7 @@ jobs:
         run: |
           for f in \
             scripts/ghl-mcp-autostart.sh \
+            scripts/lib/ghl-mcp-paths.sh \
             scripts/ghl-mcp-probe.sh \
             scripts/ghl-mcp-pin-digest.sh \
             scripts/ghl-mcp-assert-runtime.sh \
@@ -302,9 +303,23 @@ jobs:
           chmod +x tests/unit/ghl-mcp-pin-delivery.test.sh
           bash tests/unit/ghl-mcp-pin-delivery.test.sh
 
+      # skill 36 v2.0.2. The autostart script and the runtime gate carried two
+      # copies of one path/platform derivation, under a comment claiming they
+      # were identical. They were not: the gate knew two platforms to the
+      # autostart's three, and both hardcoded an install directory that a client
+      # container destroys on recreate. This proves the shared library they now
+      # both source, and asserts that they still source it.
+      - name: Run shared path-library test (resolver, platform, PM2_HOME, anti-drift wiring)
+        run: |
+          chmod +x tests/unit/ghl-mcp-paths-lib.test.sh
+          bash tests/unit/ghl-mcp-paths-lib.test.sh
+
       # v21.6.0 / R4. Mutation proof in BOTH directions: a correct installed
       # service must PASS and each single misconfiguration must FAIL. A gate
       # that only ever passes is what shipped in v21.5.0.
+      # skill 36 v2.0.2 adds section (L): a healthy HOME-layout Linux container
+      # must PASS with no launchd assertion at all, and an unsupervised one must
+      # still FAIL, so the fix cannot be "stop checking".
       - name: Run runtime-conformance mutation test (correct service passes, each defect fails)
         run: |
           chmod +x tests/unit/ghl-mcp-assert-runtime.test.sh

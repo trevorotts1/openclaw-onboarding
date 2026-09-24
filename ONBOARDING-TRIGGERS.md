@@ -40,10 +40,10 @@ Pick the one block below that matches your exact situation. Each block is self-c
 | VPS / Hostinger / cloud server | Update | Terminal | [Block 7](#block-7--vps-update-via-terminal) |
 | VPS / Hostinger / cloud server | Update | Telegram | [Block 8](#block-8--vps-update-via-telegram) |
 
-⭐ = Standard path. Every client arrives with a baseline OpenClaw + Telegram agent already configured; Block 2 (Mac) or Block 4 (VPS) is what lifts that baseline to the full 52-skill package. Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
+⭐ = Standard path. Every client arrives with a baseline OpenClaw + Telegram agent already configured; Block 2 (Mac) or Block 4 (VPS) is what lifts that baseline to the full 64-skill package. Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
 
 **Not sure if it's a full onboarding or an update?**
-- If this is a new client being lifted from the baseline OpenClaw + Telegram setup to the full 52-skill onboarding package, it's a **full onboarding** (Blocks 1–4).
+- If this is a new client being lifted from the baseline OpenClaw + Telegram setup to the full 64-skill onboarding package, it's a **full onboarding** (Blocks 1–4).
 - If they already have the full package and you just want the latest skills + bug fixes, it's an **update** (Blocks 5–8).
 
 **Not sure if your machine is a Mac or a VPS?**
@@ -54,7 +54,7 @@ Pick the one block below that matches your exact situation. Each block is self-c
 
 ## What actually gets installed
 
-A fresh install lays down **58 numbered skill folders** (53 active, 5 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
+A fresh install lays down **69 numbered skill folders** (64 active, 5 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
 
 - **Skill 01 — Teach Yourself Protocol** — governs how the agent stores new knowledge
 - **Skill 02 — Back Yourself Up Protocol** — config + secret backups before any change
@@ -87,7 +87,7 @@ If you trigger a fresh install or update while your daily quota is nearly burned
 ## BLOCK 1 — Mac, Full Onboarding, via Terminal
 
 ### What this does
-Installs the full OpenClaw onboarding package on your Mac: all 52 skills, your agent setup, memory architecture, persona system, GHL MCPs — everything. About 5–15 minutes depending on internet speed.
+Installs the full OpenClaw onboarding package on your Mac: all 64 skills, your agent setup, memory architecture, persona system, GHL MCPs — everything. About 5–15 minutes depending on internet speed.
 
 ### Before you start
 - Make sure your Mac is connected to the internet
@@ -175,7 +175,7 @@ interrupted install finishes itself. To see the live truth, ask your agent:
 ## BLOCK 2 — Mac, Full Onboarding, via Telegram
 
 ### What this does
-Tells your existing OpenClaw Telegram agent to run the full onboarding package install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. End result: all 52 skills, the full memory architecture, personas, and tooling are deployed on top of your baseline OpenClaw + Telegram setup. This is the **standard onboarding path** — clients arrive with a minimal OpenClaw + Telegram bot already configured, and this block lifts them to the full package.
+Tells your existing OpenClaw Telegram agent to run the full onboarding package install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. End result: all 64 skills, the full memory architecture, personas, and tooling are deployed on top of your baseline OpenClaw + Telegram setup. This is the **standard onboarding path** — clients arrive with a minimal OpenClaw + Telegram bot already configured, and this block lifts them to the full package.
 
 ### Before you start
 - You have an existing OpenClaw + Telegram agent you currently chat with (the standard pre-onboarding baseline)
@@ -207,7 +207,7 @@ RULE 5 — When the install completes, my system writes an UPDATE PENDING flag a
 
 RULE 6 — Follow the 5-Phase Processing Order in the UPDATE PENDING flag EXACTLY. Do not improvise. Do not skip phases. Do not reorder phases.
 
-RULE 7 — Phase A: parallel install of all skills in 5 waves. Timeout: 600 seconds (10 minutes). Wave 1 = Skills 01–06, Wave 2 = 07–12, Wave 3 = 13–18, Wave 4 = 19–24, Wave 5 = 25–36.
+RULE 7 — Phase A: parallel install of all skills in 6 dependency-aware waves. Timeout: 1800 seconds (30 minutes) per wave. The canonical rosters are `OC_WAVE1_SKILLS`..`OC_WAVE6_SKILLS` in `lib-onboarding-state.sh` — that library is what the per-wave goal check and the onboarding watchdog actually read, and `scripts/qc-assert-wave-list-integrity.py` enforces that every name in it resolves to a real, non-archived skill folder. Six waves gate 48 of the 64 active skills; the remaining 16 ship via the generic `[0-9]*/` copy but are deliberately NOT gated (held, operator-only, or skeleton units that cannot reach qc-passed on a client box). Canonical roster: Wave 1 = 01, 02 | Wave 2 = 03, 04, 05, 06, 07, 08, 09, 10, 12, 14, 63 | Wave 3 = 15, 16, 17, 18, 19, 20, 24, 25, 26, 27, 28, 29, 30, 64, 43 | Wave 4 = 31, 36 | Wave 5 = 22, 23, 32, 35 | Wave 6 = 44, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 69. If this roster and the library ever disagree, the library wins.
 
 RULE 8 — Phase B: activate foundation skills (Skill 31 Upgraded Memory System and Skill 22 Book-to-Persona). Timeout: 900 seconds.
 
@@ -258,14 +258,14 @@ RULE 22 — Confirm you understand by replying with "Got it — starting your in
 ### What you'll see while it runs
 
 - Your agent will reply confirming it understands. It will say "Got it — starting your install" and a short summary.
-- Every few minutes you'll get a progress update: *"5 of 52 skills installed,"* *"Phase A complete, moving to Phase B,"* *"Running QC on Skill 31,"* etc.
+- Every few minutes you'll get a progress update: *"5 of 64 skills installed,"* *"Phase A complete, moving to Phase B,"* *"Running QC on Skill 31,"* etc.
 - If the agent has a question for you (per RULE 16), it will stop and ask in plain English. Answer the question — the agent will not move on until you respond.
 
 ### Success looks like this
 
 A final summary message from your agent that looks roughly like:
 
-> *"Install complete. 52 skills active (5 archived skills skipped as expected). Memory: 8 layers verified. Personas: 40 available. Anything that needs my attention: nothing — everything passed QC."*
+> *"Install complete. 64 skills active (5 archived skills skipped as expected). Memory: 8 layers verified. Personas: 40 available. Anything that needs my attention: nothing — everything passed QC."*
 
 ### If something looks wrong
 
@@ -343,7 +343,7 @@ In Telegram, ask:
 ## BLOCK 4 — VPS, Full Onboarding, via Telegram
 
 ### What this does
-Your VPS's own OpenClaw agent receives a Telegram message from you and runs the full onboarding package install locally on the VPS. You never SSH in. End result: all 52 skills, the full memory architecture, personas, and tooling are deployed on top of your VPS's baseline OpenClaw + Telegram setup. This is the **standard onboarding path for VPS clients**.
+Your VPS's own OpenClaw agent receives a Telegram message from you and runs the full onboarding package install locally on the VPS. You never SSH in. End result: all 64 skills, the full memory architecture, personas, and tooling are deployed on top of your VPS's baseline OpenClaw + Telegram setup. This is the **standard onboarding path for VPS clients**.
 
 ### Before you start
 - Your VPS has the baseline OpenClaw + Telegram agent already running (standard pre-onboarding baseline)
@@ -374,7 +374,7 @@ RULE 5 — Plain English headlines only. No raw error logs unless I ask.
 RULE 6 — When the install finishes, an UPDATE PENDING flag is written to the top of /data/clawd/AGENTS.md (the VPS workspace AGENTS.md, not anything on the Mac). Read the flag completely.
 
 RULE 7 — Follow the 5-Phase Processing Order in the flag EXACTLY:
-  Phase A: parallel install in 5 waves (timeout 600s)
+  Phase A: parallel install in 6 dependency-aware waves (timeout 1800s per wave). The canonical rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh — six waves gating 48 of the 64 active skills, and where this doc and the library disagree, the library wins.
   Phase B: activate foundation skills 31 + 22 (timeout 900s)
   Phase C: process interactive skills 23 + 35 (timeout 1200s) — EXCEPTION: Skill 23 needs live owner answers; if owner not present, write INTERVIEW_PENDING to interview-handoff.md and skip to Phase D. Never run Option B. Never fabricate.
   Phase D: validate + QC (timeout 1800s)

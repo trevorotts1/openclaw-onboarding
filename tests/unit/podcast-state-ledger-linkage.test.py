@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -159,6 +160,21 @@ class TestBrokenLinkageIsNotACleanAdvance(unittest.TestCase):
             capture_output=True, text=True, timeout=120, env=e,
         )
 
+    @staticmethod
+    def _status(db, job_id):
+        """The job's committed status, read straight from the database.
+
+        The rollback is a property of the DB, not of anything the CLI prints,
+        so it has to be read from the DB to be proven.
+        """
+        conn = sqlite3.connect(db)
+        try:
+            return conn.execute(
+                "SELECT status FROM podcast_jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
     def _seed_job(self, env, db):
         payload = env.root / "payload.json"
         payload.write_text(json.dumps({"q1_answer": "a", "q2_answer": "b"}), encoding="utf-8")
@@ -190,18 +206,27 @@ class TestBrokenLinkageIsNotACleanAdvance(unittest.TestCase):
             job_id = self._seed_job(env, db)
             # Break the linkage the way a real box would: the index survives but
             # its contents no longer parse.
+            status_before = self._status(db, job_id)
             env.write_index(job_id, "{not json at all")
             proc = self._cli(env, db, "advance", "--job-id", job_id,
                              "--to", "researching", "--force-waiver", "test")
+            status_after = self._status(db, job_id)
         self.assertNotEqual(proc.returncode, 0,
                             "a broken ledger linkage still reported a clean advance")
         self.assertIn("ledger linkage broken", proc.stderr,
                       "the documented warning was not emitted")
-        out = json.loads(proc.stdout)
-        self.assertEqual(out["ledger_sync"], "broken",
-                         "the emitted record did not say the ledger sync was broken")
-        self.assertEqual(out["to"], "researching",
-                         "the record must still report the transition that WAS committed")
+        # The advance is ATOMIC: a broken linkage ROLLS BACK the SQLite
+        # transition and raises (podcast_state.py cmd_advance). So there is no
+        # committed transition to report and no record is emitted -- emitting
+        # one saying to=researching would claim a transition that did not
+        # happen. This suite used to assert that record; it predates the
+        # rollback.
+        self.assertEqual(proc.stdout, "",
+                         "a rolled-back advance must emit no record; a record here "
+                         "would report a transition that was never committed")
+        self.assertEqual(status_after, status_before,
+                         "the transition was not rolled back: the job moved to "
+                         f"{status_after!r} while its ledger linkage was broken")
 
 
 if __name__ == "__main__":

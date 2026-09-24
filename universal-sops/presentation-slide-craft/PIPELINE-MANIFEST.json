@@ -1069,8 +1069,7 @@
         "prompt-author-presentations-sops.md"
       ],
       "produces_artifact": [
-        "working/prompts/slide-*.txt",
-        "working/prompts/infographic-prompt.txt"
+        "working/prompts/slide-*.txt"
       ],
       "gate_codes": [
         "AF-PROMPT-FLOOR"
@@ -1091,7 +1090,8 @@
       "heartbeat_minutes": 30,
       "consumes": [
         "working/copy/slides_copy.md",
-        "working/research/design-brief-*.md"
+        "working/research/design-brief-*.md",
+        "working/copy/slides.json"
       ],
       "workers": 12
     },
@@ -1497,7 +1497,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/copy/priority_shift_spec.json",
-        "working/copy/slides_copy.md"
+        "working/copy/slides_copy.md",
+        "renders/slide-*.png"
       ]
     },
     {
@@ -1643,7 +1644,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/infographic-prompt.txt"
-      ]
+      ],
+      "infographic_path": true
     },
     {
       "id": "P9-SPEECH",

@@ -5,6 +5,12 @@ name: model-selector-guard
 # rejected) or if the AF-MODEL-SOVEREIGNTY gate stops blocking offenders.
 # Also smoke-tests the repair sweep end-to-end (dry-run + --apply + idempotency).
 # v12.15.0 / feat/intelligent-model-selector
+#
+# v25.1.55: the inventory fixture below carries deepseek-v4.1-flash, the tag
+# Ollama Cloud actually serves and the one the scoring chain now uses.
+# deepseek-v4-pro:cloud was deleted upstream on 2026-08-17, so a fixture
+# pinned to a retired tag would have this guard re-approving a model no box
+# can reach.
 
 on:
   push:
@@ -50,7 +56,7 @@ jobs:
           cat > "$WORK/openclaw.json" <<'JSON'
           {
             "models": { "list": [
-              {"id":"ollama/deepseek-v4-pro:cloud"},
+              {"id":"ollama/deepseek-v4.1-flash"},
               {"id":"ollama/qwen3-vl:235b-cloud"},
               {"id":"openrouter/deepseek/deepseek-v4-pro"}
             ]},

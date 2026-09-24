@@ -124,7 +124,14 @@ def visit(ms, where):
 
 agents = cfg.get("agents", {})
 visit(agents.get("defaults", {}).get("memorySearch"), "agents.defaults.memorySearch")
-for a in agents.get("list", []) or []:
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id; memory
+# search lives at entry.memory.search) and legacy agents.list[] (memorySearch).
+_entries = agents.get("entries")
+for k, a in (_entries.items() if isinstance(_entries, dict) else ()):
+    if isinstance(a, dict) and isinstance(a.get("memory"), dict):
+        visit(a["memory"].get("search"), f"agents.entries.{k}.memory.search")
+_lst = agents.get("list")
+for a in (_lst if isinstance(_lst, list) else ()):
     if isinstance(a, dict):
         visit(a.get("memorySearch"), f"agents.list[{a.get('id','?')}].memorySearch")
 

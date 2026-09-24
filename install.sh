@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.0.42"
+ONBOARDING_VERSION="v25.1.84"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -854,10 +854,10 @@ PHASE 1 — Read the docs first (do not skip):
 5. Set up workspace files (USER.md, AGENTS.md, TOOLS.md at workspace root, symlinked into per-role workspaces).
 
 PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
-Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
+Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/68-... (63 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/69-... (64 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -2374,6 +2374,162 @@ discover_skills() {
 # by content hash (read back + compare) before being counted as a success.
 # File mode/ownership are preserved across the rewrite.
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# v25.1.74 — reclaim_unify_backups (end-of-roll global .bak-unify reclaim)
+#
+# WHY THIS EXISTS ON TOP OF _lsc_prune_baks. The per-target pruner added in
+# v25.1.72/73 only ever reaches a path the unify scan ENUMERATED. That scan
+# builds its list from $OC_ROOT/workspaces, <workspace>/agents and
+# <workspace>/departments, keeping only dirs that still carry a live
+# AGENTS.md / IDENTITY.md / SOUL.md. Three populations are therefore never
+# reclaimed — all three measured on client boxes 2026-09-22:
+#
+#   1. ORPHANS — a role folder whose live core files were deleted or moved
+#      still holds its .bak-unify backlog but fails the scan filter, so
+#      nothing ever reaches it. Hidden archive dot-dirs (for example a
+#      .billing-LEGACY-DUPLICATE-ARCHIVED folder) are the same shape.
+#   2. OUT OF TREE — <workspace>/zero-human-company/<co>/departments/... and
+#      ~/clawd/zero-human-company/<co>/departments/... sit under neither
+#      agents/ nor departments/, so the scan never descends into them.
+#   3. AN EARLY EXIT — a roll whose unify step refuses (workspace unresolved),
+#      is skipped, or filters a workspace out bounds nothing at all.
+#
+# Fleet total when this was written: 71,805 *.bak-unify-* files / ~8.4 GB
+# across 6 client boxes, oldest 2026-06-07, still growing.
+#
+# WHAT IT DOES. ONE pass at the end of every roll over the resolved OpenClaw
+# root(s), the resolved workspace and ~/clawd: group every backup by its
+# target prefix and keep only the newest $UNIFY_BAK_KEEP (default 3 — the same
+# single knob _lsc_prune_baks and the python writer already honour). Reports
+# the count reclaimed. ALWAYS returns 0: a reclaim must never be the thing
+# that fails a roll. The per-target prune is unchanged and still runs first.
+#
+# SAFETY. A file is deletable ONLY when its basename matches
+#     <target>.bak-unify-<8 digits>-<6 digits>[-<n>]
+# exactly — the -<n> tail being the python writer's same-second de-dupe
+# suffix. A live AGENTS.md / TOOLS.md / USER.md cannot match that pattern, and
+# neither can a hand-made .bak-manual or an AGENTS.md.bak-unify-notatimestamp
+# decoy. Symlinks and non-regular files are never unlinked.
+#
+# UNIFY_BAK_KEEP=0 keeps none. That is the meaning it ALREADY carries in both
+# shipped pruners and in docs/SHARED-CORE-FILES.md, so this pass does not give
+# the one knob a second meaning. It is safe because the pattern above makes a
+# live core file unmatchable: 0 can empty the backup set, never the tree.
+#
+# python3 is already a hard dependency of the unify step (_lsc_sha256 and the
+# content-preservation pass both use it); if it is absent the reclaim reports
+# a skip and the per-target prune still applies. bash 3.2 / BSD-safe: no
+# associative arrays, no mapfile, no `find -printf`, no `head -n -N`.
+# ----------------------------------------------------------
+reclaim_unify_backups() {
+  local _keep="${UNIFY_BAK_KEEP:-3}"
+  case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    note "[unify-reclaim] SKIP: no python3 on PATH (the per-target prune still applied)"
+    return 0
+  fi
+
+  # Every root this box could hold a .bak-unify population under. Missing ones
+  # are dropped here; the pass below de-dupes what is left by realpath, so a
+  # symlinked workspace is never walked twice.
+  local _oc_root=""
+  if declare -F resolve_oc_root >/dev/null 2>&1; then
+    _oc_root="$(resolve_oc_root 2>/dev/null || echo '')"
+  fi
+  if [ -z "$_oc_root" ]; then
+    _oc_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _oc_root="/data/.openclaw"
+  fi
+
+  # $HOME/.openclaw covers the Docker /home/node layout (HOME is /home/node
+  # there) and _oc_root covers the VPS /data layout, so neither is listed as a
+  # literal -- every root below is derived from THIS box's own resolution.
+  # ~/clawd and ~/.clawdbot are both LIVE workspace roots on real boxes (see
+  # the TRAP 1 pre-clear note: one box's ~/.openclaw/workspace is a symlink
+  # INTO ~/.clawdbot/workspace), and both hold measured .bak-unify populations.
+  local _roots="" _r
+  for _r in \
+      "$_oc_root" \
+      "$HOME/.openclaw" \
+      "$HOME/clawd" \
+      "$HOME/.clawdbot" \
+      "${OC_WS_RESOLVED:-}" \
+      "${WORKSPACE_DIR:-}"; do
+    [ -n "$_r" ] || continue
+    [ -d "$_r" ] || continue
+    _roots="${_roots}${_r}
+"
+  done
+
+  if [ -z "$_roots" ]; then
+    note "[unify-reclaim] no existing root to scan -- nothing to do"
+    return 0
+  fi
+
+  local _n=""
+  _n="$(UNIFY_RECLAIM_KEEP="$_keep" UNIFY_RECLAIM_ROOTS="$_roots" python3 - 2>/dev/null <<'PYEOF' || echo ''
+import os, re
+
+keep  = int(os.environ.get("UNIFY_RECLAIM_KEEP", "3"))
+roots = [r for r in os.environ.get("UNIFY_RECLAIM_ROOTS", "").split("\n") if r]
+
+# The ONLY deletable shape. A live core file cannot match it.
+PAT  = re.compile(r"^(?P<target>.+)\.bak-unify-\d{8}-\d{6}(?:-\d+)?$")
+SKIP = (".git", "node_modules", ".venv", "venv", "__pycache__")
+
+# Roots nest (the workspace usually lives INSIDE the OpenClaw root), so the
+# same subtree is walked more than once. Collecting each group as a SET keyed
+# on the real directory makes a second visit a no-op instead of doubling the
+# list and over-deleting.
+groups = {}
+for root in roots:
+    try:
+        real = os.path.realpath(root)
+    except OSError:
+        continue
+    if not os.path.isdir(real):
+        continue
+    for dirpath, dirnames, filenames in os.walk(real, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in SKIP]
+        try:
+            realdir = os.path.realpath(dirpath)
+        except OSError:
+            realdir = dirpath
+        for fn in filenames:
+            m = PAT.match(fn)
+            if m:
+                groups.setdefault((realdir, m.group("target")), set()).add(fn)
+
+deleted = 0
+for (parent, _target), nameset in groups.items():
+    if keep and len(nameset) <= keep:
+        continue
+    names = sorted(nameset)         # %Y%m%d-%H%M%S sorts chronologically
+    doomed = names if keep == 0 else names[:-keep]
+    for n in doomed:
+        p = os.path.join(parent, n)
+        if not PAT.match(os.path.basename(p)):      # belt and braces
+            continue
+        if os.path.islink(p) or not os.path.isfile(p):
+            continue
+        try:
+            os.unlink(p)
+            deleted += 1
+        except OSError:
+            pass
+print(deleted)
+PYEOF
+)"
+  case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+  if [ "$_n" -gt 0 ]; then
+    note "[unify-reclaim] RECLAIMED $_n orphaned/out-of-tree .bak-unify backup(s) (keep=$_keep)"
+  else
+    note "[unify-reclaim] nothing to reclaim (keep=$_keep)"
+  fi
+  return 0
+}
+
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
 
@@ -2443,14 +2599,17 @@ except Exception:
   }
 
   # _lsc_mode_owner PATH -> "<mode>|<uid>:<gid>" for an existing file, or ""
-  # if PATH doesn't exist. Tries BSD stat(1) syntax (Mac) then GNU stat(1)
-  # syntax (Linux/VPS/Docker) — the same fallback pattern already used
-  # elsewhere in this file (see the INSTALL_FLAG lock-age check).
+  # if PATH doesn't exist. GNU stat(1) syntax FIRST (Linux/VPS/Docker), then
+  # BSD (Mac): GNU reads `-f FMT` as "filesystem status of FMT and PATH" and
+  # prints that block to stdout before failing, so a BSD-first chain handed
+  # chmod/chown a multi-line value on Linux. BSD rejects -c with no stdout.
   _lsc_mode_owner() {
     local _p="$1" _m="" _o=""
     [ -e "$_p" ] || return 0
-    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
-    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    _m="$(stat -c '%a' "$_p" 2>/dev/null || stat -f '%OLp' "$_p" 2>/dev/null)"
+    [[ "$_m" =~ ^[0-7]+$ ]] || _m=""
+    _o="$(stat -c '%u:%g' "$_p" 2>/dev/null || stat -f '%u:%g' "$_p" 2>/dev/null)"
+    [[ "$_o" =~ ^[0-9]+:[0-9]+$ ]] || _o=""
     printf '%s|%s' "$_m" "$_o"
   }
 
@@ -2479,6 +2638,34 @@ except Exception:
     else
       echo "FAIL"
     fi
+  }
+
+  # _lsc_prune_baks PATH -> echoes the number of old backups it deleted.
+  # Keeps only the $UNIFY_BAK_KEEP newest <PATH>.bak-unify-<ts> siblings
+  # (default 3; 0 keeps none), deleting oldest-first. The unify backup used to
+  # be UNBOUNDED: a canonical file that differs between rolls leaves one
+  # FULL-SIZE backup per agent per roll, forever. Measured live on a client Mac
+  # Mini 2026-09-21: 25,604 AGENTS.md.bak-unify-* files / 4.3 GB across the
+  # department tree, written daily since 2026-06-23, disk at 95%. Only this
+  # target's OWN timestamped unify backups are ever touched -- nothing else is
+  # deleted, and the newest $UNIFY_BAK_KEEP are always kept, so the
+  # "never deleted" promise becomes "the last N are never deleted".
+  # Timestamps are %Y%m%d-%H%M%S, so a lexicographic sort is chronological.
+  # bash 3.2 / BSD-safe: no `head -n -N`, no associative arrays.
+  _lsc_prune_baks() {
+    local _p="$1" _keep="${UNIFY_BAK_KEEP:-3}" _list="" _n=0 _cut=0 _old="" _pruned=0
+    case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+    _list="$(ls -1d "$_p".bak-unify-* 2>/dev/null | sort || true)"
+    if [ -z "$_list" ]; then echo 0; return 0; fi
+    _n="$(printf '%s\n' "$_list" | wc -l | tr -d ' ')"
+    _cut=$(( _n - _keep ))
+    if [ "$_cut" -le 0 ]; then echo 0; return 0; fi
+    while IFS= read -r _old; do
+      [ -n "$_old" ] || continue
+      if rm -f "$_old" 2>/dev/null; then _pruned=$(( _pruned + 1 )); fi
+    done < <(printf '%s\n' "$_list" | sed -n "1,${_cut}p")
+    echo "$_pruned"
+    return 0
   }
 
   # Precompute each canonical file's hash ONCE (not per-workspace; this repo
@@ -2538,7 +2725,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
 
   local W
   while IFS= read -r W; do
@@ -2578,6 +2765,23 @@ PYEOF
         continue
       fi
 
+      # BACKLOG PRUNE. Bound this target's existing .bak-unify set on EVERY
+      # run, before deciding what to do with the file itself. Pruning only
+      # after writing a NEW backup would never reach the case that actually
+      # holds the fleet's 4.3 GB: a role folder whose AGENTS.md was since
+      # deleted (U053 disposition) still carries thousands of backups and
+      # takes the "absent -> leave absent" path below, so a roll would walk
+      # straight past them forever. Here it covers every branch -- symlink,
+      # identical, divergent and absent. A backup written further down prunes
+      # again, so the set still lands on exactly $UNIFY_BAK_KEEP.
+      local _NBACKLOG
+      _NBACKLOG="$(_lsc_prune_baks "$LINKPATH")"
+      case "$_NBACKLOG" in ''|*[!0-9]*) _NBACKLOG=0 ;; esac
+      if [ "$_NBACKLOG" -gt 0 ]; then
+        note "[link-shared] PRUNE $_NBACKLOG stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+        PRUNED=$((PRUNED + _NBACKLOG))
+      fi
+
       if [ -L "$LINKPATH" ]; then
         # MIGRATION: a symlink is a relic of the pre-amendment behavior, and
         # the runtime boundary guard rejects it at read time regardless of
@@ -2610,9 +2814,21 @@ PYEOF
         # this agent's OWN IDENTITY.md (additive only), then overwrite with
         # canonical content -- as a real file, not a symlink.
         local BAK="$LINKPATH.bak-unify-$TS"
-        cp -p "$LINKPATH" "$BAK" 2>/dev/null \
-          && { note "[link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
-          || { warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"; continue; }
+        if cp -p "$LINKPATH" "$BAK" 2>/dev/null; then
+          note "[link-shared] BACKUP $LINKPATH -> $BAK"
+          BACKED_UP=$((BACKED_UP + 1))
+          # Bound the backup set for THIS target (see _lsc_prune_baks).
+          local _NPRUNED
+          _NPRUNED="$(_lsc_prune_baks "$LINKPATH")"
+          case "$_NPRUNED" in ''|*[!0-9]*) _NPRUNED=0 ;; esac
+          if [ "$_NPRUNED" -gt 0 ]; then
+            note "[link-shared] PRUNE $_NPRUNED stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+            PRUNED=$((PRUNED + _NPRUNED))
+          fi
+        else
+          warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"
+          continue
+        fi
 
         local AGENT_NAME
         AGENT_NAME="$(basename "$W_REAL")"
@@ -2679,7 +2895,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP failed=$FAILED"
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then
@@ -2816,7 +3032,12 @@ fi
 # Stale-lock auto-clear: if the lock file exists but is > 60 minutes old,
 # the previous run crashed mid-install. Wipe it instead of blocking.
 if [ -f "$INSTALL_FLAG" ]; then
-    LOCK_AGE_MINS=$(( ( $(date +%s) - $(stat -f %m "$INSTALL_FLAG" 2>/dev/null || stat -c %Y "$INSTALL_FLAG" 2>/dev/null || echo 0) ) / 60 ))
+    # GNU `stat -c` FIRST: on Linux `stat -f` is filesystem status and prints
+    # several lines before failing over, which broke this arithmetic. BSD
+    # rejects -c with no stdout. Integer guard, as run-full-install.sh _cc_mtime.
+    _lock_mtime="$(stat -c %Y "$INSTALL_FLAG" 2>/dev/null || stat -f %m "$INSTALL_FLAG" 2>/dev/null)"
+    [[ "$_lock_mtime" =~ ^[0-9]+$ ]] || _lock_mtime=0
+    LOCK_AGE_MINS=$(( ( $(date +%s) - _lock_mtime ) / 60 ))
     if [ "$LOCK_AGE_MINS" -gt 60 ] 2>/dev/null; then
         warn "Stale install lock detected (${LOCK_AGE_MINS} min old) — auto-clearing and continuing"
         rm -f "$INSTALL_FLAG"
@@ -3093,6 +3314,9 @@ success "State carryover initialized at $RESUME_FILE"
 note "Configuring canonical sub-agent + bootstrap settings (v9.7.8 spec)..."
 backup_config_file "$OCJSON"
 
+# Installed runtime version, for the agents.defaults.maxConcurrent decision below.
+_OC_RUNTIME_VERSION="$(openclaw --version 2>/dev/null | tr -d '\r' | head -n1 | tr -d '[:space:]' || true)"
+
 python3 << PYEOF
 import json, os, sys
 
@@ -3144,6 +3368,37 @@ try:
 except (TypeError, ValueError):
     prev_concurrent = None
 sub['maxConcurrent'] = cap_ceiling if (prev_concurrent is None or prev_concurrent > cap_ceiling) else prev_concurrent
+
+# agents.defaults.maxConcurrent — EXPLICIT, so a runtime default cannot move it.
+#
+# OpenClaw 2026.9.5 changes this key's DEFAULT from clamp(8..16, cpus) to
+# max(8, cpus*4) with NO ceiling. On a 12-core box an absent key silently goes
+# from 12 to 48 the moment the fleet rolls onto 9.5 — a quadrupling nobody
+# asked for and nothing logs.
+#
+# The PRESENT-ONLY rule above (and in scripts/capacity-monitor.sh) exists
+# because AgentDefaultsSchema is .strict(): creating this key on a runtime that
+# PREDATES it makes that runtime reject the client's ENTIRE config. So the key
+# is created only when the installed runtime is >= 2026.9.5, where it provably
+# exists; on anything older an absent key is still correct and is left alone.
+# An existing value is ALWAYS preserved — it is an operator choice or a
+# capacity-monitor heal, and this must never clobber it.
+_oc_ver = "$_OC_RUNTIME_VERSION"
+def _ver_ge_9_5(v):
+    parts = (v or "").lstrip("vV").split(".")
+    try:
+        nums = [int(x) for x in parts[:3]]
+    except ValueError:
+        return False
+    return len(nums) == 3 and tuple(nums) >= (2026, 9, 5)
+if 'maxConcurrent' in defaults:
+    print("  OK agents.defaults.maxConcurrent preserved at %s (explicit; 9.5's new default cannot move it)" % defaults['maxConcurrent'])
+elif _ver_ge_9_5(_oc_ver):
+    defaults['maxConcurrent'] = 8
+    print("  OK Set agents.defaults.maxConcurrent=8 explicitly (runtime %s >= 2026.9.5, whose default is max(8, cpus*4) with no ceiling)" % _oc_ver)
+else:
+    print("  -- agents.defaults.maxConcurrent left ABSENT (runtime %s predates 2026.9.5; AgentDefaultsSchema is strict and would reject the config)" % (_oc_ver or "unknown"))
+
 # Hard set thinking level
 sub['thinking'] = 'high'
 
@@ -3596,7 +3851,7 @@ done
 
 # v10.10.0 P0-007: Trigger agent execution of Start Here.md, not just copy.
 # The bash install.sh has done its bootstrap. The actual onboarding work
-# (read 52 skills, wave-install, run interview, build ZHC, etc.) is the
+# (read 64 skills, wave-install, run interview, build ZHC, etc.) is the
 # agent's job — driven by Start Here.md. We've copied the file; we now
 # need to MAKE SURE the agent reads it. Three independent channels (the
 # triple-fire in fire_install_kickoff_triplet at end of install.sh) all
@@ -3750,7 +4005,41 @@ if [ ! -f "$SKILLS_DIR/$_PODCAST_ACTIVATION_SKILL/scripts/webhook/intake_handler
 else
     success "Podcast activation layer present in the skills dir (register-podcast-hook.sh, webhook/intake_handler.py, install-podcast-department.sh); no scheduler installed by design: the only recurring podcast cron is the daily smoke test"
 fi
+
 unset _PODCAST_ACTIVATION_SKILL _PODCAST_ACTIVATION_FILES _ACT_FILE _ACT_SRC _ACT_DEST
+
+# ----------------------------------------------------------
+# roll-3b: RUN the activation wiring, do not merely deliver it.
+#
+# The block above only ENSURES the activation files exist. Until this call,
+# nothing on any client box ever ACTIVATED the podcast engine: activation lived
+# solely inside provision-podcast-client.sh, so a box provisioned before the
+# activation layer shipped, or one whose provision aborted, stayed dark forever
+# (intake lands, the ledger says received, the dashboard says Received, and
+# nothing runs). 58-podcast-production-engine/wire.sh is the guarded entry point
+# and is the SAME file update-skills.sh's per-skill wiring loop picks up by
+# name, so the install path and the update path activate identically.
+#
+# It is safe on every box: with no podcast client slug and no intake secret it
+# prints a WARN naming SOP-PODCAST-07 and exits 0. It refuses to run as root
+# (a root-owned openclaw.json freezes the gateway) and never restarts the
+# gateway. A nonzero exit is a real activation failure on a box that HAS a
+# podcast client, and is surfaced as a WARN, never an aborted install.
+# ----------------------------------------------------------
+_PODCAST_WIRE="$SKILLS_DIR/58-podcast-production-engine/wire.sh"
+if [ -f "$_PODCAST_WIRE" ]; then
+    chmod +x "$_PODCAST_WIRE" 2>/dev/null || true
+    if [ "$(id -u)" = "0" ]; then
+        warn "Podcast activation: skipped wire.sh because this install is running as root; re-run it as the node user: sudo -u \"\${PODCAST_NODE_USER:-node}\" $_PODCAST_WIRE --idempotent"
+    elif bash "$_PODCAST_WIRE" --idempotent >>"$LOG_FILE" 2>&1; then
+        success "Podcast activation wiring ran (wire.sh --idempotent); see $LOG_FILE for the slug/secret resolution and the activation health result"
+    else
+        warn "Podcast activation wiring reported a failure for this box's podcast client (see $LOG_FILE). Run universal-sops/podcast-craft/SOP-PODCAST-07-ACTIVATION-RESCUE.md; intake will land and never advance until it is fixed"
+    fi
+else
+    warn "Podcast activation: 58-podcast-production-engine/wire.sh is not in this onboarding package; this box cannot self-activate the podcast engine (provision-podcast-client.sh remains the only activation path)"
+fi
+unset _PODCAST_WIRE
 
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
@@ -3844,6 +4133,22 @@ for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.s
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
         success "Installed memory-health cron script: $SCRIPT"
+    fi
+done
+
+# LEAN BOOTSTRAP (docs/COMPACT-CORE-SOP.md): the daily measure, the weekly
+# compaction, the engine they both drive and the validator that owns the lean
+# targets. Persisted to the same dir for the same reason as the block above —
+# ensure-pipeline-crons.sh resolves cron scripts from $OC_ROOT/scripts, and a
+# registered cron has to keep resolving after the temp clone is cleaned up.
+# update-skills.sh delivers the whole scripts/ tree and needs no list; install.sh
+# copies by name, so these four have to be named here or a FRESH box would
+# register two crons pointing at scripts that were never installed.
+for SCRIPT in bootstrap-validate-daily.sh bootstrap-compact-weekly.sh compact-bootstrap.py validate-core-references.py bootstrap-pointerize.py; do
+    if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
+        cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
+        chmod +x "$SCRIPTS_DIR/$SCRIPT"
+        success "Installed lean-bootstrap script: $SCRIPT"
     fi
 done
 
@@ -5739,7 +6044,12 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 63 active skills install in 5 dependency-aware waves, not by number order.
+The 64 active skills install in 6 dependency-aware waves, not by number order.
+The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
+gating 48 of the 64 active skills; the remaining 16 are copied to every box by the installer's
+[0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units
+that cannot reach qc-passed on a client box). The per-wave rosters printed below document Waves 1-5;
+Wave 6 (extensions & domain verticals) is defined in that library and must be read from there.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6106,6 +6416,12 @@ fi
 # ----------------------------------------------------------
 step "Step 10a: Unifying shared core files (AGENTS/TOOLS/USER copied from this box's canonical)"
 link_shared_core_files "$WORKSPACE_DIR" || warn "link_shared_core_files reported warnings (install continues)"
+
+# END-OF-ROLL GLOBAL RECLAIM. The per-target prune inside the step above only
+# reaches paths the unify scan enumerated; this bounds the orphaned +
+# out-of-tree populations it cannot see, and runs even when that step refused.
+# See reclaim_unify_backups() for the three shapes and the safety pattern.
+reclaim_unify_backups || true
 
 # ----------------------------------------------------------
 # Step 10b: Seed Core.md Terminology into MEMORY.md (idempotent)
@@ -8572,6 +8888,48 @@ if [ "$OC_PLATFORM" = "mac" ]; then
 fi
 
 # ----------------------------------------------------------
+# LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root, sudo).
+# ----------------------------------------------------------
+# A separate gap from the self-heal block above, and the block above cannot
+# cover it. The rescue cloudflared connector on a client Mac is a SYSTEM-domain
+# daemon named com.blackceo.rescue-<slug>, installed by an operator runbook, not
+# by this repo. After a reboot it can come back holding a stale cached edge
+# address and dial the LAN router (RFC1918 address on port 7844) forever. The
+# process is ALIVE, so launchd KeepAlive keeps it, install-watchdog-agent.sh's
+# pgrep check reports OK, and the box is dark to the operator until someone
+# notices by hand. The same reboot sometimes comes back with Remote Login off in
+# the launchd system domain, which removes the last way in.
+#
+# "Alive" is not "registered". Layer E reads the connector's own log and acts
+# only on the positive evidence of the stale state (repeated RFC1918:7844 dial
+# targets with ZERO "Registered tunnel connection" lines), then kicks the daemon
+# and, separately, re-enables sshd when the authoritative
+# `launchctl print-disabled system` view says it is off.
+#
+# It needs root (system-domain launchctl), so this uses `sudo -n`: if a
+# passwordless sudo ticket is not available the install is NOT blocked. It warns
+# with the exact one-line command instead. Fail-soft by design, exactly like the
+# self-heal block above.
+if [ "$OC_PLATFORM" = "mac" ]; then
+    step "Installing Mac rescue-tunnel reboot-stale watchdog (com.blackceo.rescue-tunnel-watchdog, needs sudo)"
+    _RESCUE_WD_INSTALLER="$ONBOARDING_DIR/platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh"
+    if [ -f "$_RESCUE_WD_INSTALLER" ]; then
+        if sudo -n true 2>/dev/null; then
+            if sudo -n bash "$_RESCUE_WD_INSTALLER" 2>&1 | tee -a "$LOG_FILE"; then
+                success "Rescue-tunnel watchdog installed (every 120s, root LaunchDaemon)"
+            else
+                warn "install-rescue-tunnel-watchdog.sh returned non-zero - watchdog NOT confirmed. Re-run by hand: sudo bash $_RESCUE_WD_INSTALLER"
+            fi
+        else
+            warn "No passwordless sudo, so the rescue-tunnel watchdog was NOT installed (the install continues normally). Run this ONE command on this box, entering your own password:"
+            warn "    sudo bash $_RESCUE_WD_INSTALLER"
+        fi
+    else
+        note "rescue-tunnel watchdog installer not in bundle ($_RESCUE_WD_INSTALLER) - skipping (older onboarding bundle, harmless)"
+    fi
+fi
+
+# ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
 # ----------------------------------------------------------
 note "Restarting OpenClaw gateway..."
@@ -8783,7 +9141,7 @@ PHASE 2 — Install the skills in waves, with PROGRESS UPDATES:
   acronyms ("QC", "sub-agent", "manifest"), no technical paths.
 
   BEFORE each wave, send a Telegram message like:
-    "Starting on Wave 2 of 5 now. About to set up 18 utility skills
+    "Starting on Wave 2 of 6 now. About to set up 18 utility skills
      in parallel — this should take about 10 minutes."
 
   AFTER each wave, send a Telegram message like:

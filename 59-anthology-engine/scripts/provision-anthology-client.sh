@@ -1331,33 +1331,66 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     sys.stderr.write("[wire] openclaw.json unreadable: %s\n" % exc); sys.exit(1)
 if not isinstance(cfg.get("agents"), dict):
-    cfg["agents"] = {"list": []}
-if not isinstance(cfg["agents"].get("list"), list):
-    cfg["agents"]["list"] = []
+    cfg["agents"] = {}
+agents = cfg["agents"]
+
+# ROSTER SHAPE: agents.entries is the modern roster and the gateway PREFERS it.
+# A box carrying entries (measured: 100 entries, 66 dept- prefixed, matching 66
+# runtime dirs) ignores anything appended to agents.list, so this step wired a
+# department the gateway never saw. Write whichever shape the box already has;
+# only a genuinely list-only config still gets a list entry.
+entries = agents.get("entries")
+MODE_ENTRIES = isinstance(entries, dict) or not isinstance(agents.get("list"), list)
+if MODE_ENTRIES and not isinstance(entries, dict):
+    entries = agents["entries"] = {}
+if not MODE_ENTRIES and not isinstance(agents.get("list"), list):
+    agents["list"] = []
+
 agent_id = "dept-%s" % slug
 agent_dir = os.path.join(oc_root, "agents", agent_id)
-workspace = os.path.join(oc_root, "workspace", "departments", slug)
-# Schema byte-for-byte with materialize-dept-agents.sh: multimodal disabled +
-# fallback openai (a text-only embedding provider throws on multimodal), agentDir
-# so the routing agent can resolve this dept agent at runtime -- the exact runtime
-# the CC dispatch no_specialist_runtime check looks for.
-desired = {
-    "id": agent_id, "name": name, "workspace": workspace, "agentDir": agent_dir,
-    "memorySearch": {"extraPaths": [], "multimodal": {"enabled": False, "modalities": []},
-                     "fallback": "openai"},
-}
-lst = cfg["agents"]["list"]
-by_id = {a.get("id"): a for a in lst if isinstance(a, dict) and a.get("id")}
-existing = by_id.get(agent_id)
-if existing is None:
-    lst.append(desired); action = "added"
+# WORKSPACE: every live dept- entry points at workspaces/command-center/<slug>.
+# The old workspace/departments/<slug> path matched no sibling entry on the box.
+workspace = os.path.join(oc_root, "workspaces", "command-center", slug)
+# multimodal disabled + fallback openai (a text-only embedding provider throws
+# on multimodal). NO model key: sibling dept- entries carry none and inherit
+# agents.defaults, so hardcoding one here would pin this department to a model
+# the client never chose.
+_mem = {"extraPaths": [], "multimodal": {"enabled": False, "modalities": []},
+        "fallback": "openai"}
+if MODE_ENTRIES:
+    # entries: the KEY is the id; memory.search is NESTED (live entries use it).
+    desired = {"name": name, "workspace": workspace, "agentDir": agent_dir,
+               "memory": {"search": _mem}}
+    existing = entries.get(agent_id)
+    if not isinstance(existing, dict):
+        entries[agent_id] = desired; action = "added"
+    else:
+        changed = False
+        for k in ("name", "workspace", "agentDir"):
+            if existing.get(k) != desired[k]:
+                existing[k] = desired[k]; changed = True
+        mem = existing.get("memory")
+        if not isinstance(mem, dict):
+            mem = existing["memory"] = {}
+        if not isinstance(mem.get("search"), dict):
+            mem["search"] = _mem; changed = True
+        existing.pop("memorySearch", None)   # flat key is the list-mode shape
+        action = "updated" if changed else "no-op"
 else:
-    changed = False
-    for k in ("name", "workspace", "agentDir"):
-        if existing.get(k) != desired[k]:
-            existing[k] = desired[k]; changed = True
-    existing.setdefault("memorySearch", desired["memorySearch"])
-    action = "updated" if changed else "no-op"
+    desired = {"id": agent_id, "name": name, "workspace": workspace,
+               "agentDir": agent_dir, "memorySearch": _mem}
+    lst = agents["list"]
+    by_id = {a.get("id"): a for a in lst if isinstance(a, dict) and a.get("id")}
+    existing = by_id.get(agent_id)
+    if existing is None:
+        lst.append(desired); action = "added"
+    else:
+        changed = False
+        for k in ("name", "workspace", "agentDir"):
+            if existing.get(k) != desired[k]:
+                existing[k] = desired[k]; changed = True
+        existing.setdefault("memorySearch", desired["memorySearch"])
+        action = "updated" if changed else "no-op"
 # Backup (best-effort) + atomic write (node user; os.replace). No secret value.
 try:
     os.makedirs(os.path.join(oc_root, "backups"), exist_ok=True)
@@ -1392,13 +1425,20 @@ os.makedirs(agent_dir, exist_ok=True)
 os.makedirs(workspace, exist_ok=True)
 # READ-BACK verify: the entry must be present exactly once AND both dirs must exist.
 back = json.load(open(cfg_path, encoding="utf-8"))
-ids = [a.get("id") for a in back.get("agents", {}).get("list", []) if isinstance(a, dict)]
-if ids.count(agent_id) != 1 or not os.path.isdir(agent_dir) or not os.path.isdir(workspace):
-    sys.stderr.write("[wire] read-back FAILED: entry_count=%d agentDir=%s workspace=%s\n"
-                     % (ids.count(agent_id), os.path.isdir(agent_dir), os.path.isdir(workspace)))
+_ba = back.get("agents", {})
+if MODE_ENTRIES:
+    count = 1 if isinstance(_ba.get("entries", {}).get(agent_id), dict) else 0
+    where = "agents.entries"
+else:
+    ids = [a.get("id") for a in _ba.get("list", []) if isinstance(a, dict)]
+    count = ids.count(agent_id)
+    where = "agents.list[]"
+if count != 1 or not os.path.isdir(agent_dir) or not os.path.isdir(workspace):
+    sys.stderr.write("[wire] read-back FAILED (%s): entry_count=%d agentDir=%s workspace=%s\n"
+                     % (where, count, os.path.isdir(agent_dir), os.path.isdir(workspace)))
     sys.exit(5)
-sys.stderr.write("[wire] %s agents.list[] entry %s (agentDir %s, workspace %s); read-back verified\n"
-                 % (action, agent_id, agent_dir, workspace))
+sys.stderr.write("[wire] %s %s entry %s (agentDir %s, workspace %s); read-back verified\n"
+                 % (action, where, agent_id, agent_dir, workspace))
 PY
     rc=$?
     set_crc "$rc"

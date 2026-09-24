@@ -7,10 +7,14 @@ set -euo pipefail
 
 FLEET_AUDIT_VERSION="v1.0.0"
 
+# Root: /data/.openclaw when present, else ~/.openclaw. Platform LABEL: the
+# OS, as platform/common.sh oc_detect_platform (a Linux box with ~/.openclaw
+# is "vps", never "mac").
+case "$(uname -s)" in Linux) PLATFORM="vps" ;; *) PLATFORM="mac" ;; esac
 if [[ -d /data/.openclaw ]]; then
-  OC_ROOT="/data/.openclaw"; PLATFORM="vps"
+  OC_ROOT="/data/.openclaw"
 elif [[ -d "${HOME}/.openclaw" ]]; then
-  OC_ROOT="${HOME}/.openclaw"; PLATFORM="mac"
+  OC_ROOT="${HOME}/.openclaw"
 else
   echo "[fleet-audit-remediate] ERROR: no OpenClaw root found" >&2; exit 2
 fi
@@ -243,7 +247,12 @@ check_f4_decoy_db() {
   _log "F4: checking for 0-byte mission-control.db decoys..."
   local decoy_paths=()
   local candidate
-  for candidate in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db"; do
+  # Includes the layout paths DB consumers probe FIRST ($OC_ROOT/workspaces/
+  # command-center, $OC_ROOT/data): a 0-byte file there shadows the live board.
+  # The CC's own configured DB is never a decoy, even while still 0 bytes.
+  for candidate in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db" \
+                   "${OC_ROOT}/workspaces/command-center/mission-control.db" "${OC_ROOT}/data/mission-control.db"; do
+    [[ "$candidate" == "${DATABASE_PATH:-}" || "$candidate" == "${DASHBOARD_DB_PATH:-}" ]] && continue
     if [[ -f "$candidate" ]]; then
       local sz; sz=$(stat -f%z "$candidate" 2>/dev/null || stat -c%s "$candidate" 2>/dev/null || echo "1")
       if [[ "$sz" == "0" ]]; then decoy_paths+=("$candidate"); fi

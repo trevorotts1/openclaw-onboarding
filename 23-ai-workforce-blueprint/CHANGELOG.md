@@ -2,6 +2,171 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-09-21 - fix(departments): a department's own slug beats the map key it is filed under
+
+A client artifact keys its department map `<name>-dept` while each entry names
+its real folder. v25.1.61 folded on the KEY, slugging all 34 departments
+`…-dept` while readers that take the slug off the entry produced the bare name
+— one department with two identities, and a duplicate workspace row for each.
+
+`shared-utils/departments_payload.py` now resolves entry identity by
+precedence `id` -> `slug` -> `folder` -> the map key, using the key only when
+the entry carries none of the three, and stripping a trailing `-dept` only
+from a key-derived slug. An entry's own value is never rewritten. Mirrored
+byte for byte with blackceo-command-center at f73ae663 (CC v7.6.35).
+
+The `except ImportError` fallbacks in `scripts/materialize-missing-departments.py`
+(strict), `scripts/department-floor.py`, `scripts/prove-zhe.py`,
+`scripts/prove-board-join.py` and `scripts/upgrade-company-config.py`
+(lenient) carry the identical precedence; all were executed against the client
+shape and the four precedence cases and agree with the shared module.
+
+## [Unreleased] - 2026-09-21 - fix(departments): a slug-keyed "departments" object is folded, not refused
+
+A client Mac's real `departments.json` is `{"company": ..., "total_departments":
+34, "total_roles": N, "departments": {"<slug>": {...}, ...}}` — the `departments`
+KEY holds an OBJECT keyed by slug. The shared envelope normalizer accepted a
+slug-keyed object only at the top level, so 34 real departments read as a hard
+`MalformedDepartmentsError` instead.
+
+`shared-utils/departments_payload.py` now folds a slug-keyed object of
+department objects in BOTH positions, under the `departments` key and at the
+top level, with the key filling `id`/`slug` only when the entry lacks its own
+and file order preserved. The fold still refuses unless EVERY value is an
+object, so a metadata envelope's keys can never become departments.
+
+The `except ImportError` fallbacks in `scripts/materialize-missing-departments.py`
+(strict), `scripts/department-floor.py`, `scripts/prove-zhe.py`,
+`scripts/prove-board-join.py` and `scripts/upgrade-company-config.py` (lenient)
+carry the identical rule, so a box predating the shared module does not report
+zero departments on a file the module reads fine.
+
+No writer here emits that shape: `scripts/build-workforce.py` writes a bare
+list (`generate_departments_json`) or `{removedWithProvenance, departments:
+[list]}` (`_make_artifact_payload`), and `scripts/retire-confirmed-decline.sh`
+writes a list. The dict-keyed `departments` built by
+`scripts/register-library-additions.py` belongs to
+`templates/role-library/_index.json`, a different file. No writer was changed.
+
+## [Unreleased] - 2026-09-21 - fix(persona-selector): Stage-D stops outbidding the fleet for Ollama Cloud
+
+`PERSONA_SCORE_WORKERS` default 6 -> 3. Ollama Cloud's concurrency limit is
+ACCOUNT-WIDE (10) and the operator's standing ceiling is 8, shared by every
+running agent on every box — not a per-process budget. A 6-wide scoring burst
+queued behind whatever agents were already live and step 1 of the scoring chain
+timed out: measured on a client Mac, 0 of 3 scoring calls reached
+`ollama-cloud/minimax-m3` and all fell through to OpenRouter/Agnes at 4-20s.
+Three is wide enough to hide per-call latency without spending the fleet's
+shared concurrency.
+
+The env override is unchanged, and `PERSONA_SCORE_WORKERS=1` is still the
+literal sequential path with no thread created.
+
+`tests/unit/stage-d-parallel-scoring.test.py` now runs its overlap leg at the
+SHIPPED default rather than a pinned 6, so a default that stops overlapping
+fails there instead of passing against a width nothing ships (6 personas x 0.2s
+at 3 workers is ~0.4s, inside the unchanged 0.6s bound), and pins the default at
+3 with the reason. Paired with the `shared-utils/llm_score.py` OSError fix in
+onboarding v25.1.58: on Python 3.9 a `socket.timeout` is not a `TimeoutError`,
+so a step timeout escaped the per-step handler, propagated out of `pool.map` in
+`score_personas`, and killed the whole selection instead of advancing the chain.
+
+## [Unreleased] - 2026-09-21 - fix(departments): a wrapped departments.json is read, not folded into departments
+
+`<company_dir>/departments.json` legitimately ships in two top-level shapes: the
+bare LIST `generate_departments_json()` returns, and an OBJECT wrapping that
+list under a `departments` key. This skill writes the second one itself —
+`scripts/retire-confirmed-decline.sh` emits
+`{removedWithProvenance, departments}` and `build-workforce.py`'s
+`_make_artifact_payload` deliberately preserves it so the retirement audit trail
+survives every later apply-diff build. A client Mac additionally carried a build
+envelope of the same family, `{company, total_departments, total_roles,
+departments}`.
+
+Every reader here gated on `isinstance(data, list)` and read the object shape as
+"no departments" — a false negative on an artifact this skill wrote. The envelope
+layer now goes through one shared normalizer,
+`shared-utils/departments_payload.py`: a list is used, an object carrying a
+`departments` list is unwrapped, and anything else fails loudly naming the path
+and the top-level type. A dict's keys are never iterated as departments.
+
+- `scripts/materialize-missing-departments.py` also closed a DATA-LOSS path. It
+  fell back to `existing = []` on the object shape and then wrote the merged list
+  back, overwriting the client's real departments and destroying
+  `removedWithProvenance`. It now unwraps, writes back in the shape it read, and
+  REFUSES to touch an artifact it cannot read rather than clobbering it.
+- `scripts/prove-zhe.py` (sr-b) no longer scores a wrapped artifact "present but
+  lists no departments"; `scripts/prove-board-join.py` and
+  `scripts/department-floor.py` no longer report chosen-source "none" on one;
+  `scripts/upgrade-company-config.py` no longer emits an empty `dept_kpis` block.
+
+Neither writer changed. Onboarding v25.1.57.
+
+## [Unreleased] - 2026-09-21 - perf(persona-selector): Stage-D scores finalists concurrently
+
+Stage-D scored its finalists one at a time. In `llm` mode each finalist costs
+four sequential HTTPS chat calls, one per scoring layer, so a profiled
+`--blend` run spent 43.7s of its 46.6s wall clock blocked in
+`llm_score._post_chat` (other runs: 206s, 258s). The Command Center killed the
+selector at its spawn budget and the blend never landed.
+
+- `score_personas()` replaces the Stage-D list comprehension and maps
+  `score_persona` over the finalists on a `ThreadPoolExecutor`. `executor.map`
+  yields in INPUT order, so the scored list is element-for-element what the
+  comprehension produced and variety sampling, the bonus passes and the
+  tie-breaks are untouched.
+- `PERSONA_SCORE_WORKERS` (default 6) sets the width, capped at the finalist
+  count. `PERSONA_SCORE_WORKERS=1` takes a literal sequential path with no
+  thread created, as the escape hatch.
+- `shared-utils/semantic_task_fit.py` locks the task-embedding cache behind one
+  `_task_embed()` so the G13 "one embed per selection" contract holds with
+  concurrent callers instead of becoming one embed per finalist.
+- `shared-utils/llm_score.py` sets `_secret_helper()`'s latch only after the
+  module reference is final, closing a window where a racing thread degraded to
+  exact-name-only credential resolution.
+
+`decompose-task.py`'s sub-task loop stays sequential on purpose: each
+sub-task's `record_selection` write is what the next sub-task's variety penalty
+and sticky-assignment read.
+
+Tests: `tests/unit/stage-d-parallel-scoring.test.py` (5 cases, hermetic,
+fail-first proven at 1.19s against the 0.6s bound).
+
+## [Unreleased] - 2026-09-17 - fix(workforce): refresh-stale-roles restamps role provenance so refilled roles stop re-flagging STALE
+
+`refresh-stale-roles.py` rewrote a STALE role's `how-to.md` from the role
+library and reported `REFRESHED`, but restamped `.workforce-build-state.json`'s
+`artifactProvenance` for `kind=="sop"` and `kind=="dept"` rows only, never for
+`kind=="role"`. `detect-stale-artifacts.py`'s fast path reads that state file
+and nothing else (its own comment calls the path filesystem-blind), so the
+refilled role kept its OLD `source_content_sha`, was re-classified STALE on the
+very next run, and the roll's D2 completeness gate withheld the version stamp.
+One box sat on a single version with 10 roles looping this way across five
+consecutive rolls, every roll printing `REFRESHED` for them.
+
+- `refresh_one()` now returns the provenance record for the bytes it wrote,
+  built from the `workforce-provenance` marker `try_library_fill()` stamped into
+  those bytes (falling back to the queue row's own `current` manifest sha), in
+  the same record shape `build-workforce.py`'s
+  `_flush_artifact_provenance_to_state()` writes for a fresh build.
+- `_apply_state_restamps()` merges role restamps in the SAME atomic build-state
+  write as sop/dept, so content and provenance can never land separately.
+  `artifactProvenance.personas` and every unrelated state key are untouched.
+- A role refreshed with no establishable sha counts against the completeness
+  contract instead of being reported as a clean refresh.
+- ONE LIBRARY PER DRAIN: `create_role_workspaces.py` resolves the role-library
+  with different precedence than this consumer does (it probes the INSTALLED
+  skills dir; the consumer probes the directory it was run from), so a drain run
+  from any other tree refilled `how-to.md` out of a different library than the
+  queue it was consuming, producing `library_fill produced no usable content`
+  for exactly the roles the running tree had added. The consumer now pins
+  `ROLE_LIBRARY_PATH` to its own resolved `SKILL_DIR`, which an explicitly-set
+  operator value still overrides.
+- `tests/unit/refresh-stale-roles.test.sh` gains scenarios 17-22: end-to-end
+  refresh-then-`detect-stale-artifacts.py`-says-CURRENT, the sha landing in both
+  the marker and build state, a control proving sop/dept/persona records survive
+  byte-identical, dry-run restamps nothing, and the library-pin pair.
+
 ## v22.0.31 — durable jq resolution on container boxes
 
 - The container image does not ship `jq`, and a distro-installed `jq` vanishes on

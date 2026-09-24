@@ -209,6 +209,7 @@ from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from presentation_job.result import CheckResult
 from presentation_job import preflight_shadow as _preflight_shadow  # TRUST BOUNDARY wrap (report-only, see module docstring)
 from presentation_job import model_catalog as _model_catalog  # FIX 13: aliases, never literal model IDs
+from presentation_job import arc_slides as _arc_slides  # PD-TEST-067: the ONE reader for the deck's slide-array shape
 
 # FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
 # BUNDLE gate's guide_pdf/deck_pdf floors scale by THIS deck's slide count via
@@ -258,7 +259,7 @@ except Exception:  # noqa: BLE001 — fail-soft: legacy box without governor.py
     except Exception:  # noqa: BLE001 — still fail-soft
         _governor = None  # type: ignore[assignment]
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # FIX 20 citation-validation gate (lazy import: only needed when a run dir
@@ -4457,8 +4458,7 @@ def _chk_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     if isinstance(obj, dict) and "__parse_error__" in obj:
         return ("AF-PITCH-MISSING: arc_allocation.json is not valid JSON, so the offer "
                 "ladder + re-pitch cannot be proven. See SOP-PITCH-01 / SOP-PITCH-03.")
-    slots = obj if isinstance(obj, list) else (
-        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067: shared reader
     # Flatten every arc-section / tag token across the allocation into one lowercase blob.
     tokens = []
     for s in slots if isinstance(slots, list) else []:
@@ -4657,7 +4657,7 @@ def _chk_arc(path: Optional[Path]) -> str:
     obj = _read_json(path)
     if "__parse_error__" in obj:
         return f"not valid JSON ({obj['__parse_error__']})"
-    slots = obj if isinstance(obj, list) else (obj.get("slots") or obj.get("allocation") or obj.get("slides"))
+    slots = _arc_slides.slots_from_obj(obj)  # PD-TEST-067: the shared reader
     if not slots:
         return "no per-slide arc-section allocation present (Architect arc not built)"
     return ""
@@ -4696,14 +4696,11 @@ def _count_output_slides(run_dir: Path, slides_path: Optional[Path] = None) -> O
     def _count_from(p: Path) -> Optional[int]:
         if not p.exists():
             return None
-        obj = _read_json(p)
-        if isinstance(obj, list):
-            return len(obj)
-        if isinstance(obj, dict) and "__parse_error__" not in obj:
-            slides = obj.get("slides")
-            if isinstance(slides, list):
-                return len(slides)
-        return None
+        # PD-TEST-067: the shape is read by presentation_job.arc_slides, the one
+        # module that knows it -- this gate, dispatcher._prompt_slide_count and
+        # fanout._slides_for_units must never disagree on N again. The
+        # "__parse_error__" sentinel _read_json returns is still "no count".
+        return _arc_slides.slide_count_from_obj(_read_json(p))
 
     # 0. The ACTUAL rendered file (positional slides.json), when threaded in.
     if slides_path is not None:
@@ -4720,12 +4717,13 @@ def _count_output_slides(run_dir: Path, slides_path: Optional[Path] = None) -> O
     # 2. arc_allocation.json — per-slide arc-section allocation.
     arc = run_dir / "working" / "copy" / "arc_allocation.json"
     if arc.exists():
-        obj = _read_json(arc)
-        if "__parse_error__" not in obj:
-            slots = obj if isinstance(obj, list) else (
-                obj.get("slots") or obj.get("allocation") or obj.get("slides"))
-            if isinstance(slots, list):
-                return len(slots)
+        # PD-TEST-067: same shared reader as _count_from above; the live P3-ARC
+        # artifact spells its array "slide_allocations", which the old
+        # slots/allocation/slides lookup could not see (returned None for a
+        # present, complete 8-slide allocation).
+        n = _arc_slides.slide_count_from_obj(_read_json(arc))
+        if n is not None:
+            return n
     return None
 
 
@@ -5090,8 +5088,7 @@ def _load_slide_arc_tags(run_dir: Path) -> dict:
     obj = _read_json(arc)
     if isinstance(obj, dict) and "__parse_error__" in obj:
         return {}
-    slots = obj if isinstance(obj, list) else (
-        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067: shared reader
     out = {}
     if not isinstance(slots, list):
         return {}
@@ -6571,6 +6568,140 @@ PITCHLESS_FORBIDDEN_TOKENS = (
 )
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-131 -- WHAT AF-PITCH-LEAK MUST ACTUALLY SCAN.
+#
+# THE DEFECT. This check lowercased the WHOLE FILE and tested each forbidden token
+# as a bare substring. On the live pitchless run that made it fail on two things
+# that are not pitch content at all:
+#
+#   1. THE RECORD OF ABSENCE. The arc allocation documents its own suppression
+#      using the forbidden vocabulary, verbatim:
+#        "...intake declares pitch_included:false, so there is no anchor price,
+#         value stack, or price ladder in this deck."
+#        "...no offer, price, ladder, vip, or re-pitch content is included because
+#         intake.json records pitch_included:false."
+#      The producer did exactly what a pitchless deck requires and then SAID SO,
+#      and the saying is what failed. A check for content must not be tripped by a
+#      sentence denying that content.
+#
+#   2. NULL-VALUED SCHEMA KEYS. The same file carries the schema's own field names
+#      with null values -- "price_ladder_section": null, "value_stack_section":
+#      null, "re_pitch_section": null, "offer_price_ladder_included": false. A key
+#      declaring a thing ABSENT was scanned as if it declared it PRESENT, and the
+#      `_included: false` case trips on the key name alone.
+#
+# THE FIX. Scan the artifact's CONTENT, not its serialization:
+#   * for JSON, walk the VALUES and never the keys, so a field NAME can never be a
+#     match; and
+#   * skip fields that are prose ABOUT the artifact rather than part of it
+#     (`*_reason`, `*_note(s)`, `validation_notes`), because those exist to explain
+#     decisions -- including the decision to suppress.
+# Everything else is still scanned exactly as before, so a genuine leak in a
+# substantive field (`section_id`, `name`, `move_tag`, `slide_title`, ...) still
+# fails. Non-JSON artifacts (.md copy) are prose by nature and stay whole-text.
+# ---------------------------------------------------------------------------
+
+#: Field names whose VALUE is prose about the artifact rather than artifact content.
+_PITCH_SCAN_PROSE_FIELDS = frozenset({
+    "reason", "note", "notes", "validation_notes", "validation_note",
+})
+
+#: Names that LOOK like prose fields but carry DELIVERED content (review D1). A
+#: speaker note ships with the deck; skipping it would hide a real leak, so these
+#: are never treated as prose-about-the-artifact. BOTH spellings are listed: the
+#: department's canonical delivered-notes field is SINGULAR -- `presenter_note`
+#: inside presenter_notes.json (director-of-presentations.md:505,
+#: presenter_guide.py:105/374, pptx-assembly-specialist.md:195) -- and the plural-
+#: only set let `{"presenter_note": "price ladder tier 2 is $2997"}` pass.
+_PITCH_SCAN_CONTENT_FIELDS = frozenset({
+    "speaker_note", "speaker_notes", "slide_note", "slide_notes",
+    "presenter_note", "presenter_notes", "script_note", "script_notes",
+    "narration_note", "narration_notes",
+})
+
+
+def _pitch_scan_is_prose_field(name: str) -> bool:
+    n = str(name or "").strip().lower()
+    if n in _PITCH_SCAN_CONTENT_FIELDS:
+        return False
+    # EXACT prose names, plus the `*_reason` family the department actually uses
+    # to record a suppression rationale. The blanket `*_note` / `*_notes`
+    # catch-all was deliberately DROPPED (independent review of PR #1155): it
+    # swallowed content-bearing names whose own KEY states the leak --
+    # `{"price_ladder_notes":"Tier 1 $997, Tier 2 $2997"}` and
+    # `{"offer_notes":"Buy now, act now."}` both passed while failing on main.
+    # `*_reason` stays because the live run records suppressions as
+    # `offer_price_ladder_reason` and `non_applicable_sections.reason`, and
+    # scanning those keys would restore the false positive this rewrite removes.
+    return n in _PITCH_SCAN_PROSE_FIELDS or n.endswith("_reason")
+
+
+def _pitch_scan_key_is_affirmative(value) -> bool:
+    """True when a key's own NAME should be scanned as content (review D2).
+
+    Scanning keys unconditionally is what produced the false positives this rewrite
+    exists to remove: the live arc records a suppressed mechanic as a null/false
+    key (`"offer_price_ladder": null`). Scanning keys only when the value asserts
+    something keeps `{"offer_price_ladder_included": true}` and
+    `{"price_ladder_section": {"rung_1": "$997"}}` failing, while a null/false/empty
+    key stays silent. Underscores normalise to spaces so `price_ladder_section`
+    still matches the token "price ladder"."""
+    return not (value is None or value is False or value == "" or value == []
+                or value == {})
+
+
+def _pitch_scan_texts(path: Path) -> List[str]:
+    """The strings of `path` that AF-PITCH-LEAK should test.
+
+    JSON -> its values (never its keys), minus prose-about-the-artifact fields.
+    Anything else (the .md copy) -> the file text, because that IS prose content.
+    An unparseable JSON file degrades to the whole text, i.e. the old behaviour,
+    so a broken artifact can never become a SILENT pass."""
+    raw = path.read_text(errors="replace")
+    if path.suffix.lower() != ".json":
+        return [raw]
+    try:
+        obj = json.loads(raw)
+    except Exception:  # noqa: BLE001 -- fail towards the stricter scan
+        return [raw]
+    out: List[str] = []
+
+    def walk(node, key="", skip_direct_strings=False):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                prose = _pitch_scan_is_prose_field(k)
+                # D2: a non-prose key with an affirmative value states content in
+                # its own name ("offer_price_ladder_included": true). BOTH the raw
+                # key and its space-normalised form are tested: normalising alone
+                # turned `re_pitch_section` into "re pitch section", which matches
+                # no token (the tuple holds "re-pitch"/"re_pitch"/"repitch"), so
+                # the whole re-pitch family silently stopped being caught.
+                if not prose and _pitch_scan_key_is_affirmative(v):
+                    out.append(str(k))
+                    out.append(str(k).replace("_", " "))
+                if prose:
+                    if isinstance(v, str):
+                        continue          # its own prose, not content
+                    if isinstance(v, list):
+                        # D1: a prose key skips its STRING LEAVES but still
+                        # descends into container elements, so a list of dicts
+                        # cannot hide content the way a bare dict cannot.
+                        walk(v, str(k), True)
+                        continue
+                walk(v, str(k))
+        elif isinstance(node, list):
+            for v in node:
+                if skip_direct_strings and isinstance(v, str):
+                    continue
+                walk(v, key)
+        elif isinstance(node, str):
+            out.append(node)
+
+    walk(obj)
+    return out
+
+
 def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """2A — AF-PITCH-LEAK. A PITCHLESS deck (intake.json.pitch_included:false) must
     contain NO pitch/price/offer/ladder content. Scans arc_allocation.json,
@@ -6588,15 +6719,18 @@ def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
             leaks.append(f"{rel} present (Offer Price Strategist ran on a pitchless deck)")
             break
     # Token scan over the arc + copy artifacts.
-    scan = []
     for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
                 "working/copy/slides_copy.md", "slides_copy.md",
                 "working/copy/price_ladder.json"):
         p = run_dir / rel
-        if p.exists():
-            scan.append((rel, p.read_text(errors="replace").lower()))
-    for rel, low in scan:
-        hits = [t for t in PITCHLESS_FORBIDDEN_TOKENS if t in low]
+        if not p.exists():
+            continue
+        hits = []
+        for text in _pitch_scan_texts(p):
+            low = text.lower()
+            for t in PITCHLESS_FORBIDDEN_TOKENS:
+                if t in low and t not in hits:
+                    hits.append(t)
         if hits:
             leaks.append(f"{rel}: " + ", ".join(repr(h) for h in hits[:6]))
     if leaks:
@@ -8490,17 +8624,22 @@ def check_pitch_engines(run_dir: Path, slides_path: Optional[Path] = None) -> st
     pre-copy. Calls pitch_engines_check.check_copy(run_dir, problems) — the v15 importable
     entry point Agent 3 exposes; run_dir is the ACTUAL run dir, matching the module's own
     load_run(run_dir) -> working/copy convention. Returns a fatal message on any auto-fail."""
-    if _intake_pitch_included(run_dir) is not True:
-        return ""  # pitchless / unset — AF-PITCH-LEAK / AF-PITCH-FLAG-UNSET own those cases.
-    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
-    if not copy_md.exists():
-        return ""  # pre-copy phase — the offer engines defer.
     pec = _import_pitch_engines_check()
     if pec is None:
         return ("AF-PITCH-ENGINE: pitch_engines_check.py could not be imported from the "
                 "scripts directory; the offer sub-engines (cadence / cost-of-inaction / "
                 "branded-method / guarantee / time-to-result) could not run. Ensure "
                 "pitch_engines_check.py is present beside build_deck.py.")
+    if not hasattr(pec, "pitch_applicability"):
+        return "AF-PITCH-ENGINE: pitch_engines_check.py exposes no pitch_applicability(run_dir) contract."
+    applicable, refusal = pec.pitch_applicability(run_dir)
+    if refusal:
+        return refusal
+    if not applicable:
+        return ""
+    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
+    if not copy_md.exists():
+        return ""  # pre-copy phase — the offer engines defer.
     if not hasattr(pec, "check_copy"):
         return ("AF-PITCH-ENGINE: pitch_engines_check.py exposes no check_copy(run_dir, "
                 "problems) entry point (the v15 interface contract requires it). The offer "
@@ -8775,9 +8914,13 @@ def check_copy_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = Non
                 continue
             deficiencies.append(_engine_problem_to_def(p, "copy"))
 
-    if _intake_pitch_included(run_dir) is True:
-        pec = _import_pitch_engines_check()
-        if pec is not None and hasattr(pec, "check_copy"):
+    pec = _import_pitch_engines_check()
+    if pec is not None and hasattr(pec, "check_copy"):
+        applicable, refusal = pec.pitch_applicability(run_dir)
+        if refusal:
+            deficiencies.append(_engine_problem_to_def(
+                {"code": refusal.split(":", 1)[0], "detail": refusal}, "offer"))
+        elif applicable:
             pprob = []
             try:
                 pec.check_copy(run_dir, pprob)
@@ -9158,8 +9301,7 @@ def _apex_slide_ordinal(run_dir: Path) -> Optional[int]:
         obj = _read_json(p)
         if not isinstance(obj, (list, dict)) or (isinstance(obj, dict) and "__parse_error__" in obj):
             return None
-        slots = obj if isinstance(obj, list) else (
-            obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+        slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067: shared reader
         for s in slots if isinstance(slots, list) else []:
             if not isinstance(s, dict):
                 continue
@@ -9432,8 +9574,7 @@ def _chk_peak_end(run_dir: Path, slides_path: Optional[Path] = None) -> str:
             if isinstance(obj, dict) and "__parse_error__" in obj:
                 return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
                         "engineered PEAK + ending cannot be proven (P49).")
-            slots = obj if isinstance(obj, list) else (
-                obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+            slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067
             tokens = []
             for s in slots if isinstance(slots, list) else []:
                 if isinstance(s, dict):

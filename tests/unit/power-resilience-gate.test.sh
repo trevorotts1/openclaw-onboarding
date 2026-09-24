@@ -24,6 +24,16 @@
 #   (8) The three hand-rolled pm2 launchd names collapse into ONE canonical job.
 #   (9) The gateway is NOT blindly converted to a LaunchDaemon on a box with a
 #       session-coupled plugin enabled.
+#  (12) LAYER E, the reboot-stale RESCUE tunnel watchdog, actually BITES. The
+#       rescue connector com.blackceo.rescue-<slug> can return from a reboot
+#       holding a stale cached edge address and dial an RFC1918 address on port
+#       7844 forever. The process is ALIVE, so launchd KeepAlive keeps it and
+#       the existing pgrep-based watchdog reports OK. These assertions run the
+#       watchdog against a synthetic log window with launchctl and nc stubbed on
+#       PATH and read the stub's own call log: a stale window IS kicked, a
+#       window with one registration is NOT, a cooldown blocks a second kick, an
+#       unreadable window is UNDETERMINED rather than zero, and a disabled sshd
+#       is re-enabled and PROVEN with a real connection attempt.
 #
 # Fully offline. No root. No live box. Every system command is faked via the
 # library's injectable seams (PR_FDESETUP / PR_PMSET / PR_DEFAULTS / ...).
@@ -456,6 +466,277 @@ UPDATER="$REPO_ROOT/update-skills.sh"
 grep -qE "export OPENCLAW_BOOTSTRAP_MODE=update" "$UPDATER" \
     && pass "11m: update-skills.sh exports OPENCLAW_BOOTSTRAP_MODE=update (update path scoped)" \
     || fail "11m: update-skills.sh does not signal update mode — the roll would still abort"
+
+# =============================================================================
+# (12) LAYER E: the reboot-stale RESCUE tunnel watchdog
+# =============================================================================
+# The gap this closes: the rescue connector com.blackceo.rescue-<slug> can come
+# back from a reboot holding a stale cached edge address and dial the LAN router
+# (RFC1918:7844) forever. The process is ALIVE, so launchd KeepAlive keeps it,
+# install-watchdog-agent.sh's pgrep check reports OK, and the box is dark to the
+# operator. Nothing in this repo detected "alive but never registered" before.
+#
+# Every assertion below is BEHAVIOURAL: the watchdog is executed against a
+# synthetic log window with launchctl and nc stubbed on PATH, and the stub's own
+# call log is the evidence. A presence grep would not have caught the defect.
+echo "--- (12) Layer E: rescue-tunnel reboot-stale watchdog ---"
+
+RTW="$REPO_ROOT/platform/mac/tunnel-hardening/rescue-tunnel-watchdog.sh"
+RTW_PLIST="$REPO_ROOT/platform/mac/tunnel-hardening/com.blackceo.rescue-tunnel-watchdog.plist.template"
+RTW_INSTALL="$REPO_ROOT/platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh"
+
+# 12a-c: the three artifacts exist and parse.
+[ -f "$RTW" ] \
+    && pass "12a: rescue-tunnel-watchdog.sh ships" \
+    || fail "12a: rescue-tunnel-watchdog.sh is missing"
+[ -f "$RTW_PLIST" ] \
+    && pass "12b: com.blackceo.rescue-tunnel-watchdog.plist.template ships" \
+    || fail "12b: the Layer E LaunchDaemon template is missing"
+[ -f "$RTW_INSTALL" ] \
+    && pass "12c: install-rescue-tunnel-watchdog.sh ships" \
+    || fail "12c: the Layer E installer is missing"
+if [ -f "$RTW" ] && bash -n "$RTW" 2>/dev/null; then
+    pass "12d: rescue-tunnel-watchdog.sh is bash -n clean"
+else
+    fail "12d: rescue-tunnel-watchdog.sh does not parse"
+fi
+if [ -f "$RTW_INSTALL" ] && bash -n "$RTW_INSTALL" 2>/dev/null; then
+    pass "12e: install-rescue-tunnel-watchdog.sh is bash -n clean"
+else
+    fail "12e: install-rescue-tunnel-watchdog.sh does not parse"
+fi
+
+# ---- Harness: stub launchctl + nc, synthesize a connector log window ---------
+E="$WORK/layerE"
+EBIN="$E/bin"; EDAEMONS="$E/LaunchDaemons"; ELOGS="$E/Logs"; ESTATE="$E/state"
+mkdir -p "$EBIN" "$EDAEMONS" "$ELOGS" "$ESTATE"
+LCLOG="$E/launchctl.calls"
+
+cat > "$EBIN/launchctl" <<'EOF'
+#!/bin/sh
+echo "launchctl $*" >> "$LCLOG"
+if [ "${1:-}" = "print-disabled" ]; then
+  printf 'disabled services = {\n'
+  printf '\t"com.openssh.sshd" => %s\n' "${FAKE_SSHD_DISABLED:-false}"
+  printf '\t"com.apple.somethingelse" => false\n'
+  printf '}\n'
+  exit 0
+fi
+exit "${FAKE_LAUNCHCTL_RC:-0}"
+EOF
+
+cat > "$EBIN/nc" <<'EOF'
+#!/bin/sh
+exit "${FAKE_NC_RC:-0}"
+EOF
+
+# tail: a READ FAILURE seam. Passes straight through to the real tail unless
+# FAKE_TAIL_FAIL=1. Modelling "the log could not be read" by other means is not
+# portable: macOS `tail <dir>` exits 0 with empty output while GNU `tail <dir>`
+# exits 1, and a chmod-000 file is readable anyway when the suite runs as root.
+# A seam is the only way this case is exercised identically everywhere.
+REAL_TAIL="$(command -v tail)"
+cat > "$EBIN/tail" <<EOF
+#!/bin/sh
+if [ "\${FAKE_TAIL_FAIL:-0}" = "1" ]; then
+  echo "tail: simulated read error" >&2
+  exit 1
+fi
+exec "$REAL_TAIL" "\$@"
+EOF
+chmod +x "$EBIN/launchctl" "$EBIN/nc" "$EBIN/tail"
+
+RESCUE_TEST_LABEL="com.blackceo.rescue-testbox"
+: > "$EDAEMONS/${RESCUE_TEST_LABEL}.plist"
+
+# write_window <lan-line-count> <registered-line-count>
+write_window() {
+    : > "$ELOGS/${RESCUE_TEST_LABEL}.err.log"
+    : > "$ELOGS/${RESCUE_TEST_LABEL}.out.log"
+    _i=0
+    while [ "$_i" -lt "$1" ]; do
+        echo "ERR connection error dialing edge 192.168.1.1:7844: connect: no route" \
+            >> "$ELOGS/${RESCUE_TEST_LABEL}.err.log"
+        _i=$((_i + 1))
+    done
+    _i=0
+    while [ "$_i" -lt "$2" ]; do
+        echo "INF Registered tunnel connection connIndex=0 location=iad" \
+            >> "$ELOGS/${RESCUE_TEST_LABEL}.out.log"
+        _i=$((_i + 1))
+    done
+}
+
+# run_rtw [extra env assignments are inherited from the caller]
+run_rtw() {
+    : > "$LCLOG"
+    PATH="$EBIN:$PATH" \
+    LCLOG="$LCLOG" \
+    RESCUE_WATCHDOG_DAEMON_DIR="$EDAEMONS" \
+    RESCUE_WATCHDOG_LOG_DIR="$ELOGS" \
+    RESCUE_WATCHDOG_STATE_DIR="$ESTATE" \
+    bash "$RTW" 2>&1
+}
+
+# ---- 12f-h: 5 LAN dials, 0 registered -> KICK -------------------------------
+write_window 5 0
+rm -f "$ESTATE/rescue-watchdog.last-kick"
+OUT12A="$(FAKE_SSHD_DISABLED=false run_rtw)"
+echo "$OUT12A" | grep -q "STALE" \
+    && pass "12f: 5 LAN dials + 0 registrations is classified STALE" \
+    || fail "12f: the stale-connector signature was not detected"
+grep -q "launchctl kickstart -k system/${RESCUE_TEST_LABEL}" "$LCLOG" \
+    && pass "12g: the stale connector is KICKED (launchctl kickstart -k system/<label>)" \
+    || fail "12g: no kickstart was issued for a provably stale connector"
+[ -s "$ESTATE/rescue-watchdog.last-kick" ] \
+    && pass "12h: the cooldown stamp is written after a kick" \
+    || fail "12h: no cooldown stamp, so the next pass could storm"
+
+# ---- 12i: the SAME condition inside the cooldown must NOT kick again ---------
+OUT12B="$(FAKE_SSHD_DISABLED=false run_rtw)"
+if grep -q "kickstart -k system/${RESCUE_TEST_LABEL}" "$LCLOG"; then
+    fail "12i: the watchdog kicked again inside its own cooldown (restart storm)"
+else
+    pass "12i: a second pass inside the cooldown HOLDS instead of kicking again"
+fi
+echo "$OUT12B" | grep -q "HOLD" \
+    && pass "12j: the hold is stated in the log, not silent" \
+    || fail "12j: the cooldown hold was not logged"
+
+# ---- 12k-l: CONTROL, 5 LAN dials but ONE registration -> NO kick -------------
+# This is the control that proves 12g is a class-specific FAULT and not a
+# class-specific TEST: same 5 LAN lines, one extra registered line, no action.
+write_window 5 1
+rm -f "$ESTATE/rescue-watchdog.last-kick"
+OUT12C="$(FAKE_SSHD_DISABLED=false run_rtw)"
+if grep -q "kickstart -k system/${RESCUE_TEST_LABEL}" "$LCLOG"; then
+    fail "12k: a connector that DID register was kicked anyway"
+else
+    pass "12k: CONTROL, 5 LAN dials + 1 registration is NOT kicked"
+fi
+echo "$OUT12C" | grep -q "registered=1" \
+    && pass "12l: the measured counts are printed, so the verdict is auditable" \
+    || fail "12l: the watchdog did not print what it measured"
+
+# ---- 12m-n: a count that cannot be established is UNDETERMINED, never zero ---
+# The log window is present and FULL of the stale signature, but the read fails.
+# A watchdog that read a failed measurement as 0 would draw a conclusion from
+# nothing. This is the exact shape the negative-result contract forbids.
+write_window 5 0
+rm -f "$ESTATE/rescue-watchdog.last-kick"
+OUT12D="$(FAKE_SSHD_DISABLED=false FAKE_TAIL_FAIL=1 run_rtw)"
+echo "$OUT12D" | grep -q "undetermined" \
+    && pass "12m: an unreadable log window reports UNDETERMINED" \
+    || fail "12m: an unreadable log window did not report undetermined"
+if grep -q "kickstart -k system/${RESCUE_TEST_LABEL}" "$LCLOG"; then
+    fail "12n: the watchdog acted on a count it could not establish"
+else
+    pass "12n: UNDETERMINED takes NO action (a failed measurement is not a zero)"
+fi
+# CONTROL on the instrument: the SAME window, same box, read succeeding, DOES
+# kick. Without this, 12n could be passing because the harness is broken.
+OUT12D2="$(FAKE_SSHD_DISABLED=false run_rtw)"
+grep -q "kickstart -k system/${RESCUE_TEST_LABEL}" "$LCLOG" \
+    && pass "12n-control: the identical window WITH a readable log does kick (the harness is live)" \
+    || fail "12n-control: the harness never kicks at all, so 12n proves nothing"
+
+# ---- 12o: no rescue daemon on this box -> say so and exit 0 ------------------
+mv "$EDAEMONS/${RESCUE_TEST_LABEL}.plist" "$E/plist.parked"
+OUT12E="$(FAKE_SSHD_DISABLED=false run_rtw)"; RC12E=$?
+echo "$OUT12E" | grep -q "no-rescue-daemon" \
+    && pass "12o: a box with no rescue daemon logs no-rescue-daemon and exits 0" \
+    || fail "12o: a box with no rescue daemon did not say so"
+[ "$RC12E" -eq 0 ] \
+    && pass "12p: that case exits 0 (it is not an error, it is a box without the daemon)" \
+    || fail "12p: a box with no rescue daemon exited $RC12E"
+mv "$E/plist.parked" "$EDAEMONS/${RESCUE_TEST_LABEL}.plist"
+
+# ---- 12q: RESCUE_LABEL pins the label, including the cloudflared slot --------
+write_window 5 0
+rm -f "$ESTATE/rescue-watchdog.last-kick"
+: > "$ELOGS/com.cloudflare.cloudflared.err.log"
+_i=0
+while [ "$_i" -lt 5 ]; do
+    echo "ERR dialing edge 10.0.0.1:7844: connect: connection refused" \
+        >> "$ELOGS/com.cloudflare.cloudflared.err.log"
+    _i=$((_i + 1))
+done
+: > "$LCLOG"
+PATH="$EBIN:$PATH" LCLOG="$LCLOG" \
+  RESCUE_LABEL="com.cloudflare.cloudflared" \
+  RESCUE_WATCHDOG_DAEMON_DIR="$EDAEMONS" \
+  RESCUE_WATCHDOG_LOG_DIR="$ELOGS" \
+  RESCUE_WATCHDOG_STATE_DIR="$ESTATE" \
+  FAKE_SSHD_DISABLED=false \
+  bash "$RTW" >/dev/null 2>&1
+grep -q "kickstart -k system/com.cloudflare.cloudflared" "$LCLOG" \
+    && pass "12q: RESCUE_LABEL pins the label (boxes whose rescue tunnel IS the cloudflared slot)" \
+    || fail "12q: RESCUE_LABEL was ignored"
+
+# ---- 12r-t: the sshd leg ----------------------------------------------------
+write_window 0 1
+rm -f "$ESTATE/rescue-watchdog.last-kick"
+OUT12F="$(FAKE_SSHD_DISABLED=true FAKE_NC_RC=0 run_rtw)"
+grep -q "launchctl enable system/com.openssh.sshd" "$LCLOG" \
+    && pass "12r: a DISABLED sshd (authoritative print-disabled view) is re-enabled" \
+    || fail "12r: sshd stayed disabled, so the box stays unreachable"
+grep -q "launchctl kickstart -k system/com.openssh.sshd" "$LCLOG" \
+    && pass "12s: sshd is kickstarted after the enable" \
+    || fail "12s: sshd was enabled but never started"
+echo "$OUT12F" | grep -q "VERIFIED" \
+    && pass "12t: the listener is PROVEN with a real connection attempt (nc -z 127.0.0.1 22)" \
+    || fail "12t: no connection attempt proved the listener"
+
+# 12u: nc failing must be reported as NOT VERIFIED, never as success.
+OUT12G="$(FAKE_SSHD_DISABLED=true FAKE_NC_RC=1 run_rtw)"
+echo "$OUT12G" | grep -q "NOT VERIFIED" \
+    && pass "12u: a failed listener probe is reported NOT VERIFIED, not smoothed over" \
+    || fail "12u: a dead listener was not reported"
+
+# 12v: CONTROL, sshd NOT disabled must be left completely alone.
+OUT12H="$(FAKE_SSHD_DISABLED=false run_rtw)"
+if grep -q "launchctl enable system/com.openssh.sshd" "$LCLOG"; then
+    fail "12v: sshd was touched on a box where Remote Login is already on"
+else
+    pass "12v: CONTROL, an enabled sshd is left alone"
+fi
+
+# 12w: the shipped ssh.plist Disabled marker must never be the source of truth.
+grep -q "print-disabled" "$RTW" \
+    && pass "12w: the watchdog reads 'launchctl print-disabled system' (authoritative)" \
+    || fail "12w: the watchdog does not use the authoritative disabled view"
+if grep -qE '/System/Library/LaunchDaemons/ssh\.plist"' "$RTW"; then
+    fail "12x: the watchdog READS Apple's ssh.plist Disabled marker (true even when Remote Login is ON)"
+else
+    pass "12x: Apple's ssh.plist Disabled default marker is never read as state"
+fi
+
+# ---- 12y-z: the installer and the plist are correctly shaped ----------------
+grep -qE 'install -m 0755 -o root -g wheel' "$RTW_INSTALL" \
+    && pass "12y: the installer lays the script down 0755 root:wheel" \
+    || fail "12y: the installer does not install the script as root:wheel 0755"
+grep -qE 'install -m 0644' "$RTW_INSTALL" \
+    && pass "12z: the installer lays the plist down 0644" \
+    || fail "12z: the installer does not install the plist 0644"
+grep -q "bootstrap system" "$RTW_INSTALL" \
+    && pass "12aa: the installer bootstraps into the SYSTEM domain (not gui/)" \
+    || fail "12aa: the installer does not bootstrap a system-domain daemon"
+grep -q '<integer>120</integer>' "$RTW_PLIST" \
+    && pass "12ab: the LaunchDaemon runs every 120s" \
+    || fail "12ab: StartInterval is not 120"
+grep -q '/Library/BlackCEO/rescue-tunnel-watchdog.sh' "$RTW_PLIST" \
+    && pass "12ac: the plist points at /Library/BlackCEO/rescue-tunnel-watchdog.sh" \
+    || fail "12ac: the plist does not point at the installed script path"
+
+# ---- 12ad-ae: WIRING, the installer is actually reachable -------------------
+INSTALLER="$REPO_ROOT/install.sh"
+UPDATER_E="$REPO_ROOT/update-skills.sh"
+grep -q "install-rescue-tunnel-watchdog.sh" "$INSTALLER" \
+    && pass "12ad: install.sh calls the Layer E installer (not dead code)" \
+    || fail "12ad: install.sh never installs the rescue-tunnel watchdog"
+grep -q "install-rescue-tunnel-watchdog.sh" "$UPDATER_E" \
+    && pass "12ae: update-skills.sh calls the Layer E installer on its Mac leg" \
+    || fail "12ae: update-skills.sh never installs the rescue-tunnel watchdog"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

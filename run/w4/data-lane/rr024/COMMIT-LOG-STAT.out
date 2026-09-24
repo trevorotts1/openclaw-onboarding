@@ -1,0 +1,10 @@
+=== LOG ===
+2d374b3f2 RR-024 (ONB): freeze SHAs post-commit
+44a0d5390 RR-024 (ONB): harden drill-only cc-board receipt bridge + freeze evidence
+
+=== STAT ===
+ .../rescue-rangers/scripts/rescue_cc_board.py      | 401 +++++++++++++++++++--
+ run/w4/data-lane/rr024/EVIDENCE-REPAIR.md          | 198 ++++++++++
+ run/w4/data-lane/rr024/FROZEN-SHA.txt              |   3 +
+ run/w4/data-lane/rr024/QC-BATTERY.out              | 142 ++++++++
+ 4 files changed, 706 insertions(+), 38 deletions(-)

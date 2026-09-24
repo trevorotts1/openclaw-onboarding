@@ -26,15 +26,47 @@
 # the legacy ones.
 # ============================================================
 
-_SHIM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_OBS_CANONICAL="${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh"
+# WHERE AM I. ${BASH_SOURCE[0]} is EMPTY under zsh, and the onboarding resume
+# prompt sources this file from the agent's own shell -- zsh on every Mac box.
+# The old one-liner therefore resolved _SHIM_SCRIPT_DIR to $PWD there, and
+# "$PWD/../lib-onboarding-state.sh" is not this repo's library on any box.
+_OBS_SELF=""
+if [ -n "${BASH_SOURCE:-}" ]; then
+    _OBS_SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then
+    # Hidden behind eval so bash never has to expand a zsh-only prompt flag.
+    eval '_OBS_SELF="${(%):-%x}"'
+fi
+[ -n "$_OBS_SELF" ] || _OBS_SELF="$0"
+_SHIM_SCRIPT_DIR="$(cd "$(dirname "$_OBS_SELF")" 2>/dev/null && pwd)" || _SHIM_SCRIPT_DIR="."
 
-if [ -f "$_OBS_CANONICAL" ]; then
+# WHERE IS THE CANONICAL LIB. Box-side layouts, in the order they are likeliest:
+#   ../lib-...            repo / ~/.openclaw/onboarding checkout (scripts/ child)
+#   ./lib-...             delivered BESIDE the scripts tree by update-skills.sh
+#   ~/.openclaw/onboarding, ~/.openclaw/skills, /data/... (VPS)
+# The old code named exactly ONE candidate, ../lib-onboarding-state.sh, which
+# from the delivered ~/.openclaw/scripts resolves to ~/.openclaw/lib-onboarding-state.sh --
+# a path nothing has ever delivered. So every box warned on every source and
+# oc_* was undefined box-side.
+_OBS_CANONICAL=""
+for _obs_lib_cand in \
+    "${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh" \
+    "${_SHIM_SCRIPT_DIR}/lib-onboarding-state.sh" \
+    "$HOME/.openclaw/onboarding/lib-onboarding-state.sh" \
+    "$HOME/.openclaw/skills/lib-onboarding-state.sh" \
+    "/data/.openclaw/onboarding/lib-onboarding-state.sh"; do
+    if [ -n "$_obs_lib_cand" ] && [ -f "$_obs_lib_cand" ]; then
+        _OBS_CANONICAL="$_obs_lib_cand"; break
+    fi
+done
+unset _obs_lib_cand
+
+if [ -n "$_OBS_CANONICAL" ]; then
     # shellcheck source=/dev/null
     source "$_OBS_CANONICAL" || return 1
 else
-    echo "[onboarding-state shim] WARNING: lib-onboarding-state.sh not found at $_OBS_CANONICAL" >&2
-    echo "  Cannot provide onboarding state-machine (oc_*). Install may be incomplete." >&2
+    echo "[onboarding-state shim] WARNING: lib-onboarding-state.sh not found (looked beside and above $_SHIM_SCRIPT_DIR, in ~/.openclaw/onboarding, ~/.openclaw/skills and /data/.openclaw/onboarding)" >&2
+    echo "  Cannot provide onboarding state-machine (oc_*). The obs_* gate below still works. Install may be incomplete." >&2
 fi
 
 # ============================================================
@@ -65,13 +97,17 @@ obs_resolve_workspace() {
 import json, os
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
-            print(os.path.expanduser(ag["workspace"])); break
-    else:
-        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
-        if ws:
-            print(os.path.expanduser(ws))
+    # The main agent workspace: agents.entries (OpenClaw 2026.9.x, keyed by id)
+    # or the legacy agents.list[], then agents.defaults.workspace.
+    a = cfg.get("agents", {}) or {}
+    e = a.get("entries") if isinstance(a.get("entries"), dict) else {}
+    lst = a.get("list") if isinstance(a.get("list"), list) else []
+    ws = ((e.get("main") or {}).get("workspace")
+          or next((x.get("workspace") for x in lst
+                   if isinstance(x, dict) and x.get("id") == "main" and x.get("workspace")), None)
+          or (a.get("defaults") or {}).get("workspace"))
+    if ws:
+        print(os.path.expanduser(ws))
 except (OSError, ValueError, AttributeError, TypeError) as exc:
     raise SystemExit('Cannot resolve configured client workspace: '+str(exc))
 PYEOF
@@ -152,7 +188,7 @@ obs_seed_state() {
   mkdir -p "$OBS_WORKSPACE" 2>/dev/null || true
   command -v python3 >/dev/null 2>&1 || { obs_log "python3 missing — cannot seed state"; return 1; }
   VERSION="$version" SRC_DIR="$src_dir" STATE_FILE="$OBS_STATE_FILE" python3 - <<'PYEOF'
-import json, os, glob, datetime
+import json, os, glob, re, datetime
 state_file = os.environ["STATE_FILE"]
 src_dir = os.environ["SRC_DIR"]
 version = os.environ["VERSION"]
@@ -168,6 +204,23 @@ state.setdefault("seededAt", now)
 state["lastSeedAt"] = now
 skills = state.setdefault("skills", {})
 
+# ROLLBACK COPIES ARE NOT SKILLS. A rename beside the live skills
+# ("02-x" -> "02-x.bak-20260901", ".rollback", ".orig") still matches the
+# [0-9]* glob and is still a directory, so it used to seed as a skill. It ships
+# nothing anyone will install and no qc-*.sh that can pass, so it parked at
+# "pending" forever -- and obs_gate_summary counts its DENOMINATOR straight off
+# this file, so one such folder pinned the gate below 100% permanently and the
+# resume cron never self-removed. Mirrors _BACKUP_DIR_RE in
+# 23-ai-workforce-blueprint/scripts/department-floor.py.
+rollback_re = re.compile(r"\.(bak|rollback|orig)(\b|[-_.]|$)", re.IGNORECASE)
+
+# Skipping at discovery cannot help an entry an EARLIER run already wrote, and
+# nothing else would ever remove it. Purge those too -- narrowly, by this regex
+# only, never a real skill.
+purged = [k for k in list(skills) if rollback_re.search(k)]
+for k in purged:
+    del skills[k]
+
 # Discover non-archived numbered skill folders in the source.
 found = []
 for d in sorted(glob.glob(os.path.join(src_dir, "[0-9]*"))):
@@ -175,6 +228,8 @@ for d in sorted(glob.glob(os.path.join(src_dir, "[0-9]*"))):
     if not os.path.isdir(d):
         continue
     if "ARCHIVED" in name:
+        continue
+    if rollback_re.search(name):
         continue
     found.append(name)
 
@@ -186,6 +241,8 @@ state["discoveredSkills"] = found
 json.dump(state, open(state_file, "w"), indent=2)
 open(state_file, "a").write("\n")
 print(f"  [onboarding-state] seeded {len(found)} skills (pending preserved/added) → {state_file}")
+if purged:
+    print(f"  [onboarding-state] purged {len(purged)} rollback folder(s) from the gate denominator: {', '.join(sorted(purged))}")
 PYEOF
 }
 
@@ -193,12 +250,18 @@ PYEOF
 # obs_set_status <folder> <status>   status in:
 #   pending|downloaded|wired|qc-passed|qc-failed|interview-pending
 obs_set_status() {
-  local folder="$1" status="$2"
+  # `st`, never `status`: `status` is a READ-ONLY special variable in zsh, and
+  # the onboarding resume prompt sources this shim from the agent's shell, which
+  # is zsh on every Mac box. `local status=` aborts the function there before it
+  # writes anything, so no skill could ever be recorded qc-passed.
+  local folder="$1" st="$2" reason="${3:-}"
   command -v python3 >/dev/null 2>&1 || return 0
   [ -f "$OBS_STATE_FILE" ] || obs_seed_state >/dev/null 2>&1 || true
-  FOLDER="$folder" STATUS="$status" STATE_FILE="$OBS_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null || true
+  FOLDER="$folder" STATUS="$st" REASON="$reason" STATE_FILE="$OBS_STATE_FILE" \
+    python3 - <<'PYEOF' 2>/dev/null || true
 import json, os, datetime
 sf = os.environ["STATE_FILE"]; folder = os.environ["FOLDER"]; status = os.environ["STATUS"]
+reason = os.environ.get("REASON", "").strip()
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 try:
     state = json.load(open(sf))
@@ -207,8 +270,42 @@ except Exception:
 sk = state.setdefault("skills", {}).setdefault(folder, {})
 sk["status"] = status
 sk["updatedAt"] = now
+# RECORD THE REASON. A negative verdict with no reason moves the whole diagnostic
+# burden onto whoever reads the file later. Measured 2026-09-18: a live box
+# carried 68/68 "qc-failed" with no reason field on any entry, so the state file
+# could not say whether the skills were broken or the gate was — and they were
+# not broken (`openclaw skills info` returned Ready, all 49 CORE_UPDATES
+# sentinels were present, and the sampled qc-*.sh scripts exited 0).
+if status == "qc-failed" and reason:
+    sk["reason"] = reason
+else:
+    sk.pop("reason", None)
 json.dump(state, open(sf, "w"), indent=2); open(sf, "a").write("\n")
 PYEOF
+}
+
+# ── Is a failure reason an ENVIRONMENT failure rather than a skill failure? ───
+# obs_reason_is_environmental <reason-string>
+#
+# THE DEFECT THIS EXISTS FOR. obs_verify_skill fails CLOSED when it cannot find
+# the openclaw CLI (correct — unverifiable is not verified). But obs_set_status
+# lets qc-failed overwrite qc-passed unconditionally, so ONE run under a minimal
+# PATH — a cron, a launchd job, a non-login shell, none of which get
+# ~/.local/bin — rewrites EVERY skill to qc-failed and nothing ever restores
+# them. obs_gate_summary then never returns 0, so the "## UPDATE PENDING"
+# section that update-skills.sh removes only when the gate passes becomes
+# PERMANENT. Measured on a live box 2026-09-18: 66 skills rewritten to qc-failed
+# in a SIX-SECOND window with zero QC diagnostics written, while the box's own
+# CLI, sentinels and qc scripts all passed when run by hand.
+#
+# A reason that names the ENVIRONMENT is not evidence about the skill. It must
+# not be allowed to demote a verdict that was previously PROVEN.
+obs_reason_is_environmental() {
+  case "$1" in
+    *openclaw-cli:absent*|*deadline-runner-failed*|*skills-info:agent-required*)
+      return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 obs_get_status() {
@@ -267,6 +364,25 @@ obs_verify_skill() {
   # oc_skill_registered() in lib-onboarding-state.sh: require a positive
   # registration signal AND check negative signals against SPECIFIC phrases
   # only (never a bare "error" substring).
+  # FIND THE CLI BEFORE DECLARING IT ABSENT. `command -v` proves only that a
+  # NAME resolves on the CURRENT PATH, and the PATH that matters here is usually
+  # cron's or launchd's, which carries none of the directories an OpenClaw
+  # install actually uses. Declaring "absent" from that is a claim about the
+  # environment of the CHECK, not about the box. Look in the known install
+  # locations first, and only then say it cannot be found.
+  if ! command -v openclaw >/dev/null 2>&1; then
+    local _obs_cand
+    for _obs_cand in "$HOME/.local/bin/openclaw" "$HOME/.npm-global/bin/openclaw" \
+                     /usr/local/bin/openclaw /opt/homebrew/bin/openclaw \
+                     /usr/bin/openclaw; do
+      if [ -x "$_obs_cand" ]; then
+        PATH="$(dirname "$_obs_cand"):$PATH"; export PATH
+        break
+      fi
+    done
+    unset _obs_cand
+  fi
+
   if command -v openclaw >/dev/null 2>&1; then
     local info_out info_err _obs_agent _obs_agent_flag
     _obs_agent="$(obs_default_agent)"
@@ -379,7 +495,17 @@ obs_verify_skill() {
   fi
 
   if [ -n "$reasons" ]; then
-    obs_set_status "$folder" "qc-failed"
+    # An ENVIRONMENT failure must not demote a skill that was previously PROVEN
+    # to pass. See obs_reason_is_environmental for the incident this prevents:
+    # one cron run without the CLI on PATH rewrote 66 verified skills to
+    # qc-failed in six seconds and made the UPDATE PENDING notice permanent.
+    # This is NOT fail-open — a skill that has never reached qc-passed still
+    # fails, and the reason is still recorded and still returned to the caller.
+    if obs_reason_is_environmental "$reasons" && [ "$(obs_get_status "$folder")" = "qc-passed" ]; then
+      printf 'ENVIRONMENT-ONLY (prior qc-passed KEPT): %s' "${reasons% }"
+      return 1
+    fi
+    obs_set_status "$folder" "qc-failed" "${reasons% }"
     printf '%s' "${reasons% }"
     return 1
   fi

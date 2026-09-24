@@ -74,6 +74,7 @@ import os
 import re
 import sqlite3
 import sys
+import urllib.error
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -517,19 +518,31 @@ def llm_decompose(task_text: str, max_subtasks: int) -> "list | None":
         return _llm._extract_message(payload)
 
     def _try_ollama():
-        api_key = _llm._env("OLLAMA_CLOUD_API_KEY")
-        if not api_key:
+        # Endpoint, model tag and key order all come from llm_score so this
+        # call site cannot drift from the canonical chain: /v1 not /api (which
+        # 404s), the dated Pro tag (:cloud was deleted 2026-08-17), and the
+        # gateway's own provider key as the last-resort credential.
+        keys = _llm.ollama_cloud_api_keys()
+        if not keys:
             return None
-        base = _llm._env("OLLAMA_CLOUD_URL", "https://ollama.com/api").rstrip("/")
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        url = _llm.ollama_cloud_chat_url()
         body = {
-            "model": "deepseek-v4-pro:cloud",
+            "model": _llm.ollama_cloud_model(),
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
             "max_tokens": 400,
         }
-        payload = _llm._post_chat(base + "/chat/completions", headers, body)
-        return _llm._extract_message(payload)
+        for index, api_key in enumerate(keys):
+            headers = {"Authorization": f"Bearer {api_key}",
+                       "Content-Type": "application/json"}
+            try:
+                payload = _llm._post_chat(url, headers, body)
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and index + 1 < len(keys):
+                    continue
+                raise
+            return _llm._extract_message(payload)
+        return None
 
     text = None
     for attempt in (_try_ollama, _try_openrouter):

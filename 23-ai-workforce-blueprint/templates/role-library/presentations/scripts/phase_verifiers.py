@@ -608,14 +608,18 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
         else:
             reasons.append("AF-COPY-ENGINE-MISSING: intelligence_engines_check.check_copy unavailable — the writing-engine copy QC did not run; failing closed (test/CI marker absent)")
 
-    if _pec is not None and hasattr(_pec, "check_copy") and _pitch_included(run_dir):
-        try:
-            _pec.check_copy(working, problems)
-        except Exception as exc:  # noqa: BLE001
-            if _degraded_allowed(run_dir):
-                reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
-            else:
-                reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
+    if _pec is not None and hasattr(_pec, "check_copy"):
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        if refusal:
+            reasons.append(refusal)
+        elif applicable:
+            try:
+                _pec.check_copy(working, problems)
+            except Exception as exc:  # noqa: BLE001
+                if _degraded_allowed(run_dir):
+                    reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
+                else:
+                    reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
     else:
         if _pec is None:
             reasons.append("NOTE: pitch_engines_check unavailable — skipped")
@@ -2138,6 +2142,74 @@ def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
     return _v
 
 
+def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P3-ARC's arc_allocation.json — valid JSON **that a consumer can read**.
+
+    PD-TEST-067. This phase used to be ``_verify_json_artifact(
+    "working/copy/arc_allocation.json")`` with NO required_keys, i.e. "parses
+    and is not zero bytes". On run pres-operator-1d269693 that blessed an
+    artifact whose 8 slides sat under ``slide_allocations``/``slide_number``
+    — a spelling no reader in this tree could see — so P3-ARC reported
+    ``done`` while ``fanout._slides_for_units`` derived ZERO units for every
+    downstream phase that reads the deck's slide list. P-U-DESIGN-VSL,
+    P-U-DESIGN-SALES, P-U-DESIGN-CHECKOUT and P-STYLE-SPEC each emitted 43
+    identical zero-unit refusals, hit DISPATCH_REPEAT_CEILING and were
+    quarantined, stopping the run.
+
+    A validity-only gate cannot catch that: the file was perfectly valid JSON,
+    and every OTHER gate P3-ARC carries (_chk_arc presence/non-emptiness,
+    _chk_peak_end / _chk_pitch / _chk_pitch_leak token scans) passed too. The
+    artifact's ONE contractual obligation is that its consumers can read the
+    slide allocation, so that is what this gate now requires — via the same
+    shared reader the consumers use (presentation_job.arc_slides), so the
+    producer and its readers cannot drift apart again.
+
+    Still FAIL-HARD, and strictly stronger than before, never weaker:
+      * absent / zero-byte / unparseable  -> FAIL (unchanged, via
+        _check_json_nonempty);
+      * no recognised slide array at all  -> FAIL (NEW: the live defect);
+      * a recognised but EMPTY slide array -> FAIL (NEW: declares no slides);
+      * recognised, non-empty             -> PASS.
+    """
+    ok, reasons = _check_json_nonempty(run_dir, "working/copy/arc_allocation.json")
+    if not ok:
+        return ok, reasons
+    try:
+        from presentation_job import arc_slides as _shared
+    except ImportError:  # pragma: no cover - presentation_job absent entirely
+        # Matches this module's documented defensive-import convention, but
+        # NEVER silently: the degradation is recorded as a NOTE reason (the
+        # "NOTE" prefix is excluded from the hard-failure list), so a record
+        # graded under a validity-only gate is visibly distinguishable from one
+        # graded against the real consumer contract.
+        return True, reasons + [
+            "NOTE: presentation_job.arc_slides is unavailable, so the arc "
+            "slide-allocation SHAPE was NOT validated (validity-only, "
+            "pre-PD-TEST-067 behavior)"]
+    path = _resolve_glob(run_dir, "working/copy/arc_allocation.json")
+    slots = _shared.slots_from_obj(_read_json(path) if path is not None else None)
+    if slots is None:
+        return False, [
+            "working/copy/arc_allocation.json: no slide allocation array this "
+            "pipeline can read — P3-ARC's own consumers (fanout unit "
+            "enumeration, dispatcher._prompt_slide_count, "
+            "build_deck._count_output_slides, craft_judgement) read the slides "
+            "from one of "
+            f"{', '.join(repr(k) for k in _shared.SLIDE_LIST_KEYS)}, each slot "
+            "carrying a whole-number ordinal under one of "
+            f"{', '.join(repr(k) for k in _shared.SLIDE_ORDINAL_KEYS)}. A "
+            "structurally valid artifact no consumer can read reports ZERO "
+            "units downstream and quarantines every phase that needs the deck's "
+            "slide list (PD-TEST-067)."]
+    if not slots:
+        return False, [
+            "working/copy/arc_allocation.json: the slide allocation array is "
+            "present but EMPTY — the arc declares zero slides, so every "
+            "downstream fan-out over the deck's slide list would enumerate "
+            "zero units."]
+    return True, reasons
+
+
 # fix/run-slides: P-CONVERTER (Phase -1, "Content-to-Presentation Conversion")
 # used to be _verify_json_artifact("working/copy/intake.json", ("slides",)) --
 # demanding a "slides" key that NO writer anywhere in this codebase (grepped
@@ -2402,9 +2474,43 @@ def _verify_workbook(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 
+def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
+
+    The claim phase is a router.  It may document a signature request, but it
+    cannot promote a from-scratch deck into one.  The sealed intake remains the
+    authority and an incomplete/malformed claim fails closed.
+    """
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
+    if not isinstance(intake, dict) or not isinstance(claim, dict):
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
+    selected = str(intake.get("deck_type") or "").strip()
+    recorded = str(claim.get("deck_type") or "").strip()
+    if not selected or recorded != selected:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
+                       "the selected intake deck_type"]
+    claimed = claim.get("claimed")
+    if selected == "signature_presentation":
+        if claimed is not True:
+            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
+                           "claimed:true"]
+    elif claimed is not False:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
+                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
+    return True, []
+
+
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    ok, notes = _sp_claim_matches_intake(run_dir)
+    if not ok:
+        return ok, notes
     fn = _bd_fn("_chk_sp_claim")
-    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    if fn is None:
+        return True, []
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
@@ -2498,9 +2604,43 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(reasons) == 0), reasons
 
 
+def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
+
+    The claim phase is a router.  It may document a signature request, but it
+    cannot promote a from-scratch deck into one.  The sealed intake remains the
+    authority and an incomplete/malformed claim fails closed.
+    """
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
+    if not isinstance(intake, dict) or not isinstance(claim, dict):
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
+    selected = str(intake.get("deck_type") or "").strip()
+    recorded = str(claim.get("deck_type") or "").strip()
+    if not selected or recorded != selected:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
+                       "the selected intake deck_type"]
+    claimed = claim.get("claimed")
+    if selected == "signature_presentation":
+        if claimed is not True:
+            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
+                           "claimed:true"]
+    elif claimed is not False:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
+                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
+    return True, []
+
+
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    ok, notes = _sp_claim_matches_intake(run_dir)
+    if not ok:
+        return ok, notes
     fn = _bd_fn("_chk_sp_claim")
-    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    if fn is None:
+        return True, []
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
@@ -3535,7 +3675,10 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 0.2   Priority-Shift Spec
     "P0B-PRIORITY":       _verify_json_artifact("working/copy/priority_shift_spec.json"),
     # Phase 3     Converting Arc Allocation
-    "P3-ARC":             _verify_json_artifact("working/copy/arc_allocation.json"),
+    # PD-TEST-067: a validity-only gate here let an artifact no consumer could
+    # read report `done` and quarantine four downstream phases. The gate now
+    # requires the slide allocation its own consumers read.
+    "P3-ARC":             _verify_arc_allocation,
     # Phase 3.5   Research-to-Slide Mapping
     "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
     # Phase 4     Slide Copy
@@ -4092,6 +4235,106 @@ def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
     return []
 
 
+# The three page-design prompts: `prompts/<page>.design.txt`. Kept as ONE
+# pattern so the verifier arm and the producer's own registry agree.
+_DESIGN_PROMPT_REL_RE = re.compile(r"^prompts/[A-Za-z0-9_-]+\.design\.txt$")
+
+
+def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
+    """PD-TEST-098: a page-design prompt (`prompts/<page>.design.txt`) must sit
+    inside the SHARED prompt band its render phase enforces.
+
+    THE DEFECT THIS CLOSES -- and why the artifacts.py predicate alone was NOT
+    enough. `_pu_check_text` accepted these files on ">= 40 chars" alone, so
+    `phase_verifiers.verify('P-U-DESIGN-SALES', run)` returned `(True, [])` on
+    the live 58,482-char prompt. Two authorities then re-blessed the artifact
+    that `Engine._revalidate_banked` had just announced as invalid:
+
+      1. `Engine._phase_artifact_satisfied` (phases.py:2670) is presence AND
+         this verifier, and `wo_satisfied` (phases.py:2813) uses it to complete
+         a phase WITHOUT dispatching -- so the engine re-attested the phase
+         `done`, rc=0, artifact byte-unchanged;
+      2. the dispatcher's own idempotent pre-check (dispatcher.py:5121-5160)
+         consults the same verifier and returned `skipped_satisfied`;
+      3. and because that re-attestation path is NOT gated on
+         `status == 'done'`, it also covers `running`/`pending` phases -- the
+         DEADLOCK-1 window, where `_revalidate_banked` never runs at all.
+
+    Net effect before this check: 0 model calls, artifact unchanged, render
+    phases refused exactly as before. This verifier IS the seam all three
+    consult, so the band belongs here (and the `artifacts.validate_artifact`
+    arm stays as the banked re-validation half).
+
+    The band is READ FROM `prompt_gate` -- the same shared source the render
+    gate and the producer use, never a second copy. Length is measured on the
+    stripped text, exactly as `build_infographic.resolve_design_prompt` and
+    `prompt_gate.prompt_problems` measure it."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    length = len(text.strip())
+    if length < 40:
+        return [f"{rel}: only {length} chars of content -- too small to "
+                "be a real authored fragment"]
+    try:
+        import prompt_gate as _pg
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED, deliberately: this gate decides whether a phase may be
+        # marked DONE without re-authoring, so an unverifiable band must not
+        # silently re-bless the artifact. (The artifacts.py arm degrades the
+        # other way on purpose -- it must not turn every banked design prompt
+        # into a permanent re-author loop -- and DISCLOSES that in its verdict.)
+        return [f"{rel}: PD-TEST-098 band check UNAVAILABLE -- prompt_gate "
+                f"could not be imported ({type(exc).__name__}: {exc}); refusing "
+                "to attest an unverifiable design prompt"]
+    # PD-TEST-113 -- THE WHOLE GATE, NOT JUST ITS LENGTH CLAUSE.
+    #
+    # This verifier used to enforce exactly two rules of the shared gate:
+    # AF-P1 (floor) and AF-P2 (ceiling). `prompt_gate.prompt_problems` applies
+    # more than that, and the CONSUMER
+    # (`build_infographic.resolve_design_prompt`) calls the WHOLE gate. So a
+    # design prompt could clear this verifier, be attested `done` by the
+    # engine, and then be refused by its own render phase on a rule this seam
+    # never checked -- and `prior_reasons` could never carry that requirement
+    # back to the producer, because the producer is only ever told the reasons
+    # THIS function emits. The re-author loop was therefore structurally
+    # incapable of converging on the unstated rules.
+    #
+    # Measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    # all three design prompts PASSED this verifier at 13,513 / 14,612 /
+    # 12,296 chars, and P-U-DESIGN-RENDER-SALES / -VSL then refused them with
+    # `AF-R3: forbidden hardcoded demographic default 'default demographic'`
+    # and `AF-P13: negative block does not name defect class(es): placeholder/
+    # bracket tokens, anatomical artifacts` -- one full paid re-author plus a
+    # quarantined render phase per undiscovered rule, discovered one gate code
+    # at a time.
+    #
+    # THE FIX: delegate to the ONE shared authority rather than restate a
+    # subset of it. `prompt_problems` is the same accumulating, non-raising
+    # function the render path and build_deck's provers call, so this phase now
+    # fails on exactly the rules its consumer enforces -- no more, no fewer,
+    # and no second copy of any rule to drift. Verified against the live run:
+    # `prompt_problems` on the three banked artifacts returns byte-identical
+    # findings to the render refusals above (2 / 0 / 1 problems), including
+    # AF-R3 and both AF-P13 class lists.
+    #
+    # `copy_val` stays None deliberately -- AF-P-VERBATIM needs a slide's exact
+    # copy, which is a property of the CONSUMING slide, not of this aggregate
+    # page prompt; the render path applies it per slide with the copy in hand.
+    # The floor/ceiling constants this function already imported remain the
+    # single source for the length rule, now applied by `prompt_problems`
+    # itself.
+    # D1 (independent review of PR #1148): the CONSUMER feeds the STRIPPED text (`build_infographic.resolve_design_prompt` does `stripped = text.strip()` then `prompt_gate.prompt_problems(stripped)`). `prompt_gate`'s structural check matches the literal `'Do not '` INCLUDING its trailing space, so a file whose only such literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED by the consumer. Passing `text` here reproduced that divergence one layer up; pass exactly what the consumer passes.
+    problems = _pg.prompt_problems(text.strip())
+    if problems:
+        return [f"{rel}: {problem}" for problem in problems]
+    return []
+
+
 def _pu_check_form_gate(run_dir: Path, rel: str) -> List[str]:
     """P-U-FORM-GATE's two declared Skill-44 plan artifacts. Each must be a
     parseable JSON OBJECT with the Skill-44 operation shape: gate-form.json
@@ -4281,6 +4524,12 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_qc_scorecard(run_dir, rel))
             elif shape == "collection":
                 reasons.extend(_pu_check_collection(run_dir, rel))
+            elif _DESIGN_PROMPT_REL_RE.match(rel):
+                # PD-TEST-098: the page-design prompt carries the SHARED prompt
+                # band, not just ">= 40 chars". This is the seam the engine's
+                # wo_satisfied re-attestation AND the dispatcher's
+                # already_satisfied pre-check both consult.
+                reasons.extend(_pu_check_design_prompt(run_dir, rel))
             elif rel.endswith(".json") or rel in _PU_JSON_ARTIFACTS:
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:

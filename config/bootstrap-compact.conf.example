@@ -1,0 +1,34 @@
+# bootstrap-compact.conf — box-level switch for the WEEKLY compaction run.
+#
+# Install to $OC_CONFIG/bootstrap-compact.conf (Mac and Contabo container:
+# ~/.openclaw/, Hostinger VPS container: /data/.openclaw/). One word, nothing
+# else:
+#
+#   report    DEFAULT. The weekly job measures every bootstrap file against its
+#             lean target, prints the class and the reason for every section, and
+#             prints the plan it WOULD carry out. It writes nothing at all.
+#             This is what a box gets on its first scheduled week, so the first
+#             thing an operator sees is a reviewable plan, not a surprise edit.
+#
+#   apply     The weekly job performs the plan: cold, archive and dedupe-class
+#             OWNER-AUTHORED sections move to the reference root verbatim, a
+#             four-line pointer is left behind, the ledger is appended, and every
+#             pointer and stored block is re-verified afterwards. Hot sections and
+#             script-owned blocks are still never touched — an over-target file
+#             that has run out of movable content gets a proposal, not an edit.
+#
+# Resolution order (first match wins):
+#   1. $OPENCLAW_BOOTSTRAP_COMPACT_MODE
+#   2. this file
+#   3. agents.defaults.bootstrapCompactMode in openclaw.json
+#   4. report
+#
+# An unrecognised value is treated as "report" and warns. Honouring a typo as
+# "apply" would write to a bootstrap file nobody authorised, which is exactly the
+# failure this switch exists to prevent.
+#
+# Related: config/bootstrap-pointer.conf.example is the switch for the OTHER half
+# of lean bootstrap — how the fleet roll stamps its own MANAGED blocks. The two
+# are independent: this one governs owner-authored content moved on a schedule,
+# that one governs script-owned content stamped during a roll.
+report

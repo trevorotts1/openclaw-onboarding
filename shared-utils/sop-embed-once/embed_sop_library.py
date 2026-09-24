@@ -284,6 +284,8 @@ def _main() -> int:
     parser.add_argument("--force", action="store_true", help="Re-embed even if content md5 unchanged")
     parser.add_argument("--dry-run", action="store_true", help="Compute what would embed; no API calls, no writes beyond counting")
     parser.add_argument("--verify", action="store_true", help="Verify every row is a real gemini/3072 vector; exit 0 pass, 4 fail")
+    parser.add_argument("--role-library", help="templates/role-library dir: also build the role-library "
+                        "vectors (role_library_vectors.py) the CC's importRoleLibrary() rows need")
     args = parser.parse_args()
 
     conn = sqlite3.connect(args.db)
@@ -292,8 +294,11 @@ def _main() -> int:
     if args.verify:
         ok, bad_count, detail = verify_real_vectors(conn, GEMINI_MODEL, GEMINI_OUTPUT_DIM)
         print(f"[embed-sop-library] verify: {detail}")
+        import role_library_vectors
+        rok, rdetail = role_library_vectors.verify(conn, GEMINI_MODEL, GEMINI_OUTPUT_DIM)
+        print(f"[embed-sop-library] verify: {rdetail}")
         conn.close()
-        return 0 if ok else 4
+        return 0 if ok and rok else 4
 
     if not args.jsonl:
         print("ERROR: --jsonl is required unless --verify", file=sys.stderr)
@@ -308,8 +313,19 @@ def _main() -> int:
         f"skipped_not_selected={stats['skipped_not_selected']} "
         f"errors={stats['errors']}"
     )
+    errors = stats["errors"]
+    if args.role_library:
+        import role_library_vectors
+        records, fallbacks = role_library_vectors.role_records(Path(args.role_library))
+        rstats = role_library_vectors.embed_roles(conn, records, dry_run=args.dry_run)
+        print(
+            f"[embed-sop-library] role-library: slugs={len(records)} embedded={rstats['embedded']} "
+            f"skipped_unchanged={rstats['skipped_unchanged']} removed_stale={rstats['removed_stale']} "
+            f"render_fallbacks={fallbacks} errors={rstats['errors']}"
+        )
+        errors += rstats["errors"]
     conn.close()
-    return 0 if stats["errors"] == 0 else 2
+    return 0 if errors == 0 else 2
 
 
 if __name__ == "__main__":

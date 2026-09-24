@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-11T21:17:48Z",
+  "generated_at": "2026-09-17T14:53:02Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -233,8 +233,8 @@
       "bytes": 22755
     },
     "podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md": {
-      "sha256": "7f86e15bfdf345fdb3668b9df34e2ed8c062e9adffb5bed1d990ad7d01a20f2a",
-      "bytes": 18061
+      "sha256": "497f7ee3233aebc9b7466c8a70d8aa8e4d090b21f6a23a1dab41680c6243c7f1",
+      "bytes": 24054
     },
     "podcast-craft/SOP-PODCAST-03-REVOCATION-AND-CHURN.md": {
       "sha256": "7f9d2dd22eb19ac1f2cf318e492bc7756f08e86b7c79dbe3220b343e00d4de40",
@@ -301,8 +301,8 @@
       "bytes": 131915
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "094d898f1f27ddfcf848a343861f6475c241ab5e26575cc6028a823c949f0d7a",
-      "bytes": 201302
+      "sha256": "fc2b036c0bea908687ab86f0e0f55f153a9ac66e84c9602c714a3732f7f686d6",
+      "bytes": 201351
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",

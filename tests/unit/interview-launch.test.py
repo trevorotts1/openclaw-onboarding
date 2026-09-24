@@ -178,10 +178,34 @@ STUB
             with self.assertRaisesRegex(ValueError,'renewal-required'):m.invite(self.state,self.root)
         self.assertEqual((self.state.parent/'invocations').read_text().splitlines(),['called'])
         self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['invitation']['status'],'renewal-required')
+        # A Command Center whose links stay valid until the interview is
+        # complete records no deadline at all. The launcher must read that as a
+        # live invitation, not as one that has run out; a missing field still
+        # means renewal, so absence and null stay distinguishable.
+        completion_bound=json.loads(receipt_path.read_text());completion_bound['invitationExpiresAt']=None;receipt_path.write_text(json.dumps(completion_bound))
+        with patch.object(m,'__file__',fake_location):m.invite(self.state,self.root)
+        launch=json.loads(self.state.read_text())['interviewLaunch']['invitation']
+        self.assertEqual(launch['status'],'accepted');self.assertIsNone(launch['invitationExpiresAt'])
+        self.assertEqual((self.state.parent/'invocations').read_text().splitlines(),['called'])
+        unstamped=json.loads(receipt_path.read_text());unstamped.pop('invitationExpiresAt');receipt_path.write_text(json.dumps(unstamped))
+        with patch.object(m,'__file__',fake_location):
+            with self.assertRaisesRegex(ValueError,'renewal-required'):m.invite(self.state,self.root)
         receipt_path.unlink();sender.write_text('#!/bin/bash\nexit 9\n')
         with patch.object(m,'__file__',fake_location):
             with self.assertRaisesRegex(ValueError,'sender exit 9'):m.invite(self.state,self.root)
         self.assertEqual(json.loads(self.state.read_text())['interviewLaunch']['status'],'invitation-pending')
+    def test_invitation_origin_must_be_a_hostname_never_an_ip_address(self):
+        """The launcher's own copy of the origin rule, held to the same bar.
+
+        Only is_global was tested before, so a routable literal such as 8.8.8.8
+        was accepted as an invitation origin even though no certificate exists
+        for it under the registered tenant hostname.
+        """
+        for literal in ('https://8.8.8.8','https://1.1.1.1','https://203.0.113.7','https://[2001:4860:4860::8888]','https://127.0.0.1','https://10.0.0.5','https://[::1]'):
+            with self.subTest(origin=literal),self.assertRaises(ValueError):
+                m.public_origin(literal)
+        self.assertEqual(m.public_origin('https://client.example.com'),'https://client.example.com')
+
     def test_tunnel_ambiguous_transport_posts_once(self):
         import subprocess
         bindir=self.root/'bin';bindir.mkdir();calls=self.root/'calls'
@@ -210,11 +234,64 @@ STUB
         before=self.state.read_bytes()
         result=subprocess.run(['bash','-c',setup+'\nCLIENT_SLUG=foreign\n'+block])
         self.assertEqual(result.returncode,8);self.assertEqual(self.state.read_bytes(),before)
+    AUD='a'*64
+    def access_fixture(self,email='owner@example.test',extra=None):
+        m.initialize(self.state,'client-a','Client A',email,{})
+        (self.app/'.env.local').write_text('MC_API_TOKEN=fixture-token\n')
+        m.provision(self.state,self.app,self.root,{'MC_TENANT_PUBLIC_URL':'https://client.example.com'})
+        if extra:
+            values=m.env_read(self.app/'.env.local');reg=json.loads(values['MC_TENANT_REGISTRY_JSON'])
+            extra(reg);m.replace_env(self.app,self.app/'.env.local',{'MC_TENANT_REGISTRY_JSON':json.dumps(reg)})
+    def login(self,status=302,netloc='team.cloudflareaccess.com',host='client.example.com',kid=None):
+        return lambda origin:(status,'https://'+netloc+'/cdn-cgi/access/login/'+host+'?kid='+(kid or self.AUD)+'&redirect_url=%2Finterview')
+    def registry(self):return json.loads(m.env_read(self.app/'.env.local')['MC_TENANT_REGISTRY_JSON'])
+    def test_register_access_fills_identity_from_live_login_and_is_idempotent(self):
+        self.access_fixture(extra=lambda r:r.update({'localhost':dict(r['client.example.com'],note='kept')}))
+        self.assertIs(m.register_access(self.state,self.app,fetch=self.login()),True)
+        reg=self.registry()
+        for h in ('client.example.com','localhost'):
+            self.assertEqual((reg[h]['issuer'],reg[h]['audience'],reg[h]['subjects']),('https://team.cloudflareaccess.com',self.AUD,['owner@example.test']))
+        self.assertEqual(reg['localhost']['note'],'kept');self.assertEqual(reg['client.example.com']['kind'],'self')
+        self.assertEqual(oct((self.app/'.env.local').stat().st_mode&0o777),'0o600')
+        before=(self.app/'.env.local').read_bytes()
+        self.assertIs(m.register_access(self.state,self.app,fetch=lambda o:self.fail('no network when complete')),False)
+        self.assertEqual(before,(self.app/'.env.local').read_bytes())
+    def test_register_access_keeps_existing_subjects_and_refuses_conflicts(self):
+        self.access_fixture(extra=lambda r:r['client.example.com'].update(subjects=['second@example.test'],allowedEmails=['second@example.test']))
+        m.register_access(self.state,self.app,fetch=self.login())
+        reg=self.registry()['client.example.com'];self.assertEqual(reg['subjects'],['second@example.test']);self.assertEqual(reg['allowedEmails'],['second@example.test'])
+        self.tearDown();self.setUp()
+        self.access_fixture(extra=lambda r:r['client.example.com'].update(audience='b'*64))
+        before=(self.app/'.env.local').read_bytes()
+        with self.assertRaisesRegex(ValueError,'conflicts'):m.register_access(self.state,self.app,fetch=self.login())
+        self.assertEqual(before,(self.app/'.env.local').read_bytes())
+    def test_register_access_refuses_anything_but_this_hosts_access_login(self):
+        self.access_fixture();before=(self.app/'.env.local').read_bytes()
+        for fetch in (lambda o:(200,None),lambda o:(403,None),self.login(netloc='evil.example.com'),self.login(host='other.example.com'),
+                      self.login(kid='xyz'),lambda o:(302,'http://team.cloudflareaccess.com/cdn-cgi/access/login/client.example.com?kid='+self.AUD)):
+            with self.assertRaisesRegex(ValueError,'Cloudflare Access'):m.register_access(self.state,self.app,fetch=fetch)
+        self.assertEqual(before,(self.app/'.env.local').read_bytes())
+    def test_register_access_refuses_placeholder_owner_email(self):
+        self.access_fixture(email='pending+client-a@zerohumanworkforce.com');before=(self.app/'.env.local').read_bytes()
+        with self.assertRaisesRegex(ValueError,'placeholder'):m.register_access(self.state,self.app,fetch=self.login())
+        self.assertEqual(before,(self.app/'.env.local').read_bytes())
+    def test_register_access_live_request_sends_explicit_user_agent(self):
+        import urllib.request
+        seen={}
+        class Opener:
+            def open(self,request,timeout):seen['ua']=request.get_header('User-agent');seen['url']=request.full_url;raise urllib.error.HTTPError(request.full_url,302,'Found',{'Location':'x'},None)
+        import urllib.error
+        original=urllib.request.build_opener;urllib.request.build_opener=lambda *a:Opener()
+        try:self.assertEqual(m.access_login('https://client.example.com'),(302,'x'))
+        finally:urllib.request.build_opener=original
+        self.assertEqual(seen,{'ua':'openclaw-onboarding/interview-launch','url':'https://client.example.com/interview'})
     def test_real_installer_orders_init_before_guard_and_readiness_before_exit(self):
         s=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
         self.assertLess(s.index('interview-launch.py" initialize'),s.index('# BLOCK A - LOCKED'))
         gate=s[s.index('  INTERVIEW_COMPLETE=$(state_get'):]
         self.assertLess(gate.index('verify-tenant-readiness.py'),gate.index('cc_launch_stage invite'))
+        self.assertLess(gate.index('cc_launch_stage prebuild'),gate.index('cc_launch_stage register-access'))
+        self.assertLess(gate.index('cc_launch_stage register-access'),gate.index('verify-tenant-readiness.py'))
         self.assertLess(gate.index('cc_launch_stage invite'),gate.index('exit 0'))
         self.assertIn('cc_launch_stage bind-database',s)
 if __name__=='__main__':unittest.main()

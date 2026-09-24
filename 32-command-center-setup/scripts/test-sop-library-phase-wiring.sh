@@ -80,10 +80,11 @@ else
   fail "PHASE 6i marker missing"
 fi
 
-if grep -qE 'bash "\$INGEST_SOP_SH" "\$CLIENT_SLUG"' "$RFI"; then
-  pass "ingest-sop-library.sh invoked with \$CLIENT_SLUG"
+if grep -qE 'bash "\$INGEST_SOP_SH" "\$SOP_INGEST_SLUG"' "$RFI" \
+   && grep -qE 'SOP_INGEST_SLUG="\$\{CLIENT_SLUG:-default\}"' "$RFI"; then
+  pass "ingest-sop-library.sh invoked with the client slug (falls back to 'default' like U6c)"
 else
-  fail "ingest-sop-library.sh invocation with \$CLIENT_SLUG not found"
+  fail "ingest-sop-library.sh is not invoked with \${CLIENT_SLUG:-default}"
 fi
 
 if grep -q '"scope":"sops"' "$RFI"; then
@@ -273,6 +274,16 @@ else
   fail "ROLE_LIBRARY_PATH provisioning does not preserve an existing operator value"
 fi
 
+# The central-vectors provisioning must come AFTER the converge in Phase 6i:
+# importRoleLibrary() rows exist only once the converge has run.
+CONV_LN="$(echo "$PHASE_BLOCK" | grep -n 'api/system/converge' | head -1 | cut -d: -f1)"
+PROV_LN="$(echo "$PHASE_BLOCK" | grep -n 'provision_sop_embeddings.py" \\' | head -1 | cut -d: -f1)"
+if [[ -n "$CONV_LN" && -n "$PROV_LN" && "$PROV_LN" -gt "$CONV_LN" ]]; then
+  pass "post-converge vectors: provision_sop_embeddings.py runs after the converge (line $PROV_LN > $CONV_LN)"
+else
+  fail "provision_sop_embeddings.py is not invoked after the converge in PHASE 6i (converge=$CONV_LN provision=$PROV_LN)"
+fi
+
 # ─── Test 2: full-script syntax check ─────────────────────────────────────
 echo "$P Test 2: bash -n syntax check on the full orchestrator..."
 if bash -n "$RFI" 2>/tmp/rfi-syntax-err.$$; then
@@ -331,8 +342,21 @@ else
       # $6 expected fail_install: "no" or "yes"
       # $7 scripted CC converge response body ("" => no .env.local, converge skipped)
       # $8 role how-to.md files on disk under $OC_ROOT/workspace/departments
+      # $9 preserved ROLE_LIBRARY_PATH dir (relative to the sandbox) or ""
+      # $12 "skip" => the stub ingest takes the real script's ALREADY-POPULATED
+      #     SKIP GATE (prints its exact skip lines, writes nothing, exits 0), and
+      #     the $3 role-library rows are written by the fake CC ONLY when the
+      #     converge POST actually arrives -- so they land only if the phase
+      #     really reaches step (2).
       local scenario="$1" rows="$2" role_rows="$3" ingest_rc="$4" bootseed="$5" expect_fail="$6"
       local converge_json="${7:-}" role_howtos="${8:-0}" preserved_rl="${9:-}"
+      # $10 client slug handed to the phase ("" = none resolved; default test-client)
+      # $11 "symlink" => every role how-to.md is a SYMLINK (shared-core layout)
+      # $13 role-library rows the fake CC writes ONLY when the converge POST
+      #     arrives (importRoleLibrary() stand-in), so they exist only after it.
+      local client_slug="${10-test-client}" howto_mode="${11:-}" ingest_mode="${12:-}"
+      local stub_role_rows="$role_rows" cc_role_rows="${13:-0}"
+      if [[ "$ingest_mode" == "skip" ]]; then stub_role_rows=0; cc_role_rows="$role_rows"; fi
       local SBOX FAIL_MARKER SKILL_ROOT
       SBOX="$(mktemp -d)"
       # Mirror the REAL repo depth (assert-sop-library-populated.py resolves
@@ -348,6 +372,15 @@ else
       # Real row-count gate script + the real shared resolver, unmodified.
       cp "$ASSERT_PY" "$SKILL_ROOT/scripts/assert-sop-library-populated.py"
       cp "$REPO_SHARED_UTILS/resolve_db.py" "$SBOX/repo/shared-utils/resolve_db.py"
+      # Stub provisioner: records how many role-library rows exist WHEN it runs.
+      # Non-zero == the post-converge vectors step (2b) ran AFTER the converge.
+      mkdir -p "$SBOX/repo/shared-utils/sop-embed-once"
+      cat > "$SBOX/repo/shared-utils/sop-embed-once/provision_sop_embeddings.py" <<PROVEOF
+import sqlite3, sys
+n = sqlite3.connect(sys.argv[2]).execute("SELECT COUNT(*) FROM sops WHERE source='role-library'").fetchone()[0]
+open("$SBOX/provision_saw_role_rows", "w").write(str(n))
+print("[provision-sop-embeddings] STUB: saw %d role-library row(s)" % n)
+PROVEOF
 
       # CC boot-seed: autoSeedStarterSOPs has ALREADY run (CC booted in Phase
       # 6), so `sops` is NEVER empty by the time this phase's gate runs. This
@@ -372,13 +405,21 @@ PYEOF
 #!/usr/bin/env bash
 set -euo pipefail
 CLIENT="\${1:?usage}"
+printf '%s' "\$CLIENT" > "$SBOX/ingest_slug"
 echo "[sop-library] client=\$CLIENT  tag=stub"
+if [[ "$ingest_mode" == "skip" ]]; then
+  echo "[sop-library] db=\$DASHBOARD_DB_PATH  current sops rows=$bootseed  canonical=$rows"
+  echo "[sop-library] SKIP — this box already holds $bootseed sops rows (>= canonical $rows) and canonical membership verified."
+  echo "[sop-library] Nothing downloaded, nothing written, DB untouched. (SOP_LIB_FORCE=1 to re-ingest anyway.)"
+  echo "[sop-library] downloaded 0 SOP records (skipped — already populated)"
+  exit 0
+fi
 echo "[sop-library] downloading https://example.invalid/sops-library-v2.jsonl.gz"
 if [[ "$ingest_rc" -ne 0 ]]; then
   echo "curl: (22) The requested URL returned error: 404" >&2
   exit $ingest_rc
 fi
-python3 - "\$DASHBOARD_DB_PATH" "$rows" "$role_rows" <<'PYEOF'
+python3 - "\$DASHBOARD_DB_PATH" "$rows" "$stub_role_rows" <<'PYEOF'
 import sqlite3, sys
 db_path, n, role_n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 conn = sqlite3.connect(db_path)
@@ -406,8 +447,14 @@ STUBEOF
       local _i
       for (( _i = 0; _i < role_howtos; _i++ )); do
         mkdir -p "$OCROOT/workspace/departments/dept-$_i/01-role"
-        printf '# How-To\n\n### SOP: do the thing\n1. step\n' \
-          > "$OCROOT/workspace/departments/dept-$_i/01-role/how-to.md"
+        if [[ "$howto_mode" == "symlink" ]]; then
+          mkdir -p "$SBOX/shared-core"
+          printf '# How-To\n\n### SOP: do the thing\n1. step\n' > "$SBOX/shared-core/how-to-$_i.md"
+          ln -s "$SBOX/shared-core/how-to-$_i.md" "$OCROOT/workspace/departments/dept-$_i/01-role/how-to.md"
+        else
+          printf '# How-To\n\n### SOP: do the thing\n1. step\n' \
+            > "$OCROOT/workspace/departments/dept-$_i/01-role/how-to.md"
+        fi
       done
 
       # Fake Command Center. Answers POST /api/system/converge with a SCRIPTED body,
@@ -418,12 +465,21 @@ STUBEOF
       local CC_PID="" CC_PORT="1"
       if [[ -n "$converge_json" ]]; then
         cat > "$SBOX/fakecc.py" <<'CCEOF'
-import sys
+import sqlite3, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 body = sys.argv[1].encode()
+marker, db_path, role_n = sys.argv[3], sys.argv[4], int(sys.argv[5])
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        open(marker, 'w').write('called')
+        # importRoleLibrary() stand-in: role rows land only when converge is called.
+        conn = sqlite3.connect(db_path)
+        for i in range(role_n):
+            conn.execute("INSERT OR REPLACE INTO sops (id, slug, source) VALUES (?, ?, ?)",
+                         (f"cc_role_{i}", f"role-library:dept/role-{i}", "role-library"))
+        conn.commit()
+        conn.close()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -436,7 +492,7 @@ with open(sys.argv[2], 'w') as f:
     f.write(str(srv.server_port))
 srv.serve_forever()
 CCEOF
-        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" &
+        python3 "$SBOX/fakecc.py" "$converge_json" "$SBOX/ccport" "$SBOX/converge_called" "$SBOX/mission-control.db" "$cc_role_rows" &
         CC_PID=$!
         for _ in $(seq 1 60); do [[ -s "$SBOX/ccport" ]] && break; sleep 0.1; done
         CC_PORT="$(cat "$SBOX/ccport" 2>/dev/null || echo 1)"
@@ -469,7 +525,7 @@ fail_install() {
   exit 1
 }
 SKILL_DIR="$SKILL_ROOT"
-CLIENT_SLUG="test-client"
+CLIENT_SLUG="$client_slug"
 DASHBOARD_DIR="$SKILL_ROOT/dashboard"
 DASHBOARD_PORT="$CC_PORT"
 CC_PM2_NAME="blackceo-command-center"
@@ -495,6 +551,33 @@ HARNESSEOF
           pass "$scenario: fail_install NOT called on a healthy library (rc=$rc)"
         else
           fail "$scenario: fail_install unexpectedly called: $(cat "$FAIL_MARKER"), stdout tail: $(tail -3 "$SBOX/stdout.log")"
+        fi
+      fi
+      if [[ -z "$client_slug" ]]; then
+        local got_slug; got_slug="$(cat "$SBOX/ingest_slug" 2>/dev/null || echo none)"
+        [[ "$got_slug" == "default" ]] \
+          && pass "$scenario: no slug -> ingest ran with the 'default' slug (like U6c)" \
+          || fail "$scenario: no slug -> ingest did not run with 'default' (got: $got_slug)"
+        [[ -f "$SBOX/converge_called" ]] \
+          && pass "$scenario: no slug -> converge(scope=sops) was still called" \
+          || fail "$scenario: no slug -> converge(scope=sops) was NEVER called (phase skipped)"
+      fi
+      if [[ "$ingest_mode" == "skip" && "$cc_role_rows" -gt 0 ]]; then
+        local landed
+        landed="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT COUNT(*) FROM sops WHERE source=?", ("role-library",)).fetchone()[0])' "$SBOX/mission-control.db" 2>/dev/null || echo 0)"
+        if [[ "$landed" -eq "$cc_role_rows" ]]; then
+          pass "$scenario: converge(scope=sops) was reached -- $landed role-library row(s) landed"
+        else
+          fail "$scenario: converge(scope=sops) never ran -- $landed role-library row(s) landed, expected $cc_role_rows"
+        fi
+      fi
+      if [[ "$cc_role_rows" -gt 0 ]]; then
+        local saw
+        saw="$(cat "$SBOX/provision_saw_role_rows" 2>/dev/null || echo none)"
+        if [[ "$saw" == "$cc_role_rows" ]]; then
+          pass "$scenario: central vectors provisioned AFTER the converge (provisioner saw $saw role-library row(s))"
+        else
+          fail "$scenario: provisioner did not run after the converge (saw: $saw, expected $cc_role_rows)"
         fi
       fi
       rm -rf "$SBOX"
@@ -553,6 +636,46 @@ HARNESSEOF
                                                                   2555  0     0    54    "yes" \
                                                                   '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
                                                                   "preserved-empty-role-lib"
+
+    # 4l: NO CLIENT_SLUG (live 2026-09-23 on Karen Vaughn's and LeAnne Dolce's
+    # boxes). The slug only scopes client_template_vars, so the phase must still
+    # ingest (slug 'default', like U6c), call the converge, and run the gate.
+    _run_sandbox "4l NO CLIENT_SLUG (converge + gate still run; ingest uses 'default')" \
+                                                                  2555  107   0    54    "no" \
+                                                                  '{"ok":true,"sops":{"imported":107,"updated":0}}' 12 \
+                                                                  "" ""
+    # 4m: role how-to.md files are SYMLINKS (live on Angeleen Harris's box: 448
+    # of them, 0 counted without -L). A converge that imports nothing must still
+    # FAIL -- counting 0 how-tos would drop the role floor to 0 (fail-open).
+    _run_sandbox "4m SYMLINKED how-to.md + converge 0-imported (must fail, not floor 0)" \
+                                                                  2555  0     0    54    "yes" \
+                                                                  '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
+                                                                  "" "test-client" "symlink"
+    # 4i is the live fleet shape (2026-09-23: 2,585 `sops` rows, ZERO with
+    # source='role-library'). Every already-rolled box holds the full JSONL
+    # library, so ingest-sop-library.sh takes its ALREADY-POPULATED SKIP GATE and
+    # prints "downloaded 0 SOP records (skipped — already populated)". Phase 6i
+    # used to read that 0 as "empty asset" and fail_install BEFORE step (2), so
+    # converge(scope=sops) -> importRoleLibrary() never ran on any existing box.
+    # The skip must use the box's canonical floor and still reach the converge.
+    _run_sandbox "4i ALREADY-POPULATED SKIP (2578 rows present, ingest skips, converge imports 690 role rows)" \
+                                                                  2555  690   0    2578  "no" \
+                                                                  '{"ok":true,"sops":{"imported":690,"updated":0}}' 12 \
+                                                                  "" "test-client" "" "skip"
+    # 4j: the same skip path must not become a new fail-open -- a converge that
+    # imports nothing while role how-tos sit on disk is still the C2 ghost.
+    _run_sandbox "4j ALREADY-POPULATED SKIP, converge imports 0 with 12 how-tos on disk (ghost still caught)" \
+                                                                  2555  0     0    2578  "yes" \
+                                                                  '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
+                                                                  "" "test-client" "" "skip"
+    # 4k: importRoleLibrary() rows carry NO embedding (CC #416); their vectors come
+    # from the central asset. The provisioning inside ingest-sop-library.sh runs
+    # BEFORE the converge, so Phase 6i must provision again AFTER it -- otherwise
+    # the rows the converge just wrote never get vectors on this run.
+    _run_sandbox "4k POST-CONVERGE VECTORS (converge writes 690 role rows; provisioning must see them)" \
+                                                                  2555  0     0    54    "no" \
+                                                                  '{"ok":true,"sops":{"imported":690,"updated":0}}' 12 \
+                                                                  "" "test-client" "" "" 690
   fi
 fi
 

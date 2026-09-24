@@ -350,6 +350,80 @@ def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, st
     return {}
 
 
+# ---------------------------------------------------------------------------
+# the NESTED requester object -- the shape the ENGINE itself reads
+# (PD-TEST-049).
+#
+# THE SECOND HALF OF THE F19 GAP. The block above makes the requester durable
+# as the FLAT pair working/copy/intake.json's OTHER readers use:
+# presentation_job/resolve_intake.py reads `requester_chat_id` /
+# `requester_channel` there (resolve_intake.py:477-480) and turns them into the
+# nested `requester: {chat_id, client_name, channel}` object the engine's --new
+# wants (resolve_intake.py:498-504). That works for the two SHELL callers that
+# run resolve_intake.py first -- presentation-canonical-entry.sh:1188 and
+# presentation-intake-poll.sh:1270 -- because they hand the engine
+# `working/checkpoints/.engine-intake.json`, resolve_intake.py's OWN output.
+#
+# The launcher path does NOT go through resolve_intake.py: launcher.py:
+# 1763-1771 passes `working/copy/intake.json` STRAIGHT to the engine as
+# --intake (its documented launcher contract -- launcher.py:1760-1761 and
+# dispatch_new's docstring, launcher.py:1884-1885: "The engine's --new path
+# reads intake_json from the run directory's working/copy/intake.json").
+# The engine then reads the NESTED object
+# (presentation_job/__main__.py:266 `intake.get("requester") or {}`) and
+# hard-fails F1 when it carries no chat_id (__main__.py:278-281).
+#
+# So a run produced by THIS driver and launched by the launcher -- the
+# operator-delegated bridge path, intake_bridge.drive_operator_contract()
+# -> `deck-intake-driver.py --complete` -> launcher.dispatch_new() -- carried a
+# perfectly good requester in the FLAT shape and still died at F1 with an
+# EMPTY NESTED object. Because this driver is the SOLE writer of the file
+# (comment above; intake_bridge.py:1108-1110), the mirror belongs HERE: the
+# producer emits both shapes and the file is self-sufficient for both
+# consumers. resolve_intake.py is left untouched and still reads the flat pair.
+_OPERATOR_REQUESTER_CLIENT_NAME = "operator"
+
+
+def _ensure_nested_requester(intake: Dict[str, Any]) -> None:
+    """Mirror intake.json's FLAT requester pair into the NESTED `requester`
+    object the engine's --new actually reads, IN PLACE.
+
+    Sourced from whatever the file already carries, so this covers both the
+    freshly-stamped case AND the upstream-stamped case
+    (_resolve_requester_from_env() returns {} -- deliberately, never
+    clobbering -- when a value is already on disk; the nested mirror must
+    still be derived from it, or such a run keeps dying at F1).
+
+    Never fabricates: with no chat_id anywhere this writes NOTHING and the
+    engine's own F1 gate fires exactly as designed. The emitted shape is the
+    product's own canonical one -- `{"chat_id", "client_name", "channel"}`,
+    byte-for-byte the object resolve_intake.py:498-500 builds and the shape
+    real runs' state.json carries.
+    """
+    existing = intake.get("requester")
+    if isinstance(existing, dict) and str(existing.get("chat_id") or "").strip():
+        return
+    chat_id = str(intake.get("requester_chat_id") or "").strip()
+    if not chat_id:
+        return
+    channel = str(intake.get("requester_channel") or "").strip() or "telegram"
+    client_name = str(intake.get("client_name") or "").strip() \
+        or _OPERATOR_REQUESTER_CLIENT_NAME
+    intake["requester"] = {"chat_id": chat_id,
+                           "client_name": client_name,
+                           "channel": channel}
+
+
+def _stamp_requester(intake: Dict[str, Any]) -> Dict[str, Any]:
+    """Stamp the requester onto `intake` in BOTH shapes its readers use, and
+    return it (for easy call-site chaining). Resolve first (env -> sanctioned
+    operator fallback), then mirror into the nested engine object. The single
+    entry point every finalize path in this driver calls."""
+    intake.update(_resolve_requester_from_env(intake))
+    _ensure_nested_requester(intake)
+    return intake
+
+
 def read_intake_ledger(run_dir: Path) -> Dict[str, Any]:
     """Read working/interview/intake_ledger.json. Returns empty dict if absent."""
     path = run_dir / "working" / "interview" / "intake_ledger.json"
@@ -606,7 +680,6 @@ def cmd_next(args) -> int:
 # subfield with an unmet condition records its documented default/derived/
 # none_value, and only a fully undocumentable skip leaves the marker entry.
 # ---------------------------------------------------------------------------
-_PITCHLESS_RE = re.compile(r"no\s+pitch|pitchless|without\s+(a\s+)?pitch", re.I)
 _INT_RE = re.compile(r"(\d+)")
 _WPM_RE = re.compile(r"(\d{2,4})\s*w(?:ords)?[\s-]*p(?:m|er\s?min)", re.I)
 _MIN_RE = re.compile(r"(\d{1,3})\s*(?:minutes|minute|mins|m)\b", re.I)
@@ -638,11 +711,24 @@ def derive_slide_count_from_duration(duration_min: Any) -> Optional[int]:
     return max(1, int(round(d * 0.8)))
 
 def pitchless_session(derived: Dict[str, Any]) -> bool:
-    """Q4 (goal_cta_feeling) decides: a session with no sell has no pitch.
-    Group-2 rows (11-15) are skipped-with-defaults when the client says so."""
-    blob = " ".join(str(derived.get(k) or "")
-                    for k in ("goal", "cta_action", "target_feeling"))
-    return bool(_PITCHLESS_RE.search(blob))
+    """Only the explicit, typed pitch decision can suppress commercial turns.
+
+    Free text such as ``"without a pitch"`` is not a durable intake decision:
+    it may describe one section while the owner still selected an offer, or
+    vice versa. ``pitch_included`` is written as a real bool by cmd_answer;
+    missing or non-bool values intentionally do not skip anything.
+    """
+    return derived.get("pitch_included") is False
+
+
+def _explicit_pitch_value(text: str) -> Optional[bool]:
+    """Parse the one owner-selected pitch decision without inferring it."""
+    normalized = (text or "").strip().lower()
+    if normalized in ("true", "yes"):
+        return True
+    if normalized in ("false", "no"):
+        return False
+    return None
 
 def _answer_view(entries: Dict[str, Any]) -> Dict[str, Any]:
     """Flatten ledger entries to a {key: value} answers view. Structured
@@ -673,9 +759,9 @@ def _enum_match(text: str, allowed: List[str]) -> Optional[str]:
 
 def _yes_or_no(text: str) -> Optional[str]:
     lowered = (text or "").strip().lower()
-    if re.match(r"^(y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
+    if re.match(r"^(true|y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
         return "yes"
-    if re.match(r"^(n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
+    if re.match(r"^(false|n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
         return "no"
     return None
 
@@ -1501,9 +1587,26 @@ def cmd_answer(args) -> int:
         if q["id"] == qid:
             qdef = q
             break
+    # pitch_included is a typed subfield of the first merged type/source
+    # turn.  Accept its id directly as well because the local bridge records
+    # individual canonical fields; this does not create another interview
+    # turn or loosen its validation.
+    if qdef is None and qid == "pitch_included":
+        qdef = {"id": qid, "storeOn": "PITCH_INCLUDED",
+                "prompt": "Does this presentation include a pitch?"}
     if qdef is None:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
+
+    # The pitch branch is a typed owner decision, never a text inference.
+    # Validate before creating a ledger row so malformed or contradictory
+    # answers leave no partial intake state behind.
+    pitch_value: Optional[bool] = None
+    if qid == "pitch_included":
+        pitch_value = _explicit_pitch_value(text)
+        if pitch_value is None:
+            print(json.dumps({"error": "pitch_included must be an explicit yes/no or true/false decision"}))
+            return 1
 
     # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
@@ -1522,12 +1625,24 @@ def cmd_answer(args) -> int:
     # never silently left stale or (the old bug) clobbered.
     already_complete = bool(ledger.get("complete")) or ledger.get("status") == "complete"
     entries = ledger.get("entries", {})
+    prior_answers = _answer_view(entries)
+    if qid == "pitch_included":
+        prior_type = prior_answers.get("presentation_type")
+        if prior_type == "signature" and pitch_value is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
+            return 1
     store_on = qdef.get("storeOn", qid)
     entries[store_on] = {"value": text.strip(), "validated": True,
                          "source": "deck-intake-driver",
                          "answered_at": datetime.now(timezone.utc).isoformat()}
     # Also store by question id for lookup
     entries[qid] = entries[store_on]
+    if qid == "pitch_included":
+        pitch_record = dict(entries[store_on])
+        pitch_record.update({"value": pitch_value, "normalized": pitch_value,
+                             "answer": "true" if pitch_value else "false"})
+        entries[store_on] = pitch_record
+        entries[qid] = pitch_record
 
     # FIX 30: merged-turn answer -- split into legacy subfield records, each
     # with the SAME shape the drift-side waiver builder reads (validated +
@@ -1568,6 +1683,10 @@ def cmd_answer(args) -> int:
                             "normalized": parent, "answer": text.strip()}
         # presentation_type special (mirrors the legacy plain-row handler)
         ptype = derived.get("presentation_type")
+        selected_pitch = derived.get("pitch_included")
+        if ptype == "signature" and selected_pitch is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
+            return 1
         if ptype in LEGAL_PRESENTATION_TYPES:
             try:
                 dl = derive_legacy_fields(
@@ -1639,6 +1758,9 @@ def cmd_answer(args) -> int:
         ptype = text.strip()
         if ptype not in LEGAL_PRESENTATION_TYPES:
             print(json.dumps({"error": f"Invalid presentation_type {ptype!r}"}))
+            return 1
+        if ptype == "signature" and prior_answers.get("pitch_included") is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
             return 1
         try:
             derived = derive_legacy_fields(ptype)
@@ -1802,6 +1924,15 @@ def cmd_complete(args) -> int:
     intake = read_intake_json(run_dir)
     for store_key, entry in entries.items():
         if isinstance(entry, dict):
+            # A commercial-only field skipped because the owner selected an
+            # informational deck is not an empty client answer. Keep the
+            # provenance marker in the ledger but do not manufacture a root
+            # intake value that a later consumer could mistake for supplied
+            # content.
+            if (entry.get("skipped") and store_key in
+                    ("named_methodology", "time_to_result",
+                     "NAMED_METHODOLOGY", "TIME_TO_RESULT")):
+                continue
             val = entry.get("value")
             if val is not None:
                 intake[store_key] = val
@@ -1864,7 +1995,10 @@ def cmd_complete(args) -> int:
     # fix/deck-type-routing-bypass follow-up: stamp the requester identity
     # (env -> intake.json) so the engine's resolve_intake.py has something to
     # read besides an empty ledger. See _resolve_requester_from_env() above.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: _stamp_requester() also mirrors it into the NESTED
+    # `requester` object the engine's own --new reads -- this run's real
+    # consumer, because the launcher passes THIS file straight to --intake.
+    _stamp_requester(intake)
 
     # Mark interview_confirmed
     intake["interview_confirmed"] = True
@@ -2522,7 +2656,8 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     # requester here too, or a signature-mode deck driven straight to
     # --record never picks up either the chat-surface env vars or the
     # operator fallback. See _resolve_requester_from_env()'s own docstring.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: BOTH shapes, as in cmd_complete -- see _stamp_requester().
+    _stamp_requester(intake)
     write_intake_json(run_dir, intake)
 
     # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
@@ -2614,7 +2749,8 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
     # function exists specifically for "tooling that already ran the
     # turn-gate through another surface") never picks one up. See
     # _resolve_requester_from_env()'s own docstring.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: BOTH shapes, as in cmd_complete -- see _stamp_requester().
+    _stamp_requester(intake)
     write_intake_json(run_dir, intake)
 
     # Prove it (fail-soft -- build_deck.py preflight is the real gate)

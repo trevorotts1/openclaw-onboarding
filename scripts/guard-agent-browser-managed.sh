@@ -100,7 +100,7 @@
 set -uo pipefail
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-GUARD_AGENT_BROWSER_MANAGED_VERSION="v25.0.42"
+GUARD_AGENT_BROWSER_MANAGED_VERSION="v25.1.84"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -574,7 +574,7 @@ HEADLESS_RE = re.compile(r"headless\s*=\s*(False|0)\b")
 LAUNCH_RE = re.compile(r"(?<![A-Za-z_])launch\s*\(")
 EXCLUDE_RE = re.compile(r"launch_persistent_context|launchPersistentContext")
 CODE_LANGS = ("python", "py", "python3", "bash", "sh", "shell")
-FENCE_RE = re.compile(r"(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+-]*)")
+FENCE_RE = re.compile(r"(" "\x60" r"{3,}|~{3,})[ \t]*([A-Za-z0-9_+-]*)")  # \x60: backtick (bash 3.2 cannot parse a literal one here)
 def scan(path, rel):
     in_fence = False; fch = None; out = []
     try:

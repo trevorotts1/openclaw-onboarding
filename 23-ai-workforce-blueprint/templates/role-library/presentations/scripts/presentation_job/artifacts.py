@@ -25,6 +25,148 @@ except ImportError:
 
 _PROMPT_FLOOR = 9000
 
+
+# ---------------------------------------------------------------------------
+# PD-TEST-098 -- the design-page prompt BAND predicate (banked re-validation).
+#
+# THE DEFECT. `Engine._revalidate_banked` (phases.py) re-validates every banked
+# artifact of a `done` phase on EVERY resume: pass -> SKIP and reuse; fail ->
+# the phase is reset to PENDING and re-run. That is the engine's own
+# self-healing path. It did not fire for `prompts/<page>.design.txt`, because
+# `validate_artifact` matched none of its per-type arms for that path and fell
+# through to the F15 catch-all, which checks only exists / non-empty / sha256
+# identity. Measured read-only against live run
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+#
+#   prompts/sales.design.txt    58,484 bytes -> ok=True
+#     "...no per-type predicate, verified by recorded hash"
+#   prompts/checkout.design.txt 49,526 bytes -> ok=True
+#   prompts/vsl.design.txt      51,334 bytes -> ok=True
+#
+# So three prompts the paid render gate MUST refuse (2.7x-3.2x the 18,000-char
+# ceiling) re-validated clean, the three design phases stayed `done`, and the
+# refusal surfaced two phases later at P-U-DESIGN-RENDER-*.
+#
+# THE FIX. Give the design prompt its own per-type arm, next to the existing
+# `working/prompts/slide-NN.txt -> validate_text(path, _PROMPT_FLOOR)`
+# precedent, enforcing the SAME band the render gate enforces. With it, the
+# next resume fails these three banked artifacts, the engine resets the three
+# design phases to PENDING, and the (now band-aware) producer re-authors them
+# inside the shared budget -- the run heals itself with no hand editing.
+#
+# SINGLE SOURCE. The band is READ FROM `prompt_gate`, never re-typed: this file
+# already carried `_PROMPT_FLOOR = 9000` (an unchecked second copy -- sync_check
+# does not pin it), and a third copy would be exactly the drift this defect is
+# made of. `prompt_gate` imports only `presentation_job.model_catalog` (stdlib
+# only), so this import cannot cycle. The loader mirrors
+# `build_deck._import_prompt_gate` (normal import, then a path-based load from
+# this file's own package parent) because `phases.py` does not bootstrap
+# sys.path, so `scripts/` is not guaranteed importable from here.
+# ---------------------------------------------------------------------------
+_DESIGN_PROMPT_RE = re.compile(r"prompts/[A-Za-z0-9_-]+\.design\.txt$")
+_PROMPT_GATE_CACHE: Any = None
+_PROMPT_GATE_TRIED = False
+
+
+def _import_prompt_gate():
+    """The shared `prompt_gate` module, or None when it cannot be loaded.
+
+    Degrades gracefully, exactly like `build_deck._import_prompt_gate` and its
+    callers: a broken install must not turn every banked design prompt into a
+    permanent re-author loop. The degrade is DISCLOSED in the verdict string
+    (see `validate_design_prompt`) rather than passed off as a real check."""
+    global _PROMPT_GATE_CACHE, _PROMPT_GATE_TRIED
+    if _PROMPT_GATE_TRIED:
+        return _PROMPT_GATE_CACHE
+    _PROMPT_GATE_TRIED = True
+    try:
+        import importlib
+        _PROMPT_GATE_CACHE = importlib.import_module("prompt_gate")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "prompt_gate",
+                str(Path(__file__).resolve().parent.parent / "prompt_gate.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _PROMPT_GATE_CACHE = mod
+        except Exception:  # noqa: BLE001
+            _PROMPT_GATE_CACHE = None
+    return _PROMPT_GATE_CACHE
+
+
+def validate_design_prompt(path: Path, rel_path: str,
+                           recorded_sha: Optional[str] = None) -> Tuple[bool, str]:
+    """A design-page prompt (`prompts/<page>.design.txt`) must sit inside the
+    SHARED prompt band the render gate enforces.
+
+    `build_infographic.resolve_design_prompt` reads this file VERBATIM as ONE
+    GPT-Image-2.5 prompt and refuses it via `prompt_gate` before any paid call.
+    Re-validating the same band here means an out-of-band prompt is caught at
+    the DESIGN phase (cheap re-author) instead of at the render phase (parked
+    run). Length is measured on the stripped text, exactly as the gate does."""
+    ok, why = validate_text(path, 1)
+    if not ok:
+        return False, why
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return False, f"{path} unreadable: {exc}"
+    length = len(text.strip())
+
+    pg = _import_prompt_gate()
+    if pg is None:
+        # DISCLOSED degrade -- never silently claim the band was checked.
+        return (True, f"{why} -- PD-TEST-098 BAND PREDICATE UNAVAILABLE: "
+                      "prompt_gate.py could not be imported, so this design "
+                      f"prompt's {length}-char length was NOT checked against "
+                      "the shared band")
+
+    if length < pg.PROMPT_CHAR_FLOOR:
+        return False, (
+            f"{rel_path} is {length} chars, UNDER the {pg.PROMPT_CHAR_FLOOR}-char "
+            "shared prompt floor (AF-P1; prompt_gate.PROMPT_CHAR_FLOOR) -- the "
+            "render gate refuses it, so it is not reusable banked work")
+    if length > pg.PROMPT_CHAR_CEILING:
+        return False, (
+            f"{rel_path} is {length} chars, over the {pg.PROMPT_CHAR_CEILING}-char "
+            "shared prompt ceiling (AF-P2; prompt_gate.PROMPT_CHAR_CEILING, 2,000 "
+            "under the GPT-Image-2.5 API ceiling) -- the render gate refuses it "
+            "before any paid call, so it is not reusable banked work")
+
+    # PD-TEST-113 / D2 (independent review of PR #1148). The band checks above are
+    # only PART of the gate, and this predicate -- not the phase verifier -- is the
+    # arm that decides whether an already-`done` phase is re-opened:
+    # `phases._revalidate_banked` -> `validate_artifact` -> here, and
+    # `dispatcher._phase_already_done` short-circuits before its verifier pre-check.
+    # So a prompt that is in-band but fails AF-P13 / AF-R3 / AF-P14 was still
+    # treated as reusable banked work: the phase was NOT re-opened, the new strict
+    # verifier was never consulted, and the consuming render phase stayed refused.
+    # Measured live: P-U-DESIGN-SALES and P-U-DESIGN-VSL were `status=done` with 2
+    # and 1 gate problems respectively while P-U-DESIGN-RENDER-SALES/-VSL sat
+    # quarantined -- and P-U-DESIGN-RENDER-CHECKOUT was `done` with 0 problems.
+    # Same ONE authority as the verifier and the consumer; no second copy.
+    problems = pg.prompt_problems(text.strip())
+    if problems:
+        return False, (
+            f"{rel_path} fails the shared render gate its consuming phase applies "
+            "(prompt_gate.prompt_problems -- the same call "
+            "build_infographic.resolve_design_prompt makes) -- the render gate "
+            "refuses it before any paid call, so it is not reusable banked work: "
+            + "; ".join(problems))
+
+    band = (f"inside the {pg.PROMPT_CHAR_FLOOR}-{pg.PROMPT_CHAR_CEILING} "
+            "shared prompt band")
+    if recorded_sha is not None:
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != recorded_sha:
+            return False, (f"{rel_path} sha256 mismatch: recorded "
+                           f"{recorded_sha[:12]}..., actual {actual[:12]}...")
+        return True, f"{rel_path} ok ({length} chars, {band}, sha256 match)"
+    return True, f"{rel_path} ok ({length} chars, {band})"
+
 # FIX 3 (MASTER Part 8): one presenter-guide floor, scaled, everywhere.
 # The banked validator below used to re-derive the scaled floor inline
 # (max(min_bytes*n//34, 8192)) with its own slide-count read -- a third
@@ -274,6 +416,14 @@ def validate_artifact(run_dir: Path, rel_path: str, manifest: Any,
 
     if re.match(r"working/prompts/slide-\d+\.txt$", rel_path):
         return validate_text(path, _PROMPT_FLOOR)
+    # PD-TEST-098: the design-page prompt gets its OWN band predicate instead
+    # of falling through to the F15 hash-only catch-all below, which is what
+    # let a 58,484-char prompt re-validate clean against an 18,000 ceiling.
+    # Placed AFTER the deliverables loop and beside the slide-prompt arm, so
+    # every arm that matched this path before still matches it first -- this
+    # branch can only take files that previously reached the catch-all.
+    if _DESIGN_PROMPT_RE.match(rel_path):
+        return validate_design_prompt(path, rel_path, recorded_sha=recorded_sha)
     ext = Path(rel_path).suffix.lower()
     if ext == ".json" and (rel_path.startswith("working/qc/") or rel_path == "working/copy/intake.json"):
         return validate_json(path, min_bytes=2)

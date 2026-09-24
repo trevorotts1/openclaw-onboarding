@@ -116,7 +116,7 @@
       "section": "deck-intake",
       "order": 0.5,
       "kind": "merged",
-      "prompt": "What are we building: from scratch, from your content for one person, from your content for a broader audience, or a 4-phase Signature Presentation? If content-based, name/share the source and give the one core idea the audience must retain.",
+      "prompt": "What are we building: from scratch, from your content for one person, from your content for a broader audience, or a 4-phase Signature Presentation? Does it end with an offer or pitch (yes/no)? If content-based, name/share the source and give the one core idea the audience must retain.",
       "required": true,
       "block_gate": true,
       "subfields": {
@@ -129,6 +129,11 @@
             "signature"
           ],
           "note": "branch keyword decides; legacy deck_type/creation_mode/presentation_mode/audience_mode derive from it via the standard mapping"
+        },
+        "pitch_included": {
+          "storeOn": "PITCH_INCLUDED",
+          "note": "explicit owner decision; true keeps commercial turns and false suppresses only commercial turns; never inferred or defaulted",
+          "kind": "boolean"
         },
         "signature_source": {
           "storeOn": "SIGNATURE_SOURCE",
@@ -200,7 +205,10 @@
         },
         "named_methodology": {
           "storeOn": "NAMED_METHODOLOGY",
-          "none_value": "no named method"
+          "conditional_on": {
+            "id": "pitch_included",
+            "equals": true
+          }
         }
       },
       "stage": 1,
@@ -244,7 +252,11 @@
           "storeOn": "PRIMARY_OBJECTION"
         },
         "time_to_result": {
-          "storeOn": "TIME_TO_RESULT"
+          "storeOn": "TIME_TO_RESULT",
+          "conditional_on": {
+            "id": "pitch_included",
+            "equals": true
+          }
         }
       },
       "stage": 1,
@@ -925,7 +937,11 @@
       "required": true,
       "block_gate": true,
       "resolverHint": "Feeds pitch_engines_check.chk_branded_method (AF-NO-BRANDED-METHOD / AF-METHOD-FABRICATED) -- the ONLY source of a client-supplied method name; a NAMED_METHOD beat may not appear on a slide without this answer or an owner_approved:true record in method_name_approval.json.",
-      "alias": true
+      "alias": true,
+      "conditional_on": {
+        "id": "pitch_included",
+        "equals": true
+      }
     },
     {
       "id": "goal",
@@ -990,7 +1006,11 @@
       "required": true,
       "block_gate": true,
       "resolverHint": "Feeds pitch_engines_check.chk_time_to_result (AF-NO-TIME-TO-RESULT) -- the deck's EXPECTATION beat must carry a duration token (day/week/month/session) sourced from this answer, never fabricated.",
-      "alias": true
+      "alias": true,
+      "conditional_on": {
+        "id": "pitch_included",
+        "equals": true
+      }
     },
     {
       "id": "tone",
@@ -1225,7 +1245,7 @@
     }
   ],
   "waiver_field_mapping": {
-    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "_comment": "U026 \u2014 the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT \u2014 a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
     "teleprompter": {
       "toggle": "want_teleprompter",
       "reason": "teleprompter_declined_reason"

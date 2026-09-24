@@ -1221,7 +1221,11 @@ def record_model_plan(plan: Dict[str, Any], *,
     launcher banner and the client report both say it out loud.
 
     A later, different answer UPDATES the plan and appends another audit row:
-    a client changing their workhorse never needs an operator."""
+    a client changing their workhorse never needs an operator. UPDATE means
+    exactly that -- an answer that names only one slot (the intake asks each
+    subfield in its own turn) overlays that slot and PRESERVES every other
+    declared slot already in the store. It never nulls a slot this answer did
+    not mention; see the PRESERVE-BEFORE-OVERLAY note at the write below."""
     if not flag_enabled():
         return load_profile(config_dir)
 
@@ -1380,15 +1384,50 @@ def record_model_plan(plan: Dict[str, Any], *,
                                    "detail": verdict["reason"]})
 
     # --- write --------------------------------------------------------------
-    block: Dict[str, Any] = {
-        "workhorse": None, "reasoning": None, "judge": None,
-        "thinking": thinking,
-        "floor_waivers": sorted(waivers),
-        "source": str(source or "interview"),
-        "declared_at": _now(),
-    }
+    # PRESERVE-BEFORE-OVERLAY (PD-TEST-064). A model plan arrives one subfield
+    # at a time -- the intake asks `workhorse_model`, `reasoning_model`,
+    # `qc_model` and `thinking_mode` as SEPARATE answers, and the real driver
+    # calls here once per answer -- so most calls declare exactly ONE slot.
+    #
+    # This block used to be built from scratch with every undeclared slot
+    # pinned to None, which made the two halves of this function disagree: the
+    # PARSE loop above skips an omitted slot ("an omitted slot keeps the
+    # department default -- silence is not a declaration", parse_model_spec),
+    # while the WRITE loop below nulled that same slot IN THE STORE. The result
+    # was that answering the judge subfield one second after declaring a
+    # workhorse ERASED the workhorse: `model_plan.workhorse` went null, the
+    # Command Center operator-contract re-dispatch path then failed closed
+    # against the profile's workhorse slot (intake_bridge.
+    # _verified_operator_model_plan), and the client's declared authoring
+    # route stopped driving model selection.
+    #
+    # Silence must not ERASE a declaration either, so the block now starts from
+    # what is already stored and this answer overlays only the slots it
+    # actually declared. A first-ever declaration is unaffected: with no prior
+    # block the result is byte-for-byte the document the old code wrote.
+    prior_plan = profile.get("model_plan")
+    prior_plan = prior_plan if isinstance(prior_plan, dict) else {}
+    block: Dict[str, Any] = dict(prior_plan)
     for slot in slot_classes:
         block.setdefault(slot, None)
+    # An omitted slot is carried over, so its floor waivers must be carried too:
+    # model_router.client_plan_for() honours a declared model only while its
+    # capability appears in THIS list (`waived`), so dropping them would
+    # silently un-honour a declaration this answer never touched. Waivers
+    # belonging to a slot re-declared HERE are dropped -- they are recomputed
+    # below against the new declaration.
+    redeclared_capabilities = {capability for slot in declared
+                               for capability in slot_classes.get(slot, ())}
+    prior_waivers = {str(w).strip() for w in (prior_plan.get("floor_waivers") or [])
+                     if str(w).strip()}
+    waivers |= {w for w in prior_waivers if w not in redeclared_capabilities}
+    # Same rule for the recorded thinking level: "off" is a real, explicit
+    # choice in THINKING_LEVELS, so only an OMITTED answer leaves the stored
+    # one standing.
+    block["thinking"] = thinking if thinking is not None else block.get("thinking")
+    block["floor_waivers"] = sorted(waivers)
+    block["source"] = str(source or "interview")
+    block["declared_at"] = _now()
     for slot, spec in declared.items():
         block[slot] = dict(spec)
     profile["model_plan"] = block

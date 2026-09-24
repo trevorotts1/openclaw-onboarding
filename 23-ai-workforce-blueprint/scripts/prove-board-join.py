@@ -152,6 +152,43 @@ SKILL_DIR = SCRIPT_DIR.parent
 REPO_ROOT = SKILL_DIR.parent
 SHARED_UTILS = REPO_ROOT / "shared-utils"
 
+# The ONE departments.json envelope normalizer. The chosen artifact legitimately
+# ships as a bare LIST *or* as an object wrapping that list under "departments"
+# (retire-confirmed-decline.sh's {removedWithProvenance, departments}; a build
+# envelope adding company / total_departments / total_roles). Gating on
+# isinstance(data, list) read the object shape as "no chosen departments" and
+# silently SKIPPED the join — a gate that cannot see the artifact is not a gate.
+sys.path.insert(0, str(SHARED_UTILS))
+try:
+    from departments_payload import departments_or_empty as _departments_or_empty  # type: ignore
+except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
+    def _departments_or_empty(data, path=None):  # type: ignore[misc]
+        # KEEP IN SYNC with shared-utils/departments_payload.py. A slug-keyed
+        # object of department objects folds to a list; the ENTRY's own
+        # id/slug/folder wins over the map key, and a slug taken FROM the key
+        # loses a trailing "-dept". Anything with a non-object value is a
+        # metadata envelope whose keys are never departments.
+        if isinstance(data, dict):
+            wrapped = data.get("departments", data)
+            if isinstance(wrapped, list):
+                return wrapped
+            if (isinstance(wrapped, dict) and wrapped
+                    and all(isinstance(v, dict) for v in wrapped.values())):
+                out = []
+                for k, v in wrapped.items():
+                    e = dict(v)
+                    r = next((x.strip() for x in (e.get("id"), e.get("slug"),
+                              e.get("folder")) if isinstance(x, str) and x.strip()), None)
+                    if r is None:
+                        r = k.strip()
+                        if r.endswith("-dept") and len(r) > 5:
+                            r = r[:-5]
+                    e.setdefault("id", r); e.setdefault("slug", r)
+                    out.append(e)
+                return out
+            return []
+        return data if isinstance(data, list) else []
+
 RC_OK = 0
 RC_CANNOT_RUN = 1
 RC_DRIFT = 2
@@ -259,6 +296,7 @@ def read_chosen_for_company(company_dir, build_state=None):
         data = json.loads(artifact.read_text())
     except (OSError, json.JSONDecodeError):
         data = None
+    data = _departments_or_empty(data, path=str(artifact)) if data is not None else None
     if isinstance(data, list):
         out, seen = [], set()
         for entry in data:

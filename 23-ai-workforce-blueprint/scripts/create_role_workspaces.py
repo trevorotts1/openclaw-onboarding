@@ -29,6 +29,7 @@ For master-orchestrator, SOUL.md and IDENTITY.md use the CEO variant of the
 deferral clause (mission/owner override persona on conflict).
 """
 import argparse
+import filecmp
 import json
 import os
 import re
@@ -1550,6 +1551,71 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             "converted": link_info["converted"]}
 
 
+UNIFY_BAK_KEEP_DEFAULT = 3
+
+
+def _unify_bak_keep():
+    """Retention count for .bak-unify-* files; $UNIFY_BAK_KEEP overrides."""
+    try:
+        n = int(os.environ.get("UNIFY_BAK_KEEP", UNIFY_BAK_KEEP_DEFAULT))
+    except (TypeError, ValueError):
+        return UNIFY_BAK_KEEP_DEFAULT
+    return n if n >= 0 else UNIFY_BAK_KEEP_DEFAULT
+
+
+def _unify_backup(path):
+    """Retire `path` into a bounded, de-duplicated <name>.bak-unify-<ts> sibling.
+
+    `path` ALWAYS leaves this function removed from its original name -- the
+    caller's disposition (delete, or replace with a symlink/copy) is unchanged.
+    What changes is how much disk that costs:
+
+      * DE-DUPE  -- if the newest existing .bak-unify-* for this target is
+        byte-identical to `path`, no second copy of the same bytes is written;
+        `path` is simply unlinked. Its content is still fully preserved, in the
+        backup that already holds it.
+      * PRUNE    -- after a new backup is made, only the $UNIFY_BAK_KEEP newest
+        .bak-unify-* siblings are kept (default 3, 0 keeps none); older ones are
+        deleted oldest-first.
+
+    Before this, the backup set was UNBOUNDED and every roll added a full-size
+    copy. Measured live on a client Mac Mini 2026-09-21: 25,604
+    AGENTS.md.bak-unify-* files / 4.3 GB across the department tree, written
+    daily since 2026-06-23, disk at 95%. Only this target's OWN timestamped
+    unify backups are ever touched.
+
+    Returns the new backup Path, or None when the content was already backed up.
+    Raises OSError if the rename itself fails (callers already handle that).
+    """
+    path = Path(path)
+    existing = sorted(path.parent.glob(path.name + ".bak-unify-*"))
+    if existing:
+        try:
+            if filecmp.cmp(str(path), str(existing[-1]), shallow=False):
+                path.unlink()
+                return None
+        except OSError:
+            pass  # unreadable backup: fall through and make a real one
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    bak = path.with_name(f"{path.name}.bak-unify-{ts}")
+    # Two calls in the same second would otherwise land on the same name and
+    # silently overwrite a backup -- the one thing this function must never do.
+    # "-<n>" sorts after the bare timestamp, so newest-last ordering holds.
+    _n = 2
+    while bak.exists():
+        bak = path.with_name(f"{path.name}.bak-unify-{ts}-{_n}")
+        _n += 1
+    path.replace(bak)
+    existing.append(bak)
+    keep = _unify_bak_keep()
+    for old in (existing[:-keep] if keep else existing):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return bak
+
+
 def _link_shared_files_only(role_path, workspace_root):
     """
     U054: link shared files in a container that is correctly excluded from
@@ -1570,10 +1636,13 @@ def _link_shared_files_only(role_path, workspace_root):
                 continue                      # already correct
             link_path.unlink()                # wrong target: relink
         elif link_path.exists():
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
+            # Only back up content the symlink target does not already hold.
             try:
-                link_path.replace(bak)
+                if target.is_file() and filecmp.cmp(str(link_path), str(target),
+                                                    shallow=False):
+                    link_path.unlink()
+                else:
+                    _unify_backup(link_path)
             except OSError as e:
                 print(f"  WARN: could not back up {shared} before converting: {e}",
                       file=sys.stderr)
@@ -1677,11 +1746,13 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
                 print(f"    [DRY-RUN] would delete AGENTS.md from {entry.name}")
                 _AGENTS_DELETED.append(entry.name)
                 continue
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = agents_path.with_name(f"AGENTS.md.bak-unify-{ts}")
             try:
-                agents_path.replace(bak)
-                print(f"    {entry.name}: backed up & deleted AGENTS.md -> {bak.name}")
+                bak = _unify_backup(agents_path)
+                if bak is None:
+                    print(f"    {entry.name}: deleted AGENTS.md "
+                          f"(identical copy already backed up)")
+                else:
+                    print(f"    {entry.name}: backed up & deleted AGENTS.md -> {bak.name}")
                 _AGENTS_DELETED.append(entry.name)
             except OSError as e:
                 print(f"  WARN: could not back up AGENTS.md in {entry.name}: {e}",
@@ -1708,11 +1779,13 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
         # Delete AGENTS.md with backup (U053 disposition = delete)
         agents_path = entry / "AGENTS.md"
         if agents_path.is_file():
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = agents_path.with_name(f"AGENTS.md.bak-unify-{ts}")
             try:
-                agents_path.replace(bak)
-                print(f"    [{entry.name}] backed up & deleted AGENTS.md -> {bak.name}")
+                bak = _unify_backup(agents_path)
+                if bak is None:
+                    print(f"    [{entry.name}] deleted AGENTS.md "
+                          f"(identical copy already backed up)")
+                else:
+                    print(f"    [{entry.name}] backed up & deleted AGENTS.md -> {bak.name}")
             except OSError as e:
                 print(f"  WARN: could not back up AGENTS.md in {entry.name}: {e}",
                       file=sys.stderr)

@@ -75,7 +75,9 @@ get_json() {
 }
 
 CLIENT_NAME="$(get_json "$COMPANY_CONFIG" '.name' 'this client')"
-MODEL_TIER_REAL_TIME="$(get_json "$OPENCLAW_JSON" '(.agents.list[]? | select(.id=="main") | .model)' 'unknown')"
+# main's model from either roster shape: agents.entries.main (OpenClaw 2026.9.x)
+# or the legacy agents.list[] row.
+MODEL_TIER_REAL_TIME="$(get_json "$OPENCLAW_JSON" '(.agents.entries.main.model? // ([.agents.list[]? | select(.id=="main") | .model][0]))' 'unknown')"
 MODEL_TIER_ASYNC="$(get_json "$OPENCLAW_JSON" '.agents.async.model' '(same as real-time)')"
 MODEL_TIER_BATCH="$(get_json "$OPENCLAW_JSON" '.agents.batch.model' '(same as real-time)')"
 

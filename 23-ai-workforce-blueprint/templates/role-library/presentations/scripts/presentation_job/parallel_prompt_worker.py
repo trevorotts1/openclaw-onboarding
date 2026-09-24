@@ -222,7 +222,7 @@ def load_input(path: Path) -> Dict[str, Any]:
 # subprocess-launched worker resolves the same seam through _resolve_provider()
 # (env stub spec or the real dispatcher path).
 # ---------------------------------------------------------------------------
-ProviderCall = Callable[[Dict[str, Any], Dict[str, Any], int, Path, str, int], str]
+ProviderCall = Callable[..., str]  # PD-TEST-189: 7th arg `prior_reasons` is optional; see _default_provider_call
 
 provider_call: Optional[ProviderCall] = None   # None -> resolve per-process
 
@@ -251,7 +251,16 @@ class _StubSpec:
         return self.by_ordinal.get(key, self.default)
 
     def __call__(self, slide: Dict[str, Any], routing: Dict[str, Any], attempt: int,
-                 run_dir: Path, owning_role: str, n_slides: int) -> str:
+                 run_dir: Path, owning_role: str, n_slides: int,
+                 prior_reasons: Optional[List[str]] = None) -> str:
+        # PD-TEST-189 (review of #1173): `_execute_slide` passes `prior_reasons=`
+        # UNCONDITIONALLY, so an implementation left at six parameters dies with
+        # `TypeError` on EVERY attempt -- measured with
+        # PRESENTATION_PROMPT_PROVIDER_STUB set: BASE 1 provider call / attempt 1;
+        # #1173 0 calls / attempts 3 / `verify_failed`, because `_classify` maps
+        # TypeError to exactly the class this seam exists to diagnose. A defaulted
+        # CALLEE parameter does not make an existing 6-arg IMPLEMENTATION
+        # compatible; the implementation has to accept the keyword too.
         plan = self._plan(slide)
         kind = plan
         if isinstance(plan, list):
@@ -425,7 +434,8 @@ def _wave_lease_provider(routing: Dict[str, Any], run_dir: Path) -> str:
 
 def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
                            attempt: int, run_dir: Path, owning_role: str,
-                           n_slides: int) -> str:
+                           n_slides: int,
+                           prior_reasons: Optional[List[str]] = None) -> str:
     """PRODUCTION transport: reuse the existing routed authoring path the
     serial loop uses today (dispatcher.compose_prompt + dispatch_complete --
     FIX 16: the routed entrypoint, never the raw deepseek transport). Lazy
@@ -441,14 +451,35 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
         "_prompt_slide_total": n_slides,
         "slide": dict(slide),
     }
-    prior_reasons = None
+    # PD-TEST-183 -- carry the ACTUAL previous-attempt findings.
+    #
+    # `prior_reasons` is supplied by the caller (`_execute_slide`), which owns the
+    # accumulated `base["_reasons"]` -- the verify path records the real failing
+    # checks there as `attempt {n}: verify failed ({'; '.join(reasons)})`. Before
+    # this, the instruction was content-free ("attempt N failed verification;
+    # re-author slide X"): it named neither the failing check nor the requirement,
+    # so a model re-authoring had no signal about WHICH token was missing.
+    #
+    # That is now MEASURED, not argued. On pres-operator-1d269693 the engine was
+    # given a funded re-dispatch and reproduced the SAME findings
+    # (AF-FACE-PROMPT-MISSING, AF-LIGHT-PROMPT-MISSING, AF-HAIR-INAUTHENTIC) and
+    # added AF-WORLD-SCALE -- spending the entire allowance plus the retry pool for
+    # the same non-result. Same masking family as PD-TEST-162 and PD-TEST-177: the
+    # durable record knows the real reason and the actor that could act on it is
+    # not told it.
+    #
+    # The seam stays backward-compatible: the parameter is optional, and a stub
+    # that ignores it still satisfies the call.
+    _compose_reasons = None
     if attempt > 1:
-        prior_reasons = [
+        _compose_reasons = [
             f"attempt {attempt - 1} failed verification; re-author slide {ordinal}"]
+        for _r in (prior_reasons or []):
+            _compose_reasons.append(f"what failed on a previous attempt: {_r}")
     system_prompt, user_prompt = dispatcher.compose_prompt(
         phase_id=PHASE_ID, owning_role=owning_role,
         dept_root=_dept_root_from(run_dir), run_dir=run_dir, order=slide_order,
-        attempt=attempt, prior_reasons=prior_reasons)
+        attempt=attempt, prior_reasons=_compose_reasons)
     user_prompt = (
         f"=== THIS CALL AUTHORS EXACTLY ONE FILE: SLIDE {ordinal} OF {n_slides} ===\n"
         f"Find slide {ordinal}'s block in slides_copy.md above (the line reading "
@@ -533,15 +564,60 @@ def _resolve_provider() -> Callable:
 # ---------------------------------------------------------------------------
 # Error classification -- retry only timeouts/429/5xx/verify failures.
 # ---------------------------------------------------------------------------
-_RETRYABLE_CODES = ("timeout", "rate_limited", "server_error", "verify_failed")
+_RETRYABLE_CODES = ("timeout", "rate_limited", "server_error", "verify_failed",
+                    # Review F8: the budget classes are retryable BY DESIGN (a
+                    # refusal is free -- it is raised before any transport
+                    # call), so they belong here as well as in _classify, or
+                    # _finalize_failure would re-derive them as non-retryable
+                    # and silently undo the classification.
+                    "budget_exhausted", "budget_deferred")
 _NONRETRYABLE_CODES = ("auth_error", "permission_error", "invalid_input",
-                       "empty_response", "usage_error")
+                       "empty_response", "usage_error",
+                       # ...and this one is a HARD STOP, not a budget event.
+                       "claim_lost")
 
 
 def _classify(exc: BaseException) -> Tuple[str, bool]:
     """Returns (error_class, retryable). Text matching is deliberately strict:
     only explicit status codes or timeout markers count; everything unknown is
-    non-retryable so garbage never consumes the provider budget."""
+    non-retryable so garbage never consumes the provider budget.
+
+    PD-TEST-162: SCHEDULING IS NOT A PROVIDER FAULT, and it is RETRYABLE.
+    `PaidBudgetExhausted` / `PaidAttemptDeferred` derive from
+    `DeepSeekCallError(RuntimeError)` -- not from ValueError/KeyError/TypeError,
+    and carrying none of the 401/403/429/5xx/timeout markers -- so they used to
+    fall through to this function's catch-all and be reported as
+    `provider_error` with `retryable=False`. Measured on run
+    pres-operator-1d269693 before the fix:
+
+        _classify(PaidBudgetExhausted('paid retry budget exhausted: 3 provider
+                   attempts'))  ->  ('provider_error', False)
+
+    Two harms, both observed: it sent the reader hunting credentials/endpoints
+    when the cause was LOCAL (the phase's own bounded paid budget, PD-TEST-161),
+    and it marked the unit abandoned rather than deferred until budget exists.
+    They are matched by TYPE FIRST so no wording change can re-mask them."""
+    # Local imports: `dispatcher` is already imported lazily elsewhere in this
+    # module (see the provider seam), and these two names live there.
+    try:
+        from . import dispatcher as _d
+        _budget_types = (_d.PaidBudgetExhausted, _d.PaidAttemptDeferred)
+    except Exception:  # noqa: BLE001 -- a degraded install keeps the old order
+        _d, _budget_types = None, ()
+    if _budget_types and isinstance(exc, _budget_types):
+        # Review F8: exactly ONE `PaidBudgetExhausted` is a HARD STOP rather than
+        # a budget event -- the claim-ownership refusal raised when another
+        # worker took the phase (dispatcher.py:9629). Retrying it achieves
+        # nothing and it must stay non-retryable, but the TYPE cannot tell it
+        # apart from a genuine budget refusal, so this one fixed literal is
+        # matched explicitly. Every OTHER budget message stays scheduling.
+        if "claim ownership changed" in str(exc):
+            return "claim_lost", False
+        eclass = ("budget_deferred"
+                  if isinstance(exc, _d.PaidAttemptDeferred)
+                  else "budget_exhausted")
+        return eclass, True
+
     text = f"{type(exc).__name__}: {exc}"
     if isinstance(exc, WorkerUsageError):
         return "usage_error", False
@@ -569,6 +645,80 @@ def _sanitize(msg: str) -> str:
         r"(?i)(api[-_ ]?key|authorization|sk-[a-z0-9]{8,})[=: ]+\S+",
         r"\1=<redacted>", cleaned)
     return cleaned[:400]
+
+
+def _settle_missed(run_dir, slide_id) -> "Optional[str]":
+    """PD-TEST-187: did the settle we just made actually LAND?
+
+    A settle can die in two ways and only one of them raises.
+    `_settle_unit_paid_attempts` returns QUIETLY when there is nothing to settle
+    (dispatcher.py, `if not led: return`), so a phase id that reads an empty
+    ledger is a silent no-op; and a settle that records "ok" for a unit we
+    reported "failed" writes the wrong durable row while leaving the reservation
+    in flight -- the exact state that makes this unit's own retry resolve as
+    `budget_deferred`. Neither raises, so `except` alone cannot see them.
+
+    Assert the POST-CONDITION instead. Returns a human-readable reason when the
+    settle provably did not take effect, else None.
+
+    Failure to CHECK returns None (stay quiet): a bookkeeping probe must never
+    cry wolf, and must never break a unit.
+    """
+    try:
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import
+        led = dispatcher._read_ledger(run_dir, PHASE_ID)
+        if not isinstance(led, dict):
+            return None
+        rows = led.get(dispatcher.LEDGER_UNIT_OUTCOMES)
+    except Exception:  # noqa: BLE001 -- a probe that cannot read is not a finding
+        return None
+    if not isinstance(rows, dict):
+        return f"the ledger carries no {dispatcher.LEDGER_UNIT_OUTCOMES} table"
+    row = rows.get(str(slide_id))
+    if not isinstance(row, dict):
+        return f"no outcome row was recorded for {slide_id!r}"
+    if row.get("worker") != "p4prompt-unit":
+        return (f"the outcome row for {slide_id!r} was written by "
+                f"{row.get('worker')!r}, not by this settle")
+    if row.get("status") != "failed":
+        return (f"the outcome row for {slide_id!r} records status "
+                f"{row.get('status')!r}, but this attempt FAILED")
+    return None
+
+
+def _report_dead_settle(run_dir, slide_id, attempt: int, detail: str) -> None:
+    """PD-TEST-187: a dead per-attempt settle is AUDIBLE, on two channels.
+
+    stderr is read live; the phase sidecar is read after the fact. That is the
+    same pair this module's own `_announce_unleased_route` uses ("the log is only
+    read after the fact and stderr is only read live"), and the sidecar is where
+    the dispatcher's serial settle already records the same class of failure.
+
+    FAIL-SOFT throughout: bookkeeping must never break a unit, so even the
+    report itself is guarded, and the text is sanitised and length-bounded
+    (`_sanitize`) exactly like every other exception this module surfaces.
+    """
+    text = _sanitize(str(detail))
+    try:
+        print(f"WARNING: the per-attempt paid-attempt settle for {slide_id!r} "
+              f"(attempt {attempt}) did not take effect: {text}; the attempt that "
+              f"just ended stays reserved in flight, so this unit's own retry may "
+              f"resolve as budget_deferred", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- even the warning must not break a unit
+        pass
+    try:
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import
+        dispatcher._append_sidecar(run_dir, PHASE_ID, {
+            "status": "fanout_paid_settle_dead",
+            "unit": str(slide_id),
+            "attempt": int(attempt),
+            "reason": text,
+            "consequence": ("the attempt that just ended stays reserved in flight, "
+                            "so this unit's own retry can resolve as budget_deferred "
+                            "until a later settle succeeds"),
+        })
+    except Exception:  # noqa: BLE001 -- bookkeeping must never break a unit
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -609,6 +759,23 @@ def _verify_prompt(slide: Dict[str, Any], prompt_text: str, run_dir: Path,
 # One slide task: runs on a wave worker THREAD (F8) OR inline (n==1 /
 # constrained probes).
 # ---------------------------------------------------------------------------
+def prompt_slide_unit_key(slide: Dict[str, Any]) -> str:
+    """THE unit key for one slide's paid budget -- ONE definition, used by BOTH
+    halves of the PD-TEST-161 fix.
+
+    The declaration (dispatcher._dispatch_prompt_phase_parallel) and the paid
+    scope (this module's worker) must agree on this string EXACTLY, or every
+    slide defers: the review of PR #1164 measured that keying the declaration on
+    `ordinal` instead of `slide_id` still passed every test while producing 0
+    transport calls, 0 paid attempts and 8 `budget_deferred` in production.
+
+    Defined here rather than duplicated so the two halves cannot drift. Uses
+    `slide["slide_id"]` (required, not `.get`) because that is what
+    wave_contract.validate_input guarantees is present and unique -- an absent
+    key should fail loudly rather than silently fall back to the ordinal."""
+    return str(slide["slide_id"])
+
+
 def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     slide = task["slide"]
     routing = task["routing"]
@@ -618,7 +785,7 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     n_slides = task["n_slides"]
     owning_role = task["owning_role"]
     ordinal = int(slide["ordinal"])
-    slide_id = str(slide["slide_id"])
+    slide_id = prompt_slide_unit_key(slide)
     attempts_log = Path(task["attempts_log"])
     attempt_log_path = attempts_log.with_name(
         attempts_log.name + ATTEMPTS_LOG_SUFFIX) if attempts_log.name != \
@@ -646,10 +813,97 @@ def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
     }
     attempt = 0
     pcall = _resolve_provider()
+    # PD-TEST-161 review F1: `dispatcher` is NOT a module global here -- every
+    # other use in this module is a function-local import (see _provider_call,
+    # _verify_and_write, _dept_root_from), because `dispatcher` imports THIS
+    # module at its own line 119, so a module-level import would be circular.
+    # The first version of the per-attempt scope below used the bare name and
+    # raised `NameError: name 'dispatcher' is not defined` on EVERY slide --
+    # before any provider call, so the wave silently produced nothing and spent
+    # nothing while reporting a provider fault. Bind it the way the rest of the
+    # module does.
+    import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
     while attempt < RETRY_CAP:
+        if attempt > 0:
+            # PD-TEST-179: SETTLE THE ATTEMPT THAT JUST ENDED, before starting the
+            # next one.
+            #
+            # The dispatcher settles a whole wave only AFTER run_worker returns
+            # (`_dispatch_prompt_phase_parallel` -> `_settle_unit_paid_attempts`),
+            # but this retry loop runs INSIDE run_worker. So on every retry this
+            # unit still held its OWN previous reservation in state `reserved` --
+            # and the PD-TEST-124 double-reserve guard, whose contract is
+            # literally "the unit already has an IN-FLIGHT paid reservation",
+            # refused it. Measured on shipped main: a 1-slide wave whose
+            # transport raised HTTP 500 made ONE provider call and reported
+            # `budget_deferred` twice, where pre-PD-TEST-161 code made three and
+            # reported the real `server_error`.
+            #
+            # Settling here makes the guard's contract TRUE again rather than
+            # weakening it, so the retry is allowed because nothing is in flight
+            # -- not because a thread was recognised. This replaces the earlier
+            # thread-identity relaxation, which admitted ANY later reservation
+            # from the same thread, including a genuinely in-flight one, and
+            # thereby repealed the guarantee `tests/test_pd124_sibling_starvation.py`
+            # encodes (2 failures on main).
+            #
+            # FAIL-SOFT, deliberately: settling is bookkeeping and must never
+            # break a unit. The dispatcher's post-wave settle still runs and is
+            # idempotent over an already-settled row.
+            # PD-TEST-187 (independent review of #1169, then of the first version of
+            # this fix): a BARE `pass` here made a permanently dead settle
+            # indistinguishable from a working one. Measured: deleting this whole
+            # block, or mutating it four ways, leaves the repo's own neighbour
+            # suites GREEN at 46/46 while the end-to-end wave silently degrades to
+            # ONE provider call.
+            #
+            # The first version of this fix caught only a settle that RAISES, and
+            # adversarial review then proved that is the minority case: a settle
+            # whose phase id reads an empty ledger returns NORMALLY (dispatcher.py
+            # `if not led: return`), and one that records "ok" for a unit we
+            # reported "failed" also returns normally -- while writing the wrong
+            # durable row and leaving the reservation in flight. Both were still
+            # invisible, and the new test passed 2/2 under that mutant. So the
+            # POST-CONDITION is asserted as well: silence is not evidence.
+            #
+            # Still FAIL-SOFT: bookkeeping must never break a unit, so neither the
+            # check nor the report may raise out of here.
+            try:
+                dispatcher._settle_unit_paid_attempts(
+                    run_dir, PHASE_ID,
+                    [(slide_id, "failed", list(base.get("_reasons") or []))],
+                    worker_id="p4prompt-unit")
+                missed = _settle_missed(run_dir, slide_id)
+            except Exception as exc:  # noqa: BLE001 -- bookkeeping never breaks a unit
+                missed = f"{type(exc).__name__}: {exc}"
+            if missed:
+                _report_dead_settle(run_dir, slide_id, attempt, missed)
         attempt += 1
         try:
-            text = pcall(slide, routing, attempt, run_dir, owning_role, n_slides)
+            # PD-TEST-161: bind this ATTEMPT's paid reservation to THIS SLIDE.
+            #
+            # Without this the prompt fan-out reserved through the legacy
+            # phase-level clause (`paid >= DISPATCH_RETRY_CAP`, i.e. 3), so an
+            # 8-slide wave had 8 units racing for 3 attempts: measured on run
+            # pres-operator-1d269693, slides 02-06 failed at attempt 1 with ZERO
+            # verification codes at the SAME SECOND (they never reached a
+            # provider -- they lost the reservation race) while 01/07/08 got real
+            # attempts. PD-TEST-124 fixed exactly this for the COPY fan-out but
+            # `paid_unit_scope` is used at only that one site; this is the same
+            # accounting applied to the prompt fan-out, which is the other
+            # multi-unit paid path.
+            #
+            # One scope entry per ATTEMPT, so each attempt carries its own
+            # logical token -- two different tokens for one unit are two real
+            # attempts, and a duplicate call inside one attempt is a no-op. The
+            # phase's bounded total is declared by
+            # dispatcher._dispatch_prompt_phase_parallel immediately before the
+            # wave; outside such a declaration the legacy cap still applies
+            # byte-for-byte, so nothing else changes.
+            with dispatcher.paid_unit_scope(slide_id):
+                text = pcall(slide, routing, attempt, run_dir, owning_role,
+                            n_slides,
+                            prior_reasons=list(base.get("_reasons") or []))
         except Exception as exc:  # noqa: BLE001 -- classified below
             eclass, retryable = _classify(exc)
             base["attempts"] = attempt

@@ -17,10 +17,15 @@ Triggered by:
 Status definitions:
   healthy   sop_embeddings >= 80% SOP coverage, persona_index present,
             most-recent embedding < 7 days old.
-  degraded  coverage 40-79% OR embeddings 7-30 days stale OR recall_ratio<0.5.
+  degraded  coverage 40-79% OR embeddings 7-30 days stale OR recall_ratio<0.5
+            OR the shipped SOP-embeddings asset is an older release than
+            this checkout ships.
   dark      sop_embeddings table missing or empty, OR persona_index empty,
             OR coverage < 40%, OR embeddings > 30 days stale.
             Triggers Rescue Rangers alert.
+  Staleness ("days old") counts only rows embedded AFTER the shipped asset was
+  imported (sop_embeddings_shipped_asset marker): the asset's own rows carry its
+  build date, so they are judged by release instead.
 
 Exit codes:
   0  healthy
@@ -123,18 +128,65 @@ def _keyword_hits(db: sqlite3.Connection, phrase: str) -> int:
 
 
 # ── staleness check ────────────────────────────────────────────────────────────
+def _shipped_asset_marker(db: sqlite3.Connection) -> tuple[str, str] | None:
+    """(release_tag, imported_at) of the shipped SOP-embeddings asset, or None.
+
+    provision_sop_embeddings.py copies the asset's rows verbatim -- their
+    embedded_at is the ASSET BUILD date -- and records the import in the
+    sop_embeddings_shipped_asset marker table."""
+    if not _table_exists(db, "sop_embeddings_shipped_asset"):
+        return None
+    row = db.execute(
+        "SELECT release_tag, imported_at FROM sop_embeddings_shipped_asset WHERE id=1"
+    ).fetchone()
+    return (row[0], row[1]) if row and row[1] else None
+
+
+def _current_asset_release() -> str | None:
+    """release_tag of the SOP-embeddings asset this checkout ships (the same
+    manifest ingest-sop-library.sh provisions from), None when unknown."""
+    manifest = (Path(__file__).resolve().parent.parent.parent / "shared-utils"
+                / "sop-embed-once" / "SOP-EMBEDDINGS-MANIFEST.json")
+    try:
+        import json
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if data.get("asset_rebuild_required") is True:
+        return None
+    return data.get("release_tag") or None
+
+
 def _most_recent_embedding_age_days(
-    db: sqlite3.Connection, table: str
+    db: sqlite3.Connection, table: str, shipped_imported_at: str | None = None
 ) -> float | None:
-    """Return age in days of the most-recent embedding row, None if indeterminate."""
+    """Return age in days of the most-recent embedding row, None if indeterminate.
+
+    shipped_imported_at: when the shipped asset was imported. Rows stamped at or
+    before it are the shipped library, whose timestamp is its BUILD date: a box
+    that imported the current release weeks ago read as "N days stale" and went
+    dark. Only rows embedded AFTER the import (the box's own delta) are aged;
+    with none, the age is None -- the shipped rows are judged by their release
+    (the marker), not by the build date. A box with no marker is aged exactly as
+    before."""
     if not _table_exists(db, table):
         return None
     cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})")]  # noqa: S608
     for col in ("updated_at", "created_at", "embedded_at", "ts"):
         if col in cols:
-            row = db.execute(
-                f"SELECT MAX({col}) FROM {table}"  # noqa: S608
-            ).fetchone()
+            if shipped_imported_at:
+                # julianday() normalises "T"/space/"Z" spellings before comparing.
+                row = db.execute(
+                    f"SELECT {col} FROM {table} WHERE julianday({col}) > julianday(?) "  # noqa: S608
+                    f"ORDER BY julianday({col}) DESC LIMIT 1",
+                    (shipped_imported_at,),
+                ).fetchone()
+                if not row:
+                    return None
+            else:
+                row = db.execute(
+                    f"SELECT MAX({col}) FROM {table}"  # noqa: S608
+                ).fetchone()
             if row and row[0]:
                 try:
                     ts = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
@@ -302,7 +354,16 @@ def probe(db_path: str, dry_run: bool = False) -> int:
     print(f"  embedding_coverage:   {coverage:.2%}")
 
     # ── staleness ──────────────────────────────────────────────────────────────
-    age_days = _most_recent_embedding_age_days(db, "sop_embeddings")
+    shipped = _shipped_asset_marker(db)
+    age_days = _most_recent_embedding_age_days(
+        db, "sop_embeddings", shipped[1] if shipped else None
+    )
+    # The shipped rows' real staleness is a RELEASE lag, not their build date.
+    current_release = _current_asset_release() if shipped else None
+    release_lag = bool(shipped and current_release and shipped[0] != current_release)
+    if shipped:
+        print(f"  shipped_asset:        release={shipped[0]} imported_at={shipped[1]}"
+              f" current={current_release or '?'} (asset rows aged by release, not build date)")
     print(f"  embedding_age_days:   {age_days!r}")
 
     # ── semantic vs keyword probe ──────────────────────────────────────────────
@@ -341,6 +402,12 @@ def probe(db_path: str, dry_run: bool = False) -> int:
         dark_reason = (
             "persona_index table/file not found"
             " — persona search may fall back to keyword"
+        )
+    elif release_lag:
+        status = "degraded"
+        dark_reason = (
+            f"shipped SOP embeddings are release {shipped[0]}; this checkout ships"
+            f" {current_release} — re-run ingest-sop-library.sh to re-provision"
         )
     elif age_days is not None and age_days > STALE_DAYS_DEGRADED:
         status = "degraded"

@@ -46,11 +46,15 @@ Runnable two ways (both exercise the exact same code):
 """
 
 import argparse
+import contextlib
+import fcntl
+import functools
 import hashlib
 import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -80,10 +84,14 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
 from presentation_job.manifest import Manifest, Phase, resolve_manifest  # noqa: E402
 from presentation_job import model_catalog as _model_catalog  # noqa: E402  FIX 13
 from presentation_job.state import StateStore, utcnow  # noqa: E402
+from presentation_job import autospawn as _autospawn  # noqa: E402  PD-TEST-080
 from presentation_job import heal as _heal  # noqa: E402
 from presentation_job import contract_introspect as _ci  # noqa: E402
 from presentation_job import execution_stamp as _estamp  # noqa: E402  PRES-042
 from presentation_job import fanout  # noqa: E402  -- PARALLEL-PIPELINE-SPEC Ticket 4
+# PD-TEST-067: the ONE reader for the deck's slide-array shape, shared with
+# fanout, build_deck and craft_judgement. json/pathlib/typing only -- no cycle.
+from presentation_job import arc_slides as _arc_slides  # noqa: E402
 # PRES-014 (W2 WF05): durable fan-out unit records. Banked results are read
 # and validated BEFORE any model call; only failed/changed units resubmit;
 # the attempt/budget ledger survives restarts (append-only transitions +
@@ -147,6 +155,96 @@ except ImportError:  # pragma: no cover - pre-FIX-104 trees keep inline dict
 DISPATCH_RETRY_CAP = _heal.HEAL_CAP_TRANSIENT  # = 3. Reused, not re-invented (spec S7.1):
                                                 # one operator-visible retry budget for the
                                                 # whole pipeline, not a second number.
+
+# ---------------------------------------------------------------------------
+# PD-TEST-124 -- THE BOUNDED TOTAL PAID BUDGET OF A FAN-OUT PHASE.
+#
+# THE DEFECT. `paid_attempts` is a PHASE counter compared against
+# DISPATCH_RETRY_CAP, with no per-unit accounting at all. A fan-out phase
+# therefore has ONE three-attempt allowance shared by every unit, and the first
+# unit to fail repeatedly spends it. Measured on P4-COPY (8 units):
+# section-01 recorded completion_tokens=64000, finish_reason='length', empty
+# output; it then exhausted the phase allowance, and section-02..section-08
+# each died on `PaidBudgetExhausted: paid retry budget exhausted: 3 provider
+# attempts for unchanged approved input` WITHOUT EVER BEING ATTEMPTED. Seven
+# units did not fail -- they never ran -- and the phase quarantined having
+# authored nothing. Sibling starvation, not unit failure.
+#
+# THE POLICY IMPLEMENTED HERE (declared once, recorded in the phase ledger as
+# `phase_paid_budget`, and enforced by _reserve_paid_attempt):
+#
+#   1. ONE FUNDED FIRST ATTEMPT PER ELIGIBLE UNIT, and first attempts have
+#      ABSOLUTE PRIORITY: while any admitted unit still has zero paid attempts,
+#      no unit may reserve a second or third (PaidAttemptDeferred). One unit's
+#      retries can therefore never again preempt a sibling's first attempt.
+#
+#   2. THE TOTAL IS BOUNDED AND EXPLICIT, never `units x DISPATCH_RETRY_CAP`:
+#
+#          total_cap = min(PHASE_TOTAL_PAID_HARD_CAP,
+#                          eligible_units * FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT
+#                          + PHASE_RETRY_POOL_ATTEMPTS)
+#
+#      i.e. one attempt per unit plus the SAME phase-level retry allowance
+#      (DISPATCH_RETRY_CAP = 3) this module has always granted -- reused, not
+#      multiplied. For the measured 8-unit P4-COPY phase that is 8 + 3 = 11,
+#      not 8 * 3 = 24. Within one generation the declared total NEVER shrinks
+#      (a later declaration with fewer pending units re-uses the larger bound),
+#      so a sweep that banks successes never strands the units still owed work.
+#
+#   3. DISPATCH_RETRY_CAP IS THE PER-UNIT CEILING for one unchanged approved
+#      input -- the same number, now applied per unit instead of per phase. No
+#      existing cap is weakened: the phase-level total only ever GROWS to fund
+#      the first attempts the old counter could never pay for, and a serial
+#      (non-fan-out) phase keeps the legacy phase-level cap byte-for-byte.
+#
+#   4. CANNOT-FUND-ALL BEHAVIOUR. When the total cap cannot fund every
+#      eligible unit's first attempt (eligible_units > total_cap), the first
+#      `total_cap` units in DETERMINISTIC ENUMERATION ORDER are admitted and
+#      every remaining unit is recorded in `unit_not_admitted` with a
+#      machine-readable reason, named in the sidecar, and refused at
+#      reservation time. No unit is ever silently dropped: the phase reports
+#      exactly how many units the bound could not fund, and which.
+#
+#   5. SUCCESSES ARE NEVER REGENERATED. A unit whose durable outcome is ok is
+#      refused a reservation outright (PD-TEST-124 requirement 4), and a unit
+#      whose valid on-disk output is still bound to the current inputs is
+#      REUSED without any reservation at all (see _reusable_unit_output).
+#
+#   6. RESERVATIONS ARE ATOMIC AND DUPLICATE-SAFE. Every reservation happens
+#      inside the phase's existing `_phase_budget_transaction` flock, in one
+#      read-modify-write, and carries the logical attempt's token. A duplicate
+#      call for a token already charged is a no-op (idempotent), and a second
+#      logical attempt for a unit that already has an in-flight reservation is
+#      refused unless the reserving process is gone (pid-liveness takeover,
+#      the same idiom the claim code uses). Concurrent workers cannot
+#      double-reserve one unit's attempt.
+#
+#   7. NOTHING IS RESET. Per-unit counters are durable and generation-scoped
+#      exactly like the phase counter they sit beside: a new approved-input
+#      generation (verified intake amendment, or a consumed repair receipt)
+#      starts a fresh per-unit count, and `unit_paid_attempts_lifetime` keeps
+#      the never-reset audit total. A restart, a re-sweep and a re-issued work
+#      order preserve successes, reservations and failure history.
+# ---------------------------------------------------------------------------
+FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT = 1
+# The legacy phase-level retry allowance, reused as the fan-out RETRY POOL.
+# Deliberately DISPATCH_RETRY_CAP and not a second number (spec S7.1).
+PHASE_RETRY_POOL_ATTEMPTS = DISPATCH_RETRY_CAP
+# An explicit, finite ceiling on any single phase's total paid attempts, no
+# matter how many units a manifest enumerates. The shipped manifest's widest
+# fan-out is a per-slide QC phase over a >=100-slide deck (100 + 3 = 103), so
+# 128 funds every shipped phase's first attempts plus the retry pool while
+# keeping the bound a declared constant rather than an emergent product.
+PHASE_TOTAL_PAID_HARD_CAP = 128
+# The one-line policy string recorded in every fan-out ledger this module
+# writes, so an operator reading the ledger sees the rule that produced the
+# numbers beside it.
+PHASE_PAID_BUDGET_POLICY = (
+    "bounded-total-first-attempt-fair-v1: one funded first attempt per eligible "
+    "unit in deterministic order, then a phase retry pool of "
+    f"{PHASE_RETRY_POOL_ATTEMPTS}; total = min({PHASE_TOTAL_PAID_HARD_CAP}, "
+    f"units*{FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT} + {PHASE_RETRY_POOL_ATTEMPTS}); "
+    f"per-unit ceiling {DISPATCH_RETRY_CAP}; no success is ever regenerated")
 
 # ---------------------------------------------------------------------------
 # FIX 14 -- per-provider governor gates. Every outbound call site acquires a
@@ -473,6 +571,107 @@ DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 # gives a large structured artifact (deep choreography JSON, 60+ slides of copy)
 # room to complete even after thinking-MAX spends heavily on reasoning first.
 DEEPSEEK_MAX_OUTPUT_TOKENS = 64_000
+# PD-TEST-124 (2026-09-16): do NOT raise this again to "fix" an empty
+# completion. The bounded experiment measured `medium` finishing at 15.3% of
+# this ceiling while `max` consumed 100.0% of the BYTE-IDENTICAL request -- the
+# effort, not the budget, was binding. Raising it a fourth time would buy
+# nothing and cost more. See DEEPSEEK_REASONING_EFFORT below.
+# PD-TEST-065 (2026-09-15). The reasoning effort is a REQUEST parameter, not a
+# buried literal.
+#
+# PD-TEST-124 (2026-09-16) -- HARNESS DECLARATION vs PRODUCT WORKER.
+# `max` is what this box's openclaw.json declares for the HARNESS agent
+# (agents.defaults.models["deepseek/deepseek-flash"].params.reasoning_effort =
+# "max"). That declaration governs the harness agent's own interactive turns.
+# It does NOT govern THIS module. This dispatcher is a PRODUCT worker that
+# sends ONE very large authoring prompt (P4-COPY's real section prompt measured
+# 155,379 chars = 38,365 prompt tokens) and the endpoint bills reasoning INSIDE
+# max_tokens (confirmed live above). On that workload `max` is not a quality
+# setting, it is a runaway: four independent live sends of the byte-identical
+# P4-COPY section-01 request at max_tokens=64,000 returned
+# completion_tokens=64,000, reasoning_tokens=64,000, ZERO-length `content` and
+# finish_reason="length" -- 100% of the deliverable budget spent thinking, none
+# left to deliver. Raising the ceiling does not fix it (8,000 -> 32,000 ->
+# 64,000 each filled; see this constant's history above): reasoning expands to
+# consume whatever ceiling it is given, so the ceiling was never the binding
+# constraint.
+#
+# PD-TEST-124 BOUNDED EXPERIMENT (2026-09-16). ONE real prompt, the captured
+# production request body BYTE-IDENTICAL (sha256 a2cc393fd4dc1a91...), same
+# endpoint / model / temperature / max_tokens=64,000; ONLY the documented
+# request control varied (4 paid calls, every response schema-validated by this
+# module's own _validate_copy_section):
+#   reasoning_effort="max"     reasoning 64,000 (100.0% of budget)  content
+#                              ZERO  finish_reason="length"  308.2s  -- FAIL
+#   reasoning_effort="medium"  reasoning  9,788 ( 15.3% of budget)  content
+#                              1,494 chars  finish_reason="stop"  49.1s  -- PASS
+#   reasoning_effort="low"     reasoning 13,445 ( 21.0% of budget)  content
+#                              1,063 chars  finish_reason="stop"  62.2s  -- PASS
+#   thinking.type="disabled"   reasoning      0                    content
+#                              1,297 chars  finish_reason="stop"   3.4s  -- PASS
+#                              (DIAGNOSTIC ONLY -- not a production candidate;
+#                              it removes thinking altogether, which no
+#                              incident asked for. Recorded to bound the
+#                              mechanism, not to be shipped.)
+# Every PASS carried all 7 required per-slide fields. The decisive number is
+# that `medium` terminates at 15.3% of the SAME 64,000 ceiling that `max`
+# exhausts -- the EFFORT was binding, never the budget. This also refutes the
+# tempting reading of the tiny "Reply with the single word OK" probe (max=23
+# vs none=25 reasoning tokens): a 256-token probe is not the 38k-token
+# authoring regime, and it cannot show the difference that this test does.
+#
+# `medium` is the default, NOT `low`: it is the cheapest of the two
+# thinking-enabled settings that work (9,788 vs 13,445 reasoning tokens), it is
+# a documented enum member (resource_profile.THINKING_LEVELS and
+# api-docs.deepseek.com/guides/thinking_mode), and it is the same step-down
+# this box already used successfully on 2026-08-26/27 before it was lost.
+# Honest limit of the evidence: `low` spent MORE reasoning tokens than `medium`
+# here, so the ladder below is a change of REQUEST, not a strict monotonic
+# reduction in thinking.
+DEEPSEEK_REASONING_EFFORT = "medium"
+#: What the operator's openclaw.json declares, recorded so the divergence above
+#: is EXPLICIT and auditable rather than silent. The product worker sends
+#: DEEPSEEK_REASONING_EFFORT; the harness agent keeps the operator's
+#: declaration. The two are deliberately allowed to differ because `max`
+#: demonstrably returns ZERO-LENGTH content on this worker's prompt size, so
+#: the harness declaration cannot govern the worker's own authoring calls.
+#: Nothing in this module writes openclaw.json.
+DEEPSEEK_REASONING_EFFORT_DECLARED_BY_OPERATOR = "max"
+# A re-attempt for a unit that has ALREADY come back empty is re-issued at the
+# reduced effort instead of repeating a request that just failed. This is the
+# FIRST rung of the ladder below and must always differ from
+# DEEPSEEK_REASONING_EFFORT -- otherwise the "retry" re-sends the exact request
+# that just failed and can only burn another paid call. (Before PD-TEST-124
+# this was "medium" and the default was "max"; the default moved DOWN to
+# medium, so the step-down moved down with it.)
+DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY = "low"
+# PD-070 (2026-09-15). A LADDER, not a single step. `medium` is a documented
+# ALIAS for `high` on this endpoint (api-docs.deepseek.com/guides/thinking_mode:
+# "`medium`/`xhigh` are accepted and mapped to `high`"), and `high` is the
+# model's own DEFAULT effort -- so a "max -> medium" step lands on the model
+# default and then DEAD-ENDS: a second, third and fourth empty completion all
+# re-send that same effort. Each rung here must therefore be a request that has
+# NOT just failed.
+# PD-TEST-124 (2026-09-16): with the default now `medium`, rung 0 is `low` --
+# a genuine step DOWN from what attempt 1 sends, and a setting the bounded
+# experiment above measured returning valid content with finish_reason="stop".
+# The ladder is deliberately SHORT: no documented value below `low` keeps
+# thinking ENABLED ("none" disables it, and mixing that with
+# thinking.type="enabled" has undocumented precedence -- so it is NOT a rung
+# until probed), and inventing an unmeasured rung would re-create PD-070's
+# dead-end defect from the other direction.
+#
+# HONEST BOUND, stated here because a comment that overclaims is how PD-070
+# happened: the rung index in `effort_for_paid_attempt` is CLAMPED to the last
+# rung, so a unit whose attempt allowance outlives the ladder re-sends the
+# FINAL rung on every later attempt rather than stepping further down. With this
+# one-rung ladder, attempt 2 and attempt 3 both send `low`: attempt 3 is a
+# RESAMPLE at DEEPSEEK_TEMPERATURE, not a fresh step-down. The property a test
+# may assert is therefore only that attempt 2 DIFFERS from attempt 1 -- NOT that
+# no attempt ever repeats the rung that just failed. A unit that exhausts the
+# ladder parks on the phase's paid-attempt cap, which is the correct fail-closed
+# outcome rather than an unbounded series of paid calls.
+DEEPSEEK_REASONING_EFFORT_LADDER: Tuple[str, ...] = ("low",)
 DEEPSEEK_TEMPERATURE = 0.3
 DEEPSEEK_TIMEOUT_S = 600       # thinking MAX at a large max_tokens can genuinely run minutes
 
@@ -710,7 +909,18 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "arc section each slide belongs to), a clear PEAK/APEX beat, and a clear ending "
         "beat (never a flat ending). If intake.json records pitch_included:false, do NOT "
         "include any offer/price/ladder content; otherwise include the value-stack/anchor/"
-        "price-ladder beats and a re-pitch after the FINAL beat."
+        "price-ladder beats and a re-pitch after the FINAL beat. "
+        "PITCHLESS VOCABULARY IS NOT OPTIONAL TO AVOID (PD-TEST-132). `build_deck."
+        "_chk_pitch_leak` is a RENDER GATE that scans this file for a fixed token list, so "
+        "on a pitch_included:false deck the artifact is refused for the WORDS it uses, "
+        "including words used to record that the content is absent. The exact suppressed "
+        "tokens are enumerated at the END of this contract, read out of the gate itself at "
+        "import time, so that list is complete and cannot drift. Name a felt-stakes section "
+        "by WHAT IT DOES for this audience (for example 'what-carrying-it-alone-costs', "
+        "'the-hidden-cost-of-waiting', 'status-quo-cost') rather than by a suppressed sale "
+        "mechanic. State the pitchless decision itself PLAINLY -- 'this deck carries no "
+        "commercial offer' -- and do not enumerate the mechanics you are omitting, because "
+        "listing them trips the same scan."
     ),
     "P-3.5-RESEARCH-MAP": (
         "OUTPUT CONTRACT: valid JSON object at working/research/research_map.json mapping "
@@ -767,8 +977,13 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     # AND its own literal `<!-- ARC: TAG -->` marker for pitch_engines_check. Do not
     # "fix" this again by teaching only one half.
     "P4-COPY": (
-        "OUTPUT CONTRACT -- TWO SEPARATE CHECKERS both grade this ONE file, by TWO "
-        "DIFFERENT mechanisms, and BOTH must show zero problems:\n"
+        "OUTPUT CONTRACT -- FIRST read intake.json's explicit pitch_included selection. "
+        "When it is false for a non-signature deck, commercial ARC beats (VILLAIN, "
+        "FELT_STAKES, NAMED_METHOD, EXPECTATION and PRICE) are not applicable and must "
+        "not be fabricated. Missing/malformed selection is AF-PITCH-APPLICABILITY-UNSET; "
+        "a signature deck with pitch_included:false is AF-PITCH-APPLICABILITY-CONFLICT. "
+        "TWO SEPARATE CHECKERS otherwise grade this ONE file, by TWO DIFFERENT mechanisms, "
+        "and BOTH must show zero problems:\n"
         "  (a) intelligence_engines_check.check_copy scans PROSE SUBSTRINGS and a "
         "`LADDER: <value>` metadata field line.\n"
         "  (b) pitch_engines_check.check_copy scans ONLY literal marker syntax: "
@@ -839,6 +1054,19 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "ARC markers -- add at least one, typically `<!-- ARC: FINAL -->` on the single "
         "price-reveal slide, even for a flat-price deck, so that check can see the beat "
         "at all. Every price/ladder slide must be LATER than the PROMISE slide.\n"
+        "APPLICABILITY GATE FOR POINTS 8, 9 AND 12 (PD-TEST-125 D2). Read "
+        "intake.json's pitch_included FIRST. When it is FALSE for a non-signature "
+        "deck, points 8, 9 and 12 DO NOT APPLY: write NO price rung, NO re-pitch "
+        "and NO `<!-- ARC: COST_OF_INACTION -->` marker, and no prose naming the "
+        "cost of inaction. This is not a style preference -- `build_deck."
+        "_chk_pitch_leak` refuses the deck with AF-PITCH-LEAK when a pitchless deck "
+        "carries those tokens, so following points 8/9 on a pitchless deck "
+        "GUARANTEES a QC failure you cannot write your way out of. Measured live on "
+        "pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: the contract ordered "
+        "`<!-- ARC: COST_OF_INACTION -->`, the copy carried it verbatim at "
+        "slides_copy.md:23-24, and AF-PITCH-LEAK fired on exactly that token. When "
+        "pitch_included is false the whole price/pitch apparatus is inapplicable; "
+        "points 1-7 and 10-11 still apply, under their own applicability rules.\n"
         "8. Cadence loop between price rungs (AF-CADENCE -- NOTE: this specific check "
         "currently DEFERS pipeline-wide because no phase yet writes "
         "working/copy/price_ladder.json; write it correctly anyway so the deck already "
@@ -964,9 +1192,11 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "your narration fails both gates."
     ),
     "P-SP-CLAIM": (
-        "OUTPUT CONTRACT: valid JSON object at working/copy/sp_claims.json recording that "
-        "this deck's presentation_type/deck_type has been explicitly claimed as a signature "
-        "presentation (deck_type: 'signature_presentation'), matching intake.json."
+        "OUTPUT CONTRACT: valid JSON object at working/copy/sp_claims.json that records the "
+        "presentation_type and deck_type ALREADY declared in working/copy/intake.json. If and "
+        "only if that sealed intake declares signature_presentation, record a signature claim; "
+        "otherwise record a non-signature routing result. Never change intake.json, never upgrade "
+        "a from_scratch deck to signature, and never infer commercial/pitch requirements."
     ),
     # NOTE: P-SP-STRUCTURE has no static entry here (mirrors the P-SP-INTAKE
     # no-entry comment below) -- unlike every other phase, its contract is NOT
@@ -1143,6 +1373,221 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# PD-TEST-098 -- THE DESIGN-PAGE PROMPT BAND IS A *SHARED* BUDGET.
+#
+# THE DEFECT. P-U-DESIGN-SALES / -CHECKOUT / -VSL are three-unit fan-outs
+# (`fanout.by: slide`, `desired_count: 3`, PIPELINE-MANIFEST.json v69) whose
+# reducer CONCATENATES the three unit outputs into ONE artifact
+# (`prompts/<page>.design.txt`, `_reduce_text_concat`), and the consuming
+# render phase (`build_infographic.resolve_design_prompt`) sends that ONE
+# artifact VERBATIM to GPT-Image-2.5 as ONE prompt behind the shared gate at
+# `prompt_gate.PROMPT_CHAR_FLOOR .. PROMPT_CHAR_CEILING`.
+#
+# Nothing in the producer knew any of that. All three phases had NO entry in
+# ARTIFACT_CONTRACTS, so `compose_prompt` fell through to GENERIC_CONTRACT,
+# whose entire length rule is "real prose long enough to be substantive (not
+# a one-line stub)" -- there was no upper bound anywhere on the authoring
+# path. The owning role's SOP states the 9,000-14,000 band PER PROMPT, and
+# each of the three units reasonably spent that budget on ITSELF, so three
+# individually in-band prompts concatenated to 49,526-58,484 chars against an
+# 18,000 ceiling. Measured live on run
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: sales unit outputs
+# 20,917 + 20,024 + 17,537 = 58,478, plus the 4 separator chars
+# `_reduce_text_concat` inserts = the 58,484-char file the gate refused.
+# Every one of those units PASSED its validator -- `_validate_text` refused
+# nothing but emptiness -- so the ceiling was discovered three phases later,
+# at the paid render gate, instead of here.
+#
+# THE FIX. The band is stated to the units as what it actually is -- a budget
+# on the FINAL AGGREGATE artifact, shared across the phase's N units -- and
+# each unit is told its own share of it. The numbers are IMPORTED from
+# `prompt_gate`, the same module the gate itself raises from, so the
+# authoring target and the gate cannot drift; there is deliberately no second
+# copy of 9,000/18,000 in this file to drift from. The separator arithmetic
+# mirrors `_reduce_text_concat` through the ONE shared separator constant
+# below, so the budget and the reducer can never disagree either.
+#
+# NO MANIFEST CHANGE IS REQUIRED. `fanout.desired_count: 3` + one declared
+# artifact + the concat reducer + the aggregate ceiling are mutually
+# satisfiable: three units each authoring ONE PART of the one prompt, inside
+# their share of the one budget, sum to an artifact that clears the gate.
+# ---------------------------------------------------------------------------
+DESIGN_PAGE_PHASES: Dict[str, str] = {
+    "P-U-DESIGN-SALES": "sales",
+    "P-U-DESIGN-CHECKOUT": "checkout",
+    "P-U-DESIGN-VSL": "vsl",
+}
+
+# The ONE separator `_reduce_text_concat` joins unit texts with. The shared
+# budget arithmetic below charges for it, so a change here can never silently
+# put the reducer's real output over the ceiling the units were given.
+_UNIT_TEXT_SEPARATOR = "\n\n"
+
+
+def _shared_prompt_gate():
+    """The shared prompt gate module (`prompt_gate.py`, at the top of
+    scripts/ -- already on sys.path via this module's own bootstrap).
+
+    FAIL CLOSED, deliberately: a design unit that cannot be told the band is
+    a design unit authoring blind against a gate that will refuse it, which is
+    the exact defect above. Refusing the phase here costs nothing; authoring
+    without a ceiling costs three paid units and a parked render phase."""
+    try:
+        import prompt_gate  # noqa: PLC0415 -- lazy: never a hard import at module scope
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "PD-TEST-098: prompt_gate.py could not be imported, so the "
+            "design-page prompt band cannot be stated to the authoring unit. "
+            "Refusing to author a design prompt blind against the shared "
+            f"gate ({type(exc).__name__}: {exc}).") from exc
+    return prompt_gate
+
+
+def design_unit_char_budget(unit_count: int) -> Tuple[int, int]:
+    """`(floor_share, ceiling_share)` -- the character budget for ONE unit of
+    a design-page fan-out, derived from the SHARED band.
+
+    The gate measures the FINAL artifact: N unit texts joined by
+    `_UNIT_TEXT_SEPARATOR` (2 chars each, N-1 of them). So the aggregate is
+    `sum(u) + 2*(N-1)`, and each unit's fair share is the band minus the
+    separators, divided N ways. Both bounds are imported from `prompt_gate`
+    -- never re-typed here.
+
+    A degenerate/absent `unit_count` is treated as ONE unit (the whole band),
+    which is the honest reading for a phase that enumerated a single unit."""
+    pg = _shared_prompt_gate()
+    n = unit_count if isinstance(unit_count, int) and unit_count > 0 else 1
+    sep_total = len(_UNIT_TEXT_SEPARATOR) * (n - 1)
+    ceiling_share = max(1, (pg.PROMPT_CHAR_CEILING - sep_total) // n)
+    floor_share = -(-max(0, pg.PROMPT_CHAR_FLOOR - sep_total) // n)  # ceil
+    return floor_share, min(ceiling_share, pg.PROMPT_CHAR_CEILING)
+
+
+def design_part_count(payload: Dict[str, Any]) -> int:
+    """How many parts the design-page artifact is ACTUALLY assembled from.
+
+    `admitted_count` (stamped by the dispatcher from `wanted_items`) is the
+    authority -- it is the number of parts `_reduce_text_concat` will join.
+    `unit_count` is only the ENUMERATED count and over-counts whenever
+    `fanout.desired_count` bounded the phase (live run P-U-DESIGN-SALES:
+    enumerated 8, admitted 3), so it is a last-resort fallback for direct
+    callers that never went through the dispatcher's admission pass."""
+    payload = payload if isinstance(payload, dict) else {}
+    for key in ("admitted_count", "unit_count"):
+        val = payload.get(key)
+        if isinstance(val, int) and val > 0:
+            return val
+    return 1
+
+
+def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
+    """The OUTPUT CONTRACT a P-U-DESIGN-* unit is dispatched with.
+
+    Replaces the GENERIC_CONTRACT fallthrough that let this defect through.
+    States, in the model's own instruction and with numbers imported from the
+    gate: that the file is ONE prompt for ONE rendered image, that the band
+    applies to the AGGREGATE and is therefore SHARED across the phase's
+    units, which part this unit is, and the exact character share it owns."""
+    page = DESIGN_PAGE_PHASES.get(phase_id, "page")
+    payload = order.get("_unit_payload") if isinstance(order, dict) else None
+    payload = payload if isinstance(payload, dict) else {}
+    n = design_part_count(payload)
+    ordinal = payload.get("ordinal")
+    if not isinstance(ordinal, int) or not (1 <= ordinal <= n):
+        ordinal = 1
+    floor_share, ceiling_share = design_unit_char_budget(n)
+    pg = _shared_prompt_gate()
+    # Aim at the MIDDLE of the share so a compliant part clears both bounds
+    # with real headroom; the shares themselves stay the hard bounds the
+    # validator enforces.
+    target_lo = floor_share + (ceiling_share - floor_share) // 4
+    target_hi = floor_share + (3 * (ceiling_share - floor_share)) // 4
+
+    if n > 1:
+        attribution = (
+            f"1. YOU ARE AUTHORING PART {ordinal} OF {n} OF ONE SINGLE PROMPT, "
+            f"NOT A PROMPT OF YOUR OWN. `prompts/{page}.design.txt` is ONE "
+            f"image prompt, sent VERBATIM to GPT-Image-2.5 to render ONE 16:9 "
+            f"page-design image. The engine authors it in {n} parts "
+            f"concurrently and joins them in ordinal order with a blank line. "
+            f"Part 1 opens the prompt: it carries the ONE `[ARCHETYPE ...]` "
+            f"layout header, the ONE canvas/format/resolution declaration, the "
+            f"background, and the brand palette. Every later part CONTINUES "
+            f"that same prompt: no second `[ARCHETYPE` header, no second "
+            f"canvas/frame/resolution declaration, no restart. Part {n} closes "
+            f"it with the ONE `DO-NOT BLOCK` negative block.\n")
+    else:
+        attribution = (
+            f"1. YOU ARE AUTHORING THE WHOLE PROMPT. "
+            f"`prompts/{page}.design.txt` is ONE image prompt, sent VERBATIM to "
+            f"GPT-Image-2.5 to render ONE 16:9 page-design image. It carries "
+            f"exactly ONE `[ARCHETYPE ...]` layout header, ONE "
+            f"canvas/format/resolution declaration, and closes with the ONE "
+            f"`DO-NOT BLOCK` negative block.\n")
+
+    # PD-TEST-113: the AF-P13 defect classes and their tolerant tokens are read
+    # from prompt_gate at call time, exactly as the band numbers are. The
+    # producer must be told every rule its consumer enforces, or each unstated
+    # rule costs one full paid re-author and one quarantined render phase to
+    # discover (measured: AF-P13 and AF-R3 on run
+    # pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4). Importing the map
+    # rather than retyping it means a class added to the gate reaches the
+    # contract with no second edit.
+    defect_classes = sorted(pg.NEGATIVE_BLOCK_CLASS_TOKENS.items())
+    return (
+        f"OUTPUT CONTRACT: author `prompts/{page}.design.txt` -- the page-design "
+        f"prompt for the {page.upper()} upsell page. This contract is "
+        f"mechanically graded BEFORE any paid image call; a violation is refused "
+        f"by `build_infographic.resolve_design_prompt` via the shared "
+        f"`prompt_gate`, and the render phase is NOT submitted.\n"
+        + attribution +
+        f"2. LENGTH -- THE BAND IS SHARED, AND IT IS MEASURED ON THE FINAL "
+        f"ASSEMBLED FILE, NOT ON YOUR PART. The shared gate requires the "
+        f"complete `prompts/{page}.design.txt` to be between "
+        f"{pg.PROMPT_CHAR_FLOOR:,} and {pg.PROMPT_CHAR_CEILING:,} characters "
+        f"({pg.PROMPT_CHAR_CEILING:,} sits 2,000 under the "
+        f"{pg.API_PROMPT_HARD_CEILING:,}-character GPT-Image-2.5 API ceiling). "
+        f"Your part is {ordinal} of {n}, so YOUR OWN OUTPUT MUST BE BETWEEN "
+        f"{floor_share:,} AND {ceiling_share:,} CHARACTERS -- aim for "
+        f"{target_lo:,}-{target_hi:,}. The {n} parts plus their separators sum "
+        f"to the file, so a part written at full single-prompt length is what "
+        f"puts the file over the ceiling and gets the whole phase refused. Do "
+        f"NOT pad to reach a number: this is a MAXIMUM to respect, and every "
+        f"character must still be real, specific art direction.\n"
+        f"3. REQUIRED STRUCTURAL BLOCKS -- the assembled file must contain all "
+        f"three (case-insensitive): a layout header starting `[ARCHETYPE`; a "
+        f"final block headed exactly `DO-NOT BLOCK`; and at least one literal "
+        f"`Do not ` imperative inside that block. They are required ONCE each "
+        f"across the whole file -- see point 1 for which part carries each.\n"
+        f"3a. THE `DO-NOT BLOCK` MUST NAME ALL {len(defect_classes)} DEFECT "
+        f"CLASSES (AF-P13). A one-line 'no text' AVOID stub does NOT satisfy "
+        f"it. Pair EVERY class with an explicit `Do not ...` imperative, using "
+        f"the wording in brackets so the mechanical check can see it: "
+        + "; ".join(f"{name} [{', '.join(tokens[:4])}]"
+                    for name, tokens in defect_classes)
+        + ".\n"
+        f"3b. NEVER hardcode a demographic default (AF-R3): no fixed "
+        f"percentage split and no baked-in representation mix. State that "
+        f"skin-tone and representation follow the client's captured audience / "
+        f"casting ledger. The gate matches the forbidden 'default <group>' "
+        f"phrasing LITERALLY, so never write that two-word form -- the "
+        f"assembled file is refused before any paid call if you do.\n"
+        f"4. DENSITY: the assembled file needs at least "
+        f"{pg.PROMPT_MIN_DISTINCT_WORDS} DISTINCT words, a brand palette color "
+        f"as a 6-digit `#RRGGBB` HEX code, an explicit typography SIZE token "
+        f"(e.g. '96pt'), and a real COMPOSITION/zone instruction (e.g. 'rule of "
+        f"thirds', 'left third', 'safe margin', 'negative space') -- "
+        f"'centered' alone does NOT count.\n"
+        f"5. SPELLING-LOCK: quote every on-slide string VERBATIM, "
+        f"letter-for-letter, and say so ('render every quoted text string "
+        f"exactly as written, letter-for-letter').\n"
+        f"6. Output ONLY this part's prompt text -- no preamble, no commentary, "
+        f"no markdown code fence around the answer, no file header, no restated "
+        f"work order."
+    )
+
+
+# ---------------------------------------------------------------------------
 # CONTRACT COMPLETENESS (the class fix, not the instance).
 #
 # THE DEFECT: every rule in the hand-written contract above had to be noticed
@@ -1227,6 +1672,87 @@ def _compose_p4_copy_contract(base: str) -> str:
 
 
 ARTIFACT_CONTRACTS["P4-COPY"] = _compose_p4_copy_contract(ARTIFACT_CONTRACTS["P4-COPY"])
+
+
+def _module_str_sequence(module: str, name: str) -> List[str]:
+    """Read a module-level list/tuple of string literals out of source by AST.
+
+    DERIVED, never re-typed: a hand-copied rule list is what drifts
+    (contract_introspect.py), and the hand-copied version of the suppressed-token
+    list written first for PD-TEST-132 missed 3 of the gate's 26 variants. Fails
+    soft to [] so a read failure can never block a dispatch.
+    """
+    try:
+        node = _ci._module_level_assigns(module).get(name)
+        if node is None or type(node).__name__ not in ("Tuple", "List"):
+            return []
+        out: List[str] = []
+        for elt in getattr(node, "elts", []):
+            text = _ci.literal_text(elt)
+            if text:
+                out.append(text)
+        return out
+    except Exception:  # noqa: BLE001 -- a derivation failure must never block a dispatch
+        return []
+
+
+def _compose_p3_arc_contract(base: str) -> str:
+    """Name, in the P3-ARC contract, the rules its own artifact is judged by (PD-TEST-132).
+
+    P3-ARC writes working/copy/arc_allocation.json. Two separate checkers grade that
+    file and NEITHER rule was in this contract, so the author wrote blind and the run
+    paid for it one re-author at a time:
+
+      * AF-NO-VILLAIN -- the arc MUST carry a named antagonist beat. Measured on run
+        pres-operator-1d269693: the arc has 8 sections and ZERO antagonist vocabulary,
+        so P4-COPY failed the substance check with "no VILLAIN/antagonist beat anywhere
+        in the arc". P4-COPY's own contract DOES name that rule (the derived index
+        covers it) -- but P4-COPY does not own the arc and cannot repair it, so naming
+        the rule downstream only produced a phase that blocks on an artifact it cannot
+        fix. The rule belongs where the artifact is authored.
+      * AF-PITCH-LEAK -- on a pitch_included:false deck the arc is refused for the
+        suppressed vocabulary. All 11 recognised antagonist tokens are pitchless-SAFE
+        (zero overlap with the forbidden 26), so the deck is satisfiable; the author
+        was simply never told which words are closed to it.
+    """
+    tokens = _module_str_sequence("build_deck", "PITCHLESS_FORBIDDEN_TOKENS")
+    villain = _module_str_sequence("intelligence_engines_check", "VILLAIN_TOKENS")
+    safe_villain = [v for v in villain
+                    if not any(f in v.lower() or v.lower() in f for f in tokens)]
+    out = base
+    if safe_villain:
+        out += (
+            " MANDATORY VILLAIN BEAT (AF-NO-VILLAIN, graded on THIS artifact). The arc "
+            "MUST contain a named antagonist beat -- the thing standing between this "
+            "audience and the outcome -- placed BEFORE the solution/hero beat. An arc "
+            "with no named antagonist fails the substance check and blocks P4-COPY, "
+            "which cannot repair an artifact it does not own. Recognised antagonist "
+            "vocabulary, read at import time from "
+            "intelligence_engines_check.VILLAIN_TOKENS: "
+            + "; ".join(safe_villain)
+            + "."
+        )
+    else:
+        out += (
+            " MANDATORY VILLAIN BEAT (AF-NO-VILLAIN, graded on THIS artifact). The arc "
+            "MUST contain a named antagonist beat before the solution/hero beat. An arc "
+            "with no named antagonist fails the substance check and blocks P4-COPY."
+        )
+    if tokens:
+        out += (
+            " SUPPRESSED TOKENS -- read at import time from "
+            "build_deck.PITCHLESS_FORBIDDEN_TOKENS, the very tuple `_chk_pitch_leak` "
+            "scans for, so this list is complete and cannot drift. None of these "
+            f"{len(tokens)} tokens may appear in ANY string value of the artifact on a "
+            "pitch_included:false deck (the scan reads values, not keys, and skips "
+            "*_reason / *_note / validation_notes): "
+            + "; ".join(tokens)
+            + "."
+        )
+    return out
+
+
+ARTIFACT_CONTRACTS["P3-ARC"] = _compose_p3_arc_contract(ARTIFACT_CONTRACTS["P3-ARC"])
 
 
 GENERIC_CONTRACT = (
@@ -1572,14 +2098,25 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                       model: Optional[str] = None,
                       run_dir: Optional[Path] = None,
                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
-                      retries: int = 3) -> Tuple[str, Dict[str, Any]]:
+                      retries: int = 3,
+                      reasoning_effort: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
     """One DeepSeek chat completion, thinking MAX. Returns
     (content_text, usage_dict). FIX 16: the caller passes the model the ROUTE
     selected (default stays the catalog text.fast id so the pre-FIX-7
     rollback path is byte-for-byte unchanged). Retries transient
     HTTP/network failures with backoff; a non-transient (4xx other than 429)
-    failure raises immediately."""
+    failure raises immediately.
+
+    PD-TEST-065: `reasoning_effort` defaults to DEEPSEEK_REASONING_EFFORT.
+    PD-TEST-124: that default is now "medium" (a measured-working effort for
+    this worker's very large authoring prompts), NOT the operator's declared
+    "max" -- see the DEEPSEEK_REASONING_EFFORT comment for the evidence and for
+    why the product worker is entitled to differ from the harness declaration.
+    A caller may still step it DOWN for a call whose identical predecessor
+    already returned empty content -- see
+    DEEPSEEK_REASONING_EFFORT_AFTER_EMPTY."""
     key = _load_deepseek_key()
+    effort = reasoning_effort or DEEPSEEK_REASONING_EFFORT
     body = {
         # FIX 16: send the model the router chose, not a module constant.
         "model": model or DEEPSEEK_MODEL,
@@ -1590,7 +2127,7 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
         "max_tokens": max_tokens,
         "temperature": DEEPSEEK_TEMPERATURE,
         "thinking": {"type": "enabled"},
-        "reasoning_effort": "max",
+        "reasoning_effort": effort,
     }
     data = json.dumps(body).encode("utf-8")
     # FIX 16 dispatcher debug log: the exact request body that leaves this
@@ -1645,6 +2182,17 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                 choice = (obj.get("choices") or [{}])[0]
                 content = ((choice.get("message") or {}).get("content")) or ""
                 usage = obj.get("usage") or {}
+                # PD-070: keep the provider's OWN stop signal alongside the
+                # usage. `finish_reason="length"` is the documented marker that
+                # the request's token maximum was reached; with thinking enabled
+                # that maximum is SHARED with reasoning, so "length" + an empty
+                # `content` means reasoning starved the deliverable -- a
+                # different defect from a model that answered nothing ("stop" +
+                # empty), needing a different fix. Before this the field was
+                # read nowhere at all (grep -c finish_reason dispatcher.py == 0),
+                # so the two were indistinguishable after the fact.
+                if isinstance(usage, dict):
+                    usage["finish_reason"] = choice.get("finish_reason")
                 _govern_ok("deepseek-direct")
                 return content, usage
             except urllib.error.HTTPError as exc:
@@ -1983,9 +2531,11 @@ def _apply_route_override(decision: Optional[Dict[str, Any]],
 def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       phase_id: str,
                       run_dir: Optional[Path] = None,
+                      worker_id: Optional[str] = None,
                       max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
                       retries: int = 3,
                       route_override: Optional[Dict[str, Any]] = None,
+                      reasoning_effort: Optional[str] = None,
                       ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     """THE routed completion entrypoint: every dispatcher LLM call site goes
     through here. Returns (content, usage, route_dict) where route_dict carries
@@ -2000,7 +2550,17 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
 
     F10: `route_override` ({provider, model}, from a heal rung's reissued work
     order) re-points the selection -- but only onto a candidate the router
-    itself already marked eligible. See _apply_route_override."""
+    itself already marked eligible. See _apply_route_override.
+
+    PD-TEST-065: `reasoning_effort` (optional) is forwarded to the native
+    DeepSeek transport only. PD-TEST-124: None now sends
+    DEEPSEEK_REASONING_EFFORT ("medium", measured working on this worker's real
+    authoring prompt), NOT the operator's declared "max" -- see that constant's
+    comment for the four-call evidence and for why the product worker is
+    entitled to differ from the harness declaration. A caller steps it DOWN
+    only when the identical predecessor call already returned empty content. A
+    non-native provider route ignores it -- that provider's own params
+    govern."""
     ctx = _RouteContext()
     decision: Optional[Dict[str, Any]] = None
     if _model_router is not None:
@@ -2074,9 +2634,11 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
                 or "deepseek-flash"
             ctx.reason = str((decision or {}).get("reason")
                              or "no profile route; dispatcher default DeepSeek-direct")
+            _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=retries)
+                                               max_tokens=max_tokens, retries=1,
+                                               reasoning_effort=reasoning_effort)
             _emit_model_route_telemetry(run_dir, ctx, phase_id)
             return content, usage, ctx.as_dict()
         if router_id == "disabled":
@@ -2087,9 +2649,11 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             ctx.model = DEEPSEEK_MODEL
             ctx.requested_alias = None
             ctx.reason = str((decision or {}).get("reason") or "router disabled")
+            _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=retries)
+                                               max_tokens=max_tokens, retries=1,
+                                               reasoning_effort=reasoning_effort)
             return content, usage, ctx.as_dict()
 
         ctx.provider = str(route.get("provider") or "")
@@ -2114,18 +2678,21 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
             pass
 
         if ctx.provider == "deepseek-direct":
+            _reserve_paid_attempt(run_dir, phase_id, worker_id)
             content, usage = deepseek_complete(system_prompt, user_prompt,
                                                model=ctx.model, run_dir=run_dir,
-                                               max_tokens=max_tokens, retries=retries)
+                                               max_tokens=max_tokens, retries=1,
+                                               reasoning_effort=reasoning_effort)
             # usage/model provenance stays honest even though the native endpoint
             # pins its own served id; FIX 16 now sends the ROUTE's model id in the
             # request body itself (the route is what callers stamp AND what is sent).
             _emit_model_route_telemetry(run_dir, ctx, phase_id)
             return content, usage, ctx.as_dict()
 
+        _reserve_paid_attempt(run_dir, phase_id, worker_id)
         content, usage = _openai_compat_complete(
             system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
-            max_tokens=max_tokens, retries=retries, run_dir=run_dir)
+            max_tokens=max_tokens, retries=1, run_dir=run_dir)
         _emit_model_route_telemetry(run_dir, ctx, phase_id)
         return content, usage, ctx.as_dict()
     finally:
@@ -2433,6 +3000,13 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
     # no static entry" comment in ARTIFACT_CONTRACTS for why.
     if phase_id == "P-SP-STRUCTURE":
         contract = _sp_structure_contract(run_dir)
+    elif phase_id in DESIGN_PAGE_PHASES:
+        # PD-TEST-098: derived PER UNIT, because the band is a SHARED budget
+        # and the unit's own share depends on how many units this phase
+        # enumerated (`unit_count` rides the unit payload). Without this the
+        # three design phases fell through to GENERIC_CONTRACT, which states
+        # no upper bound at all -- see the PD-TEST-098 block above.
+        contract = _design_page_prompt_contract(phase_id, order)
     else:
         contract = ARTIFACT_CONTRACTS.get(phase_id, GENERIC_CONTRACT)
 
@@ -2544,11 +3118,24 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
                           "header). Never the whole file, never another unit's scope."
         )
     else:
-        user_parts.append(
-            "Write the complete, final content of the target artifact file now. If the target "
-            "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
-            "fence). If the target is Markdown/text, output the complete file content directly."
-        )
+        declared = order.get("produces_artifact") if isinstance(order, dict) else None
+        if isinstance(declared, list) and len(declared) > 1 and all(
+                isinstance(path, str) and path and not any(c in path for c in "*?[")
+                for path in declared):
+            paths = ", ".join(json.dumps(path) for path in declared)
+            user_parts.append(
+                "This phase has MULTIPLE declared artifacts. Output ONE JSON object with exactly "
+                "one top-level key, `artifacts`. Its value must map EACH of these exact manifest-"
+                f"relative paths to that file's complete content: {paths}. No other keys, paths, "
+                "or prose. The value for a .json target must itself be valid JSON text; the value "
+                "for a Markdown/text target must be the complete substantive file text."
+            )
+        else:
+            user_parts.append(
+                "Write the complete, final content of the target artifact file now. If the target "
+                "is JSON, output ONLY the JSON object/array itself (no surrounding prose, no code "
+                "fence). If the target is Markdown/text, output the complete file content directly."
+            )
     user_prompt = "\n\n".join(user_parts)
     return system_prompt, user_prompt
 
@@ -2609,6 +3196,112 @@ def _first_concrete_path(patterns: List[str], run_dir: Path) -> Optional[Path]:
                 return run_dir / stem
             continue
         return run_dir / pat
+    return None
+
+
+def _concrete_target_paths(patterns: List[str], run_dir: Path) -> Optional[List[Path]]:
+    """Resolve every declared output only when each is a literal safe path.
+
+    A completion is one transport payload, so a phase with sibling artifacts
+    must use the explicit envelope contract below.  Globs remain the domain of
+    their dedicated fan-out dispatchers: guessing a second filename would
+    create an artifact the manifest never declared.
+    """
+    root = run_dir.resolve()
+    targets: List[Path] = []
+    seen: set[Path] = set()
+    for pattern in patterns:
+        if not isinstance(pattern, str) or not pattern or any(c in pattern for c in "*?["):
+            return None
+        raw = Path(pattern)
+        if raw.is_absolute() or ".." in raw.parts:
+            return None
+        target = (root / raw).resolve(strict=False)
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return None
+        if target in seen:
+            return None
+        seen.add(target)
+        targets.append(target)
+    return targets or None
+
+
+def _multi_artifact_payload(payload: str, targets: List[Path], run_dir: Path) -> Tuple[Optional[Dict[Path, str]], Optional[str]]:
+    """Parse the only accepted model format for a multi-output phase.
+
+    The keys are manifest-relative target paths, not basenames, so similarly
+    named artifacts cannot be swapped.  Every declared target is required and
+    no undeclared path may be smuggled into the run directory.
+    """
+    try:
+        root = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return None, f"multi-artifact response is not JSON: {exc.msg}"
+    artifacts = root.get("artifacts") if isinstance(root, dict) else None
+    if not isinstance(artifacts, dict):
+        return None, "multi-artifact response needs an artifacts object"
+    root_dir = run_dir.resolve()
+    expected = {str(target.relative_to(root_dir)) for target in targets}
+    actual = set(artifacts)
+    if actual != expected:
+        return None, ("multi-artifact response keys must exactly equal declared targets; "
+                      f"missing={sorted(expected - actual)!r} extra={sorted(actual - expected)!r}")
+    resolved: Dict[Path, str] = {}
+    for target in targets:
+        value = artifacts[str(target.relative_to(root_dir))]
+        if not isinstance(value, str) or not value.strip():
+            return None, f"multi-artifact response has empty/non-text content for {target.relative_to(root_dir)}"
+        resolved[target] = value
+    return resolved, None
+
+
+def _publish_artifact_group(tmp_paths: Dict[Path, Path]) -> Optional[str]:
+    """Publish sibling outputs as a recoverable group.
+
+    ``os.replace`` is atomic per path, not across paths.  Copy prior outputs
+    beside their targets before publication so a failure on a later sibling
+    restores every already-replaced target; a target that did not exist is
+    removed.  The caller still performs the ownership fence before entering
+    this function.
+    """
+    backups: Dict[Path, Optional[Path]] = {}
+    published: List[Path] = []
+    try:
+        for output in tmp_paths:
+            if output.exists():
+                backup = output.with_name(output.name + f".publish-backup-{uuid.uuid4().hex}")
+                shutil.copy2(output, backup)
+                backups[output] = backup
+            else:
+                backups[output] = None
+        for output, tmp in tmp_paths.items():
+            os.replace(tmp, output)
+            published.append(output)
+    except OSError as exc:
+        rollback_errors: List[str] = []
+        for output in reversed(published):
+            backup = backups.get(output)
+            try:
+                if backup is None:
+                    output.unlink(missing_ok=True)
+                else:
+                    shutil.copy2(backup, output)
+            except OSError as rollback_exc:
+                rollback_errors.append(f"{output.name}: {rollback_exc}")
+        for tmp in tmp_paths.values():
+            tmp.unlink(missing_ok=True)
+        for backup in backups.values():
+            if backup is not None:
+                backup.unlink(missing_ok=True)
+        detail = f"multi-artifact publication failed: {exc}"
+        if rollback_errors:
+            detail += "; rollback failures: " + "; ".join(rollback_errors)
+        return detail
+    for backup in backups.values():
+        if backup is not None:
+            backup.unlink(missing_ok=True)
     return None
 
 
@@ -2889,41 +3582,19 @@ def _prompt_slide_count(run_dir: Path) -> Optional[int]:
     the real verifier can never disagree on N: working/copy/slides.json (a list,
     or {"slides":[...]}) first, then working/copy/arc_allocation.json's
     slides/slots/allocation array. Returns None when neither is present/readable
-    yet (the phase is not ready to dispatch)."""
-    def _len_from(obj) -> Optional[int]:
-        if isinstance(obj, list):
-            return len(obj)
-        if isinstance(obj, dict) and "__parse_error__" not in obj:
-            slides = obj.get("slides")
-            if isinstance(slides, list):
-                return len(slides)
-        return None
+    yet (the phase is not ready to dispatch).
 
-    for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
-        p = run_dir / rel
-        if not p.is_file():
-            continue
-        try:
-            obj = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        n = _len_from(obj)
-        if n is not None:
-            return n
-
-    arc = run_dir / "working" / "copy" / "arc_allocation.json"
-    if arc.is_file():
-        try:
-            obj = json.loads(arc.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            obj = None
-        if isinstance(obj, dict):
-            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-            if isinstance(slots, list):
-                return len(slots)
-        elif isinstance(obj, list):
-            return len(obj)
-    return None
+    PD-TEST-067: those two sources are now read by ``arc_slides`` -- the ONE
+    module that knows the deck's slide-array shape -- so this function, the
+    fan-out enumerator and the real verifier cannot drift apart again. The
+    live run's arc_allocation.json carried its 8 slides under the P3-ARC
+    spelling ``slide_allocations``/``slide_number``, which this function's
+    private key list could not see; it returned None for a present, complete
+    artifact, and the two P4-PROMPT callers below turn that None into a
+    status="error" -- the same byte-identical repeat that parked four phases.
+    The None contract itself is UNCHANGED.
+    """
+    return _arc_slides.load_slide_count(run_dir)
 
 
 def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]:
@@ -3090,7 +3761,7 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
             try:
                 content, usage, route_dict = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id,
-                    run_dir=run_dir)
+                    run_dir=run_dir, worker_id=worker_id)
             except RoutingUnavailable as exc:
                 # no client-owned model can serve this phase: park the slide
                 # honestly (fail-closed), never fabricate a route.
@@ -4080,6 +4751,104 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # error -- never silently falls back to the serial loop and re-spends.
     started_iso = utcnow()
     started_t = time.monotonic()
+    # PD-TEST-161: DECLARE this fan-out's bounded total BEFORE any paid call, so
+    # the prompt wave is funded the same way the copy fan-out has been since
+    # PD-TEST-124. `_declare_phase_paid_budget` is the single writer of
+    # `phase_paid_budget`, and `_effective_phase_paid_cap` returns the declared
+    # bound when one exists (else the legacy DISPATCH_RETRY_CAP, byte-for-byte).
+    # Each slide's own attempt is then accounted under its `slide_id` by the
+    # `paid_unit_scope` the worker enters per attempt.
+    #
+    # Strictly fail-soft: a declaration failure must not stop the wave. The
+    # ledger then simply stays undeclared and the legacy per-phase cap governs,
+    # which is exactly the pre-fix behaviour -- the sidecar records which
+    # happened so the difference is never silent.
+    try:
+        # PD-TEST-166 (review of PR #1164): declare only the slides that still
+        # need PAID work -- a slide whose prompt is already on disk and clears
+        # the real per-slide gate costs nothing, and `_declare_phase_paid_budget`
+        # says so in its own contract: banked/reused units must be EXCLUDED,
+        # "because they cost nothing, so funding them would only shrink the pool
+        # available to the units that do". The first version declared EVERY slide,
+        # which (with the settlement PD-TEST-165 adds) would leave already-good
+        # slides at counts == 0 while still listed as owed a first attempt.
+        #
+        # The WAVE itself still processes every slide, so already-good ones are
+        # re-derived from disk by `_run_one` as usual -- only the DECLARATION is
+        # narrowed to the units that can actually spend.
+        _all_keys = [_ppw.prompt_slide_unit_key(_s) for _s in slides_payload]
+        _pending_keys = []
+        for _s in slides_payload:
+            _key = _ppw.prompt_slide_unit_key(_s)
+            try:
+                _ok, _ = _verify_single_prompt(run_dir, int(_s["ordinal"]))
+            except Exception:  # noqa: BLE001 -- unverifiable != already good
+                _ok = False
+            if not _ok:
+                _pending_keys.append(_key)
+        # Never declare an EMPTY set: with nothing pending the wave is a no-op
+        # anyway, and an empty declaration would rewrite the phase's bound to
+        # its `0 units -> 3` floor for no reason.
+        _unit_keys = _pending_keys or _all_keys
+        _budget_decl = _declare_phase_paid_budget(
+            run_dir, phase_id, unit_keys=_unit_keys, worker_id=worker_id)
+    except Exception as exc:  # noqa: BLE001 -- the wave still runs undeclared
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("the prompt wave runs on the legacy per-phase cap "
+                            "(DISPATCH_RETRY_CAP) exactly as before PD-TEST-161"),
+        })
+        _budget_decl, _bd = None, {}
+    # Review (delta): the AUDIT of a successful declaration gets its OWN guard.
+    # Wrapping it in the declaration's try meant a sidecar write failure AFTER a
+    # successful declaration recorded "declaration_failed / legacy cap governs"
+    # while the ledger in fact held the declaration -- a false record.
+    if _budget_decl is not None:
+      try:
+        # Review F4: `_declare_phase_paid_budget` returns a NESTED document --
+        # {"budget": {...}, "admitted": [...], "not_admitted": {...}} -- and the
+        # copy caller reads `["budget"]["total_cap"]`. The first version of this
+        # sidecar read those keys at top level and therefore recorded nulls.
+        _bd = _budget_decl.get("budget") or {}
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_budget_declared",
+            "policy": _bd.get("policy"),
+            "units": len(_unit_keys),
+            "units_in_wave": len(_all_keys),
+            "units_already_good": len(_all_keys) - len(_pending_keys),
+            "units_eligible": _bd.get("units_eligible"),
+            "total_cap": _bd.get("total_cap"),
+            "units_admitted_first_attempt":
+                _bd.get("units_admitted_first_attempt"),
+            "units_not_admitted": _bd.get("units_not_admitted"),
+        })
+        # Review F5: the same explicit cannot-fund-all record the copy path
+        # writes, so slides outside the bound are visibly NOT ATTEMPTED rather
+        # than silently absent.
+        if _bd.get("units_not_admitted"):
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0,
+                "status": "paid_budget_cannot_fund_all_units",
+                "reason": (f"{_bd.get('units_not_admitted')} of "
+                           f"{_bd.get('units_eligible')} eligible slide(s) fall "
+                           f"outside the declared bounded total of "
+                           f"{_bd.get('total_cap')} paid attempt(s); they were "
+                           "NOT attempted (they did not fail). They are named in "
+                           "the ledger's phase_paid_budget/unit_not_admitted."),
+                "units_not_admitted": sorted(
+                    (_budget_decl.get("not_admitted") or {}).keys()),
+            })
+      except Exception as exc:  # noqa: BLE001 -- an audit failure is not a budget failure
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_audit_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "note": ("the DECLARATION itself succeeded -- the ledger carries the "
+                     "bounded total; only this audit row failed"),
+        })
     _append_sidecar(run_dir, phase_id, {
         "worker": worker_id, "attempt": 1, "status": "parallel_wave_started",
         "input": str(input_path), "slides": len(slides_payload),
@@ -4116,6 +4885,50 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     except (OSError, json.JSONDecodeError):
         doc = result_doc  # in-memory copy is authoritative if the file vanished
     slide_rows = doc.get("slides") or []
+
+    # PD-TEST-165: SETTLE this wave's paid reservations, exactly as the copy
+    # fan-out does for every batch (`_settle_unit_paid_attempts`, dispatcher.py).
+    #
+    # Without this the prompt path had NO settlement at all: a slide's
+    # attempt-1 reservation stayed IN FLIGHT in the ledger, and because the wave
+    # runs in the dispatcher's own process the unit's own second reservation was
+    # refused -- measured by the independent review of PR #1164 on an 8-slide
+    # wave: attempts 2-3 ALL resolved as `budget_deferred` and the final row's
+    # error class was the refusal rather than what actually failed
+    # (verify_failed, HTTP 500). So PD-TEST-161 bought every slide a FIRST
+    # attempt and no working retry.
+    #
+    # `_settle_unit_paid_attempts` marks each reservation settled (a later
+    # dispatch may reserve again; a duplicate carrying the same token stays a
+    # no-op) and records each unit's durable outcome, which is what the
+    # first-attempt-fairness rule reads to decide whether a retry may proceed.
+    # Strictly fail-soft: a settlement failure must not fail a wave whose
+    # artifacts are already on disk.
+    try:
+        _outcomes = [
+            (str(_r.get("slide_id") or _r.get("ordinal")),
+             "ok" if str(_r.get("status")) == "succeeded" else "failed",
+             list((_r.get("verify") or {}).get("codes") or []))
+            for _r in slide_rows if isinstance(_r, dict)
+        ]
+        _settle_unit_paid_attempts(run_dir, phase_id, _outcomes,
+                                   worker_id=worker_id)
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_attempts_settled",
+            "units": len(_outcomes),
+            "ok": sum(1 for _o in _outcomes if _o[1] == "ok"),
+            "failed": sum(1 for _o in _outcomes if _o[1] != "ok"),
+        })
+    except Exception as exc:  # noqa: BLE001 -- settlement never fails a wave
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "fanout_paid_settle_failed",
+            "reason": f"{type(exc).__name__}: {exc}"[:300],
+            "consequence": ("reservations stay in flight, so this wave's units "
+                            "cannot reserve again (retries resolve as "
+                            "budget_deferred) until the next successful settle"),
+        })
     telemetry_rows = []
     for row in slide_rows:
         telemetry_rows.append({
@@ -4397,7 +5210,7 @@ def _dispatch_research_phase(run_dir: Path, order: Dict[str, Any], *,
         try:
             content, usage, route_dict = dispatch_complete(
                 system_prompt, user_prompt, phase_id="P-0.5-RESEARCH",
-                run_dir=run_dir)
+                run_dir=run_dir, worker_id=worker_id)
         except RoutingUnavailable as exc:
             reason = f"RoutingUnavailable: {exc}"
             _append_sidecar(run_dir, phase_id, {
@@ -4518,7 +5331,7 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
                 # sent is the one the client's profile routed.
                 content, usage, route_dict = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id,
-                    run_dir=run_dir)
+                    run_dir=run_dir, worker_id=worker_id)
             except RoutingUnavailable as exc:
                 # fail-closed: no client-owned route for this phase, park the
                 # slide honestly rather than fabricating a model.
@@ -4746,6 +5559,7 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     ok, reasons = _verify(phase_id, run_dir)
     patterns = resolve_target_paths(phase_id, order, phase_obj, run_dir)
     target = _first_concrete_path(patterns, run_dir)
+    targets = _concrete_target_paths(patterns, run_dir)
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3):
     # verify()==True does NOT mean THIS phase's own produces_artifact file exists --
     # for a QC/audit phase whose phase_verifiers mapping re-runs an UPSTREAM check
@@ -4769,14 +5583,16 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # (P4-COPY, P-SP-STRUCTURE, the intake phases, ...) where produces_artifact IS
     # the exact file the verifier reads -- once written it stays on disk, so
     # target_exists is True from the next check onward, same as before.
-    target_exists = bool(target is not None and target.exists())
+    target_exists = bool(
+        all(path.exists() for path in targets) if targets is not None
+        else target is not None and target.exists())
     if ok and target_exists:
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0, "status": "already_satisfied",
         })
         return DispatchResult(phase_id, "skipped_satisfied", 0, [])
 
-    if target is None:
+    if target is None or (len(patterns) > 1 and targets is None):
         reason = f"cannot resolve a concrete write target from produces_artifact={patterns!r}"
         _append_sidecar(run_dir, phase_id, {
             "worker": worker_id, "attempt": 0, "status": "error", "reason": reason,
@@ -4824,6 +5640,7 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
         try:
             content, usage, route_dict2 = dispatch_complete(
                 system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
+                worker_id=worker_id,
                 # F10: a heal rung's provider pin, if this order carries one.
                 # Ignored unless the router already lists it as eligible --
                 # see _apply_route_override.
@@ -4866,9 +5683,26 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             if attempt < DISPATCH_RETRY_CAP:
                 continue
             break
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = target.with_suffix(target.suffix + f".partial-{os.getpid()}-{attempt}")
-        tmp_path.write_text(payload, encoding="utf-8")
+        if targets is not None and len(targets) > 1:
+            contents, payload_reason = _multi_artifact_payload(payload, targets, run_dir)
+            if contents is None:
+                _append_sidecar(run_dir, phase_id, {
+                    "worker": worker_id, "attempt": attempt,
+                    "status": "invalid_multi_artifact_response", "reason": payload_reason,
+                })
+                last_reasons = [payload_reason or "invalid multi-artifact response"]
+                prior_reasons = last_reasons
+                if attempt < DISPATCH_RETRY_CAP:
+                    continue
+                break
+        else:
+            contents = {target: payload}
+        tmp_paths: Dict[Path, Path] = {}
+        for output, content in contents.items():
+            output.parent.mkdir(parents=True, exist_ok=True)
+            tmp = output.with_suffix(output.suffix + f".partial-{os.getpid()}-{attempt}")
+            tmp.write_text(content, encoding="utf-8")
+            tmp_paths[output] = tmp
         # PRES-018 fencing at publication (same contract as the fanout
         # aggregate above): a single-target artifact is published only while
         # the claim file still names THIS worker. A worker whose claim was
@@ -4881,12 +5715,13 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             _pub_rec = _read_claim_record(_pub_claim_file) or {}
             if _pub_rec.get("worker") != worker_id or \
                     _pub_rec.get("owner_token") != _current_claim_token(run_dir, phase_id, worker_id):
-                quarantine = target.with_name(
-                    target.name + f".stale-quarantine-{worker_id}")
-                try:
-                    tmp_path.replace(quarantine)
-                except OSError:
-                    tmp_path.unlink(missing_ok=True)
+                for output, tmp in tmp_paths.items():
+                    quarantine = output.with_name(
+                        output.name + f".stale-quarantine-{worker_id}")
+                    try:
+                        tmp.replace(quarantine)
+                    except OSError:
+                        tmp.unlink(missing_ok=True)
                 _append_sidecar(run_dir, phase_id, {
                     "worker": worker_id, "attempt": attempt,
                     "status": "stale_quarantined",
@@ -4896,7 +5731,13 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 return DispatchResult(
                     phase_id, "exhausted", attempt,
                     ["claim lost before publication; output quarantined"])
-        os.replace(tmp_path, target)  # atomic on POSIX, same filesystem -- no torn read
+        publication_error = _publish_artifact_group(tmp_paths)
+        if publication_error:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt,
+                "status": "publication_rolled_back", "reason": publication_error,
+            })
+            return DispatchResult(phase_id, "error", attempt, [publication_error])
 
         verifier_ok, verifier_reasons = _verify(phase_id, run_dir)
         _append_sidecar(run_dir, phase_id, {
@@ -4915,9 +5756,10 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
             # artifact's sha via the QC report's own consumes, rubric
             # version) — identity from the dispatch record, never the
             # report's graded_by prose.
-            _stamp_author(run_dir, phase_id, target,
-                          model=route_dict2.get("model") or DEEPSEEK_MODEL,
-                          provider=route_dict2.get("provider") or "deepseek-direct")
+            for output in (targets or [target]):
+                _stamp_author(run_dir, phase_id, output,
+                              model=route_dict2.get("model") or DEEPSEEK_MODEL,
+                              provider=route_dict2.get("provider") or "deepseek-direct")
             if _estamp.stamps_enabled() and _is_qc_phase(owning_role, phase_id):
                 try:
                     _stamp_qc_reviewer(run_dir, phase_id, target,
@@ -5233,7 +6075,95 @@ def invalidated_units(unit_payloads: List[Dict[str, Any]],
     return [k for k in out if k]
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-125 -- DECK-LEVEL ORDERED BEATS MUST BE OWNED BY A NAMED UNIT.
+#
+# THE DEFECT, measured. Every P4-COPY unit authors EXACTLY ONE SECTION, while the
+# writing engines require six DECK-LEVEL beats in a fixed order
+# (`intelligence_engines_check.check_narrative_harmony`, whose `beats` list at
+# `beats` list is the authority for these names and this order):
+#
+#     HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
+#
+# The unit prompt already carried the whole requirement -- a rebuilt unit prompt
+# (system 50,954 chars + user 103,895) contains `AF-NO-VILLAIN`, `VILLAIN beat`,
+# `<!-- ARC: VILLAIN -->` and the derived constraint index. The producer was told
+# and the output still omitted every beat, because the contract states the beats
+# as properties of the WHOLE deck ("must be the FIRST slide that carries either
+# the VILLAIN prose/marker or the PROMISE prose/marker") and a section-scoped
+# author cannot evaluate a whole-deck ordering: it does not know where its section
+# sits, nor whether a sibling already claimed the beat. The equilibrium is that NO
+# section claims it -- and the artifact showed exactly that: 8 SLIDE markers, all 8
+# units `ok`, ZERO villain tokens, and FOUR ARC markers of which one (`<!-- ARC: PROMISE HERO -->`)
+# IS a story beat -- so the deck carried PROMISE and still omitted VILLAIN and FELT_STAKES.
+#
+# THE FIX, and its precedent. PD-TEST-098 hit the identical structure on the design
+# phases -- three units author ONE prompt -- and it was fixed by TELLING each unit
+# which PART owns which single structural block (part 1 carries the one
+# `[ARCHETYPE` header, part N closes with the one `DO-NOT BLOCK`). That assignment
+# is what made the design fanout converge. This is the same mechanism: assign each
+# ordered deck-level beat to exactly one section, by position, and say so in that
+# unit's scope instruction.
+#
+# WHY BY POSITION. It is deterministic, it distributes the load instead of piling
+# every beat on one unit, and because the beats are ordered and the sections are
+# ordered it preserves the required HOOK -> ... -> RECAP sequence by construction.
+# A section beyond the last beat owns none, which is correct: absence of an
+# assignment is not an assignment to duplicate.
+# ---------------------------------------------------------------------------
+DECK_ORDERED_BEATS: Tuple[str, ...] = (
+    "HOOK", "VILLAIN", "FELT_STAKES", "PROMISE", "PRICE", "RECAP",
+)
+
+def _deck_commercial_beats_apply(run_dir: Path) -> bool:
+    """False only on an EXPLICIT pitchless verdict from the ONE authority.
+
+    `pitch_engines_check.pitch_applicability` returns `(False, None)` for a
+    non-signature deck that declares `pitch_included: false`; anything else
+    (including a refusal, and including an import that will not load) keeps the
+    assignment ON, so a degraded environment behaves exactly as it does today."""
+    try:
+        import pitch_engines_check as _pec
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        return not (applicable is False and refusal is None)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+#: Phases whose verifier judges DECK-LEVEL ordered beats. Only the copy fan-out
+#: exists today; the set is explicit so a future phase opts IN rather than
+#: inheriting an assignment its verifier does not ask for.
+DECK_BEAT_PHASES: frozenset = frozenset({"P4-COPY"})
+
+
+def _owned_beat_clause(payload: Dict[str, Any]) -> str:
+    """PD-TEST-125: the beat THIS unit is the sole owner of, or "" when none.
+
+    Absence is deliberate and must be stated as absence-with-reason, or a unit
+    that owns no beat may "helpfully" plant one and duplicate a sibling's."""
+    if not isinstance(payload, dict):
+        return ""
+    owned = payload.get("owned_beats")
+    if not isinstance(owned, (list, tuple)) or not owned:
+        return ""
+    arc = " -> ".join(DECK_ORDERED_BEATS)
+    return (
+        f"=== YOU ARE THE SOLE OWNER OF THIS DECK-LEVEL STORY BEAT: "
+        f"{', '.join(str(x) for x in owned)} ===\n"
+        f"The deck-level writing engines require SIX ordered beats across the whole "
+        f"deck -- {arc} -- and an ordering failure on any one of them refuses the "
+        f"assembled copy for the WHOLE deck. Every other section is owned by a "
+        f"different unit, so no sibling will plant yours, and you must not plant "
+        f"theirs: plant {', '.join(str(x) for x in owned)} in YOUR section, using "
+        f"the prose and the literal `<!-- ARC: <BEAT> -->` marker the OUTPUT "
+        f"CONTRACT names for it.\n\n")
+
+
 def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
+    return _owned_beat_clause(payload) + (_unit_scope_text_base(payload) or "")
+
+
+def _unit_scope_text_base(payload: Dict[str, Any]) -> Optional[str]:
     """The ONE-scope instruction a unit worker gets INSTEAD of the generic
     whole-artifact trigger (compose_prompt suppresses its "write the complete
     final content" tail when the work order carries a `_unit_scope` key).
@@ -5245,6 +6175,36 @@ def _unit_scope_text(payload: Dict[str, Any]) -> Optional[str]:
         return None
     scope = payload.get("scope")
     ordinal = payload.get("ordinal")
+    # PD-TEST-098: the design phases reuse the by=slide enumerator to get N
+    # units, but the artifact is ONE image prompt, not N slide prompts. The
+    # generic slide-scope text below ("EXACTLY ONE UNIT: ... for SLIDE 2 OF 8")
+    # is what made each design unit author its own COMPLETE prompt for its own
+    # deck slide, so three complete prompts were concatenated into one. Say
+    # what the unit actually is: one PART of one prompt.
+    if isinstance(payload.get("phase_id"), str) \
+            and payload["phase_id"] in DESIGN_PAGE_PHASES:
+        n = design_part_count(payload)
+        page = DESIGN_PAGE_PHASES[payload["phase_id"]]
+        if not isinstance(ordinal, int) or not (1 <= ordinal <= n):
+            ordinal = 1
+        # Name the unit's own slide identity so the part stays anchored to the
+        # upstream copy it is responsible for (review nit: the PART-of-ONE
+        # rewrite had dropped the slide identity the old slide-scope text
+        # carried). Falls back to the unit key when no slide_id was derived.
+        _sid = payload.get("slide_id") or payload.get("key") or f"part-{ordinal}"
+        return (
+            f"=== THIS CALL AUTHORS PART {ordinal} OF {n} OF THE ONE "
+            f"{page.upper()} PAGE-DESIGN PROMPT — YOUR SLIDE: {_sid} ===\n"
+            f"`prompts/{page}.design.txt` is ONE image prompt rendered as ONE "
+            f"16:9 page-design image. You are writing PART {ordinal} of {n}; the "
+            f"engine joins the {n} parts, in this order, into that one file. "
+            f"Author ONLY your part -- never the whole file, never another "
+            f"part's content, no preamble, no file header, no fences around the "
+            f"answer, and never a restatement this work order.\n"
+            f"The content you are responsible for is the upstream copy for "
+            f"{_sid}; render it as art direction INSIDE the one shared prompt "
+            f"(see the OUTPUT CONTRACT below for which structural blocks are "
+            f"yours and for your exact character share of the shared band).\n\n")
     n = payload.get("unit_count")
     if scope == "section":
         name = payload.get("name")
@@ -5435,14 +6395,58 @@ def _validate_text(payload: Dict[str, Any], text: str) -> Tuple[bool, List[str]]
     return True, []
 
 
+def _validate_design_page_unit(payload: Dict[str, Any],
+                               text: str) -> Tuple[bool, List[str]]:
+    """PD-TEST-098: a design-page unit must fit ITS SHARE of the shared band.
+
+    The defect this closes: `_validate_text` refused nothing but emptiness, so
+    three units at 20,917 / 20,024 / 17,537 chars each reported `ok`, the
+    concat reducer wrote a 58,484-char file, and the shared gate refused it
+    three phases later at the PAID render call. The unit is where the producer
+    can still refuse for free -- so the bound belongs here, not at the gate.
+
+    Bounds come from `design_unit_char_budget` (imported from `prompt_gate`),
+    which charges for the separators `_reduce_text_concat` inserts, so a phase
+    whose units all pass here cannot assemble an out-of-band file. Both
+    directions are checked: over-share units blow the aggregate ceiling, and
+    sub-share stubs drop the aggregate under the floor -- the gate refuses
+    either one."""
+    if not text.strip():
+        return False, ["unit output is empty"]
+    stripped = text.strip()
+    payload = payload if isinstance(payload, dict) else {}
+    n = design_part_count(payload)
+    floor_share, ceiling_share = design_unit_char_budget(n)
+    length = len(stripped)
+    problems: List[str] = []
+    if length > ceiling_share:
+        problems.append(
+            f"PD-TEST-098/AF-P2: this unit's part is {length:,} chars, over its "
+            f"{ceiling_share:,}-char share of the shared "
+            f"{_shared_prompt_gate().PROMPT_CHAR_CEILING:,}-char ceiling. This "
+            f"phase authors ONE prompt in {n} parts and the gate measures the "
+            f"ASSEMBLED file, so a part written at full single-prompt length "
+            f"puts the whole artifact over the ceiling and the render phase is "
+            f"refused before any paid call. Tighten redundant phrasing -- never "
+            f"delete the negative block or any spelling-lock.")
+    if length < floor_share:
+        problems.append(
+            f"PD-TEST-098/AF-P1: this unit's part is {length:,} chars, under its "
+            f"{floor_share:,}-char share of the shared "
+            f"{_shared_prompt_gate().PROMPT_CHAR_FLOOR:,}-char floor. The "
+            f"assembled file would fall under the gate's hard floor. Expand with "
+            f"real, specific art direction -- never boilerplate padding.")
+    return (not problems), problems
+
+
 _UNIT_VALIDATORS: Dict[str, Any] = {
     "P4-COPY": _validate_copy_section,
     "P-PROMPT-QC": _validate_qc_slide,
     "P-IMAGE-QC": _validate_qc_slide,
     "P-STYLE-SPEC": _validate_style_variant,
-    "P-U-DESIGN-SALES": _validate_text,
-    "P-U-DESIGN-CHECKOUT": _validate_text,
-    "P-U-DESIGN-VSL": _validate_text,
+    "P-U-DESIGN-SALES": _validate_design_page_unit,
+    "P-U-DESIGN-CHECKOUT": _validate_design_page_unit,
+    "P-U-DESIGN-VSL": _validate_design_page_unit,
     "P9-SPEECH": _validate_text,
 }
 
@@ -5680,11 +6684,16 @@ def _reduce_style_variants(ordered: List[Tuple[Dict[str, Any], str]]) -> Optiona
 def _reduce_text_concat(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]:
     """Ordered text join (design page prompts, whole-file units): exactly the
     units in input order, each separated by a blank line. Refuses nothing but
-    emptiness — scope there is one file/one prompt."""
+    emptiness — scope there is one file/one prompt.
+
+    PD-TEST-098: the separator is `_UNIT_TEXT_SEPARATOR`, the SAME constant
+    `design_unit_char_budget` charges for when it divides the shared band
+    across the parts. The two must never disagree, or the units would be
+    budgeted against a different assembly than this one performs."""
     texts = [t.strip() for _p, t in ordered if t.strip()]
     if not texts:
         return None
-    return "\n\n".join(texts)
+    return _UNIT_TEXT_SEPARATOR.join(texts)
 
 
 _UNIT_REDUCERS: Dict[str, Any] = {
@@ -5763,11 +6772,11 @@ def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tup
         obj = json.loads(arc.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
-    slots = None
-    if isinstance(obj, dict):
-        slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-    elif isinstance(obj, list):
-        slots = obj
+    # PD-TEST-067: the deck's slide allocation is read by the shared reader, so
+    # a section's ordinal range is derivable from the live P3-ARC shape too
+    # (previously an unrecognised container made this return [] and every
+    # section unit silently lost its declared slide range).
+    slots = _arc_slides.slots_from_obj(obj) or []
     if not isinstance(slots, list) or not slots:
         return []
     name_to_idx = {n: i for i, n in enumerate(section_names)}
@@ -5775,7 +6784,12 @@ def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tup
     for pos, slot in enumerate(slots):
         if not isinstance(slot, dict):
             continue
-        label = slot.get("arc") or slot.get("section") or slot.get("name")
+        # PD-TEST-067: THE SAME accessor the enumerator derived the names with.
+        # One reader for both sides of the join; the live slots say
+        # ``arc_section``, which this used never to look for, so no label ever
+        # matched and every section silently got the (-1,-1) sentinel -- the
+        # live 'unit payload carries no ordinal range' refusal.
+        label = _arc_slides.slot_label(slot)
         if not isinstance(label, str):
             continue
         idx = name_to_idx.get(label)
@@ -5790,6 +6804,70 @@ def _section_ordinal_ranges(run_dir: Path, section_names: List[str]) -> List[Tup
         ords = sorted(per_section.get(i, []))
         ranges.append((ords[0], ords[-1]) if ords else (-1, -1))
     return ranges
+
+
+def _section_payload_range(item: Dict[str, Any], run_dir: Path,
+                           name: str) -> Optional[Tuple[int, int]]:
+    """The slide-ordinal range one SECTION unit's payload must carry.
+
+    PD-TEST-099. Order, and why it is this order:
+
+      1. the ITEM's own ``first_ordinal``/``last_ordinal`` -- put there by
+         ``fanout.enumerate_fanout_items`` from the SAME source that named the
+         section (its declared ``sections[].slides``, or the very slots that
+         carried its arc label). This is the join made unbreakable: one source,
+         one derivation, carried across the seam;
+      2. else ``_section_ordinal_ranges`` -- the arc reader, for an item built
+         by hand with no enumerator provenance (the direct-call/test path);
+      3. else None: the section declares no ordinals this run can see. The
+         caller must then refuse the fan-out BEFORE any paid call -- a
+         range-less section unit cannot pass its own contract validator (and
+         ``_reduce_markdown_sections`` refuses its payload too), so a paid
+         attempt on it is guaranteed waste, which is precisely how the live run
+         spent its whole retry budget twice."""
+    lo, hi = item.get("first_ordinal"), item.get("last_ordinal")
+    if isinstance(lo, int) and not isinstance(lo, bool) \
+            and isinstance(hi, int) and not isinstance(hi, bool) and lo <= hi:
+        return (int(lo), int(hi))
+    ranges = _section_ordinal_ranges(run_dir, [name])
+    if ranges and tuple(ranges[0]) != (-1, -1):
+        return (int(ranges[0][0]), int(ranges[0][1]))
+    return None
+
+
+def _preflight_section_payload_ranges(phase_id: str,
+                                      payloads: List[Dict[str, Any]]) -> Optional[str]:
+    """PRES-001/PD-TEST-099 preflight — refuses a SECTION-scoped fan-out whose
+    units carry no derivable slide-ordinal range, BEFORE any paid call.
+
+    ``_validate_copy_section`` refuses a payload without an ordinal range
+    unconditionally ("unit payload carries no ordinal range"), and the markdown
+    reducer refuses it too, so such a unit can NEVER come back ok: dispatching it
+    converts the phase's bounded paid retry budget into byte-identical refusals
+    — the live ledger's ``paid_attempts: 3, status: exhausted`` on an unchanged
+    approved input. The defect is in the PAYLOAD, and it is knowable before the
+    first token, so it is refused here. Returns the reason, or None when every
+    section unit's range is present."""
+    contract = _unit_contract_for(phase_id)
+    if contract is None or contract.scope != "section" or not payloads:
+        return None
+    missing = [p for p in payloads
+               if not (isinstance(p.get("first_ordinal"), int)
+                       and not isinstance(p.get("first_ordinal"), bool)
+                       and isinstance(p.get("last_ordinal"), int))]
+    if not missing:
+        return None
+    keys = ", ".join(str(p.get("key") or "?") for p in missing[:4])
+    if len(missing) > 4:
+        keys += f", +{len(missing) - 4} more"
+    return (f"AF-UNIT-CONTRACT: phase {phase_id} is section-scoped but "
+            f"{len(missing)} of {len(payloads)} unit payload(s) carry no "
+            f"derivable slide-ordinal range ({keys}) — a range-less section unit "
+            "can never pass its own contract validator, so a paid attempt on it "
+            "is refused only AFTER the money is spent. Refusing the fan-out "
+            "before any paid call: the section source must declare each "
+            "section's slides (arc_allocation.json sections[].slides, or slots "
+            "carrying the section label AND their ordinals).")
 
 
 def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
@@ -5813,11 +6891,22 @@ def _unit_payload_enrichment(run_dir: Path, phase_id: str, item: Dict[str, Any],
         "slide": item.get("slide") if isinstance(item.get("slide"), dict) else None,
     }
     if payload["scope"] == "section":
+        # PD-TEST-099: the ITEM's own range first -- fanout derived it from the
+        # same source that named the section, so the two halves of the join
+        # cannot disagree. ``_section_ordinal_ranges`` stays as the fallback for
+        # an item built by hand (no enumerator provenance to carry).
         name = payload.get("name") or ""
-        ranges = _section_ordinal_ranges(run_dir, [name])
-        if ranges and ranges[0] != (-1, -1):
-            payload["first_ordinal"] = ranges[0][0]
-            payload["last_ordinal"] = ranges[0][1]
+        lo_hi = _section_payload_range(item, run_dir, name)
+        if lo_hi is not None:
+            payload["first_ordinal"], payload["last_ordinal"] = lo_hi
+        # PD-TEST-125: assign this section its ordered deck-level beat, if any --
+        # but ONLY when the deck is actually pitched. On a pitchless deck the
+        # contract forbids fabricating these beats, so assigning them would order
+        # the author to violate AF-PITCH-LEAK in order to satisfy AF-NO-VILLAIN.
+        if phase_id in DECK_BEAT_PHASES and _deck_commercial_beats_apply(run_dir):
+            _n = payload.get("ordinal")
+            if isinstance(_n, int) and 1 <= _n <= len(DECK_ORDERED_BEATS):
+                payload["owned_beats"] = [DECK_ORDERED_BEATS[_n - 1]]
     if phase_id == "P-STYLE-SPEC" and payload["ordinal"] is not None:
         # TODO.md step 1: EXPLICIT variant ids, bounded three. Each unit is
         # ASSIGNED one variant id by its enumeration position (unit 1 -> A,
@@ -5986,6 +7075,89 @@ def _aggregate_fanout_parts(phase_id: str, parts: List[str]) -> Optional[str]:
         indent=2, ensure_ascii=False)
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-065. `EMPTY_COMPLETION_MARKER` is the ONE spelling of the fan-out
+# empty-completion failure, so the durable per-unit record written by the batch
+# loop (`last_error`) and the re-attempt decision read by `_unit_worker` can
+# never drift apart. It is the PREFIX of the recorded reason; the detail suffix
+# is diagnostic only and is deliberately excluded from the match.
+# ---------------------------------------------------------------------------
+EMPTY_COMPLETION_MARKER = "unit returned empty output"
+
+
+def effort_for_paid_attempt(prior_error: str,
+                            attempts_total: int) -> Optional[str]:
+    """The reasoning effort a fan-out unit's NEXT paid attempt must send.
+
+    PD-TEST-124 / PD-070. Extracted from `_unit_worker` so the ladder walk is a
+    real, directly-testable function rather than an inline expression that only
+    a constants-level test could reach (the test that used to guard this
+    asserted properties of `DEEPSEEK_REASONING_EFFORT_LADDER` alone and so
+    passed unchanged even when the walk itself was broken).
+
+    Returns:
+      * `None` — attempt 1, or any attempt after a failure that was NOT an
+        empty completion. The caller then sends `DEEPSEEK_REASONING_EFFORT`
+        (the product worker's default), which is PD-TEST-065's behaviour.
+      * a rung of `DEEPSEEK_REASONING_EFFORT_LADDER` — a unit that has ALREADY
+        come back empty is re-issued at a reduced effort instead of repeating
+        the request that just failed. The rung is chosen by how many attempts
+        the unit has already spent; `attempts_total` is durable (PRES-014), so
+        the rung survives restarts and resumes.
+
+    HONEST BOUND (do not let a test claim more than this): the rung index is
+    CLAMPED to the last rung, so once the ladder is shorter than the unit's
+    remaining attempt allowance, later attempts re-send the final rung rather
+    than stepping further down. With the shipped one-rung ladder that means
+    attempt 2 and attempt 3 both send `low` — a RESAMPLE at
+    `DEEPSEEK_TEMPERATURE`, not a fresh step-down. That is deliberate: no
+    documented value below `low` keeps thinking enabled (`none` disables it and
+    mixing it with `thinking.type="enabled"` has undocumented precedence, so it
+    is not a rung until probed), and inventing an unmeasured rung would
+    re-create PD-070's dead-end defect from the other direction. The genuine
+    guarantee is only that attempt 2 DIFFERS from attempt 1.
+    """
+    if EMPTY_COMPLETION_MARKER not in (prior_error or ""):
+        return None
+    spent = int(attempts_total or 1)
+    rung = max(0, min(spent - 1, len(DEEPSEEK_REASONING_EFFORT_LADDER) - 1))
+    return DEEPSEEK_REASONING_EFFORT_LADDER[rung]
+
+
+
+def _empty_completion_detail(usage: Optional[Dict[str, Any]]) -> str:
+    """Name the ONE number that explains an empty completion.
+
+    PD-TEST-065: the generic fan-out path used to discard the provider's usage
+    dict on an empty completion, so the run could not tell "reasoning consumed
+    the whole shared budget" from any other empty answer -- the diagnosis had to
+    be reconstructed later from a DIFFERENT phase's successful call. The serial
+    path has always recorded its usage; this brings the fan-out path to parity.
+    Never raises: a missing/misshapen usage is reported as missing, not
+    invented."""
+    if not isinstance(usage, dict):
+        return " (no usage recorded)"
+    details = usage.get("completion_tokens_details")
+    reasoning = details.get("reasoning_tokens") if isinstance(details, dict) else None
+    completion = usage.get("completion_tokens")
+    # PD-070: `finish_reason` is the provider's own verdict on WHY generation
+    # ended. "length" == the token maximum was reached; with thinking enabled
+    # that maximum is shared with reasoning, so "length" + empty content is
+    # budget starvation, while "stop" + empty is a model that emitted nothing.
+    # Absent (older logs, other transports) adds nothing to the string, so the
+    # PD-TEST-065 wording is byte-identical when the field is missing.
+    finish = usage.get("finish_reason")
+    finish_txt = "" if finish is None else f", finish_reason={finish!r}"
+    if completion is None and reasoning is None:
+        return f" (usage recorded without token counts{finish_txt})"
+    if reasoning is None:
+        return (f" (completion_tokens={completion}, reasoning_tokens not "
+                f"reported{finish_txt})")
+    return (f" (completion_tokens={completion}, reasoning_tokens={reasoning} of "
+            f"max_tokens={DEEPSEEK_MAX_OUTPUT_TOKENS}{finish_txt} -- reasoning "
+            f"is billed INSIDE that budget)")
+
+
 def _dispatch_phase_fanout_units(
         run_dir: Path, order: Dict[str, Any], *, dept_root: Path,
         phase_obj: Optional[Phase], worker_id: str,
@@ -6037,6 +7209,18 @@ def _dispatch_phase_fanout_units(
     # input-hash snapshot pair) before anything is dispatched.
     payloads = [_unit_payload_enrichment(run_dir, phase_id, it, len(items))
                 for it in items]
+    # PD-TEST-099 preflight: a section-scoped unit whose payload carries no
+    # ordinal range can never pass its own contract validator, so it is refused
+    # HERE -- before any paid call -- instead of after the model answers (the
+    # live P4-COPY ledger's whole retry budget, spent on three byte-identical
+    # post-payment refusals).
+    range_gap = _preflight_section_payload_ranges(phase_id, payloads)
+    if range_gap:
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error",
+            "reason": range_gap,
+        })
+        return DispatchResult(phase_id, "error", 0, [range_gap])
     by_key = {p["key"]: p for p in payloads}
 
     # PRES-001 scoped reuse (the 'fail slide7, resume only7' acceptance): unit
@@ -6112,9 +7296,135 @@ def _dispatch_phase_fanout_units(
                 {"inputs": by_key.get(it["key"], {}).get("unit_inputs_now", {}),
                  "payload": it.get("payload", it)})
 
-    reuse = {k: v for k, v in reuse.items() if k not in _store_state}
+    # ------------------------------------------------------------------
+    # PD-TEST-119 / 120 / 121 -- AN ACTIONABLE REPAIR RECEIPT VOIDS THE BANK.
+    #
+    # Three defects interlock into a loop with no exit:
+    #   * PD-TEST-119: a unit is reusable on its INPUT hash alone, so once the
+    #     phase-level verifier rejects the assembled artifact, every dispatch
+    #     rebuilds the identical rejected file from the identical banked parts --
+    #     forever, with zero paid calls.
+    #   * PD-TEST-120: DISPATCH_RETRY_CAP caps PAID CALLS PER PHASE, and a 3-unit
+    #     phase spends all 3 on its first authoring pass, so there is normally no
+    #     budget left to re-author with.
+    #   * PD-TEST-121: nothing sanctioned un-banks a unit set -- `validate_banked`
+    #     refuses only on a changed input hash or a missing/corrupt output, and the
+    #     dispatcher CLI has no unit or bank reset at all.
+    #
+    # The repair receipt is exactly the operator act that resolves all three at
+    # once, which is why it is the right place to hang this:
+    #   * it is BUDGET-AWARE -- `authorize_paid_retry_reset` reopens `allowance`
+    #     paid attempts and the reservations below then consume it, so the
+    #     re-author is paid for by the same deliberate act;
+    #   * it is AUDITED and SINGLE-USE -- owner uid, dispatcher sha256, phase,
+    #     approved input revision and ledger generation, spent exactly once;
+    #   * it is BOUNDED -- no receipt means no change at all, so a phase whose
+    #     verifier can never pass cannot loop: it simply behaves exactly as it does
+    #     today.
+    #
+    # Deliberately NOT a phase-verifier-driven invalidation. An earlier attempt at
+    # that was refuted by independent review: with no budget left it destroyed the
+    # bank and left the phase parked AND unbuildable (the units came back FAILED
+    # with every reservation denied). Invalidation must be paid for, and the only
+    # component that can promise payment is the receipt.
+    # ------------------------------------------------------------------
+    _force_reauthor, _force_why = False, ""
+    try:
+        _led = _read_ledger(run_dir, phase_id)
+        _force_reauthor, _force_why = _repair_receipt_is_actionable(
+            _led, phase_id, run_dir,
+            approved_input_revision=_approved_input_revision(run_dir, phase_id))
+    except Exception:  # noqa: BLE001 -- never let the check itself break a fanout
+        _force_reauthor, _force_why = False, "receipt check unavailable"
+    # PD-TEST-119 follow-up (round 270). `wanted_items` is computed HERE because
+    # the sufficiency gate below must compare the receipt's allowance against the
+    # number of units the void would ACTUALLY invalidate -- and `len(items)` is the
+    # ENUMERATED count, not that number. Measured on the live run: the design
+    # phases enumerate 8 units (by slide) while only 3 are wanted, so the gate saw
+    # `3 < 8`, refused with bank_void_refused_insufficient_allowance, and made the
+    # void INERT on exactly the three phases it was written for -- the receipt was
+    # actionable, everything looked correct, and the artifact never changed. The
+    # later line reuses this value rather than recomputing it, so the two can never
+    # disagree.
     desired_count = getattr(spec, "desired_count", None)
+    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+
+    # SUFFICIENCY GATE (independent review of PR #1150, MEDIUM).
+    #
+    # The void and the payment must be COMMENSURATE. `authorize_paid_retry_reset`
+    # accepts any `allowance` in 1..PHASE_TOTAL_PAID_HARD_CAP, so `--reset-allowance 1`
+    # is a legal, documented invocation -- and without this gate it voided the
+    # WHOLE bank while paying for exactly ONE unit. Measured by the reviewer with
+    # the real reservation seam running: allowance=1 -> one unit re-authored, two
+    # died on PaidBudgetExhausted, and their durable records were OVERWRITTEN from
+    # `ok` to `failed`. That is the same "parked AND unbuildable" mode that
+    # refuted the earlier verifier-driven design, reachable silently through the
+    # tool's own CLI.
+    #
+    # So: void only when the actionable receipt can pay for every unit it would
+    # invalidate. Otherwise leave the bank INTACT and say so -- the phase then
+    # behaves exactly as it does without a receipt, which is the safe direction,
+    # and the operator can re-issue with an allowance that covers the work.
+    _allowance = 0
+    if _force_reauthor:
+        try:
+            _allowance = int((_read_repair_receipt(run_dir, phase_id) or {}).get("allowance") or 0)
+        except (TypeError, ValueError):
+            _allowance = 0
+        _n_units = len(wanted_items)
+        if _allowance < _n_units:
+            _force_reauthor = False
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0,
+                "status": "bank_void_refused_insufficient_allowance",
+                "reason": (f"an actionable repair receipt covers {_allowance} paid "
+                           f"attempt(s) but this fan-out would invalidate {_n_units} "
+                           "unit(s); voiding the bank would leave units it cannot "
+                           "pay to re-author, so the bank is left INTACT and the "
+                           "phase behaves as if no receipt were present. Re-issue "
+                           f"with --reset-allowance >= {_n_units} (max "
+                           f"{PHASE_TOTAL_PAID_HARD_CAP})."),
+                "allowance": _allowance, "units": _n_units,
+            })
+    if _force_reauthor:
+        reuse = {}
+        _store_state = {}
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "bank_voided_by_receipt",
+            "reason": ("an actionable paid-retry repair receipt is on disk, so the "
+                       "banked unit outputs are NOT reusable and every unit "
+                       "re-authors against the current approved input; the "
+                       "reservations below consume that receipt (PD-TEST-119/120/121)"),
+            "receipt_reason": _force_why,
+        })
+
+    reuse = {k: v for k, v in reuse.items() if k not in _store_state}
     batch_width = getattr(spec, "batch_width", None)
+
+    # PD-TEST-098 (review fix B): `admitted_count` MUST be stamped BEFORE any
+    # validator runs -- the scoped-reuse loop above and the banked-validation
+    # loop below both call `contract.validator(payload, ...)`, and for a design
+    # phase that validator bounds the text by the part's share of the shared
+    # band. Stamped late (it used to be stamped just before `pending_items`),
+    # those two loops saw `unit_count` instead -- the ENUMERATED count, 8 on the
+    # live run -- and computed the share as (1124, 2248). Since
+    # floor_share(3) = 2999 > ceiling_share(8) = 2248, EVERY compliant part
+    # failed reuse: measured with the real dispatcher and a stubbed model,
+    # pristine main re-paid 0 units on dispatch #2/#3 while the late stamp
+    # re-paid 3 each (9 total). That silently broke PRES-001's "a resume re-pays
+    # ONLY the changed units" contract for these three phases and inverted the
+    # fix's own cost story.
+    #
+    # `wanted_items` is computed HERE now because it is exactly the number of
+    # parts the reducer will join; it depends only on `items` and
+    # `desired_count`, neither of which the loops below mutate, so hoisting it
+    # changes nothing else. The later line reuses this value rather than
+    # recomputing it, so the two can never disagree.
+    # `wanted_items` was hoisted above the sufficiency gate -- reused here, never recomputed.
+    for _it in wanted_items:
+        _p = by_key.get(_it["key"])
+        if isinstance(_p, dict):
+            _p["admitted_count"] = len(wanted_items)
 
     # Step 4 -- validate banked results BEFORE admission. A validated unit is
     # admitted as already-done; a stale/corrupt one falls through to a real
@@ -6170,7 +7480,11 @@ def _dispatch_phase_fanout_units(
     # Step 2 -- the DESIRED WORK COUNT reduces the enumerated list only for
     # whole-deck-unit phases. Per-slide QC phases (desired_count is None on
     # them, enforced by the caller's plan) never drop a slide here.
-    wanted_items = _us.apply_desired_count(items, desired_count) if _us else list(items)
+    #
+    # PD-TEST-098: `wanted_items` and the `admitted_count` stamp now happen
+    # ABOVE, before the scoped-reuse and banked-validation loops -- both call the
+    # design phase's share-bounded validator (see the note there). It is NOT
+    # recomputed here, so the two can never disagree.
 
     pending_items = [it for it in wanted_items if it["key"] not in _banked_keys and it["key"] not in reuse]
     _append_sidecar(run_dir, phase_id, {
@@ -6180,6 +7494,57 @@ def _dispatch_phase_fanout_units(
         "units_pending": len(pending_items),
         "desired_count": desired_count, "batch_width": batch_width,
     })
+
+    # ------------------------------------------------------------------
+    # PD-TEST-124 -- DECLARE THE BOUNDED TOTAL PAID BUDGET BEFORE ANY PAID CALL.
+    #
+    # The declaration is written (atomically, under the phase's own ledger lock)
+    # BEFORE a single unit is submitted, so:
+    #   * every reservation below is checked against a bound that is on disk,
+    #     durable and identical for every concurrent worker and every later
+    #     sweep -- not against an in-memory number a restart would lose;
+    #   * the admission ORDER is fixed here, in the deterministic enumeration
+    #     order fanout.enumerate_fanout_items produced, so "which units get the
+    #     first attempts" is reproducible rather than whichever thread ran first;
+    #   * a phase whose budget cannot fund every eligible unit says so, by name,
+    #     in the ledger and in a sidecar -- never by silently dropping units.
+    #
+    # Only PENDING units are declared: a banked or reused unit costs nothing, so
+    # funding it would shrink the pool owed to the units that must actually run.
+    # The call is idempotent and monotonic within a generation, and it NEVER
+    # resets a counter (a re-declaration over a smaller pending set keeps the
+    # larger bound already granted).
+    # ------------------------------------------------------------------
+    _budget_decl: Dict[str, Any] = {}
+    try:
+        _budget_decl = _declare_phase_paid_budget(
+            run_dir, phase_id, unit_keys=[str(it["key"]) for it in pending_items],
+            worker_id=worker_id)
+    except Exception as exc:  # noqa: BLE001 -- a broken declaration must never
+        # kill the phase: the reservations fall back to the legacy phase-level
+        # cap, i.e. exactly the pre-PD-TEST-124 behaviour, and the sidecar says
+        # so loudly instead of pretending the new bound applied.
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_declaration_failed",
+            "reason": (f"{type(exc).__name__}: {exc}; paid reservations fall back "
+                       "to the legacy phase-level cap for this dispatch"),
+        })
+    if _budget_decl.get("not_admitted"):
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0,
+            "status": "paid_budget_cannot_fund_all_units",
+            "reason": (f"{_budget_decl['budget']['units_not_admitted']} of "
+                       f"{_budget_decl['budget']['units_eligible']} eligible unit(s) "
+                       f"fall outside the declared bounded total of "
+                       f"{_budget_decl['budget']['total_cap']} paid attempt(s); they "
+                       "were NOT attempted (they did not fail). They are named in "
+                       f"{_ledger_path(run_dir, phase_id)} under "
+                       f"{LEDGER_UNIT_NOT_ADMITTED}."),
+            "budget": _budget_decl["budget"],
+            "admitted_units": _budget_decl.get("admitted"),
+            "not_admitted_units": sorted(_budget_decl["not_admitted"]),
+        })
 
     results: List[fanout.UnitResult] = []
     # Banked units first, in input order, with attempts=0 -- they are real
@@ -6247,21 +7612,71 @@ def _dispatch_phase_fanout_units(
 
     def _unit_worker(unit: "fanout.Unit") -> "fanout.UnitResult":
         payload = by_key.get(unit.key, {})
+        # PD-TEST-065: if THIS unit's own durable record already carries an
+        # empty completion, the identical request has already been proven to
+        # return nothing at full reasoning effort. Re-issue it at the reduced
+        # effort instead of repeating the byte-identical call. The record
+        # survives restarts and resumes (PRES-014: no restart resets the
+        # ledger), so this holds across sweeps, not just within one process.
+        prior_rec = _store_state.get(unit.key)
+        prior_err = str(prior_rec.get("last_error") or "") \
+            if isinstance(prior_rec, dict) else ""
+        # PD-070/PD-TEST-124: the ladder walk lives in `effort_for_paid_attempt`
+        # so it is directly testable over a real attempt sequence. It returns
+        # None for a first attempt (caller sends the product default) and a
+        # ladder rung once the unit has already come back empty.
+        _prior_attempts = int(prior_rec.get("attempts_total") or 1) \
+            if isinstance(prior_rec, dict) else 1
+        effort = effort_for_paid_attempt(prior_err, _prior_attempts)
+        # PD-TEST-124: the paid reservation this unit's dispatch makes must be
+        # accounted to THIS unit, so the whole dispatch runs inside a unit
+        # scope. Inside it the reservation enforces the phase's declared bounded
+        # total, this unit's own DISPATCH_RETRY_CAP ceiling, first-attempt
+        # fairness, and duplicate-safe atomicity; outside it (every serial
+        # phase) the reservation is the untouched legacy phase-level one.
+        #
+        # `allow_reauthor` is set ONLY when this unit's own durable record says
+        # it SUCCEEDED BEFORE and it is back in the pending set, which is the
+        # fan-out's own proof that the success was invalidated (its inputs
+        # changed, its output no longer validates, or `_force_reauthor` voided
+        # the bank for a repair receipt). A unit that has not been invalidated
+        # never reaches this code at all -- banked and reused units are taken
+        # out of the pending list above -- so "a success is never regenerated"
+        # and "an invalidated success can still be repaired" both hold.
+        _prior_status = str((prior_rec or {}).get("status") or "") \
+            if isinstance(prior_rec, dict) else ""
+        _was_success = _prior_status in (
+            _us.BANKED_STATUSES if _us is not None else ("ok", "verified", "banked"))
         try:
-            system_prompt, user_prompt = compose_prompt(
-                phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
-                run_dir=run_dir, order=_unit_scope_work_order(order, payload),
-                attempt=1, prior_reasons=prior_reasons,
-            )
-            content, usage, route = dispatch_complete(
-                system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir)
+            with paid_unit_scope(unit.key,
+                                 allow_reauthor=bool(_force_reauthor or _was_success)):
+                system_prompt, user_prompt = compose_prompt(
+                    phase_id=phase_id, owning_role=owning_role, dept_root=dept_root,
+                    run_dir=run_dir, order=_unit_scope_work_order(order, payload),
+                    attempt=1, prior_reasons=prior_reasons,
+                )
+                content, usage, route = dispatch_complete(
+                    system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
+                    worker_id=worker_id, reasoning_effort=effort)
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
         text = _clean_payload((content or "").strip())
         if not text:
-            return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
-                                     reasons=["unit returned empty output"])
+            # PD-TEST-065: record the failure the way the serial path does --
+            # an explicit sidecar row carrying the provider's usage -- and put
+            # the budget arithmetic in the reason, so the durable unit record
+            # says WHY the output was empty on the NEXT read.
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 1, "unit": unit.key,
+                "status": "empty_completion",
+                "reasoning_effort": effort or DEEPSEEK_REASONING_EFFORT,
+                "max_tokens": DEEPSEEK_MAX_OUTPUT_TOKENS,
+                "usage": usage})
+            return fanout.UnitResult(
+                key=unit.key, status="failed", attempts=1,
+                reasons=[EMPTY_COMPLETION_MARKER
+                         + _empty_completion_detail(usage)])
         # PRES-001: the unit output must pass the CONTRACT's validator BEFORE
         # it may report ok. An invalid unit is a failed unit — it never rides
         # into the reducer, never overwrites a sibling's scratch, never counts
@@ -6299,6 +7714,21 @@ def _dispatch_phase_fanout_units(
 
     deadline_s = (phase_obj.budget_minutes * 60) if phase_obj is not None else None
     results.extend(r for k, r in reused_results.items() if k not in _banked_keys)
+    # PD-TEST-124: record the FREE successes durably before any paid unit runs.
+    # A reused or banked unit is an ok outcome that cost nothing; writing it to
+    # the ledger now is what makes "a success is never regenerated" survive a
+    # restart -- the next dispatch sees the same picture instead of re-deriving
+    # it from scratch. Both sets are already validated above (banked by
+    # unit_store.validate_banked + the contract validator, reused by the
+    # contract validator + the recorded input-hash snapshot), and neither has a
+    # reservation to settle, which the settle helper tolerates by design.
+    _settle_unit_paid_attempts(
+        run_dir, phase_id,
+        [(k, "ok", ["banked: prior output re-validated, no paid attempt"])
+         for k in sorted(_banked_keys)] +
+        [(k, "ok", ["reused: validated on-disk output, no paid attempt"])
+         for k in sorted(reuse) if k not in _banked_keys],
+        worker_id=worker_id)
     # ------------------------------------------------------------------
     # PRES-014: bounded admission BATCHES. The enumerated unit list is split
     # into batches of at most `batch_width` (migrated from the legacy
@@ -6376,6 +7806,16 @@ def _dispatch_phase_fanout_units(
                     _next["author_route"] = r.meta
                 if r.status != "ok" and r.reasons:
                     _next["last_error"] = "; ".join(r.reasons)[:500]
+                else:
+                    # PD-TEST-065: `last_error` means "the CURRENT error". A unit
+                    # that just came back ok must not keep advertising its
+                    # previous attempt's failure: the re-attempt decision in
+                    # _unit_worker reads this record, and a stale marker would
+                    # silently step down the reasoning effort for a unit that
+                    # has since succeeded. Set to the store's own empty shape
+                    # (unit_store.py's new-unit record) rather than deleting the
+                    # key, so every record keeps the same field set.
+                    _next["last_error"] = None
                 _us.stamp_identity(_next, company_id=_company_id,
                                    presentation_id=_presentation_id,
                                    phase_id=phase_id)
@@ -6394,6 +7834,19 @@ def _dispatch_phase_fanout_units(
             _us.save_state(run_dir, phase_id, _store_state,
                            company_id=_company_id,
                            presentation_id=_presentation_id)
+        # PD-TEST-124: settle this batch's paid reservations and record each
+        # unit's durable outcome IN ONE atomic fold. This runs whether or not a
+        # unit store exists, because it is the PAID ledger's own record:
+        #   * a reservation whose unit came back is marked settled, so the next
+        #     dispatch of that unit may reserve again while a duplicate call
+        #     carrying the same token stays a no-op forever;
+        #   * the outcome ("ok"/"failed" + its reasons) is what the next
+        #     dispatch reads to keep a success from being regenerated and to
+        #     retry only the units that actually failed.
+        _settle_unit_paid_attempts(
+            run_dir, phase_id,
+            [(r.key, r.status, list(r.reasons or [])) for r in batch_results],
+            worker_id=worker_id)
         results.extend(batch_results)
     _ordered = {r.key: r for r in results}
     results = [_ordered[it["key"]] for it in wanted_items if it["key"] in _ordered]
@@ -7227,6 +8680,213 @@ def _blocked_marker_path(run_dir: Path, phase_id: str) -> Path:
     return run_dir / "working" / "work-orders" / f"{phase_id}.dispatch-blocked.txt"
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-080 -- a park marker must not outlive the dispatcher that wrote it.
+#
+# `_park_blocked` records `worker: dispatcher-<pid>-<uuid8>`, the exact id
+# watch_run_dir mints for itself, so the marker names its own owner. Reader
+# side, phases.readmit_retryable_phases treated the bare EXISTENCE of that file
+# as "a dispatcher owns this generation's durable budget" and skipped the phase
+# -- true while the writer lives, FALSE once it is gone, which is the ordinary
+# end state of a run: a dispatcher's last act after state.terminal is set is to
+# exit, leaving the marker it wrote with no owner. Measured on
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4 -- five quarantined phases
+# parked by pids 55801 / 71266 / 87833, every one of them dead, terminal
+# BLOCKED -- no --resume could re-admit them, so the run re-parked identically:
+# precisely the failure PD-TEST-060 (phases.py:654-675) was written to end.
+#
+# LIVENESS IS NOT THE WHOLE QUESTION. POSIX recycles pids, so a dead
+# dispatcher's pid can be held by an unrelated process; "the pid resolves" is
+# not "the owner is here". The marker's own `blocked_at` is the discriminator
+# its writer cannot fake: that line was written BY the owner WHILE IT EXISTED,
+# so a live process at that pid which STARTED LATER cannot be the author.
+# autospawn._process_start_epoch supplies the live start (reusing the one
+# module that owns pid questions, so the two can never disagree), and
+# autospawn._pid_is_alive supplies the liveness test.
+#
+# EVERY DOUBT RESOLVES TO LIVE. No worker line, no timestamp, no `ps`,
+# unparseable output, our own pid -- all "live". Honouring a marker too long is
+# the fail-closed direction: it cannot spend a provider call (the paid ceiling
+# is the LEDGER, enforced by should_dispatch/_reserve_paid_attempt, neither of
+# which this decision touches), while ignoring a marker whose owner is still
+# working would be the protection being weakened.
+# ---------------------------------------------------------------------------
+_PARK_MARKER_WORKER_RE = re.compile(
+    r"^worker:\s*dispatcher-(\d+)-[0-9a-fA-F]{4,32}\s*$", re.M)
+_PARK_MARKER_BLOCKED_AT_RE = re.compile(r"^blocked_at:\s*(\S+)\s*$", re.M)
+
+# utcnow() has one-second resolution, and _process_start_epoch never returns a
+# start LATER than the real one, so a true owner can appear at most ~1 s after
+# its own `blocked_at`. A recycled pid would have to take the pid within this
+# window of the park to be mistaken for the owner -- and that mistake is the
+# fail-closed one. Anything later is proof of recycling.
+_PARK_MARKER_RECYCLE_GRACE_S = 5.0
+
+
+def _park_marker_blocked_epoch(text: str) -> Optional[float]:
+    """The marker's `blocked_at` as an epoch, or None when absent/unreadable."""
+    m = _PARK_MARKER_BLOCKED_AT_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(
+            m.group(1).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def park_marker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
+    """Adjudicate who owns this phase's dispatcher park marker RIGHT NOW.
+
+    Returns (state, detail), state one of:
+      "absent"   -- no marker on disk; nothing to honour.
+      "live"     -- a marker exists and its owner process is still running.
+      "orphaned" -- a marker exists and the dispatcher that wrote it is gone.
+      "unknown"  -- a marker exists but ownership cannot be established; the
+                    caller MUST treat this as live (fail closed).
+
+    Read-only: nothing here deletes or rewrites the marker -- acting on the
+    verdict is phases.readmit_retryable_phases' job."""
+    marker = _blocked_marker_path(run_dir, phase_id)
+    try:
+        if not marker.is_file():
+            return "absent", "no dispatcher park marker"
+        text = marker.read_text(encoding="utf-8")
+    except OSError as exc:
+        return "unknown", f"park marker unreadable ({exc.__class__.__name__})"
+    m = _PARK_MARKER_WORKER_RE.search(text)
+    if not m:
+        # A hand-written or pre-PD-TEST-080 marker with no owner line: there is
+        # no pid to adjudicate, so the honest answer is "not established".
+        return "unknown", "park marker names no dispatcher worker"
+    pid = int(m.group(1))
+    worker = m.group(0).split(":", 1)[1].strip()
+    if pid == os.getpid():
+        return "live", f"{worker} is this process"
+    if not _autospawn._pid_is_alive(pid):
+        return "orphaned", (f"owner {worker} is gone: pid {pid} names no "
+                            "process")
+    started = _autospawn._process_start_epoch(pid)
+    blocked_at = _park_marker_blocked_epoch(text)
+    if started is None or blocked_at is None:
+        return "live", (f"owner {worker} is alive (pid {pid}); its start could "
+                        "not be compared with the park timestamp, so the park "
+                        "is honoured")
+    if started > blocked_at + _PARK_MARKER_RECYCLE_GRACE_S:
+        return "orphaned", (
+            f"owner {worker} is gone and its pid was recycled: the process "
+            f"holding pid {pid} started {started - blocked_at:.0f}s AFTER the "
+            "park was written")
+    return "live", f"owner {worker} is alive (pid {pid})"
+
+
+def running_worker_owner_state(run_dir: Path, phase_id: str) -> Tuple[str, str]:
+    """Adjudicate whether the dispatcher worker that last serviced this phase is
+    still there to finish it. The exact counterpart of `park_marker_owner_state`
+    for a phase the Engine still calls `running`.
+
+    WHY THIS EXISTS (PD-TEST-155). `Engine._ready_queue_tick()` skips any phase
+    whose status is `running` -- it is collected into the `running` bucket and
+    `continue`d, never re-planned and never expired. That is correct while an
+    engine is genuinely working the phase, but nothing ever revisits it when the
+    engine that owned it died mid-wait: the phase stays `running` forever,
+    `_phase_terminal_bad` does not apply to it (so its descendants are not even
+    quarantined, they just `waiting_dependency` on it), and the run becomes INERT
+    with a full queue and zero dispatches. Measured on pres-operator-1d269693:
+    three phases stranded `running` by a killed engine, `waited_seconds` frozen,
+    0 provider requests for 11 minutes, 29 pending phases all downstream.
+
+    WHICH ATTEMPT ARE WE ADJUDICATING? (independent review of PR #1161, F1.)
+    The ledger holds TWO different owner records, and they name DIFFERENT
+    attempts, so a worker must never be judged against the other one's clock:
+
+      * `last_reservation_worker` + `last_reserved_at` -- written by
+        `_reserve_paid_attempt` BEFORE the transport call, and DELIBERATELY
+        erased by the next `record_outcome` rebuild (see the PD-TEST-092 note on
+        that dict). They therefore exist ONLY while an attempt is genuinely IN
+        FLIGHT, and they are the authoritative pair for "who is working now".
+      * `worker` + `last_seen_at` -- written by `record_outcome` at outcome-fold
+        time, and consistent with EACH OTHER. They name the last SETTLED attempt.
+
+    The first version of this function read only the second pair. Mid-dispatch,
+    that pair still names the PREVIOUS attempt while the pid it records may since
+    have been recycled by the CURRENT dispatcher -- whose start is then LATER than
+    the stale `last_seen_at`, so the pid-reuse guard fired and a phase with a live
+    worker was reported "orphaned". The guard was reading a stale record and
+    comparing it against the wrong clock. Selecting the pair FIRST fixes that by
+    construction: a worker is only ever compared with the timestamp written
+    alongside it.
+
+    Returns (state, detail), state one of:
+      "absent"   -- no ledger row, so no worker is claimed; nothing to honour.
+      "live"     -- the governing record names a worker pid that is still running.
+      "orphaned" -- the governing record names a worker pid that is gone (or was
+                    recycled -- i.e. the pid now belongs to a process that started
+                    after the record was written).
+      "unknown"  -- ownership cannot be established; the caller MUST treat this
+                    as live (fail closed). A degraded install must never start
+                    reclaiming phases out from under a live worker.
+
+    Read-only, exactly like `park_marker_owner_state`: acting on the verdict is
+    the caller's job, and the caller must NOT touch the paid ledger."""
+    path = _ledger_path(run_dir, phase_id)
+    try:
+        if not path.is_file():
+            return "absent", "no dispatch ledger for this phase"
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return "unknown", f"dispatch ledger unreadable ({exc.__class__.__name__})"
+    except json.JSONDecodeError:
+        return "unknown", "dispatch ledger is not valid JSON"
+    record = raw if isinstance(raw, dict) else {}
+    if not record:
+        return "unknown", "dispatch ledger holds no record to adjudicate"
+
+    # Pick the owner record and ITS OWN timestamp together. See the docstring:
+    # mixing a worker from one attempt with a timestamp from another is the exact
+    # defect this selection exists to prevent.
+    worker = str(record.get("last_reservation_worker") or "").strip()
+    stamp = record.get("last_reserved_at")
+    phase_of_attempt = "in-flight"
+    if not (worker and stamp):
+        worker = str(record.get("worker") or "").strip()
+        stamp = record.get("last_seen_at") or record.get("updated_at")
+        phase_of_attempt = "settled"
+
+    m = re.match(r"^dispatcher-(\d+)-[0-9a-fA-F]{4,32}$", worker)
+    if not m:
+        # A row with no parseable worker (an older shape, or a hand-written
+        # record): there is no pid to adjudicate, so the honest answer is
+        # "not established".
+        return "unknown", (f"{phase_of_attempt} ledger worker {worker!r} names no "
+                           "adjudicable dispatcher pid")
+    pid = int(m.group(1))
+    if pid == os.getpid():
+        return "live", f"{worker} is this process"
+    if not _autospawn._pid_is_alive(pid):
+        return "orphaned", (f"the {phase_of_attempt} worker {worker} is gone: "
+                            f"pid {pid} names no process")
+    try:
+        from datetime import datetime
+        seen_epoch = datetime.fromisoformat(
+            str(stamp).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        seen_epoch = None
+    started = _autospawn._process_start_epoch(pid)
+    if started is None or seen_epoch is None:
+        return "live", (f"{phase_of_attempt} worker {worker} is alive (pid "
+                        f"{pid}); its start could not be compared with its own "
+                        "ledger timestamp, so the worker is honoured")
+    if started > seen_epoch + _PARK_MARKER_RECYCLE_GRACE_S:
+        return "orphaned", (
+            f"the {phase_of_attempt} worker {worker} is gone and its pid was "
+            "recycled: the process "
+            f"holding pid {pid} started {started - seen_epoch:.0f}s AFTER the "
+            "ledger was last written")
+    return "live", f"worker {worker} is alive (pid {pid})"
+
+
 def _read_ledger(run_dir: Path, phase_id: str) -> Dict[str, Any]:
     try:
         obj = json.loads(_ledger_path(run_dir, phase_id).read_text(encoding="utf-8"))
@@ -7241,6 +8901,34 @@ def _write_ledger(run_dir: Path, phase_id: str, record: Dict[str, Any]) -> None:
     tmp = path.with_suffix(f".json.partial-{os.getpid()}")
     tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, path)  # atomic: a concurrent reader never sees a torn ledger
+
+
+@contextlib.contextmanager
+def _phase_budget_transaction(run_dir: Path, phase_id: str):
+    """Serialize every mutation of a phase's paid-budget ledger.
+
+    Atomic replacement prevents torn JSON, but it does not serialize a
+    read/modify/write cycle.  The reset issuer, pre-transport reservation, and
+    outcome fold must therefore all hold this *same* lock from their read
+    through their final ledger replacement.
+    """
+    lock_path = _ledger_path(run_dir, phase_id).with_suffix(".budget.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _phase_budget_locked(fn):
+    """Apply the shared ledger transaction to a (run_dir, phase_id) writer."""
+    @functools.wraps(fn)
+    def guarded(run_dir: Path, phase_id: str, *args, **kwargs):
+        with _phase_budget_transaction(run_dir, phase_id):
+            return fn(run_dir, phase_id, *args, **kwargs)
+    return guarded
 
 
 def _outcome_signature(status: str, reasons: Optional[List[str]] = None) -> str:
@@ -7281,13 +8969,932 @@ def _dispatch_revision(run_dir: Path, phase_id: str,
     return f"wo={wo}|state={status}"
 
 
+def _approved_input_revision(run_dir: Path, phase_id: Optional[str] = None) -> str:
+    """Return the durable budget-reset witness for this run.
+
+    Rewriting a work order is a request to retry, not evidence that the model
+    now has different approved inputs.  The one sanctioned mutable input after
+    launch is an intake amendment.  It may reset a paid phase's budget only
+    when the replacement intake still matches an amendment row and that row
+    passes the same owner-approval oracle used by launcher.apply_intake_amendment.
+
+    An unreadable, hand-written, or unverified row deliberately has no power
+    here: it remains the original budget generation.  This is best-effort and
+    fail-closed; a broken approval oracle cannot buy more provider attempts.
+    """
+    intake = run_dir / "working" / "copy" / "intake.json"
+    amendments = run_dir / "working" / "copy" / "intake_amendments.jsonl"
+    try:
+        digest = hashlib.sha256(intake.read_bytes()).hexdigest()
+        rows = [json.loads(line) for line in amendments.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+    except (OSError, json.JSONDecodeError):
+        return "initial"
+    for row in reversed(rows):
+        if not isinstance(row, dict) or row.get("kind") != "intake_amendment":
+            continue
+        if row.get("intake_sha256") != digest:
+            continue
+        try:
+            from presentation_job import launcher
+            approved, _detail = launcher.verify_amendment_approval(
+                {"approval": row.get("approval") or {}}, run_dir)
+        except Exception:  # noqa: BLE001 -- no verified witness, no reset
+            approved = False
+        if approved:
+            return f"approved-intake:{digest}"
+    return "initial"
+
+
+class PaidBudgetExhausted(DeepSeekCallError):
+    """No provider transport may start after the durable paid-attempt cap."""
+
+
+class PaidAttemptDeferred(DeepSeekCallError):
+    """This ONE attempt may not start yet -- and no budget was spent.
+
+    Raised in three situations, all of which are scheduling decisions rather
+    than exhausted budgets (PD-TEST-124):
+
+      * FIRST-ATTEMPT FAIRNESS: an admitted sibling unit has not had its first
+        paid attempt yet, and this call was a retry. The unit is not failed --
+        it is queued behind a first attempt that must not be starved.
+      * NOT ADMITTED: the phase's declared bounded total could not fund this
+        unit's first attempt at all; the ledger records why, by name.
+      * DOUBLE-RESERVE: the unit already has an in-flight paid reservation
+        owned by a live process.
+
+    A deferral is deliberately a DIFFERENT type from PaidBudgetExhausted so the
+    two are distinguishable in a sidecar: an exhausted budget parks the phase,
+    a deferral resolves itself as soon as the sibling's first attempt is made.
+    """
+
+
+def _repair_receipt_path(run_dir: Path, phase_id: str) -> Path:
+    return _ledger_path(run_dir, phase_id).with_suffix(".repair-receipt.json")
+
+
+def _file_sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+# The ONE kind string for the local-operator repair receipt.  Issued by
+# authorize_paid_retry_reset, validated by _repair_receipt_is_actionable, both
+# reading THIS constant so the writer and the reader cannot drift.
+DISPATCH_REPAIR_RECEIPT_KIND = "local-operator-paid-retry-reset-v1"
+
+
+def _read_repair_receipt(run_dir: Path, phase_id: str) -> Dict[str, Any]:
+    """The repair receipt's bytes, or {} when absent/unreadable/not an object.
+
+    ONE reader, so the read-only gate and the reserve consumer cannot disagree
+    about what "the receipt on disk" means.  An unreadable receipt is an absent
+    receipt: no clause downstream may treat a parse failure as permission.
+    """
+    try:
+        obj = json.loads(_repair_receipt_path(run_dir, phase_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _repair_receipt_is_actionable(led: Dict[str, Any], phase_id: str, run_dir: Path,
+                                  *, approved_input_revision: Optional[str] = None
+                                  ) -> Tuple[bool, str]:
+    """THE single receipt-versus-ledger validation, shared by BOTH the read-only
+    dispatch gate (should_dispatch) and the one and only consumer
+    (_reserve_paid_attempt).  Returns (True, <truthful reason>) only when the
+    receipt on disk may lift this phase's paid-budget block; (False, <why not>)
+    otherwise.
+
+    WHY IT IS SHARED (PD-TEST-068).  The two callers used to hold separate
+    copies of this predicate -- and the gate's copy was EMPTY.  The receipt was
+    read in exactly one place, _reserve_paid_attempt, which every claim path
+    reaches only AFTER should_dispatch has said yes; should_dispatch refused on
+    the exhausted branch before consulting anything, so a valid unconsumed
+    receipt could never lift the very gate that blocks its own consumption.
+    Observed live: receipt issued rc=0, six 30s samples over ~2.5 minutes with
+    zero consumption, zero dispatch, zero provider requests, ledger unchanged
+    (status=exhausted, paid_attempts=3, generation=0,
+    repair_receipt_consumed=False).  One predicate, two call sites, makes that
+    divergence unrepresentable.
+
+    PURE READ.  It never writes, never consumes and never mutates the ledger;
+    should_dispatch's three call sites rely on that.  Consumption happens only
+    in _reserve_paid_attempt, under the phase's budget transaction.
+
+    Every clause is fail-closed and every refusal names itself:
+      * a ledger must exist and carry a durable integer generation (a missing one
+        cannot satisfy any receipt's prior_generation). Single-use is enforced by the
+        generation clause below, NOT by a consumed flag -- see PD-TEST-092 above;
+      * the receipt must be readable, of kind
+        'local-operator-paid-retry-reset-v1', and issued for THIS phase and THIS
+        resolved run directory;
+      * its allowance must be a positive int within PHASE_TOTAL_PAID_HARD_CAP
+        (PD-TEST-182: the SAME ceiling the producer enforces, so the two can
+        never drift apart again);
+      * its prior_generation must be the ledger's CURRENT generation, so a
+        receipt can never re-arm a generation it was not issued against;
+      * its approved_input_revision must be the CURRENT one, so a receipt can
+        never outlive the input it was issued for;
+      * its operator_uid must be the OS owner of the run directory;
+      * its dispatcher_sha256 must be the hash of the dispatcher source running
+        RIGHT NOW, so a receipt cannot survive the code change it was not issued
+        for (stale receipt => refused; re-issue after the repair is deployed).
+    """
+    if not led:
+        return False, "no dispatch ledger for this phase"
+    # PD-TEST-092: this used to gate on the bare bool `repair_receipt_consumed`, which
+    # made ONE consumed receipt a LIFETIME latch on the phase: every later receipt was
+    # refused with "paid-retry repair receipt already consumed" no matter how valid it
+    # was, so a phase could only ever be repaired once and P4-COPY's paid budget could
+    # never be reopened. The latch is REDUNDANT for its stated purpose, because the
+    # generation clause below already makes each receipt single-use:
+    #   * consumption is the ONLY writer of the ledger generation
+    #     (_reserve_paid_attempt: led["generation"] = generation + 1) and that is the
+    #     only increment anywhere in the package, so the generation never repeats;
+    #   * a receipt must carry prior_generation == the ledger's CURRENT generation;
+    # therefore the instant a receipt is consumed the generation advances and that same
+    # receipt can never match again -- in this process or any later one. The bool is
+    # still WRITTEN on consumption as an audit record of which receipt was spent (see
+    # repair_receipt / repair_receipt_consumed_generation beside it); it is simply no
+    # longer a gate. Measured on the live run: with the latch flipped to False and
+    # nothing else changed the predicate returns True, and an already-spent receipt is
+    # still refused by the generation clause -- exactly-once survives, the latch does not.
+    receipt = _read_repair_receipt(run_dir, phase_id)
+    if not receipt:
+        return False, "no readable paid-retry repair receipt on disk"
+    if receipt.get("kind") != DISPATCH_REPAIR_RECEIPT_KIND:
+        return False, (f"repair receipt kind is not {DISPATCH_REPAIR_RECEIPT_KIND}")
+    if receipt.get("phase_id") != phase_id:
+        return False, "repair receipt is for a different phase"
+    if receipt.get("run") != str(run_dir.resolve()):
+        return False, "repair receipt is for a different run"
+    allowance = receipt.get("allowance")
+    # PD-TEST-182: the SAME ceiling the producer enforces. Leaving this at
+    # DISPATCH_RETRY_CAP would have made the fix inert -- authorize_paid_retry_reset
+    # would ISSUE a receipt for an 8-unit fan-out and this validator would then
+    # REJECT it as invalid, so the fan-out would still never re-author.
+    if (isinstance(allowance, bool) or not isinstance(allowance, int)
+            or not 1 <= allowance <= PHASE_TOTAL_PAID_HARD_CAP):
+        return False, (f"repair receipt allowance is not an int in 1.."
+                       f"{PHASE_TOTAL_PAID_HARD_CAP}")
+    ledger_generation = led.get("generation")
+    if isinstance(ledger_generation, bool) or not isinstance(ledger_generation, int):
+        return False, "repair receipt has no durable ledger generation to bind to"
+    if receipt.get("prior_generation") != ledger_generation:
+        return False, "repair receipt does not match the ledger generation"
+    revision = (_approved_input_revision(run_dir, phase_id)
+                if approved_input_revision is None else approved_input_revision)
+    if receipt.get("approved_input_revision") != revision:
+        return False, "repair receipt does not match the approved input revision"
+    try:
+        run_owner_uid = run_dir.stat().st_uid
+    except OSError:
+        return False, "repair receipt owner could not be verified"
+    if receipt.get("operator_uid") != run_owner_uid:
+        return False, "repair receipt was not issued by the owner of this run"
+    if receipt.get("dispatcher_sha256") != _file_sha(Path(__file__)):
+        return False, "repair receipt does not match the running dispatcher source"
+    return True, "valid unconsumed paid-retry repair receipt"
+
+
+def authorize_paid_retry_reset(run_dir: Path, phase_id: str, *, allowance: int) -> Dict[str, Any]:
+    """Local-operator control-plane action; never invoked from a work order.
+
+    The OS owner of the run may issue one bounded repair receipt after a
+    deployed code repair.  It is atomic and binds the current sealed intake,
+    installed dispatcher bytes, and prior ledger generation before any marker
+    can be cleared.  The dispatcher consumes it exactly once.
+    """
+    # PD-TEST-182 -- the ceiling is the PAID-BUDGET hard cap, NOT DISPATCH_RETRY_CAP.
+    #
+    # This receipt exists to fund RE-AUTHORING of the units a fan-out invalidates,
+    # and its consumer refuses to act unless the allowance covers ALL of them
+    # (`_n_units = len(wanted_items)`, then `if _allowance < _n_units` leaves the
+    # bank INTACT). Capping the allowance at DISPATCH_RETRY_CAP (3) made the
+    # requirement unsatisfiable for any fan-out larger than 3: on
+    # pres-operator-1d269693 P4-PROMPT has 8 units, so the engine demanded
+    # `allowance >= 8` while itself rejecting anything above 3, and its own
+    # refusal text asked the operator to re-issue with a value it would refuse.
+    # The run was therefore walled by an internal contradiction in its own
+    # recovery path -- no operator action could clear it.
+    #
+    # This is PD-TEST-124's theme in the recovery instrument: the fair-budget work
+    # gave the fan-out a bounded total of min(128, units + pool) precisely because
+    # the legacy per-phase cap of 3 starved an 8-unit fan-out, but the receipt that
+    # must fund the re-authoring was left on that same legacy ceiling.
+    #
+    # Spend stays bounded exactly as before: by PHASE_TOTAL_PAID_HARD_CAP (128),
+    # the same ceiling `_declare_phase_paid_budget` already enforces, and by the
+    # consumer's own `_allowance >= _n_units` check. The per-unit ceilings still
+    # bind at dispatch time.
+    if allowance < 1 or allowance > PHASE_TOTAL_PAID_HARD_CAP:
+        raise ValueError(
+            f"allowance must be 1..{PHASE_TOTAL_PAID_HARD_CAP} "
+            f"(PHASE_TOTAL_PAID_HARD_CAP; it must cover the units the receipt "
+            f"invalidates)")
+    if os.getuid() != run_dir.stat().st_uid:
+        raise PermissionError("local operator must own the run directory")
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        # A reset must be bound to an existing durable generation.  Treating a
+        # missing field as generation zero would let a hand-created legacy
+        # ledger satisfy a newly-issued receipt's default prior generation.
+        if not isinstance(led.get("generation"), int):
+            raise RuntimeError("paid retry reset requires a durable ledger generation")
+        receipt = {"kind": DISPATCH_REPAIR_RECEIPT_KIND, "run": str(run_dir.resolve()),
+                   "phase_id": phase_id, "approved_input_revision": _approved_input_revision(run_dir, phase_id),
+                   "prior_generation": led.get("generation", 0), "dispatcher_sha256": _file_sha(Path(__file__)),
+                   "allowance": allowance, "issued_at": utcnow(), "operator_uid": os.getuid()}
+        target = _repair_receipt_path(run_dir, phase_id); target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(f".partial-{os.getpid()}"); tmp.write_text(json.dumps(receipt, sort_keys=True), encoding="utf-8"); os.replace(tmp, target)
+        return receipt
+
+
+# ---------------------------------------------------------------------------
+# PD-TEST-124 -- the per-unit paid-attempt ledger, the bounded TOTAL budget and
+# the first-attempt fairness rule. The behaviour these helpers implement is
+# declared once in the policy block beside DISPATCH_RETRY_CAP.
+#
+# Every field name is a module constant read by BOTH the writer and every
+# reader, so a rename cannot leave a half-migrated ledger behind.
+# ---------------------------------------------------------------------------
+LEDGER_PHASE_PAID_BUDGET = "phase_paid_budget"
+LEDGER_UNIT_ADMISSION_ORDER = "unit_admission_order"
+LEDGER_UNIT_NOT_ADMITTED = "unit_not_admitted"
+LEDGER_UNIT_PAID_ATTEMPTS = "unit_paid_attempts"
+LEDGER_UNIT_PAID_ATTEMPTS_GENERATION = "unit_paid_attempts_generation"
+LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME = "unit_paid_attempts_lifetime"
+LEDGER_UNIT_OUTCOMES = "unit_outcomes"
+LEDGER_UNIT_RESERVATIONS = "unit_reservations"
+LEDGER_RESERVATION_TOKENS = "reservation_tokens"
+# Bounded audit trail of charged logical-attempt tokens. 512 is far more than
+# any one dispatch of any shipped phase can mint (the widest enumerates 100
+# units) while keeping the ledger a bounded document.
+_RESERVATION_TOKEN_HISTORY = 512
+# Fallback for a ledger whose budget declaration could not be written (an
+# unwritable run dir). Deliberately the LEGACY number, so a broken declaration
+# degrades to the pre-PD-TEST-124 behaviour instead of inventing a wider bound.
+_PAID_BUDGET_UNDECLARED_CAP = DISPATCH_RETRY_CAP
+
+_PAID_UNIT_SCOPE = threading.local()
+
+
+@contextlib.contextmanager
+def paid_unit_scope(unit_key: Optional[str], *, token: Optional[str] = None,
+                    allow_reauthor: bool = False):
+    """Bind the paid reservations made inside this block to ONE fan-out unit.
+
+    Set by the fan-out unit worker around its dispatch_complete() call and read
+    by _reserve_paid_attempt. Thread-local rather than global because units run
+    concurrently in fanout.run_units' pool: each pool thread carries exactly the
+    unit it is working on, and a nested call inside that unit's dispatch (a
+    transport re-entry) sees the same unit -- which is what makes the token
+    idempotency below correct.
+
+    Outside a scope the reservation keeps the legacy phase-level behaviour
+    byte-for-byte, so every serial phase is untouched by this repair.
+
+    `token` identifies ONE LOGICAL paid attempt. Two reservations carrying the
+    same token are the same attempt (a duplicate call) and the second is a
+    no-op; two different tokens for one unit are two real attempts.
+
+    `allow_reauthor=True` is set ONLY when the unit's own durable record says it
+    succeeded before and it is being re-admitted because that success was
+    invalidated (changed inputs, corrupt output, or an operator repair receipt
+    that voided the bank). It is what keeps "a success is never regenerated"
+    from also meaning "an invalidated success can never be repaired".
+    """
+    previous = (getattr(_PAID_UNIT_SCOPE, "unit_key", None),
+                getattr(_PAID_UNIT_SCOPE, "token", None),
+                getattr(_PAID_UNIT_SCOPE, "allow_reauthor", False))
+    _PAID_UNIT_SCOPE.unit_key = unit_key
+    _PAID_UNIT_SCOPE.token = (token or uuid.uuid4().hex) if unit_key else None
+    _PAID_UNIT_SCOPE.allow_reauthor = bool(allow_reauthor) if unit_key else False
+    try:
+        yield getattr(_PAID_UNIT_SCOPE, "token", None)
+    finally:
+        (_PAID_UNIT_SCOPE.unit_key, _PAID_UNIT_SCOPE.token,
+         _PAID_UNIT_SCOPE.allow_reauthor) = previous
+
+
+def _current_paid_unit_key() -> Optional[str]:
+    """The unit this thread is dispatching a paid call for, or None outside a
+    fan-out unit scope."""
+    key = getattr(_PAID_UNIT_SCOPE, "unit_key", None)
+    return str(key) if key else None
+
+
+def _current_paid_unit_token() -> Optional[str]:
+    token = getattr(_PAID_UNIT_SCOPE, "token", None)
+    return str(token) if token else None
+
+
+def _paid_unit_allows_reauthor() -> bool:
+    return bool(getattr(_PAID_UNIT_SCOPE, "allow_reauthor", False))
+
+
+def _fanout_total_paid_cap(eligible_units: int) -> int:
+    """The declared TOTAL paid-attempt bound for a fan-out phase with this many
+    eligible units. Explicit and finite -- one funded first attempt per unit
+    plus the legacy phase retry pool, clamped by the hard ceiling. Deliberately
+    NOT `units * DISPATCH_RETRY_CAP`."""
+    n = max(0, int(eligible_units or 0))
+    return min(PHASE_TOTAL_PAID_HARD_CAP,
+               n * FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT + PHASE_RETRY_POOL_ATTEMPTS)
+
+
+def _declared_paid_budget(led: Dict[str, Any],
+                          generation: str) -> Optional[Dict[str, Any]]:
+    """This phase's declared fan-out budget, or None for the legacy serial path.
+
+    Generation-scoped exactly like the phase counter it sits beside: a budget
+    declared for a superseded approved-input generation describes spending that
+    generation no longer has, so it is simply not consulted."""
+    budget = led.get(LEDGER_PHASE_PAID_BUDGET)
+    if not isinstance(budget, dict):
+        return None
+    if str(budget.get("generation") or "initial") != str(generation):
+        return None
+    try:
+        total = int(budget.get("total_cap"))
+    except (TypeError, ValueError):
+        return None
+    return budget if total >= 1 else None
+
+
+def _effective_phase_paid_cap(led: Dict[str, Any], generation: str) -> int:
+    """DISPATCH_RETRY_CAP for a serial phase (unchanged), the declared total for
+    a fan-out phase."""
+    budget = _declared_paid_budget(led, generation)
+    if budget is None:
+        return _PAID_BUDGET_UNDECLARED_CAP
+    return int(budget["total_cap"])
+
+
+def _unit_paid_counts(led: Dict[str, Any], generation: str) -> Dict[str, int]:
+    """Per-unit paid attempts for the CURRENT budget scope.
+
+    A scope change starts a fresh count, mirroring the phase counter's own
+    documented rule (`paid = ... if generation == prior_generation else 0`); the
+    counters themselves are preserved -- `unit_paid_attempts_lifetime` is the
+    never-reset audit total and the superseded counts are archived. Nothing in
+    this repair zeroes or hand-edits a counter."""
+    stored = led.get(LEDGER_UNIT_PAID_ATTEMPTS)
+    if not isinstance(stored, dict):
+        return {}
+    if str(led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION) or "initial") \
+            != _paid_attempt_scope(led, generation):
+        return {}
+    return {str(k): int(v) for k, v in stored.items()
+            if isinstance(v, int) and not isinstance(v, bool) and v >= 0}
+
+
+def _paid_attempt_scope(led: Dict[str, Any], generation: str) -> str:
+    """The scope key the PER-UNIT paid counters belong to.
+
+    Two things start a fresh per-unit count, and both are deliberate acts the
+    PHASE counter already honours in exactly the same way:
+
+      * the approved input revision changed (a verified intake amendment) --
+         `paid_attempts`' own `generation == prior_generation` rule; and
+      * an operator repair receipt was consumed, which bumps `led['generation']`
+        and re-arms `paid_attempts` as `max(0, DISPATCH_RETRY_CAP - allowance)`.
+
+    The second term is not optional. Without it a receipt would reopen the
+    phase's TOTAL but leave a saturated unit pinned at its per-unit ceiling: the
+    phase could re-dispatch and pay, yet the one unit that needs re-authoring
+    could never be re-authored -- which is precisely the PD-TEST-119/120/121
+    situation the receipt exists to resolve. Counters are never destroyed: the
+    superseded counts are archived under
+    `unit_paid_attempts_prior_generation` and `unit_paid_attempts_lifetime`
+    keeps the never-reset total."""
+    return f"{generation}|receipt-gen:{int(led.get('generation') or 0)}"
+
+
+def _unit_outcome(led: Dict[str, Any], unit_key: str,
+                  generation: str) -> Optional[Dict[str, Any]]:
+    """This unit's durable outcome in the CURRENT generation, or None."""
+    outcomes = led.get(LEDGER_UNIT_OUTCOMES)
+    if not isinstance(outcomes, dict):
+        return None
+    rec = outcomes.get(unit_key)
+    if not isinstance(rec, dict):
+        return None
+    if str(rec.get("generation") or "initial") != str(generation):
+        return None
+    return rec
+
+
+def _unit_succeeded(led: Dict[str, Any], unit_key: str, generation: str) -> bool:
+    rec = _unit_outcome(led, unit_key, generation)
+    return bool(rec and rec.get("status") == "ok")
+
+
+def _reservation_owner_is_gone(pid: Any) -> bool:
+    """Fail-closed pid-liveness test: an unprovable death keeps the reservation
+    (the same direction _autospawn decides park-marker ownership in)."""
+    if isinstance(pid, bool) or not isinstance(pid, int):
+        return False
+    if pid == os.getpid():
+        return False
+    try:
+        return not _autospawn._pid_is_alive(pid)
+    except Exception:  # noqa: BLE001 -- no liveness answer is not "gone"
+        return False
+
+
+def _declare_phase_paid_budget(run_dir: Path, phase_id: str, *,
+                               unit_keys: List[str],
+                               worker_id: str) -> Dict[str, Any]:
+    """Declare (or re-declare) this phase's bounded TOTAL paid budget and its
+    first-attempt admission order.
+
+    Idempotent, atomic (the same `_phase_budget_transaction` lock every other
+    ledger writer takes) and it NEVER resets a counter: existing per-unit
+    counts, lifetime counts, outcomes and reservations are carried forward
+    untouched.
+
+    Called by _dispatch_phase_fanout_units once per dispatch with the keys of
+    the units that still need paid work. Banked and reused units are EXCLUDED --
+    they cost nothing, so funding them would only shrink the pool available to
+    the units that do.
+
+    MONOTONIC WITHIN A GENERATION. `total_cap` is the max of the stored and the
+    recomputed bound, so a later dispatch over fewer pending units cannot shrink
+    the budget an earlier dispatch of the same generation already declared --
+    that would strand units the retry pool is still paying for.
+
+    CANNOT-FUND-ALL. With more eligible units than the bound can fund, the first
+    `total_cap` keys in the given (deterministically enumerated) order are
+    admitted, and every remaining unit is recorded in `unit_not_admitted` with a
+    reason naming the bound, refused at reservation time, and reported in the
+    phase's sidecar. No unit is ever silently dropped.
+    """
+    order = [str(k) for k in unit_keys if k]
+    computed = _fanout_total_paid_cap(len(order))
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        generation = _approved_input_revision(run_dir, phase_id)
+        stored = _declared_paid_budget(led, generation)
+        # Monotonic within the generation, then clamped by the hard ceiling --
+        # so neither a shrinking eligible set nor a hand-edited stored value can
+        # raise the bound above the declared maximum.
+        cap = computed
+        if stored is not None:
+            cap = max(int(stored.get("total_cap") or 0), computed)
+        cap = min(PHASE_TOTAL_PAID_HARD_CAP, cap)
+        admitted = order[:cap]
+        reason = (
+            f"not admitted: this phase's declared bounded TOTAL paid budget is "
+            f"{cap} attempt(s) -- {len(order)} eligible unit(s) each owed one funded "
+            f"first attempt, capped at PHASE_TOTAL_PAID_HARD_CAP="
+            f"{PHASE_TOTAL_PAID_HARD_CAP} and funded by "
+            f"FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT="
+            f"{FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT} per unit plus a "
+            f"{PHASE_RETRY_POOL_ATTEMPTS}-attempt retry pool. First attempts are "
+            f"admitted in deterministic enumeration order and this unit falls "
+            f"outside the bound, so it was NOT attempted (it did not fail)")
+        not_admitted = {k: reason for k in order[cap:]}
+        budget = {
+            "policy": PHASE_PAID_BUDGET_POLICY,
+            "generation": generation,
+            "units_eligible": len(order),
+            "units_admitted_first_attempt": len(admitted),
+            "units_not_admitted": len(not_admitted),
+            "first_attempt_reserve": FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT,
+            "retry_pool": PHASE_RETRY_POOL_ATTEMPTS,
+            "total_cap": cap,
+            "computed_cap": computed,
+            "hard_cap": PHASE_TOTAL_PAID_HARD_CAP,
+            "per_unit_cap": DISPATCH_RETRY_CAP,
+            "declared_at": utcnow(),
+            "declared_by": worker_id,
+        }
+        led.update({
+            "phase_id": phase_id,
+            "approved_input_revision": led.get("approved_input_revision") or generation,
+            LEDGER_PHASE_PAID_BUDGET: budget,
+            LEDGER_UNIT_ADMISSION_ORDER: admitted,
+            LEDGER_UNIT_NOT_ADMITTED: not_admitted,
+        })
+        # A scope change (a new approved-input generation, or a consumed repair
+        # receipt) starts a FRESH per-unit count -- the phase counter's own
+        # rule, applied per unit. The superseded counts are preserved for audit
+        # under their own key; they are never read for admission again.
+        scope = _paid_attempt_scope(led, generation)
+        stamp = str(led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION) or "initial")
+        if stamp != scope:
+            prior = led.get(LEDGER_UNIT_PAID_ATTEMPTS)
+            if isinstance(prior, dict) and prior:
+                led["unit_paid_attempts_prior_generation"] = {
+                    "scope": stamp, "attempts": prior}
+            led[LEDGER_UNIT_PAID_ATTEMPTS] = {}
+            led[LEDGER_UNIT_PAID_ATTEMPTS_GENERATION] = scope
+        if not isinstance(led.get(LEDGER_UNIT_PAID_ATTEMPTS), dict):
+            led[LEDGER_UNIT_PAID_ATTEMPTS] = {}
+        if not isinstance(led.get(LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME), dict):
+            led[LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME] = {}
+        if not isinstance(led.get(LEDGER_UNIT_OUTCOMES), dict):
+            led[LEDGER_UNIT_OUTCOMES] = {}
+        if not isinstance(led.get(LEDGER_UNIT_RESERVATIONS), dict):
+            led[LEDGER_UNIT_RESERVATIONS] = {}
+        _write_ledger(run_dir, phase_id, led)
+        return {"budget": budget, "admitted": admitted,
+                "not_admitted": not_admitted}
+
+
+def _reserve_scoped_unit_attempt(led: Dict[str, Any], *, run_dir: Path,
+                                 phase_id: str, worker_id: Optional[str],
+                                 paid: int) -> int:
+    """The PER-UNIT branch of _reserve_paid_attempt.
+
+    Runs INSIDE the phase budget transaction, after the ledger has been read and
+    any actionable repair receipt already consumed, with `paid` being the
+    caller's generation- and receipt-adjusted PHASE count. Mutates `led` in
+    place and returns the new phase count; the caller writes the ledger.
+
+    Every refusal raises BEFORE mutating, so a refused attempt leaves no mark --
+    the property should_dispatch's read-only call sites and the existing PD-068
+    test both depend on."""
+    unit_key = _current_paid_unit_key()
+    token = _current_paid_unit_token() or ""
+    generation = _approved_input_revision(run_dir, phase_id)
+    budget = _declared_paid_budget(led, generation)
+    cap = _effective_phase_paid_cap(led, generation)
+    counts = _unit_paid_counts(led, generation)
+    lifetime = led.get(LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME)
+    if not isinstance(lifetime, dict):
+        lifetime = {}
+    reservations = led.get(LEDGER_UNIT_RESERVATIONS)
+    if not isinstance(reservations, dict):
+        reservations = {}
+    charged = {t for t in (led.get(LEDGER_RESERVATION_TOKENS) or [])
+               if isinstance(t, str)}
+
+    # (0) DUPLICATE CALL. This exact logical attempt has already been charged:
+    # return without buying a second paid slot. This is what makes a re-entrant
+    # or concurrent second call for one attempt idempotent.
+    if token and token in charged:
+        return paid
+
+    # (1) A SUCCESS IS NEVER REGENERATED. The ledger's own durable ok outcome
+    # refuses the attempt unless the fan-out worker proved the success was
+    # INVALIDATED (changed inputs / corrupt output / a receipt that voided the
+    # bank) -- in which case re-authoring is the whole point of the retry.
+    if _unit_succeeded(led, unit_key, generation) and not _paid_unit_allows_reauthor():
+        raise PaidAttemptDeferred(
+            f"unit {unit_key} already succeeded in generation {generation!r}; "
+            f"refusing to regenerate a completed unit (PD-TEST-124). A unit is "
+            f"re-authored only when its success was invalidated.")
+
+    # (2) THE DECLARED BOUND. The refusal names the policy's own numbers, so an
+    # operator reading the sidecar sees which bound stopped the spend.
+    if paid >= cap:
+        raise PaidBudgetExhausted(
+            f"phase paid budget exhausted: {paid} of the declared bounded total "
+            f"{cap} provider attempt(s) for unchanged approved input "
+            f"({PHASE_PAID_BUDGET_POLICY})")
+
+    # (3) THE PER-UNIT CEILING -- DISPATCH_RETRY_CAP, the same number this
+    # module has always used, now applied per unit instead of per phase. One
+    # unit can never spend a sibling's budget.
+    spent = int(counts.get(unit_key) or 0)
+    if spent >= DISPATCH_RETRY_CAP:
+        raise PaidBudgetExhausted(
+            f"unit {unit_key} retry budget exhausted: {spent} provider attempt(s) "
+            f"for unchanged approved input (DISPATCH_RETRY_CAP="
+            f"{DISPATCH_RETRY_CAP}); sibling units keep their own budget "
+            f"(PD-TEST-124)")
+
+    # (4) CANNOT-FUND-ALL: a unit the declared bound could not fund is refused
+    # by name, with the recorded reason, instead of consuming a slot the
+    # admitted units are owed.
+    if budget is not None:
+        admitted = [str(k) for k in (led.get(LEDGER_UNIT_ADMISSION_ORDER) or [])]
+        if admitted and unit_key not in admitted:
+            why = (led.get(LEDGER_UNIT_NOT_ADMITTED) or {}).get(unit_key) or (
+                "not admitted: outside this phase's bounded total paid budget")
+            raise PaidAttemptDeferred(f"unit {unit_key} {why}")
+
+    # (5) FIRST-ATTEMPT FAIRNESS. While any admitted unit still has ZERO paid
+    # attempts, no unit may take a second or third. This is the rule that ends
+    # sibling starvation: the retry of a failing unit can no longer preempt a
+    # sibling's first attempt.
+    if budget is not None:
+        order = [str(k) for k in (led.get(LEDGER_UNIT_ADMISSION_ORDER) or [])]
+        pending_first = [k for k in order
+                         if int(counts.get(k) or 0) == 0
+                         and not _unit_succeeded(led, k, generation)]
+        if spent > 0 and pending_first:
+            raise PaidAttemptDeferred(
+                f"unit {unit_key} retry deferred: {len(pending_first)} admitted "
+                f"sibling unit(s) have not had their first paid attempt yet "
+                f"({', '.join(pending_first[:6])}"
+                f"{', ...' if len(pending_first) > 6 else ''}); first attempts "
+                f"have absolute priority (PD-TEST-124)")
+
+    # (6) ATOMIC, DUPLICATE-SAFE RESERVATION. Held under the phase's own budget
+    # lock, so two workers cannot interleave a read-modify-write and charge one
+    # slot twice; the token makes a repeat of THIS attempt a no-op; an in-flight
+    # reservation for the unit blocks a second concurrent attempt for it unless
+    # its owner process is provably gone (pid-liveness takeover, the same idiom
+    # the claim code uses for a dead claimant).
+    scope = _paid_attempt_scope(led, generation)
+    live = reservations.get(unit_key)
+    if isinstance(live, dict) and live.get("state") == "reserved" \
+            and str(live.get("generation") or "initial") == scope:
+        if token and live.get("token") == token:
+            return paid
+        # PD-TEST-177 -- THIS THREAD'S OWN PREVIOUS ATTEMPT FOR THIS UNIT IS, BY
+        # CONSTRUCTION, NO LONGER IN FLIGHT. A worker task runs one unit
+        # sequentially, and a unit's retries all happen inside that one task
+        # (parallel_prompt_worker._execute_slide's `while attempt < RETRY_CAP`
+        # loop), so a reservation this same THREAD left for this same unit can
+        # only be the attempt that just ended. Refusing it disabled the retry:
+        # the reservation is settled only AFTER the whole wave returns
+        # (_settle_unit_paid_attempts, called by _dispatch_prompt_phase_parallel),
+        # so during the retry loop the attempt-1 reservation is still 'reserved'.
+        # Measured on the shipped code: a 1-slide wave whose transport raises
+        # HTTP 500 made ONE provider call and then reported `budget_deferred`
+        # twice, where pre-PD-TEST-161 code made three and reported the real
+        # `server_error` -- one transient 5xx/429/timeout lost the slide AND
+        # mislabelled the cause.
+        #
+        # WHY (pid, thread) AND NOT worker_id: the prompt path calls
+        # `dispatch_complete(system_prompt, user_prompt, phase_id=..., run_dir=...)`
+        # -- worker_id is deliberately NOT passed (parallel_prompt_worker.py), so
+        # it is None here and cannot identify an owner. Thread identity can:
+        # threads are REUSED across units (ThreadPoolExecutor(thread_name_prefix=
+        # "p4prompt"); p4prompt_0 handled slides 1 and 4 in one measured run), so
+        # a thread name identifies no unit on its own -- but paired with the
+        # `unit_key` this lookup is already keyed on, and this process's pid, it
+        # identifies exactly "my own previous attempt at this unit".
+        #
+        # The guard's real job is unchanged: it stops TWO CONCURRENT attempts for
+        # one unit. A different thread (even in this process), a different
+        # process, or a reservation predating this field still refuses, because
+        # `live.get("thread")` will not equal ours. Spend stays bounded by the
+        # checks that already ran: the per-unit ceiling (`spent >=
+        # DISPATCH_RETRY_CAP`) and the declared phase bound (`paid >= cap`).
+        # Every replacement below still increments `seq` and `paid`.
+        if not _reservation_owner_is_gone(live.get("pid")):
+            raise PaidAttemptDeferred(
+                f"unit {unit_key} already has an in-flight paid reservation "
+                f"(attempt {live.get('seq')}, owner pid {live.get('pid')}, worker "
+                f"{live.get('worker')!r}); refusing to double-reserve one unit's "
+                f"attempt (PD-TEST-124)")
+
+    seq = spent + 1
+    counts[unit_key] = seq
+    lifetime[unit_key] = int(lifetime.get(unit_key) or 0) + 1
+    paid = int(paid) + 1
+    reservations[unit_key] = {
+        "token": token, "seq": seq, "worker": worker_id or "unknown",
+        "pid": os.getpid(), "state": "reserved", "generation": scope,
+        # PD-TEST-177: the reserving THREAD, so this unit's own in-run retry can
+        # recognise its predecessor as finished (see the double-reserve guard
+        # above) while a different thread or process still refuses. Absent on
+        # rows written before this change, which therefore still refuse.
+        "thread": threading.get_ident(),
+        "reserved_at": utcnow(),
+    }
+    tokens = [t for t in (led.get(LEDGER_RESERVATION_TOKENS) or [])
+              if isinstance(t, str)]
+    if token:
+        tokens.append(token)
+    # A scope change is normally archived by _declare_phase_paid_budget, but a
+    # repair receipt is consumed HERE -- after the declaration -- so the archive
+    # is repeated on this path too. Audit history is never dropped.
+    prior_stamp = str(led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION) or "initial")
+    if prior_stamp != scope:
+        prior_counts = led.get(LEDGER_UNIT_PAID_ATTEMPTS)
+        if isinstance(prior_counts, dict) and prior_counts:
+            led["unit_paid_attempts_prior_generation"] = {
+                "scope": prior_stamp, "attempts": prior_counts}
+    led.update({
+        LEDGER_UNIT_PAID_ATTEMPTS: counts,
+        # The SCOPE, not the bare revision: a receipt re-arms the per-unit
+        # ceilings, so the stamp has to move with it or the counts would look
+        # stale on the very next read and the caps would silently vanish.
+        LEDGER_UNIT_PAID_ATTEMPTS_GENERATION: scope,
+        LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME: lifetime,
+        LEDGER_UNIT_RESERVATIONS: reservations,
+        LEDGER_RESERVATION_TOKENS: tokens[-_RESERVATION_TOKEN_HISTORY:],
+        "paid_attempts": paid,
+    })
+    return paid
+
+
+def _settle_unit_paid_attempts(run_dir: Optional[Path], phase_id: str,
+                               outcomes: List[Tuple[str, str, List[str]]], *,
+                               worker_id: str) -> None:
+    """Settle one batch's paid reservations and record each unit's durable
+    outcome, in ONE transaction.
+
+    A settled reservation stays in the ledger as history: its `state` becomes
+    "settled", so a later dispatch of the same unit may reserve again while a
+    duplicate call carrying the SAME token stays a no-op forever. The outcome
+    row is what later dispatches read to decide "this unit already succeeded --
+    do not regenerate it" and "this unit failed -- retry it".
+
+    Appended for every unit the batch reported, including banked/reused units
+    with no reservation at all (their outcome is an honest ok at zero cost), so
+    a restart sees the same picture. Never raises on a missing ledger: a phase
+    with no ledger has nothing to settle."""
+    if run_dir is None or not outcomes:
+        return
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        if not led:
+            return
+        generation = _approved_input_revision(run_dir, phase_id)
+        reservations = led.get(LEDGER_UNIT_RESERVATIONS)
+        if not isinstance(reservations, dict):
+            reservations = {}
+        recorded = led.get(LEDGER_UNIT_OUTCOMES)
+        if not isinstance(recorded, dict):
+            recorded = {}
+        counts = _unit_paid_counts(led, generation)
+        scope = _paid_attempt_scope(led, generation)
+        for unit_key, status, reasons in outcomes:
+            unit_key = str(unit_key)
+            live = reservations.get(unit_key)
+            if isinstance(live, dict) and live.get("state") == "reserved" \
+                    and str(live.get("generation") or "initial") == scope:
+                settled = dict(live)
+                settled["state"] = "settled"
+                settled["settled_at"] = utcnow()
+                settled["settled_status"] = str(status)
+                reservations[unit_key] = settled
+            recorded[unit_key] = {
+                "status": "ok" if str(status) == "ok" else "failed",
+                "unit_status": str(status),
+                "generation": generation,
+                "attempts": int(counts.get(unit_key) or 0),
+                "reasons": [str(r) for r in (reasons or [])][:5],
+                "at": utcnow(),
+                "worker": worker_id,
+            }
+        led.update({LEDGER_UNIT_RESERVATIONS: reservations,
+                    LEDGER_UNIT_OUTCOMES: recorded,
+                    "phase_id": phase_id})
+        _write_ledger(run_dir, phase_id, led)
+
+
+def _reserve_paid_attempt(run_dir: Optional[Path], phase_id: str,
+                          worker_id: Optional[str]) -> None:
+    """Atomically reserve one provider call before transport.
+
+    A reservation is intentionally never released: a process can die after
+    sending bytes to a provider but before receiving/logging a response.  In
+    that ambiguous case retaining the slot is the only no-double-charge policy.
+
+    TWO MODES, ONE LEDGER. Outside a fan-out unit scope (every serial phase)
+    this is the legacy phase-level reservation, unchanged. Inside a unit scope
+    -- paid_unit_scope, set by the fan-out unit worker -- the same call is
+    accounted PER UNIT against the phase's declared bounded total budget
+    (PD-TEST-124): first-attempt fairness, the per-unit DISPATCH_RETRY_CAP
+    ceiling, admission, and a token-keyed duplicate-safe reservation. The
+    phase's `paid_attempts` total is incremented in both modes, so the declared
+    bound and the legacy counter can never disagree about total spend.
+    """
+    if run_dir is None:
+        return
+    with _phase_budget_transaction(run_dir, phase_id):
+        led = _read_ledger(run_dir, phase_id)
+        generation = _approved_input_revision(run_dir, phase_id)
+        prior_generation = str(led.get("approved_input_revision") or "initial")
+        paid = int(led.get("paid_attempts") or 0) if generation == prior_generation else 0
+        # A local-operator receipt is the only code-repair reset path.  Its
+        # fields are rechecked at consumption by the SAME predicate the
+        # read-only dispatch gate consults; an order file is never read.
+        # PD-TEST-068: this function is the receipt's SINGLE consumer, and the
+        # consumption below is the only place a receipt is ever spent.
+        actionable, _why = _repair_receipt_is_actionable(
+            led, phase_id, run_dir, approved_input_revision=generation)
+        if actionable:
+            # Exactly-once, and atomic.  authorize_paid_retry_reset writes the
+            # receipt under THIS same _phase_budget_transaction lock, so the
+            # bytes the predicate just proved are the bytes read here: no
+            # re-derivation, no second validation copy.
+            # PD-TEST-092: the durable claim that makes this exactly-once is the
+            # GENERATION BUMP on the next line, NOT repair_receipt_consumed.  The
+            # generation is the only field a receipt must match (it carries
+            # prior_generation == the ledger's current generation), and bumping it
+            # here is what strands this receipt permanently.  The bool below is an
+            # audit record only; gating on it is what PD-TEST-092 removed, because
+            # it latched the phase for life and made the paid budget unopenable a
+            # second time.  Both fields are carried across outcome folds in
+            # record_outcome's rebuild dict (cited by symbol, not by line: the
+            # line moved once already and a stale offset is how this recurs).
+            receipt = _read_repair_receipt(run_dir, phase_id)
+            # PD-TEST-182: `paid = DISPATCH_RETRY_CAP - allowance` assumed the
+            # allowance could never exceed DISPATCH_RETRY_CAP. With a fan-out
+            # sized receipt (up to PHASE_TOTAL_PAID_HARD_CAP) it would go
+            # NEGATIVE -- an 8-unit receipt would write paid_attempts = 3 - 8 = -5,
+            # and a negative phase counter makes the `paid >= cap` bound
+            # unsatisfiable, i.e. UNBOUNDED re-dispatch. The intent is to reopen
+            # the phase total by `allowance`; clamped at zero, "reopen by more
+            # than the cap" simply means "fully reopened", and the phase bound
+            # still governs from there.
+            paid = max(0, DISPATCH_RETRY_CAP - receipt["allowance"])
+            led["generation"] = int(led.get("generation", 0)) + 1
+            led["repair_receipt_consumed"] = True
+            # PD-TEST-092: record the generation this receipt was spent FOR, so the
+            # audit trail says which generation consumed it and a later reader never
+            # has to infer it from the stored receipt's prior_generation.
+            led["repair_receipt_consumed_generation"] = int(led.get("generation", 0)) - 1
+            led["repair_receipt"] = receipt
+        if worker_id:
+            claim = _read_claim_record(_claim_path(run_dir, phase_id)) or {}
+            if claim and str(claim.get("worker") or "") != worker_id:
+                raise PaidBudgetExhausted("paid attempt refused: claim ownership changed")
+        # PD-TEST-124: INSIDE a fan-out unit scope the budget is the phase's
+        # declared BOUNDED TOTAL, accounted per unit (first-attempt fairness,
+        # per-unit ceiling, admission, duplicate-safe reservation). OUTSIDE one
+        # -- every serial phase -- the legacy phase-level clause below is
+        # byte-for-byte unchanged, so no existing cap is weakened.
+        unit_key = _current_paid_unit_key()
+        if unit_key:
+            paid = _reserve_scoped_unit_attempt(
+                led, run_dir=run_dir, phase_id=phase_id,
+                worker_id=worker_id, paid=paid)
+        else:
+            if paid >= DISPATCH_RETRY_CAP:
+                raise PaidBudgetExhausted(
+                    f"paid retry budget exhausted: {paid} provider attempts for unchanged "
+                    f"approved input (DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+            paid = paid + 1
+        led.update({"phase_id": phase_id, "approved_input_revision": generation,
+                    "paid_attempts": paid, "last_reserved_at": utcnow(),
+                    "last_reservation_worker": worker_id or "unknown"})
+        _write_ledger(run_dir, phase_id, led)
+        # The new generation is durable before removing a prior park marker.
+        if generation != prior_generation:
+            try:
+                _blocked_marker_path(run_dir, phase_id).unlink()
+            except OSError:
+                pass
+
+
 def _backoff_delay_s(repeat: int) -> float:
     """repeat is the number of times this outcome has recurred AFTER its first
-    observation. repeat<=0 (a new or changed outcome) is always zero delay."""
+    observation. repeat<=0 (a new or changed outcome) is always zero delay.
+
+    PD-TEST-095 -- SATURATE BY REPEATED MULTIPLICATION, NEVER BY A POWER.
+    This used to be `min(CAP, BASE * (MULT ** (repeat - 1)))`. The power is
+    evaluated BEFORE the min(), so it overflows float range before the cap can
+    clamp it: at exponent 1024, `2.0 ** 1024` raises
+    `OverflowError(34, 'Result too large')`. `repeat` is not bounded by the retry
+    ceiling -- a work order that LINGERS on a phase whose status stopped changing
+    is re-folded on every sweep tick, so `consecutive` climbs without limit (the
+    live run reached 1025 on two phases).
+
+    The consequence is a PERMANENT, SELF-LOCKING STALL, not a slow backoff:
+    `record_outcome` computes the delay BEFORE it writes the ledger, so the raise
+    aborts the fold and `consecutive` never advances past the boundary -- and
+    because the exception escapes `sweep_run_dir`, EVERY phase in the run stops
+    being dispatched. Measured on pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    271 consecutive `sweep error: OverflowError(34, 'Result too large')` lines and
+    zero dispatches, which is why a freshly issued P4-COPY repair receipt was
+    never consumed.
+
+    The result is `min(cap, base * mult**exp)` for every input this function can
+    actually be called with (`repeat` is an int, and the sole call site passes
+    `consecutive - 1` where `consecutive` is `int(...) + 1`), verified by sweeping
+    the range: zero differences wherever the old expression returned a value. It is
+    NOT bit-identical for out-of-contract inputs -- a non-integral float `repeat`,
+    NaN, or a negative multiplier can differ -- and the docstring says so rather
+    than claiming a universal equivalence it does not have.
+    Above mult == 1 the loop stops as soon as the cap is reached, so it runs a
+    handful of times and cannot overflow; at or below 1 the power is safe by
+    construction and is used directly, so no path is O(repeat)."""
     if repeat <= 0:
         return 0.0
-    return min(DISPATCH_BACKOFF_CAP_S,
-               DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+    if 0 <= DISPATCH_BACKOFF_MULTIPLIER <= 1:
+        # A multiplier in [0, 1] cannot overflow a power: `mult ** n` either stays 1
+        # (mult == 1) or underflows toward 0 (0 <= mult < 1), and both are finite for
+        # any n. The range is checked EXPLICITLY rather than as `<= 1`, because a
+        # NEGATIVE multiplier reaches this branch otherwise and `(-2.0) ** 1024`
+        # raises the very OverflowError this function exists to prevent (found by
+        # the delta re-review; unreachable today because the multiplier is the module
+        # literal 2.0, but the guard should not depend on that being true forever). Use the power directly here so a non-growing
+        # multiplier stays O(1) instead of walking `repeat` steps -- the value is
+        # identical to the loop's, and the loop would be O(repeat) for mult < 1
+        # because `delay < CAP` never becomes false on a decreasing sequence.
+        # (Independent review of PR #1145 measured 0.25s for 1e7 steps at
+        # mult == 1.0, i.e. ~25s at 1e9: correct but unbounded.)
+        return min(DISPATCH_BACKOFF_CAP_S,
+                   DISPATCH_BACKOFF_BASE_S
+                   * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1)))
+    delay = DISPATCH_BACKOFF_BASE_S
+    steps = 0
+    while delay < DISPATCH_BACKOFF_CAP_S and steps < repeat - 1:
+        delay *= DISPATCH_BACKOFF_MULTIPLIER
+        steps += 1
+    return min(DISPATCH_BACKOFF_CAP_S, delay)
 
 
 def should_dispatch(run_dir: Path, phase_id: str, *,
@@ -7301,6 +9908,46 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
     led = _read_ledger(run_dir, phase_id)
     if not led:
         return True, ""
+    input_revision = _approved_input_revision(run_dir, phase_id)
+    prior_input_revision = str(led.get("approved_input_revision") or "initial")
+    if input_revision != prior_input_revision:
+        # Marker removal follows only the durable reservation of this
+        # generation, never this read-only preflight.
+        return True, "approved input revision changed"
+    # PD-TEST-124: the ceiling is the phase's DECLARED bounded total for a
+    # fan-out phase and DISPATCH_RETRY_CAP for every other phase, so a fan-out
+    # phase whose siblings are still owed their first attempt is NOT gated off
+    # by the legacy three-attempt phase counter. Undeclared => the legacy
+    # comparison and the legacy refusal text, byte-for-byte.
+    if (led.get("blocked") and
+            int(led.get("paid_attempts") or 0) >= _effective_phase_paid_cap(
+                led, input_revision)):
+        # PD-TEST-068.  This early return used to precede every other clause of
+        # this function AND to be blind to the repair receipt, while the only
+        # code that ever reads that receipt sits downstream of a claim -- and
+        # every claim path is gated right here.  A valid unconsumed receipt
+        # could therefore never lift the very gate that blocks its own
+        # consumption.  Consult the SAME predicate the consumer uses.
+        #
+        # READ-ONLY: this gate never consumes the receipt, never resets the
+        # counters and never mutates the ledger.  All three should_dispatch
+        # call sites (sweep_run_dir, the scheduler's claim loop, and the
+        # scan-root reporter) depend on that, and the reservation remains the
+        # single consumer.  Nothing is weakened for the no-receipt case: the
+        # refusal below is the unchanged, truthful exhaustion message.
+        actionable, why = _repair_receipt_is_actionable(
+            led, phase_id, run_dir, approved_input_revision=input_revision)
+        if actionable:
+            return True, why
+        _budget = _declared_paid_budget(led, input_revision)
+        if _budget is None:
+            return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} "
+                           f"provider attempts for unchanged approved input "
+                           f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP})")
+        return False, (f"paid retry budget exhausted: {led.get('paid_attempts')} of "
+                       f"the declared bounded total {_budget.get('total_cap')} "
+                       f"provider attempts for unchanged approved input "
+                       f"({PHASE_PAID_BUDGET_POLICY})")
     eligible_at = led.get("next_eligible_at_epoch")
     if not isinstance(eligible_at, (int, float)):
         return True, ""
@@ -7317,9 +9964,11 @@ def should_dispatch(run_dir: Path, phase_id: str, *,
                    f"{eligible_at - now:.0f}s")
 
 
+@_phase_budget_locked
 def record_outcome(run_dir: Path, phase_id: str, status: str,
                    reasons: Optional[List[str]] = None, *, worker_id: str,
                    order_file: Optional[Path] = None,
+                   paid_attempts: int = 0,
                    now: Optional[float] = None) -> Dict[str, Any]:
     """Fold one dispatch outcome into the ledger and decide whether it earns a
     sidecar record. Returns the new ledger entry.
@@ -7333,6 +9982,12 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
     led = _read_ledger(run_dir, phase_id)
     sig = _outcome_signature(status, reasons)
     rev = _dispatch_revision(run_dir, phase_id, order_file)
+    input_revision = _approved_input_revision(run_dir, phase_id)
+    prior_input_revision = str(led.get("approved_input_revision") or "initial")
+    prior_paid_attempts = (int(led.get("paid_attempts") or 0)
+                           if input_revision == prior_input_revision else 0)
+    paid_attempts = max(0, int(paid_attempts or 0))
+    total_paid_attempts = prior_paid_attempts + paid_attempts
 
     same = bool(led) and led.get("signature") == sig and led.get("revision") == rev
     consecutive = (int(led.get("consecutive") or 0) + 1) if same else 1
@@ -7356,6 +10011,38 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
         "blocked": False,
         "blocked_reason": None,
         "worker": worker_id,
+        "approved_input_revision": input_revision,
+        "paid_attempts": total_paid_attempts,
+        # Reservation state is durable across outcome folds.  Dropping these
+        # fields would make a consumed repair receipt appear fresh after an
+        # exhausted result and buy a second allowance on restart.
+        "generation": int(led.get("generation") or 0),
+        "repair_receipt_consumed": bool(led.get("repair_receipt_consumed")),
+        # PD-TEST-092: this entry REBUILDS the ledger, so any field not named here
+        # is erased on the very next outcome fold.  The independent review of PR
+        # #1143 measured exactly that: the new audit field was present after
+        # _reserve and GONE after one record_outcome, which made the advertised
+        # audit trail fiction.  Carried forward so it survives as documented.
+        "repair_receipt_consumed_generation": led.get("repair_receipt_consumed_generation"),
+        "repair_receipt": led.get("repair_receipt"),
+        # PD-TEST-124: the per-unit paid ledger, the declared bounded total
+        # budget and the settled reservations are exactly as durable as the
+        # phase counter above -- and for the same reason. This entry REBUILDS
+        # the ledger, so a field not named here is erased by the very next
+        # outcome fold. Measured: without these four lines one record_outcome
+        # wiped every per-unit counter, the admission order and the reservation
+        # history, and a restart then re-paid units whose successes it could no
+        # longer see. Nothing here is reset; everything is carried forward.
+        LEDGER_PHASE_PAID_BUDGET: led.get(LEDGER_PHASE_PAID_BUDGET),
+        LEDGER_UNIT_ADMISSION_ORDER: led.get(LEDGER_UNIT_ADMISSION_ORDER),
+        LEDGER_UNIT_NOT_ADMITTED: led.get(LEDGER_UNIT_NOT_ADMITTED),
+        LEDGER_UNIT_PAID_ATTEMPTS: led.get(LEDGER_UNIT_PAID_ATTEMPTS),
+        LEDGER_UNIT_PAID_ATTEMPTS_GENERATION: led.get(LEDGER_UNIT_PAID_ATTEMPTS_GENERATION),
+        LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME: led.get(LEDGER_UNIT_PAID_ATTEMPTS_LIFETIME),
+        "unit_paid_attempts_prior_generation": led.get("unit_paid_attempts_prior_generation"),
+        LEDGER_UNIT_OUTCOMES: led.get(LEDGER_UNIT_OUTCOMES),
+        LEDGER_UNIT_RESERVATIONS: led.get(LEDGER_UNIT_RESERVATIONS),
+        LEDGER_RESERVATION_TOKENS: led.get(LEDGER_RESERVATION_TOKENS),
     }
 
     if status in _FAILING_STATUSES and consecutive >= DISPATCH_REPEAT_CEILING:
@@ -7365,9 +10052,36 @@ def record_outcome(run_dir: Path, phase_id: str, status: str,
             f"{phase_id} (retry ceiling DISPATCH_REPEAT_CEILING={DISPATCH_REPEAT_CEILING}). "
             f"Last reasons: {reasons or []}")
         entry["blocked_at"] = utcnow()
-        # Parked, never dropped: re-dispatch resumes the moment the Engine
-        # reissues the work order or this phase's state changes (should_dispatch's
-        # revision check), so a real fix upstream un-parks it automatically.
+        # Unpaid refusal parks stay re-armable when the engine changes the
+        # work order or phase state.  Paid failures additionally carry the
+        # durable budget below, which only a verified input amendment resets.
+        entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
+
+    # PD-TEST-124: the ceiling this clause compares against is the phase's
+    # DECLARED bounded total for a fan-out phase, and DISPATCH_RETRY_CAP for
+    # every other phase. Before this, an 8-unit fan-out phase was parked as
+    # "paid retry budget exhausted" after its THIRD attempt -- with seven units
+    # never attempted -- because the phase counter was compared against the
+    # per-phase legacy cap no matter how many units the phase owed work to.
+    # The legacy refusal text is preserved byte-for-byte when no fan-out budget
+    # is declared, so serial phases and the existing PD-068/PD-092 pins are
+    # untouched.
+    _outcome_cap = _effective_phase_paid_cap(led, input_revision)
+    if status in _FAILING_STATUSES and total_paid_attempts >= _outcome_cap:
+        entry["blocked"] = True
+        _budget = _declared_paid_budget(led, input_revision)
+        if _budget is None:
+            entry["blocked_reason"] = (
+                f"paid retry budget exhausted after {total_paid_attempts} provider attempts for "
+                f"{phase_id} with unchanged approved input "
+                f"(DISPATCH_RETRY_CAP={DISPATCH_RETRY_CAP}). Last reasons: {reasons or []}")
+        else:
+            entry["blocked_reason"] = (
+                f"paid retry budget exhausted after {total_paid_attempts} of the "
+                f"declared bounded total {_budget.get('total_cap')} provider "
+                f"attempts for {phase_id} with unchanged approved input "
+                f"({PHASE_PAID_BUDGET_POLICY}). Last reasons: {reasons or []}")
+        entry["blocked_at"] = utcnow()
         entry["next_eligible_at_epoch"] = now + DISPATCH_BACKOFF_CAP_S
 
     _write_ledger(run_dir, phase_id, entry)
@@ -7403,9 +10117,23 @@ def _park_blocked(run_dir: Path, phase_id: str, entry: Dict[str, Any], *,
         f"status:      {entry.get('status')}\n"
         f"consecutive: {entry.get('consecutive')} identical outcomes\n"
         f"reason:      {reason}\n"
-        "\nThis phase stopped being re-dispatched after the retry ceiling. It was NOT\n"
-        "marked done and NOT silently dropped. Dispatch resumes automatically if the\n"
-        "Engine reissues the work order or this phase's state.json status changes.\n"
+        "\nThis phase stopped being re-dispatched after its retry ceiling. It was NOT\n"
+        "marked done and NOT silently dropped. A work-order rewrite or worker restart\n"
+        "does not buy more paid attempts. Dispatch resumes by EITHER of two verified\n"
+        "routes -- and by nothing else:\n"
+        "  1. ENGINE route: a verified owner input amendment changes this phase's\n"
+        "     approved input generation; or\n"
+        "  2. REPAIR-RECEIPT route: after a deployed code repair, the OS owner of this\n"
+        f"     run issues ONE bounded local-operator paid-retry repair receipt (kind\n"
+        f"     {DISPATCH_REPAIR_RECEIPT_KIND}, allowance 1..{PHASE_TOTAL_PAID_HARD_CAP}) bound to the\n"
+        "     then-current dispatcher source hash, ledger generation, approved input\n"
+        "     revision and run owner. The dispatcher consumes it exactly once and\n"
+        "     reserves that many further paid attempts:\n"
+        "       dispatcher.py --run-dir <THIS RUN DIR> \\\n"
+        f"         --authorize-paid-retry-reset {phase_id} --reset-allowance <N>\n"
+        "     A receipt whose dispatcher_sha256 is not the hash of the dispatcher\n"
+        "     source RUNNING NOW is refused -- re-issue it after the repair is\n"
+        "     deployed to every mirror.\n"
         f"Ledger: working/work-orders/{_LEDGER_DIRNAME}/{phase_id}.json\n",
         encoding="utf-8")
     _append_sidecar(run_dir, phase_id, {
@@ -8289,6 +11017,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "when this box's detection and resource profile do not already "
                         "know it. A structural cap-table provider declared with no plan "
                         "PARKS the run, so --declare-capacity refuses instead")
+    p.add_argument("--authorize-paid-retry-reset", metavar="PHASE_ID", default=None,
+                   help="local-operator repair action: issue one bounded reset receipt for PHASE_ID")
+    p.add_argument("--reset-allowance", type=int, default=None,
+                   help="provider calls allowed by --authorize-paid-retry-reset (1..retry cap)")
     return p
 
 
@@ -8298,6 +11030,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.run_dir:
         run_dir = args.run_dir.expanduser().resolve()
+        if args.authorize_paid_retry_reset:
+            if args.reset_allowance is None:
+                raise SystemExit("--reset-allowance is required with --authorize-paid-retry-reset")
+            print(json.dumps(authorize_paid_retry_reset(
+                run_dir, args.authorize_paid_retry_reset,
+                allowance=args.reset_allowance), sort_keys=True))
+            return 0
         scripts_dir = resolve_scripts_dir_for_run(run_dir)
         dept_root = resolve_dept_root(scripts_dir)
         # FIX 6: the override file is written only when an operator explicitly

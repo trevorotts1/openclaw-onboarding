@@ -49,6 +49,28 @@ CREATE TABLE IF NOT EXISTS sop_embeddings_shipped_asset (
     imported_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
+# Role-library rows (the CC's importRoleLibrary(), source='role-library') are
+# written by converge AFTER the SOP library ingest, with random ids and no
+# vector. This marker records how many of them the last import saw, so a
+# converge that adds role rows re-arms provisioning instead of being SKIPped
+# forever by the release-tag gate above.
+ROLE_MARKER_SQL = """
+CREATE TABLE IF NOT EXISTS role_library_embeddings_shipped (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    release_tag     TEXT NOT NULL,
+    role_rows_seen  INTEGER NOT NULL
+);
+"""
+
+
+def _role_rows(conn: sqlite3.Connection) -> int:
+    """Live role-library rows on this box (0 on a CC that predates sops.source)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(sops)")}
+    if "source" not in cols:
+        return 0
+    return conn.execute(
+        "SELECT COUNT(*) FROM sops WHERE source = 'role-library' AND deleted_at IS NULL"
+    ).fetchone()[0]
 
 
 def _sha256_file(path: str) -> str:
@@ -130,17 +152,39 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
         installed_rows = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings'"
         ).fetchone()[0]
+        # COVERAGE, not raw row count. A box can hold a full 2555-row
+        # sop_embeddings table in which EVERY row is an ORPHAN — keyed to the
+        # asset's slug-derived ids while this box's sops.id is a content hash,
+        # so not one row joins to a SOP. Counting rows, that box looks finished
+        # (2555 >= 2555) and this gate SKIPped it forever; counting coverage, it
+        # correctly reads as 0 and gets provisioned. Measured across the fleet
+        # 2026-09-12: 6 boxes were permanently stuck this way, each showing a
+        # "full" embeddings table with 82–100% of its SOPs unembedded.
         installed_count = 0
         if installed_rows:
-            installed_count = conn.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0]
+            installed_count = conn.execute(
+                "SELECT COUNT(*) FROM sops s WHERE EXISTS "
+                "(SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)"
+            ).fetchone()[0]
+        role_rows = _role_rows(conn)
+        conn.execute(ROLE_MARKER_SQL)
+        role_marker = conn.execute(
+            "SELECT release_tag, role_rows_seen FROM role_library_embeddings_shipped WHERE id=1"
+        ).fetchone()
+        conn.commit()
         conn.close()
     except sqlite3.Error as exc:
         return {"status": "WARN", "reason": f"could not read target DB: {exc}"}
 
-    if marker and marker["release_tag"] == release_tag and installed_count >= sop_count:
+    roles_current = (
+        not manifest.get("role_library_count")
+        or (role_marker is not None and role_marker[0] == release_tag and role_rows <= role_marker[1])
+    )
+    if marker and marker["release_tag"] == release_tag and installed_count >= sop_count and roles_current:
         return {
             "status": "SKIP",
-            "reason": f"already canonical (release={release_tag}, {installed_count} rows >= manifest {sop_count})",
+            "reason": f"already canonical (release={release_tag}, {installed_count} SOPs covered "
+                      f">= manifest {sop_count})",
         }
 
     if dry_run:
@@ -181,6 +225,14 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
             (model, dims),
         )
         mismatched = cur.fetchone()[0]
+        has_role_table = conn.execute(
+            "SELECT COUNT(*) FROM shipped.sqlite_master WHERE type='table' AND name='role_library_embeddings'"
+        ).fetchone()[0] > 0
+        if has_role_table:
+            mismatched += conn.execute(
+                "SELECT COUNT(*) FROM shipped.role_library_embeddings "
+                "WHERE embedding_model != ? OR embedding_dims != ?", (model, dims),
+            ).fetchone()[0]
         if mismatched:
             conn.commit()  # close out the implicit read transaction before DETACH
             conn.execute("DETACH DATABASE shipped")
@@ -191,14 +243,100 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
                           f"({model}/{dims}) — REFUSING import (never mix vector spaces)",
             }
 
-        conn.execute(
+        # ── Import: map the asset's ids onto THIS box's sops ids ─────────────
+        # TWO PASSES, disjoint by construction and in priority order:
+        #
+        #   pass 1 — EXACT id equality. Correct on a box whose `sops.id` already
+        #            IS the slug-derived spelling the asset ships
+        #            (`sop_app_development_ux_ui_specialist_morning_routine`).
+        #
+        #   pass 2 — the manifest's OWN documented derivation, for a box whose
+        #            `sops.id` is a CONTENT HASH (`sop_<64 hex>`).
+        #            SOP-EMBEDDINGS-MANIFEST.json states the relationship as
+        #                sop_id = "sop_" + slug.replace("-","_")[:60]
+        #            so recompute that from `main.sops.slug` and write the asset
+        #            embedding against the LOCAL id.
+        #
+        # BUG THIS FIXES (found on a live client box 2026-09-11): the import was
+        # a single `WHERE sop_id IN (SELECT id FROM main.sops)`, which silently
+        # matches NOTHING when sops.id is hashed — measured intersection 0 of
+        # 2555 asset rows against 3415 local SOPs. The function still returned
+        # status "IMPORTED" and a message quoting the MANIFEST count, so every
+        # such box logged a green "imported 2555 rows" line over an embeddings
+        # table that never grew past its pre-existing rows. Semantic SOP search
+        # then silently degraded to keyword matching fleet-wide, with nothing in
+        # any log to show for it.
+        #
+        # Pass 2 excludes ids the asset carries directly, so the two passes can
+        # never both write the same local row and the outcome is deterministic
+        # regardless of table order.
+        cur = conn.execute(
             """INSERT OR REPLACE INTO main.sop_embeddings
                    (sop_id, embedding, embedding_model, embedding_dims, embedded_at)
-               SELECT sop_id, embedding, embedding_model, embedding_dims, embedded_at
-               FROM shipped.sop_embeddings
-               WHERE sop_id IN (SELECT id FROM main.sops)"""
+               SELECT e.sop_id, e.embedding, e.embedding_model, e.embedding_dims, e.embedded_at
+               FROM shipped.sop_embeddings e
+               WHERE e.sop_id IN (SELECT id FROM main.sops)"""
         )
-        imported = conn.total_changes
+        imported_by_id = max(cur.rowcount, 0)
+
+        cur = conn.execute(
+            """INSERT OR REPLACE INTO main.sop_embeddings
+                   (sop_id, embedding, embedding_model, embedding_dims, embedded_at)
+               SELECT s.id, e.embedding, e.embedding_model, e.embedding_dims, e.embedded_at
+               FROM main.sops s
+               JOIN shipped.sop_embeddings e
+                 ON e.sop_id = 'sop_' || substr(replace(s.slug, '-', '_'), 1, 60)
+               WHERE s.slug IS NOT NULL
+                 AND s.slug != ''
+                 AND s.id NOT IN (SELECT sop_id FROM shipped.sop_embeddings)"""
+        )
+        imported_by_slug = max(cur.rowcount, 0)
+
+        # pass 3 — role-library rows, matched on the EXACT slug importRoleLibrary()
+        # wrote (`role-library:<dept>/<role>`); their ids are random uuids, and the
+        # 60-char rule of pass 2 would collide on these long slugs.
+        imported_roles = 0
+        if has_role_table and _role_rows(conn):
+            cur = conn.execute(
+                """INSERT OR REPLACE INTO main.sop_embeddings
+                       (sop_id, embedding, embedding_model, embedding_dims, embedded_at)
+                   SELECT s.id, r.embedding, r.embedding_model, r.embedding_dims, r.embedded_at
+                   FROM main.sops s
+                   JOIN shipped.role_library_embeddings r ON r.slug = s.slug
+                   WHERE s.source = 'role-library' AND s.deleted_at IS NULL"""
+            )
+            imported_roles = max(cur.rowcount, 0)
+        imported = imported_by_id + imported_by_slug + imported_roles
+
+        # HONEST OUTCOME. Zero rows here is a FAILURE, never a success: the
+        # idempotency gate above already returned SKIP for an
+        # already-provisioned box, so reaching this point having written
+        # nothing means the asset and this box's SOP library do not line up.
+        # Report that, and do NOT stamp the provisioned marker.
+        if imported == 0:
+            asset_rows = conn.execute(
+                "SELECT COUNT(*) FROM shipped.sop_embeddings").fetchone()[0]
+            local_sops = conn.execute("SELECT COUNT(*) FROM main.sops").fetchone()[0]
+            with_slug = conn.execute(
+                "SELECT COUNT(*) FROM main.sops WHERE slug IS NOT NULL AND slug != ''"
+            ).fetchone()[0]
+            conn.commit()
+            conn.execute("DETACH DATABASE shipped")
+            conn.close()
+            return {
+                "status": "WARN",
+                "reason": (
+                    f"asset downloaded and sha256-verified (release={release_tag}, "
+                    f"{asset_rows} rows) but ZERO rows matched this box — NOTHING was "
+                    f"imported. Local sops={local_sops} ({with_slug} with a slug); neither "
+                    "sops.id equality nor the manifest's slug derivation "
+                    "(\"sop_\" + slug.replace(\"-\",\"_\")[:60]) lines up with the shipped "
+                    "ids, so the SOP library on this box is probably from a different "
+                    "release. Provisioned marker NOT written."
+                ),
+                "imported_rows": 0,
+            }
+
         conn.commit()  # DETACH requires no pending transaction on the attached db
         conn.execute("DETACH DATABASE shipped")
         conn.execute("DELETE FROM sop_embeddings_shipped_asset WHERE id=1")
@@ -207,13 +345,25 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
             "VALUES (1, ?, ?, ?, datetime('now'))",
             (release_tag, sop_count, sha256_expected),
         )
+        conn.execute(ROLE_MARKER_SQL)
+        conn.execute("DELETE FROM role_library_embeddings_shipped WHERE id=1")
+        conn.execute(
+            "INSERT INTO role_library_embeddings_shipped (id, release_tag, role_rows_seen) VALUES (1, ?, ?)",
+            (release_tag, _role_rows(conn)),
+        )
         conn.commit()
         conn.close()
 
         return {
             "status": "IMPORTED",
-            "reason": f"imported shared-library sop_embeddings (release={release_tag}, "
-                      f"{sop_count} manifest rows, sha256 verified, 0 embedding API calls)",
+            # Report what was ACTUALLY written, never the manifest's count — the
+            # two differ whenever the library and the asset disagree, and quoting
+            # the manifest is what made a zero-row import read as a success.
+            "reason": f"imported {imported} shared-library sop_embeddings row(s) "
+                      f"({imported_by_id} matched by id + {imported_by_slug} by slug rule + "
+                      f"{imported_roles} role-library row(s) by exact slug; "
+                      f"release={release_tag}, manifest sop_count={sop_count}, "
+                      "sha256 verified, 0 embedding API calls)",
             "imported_rows": imported,
         }
     finally:

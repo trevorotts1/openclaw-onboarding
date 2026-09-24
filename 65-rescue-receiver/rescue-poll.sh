@@ -10,13 +10,13 @@
 # `openclaw agent` turn in an isolated per-ticket session), and acks a verdict.
 #
 # THE HONESTY CONTRACT (non-negotiable):
-#   ack `delivered` ONLY when the delivery command returned exit_code 0 AND a
-#   non-empty reply was extracted. Everything else acks `failed`. Ambiguous is
-#   never fixed. A box that stays silent leaves its ticket non-terminal so the
-#   SLA machinery pages a human.
-#   v1.3.0: an exit-0 non-empty reply whose TEXT says the job was not done
-#   (escalation/deferral language) is not a delivery — it acks `failed` with
-#   fail_reason `escalation_language` and carries a reply_excerpt of the text.
+#   `delivered` is a TRANSPORT fact only: the local delivery command exited 0
+#   and a non-empty reply was extracted. It never means the incident is fixed.
+#   Repair and verification are reported in a separate result-v3 object. A
+#   missing/invalid agent result becomes a conservative not_repaired /
+#   unverified result with a named blocker; prose can never promote repair.
+#   A box that stays silent leaves its ticket non-terminal so the SLA machinery
+#   pages a human.
 #
 # ROLL-SAFETY:
 #   * The script lives in the repo-managed skills tree; a roll OVERWRITES it.
@@ -81,7 +81,7 @@
 # contract: public receiver changes pair with additive server support FIRST;
 # old servers that omit the fields keep working because the fields simply echo
 # as empty strings).
-RECEIVER_VERSION="1.6.0"
+RECEIVER_VERSION="1.7.1"
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -467,6 +467,203 @@ _bounded_excerpt() {
 }
 
 # ---------------------------------------------------------------------------
+# RR-029 structured outcome and notification boundary.
+#
+# The agent's visible prose remains useful evidence, but it is never a repair
+# decision.  The receiver asks for a machine-readable result and normalizes it
+# against the authenticated claim.  If the agent omits or malforms it, the
+# receiver still sends a valid, conservative v3 result: transport happened,
+# repair is unverified/not_repaired, and the missing evidence is an owned
+# blocker.  This preserves a partial repair when it is stated structurally;
+# it does not use escalation-like wording as a classifier.
+#
+# `end_user_notification` is an additive result-v3 extension coordinated with
+# FLEET.  It records an attempt/receipt fact separately from repair state.
+# This receiver has no independent way to inspect a chat delivery, so it never
+# turns prose such as "I told the user" into `delivered`.
+# ---------------------------------------------------------------------------
+_rr_result_prompt() {
+    _rp_original="$1"
+    printf '%s\n\n%s\n%s\n%s\n%s\n%s\n' "$_rp_original" \
+        '[RESCUE RESULT CONTRACT — REQUIRED]' \
+        'Return your normal concise outcome, then include one fenced JSON object labelled json with repair_status (repaired|advice_delivered|partial|not_repaired), verification_status (verified|unverified|verifier_failed|pending), evidence_refs, and remaining_blocker when work remains.' \
+        'Only use repaired when the original acceptance check passed and include acceptance_check with check_id, passed:true, evidence_ref plus a fix_card with card_id, card_version, scope_authorized:true. A successful command or a nonempty reply is not proof of repair.' \
+        'If a user-facing update is explicitly authorized for this ticket and you can obtain a real message receipt, include end_user_notification.initial and .final objects with status (attempted|delivered|unavailable|unconfirmed), channel, message_receipt when available, and failure_reason when unavailable/unconfirmed. The receiver can only verify a channel-owned receipt; an agent-reported receipt remains unconfirmed. Never claim delivery from prose.' \
+        'If an initial received/applying update is authorized, send it before work; send the verified outcome or remaining blocker after work. Do not send maintenance updates merely because this instruction asks for a result.'
+}
+
+# _rr_build_result <reply-text> <agent-exit> <reply-chars> <reply-excerpt>
+#
+# Writes a compact result-v3 object to a private temporary file and sets
+# RR_RESULT_JSON to it.  Identity and transport facts are receiver-owned, so
+# an agent cannot accidentally attach a result to a different incident.
+_rr_build_result() {
+    _rb_reply="$1"
+    _rb_exit="$2"
+    _rb_chars="$3"
+    _rb_excerpt="$4"
+    RR_RESULT_JSON="$_TMP/rr-result-${INSTRUCTION_ID:-unknown}-$$.json"
+    rm -f "$RR_RESULT_JSON"
+    umask 077
+    printf '%s' "$_rb_reply" | python3 -c '
+import hashlib, json, re, sys
+
+out_path, incident_id, instruction_id, attempt_id, runtime_id, exit_code, reply_chars, excerpt, operation_id, attempt_generation, expected_check, trusted_evidence = sys.argv[1:]
+text = sys.stdin.read()
+
+def candidate_from_text(value):
+    candidates = []
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            candidates.append(parsed)
+    except Exception:
+        pass
+    for match in re.finditer(r"```(?:json|rr_result_v3)?\s*(\{.*?\})\s*```", value, re.I | re.S):
+        try:
+            parsed = json.loads(match.group(1))
+            if isinstance(parsed, dict):
+                candidates.append(parsed)
+        except Exception:
+            pass
+    required = {"repair_status", "verification_status"}
+    for item in reversed(candidates):
+        if required.issubset(item):
+            return item
+    return {}
+
+candidate = candidate_from_text(text)
+repair_values = {"repaired", "advice_delivered", "partial", "not_repaired"}
+verification_values = {"verified", "unverified", "verifier_failed", "pending"}
+repair = candidate.get("repair_status") if candidate.get("repair_status") in repair_values else "not_repaired"
+verification = candidate.get("verification_status") if candidate.get("verification_status") in verification_values else "unverified"
+evidence = candidate.get("evidence_refs") if isinstance(candidate.get("evidence_refs"), list) else []
+evidence = [str(x)[:500] for x in evidence if isinstance(x, (str, int, float)) and str(x)][:20]
+turn_ref = "agent_turn:%s" % instruction_id
+if turn_ref not in evidence:
+    evidence.append(turn_ref)
+
+blocker = candidate.get("remaining_blocker") if isinstance(candidate.get("remaining_blocker"), dict) else None
+fix_card = candidate.get("fix_card") if isinstance(candidate.get("fix_card"), dict) else None
+acceptance = candidate.get("acceptance_check") if isinstance(candidate.get("acceptance_check"), dict) else None
+repair_is_valid = (repair != "repaired" or (
+    verification == "verified" and bool(evidence) and
+    isinstance(fix_card.get("card_id") if fix_card else None, str) and
+    isinstance(fix_card.get("card_version") if fix_card else None, str) and
+    fix_card.get("scope_authorized") is True and
+    isinstance(acceptance, dict) and bool(expected_check) and
+    acceptance.get("check_id") == expected_check and acceptance.get("passed") is True and
+    # The agent names the original criterion only.  Its evidence_ref is never
+    # trusted: the receiver substitutes the probe result it just observed.
+    bool(trusted_evidence)
+))
+if not repair_is_valid:
+    repair = "partial"
+    verification = "unverified"
+    blocker = {"reason": "repaired_claim_missing_verification", "owner": "assigned_agent", "next_action": "run and attach the original acceptance check"}
+    fix_card = None
+    acceptance = None
+elif not candidate:
+    blocker = {"reason": "structured_result_missing", "owner": "assigned_agent", "next_action": "report repair, verification, evidence, and any remaining blocker in result-v3"}
+elif repair != "repaired" and not blocker:
+    blocker = {"reason": "repair_not_verified", "owner": "assigned_agent", "next_action": "run the original acceptance check or state the remaining blocker"}
+
+if repair in {"partial", "not_repaired"}:
+    blocker = blocker if isinstance(blocker, dict) else {}
+    blocker = {
+        "reason": str(blocker.get("reason") or "repair_not_verified")[:500],
+        "owner": str(blocker.get("owner") or "assigned_agent")[:200],
+        "next_action": str(blocker.get("next_action") or "run the original acceptance check or state the remaining blocker")[:500],
+        **({"due_at": str(blocker["due_at"])[:100]} if blocker.get("due_at") else {}),
+    }
+
+if repair == "repaired" and acceptance:
+    acceptance_evidence = trusted_evidence
+    if acceptance_evidence not in evidence:
+        evidence.append(acceptance_evidence)
+
+def notification_part(value):
+    value = value if isinstance(value, dict) else {}
+    status = value.get("status")
+    if status not in {"attempted", "delivered", "unavailable", "unconfirmed"}:
+        status = "unavailable"
+    # This receiver has no channel API or receiver-owned callback. Agent
+    # JSON/prose can report an attempted message and preserve its alleged ID,
+    # but cannot verify the external delivery. Keep the recovery obligation
+    # honest until a channel-owned integration records the receipt.
+    agent_claimed_delivered = status == "delivered"
+    if agent_claimed_delivered:
+        status = "unconfirmed"
+    result = {"status": status}
+    receipt = value.get("message_receipt")
+    if isinstance(receipt, (str, int, float)) and str(receipt):
+        result["message_receipt"] = str(receipt)[:256]
+    channel = value.get("channel")
+    if isinstance(channel, str) and channel:
+        result["channel"] = channel[:80]
+    failure_reason = value.get("failure_reason")
+    if isinstance(failure_reason, str) and failure_reason:
+        result["failure_reason"] = failure_reason[:500]
+    elif agent_claimed_delivered:
+        result["failure_reason"] = "agent_reported_receipt_unverified"
+    return result
+
+notification = candidate.get("end_user_notification") if isinstance(candidate.get("end_user_notification"), dict) else {}
+result = {
+    "schema_version": 3,
+    "incident_id": incident_id,
+    "instruction_id": instruction_id,
+    "attempt_id": attempt_id,
+    "runtime_id": runtime_id,
+    "repair_status": repair,
+    "verification_status": verification,
+    "evidence_refs": evidence,
+    "remaining_blocker": blocker,
+    "transport_receipt": {
+        "receipt_state": "receipt_pending",
+        "reply_chars": int(reply_chars or 0),
+        "operation_id": operation_id,
+        "attempt_id": attempt_id,
+    },
+    "end_user_notification": {
+        "initial": notification_part(notification.get("initial")),
+        "final": notification_part(notification.get("final")),
+    },
+}
+if attempt_generation.isdigit() and int(attempt_generation) > 0:
+    result["transport_receipt"]["attempt_generation"] = int(attempt_generation)
+if excerpt:
+    result["reply"] = {"text": excerpt[:500], "reply_chars": int(reply_chars or 0)}
+if repair == "repaired":
+    result["fix_card"] = fix_card
+    result["acceptance_check"] = {
+        "incident_id": incident_id,
+        "attempt_id": attempt_id,
+        "check_id": acceptance["check_id"][:200],
+        "passed": True,
+        "evidence_ref": trusted_evidence[:500],
+    }
+if repair == "advice_delivered":
+    outcome_type = candidate.get("outcome_type")
+    result["outcome_type"] = outcome_type if isinstance(outcome_type, str) and outcome_type else "advice_delivered"
+
+digest_input = json.dumps(result, sort_keys=True, separators=(",", ":")).encode("utf-8")
+result["outcome_digest"] = hashlib.sha256(digest_input).hexdigest()
+with open(out_path, "w", encoding="utf-8") as handle:
+    json.dump(result, handle, separators=(",", ":"), sort_keys=True)
+    handle.write("\n")
+' "$RR_RESULT_JSON" "${INCIDENT_ID:-$TICKET_ID}" "$INSTRUCTION_ID" "${ATTEMPT_ID:-$ATTEMPT_REF}" "${RR_RUNTIME_ID:-$RR_BOX_SLUG}" "$_rb_exit" "$_rb_chars" "$_rb_excerpt" "${_op_id:-}" "${ATTEMPT_GENERATION:-}" "${RR_ACCEPTANCE_CHECK_ID:-}" "${RR_ACCEPTANCE_EVIDENCE_REF:-}" 2>/dev/null
+    _rb_rc=$?
+    chmod 600 "$RR_RESULT_JSON" 2>/dev/null || true
+    if [ "$_rb_rc" -ne 0 ] || [ ! -s "$RR_RESULT_JSON" ]; then
+        rm -f "$RR_RESULT_JSON"
+        RR_RESULT_JSON=""
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # _post <json-body>
 #
 # The ONLY HTTP caller in the script. It writes the token to a 0600 temp header
@@ -642,6 +839,47 @@ elif isinstance(o, str):
     print(o)
 else:
     sys.exit(0)
+' 2>/dev/null
+        return 0
+    fi
+    return 0
+}
+
+# _json_type <json> <dotted-path> -> JSON type at that path, or nothing.
+# A receipt revision is an integer in the wire contract. `_json_get` alone
+# cannot distinguish JSON 7 from JSON "7", so the receipt matcher uses this
+# companion probe before accepting a revision as a settlement proof.
+_json_type() {
+    _jt_json="$1"
+    _jt_path="$2"
+    [ -n "$_jt_json" ] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$_jt_json" | jq -r --arg p "$_jt_path" '
+          ($p | split(".")) as $k
+          | getpath($k)
+          | if . == null then "null" else type end' 2>/dev/null
+        return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$_jt_json" | JT_PATH="$_jt_path" python3 -c '
+import json, os, sys
+try:
+    value = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for key in os.environ.get("JT_PATH", "").split("."):
+    if not key:
+        continue
+    if not isinstance(value, dict) or key not in value:
+        sys.exit(0)
+    value = value[key]
+if value is None: print("null")
+elif isinstance(value, bool): print("boolean")
+elif isinstance(value, int): print("number")
+elif isinstance(value, float): print("number")
+elif isinstance(value, str): print("string")
+elif isinstance(value, list): print("array")
+elif isinstance(value, dict): print("object")
 ' 2>/dev/null
         return 0
     fi
@@ -934,6 +1172,15 @@ _parse_claim() {
     SCHEMA_VERSION=$(_json_field "$_pc_resp" "schema_version")
     LEASE_SECONDS=$(_json_field "$_pc_resp" "lease_seconds")
     CAPABILITY=$(_json_field "$_pc_resp" "capability")
+    # Server-persisted claim binding. Agent reply JSON cannot select either.
+    RR_ACCEPTANCE_CHECK_ID=$(_json_get "$_pc_resp" "acceptance.check_id")
+    RR_ACCEPTANCE_KIND=$(_json_get "$_pc_resp" "acceptance.kind")
+    RR_ACCEPTANCE_URL=$(_json_get "$_pc_resp" "acceptance.url")
+    RR_NOTIFICATION_ORIGIN=$(printf '%s' "$_pc_resp" | python3 -c 'import json,sys
+try:
+ d=json.load(sys.stdin); o=d.get("notification_origin")
+ if isinstance(o,dict) and o.get("authorized") is True and o.get("channel")=="telegram" and isinstance(o.get("account"),str) and isinstance(o.get("target"),str): print(json.dumps(o,sort_keys=True,separators=(",",":")))
+except Exception: pass' 2>/dev/null)
 
     # --- member TYPES (mistype QC) -----------------------------------------
     # ONE probe, then every member the envelope relies on is checked for its
@@ -1476,8 +1723,9 @@ f=open(sys.argv[1],"rb"); os.fsync(f.fileno()); f.close()' "$_pp_tmp" 2>/dev/nul
 
 # _receipt_match <response-body> <op_id> <attempt_id>
 # Prints "match" when the body carries an ACCEPTABLE structured receipt for
-# THIS operation and attempt; otherwise prints the reason it did not.
-# An expected 2xx alone is NEVER a confirmation (RR-008).
+# THIS operation and attempt and carries a JSON nonnegative-integer
+# state_revision; otherwise prints the reason it did not. An expected 2xx
+# alone is NEVER a confirmation (RR-008).
 _receipt_match() {
     _rm_body="$1"
     _rm_op="$2"
@@ -1486,8 +1734,13 @@ _receipt_match() {
     _rm_op_seen=$(_json_get "$_rm_body" "receipt.operation_id")
     _rm_attempt_seen=$(_json_get "$_rm_body" "receipt.attempt_id")
     _rm_rev=$(_json_get "$_rm_body" "receipt.state_revision")
+    _rm_rev_type=$(_json_type "$_rm_body" "receipt.state_revision")
     [ -n "$_rm_op_seen" ]    || { printf 'no_receipt_operation_id'; return 0; }
     [ -n "$_rm_rev" ]        || { printf 'no_receipt_state_revision'; return 0; }
+    [ "$_rm_rev_type" = "number" ] || { printf 'invalid_receipt_state_revision'; return 0; }
+    case "$_rm_rev" in
+        *[!0-9]*) printf 'invalid_receipt_state_revision'; return 0 ;;
+    esac
     if [ -n "$_rm_op" ] && [ "$_rm_op_seen" != "$_rm_op" ]; then
         printf 'receipt_operation_mismatch'; return 0
     fi
@@ -1781,6 +2034,28 @@ _write_done() {
     _wd_ids_json=""
     [ -n "${INSTRUCTION_ID:-}" ] && _wd_ids_json=",\"instruction_id\":\"$(_json_str "${INSTRUCTION_ID:-}")\""
     [ -n "${TICKET_ID:-}" ] && _wd_ids_json="${_wd_ids_json},\"ticket_id\":\"$(_json_str "${TICKET_ID:-}")\""
+    # Preserve the exact structured result with the dedup record. A cached
+    # re-ack must retain repair/verification/blocker evidence; dropping it
+    # would turn an honest partial result into a transport-only replay.
+    _wd_result_json=""
+    if [ -n "${RR_RESULT_JSON:-}" ] && [ -f "${RR_RESULT_JSON:-}" ]; then
+        _wd_result=$(cat "$RR_RESULT_JSON" 2>/dev/null)
+        # _rr_build_result writes this file atomically and validates its JSON
+        # shape before setting RR_RESULT_JSON.  Retain it verbatim so retries
+        # replay the original result rather than an inferred replacement.
+        [ -n "$_wd_result" ] && _wd_result_json=",\"result\":$_wd_result"
+    fi
+    # Final notification intent is retained in the same atomic done record as
+    # the result. A crash before enqueue can therefore be replayed without a
+    # second repair turn or a newly invented destination/body.
+    _wd_notify_json=""
+    if [ -n "${RR_NOTIFICATION_ORIGIN:-}" ] && [ -n "${RR_NOTIFICATION_FINAL_BODY:-}" ]; then
+        _wd_notify=$(python3 -c 'import json,sys
+try:
+ o=json.loads(sys.argv[1]); assert isinstance(o,dict); print(json.dumps({"origin":o,"body":sys.argv[2]},separators=(",",":")))
+except Exception: pass' "$RR_NOTIFICATION_ORIGIN" "$RR_NOTIFICATION_FINAL_BODY" 2>/dev/null)
+        [ -n "$_wd_notify" ] && _wd_notify_json=",\"notification_final\":$_wd_notify"
+    fi
     # RR-021/RR-025: collision-resistant done-file identity. The old
     # tr-normalization ALIASED distinct keys (a/b and a_b both -> key-a_b),
     # so one ticket's cached verdict could satisfy another's dedup check.
@@ -1796,9 +2071,9 @@ _write_done() {
     [ -n "$_safe" ] || { _log "write_done refused: empty hash identity"; return 1; }
     _tmp=$(mktemp "$_DONE/.tmp-XXXXXX" 2>/dev/null) || return 1
     chmod 600 "$_tmp" 2>/dev/null
-    printf '{"verdict":"%s","exit_code":%s,"reply_chars":%s,"fail_reason":%s,"elapsed_s":%s%s%s%s%s,"written_at":"%s"}\n' \
+    printf '{"verdict":"%s","exit_code":%s,"reply_chars":%s,"fail_reason":%s,"elapsed_s":%s%s%s%s%s%s%s,"written_at":"%s"}\n' \
         "$_wd_verdict" "$_wd_exit" "$_wd_chars" "$_fr_json" "$_wd_elapsed" \
-        "$_wd_excerpt_json" "$_wd_op_json" "$_wd_attempt_json" "$_wd_ids_json" "$(_now_iso)" > "$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
+        "$_wd_excerpt_json" "$_wd_op_json" "$_wd_attempt_json" "$_wd_ids_json" "$_wd_result_json" "$_wd_notify_json" "$(_now_iso)" > "$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
     # RR-021: the claimed instruction's record must be DURABLY on disk before
     # the poll proceeds — a crash or a lost ACK must never lose the work item.
     # fsync the record (python3 is present on every supported box; `sync` is
@@ -1869,12 +2144,51 @@ _reack_cached() {
     [ -n "$_rc_gen" ]     || _rc_gen="${ATTEMPT_GENERATION:-}"
     ATTEMPT_ID="$_rc_attempt"
     ATTEMPT_GENERATION="$_rc_gen"
+    # Restore the original structured result, if present. The cache is a
+    # replay ledger, so this must be the result from the turn that actually
+    # ran rather than a new inference from the current claim.
+    RR_RESULT_JSON=""
+    if command -v python3 >/dev/null 2>&1 && [ -n "${_TMP:-}" ] && [ -d "$_TMP" ]; then
+        _rc_result_path="$_TMP/rr-result-cache-${_rc_safe}-$$.json"
+        printf '%s' "$_rc_body" | python3 -c '
+import json, sys
+try:
+    doc = json.load(sys.stdin)
+    value = doc.get("result")
+    if isinstance(value, dict):
+        with open(sys.argv[1], "w", encoding="utf-8") as handle:
+            json.dump(value, handle, separators=(",", ":"), sort_keys=True)
+            handle.write("\n")
+except Exception:
+    pass
+' "$_rc_result_path" 2>/dev/null || true
+        if [ -s "$_rc_result_path" ]; then
+            chmod 600 "$_rc_result_path" 2>/dev/null || true
+            RR_RESULT_JSON="$_rc_result_path"
+        else
+            rm -f "$_rc_result_path" 2>/dev/null || true
+        fi
+    fi
     if [ -z "$_rc_op" ]; then
         _rc_op=$(_op_id_for "$1" "$_rc_attempt" "$_rc_gen")
         _log "re-ack cache predates operation ids; derived op=$_rc_op key=$_rc_safe"
     fi
+    _rc_notify=$(printf '%s' "$_rc_body" | python3 -c 'import base64,json,sys
+try:
+ d=json.load(sys.stdin); n=d.get("notification_final");
+ if isinstance(n,dict) and isinstance(n.get("origin"),dict) and isinstance(n.get("body"),str):
+  print(base64.b64encode(json.dumps(n["origin"],separators=(",",":")).encode()).decode()); print(base64.b64encode(n["body"].encode()).decode())
+except Exception: pass' 2>/dev/null)
+    if [ -n "$_rc_notify" ]; then
+        _rc_origin=$(printf '%s\n' "$_rc_notify" | sed -n '1p' | base64 -d 2>/dev/null)
+        _rc_note=$(printf '%s\n' "$_rc_notify" | sed -n '2p' | base64 -d 2>/dev/null)
+        RR_NOTIFICATION_ORIGIN="$_rc_origin"
+        _rr_notification_enqueue final "$_rc_note"
+    fi
     _ack "$_rc_verdict" "$_rc_exit" "$_rc_chars" "$_rc_reason" "$_rc_elapsed" "$_rc_excerpt"
     _rc_rc=$?
+    [ -n "${RR_RESULT_JSON:-}" ] && rm -f "$RR_RESULT_JSON" 2>/dev/null || true
+    RR_RESULT_JSON=""
     _log "re-acked cached verdict key=$_rc_safe verdict=$_rc_verdict excerpt_chars=${#_rc_excerpt} op=$_rc_op rc=$_rc_rc"
     return "$_rc_rc"
 }
@@ -2081,6 +2395,38 @@ _sleep_jitter
 # ---------------------------------------------------------------------------
 _resend_pending
 
+# Drain notification work before claiming a repair.  This is a separate durable
+# journal: a notification retry can never re-run the agent turn or alter an ACK.
+_rr_notification_tick() {
+    _rn_worker="$(dirname "$0")/rescue-notification.py"
+    [ -f "$_rn_worker" ] || return 0
+    _rn_out=$(python3 "$_rn_worker" tick --state-dir "$_STATE/notifications" --openclaw-bin "$_OC_BIN" 2>/dev/null) || return 0
+    printf '%s' "$_rn_out" | python3 -c '
+import base64,json,sys
+try: d=json.load(sys.stdin)
+except Exception: d={}
+for r in d.get("pending_reports",[]):
+ print(base64.b64encode(json.dumps(r,separators=(",",":")).encode()).decode())
+' | while IFS= read -r _rn_b64; do
+        [ -n "$_rn_b64" ] || continue
+        _rn_body=$(printf '%s' "$_rn_b64" | base64 -d 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); d["box_slug"]=sys.argv[1]; print(json.dumps(d,separators=(",",":")))' "$RR_BOX_SLUG" 2>/dev/null) || continue
+        _rn_resp=$(_post "$_rn_body") || continue
+        _rn_op=$(printf '%s' "$_rn_body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("operation_id", ""))' 2>/dev/null)
+        # Endpoint response must bind the exact operation; never mark a local
+        # report settled from a bare 2xx or somebody else's receipt.
+        _rn_ok=$(printf '%s' "$_rn_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); op=sys.argv[1]; print("yes" if d.get("ok") is True and d.get("operation_id")==op and d.get("receipt") is not None and d.get("notification_state") in ("confirmed","pending","failed") else "no")' "$_rn_op" 2>/dev/null)
+        [ "$_rn_ok" = yes ] && python3 "$_rn_worker" report-confirm --state-dir "$_STATE/notifications" --operation-id "$_rn_op" >/dev/null 2>&1 || true
+    done
+}
+_rr_notification_enqueue() {
+    _rne_stage="$1"; _rne_body="$2"; _rne_worker="$(dirname "$0")/rescue-notification.py"
+    [ -f "$_rne_worker" ] || return 0
+    [ -n "${RR_NOTIFICATION_ORIGIN:-}" ] || return 0
+    printf '%s' "$_rne_body" | python3 "$_rne_worker" enqueue --state-dir "$_STATE/notifications" --origin-json "$RR_NOTIFICATION_ORIGIN" --incident-id "${INCIDENT_ID:-$TICKET_ID}" --instruction-id "$INSTRUCTION_ID" --attempt-id "${ATTEMPT_ID:-$ATTEMPT_REF}" --attempt-generation "${ATTEMPT_GENERATION:-1}" --idempotency-key "$IDEMPOTENCY_KEY" --stage "$_rne_stage" >/dev/null 2>&1 || return 0
+    _rr_notification_tick
+}
+_rr_notification_tick
+
 # Build the claim body once. No token appears here — the token rides in a header
 # file (see _post).
 _claim_body="{\"action\":\"claim\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",\"receiver_version\":\"$(_json_str "$RECEIVER_VERSION")\",\"capacity\":1}"
@@ -2156,6 +2502,8 @@ if _reack_cached "$RR_CACHE_KEY"; then
     exit 0
 fi
 
+_rr_notification_enqueue initial "Rescue Rangers received your request and is applying the authorized recovery."
+
 # Decode the payload and run the local delivery command. The message is
 # base64-transported (never shell-quoted, never executed as shell).
 MSG=$(printf '%s' "$PAYLOAD_B64" | base64 -d 2>/dev/null || true)
@@ -2165,6 +2513,12 @@ if [ -z "$MSG" ]; then
     _log "empty payload (decode produced nothing) instruction=$INSTRUCTION_ID"
     exit 0
 fi
+
+# The coaching instruction remains intact, with an additive result contract
+# that keeps the repair and notification claims auditable.  This is prompt
+# construction only; the receiver still treats the returned JSON as evidence
+# to validate, never as an authority to claim a repair.
+MSG=$(_rr_result_prompt "$MSG")
 
 # RR-025: verify the requested capability EXISTS on this box before executing.
 # An absent agent is a ROUTING decision, not an error to be discovered by the
@@ -2271,25 +2625,51 @@ REPLY_CHARS=$(printf '%s' "$REPLY_TRIM" | wc -c 2>/dev/null | tr -dc '0-9')
 [ -n "$REPLY_CHARS" ] || REPLY_CHARS=0
 
 # ---------------------------------------------------------------------------
-# VERDICT RULE (§6.3) — ambiguous ⇒ NOT fixed.
-#   delivered  <=>  AGENT_RC == 0 AND REPLY_CHARS > 0 AND the reply is not an
-#                   escalation/deferral text (v1.3.0).
-#   else failed, with the most specific honest fail_reason.
-# An exit-0 turn whose text says the job was not done is NOT a delivery: it
-# acks failed/escalation_language so RR-07 pages a human instead of closing
-# the ticket as coached-and-done.
+# TRANSPORT VERDICT — deliberately separate from repair outcome.
+#   delivered  <=> AGENT_RC == 0 AND REPLY_CHARS > 0
+#   failed     otherwise
+# A reply that says work remains is still a delivered transport fact. Its
+# result-v3 repair_status=partial/not_repaired keeps the incident open. Using
+# escalation-language prose to turn a real partial report into transport
+# failure erases progress and makes the next follow-up repeat completed work.
 # ---------------------------------------------------------------------------
 REPLY_EXCERPT=""
 if [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
     REPLY_EXCERPT=$(_bounded_excerpt "$REPLY_TRIM")
 fi
 
+_rr_run_acceptance_verifier() {
+    # Receiver-owned verification. Only server-persisted gateway_http is
+    # executable: bounded HTTPS GET, never an agent command or agent path.
+    RR_ACCEPTANCE_EVIDENCE_REF=""
+    [ "${RR_ACCEPTANCE_KIND:-}" = "gateway_http" ] && [ -n "${RR_ACCEPTANCE_CHECK_ID:-}" ] && [ -n "${RR_ACCEPTANCE_URL:-}" ] || return 1
+    case "$RR_ACCEPTANCE_URL" in
+        https://*)
+            _rr_verify_code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 --connect-timeout 5 "$RR_ACCEPTANCE_URL" 2>/dev/null || true)
+            case "$_rr_verify_code" in
+                2??)
+                    _rr_verify_hash=$(printf '%s' "${INCIDENT_ID:-$TICKET_ID}|${ATTEMPT_ID:-$ATTEMPT_REF}|$RR_ACCEPTANCE_CHECK_ID|$_rr_verify_code" | _rr_hash 2>/dev/null || true)
+                    [ -n "$_rr_verify_hash" ] && RR_ACCEPTANCE_EVIDENCE_REF="receiver:gateway_http:${INCIDENT_ID:-$TICKET_ID}:${ATTEMPT_ID:-$ATTEMPT_REF}:${RR_ACCEPTANCE_CHECK_ID}:${_rr_verify_hash}"
+                    ;;
+            esac
+            ;;
+    esac
+    [ -n "$RR_ACCEPTANCE_EVIDENCE_REF" ]
+}
+
+_rr_run_acceptance_verifier || true
+
+# Build a structured result before recording or acknowledging the turn.  A
+# missing agent JSON becomes a conservative fallback; a build failure merely
+# means this older/minimal box cannot emit result-v3 and the normal transport
+# ACK remains available for compatibility.
+if ! _rr_build_result "$REPLY_TRIM" "$AGENT_RC" "$REPLY_CHARS" "$REPLY_EXCERPT"; then
+    _log "result-v3 unavailable instruction=$INSTRUCTION_ID reason=local_result_builder_failed (transport ACK remains compatible)"
+fi
+
 VERDICT="failed"
 FAIL_REASON="failed_nonzero_exit"
-if [ "$AGENT_RC" -eq 0 ] && [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null && _is_escalation "$REPLY_TRIM"; then
-    VERDICT="failed"
-    FAIL_REASON="escalation_language"
-elif [ "$AGENT_RC" -eq 0 ] && [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
+if [ "$AGENT_RC" -eq 0 ] && [ "$REPLY_CHARS" -gt 0 ] 2>/dev/null; then
     VERDICT="delivered"
     FAIL_REASON=""
 elif [ "$AGENT_RC" -eq 0 ]; then
@@ -2319,11 +2699,24 @@ fi
 # checked: a done record that did not land means the dedup this box relies on
 # does not exist, so no ack is sent that would let the server settle a
 # delivery the box cannot replay.
+RR_NOTIFICATION_FINAL_BODY=$(python3 -c 'import json,sys
+try:
+ r=json.load(open(sys.argv[1])); b=r.get("remaining_blocker") or {}; reply=((r.get("reply") or {}).get("text") or "").replace("\n"," ").replace("\r"," ")[:500]
+ status="Repair status: %s. Verification: %s."%(r.get("repair_status") or "not_repaired",r.get("verification_status") or "unverified")
+ blocker=" Remaining blocker: %s. Owner: %s. Next action: %s."%(str(b.get("reason") or "none")[:200],str(b.get("owner") or "operator")[:120],str(b.get("next_action") or "review the recovery outcome")[:300])
+ print((reply+" " if reply else "")+status+blocker)
+except Exception: print("Recovery outcome is pending verification.")' "$RR_RESULT_JSON" 2>/dev/null)
 if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
     _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
     exit 0
 fi
+_rr_notification_enqueue final "$RR_NOTIFICATION_FINAL_BODY"
 _ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"
+
+# The durable done/pending ledgers now carry the result. Do not leave this
+# per-turn staging file behind for the hourly temporary-file sweep.
+[ -n "${RR_RESULT_JSON:-}" ] && rm -f "$RR_RESULT_JSON" 2>/dev/null || true
+RR_RESULT_JSON=""
 
 _log "delivery instruction=$INSTRUCTION_ID verdict=$VERDICT exit=$AGENT_RC chars=$REPLY_CHARS elapsed=${_elapsed}s reason=$FAIL_REASON op=$_op_id"
 

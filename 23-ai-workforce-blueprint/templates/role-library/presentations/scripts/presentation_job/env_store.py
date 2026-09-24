@@ -230,6 +230,46 @@ def resolve(environ: Optional[Dict[str, str]] = None,
     return assignments, report
 
 
+def load_into_process(environ: Optional[Dict[str, str]] = None,
+                      paths: Optional[Sequence[Path]] = None) -> dict:
+    """PD-066: export the box env store into THIS process, then return the
+    REDACTED report. The in-process twin of ``--emit-shell``, for a Python
+    ENTRY POINT that was not started by one of the two launchd shells.
+
+    WHY THIS EXISTS. ``--emit-shell`` fixes every reader that is a CHILD of a
+    shell entry point (presentation-intake-poll.sh, presentation-watchdog.sh)
+    and ``intake_bridge._load_operator_launch_environment`` fixes the
+    Command-Center-spawned operator-contract path. Neither covers an engine
+    launched DIRECTLY -- e.g. an operator or agent shell running
+    ``python3 presentation_job.py --resume --run-dir ...``. That process
+    inherits the *gateway/agent* environment, which carries
+    ``COMMAND_CENTER_URL`` but NOT ``MC_API_TOKEN`` / ``WEBHOOK_SECRET``.
+    ``cc_board.board_config()`` therefore reports the board as ENABLED with an
+    empty token and secret, ``_request()`` attaches neither the Bearer nor the
+    HMAC, and the Command Center middleware rejects the write 401
+    ('missing-header') -- every registration silently degrades to
+    "run continues ungrouped". Measured live on run
+    pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4 (6 x HTTP 401).
+
+    PRECEDENCE IS UNCHANGED: a non-blank value already in ``environ`` wins and
+    is never re-assigned, exactly as ``resolve()`` guarantees. Never raises --
+    an unavailable store is reported, not fatal, so a board-credential problem
+    can never itself kill a deck run. No value is returned, logged or
+    serialized: only the redacted report leaves this function.
+    """
+    try:
+        assignments, report = resolve(environ, paths)
+    except Exception as exc:  # noqa: BLE001 -- report, never kill the engine
+        return {"enabled": False, "error": type(exc).__name__, "files": [],
+                "exported_names": [], "already_in_process_env": [], "names": {}}
+    view = os.environ if environ is None else environ
+    for name, value in assignments.items():
+        if not str(view.get(name) or "").strip():
+            view[name] = value
+    report["loaded_into_process"] = True
+    return report
+
+
 def _describe_names(view: Dict[str, str], assignments: Dict[str, str],
                     report: dict) -> None:
     """Per-name presence and LENGTH for the required/watched names. Length is

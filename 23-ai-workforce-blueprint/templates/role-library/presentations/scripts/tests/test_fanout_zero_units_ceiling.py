@@ -61,6 +61,7 @@ ceiling are all the real code.
 from __future__ import annotations
 
 import json
+import multiprocessing
 import sys
 import time as _real_time
 from collections import Counter
@@ -73,6 +74,7 @@ sys.path.insert(0, str(_scripts_dir))
 
 from presentation_job import dispatcher as dj  # noqa: E402
 from presentation_job import fanout as fo  # noqa: E402
+from presentation_job import launcher as pl  # noqa: E402
 
 PHASE = "P-STYLE-SPEC"
 SPEC_ARTIFACT = "working/copy/style_preview_spec.json"
@@ -160,6 +162,29 @@ def _ledger(run_dir: Path) -> dict:
 
 def _marker(run_dir: Path) -> Path:
     return run_dir / "working" / "work-orders" / f"{PHASE}.dispatch-blocked.txt"
+
+
+def _paused_outcome_writer(run_text: str, ready, release) -> None:
+    """Fork child used only by the ledger interleaving regression below."""
+    run_dir = Path(run_text)
+    original = dj._write_ledger
+
+    def pause_before_replace(*args, **kwargs):
+        ready.set()
+        assert release.wait(5), "test controller never released paused outcome"
+        return original(*args, **kwargs)
+
+    dj._write_ledger = pause_before_replace
+    try:
+        dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic"],
+                          worker_id="outcome-worker",
+                          order_file=run_dir / "working" / "work-orders" / f"{PHASE}.json")
+    finally:
+        dj._write_ledger = original
+
+
+def _reserve_in_child(run_text: str) -> None:
+    dj._reserve_paid_attempt(Path(run_text), PHASE, "reserve-worker")
 
 
 def _sweep_n(run_dir: Path, clock: _Clock, n: int = TICKS) -> list:
@@ -339,6 +364,199 @@ def test_unparked_phase_really_dispatches_again(tmp_path, clock, monkeypatch):
     led = _ledger(run_dir)
     assert led["consecutive"] == 1, "the counter must restart on a new revision"
     assert led["blocked"] is False
+
+
+def test_paid_retry_budget_survives_reissued_order_and_worker_restart(
+        tmp_path, clock):
+    """A rewrite is retry context, never a new provider budget generation.
+
+    This is the live-sales failure shape: a deterministic exhausted response
+    consumed the full paid cap, then the engine rewrote the order and a new
+    dispatcher process started.  Neither event may buy another paid call.
+    """
+    run_dir = _seed_run(tmp_path)
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    for _ in range(dj.DISPATCH_RETRY_CAP):
+        dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic failure"],
+                          worker_id="first-worker", order_file=order,
+                          paid_attempts=1, now=clock.time())
+        clock.advance(1)
+
+    assert _ledger(run_dir)["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    assert _ledger(run_dir)["blocked"] is True
+    assert _marker(run_dir).is_file()
+
+    # A heal/restart rewrite changes mtime and bytes, but not approved inputs.
+    order.write_text(order.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    may, why = dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())
+    assert may is False
+    assert "paid retry budget exhausted" in why
+    assert _marker(run_dir).is_file(), "a reissue must not erase the paid-budget park"
+
+
+def test_verified_intake_amendment_explicitly_rearms_paid_budget(
+        tmp_path, clock, monkeypatch):
+    """Only the sanctioned, approval-verified input path starts a new budget."""
+    run_dir = _seed_run(tmp_path)
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    for _ in range(dj.DISPATCH_RETRY_CAP):
+        dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic failure"],
+                          worker_id="worker", order_file=order, paid_attempts=1,
+                          now=clock.time())
+        clock.advance(1)
+
+    intake = run_dir / "working" / "copy" / "intake.json"
+    intake.parent.mkdir(parents=True, exist_ok=True)
+    intake.write_text('{"topic":"changed with owner approval"}\n', encoding="utf-8")
+    digest = __import__("hashlib").sha256(intake.read_bytes()).hexdigest()
+    amendments = intake.with_name("intake_amendments.jsonl")
+    amendments.write_text(json.dumps({
+        "kind": "intake_amendment", "intake_sha256": digest,
+        "approval": {"owner_msg_id": "real-owner-message"},
+    }) + "\n", encoding="utf-8")
+
+    # An amendment-shaped file alone is not an authority.
+    monkeypatch.setattr(pl, "verify_amendment_approval", lambda *_a, **_k: (False, "refused"))
+    assert dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())[0] is False
+
+    # The launcher oracle is the authority.  The marker remains until the
+    # first new-generation provider slot is atomically reserved.
+    monkeypatch.setattr(pl, "verify_amendment_approval", lambda *_a, **_k: (True, "verified"))
+    may, why = dj.should_dispatch(run_dir, PHASE, order_file=order, now=clock.time())
+    assert may is True and why == "approved input revision changed"
+    assert _marker(run_dir).exists()
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+    assert not _marker(run_dir).exists()
+
+
+def test_atomic_reservation_allows_only_remaining_paid_call_and_survives_crash(
+        tmp_path):
+    """The slot is consumed before transport and is never refunded on a crash."""
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {
+        "phase_id": PHASE, "approved_input_revision": "initial",
+        "paid_attempts": dj.DISPATCH_RETRY_CAP - 1,
+    })
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker-a")
+    assert _ledger(run_dir)["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker-a")
+    # Simulated process death after the first call: the next process reads the
+    # durable reservation and cannot spend another call.
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker-b")
+
+
+def test_atomic_reservation_refuses_claim_handoff_stale_owner(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    claim = run_dir / "working" / "work-orders" / f"{PHASE}.claim"
+    claim.write_text(json.dumps({"worker": "new-owner", "owner_token": "new"}),
+                     encoding="utf-8")
+    with pytest.raises(dj.PaidBudgetExhausted, match="claim ownership changed"):
+        dj._reserve_paid_attempt(run_dir, PHASE, "stale-owner")
+    assert not _ledger(run_dir), "stale owner must not reserve a provider call"
+
+
+def test_local_operator_receipt_rearms_once_with_bounded_allowance(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    receipt = dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    assert receipt["phase_id"] == PHASE and receipt["allowance"] == 1
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+    assert _ledger(run_dir)["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    assert _ledger(run_dir)["repair_receipt_consumed"] is True
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+
+
+def test_consumed_receipt_survives_outcome_restart_and_order_reissue(tmp_path):
+    """The precise PD14 regression: outcome folding must not resurrect a receipt."""
+    run_dir = _seed_run(tmp_path)
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+    # This is the old destructive fold: it used to discard generation and
+    # consumed-receipt metadata after the one permitted post-repair call.
+    dj.record_outcome(run_dir, PHASE, "exhausted", ["deterministic"],
+                      worker_id="worker", order_file=order)
+    order.write_text(order.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    led = _ledger(run_dir)
+    assert led["generation"] == 1
+    assert led["repair_receipt_consumed"] is True
+    assert led["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "restarted-worker")
+
+
+def test_outcome_and_reservation_share_one_budget_transaction(tmp_path):
+    """A stale outcome must not overwrite a pre-transport receipt reservation.
+
+    The outcome child pauses after its read/assembly and before replacement.
+    Without the transaction around the entire fold, the reservation commits
+    during that pause and this old outcome then erases its generation and
+    consumed receipt.  With the shared flock, reserve waits, then sees and
+    preserves the completed fold.  Forked children make this a real
+    cross-process lock test with bounded event waits.
+    """
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    ctx = multiprocessing.get_context("fork")
+    ready, release = ctx.Event(), ctx.Event()
+    outcome = ctx.Process(target=_paused_outcome_writer, args=(str(run_dir), ready, release))
+    reserve = ctx.Process(target=_reserve_in_child, args=(str(run_dir),))
+    outcome.start()
+    assert ready.wait(5), "outcome did not reach its bounded interleaving point"
+    reserve.start()
+    # Give an unlocked implementation a deterministic chance to reserve while
+    # the stale outcome is paused.  A locked implementation leaves it waiting.
+    _real_time.sleep(0.15)
+    release.set()
+    outcome.join(5); reserve.join(5)
+    assert outcome.exitcode == 0 and reserve.exitcode == 0
+    led = _ledger(run_dir)
+    assert led["paid_attempts"] == dj.DISPATCH_RETRY_CAP
+    assert led["generation"] == 1
+    assert led["repair_receipt_consumed"] is True
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "restart-worker")
+
+
+def test_operator_reset_refuses_ledger_without_durable_generation(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP})
+    with pytest.raises(RuntimeError, match="durable ledger generation"):
+        dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("phase_id", "OTHER"), ("run", "/wrong/run"), ("dispatcher_sha256", "forged"),
+    ("approved_input_revision", "forged"), ("prior_generation", 99), ("operator_uid", -1),
+])
+def test_mismatched_operator_receipt_never_rearms(tmp_path, field, value):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP, "generation": 0})
+    receipt = dj.authorize_paid_retry_reset(run_dir, PHASE, allowance=1)
+    receipt[field] = value
+    dj._repair_receipt_path(run_dir, PHASE).write_text(json.dumps(receipt), encoding="utf-8")
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker")
+
+
+def test_work_order_rewrite_cannot_reset_paid_receipt_budget(tmp_path):
+    run_dir = _seed_run(tmp_path)
+    dj._write_ledger(run_dir, PHASE, {"phase_id": PHASE, "approved_input_revision": "initial",
+                                      "paid_attempts": dj.DISPATCH_RETRY_CAP})
+    order = run_dir / "working" / "work-orders" / f"{PHASE}.json"
+    order.write_text('{"authorized_retry":{"allowance":3}}', encoding="utf-8")
+    with pytest.raises(dj.PaidBudgetExhausted):
+        dj._reserve_paid_attempt(run_dir, PHASE, "worker")
 
 
 # ---------------------------------------------------------------------------

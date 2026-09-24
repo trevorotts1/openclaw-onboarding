@@ -5,7 +5,11 @@
 #   1. dependency check (verify-deps.sh)
 #   2. resolve the engine tier map (preflight.sh) into model-map.json
 #   3. credential labels present -- SET or NOT SET only, never a value
-#      (delegates to scripts/caf_credential_gate.py when present)
+#      (delegates to scripts/caf_credential_gate.py when present). The REQUIRED
+#      ANTHOLOGY_GATE_TOKEN_SECRET is GENERATED here into the box's canonical 0600
+#      secrets store when it does not already resolve, so a fresh box no longer
+#      fails this step waiting on provision-anthology-client.sh step 7. The value
+#      is never printed.
 #   4. webhook route + the ONE daily cron tick + Drive-root reachability
 #      (delegates to scripts/provision-anthology-client.sh when present)
 # Heavy provisioning lives in provision-anthology-client.sh (W2.6); this script
@@ -53,8 +57,89 @@ else
     echo "  (preflight.sh missing; cannot resolve the tier map)"; exit 2
 fi
 
+# --------------------------------------------------------------------------
+# ANTHOLOGY_GATE_TOKEN_SECRET is a REQUIRED family of the STEP 3 credential gate,
+# but the only generator was provision-anthology-client.sh step 7 -- which runs
+# AFTER this bootstrap. So a fresh box ALWAYS failed STEP 3 (surfacing as "GATE 1b
+# MISSING PREREQUISITE") until an operator hand-generated the value. Generate it
+# here when it does not already resolve.
+#
+# Presence is asked of caf_credential_gate.py ITSELF (its --json resolution over the
+# live process env plus every client env store), so there is exactly ONE definition
+# of "is the gate-token secret SET", never a second drifting copy in bash. The store
+# written to is likewise the gate's OWN first canonical store (resolve_stores), so
+# the value lands in the file the gate actually reads on this box.
+#
+# The value is written DIRECTLY into the 0600 file: it never reaches stdout, a shell
+# variable, the process table, or this script's log. Idempotent: an already-resolving
+# secret is left exactly as it is and nothing is appended.
+# --------------------------------------------------------------------------
+gate_token_secret_present() {   # echoes: true | false | unknown
+    python3 "$SCRIPTS/caf_credential_gate.py" --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    rep = json.load(sys.stdin)
+except Exception:
+    print("unknown"); sys.exit(0)
+res = rep.get("resolutions", {}).get("anthology_gate_token_secret", {})
+print("true" if res.get("present") else "false")
+'
+}
+
+gate_token_secret_store() {     # the gate's OWN first canonical env store
+    python3 - "$SCRIPTS/caf_credential_gate.py" <<'PYSTORE' 2>/dev/null
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("caf_credential_gate", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+stores = mod.resolve_stores()
+print(str(stores[0]) if stores else "")
+PYSTORE
+}
+
+ensure_gate_token_secret() {
+    local present store dir
+    present="$(gate_token_secret_present)"
+    if [ "$present" = "true" ]; then
+        note "  ANTHOLOGY_GATE_TOKEN_SECRET: already SET (value never shown)"
+        return 0
+    fi
+    if [ "$present" != "false" ]; then
+        note "  ANTHOLOGY_GATE_TOKEN_SECRET: presence UNDETERMINED (the gate returned no JSON); leaving every secrets file untouched"
+        return 0
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        note "  ANTHOLOGY_GATE_TOKEN_SECRET NOT SET and openssl is unavailable -- cannot generate it here; the gate below will name it"
+        return 0
+    fi
+    store="$(gate_token_secret_store)"
+    [ -n "$store" ] || store="$HOME/.openclaw/secrets/.env"
+    dir="$(dirname "$store")"
+    if ! mkdir -p "$dir" 2>/dev/null; then
+        note "  could not create $dir -- cannot generate ANTHOLOGY_GATE_TOKEN_SECRET; the gate below will name it"
+        return 0
+    fi
+    if [ ! -f "$store" ] && ! : > "$store" 2>/dev/null; then
+        note "  could not create $store -- cannot generate ANTHOLOGY_GATE_TOKEN_SECRET; the gate below will name it"
+        return 0
+    fi
+    chmod 600 "$store" 2>/dev/null || true
+    # A store with no trailing newline would otherwise splice onto its last line.
+    if [ -s "$store" ] && [ "$(tail -c 1 "$store" | wc -l | tr -d ' ')" = "0" ]; then
+        printf '\n' >> "$store"
+    fi
+    if { printf 'ANTHOLOGY_GATE_TOKEN_SECRET='; openssl rand -hex 32; } >> "$store" 2>/dev/null; then
+        chmod 600 "$store" 2>/dev/null || true
+        note "  generated ANTHOLOGY_GATE_TOKEN_SECRET (value not shown) -> $store (0600)"
+    else
+        note "  FAILED to write ANTHOLOGY_GATE_TOKEN_SECRET into $store; the gate below will name it"
+    fi
+    return 0
+}
+
 note "STEP 3/4 -- credential labels (SET or NOT SET only, never a value)"
 if [ -f "$SCRIPTS/caf_credential_gate.py" ]; then
+    ensure_gate_token_secret
     GATE_RC=0
     python3 "$SCRIPTS/caf_credential_gate.py" || GATE_RC=$?
     case "$GATE_RC" in

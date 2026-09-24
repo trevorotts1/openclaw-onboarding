@@ -119,7 +119,34 @@ fi
 source "$_PLATFORM_COMMON" || exit 8
 oc_set_platform_paths || exit 8
 
-STATE_FILE="${OPENCLAW_WORKSPACE_PATH:-$OC_ROOT/workspace}/.workforce-build-state.json"
+# resolve_build_state_workspace() — the ONE build-state path resolver.
+_OC_ROOT_RESOLVER="$SKILL_DIR/../shared-utils/resolve-oc-root.sh"
+[[ -f "$_OC_ROOT_RESOLVER" ]] || _OC_ROOT_RESOLVER="$SKILL_DIR/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+
+# Prefer the workspace that ACTUALLY holds the build state over the one
+# openclaw.json configures. oc_set_platform_paths just set
+# OPENCLAW_WORKSPACE_PATH from agents.defaults.workspace; on the operator
+# operator box that is a legacy directory while the real file lives under
+# ~/.openclaw/workspace, so --update-only found no state, the launch inspector
+# returned requiresInitialization:true / companySlug:null, and the run exited 8
+# demanding an interactive interview on a fully built box.
+# When NO candidate has the file this falls back to the configured path, which
+# is the correct WRITE target for a genuinely fresh install.
+_BUILD_STATE_WS=""
+if declare -F resolve_build_state_workspace >/dev/null 2>&1; then
+  _BUILD_STATE_WS="$(resolve_build_state_workspace || true)"
+fi
+if [[ -n "$_BUILD_STATE_WS" ]]; then
+  STATE_FILE="$_BUILD_STATE_WS/.workforce-build-state.json"
+  [[ "$_BUILD_STATE_WS" == "${OPENCLAW_WORKSPACE_PATH:-}" ]] \
+    || echo "[run-full-install] build state resolved to $_BUILD_STATE_WS (openclaw.json configures ${OPENCLAW_WORKSPACE_PATH:-unset}); searched: ${OC_BUILD_STATE_SEARCHED:-}"
+else
+  STATE_FILE="${OPENCLAW_WORKSPACE_PATH:-$OC_ROOT/workspace}/.workforce-build-state.json"
+  [[ -z "${OC_BUILD_STATE_SEARCHED:-}" ]] \
+    || echo "[run-full-install] no .workforce-build-state.json found; searched: $OC_BUILD_STATE_SEARCHED — treating this as a fresh install and writing to $STATE_FILE"
+fi
 LOG_FILE="$(dirname "$STATE_FILE")/.command-center-install.log"
 mkdir -p "$(dirname "$STATE_FILE")"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -449,7 +476,16 @@ cc_pm2_start_canonical() {
 # ----------------------------------------------------------------------
 
 # _cc_mtime — epoch mtime of a file, portable across BSD (Mac) and GNU (Linux).
-_cc_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+# GNU form FIRST: on Linux, `stat -f` means FILESYSTEM status and prints six
+# lines to stdout before failing over, and under `set -u` the callers' `-gt`
+# comparison then dies on "File: unbound variable" (every VPS box, run silently
+# ending after "update.sh reported success"). BSD rejects `-c` with no stdout.
+# Always prints a plain integer.
+_cc_mtime() {
+  local m
+  m="$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)"
+  [[ "$m" =~ ^[0-9]+$ ]] && echo "$m" || echo 0
+}
 
 # _cc_gen_secret — a strong random hex secret (openssl -> python3 -> urandom).
 _cc_gen_secret() {
@@ -495,7 +531,9 @@ cc_resolve_sovereign_model() {
   local candidates cand
   candidates="$(jq -r '
     [ .agents.defaults.model.primary?,
+      .agents.entries.main.model.primary?,
       ( (.agents.list // []) | map(select(.name=="Main" or .name=="main")) | .[0].model.primary? ),
+      ( [(.agents.entries // {})[]] | .[0].model.primary? ),
       .agents.list[0].model.primary?,
       ( (.agents.defaults.model.fallbacks? // [])[] ),
       .agents.defaults.model?
@@ -588,8 +626,8 @@ cc_resolve_judge_model() {
       (.models.providers["ollama"].models[]?.id),
       (.agents.defaults.model.primary?),
       ((.agents.defaults.model.fallbacks? // [])[]),
-      ((.agents.list // []) | map(.model.primary?) | .[]),
-      ((.agents.list // []) | map(.model.fallbacks? // []) | add // [] | .[])
+      ((.agents.list // []) + [(.agents.entries // {})[]] | map(.model.primary?) | .[]),
+      ((.agents.list // []) + [(.agents.entries // {})[]] | map(.model.fallbacks? // []) | add // [] | .[])
     ] | map(select(type=="string" and . != "")) | unique | .[]
   ' "$OC_CONFIG" 2>/dev/null)"
   local fam id lid
@@ -882,7 +920,7 @@ cc_write_env_local() {
     # than importing 0 rows behind a green check.
     rl_status="preserved(existing)"
   elif [[ -d "$rl_dir" ]]; then
-    rl_howtos="$(find "$rl_dir" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    rl_howtos="$(find -L "$rl_dir" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
     if [[ "${rl_howtos:-0}" -ge 1 ]]; then
       cc_env_set_if_absent "$envf" ROLE_LIBRARY_PATH "$rl_dir" >/dev/null
       rl_status="set($rl_dir; $rl_howtos role how-to.md)"
@@ -1130,7 +1168,9 @@ cc_git_sync_to_default_branch() {
 #      and an OWN manual revert (snapshot .next before building, restore it
 #      on a failed post-check) — so even the last-resort tier never leaves a
 #      half-updated CC standing.
-# Sets state key .commandCenterLastUpdateVerified (true/false) either way.
+# Sets state keys .commandCenterLastUpdateVerified AND .commandCenterBuildFresh
+# (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build, and the
+# FINAL degraded check requires commandCenterBuildFresh.
 # Returns 0 if the box ends the call GREEN (fresh build + healthy), 1 otherwise
 # (the box may still be safely serving the PRIOR build — that is success from
 # the "never half-updated" invariant's point of view, just not a fresh deploy).
@@ -1234,7 +1274,7 @@ cc_route_update_through_canonical_path() {
   health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
   if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
     log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
-    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true' 2>/dev/null || true
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true | .commandCenterBuildFresh = true' 2>/dev/null || true
     return 0
   fi
   if [[ "$health_code" == "200" ]]; then
@@ -1242,7 +1282,7 @@ cc_route_update_through_canonical_path() {
   else
     log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code. CC may be down; this box needs operator attention (see $LOG_FILE)."
   fi
-  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false' 2>/dev/null || true
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false | .commandCenterBuildFresh = false' 2>/dev/null || true
   return 1
 }
 
@@ -1274,6 +1314,172 @@ cc_load_launch_environment() {
     value="$(cc_env_get "$DASHBOARD_DIR/.env.local" "$key")" || fail_install "Invalid client service environment; startup stopped"
     [[ -n "$value" ]] && export "$key=$value"
   done
+  cc_check_company_id_against_board
+}
+
+# ── Does the mirrored company id match the company that owns the board? ──────
+# Measured on a client box: this mirror wrote MC_COMPANY_ID=default while the
+# CC DB's live workspaces sat 31 under one real company id and 9 under
+# 'default'. The Command Center's ingest is company-scoped, so the catch-all
+# `general-task` became unresolvable and every routed task landed unrouted. The
+# catch-all's owner is the authority; absent a catch-all, the company owning the
+# most live workspaces is.
+#
+# TWO CORRECTIONS, BOTH MEASURED ON A LATER BOX, BOTH IN cc_repair_company_id:
+#
+#   1. THE REPAIRED COPY WAS NOT THE COPY THAT GETS READ. This function rewrote
+#      MC_COMPANY_ID and nothing else. But the Command Center resolves a
+#      request's tenant through tenantRegistration(), which reads the per-host
+#      `companyId` inside MC_TENANT_REGISTRY_JSON — NOT the env scalar. Six
+#      hosts on that box all still carried `companyId: default` after an install
+#      that reported success, because interview-launch.py stamps the registry
+#      once from the launch state and then refuses to rebind a registered host.
+#      So the value that was repaired was not the value in use, and the board
+#      stayed blank. Both copies are now repaired together, in one atomic write.
+#
+#   2. --update-only USED TO WARN AND CHANGE NOTHING. The reasoning was sound —
+#      rewriting a client's tenant id during a routine code roll is a surprise.
+#      It was outweighed: the state it declined to repair is a client sitting
+#      logged in at a board showing zero of their 40 departments, and a code roll
+#      is frequently the only thing that ever runs on that box again. A surprise
+#      that restores a client's own data beats a silence that leaves it hidden.
+#      The repair now runs on EVERY install path. It only ever moves the id to
+#      the company that demonstrably owns the rows in that box's own database,
+#      it is a no-op when they already agree, and it is logged and stamped on
+#      the state file either way.
+cc_check_company_id_against_board() {
+  local db="${DATABASE_PATH:-$DASHBOARD_DIR/mission-control.db}" owner split env_id
+  [[ -f "$db" ]] || return 0
+  env_id="${MC_COMPANY_ID:-}"
+  [[ -n "$env_id" ]] || return 0
+  local out
+  out="$(python3 - "$db" <<'PYCID'
+import sqlite3, sys
+try:
+    con = sqlite3.connect(sys.argv[1])
+    cols = [r[1] for r in con.execute("PRAGMA table_info(workspaces)")]
+    if "company_id" not in cols:
+        raise SystemExit(0)
+    where = " WHERE archived_at IS NULL" if "archived_at" in cols else ""
+    rows = con.execute(
+        "SELECT company_id, COUNT(*) FROM workspaces" + where + " GROUP BY 1 ORDER BY 2 DESC"
+    ).fetchall()
+    if not rows:
+        raise SystemExit(0)
+    owner = None
+    hit = con.execute(
+        "SELECT company_id FROM workspaces WHERE slug IN ('general-task','dept-general-task','general') "
+        "OR id IN ('general-task','dept-general-task','general') LIMIT 1"
+    ).fetchone()
+    if hit:
+        owner = hit[0]
+    if owner is None:
+        owner = rows[0][0]
+    print(owner or "")
+    print(", ".join(f"{c or 'NULL'}={n}" for c, n in rows))
+except sqlite3.Error:
+    raise SystemExit(0)
+PYCID
+)" || return 0
+  owner="$(printf '%s\n' "$out" | sed -n '1p')"
+  split="$(printf '%s\n' "$out" | sed -n '2p')"
+  [[ -n "$owner" ]] || return 0
+  if [[ "$owner" == "$env_id" ]]; then
+    log "INFO" "[cc-env] MC_COMPANY_ID=$env_id matches the company owning the board (split: $split)"
+    return 0
+  fi
+  echo "[cc-env] MC_COMPANY_ID MISMATCH: env=$env_id but workspaces/catch-all belong to $owner (split: $split)" >&2
+  log "WARN" "[cc-env] MC_COMPANY_ID MISMATCH: env=$env_id but workspaces/catch-all belong to $owner (split: $split)"
+  [[ -f "$STATE_FILE" ]] && state_set ".commandCenterCompanyIdMismatch = \"env=$env_id owner=$owner\""
+  cc_repair_company_id "$DASHBOARD_DIR/.env.local" "$owner" "$env_id"
+}
+
+# cc_repair_company_id — point BOTH copies of the company id at the company that
+# owns the board, in ONE atomic write of .env.local.
+#
+#   • MC_COMPANY_ID                — the env scalar (what this function used to
+#                                    repair, alone).
+#   • MC_TENANT_REGISTRY_JSON      — the per-host `companyId` on EVERY
+#                                    registration. This is the copy
+#                                    tenantRegistration() actually reads, and
+#                                    repairing the scalar without it is what made
+#                                    a "successful" install leave a blank board.
+#
+# Values are re-encoded through the shared service_env writer (the same encoder
+# interview-launch.py and cc_env_set_if_absent use), so a value carrying a
+# newline, a `$` or a `#` survives losslessly. Every other assignment in the file
+# is carried through untouched and NOTHING is echoed — the file holds the client's
+# API token and session secret.
+#
+# Idempotent: already-correct copies produce no write at all. Prints one status
+# line naming only the key(s) changed and the host COUNT, never a host, never a
+# value other than the company ids already being logged by the caller.
+cc_repair_company_id() {
+  local envf="$1" owner="$2" env_id="$3" result
+  if [[ ! -f "$envf" ]]; then
+    log "WARN" "[cc-env] company-id repair skipped: $envf is absent; env still says $env_id"
+    return 0
+  fi
+  result="$(python3 - "$SKILL_DIR/../shared-utils" "$envf" "$owner" <<'PYCOMPANYID'
+import json, os, sys, tempfile
+sys.path.insert(0, sys.argv[1])
+from service_env import read_env, encode_assignment
+
+path, owner = sys.argv[2], sys.argv[3]
+values = read_env(path)
+updates = {}
+
+if values.get('MC_COMPANY_ID', '') != owner:
+    updates['MC_COMPANY_ID'] = owner
+
+# The registry is the copy tenantRegistration() reads. Repair every registration
+# that names a different company: this box serves ONE tenant, so a host on it
+# registered to another company is the defect, not a second customer.
+try:
+    registry = json.loads(values.get('MC_TENANT_REGISTRY_JSON') or '{}')
+except ValueError:
+    registry = None
+hosts = 0
+if isinstance(registry, dict):
+    for host, registration in registry.items():
+        if isinstance(registration, dict) and registration.get('companyId') != owner:
+            registration['companyId'] = owner
+            hosts += 1
+    if hosts:
+        updates['MC_TENANT_REGISTRY_JSON'] = json.dumps(registry, separators=(',', ':'))
+elif registry is None:
+    print('registry-unparseable 0')
+    raise SystemExit(0)
+
+if not updates:
+    print('already-correct 0')
+    raise SystemExit(0)
+
+text = open(path, encoding='utf-8').read()
+lines = [line for line in text.splitlines() if line.split('=', 1)[0].strip() not in updates]
+lines.extend(encode_assignment(key, value) for key, value in updates.items())
+handle_fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path) or '.', prefix='.cc-company-id-')
+with os.fdopen(handle_fd, 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(lines) + '\n')
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, path)
+os.chmod(path, 0o600)
+print('%s %d' % ('+'.join(sorted(updates)), hosts))
+PYCOMPANYID
+)" || {
+    log "WARN" "[cc-env] company-id repair FAILED; env still says $env_id and the registry is unchanged"
+    return 0
+  }
+  case "$result" in
+    already-correct*)
+      log "INFO" "[cc-env] company-id repair: both copies already name $owner (no write)" ;;
+    registry-unparseable*)
+      log "WARN" "[cc-env] company-id repair: MC_TENANT_REGISTRY_JSON is not parseable JSON; NOTHING was rewritten (env still says $env_id). Operator action required." ;;
+    *)
+      export MC_COMPANY_ID="$owner"
+      log "INFO" "[cc-env] company-id repaired to $owner on ${UPDATE_ONLY:-false}-update path (rewrote: $result registry host(s))" ;;
+  esac
 }
 
 cc_prepare_database_environment() {
@@ -1299,6 +1505,220 @@ PYDB
 cc_launch_stage() {
   python3 "$SKILL_DIR/scripts/interview-launch.py" "$1" --state "$STATE_FILE" \
     --app "$DASHBOARD_DIR" --root "$OC_ROOT" >>"$LOG_FILE" 2>&1
+}
+
+# ----------------------------------------------------------------------
+# ISSUE-04 - schedule the Command Center self-heal watchdog (cc-watchdog)
+# ----------------------------------------------------------------------
+# THE DEFECT THIS CLOSES. The Command Center repo ships scripts/watchdog-cc.sh:
+# a */5 self-heal for pm2 crash loops, EADDRINUSE, duplicate/legacy app-name
+# zombies, cc-start.sh stale-build refusal receipts, and (from the companion CC
+# change) a scheduler-stalled class that does one pm2 restart. This installer's
+# own pm2 app-name contract block has NAMED that file since v16.1.7 - but no
+# installer in this repo ever SCHEDULED it on any box. mac-mini-bootstrap.sh
+# registers only the pm2 launchd job. So the watchdog shipped to every client
+# and fired on none of them: on a live client Mac the board read "healthy" for
+# 41 hours with no card moving, until an operator ran pm2 restart by hand.
+# A self-heal that nothing schedules is the same as no self-heal.
+#
+# WHERE IT RUNS. Registered in BLOCK A immediately after Phase 6, so it lands on
+# BOTH a full install and an --update-only refresh, on every box, regardless of
+# interview state. Existing boxes therefore pick it up on the next fleet roll
+# without a separate remediation pass.
+#
+# FAIL-SOFT ON PURPOSE, matching install.sh's own cron registrars
+# (install_workforce_resume_cron / install_watchdog_loop_cron): no openclaw CLI
+# means a LOUD PENDING log and a continuing install, because a box with a
+# working board and no watchdog is strictly better than a box with neither.
+CC_WATCHDOG_CRON_NAME="cc-watchdog"
+CC_WATCHDOG_CRON_DECL="skill32-cc-watchdog"
+CC_WATCHDOG_CRON_EXPR="*/5 * * * *"
+CC_WATCHDOG_SCRIPT=""
+CC_WATCHDOG_WRAPPER=""
+
+# Durable-tombstone awareness so an operator who deliberately removed this cron
+# is never overridden by the next roll. Sourced from the shared lib when the
+# bundle carries it; when it does not, the inline stub fails OPEN (never
+# tombstoned) rather than block all registration, mirroring
+# 38-conversational-ai-system/scripts/04-register-crons.sh.
+_CC_CRON_LIB="$SKILL_DIR/../shared-utils/cron-lib.sh"
+[[ -f "$_CC_CRON_LIB" ]] || _CC_CRON_LIB="$SKILL_DIR/../../shared-utils/cron-lib.sh"
+if [[ -f "$_CC_CRON_LIB" ]]; then
+  # shellcheck source=/dev/null
+  source "$_CC_CRON_LIB" || true
+fi
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
+
+# cc_cron_add_supports <flag> - feature-probe `openclaw cron add --help` ONCE
+# for a flag this repo cannot assume every installed CLI carries. Same probe
+# shape install.sh uses for --command (_wbr_has_command). Never invents a flag
+# the help text does not literally advertise.
+cc_cron_add_supports() {
+  local flag="$1"
+  if [[ -z "${CC_CRON_ADD_HELP+x}" ]]; then
+    CC_CRON_ADD_HELP="$(openclaw cron add --help 2>&1 || true)"
+  fi
+  printf '%s' "$CC_CRON_ADD_HELP" | grep -qE -- "(^|[[:space:]])${flag}([[:space:]=<]|\$)"
+}
+
+# cc_watchdog_cron_lookup - print "<id>|<enabled>" for the cc-watchdog job, or
+# return 1 when it is absent / the listing is unreadable. JSON exact-name match
+# only: `cron list`'s TEXT table truncates names past ~22 chars, which is the
+# documented root cause of the 6x-duplicate-cron incident (see
+# shared-utils/cron-lib.sh). `--all` is feature-detected because DISABLED jobs
+# are omitted from the default listing on the CLI builds that have it, and a
+# disabled job is exactly the case this lookup has to see.
+cc_watchdog_cron_lookup() {
+  local raw list_flags=""
+  if openclaw cron list --help 2>&1 | grep -qE -- '(^|[[:space:]])--all([[:space:]=<]|$)'; then
+    list_flags="--all"
+  fi
+  raw=$(openclaw cron list --json $list_flags 2>/dev/null) || raw=""
+  [[ -n "$raw" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  OC_CRON_RAW="$raw" python3 - "$CC_WATCHDOG_CRON_NAME" 2>/dev/null <<'PYWD'
+import json, os, sys
+name = sys.argv[1]
+try:
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+for job in jobs:
+    if isinstance(job, dict) and job.get("name") == name:
+        enabled = job.get("enabled", True)
+        print("%s|%s" % (job.get("id", ""), "true" if enabled else "false"))
+        sys.exit(0)
+sys.exit(1)
+PYWD
+}
+
+# cc_watchdog_write_wrapper - env carrier for a CLI with no --command-env.
+# The cron payload contract is ONE plain command string: no `;`, no `||`, no
+# `VAR=x cmd` prefix (the gateway runs it through `sh -lc`, and an inline
+# assignment prefix is exactly the shape that silently becomes part of the
+# argv on the --command-argv path). So on an older CLI the environment moves
+# into a tiny generated wrapper instead. Values are quoted with printf %q, so a
+# path containing spaces survives verbatim.
+cc_watchdog_write_wrapper() {
+  local wrapper_dir="$OC_ROOT/scripts"
+  CC_WATCHDOG_WRAPPER="$wrapper_dir/cc-watchdog-run.sh"
+  mkdir -p "$wrapper_dir" 2>/dev/null || return 1
+  {
+    printf '%s\n' '#!/usr/bin/env bash'
+    printf '%s\n' '# GENERATED by 32-command-center-setup/scripts/run-full-install.sh (ISSUE-04).'
+    printf '%s\n' '# Env carrier for the cc-watchdog cron on an openclaw CLI without --command-env.'
+    printf '%s\n' '# Regenerated on every install/update run. Do not hand-edit.'
+    printf '%s\n' 'set -u'
+    printf 'export WATCHDOG_SELF_HEAL=1\n'
+    printf 'export WATCHDOG_PORT=%q\n' "$DASHBOARD_PORT"
+    printf 'export WATCHDOG_CANONICAL_DIR=%q\n' "$DASHBOARD_DIR"
+    printf 'exec bash %q\n' "$CC_WATCHDOG_SCRIPT"
+  } > "$CC_WATCHDOG_WRAPPER" || return 1
+  chmod +x "$CC_WATCHDOG_WRAPPER" 2>/dev/null || true
+  return 0
+}
+
+# cc_register_watchdog_cron - idempotent registration of the */5 self-heal cron.
+#
+# ENV CONTRACT. watchdog-cc.sh reads WATCHDOG_SELF_HEAL, WATCHDOG_PORT and
+# WATCHDOG_CANONICAL_DIR (plus optional WATCHDOG_ALERT_LOG / WATCHDOG_ALERT_HOOK
+# / WATCHDOG_STATE_DIR, all of which have working defaults). It does NOT read a
+# pm2-app-name variable: the canonical name is compiled into both repos
+# ("blackceo-command-center", $CC_PM2_NAME here), so passing one would be dead
+# weight the watchdog ignores. Only the three variables it actually reads are
+# passed.
+#
+# IDEMPOTENCY. `openclaw cron add` has no dedupe-by-name guard of its own - that
+# is how one box accumulated nine copies of the same tick. --declaration-key is
+# the CLI's add-or-converge identity: it updates the ONE job carrying that key
+# when anything differs, no-ops when nothing does, and creates exactly one job
+# the first time. On a CLI without the flag this falls back to an explicit
+# remove-then-add by resolved job id, which reaches the same single-job end
+# state. Never both.
+cc_register_watchdog_cron() {
+  CC_WATCHDOG_SCRIPT="$DASHBOARD_DIR/scripts/watchdog-cc.sh"
+
+  if [[ ! -f "$CC_WATCHDOG_SCRIPT" ]]; then
+    log "WARN" "phase=6j cc-watchdog: SKIPPED - $CC_WATCHDOG_SCRIPT is not present in this Command Center checkout (older pin). No cron registered; this box self-heals nothing until the checkout carries scripts/watchdog-cc.sh, at which point the next install/update run registers it."
+    return 0
+  fi
+  chmod +x "$CC_WATCHDOG_SCRIPT" 2>/dev/null || true
+
+  local manual_hint
+  manual_hint="openclaw cron add --name $CC_WATCHDOG_CRON_NAME --cron '$CC_WATCHDOG_CRON_EXPR' --declaration-key $CC_WATCHDOG_CRON_DECL --no-deliver --command-env WATCHDOG_SELF_HEAL=1 --command-env WATCHDOG_PORT=$DASHBOARD_PORT --command-env WATCHDOG_CANONICAL_DIR=$DASHBOARD_DIR --command 'bash $CC_WATCHDOG_SCRIPT'"
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    log "WARN" "phase=6j cc-watchdog: PENDING - the openclaw CLI is not on PATH, so the */5 self-heal cron was NOT registered. This box can sit wedged (crash loop, EADDRINUSE, stale-build refusal, stalled scheduler) with nothing to restart it. Register it by hand once the CLI is available: $manual_hint"
+    return 0
+  fi
+
+  if oc_cron_tombstoned "$CC_WATCHDOG_CRON_NAME"; then
+    log "WARN" "phase=6j cc-watchdog: TOMBSTONED (deliberately removed by an operator) - NOT re-registering. Un-tombstone with: bash scripts/tombstone-cron.sh --remove $CC_WATCHDOG_CRON_NAME"
+    return 0
+  fi
+
+  local -a add_args
+  add_args=( --name "$CC_WATCHDOG_CRON_NAME" --cron "$CC_WATCHDOG_CRON_EXPR" --no-deliver )
+
+  local idem_mode
+  if cc_cron_add_supports --declaration-key; then
+    add_args+=( --declaration-key "$CC_WATCHDOG_CRON_DECL" )
+    idem_mode="declaration-key converge ($CC_WATCHDOG_CRON_DECL)"
+  else
+    idem_mode="remove-then-add by name (CLI has no --declaration-key)"
+    local prior prior_id
+    if prior="$(cc_watchdog_cron_lookup)"; then
+      prior_id="${prior%%|*}"
+      if [[ -n "$prior_id" ]] && openclaw cron rm "$prior_id" >/dev/null 2>&1; then
+        log "INFO" "phase=6j cc-watchdog: removed the prior '$CC_WATCHDOG_CRON_NAME' job (id=$prior_id) before re-adding - no --declaration-key on this CLI"
+      fi
+    fi
+  fi
+
+  local env_mode
+  if cc_cron_add_supports --command-env; then
+    env_mode="--command-env"
+    add_args+=( --command-env "WATCHDOG_SELF_HEAL=1" \
+                --command-env "WATCHDOG_PORT=$DASHBOARD_PORT" \
+                --command-env "WATCHDOG_CANONICAL_DIR=$DASHBOARD_DIR" \
+                --command "bash $CC_WATCHDOG_SCRIPT" )
+  else
+    if ! cc_watchdog_write_wrapper; then
+      log "WARN" "phase=6j cc-watchdog: PENDING - this CLI has no --command-env and the wrapper at $OC_ROOT/scripts/cc-watchdog-run.sh could not be written, so the */5 self-heal cron was NOT registered and this box self-heals nothing. Fix the permissions on $OC_ROOT/scripts and re-run the installer. (Do NOT copy the --command-env remedy logged elsewhere in this phase: this CLI does not support that flag.)"
+      return 0
+    fi
+    env_mode="generated wrapper $CC_WATCHDOG_WRAPPER"
+    add_args+=( --command "bash $CC_WATCHDOG_WRAPPER" )
+  fi
+
+  if openclaw cron add "${add_args[@]}" >>"$LOG_FILE" 2>&1; then
+    log "INFO" "phase=6j cc-watchdog: registered - $CC_WATCHDOG_CRON_EXPR, self-heal ON, port=$DASHBOARD_PORT, dir=$DASHBOARD_DIR, env via $env_mode, idempotency via $idem_mode"
+  else
+    log "WARN" "phase=6j cc-watchdog: PENDING - 'openclaw cron add' FAILED (gateway down or unauthenticated?), so the */5 self-heal cron is NOT registered and this box self-heals nothing. See $LOG_FILE, then register by hand: $manual_hint"
+    return 0
+  fi
+
+  # ENABLE-IF-DISABLED. A converge writes the job's fields but does not flip a
+  # previously disabled job back on, and a disabled watchdog is indistinguishable
+  # from an absent one at 3am. An operator's DELIBERATE off-switch is the
+  # tombstone checked above, not a bare disable, so re-enabling here cannot
+  # override an intentional removal.
+  local state state_id state_enabled
+  if state="$(cc_watchdog_cron_lookup)"; then
+    state_id="${state%%|*}"
+    state_enabled="${state##*|}"
+    if [[ "$state_enabled" != "true" ]]; then
+      if [[ -n "$state_id" ]] && openclaw cron enable "$state_id" >>"$LOG_FILE" 2>&1; then
+        log "INFO" "phase=6j cc-watchdog: the job was DISABLED - re-enabled (id=$state_id)"
+      else
+        log "WARN" "phase=6j cc-watchdog: the job exists but is DISABLED and could not be re-enabled (id=${state_id:-unresolved}). It will never fire. Enable it by hand: openclaw cron enable ${state_id:-<id>}"
+      fi
+    fi
+  else
+    log "WARN" "phase=6j cc-watchdog: 'openclaw cron add' reported success but the job is not readable back from 'openclaw cron list --json'. Treating registration as UNPROVEN - verify with: openclaw cron list --all --json"
+  fi
+  return 0
 }
 
 # ---- preflight ----
@@ -1366,7 +1786,7 @@ if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FI
   # P1-3: read companySlug (canonical, written by build-workforce.py) with a
   # transition fallback to the legacy clientSlug alias. state_get appends `// empty`,
   # so this resolves companySlug → clientSlug → empty across both state generations.
-  CLIENT_SLUG=$(state_get '.companySlug // .clientSlug')
+  CLIENT_SLUG=$(state_get '.companySlug // .clientSlug // .slug')
   COMPANY_NAME=$(state_get '.companyName')
   CONTACT_EMAIL=$(state_get '.contactEmail')
   [[ -n "$CLIENT_SLUG" ]] && log "INFO" "update-only: read client slug from state file: $CLIENT_SLUG"
@@ -1615,6 +2035,24 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6j - Command Center self-heal watchdog cron (ISSUE-04)
+# ----------------------------------------------------------------------
+# DELIBERATELY OUTSIDE the phase-6 if/elif/else above: all three of its branches
+# (--update-only refresh, already-done skip, fresh full install) converge here,
+# so the watchdog gets scheduled on every run in every mode. It is also ABOVE
+# the interview-complete gate, because a wedged board needs restarting whether
+# or not the client has finished their interview.
+#
+# NOT state-gated either. There is no commandCenterPhase6jDone flag on purpose:
+# the registration is a converge, so re-running it is a no-op, and a box whose
+# cron store was wiped (gateway re-provision, openclaw doctor --fix, a manual
+# cron rm) must be able to heal itself on the next roll rather than be skipped
+# forever by a stale "done" bit.
+log "INFO" "phase=6j cc-watchdog: starting"
+cc_register_watchdog_cron
+log "INFO" "phase=6j cc-watchdog: done"
+
+# ----------------------------------------------------------------------
 # PHASE 6h — Tunnel (n8n webhook + cloudflared)
 # ----------------------------------------------------------------------
 # P3-2: this tunnel phase was previously mislabeled "PHASE 6b", colliding with the
@@ -1736,6 +2174,29 @@ if [[ "$UPDATE_ONLY" != "true" || ( -n "$(state_get '.launchBootstrap')" && "$(s
     if ! cc_launch_stage prebuild; then
       state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "foundation-pending"'
       log "WARN" "Interview launch pending: explicit lane/consent or foundation verification missing; see $LOG_FILE"
+      exit 8
+    fi
+    # The Command Center refuses every interview sign-in (409 access_identity_unregistered)
+    # until the public host's registry entry names its Cloudflare Access issuer, audience and
+    # the owner's email. Fill them from the live Access login before any invitation is sent.
+    cc_launch_stage register-access; _ra_rc=$?
+    if [[ "$_ra_rc" -eq 3 ]]; then
+      # Registry is read at boot only; restart the same way the fresh install starts it.
+      export MC_TENANT_REGISTRY_JSON="$(cc_env_get "$DASHBOARD_DIR/.env.local" MC_TENANT_REGISTRY_JSON)"
+      pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
+      cc_pm2_start_canonical || fail_install "Command Center restart after Access registration failed"
+      pm2 save >>"$LOG_FILE" 2>&1 || true
+      _ra_health="000"
+      for _ in $(seq 1 60); do
+        _ra_health="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
+        [[ "$_ra_health" == "200" ]] && break
+        sleep 2
+      done
+      [[ "$_ra_health" == "200" ]] || fail_install "Command Center not healthy after Access registration restart (health=$_ra_health)"
+      log "INFO" "Interview Access identity registered; Command Center restarted"
+    elif [[ "$_ra_rc" -ne 0 ]]; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "access-registration-pending"'
+      log "WARN" "Interview launch pending: public /interview is not behind a Cloudflare Access login, or the owner's contact email is missing; see $LOG_FILE"
       exit 8
     fi
     if ! python3 "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --interview --env-file "$DASHBOARD_DIR/.env.local" >>"$LOG_FILE" 2>&1; then
@@ -1936,12 +2397,15 @@ else
   if ! bash "$SKILL32_MATERIALIZE" >>"$LOG_FILE" 2>&1; then
     fail_install "phase=4: materialize-dept-agents.sh exited non-zero (see $LOG_FILE)"
   fi
-  AGENT_COUNT=$(python3 -c 'import json,sys; sys.stdout.write(str(len(json.load(open(sys.argv[1]))["agents"]["list"])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
+  # Count BOTH roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id)
+  # and legacy agents.list[]. Reading only ["agents"]["list"] raised KeyError on
+  # an entries box, counted 0 and failed every fresh install there.
+  AGENT_COUNT=$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("agents") or {}; e=a.get("entries"); l=a.get("list"); sys.stdout.write(str(len(e if isinstance(e, dict) else {}) + len(l if isinstance(l, list) else [])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
   if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
-    fail_install "phase=4: agents.list[] has only ${AGENT_COUNT:-0} entries after materialize"
+    fail_install "phase=4: the agent roster has only ${AGENT_COUNT:-0} entries after materialize"
   fi
   state_set ".agentsMaterializedCount = $AGENT_COUNT | .commandCenterPhase4Done = true"
-  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in agents.list[])"
+  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in the roster)"
 fi
 
 # ----------------------------------------------------------------------
@@ -1996,6 +2460,32 @@ fi
 # Idempotent -- safe to re-run on every install/resume/update.
 # In --update-only mode this is the #109 fix: demo departments can never
 # resurrect because the real build-state always wins.
+# ── CONTRACT CHECK ──────────────────────────────────────────────────────────
+# The CC ships scripts/openclaw-contract-check.mjs, proving the config/runtime
+# contract the installer just built against. FATAL on a FULL install (a fresh
+# box must not ship against a contract it fails); WARN on --update-only, which
+# is a code-only roll and must not be blocked by it.
+CC_CONTRACT_CHECK="$DASHBOARD_DIR/scripts/openclaw-contract-check.mjs"
+if [[ -f "$CC_CONTRACT_CHECK" ]] && command -v node >/dev/null 2>&1; then
+  if ( cd "$DASHBOARD_DIR" && node "$CC_CONTRACT_CHECK" >>"$LOG_FILE" 2>&1 ); then
+    log "INFO" "contract-check: PASS"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = true'; fi
+  else
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = false'; fi
+    if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+      log "WARN" "contract-check: FAILED on an update roll -- reported, not fatal (see $LOG_FILE)"
+      echo "  ⚠ CC contract check reported issues (WARN on an update roll; see $LOG_FILE)." >&2
+    else
+      fail_install "contract-check: $CC_CONTRACT_CHECK failed on a FULL install; refusing to ship a box that fails its own config/runtime contract (see $LOG_FILE)"
+    fi
+  fi
+elif [[ -f "$CC_CONTRACT_CHECK" ]]; then
+  log "WARN" "contract-check: node not on PATH -- skipped (not a failure)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = "node-missing"'; fi
+else
+  log "INFO" "contract-check: $CC_CONTRACT_CHECK not present in this CC version -- skipping"
+fi
+
 log "INFO" "phase=6c sync-departments: starting"
 SYNC_SCRIPT="$DASHBOARD_DIR/scripts/sync-departments-from-build-state.py"
 if [[ -f "$SYNC_SCRIPT" ]]; then
@@ -2043,11 +2533,29 @@ fi
 # Phase 6b-seed (workspaces exist) in BOTH full and --update-only. Idempotent:
 # only inserts agents/tasks for workspaces that have none yet, so a built box is
 # never duplicated. WARN-only + state-recorded.
+#
+# STARTER TASKS ARE FULL-INSTALL ONLY. The seeder's per-workspace guard is "this
+# workspace has zero tasks", which on a MATURE board is true of every department
+# the client has simply never used. An --update-only code roll therefore dropped
+# fresh "Welcome to <dept>" cards into a live backlog months after install, and
+# the Command Center's grooming loop spawned failing "Author SOP: Welcome to X"
+# follow-on work off them. So --update-only passes --no-starter-tasks: companies
+# and dept-head agent rows are still ensured (idempotent identity/runtime rows),
+# but no content card is ever written into a board the client is already using.
 log "INFO" "phase=6e seed-dashboard-content: starting"
 SEED_DASH="$SKILL_DIR/scripts/seed-dashboard-content.py"
+SEED_DASH_ARGS=()
+if [[ "$UPDATE_ONLY" == "true" ]]; then
+  SEED_DASH_ARGS+=(--no-starter-tasks)
+  log "INFO" "phase=6e seed-dashboard-content: starter tasks SKIPPED -- update-only roll (companies + head agents still ensured; no welcome cards into a live backlog)"
+fi
 if [[ -f "$SEED_DASH" ]] && command -v python3 >/dev/null 2>&1; then
-  if COMPANY_NAME="${COMPANY_NAME:-}" python3 "$SEED_DASH" >>"$LOG_FILE" 2>&1; then
-    log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents + starter tasks seeded (Kanban non-empty)"
+  if COMPANY_NAME="${COMPANY_NAME:-}" python3 "$SEED_DASH" ${SEED_DASH_ARGS+"${SEED_DASH_ARGS[@]}"} >>"$LOG_FILE" 2>&1; then
+    if [[ "$UPDATE_ONLY" == "true" ]]; then
+      log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents ensured (starter tasks skipped: update-only)"
+    else
+      log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents + starter tasks seeded (Kanban non-empty)"
+    fi
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDashboardContentSeeded = true'; fi
   else
     log "WARN" "phase=6e seed-dashboard-content: exited non-zero (see $LOG_FILE) -- board may render empty columns"
@@ -2104,9 +2612,29 @@ try:
 except Exception:
     sys.stdout.write('<unparseable guard output -- see log>')
 " 2>/dev/null || echo "<unparseable guard output -- see log>")"
-    log "ERROR" "phase=6e2 department-runtime-parity: FAIL (rc=$DEPT_PARITY_RC) -- department(s) with no matching runtime: $DEPT_PARITY_NAMES"
+    DEPT_PARITY_N="$(printf '%s' "$DEPT_PARITY_OUT" | python3 -c "
+import json, sys
+try:
+    sys.stdout.write(str(len(json.load(sys.stdin).get('mismatches', []))))
+except Exception:
+    sys.stdout.write('?')
+" 2>/dev/null || echo "?")"
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = false'; fi
-    fail_install "phase=6e2: department-runtime-parity guard found department(s) with a board row but NO matching OpenClaw runtime entry: ${DEPT_PARITY_NAMES} (rc=$DEPT_PARITY_RC; see $LOG_FILE for full detail; run materialize-dept-agents.sh then re-run install)"
+    # A parity finding is NOT a failed refresh. On an --update-only roll the
+    # pull, build and restart all succeeded; reporting that as "Command Center
+    # refresh failed or rolled back" told the operator the app was broken when
+    # only the runtime roster disagreed with the board. Measured on a client
+    # box, where every department was reported missing because the guard could
+    # not read agents.entries at all. Warn, record, and let the roll finish; a
+    # FULL install still refuses, because a fresh box must not ship a board
+    # whose departments have no runtime.
+    if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+      log "WARN" "phase=6e2 department-runtime-parity: WARN (rc=$DEPT_PARITY_RC) -- ${DEPT_PARITY_N} department(s) with no matching runtime: $DEPT_PARITY_NAMES. The Command Center itself refreshed successfully; run materialize-dept-agents.sh to reconcile."
+      echo "  ⚠ parity guard WARN: ${DEPT_PARITY_N} department(s) have a board row but no matching runtime entry (${DEPT_PARITY_NAMES}). CC refresh itself SUCCEEDED." >&2
+    else
+      log "ERROR" "phase=6e2 department-runtime-parity: FAIL (rc=$DEPT_PARITY_RC) -- department(s) with no matching runtime: $DEPT_PARITY_NAMES"
+      fail_install "phase=6e2: department-runtime-parity guard found department(s) with a board row but NO matching OpenClaw runtime entry: ${DEPT_PARITY_NAMES} (rc=$DEPT_PARITY_RC; see $LOG_FILE for full detail; run materialize-dept-agents.sh then re-run install)"
+    fi
   fi
 else
   log "WARN" "phase=6e2 department-runtime-parity: $DEPT_PARITY_GUARD not found (or python3 missing) -- skipping (Skill 32 not at the version that ships this guard)"
@@ -2241,15 +2769,6 @@ if [[ ! -f "$INGEST_SOP_SH" ]]; then
   # even attempted is the C2 ghost, and it must never ship with a green check.
   if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibrarySkipReason = "ingest-script-missing"'; fi
   fail_install "phase=6i: $INGEST_SOP_SH not found -- the SOP V2 library ingester is missing from this Skill 32 install, so the library would never be ingested and the Command Center would ship the boot-seed ghost. Re-run update-skills.sh to repair the skill dir, then re-run install."
-elif [[ -z "${CLIENT_SLUG:-}" ]]; then
-  # Reachable ONLY in --update-only mode (a full install hard-exits on a missing
-  # slug during arg parsing) on a box whose state file records no companySlug.
-  # Left non-fatal: this is a pre-existing box-state anomaly, not a library
-  # defect, and hard-failing every slug-less update-only re-run is out of C2's
-  # scope. It is recorded FALSY + with a reason, so nothing downstream can read
-  # it as a successful ingest.
-  log "WARN" "phase=6i sop-library-ingestion: no CLIENT_SLUG resolved -- SKIPPING the SOP library ingest (ingest-sop-library.sh requires a client slug). The SOP library is NOT verified on this run; re-run with the slug once known."
-  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibrarySkipReason = "no-client-slug"'; fi
 else
   # ---- (1) direct JSONL-asset ingest -> `sops` table -------------------
   # FAIL-CLOSED. ingest-sop-library.sh runs under `set -euo pipefail` and only
@@ -2266,7 +2785,20 @@ else
   # trustworthy floor -- so we do not guess one, we FAIL THE INSTALL. Both
   # writers are idempotent upserts, so the operator just re-runs once the
   # asset/network is reachable again.
-  SOP_INGEST_OUT="$(bash "$INGEST_SOP_SH" "$CLIENT_SLUG" 2>&1)"; SOP_INGEST_RC=$?
+  #
+  # NO SLUG IS NOT A SKIP. The client slug only scopes the ingester's
+  # client_template_vars rows -- the SOP rows, the converge(scope=sops) role
+  # import and the gates below need none. This used to be an `elif` that skipped
+  # the WHOLE phase (ingest + converge + gate) whenever no slug resolved, which
+  # measured live 2026-09-23 on two Mac boxes whose build state carries no
+  # companySlug/clientSlug: every run logged "no CLIENT_SLUG resolved -- SKIPPING"
+  # and the role library never reached the board. Fall back exactly like
+  # update-skills.sh Step U6c does.
+  SOP_INGEST_SLUG="${CLIENT_SLUG:-default}"
+  if [[ -z "${CLIENT_SLUG:-}" ]]; then
+    log "WARN" "phase=6i sop-library-ingestion: no CLIENT_SLUG resolved -- ingesting with slug 'default' (it only scopes client_template_vars; the SOP rows, converge and gates run as normal)"
+  fi
+  SOP_INGEST_OUT="$(bash "$INGEST_SOP_SH" "$SOP_INGEST_SLUG" 2>&1)"; SOP_INGEST_RC=$?
   printf '%s\n' "$SOP_INGEST_OUT" >> "$LOG_FILE"
   SOP_INGEST_TAIL="$(printf '%s' "$SOP_INGEST_OUT" | tail -n 3 | tr '\n' ' ')"
 
@@ -2281,6 +2813,19 @@ else
   # the library grows/shrinks across releases). No count parsed => no floor =>
   # FAIL, never a silent degrade.
   SOP_DOWNLOADED_COUNT="$(printf '%s' "$SOP_INGEST_OUT" | grep -oE 'downloaded [0-9]+ SOP records' | grep -oE '[0-9]+' | head -n1 || true)"
+  # ALREADY-POPULATED SKIP (every already-rolled box). The ingester verified the
+  # box holds >= its canonical population and prints "downloaded 0 SOP records
+  # (skipped — already populated)". That 0 is NOT an empty asset: take the
+  # canonical count it verified as this run's floor. Reading it as empty used to
+  # fail_install here, BEFORE step (2), so converge(scope=sops) ->
+  # importRoleLibrary() never ran on any existing box and the fleet held ZERO
+  # source='role-library' rows. No canonical count parsed => stays 0 => FAIL below.
+  if [[ "$SOP_DOWNLOADED_COUNT" == "0" ]] \
+     && printf '%s' "$SOP_INGEST_OUT" | grep -q 'downloaded 0 SOP records (skipped'; then
+    SOP_DOWNLOADED_COUNT="$(printf '%s' "$SOP_INGEST_OUT" | grep -oE '>= canonical [0-9]+' | grep -oE '[0-9]+' | head -n1 || true)"
+    SOP_DOWNLOADED_COUNT="${SOP_DOWNLOADED_COUNT:-0}"
+    log "INFO" "phase=6i sop-library-ingestion: ingest skipped (box already at canonical population $SOP_DOWNLOADED_COUNT) -- proceeding to converge(scope=sops)"
+  fi
   if [[ -z "$SOP_DOWNLOADED_COUNT" ]]; then
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopConvergeStatus = "not-reached"'; fi
     fail_install "phase=6i: ingest-sop-library.sh exited 0 but printed NO 'downloaded N SOP records' line -- there is no trustworthy row floor for this run, and a relaxed gate would rubber-stamp the CC boot-seed ghost as a healthy library. This means the ingester changed its output contract or half-completed. See $LOG_FILE, then re-run install. Last output: ${SOP_INGEST_TAIL}"
@@ -2381,6 +2926,30 @@ except Exception:
   # carries the reason even when the gate then fail_install()s on it.
   state_set_arg '.commandCenterSopConvergeStatus = $val' "$SOP_CONVERGE_STATUS"
 
+  # ---- (2b) central vectors for the rows the converge just wrote ---------
+  # importRoleLibrary() writes role-library rows with NO embedding (CC #416: a
+  # per-box embed bills the client's key); their vectors ship centrally in the
+  # SOP-embeddings asset (role_library_embeddings, matched by exact slug). The
+  # provisioning inside ingest-sop-library.sh ran BEFORE this converge, and
+  # update-skills U6c2 runs before the whole CC refresh -- so without this call
+  # the new role rows stay unembedded. Additive: never fails the install.
+  SOP_EMBED_DIR="$SKILL_DIR/../shared-utils/sop-embed-once"
+  if [[ -f "$SOP_EMBED_DIR/provision_sop_embeddings.py" ]]; then
+    SOP_PROV_DB="$(python3 - "$SKILL_DIR/../shared-utils" <<'PYDB' 2>/dev/null || true
+import sys
+sys.path.insert(0, sys.argv[1])
+from resolve_db import find_dashboard_db, is_db_found
+p = find_dashboard_db()
+print(p if is_db_found(p) else "")
+PYDB
+)"
+    if [[ -n "$SOP_PROV_DB" ]]; then
+      SOP_PROV_OUT="$(python3 "$SOP_EMBED_DIR/provision_sop_embeddings.py" \
+          "$SOP_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json" "$SOP_PROV_DB" 2>&1 | tail -n 1)"
+      log "INFO" "phase=6i sop-library-ingestion: post-converge vectors: ${SOP_PROV_OUT:-no output}"
+    fi
+  fi
+
   # ---- (3) fail-loud row-count gate (BOTH writers, independently) -------
   # The gate script itself is now fail-closed (--min-total has no default: it
   # exits 3 rather than assume a floor). Belt AND braces: this phase must never
@@ -2439,11 +3008,11 @@ except Exception:
   [[ -z "$SOP_ROLE_SRC_DIR" ]] && SOP_ROLE_SRC_DIR="$SOP_ROLE_DEFAULT_DIR"
   SOP_ROLE_SRC_COUNT=0
   if [[ -d "$SOP_ROLE_SRC_DIR" ]]; then
-    SOP_ROLE_SRC_COUNT="$(find "$SOP_ROLE_SRC_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    SOP_ROLE_SRC_COUNT="$(find -L "$SOP_ROLE_SRC_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
   fi
   SOP_ROLE_DEFAULT_COUNT=0
   if [[ "$SOP_ROLE_SRC_DIR" != "$SOP_ROLE_DEFAULT_DIR" && -d "$SOP_ROLE_DEFAULT_DIR" ]]; then
-    SOP_ROLE_DEFAULT_COUNT="$(find "$SOP_ROLE_DEFAULT_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    SOP_ROLE_DEFAULT_COUNT="$(find -L "$SOP_ROLE_DEFAULT_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
     SOP_ROLE_SRC_COUNT=$(( SOP_ROLE_SRC_COUNT + SOP_ROLE_DEFAULT_COUNT ))
   fi
 
@@ -2629,10 +3198,14 @@ if [[ -f "$STATE_FILE" ]]; then
   if [[ -z "$(state_get '.commandCenterUrl')" || "$(state_get '.commandCenterUrl')" == "null" ]]; then
     state_set ".commandCenterUrl = \"http://127.0.0.1:$DASHBOARD_PORT/\""
   fi
-  # A required sub-phase counts as degraded only when its key is PRESENT and not
-  # `true` (false or "script-missing"). An absent key (older state) is not treated
-  # as a regression. jq's `//` collapses false→empty, so this membership test is
-  # done in one jq pass rather than via state_get.
+  # FAIL-CLOSED: a required sub-phase counts as degraded unless its key is
+  # exactly `true` -- false, "script-missing" AND an absent key all withhold
+  # "done" (tests/unit/cc-done-degraded-retry-gate.test.sh pins this). So every
+  # install path must WRITE each key: the update-only path stamps
+  # commandCenterBuildFresh in cc_route_update_through_canonical_path, because
+  # its update.sh / atomic-deploy.sh tiers never run cc_ensure_fresh_build.
+  # jq's `//` collapses false→empty, so this membership test is done in one jq
+  # pass rather than via state_get.
   if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1; then
     log "WARN" "Tenant readiness pending. Configure this client's own IDs and enrollment per TENANT-CONFIGURATION.md; recovery remains enabled."
     state_set '.commandCenterTenantReady = false'

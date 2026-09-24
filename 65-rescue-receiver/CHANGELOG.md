@@ -1,5 +1,637 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.5.1] - 2026-09-19 - a receipt revision string could settle an acknowledgement
+
+THE DEFECT. `_receipt_match` required the receipt's operation ID and attempt
+identity, but accepted any nonempty `state_revision`. A server response with a
+string such as `"receipt_only"` could therefore settle the durable ACK even
+though the result-v3 contract requires a nonnegative integer revision.
+
+THE FIX. The receiver now checks both the JSON type and decimal representation:
+only a numeric, nonnegative integer revision settles an ACK. Strings, negative
+numbers, fractions, booleans, missing values, and malformed receipts remain in
+`ack-pending` for reconciliation. RR-008 adds regression cases for each of
+those invalid shapes.
+
+## [23.5.0] - 2026-09-19 - a nonempty agent reply was being treated as a repair
+
+THE DEFECT. The receiver's `delivered` verdict meant that `openclaw agent`
+exited 0 and produced text. That transport observation was too easily read as
+“the incident is fixed.” A response that restored one service but left the
+original acceptance check blocked was also classified by escalation-like prose,
+which discarded the partial result instead of preserving it.
+
+THE FIX. Each turn now receives a result-v3 prompt and the receiver writes a
+normalized structured result into the ACK. The receiver owns the claim identity
+and transport receipt; agent-provided repair state must be one of the contract
+values and `repaired` is downgraded to `partial` unless it includes a verified,
+receiver-bound original-symptom acceptance check (`incident_id`, `attempt_id`,
+`check_id`, `passed`, `evidence_ref`) and an authorized fix card. A missing or
+malformed result becomes `not_repaired` / `unverified` with
+`structured_result_missing`, so a nonempty reply never promotes a repair. The
+dedup record retains the exact result for a later ACK replay.
+
+User notification is recorded separately as initial and final statuses, each
+with an optional channel, message receipt, and failure reason. The prompt asks
+for message receipts only where the ticket authorizes a user-facing update and
+the agent has the originating conversation. Without a receipt the status is
+`unavailable` or `unconfirmed`; text claiming “I told the user” is not delivery
+evidence. This receiver has no channel-owned receipt integration, so even an
+agent-supplied message ID remains `unconfirmed` until one exists. Notification
+recovery is a separate obligation, so a failed final message never causes the
+verified repair to run again.
+
+TESTS: `tests/rescue/RR-029/test_structured_result.sh` exercises the real
+receiver result builder for fallback, partial, unverified repaired, and
+notification-receipt cases.
+
+## [23.4.9] - 2026-09-17 - the escalation INTAKE was never probed, so a stale secret was silent
+
+THE DEFECT. A box whose `RESCUE_RANGERS_WEBHOOK_SECRET` went stale after an operator-side
+rotation gets a 401 or a 403 on every escalation, silently, for as long as nobody happens to
+escalate and then check. Nothing on the box looked:
+
+  * `rr-readiness.sh` probes only the RETURN leg (`RR_RECEIVER_URL` with `RR_BOX_TOKEN`). A
+    box can sit at `VERIFIED` while every escalation it makes is refused. Readiness said
+    nothing about whether the box could still get INTO the queue.
+  * `scripts/lib/rescue_admission.py` DOES classify a 403 as an auth refusal
+    (`is_auth_refusal`, `_AUTH_REFUSAL_MARKERS`), but only during a real escalation, and
+    nothing scheduled a probe or wrote a durable flag afterwards.
+  * `scripts/rescue-escalation-section.md.tpl` already documents the exact self-check that
+    proves the channel with zero ticket residue: an `__AUTHTEST__` escalate body whose reply
+    is `{"accepted":true,"ticketId":null,"status":"test_suppressed"}`. It was a manual
+    paragraph for an agent to run by hand. Nothing ran it on a schedule.
+
+THE FIX: `rr-intake-auth-check.sh`, registered by `wire.sh` as the daily cron
+`rr-intake-auth-check` (23 7 local, delivery none). It sends the template's own
+`__AUTHTEST__` body with the credential in a 0600 `curl -H @file` header file inside a 0700
+private dir, exactly as the RR-028 safe probe does, and classifies:
+
+    test_suppressed            -> OK                 rc 0   flag REMOVED
+    401 / 403 / auth-refusal   -> RR_SECRET_STALE    rc 3   flag written
+    200 missing_message        -> RR_OLD_RELAY_URL   rc 4   flag written
+    no credential anywhere     -> RR_SECRET_MISSING  rc 5   flag written, NOTHING sent
+    transport / 429 / 5xx /
+    redirect / unknown 2xx     -> UNDETERMINED       rc 75
+
+UNDETERMINED IS NEVER REPORTED AS STALE, and an UNDETERMINED pass never overwrites a flag
+that already records a PROVEN class: an unproven result must not erase a proven one. Only an
+OK clears the flag, because only an OK is proof. The flag
+(`state/rr-intake-auth.flag`) records a class, an HTTP code, a timestamp and the remedy. It
+never records a value, and the credential is never printed, never in argv and never in the
+request body.
+
+THE DAILY SURFACE. There was no known-flags surface in this skill or in `shared-utils` to
+append to (grepped: none exists), so `rr-readiness.sh`'s HUMAN report now reads the flag file
+and prints it with its remedy. `--json` is untouched: it emits exactly one JSON object that
+callers parse with `json.load`, so an extra stdout line there would break every consumer.
+
+DELIVERY NONE IS NOT OPTIONAL. If the CLI refuses `--no-deliver`, `wire.sh` registers NOTHING
+and says so. A delivering daily cron would route operator-facing credential diagnostics into
+the client's chat. A missing check is a gap; a delivering one is client spam.
+
+ONE FALSE NEGATIVE CAUGHT IN REVIEW OF THIS OWN CHANGE. `rescue_env_get` returns rc 3 when the
+store carries malformed lines ANYWHERE, and the requested name may STILL be resolved on
+stdout (`shared-utils/rescue-env.sh`, the rc-3 branch prints the value before returning). The
+first draft discarded the value on any non-zero rc, so one unrelated bad line elsewhere in
+`secrets/.env` would have reported `RR_SECRET_MISSING` on a box that HAS a credential: the
+exact false negative this check exists to stop producing. The rc is now captured in the
+script's own shell (a helper's assignment would have been lost in the command-substitution
+subshell, which is how the first fix for it silently did nothing), the OUTPUT decides, and the
+malformed store is NAMED as a note rather than turned into a verdict. Covered by section 6b.
+
+TESTS: `65-rescue-receiver/tests/test_intake_auth_check.sh`, 31 assertions against a REAL
+local HTTP responder (`tests/stub-intake.py`) that journals what it received, so the
+credential's route is proven rather than asserted. It covers all four required
+classifications plus the missing-credential case, proves the value never reaches the body or
+the flag, proves an UNDETERMINED leaves a proven flag alone, and carries a control that the
+same harness yields 0 / 3 / 4 for the three server shapes, so a green suite cannot be green
+because the responder is broken.
+
+## [23.4.8] - 2026-09-14 - a CLI that failed to answer is not a CLI that answered "none"
+
+MEASURED LIVE, not hypothesised. A capture loop ran the readiness reporter 40 times on this
+box; on runs 7 and 35 it returned `ENROLLED_PENDING / cron_source_disagreement` with
+`cron=store_diverged`, `cli_hides_enabled_row`, and the reporter's own view showing
+`sources=cli,db`, `coverage=cli+db`, `visibility=full`, `count=1`. In BOTH captures the
+evidence was identical:
+
+    openclaw cron list --json --all  ->  ZERO rows, exit 0, EMPTY stderr
+    gateway store (cron_jobs)        ->  the job, present, enabled=true
+
+So the CLI printed NOTHING AT ALL and reported success. The engine read that as "the gateway
+genuinely has no jobs", because:
+
+  * `rrr_json_rows` treats an UNPARSEABLE document as an empty job list -- correct for its
+    per-row DB use, wrong for a whole listing; and
+  * the stderr-based classification added in 23.4.4 saw no stderr to classify.
+
+The result was a FABRICATED two-view contradiction: it says the gateway's own listing hides a
+job the gateway actually has. It is fail-closed and self-correcting (12 consecutive clean runs
+either side), and it cannot manufacture an acceptance -- it makes the box look LESS ready --
+but it is a false statement about the system, and it recurred twice.
+
+THE FIX: **shape is the fact that separates "answered none" from "did not answer"**. A CLI
+that answered carries the documented envelope -- an array, `{"jobs":[...]}`, or a single job
+object. `rrr_cli_listing_shape` checks exactly that, and anything else is now
+`cli_unreadable` with sub-reason `cli_unparseable`, reported as `ENROLLED_PENDING /
+cli_unreachable` with NOTHING compared. No contradiction is manufactured, because only one
+view ever spoke.
+
+NEW CASES (section 3c, five assertions): a garbage listing and a parseable-but-not-a-listing
+object (`{"ok":true}`) are both reported as a FAILED CLI with `cron.disagreement` EMPTY; and a
+WELL-FORMED listing is still read, with the box SCHEDULED, so the gate discriminates rather
+than refusing everything.
+
+FALSIFICATION: disabling the shape gate (declarations intact) makes both new cases FAIL --
+each falls back to `cron_absent`, i.e. the empty listing is believed again.
+
+Batteries: readiness-states 65 -> 70 assertions; all green: 70/0, 50/0, 71/0, 135/0, plus
+RR-025 39/0 and 14/0. Skill 65 v23.4.7 -> v23.4.8.
+
+## [23.4.7] - 2026-09-14 - the routing-fault refusals had no test
+
+RR-025's own required QC is: *"Verify requested local agent exists. If absent, use a verified
+authorized same-client General/CEO fallback and record substitution, or keep an owned
+operator-recoverable routing fault."* Only the FIRST half was pinned -- the fallback path was
+covered by `test_claim_envelope.sh` case 9, and the refusal half was covered by nothing.
+
+A survey of the whole ONB test tree found three reason literals in `rescue-poll.sh` that NO
+test mentioned:
+
+  `roster_unreadable`       the roster could not be read at all
+  `requested_agent_absent`  the requested agent is absent; a verified local substitute was
+                            chosen and recorded (this one was exercised, by case 9)
+  `no_verified_fallback`    the requested agent is absent AND no local candidate could be
+                            verified
+
+`no_verified_fallback` is the one that matters most: it is the point where the box could page
+a session nobody verified, on a ticket that names a different agent. The code says it refuses
+and records an owned routing fault instead, and nothing measured that.
+
+NEW BATTERY: `tests/rescue/RR-025/test_routing_fallback.sh` drives the REAL `rescue-poll.sh`
+against a loopback receiver stub and counts the agent turns a stub `openclaw` records:
+  * a resolvable agent DOES get a turn, and that turn is ACKED -- the non-vacuity control for
+    both counters;
+  * an UNREADABLE roster produces zero turns and zero acks;
+  * a candidate-less roster produces zero turns, zero acks, and a RECORDED
+    `no_verified_fallback` fault;
+  * with a verifiable candidate the turn DOES run, ON that candidate, and is acked -- so the
+    contrast with the refusal is a turn, not a silent difference;
+  * an unrelated agent present in the roster is NOT chosen merely for being there;
+  * the two unresolvable inputs are reported as DIFFERENT faults.
+
+TWO MEASUREMENT TRAPS ARE RECORDED IN THE BATTERY, because both cost a run:
+  1. `claims.txt` counts every POST, and a run ALWAYS claims once -- so counting its lines
+     measures "the poll ran", not "the poll lied". The wire event that must not happen is an
+     ACK, so the battery counts `"action":"ack"` bodies instead.
+  2. an EMPTY `STUB_ROSTER` does not model an unreadable roster: the stub falls through to its
+     built-in default, so the poll saw a good roster and legitimately ran a turn. The harness
+     gained `STUB_ROSTER_FAIL=1` for a roster read that genuinely FAILS.
+
+FALSIFICATION (both reverted, poll hash-checked afterwards)
+  MUT-F1 fall back to ANY roster entry instead of refusing -> FIVE assertions FAIL
+  MUT-F2 treat an unreadable roster as an empty one         -> the distinctness assertion FAILS
+
+Batteries: new 14/0; `test_claim_envelope.sh` 39/0; RR-028 65/0, 50/0, 71/0, 135/0.
+Skill 65 v23.4.6 -> v23.4.7.
+
+## [23.4.6] - 2026-09-14 - the runtime identity: stable across releases, bound to the runtime
+
+The engine hashes TWO canonical forms, and only one of them was pinned:
+
+  * the DESIRED-CONFIG digest (`rr028-desired/1`), whose comment says "NO VERSION INPUTS"
+    -- `test_readiness_states.sh` section 5 already proved it ignores
+    ONBOARDING_VERSION / RECEIVER_VERSION / ONBOARDING_SKILL_VERSION; and
+  * the RUNTIME identity (`rr028-runtime/1`), which is what a readiness RECEIPT is bound
+    to: a receipt taken in one runtime can never verify another.
+
+The second is the dangerous half, and nothing asserted either of its two failure
+directions:
+
+  * if it moved on a VERSION change, an upgrade would silently void the box's own
+    receipt, and readiness would flap between VERIFIED and SCHEDULED for a reason no
+    operator could see;
+  * if it were INSENSITIVE to the runtime, a receipt could be replayed onto a different
+    runtime -- the exact hole the binding exists to close.
+
+Neither was true, but "not true and untested" is a claim. Section **5b** now measures both
+directions on the same synthetic box: the id does NOT move for a version change, DOES move
+for a changed `target_id`, and the report NAMES the runtime it judged
+(`platform=mac mode=launchd`) rather than only hashing it.
+
+Falsification, both reverted with the engine hash-checked afterwards:
+  MUT-RID1 add `ONBOARDING_VERSION` to the runtime identity -> the stability assertion FAILS
+  MUT-RID2 remove `target_id` from the runtime identity     -> the binding assertion FAILS
+
+Batteries: readiness-states 62 -> 65 assertions, and all four green: 65/0, 50/0, 71/0, 135/0.
+
+A measurement note kept because it cost time: `RR028_EXTRA_ENV="OC_TARGET_ID=..."` is
+SILENTLY IGNORED -- `rr028_run` sets both `OC_TARGET_ID` and `OC_SERVICE_LABEL` from
+`RR028_TARGET_ID` before the extra env is applied, so the override must use
+`RR028_TARGET_ID`. The first version of 5b failed for that reason alone, and the note is
+now in the test.
+
+## [23.4.5] - 2026-09-14 - the probe budget was sized for a receiver nobody has
+
+The safe test claim's default budget was 25 seconds. Measured against the LIVE
+production receiver on this box:
+
+  * four consecutive probe attempts: `class=transport_error`, http=0 -- the 25s
+    budget expired before ANY answer arrived;
+  * the SAME probe with `RR_RECEIVER_PROBE_TIMEOUT=220`: `class=no_work`,
+    **http=200, structured=true, VERIFIED on the first try**;
+  * one identical request measured independently: curl timed out at 90s while the
+    response file ALREADY held `{"status":"empty"}` -- the answer took just over
+    90 seconds;
+  * a repeat: n8n **HTTP 500 after 99.8s**.
+
+A working answer arrives in the **70-110s band** on this target, so a 25s budget
+reports a merely-slow receiver as unreachable. That is the worst place to have a
+false negative: it is exactly what an operator reads to decide whether the box is
+ready, and it made four attempts look like a broken receiver when the receiver was
+answering all along. **Same defect class as the P2 page budget on the FLEET side**
+-- a budget sized from an assumption rather than a measurement.
+
+- Default raised to **120s**: the smallest round budget that clears every measured
+  ANSWER with headroom while staying under the slowest observed NO-answer (150s),
+  so a genuinely dead endpoint still fails instead of hanging.
+- The `RR_RECEIVER_PROBE_TIMEOUT` override is now **bounded to 5..900**, and a
+  malformed or out-of-range value falls back to the DEFAULT -- a typo must not
+  silently restore the 25s defect.
+- **This does not claim the receiver is healthy.** It is intermittently slow and
+  intermittently 5xx (one probe answered 200 while the next returned
+  `class=server_error`). A late answer is still an answer; the budget stops being
+  the thing that fails.
+
+Batteries: safe-probe 46 -> 50 assertions, pinning the default, the fallback
+target, the bounds and the recorded rationale. Falsification: restoring the 25s
+default and the unbounded override fails **three** of the new assertions.
+
+## [23.4.4] - 2026-09-14 - an unreachable gateway is not a cron that disagrees with itself
+
+Found by EXECUTING the tool on the operator box, after 23.4.3 had already shipped.
+The readiness reporter said:
+
+    ENROLLED_PENDING / cron_source_disagreement
+    cron=store_diverged  disagreement=cli_hides_enabled_row(id=07757c08-...)
+
+That message was FALSE. `openclaw cron list` could not reach the gateway at all:
+
+    Gateway not reachable at ws://127.0.0.1:18789 (ECONNREFUSED).
+    ... exit 0, stdout EMPTY
+
+`cron list --help` still works (it reads no gateway state), so the engine's
+visibility probe had already succeeded and set `visibility=full` before the
+listing came back empty. The engine then compared that emptiness against the
+gateway's own store, found the enabled row the CLI "hid", and concluded the
+gateway's own listing contradicted its own store. Only ONE view had ever been
+read. UNOBSERVABLE IS NOT ABSENT -- the rule this engine already applies to the
+`enabled` bit, applied one level up to the whole readback.
+
+- **A CLI that FAILED is no longer read as a CLI that answered nothing.** The
+  readback classifies a failed `cron list` (`RRR_CLI_FAILURE`): `gateway_unreachable`
+  when stderr names an unreachable gateway, `cli_error` for any other stderr. ANY
+  stderr counts, because the real CLI writes its complaint and still exits 0, so an
+  exit-code test alone misses exactly the case that reached the box.
+- **Fail-closed, before any comparison.** With a failure recorded and NO store row
+  for the managed name, the evaluator returns `cli_failed` immediately. Nothing is
+  compared, nothing is mutated, and the report reads
+  `ENROLLED_PENDING / cli_unreachable` with the connection named as the remedy --
+  so an operator repairs the gateway instead of chasing a phantom cron.
+- **The guard is SCOPED, deliberately.** When the store DOES carry a row for the
+  managed name, the engine keeps its existing, reviewed verdict
+  (`cron_store_unconfirmed`): a store may veto, never establish. An unscoped guard
+  was written first and the battery caught it replacing that precise verdict with a
+  vaguer one -- which is why the scope is stated here rather than left to the code.
+- **Nothing changed about the states, the rc contract, or any other reason.** The
+  fail-closed conclusion was already correct; the REASON was wrong, and a wrong
+  reason sends an operator to the wrong place.
+
+Batteries: readiness-states 60 -> 62 assertions (both gateway-failure shapes, plus
+the reachable-gateway control that proves the case measures the connection and not
+the fixture), and the case that previously read `cron_readback_unreadable` for a
+failed CLI now asserts `cli_unreachable` with its sub-reason. All four RR-028
+batteries green: 62/0, 46/0, 71/0, 135/0.
+
+Falsification: removing the scoped guard (declarations and classification left
+intact) makes THREE cases fail, including both gateway-failure shapes. No
+pre-existing test caught the defect, because the mock CLI had no way to fail at the
+LIST step with the real stdout/stderr/exit shape -- so the double and the engine
+agreed with each other while both disagreed with the real box.
+
+## [23.4.3] - 2026-09-14 - RR-028 final review: unobservable is not absent
+
+Final independent review before promotion (Worker AD, `RR028-AD-REVIEW.md`)
+returned APPROVE-WITH-CONCERNS and found (AD-2) that a NEW unqualified safety
+claim added by 23.4.2 was FALSE, plus that the job-destruction class re-entered
+through two more doors (AD-1, AD-7), one understated header sentence (AD-4), one
+undocumented mirror cost (AD-5), one unguarded `cron rm` in the legacy cleanup
+(AD-6), and two untested removal guards (AD-3). All are fixed at the cause; no
+existing assertion was weakened, skipped or deleted. The batteries gained 59
+assertions (49 -> 55, 46 -> 46, 82 -> 135) and every write path below is pinned
+by a new case that fails when its effect is disabled.
+
+- **AD-2 (MEDIUM, pre-existing) — "a job the operator switched off is never
+  deleted" was FALSE when the `enabled` bit is unobservable.** When a row for the
+  managed name was present and NEITHER view reported its `enabled` bit (the key
+  absent, or `"disabled"` carrying a non-boolean such as the string `"true"`),
+  the engine reported `enabled_unobservable` and then ran
+  `cron edit` -> `cron rm` -> `cron add`: the operator's row was DELETED and
+  replaced by a freshly minted ENABLED one, reported `SCHEDULED` with `wire.sh`
+  rc 0 (reviewer scenario S). The 23.4.2 `SKILL.md` sentence that
+  categorically denied this was therefore a false shipped safety claim — the
+  third in this program.
+  **Fix — unobservable is not absent, on every mutating rung:**
+  * The readback now tracks whether ANY view reported a boolean `enabled` for
+    the managed name. When none did, the reconciler REFUSES to edit, replace or
+    remove that row: new state `enabled_unobservable`, **rc 8**, nothing
+    mutated, nothing claimed — the same fail-closed family as the CLI
+    blind-spot refusal, extended to the bit itself.
+  * `rrr_cron_removable` now requires the row to have been OBSERVED with
+    `enabled=true` as well as shown by the CLI's own listing and never observed
+    DISABLED (AD-7: the `cron rm` half).
+  * The verdict is a NAMED one: `ENROLLED_PENDING / cron_enabled_unobservable`,
+    with the refusal spelled out on the failing surface.
+- **AD-1 (MEDIUM, pre-existing) — the store still licensed one mutation and was
+  reported `corroborated` without corroboration.** A store row the CLI's own
+  listing never showed (scenarios G/G2/Q/Q2) licensed `cron edit <store-only-id>`
+  and the report said `cron.store=corroborated` although the CLI had never
+  confirmed the row.
+  **Fix:** a store row the CLI's own listing does not show, and that is not
+  provably contradictory, now makes the store `unconfirmed` — never
+  `corroborated` — and is reported as `cron.store_note =
+  store_row_omitted_by_cli(id=…)` (a coverage gap, deliberately NOT a
+  `disagreement`). Combined with AD-2's guard the store licenses no edit, rm or
+  add from such a row.
+- **AD-7 (INFO) — closed by the same guard.** A row that is genuinely disabled
+  but whose bit no view reports can no longer be `cron rm`'d on any rung
+  (dedupe or replace), and the refusal is a named state rather than a silent
+  skip.
+- **AD-4 (INFO) — the engine header understated the residual.** It claimed a
+  lying CLI build is "indistinguishable … by any input this engine has". That is
+  wrong when a resolved store contradicts the lying CLI: the engine detects it
+  (`store_diverged` / `cli_all_omits_disabled_row(id=…)`, rc 4, nothing
+  mutated). The header now says "indistinguishable IN-BAND — by the CLI's own
+  answers alone", which is true and is pinned by a new lying-CLI test
+  (`RR028_MOCK_LIE_ALL=1` advertises `--all` and hides a disabled job anyway).
+- **AD-5 (LOW) — the mirror cost is now documented.** Because only the CLI's own
+  listing may corroborate the store, a STALE or EMPTY resolved store reds a box
+  that is genuinely scheduled: the CLI shows the one correct ENABLED job, the
+  store carries no row for it, `store_missing_row` makes the readback
+  `store_diverged`, the box reports `ENROLLED_PENDING /
+  cron_source_disagreement` with rc 4, and NOTHING is mutated. Deliberate (a
+  store that does not reflect the gateway licenses nothing), and the detail
+  names the missing row and the remedy; it is stated here and in the engine
+  header so a red roll is not mistaken for a broken box. Pinned by a new test.
+- **AD-6 (INFO) — the last unguarded `cron rm` is now guarded.** `wire.sh`'s
+  legacy cleanup (`rescue-rangers-poll`) used `cron list --json | grep` plus an
+  UNCONDITIONAL `cron rm`: no full-status flag, and no look at the row's
+  `enabled` bit. On a build whose DEFAULT listing includes disabled jobs it
+  resolved the id of a job the operator had switched OFF and deleted it — the
+  same destruction class as AD-2. It now asks the LADDER'S OWN question
+  (`rrr_cron_removable` against the engine's two-view readback of the legacy
+  name) and removes the row only when the CLI's own listing shows it with an
+  observed `enabled=true`; otherwise it leaves it in place and says so. Without
+  the engine there is no guarded readback, so no removal is attempted (wire.sh
+  and the engine ship together). Pinned by a disabled case, an unobservable
+  case, and an enabled control that IS still removed.
+- **AD-3 (LOW) — the removal guards are now covered.** New cases drive a
+  store-only stray through the dedupe arm (a row the CLI's own listing never
+  showed, reviewer mutation `mutF2`'s target), a CLI-visible stray whose enabled
+  bit is unobservable (AD-7), and the replace rung with a CLI that cannot edit
+  (reviewer mutation `mutK`'s target). `mutK` is CAUGHT by the new replace-rung
+  case; `mutF2` is reported honestly as structurally shadowed — see the test
+  header: with the AD-1/AD-2 fixes in place, a CLI-invisible row is also
+  refused by the enabled-observed guard and (when its bit IS observable) by the
+  store-authority gate, so no input isolates that one check. The class it
+  protects is pinned by the new cases and by a coarser mutation of the same
+  guard, which IS caught.
+- **Tests / harness.** `RR028_MOCK_LIST_ALL_DEFAULT=1` models a CLI whose
+  DEFAULT listing includes disabled rows (the AD-6 fixture);
+  `RR028_MOCK_LIE_ALL=1` models the lying build (advertises `--all`, hides a
+  disabled job anyway); `rr028_mutating_argv` reports only MUTATING argv
+  vectors, so a "nothing was mutated" assertion can no longer be satisfied or
+  broken by the read-only `cron edit --help` probe.
+
+Skill package version 23.4.2 -> 23.4.3. Gates (run serially): `tests/rescue/RR-028`
+readiness states **55/0**, safe probe **46/0**, wire reconciliation **135/0**;
+RR-027 credential gates 32/0 and 35/0 in BOTH bash and sh legs; RR-005 `FAILS=0`;
+RR-016 `FAILS=0`; frontmatter gate PASS; RR-004 12/0; RR-025 39/0; RR-026 47/0.
+
+## [23.4.2] - 2026-09-14 - RR-028 re-review fixes: the store may veto, never license
+
+Independent re-review (Worker Z, `RR028-RE-REVIEW-Z.md`) confirmed both 23.4.1
+HIGH fixes hold at the cause and found one MEDIUM hole the M-1 fix did not close
+(Z-1), one FALSE claim in the 23.4.1 text (Z-2), one unreachable detail (Z-6),
+and two test/harness defects (Z-3, Z-5). All five are fixed here, plus the M-3
+limitation is now documented in the shipped artifacts. No test was weakened; the
+three batteries gained 34 assertions (43->49, 42->46, 58->82).
+
+- **Z-1 (MEDIUM, pre-existing — NOT a 23.4.1 regression) — a resolved gateway
+  store licensed a mutation.** `rrr_cron_readback` upgraded
+  `cron.visibility` to `full` whenever a state DB resolved, and the 23.4.1
+  refusal guard only fired for `coverage=cli-only`; so on a box whose CLI
+  cannot show DISABLED jobs AND whose resolved store does not actually hold the
+  operator's job (an alternate/older candidate `ocd_state_db` accepts — it takes
+  any readable sqlite with >=1 table), "nothing visible" was read as "absent":
+  the ladder ADDED an enabled poller, the readback then saw both rows, and the
+  dedupe pass DELETED the operator's disabled job and reported SCHEDULED with
+  `wire.sh` rc 0. Identical on the parent revision.
+  **Fix — the store may VETO, never LICENSE:**
+  * `cron.visibility` is now a CLI fact only. Absence is proven ONLY by the
+    CLI's own listing having been asked for a full-status flag and reporting
+    nothing (`absent_proven_by_cli`); a resolved store never upgrades it.
+  * The store is corroborated against the CLI's own listing for the managed
+    name. Contradiction (`cli_hides_enabled_row`, `cli_all_omits_disabled_row`,
+    `store_missing_row`) => `cron_source_disagreement`, nothing claimed, nothing
+    mutated (rc 4). A store-only row with an unreadable CLI listing =>
+    `cron_store_unconfirmed` (rc 3): it may veto, never establish.
+  * REMOVAL now needs corroboration: `cron rm` may only touch an id the
+    gateway's own listing shows AND that was never observed DISABLED.
+    `duplicate_protected` / `replace_protected` (rc 4) refuse instead — this
+    also closes the reachable path where a duplicate beside an operator-DISABLED
+    job was "deduped" by deleting the operator's job.
+  * Vocabulary: the dead `absent` state and the misleading `cli_only_absent`
+    are replaced by `absent_proven_by_cli`; `cron.store`
+    (`corroborated`/`diverged`/`unconfirmed`/`none`) is reported in the JSON.
+  * Cost, stated plainly: a box whose CLI cannot list disabled jobs stays
+    unregistered EVEN IF its store resolves, and says so — the remedy is a CLI
+    that advertises the flag, never "make the state DB readable".
+- **Z-2 — a FALSE safety claim in the 23.4.1 text, corrected in place.** The
+  M-1 bullet claimed the refusal was "deliberately independent of whether the
+  CLI's help ADVERTISES a full-status flag". The code does the opposite: it asks
+  for the flag when the help advertises one and trusts the listing. The 23.4.1
+  bullet now carries an explicit correction, and the engine header states the
+  real rule and its residual: a CLI that advertises the flag and then hides a
+  disabled job anyway is indistinguishable in-band — except when a resolved
+  store contradicts it, which is now detected.
+- **Z-6 / M-6 — the superseded-receipt detail is now OBSERVABLE.** In 23.4.1 the
+  `stale` arm of `rrr_evaluate` substituted a fixed sentence and discarded
+  `RRR_RECEIPT_DETAIL`, so "names the file / NEWEST superseded receipt" could not
+  be seen anywhere. The stale detail now carries it, and a four-receipt test
+  pins both the observable `receipt.at` (newest from the INTENDED runtime) and
+  the named file.
+- **Z-3 — the M-4 assertion checked the label, not the state.** It asserted only
+  `cron.state=`; an empty or hard-coded value passed. It now pins the exact
+  state (`readback cron.state=absent_proven_by_cli)`).
+- **Z-5 — M-5's pgrep supplement could never fire.** It matched
+  `"$WORK/receiver.py"` while every stub lives at `"$WORK/<box>/receiver.py"`, so
+  the protection was single-mechanism (the batteries stayed green while 7
+  receivers leaked with the registry disabled). The pattern is fixed and a new
+  test proves BOTH mechanisms: the registry records both pids, then — with the
+  registry neutered at runtime (no code touched) — the supplement alone reaps
+  both receivers, 0 survivors. The batteries now honour a pre-exported
+  `RR028_PIDFILE`, so a killed-battery run can be reproduced without patching.
+- **M-3 honesty (documentation only).** A hand-written receipt is accepted as
+  VERIFIED — there is no signing key on the box — and that limitation was
+  nowhere in the shipped artifacts. The receipt contract and `SKILL.md` now state
+  that a receipt is a plain unauthenticated file (local liveness attestation, not
+  tamper-proof), and the VERIFIED detail no longer says a receipt "verified the
+  intended runtime"; it says what was actually recorded.
+
+Skill package version 23.4.1 -> 23.4.2. Gates (run serially): `tests/rescue/RR-028`
+readiness states **49/0**, safe probe **46/0**, wire reconciliation **82/0**;
+RR-027 credential gates 32/0 and 35/0 in BOTH bash and sh legs; RR-005 `FAILS=0`;
+RR-016 `FAILS=0`; frontmatter gate PASS; RR-004 12/0; RR-025 39/0; RR-026 47/0.
+
+## [23.4.1] - 2026-09-14 - RR-028 review fixes: fail-closed blind spot + honest exit codes
+
+Independent review (Worker M, `RR028-REVIEW-M.md`) found two HIGH defects in
+23.4.0, both reachable from the fleet-wide roll. Both are fixed at the cause;
+no existing assertion was weakened (two were corrected because they encoded the
+old, wrong behaviour — see below).
+
+- **M-1 (HIGH) — an operator-DISABLED cron was re-enabled and then reported
+  SCHEDULED.** The readback has two views: the CLI (`cron list --json`, which
+  hides DISABLED jobs on builds with no full-status flag) and the gateway store
+  (`cron_jobs.job_json`, the only view that shows them). `RRR_CRON_DISABLED_DIRECT`
+  was set ONLY from an observed row, so when the CLI could not show a disabled
+  job AND no state DB resolved, the visible set was empty, the ladder took the
+  `add` arm, and the reconciler registered a **second, ENABLED** poller beside
+  the operator's disabled one — then reported `SCHEDULED`. A later `--all`
+  readback makes the box `cron_duplicate`, and the dedupe ladder deletes by
+  first match, so the operator's own job could be the one destroyed.
+  **Fix:** the engine now tracks and reports READBACK VISIBILITY
+  (`cron.visibility` = `full` | `enabled_only` | `unknown`). Under CLI-only
+  coverage with `enabled_only` visibility, "nothing visible" is no longer read as
+  "absent": the new state `cli_visibility_insufficient` reports
+  `ENROLLED_PENDING / cron_state_unverifiable`, and `rrr_cron_reconcile` returns
+  a new **rc 8** WITHOUT mutating anything. Fail-closed: a box whose CLI cannot
+  list disabled jobs and whose state DB is unreadable stays unregistered (and
+  says so) instead of risking the operator's job.
+  **CORRECTION (23.4.2, re-review Z-2 — the following sentence was FALSE as
+  shipped here):** this bullet used to claim *"This is deliberately independent
+  of whether the CLI's help ADVERTISES a full-status flag — advertising is not
+  proof the flag works, and the whole point is that a hidden disabled job is
+  never guessed away."* The code does the opposite: visibility is `full` exactly
+  when the CLI's help advertises `--all` / `--include-disabled` /
+  `--show-disabled`, the CLI IS then asked for that flag, and its listing IS
+  trusted — advertising is taken as the proof. A hidden disabled job is still
+  guessed away when a CLI advertises a flag it does not honour and nothing
+  contradicts it. The other false half — that a resolved gateway store proves
+  an absence — was removed in 23.4.2 (Z-1). The engine header now states the
+  real rule and this residual.
+- **M-2 (HIGH) — `wire.sh` exited 0 when its OWN readback failed.** Only
+  reconcile rc 5/7 mapped to 1; rc 3 (readback unavailable) and rc 4 (desired job
+  NOT proven, including `add_not_read_back`) fell through to `exit 0`, so
+  `update-skills.sh` printed `✓ enrollment/cron reconciliation ran` over a box
+  with NO cron at all. **Fix:** explicit mapping with no fall-through — 3/4/5/7
+  (and any unexpected code) exit 1; rc 6 (tombstoned / disabled by owner) and
+  rc 8 (fail-closed refusal) are DELIBERATELY 0, because in both the engine
+  attempted no mutation and claims nothing, and neither is a wiring failure that
+  a retry could fix. A genuinely un-enrolled or missing-secrets box still exits 0
+  with zero CLI calls (RR-027 contract preserved; no pre-existing `exit 1`
+  became `exit 0`).
+- **M-4 (LOW)** — the probe printed "safe test claim verified in the intended
+  runtime" even on a box with NO cron. The verdict was right; the line was not.
+  It now says exactly what was verified (the receiver's transport-OK, structured,
+  no-work, zero-turn/zero-ack ANSWER) and prints the schedule readback state, so
+  it can no longer be grepped as "this box is ready".
+- **M-5 (LOW, test harness)** — the batteries' EXIT trap was gated on
+  `RR028_DONE` and tracked only the LAST receiver pid, so a battery killed
+  mid-run leaked every receiver it had started (24 orphans were found alive on
+  the review host; they caused a 41/2 flake). Every spawned pid is now recorded
+  in a per-battery registry that the trap reads on EXIT/INT/TERM, with a bounded
+  `pgrep` supplement; `RR028_DONE` no longer decides whether to reap.
+- **M-6 (INFO)** — with several superseded receipts on a box, the stale-receipt
+  detail named the first one in glob order, so its digest/at could belong to an
+  unrelated receipt. It now reports the NEWEST superseded receipt from the
+  INTENDED runtime, names the file, and says other superseded receipts may exist.
+  **NOTE (23.4.2, re-review Z-6):** as shipped in 23.4.1 this bullet overstated —
+  the `stale)` arm substituted a fixed sentence and DISCARDED that detail, so
+  "names the file" was observable nowhere. 23.4.2 appends the detail to the
+  stale verdict and pins it with a test.
+
+Test-fixture corrections (each one ENCODED the old, wrong behaviour; every
+assertion is kept or strengthened, none weakened):
+- `test_wire_install_vs_ready.sh` asserted `wire.sh` rc 0 for a silent add
+  (`add_not_read_back`). That is the M-2 defect stated as a requirement; it now
+  asserts a NON-ZERO rc with a readable reason, keeping the original readback
+  assertions unchanged, and adds the reviewer-requested blind-spot case
+  (`RR028_MOCK_NO_ALL=1` with NO state DB, driven through `--reconcile`) plus two
+  controls (readable DB → `cron_disabled_by_owner`; a fully read-back
+  reconciliation → exit 0).
+- the mock CLI's `cron list --help` advertised `--all` while its list HID
+  disabled jobs under `RR028_MOCK_NO_ALL=1` — a CLI lying about itself. The two
+  are now consistent, so the fixture genuinely exercises the blind spot the
+  engine's fail-closed rule exists for.
+
+Skill package version 23.4.0 -> 23.4.1. Gates: `tests/rescue/RR-028`
+(readiness states 43 assertions, safe probe 35, wire reconciliation 58), plus
+RR-027 credential gates, RR-005, RR-016, RR-004, RR-025 and RR-026 re-run green.
+**CORRECTION (23.4.2):** the safe-probe count above was stale — as shipped in
+23.4.1 that battery reports **42/0** (the M-4 success-line assertions were added
+without updating this line).
+
+## [23.4.0] - 2026-09-13 - RR-028 enrollment + cron reconciliation report REAL readiness
+
+RR-W4-INSTALL. Enrollment and cron status were PROSE. `UNENROLLED` existed only
+as a comment inside `wire.sh`; the four-state vocabulary did not exist anywhere
+in this repo. A job registered with a stale poll path, the wrong cadence, or
+client-facing delivery left ON was indistinguishable from a correct one,
+because presence was decided by `cron list --json | grep '"name": ..."'` — a
+text match that proves nothing about the job. And nothing separated "files were
+installed" (the installer's claim) from "the receiver is READY" (a claim about
+the intended runtime).
+
+New engine `shared-utils/rr-readiness.sh` + operator surface
+`65-rescue-receiver/rr-readiness.sh`:
+
+- **Four explicit states with explicit reasons** — `UNENROLLED`,
+  `ENROLLED_PENDING`, `SCHEDULED`, `VERIFIED`; every outcome carries a
+  machine-readable reason code and a detail that names NAMES, never values.
+  Anything unproven is `ENROLLED_PENDING` naming exactly what is missing.
+- **Version-independent** — no input to reconciliation is a software version.
+  A `.wired-<version>` sentinel says "files were copied"; it is never evidence
+  that a cron exists. `update-skills.sh` now runs this skill's reconciler on
+  every pass, BEFORE the sentinel gate, so a cron an operator removed is
+  repaired on the next roll instead of waiting for a version bump.
+- **Keyed by a desired-config digest** — name, schedule, command, enabled bit,
+  delivery mode, slug, URL and a SALTED token commitment (the token itself is
+  never printed, logged or exported). A verified receipt is keyed by that
+  digest AND by the runtime, so a changed desired config or a probe taken in a
+  different runtime can never inherit an old verdict.
+- **All required resolutions** — slug, token and URL from the store, plus the
+  parser, curl, base64, the OpenClaw CLI and node. Anything unresolved is
+  reported by name.
+- **Readback, never assume** — two views (`cron list --json` and the gateway's
+  stored `cron_jobs.job_json`, the only one that shows a DISABLED job);
+  duplicates collapsed, command / schedule / enabled / delivery compared and
+  repaired (`cron edit` in place, else replace), with a FRESH readback after
+  every write. An operator-disabled cron or a tombstone is never resurrected.
+- **argv-safe** — every external command runs as an argv vector; no eval, no
+  `sh -c`, no string re-splitting. The host/container identity comes from
+  `shared-utils/oc-env-descriptor.sh`.
+- **Installer success != ready** — `wire.sh` exit 0 means files installed and
+  now prints `files-installed=1` plus the readiness line. `VERIFIED` requires a
+  receipt from a capacity-0 `dry_run` probe that starts no agent turn, acks
+  nothing, and is refused outright if the receiver hands it an instruction.
+
+Skill package version 23.3.0 -> 23.4.0. Gates: `tests/rescue/RR-028`
+(readiness states 43 assertions, safe probe 35, wire reconciliation 42), plus
+RR-027 credential gates, RR-004, RR-015, RR-025 and RR-026 re-run green.
+
 ## [23.3.0] - 2026-09-10 - RR-025 claim envelope identity + RR-026 process/lock supervision (RECEIVER_VERSION 1.6.0)
 
 RR-W3-RECEIVER. Two defect classes, both of which let the poller be *wrong* on a
@@ -99,3 +731,9 @@ later, only after the additive server contract is confirmed fleet-wide
 ## [23.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
+## [23.5.2] - 2026-09-19 - RR-029 durable Telegram notification intents
+
+Authorized server-supplied Telegram origins now create deterministic initial and
+final notification jobs. Final intent is retained with the done record and is
+recreated on cached replay after a crash; no repair turn is rerun. Confirmation
+records gateway provider acceptance only.

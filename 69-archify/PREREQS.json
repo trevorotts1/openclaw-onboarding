@@ -1,0 +1,29 @@
+{
+  "skill": "69-archify",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 — Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 69. archify's INSTALL.md opens with the mandatory TYP check and must not be read or executed before TYP is confirmed."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 — Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 69."
+    },
+    {
+      "id": "node-runtime",
+      "type": "binary",
+      "label": "Node.js runtime >= 18 (the skill's ONLY prerequisite — archify itself is zero-dependency)",
+      "check": { "binary": "node", "minVersion": "18" },
+      "severity": "required",
+      "satisfy": "Install Node.js 18 or newer (package.json declares engines.node \">=18\"). Verify with: node --version (expect v18.0.0 or higher). archify is a zero-dependency Node.js CLI — once node is present there is NO npm install, NO API key, NO credential and NO network step. There is nothing else to provision."
+    }
+  ]
+}

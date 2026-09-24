@@ -355,7 +355,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
             with self.subTest(expiry=expiry),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(good,expiresAt=expiry))+'\n200','')):
                 with self.assertRaisesRegex(m.Pending,'expiry invalid'):m.issue_invitation(resolved,self.env,'123456789')
 
-    def prepare_shell_resume_fixture(self,ttl=86400):
+    def prepare_shell_resume_fixture(self,ttl=86400,valid_until=None,redeemable=None):
         runtime=self.root/"client's runtime"
         workspace=self.root/"client's workspace & records"
         runtime.mkdir();workspace.mkdir()
@@ -372,10 +372,12 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         mint_log=self.root/'issued.log'
         fake=self.bin/'curl'
         fake.write_text('#!'+sys.executable+'\nimport sys,json,time,os\nconfig=sys.stdin.read()\nassert "Authorization: Bearer fixture-secret" in config\n'+'data=json.loads('+repr(json.dumps(self.receipt))+')\n'+
-            'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n with open(os.environ["MINT_LOG"],"a") as out: out.write("issued\\n")\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+int(os.environ["FIXTURE_TTL"]),"oneUse":True,"url":"https://client.example.com/interview#enroll=fixture.signature"}\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n')
+            'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n with open(os.environ["MINT_LOG"],"a") as out: out.write("issued\\n")\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+int(os.environ["FIXTURE_TTL"]),"oneUse":True,"url":"https://client.example.com/interview#enroll=fixture.signature"}\n if os.environ.get("FIXTURE_VALID_UNTIL"): data["validUntil"]=os.environ["FIXTURE_VALID_UNTIL"]\n if os.environ.get("FIXTURE_REDEEMABLE"): data["redeemable"]=os.environ["FIXTURE_REDEEMABLE"]\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n')
         fake.chmod(0o755)
         env={key:value for key,value in os.environ.items() if not key.startswith(('OPENCLAW_','OC_','MC_')) and key not in ('FORCE','INTERVIEW_INVITATION_AUTOMATIC')}
         env.update(HOME=str(self.root),OPENCLAW_ROOT=str(runtime),OPENCLAW_OWNER_CHAT_ID='123456789',MINT_LOG=str(mint_log),FIXTURE_TTL=str(ttl))
+        if valid_until is not None: env['FIXTURE_VALID_UNTIL']=valid_until
+        if redeemable is not None: env['FIXTURE_REDEEMABLE']=redeemable
         return state,foreign_state,mint_log,env
 
     def invoke_sender(self,env,*args):
@@ -448,5 +450,152 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(result.returncode,3,result.stderr)
         self.assertFalse(mints.exists());self.assertFalse(self.capture.exists())
         self.assertEqual(state.read_bytes(),before)
+
+    def test_completion_bound_receipt_is_never_time_barred(self):
+        """A link valid until the interview is complete has no deadline to police.
+
+        Every stamp an issuer could put on such a receipt -- one long past, one
+        far beyond any TTL bound, a wrong type, or none at all -- has to be
+        accepted, because none of them is what decides whether the link works.
+        """
+        resolved=self.resolve()
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,validUntil='interview-complete',url='https://client.example.com/interview#enroll=fixture.signature')
+        stamps=[{'expiresAt':100000-86400*45},{'expiresAt':100000+86400*3650},{'expiresAt':100000+900},{'expiresAt':'nonsense'},{'expiresAt':True},{}]
+        for stamp in stamps:
+            with self.subTest(stamp=stamp),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**stamp))+'\n200','')):
+                metadata={}
+                self.assertEqual(m.issue_invitation(resolved,self.env,'123456789',metadata),base['url'])
+                self.assertIsNone(metadata['invitationExpiresAt'])
+
+    def test_only_the_exact_completion_marker_lifts_the_legacy_ttl_bound(self):
+        """A near-miss marker must not be a way around the bound it replaces."""
+        resolved=self.resolve()
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,expiresAt=100000+86400*30,url='https://client.example.com/interview#enroll=fixture.signature')
+        for marker in ('interview_complete','Interview-Complete','never',True,None,'',{'until':'interview-complete'}):
+            receipt=dict(base) if marker is None else dict(base,validUntil=marker)
+            with self.subTest(marker=marker),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(receipt)+'\n200','')):
+                with self.assertRaisesRegex(m.Pending,'expiry invalid'):m.issue_invitation(resolved,self.env,'123456789')
+
+    def test_completion_bound_receipt_still_requires_identity_and_one_use(self):
+        """Dropping the deadline check must not drop any other binding."""
+        resolved=self.resolve()
+        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,validUntil='interview-complete',url='https://client.example.com/interview#enroll=fixture.signature')
+        for bad in [dict(good,companyId='foreign'),dict(good,tenantId='foreign'),dict(good,installationId='foreign'),dict(good,host='foreign.example.com'),dict(good,oneUse=False),dict(good,protocol='interview-invitation.v2'),dict(good,url='https://foreign.example.com/interview#enroll=fixture.signature'),dict(good,url='https://client.example.com/interview'),dict(good,url='https://client.example.com/interview#enroll=not a token')]:
+            with self.subTest(bad=bad),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(bad)+'\n200','')),self.assertRaises(m.Pending):
+                m.issue_invitation(resolved,self.env,'123456789')
+
+    def test_validity_sentence_states_completion_or_the_legacy_deadline(self):
+        self.assertEqual(m.invitation_validity_sentence(None),'This private sign-in link stays valid until your interview is complete.')
+        legacy=m.invitation_validity_sentence(1789000000)
+        self.assertIn('expires on ',legacy);self.assertIn(' UTC.',legacy)
+
+    def test_completion_bound_link_tells_the_client_it_lasts_until_completion(self):
+        state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete')
+        sent=self.invoke_sender(env)
+        self.assertEqual(sent.returncode,0,sent.stderr)
+        message=json.loads(self.capture.read_text())['message']
+        self.assertIn('stays valid until your interview is complete.',message)
+        self.assertNotIn('expires on ',message)
+        self.assertNotIn('{{INVITATION_VALIDITY}}',message)
+        self.assertEqual(message.count('#enroll='),1)
+        self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
+        receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
+        self.assertIsNone(json.loads(receipt_path.read_text())['invitationExpiresAt'])
+        self.assertEqual(len(mints.read_text().splitlines()),1)
+
+    def test_completion_bound_link_is_not_renewed_by_the_passage_of_time(self):
+        """No deadline means no expiry-triggered reissue: only --renew mints again."""
+        state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete')
+        self.assertEqual(self.invoke_sender(env).returncode,0)
+        guarded=self.invoke_sender(env,'--resume')
+        self.assertEqual(guarded.returncode,7,guarded.stderr)
+        self.assertEqual(len(mints.read_text().splitlines()),1)
+        self.assertEqual(self.invoke_sender(env,'--renew').returncode,0)
+        self.assertEqual(len(mints.read_text().splitlines()),2)
+
+    def test_completion_bound_link_is_refused_once_the_interview_is_complete(self):
+        state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete')
+        data=json.loads(state.read_text());data['interviewComplete']=True;state.write_text(json.dumps(data))
+        before=state.read_bytes()
+        result=self.invoke_sender(env,'--renew')
+        self.assertEqual(result.returncode,3,result.stderr)
+        self.assertFalse(mints.exists());self.assertFalse(self.capture.exists())
+        self.assertEqual(state.read_bytes(),before)
+
+    def test_redemption_contract_must_be_declared_by_the_issuer(self):
+        """A receipt that states neither contract is refused, not guessed at."""
+        resolved=self.resolve()
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',url='https://client.example.com/interview#enroll=fixture.signature')
+        for declared in [{'oneUse':True},{'redeemable':'until-interview-complete'},{'oneUse':True,'redeemable':'until-interview-complete'},{'oneUse':False,'redeemable':'until-interview-complete'}]:
+            with self.subTest(declared=declared),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**declared))+chr(10)+'200','')):
+                self.assertEqual(m.issue_invitation(resolved,self.env,'123456789'),base['url'])
+        for undeclared in [{},{'oneUse':False},{'oneUse':'yes'},{'redeemable':'forever'},{'redeemable':True},{'oneUse':1}]:
+            with self.subTest(undeclared=undeclared),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**undeclared))+chr(10)+'200','')):
+                with self.assertRaisesRegex(m.Pending,'protocol mismatch'):m.issue_invitation(resolved,self.env,'123456789')
+
+    def test_reopenable_is_recorded_only_when_the_issuer_declares_it(self):
+        resolved=self.resolve()
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',oneUse=True,url='https://client.example.com/interview#enroll=fixture.signature')
+        for extra,expected in [({'redeemable':'until-interview-complete'},True),({},False),({'redeemable':'forever'},False)]:
+            with self.subTest(extra=extra),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**extra))+chr(10)+'200','')):
+                metadata={}
+                m.issue_invitation(resolved,self.env,'123456789',metadata)
+                self.assertIs(metadata['invitationReopenable'],expected)
+
+    def test_validity_sentence_only_promises_reopening_when_the_issuer_allows_it(self):
+        self.assertEqual(m.invitation_validity_sentence(None,False),'This private sign-in link stays valid until your interview is complete.')
+        reopenable=m.invitation_validity_sentence(None,True)
+        self.assertIn('stays valid until your interview is complete',reopenable)
+        self.assertIn('open it again',reopenable)
+        legacy=m.invitation_validity_sentence(1789000000,True)
+        self.assertIn('expires on ',legacy)
+        self.assertNotIn('open it again',legacy)
+
+    def test_reopenable_issuer_tells_the_client_the_link_can_be_opened_again(self):
+        state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete',redeemable='until-interview-complete')
+        sent=self.invoke_sender(env)
+        self.assertEqual(sent.returncode,0,sent.stderr)
+        message=json.loads(self.capture.read_text())['message']
+        self.assertIn('stays valid until your interview is complete',message)
+        self.assertIn('open it again whenever you like, on any device.',message)
+        self.assertNotIn('expires on ',message)
+        self.assertNotIn('{{INVITATION_VALIDITY}}',message)
+        self.assertEqual(message.count('#enroll='),1)
+        self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
+        receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
+        accepted=json.loads(receipt_path.read_text())
+        self.assertIsNone(accepted['invitationExpiresAt'])
+        self.assertIs(accepted['invitationReopenable'],True)
+
+    def test_single_use_issuer_is_never_promised_as_reopenable(self):
+        """An old Command Center burns the link; the client must not be told otherwise."""
+        state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete')
+        sent=self.invoke_sender(env)
+        self.assertEqual(sent.returncode,0,sent.stderr)
+        message=json.loads(self.capture.read_text())['message']
+        self.assertIn('stays valid until your interview is complete.',message)
+        self.assertNotIn('open it again',message)
+
+    def test_origin_must_be_a_hostname_never_an_ip_address(self):
+        """A public IP literal is not a weaker origin, it is a different tenant.
+
+        The old check only asked whether the address was global, so 8.8.8.8 and
+        any other routable literal passed. No certificate exists for an address
+        under the hostname the tenant registry selects configuration by, so an
+        accepted literal would carry a client's private sign-in link to an
+        origin no tenant is registered under.
+        """
+        for literal in ('https://8.8.8.8','https://1.1.1.1','https://203.0.113.7','https://[2001:4860:4860::8888]','https://127.0.0.1','https://10.0.0.5','https://[::1]','https://192.168.1.10'):
+            with self.subTest(origin=literal),self.assertRaisesRegex(m.Pending,'hostname|loopback|private'):
+                m.public_origin(literal)
+        # A real hostname is still accepted, so the guard bites only literals.
+        self.assertEqual(m.public_origin('https://client.example.com')[0],'https://client.example.com')
+
+    def test_ip_literal_origin_is_refused_before_any_network_call(self):
+        for key,literal in [('commandCenterUrl','https://8.8.8.8'),('commandCenterUrl','https://203.0.113.7')]:
+            with self.subTest(literal=literal),patch.object(m.subprocess,'run') as run:
+                with self.assertRaisesRegex(m.Pending,'hostname'):
+                    m.resolve_public_origin(dict(self.state,**{key:literal}),self.env)
+                run.assert_not_called()
 
 if __name__=='__main__':unittest.main()

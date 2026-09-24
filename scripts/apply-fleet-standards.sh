@@ -325,8 +325,148 @@ def deep_merge(dst, src):
             dst[k] = v
     return dst
 
-# Apply the canonical block.
-deep_merge(cfg, CANONICAL)
+# >>> BEGIN LEGACY-EXEC-MODE TRANSLATION (extracted live by
+#     tests/unit/fleet-standards-legacy-exec-mode.test.sh -- do not rename these
+#     two anchor comments without updating that test) <<<
+#
+# DEFECT (2026-09-17). This script deep-merges {security, ask} into tools.exec.
+# On a box whose config still carries the LEGACY tools.exec.mode key the merged
+# block holds mode AND security AND ask at once, and the OpenClaw validator
+# rejects that combination outright:
+#
+#   tools.exec.mode: mode cannot be combined with security or ask in the same
+#   exec object.
+#
+# The script then printed "ERROR: openclaw config validate failed" and rolled
+# back the WHOLE fleet-standards write -- toolSearch directory mode, the
+# WhatsApp ban, the subagent ungate, plugins.allow, every standard in this file
+# -- on every box carrying the legacy key, on every roll. Reproduced on two
+# client Macs on 2026-09-15 and again on 2026-09-17.
+#
+# SCHEMA EVIDENCE (OpenClaw 2026.9.4, read from $(npm root -g)/openclaw/dist):
+#
+#   zod-schema.agent-runtime-*.mjs
+#     const ToolExecBaseShape = {
+#       host: enum["auto","sandbox","gateway","node"],
+#       mode: enum["deny","allowlist","ask","auto","full"],
+#       security: enum["deny","allowlist","full"],
+#       ask: enum["off","on-miss","always"], ... }
+#     const ToolExecSchema =
+#       object(ToolExecBaseShape).strict().superRefine(addExecPolicyModeConflictIssue)
+#
+#     function addExecPolicyModeConflictIssue(value, ctx) {
+#       if (value.mode === void 0 ||
+#           (value.security === void 0 && value.ask === void 0)) return;
+#       ...ctx.addIssue({ path: ["mode"], message: "mode cannot be combined
+#          with security or ask in the same exec object. ..." })
+#     }
+#
+#   That `if` IS the exact conflict rule: an error is raised if and only if
+#   `mode` is present AND at least one of `security` / `ask` is present.
+#   Neither alone is an error.
+#
+#   exec-approvals-core-*.mjs
+#     function resolveExecPolicyForMode(mode) {
+#       case "deny":      return { security: "deny",      ask: "off",     autoReview: false }
+#       case "allowlist": return { security: "allowlist", ask: "off",     autoReview: false }
+#       case "ask":       return { security: "allowlist", ask: "on-miss", autoReview: false }
+#       case "auto":      return { security: "allowlist", ask: "on-miss", autoReview: true  }
+#       case "full":      return { security: "full",      ask: "off",     autoReview: false }
+#     }
+#
+#   EXEC_MODE_TO_POLICY below is that table verbatim. It is the gateway's own
+#   resolver, not an inference. `autoReview` is deliberately NOT carried across:
+#   it is not a member of ToolExecBaseShape, and the schema is .strict(), so
+#   writing it is rejected ("Unrecognized key: autoReview"). It is a derived
+#   runtime value, never persisted config, so "auto" and "ask" translate to the
+#   same persistable pair and nothing storable is lost.
+#
+# VERIFIED AGAINST THE REAL VALIDATOR (OPENCLAW_CONFIG_PATH=<temp>
+# openclaw config validate, OpenClaw 2026.9.4):
+#   {"tools":{"exec":{"mode":"full","security":"full","ask":"off"}}}  -> rc=1, the
+#       conflict message above  (the fleet defect, exactly)
+#   {"tools":{"exec":{"security":"full","ask":"off"}}}                -> rc=0 VALID
+#       (what this translation leaves behind)
+#   {"tools":{"exec":{"mode":"full"}}}                                -> rc=0 VALID
+#       (the legacy box BEFORE the merge -- which is why the box was healthy
+#        until this script ran)
+#   every {security, ask} pair in EXEC_MODE_TO_POLICY                 -> rc=0 VALID
+#
+# DIRECTION OF TRAVEL. The validator's own repair hint prefers the opposite
+# move ("Replace security/ask with mode=..."), and `openclaw doctor --fix`
+# migrates legacy policies toward `mode`. We deliberately do NOT flip the fleet
+# standard to `mode` here: {security, ask} are still fully valid keys on
+# 2026.9.4 (proved above), the whole fleet standard, its post-merge assertions
+# and verify-routing.sh all key off {security, ask}, and older gateways on the
+# fleet are not proven to accept `mode`. Changing the written shape fleet-wide
+# is a separate, larger decision. This fix removes the CONFLICT, nothing more.
+EXEC_MODE_TO_POLICY = {
+    "deny":      {"security": "deny",      "ask": "off"},
+    "allowlist": {"security": "allowlist", "ask": "off"},
+    "ask":       {"security": "allowlist", "ask": "on-miss"},
+    "auto":      {"security": "allowlist", "ask": "on-miss"},
+    "full":      {"security": "full",      "ask": "off"},
+}
+
+
+def translate_legacy_exec_mode(cfg):
+    """Drop a legacy tools.exec.mode, translating it into {security, ask}.
+
+    Returns (status, detail):
+      ("absent", None)            no tools.exec block, or no mode key -- no-op.
+      ("translated", mode)        mode recognised; replaced by its {security,
+                                  ask} pair and the mode key deleted. The
+                                  canonical merge then enforces the fleet
+                                  standard on top, as it always did.
+      ("untranslatable", raw)     mode present but NOT one of the five schema
+                                  values. We do not guess and we do not delete
+                                  a key we cannot interpret. The caller SKIPS
+                                  the tools.exec sub-block only, and every other
+                                  standard is still applied.
+    """
+    tools = cfg.get("tools")
+    if not isinstance(tools, dict):
+        return ("absent", None)
+    execblk = tools.get("exec")
+    if not isinstance(execblk, dict):
+        return ("absent", None)
+    if "mode" not in execblk:
+        return ("absent", None)
+    raw = execblk.get("mode")
+    key = raw.strip().lower() if isinstance(raw, str) else None
+    policy = EXEC_MODE_TO_POLICY.get(key)
+    if policy is None:
+        return ("untranslatable", raw)
+    del execblk["mode"]
+    for pk, pv in policy.items():
+        execblk[pk] = pv
+    return ("translated", key)
+
+
+_EXEC_STATUS, _EXEC_DETAIL = translate_legacy_exec_mode(cfg)
+if _EXEC_STATUS == "translated":
+    _p = EXEC_MODE_TO_POLICY[_EXEC_DETAIL]
+    print("[apply-fleet-standards] legacy tools.exec.mode=\"%s\" translated to "
+          "security=\"%s\" ask=\"%s\" and the mode key removed "
+          "(the OpenClaw validator rejects mode combined with security/ask)"
+          % (_EXEC_DETAIL, _p["security"], _p["ask"]))
+elif _EXEC_STATUS == "untranslatable":
+    print("[apply-fleet-standards] WARNING: tools.exec.mode=%r is not one of %s "
+          "-- cannot translate it, so the tools.exec sub-block is SKIPPED on this "
+          "box. Every other fleet standard IS still applied. This config was "
+          "already invalid before this script ran (the schema enum rejects that "
+          "value on its own); fix tools.exec.mode by hand, then re-run."
+          % (_EXEC_DETAIL, sorted(EXEC_MODE_TO_POLICY)))
+# >>> END LEGACY-EXEC-MODE TRANSLATION <<<
+
+# Apply the canonical block. When the legacy mode key could not be translated we
+# merge a copy with the tools.exec sub-block removed, so ONE unreadable key can
+# never cost the box every other standard in this file. CANONICAL itself is left
+# intact -- the before/after audit print at the end still keys off it.
+CANONICAL_TO_MERGE = json.loads(json.dumps(CANONICAL))
+if _EXEC_STATUS == "untranslatable":
+    CANONICAL_TO_MERGE["tools"].pop("exec", None)
+deep_merge(cfg, CANONICAL_TO_MERGE)
 
 # POST-MERGE ASSERTION. A scalar `tools.toolSearch` (e.g. bare `true`) selects a
 # prompt surface with NO hydration path: every tool call returns "Tool not found",
@@ -514,8 +654,16 @@ else:
 # Fix per-agent subagents overrides: any agent with an explicit allowAgents
 # that is NOT ["*"] should be set to ["*"]. This is the critical piece that
 # was missing in earlier partial fixes.
-if "agents" in cfg and "list" in cfg["agents"]:
-    for agent in cfg["agents"]["list"]:
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY -- never
+# written into the body) and the legacy agents.list[]. Edits land on the LIVE
+# entry dicts, so whichever shape the box has is the one written.
+_a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+_e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+_l = _a.get("list") if isinstance(_a.get("list"), list) else []
+_roster = [(k, v) for k, v in _e.items() if isinstance(v, dict)]
+_roster += [(a.get("id"), a) for a in _l if isinstance(a, dict) and a.get("id") not in _e]
+if _roster:
+    for _aid, agent in _roster:
         if "subagents" in agent and "allowAgents" in agent["subagents"]:
             if agent["subagents"]["allowAgents"] != ["*"]:
                 agent_name = agent.get("name", "unknown")
@@ -616,7 +764,7 @@ def _ceo_consent_active():
 
 if _ceo_consent_active():
     print("[apply-fleet-standards] owner-consent carve-out ACTIVE — skipping CEO tool-gate re-assert (would revoke the owner's grant)")
-elif "agents" in cfg and "list" in cfg["agents"]:
+elif _roster:
     # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: re-assert the gate on the box's
     # default agent (default:true, else id=="main") ONLY IF it is a ROUTER —
     # matching apply-routing-fix.sh L5 and verify-routing.sh G7 so the gate target
@@ -628,23 +776,22 @@ elif "agents" in cfg and "list" in cfg["agents"]:
         "master-orchestrator", "dept-master-orchestrator",
         "dept-executive-office",
     }
-    def _is_router(a):
+    def _is_router(a, aid):
         if not isinstance(a, dict):
             return False
         if a.get("is_master") is True:
             return True
         if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
             return True
-        return a.get("id") in ROUTER_IDS
+        return aid in ROUTER_IDS
 
-    _agents = cfg["agents"]["list"]
-    _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("default") is True), None)
+    _ceo_id, _ceo_agent = next(((i, a) for i, a in _roster if a.get("default") is True), (None, None))
     if _ceo_agent is None:
-        _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("id") == "main"), None)
-    if _ceo_agent is not None and not _is_router(_ceo_agent):
+        _ceo_id, _ceo_agent = next(((i, a) for i, a in _roster if i == "main"), (None, None))
+    if _ceo_agent is not None and not _is_router(_ceo_agent, _ceo_id):
         # PA-FREEZE GUARD: default agent is a personal assistant / owner agent —
         # the CEO production lock would freeze it. Do NOT re-assert here.
-        print(f"[apply-fleet-standards] default agent (id={_ceo_agent.get('id','<unknown>')}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
+        print(f"[apply-fleet-standards] default agent (id={_ceo_id or '<unknown>'}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
         _ceo_agent = None
     if _ceo_agent is not None:
         agent = _ceo_agent
@@ -700,7 +847,7 @@ elif "agents" in cfg and "list" in cfg["agents"]:
             _root_tools["agentToAgent"] = _a2a
         _a2a.setdefault("enabled", True)
         _a2a.setdefault("allow", ["*"])
-        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
+        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={_ceo_id or '<unknown>'}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
 
 # v16.1.3 SELF-HEAL — sessions/agentToAgent belong on ROOT `tools`, NEVER on a
 # per-agent tools block (AgentEntry.tools is additionalProperties:false and
@@ -719,9 +866,14 @@ def _heal_peragent_routing_keys(_cfg):
         _rt = {}
         _cfg["tools"] = _rt
     _healed = []
-    for _ag in (_cfg.get("agents", {}) or {}).get("list", []) or []:
-        if not isinstance(_ag, dict):
-            continue
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY)
+    # and the legacy agents.list[] ids not already in entries.
+    _ha = _cfg.get("agents") if isinstance(_cfg.get("agents"), dict) else {}
+    _he = _ha.get("entries") if isinstance(_ha.get("entries"), dict) else {}
+    _hl = _ha.get("list") if isinstance(_ha.get("list"), list) else []
+    _hroster = [(k, v) for k, v in _he.items() if isinstance(v, dict)]
+    _hroster += [(a.get("id", "<unknown>"), a) for a in _hl if isinstance(a, dict) and a.get("id") not in _he]
+    for _aid, _ag in _hroster:
         _at = _ag.get("tools")
         if not isinstance(_at, dict):
             continue
@@ -730,7 +882,7 @@ def _heal_peragent_routing_keys(_cfg):
                 if _k not in _rt and isinstance(_at[_k], (dict, list)):
                     _rt[_k] = _at[_k]  # migrate the configured value up to root
                 del _at[_k]
-                _healed.append(f"{_ag.get('id', '<unknown>')}.{_k}")
+                _healed.append(f"{_aid}.{_k}")
     return _healed
 
 _healed_keys = _heal_peragent_routing_keys(cfg)
@@ -839,10 +991,82 @@ echo "[apply-fleet-standards] prompt-caching (ollama path): RESERVED slot — aw
 echo ""
 echo "[apply-fleet-standards] running: openclaw config validate"
 if ! openclaw config validate; then
-  echo "ERROR: openclaw config validate failed — see output above" >&2
-  echo "[apply-fleet-standards] rolling back to: $OC_BACKUP"
-  cp "$OC_BACKUP" "$OC_CONFIG"
-  exit 1
+  # NARROW REPAIR BEFORE ANY ROLLBACK (2026-09-17).
+  #
+  # This gate used to do exactly one thing on failure: restore the backup and
+  # exit 1, discarding EVERY standard this script had just applied. On boxes
+  # carrying a legacy tools.exec.mode key that fired on every single roll, and
+  # one unreadable exec key cost the box toolSearch directory mode, the WhatsApp
+  # ban, the subagent ungate, plugins.allow and the rest. A whole-file rollback
+  # is the right LAST resort and the wrong FIRST one.
+  #
+  # tools.exec is the only sub-block this script writes that has a documented
+  # schema conflict rule (mode vs security/ask). So: revert ONLY tools.exec to
+  # its pre-merge value, re-validate, and if that clears, keep every other
+  # standard. Only if the config is STILL invalid do we do what we always did.
+  echo "[apply-fleet-standards] validate FAILED after the merge; trying the NARROW repair (revert tools.exec only) before any rollback" >&2
+
+  _EXEC_REVERTED=0
+  if python3 - "$OC_CONFIG" "$OC_BACKUP" <<'EXECREVERTEOF'
+import json
+import sys
+from pathlib import Path
+
+cur_p = Path(sys.argv[1])
+bak_p = Path(sys.argv[2])
+try:
+    cur = json.loads(cur_p.read_text())
+    bak = json.loads(bak_p.read_text())
+except Exception as exc:
+    print("[apply-fleet-standards] narrow repair: cannot parse config or backup "
+          "(%s) -- falling through to the full rollback" % exc, file=sys.stderr)
+    sys.exit(1)
+
+cur_tools = cur.get("tools")
+if not isinstance(cur_tools, dict):
+    print("[apply-fleet-standards] narrow repair: no tools block to revert -- "
+          "tools.exec is not the culprit", file=sys.stderr)
+    sys.exit(1)
+
+bak_tools = bak.get("tools")
+bak_exec = bak_tools.get("exec") if isinstance(bak_tools, dict) else None
+
+if bak_exec is None:
+    cur_tools.pop("exec", None)
+    detail = "removed (the backup had no tools.exec)"
+else:
+    cur_tools["exec"] = bak_exec
+    detail = "restored from the backup verbatim"
+
+cur_p.write_text(json.dumps(cur, indent=2) + "\n")
+print("[apply-fleet-standards] narrow repair: tools.exec %s; every other fleet "
+      "standard is still in the file" % detail)
+sys.exit(0)
+EXECREVERTEOF
+  then
+    _EXEC_REVERTED=1
+  fi
+
+  if [ "$_EXEC_REVERTED" = "1" ] && openclaw config validate; then
+    echo "[apply-fleet-standards] WARNING: the merged tools.exec block did NOT validate on this box, so tools.exec was left at its pre-merge value." >&2
+    echo "[apply-fleet-standards] WARNING: the fleet exec ungate (security=full, ask=off) is NOT applied here. Inspect tools.exec by hand, then re-run." >&2
+    echo "[apply-fleet-standards] every other standard in this script IS applied and validated. NOT rolling back." >&2
+  else
+    echo "ERROR: openclaw config validate failed -- see output above" >&2
+    echo "[apply-fleet-standards] rolling back to: $OC_BACKUP"
+    cp "$OC_BACKUP" "$OC_CONFIG"
+    # DIAGNOSTIC, not a second repair attempt. The config is now byte-for-byte
+    # the pre-roll backup. Validating it here answers the only question the
+    # operator has left: did THIS script break the box, or was the box already
+    # invalid before the roll touched it? Reporting "rolled back" without that
+    # answer sends someone hunting a fleet-script bug that may not exist.
+    if openclaw config validate >/dev/null 2>&1; then
+      echo "[apply-fleet-standards] the PRE-ROLL config validates clean, so the failure came from this roll's merge." >&2
+    else
+      echo "[apply-fleet-standards] the PRE-ROLL config ALSO fails validate, so this box was already invalid before the roll. Fix the config by hand; re-running this script cannot clear it." >&2
+    fi
+    exit 1
+  fi
 fi
 
 echo ""
@@ -1612,7 +1836,13 @@ def _is_router(a):
     return a.get("id") in ROUTER_IDS
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    agents = cfg.get("agents", {}).get("list", []) or []
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the key)
+    # and the legacy agents.list[].
+    _a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    _e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+    _l = _a.get("list") if isinstance(_a.get("list"), list) else []
+    agents = [dict(v, id=k) for k, v in _e.items() if isinstance(v, dict)]
+    agents += [a for a in _l if isinstance(a, dict) and a.get("id") not in _e]
     da = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
     if da is None:
         da = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
@@ -1680,7 +1910,10 @@ MAX_RETRIES=2
 # Center report-back loop can acknowledge/progress/done back to the client. Empty
 # (the default) => omitted from the payload, exactly as mc-route.sh behaves.
 REQUESTER_CHAT_ID="${ROUTE_PRES_REQUESTER_CHAT_ID:-${MC_ROUTE_REQUESTER_CHAT_ID:-}}"
-REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-telegram}}"
+REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-}}"
+# An absent authenticated requester is an operator-delegated route, not Telegram.
+# Callers may explicitly override the source only through the sanctioned route vars.
+ROUTE_SOURCE="${ROUTE_PRES_SOURCE:-${MC_ROUTE_SOURCE:-}}"
 
 TITLE="${1:-}"
 DESCRIPTION="${2:-}"
@@ -1756,20 +1989,25 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/route-pres.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
 if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" ROUTE_SOURCE="$ROUTE_SOURCE" \
      python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
-payload = {
-    "title": os.environ.get("TITLE", "")[:120],
-    "description": os.environ.get("DESCRIPTION", ""),
-    "department_slug": "presentations",
-    "source": "telegram",
-    "priority": "medium",
-}
 # P1-04 trust engine: pass the originating client chat id through so the Command
 # Center captures it and reports acknowledge/progress/done back to the client.
 # Only added when present — an operator/internal route omits it entirely.
 _rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+_source = os.environ.get("ROUTE_SOURCE", "").strip()
+# Never label an internal/operator route as Telegram when no authenticated chat
+# identity was supplied. A real chat route retains the historical telegram default.
+if not _source:
+    _source = "telegram" if _rcid else "operator-delegated"
+payload = {
+    "title": os.environ.get("TITLE", "")[:120],
+    "description": os.environ.get("DESCRIPTION", ""),
+    "department_slug": "presentations",
+    "source": _source,
+    "priority": "medium",
+}
 if _rcid:
     payload["requester_chat_id"] = _rcid
     payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
@@ -2918,10 +3156,13 @@ if si != -1 and ei != -1 and ei > si:
     # the template renders content BEYOND the END marker (the
     # "## What Rescue Rangers IS + your own wiring" section). The replace
     # branch above only covered START..END, so every re-stamp spliced the whole
-    # template back in while leaving the PREVIOUS render's tail in place --
+    # template back in while leaving the tail of the PREVIOUS render in place --
     # duplicating that section on every roll. The re-stamp runs unconditionally
     # on every fleet roll, so this accumulated silently per box. Consume the
     # tail we ourselves rendered last time, if it is sitting right there.
+    # (No apostrophe in prose anywhere in this heredoc: it sits inside $(...),
+    # and macOS /bin/bash 3.2 then pairs a lone apostrophe and fails to parse
+    # the whole script from here on.)
     _tpl_ei = tpl.find(END)
     if _tpl_ei != -1:
         _tail = tpl[_tpl_ei + len(END):]
@@ -3076,6 +3317,67 @@ if [ -n "${N8N_API_KEY:-}" ]; then
     unset _RR_RECON_SH _RR_RC _RR_COUNTS
   fi
 fi
+
+# ─── LEAN BOOTSTRAP: pointerize managed blocks (runs LAST, after every stamp) ─
+#
+# WHY HERE. Every stamper above is append-and-guard: it writes its block once,
+# then `grep -qF "<!-- NAME_V1 -->"` makes every later roll a no-op. That is
+# correct for correctness and wrong for SIZE — the full rule text lands in
+# AGENTS.md, which is re-billed to the model on EVERY turn, and once it is there
+# no stamper ever revisits it. Moving a block out by hand does not hold either:
+# the guard stops matching and the next roll re-appends the whole thing.
+#
+# So the sweep runs at the END of the roll, after every block exists, and
+# rewrites the ones that are still full text as compact POINTERS whose full text
+# it first writes to this box's master-files reference. Measured on one live box
+# (2026-09-18): AGENTS.md 92,068 -> 64,159 characters, 25 blocks pointerized,
+# zero content lost, second run byte-identical.
+#
+# WHAT IT WILL NOT TOUCH
+#   - a block already written as a pointer (no double-work, no drift)
+#   - a block under OPENCLAW_BOOTSTRAP_POINTER_MIN_CHARS (default 800) — already lean
+#   - any sentinel that owns a matching `<!-- END NAME -->`: those blocks
+#     (PRESENTATION_ROUTING_REFLEX_*, SKILL_INTENT_ROUTING_REFLEX_*,
+#     CEO_ROUTING_NO_LOOPHOLES_*) are rewritten WHOLESALE by the strip/upgrade
+#     branches above, which regex on that pair. Pointerizing one would be undone
+#     on the next roll at best, and orphan the pair at worst.
+#   - anything at all when the box sets mode=full (see lib-bootstrap-pointer.sh)
+#
+# NON-FATAL BY DESIGN. A failure here leaves a correct, merely larger AGENTS.md.
+# That must never fail a roll, so every exit path below returns success.
+_BP_LIB="$(dirname "${BASH_SOURCE[0]}")/lib-bootstrap-pointer.sh"
+if [ -f "$_BP_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$_BP_LIB"
+  _BP_MODE="$(bp_mode)"
+  if [ "$_BP_MODE" = "full" ]; then
+    echo "[apply-fleet-standards] bootstrap pointer mode=full — leaving managed blocks verbatim"
+  else
+    _BP_REF="$(bp_reference_for AGENTS.md)"
+    for _bp_target in "$AGENTS_FILE" "$AGENTS_FILE_EARLY"; do
+      [ -n "$_bp_target" ] && [ -f "$_bp_target" ] || continue
+      _BP_OUT="$(python3 "$(dirname "${BASH_SOURCE[0]}")/bootstrap-pointerize.py" sweep \
+                   --bootstrap "$_bp_target" --ref-file "$_BP_REF" 2>&1)" || true
+      _BP_STATUS="$(printf '%s' "$_BP_OUT" | sed -n 's/.*"status": "\([a-z-]*\)".*/\1/p' | head -1)"
+      case "$_BP_STATUS" in
+        written)
+          echo "[apply-fleet-standards] lean-bootstrap: $(basename "$_bp_target") $(printf '%s' "$_BP_OUT" | sed -n 's/.*"before_chars": \([0-9]*\).*/\1/p' | head -1) -> $(printf '%s' "$_BP_OUT" | sed -n 's/.*"after_chars": \([0-9]*\).*/\1/p' | head -1) chars; full text in $_BP_REF"
+          ;;
+        unchanged)
+          echo "[apply-fleet-standards] lean-bootstrap: $(basename "$_bp_target") already compact — no-op"
+          ;;
+        *)
+          echo "[apply-fleet-standards] lean-bootstrap: SKIPPED for $(basename "$_bp_target") (status=${_BP_STATUS:-unknown}) — file left unchanged, roll continues"
+          ;;
+      esac
+      # The same workspace can be reached by both variables; sweep it once.
+      [ "$AGENTS_FILE" = "$AGENTS_FILE_EARLY" ] && break
+    done
+    unset _BP_REF _BP_OUT _BP_STATUS _bp_target
+  fi
+  unset _BP_MODE
+fi
+unset _BP_LIB
 
 echo ""
 echo "[apply-fleet-standards] DONE"

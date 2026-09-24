@@ -89,6 +89,19 @@ warn_only "cloudflared installed (Mac only — VPS skip)" "[ \"${OPENCLAW_PLATFO
 warn_only "Cloudflare tunnel token present" "[ -n \"$CLOUDFLARE_TUNNEL_TOKEN\" ] || [ -n \"$TUNNEL_TOKEN\" ]"
 warn_only "Port ${CC_PORT} reachable (CC running locally)" "curl -sS -m 3 http://localhost:${CC_PORT}/ -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^(200|301|302|404|307)'"
 assert "Python 3 installed" "command -v python3"
+
+# ---- ISSUE-04: the shipped self-heal that nothing scheduled ----------------
+# blackceo-command-center ships scripts/watchdog-cc.sh (*/5 self-heal for pm2
+# crash loops, EADDRINUSE, stale-build refusal receipts, stalled scheduler) and
+# for its whole life NO installer in this repo scheduled it on any box: the
+# watchdog shipped everywhere and fired nowhere. A live client Mac read
+# "healthy" for 41 hours with no card moving until pm2 was restarted by hand.
+# HARD assert on the installer (it is the thing this skill owns and ships);
+# WARN on the live job, because a box QC'd while its gateway is down would
+# otherwise fail for a reason that is not a Skill 32 defect.
+_CC_INSTALLER="$SKILLS_DIR_DEFAULT/32-command-center-setup/scripts/run-full-install.sh"
+assert "run-full-install.sh registers the cc-watchdog self-heal cron" "grep -q '^cc_register_watchdog_cron$' \"$_CC_INSTALLER\" && grep -q 'CC_WATCHDOG_CRON_NAME=' \"$_CC_INSTALLER\""
+warn_only "cc-watchdog cron live on this box (*/5 self-heal)" "command -v openclaw && openclaw cron list --all --json 2>/dev/null | grep -q 'cc-watchdog'"
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 32 QC FAILED"; exit 1; } || { green "Skill 32 QC PASS"; exit 0; }

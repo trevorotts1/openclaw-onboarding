@@ -2,7 +2,11 @@
 # ============================================================
 # lib-onboarding-state.sh — Onboarding honesty state-machine + verification gate
 # ------------------------------------------------------------
-# v10.16.48 — FIX 1 (ONBOARDING HONESTY)
+# history: v10.16.48 FIX 1 (ONBOARDING HONESTY) is the release that FIRST
+#          introduced this library. It is a historical marker only. It is NOT
+#          this library's current version and NOT the box's OpenClaw version;
+#          read /version for that. A client agent read this line as "the lib is
+#          v10.16.48" and reported a current box as years stale.
 #
 # WHY THIS EXISTS
 #   install.sh copies skill files to disk and pastes 5-Phase/Wave PROSE into
@@ -148,6 +152,36 @@ if not isinstance(skills, dict):
     fail('state file "skills" is %s, not a JSON object: %s'
          % (type(skills).__name__, sf))
 
+# ROLLBACK COPIES ARE NOT SKILLS.
+# A rollback rename beside the live skills ("02-x" -> "02-x.bak-20260901",
+# ".rollback", ".orig") still starts with a digit and is still a directory, so
+# the discovery loop below used to seed it as a skill. It ships no INSTALL.md
+# that anyone will run and no qc-*.sh that can pass, so it sat at "pending"
+# forever -- and because oc_state_summary / obs_gate_summary count the
+# DENOMINATOR straight off this state file, one such folder held the gate at
+# "N-1 of N" permanently and the resume cron never self-removed.
+#
+# SKIPPING at discovery is not enough on its own: an entry seeded by an EARLIER
+# run is already in the file and nothing would ever take it back out. So purge
+# matching entries too. This is the one deletion this seed performs, and it is
+# deliberately narrow -- only names this regex matches, never a real skill.
+# Mirrors _BACKUP_DIR_RE in 23-ai-workforce-blueprint/scripts/department-floor.py
+# so "what is a rollback folder" has one answer across the repo.
+_ROLLBACK_DIR_RE = re.compile(r"\.(bak|rollback|orig)(\b|[-_.]|$)", re.IGNORECASE)
+
+
+def _is_rollback_dirname(name):
+    return bool(_ROLLBACK_DIR_RE.search(name))
+
+
+_purged = [k for k in list(skills) if _is_rollback_dirname(k)]
+for _k in _purged:
+    del skills[_k]
+if _purged:
+    sys.stderr.write(
+        "oc_state_seed: purged %d rollback folder(s) from the gate denominator: %s\n"
+        % (len(_purged), ", ".join(sorted(_purged))))
+
 # A MISSING source dir is deliberately NOT fatal. oc_state_set seeds with
 # $OC_SKILLS_DIR, whose default (/data/.openclaw/skills) does not exist on Mac
 # boxes, and a gate may legitimately run before skills are copied. Failing here
@@ -159,6 +193,7 @@ if os.path.isdir(src):
         if not os.path.isdir(p): continue
         if not re.match(r"^\d", name): continue          # numbered skills only
         if name.endswith("-ARCHIVED"): continue          # skip archived
+        if _is_rollback_dirname(name): continue          # skip rollback copies
         has_core = os.path.isfile(os.path.join(p, "CORE_UPDATES.md"))
         # any qc-*.sh shipped with the skill
         has_qc = any(f.startswith("qc-") and f.endswith(".sh") for f in os.listdir(p))
@@ -233,7 +268,11 @@ PYEOF
 #   a skill as verified that had just failed its gate. A status write that did
 #   not happen is now nonzero and explains itself on stderr.
 oc_state_set() {
-  local skill="$1" status="$2" err="${3:-}"
+  # `st`, never `status`: `status` is a READ-ONLY special variable in zsh, and
+  # the onboarding resume prompt sources this library from the agent's shell,
+  # which is zsh on every Mac box. `local status=` there aborts the function
+  # before it writes anything, so no skill could ever reach qc-passed.
+  local skill="$1" st="$2" err="${3:-}"
   local _rc=0
   # ABSENT is normal on a fresh box -- oc_state_seed owns creation. A seed
   # FAILURE is not: without a state file there is nowhere to record this status,
@@ -241,11 +280,11 @@ oc_state_set() {
   if [ ! -f "$ONBOARDING_STATE_FILE" ]; then
     oc_state_seed "$OC_SKILLS_DIR" || {
       printf 'oc_state_set: cannot seed %s -- refusing to report a %s=%s write that did not happen\n' \
-        "$ONBOARDING_STATE_FILE" "$skill" "$status" >&2
+        "$ONBOARDING_STATE_FILE" "$skill" "$st" >&2
       return 1
     }
   fi
-  SKILL="$skill" STATUS="$status" ERR="$err" STATE_FILE="$ONBOARDING_STATE_FILE" \
+  SKILL="$skill" STATUS="$st" ERR="$err" STATE_FILE="$ONBOARDING_STATE_FILE" \
   NOW="$(oc_state_now)" python3 - <<'PYEOF' || _rc=$?
 import json, os, sys, tempfile
 sf=os.environ["STATE_FILE"]; skill=os.environ["SKILL"]; st=os.environ["STATUS"]
@@ -305,7 +344,7 @@ PYEOF
 
   if [ "$_rc" -ne 0 ]; then
     printf 'oc_state_set: FAILED (rc=%s) -- %s=%s was NOT recorded in %s\n' \
-      "$_rc" "$skill" "$status" "$ONBOARDING_STATE_FILE" >&2
+      "$_rc" "$skill" "$st" "$ONBOARDING_STATE_FILE" >&2
     return 1
   fi
   return 0
@@ -706,7 +745,7 @@ OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improv
 OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
 OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
 
-# Wave 6 — EXTENSIONS & DOMAIN VERTICALS (skills 44-62).
+# Wave 6 — EXTENSIONS & DOMAIN VERTICALS (skills 44-62, plus 69-archify).
 #
 # WHY A SIXTH WAVE, AND WHY IT IS TERMINAL
 # ----------------------------------------
@@ -773,7 +812,25 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # order satisfies every one of those, which is why the watchdog prompt tells the
 # agent to install this wave in ascending order and to read each skill's
 # SKILL.md Prerequisites section first.
-OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box"
+#
+# 69-archify (added v25.1.0) is the wave's first entry above the original 44-62
+# range, so it sorts last and changes no existing entry's position. It is GATED
+# because it satisfies the same test the six exclusions above fail: it reaches
+# qc-passed on an ordinary client box, verified rather than assumed —
+# `node bin/archify.mjs doctor` reports all 15 subsystems ok (exit 0), the
+# runtime has ZERO package dependencies (package.json declares none; bin/ only
+# imports `node:` builtins), so there is no `npm install` step to fail, and its
+# only prerequisite is Node >= 18, which every box already has because OpenClaw
+# itself requires it. That prerequisite is declared machine-readably in
+# 69-archify/PREREQS.json (a `binary` entry) so a box without Node reports a
+# named missing prereq via shared-utils/check-skill-prereqs.sh instead of
+# wedging the wave. The verification path is
+# 69-archify/scripts/onboarding-smoke.sh (doctor + validate + render, exits
+# non-zero on failure). Note that 69-archify's upstream repo-level npm scripts
+# (check:viewer, check:release-identity, build:*) are deliberately NOT usable
+# here and are NOT part of the qc-passed path — they reference the upstream
+# monorepo root ../scripts/, which is not vendored.
+OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify"
 
 # ------------------------------------------------------------
 # oc_wave_state_init
@@ -1000,7 +1057,7 @@ oc_repo_consistency_ok() {
 # ------------------------------------------------------------
 # oc_overall_goal_check
 #   CHEAP overall goal check (reads two state files, no network):
-#   (i) all 5 waves passed in waveGoals, (ii) interviewComplete in
+#   (i) all 6 waves passed in waveGoals, (ii) interviewComplete in
 #   workforce-build-state.json, (iii) workforce built — buildCompletedAt set AND
 #   the WORKSPACE-SHELL gate passes (workspace departments materialized, NOT just
 #   a template on disk), (iv) closeoutStatus=done.

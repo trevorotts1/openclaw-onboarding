@@ -69,7 +69,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Path bootstrap -- same pattern as dispatcher.py, so this module imports
@@ -82,6 +82,14 @@ if str(_OWN_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_OWN_SCRIPTS_DIR))
 
 from presentation_job import heal as _heal  # noqa: E402
+
+# PD-TEST-067: the deck's slide list has ONE reader now. Every slide-count /
+# slide-list consumer in this tree (this module, dispatcher._prompt_slide_count,
+# build_deck._count_output_slides, craft_judgement._arc_slots,
+# phase_verifiers' P3-ARC gate) asks this module, so a producer that emits a
+# recognised shape can never be silently unreadable by one reader and readable
+# by another. Imports json/pathlib/typing only -- no cycle, ever.
+from presentation_job import arc_slides as _arc_slides  # noqa: E402
 
 # FIX 14 (MASTER Part 8): one per-provider governor for every outbound call.
 # Defensive import, same pattern as heal above: a tree that predates the
@@ -891,45 +899,63 @@ def _slides_for_units(run_dir: Path) -> List[Dict[str, Any]]:
     dispatcher._prompt_slide_count trusts (working/copy/slides.json, then
     arc_allocation.json). Ordered by ordinal; entries carry at least
     {"ordinal": int}. Returns [] when neither source is present/readable --
-    the caller reports that honestly rather than inventing slides."""
-    for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
-        p = run_dir / rel
-        if not p.is_file():
-            continue
-        try:
-            obj = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        raw = obj if isinstance(obj, list) else (
-            obj.get("slides") if isinstance(obj, dict) else None)
-        if isinstance(raw, list) and raw:
-            out = []
-            for s in raw:
-                if isinstance(s, dict):
-                    o = s.get("ordinal") if isinstance(s.get("ordinal"), int) else None
-                    if o is None and isinstance(s.get("slide"), int):
-                        o = s["slide"]
-                    if o is None:
-                        o = len(out) + 1  # positional fallback keeps order honest
-                    out.append({"ordinal": int(o), **{k: v for k, v in s.items()
-                                                      if k not in ("ordinal", "slide")}})
-            if out:
-                return sorted(out, key=lambda s: s["ordinal"])
-    arc = run_dir / "working" / "copy" / "arc_allocation.json"
-    if arc.is_file():
-        try:
-            obj = json.loads(arc.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            obj = None
-        slots = None
-        if isinstance(obj, dict):
-            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-        elif isinstance(obj, list):
-            slots = obj
-        if isinstance(slots, list) and slots:
-            return [{"ordinal": i + 1, **(s if isinstance(s, dict) else {"slot": s})}
-                    for i, s in enumerate(slots)]
+    the caller reports that honestly rather than inventing slides.
+
+    PD-TEST-067: the two sources are now read by ``arc_slides``, the ONE
+    module that knows the deck's slide-array shape, instead of by a third
+    private copy of the key list. On run pres-operator-1d269693 this function
+    returned [] for an arc_allocation.json that WAS present and DID carry 8
+    slides (under ``slide_allocations``, the live P3-ARC spelling) while this
+    module looked only for slots/allocation/slides -- the zero-unit refusal
+    then fired, byte-identically, 8 times into DISPATCH_REPEAT_CEILING and
+    quarantined four phases. The [] contract itself is UNCHANGED and still
+    means "no unit is ever invented": a recognised-but-empty array
+    ({"slots": []}) and an unrecognisable artifact both still return [] here,
+    and the caller still refuses loudly. Only the set of artifacts that are
+    READABLE changed.
+    """
+    slots = _arc_slides.load_slots(run_dir)
+    if not slots:
+        return []
+    # `ordinal`/`slide` are dropped and `ordinal` re-added, byte-for-byte the
+    # dict this function returned before PD-TEST-067: the unit item carries the
+    # slot as its payload, and unit_store.input_hash_for_unit hashes that
+    # payload, so a gratuitously different dict here would invalidate every
+    # already-banked unit's input hash and re-pay it on resume.
+    return [{"ordinal": s["ordinal"], **{k: v for k, v in s.items()
+                                         if k not in ("ordinal", "slide")}}
+            for s in slots]
+
+
+def _declared_section_ordinals(entry: Any) -> List[int]:
+    """The slide ordinals ONE section entry declares about ITSELF.
+
+    P3-ARC's own section shape carries the section's slides as a list
+    (``arc_sections[].slides`` on run pres-operator-1d269693), and a single-slide
+    section may instead carry one scalar under the shared ordinal spellings.
+    Returns [] when the entry declares neither -- "this section does not say",
+    which is NEVER the same answer as "this section has no slides"."""
+    if not isinstance(entry, dict):
+        return []
+    values = entry.get("slides")
+    if isinstance(values, list):
+        out = [int(v) for v in values
+               if isinstance(v, int) and not isinstance(v, bool) and v >= 1]
+        if out:
+            return sorted(set(out))
+    for key in _arc_slides.SLIDE_ORDINAL_KEYS:
+        value = entry.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
+            return [int(value)]
     return []
+
+
+def _ordinal_range(ordinals: List[int]) -> Optional[Tuple[int, int]]:
+    """The contiguous (first, last) span of a section's own declared ordinals,
+    or None when it declares none."""
+    if not ordinals:
+        return None
+    return (min(ordinals), max(ordinals))
 
 
 def _sections_for_units(run_dir: Path) -> List[Dict[str, Any]]:
@@ -938,7 +964,20 @@ def _sections_for_units(run_dir: Path) -> List[Dict[str, Any]]:
     Priority: arc_allocation.json's own "sections" array (its declared shape),
     then the arc grouping of its slots, then the top-level headings of the
     existing slides_copy.md, then ONE whole-file unit. Ordered; entries carry
-    {"name": str, "ordinal": int}."""
+    {"name": str, "ordinal": int} plus, whenever the SAME source that named the
+    section also declares its slides, {"first_ordinal": int, "last_ordinal": int}.
+
+    PD-TEST-099 -- WHY THE RANGE RIDES THE ENUMERATION. The unit payload's range
+    used to be derived by a SECOND lookup of the section NAME against the slot
+    labels (dispatcher._section_ordinal_ranges). Two derivations that can
+    disagree is the live defect: whenever they did, the payload carried no range,
+    the section unit failed its own contract validator AFTER being paid for, and
+    P4-COPY burned its whole retry budget on units that could never validate
+    ("section-01: unit payload carries no ordinal range", paid_attempts 3,
+    status exhausted). Naming and ranging now come from the ONE source, so the
+    two halves of the join cannot drift apart again; a source that cannot supply
+    a range supplies none, and the dispatcher refuses the fan-out BEFORE any
+    paid call rather than after it."""
     arc = run_dir / "working" / "copy" / "arc_allocation.json"
     if arc.is_file():
         try:
@@ -948,23 +987,47 @@ def _sections_for_units(run_dir: Path) -> List[Dict[str, Any]]:
         if isinstance(obj, dict):
             secs = obj.get("sections")
             if isinstance(secs, list) and secs:
-                return [{"ordinal": i + 1,
-                         "name": str((s.get("name") if isinstance(s, dict) else s)
-                                     or f"section-{i + 1:02d}")}
-                        for i, s in enumerate(secs)]
-            slots = obj.get("slots") or obj.get("allocation") or obj.get("slides")
-            if isinstance(slots, list) and slots:
-                names: List[str] = []
-                for s in slots:
-                    if not isinstance(s, dict):
-                        continue
-                    arc_name = s.get("arc") or s.get("section") or s.get("name")
-                    if isinstance(arc_name, str) and arc_name.strip() \
-                            and arc_name not in names:
-                        names.append(arc_name)
-                if names:
-                    return [{"ordinal": i + 1, "name": n}
-                            for i, n in enumerate(names)]
+                out: List[Dict[str, Any]] = []
+                for i, s in enumerate(secs):
+                    entry = {"ordinal": i + 1,
+                             "name": str((s.get("name") if isinstance(s, dict) else s)
+                                         or f"section-{i + 1:02d}")}
+                    rng = _ordinal_range(_declared_section_ordinals(s))
+                    if rng:
+                        entry["first_ordinal"], entry["last_ordinal"] = rng
+                    out.append(entry)
+                return out
+            # PD-TEST-067: shared reader (this is the ONLY private key list that
+            # used to remain in this module). Verified behaviour-neutral for
+            # both real shapes -- neither the live slide_allocations artifact
+            # nor the canonical golden-quest slots carry arc/section/name keys,
+            # so both fall through to the slides_copy.md headings below exactly
+            # as before; a shape that DOES carry names is read identically.
+            # PD-TEST-067: the section NAMES are derived by the shared reader,
+            # through the slot's own arc label, so the names produced here and
+            # the names dispatcher._section_ordinal_ranges looks up can never
+            # disagree. They used to hold two private copies of the key list and
+            # both asked for arc/section/name while the live slots carried
+            # arc_section -- so this collapsed the whole deck to the single
+            # "whole" unit below, and every section then lost its ordinal range.
+            names = _arc_slides.section_names_from_obj(obj)
+            if names:
+                # PD-TEST-099: the range comes from these SAME slots -- the very
+                # objects that named the section -- so it is the section's real
+                # span even when no other reader can see the label.
+                per_name: Dict[str, List[int]] = {}
+                for slot in _arc_slides.slots_from_obj(obj) or []:
+                    label = _arc_slides.slot_label(slot)
+                    if label in names:
+                        per_name.setdefault(label, []).append(int(slot["ordinal"]))
+                out = []
+                for i, n in enumerate(names):
+                    entry = {"ordinal": i + 1, "name": n}
+                    rng = _ordinal_range(per_name.get(n, []))
+                    if rng:
+                        entry["first_ordinal"], entry["last_ordinal"] = rng
+                    out.append(entry)
+                return out
     copy_md = run_dir / "working" / "copy" / "slides_copy.md"
     if copy_md.is_file():
         try:
@@ -989,7 +1052,11 @@ def enumerate_fanout_items(run_dir: Path, spec: FanoutSpec, *, phase_id: str,
     Returns a list of item dicts, each carrying its stable `key` (the merge
     order for text aggregation) plus whatever the unit worker needs:
       by=slide    -> {"key": "slide-NN", "ordinal": N}
-      by=section  -> {"key": "section-NN", "ordinal": N, "name": ...}
+      by=section  -> {"key": "section-NN", "ordinal": N, "name": ..., and the
+                      section's own first_ordinal/last_ordinal whenever the
+                      source that named it also declares its slides (PD-TEST-099:
+                      the unit PAYLOAD's range comes from here, so it can never
+                      be lost to a second, disagreeing lookup)}
       by=file     -> {"key": "file-NN", "path": <rel path>}
     """
     if spec.by == "slide":
@@ -998,8 +1065,12 @@ def enumerate_fanout_items(run_dir: Path, spec: FanoutSpec, *, phase_id: str,
                  "slide": s} for s in slides]
     if spec.by == "section":
         secs = _sections_for_units(run_dir)
+        # PD-TEST-099: the section's OWN declared range rides its item, so the
+        # payload builder downstream never has to re-derive it by name.
         return [{"key": f"section-{s['ordinal']:02d}", "ordinal": s["ordinal"],
-                 "name": s["name"]} for s in secs]
+                 "name": s["name"],
+                 **{k: s[k] for k in ("first_ordinal", "last_ordinal") if k in s}}
+                for s in secs]
     # by=file: the spec's own file list wins; else enumerate the phase's
     # produces_artifact patterns (a '*' pattern globs the run dir).
     rels: List[str] = []

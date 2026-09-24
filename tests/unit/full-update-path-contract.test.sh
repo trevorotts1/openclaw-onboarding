@@ -94,12 +94,27 @@ grep -q 'LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"' "$UPDATE_
   && ok "installed legacy Sunday scripts self-heal to the root updater" \
   || bad "weekly cron self-heal missing"
 
+# The roll converges the Mac gateway health watchdog. Its installer and the two
+# scripts it lays down are repo artifacts inside the temp clone, so like the
+# Layer E rescue-tunnel converge it has to sit BEFORE the Cleanup that removes
+# that clone. A box that records a completed roll while carrying no
+# com.openclaw.service-remediate is the exact state that let a stalled upgrade
+# leave a client Mac dark for about two hours. Deliberately fail-soft, so it
+# never withholds the version stamp.
+before "gateway-watchdog converge runs before the temp-clone Cleanup" '# ---- BEGIN gateway-watchdog converge ----' '^  # Cleanup$' "$UPDATE_SH"
+before "gateway-watchdog converge sits alongside the Layer E converge" '# ---- BEGIN gateway-watchdog converge ----' 'install-rescue-tunnel-watchdog.sh' "$UPDATE_SH"
+grep -q 'install-service-remediate.sh' "$UPDATE_SH" \
+  && grep -q '\[GATEWAY-WATCHDOG\] state=' "$UPDATE_SH" \
+  && ok "the roll converges the Mac service self-heal and reports a greppable state" \
+  || bad "the roll never converges install-service-remediate.sh"
+
 for suite in \
   tests/unit/sop-library-update-path-ingest.test.sh \
   tests/unit/update-command-center-runtime-config.test.sh \
   tests/unit/power-resilience-gate.test.sh \
   tests/unit/provisioning-completeness-gate.test.py \
   tests/unit/fleet-refresh-cc-main-convergence.test.py \
+  tests/unit/roll-converges-gateway-watchdog.test.sh \
   tests/unit/update-skills-full-scripts-tree.test.sh; do
   [ -f "$TARGET_ROOT/$suite" ] && ok "stage has a regression suite: $suite" || bad "missing stage suite: $suite"
 done

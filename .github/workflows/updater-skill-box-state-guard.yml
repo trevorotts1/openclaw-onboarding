@@ -1,0 +1,42 @@
+name: updater skill box-state guard
+
+# update-skills.sh replaces every numbered skill wholesale. Box-local state on
+# its allow-list (59-anthology-engine/model-map.json with owner_pins) must
+# survive that replace and be honored by the skill's own re-resolve. Before the
+# fix every update deleted the pins and the re-resolve failed closed on
+# AF-AE-JUDGE-INDEPENDENCE. The suite carries its own known-good control.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "59-anthology-engine/preflight.sh"
+      - "tests/unit/updater-preserves-skill-box-state.test.sh"
+      - ".github/workflows/updater-skill-box-state-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "59-anthology-engine/preflight.sh"
+      - "tests/unit/updater-preserves-skill-box-state.test.sh"
+      - ".github/workflows/updater-skill-box-state-guard.yml"
+
+jobs:
+  box-state:
+    name: "update-skills.sh keeps allow-listed skill box state (owner pins)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: The updater still parses
+        run: bash -n update-skills.sh
+
+      - name: Owner pins survive an update and are honored
+        run: bash tests/unit/updater-preserves-skill-box-state.test.sh

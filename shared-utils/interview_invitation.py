@@ -22,7 +22,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from interview_completion import prompt_status
 
 PROTOCOL = 'interview-launch.v1'
-# CC issues at most 24 hours; allow a small bounded clock skew, not arbitrary TTLs.
+# An interview link is valid until the interview is complete; it does not expire
+# on a clock. A Command Center that implements that contract says so in the
+# receipt, and then there is no deadline to enforce or to quote to the client.
+# Older issuers still in the field really do expire their links, so a receipt
+# without the marker is still held to the bounded TTL it was minted under: at
+# most 24 hours, plus a small bounded clock skew, never an arbitrary TTL.
+INVITATION_VALID_UNTIL_COMPLETE = 'interview-complete'
+# A link is not spent by being used either: it re-opens until the interview is
+# complete, so a client on a second device, with cleared cookies, or returning
+# after their browser session lapsed gets back into the same interview. A
+# Command Center that implements that says so with this marker. Older issuers
+# really do burn the link on first redemption and say so with `oneUse`; both
+# are accepted, because both are honest about the issuer that sent them.
+INVITATION_REDEEMABLE_UNTIL_COMPLETE = 'until-interview-complete'
 MAX_INVITATION_TTL_SECONDS = 24 * 60 * 60
 INVITATION_CLOCK_SKEW_SECONDS = 10
 class Pending(ValueError):
@@ -36,10 +49,17 @@ def public_origin(value):
     host = p.hostname.lower()
     if host == 'localhost' or host.endswith(('.localhost','.local')) or '.' not in host or p.port == 18789:
         raise Pending('public origin cannot be loopback or gateway')
+    # An IP literal is never an interview origin, global or not. A public
+    # address still cannot present a certificate for the tenant hostname the
+    # registry selects configuration by, so accepting one would let an origin
+    # no tenant is registered under carry a client's private sign-in link.
+    # Testing only is_global was the whole check before, which let 8.8.8.8 pass.
     try:
-        if not ipaddress.ip_address(host).is_global: raise Pending('public origin cannot be private')
-    except ValueError as exc:
-        if isinstance(exc, Pending): raise
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise Pending('public origin must be a hostname, not an IP address')
     return 'https://' + p.netloc.lower().rstrip('/'), host
 
 def expected_identity(state, env):
@@ -154,6 +174,51 @@ def resolve_public_origin(state, env, fetch=None):
         raise Pending('standard foundation verification pending')
     return dict(expected,origin=origin,host=host,protocol=PROTOCOL,receipt=receipt)
 
+def redemption_declared(receipt):
+    """Whether the issuer stated a redemption contract this sender understands.
+
+    A current issuer says the link re-opens until the interview is complete. An
+    older one says it is single use. Either is a contract; a receipt that
+    declares neither is from something this sender does not recognise, and it
+    is refused rather than delivered on a guess.
+    """
+    return receipt.get('redeemable') == INVITATION_REDEEMABLE_UNTIL_COMPLETE or receipt.get('oneUse') is True
+
+
+def invitation_expiry(receipt):
+    """The deadline to enforce and to quote, or None when there is not one.
+
+    A receipt marked valid until interview completion carries no deadline: the
+    link stays usable until the interview is finished, so there is nothing here
+    to bound and nothing truthful to promise the client about a date. Every
+    other receipt came from an issuer that really does expire the link, and its
+    stated expiry is still bounded exactly as before, so a short legacy TTL and
+    a full 24-hour one are both accepted and anything unbounded is refused.
+    """
+    if receipt.get('validUntil') == INVITATION_VALID_UNTIL_COMPLETE:
+        return None
+    expiry = receipt.get('expiresAt')
+    if type(expiry) is not int or not time.time() < expiry <= time.time() + MAX_INVITATION_TTL_SECONDS + INVITATION_CLOCK_SKEW_SECONDS:
+        raise Pending('invitation expiry invalid')
+    return expiry
+
+
+def invitation_validity_sentence(expiry, reopenable=False):
+    """What the client is told about how long the private link lasts.
+
+    Only ever states what the issuing Command Center actually does.
+    Promising a client they can reopen a link that their issuer burns on
+    first use would strand them at the moment they trusted the sentence.
+    """
+    if expiry is None:
+        if reopenable:
+            return ('This private sign-in link stays valid until your interview is complete, '
+                    'and you can open it again whenever you like, on any device.')
+        return 'This private sign-in link stays valid until your interview is complete.'
+    from datetime import datetime, timezone
+    return 'This private sign-in link expires on '+datetime.fromtimestamp(expiry,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')+'.'
+
+
 def issue_invitation(resolved, env, target, metadata=None):
     config=curl_auth_config(env)
     body=json.dumps({'recipientHash':hashlib.sha256(target.encode()).hexdigest()})
@@ -166,16 +231,17 @@ def issue_invitation(resolved, env, target, metadata=None):
         if not isinstance(receipt,dict): raise Pending('invalid invitation receipt')
         for key in ['tenantId','companyId','installationId','host']:
             if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
-        if receipt.get('protocol')!='interview-invitation.v1' or receipt.get('oneUse') is not True: raise Pending('invitation protocol mismatch')
-        expiry=receipt.get('expiresAt')
-        if type(expiry) is not int or not time.time()<expiry<=time.time()+MAX_INVITATION_TTL_SECONDS+INVITATION_CLOCK_SKEW_SECONDS: raise Pending('invitation expiry invalid')
+        if receipt.get('protocol')!='interview-invitation.v1' or not redemption_declared(receipt): raise Pending('invitation protocol mismatch')
+        expiry=invitation_expiry(receipt)
         url=receipt.get('url','');parsed=urlsplit(url)
         if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview' or parsed.query or not parsed.fragment.startswith('enroll='):
             raise Pending('invitation URL binding invalid')
         ticket=parsed.fragment[len('enroll='):]
         import re
         if not re.fullmatch(r'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+',ticket): raise Pending('invalid enrollment token format')
-        if metadata is not None: metadata['invitationExpiresAt']=expiry
+        if metadata is not None:
+            metadata['invitationExpiresAt']=expiry
+            metadata['invitationReopenable']=receipt.get('redeemable')==INVITATION_REDEEMABLE_UNTIL_COMPLETE
         return url
     except Pending: raise
     except (OSError,ValueError,subprocess.TimeoutExpired): raise Pending('invitation issuance unverified') from None
@@ -364,11 +430,10 @@ def main():
             if private_entry not in text:
                 raise Pending('private invitation link missing from message')
             url=issue_invitation(resolved,env,args.target,delivery_context)
-            from datetime import datetime, timezone
-            deadline=datetime.fromtimestamp(delivery_context['invitationExpiresAt'],timezone.utc).strftime('%b %d, %Y at %H:%M UTC')
             # Replace only the primary sign-in link: the later authenticated
             # resume bookmark must remain stable and must never carry a ticket.
-            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}','This private sign-in link expires on '+deadline+'.')
+            validity=invitation_validity_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False))
+            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}',validity)
         code,receipt=send_gateway(message,args.target,args.ledger,delivery_context,os.environ.get('FORCE')=='1',prepare_message=enroll)
         print(json.dumps(receipt));return code
     except (Pending,ValueError,OSError) as exc:

@@ -1,0 +1,120 @@
+name: lean-bootstrap guard
+
+# THE DEFECT CLASS THIS CLOSES: a check that exists and cannot fire.
+#
+# tests/unit/bootstrap-pointerize.test.sh shipped with PR #1197 and NO workflow
+# ever ran it, so the ten properties it proves -- markers survive a sweep, a
+# paired sentinel's END is not swallowed, an unwritable reference refuses the
+# stamp -- were free to regress on the next commit. This wires it, together with
+# the compact-core suite that covers the other half of the same contract.
+#
+# The two halves are one contract, which is why they share a workflow:
+#   bootstrap-pointerize.py  writes SCRIPT-OWNED blocks as pointers during a roll
+#   compact-bootstrap.py     moves OWNER-AUTHORED sections behind the SAME pointer
+# compact-bootstrap.py IMPORTS build_pointer from bootstrap-pointerize.py rather
+# than re-implementing it, so a change to the pointer shape in one file must keep
+# both suites green or the box ends up with pointers only half its own tooling
+# can resolve -- and validate-core-references.py's dangling-pointer check would
+# silently skip the half it no longer recognises.
+#
+# ANTI-VACUITY: compact-bootstrap.test.sh runs its --check CONTROL (ok on a
+# healthy tree) BEFORE it asserts either failure mode, so a green run here means
+# the instrument discriminates, not merely that it returned zero.
+#
+# Hermetic: python3 and bash over the checkout, throwaway fixtures under mktemp
+# that the suites delete themselves. No network, no box, no credentials.
+#
+# Security note: consumes only repo file content. No GitHub event fields reach
+# any run: block, so there is no workflow-injection surface here.
+
+on:
+  push:
+    paths:
+      - scripts/compact-bootstrap.py
+      - scripts/bootstrap-pointerize.py
+      - scripts/lib-bootstrap-pointer.sh
+      - scripts/validate-core-references.py
+      - scripts/bootstrap-validate-daily.sh
+      - scripts/bootstrap-compact-weekly.sh
+      - scripts/ensure-pipeline-crons.sh
+      - config/bootstrap-compact.conf.example
+      - config/bootstrap-pointer.conf.example
+      - docs/COMPACT-CORE-SOP.md
+      - install.sh
+      - tests/unit/compact-bootstrap.test.sh
+      - tests/unit/bootstrap-pointerize.test.sh
+      - .github/workflows/lean-bootstrap-guard.yml
+  pull_request:
+    paths:
+      - scripts/compact-bootstrap.py
+      - scripts/bootstrap-pointerize.py
+      - scripts/lib-bootstrap-pointer.sh
+      - scripts/validate-core-references.py
+      - scripts/bootstrap-validate-daily.sh
+      - scripts/bootstrap-compact-weekly.sh
+      - scripts/ensure-pipeline-crons.sh
+      - config/bootstrap-compact.conf.example
+      - config/bootstrap-pointer.conf.example
+      - docs/COMPACT-CORE-SOP.md
+      - install.sh
+      - tests/unit/compact-bootstrap.test.sh
+      - tests/unit/bootstrap-pointerize.test.sh
+      - .github/workflows/lean-bootstrap-guard.yml
+  workflow_dispatch:
+
+jobs:
+  lean-bootstrap:
+    name: compact core + pointer stamping contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: compact-bootstrap contract tests
+        run: |
+          chmod +x tests/unit/compact-bootstrap.test.sh
+          bash tests/unit/compact-bootstrap.test.sh
+
+      - name: bootstrap-pointerize contract tests
+        run: |
+          chmod +x tests/unit/bootstrap-pointerize.test.sh
+          bash tests/unit/bootstrap-pointerize.test.sh
+
+      - name: Scheduled jobs are COMMAND kind and name no model
+        # Both crons must stay zero-token. An agent-kind maintenance cron burns
+        # client tokens every week and the repo's own reconcile pass flips such a
+        # cron back to command kind, so registering one here would be a change
+        # that fights itself. A hardcoded model name is the other half of the
+        # same defect: the box's configured default is the only model that may
+        # ever run on a box.
+        run: |
+          set -euo pipefail
+          for f in scripts/bootstrap-compact-weekly.sh scripts/bootstrap-validate-daily.sh; do
+            if grep -nE '(agnes|claude-|gpt-|gemini-[0-9]|deepseek|kimi|glm-)' "$f"; then
+              echo "FAIL: $f names a model. It must read the box default from config." >&2
+              exit 1
+            fi
+          done
+          # The registrations must go through _ensure_health_cron, which always
+          # builds a command-kind cron.
+          grep -q '_ensure_health_cron "bootstrap-validate-daily"' scripts/ensure-pipeline-crons.sh
+          grep -q '_ensure_health_cron "bootstrap-compact-weekly"' scripts/ensure-pipeline-crons.sh
+          # And the weekly one must carry its timezone, or it can land BEFORE the
+          # 03:00 America/New_York skill update it is supposed to follow.
+          grep -q '"bootstrap-compact-weekly" "30 4 \* \* 0"  "bootstrap-compact-weekly.sh" "America/New_York"' \
+            scripts/ensure-pipeline-crons.sh
+          echo "OK: both crons are command-kind, model-free, and the weekly job is zone-pinned."
+
+      - name: The weekly switch defaults to report
+        # A weekly job that writes by default is a surprise edit on 37 boxes.
+        run: |
+          set -euo pipefail
+          test -f config/bootstrap-compact.conf.example
+          grep -q '^report$' config/bootstrap-compact.conf.example
+          grep -q 'MODE="report"' scripts/bootstrap-compact-weekly.sh
+          echo "OK: the shipped default is report (writes nothing)."

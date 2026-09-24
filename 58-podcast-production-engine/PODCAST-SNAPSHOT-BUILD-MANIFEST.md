@@ -76,11 +76,18 @@ All SPEC-DEFINED portability placeholders (the engine reads NONE directly; the t
 | 1 | `podcast_show_name` | `SET_AT_PROVISIONING` | Provisioner (payload `show_name`, required in Interview mode) |
 | 2 | `podcast_host_name` | `SET_AT_PROVISIONING` | Provisioner (payload `host_name`, required in Interview mode) |
 | 3 | `podbean_podcast_id` | `SET_AT_PROVISIONING` | Provisioner (payload `podcast_id`, required always) |
-| 4 | `podcast_intake_webhook_url` | `https://SET-AT-PROVISIONING/hooks/podcast-intake` | Provisioner (Cloudflare Tunnel host of the client box; never Tailscale) |
-| 5 | `podcast_intake_hook_secret` | `SET_AT_PROVISIONING` | Provisioner (`PODCAST_INTAKE_HOOK_SECRET`) |
+| 4 | `podcast_intake_webhook_url` | `https://SET-AT-PROVISIONING/hooks/podcast-intake-<client-slug>` | Provisioner (Cloudflare Tunnel host of the client box; never Tailscale). The `-<client-slug>` suffix is REQUIRED: it is the gateway hook mapping's `match.path`. |
+| 5 | `podcast_intake_hook_secret` | `SET_AT_PROVISIONING` | Provisioner (`PODCAST_INTAKE_HOOK_SECRET`), sent as the `Authorization: Bearer` HEADER |
 | 6 | `podcast_snapshot_version` | `v2.0.0` | Build stamps LAST (idempotency marker) |
 
 **DECISION on custom value #5 (secret transport):** DEFAULT = keep the custom-value form; both intake workflows reference `{{custom_values.podcast_intake_hook_secret}}`. WHY: it keeps the snapshot fully portable (per-client = fill 5 values, edit 0 workflows). CAVEAT (recorded): a custom value is visible to any user in the subaccount UI; the template ships only the placeholder, and per client the operator MAY instead blank this custom value and paste the secret directly into the two intake workflows' webhook headers. Operator-overridable per client; not a build blocker.
+
+**DECISION on the transport itself (the ISSUE-02 contract fix). The endpoint is the GATEWAY HOOKS INGRESS, and the secret is a HEADER, not a payload field.**
+
+- The URL is `https://<client-hooks-host>/hooks/podcast-intake-<client-slug>`. The `/plugins/webhooks/podcast-intake-<client-slug>` route is a DIFFERENT surface: it is the durable TaskFlow control surface driven from inside the podcast agent's own turn, and it accepts ONLY a `{"action":"create_flow", ...}` envelope. A flat `customData` body posted there returns HTTP 400 `action: Invalid discriminator value. Expected 'create_flow'`. That mismatch is why intakes built from this snapshot could never start an episode.
+- The secret travels as `Authorization: Bearer {{custom_values.podcast_intake_hook_secret}}`. The gateway hooks ingress reads the token from the `Authorization: Bearer` header or the `x-openclaw-token` header and from nowhere else: it never reads a token out of the JSON body or the query string. So the "else payload field" fallback in WF-1 and WF-2 below does NOT work for this endpoint. If a Convert and Flow webhook action cannot set a header for a given client, that client's intake must be sent by a sender that can (Make.com or n8n), and the fallback must be recorded in the setup notes.
+- ONE SECRET, TWO SURFACES. `register-podcast-hook.sh` points the box's `hooks.token` at the same env label the plugin route's SecretRef names, `${PODCAST_INTAKE_HOOK_SECRET}`, so the value in custom value #5 is the value of `PODCAST_INTAKE_HOOK_SECRET` and rotating one env value rotates both surfaces. On a box whose `hooks.token` was ALREADY set by another integration, the registrar does NOT overwrite it and the provisioner fills custom value #5 with that existing box token instead; the registrar's output says which case applies.
+- Recorded trade-off: the gateway hooks token is box-wide, so a sender holding it can reach every hook endpoint on that box. It is bounded by `hooks.allowedAgentIds` and `hooks.allowedSessionKeyPrefixes`, which the registrar keeps as tight as the box's other integrations allow. The per-route SecretRef on the plugin surface stays per-client and unshared.
 
 ---
 
@@ -114,7 +121,7 @@ Names of 04 and 06 are EXACT and engine-asserted (`enroll.py` resolves by these 
   - `first_name`, `last_name`, `email`, `phone`: standard contact merge fields
   - `show_name`: `{{custom_values.podcast_show_name}}`; `host_name`: `{{custom_values.podcast_host_name}}`; `podcast_id`: `{{custom_values.podbean_podcast_id}}`
   - `contact_id`, `location_id`: GHL standard merge fields
-  - `secret`: `{{custom_values.podcast_intake_hook_secret}}` (header if supported, else payload field)
+  - **Header (REQUIRED, not optional):** `Authorization: Bearer {{custom_values.podcast_intake_hook_secret}}`. The gateway hooks ingress reads the token from the `Authorization: Bearer` header or `x-openclaw-token` and from nowhere else, so there is NO payload-field fallback for this endpoint (see the transport decision in Section B).
 - **Required-to-start (payload law):** mode, style, contact_id, location_id, podcast_id, first_name, show_name, host_name.
 
 ### WF-2: `02-Podcast Intake Submitted (Personal)`

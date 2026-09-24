@@ -36,6 +36,12 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from departments_payload import (  # noqa: E402  (same-dir shared helper)
+    MalformedDepartmentsError,
+    normalize_departments,
+)
+
 # The exact token run_box's verdict test keys on — see _scrub_gating_token().
 _GATING_TOKEN_RE = re.compile("failed", re.IGNORECASE)
 
@@ -1695,7 +1701,20 @@ def step_provisioning_completeness(
     # departments workspace on disk), not the length of this JSON array. So
     # DEPARTMENTS gates only on the file being a well-formed list; an empty array
     # is a valid fresh-box state, never a failure.
+    # departments.json legitimately ships as a bare LIST *or* as an object
+    # wrapping that list under "departments" (retire-confirmed-decline.sh's
+    # {removedWithProvenance, departments}; a build envelope adding company /
+    # total_departments / total_roles). Unwrap through the ONE shared normalizer
+    # so the object shape is not scored "missing/not-a-list" on a valid artifact.
+    # A MISSING file still yields None, and a malformed object still yields a
+    # non-list — both keep failing this gate exactly as before.
     depts = _prov_read_json(pp.get("departments_json"))
+    if isinstance(depts, dict):
+        try:
+            depts = normalize_departments(depts, path=pp.get("departments_json"))
+        except MalformedDepartmentsError as _dept_exc:
+            print(f"  [departments.json] MALFORMED: {_dept_exc}", file=sys.stderr)
+            depts = None  # stays non-list -> this gate fails it, exactly as before
     if not isinstance(depts, list):
         checks.append(("DEPARTMENTS", False,
                        f"departments.json missing/not-a-list ({pp.get('departments_json')})"))

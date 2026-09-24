@@ -173,14 +173,15 @@ else
         lineno="${codeln%%:*}"
         code="${codeln#*:}"
         [ -z "$code" ] && continue
-        if printf '%s' "$code" | grep -Fq "$forbidden"; then
+        if grep -Fq "$forbidden" <<<"$code"; then
           # Allow the string in a pure assignment to a constant that is itself
           # the forbidden-string SENTINEL (e.g. STORAGE_MARKER_IS_NOT_VERIFICATION
           # = "marker in storage"). Such a line contains the string as a value,
           # not as a pass criterion. Detect this by checking if the line is a
           # simple constant assignment with no conditional/return around it.
-          if printf '%s' "$code" | grep -Eiq \
-             '^\s*(STORAGE_MARKER_IS_NOT_VERIFICATION|_FORBIDDEN_|NOT_A_GATE|BANNED_STRING)\s*='; then
+          if grep -Eiq \
+             '^\s*(STORAGE_MARKER_IS_NOT_VERIFICATION|_FORBIDDEN_|NOT_A_GATE|BANNED_STRING)\s*=' \
+             <<<"$code"; then
             continue  # This is a sentinel constant — intentional, not a violation.
           fi
           fail "Forbidden string '$forbidden' found in $fname:$lineno (code context, not comment)"
@@ -279,8 +280,8 @@ if [ -f "$VERIFY_PY" ]; then
     # computation (i.e., not via 'and'/'or'/comparison). A safe assignment
     # looks like: "overall = total > 0 and failed == 0" or any expression.
     # An unsafe assignment looks like: "overall_pass = True" (bare literal).
-    if printf '%s' "$code" | grep -Eq 'overall_pass\s*=\s*True\b' && \
-       ! printf '%s' "$code" | grep -Eq '(and|or|>|<|==|!=|not\b)'; then
+    if grep -Eq 'overall_pass\s*=\s*True\b' <<<"$code" && \
+       ! grep -Eq '(and|or|>|<|==|!=|not\b)' <<<"$code"; then
       fail "ghl_verify.py:$lineno assigns overall_pass = True (bare literal) — this is the hand-written override pattern"
       override_hits=$((override_hits + 1))
     fi

@@ -60,16 +60,70 @@ MOVEMENT RECEIPT: every advance attempt + its HTTP status/body is appended to
 
 from __future__ import annotations
 
+import errno
+import fcntl
 import hashlib
 import hmac
 import json
 import os
+import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Optional
+
+# ---------------------------------------------------------------------------
+# RR-024 receipt hardening (COMPATIBILITY-ONLY drill bridge).
+# ---------------------------------------------------------------------------
+# Base defects fixed here (SPEC RR-024, source _record_movement):
+#   traversal ticket_id escaped cc-board/; one shared "<ticket>.json.tmp" temp
+#   per ticket collided across writers; read-modify-write lost concurrent
+#   events; "successful_advances" counted kind="activity" notes as state
+#   advances; raw response bodies persisted unredacted; write failure only
+#   logged. The canonical receipt record is the append-only operation/event
+#   store (FLEET ledger rr_ticket_events keyed by tenant+operation; executor
+#   rr_fix_receipt/rr_fix_events); this file keeps the drill export only.
+RECEIPT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+RECEIPT_ID_MAX = 128
+RECEIPT_DETAIL_MAX = 300
+# A record is a STATE TRANSITION only when kind is one of these AND it names
+# the observed resulting state; kind "activity" is an event with zero
+# transition delta (activity is never a state transition).
+RECEIPT_TRANSITION_KINDS = frozenset({"transition", "ingest", "status"})
+_CREDENTIAL_SHAPE_RES = (
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(r"sk-[A-Za-z0-9_-]{16,}"),
+    re.compile(r"ghp_[A-Za-z0-9]{20,}"),
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}"),
+    re.compile(r"[A-Za-z0-9_-]{40,}"),
+)
+
+
+def validate_receipt_id(ticket_id) -> bool:
+    """Bounded opaque ID check. False for traversal/absolute/oversized input."""
+    if not isinstance(ticket_id, str):
+        return False
+    if not ticket_id or len(ticket_id) > RECEIPT_ID_MAX:
+        return False
+    return RECEIPT_ID_RE.match(ticket_id) is not None
+
+
+def _receipt_identity(ticket_id: str) -> str:
+    """Stable filename stem: the valid ID itself, else sha256(ticket_id)."""
+    if validate_receipt_id(ticket_id):
+        return ticket_id
+    return "id_" + hashlib.sha256(ticket_id.encode("utf-8")).hexdigest()
+
+
+def _scrub_detail(detail) -> str:
+    text = re.sub(r"\s+", " ", str(detail or "")).strip()
+    for rx in _CREDENTIAL_SHAPE_RES:
+        text = rx.sub("[redacted-credential-shape]", text)
+    return text[:RECEIPT_DETAIL_MAX]
 
 _DEFAULT_TIMEOUT = 8
 _DEPARTMENT_SLUG = "rescue-rangers"
@@ -200,45 +254,235 @@ def _now() -> str:
         return ""
 
 
-def _record_movement(state_dir, ticket_id: str, entry: dict) -> None:
-    """Append one advance-attempt receipt for a ticket. Never raises; no-op when
-    state_dir is None."""
+def _receipt_path(state_dir, ticket_id: str) -> Optional[Path]:
+    """Resolve the receipt file with containment enforced. Valid bounded
+    opaque IDs map to <id>.json; anything else (traversal, absolute,
+    oversized, bad characters) maps to the sha256 identity hash. The
+    resolved path is always contained under cc-board/; None refuses
+    empty/oversized input outright."""
+    d = _receipts_dir(state_dir)
+    if d is None:
+        return None
+    if not isinstance(ticket_id, str) or not ticket_id or len(ticket_id) > 1024:
+        return None
+    root = Path(os.path.realpath(d) if d.exists() else os.path.abspath(d))
+    candidate = (root / (_receipt_identity(ticket_id) + ".json"))
+    resolved = Path(os.path.realpath(candidate) if candidate.exists()
+                    else os.path.abspath(candidate))
+    if resolved != root and root not in resolved.parents:
+        return None
+    return resolved
+
+
+def _persist_outstanding(state_dir, ticket_id: str, entry: dict,
+                         write_error: str) -> None:
+    """A disk failure becomes an outstanding OWNED intent (owner + due),
+    never a bare log line. Retention is bounded only after reconciliation
+    (see reconcile_outstanding)."""
     d = _receipts_dir(state_dir)
     if d is None:
         return
-    p = d / f"{ticket_id}.json"
     try:
-        d.mkdir(parents=True, exist_ok=True)
-        data: dict = {}
-        if p.exists():
+        out_dir = d / "outstanding"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(out_dir, 0o700)
+        except OSError:
+            pass
+        now = time.time()
+        op_id = str(entry.get("operation_id") or "")
+        intent = {
+            "schema_version": 1,
+            "intent_id": "out_" + hashlib.sha256(
+                f"{_receipt_identity(ticket_id)}|{op_id}|{entry.get('kind')}".encode()
+            ).hexdigest()[:32],
+            "ticket_id": ticket_id,
+            "identity": _receipt_identity(ticket_id),
+            "operation_id": entry.get("operation_id"),
+            "kind": entry.get("kind"),
+            "observed": entry.get("observed"),
+            "detail": _scrub_detail(entry.get("detail")),
+            "owner": "rescue-rangers",
+            "next_action_at": time.strftime(
+                "%Y-%m-%dT%H:%M:%S%z", time.localtime(now + 3600)),
+            "write_error": _scrub_detail(write_error),
+            "reconciled": False,
+            "ts": _now(),
+        }
+        fd, tmp_name = tempfile.mkstemp(prefix=".out-", suffix=".tmp",
+                                        dir=str(out_dir))
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(intent, fh, indent=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.chmod(tmp_name, 0o600)
+            os.replace(tmp_name, str(out_dir / (intent["intent_id"] + ".json")))
             try:
-                loaded = json.loads(p.read_text())
-                if isinstance(loaded, dict):
-                    data = loaded
-            except (json.JSONDecodeError, OSError):
-                data = {}
-        movements = data.get("movements")
-        if not isinstance(movements, list):
-            movements = []
-        record = {"ts": _now()}
-        record.update(entry)
-        movements.append(record)
-        data["movements"] = movements
-        data["successful_advances"] = sum(
-            1 for m in movements if isinstance(m, dict) and m.get("ok"))
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, indent=2))
-        os.replace(tmp, p)
+                dfd = os.open(str(out_dir), os.O_RDONLY)
+                try:
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
+            except OSError:
+                pass
+        finally:
+            try:
+                if os.path.exists(tmp_name):
+                    os.unlink(tmp_name)
+            except OSError:
+                pass
     except OSError as exc:
-        _log(f"movement receipt write failed ({exc}).")
+        _log(f"outstanding intent persist failed ({exc}).")
 
 
-def count_successful_advances(state_dir, ticket_id: str) -> int:
-    d = _receipts_dir(state_dir)
-    if d is None:
-        return 0
-    p = d / f"{ticket_id}.json"
-    if not p.exists():
+def _stable_op_id(ticket_id: str, record: dict) -> str:
+    """Idempotency key for one movement attempt. An explicit
+    ``operation_id`` wins (retries replay it); otherwise derive a stable
+    key from the attempt itself so a retried call dedupes instead of
+    doubling the event log."""
+    explicit = record.get("operation_id")
+    if explicit:
+        return str(explicit)
+    core = json.dumps(
+        {k: record.get(k) for k in (
+            "kind", "endpoint", "target", "http_status", "task_id",
+            "observed", "detail", "ok")},
+        sort_keys=True, default=str)
+    return "op_" + hashlib.sha256(
+        f"{ticket_id}|{core}".encode("utf-8")).hexdigest()[:32]
+
+def _acquire_lock(lock_path: Path, timeout_s: float = 15.0) -> Optional[int]:
+    """Create the lock file with O_EXCL. Returns the fd or None on timeout."""
+    deadline = time.time() + timeout_s
+    while True:
+        try:
+            return os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except OSError as exc:
+            if exc.errno not in (errno.EEXIST, errno.EACCES):
+                raise
+            if time.time() > deadline:
+                return None
+            time.sleep(0.025)
+
+def _record_movement(state_dir, ticket_id: str, entry: dict) -> None:
+    """Append one advance-attempt receipt for a ticket. Never raises; no-op when
+    state_dir is None. RR-024: containment enforced, unique temp + fsync,
+    process-safe (dedicated lock file + O_EXCL) serialization, op-ID dedupe,
+    redacted detail, observed-state transition split, owned intent on disk
+    error."""
+    p = _receipt_path(state_dir, ticket_id)
+    if p is None:
+        _log("movement receipt refused — invalid ticket identity.")
+        return
+    if not isinstance(entry, dict):
+        entry = {"detail": entry}
+    record = {"ts": _now()}
+    record.update(entry)
+    # Operation-ID dedupe: a retry replays the recorded receipt (no 2nd event).
+    # Transition split: only transition kinds carrying the OBSERVED resulting
+    # state advance the counter; activity never does.
+    record["operation_id"] = _stable_op_id(ticket_id, record)
+    op_id = record["operation_id"]
+    detail = _scrub_detail(record.get("detail"))
+    try:
+        d = p.parent
+        d.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(d, 0o700)
+        except OSError:
+            pass
+        lock_path = d / (p.stem + ".lock")
+        lock_fd = _acquire_lock(lock_path)
+        if lock_fd is None:
+            raise OSError(errno.ETIMEDOUT, "receipt lock timeout")
+        try:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except OSError:
+                pass  # O_EXCL creation is the mutual exclusion; flock is belt-and-braces
+            data: dict = {}
+            if p.exists():
+                try:
+                    loaded = json.loads(p.read_text())
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except (json.JSONDecodeError, OSError):
+                    data = {}
+            movements = data.get("movements")
+            if not isinstance(movements, list):
+                movements = []
+            deduped = any(isinstance(m, dict) and m.get("operation_id") == op_id
+                          for m in movements)
+            if not deduped:  # idempotent replay: recorded receipt, zero delta
+                stored = dict(record)
+                stored["detail"] = detail
+                movements.append(stored)
+            data["movements"] = movements
+            data["transitions"] = sum(
+                1 for m in movements
+                if isinstance(m, dict) and m.get("kind") in RECEIPT_TRANSITION_KINDS
+                and isinstance(m.get("observed"), dict) and m["observed"].get("to"))
+            # Legacy key kept for readers: now equals the transition count
+            # (activity no longer inflates it).
+            data["successful_advances"] = data["transitions"]
+            wfd, tmp_name = tempfile.mkstemp(prefix="." + p.stem + ".",
+                                             suffix=".tmp", dir=str(d))
+            try:
+                with os.fdopen(wfd, "w") as out_fh:
+                    json.dump(data, out_fh, indent=2)
+                    out_fh.flush()
+                    os.fsync(out_fh.fileno())
+                os.chmod(tmp_name, 0o600)
+                os.replace(tmp_name, p)
+                try:
+                    dfd = os.open(str(d), os.O_RDONLY)
+                    try:
+                        os.fsync(dfd)
+                    finally:
+                        os.close(dfd)
+                except OSError:
+                    pass
+            finally:
+                try:
+                    if os.path.exists(tmp_name):
+                        os.unlink(tmp_name)
+                except OSError:
+                    pass
+        finally:
+            try:
+                os.close(lock_fd)
+            except OSError:
+                pass
+            try:
+                os.unlink(lock_path)
+            except OSError:
+                pass
+    except OSError as exc:
+        _persist_outstanding(state_dir, ticket_id, record,
+                             f"{type(exc).__name__}: {exc}")
+
+
+def _count_transitions(movements) -> int:
+    """Transitions only: transition kinds carrying OBSERVED resulting state.
+    Activity (kind activity, or transition kinds without observed.to) never
+    counts — activity is not a state transition."""
+    total = 0
+    for m in movements or []:
+        if not isinstance(m, dict):
+            continue
+        if m.get("kind") not in RECEIPT_TRANSITION_KINDS:
+            continue
+        observed = m.get("observed")
+        if isinstance(observed, dict) and observed.get("to"):
+            total += 1
+    return total
+
+
+def count_transitions(state_dir, ticket_id: str) -> int:
+    """RR-024 transition count (observed-state advances only)."""
+    p = _receipt_path(state_dir, ticket_id)
+    if p is None or not p.exists():
         return 0
     try:
         data = json.loads(p.read_text())
@@ -246,13 +490,90 @@ def count_successful_advances(state_dir, ticket_id: str) -> int:
         return 0
     if not isinstance(data, dict):
         return 0
-    got = data.get("successful_advances")
+    got = data.get("transitions")
     if isinstance(got, int):
         return got
     movements = data.get("movements")
     if isinstance(movements, list):
-        return sum(1 for m in movements if isinstance(m, dict) and m.get("ok"))
+        return _count_transitions(movements)
     return 0
+
+
+def count_successful_advances(state_dir, ticket_id: str) -> int:
+    """Legacy alias: now equals the transition count (activity excluded)."""
+    return count_transitions(state_dir, ticket_id)
+
+
+def list_outstanding(state_dir) -> list:
+    """Outstanding owned intents from disk failures (unreconciled evidence)."""
+    d = _receipts_dir(state_dir)
+    if d is None:
+        return []
+    out_dir = d / "outstanding"
+    intents = []
+    try:
+        files = sorted(out_dir.glob("*.json"))
+    except OSError:
+        return []
+    for f in files:
+        try:
+            intents.append(json.loads(f.read_text()))
+        except (json.JSONDecodeError, OSError):
+            continue
+    return intents
+
+
+def reconcile_outstanding(state_dir, intent_id: str) -> bool:
+    """Mark one outstanding intent reconciled after replay into the canonical
+    store. Retention purges reconciled intents only (see
+    purge_reconciled_outstanding)."""
+    d = _receipts_dir(state_dir)
+    if d is None:
+        return False
+    if not validate_receipt_id(intent_id):
+        return False
+    p = d / "outstanding" / (intent_id + ".json")
+    try:
+        data = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    data["reconciled"] = True
+    data["reconciled_at"] = _now()
+    try:
+        p.write_text(json.dumps(data, indent=2))
+        return True
+    except OSError as exc:
+        _log(f"outstanding reconcile failed ({exc}).")
+        return False
+
+
+def purge_reconciled_outstanding(state_dir, older_than_seconds: int = 604800) -> dict:
+    """Bound retention: remove ONLY reconciled intents older than the bound.
+    Unreconciled evidence is never purged (returned in refused)."""
+    d = _receipts_dir(state_dir)
+    if d is None:
+        return {"ok": True, "purged": [], "refused": []}
+    import datetime as _dt
+    cutoff = time.time() - max(0, int(older_than_seconds))
+    purged, refused = [], []
+    for intent in list_outstanding(state_dir):
+        iid = intent.get("intent_id", "")
+        ts = intent.get("ts", "")
+        try:
+            age = _dt.datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").timestamp()
+        except (ValueError, TypeError):
+            age = time.time()
+        if intent.get("reconciled") is True and age < cutoff:
+            try:
+                (d / "outstanding" / (iid + ".json")).unlink()
+                purged.append(iid)
+            except OSError:
+                refused.append(iid)
+        else:
+            refused.append(iid)
+    return {"ok": True, "purged": purged, "refused": refused}
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +615,9 @@ def ingest_ticket(ticket_id: str, client: str, problem: str, *,
              f"task_id={task_id} ticket_id={ticket_id}")
         _record_movement(state_dir, ticket_id, {
             "kind": "ingest", "endpoint": "POST /api/tasks/ingest",
-            "http_status": status, "ok": True, "task_id": task_id, "deduped": deduped})
+            "http_status": status, "ok": True, "task_id": task_id, "deduped": deduped,
+            "observed": {"from": None, "to": "backlog"},
+            "operation_id": f"ingest|{ticket_id}|{task_id}"})
         if ledger is not None:
             try:
                 ledger.stamp_cc_task(ticket_id, task_id)
@@ -305,7 +628,7 @@ def ingest_ticket(ticket_id: str, client: str, problem: str, *,
     _log(f"ingest POST non-OK (HTTP {status}): {body}; ticket handled ungrouped.")
     _record_movement(state_dir, ticket_id, {
         "kind": "ingest", "endpoint": "POST /api/tasks/ingest",
-        "http_status": status, "ok": False, "detail": str(body)[:300]})
+        "http_status": status, "ok": False, "detail": _scrub_detail(body)})
     return None
 
 
@@ -353,7 +676,9 @@ def patch_status(task_id: str, status: str, *, ticket_id: str = "", note: str = 
     ok = st == 200
     _record_movement(state_dir, ticket_id or task_id, {
         "kind": "status", "target": status, "endpoint": endpoint,
-        "http_status": st, "ok": ok, "detail": "OK" if ok else str(body)[:300]})
+        "http_status": st, "ok": ok, "detail": "OK" if ok else _scrub_detail(body),
+        **({"observed": {"from": None, "to": status},
+            "operation_id": f"status|{ticket_id or task_id}|{status}|{st}"} if ok else {})})
     if ok:
         _log(f"patch_status ->{status} OK (task_id={task_id}).")
     else:
@@ -404,7 +729,7 @@ def post_activity(task_id: str, message: str, *, ticket_id: str = "",
     ok = st in (200, 201)
     _record_movement(state_dir, ticket_id or task_id, {
         "kind": "activity", "target": activity_type, "endpoint": endpoint,
-        "http_status": st, "ok": ok, "detail": "OK" if ok else str(body)[:300]})
+        "http_status": st, "ok": ok, "detail": "OK" if ok else _scrub_detail(body)})
     return ok
 
 

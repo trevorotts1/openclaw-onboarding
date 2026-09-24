@@ -15,9 +15,8 @@ re-authoring could clear them (the gate was right; the interview was
 incomplete).
 
 This file proves, mechanically, in order:
-  1. the question bank now carries both questions, unconditional (no
-     ask_if -- the pitch checks run regardless of QUICK/IN-DEPTH), required,
-     block_gate.
+  1. the question bank carries both questions for the explicit commercial
+     branch (not QUICK/IN-DEPTH), required, block_gate.
   2. running the REAL, unmodified deck-intake-driver.py end-to-end (the
      sanctioned chat intake path) against those two question ids produces a
      working/copy/intake.json whose TRUE ROOT carries `named_methodology` /
@@ -110,7 +109,7 @@ ARC_COPY_WITH_METHOD_AND_EXPECTATION = (
 # 1. the bank itself
 # ---------------------------------------------------------------------------
 class TestBankHasAntiFabricationQuestions:
-    def test_named_methodology_question_present_and_unconditional(self):
+    def test_named_methodology_question_is_required_for_explicit_pitch(self):
         bank = _load_bank()
         q = _question(bank, "named_methodology")
         assert q.get("storeOn") == "NAMED_METHODOLOGY"
@@ -121,16 +120,16 @@ class TestBankHasAntiFabricationQuestions:
             "runs regardless of QUICK/IN-DEPTH (standard_mode), so gating "
             "this question behind IN-DEPTH would leave QUICK-mode decks "
             "auto-failing exactly as before this fix.")
-        assert "conditional_on" not in q
+        assert q.get("conditional_on") == {"id": "pitch_included", "equals": True}
 
-    def test_time_to_result_question_present_and_unconditional(self):
+    def test_time_to_result_question_is_required_for_explicit_pitch(self):
         bank = _load_bank()
         q = _question(bank, "time_to_result")
         assert q.get("storeOn") == "TIME_TO_RESULT"
         assert q.get("required") is True
         assert q.get("block_gate") is True
         assert "ask_if" not in q
-        assert "conditional_on" not in q
+        assert q.get("conditional_on") == {"id": "pitch_included", "equals": True}
 
     def test_storeTarget_entries_present(self):
         bank = _load_bank()

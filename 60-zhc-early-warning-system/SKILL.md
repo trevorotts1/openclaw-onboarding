@@ -1,7 +1,7 @@
 ---
 name: zhc-early-warning-system
 description: The fleet Early Warning System, a deterministic, zero-model-call sentinel that runs on every OpenClaw box and tells the OPERATOR (never the client) the moment something breaks or drifts. It pins a per-box baseline, tails the native config-audit event stream, and detects ten failure classes the fleet has actually suffered - a silent model or paid-provider downgrade, a runtime fallback the config never shows, a subtractive compaction misconfig that will crash the box, a safety-cap raised without sign-off, heartbeat/idle furnace token-burn in BOTH subscription and metered billing, a root-owned config write that freezes the gateway, a dark dashboard or tunnel, a secret shape leaked into a transcript, a stale skills downgrade, and a client-spamming announce cron. Every config write is snapshotted with a one-line revert command placed in the operator's hand; it never auto-changes a client box by default (alert-only fleet-wide). One skill directory holds BOTH the per-box sentinel and the companion that can audit, install, verify, and troubleshoot the sentinel on any box, plus the operator-box aggregator with a dead-man switch for boxes too broken to self-report. Zero model calls, one cron, CPU-cheap, operator-verbose and client-silent by construction. Trigger with "audit the early warning system", "why did the model switch", "install the sentinel", "did a safety cap get raised", "check for idle token burn", "verify the early warning system", "run the fleet digest", or "revert the last config change".
-version: v1.1.1
+version: v1.2.2
 ---
 
 # ZHC Early Warning System (Skill 60)
@@ -118,11 +118,13 @@ id, revert command text), `baseline_stamps` (S4 approval records), `digests`
 | No secret value ever printed | `scan-no-secrets.sh` class detector reused everywhere; alerts carry class only |
 | Config as the box user, never root | root-refusal in every config-touching path; `docker exec -u node` on VPS |
 | One cron, zero model calls | `guard-cron-inventory.py` pattern; `thresholds.json` owns the 15-minute cadence |
+| A detection can never switch the sentinel off | the cron is registered as `ews-entry.sh cron-tick`, which maps the sentinel's exit 10 (findings present) to 0. The scheduler counts any non-zero exit as a failed run and auto-disables a job after 10 consecutive ones, so a bare `tick` registration made a box with a standing finding silence its own guard. Every other non-zero exit still passes through, and every install re-enables a tick the scheduler had already switched off |
 | Weekly cadence, pinned | `ews_cadence.py` (recommends only; default never self-changes, D8) |
 
 ## Entry and verify
 
-    bash 60-zhc-early-warning-system/ews-entry.sh tick            # one sentinel tick
+    bash 60-zhc-early-warning-system/ews-entry.sh tick            # one sentinel tick, by hand
+    bash 60-zhc-early-warning-system/ews-entry.sh cron-tick       # what the CRON runs (exit 10 -> 0)
     bash 60-zhc-early-warning-system/ews-entry.sh audit           # read-only diff table
     bash 60-zhc-early-warning-system/ews-entry.sh --self-test     # every script self-test
     bash 60-zhc-early-warning-system/verify.sh                    # drill battery (failable proof)

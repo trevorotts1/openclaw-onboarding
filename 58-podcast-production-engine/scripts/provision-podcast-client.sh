@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# bash 3.2 re-exec guard. macOS ships bash 3.2 as /bin/bash, and this script
+# uses bash-4 constructs. Hand off to a real bash >= 4 when one is installed
+# rather than failing halfway through a provision with a syntax error.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] && [ -z "${_OC_BASH_REEXEC:-}" ]; then
+  for _b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$_b" ] && _OC_BASH_REEXEC=1 exec "$_b" "$0" "$@"
+  done
+  echo "FATAL: bash >= 4 required (macOS ships 3.2): brew install bash" >&2; exit 3
+fi
 # provision-podcast-client.sh <slug> <client-email[,email2,...]> <timezone>
 #
 # Podcast Production Engine (skill 58) - per-client Cloudflare provisioning.
@@ -27,18 +36,22 @@
 # ACTIVATION (fleet guarantee: provision => processor active):
 #   After the roster/env provisioning above, this script runs the processor
 #   activation sequence from the activation layer (Workflow 1, same merge batch):
-#     1. install-podcast-department.sh                        (department install)
-#     2. register-podcast-hook.sh --client-slug <slug>        (inbound hook mapping)
+#     1. install-podcast-department.sh --client-slug <slug> --prime-session
+#          verified by: install-podcast-department.sh --verify --client-slug <slug>
+#     2. register-podcast-hook.sh --client-slug <slug>       (intake route +
+#          gateway hook mapping), verified by:
+#          register-podcast-hook.sh --verify --client-slug <slug>
 #   No scheduler install exists (no-daemon doctrine: the department agent advances
 #   TaskFlows in its own turn via podcast_step_driver.py).
 #   Every step is GATED three ways: presence (fail closed, naming the missing
-#   piece), run rc (fail closed), and a --check read-back (fail closed unless the
+#   piece), run rc (fail closed), and a --verify read-back (fail closed unless the
 #   helper reports its piece ACTIVE). Any failure aborts the provision with the
-#   stage-specific exit code (22 department, 23 hook, 24 scheduler); the ledger
+#   stage-specific exit code (22 department, 23 hook); the ledger
 #   records activation=failed. The helpers are idempotent per the activation-layer
 #   contract, so a re-provision verifies an already-active processor instead of
-#   duplicating it. Activation helper contract: each accepts "--check <same args>"
-#   and returns 0 when its piece is active. Operator override: --skip-activation
+#   duplicating it. Activation helper contract: each has a READ-ONLY --verify mode
+#   that returns 0 only when its piece is active, and its verify arguments are
+#   passed separately from its install arguments. Operator override: --skip-activation
 #   (documented below; the ledger records activation=skipped, which revoke reads).
 #   revoke-podcast-client.sh tears this sequence down symmetrically.
 #
@@ -274,6 +287,10 @@ need curl; need jq; need openssl
 [ -n "$EMAILS_RAW" ] || { echo "missing client email(s)" >&2; usage; exit 2; }
 [ -n "$CLIENT_TZ" ] || { echo "missing timezone" >&2; usage; exit 2; }
 printf '%s' "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]{1,40}$' || { echo "slug must be lowercase [a-z0-9-], 2 to 41 chars" >&2; exit 2; }
+# The activation helpers and the per-skill wire script all fall back to
+# PODCAST_CLIENT_SLUG when no --client-slug reaches them. Export it once here so
+# that fallback is real on this run instead of a documented fiction.
+export PODCAST_CLIENT_SLUG="$SLUG"
 
 # --show validation (two-show model). Each value is <SHOW_SLUG>:<PODBEAN_CHANNEL_ID>;
 # the slug becomes an env-var name suffix (PODBEAN_PODCAST_ID_<SHOW_SLUG>), so it must
@@ -871,38 +888,59 @@ provision_fb_ads
 # Every step is GATED three ways and FAILS CLOSED:
 #   1. presence   - a missing helper aborts with a message naming the missing piece
 #   2. run rc     - a nonzero return aborts (the piece is not installed)
-#   3. --check    - a read-back must report the piece ACTIVE before it counts
+#   3. --verify   - a read-back must report the piece ACTIVE before it counts
 #
-# Activation helper contract (recorded here for Workflow 1 and the tests): each
-# helper accepts "--check" in place of its action (same remaining args) and exits
-# 0 only when its piece is currently active on this box. The helpers are
-# idempotent, so a re-provision verifies an already-active processor instead of
-# duplicating it.
+# Activation helper contract (binding; the tests assert it): each helper has a
+# READ-ONLY --verify mode that takes its own arguments and exits 0 only when its
+# piece is currently active on this box, nonzero otherwise. The verify arguments
+# are passed separately from the install arguments, after a "--" separator, so a
+# helper whose install flags differ from its verify flags is still gated. The
+# helpers are idempotent, so a re-provision verifies an already-active processor
+# instead of duplicating it.
+#
+# THE DEFECT THIS REPLACED: this step used to re-run each helper as
+# "$helper --check <the same install args>". Neither helper has ever accepted
+# --check; both reject an unknown flag with exit 2. Every provision therefore
+# died at activation:department with exit 22 AFTER the department install had
+# already succeeded, so the fleet guarantee was never actually met on any box.
 #
 # Operator override: --skip-activation (documented in the usage block). It is
 # recorded as activation=skipped so the fleet audit flags the client.
 # --------------------------------------------------------------------------- #
 activation_step() {
-  # activation_step <step-name> <missing-code> <missing-piece> <helper-name> [args...]
+  # activation_step <step-name> <missing-code> <missing-piece> <helper-name> \
+  #                 [install-args...] -- [verify-args...]
   local name="$1" code="$2" piece="$3" helper="$4"
   shift 4
+  local run_args=() verify_args=() seen_sep=0 a
+  for a in "$@"; do
+    if [ "$seen_sep" = "0" ] && [ "$a" = "--" ]; then seen_sep=1; continue; fi
+    if [ "$seen_sep" = "0" ]; then run_args+=("$a"); else verify_args+=("$a"); fi
+  done
+  local run_desc="${run_args[*]-}" verify_desc="${verify_args[*]-}"
   if [ "$DRY_RUN" = "1" ]; then
-    ledger_step "$name" "DRY-RUN" "would run $helper $*"
+    ledger_step "$name" "DRY-RUN" "would run $helper $run_desc, then verify with $helper $verify_desc"
     return 0
   fi
   if [ ! -x "$SCRIPT_DIR/$helper" ]; then
     ledger_step "$name" "FAIL" "missing $piece: $SCRIPT_DIR/$helper not present or not executable in this build (owned by the activation layer, Workflow 1); FAIL CLOSED (no silent partial provision)"
     die "$code" "activation step $name failed: missing $piece ($SCRIPT_DIR/$helper). The fleet guarantee (provision => processor active) is NOT met for client '$SLUG'."
   fi
-  if ! runas "$SCRIPT_DIR/$helper" "$@"; then
-    ledger_step "$name" "FAIL" "$helper $* returned nonzero"
+  # A step with no verify surface may never report a piece ACTIVE. Checked after
+  # the presence gate so a missing helper still reports the more useful cause.
+  if [ "$seen_sep" = "0" ]; then
+    ledger_step "$name" "FAIL" "mis-declared activation step: no -- separator, so no read-back surface was supplied"
+    die "$code" "activation step $name is mis-declared: no -- separator, so no verify surface was given. Refusing to report $piece active without a read-back."
+  fi
+  if ! runas "$SCRIPT_DIR/$helper" ${run_args[@]+"${run_args[@]}"}; then
+    ledger_step "$name" "FAIL" "$helper $run_desc returned nonzero"
     die "$code" "activation step $name failed: $helper returned nonzero; $piece is NOT confirmed active for client '$SLUG'."
   fi
-  if ! runas "$SCRIPT_DIR/$helper" --check "$@"; then
-    ledger_step "$name" "FAIL" "$helper --check $*: the piece reports NOT active after install"
-    die "$code" "activation step $name failed: $helper installed but its --check read-back says $piece is NOT active for client '$SLUG'."
+  if ! runas "$SCRIPT_DIR/$helper" ${verify_args[@]+"${verify_args[@]}"}; then
+    ledger_step "$name" "FAIL" "$helper $verify_desc: the read-back reports $piece NOT active after install"
+    die "$code" "activation step $name failed: $helper installed but its read-back ($helper $verify_desc) says $piece is NOT active for client '$SLUG'."
   fi
-  ledger_step "$name" "OK" "$helper $* (verified ACTIVE by --check)"
+  ledger_step "$name" "OK" "$helper $run_desc (verified ACTIVE by $helper $verify_desc)"
   ledger_fact "$name" "active"
 }
 
@@ -910,8 +948,20 @@ if [ "$SKIP_ACTIVATION" = "1" ]; then
   ledger_fact "activation" "skipped"
   ledger_step "activation" "SKIPPED" "--skip-activation operator override; the processor is NOT confirmed active for $SLUG (the fleet audit will flag this client)"
 else
-  activation_step "activation:department" 22 "the podcast department installer" "install-podcast-department.sh"
-  activation_step "activation:hook"        23 "the inbound hook registrar"       "register-podcast-hook.sh" --client-slug "$SLUG"
+  # The registrar creates the podcast session namespace.  On a fresh box it
+  # must exist before the department's readiness read-back can succeed.
+  if ! runas "$SCRIPT_DIR/install-podcast-department.sh" --client-slug "$SLUG" --prime-session; then
+    ledger_step "activation:department-install" "FAIL" "department installer returned nonzero"
+    die 22 "podcast department installation failed for client '$SLUG'."
+  fi
+  ledger_step "activation:department-install" "OK" "department installed; readiness follows hook namespace registration"
+  activation_step "activation:hook"        23 "the inbound hook registrar"       "register-podcast-hook.sh" \
+    --client-slug "$SLUG" -- --verify --client-slug "$SLUG"
+  if ! runas "$SCRIPT_DIR/install-podcast-department.sh" --verify --client-slug "$SLUG"; then
+    ledger_step "activation:department-ready" "FAIL" "department read-back failed after hook registration"
+    die 22 "podcast department is not ready after hook registration for client '$SLUG'."
+  fi
+  ledger_step "activation:department-ready" "OK" "department verified active after hook namespace registration"
   # NO-DAEMON DOCTRINE: there is no scheduler installer and no activation step for
   # one. The department agent advances TaskFlows in its own turn via
   # podcast_step_driver.py; the former scheduler is dead by design
@@ -945,7 +995,14 @@ gate_302() {
 }
 gate_302
 
-# G2: signed hook test POST (requires the box-side mapping + token; PENDING if not wired).
+# G2: signed public-ingress test POST. The upstream survey submits a flat body
+# to /hooks/<route>, where the registered hook mapping reaches the authenticated
+# intake handler. The similarly named /plugins/webhooks/<route> endpoint is
+# the internal TaskFlow control surface and rejects that flat body; probing it
+# cannot prove public handler reachability. The deliberately test-gated payload
+# is terminal in intake_handler.py, so a 2xx is NOT evidence that a production
+# worker run was dispatched; the registered mapping/runtime verification owns
+# that separate acceptance gate.
 gate_hook() {
   if [ "$DRY_RUN" = "1" ]; then ledger_step "gate:signed-hook" "DRY-RUN" "skipped in dry-run"; return 0; fi
   local tok=""
@@ -954,19 +1011,21 @@ gate_hook() {
     tok="$(runas bash -c 'set -a; . "$0" >/dev/null 2>&1; printf "%s" "${PODCAST_INTAKE_HOOK_SECRET:-}"' "$SECRETS_ENV_FILE" 2>/dev/null)"
   fi
   if [ -z "$tok" ]; then
-    ledger_step "gate:signed-hook" "PENDING" "intake token not available here; run once the hook mapping and token are wired on the box"
+    ledger_step "gate:signed-hook" "FAIL" "intake token unavailable; cannot prove authenticated public handler reachability"
+    GATE_HARD_FAIL="1"
     return 0
   fi
   local code
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
-    -X POST "https://${HOOKS_HOST}/plugins/webhooks/${INTAKE_MAPPING}" \
+    -X POST "https://${HOOKS_HOST}/hooks/${INTAKE_MAPPING}" \
     -H "Authorization: Bearer ${tok}" -H "Content-Type: application/json" \
     --data '{"_test":true,"source":"provision-gate"}' 2>/dev/null || echo "000")"
   unset tok
   if printf '%s' "$code" | grep -Eq '^2[0-9][0-9]$'; then
-    ledger_step "gate:signed-hook" "PASS" "signed test POST accepted (HTTP $code)"
+    ledger_step "gate:signed-hook" "PASS" "signed public ingress handler reachable (HTTP $code; test payload is terminal)"
   else
-    ledger_step "gate:signed-hook" "PENDING" "hook not accepting yet (HTTP $code); confirm the mapping is registered on the box"
+    ledger_step "gate:signed-hook" "FAIL" "public hook mapping did not reach the authenticated handler (HTTP $code)"
+    GATE_HARD_FAIL="1"
   fi
 }
 gate_hook

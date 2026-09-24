@@ -3,7 +3,7 @@
 > **v25.0.16 — Private interview renewal and pause/resume on Mac and VPS.** Resume partial onboarding without replacing client identity; preserve service configuration, migrate the correct database and reconcile the client’s standard board foundation. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.1.5**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.0.42.
+> **Version:** see `/version` - this repo at v25.1.84.
 
 
 
@@ -158,14 +158,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.0.42** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.1.84** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **68 numbered skill folders (01–68)** — 63 active plus 5 archived (11, 13, 21, 33, 34) — plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **69 numbered skill folders (01–69)** — 64 active plus 5 archived (11, 13, 21, 33, 34) — plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -279,15 +279,28 @@ That file is the master instruction file. It contains:
 | 62-cinematic-web-funnel-engine | **Cinematic and Web Funnel Engine (v1.0.0)** — IN-PROGRESS on branch `skill62/cinematic-engine` (NOT yet merged to `main`; row added at build unit U22 for tree-vs-README count parity). A governed, client-facing web-development capability that builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels: AI-generated, scroll-controlled cinematic scene sequences on the client's own Kie.ai key (anchor image → image-to-video → real encoded boundary frames → scroll-position-to-`currentTime` binding), assembled into a production Next.js/TypeScript site, deployed to Vercel, with GoHighLevel/Convert and Flow forms/calendars/payments/workflows. Delegates protected copy methodologies (Signature Funnel / Sales-Page-Assets, Skills 49/56) rather than duplicating them; routes through the same shared STEP-0 funnel-engine selector registry as its THIRD registered engine. Owned by Web Development (primary role `funnel-builder-specialist`); supporting departments Marketing, Video, Graphics, CRM. |
 | 63-agnes-image | **Agnes Image 2.1 Flash (v1.0.1)** — the endpoint reference for the Agnes AI synchronous image model: text-to-image and image-to-image via one `POST https://apihub.agnes-ai.com/v1/images/generations` call (model `agnes-image-2.1-flash`) that returns the finished image in the SAME response (`data[0].url` or `data[0].b64_json`) — no task polling (the opposite of the KIE.ai / Skill 07 pattern and of the separate Agnes VIDEO endpoint). Documents the required `model`/`prompt`/`size` fields, the `1K`/`2K`/`3K`/`4K` size tiers crossed with aspect `ratio`, and the full ratio×tier output-dimension table (16:9 2K = 2624x1472), plus the two gotchas (`response_format` lives in `extra_body`, not the top level; image-to-image needs no `tags`). Rate limits are read per account tier with HTTP 429 as the live ceiling (never a hardcoded cap); uses the EXISTING fleet credential `AGNES_AI_API_KEY` (SET/NOT-SET only, value never printed). Currently $0/image. Installed in Wave 2 alongside the other independent API integrations. |
 | 64-agnes-video | **Agnes Video V2.0 (v1.0.1)** — the endpoint reference and asynchronous workflow for the Agnes AI video-generation model `agnes-video-v2.0` on the `apihub.agnes-ai.com` gateway. Covers text-to-video, image-to-video, and keyframe animation via the create-task / poll-result async pattern, the `num_frames` 8n+1 rule, resolution tiers, and reading the returned size/seconds/metadata as the source of truth. A REFERENCE (not a new-account installer): the fleet already carries the `AGNES_AI_API_KEY` credential (SET/NOT-SET only, value never printed). As Skill 30 (Fish Audio) is the operating manual for text-to-speech, this is for text-to-video. Installed in Wave 3 alongside the content + service tools. |
+| 65-rescue-receiver | **Rescue Receiver (v1.0.0)** — the fleet escalation plumbing: polls Rescue Rangers tickets from the n8n rr_outbox (rescue-poll.sh) and wires the receiver (wire.sh) so every box can pull and answer escalation tickets. Operator tooling, client-silent. Installed alongside the content + service tools. |
 | 66-kie-image | **KIE Image (v1.0.0)** — the KIE.ai image-generation skill: 30-model registry across 14 families (Wan, Ideogram, Imagen 4, Qwen, GPT Image, etc.) with per-model prompt hard caps (VERIFIED / NOT_PUBLISHED / LIVE_PROBE_REQUIRED — never an invented number), duration/aspect/ratio constraints, reference caps and resolved output tables. Deterministic pre-dispatch validators: `validate_prompt.py` (house band 5K/9K/19K + model-hard-cap priority), `validate_payload.py`, `select_image_model.py` (capability-matched routing with explicit-model precedence), `normalize_alias.py`. Real image QC checklist (SPEC 7.x), async createTask → recordInfo completion with Skill 46 callback option, and marker-based idempotent `wire.sh`. Credential: `KIE_API_KEY` (env var NAME per repo convention; SET/NOT-SET only). |
 | 67-kie-video | **KIE Video (v1.0.0)** — the KIE.ai video-generation skill: 37-model registry incl. dedicated Runway and Veo 3.1 API families (never routed through the generic createTask), per-model duration windows, resolutions, media reference caps and prompt limits (Wan 3.0 20K, Seedance 2.5 30K, Kling 3.0 Omni 3,072 chars, MiniMax H3 7K, Kling 3.0 single-shot NOT_PUBLISHED). Deterministic pre-dispatch validators: `validate_prompt.py`, `validate_payload.py`, `select_video_model.py` (capability-hierarchy routing), `normalize_alias.py`. Real video QC checklist (SPEC 9.5: playable file, motion accuracy, subject consistency, audio sync), async completion + dedicated Runway/Veo record/upgrade endpoints, marker-based `wire.sh`. Credential: `KIE_API_KEY`. |
 | 68-kie-audio | **KIE Audio (v1.0.0)** — the KIE.ai audio skill: TTS (Gemini 3.1 Flash / 2.5 Pro + ElevenLabs dialogue-v3 / multilingual-v2 / turbo-2-5 via generic createTask), Suno music/sound-effects (DEDICATED `/api/v1/generate` family — never createTask), and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no endpoint located, `dispatch_enabled: false`, refuses to invent one). Registry `models.json` (10 entries), deterministic `validate_audio_request.py` with HARD-REJECT rules (Suno via createTask, out-of-enum values, any STT dispatch), audio QC checklists (playable file, language, voice identity, pronunciation, clipping), marker-based `wire.sh`. Credential: `KIE_API_KEY`. |
+| 69-archify | **Archify (v2.17.0)** — an agent skill that turns plain-language requirements, pasted Mermaid (`flowchart` / `sequenceDiagram` / `stateDiagram`), or repository evidence into polished, validated architecture / workflow / sequence / data-flow / lifecycle diagrams as self-contained, explorable interactive HTML with inline SVG, dark/light themes, optional trace motion, and PNG/JPEG/WebP/SVG/WebM export. A zero-dependency Node.js CLI (entry `bin/archify.mjs`) whose `doctor` verifies all 15 subsystems, `validate` gates a diagram document against quality profiles, and `render` emits a standalone HTML file. MIT; vendored from `tt-a1i/archify`. Zero runtime dependencies; requires Node ≥ 18. |
 
-| 65-rescue-receiver | **Rescue Receiver (v1.0.0)** — the fleet escalation plumbing: polls Rescue Rangers tickets from the n8n rr_outbox (rescue-poll.sh) and wires the receiver (wire.sh) so every box can pull and answer escalation tickets. Operator tooling, client-silent. Installed alongside the content + service tools. |
-**Total: 68 numbered skill folders** (01–68) — **63 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 69 numbered skill folders** (01–69) — **64 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
+
+---
+
+## Document delivery: Google Drive, then Notion
+
+Skill 58's Step 12 renders the Episode Package and the Speech Script, then delivers them through a two-tier chain so the documents reach the client wherever the box is provisioned.
+
+1. **Google Drive**, through the client's own Skill 14 credentials (`GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`, plus `GCP_IMPERSONATE_USER` or `GWS_ACCOUNT`). Each document is uploaded as a Google Doc and shared anyone-with-the-link-can-edit.
+2. **Notion**, the client's own workspace, when Skill 14 is not configured on the box or the Drive call delivers nothing. Needs `NOTION_API_TOKEN` and an explicit client-owned parent page, the same contract `37-zhc-closeout` uses. One `Podcast Episodes` page, then one page per episode, created idempotently. The Notion API cannot upload a file, so the published audio is linked.
+3. **Intent only**, when neither is configured: the plan records what was owed and ONE log line names both prerequisites.
+
+No tier can fail the episode. Agency and operator credentials are refused on both tiers, and the `gws` binary is never invoked because a bare headless call wipes the box's credential store. Details in `58-podcast-production-engine/INSTALL.md` and `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` section 2.10.
 
 ---
 
@@ -339,9 +352,14 @@ and `HEARTBEAT.md`.
 - **Nested workflow agent exemption:** internal workflow micro-agents (`*/workflows/*/agents/*`)
   are never touched.
 - **Non-destructive + idempotent:** real files are backed up
-  (`*.bak-unify-<ts>`, never deleted) and any unique content is preserved into
+  (`*.bak-unify-<ts>`) and any unique content is preserved into
   the agent's own `IDENTITY.md` before linking; correct symlinks are no-ops on
-  re-run.
+  re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
+  kept per target, oldest deleted first. A second pass at the end of every
+  roll (`reclaim_unify_backups`) bounds the backups the unify scan cannot
+  reach — orphaned role folders, hidden archive dot-dirs, and the out-of-tree
+  `zero-human-company` trees — deleting only names matching
+  `.bak-unify-<8 digits>-<6 digits>`, so a live core file is never touched.
 
 Runs automatically at install (`install.sh` Step 10a) and on every update
 (`update-skills.sh`), and is QC-enforced (check 9.9 in

@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# bash >= 4 required (associative arrays / mapfile / case modifiers); macOS ships 3.2 at /bin/bash.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] && [ -z "${_OC_BASH_REEXEC:-}" ]; then
+  for _oc_b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$_oc_b" ] && _OC_BASH_REEXEC=1 exec "$_oc_b" "$0" "$@"
+  done
+  echo "FATAL: bash >= 4 required (macOS ships 3.2): brew install bash" >&2; exit 3
+fi
 # ============================================================
 #  check-credential.sh  —  Authoritative credential existence checker
 #  Version: v12.3.6  |  Added: 2026-06-13
@@ -98,12 +105,15 @@
 set -euo pipefail
 
 # ─── Detect platform ─────────────────────────────────────────────────────────
+# The OS decides, exactly as platform/common.sh oc_detect_platform (what
+# install.sh / update-skills.sh use): Darwin -> mac, Linux -> vps. Keying on
+# /data/.openclaw called a Linux box whose root is ~/.openclaw "mac" and skipped
+# the live-process / Docker env sources below -- a false "not found".
 detect_platform() {
-  if [[ -d "/data/.openclaw" ]]; then
-    echo "vps"
-  else
-    echo "mac"
-  fi
+  case "$(uname -s)" in
+    Linux) echo "vps" ;;
+    *)     echo "mac" ;;
+  esac
 }
 
 # ─── Detect gateway PID / Docker container ───────────────────────────────────

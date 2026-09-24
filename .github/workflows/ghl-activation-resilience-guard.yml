@@ -44,6 +44,14 @@ jobs:
           bash scripts/guard-ghl-activation-resilience.sh
           echo "✓ Skill 06 Layer-2 activation resilience enforced (no single-shot/reload/hasPwd-only/deep-route regression)"
 
+      - name: Guard matcher cannot SIGPIPE its producer (code_has here-string lock)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tests/unit/code-has-no-sigpipe.test.sh
+          bash tests/unit/code-has-no-sigpipe.test.sh
+          echo "✓ code_has/code_has_i feed grep from a here-string; no grep -q can SIGPIPE a producer under pipefail"
+
       - name: Run activation-resilience regression tests
         shell: bash
         run: |

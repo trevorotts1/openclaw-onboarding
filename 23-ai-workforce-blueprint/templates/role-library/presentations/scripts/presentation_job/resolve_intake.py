@@ -77,6 +77,10 @@ class MissingRequester(RuntimeError):
     UnknownPresentationType -- never catch it to fabricate a chat_id or to
     write an intake anyway. See main()'s EXIT CODES doc (exit 4)."""
 
+class UnknownExecutionSelection(ValueError):
+    """A validated run-mode/model entry cannot be projected safely."""
+
+
 class UnknownIntakeDepth(ValueError):
     """FIX 36(3): an explicit --intake-depth / PRESENTATION_INTAKE_DEPTH value
     outside the QUICK|IN-DEPTH vocabulary. Loud, blocking, exit 5 — never
@@ -94,6 +98,15 @@ _UPSELL_FIELDS = (
     ("SALES_CHECKOUT_DECLINED_REASON", "sales_checkout_declined_reason"),
     ("WANT_VSL_PAGE", "want_vsl_page"),
     ("VSL_PAGE_DECLINED_REASON", "vsl_page_declined_reason"),
+    # Core deliverables and destinations share the same sealed capture path.
+    # Carry only captured values into the engine's immutable input; no defaults.
+    ("DELIVERABLE_SET", "deliverable_set"),
+    ("WANT_TELEPROMPTER", "want_teleprompter"),
+    ("WANT_SPEECH_SCRIPT", "want_speech_script"),
+    ("WANT_AUDIO_DELIVERABLE", "want_audio_deliverable"),
+    ("WANT_AUDIO_DEMO", "want_audio_demo"),
+    ("WANT_GHL_UPLOAD", "want_ghl_upload"),
+    ("DELIVERY_DESTINATIONS", "delivery_destinations"),
 )
 
 
@@ -132,6 +145,56 @@ def _entry_raw_value(entries: dict, key: str) -> Optional[str]:
     if isinstance(entry, str) and entry:
         return entry
     return None
+
+
+_RUN_MODES = frozenset(("ultra", "standard", "economy"))
+_MODEL_SPEC_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _execution_entry(entries: dict, *keys: str) -> Optional[str]:
+    """Read a validated execution alias without treating the prose resource
+    summary as an execution declaration.
+
+    The resource-plan parent can legitimately say ``use conservative default``
+    while its typed child fields carry a client-selected model and run mode.
+    Prefer the upper-case storeOn aliases, whose writer already strips the
+    merged-turn delimiter, then tolerate the lower-case canonical aliases.
+    """
+    for key in keys:
+        entry = entries.get(key)
+        if isinstance(entry, dict) and entry.get("validated") is not True:
+            continue
+        value = _entry_raw_value(entries, key)
+        if value:
+            return str(value)
+    return None
+
+
+def _resolve_execution_selection(entries: dict) -> dict:
+    """Project validated run execution selections into engine intake.
+
+    Only the schema's merged-turn separators are removed; arbitrary user prose
+    is never parsed here. Missing selections remain absent so launcher defaults
+    keep their documented behavior. Present-but-invalid selections fail before
+    a launch can silently fall back to another mode or model.
+    """
+    selection: dict = {}
+    raw_mode = _execution_entry(entries, "RUN_MODE", "run_mode")
+    if raw_mode is not None:
+        mode = raw_mode.strip().rstrip(";,. ").lower()
+        if mode not in _RUN_MODES:
+            raise UnknownExecutionSelection(
+                f"validated run_mode {raw_mode!r} is not one of {sorted(_RUN_MODES)}")
+        selection["run_mode"] = mode
+
+    raw_workhorse = _execution_entry(entries, "WORKHORSE_MODEL", "workhorse_model")
+    if raw_workhorse is not None:
+        workhorse = raw_workhorse.strip().rstrip(";,. ")
+        if not _MODEL_SPEC_RE.fullmatch(workhorse):
+            raise UnknownExecutionSelection(
+                f"validated workhorse_model {raw_workhorse!r} is not a model@provider selection")
+        selection["workhorse_model"] = workhorse
+    return selection
 
 
 def _read_json_dict(path: Path) -> dict:
@@ -293,6 +356,11 @@ def _resolve_upsell_capture(entries: dict, intake_copy: dict) -> dict:
         if not val:
             val = _entry_raw_value(entries, qid) or _entry_raw_value(entries, field)
         if val:
+            # These two fields are structured list values in the declared
+            # schema. The merged-turn writer may retain its final separator;
+            # remove only that delimiter, never punctuation in free-form text.
+            if field in {"DELIVERABLE_SET", "DELIVERY_DESTINATIONS"} and isinstance(val, str):
+                val = val.rstrip("; ")
             capture[field] = val
     return capture
 
@@ -492,6 +560,12 @@ def resolve(ledger_path: Path, source: str,
     if capture:
         intake["pre_presentation_capture"] = capture
 
+    # PD-TEST-035: execution selections are typed children of resource_plan,
+    # not resource-plan prose. Carry only validated aliases so the launcher
+    # can enforce the client-declared mode and the engine can retain the
+    # selected workhorse as immutable run provenance.
+    intake.update(_resolve_execution_selection(entries))
+
     # FIX 36(3): intake depth (QUICK|IN-DEPTH) — resolved explicitly, never
     # silently defaulted: the schema default only applies when the question
     # was genuinely never answered anywhere. An explicit caller value that is
@@ -563,6 +637,9 @@ def main(argv=None) -> int:
     except UnknownIntakeDepth as exc:
         print(f"AF-INTAKE-DEPTH-INVALID: {exc}", file=sys.stderr)
         return 5
+    except UnknownExecutionSelection as exc:
+        print(f"AF-EXECUTION-SELECTION-INVALID: {exc}", file=sys.stderr)
+        return 6
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     # FIX 109: capture the pre-write sha BEFORE the atomic replace lands, so
