@@ -66,6 +66,7 @@ on:
       - shared-utils/sop-library/**
       - update-skills.sh
       - tests/unit/sop-library-coverage-gate.test.py
+      - tests/unit/sop-library-v3-build.test.py
       - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
@@ -106,6 +107,7 @@ on:
       - shared-utils/sop-library/**
       - update-skills.sh
       - tests/unit/sop-library-coverage-gate.test.py
+      - tests/unit/sop-library-v3-build.test.py
       - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   workflow_dispatch:
@@ -244,6 +246,9 @@ jobs:
       # coverage. These two gates keep both halves closed.
       - name: SOP library — coverage gate (an under-populated `sops` table can no longer report pass)
         run: python3 tests/unit/sop-library-coverage-gate.test.py -v
+
+      - name: SOP library v3 — builder carries V2 verbatim + dept SOPs; manifest pins real sample slugs
+        run: python3 tests/unit/sop-library-v3-build.test.py -v
 
       - name: SOP library — update-path ingestion (idempotent, non-clobbering, fails loud; offline)
         run: |

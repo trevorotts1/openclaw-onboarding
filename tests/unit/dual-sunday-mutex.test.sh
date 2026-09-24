@@ -53,7 +53,9 @@ _section "T6 — env failure distinct from contention"
 grep -q 'FATAL: cannot create lock' "$TARGET" && _pass "FATAL lock-create message present" || _fail "FATAL lock-create message NOT found"
 
 _section "T7 — trap wired"
-grep -q 'trap release_update_lock EXIT' "$TARGET" && _pass "release trap wired in main()" || _fail "release trap NOT wired"
+{ grep -q 'trap release_update_lock EXIT' "$TARGET" \
+  || { grep -q 'trap oc_update_exit_trap EXIT' "$TARGET" \
+       && awk '/^oc_update_exit_trap\(\) *\{/,/^}/' "$TARGET" | grep -q '^  release_update_lock'; }; } && _pass "release trap wired in main()" || _fail "release trap NOT wired"
 
 _section "T8 — retirement messages"
 grep -q 'RETIRED.*legacy Sunday' "$TARGET" && grep -q 'OWNER NOTICE' "$TARGET" && _pass "retirement prints RETIRED + OWNER NOTICE" || _fail "retirement messages missing"
