@@ -2896,6 +2896,30 @@ except Exception:
   # carries the reason even when the gate then fail_install()s on it.
   state_set_arg '.commandCenterSopConvergeStatus = $val' "$SOP_CONVERGE_STATUS"
 
+  # ---- (2b) central vectors for the rows the converge just wrote ---------
+  # importRoleLibrary() writes role-library rows with NO embedding (CC #416: a
+  # per-box embed bills the client's key); their vectors ship centrally in the
+  # SOP-embeddings asset (role_library_embeddings, matched by exact slug). The
+  # provisioning inside ingest-sop-library.sh ran BEFORE this converge, and
+  # update-skills U6c2 runs before the whole CC refresh -- so without this call
+  # the new role rows stay unembedded. Additive: never fails the install.
+  SOP_EMBED_DIR="$SKILL_DIR/../shared-utils/sop-embed-once"
+  if [[ -f "$SOP_EMBED_DIR/provision_sop_embeddings.py" ]]; then
+    SOP_PROV_DB="$(python3 - "$SKILL_DIR/../shared-utils" <<'PYDB' 2>/dev/null || true
+import sys
+sys.path.insert(0, sys.argv[1])
+from resolve_db import find_dashboard_db, is_db_found
+p = find_dashboard_db()
+print(p if is_db_found(p) else "")
+PYDB
+)"
+    if [[ -n "$SOP_PROV_DB" ]]; then
+      SOP_PROV_OUT="$(python3 "$SOP_EMBED_DIR/provision_sop_embeddings.py" \
+          "$SOP_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json" "$SOP_PROV_DB" 2>&1 | tail -n 1)"
+      log "INFO" "phase=6i sop-library-ingestion: post-converge vectors: ${SOP_PROV_OUT:-no output}"
+    fi
+  fi
+
   # ---- (3) fail-loud row-count gate (BOTH writers, independently) -------
   # The gate script itself is now fail-closed (--min-total has no default: it
   # exits 3 rather than assume a floor). Belt AND braces: this phase must never

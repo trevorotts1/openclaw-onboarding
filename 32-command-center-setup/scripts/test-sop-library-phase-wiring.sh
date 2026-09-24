@@ -274,6 +274,16 @@ else
   fail "ROLE_LIBRARY_PATH provisioning does not preserve an existing operator value"
 fi
 
+# The central-vectors provisioning must come AFTER the converge in Phase 6i:
+# importRoleLibrary() rows exist only once the converge has run.
+CONV_LN="$(echo "$PHASE_BLOCK" | grep -n 'api/system/converge' | head -1 | cut -d: -f1)"
+PROV_LN="$(echo "$PHASE_BLOCK" | grep -n 'provision_sop_embeddings.py" \\' | head -1 | cut -d: -f1)"
+if [[ -n "$CONV_LN" && -n "$PROV_LN" && "$PROV_LN" -gt "$CONV_LN" ]]; then
+  pass "post-converge vectors: provision_sop_embeddings.py runs after the converge (line $PROV_LN > $CONV_LN)"
+else
+  fail "provision_sop_embeddings.py is not invoked after the converge in PHASE 6i (converge=$CONV_LN provision=$PROV_LN)"
+fi
+
 # ─── Test 2: full-script syntax check ─────────────────────────────────────
 echo "$P Test 2: bash -n syntax check on the full orchestrator..."
 if bash -n "$RFI" 2>/tmp/rfi-syntax-err.$$; then
@@ -342,8 +352,10 @@ else
       local converge_json="${7:-}" role_howtos="${8:-0}" preserved_rl="${9:-}"
       # $10 client slug handed to the phase ("" = none resolved; default test-client)
       # $11 "symlink" => every role how-to.md is a SYMLINK (shared-core layout)
+      # $13 role-library rows the fake CC writes ONLY when the converge POST
+      #     arrives (importRoleLibrary() stand-in), so they exist only after it.
       local client_slug="${10-test-client}" howto_mode="${11:-}" ingest_mode="${12:-}"
-      local stub_role_rows="$role_rows" cc_role_rows=0
+      local stub_role_rows="$role_rows" cc_role_rows="${13:-0}"
       if [[ "$ingest_mode" == "skip" ]]; then stub_role_rows=0; cc_role_rows="$role_rows"; fi
       local SBOX FAIL_MARKER SKILL_ROOT
       SBOX="$(mktemp -d)"
@@ -360,6 +372,15 @@ else
       # Real row-count gate script + the real shared resolver, unmodified.
       cp "$ASSERT_PY" "$SKILL_ROOT/scripts/assert-sop-library-populated.py"
       cp "$REPO_SHARED_UTILS/resolve_db.py" "$SBOX/repo/shared-utils/resolve_db.py"
+      # Stub provisioner: records how many role-library rows exist WHEN it runs.
+      # Non-zero == the post-converge vectors step (2b) ran AFTER the converge.
+      mkdir -p "$SBOX/repo/shared-utils/sop-embed-once"
+      cat > "$SBOX/repo/shared-utils/sop-embed-once/provision_sop_embeddings.py" <<PROVEOF
+import sqlite3, sys
+n = sqlite3.connect(sys.argv[2]).execute("SELECT COUNT(*) FROM sops WHERE source='role-library'").fetchone()[0]
+open("$SBOX/provision_saw_role_rows", "w").write(str(n))
+print("[provision-sop-embeddings] STUB: saw %d role-library row(s)" % n)
+PROVEOF
 
       # CC boot-seed: autoSeedStarterSOPs has ALREADY run (CC booted in Phase
       # 6), so `sops` is NEVER empty by the time this phase's gate runs. This
@@ -550,6 +571,15 @@ HARNESSEOF
           fail "$scenario: converge(scope=sops) never ran -- $landed role-library row(s) landed, expected $cc_role_rows"
         fi
       fi
+      if [[ "$cc_role_rows" -gt 0 ]]; then
+        local saw
+        saw="$(cat "$SBOX/provision_saw_role_rows" 2>/dev/null || echo none)"
+        if [[ "$saw" == "$cc_role_rows" ]]; then
+          pass "$scenario: central vectors provisioned AFTER the converge (provisioner saw $saw role-library row(s))"
+        else
+          fail "$scenario: provisioner did not run after the converge (saw: $saw, expected $cc_role_rows)"
+        fi
+      fi
       rm -rf "$SBOX"
     }
 
@@ -638,6 +668,14 @@ HARNESSEOF
                                                                   2555  0     0    2578  "yes" \
                                                                   '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
                                                                   "" "test-client" "" "skip"
+    # 4k: importRoleLibrary() rows carry NO embedding (CC #416); their vectors come
+    # from the central asset. The provisioning inside ingest-sop-library.sh runs
+    # BEFORE the converge, so Phase 6i must provision again AFTER it -- otherwise
+    # the rows the converge just wrote never get vectors on this run.
+    _run_sandbox "4k POST-CONVERGE VECTORS (converge writes 690 role rows; provisioning must see them)" \
+                                                                  2555  0     0    54    "no" \
+                                                                  '{"ok":true,"sops":{"imported":690,"updated":0}}' 12 \
+                                                                  "" "test-client" "" "" 690
   fi
 fi
 
