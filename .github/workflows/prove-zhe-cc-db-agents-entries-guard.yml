@@ -1,0 +1,59 @@
+name: prove-zhe guard (live CC DB + agents.entries roster)
+
+# prove-zhe.py is the phase-7z ZERO HUMAN EXPERIENCE gate in run-full-install.sh:
+# a false FAIL there marks a client's Command Center install failed. It
+# false-FAILed OpenClaw 2026.9.x boxes by measuring the wrong place:
+#   * a 0-byte decoy mission-control.db shadowing the running CC's real DB;
+#   * reading only agents.list[] when the roster lives in agents.entries;
+#   * matching dept folders to board lanes literally (legal-compliance vs "legal");
+#   * holding the operator-side rescue-rangers dept to a client board lane.
+# tests/unit/test_prove_zhe_cc_db_and_agents_entries.py pins all four; the
+# prover's own selftests pin the STANDARD_READY and web-parity verdicts.
+#
+# Hermetic: the pytest fixture sandboxes $HOME and strips DATABASE_PATH /
+# DASHBOARD_DB_PATH; the selftests build their fixtures in a temp dir.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/prove-zhe.py"
+      - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
+      - "shared-utils/canonical_slug.py"
+      - "tests/unit/test_prove_zhe_cc_db_and_agents_entries.py"
+      - ".github/workflows/prove-zhe-cc-db-agents-entries-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/prove-zhe.py"
+      - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
+      - "shared-utils/canonical_slug.py"
+      - "tests/unit/test_prove_zhe_cc_db_and_agents_entries.py"
+      - ".github/workflows/prove-zhe-cc-db-agents-entries-guard.yml"
+
+jobs:
+  prove-zhe:
+    name: prove-zhe measures the live board and roster
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: python3 -m pip install --quiet --disable-pip-version-check pytest
+
+      - name: CC DB / agents.entries / lane regression tests
+        run: python3 -m pytest -q tests/unit/test_prove_zhe_cc_db_and_agents_entries.py
+
+      - name: STANDARD_READY selftest
+        run: python3 23-ai-workforce-blueprint/scripts/prove-zhe.py --standard-ready-selftest
+
+      - name: Web-parity selftest
+        run: python3 23-ai-workforce-blueprint/scripts/prove-zhe.py --web-parity-selftest
