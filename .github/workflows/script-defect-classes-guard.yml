@@ -83,6 +83,7 @@ on:
       - "tests/unit/embedding-probe-shipped-asset.test.py"
       - "tests/unit/platform-detection-parity.test.sh"
       - ".github/workflows/script-defect-classes-guard.yml"
+      - "**.sh"
   pull_request:
     branches: [main]
     paths:
@@ -144,6 +145,7 @@ on:
       - "tests/unit/embedding-probe-shipped-asset.test.py"
       - "tests/unit/platform-detection-parity.test.sh"
       - ".github/workflows/script-defect-classes-guard.yml"
+      - "**.sh"
 
 jobs:
   defect-classes:
@@ -188,11 +190,12 @@ jobs:
   bash32-parse:
     # macOS ships bash 3.2 at /bin/bash, and every Mac in the fleet runs these
     # scripts with it (`bash script.sh` / `#!/usr/bin/env bash`). bash 3.2
-    # pairs quotes inside a heredoc nested in $(...): one apostrophe in prose
-    # there fails the WHOLE script at parse time -- mid-run, often with rc 0 --
-    # while bash 5 (ubuntu, Homebrew) parses it fine. Parse every shell file
-    # this guard watches (the .sh paths in the filter above) with /bin/bash.
-    name: bash 3.2 parses every watched shell script (macOS)
+    # pairs quotes and parens inside a heredoc nested in $(...): one apostrophe,
+    # backtick or unmatched paren in prose there fails the WHOLE script at parse
+    # time -- mid-run, often with rc 0 -- while bash 5 (ubuntu, Homebrew) parses
+    # it fine. Parse EVERY tracked .sh in the repo with /bin/bash (the "**.sh"
+    # path filter above runs this whenever any shell file changes).
+    name: bash 3.2 parses every tracked shell script (macOS)
     runs-on: macos-latest
     steps:
       - name: Checkout repo
@@ -201,8 +204,10 @@ jobs:
       - name: /bin/bash -n
         run: |
           /bin/bash --version | head -1
-          rc=0
-          for f in $(sed -nE 's/^      - "(.+\.sh)"$/\1/p' .github/workflows/script-defect-classes-guard.yml | sort -u); do
-            if /bin/bash -n "$f"; then echo "ok   $f"; else echo "FAIL $f"; rc=1; fi
-          done
+          rc=0; n=0
+          while IFS= read -r -d '' f; do
+            n=$((n+1))
+            /bin/bash -n "$f" || { echo "FAIL $f"; rc=1; }
+          done < <(git ls-files -z '*.sh')
+          echo "parsed $n tracked .sh files with /bin/bash"
           exit $rc
