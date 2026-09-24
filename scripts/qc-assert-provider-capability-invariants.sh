@@ -92,7 +92,14 @@ except Exception as e:
 
 agents_cfg = cfg.get("agents", {})
 defaults = agents_cfg.get("defaults", {})
-agents_list = agents_cfg.get("list", []) or []
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id -- the
+# memory search block is entry.memory.search) and legacy agents.list[]
+# (memorySearch). Same union as update-skills.sh _registry_snapshot().
+_entries = agents_cfg.get("entries") if isinstance(agents_cfg.get("entries"), dict) else {}
+_list = agents_cfg.get("list") if isinstance(agents_cfg.get("list"), list) else []
+agents_list = [dict(v, id=k, memorySearch=v.get("memorySearch") or (v.get("memory") or {}).get("search"))
+               for k, v in _entries.items() if isinstance(v, dict)]
+agents_list += [a for a in _list if isinstance(a, dict) and a.get("id") not in _entries]
 memory_search = defaults.get("memorySearch", {})
 
 embed_provider = (memory_search.get("provider") or "").strip().lower()

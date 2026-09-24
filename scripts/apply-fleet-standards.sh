@@ -654,8 +654,16 @@ else:
 # Fix per-agent subagents overrides: any agent with an explicit allowAgents
 # that is NOT ["*"] should be set to ["*"]. This is the critical piece that
 # was missing in earlier partial fixes.
-if "agents" in cfg and "list" in cfg["agents"]:
-    for agent in cfg["agents"]["list"]:
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY -- never
+# written into the body) and the legacy agents.list[]. Edits land on the LIVE
+# entry dicts, so whichever shape the box has is the one written.
+_a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+_e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+_l = _a.get("list") if isinstance(_a.get("list"), list) else []
+_roster = [(k, v) for k, v in _e.items() if isinstance(v, dict)]
+_roster += [(a.get("id"), a) for a in _l if isinstance(a, dict) and a.get("id") not in _e]
+if _roster:
+    for _aid, agent in _roster:
         if "subagents" in agent and "allowAgents" in agent["subagents"]:
             if agent["subagents"]["allowAgents"] != ["*"]:
                 agent_name = agent.get("name", "unknown")
@@ -756,7 +764,7 @@ def _ceo_consent_active():
 
 if _ceo_consent_active():
     print("[apply-fleet-standards] owner-consent carve-out ACTIVE — skipping CEO tool-gate re-assert (would revoke the owner's grant)")
-elif "agents" in cfg and "list" in cfg["agents"]:
+elif _roster:
     # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: re-assert the gate on the box's
     # default agent (default:true, else id=="main") ONLY IF it is a ROUTER —
     # matching apply-routing-fix.sh L5 and verify-routing.sh G7 so the gate target
@@ -768,23 +776,22 @@ elif "agents" in cfg and "list" in cfg["agents"]:
         "master-orchestrator", "dept-master-orchestrator",
         "dept-executive-office",
     }
-    def _is_router(a):
+    def _is_router(a, aid):
         if not isinstance(a, dict):
             return False
         if a.get("is_master") is True:
             return True
         if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
             return True
-        return a.get("id") in ROUTER_IDS
+        return aid in ROUTER_IDS
 
-    _agents = cfg["agents"]["list"]
-    _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("default") is True), None)
+    _ceo_id, _ceo_agent = next(((i, a) for i, a in _roster if a.get("default") is True), (None, None))
     if _ceo_agent is None:
-        _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("id") == "main"), None)
-    if _ceo_agent is not None and not _is_router(_ceo_agent):
+        _ceo_id, _ceo_agent = next(((i, a) for i, a in _roster if i == "main"), (None, None))
+    if _ceo_agent is not None and not _is_router(_ceo_agent, _ceo_id):
         # PA-FREEZE GUARD: default agent is a personal assistant / owner agent —
         # the CEO production lock would freeze it. Do NOT re-assert here.
-        print(f"[apply-fleet-standards] default agent (id={_ceo_agent.get('id','<unknown>')}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
+        print(f"[apply-fleet-standards] default agent (id={_ceo_id or '<unknown>'}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
         _ceo_agent = None
     if _ceo_agent is not None:
         agent = _ceo_agent
@@ -840,7 +847,7 @@ elif "agents" in cfg and "list" in cfg["agents"]:
             _root_tools["agentToAgent"] = _a2a
         _a2a.setdefault("enabled", True)
         _a2a.setdefault("allow", ["*"])
-        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
+        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={_ceo_id or '<unknown>'}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
 
 # v16.1.3 SELF-HEAL — sessions/agentToAgent belong on ROOT `tools`, NEVER on a
 # per-agent tools block (AgentEntry.tools is additionalProperties:false and
@@ -859,9 +866,14 @@ def _heal_peragent_routing_keys(_cfg):
         _rt = {}
         _cfg["tools"] = _rt
     _healed = []
-    for _ag in (_cfg.get("agents", {}) or {}).get("list", []) or []:
-        if not isinstance(_ag, dict):
-            continue
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY)
+    # and the legacy agents.list[] ids not already in entries.
+    _ha = _cfg.get("agents") if isinstance(_cfg.get("agents"), dict) else {}
+    _he = _ha.get("entries") if isinstance(_ha.get("entries"), dict) else {}
+    _hl = _ha.get("list") if isinstance(_ha.get("list"), list) else []
+    _hroster = [(k, v) for k, v in _he.items() if isinstance(v, dict)]
+    _hroster += [(a.get("id", "<unknown>"), a) for a in _hl if isinstance(a, dict) and a.get("id") not in _he]
+    for _aid, _ag in _hroster:
         _at = _ag.get("tools")
         if not isinstance(_at, dict):
             continue
@@ -870,7 +882,7 @@ def _heal_peragent_routing_keys(_cfg):
                 if _k not in _rt and isinstance(_at[_k], (dict, list)):
                     _rt[_k] = _at[_k]  # migrate the configured value up to root
                 del _at[_k]
-                _healed.append(f"{_ag.get('id', '<unknown>')}.{_k}")
+                _healed.append(f"{_aid}.{_k}")
     return _healed
 
 _healed_keys = _heal_peragent_routing_keys(cfg)
@@ -1824,7 +1836,13 @@ def _is_router(a):
     return a.get("id") in ROUTER_IDS
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    agents = cfg.get("agents", {}).get("list", []) or []
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the key)
+    # and the legacy agents.list[].
+    _a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    _e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+    _l = _a.get("list") if isinstance(_a.get("list"), list) else []
+    agents = [dict(v, id=k) for k, v in _e.items() if isinstance(v, dict)]
+    agents += [a for a in _l if isinstance(a, dict) and a.get("id") not in _e]
     da = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
     if da is None:
         da = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
@@ -3138,10 +3156,13 @@ if si != -1 and ei != -1 and ei > si:
     # the template renders content BEYOND the END marker (the
     # "## What Rescue Rangers IS + your own wiring" section). The replace
     # branch above only covered START..END, so every re-stamp spliced the whole
-    # template back in while leaving the PREVIOUS render's tail in place --
+    # template back in while leaving the tail of the PREVIOUS render in place --
     # duplicating that section on every roll. The re-stamp runs unconditionally
     # on every fleet roll, so this accumulated silently per box. Consume the
     # tail we ourselves rendered last time, if it is sitting right there.
+    # (No apostrophe in prose anywhere in this heredoc: it sits inside $(...),
+    # and macOS /bin/bash 3.2 then pairs a lone apostrophe and fails to parse
+    # the whole script from here on.)
     _tpl_ei = tpl.find(END)
     if _tpl_ei != -1:
         _tail = tpl[_tpl_ei + len(END):]

@@ -132,6 +132,27 @@ if [[ -z "$HEALER_TEMPLATE" ]]; then
   echo "[backfill-healer] WARN: dept-healer-template.md not found in skills dir -- role files will not be written (DB rows will still be inserted)" >&2
 fi
 
+# ---- Resolve the Command Center DB ONCE (backed up AND written below) ------
+# The shared resolver (shared-utils/resolve_db.py) is the DB the running CC
+# uses: env/.env.local first, 0-byte decoys skipped, layout candidates only
+# with a `workspaces` table. The old "first existing file" list picked a
+# 0-byte decoy over the live board. Fallback (resolver absent): the legacy
+# layout list, non-empty files only.
+CC_DB=""
+_RESOLVE_DB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/resolve_db.py"
+if [[ -f "$_RESOLVE_DB" ]]; then
+  CC_DB="$(python3 "$_RESOLVE_DB" --path 2>/dev/null || true)"
+fi
+if [[ -z "$CC_DB" ]]; then
+  for db_candidate in \
+      "$OC_ROOT/workspaces/command-center/mission-control.db" \
+      "$OC_ROOT/workspace/mission-control.db" \
+      "$OC_ROOT/data/mission-control.db"; do
+    if [[ -s "$db_candidate" ]]; then CC_DB="$db_candidate"; break; fi
+  done
+fi
+export OC_CC_DB="$CC_DB"
+
 # ---- Backup before any write -----------------------------------------------
 if [[ $DRY_RUN -eq 0 ]]; then
   mkdir -p "$BACKUP_DIR"
@@ -142,17 +163,11 @@ if [[ $DRY_RUN -eq 0 ]]; then
 
   # Backup mission-control.db if found
   DB_BACKUP=""
-  for db_candidate in \
-      "$OC_ROOT/workspaces/command-center/mission-control.db" \
-      "$OC_ROOT/workspace/mission-control.db" \
-      "$OC_ROOT/data/mission-control.db"; do
-    if [[ -f "$db_candidate" ]]; then
-      DB_BACKUP="$BACKUP_DIR/mission-control-backup-${TS}-pre-backfill-healer.db"
-      cp "$db_candidate" "$DB_BACKUP"
-      echo "[backfill-healer] backed up mission-control.db -> $DB_BACKUP"
-      break
-    fi
-  done
+  if [[ -n "$CC_DB" ]]; then
+    DB_BACKUP="$BACKUP_DIR/mission-control-backup-${TS}-pre-backfill-healer.db"
+    cp "$CC_DB" "$DB_BACKUP"
+    echo "[backfill-healer] backed up mission-control.db -> $DB_BACKUP"
+  fi
 fi
 
 # ---- Run the backfill in Python --------------------------------------------
@@ -209,15 +224,8 @@ def now_iso():
 
 
 def find_db():
-    candidates = [
-        os.path.join(OC_ROOT, "workspaces", "command-center", "mission-control.db"),
-        os.path.join(OC_ROOT, "workspace", "mission-control.db"),
-        os.path.join(OC_ROOT, "data", "mission-control.db"),
-    ]
-    for c in candidates:
-        if os.path.isfile(c):
-            return c
-    return None
+    # Resolved once in bash (the same file that was backed up).
+    return os.environ.get("OC_CC_DB") or None
 
 
 def discover_departments():

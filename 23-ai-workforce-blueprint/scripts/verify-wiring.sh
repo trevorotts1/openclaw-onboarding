@@ -665,13 +665,14 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
   REG_GAPS=()
 
   if [[ -f "$OPENCLAW_CFG" ]]; then
-    AGENT_IDS_IN_CFG=$(jq -r '.agents.list[]?.id // empty' "$OPENCLAW_CFG" 2>/dev/null || true)
+    # Both roster shapes: agents.entries keys (OpenClaw 2026.9.x) + agents.list[].id
+    AGENT_IDS_IN_CFG=$(jq -r '((.agents.entries // {}) | keys[]), (.agents.list[]?.id // empty)' "$OPENCLAW_CFG" 2>/dev/null || true)
     # The dept agent id is typically "dept-<slug>"
     EXPECTED_AGENT_ID="dept-${DEPT_SLUG}"
     if echo "$AGENT_IDS_IN_CFG" | grep -qx "$EXPECTED_AGENT_ID"; then
       # Also verify workspace path resolves
       REG_WORKSPACE=$(jq -r --arg aid "$EXPECTED_AGENT_ID" \
-        '.agents.list[] | select(.id==$aid) | .workspace // empty' \
+        '(.agents.entries[$aid].workspace? // ([.agents.list[]? | select(.id==$aid) | .workspace][0])) // empty' \
         "$OPENCLAW_CFG" 2>/dev/null || true)
       if [[ -n "$REG_WORKSPACE" && "$REG_WORKSPACE" != "null" ]]; then
         if [[ -d "$REG_WORKSPACE" ]]; then
@@ -689,7 +690,7 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
         FAIL_REGISTERED+=("$DEPT_SLUG:no-workspace-path")
       fi
     else
-      echo "  [REGISTERED]   FAIL: agent '$EXPECTED_AGENT_ID' not found in openclaw.json agents.list" >&2
+      echo "  [REGISTERED]   FAIL: agent '$EXPECTED_AGENT_ID' not found in openclaw.json agents.entries / agents.list" >&2
       REG_PASS=0
       REG_GAPS+=("agent-not-in-config")
       FAIL_REGISTERED+=("$DEPT_SLUG:agent-not-in-config")

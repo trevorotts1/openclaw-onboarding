@@ -1,3 +1,27 @@
+## [v25.1.83]  -  2026-09-24  -  Scripts read the new agent roster, find the real Command Center database, and work on Linux
+
+### Why
+OpenClaw 2026.9.x keeps agents under `agents.entries`, an object keyed by agent id, instead of the `agents.list` array. Scripts that read only `agents.list` found zero agents on those boxes. Scripts that wrote `agents.list` produced a config the gateway rejects. Several scripts also picked the first `mission-control.db` file that existed, which on some boxes is an empty decoy. On Linux, others ran `stat` the BSD way first and captured junk.
+
+### What changed (#1243, with #1244 folded in)
+- **Agent roster.** Readers combine `agents.entries` and `agents.list`, with `entries` winning, the same rule as `update-skills.sh`. Writers write to whichever shape the box already has. Examples: heartbeat defaults, the conversational-AI hook scripts, memory activation, fleet standards and the Telegram diagnosis.
+- **Command Center database.** `shared-utils/resolve_db.py` resolves the database the way the app does:
+  1. `$DASHBOARD_DB_PATH`
+  2. `$DATABASE_PATH`
+  3. the app's `.env.local`
+  4. the standard install locations, skipping empty files and requiring a `workspaces` table.
+
+  The healer backfill, department materialisation, integrity check and the updater's SOP repair path now use it.
+- **GNU `stat`.** Scripts try GNU `stat -c` first and check that the result is a plain number. Covered: install lock, file mode and owner, and the Rescue Rangers config lock and promote.
+- **Retiring a declined department** removes its agent from either roster shape and archives (never deletes) its workspace folder. It also works when the build state has no company slug.
+- **Update-only runs** now record `commandCenterBuildFresh`, so a verified update is no longer reported as "done-degraded".
+- **The embedding probe** judges rows imported from the shipped embeddings asset by release, not by the asset's build date. A box on the current release is no longer reported "dark".
+- **Platform detection** follows `platform/common.sh`: the operating system decides the label. This affects the credential check, the remediation reports and the agent-browser verification.
+- Skill versions: 07 v7.0.3, 15 v7.1.2, 31 v8.0.1, 32 v13.1.26, 38 v2.0.3, 41 v2.0.1, 58 v1.0.12, 60 v1.2.2, 63 v2.1.3, 64 v2.0.2, 66 v2.0.3, 67 v2.0.1, 68 v2.0.2. Skill 32 took the next patch over main's v13.1.25 (from #1240).
+
+### Tests
+Each class has a regression test that fails on the previous main and passes here. A new CI guard runs all seven. `test-sop-library-phase-wiring.sh` after merging main: 48 passed, 1 failed. The failure is the INSTALL.md "Phase 6c" heading check, which fails on main too.
+
 ## [v25.1.82]  -  2026-09-24  -  The SOP library reaches every box, and prove-zhe checks the right places
 
 ### What changed since v25.1.81

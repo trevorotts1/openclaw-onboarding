@@ -78,7 +78,9 @@ if [[ -z "$RUNTIME_USER" ]]; then
   fi
 fi
 
-CURRENT_OWNER="$(stat -f '%Su' "$LOGS_DIR" 2>/dev/null || stat -c '%U' "$LOGS_DIR" 2>/dev/null || echo "")"
+# GNU first: GNU reads `-f FMT` as filesystem status and prints it before
+# failing (multi-line junk on Linux); BSD rejects -c with no stdout.
+CURRENT_OWNER="$(stat -c '%U' "$LOGS_DIR" 2>/dev/null || stat -f '%Su' "$LOGS_DIR" 2>/dev/null || echo "")"
 if [[ -n "$RUNTIME_USER" && "$CURRENT_OWNER" != "$RUNTIME_USER" ]]; then
   if chown -R "$RUNTIME_USER" "$LOGS_DIR" 2>/dev/null; then
     echo "[09-install-conversation-workflows] conversational-logs dir chowned to runtime user '$RUNTIME_USER' → $LOGS_DIR"

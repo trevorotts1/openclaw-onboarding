@@ -5,8 +5,10 @@
 set -euo pipefail
 
 FLEET_AUDIT_VERSION="v1.0.0"
-if [[ -d /data/.openclaw ]]; then OC_ROOT="/data/.openclaw"; PLATFORM="vps"
-elif [[ -d "${HOME}/.openclaw" ]]; then OC_ROOT="${HOME}/.openclaw"; PLATFORM="mac"
+# Label = the OS (platform/common.sh oc_detect_platform); root = /data first.
+case "$(uname -s)" in Linux) PLATFORM="vps" ;; *) PLATFORM="mac" ;; esac
+if [[ -d /data/.openclaw ]]; then OC_ROOT="/data/.openclaw"
+elif [[ -d "${HOME}/.openclaw" ]]; then OC_ROOT="${HOME}/.openclaw"
 else echo "ERROR: no OpenClaw root" >&2; exit 2; fi
 
 WORKSPACE="${OC_ROOT}/workspace"; SKILLS_DIR="${OC_ROOT}/skills"
@@ -174,7 +176,10 @@ dv=du[0].get('delivery',{}) or {}; print(json.dumps({'id':du[0].get('id',''),'mo
 
 check_f4() {
   _log "F4: 0-byte decoy"; local dps=()
-  for c in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db"; do
+  # + the layout paths DB consumers probe first; never the CC's configured DB.
+  for c in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db" \
+           "${OC_ROOT}/workspaces/command-center/mission-control.db" "${OC_ROOT}/data/mission-control.db"; do
+    [[ "$c" == "${DATABASE_PATH:-}" || "$c" == "${DASHBOARD_DB_PATH:-}" ]] && continue
     if [[ -f "$c" ]]; then local sz; sz=$(stat -f%z "$c" 2>/dev/null || stat -c%s "$c" 2>/dev/null || echo "1"); [[ "$sz" == "0" ]] && dps+=("$c"); fi
   done
   [[ ${#dps[@]} -eq 0 ]] && { _finding "F4" "OK" "no decoys"; return 0; }

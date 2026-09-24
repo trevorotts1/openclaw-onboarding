@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.82"
+ONBOARDING_VERSION="v25.1.83"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1961,7 +1961,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.82 - safe_json_edit
+# v25.1.83 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2317,8 +2317,12 @@ except Exception:
   _lsc_mode_owner() {
     local _p="$1" _m="" _o=""
     [ -e "$_p" ] || return 0
-    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
-    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    # GNU first: GNU reads `-f FMT` as filesystem status and prints it before
+    # failing (multi-line junk on Linux); BSD rejects -c with no stdout.
+    _m="$(stat -c '%a' "$_p" 2>/dev/null || stat -f '%OLp' "$_p" 2>/dev/null)"
+    [[ "$_m" =~ ^[0-7]+$ ]] || _m=""
+    _o="$(stat -c '%u:%g' "$_p" 2>/dev/null || stat -f '%u:%g' "$_p" 2>/dev/null)"
+    [[ "$_o" =~ ^[0-9]+:[0-9]+$ ]] || _o=""
     printf '%s|%s' "$_m" "$_o"
   }
 
@@ -5647,11 +5651,27 @@ print(state + " " + str(len(headers)))
           fi
           break
         done
+        # --- the Command Center DB both SOP repairs below read ---------------
+        # The shared resolver (shared-utils/resolve_db.py) is the DB the running
+        # CC uses: env/.env.local first, 0-byte decoys skipped, layout candidates
+        # only with a `workspaces` table. The old "first existing file" pick
+        # took a 0-byte decoy over the live board. Fallback (resolver absent):
+        # the legacy pair, non-empty files only.
+        _fast_cc_db=""
+        _fast_resolve_db="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/resolve_db.py"
+        [ -f "$_fast_resolve_db" ] || _fast_resolve_db="${EXTRACTED_DIR:-}/shared-utils/resolve_db.py"
+        if [ -f "$_fast_resolve_db" ]; then
+          _fast_cc_db="$(python3 "$_fast_resolve_db" --path 2>/dev/null || true)"
+        fi
+        if [ -z "$_fast_cc_db" ]; then
+          for _fast_c in "/data/projects/command-center/mission-control.db" "$HOME/projects/command-center/mission-control.db"; do
+            if [ -s "$_fast_c" ]; then _fast_cc_db="$_fast_c"; break; fi
+          done
+        fi
         # --- SOP library under-populated (U6c) ------------------------------
         if [ -n "${_U6C_SOPLIB_FAIL:-}" ]; then : # probe reported missing ingester / no reader — full pass handles it
         else
-          _fast_sop_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
-                        || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+          _fast_sop_db="$_fast_cc_db"
           if [ -n "$_fast_sop_db" ] && [ -f "$_fast_sop_db" ]; then
             _fast_sop_canon="${_U6C_CANON:-2555}"
             _fast_sop_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_sop_db" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
@@ -5669,8 +5689,7 @@ print(state + " " + str(len(headers)))
           fi
         fi
         # --- SOP-embeddings under-populated (U6c2) --------------------------
-        _fast_emb_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
-                       || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+        _fast_emb_db="$_fast_cc_db"
         if [ -n "$_fast_emb_db" ] && [ -f "$_fast_emb_db" ]; then
           _fast_emb_canon="${_U6C_EMB_CANON:-0}"
           if [ "${_fast_emb_canon:-0}" -gt 0 ] 2>/dev/null; then

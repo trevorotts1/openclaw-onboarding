@@ -258,8 +258,11 @@ report_interview_not_complete() {
   local detail="${1:-not complete}"
   # Throttle: skip if we reported within the window.
   if [[ -f "$INTERVIEW_REPORT_MARKER" ]]; then
-    local age_h
-    age_h=$(( ( $(date -u +%s) - $(stat -f %m "$INTERVIEW_REPORT_MARKER" 2>/dev/null || stat -c %Y "$INTERVIEW_REPORT_MARKER" 2>/dev/null || echo 0) ) / 3600 ))
+    local age_h m
+    # GNU `stat -c` first (GNU `stat -f` prints filesystem status, not a number).
+    m="$(stat -c %Y "$INTERVIEW_REPORT_MARKER" 2>/dev/null || stat -f %m "$INTERVIEW_REPORT_MARKER" 2>/dev/null)"
+    [[ "$m" =~ ^[0-9]+$ ]] || m=0
+    age_h=$(( ( $(date -u +%s) - m ) / 3600 ))
     [[ "$age_h" -lt "$REPORT_THROTTLE_HOURS" ]] && { log "interview-report: throttled (${age_h}h < ${REPORT_THROTTLE_HOURS}h)"; return 0; }
   fi
   local msg="[INTERVIEW-GATE] AI Workforce interview not completed yet (${detail}). The Command Center / zero-human company is gated until the interview is complete — no departments are being built. Finish the interview to proceed."

@@ -206,7 +206,9 @@ LOCK_HELD=0; LOCK_STOLEN=0; OWN_PID=$$
 
 lock_holder_pid() { sed -n '1p' "$LOCK_PATH/pid" 2>/dev/null || true; }
 dir_age_seconds() {
-  local m; m="$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || date +%s)"
+  # GNU `stat -c` first (GNU `stat -f` prints filesystem status, not a number).
+  local m; m="$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)"
+  [[ "$m" =~ ^[0-9]+$ ]] || m="$(date +%s)"
   printf '%s' "$(( $(date +%s) - m ))"
 }
 acquire_lock() {

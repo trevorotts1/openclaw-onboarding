@@ -165,7 +165,7 @@ p = os.environ["OC_CONFIG"]
 op_token = os.environ.get("OPERATOR_BOT_TOKEN", "").strip()
 op_help_chat = os.environ.get("OPERATOR_HELP_CHAT_ID", "").strip()
 
-# The ONLY operator IDs allowed on the operator account. The client's id is
+# The ONLY operator IDs allowed on the operator account. The client id is
 # NEVER added here (that is the whole point of the separation).
 OPERATOR_IDS = ["5252140759", "6663821679", "6771245262"]
 
@@ -178,7 +178,7 @@ before = json.dumps(cfg, sort_keys=True)
 
 tg = cfg.setdefault("channels", {}).setdefault("telegram", {})
 
-# 1) Existing single-bot config -> migrate its botToken/allowFrom into a
+# 1. Existing single-bot config -> migrate its botToken/allowFrom into a
 #    `default` (CLIENT) account WITHOUT removing anything. We do not touch the
 #    top-level allowFrom (named accounts may still inherit it), we just make the
 #    client account explicit.
@@ -186,20 +186,20 @@ accounts = tg.setdefault("accounts", {})
 default_acct = accounts.setdefault("default", {})
 
 # Carry over the existing single-bot token/allowFrom into default if present and
-# default doesn't already have them. ADDITIVE — never clobber an existing,
+# default does not already have them. ADDITIVE — never clobber an existing,
 # already-configured default account.
 legacy_token = tg.get("botToken", "")
 legacy_allow = tg.get("allowFrom", [])
 if legacy_token and not default_acct.get("botToken"):
     default_acct["botToken"] = legacy_token
 if legacy_allow and not default_acct.get("allowFrom"):
-    # client account keeps the client's own allow list / pairing
+    # client account keeps its own allow list / pairing
     default_acct["allowFrom"] = list(legacy_allow)
 default_acct.setdefault("dmPolicy", "pairing")
 
-# 2) operator account — SEPARATE bot, allowlist of operator IDs ONLY.
+# 2. operator account — SEPARATE bot, allowlist of operator IDs ONLY.
 op_acct = accounts.setdefault("operator", {})
-# additive: set token only if we have one and it's not already set
+# additive: set token only if we have one and it is not already set
 if op_token and not op_acct.get("botToken"):
     op_acct["botToken"] = op_token
 elif "botToken" not in op_acct:
@@ -215,7 +215,7 @@ op_acct["allowFrom"] = existing_allow
 
 # v16.1.4 — helpChatId is NOT a valid telegram-account schema key
 # (channels.telegram.accounts.<id> is additionalProperties:false → the gateway
-# rejects it: 'must not have additional properties: "helpChatId"') and stuffing a
+# rejects it: "must not have additional properties: helpChatId") and stuffing a
 # chat id there co-mingles operators with clients. Operator escalation is driven
 # by env OPERATOR_ESCALATION_CHAT_ID (persisted above), NEVER this key. Do not
 # write it, and STRIP any helpChatId a prior buggy run left on any account.
@@ -224,10 +224,10 @@ for _acct in accounts.values():
     if isinstance(_acct, dict):
         _acct.pop("helpChatId", None)
 
-# 3) defaultAccount -> the CLIENT account, so owner-facing routing is unchanged.
+# 3. defaultAccount -> the CLIENT account, so owner-facing routing is unchanged.
 tg["defaultAccount"] = "default"
 
-# 4) bindings route: operator account -> agent main (isolated session key).
+# 4. bindings route: operator account -> agent main (isolated session key).
 # v16.1.4 SCHEMA FIX (proven against the live gateway schema 2026.5.28 + 2026.6.8):
 #   • `bindings` is a TOP-LEVEL config key (sibling of `agents`), NOT a child of
 #     `channels`. channels.bindings makes the gateway read `bindings` as an
@@ -262,7 +262,7 @@ else:
     open(p, "a").write("\n")
     print("MERGED")
 
-# report token state for the caller's honesty contract
+# report token state for the honesty contract of the caller
 print("TOKEN_PRESENT:" + ("yes" if op_acct.get("botToken") else "no"))
 PYEOF
 )"

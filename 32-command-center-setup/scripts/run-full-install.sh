@@ -531,7 +531,9 @@ cc_resolve_sovereign_model() {
   local candidates cand
   candidates="$(jq -r '
     [ .agents.defaults.model.primary?,
+      .agents.entries.main.model.primary?,
       ( (.agents.list // []) | map(select(.name=="Main" or .name=="main")) | .[0].model.primary? ),
+      ( [(.agents.entries // {})[]] | .[0].model.primary? ),
       .agents.list[0].model.primary?,
       ( (.agents.defaults.model.fallbacks? // [])[] ),
       .agents.defaults.model?
@@ -624,8 +626,8 @@ cc_resolve_judge_model() {
       (.models.providers["ollama"].models[]?.id),
       (.agents.defaults.model.primary?),
       ((.agents.defaults.model.fallbacks? // [])[]),
-      ((.agents.list // []) | map(.model.primary?) | .[]),
-      ((.agents.list // []) | map(.model.fallbacks? // []) | add // [] | .[])
+      ((.agents.list // []) + [(.agents.entries // {})[]] | map(.model.primary?) | .[]),
+      ((.agents.list // []) + [(.agents.entries // {})[]] | map(.model.fallbacks? // []) | add // [] | .[])
     ] | map(select(type=="string" and . != "")) | unique | .[]
   ' "$OC_CONFIG" 2>/dev/null)"
   local fam id lid
@@ -1166,7 +1168,9 @@ cc_git_sync_to_default_branch() {
 #      and an OWN manual revert (snapshot .next before building, restore it
 #      on a failed post-check) — so even the last-resort tier never leaves a
 #      half-updated CC standing.
-# Sets state key .commandCenterLastUpdateVerified (true/false) either way.
+# Sets state keys .commandCenterLastUpdateVerified AND .commandCenterBuildFresh
+# (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build, and the
+# FINAL degraded check requires commandCenterBuildFresh.
 # Returns 0 if the box ends the call GREEN (fresh build + healthy), 1 otherwise
 # (the box may still be safely serving the PRIOR build — that is success from
 # the "never half-updated" invariant's point of view, just not a fresh deploy).
@@ -1270,7 +1274,7 @@ cc_route_update_through_canonical_path() {
   health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
   if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
     log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
-    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true' 2>/dev/null || true
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true | .commandCenterBuildFresh = true' 2>/dev/null || true
     return 0
   fi
   if [[ "$health_code" == "200" ]]; then
@@ -1278,7 +1282,7 @@ cc_route_update_through_canonical_path() {
   else
     log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code. CC may be down; this box needs operator attention (see $LOG_FILE)."
   fi
-  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false' 2>/dev/null || true
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false | .commandCenterBuildFresh = false' 2>/dev/null || true
   return 1
 }
 
@@ -2370,12 +2374,15 @@ else
   if ! bash "$SKILL32_MATERIALIZE" >>"$LOG_FILE" 2>&1; then
     fail_install "phase=4: materialize-dept-agents.sh exited non-zero (see $LOG_FILE)"
   fi
-  AGENT_COUNT=$(python3 -c 'import json,sys; sys.stdout.write(str(len(json.load(open(sys.argv[1]))["agents"]["list"])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
+  # Count BOTH roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id)
+  # and legacy agents.list[]. Reading only ["agents"]["list"] raised KeyError on
+  # an entries box, counted 0 and failed every fresh install there.
+  AGENT_COUNT=$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("agents") or {}; e=a.get("entries"); l=a.get("list"); sys.stdout.write(str(len(e if isinstance(e, dict) else {}) + len(l if isinstance(l, list) else [])))' "$OC_ROOT/openclaw.json" 2>>"$LOG_FILE" || echo "0")
   if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
-    fail_install "phase=4: agents.list[] has only ${AGENT_COUNT:-0} entries after materialize"
+    fail_install "phase=4: the agent roster has only ${AGENT_COUNT:-0} entries after materialize"
   fi
   state_set ".agentsMaterializedCount = $AGENT_COUNT | .commandCenterPhase4Done = true"
-  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in agents.list[])"
+  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in the roster)"
 fi
 
 # ----------------------------------------------------------------------
@@ -3168,10 +3175,14 @@ if [[ -f "$STATE_FILE" ]]; then
   if [[ -z "$(state_get '.commandCenterUrl')" || "$(state_get '.commandCenterUrl')" == "null" ]]; then
     state_set ".commandCenterUrl = \"http://127.0.0.1:$DASHBOARD_PORT/\""
   fi
-  # A required sub-phase counts as degraded only when its key is PRESENT and not
-  # `true` (false or "script-missing"). An absent key (older state) is not treated
-  # as a regression. jq's `//` collapses false→empty, so this membership test is
-  # done in one jq pass rather than via state_get.
+  # FAIL-CLOSED: a required sub-phase counts as degraded unless its key is
+  # exactly `true` -- false, "script-missing" AND an absent key all withhold
+  # "done" (tests/unit/cc-done-degraded-retry-gate.test.sh pins this). So every
+  # install path must WRITE each key: the update-only path stamps
+  # commandCenterBuildFresh in cc_route_update_through_canonical_path, because
+  # its update.sh / atomic-deploy.sh tiers never run cc_ensure_fresh_build.
+  # jq's `//` collapses false→empty, so this membership test is done in one jq
+  # pass rather than via state_get.
   if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1; then
     log "WARN" "Tenant readiness pending. Configure this client's own IDs and enrollment per TENANT-CONFIGURATION.md; recovery remains enabled."
     state_set '.commandCenterTenantReady = false'

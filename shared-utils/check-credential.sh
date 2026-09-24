@@ -105,12 +105,15 @@ fi
 set -euo pipefail
 
 # ─── Detect platform ─────────────────────────────────────────────────────────
+# The OS decides, exactly as platform/common.sh oc_detect_platform (what
+# install.sh / update-skills.sh use): Darwin -> mac, Linux -> vps. Keying on
+# /data/.openclaw called a Linux box whose root is ~/.openclaw "mac" and skipped
+# the live-process / Docker env sources below -- a false "not found".
 detect_platform() {
-  if [[ -d "/data/.openclaw" ]]; then
-    echo "vps"
-  else
-    echo "mac"
-  fi
+  case "$(uname -s)" in
+    Linux) echo "vps" ;;
+    *)     echo "mac" ;;
+  esac
 }
 
 # ─── Detect gateway PID / Docker container ───────────────────────────────────
