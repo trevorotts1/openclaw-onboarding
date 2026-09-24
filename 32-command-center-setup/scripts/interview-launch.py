@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Client-owned launch stages. No messages, provider calls, or readiness fabrication."""
 from __future__ import annotations
-import argparse, hashlib, json, os, re, secrets, sqlite3, subprocess, sys, uuid
+import argparse, hashlib, json, os, re, secrets, sqlite3, subprocess, sys, tempfile, uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '23-ai-workforce-blueprint/scripts'))
 from workforce_state import read, update, atomic_write, lock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared-utils"))
@@ -197,15 +197,7 @@ def provision(path, app, root, env):
             else: registry[host] = registration
             values['MC_TENANT_REGISTRY_JSON'] = json.dumps(registry,separators=(',',':'))
             preserve('MC_TENANT_PUBLIC_URL', origin)
-        text = target.read_text() if target.exists() else ''
-        updates={k:v for k,v in values.items() if original_values.get(k)!=v or k.endswith('_JSON')}
-        lines = [line for line in text.splitlines() if line.split('=',1)[0].strip() not in updates]
-        lines.extend(encode_assignment(k, v) for k,v in updates.items())
-        import tempfile
-        fd, temporary = tempfile.mkstemp(dir=app, prefix='.launch-env-')
-        with os.fdopen(fd,'w') as handle:
-            handle.write('\n'.join(lines)+'\n'); handle.flush(); os.fsync(handle.fileno())
-        os.replace(temporary,target); target.chmod(0o600)
+        replace_env(app, target, {k:v for k,v in values.items() if original_values.get(k)!=v or k.endswith('_JSON')})
     def record(current):
         if any(current.get(k)!=s.get(k) for k in ('companyId','installationId','tenantId')): raise ValueError('identity changed while provisioning')
         current['companyRoot'] = str(company)
@@ -213,6 +205,70 @@ def provision(path, app, root, env):
         current['launchBootstrap']['serviceEnvPath'] = str(target.resolve())
         if candidate: current['commandCenterUrl'] = origin  # candidate only; never a verified receipt
     update(path,record)
+
+
+def replace_env(app, target, updates):
+    text = target.read_text() if target.exists() else ''
+    lines = [line for line in text.splitlines() if line.split('=',1)[0].strip() not in updates]
+    lines.extend(encode_assignment(k, v) for k,v in updates.items())
+    fd, temporary = tempfile.mkstemp(dir=app, prefix='.launch-env-')
+    with os.fdopen(fd,'w') as handle:
+        handle.write('\n'.join(lines)+'\n'); handle.flush(); os.fsync(handle.fileno())
+    os.replace(temporary,target); target.chmod(0o600)
+
+
+def access_login(origin):
+    """One unauthenticated, non-following request: (status, Location) of the public interview page."""
+    import urllib.request, urllib.error
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args,**kwargs): return None
+    # Cloudflare answers the stock Python-urllib agent with 403 before Access runs.
+    request=urllib.request.Request(origin+'/interview',headers={'User-Agent':'openclaw-onboarding/interview-launch'})
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(request,timeout=15) as response: return response.status, None
+    except urllib.error.HTTPError as exc: return exc.code, exc.headers.get('Location')
+
+
+def register_access(path, app, fetch=None):
+    """Fill the public host's Cloudflare Access issuer/audience from its live login redirect and,
+    when no subject is registered, the owner's contact email. Without all three the Command Center
+    refuses every interview sign-in (409 access_identity_unregistered). Present values are kept;
+    a conflicting one is refused, never replaced. Returns True only when the registry changed."""
+    s = read(path); target = app / '.env.local'
+    with lock(target):
+        values = env_read(target)
+        origin = public_origin(values.get('MC_TENANT_PUBLIC_URL') or s.get('commandCenterUrl') or '')
+        host = urlsplit(origin).hostname
+        registry = json.loads(values.get('MC_TENANT_REGISTRY_JSON') or '{}')
+        reg = registry.get(host)
+        if not isinstance(reg, dict) or any(reg.get(k) != s.get(k) for k in ('tenantId','companyId','installationId')):
+            raise ValueError('public host is not registered to this installation; run provision first')
+        # Loopback aliases registered to the same installation carry the same identity.
+        ident = {k: reg.get(k) for k in ('kind','tenantId','companyId','installationId')}
+        hosts = [host] + [h for h in ('localhost','127.0.0.1','[::1]') if h != host and isinstance(registry.get(h), dict)
+                          and all(registry[h].get(k) == v for k, v in ident.items())]
+        if all(registry[h].get('issuer') and registry[h].get('audience') and registry[h].get('subjects') for h in hosts): return False
+        subjects = reg.get('subjects') or []
+        if not isinstance(subjects, list): raise ValueError('registered Access subjects must be a list')
+        if not subjects:
+            email = str(s.get('contactEmail') or '').strip().lower()
+            if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email) or email.startswith('pending+'):
+                raise ValueError('owner contactEmail in '+str(path)+' is missing or a placeholder; set the owner\'s real sign-in email')
+            subjects = [email]
+        status, location = (fetch or access_login)(origin)
+        login = urlsplit(location or '')
+        kid = dict(parse_qsl(login.query)).get('kid', '')
+        if (status not in (302, 303, 307) or login.scheme != 'https'
+                or not re.fullmatch(r'[a-z0-9-]+\.cloudflareaccess\.com', login.netloc)
+                or login.path != '/cdn-cgi/access/login/'+host or not re.fullmatch(r'(?:[0-9a-f]{32}){1,2}', kid)):
+            raise ValueError(origin+'/interview is not behind a Cloudflare Access login (HTTP '+str(status)+'); create the Access app first')
+        derived = {'issuer': 'https://'+login.netloc, 'audience': kid}
+        for h in hosts:
+            for k, v in derived.items():
+                if registry[h].get(k) and registry[h][k] != v: raise ValueError('registered Access '+k+' for '+h+' conflicts with the live login; refusing replacement')
+            registry[h] = {**registry[h], **derived, 'subjects': registry[h].get('subjects') or subjects}
+        replace_env(app, target, {'MC_TENANT_REGISTRY_JSON': json.dumps(registry, separators=(',',':'))})
+    return True
 
 
 def bind_database(path, app):
@@ -324,7 +380,7 @@ def invite(path, root):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('stage',choices=['inspect','initialize','provision','bind-database','prebuild','invite']);p.add_argument('--state',type=Path,required=True);p.add_argument('--app',type=Path);p.add_argument('--root',type=Path);p.add_argument('--slug');p.add_argument('--name');p.add_argument('--email');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('stage',choices=['inspect','initialize','provision','register-access','bind-database','prebuild','invite']);p.add_argument('--state',type=Path,required=True);p.add_argument('--app',type=Path);p.add_argument('--root',type=Path);p.add_argument('--slug');p.add_argument('--name');p.add_argument('--email');a=p.parse_args()
     try:
         if a.stage=='inspect':
             print(json.dumps(inspect_installation(a.state,a.app)));return 0
@@ -337,6 +393,10 @@ def main():
                     if stored.get(key): env[key]=stored[key]
             initialize(a.state,a.slug,a.name,a.email,env)
         elif a.stage=='provision': provision(a.state,a.app,a.root,os.environ)
+        elif a.stage=='register-access':
+            changed=register_access(a.state,a.app)
+            # Exit 3 = registry rewritten: the running Command Center still holds the old copy.
+            print(json.dumps({'stage':a.stage,'status':'complete','changed':changed}));return 3 if changed else 0
         elif a.stage=='bind-database': bind_database(a.state,a.app)
         elif a.stage=='invite': invite(a.state,a.root)
         else: prebuild(a.state,a.app,a.root)
