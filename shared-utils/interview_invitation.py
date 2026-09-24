@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -229,10 +229,28 @@ def issue_invitation(resolved, env, target, metadata=None):
             if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
         if receipt.get('protocol')!='interview-invitation.v1' or not redemption_declared(receipt): raise Pending('invitation protocol mismatch')
         expiry=invitation_expiry(receipt)
-        url=receipt.get('url','');parsed=urlsplit(url)
-        if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview' or parsed.query or not parsed.fragment.startswith('enroll='):
+        url=receipt.get('url')
+        if not isinstance(url,str) or not url: raise Pending('invitation URL missing')
+        parsed=urlsplit(url)
+        # An origin allow-list, not a full parse: binding must hold before any
+        # ticket is read. v7.6.64 issuers mint `/interview?enroll=<ticket>`;
+        # older fleet issuers mint `/interview#enroll=<ticket>`. Accept both
+        # query and fragment, but exactly one ticket, in exactly one place, and
+        # nothing else beside it: extra query keys or a bare path with no ticket
+        # are all refused rather than delivered on a guess.
+        if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview':
             raise Pending('invitation URL binding invalid')
-        ticket=parsed.fragment[len('enroll='):]
+        ticket=None
+        if parsed.query:
+            params=parse_qs(parsed.query,keep_blank_values=True)
+            if parsed.fragment or set(params)!= {'enroll'} or len(params['enroll'])!=1: raise Pending('invitation URL binding invalid')
+            ticket=params['enroll'][0]
+        elif parsed.fragment:
+            params=parse_qs(parsed.fragment,keep_blank_values=True)
+            if set(params)!= {'enroll'} or len(params['enroll'])!=1: raise Pending('invitation URL binding invalid')
+            ticket=params['enroll'][0]
+
+        if ticket is None: raise Pending('invitation URL binding invalid')
         import re
         if not re.fullmatch(r'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+',ticket): raise Pending('invalid enrollment token format')
         if metadata is not None:

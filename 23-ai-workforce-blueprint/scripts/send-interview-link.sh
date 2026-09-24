@@ -112,7 +112,7 @@ Welcome back, $FIRST_NAME — continue your AI Workforce Interview here: $LINK
 You can stop and return later. Any saved answers will resume after sign-in.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -122,7 +122,7 @@ Hi $FIRST_NAME — your company's standard foundation is already set up, and you
 Answers are saved as you go. You can stop and return later.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -132,7 +132,7 @@ Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversati
 Answers are saved as you go. You can stop and return later.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 
 fi
