@@ -119,6 +119,7 @@ __all__ = [
     "LAYERS",
     "NON_BLEND_MODES",
     "CONFIDENCE_LEVELS",
+    "FiveLayerScorer",
     "default_weights",
     "validate_layer_input",
     "validate_result",
@@ -431,3 +432,50 @@ def validate_result(res) -> tuple[bool, list[str]]:
         return (len(errors) == 0), errors
     except Exception as exc:  # fail-closed
         return False, [f"validator error: {exc}"]
+
+
+class FiveLayerScorer:
+    """Spec 8.5 five-layer scorer (persona-bundle + task-part ACTUAL levels).
+
+    Thin facade over the module functions (the task receipt names this
+    class): default weight policy READ from adaptive_weights.py
+    (``default_weights``), per-layer caller-supplied descriptive levels via
+    the REAL D03 ``normalize_score``/``aggregate_fit``, D16 blend
+    applicability decided FIRST (a supplied result is never re-decided),
+    per-layer judgments compatible with the D02 envelope contract,
+    uncertainty as weakest-applicable-layer confidence plus spread, and
+    deterministic batch ranking (aggregate desc, candidate id asc).
+    Stdlib only; scoring raises ValueError on bad answers (never silent
+    defaults), validators fail closed.
+    """
+
+    LAYERS = LAYERS
+    NON_BLEND_MODES = NON_BLEND_MODES
+    CONFIDENCE_LEVELS = CONFIDENCE_LEVELS
+
+    def __init__(self, *, mode: str = "leadership", weights=None):
+        self.mode = mode or "leadership"
+        self.weights = dict(weights) if isinstance(weights, dict) else None
+
+    def default_weights(self, task_text=None, mode=None):
+        """Adaptive defaults READ from adaptive_weights.py (never invented)."""
+        return default_weights(task_text, mode or self.mode)
+
+    def score(self, candidate_id, layer_inputs, **kw):
+        """Score one candidate (see ``score_candidate``)."""
+        kw.setdefault("mode", self.mode)
+        if self.weights is not None and "weights" not in kw:
+            kw["weights"] = self.weights
+        return score_candidate(candidate_id, layer_inputs, **kw)
+
+    def batch(self, candidates, **shared):
+        """Score N candidates independently, ranked (see ``score_batch``)."""
+        shared.setdefault("mode", self.mode)
+        if self.weights is not None and "weights" not in shared:
+            shared["weights"] = self.weights
+        return score_batch(candidates, **shared)
+
+    @staticmethod
+    def validate(result):
+        """Validate a score result; ``(ok, errors)``, never raises."""
+        return validate_result(result)

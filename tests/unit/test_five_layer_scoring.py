@@ -317,5 +317,19 @@ class FiveLayerResultContract(unittest.TestCase):
         self.assertTrue(errs)
 
 
+class FiveLayerScorerFacade(unittest.TestCase):
+    def test_class_scores_and_batches_like_functions(self):
+        s = fl.FiveLayerScorer()
+        layers = _layers()
+        r1 = s.score("c1", layers, department_id="sales")
+        r2 = fl.score_candidate("c1", layers, department_id="sales")
+        self.assertEqual(r1["aggregate"], r2["aggregate"])
+        out = s.batch([{"candidate_id": "c1", "layers": layers}],
+                      department_id="sales")
+        self.assertEqual(out[0]["candidate_id"], "c1")
+        ok, errs = fl.FiveLayerScorer.validate(out[0])
+        self.assertTrue(ok, errs)
+
+
 if __name__ == "__main__":
     unittest.main()
