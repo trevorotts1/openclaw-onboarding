@@ -866,9 +866,14 @@ def _heal_peragent_routing_keys(_cfg):
         _rt = {}
         _cfg["tools"] = _rt
     _healed = []
-    for _ag in (_cfg.get("agents", {}) or {}).get("list", []) or []:
-        if not isinstance(_ag, dict):
-            continue
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY)
+    # and the legacy agents.list[] ids not already in entries.
+    _ha = _cfg.get("agents") if isinstance(_cfg.get("agents"), dict) else {}
+    _he = _ha.get("entries") if isinstance(_ha.get("entries"), dict) else {}
+    _hl = _ha.get("list") if isinstance(_ha.get("list"), list) else []
+    _hroster = [(k, v) for k, v in _he.items() if isinstance(v, dict)]
+    _hroster += [(a.get("id", "<unknown>"), a) for a in _hl if isinstance(a, dict) and a.get("id") not in _he]
+    for _aid, _ag in _hroster:
         _at = _ag.get("tools")
         if not isinstance(_at, dict):
             continue
@@ -877,7 +882,7 @@ def _heal_peragent_routing_keys(_cfg):
                 if _k not in _rt and isinstance(_at[_k], (dict, list)):
                     _rt[_k] = _at[_k]  # migrate the configured value up to root
                 del _at[_k]
-                _healed.append(f"{_ag.get('id', '<unknown>')}.{_k}")
+                _healed.append(f"{_aid}.{_k}")
     return _healed
 
 _healed_keys = _heal_peragent_routing_keys(cfg)

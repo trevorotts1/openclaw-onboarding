@@ -199,6 +199,18 @@ class RemainingReaders(unittest.TestCase):
         self.assertNotIn("id", agents["entries"]["main"])
         self.assertTrue(agents["entries"]["main"].get("tools", {}).get("byProvider"), r.stdout)
 
+    def test_apply_fleet_standards_heals_entries_routing_keys(self):
+        code = heredoc("scripts/apply-fleet-standards.sh", r'python3 - "\$OC_CONFIG"', "PYEOF")
+        self.write({"agents": {"entries": {"dept-x": {"tools": {
+            "sessions": {"visibility": "all"}, "agentToAgent": {"enabled": True}}}}}})
+        r = self.py(code, str(self.cfg), HOME=str(self.tmp), FLEET_WRITE_DEFAULTS_TOOLS="0",
+                    CEO_CONSENT_FILE=str(self.tmp / "no-consent.json"))
+        self.assertIn("dept-x.sessions", r.stdout, r.stderr)
+        cfg = json.loads(self.cfg.read_text())
+        self.assertEqual(cfg["agents"]["entries"]["dept-x"]["tools"], {})
+        self.assertEqual(cfg["tools"]["sessions"], {"visibility": "all"})
+        self.assertNotIn("list", cfg["agents"])
+
     def test_apply_fleet_standards_reflex_boxtype_reads_entries(self):
         code = heredoc("scripts/apply-fleet-standards.sh", r'_REFLEX_BOXTYPE="\$\(OC_JSON="\$OC_CONFIG" python3 -', "PYBT")
         for roster, want in (({"main": {}}, "ROUTER"), ({"pa": {"default": True}, "main": {}}, "PA")):
