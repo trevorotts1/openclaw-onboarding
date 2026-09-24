@@ -19,6 +19,7 @@ import time
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from interview_completion import prompt_status
 
 PROTOCOL = 'interview-launch.v1'
 # CC issues at most 24 hours; allow a small bounded clock skew, not arbitrary TTLs.
@@ -114,6 +115,9 @@ def reject_public_redirect(status):
 def resolve_public_origin(state, env, fetch=None):
     if not isinstance(state,dict): raise Pending('canonical workforce state must be an object')
     env=load_service_environment(state,env)
+    completion = prompt_status(state, env)
+    if completion != 'INCOMPLETE':
+        raise Pending('prior interview completion recorded' if completion in ('COMPLETE', 'DECLARED') else 'completion scope/store unknown; invitation suppressed')
     expected = expected_identity(state,env)
     record = state.get('commandCenterPublicOrigin')
     candidate = None
@@ -353,6 +357,9 @@ def main():
         message=Path(args.message_file).read_text()
         delivery_context=dict(origin=resolved['origin'],companyId=resolved['companyId'],tenantId=resolved['tenantId'],installationId=resolved['installationId'],mode=args.mode,lane=args.lane)
         def enroll(text):
+            latest = json.loads(Path(args.state).read_text())
+            if prompt_status(latest, env) != 'INCOMPLETE':
+                raise Pending('completion changed or unavailable; invitation suppressed')
             private_entry=resolved['origin']+'/interview'
             if private_entry not in text:
                 raise Pending('private invitation link missing from message')

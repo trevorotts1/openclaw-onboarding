@@ -39,6 +39,22 @@ class Launch(unittest.TestCase):
         self.assertEqual(values['MC_COMPANY_ID'],s['companyId']);self.assertNotEqual(s['companyId'],'client-a')
         self.assertEqual(values['OPENCLAW_WORKSPACE_ROOT'],str(self.state.parent.resolve()))
         self.assertNotIn('commandCenterPublicOrigin',s)
+    def test_reprovision_preserves_completed_state_and_access_selectors(self):
+        self.initialize();state=json.loads(self.state.read_text())
+        state.update(interviewComplete=True,interviewCompletedAt='2026-06-20T12:00:44Z')
+        self.state.write_text(json.dumps(state))
+        from urllib.parse import urlsplit
+        host=urlsplit(state['commandCenterUrl']).hostname
+        registration=dict(kind='self',**{k:state[k] for k in ('tenantId','companyId','installationId')},subjects=['owner@example.test','opaque-user-id'],allowedEmails=['owner@example.test'],issuer='https://access.example.test',audience='test-audience')
+        envfile=self.app/'.env.local'
+        envfile.write_text(m.encode_assignment('MC_API_TOKEN','fixture-token')+'\n'+m.encode_assignment('MC_TENANT_REGISTRY_JSON',json.dumps({host:registration}))+'\n')
+        for _ in range(2):
+            m.provision(self.state,self.app,self.root,{})
+            values=m.env_read(envfile);saved=json.loads(self.state.read_text())
+            self.assertEqual(json.loads(values['MC_TENANT_REGISTRY_JSON'])[host],registration)
+            self.assertEqual(values['MC_API_TOKEN'],'fixture-token')
+            self.assertIs(saved['interviewComplete'],True)
+            self.assertEqual(saved['interviewCompletedAt'],'2026-06-20T12:00:44Z')
     def test_nonempty_unidentified_company_root_not_adopted(self):
         self.initialize();(self.app/'.env.local').write_text('MC_API_TOKEN=fixture-token\n')
         foreign=self.root/'unidentified';foreign.mkdir();(foreign/'owner-content.md').write_text('preserve')

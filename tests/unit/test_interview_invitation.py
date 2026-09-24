@@ -51,7 +51,12 @@ class InvitationTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
         self.state={'companyId':'client-a','tenantId':'tenant-a','installationId':'install-a','commandCenterUrl':'https://client.example.com','interviewComplete':False}
-        self.env={'MC_API_TOKEN':'fixture-secret'}
+        import sqlite3
+        self.db=self.root/'canonical.db'
+        connection=sqlite3.connect(self.db)
+        connection.execute("CREATE TABLE interview_prior_completion_declarations (tenant_id TEXT,company_id TEXT,installation_id TEXT,source TEXT)")
+        connection.close()
+        self.env={'MC_API_TOKEN':'fixture-secret','MC_TENANT_ID':'tenant-a','MC_COMPANY_ID':'client-a','MC_INSTALLATION_ID':'install-a','DATABASE_PATH':str(self.db),'DASHBOARD_DB_PATH':str(self.db)}
         self.receipt=dict(companyId='client-a',tenantId='tenant-a',installationId='install-a',host='client.example.com',protocol=m.PROTOCOL,stage='interview',ready=True,missing=[],interviewComplete=False,capabilities={'state':True,'localInterviewPrerequisites':True,'enrollment':True,'providerLiveness':'unverified'})
         self.bin=self.root/'bin';self.bin.mkdir();self.ledger=self.root/'discovery'/'sends.log'
         self.context={'origin':'https://client.example.com','companyId':'client-a','tenantId':'tenant-a','installationId':'install-a','mode':'start','lane':'legacy'}
@@ -77,6 +82,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         guard=self.root/'guard';guard.mkdir();(guard/'sitecustomize.py').write_text(FIXTURE_GUARD)
         fixture_env={key:value for key,value in os.environ.items() if not key.startswith(('OPENCLAW_','OC_','MC_','CF_ACCESS_')) and key not in ('FORCE','INTERVIEW_INVITATION_AUTOMATIC')}
         fixture_env.update(HOME=str(self.root),OPENCLAW_ROOT=str(self.root/'.openclaw'),PATH=str(self.bin)+os.pathsep+os.environ['PATH'],CAPTURE=str(self.capture),LEDGER=str(self.ledger),INVITATION_FIXTURE_ROOT=str(self.root),PYTHONPATH=str(guard))
+        fixture_env.update(self.env)
         self.process_env=patch.dict(os.environ,fixture_env,clear=True);self.process_env.start();self.addCleanup(self.process_env.stop)
     def test_fixture_rejects_absolute_host_executable_before_launch(self):
         with self.assertRaisesRegex(RuntimeError,'non-fixture executable'):
@@ -260,9 +266,9 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         fake=self.bin/'curl';fake.write_text('#!'+sys.executable+'\nimport sys,json,time\nconfig=sys.stdin.read()\nassert "Authorization: Bearer fixture-secret" in config\nassert "--location" not in sys.argv\n'+'data=json.loads('+repr(json.dumps(self.receipt))+')\n'+'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+900,"oneUse":True,"url":"https://client.example.com/interview#enroll=fixture.signature"}\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n');fake.chmod(0o755)
         env=dict(os.environ,HOME=str(self.root),OPENCLAW_WORKSPACE_ROOT=str(self.root),OPENCLAW_OWNER_CHAT_ID='123456789',MC_API_TOKEN='fixture-secret')
         env.pop('MC_API_TOKEN',None)  # fresh installer writes a service token, not ambient shell export
-        run=subprocess.run(['bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'),'--dry-run'],env=env,text=True,capture_output=True)
+        run=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'),'--dry-run'],env=env,text=True,capture_output=True)
         self.assertEqual(run.returncode,0,run.stderr);self.assertIn('https://client.example.com/interview',run.stdout);self.assertNotIn('fixture-secret',run.stdout+run.stderr);self.assertFalse(self.capture.exists())
-        sent=subprocess.run(['bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh')],env=env,text=True,capture_output=True)
+        sent=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh')],env=env,text=True,capture_output=True)
         self.assertEqual(sent.returncode,0,sent.stderr);self.assertEqual(json.loads(sent.stdout)['status'],'accepted');self.assertEqual(json.loads(self.capture.read_text())['target'],'123456789');self.assertIn('#enroll=fixture.signature',json.loads(self.capture.read_text())['message']);self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
     def test_concurrent_invocations_send_once(self):
         script="import sys;sys.path.insert(0,sys.argv[1]);import interview_invitation as m,json;print(m.send_gateway('same message','123456789',sys.argv[2],json.loads(sys.argv[3]))[0])"
@@ -300,6 +306,8 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_bootstrap_service_token_handoff_without_ambient_secret(self):
         service=self.root/'service.env';service.write_text('MC_API_TOKEN="fixture-secret"\nMC_COMPANY_ID="client-a"\nMC_TENANT_ID="tenant-a"\nMC_INSTALLATION_ID="install-a"\nMC_TENANT_PUBLIC_URL="https://client.example.com"\n')
         state=dict(self.state,launchBootstrap={'serviceEnvPath':str(service)})
+        # Actual provision() pins the server database in this service file.
+        service.write_text(service.read_text()+'DATABASE_PATH='+json.dumps(str(self.db))+'\n')
         env=m.load_service_environment(state,{})
         self.assertEqual(env['MC_API_TOKEN'],'fixture-secret');self.assertEqual(self.resolve(state=state,env={'UNRELATED':'value'})['companyId'],'client-a')
         with self.assertRaises(m.Pending):m.load_service_environment(state,{'MC_API_TOKEN':'another-client-token'})
