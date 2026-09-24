@@ -1,4 +1,7 @@
-"""D06 provider credential stores (JEV spec 1.1, section 3.3).
+"""JEV 1.1 decision-engine providers (spec section 3).
 
-Stdlib only. No network, no filesystem, no state writes.
+D04 owns ``typesafe_direct``; D06 owns the client-scoped credential stores
+(spec section 3.3). Each provider module is stdlib-only, performs no network
+or filesystem I/O at import, never touches credentials on disk, and never
+mutates process environment.
 """
