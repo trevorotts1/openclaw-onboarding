@@ -3156,10 +3156,13 @@ if si != -1 and ei != -1 and ei > si:
     # the template renders content BEYOND the END marker (the
     # "## What Rescue Rangers IS + your own wiring" section). The replace
     # branch above only covered START..END, so every re-stamp spliced the whole
-    # template back in while leaving the PREVIOUS render's tail in place --
+    # template back in while leaving the tail of the PREVIOUS render in place --
     # duplicating that section on every roll. The re-stamp runs unconditionally
     # on every fleet roll, so this accumulated silently per box. Consume the
     # tail we ourselves rendered last time, if it is sitting right there.
+    # (No apostrophe in prose anywhere in this heredoc: it sits inside $(...),
+    # and macOS /bin/bash 3.2 then pairs a lone apostrophe and fails to parse
+    # the whole script from here on.)
     _tpl_ei = tpl.find(END)
     if _tpl_ei != -1:
         _tail = tpl[_tpl_ei + len(END):]

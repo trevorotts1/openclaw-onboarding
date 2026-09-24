@@ -184,3 +184,25 @@ jobs:
 
       - name: G — platform detection parity
         run: bash tests/unit/platform-detection-parity.test.sh
+
+  bash32-parse:
+    # macOS ships bash 3.2 at /bin/bash, and every Mac in the fleet runs these
+    # scripts with it (`bash script.sh` / `#!/usr/bin/env bash`). bash 3.2
+    # pairs quotes inside a heredoc nested in $(...): one apostrophe in prose
+    # there fails the WHOLE script at parse time -- mid-run, often with rc 0 --
+    # while bash 5 (ubuntu, Homebrew) parses it fine. Parse every shell file
+    # this guard watches (the .sh paths in the filter above) with /bin/bash.
+    name: bash 3.2 parses every watched shell script (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: /bin/bash -n
+        run: |
+          /bin/bash --version | head -1
+          rc=0
+          for f in $(sed -nE 's/^      - "(.+\.sh)"$/\1/p' .github/workflows/script-defect-classes-guard.yml | sort -u); do
+            if /bin/bash -n "$f"; then echo "ok   $f"; else echo "FAIL $f"; rc=1; fi
+          done
+          exit $rc
