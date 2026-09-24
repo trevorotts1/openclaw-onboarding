@@ -30,16 +30,35 @@ fi
 if [[ "$_oc_try_container" == true ]]; then
     _oc_container="${OPENCLAW_CONTAINER_NAME:-}"
     if command -v docker >/dev/null 2>&1; then
-        _oc_running=$(docker ps --format '{{.Names}}' 2>/dev/null) || _oc_running=""
+        # Daemon reachability, not output volume, gates the stopped-container
+        # probe below: zero RUNNING containers with a STOPPED OpenClaw
+        # container present must still refuse (start it, don't install beside
+        # it). Only an unreachable daemon falls through to native.
+        _oc_docker_ok=true
+        if ! _oc_running=$(docker ps --format '{{.Names}}' 2>/dev/null); then
+            echo "[install] Docker daemon is unreachable; continuing with a native Linux installation." >&2
+            _oc_running=""
+            _oc_docker_ok=false
+        fi
         if [[ -z "$_oc_container" ]]; then
-            _oc_matches=$(printf '%s\n' "$_oc_running" | grep -iE 'openclaw' || true)
-            _oc_count=$(printf '%s\n' "$_oc_matches" | grep -c '.' || true)
+            # Empty output must fall through to the native path below: count
+            # only when the match list is non-empty, and guard the
+            # stopped-container probe against a daemon that already failed.
+            _oc_matches=""
+            _oc_count=0
+            if [[ -n "$_oc_running" ]]; then
+                _oc_matches=$(printf '%s\n' "$_oc_running" | grep -iE 'openclaw' || true)
+                if [[ -n "$_oc_matches" ]]; then
+                    _oc_count=$(printf '%s\n' "$_oc_matches" | grep -c '.' || true)
+                    _oc_count="${_oc_count:-0}"
+                fi
+            fi
             if [[ "$_oc_count" -gt 1 ]]; then
                 echo "Multiple OpenClaw containers are running; set OPENCLAW_CONTAINER_NAME to the intended client container." >&2
                 return 1
             fi
             _oc_container="$_oc_matches"
-            if [[ -z "$_oc_container" ]] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qiE 'openclaw'; then
+            if [[ -z "$_oc_container" ]] && [[ "$_oc_docker_ok" == true ]] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qiE 'openclaw'; then
                 echo "An OpenClaw container exists but is stopped; start that client container before onboarding." >&2
                 return 1
             fi
@@ -68,6 +87,18 @@ if [[ "$_oc_try_container" == true ]]; then
                 -e CC_PORT
                 -e OPENCLAW_PODBEAN_CLIENT_ID
                 -e OPENCLAW_PODBEAN_CLIENT_SECRET
+                -e MC_COMPANY_ID
+                -e MC_TENANT_ID
+                -e MC_INSTALLATION_ID
+                -e MC_TENANT_PUBLIC_URL
+                -e CC_PUBLIC_URL
+                -e MC_API_TOKEN
+                -e MC_TENANT_REGISTRY_JSON
+                -e MC_PERSONA_COMPANY_CONTEXTS_JSON
+                -e MC_TENANT_SESSION_SECRET
+                -e DATABASE_PATH
+                -e ZERO_HUMAN_COMPANY_DIR
+                -e ONBOARDING_LANE
                 -e OPENCLAW_PLATFORM=vps
                 -e OPENCLAW_BOOTSTRAP_MODE
                 -e OPENCLAW_NO_CONTAINER_REEXEC=1)
@@ -78,6 +109,8 @@ if [[ "$_oc_try_container" == true ]]; then
             _oc_source="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/$_oc_ref/$_oc_entrypoint"
             # A terminal client can answer the two intake questions inside Docker.
             # Agent/background callers must provide the answers in the scoped env.
+            # Tenant/interview values travel in the environment file only, never
+            # as re-exec argv (argv leaks into process listings and logs).
             if [[ -t 2 && -r /dev/tty ]]; then
                 _oc_args+=(-t)
                 exec docker "${_oc_args[@]}" "$_oc_container" bash -c 'set -o pipefail; _oc_source_url=$1; shift; curl -fSL "$_oc_source_url" | bash -s -- "$@"' onboarding "$_oc_source" "$@" </dev/tty
