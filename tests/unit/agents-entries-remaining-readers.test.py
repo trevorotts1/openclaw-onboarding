@@ -198,6 +198,7 @@ class RemainingReaders(unittest.TestCase):
             self.assertEqual(agents["entries"][aid]["subagents"]["allowAgents"], ["*"], aid)
         self.assertNotIn("id", agents["entries"]["main"])
         self.assertTrue(agents["entries"]["main"].get("tools", {}).get("byProvider"), r.stdout)
+        self.assertIn("re-asserted CEO tool-gate on default agent (id=main;", r.stdout)
 
     def test_apply_fleet_standards_heals_entries_routing_keys(self):
         code = heredoc("scripts/apply-fleet-standards.sh", r'python3 - "\$OC_CONFIG"', "PYEOF")

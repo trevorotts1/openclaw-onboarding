@@ -847,7 +847,7 @@ elif _roster:
             _root_tools["agentToAgent"] = _a2a
         _a2a.setdefault("enabled", True)
         _a2a.setdefault("allow", ["*"])
-        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
+        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={_ceo_id or '<unknown>'}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
 
 # v16.1.3 SELF-HEAL — sessions/agentToAgent belong on ROOT `tools`, NEVER on a
 # per-agent tools block (AgentEntry.tools is additionalProperties:false and
