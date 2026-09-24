@@ -1,3 +1,19 @@
+## [v25.1.85]  -  2026-09-24  -  Interview invitation link is query-form, reusable until complete (skill 32 v13.1.28)
+
+### Why
+The paired Command Center (v7.6.65) mints enrollment links as `/interview?enroll=<ticket>`, but the onboarding validator accepted only the legacy `/interview#enroll=<ticket>` fragment form and rejected an empty or missing URL with a crash-shaped error instead of a Pending refusal. The CI contract still pinned Command Center v7.1.5, which mints only fragment links. Client-facing copy promised a fresh link on re-sign-in and quoted a 24-hour clock, while the actual contract is reusable until the interview is complete.
+
+### What changed
+- `shared-utils/interview_invitation.py`: `issue_invitation` accepts the canonical `/interview?enroll=<ticket>` query form and keeps the legacy `/interview#enroll=<ticket>` fragment form for older issuers; exactly one ticket in exactly one place, nothing else beside it. Missing, empty, and non-string URLs are refused as Pending.
+- `tests/unit/test_interview_invitation.py`: all minted fixtures use the query form; the legacy fragment form is covered by a dedicated case plus mixed-form and empty-URL rejections. Fixture guard allows the PATH-resolved `bash` interpreter entrypoint (Homebrew on operator Macs, system bash on Linux).
+- `.github/workflows/interview-launch-contract.yml`: paired Command Center pin v7.1.5 to v7.6.65; new step asserts the paired `invitation.ts` mints query-form, the `send-link` route requires query `enroll`, and the minted URL passes this repo's validator.
+- `23-ai-workforce-blueprint/scripts/send-interview-link.sh`: sign-in lines now say to re-open the same link (valid until the interview is complete, re-openable on any device) instead of promising a fresh link on expiry.
+- `docs/interview-launch-recovery.md`, `32-command-center-setup/SKILL.md`, `23-ai-workforce-blueprint/INSTRUCTIONS.md`: link copy updated to reusable-until-complete with `?enroll=` canonical and legacy `#enroll=` noted; `TENANT-CONFIGURATION.md` needed no link-lifetime copy. `docs/tenant-interview-rollout.md` and `docs/interview-state-source-of-truth.md` do not exist in this repo (verified against `origin/main` tree), recorded as NOT-DONE.
+- Skill 32 v13.1.27 to v13.1.28.
+
+### Tests
+`tests/unit/test_interview_invitation.py`: 60 passed, 99 subtests passed. `send-interview-link.sh --dry-run` path covered inside that suite. Workflow YAML parses (29 steps). Contract assertion proven locally against CC v7.6.65 sources.
+
 ## [v25.1.84]  -  2026-09-24  -  Interview sign-in works on fresh installs (skill 32 v13.1.27)
 
 ### Why

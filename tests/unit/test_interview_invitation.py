@@ -34,6 +34,11 @@ def fixture_audit(event, args):
     # entrypoints; their sitecustomize inherits this same guard.
     python = shutil.which('python3', path=env.get('PATH', ''))
     if python: interpreters.add(pathlib.Path(python).resolve())
+    # The shell under test is an interpreter entrypoint too: bare `bash` resolves
+    # via PATH (Homebrew /opt/homebrew/bin/bash on operator Macs, /usr/bin/bash
+    # on Linux), never to a fixture file, so allow exactly what PATH selects.
+    shell = shutil.which('bash', path=env.get('PATH', ''))
+    if shell: interpreters.add(pathlib.Path(shell).resolve())
     if resolved not in interpreters and root not in resolved.parents:
         raise RuntimeError('fixture rejected non-fixture executable')
     for key in ('HOME', 'OPENCLAW_ROOT', 'OC_ROOT', 'OC_CONFIG'):
@@ -129,7 +134,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_cloudflare_credentials_are_only_in_curl_stdin_for_both_requests(self):
         import time
         credentials=dict(self.env,CF_ACCESS_CLIENT_ID='fixture-access-id',CF_ACCESS_CLIENT_SECRET='fixture-access-secret')
-        ticket=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',expiresAt=int(time.time())+86400,oneUse=True,url='https://client.example.com/interview#enroll=fixture.signature')
+        ticket=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',expiresAt=int(time.time())+86400,oneUse=True,url='https://client.example.com/interview?enroll=fixture.signature')
         with patch.object(m.subprocess,'run',side_effect=[subprocess.CompletedProcess([],0,json.dumps(self.receipt)+'\n200',''),subprocess.CompletedProcess([],0,json.dumps(ticket)+'\n200','')]) as run:
             resolved=m.resolve_public_origin(self.state,credentials)
             m.issue_invitation(resolved,credentials,'123456789')
@@ -257,13 +262,13 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_actual_shell_uses_authenticated_origin_and_owner_resolver(self):
         service=self.root/'service.env';service.write_text('MC_API_TOKEN=fixture-secret\nMC_COMPANY_ID=client-a\nMC_TENANT_ID=tenant-a\nMC_INSTALLATION_ID=install-a\n')
         self.root.joinpath('.workforce-build-state.json').write_text(json.dumps(dict(self.state,launchBootstrap={'serviceEnvPath':str(service)})))
-        fake=self.bin/'curl';fake.write_text('#!'+sys.executable+'\nimport sys,json,time\nconfig=sys.stdin.read()\nassert "Authorization: Bearer fixture-secret" in config\nassert "--location" not in sys.argv\n'+'data=json.loads('+repr(json.dumps(self.receipt))+')\n'+'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+900,"oneUse":True,"url":"https://client.example.com/interview#enroll=fixture.signature"}\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n');fake.chmod(0o755)
+        fake=self.bin/'curl';fake.write_text('#!'+sys.executable+'\nimport sys,json,time\nconfig=sys.stdin.read()\nassert "Authorization: Bearer fixture-secret" in config\nassert "--location" not in sys.argv\n'+'data=json.loads('+repr(json.dumps(self.receipt))+')\n'+'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+900,"oneUse":True,"url":"https://client.example.com/interview?enroll=fixture.signature"}\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n');fake.chmod(0o755)
         env=dict(os.environ,HOME=str(self.root),OPENCLAW_WORKSPACE_ROOT=str(self.root),OPENCLAW_OWNER_CHAT_ID='123456789',MC_API_TOKEN='fixture-secret')
         env.pop('MC_API_TOKEN',None)  # fresh installer writes a service token, not ambient shell export
         run=subprocess.run(['bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'),'--dry-run'],env=env,text=True,capture_output=True)
         self.assertEqual(run.returncode,0,run.stderr);self.assertIn('https://client.example.com/interview',run.stdout);self.assertNotIn('fixture-secret',run.stdout+run.stderr);self.assertFalse(self.capture.exists())
         sent=subprocess.run(['bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh')],env=env,text=True,capture_output=True)
-        self.assertEqual(sent.returncode,0,sent.stderr);self.assertEqual(json.loads(sent.stdout)['status'],'accepted');self.assertEqual(json.loads(self.capture.read_text())['target'],'123456789');self.assertIn('#enroll=fixture.signature',json.loads(self.capture.read_text())['message']);self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
+        self.assertEqual(sent.returncode,0,sent.stderr);self.assertEqual(json.loads(sent.stdout)['status'],'accepted');self.assertEqual(json.loads(self.capture.read_text())['target'],'123456789');self.assertIn('?enroll=fixture.signature',json.loads(self.capture.read_text())['message']);self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
     def test_concurrent_invocations_send_once(self):
         script="import sys;sys.path.insert(0,sys.argv[1]);import interview_invitation as m,json;print(m.send_gateway('same message','123456789',sys.argv[2],json.loads(sys.argv[3]))[0])"
         args=[sys.executable,'-c',script,str(ROOT/'shared-utils'),str(self.ledger),json.dumps(self.context)]
@@ -294,9 +299,16 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(self.resolve(state=dict(self.state,buildType='standard-first'),receipt=dict(self.receipt,foundation={'ready':True,'missing':[]}))['origin'],'https://client.example.com')
     def test_invitation_issuance_rejects_foreign_identity_and_url(self):
         resolved=self.resolve();import time
-        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',expiresAt=int(time.time())+900,oneUse=True,url='https://client.example.com/interview#enroll=fixture.signature')
-        for bad in [dict(good,companyId='foreign'),dict(good,url='https://foreign.example.com/interview#enroll=fixture.signature'),dict(good,expiresAt=1),dict(good,oneUse=False),dict(good,url='https://client.example.com/interview')]:
+        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',expiresAt=int(time.time())+900,oneUse=True,url='https://client.example.com/interview?enroll=fixture.signature')
+        with patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(good)+'\n200','')):
+            self.assertEqual(m.issue_invitation(resolved,self.env,'123456789'),good['url'])
+        legacy=dict(good,url='https://client.example.com/interview#enroll=fixture.signature')
+        with patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(legacy)+'\n200','')):
+            self.assertEqual(m.issue_invitation(resolved,self.env,'123456789'),legacy['url'])
+        for bad in [dict(good,companyId='foreign'),dict(good,url='https://foreign.example.com/interview?enroll=fixture.signature'),dict(good,expiresAt=1),dict(good,oneUse=False),dict(good,url='https://client.example.com/interview'),dict(good,url='https://client.example.com/interview?enroll=fixture.signature&next=/evil'),dict(good,url='https://client.example.com/interview?enroll=fixture.signature#enroll=fixture.signature'),dict(good,url='https://client.example.com/interview?enroll='),dict(good,url=''),dict(good,url='https://client.example.com/interview?enroll=not a token')]:
             with patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(bad)+'\n200','')),self.assertRaises(m.Pending):m.issue_invitation(resolved,self.env,'123456789')
+        for missing in [{key:value for key,value in good.items() if key!='url'},dict(good,url=None),dict(good,url=123)]:
+            with patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(missing)+'\n200','')),self.assertRaises(m.Pending):m.issue_invitation(resolved,self.env,'123456789')
     def test_bootstrap_service_token_handoff_without_ambient_secret(self):
         service=self.root/'service.env';service.write_text('MC_API_TOKEN="fixture-secret"\nMC_COMPANY_ID="client-a"\nMC_TENANT_ID="tenant-a"\nMC_INSTALLATION_ID="install-a"\nMC_TENANT_PUBLIC_URL="https://client.example.com"\n')
         state=dict(self.state,launchBootstrap={'serviceEnvPath':str(service)})
@@ -337,7 +349,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
 
     def test_issuer_accepts_old_and_new_ttl_but_rejects_unbounded_expiry(self):
         resolved=self.resolve()
-        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,url='https://client.example.com/interview#enroll=fixture.signature')
+        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,url='https://client.example.com/interview?enroll=fixture.signature')
         for seconds in (900,86400,86410):
             with self.subTest(seconds=seconds),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(good,expiresAt=100000+seconds))+'\n200','')):
                 metadata={}
@@ -364,7 +376,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         mint_log=self.root/'issued.log'
         fake=self.bin/'curl'
         fake.write_text('#!'+sys.executable+'\nimport sys,json,time,os\nconfig=sys.stdin.read()\nassert "Authorization: Bearer fixture-secret" in config\n'+'data=json.loads('+repr(json.dumps(self.receipt))+')\n'+
-            'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n with open(os.environ["MINT_LOG"],"a") as out: out.write("issued\\n")\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+int(os.environ["FIXTURE_TTL"]),"oneUse":True,"url":"https://client.example.com/interview#enroll=fixture.signature"}\n if os.environ.get("FIXTURE_VALID_UNTIL"): data["validUntil"]=os.environ["FIXTURE_VALID_UNTIL"]\n if os.environ.get("FIXTURE_REDEEMABLE"): data["redeemable"]=os.environ["FIXTURE_REDEEMABLE"]\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n')
+            'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n with open(os.environ["MINT_LOG"],"a") as out: out.write("issued\\n")\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+int(os.environ["FIXTURE_TTL"]),"oneUse":True,"url":"https://client.example.com/interview?enroll=fixture.signature"}\n if os.environ.get("FIXTURE_VALID_UNTIL"): data["validUntil"]=os.environ["FIXTURE_VALID_UNTIL"]\n if os.environ.get("FIXTURE_REDEEMABLE"): data["redeemable"]=os.environ["FIXTURE_REDEEMABLE"]\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n')
         fake.chmod(0o755)
         env={key:value for key,value in os.environ.items() if not key.startswith(('OPENCLAW_','OC_','MC_')) and key not in ('FORCE','INTERVIEW_INVITATION_AUTOMATIC')}
         env.update(HOME=str(self.root),OPENCLAW_ROOT=str(runtime),OPENCLAW_OWNER_CHAT_ID='123456789',MINT_LOG=str(mint_log),FIXTURE_TTL=str(ttl))
@@ -390,7 +402,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(renewed.returncode,0,renewed.stderr)
         message=json.loads(self.capture.read_text())['message']
         self.assertIn('Welcome back',message)
-        self.assertEqual(message.count('#enroll='),1)
+        self.assertEqual(message.count('?enroll='),1)
         self.assertIn('after signing in: https://client.example.com/interview\n',message)
         self.assertIn('resume my interview',message)
         self.assertIn('expires on ',message);self.assertIn(' UTC.',message)
@@ -451,7 +463,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         accepted, because none of them is what decides whether the link works.
         """
         resolved=self.resolve()
-        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,validUntil='interview-complete',url='https://client.example.com/interview#enroll=fixture.signature')
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,validUntil='interview-complete',url='https://client.example.com/interview?enroll=fixture.signature')
         stamps=[{'expiresAt':100000-86400*45},{'expiresAt':100000+86400*3650},{'expiresAt':100000+900},{'expiresAt':'nonsense'},{'expiresAt':True},{}]
         for stamp in stamps:
             with self.subTest(stamp=stamp),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**stamp))+'\n200','')):
@@ -462,7 +474,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_only_the_exact_completion_marker_lifts_the_legacy_ttl_bound(self):
         """A near-miss marker must not be a way around the bound it replaces."""
         resolved=self.resolve()
-        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,expiresAt=100000+86400*30,url='https://client.example.com/interview#enroll=fixture.signature')
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,expiresAt=100000+86400*30,url='https://client.example.com/interview?enroll=fixture.signature')
         for marker in ('interview_complete','Interview-Complete','never',True,None,'',{'until':'interview-complete'}):
             receipt=dict(base) if marker is None else dict(base,validUntil=marker)
             with self.subTest(marker=marker),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(receipt)+'\n200','')):
@@ -471,8 +483,8 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_completion_bound_receipt_still_requires_identity_and_one_use(self):
         """Dropping the deadline check must not drop any other binding."""
         resolved=self.resolve()
-        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,validUntil='interview-complete',url='https://client.example.com/interview#enroll=fixture.signature')
-        for bad in [dict(good,companyId='foreign'),dict(good,tenantId='foreign'),dict(good,installationId='foreign'),dict(good,host='foreign.example.com'),dict(good,oneUse=False),dict(good,protocol='interview-invitation.v2'),dict(good,url='https://foreign.example.com/interview#enroll=fixture.signature'),dict(good,url='https://client.example.com/interview'),dict(good,url='https://client.example.com/interview#enroll=not a token')]:
+        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,validUntil='interview-complete',url='https://client.example.com/interview?enroll=fixture.signature')
+        for bad in [dict(good,companyId='foreign'),dict(good,tenantId='foreign'),dict(good,installationId='foreign'),dict(good,host='foreign.example.com'),dict(good,oneUse=False),dict(good,protocol='interview-invitation.v2'),dict(good,url='https://foreign.example.com/interview?enroll=fixture.signature'),dict(good,url='https://client.example.com/interview'),dict(good,url='https://client.example.com/interview?enroll=not a token')]:
             with self.subTest(bad=bad),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(bad)+'\n200','')),self.assertRaises(m.Pending):
                 m.issue_invitation(resolved,self.env,'123456789')
 
@@ -489,7 +501,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertIn('stays valid until your interview is complete.',message)
         self.assertNotIn('expires on ',message)
         self.assertNotIn('{{INVITATION_VALIDITY}}',message)
-        self.assertEqual(message.count('#enroll='),1)
+        self.assertEqual(message.count('?enroll='),1)
         self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
         receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
         self.assertIsNone(json.loads(receipt_path.read_text())['invitationExpiresAt'])
@@ -517,7 +529,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_redemption_contract_must_be_declared_by_the_issuer(self):
         """A receipt that states neither contract is refused, not guessed at."""
         resolved=self.resolve()
-        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',url='https://client.example.com/interview#enroll=fixture.signature')
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',url='https://client.example.com/interview?enroll=fixture.signature')
         for declared in [{'oneUse':True},{'redeemable':'until-interview-complete'},{'oneUse':True,'redeemable':'until-interview-complete'},{'oneUse':False,'redeemable':'until-interview-complete'}]:
             with self.subTest(declared=declared),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**declared))+chr(10)+'200','')):
                 self.assertEqual(m.issue_invitation(resolved,self.env,'123456789'),base['url'])
@@ -527,7 +539,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
 
     def test_reopenable_is_recorded_only_when_the_issuer_declares_it(self):
         resolved=self.resolve()
-        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',oneUse=True,url='https://client.example.com/interview#enroll=fixture.signature')
+        base=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',oneUse=True,url='https://client.example.com/interview?enroll=fixture.signature')
         for extra,expected in [({'redeemable':'until-interview-complete'},True),({},False),({'redeemable':'forever'},False)]:
             with self.subTest(extra=extra),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(base,**extra))+chr(10)+'200','')):
                 metadata={}
@@ -552,7 +564,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertIn('open it again whenever you like, on any device.',message)
         self.assertNotIn('expires on ',message)
         self.assertNotIn('{{INVITATION_VALIDITY}}',message)
-        self.assertEqual(message.count('#enroll='),1)
+        self.assertEqual(message.count('?enroll='),1)
         self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
         receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
         accepted=json.loads(receipt_path.read_text())
