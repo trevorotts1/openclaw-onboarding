@@ -53,6 +53,9 @@ on:
       - 'tests/unit/test_governing_persona_portability.py'
       - 'tests/unit/test_installation_recovery.py'
       - 'tests/unit/test_pm2_boot.py'
+      - 'tests/unit/test_contabo_docker_topology.py'
+      - 'shared-utils/resolve-oc-root.sh'
+      - 'shared-utils/cc-tunnel-ingress.sh'
       - 'tests/unit/engine-bootstrap-real-db.test.py'
       - 'docs/interview-launch-recovery.md'
       - 'docs/portable-onboarding-platforms.md'
@@ -85,6 +88,8 @@ jobs:
           python-version: '3.11'
       - name: Mac, native VPS, Hostinger and Contabo container topology fixtures
         run: python3 tests/unit/test_portable_bootstrap.py
+      - name: Contabo per-client Docker topology (own Command Center per container)
+        run: python3 tests/unit/test_contabo_docker_topology.py
       - name: Validate literal scheduler configuration before replacing a working job
         run: python3 tests/unit/test_intake_poll_plist.py
       - name: Install scheduler regression test runner
