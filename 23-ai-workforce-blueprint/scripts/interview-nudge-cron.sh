@@ -248,6 +248,15 @@ if [[ "${interview_complete}" == "true" ]]; then
   exit 0
 fi
 
+# Same durable declaration as the Command Center; UNKNOWN is not permission to nag.
+COMPLETION_READER="${SCRIPT_DIR}/../../shared-utils/interview_completion.py"
+if [[ ! -f "$COMPLETION_READER" ]]; then COMPLETION_READER="${SCRIPT_DIR}/../../../shared-utils/interview_completion.py"; fi
+completion_status="$(python3 "$COMPLETION_READER" "$STATE_FILE" 2>/dev/null)" || completion_status="UNKNOWN"
+if [[ "$completion_status" != "INCOMPLETE" ]]; then
+  log "interview prompt status=$completion_status - no owner reminder"
+  exit 0
+fi
+
 if [[ -z "${last_q_at}" ]]; then
   if [[ "${build_type}" == "standard-first" && "${prebuild_status}" == "done" ]]; then
     # Standard-first: the company's standard foundation is already prebuilt,

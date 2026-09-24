@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from detect_platform import get_openclaw_paths
+from interview_completion import prompt_status
 
 
 # OPERATOR chat IDs — MUST match install.sh OPERATOR_CHAT_IDS exactly.
@@ -304,9 +305,11 @@ def merge_meta_from_state(meta: dict, state: dict) -> dict:
     """
     merged = dict(meta)
 
-    # interviewComplete from state takes priority
-    if state.get("interviewComplete") is not None:
-        merged["complete"] = bool(state["interviewComplete"])
+    # Completion is terminal; stale false state cannot erase a completed handoff.
+    merged["complete"] = (meta.get("complete") is True or
+                          state.get("interviewComplete") is True or
+                          state.get("interview_complete") is True or
+                          bool(state.get("buildCompletedAt")))
 
     # lastQuestionAt from state interviewProgress
     progress = state.get("interviewProgress") or {}
@@ -399,6 +402,14 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
 
         if meta.get("complete"):
             counts["skipped_complete"] += 1
+            continue
+        completion = prompt_status(state)
+        if completion in ('COMPLETE', 'DECLARED'):
+            counts["skipped_complete"] += 1
+            continue
+        if completion == 'UNKNOWN' or state.get('companySlug') != company.name:
+            print(f"  Company {company.name}: completion scope/store unknown; no reminder sent")
+            counts["skipped_recent"] += 1
             continue
         if not meta.get("last_activity"):
             counts["skipped_recent"] += 1

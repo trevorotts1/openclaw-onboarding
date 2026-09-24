@@ -1,3 +1,18 @@
+## [v25.1.85]  -  2026-09-24  -  Interview prior-declaration batch (INT-001..INT-005)
+
+### Why
+A client who completed the interview on one box (or outside the reminder flow) was re-invited and re-nudged on every other box and on every update pass: `nudge-incomplete-interviews.py` and the nudge cron read only the legacy SQLite completion, and the launch scripts sent a fresh link without asking first. The batch wires prior-declaration so completion declared earlier is honored everywhere, paired with Command Center v7.6.65 (the interview API accepts and records a prior-completion declaration and stops reminding once one exists).
+
+### What changed
+- `shared-utils/interview_completion.py` — prior-declaration store plus reader: a declaration recorded on one install is visible to the nudge and reminder logic, with a legacy-registry fallback that rejects foreign, ambiguous or conflicting pins (INT-001..INT-005).
+- `shared-utils/interview_invitation.py` — invitation path consults the declaration before sending (INT-003).
+- `shared-utils/nudge-incomplete-interviews.py` — reminder scan reads the declaration store, not only the legacy SQLite flag (INT-004).
+- `23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh` and `send-interview-link.sh` — both check the declaration before nudging or re-sending the link (INT-005).
+- Tests: `tests/unit/interview-completion.test.py` (new, declaration store + reader + legacy-fallback rejection), `tests/unit/interview-launch.test.py`, `tests/unit/test_interview_invitation.py` updated to the new behavior.
+
+### Tests
+Combined run on the release branch (`PYTHONDONTWRITEBYTECODE=1`): `interview-completion.test.py` 8 passed; `test_interview_invitation.py` 60 passed; `interview-launch.test.py` 21 passed (1 skipped — full canonical prebuild fixture, opt-in via `RUN_LAUNCH_PREBUILD_FIXTURE=1`); `test_service_env.py` 5 passed (1 skipped — requires node + `next.env` on the host); `test_onboarding_identity.py` 13 passed. No failures. Pairs with Command Center v7.6.65.
+
 ## [v25.1.84]  -  2026-09-24  -  Interview sign-in works on fresh installs (skill 32 v13.1.27)
 
 ### Why
