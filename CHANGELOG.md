@@ -1,3 +1,23 @@
+## [v25.1.82]  -  2026-09-24  -  The SOP library reaches every box, and prove-zhe checks the right places
+
+### What changed since v25.1.81
+- **Phase 6i runs on every box again (#1242).** The Command Center refresh stopped before Phase 6i on Linux boxes (`_cc_mtime` crashed under `set -u` when GNU `stat -f` printed filesystem status). On Macs, Phase 6i skipped itself entirely when no client slug resolved. It now uses the GNU `stat` form first, falls back to the `default` slug like update-skills U6c, and counts symlinked role `how-to.md` files. Skill 32 v13.1.23.
+- **Phase 6i reaches the role-library import on boxes that already hold the library (#1245, re-land of #1237).** An already-populated box makes the ingest print "downloaded 0 SOP records (skipped)". Phase 6i read that 0 as an empty asset and stopped before `converge(scope=sops)`, so `importRoleLibrary()` never ran on an existing box. The skip now uses the canonical count it verified and continues to the converge. #1237 was first merged before its Command Center dependency and reverted (#1238). It was re-landed on top of #1242, with every #1242 change kept. It depends on blackceo-command-center#416 (the role-library import makes no per-box embedding calls), which is merged. Skill 32 v13.1.24.
+- **SOP library v3 and central role-library vectors (#1240).** The 145 department SOPs are now in the library asset (`sop-library-v3.0.0`, 2,763 records; all 2,618 V2 records carried over unchanged). Role-library rows get their vectors from the central `sop-embeddings-v1.2.0` asset, so a box makes no embedding calls for them. Phase 6i provisions embeddings again after the converge, because the earlier provisioning runs before the role rows exist. Skill 32 v13.1.25.
+- **The updater keeps the Anthology engine's owner pins (#1239).** `update-skills.sh` no longer wipes `59-anthology-engine` owner pins when it replaces the skill folder.
+- **prove-zhe measures the live Command Center board and the new agent roster (#1241).** Phase 7z failed on a box whose ZHE steps had all landed:
+  - it read only `agents.list`, while OpenClaw 2026.9.x keeps the roster in `agents.entries`;
+  - it took the first `mission-control.db` it found, which was a 0-byte decoy;
+  - it matched lane slugs literally (`legal-compliance` against the `legal` lane).
+
+  It now reads both roster shapes, resolves the Command Center database the way the app does (and never creates one), and accepts the canonical lane slug.
+
+### Tests
+- `test-sop-library-phase-wiring.sh`: 48 passed, 1 failed. The one failure is the INSTALL.md "Phase 6c" heading check, which fails on main too.
+- `tests/unit/test_prove_zhe_cc_db_and_agents_entries.py`: 9 new tests.
+- `tests/unit/sop-library-v3-build.test.py`: 15 new tests.
+- `updater-preserves-skill-box-state.test.sh`: 39 passed.
+
 ## [v25.1.81]  -  2026-09-22  -  Fail closed on the podcast publish success response (T0-21)
 
 ### Why
