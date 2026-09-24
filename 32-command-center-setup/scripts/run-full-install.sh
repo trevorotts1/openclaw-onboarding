@@ -2176,6 +2176,29 @@ if [[ "$UPDATE_ONLY" != "true" || ( -n "$(state_get '.launchBootstrap')" && "$(s
       log "WARN" "Interview launch pending: explicit lane/consent or foundation verification missing; see $LOG_FILE"
       exit 8
     fi
+    # The Command Center refuses every interview sign-in (409 access_identity_unregistered)
+    # until the public host's registry entry names its Cloudflare Access issuer, audience and
+    # the owner's email. Fill them from the live Access login before any invitation is sent.
+    cc_launch_stage register-access; _ra_rc=$?
+    if [[ "$_ra_rc" -eq 3 ]]; then
+      # Registry is read at boot only; restart the same way the fresh install starts it.
+      export MC_TENANT_REGISTRY_JSON="$(cc_env_get "$DASHBOARD_DIR/.env.local" MC_TENANT_REGISTRY_JSON)"
+      pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
+      cc_pm2_start_canonical || fail_install "Command Center restart after Access registration failed"
+      pm2 save >>"$LOG_FILE" 2>&1 || true
+      _ra_health="000"
+      for _ in $(seq 1 60); do
+        _ra_health="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
+        [[ "$_ra_health" == "200" ]] && break
+        sleep 2
+      done
+      [[ "$_ra_health" == "200" ]] || fail_install "Command Center not healthy after Access registration restart (health=$_ra_health)"
+      log "INFO" "Interview Access identity registered; Command Center restarted"
+    elif [[ "$_ra_rc" -ne 0 ]]; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "access-registration-pending"'
+      log "WARN" "Interview launch pending: public /interview is not behind a Cloudflare Access login, or the owner's contact email is missing; see $LOG_FILE"
+      exit 8
+    fi
     if ! python3 "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --interview --env-file "$DASHBOARD_DIR/.env.local" >>"$LOG_FILE" 2>&1; then
       state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "readiness-pending"'
       log "WARN" "Interview launch pending: authenticated public identity/runtime readiness not verified; no invitation may be claimed"

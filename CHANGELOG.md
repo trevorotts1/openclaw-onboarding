@@ -1,3 +1,16 @@
+## [v25.1.84]  -  2026-09-24  -  Interview sign-in works on fresh installs (skill 32 v13.1.27)
+
+### Why
+The Command Center refuses every interview sign-in with 409 `access_identity_unregistered` unless the public host's `MC_TENANT_REGISTRY_JSON` entry names its Cloudflare Access `issuer`, `audience` and `subjects`. `interview-launch.py provision` wrote only `kind`, `tenantId`, `companyId` and `installationId`, and nothing else in this repo ever wrote the other three, so every fresh install produced an interview link that errored for the owner. Each box had to be patched by hand.
+
+### What changed
+- New stage `interview-launch.py register-access`. It requests `<public origin>/interview` without following redirects (explicit `User-Agent`: Cloudflare answers the stock Python agent with 403 before Access runs) and accepts only a 302/303/307 to `https://<team>.cloudflareaccess.com/cdn-cgi/access/login/<this host>?kid=<audience>`. It fills `issuer`/`audience`, and `subjects` from the owner's `contactEmail` when none is registered (`pending+` placeholders refused). Matching loopback aliases get the same values. Present values are kept; conflicting ones are refused, never replaced. Atomic write, mode 0600. Exit 3 means the registry changed.
+- `run-full-install.sh` runs it inside the interview gate after `prebuild` and before the readiness verifier. On exit 3 it restarts the Command Center through `cc_pm2_start_canonical` (the registry is read at boot only) and waits for `/api/health` 200. On failure it stops at `interviewLaunch.status = "access-registration-pending"`, exit 8, before any invitation.
+- `TENANT-CONFIGURATION.md` documents the stage and the Access-app prerequisite.
+
+### Tests
+`tests/unit/interview-launch.test.py`: 5 new tests (fill + idempotent rerun with no network, existing subjects kept and conflicting audience refused, six non-Access responses refused with the file byte-identical, placeholder email refused, live request sends the explicit User-Agent) plus gate-ordering assertions. 20 run, OK (1 skipped, pre-existing). Mutation check: dropping the login-path check fails the refusal test. Live control: the stage's own request against a real client host returned 302 to its Access login with a 64-character `kid`.
+
 ## [v25.1.83]  -  2026-09-24  -  Scripts read the new agent roster, find the real Command Center database, and work on Linux
 
 ### Why
