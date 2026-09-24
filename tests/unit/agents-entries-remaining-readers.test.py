@@ -184,6 +184,27 @@ class RemainingReaders(unittest.TestCase):
         self.assertEqual(agents["list"][0]["memorySearch"]["extraPaths"], ["/corpus"])
         self.assertNotIn("entries", agents)
 
+    def test_apply_fleet_standards_gates_and_ungates_entries_roster(self):
+        code = heredoc("scripts/apply-fleet-standards.sh", r'python3 - "\$OC_CONFIG"', "PYEOF")
+        self.write({"agents": {"entries": {
+            "main": {"subagents": {"allowAgents": ["dept-x"]}},
+            "dept-x": {"subagents": {"allowAgents": ["main"]}}}}})
+        r = self.py(code, str(self.cfg), HOME=str(self.tmp), FLEET_WRITE_DEFAULTS_TOOLS="0",
+                    CEO_CONSENT_FILE=str(self.tmp / "no-consent.json"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        agents = json.loads(self.cfg.read_text())["agents"]
+        self.assertNotIn("list", agents)
+        for aid in ("main", "dept-x"):
+            self.assertEqual(agents["entries"][aid]["subagents"]["allowAgents"], ["*"], aid)
+        self.assertNotIn("id", agents["entries"]["main"])
+        self.assertTrue(agents["entries"]["main"].get("tools", {}).get("byProvider"), r.stdout)
+
+    def test_apply_fleet_standards_reflex_boxtype_reads_entries(self):
+        code = heredoc("scripts/apply-fleet-standards.sh", r'_REFLEX_BOXTYPE="\$\(OC_JSON="\$OC_CONFIG" python3 -', "PYBT")
+        for roster, want in (({"main": {}}, "ROUTER"), ({"pa": {"default": True}, "main": {}}, "PA")):
+            self.write({"agents": {"entries": roster}})
+            self.assertEqual(self.py(code, OC_JSON=str(self.cfg)).stdout.strip(), want, roster)
+
 
 if __name__ == "__main__":
     unittest.main()
