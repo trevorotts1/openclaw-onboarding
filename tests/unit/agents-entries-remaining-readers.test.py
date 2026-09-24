@@ -205,6 +205,11 @@ class RemainingReaders(unittest.TestCase):
             self.write({"agents": {"entries": roster}})
             self.assertEqual(self.py(code, OC_JSON=str(self.cfg)).stdout.strip(), want, roster)
 
+    def test_diagnose_telegram_path4_reads_entries_bindings(self):
+        code = heredoc("scripts/diagnose-telegram-config.sh", r"\npython3 ", "PYEOF")
+        self.write({"agents": {"entries": {"main": {"bindings": {"telegram": {"chat": "1"}}}}}})
+        out = self.py(code, OCJSON=str(self.cfg)).stdout
+        self.assertIn("agents.entries.main (id=main) telegram bindings", out)
 
 if __name__ == "__main__":
     unittest.main()
