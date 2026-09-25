@@ -3,8 +3,8 @@
 #
 # Acceptance tests for fix/cron-announce-fail-closed.
 #
-# THE DEFECT (found live on rescue-leanne-dolce, 2026-09-22, and reproduced on
-# rescue-karen-vaughn + rescue-stephanie-wall):
+# THE DEFECT (found live on rescue-<client>, 2026-09-22, and reproduced on
+# two more client boxes):
 #
 #   `bootstrap-validate-daily` had failed 4x and could not tell anyone. Its
 #   delivery was `announce -> last`, and OpenClaw 2026.9.x fail-CLOSES on that
@@ -128,7 +128,7 @@ fi
 # ---------------------------------------------------------------------------
 # A2 — REPAIR: a PRE-EXISTING cron already in the announce+last shape is
 #      repaired by the reconcile pass. This is the exact live state of
-#      bootstrap-validate-daily on rescue-leanne-dolce.
+#      bootstrap-validate-daily on rescue-<client>.
 #      Fails on the unfixed tree: the name is not in MANAGED_RECONCILE_CRONS,
 #      so _reconcile_rows filters it out and nothing ever touches it.
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ def seeded(name, expr):
     return {"name": name, "cron": expr, "agent": "", "message": "",
             "command": "bash %s/.openclaw/scripts/%s.sh" % (home, name),
             "kind": "command", "id": "pre-%s" % name,
-            # The exact live shape read off rescue-leanne-dolce 2026-09-22.
+            # The exact live shape read off rescue-<client> 2026-09-22.
             "delivery": {"mode": "announce", "channel": "last", "to": None},
             "payload": {"kind": "command"}, "schedule": {"expr": expr}}
 json.dump([seeded("bootstrap-validate-daily", "0 5 * * *"),

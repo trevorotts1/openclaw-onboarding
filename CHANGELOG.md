@@ -188,7 +188,7 @@ The engine's Python suite goes 396 -> 423, all green; no existing test was weake
 
 ### Why
 
-On `rescue-leanne-dolce`, `bootstrap-validate-daily` had failed **four times** and its delivery read:
+On `rescue-<client>`, `bootstrap-validate-daily` had failed **four times** and its delivery read:
 
 ```
 announce -> last (last -> no route, will fail-closed: Refusing implicit isolated cron delivery ...)
@@ -215,14 +215,14 @@ Measured 2026-09-22 across 8 boxes, every probe with a known-good control (total
 
 | Box | Platform | State |
 |---|---|---|
-| rescue-leanne-dolce | Mac | both crons `announce -> last`, validate = **error (4x)** |
-| rescue-karen-vaughn | Mac | both crons `announce -> last`, validate = **error** |
-| rescue-stephanie-wall | Mac | both crons `announce -> last`, validate = **error** |
-| rescue-star-bobatoon | Mac | crons absent |
+| rescue-<client> | Mac | both crons `announce -> last`, validate = **error (4x)** |
+| rescue-<client> | Mac | both crons `announce -> last`, validate = **error** |
+| rescue-<client> | Mac | both crons `announce -> last`, validate = **error** |
+| rescue-<client> | Mac | crons absent |
 | openclaw-a3go, openclaw-hy5t | Hostinger VPS | crons absent |
-| oc-janet-pinkney, oc-donna-izzard | Contabo | crons absent |
+| oc-<client>, oc-<client> | Contabo | crons absent |
 
-**3 of 3 boxes that carry the cron are broken.** It is not box-local. The same 19 crons on Karen Vaughn's box sit at `mode=none, channel=last` and are all `ok` — a vestigial channel string with mode `none` is harmless, which is exactly why the inner reconcile gate is correct as written and was left alone.
+**3 of 3 boxes that carry the cron are broken.** It is not box-local. The same 19 crons on a client box sit at `mode=none, channel=last` and are all `ok` — a vestigial channel string with mode `none` is harmless, which is exactly why the inner reconcile gate is correct as written and was left alone.
 
 ### What changed
 
@@ -255,7 +255,7 @@ A4a, A5c, A5d and A6 stay green by design: the exit code was always right, no cl
 
 ### Not fixed here
 
-`cloud-backup-daily` on `rescue-leanne-dolce` also shows `error`, but its stored cause is `cron: job interrupted by gateway restart` — an interrupted run, not a script fault, and its delivery is already silent. It has **no definition anywhere in this repo** (`git log --all -S"cloud-backup-daily"` returns nothing) and is absent from all 7 other boxes probed. It is box-local and out of scope for a repo fix.
+`cloud-backup-daily` on `rescue-<client>` also shows `error`, but its stored cause is `cron: job interrupted by gateway restart` — an interrupted run, not a script fault, and its delivery is already silent. It has **no definition anywhere in this repo** (`git log --all -S"cloud-backup-daily"` returns nothing) and is absent from all 7 other boxes probed. It is box-local and out of scope for a repo fix.
 
 ## [v25.1.77]  -  2026-09-22  -  A blind daily smoke test is not a green one: Skill 58 stops rendering "could not check" as "checked, found nothing"
 
@@ -2526,9 +2526,9 @@ corrected here rather than left to read as measured.
 - SKIP messaging now reads `N SOPs covered >= manifest M` instead of `N rows >= manifest M`, so the log states what was actually measured.
 
 ### Fleet evidence (read-only sweep, 2026-09-12)
-- 18 reachable Mac boxes probed. **7 affected**: `aurelia-gardner` (82% of SOPs unembedded), `er-spaulding` (100%), `maria-anderson` (76%), `sheila-reynolds` (99%), `star-bobatoon` (100%), `stephanie-wall` (77%), `talaya-kelley` (100%).
-- **6 of those 7 were permanently stuck** behind the raw-row gate — only `maria-anderson` (835 rows < 2555) would ever have re-triggered. This release is what makes the other six repairable.
-- 9 boxes healthy, 1 without a Command Center, 1 unreachable at sweep time (`teresa-pelham`).
+- 18 reachable Mac boxes probed. **7 affected**: `box-a` (82% of SOPs unembedded), `er-spaulding` (100%), `box-b` (76%), `box-c` (99%), `box-d` (100%), `box-e` (77%), `box-f` (100%).
+- **6 of those 7 were permanently stuck** behind the raw-row gate — only `box-b` (835 rows < 2555) would ever have re-triggered. This release is what makes the other six repairable.
+- 9 boxes healthy, 1 without a Command Center, 1 unreachable at sweep time (`box-g`).
 
 ### Tests
 - `tests/unit/provision-sop-embeddings-hashed-id.test.py` grows to 9 checks: a full-but-orphaned table plus a success-claiming marker must NOT be skipped and must end fully covered; and a genuinely covered box must still SKIP, so the stricter gate adds no re-download noise. **Fail-first verified** — the orphan case returns `SKIP` against the raw-row gate.

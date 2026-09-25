@@ -84,7 +84,7 @@ esac''')
         self.assertFalse((self.home / '.openclaw').exists())
 
     def test_custom_root_and_workspace_survive_native_vps_bootstrap(self):
-        own = self.root / "Nicole's Company"
+        own = self.root / "Jordan's Company"
         workspace = own / 'custom workspace'
         result = self.run_shell('source ' + shlex.quote(str(REPO / 'platform/vps/bootstrap.sh')) + '\n' + self.fields(),
                                 OPENCLAW_ROOT=str(own), OPENCLAW_WORKSPACE_PATH=str(workspace),
@@ -128,12 +128,12 @@ esac''')
     def test_docker_host_reexec_preserves_identity_and_path_pins(self):
         result = self.run_shell('source ' + shlex.quote(str(REPO / 'platform/vps/bootstrap.sh')),
                                 OPENCLAW_CONTAINER_NAME='client-runtime', FIXTURE_DOCKER_NAMES='client-runtime',
-                                OPENCLAW_OWNER_NAME="Nicole O'Brien", OPENCLAW_COMPANY_NAME="Nicole's",
+                                OPENCLAW_OWNER_NAME="Jordan Example", OPENCLAW_COMPANY_NAME="Jordan's",
                                 OPENCLAW_ROOT='/srv/client root', OPENCLAW_WORKSPACE_PATH='/srv/client workspace')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         captured = json.loads((self.root / 'docker-calls').read_text())
-        self.assertEqual(captured['company'], "Nicole's")
-        self.assertEqual(captured['owner'], "Nicole O'Brien")
+        self.assertEqual(captured['company'], "Jordan's")
+        self.assertEqual(captured['owner'], "Jordan Example")
         self.assertEqual(captured['root'], '/srv/client root')
         self.assertEqual(captured['workspace'], '/srv/client workspace')
         for key in ('OPENCLAW_COMPANY_NAME', 'OPENCLAW_OWNER_NAME', 'OPENCLAW_ROOT', 'OPENCLAW_WORKSPACE_PATH'):
@@ -156,7 +156,7 @@ json.dump({'args':sys.argv[1:], 'mode':os.environ.get('OPENCLAW_BOOTSTRAP_MODE')
 PY
 ''')
         proof = self.root / 'child-proof'
-        args = ['--only', "23-ai-workforce-blueprint,32-command-center-setup", '--note', "Nicole's $literal $(must-not-run)"]
+        args = ['--only', "23-ai-workforce-blueprint,32-command-center-setup", '--note', "Jordan's $literal $(must-not-run)"]
         body = ('set -- ' + ' '.join(shlex.quote(value) for value in args) + '\nsource '
                 + shlex.quote(str(REPO / 'platform/vps/bootstrap.sh')))
         result = self.run_shell(body, FIXTURE_DOCKER_NAMES='openclaw-client',
@@ -170,7 +170,7 @@ PY
     def test_installer_and_updater_choose_selected_root_over_downloads(self):
         legacy = self.home / 'Downloads/openclaw-master-files/23-old-skill'
         legacy.mkdir(parents=True)
-        own = self.root / "Nicole's selected root"
+        own = self.root / "Jordan's selected root"
         for script in ('install.sh', 'update-skills.sh'):
             with self.subTest(script=script):
                 source = (REPO / script).read_text()
@@ -186,7 +186,7 @@ PY
         source_bundle = self.root / 'bundle'
         (source_bundle / 'platform').mkdir(parents=True)
         (source_bundle / 'platform/common.sh').write_text('fixture-common\n')
-        own = self.root / "Nicole's selected root"
+        own = self.root / "Jordan's selected root"
         for script in ('install.sh', 'update-skills.sh'):
             with self.subTest(script=script):
                 source = (REPO / script).read_text()
@@ -213,7 +213,7 @@ PY
         source = (REPO / 'update-skills.sh').read_text()
         start = source.index('  cc_resolve_existing_dir() {')
         function = source[start:source.index('\n  }', start)+4]
-        own = self.root / "Nicole's command center"
+        own = self.root / "Jordan's command center"
         body = ('_CC_DIR_CANONICAL="$HOME/projects/command-center"\n'
                 'cc_is_valid_checkout() { [ "$1" = "$_CC_DIR_CANONICAL" ] || '
                 '{ [ "${FIXTURE_PIN_VALID:-}" = 1 ] && [ "$1" = "$CC_APP_DIR" ]; }; }\n'
@@ -236,16 +236,16 @@ PY
         child.chmod(0o755)
         self.stub('pm2', 'echo "[]"')
         self.stub('lsof', 'exit 1')
-        own = self.root / "Nicole's command center"
+        own = self.root / "Jordan's command center"
         proof = self.root / 'install-args'
         body = ('note() { :; }; warn() { :; }; success() { :; }\n' + function
                 + '\nbootstrap_command_center_shell')
         result = self.run_shell(body, CC_APP_DIR=str(own), SKILLS_DIR=str(skills),
-                                OPENCLAW_COMPANY_SLUG='nicole', OPENCLAW_COMPANY_NAME="Nicole's Company",
+                                OPENCLAW_COMPANY_SLUG='jordan', OPENCLAW_COMPANY_NAME="Jordan's Company",
                                 LOG_FILE=str(self.root / 'log'), FIXTURE_ARGS=str(proof))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(proof.read_text().splitlines(),
-                         ['nicole', "Nicole's Company", 'pending+nicole@zerohumanworkforce.com', '--app-dir', str(own)])
+                         ['jordan', "Jordan's Company", 'pending+jordan@zerohumanworkforce.com', '--app-dir', str(own)])
 
     def test_ambiguous_or_stopped_container_never_creates_host_client(self):
         for values in ({'FIXTURE_DOCKER_NAMES': 'openclaw-a\nopenclaw-b'},
