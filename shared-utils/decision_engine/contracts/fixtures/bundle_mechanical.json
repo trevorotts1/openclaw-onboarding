@@ -1,0 +1,53 @@
+{
+  "mode": "blend",
+  "bundle_version": "1.0",
+  "persona_id": null,
+  "persona_name": null,
+  "persona_version": 1,
+  "score": 0.0,
+  "interaction_mode": "leadership",
+  "task_category": "operations",
+  "content_task": false,
+  "topic": "operations",
+  "resolved_audience": {
+    "source": "n/a",
+    "candidates": [],
+    "confidence": "none",
+    "label": null,
+    "ask": null,
+    "confirm_required": false
+  },
+  "confirm_required": false,
+  "voice": {
+    "audience_persona": null,
+    "topic_persona": null,
+    "collapsed": false,
+    "collapsed_persona_id": null,
+    "topic_as_task_guidance": false
+  },
+  "blend_directive": "Operational/mechanical task — no persona voice required. STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the cadence, devices and register of the named voice(s) as an INSPIRATION only. Never claim to be the author, never write in their first person as if they authored this, never sign as them, never quote them as if verified, and never imply their endorsement. This clause may not be removed or weakened.",
+  "task_personas": [],
+  "conversion_goal": "",
+  "goal_source": "n/a",
+  "goal_confirm_required": false,
+  "resolved_goal": {
+    "value": "",
+    "source": "n/a",
+    "ask": null,
+    "confirm_required": false
+  },
+  "rationale": {
+    "note": "mechanical task — governance persona attached, no audience/topic blend."
+  },
+  "funnel": {"pool": 0, "category": 0, "semantic": 0, "mechanical": true},
+  "fallbacks": {
+    "default_persona": "blackceo-house-voice",
+    "default_persona_source": "default_persona",
+    "governance": "covey-7-habits",
+    "governance_source": "governance_default"
+  },
+  "catalog_version": "1.4",
+  "no_persona_required": true,
+  "governance_persona_id": "covey-7-habits",
+  "governance_persona_source": "governance_default"
+}
