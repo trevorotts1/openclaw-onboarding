@@ -1,3 +1,17 @@
+## [v25.1.87]  -  2026-09-26  -  Interview transcript-lock correctness pinned, cross-repo pin proof, reusable-link wording
+
+### Why
+The paired Command Center pin sat at v7.4.1 while the interview transcript lock could still burn its full 10-second deadline and wedge the single-threaded Node event loop when a transcript's parent directory did not exist, and the answer route did not append under the transcript lock. Separately the pin was asserted only as a local string: nothing read the Command Center repo, so a typo or a deleted tag would pass CI and only fail on a client box. Client-facing recovery copy still called the interview ticket single-use, while the actual contract is re-openable until the interview is complete.
+
+### What changed
+- `cc-compat.json`: `pinnedTag` v7.4.1 to v7.6.68 — the Command Center release carrying the ILJ-003 seam atomic merge with `decrypt_failed` surfaced (answer route appends under the transcript lock) and the ILJ-011 lock fix (creates its missing parent directory, treats `ENOENT` as missing-parent, never spins the 10 s deadline). `minVersion` is UNCHANGED at v7.4.0 and `maxVersion` stays null, so the schema contract (pinnedTag >= minVersion) holds and boxes still mid-update are not blocked by `assert_min_version`.
+- `tests/unit/cc-runtime-preflight.test.py`: new `test_cc_pin_is_real_annotated_tag_and_main_gte_pin` reads the public Command Center repo over git (no auth) and FAILS CLOSED, never skips: the pinned tag must exist, must be an ANNOTATED tag object (`git cat-file -t` prints `tag`), and Command Center `main` must be at or above the pin. The test-mirror literal `CC_PIN` moves to v7.6.68 in the same change (deliberately NOT derived from the file under test).
+- `docs/interview-launch-recovery.md`: the ticket is documented as re-openable until the interview is complete, with no expiry clock and re-openable on any device, instead of single-use.
+- Version markers rolled to v25.1.87 by `scripts/bump-version.sh`.
+
+### Tests
+`tests/unit/cc-runtime-preflight.test.py`: 7 passed — includes the live cross-repo probe against `github.com/trevorotts1/blackceo-command-center` (tag present, peeled ref present, tag object type `tag`, Command Center main >= pin). `tests/unit/test_interview_invitation.py`: 60 passed. `scripts/bump-version.sh --check`: all markers agree.
+
 ## [v25.1.86]  -  2026-09-24  -  Nudge links use the configured public interview page, gateway receipts verified, state dir via canonical resolver
 
 ### Why
