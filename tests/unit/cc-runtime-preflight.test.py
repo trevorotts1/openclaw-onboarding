@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Offline security-floor tests; no real Node install, database or service calls."""
+"""Security-floor tests; no real Node install, database or service calls, except
+the cross-repo pin test which reads the public Command Center repo over git
+(no auth) and fails closed without network; skips are forbidden."""
 import importlib.util
 import json
 import os
@@ -64,6 +66,44 @@ class Compatibility(unittest.TestCase):
         compat['commandCenter']['pinnedTag']=None
         self.assertEqual(resolve_cc_tag(compat,['v7.0.0',CC_FLOOR]),CC_FLOOR)
         with self.assertRaises(ValueError): resolve_cc_tag(compat,['v7.0.0'])
+
+    def test_cc_pin_is_real_annotated_tag_and_main_gte_pin(self):
+        compat=load_cc_compat(ROOT)
+        self.assertEqual(compat['commandCenter']['repo'],'trevorotts1/blackceo-command-center')
+        self.assertEqual(compat['commandCenter']['pinnedTag'],CC_PIN)
+        self.assertEqual(compat['commandCenter']['minVersion'],CC_FLOOR)
+        url='https://github.com/trevorotts1/blackceo-command-center.git'
+        try:
+            probed=subprocess.run(['git','ls-remote',url,f'refs/tags/{CC_PIN}',f'refs/tags/{CC_PIN}^{{}}'],capture_output=True,text=True,timeout=60)
+        except (OSError,subprocess.SubprocessError) as exc:
+            self.fail(f'cannot reach CC repo {url}: {exc}')
+        if probed.returncode!=0:
+            self.fail(f'CC repo unreachable: {probed.stderr.strip()}')
+        refs={line.split()[1] for line in probed.stdout.splitlines() if line.split()}
+        self.assertIn(f'refs/tags/{CC_PIN}',refs,f'pinnedTag {CC_PIN} is not a tag on the CC repo')
+        self.assertIn(f'refs/tags/{CC_PIN}^{{}}',refs,f'pinnedTag {CC_PIN} is not an ANNOTATED tag on the CC repo (no peeled ref)')
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                def run_git(*args):
+                    return subprocess.run(['git',*args],cwd=td,capture_output=True,text=True,timeout=120)
+                if run_git('init','-q').returncode!=0:
+                    self.fail('cannot init scratch git repo')
+                if run_git('fetch','-q','--depth','1',url,'tag',CC_PIN).returncode!=0:
+                    self.fail(f'cannot fetch CC tag {CC_PIN}')
+                tag_type=run_git('cat-file','-t',CC_PIN)
+                self.assertEqual(tag_type.returncode,0,f'cannot inspect CC tag object {CC_PIN}: {tag_type.stderr.strip()}')
+                self.assertEqual(tag_type.stdout.strip(),'tag',f'pinnedTag {CC_PIN} is not an annotated tag object')
+                if run_git('fetch','-q','--depth','1',url,'main:refs/remotes/origin/main').returncode!=0:
+                    self.fail('cannot fetch CC main')
+                shown=subprocess.run(['git','show','origin/main:package.json'],cwd=td,capture_output=True,text=True,timeout=60)
+                if shown.returncode!=0:
+                    self.fail(f'cannot read CC main package.json: {shown.stderr.strip()}')
+                main_version=json.loads(shown.stdout).get('version','')
+                assert_min_version(main_version,compat)
+                self.assertGreaterEqual(guard.stable_version(main_version),guard.stable_version(CC_PIN),
+                    f'CC main {main_version} is older than pinnedTag {CC_PIN}')
+        except OSError as exc:
+            self.fail(f'no scratch space for CC probe: {exc}')
 
     def test_cli_node_and_checkout_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:

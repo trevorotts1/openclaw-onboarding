@@ -120,7 +120,7 @@ not a modification to the client's Command Center or personal browser profile.
 Do not delete a client's browser data to clear a profile lock.
 
 Use a separate test invitation for browser verification, not the one already
-sent to the client. A ticket is single-use. Observe the page's own automatic
+sent to the client. The ticket stays re-openable until the interview is complete and carries no expiry clock; re-open the same link on any device to continue where it left off. Observe the page's own automatic
 enrollment, save two answers, close/reopen and resume, and verify the reference
 export. A successful manual POST from browser developer tools proves only that
 the endpoint works; it does not prove that the page automatically redeems the
