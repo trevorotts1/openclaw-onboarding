@@ -201,6 +201,15 @@ def main() -> int:
         print(f"[backfill-build-state] Build-state not found at {state_path}; will create minimal stub")
         state = {"version": 1, "interviewComplete": False, "ownerChat": 0, "departments": {}}
 
+    # JEV A36 (spec 10.3): the decision revision this backfill result is
+    # computed against. Read BEFORE the detection scan below; the write is
+    # refused if the head has moved since (a late backfill must not clobber a
+    # newer committed decision). 0 == no committed decision yet.
+    _cas_state_dir = state_path.parent
+    _cas_task_key = "backfill-build-state"
+    _rev_at_start = (_cas_dispatch.head_revision(_cas_state_dir, _cas_task_key)
+                     if _cas_dispatch is not None else 0)
+
     now = datetime.now(timezone.utc).isoformat()
     changed = False
 
@@ -287,6 +296,19 @@ def main() -> int:
         print("[backfill-build-state] DRY-RUN: would write:")
         print(json.dumps(state, indent=2))
         return 0
+
+    # JEV A36 (spec 10.3): late-result gate immediately before the clobbering
+    # write. A False return refuses the write (exit 2) -- the stale backfill is
+    # re-runnable; the newer committed decision is not recoverable if clobbered.
+    if _cas_dispatch is not None:
+        _ok, _detail = gate_backfill_result(_cas_task_key, _rev_at_start,
+                                            state_dir=_cas_state_dir)
+        if not _ok:
+            print("[backfill-build-state] STALE: decision head moved while this "
+                  "backfill ran (basis r%s; %s); refusing to write -- re-run"
+                  % (_rev_at_start,
+                     _detail.get("detail") or _detail.get("error")), file=sys.stderr)
+            return 2
 
     try:
         state_path.parent.mkdir(parents=True, exist_ok=True)
