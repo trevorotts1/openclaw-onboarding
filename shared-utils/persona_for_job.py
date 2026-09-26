@@ -568,6 +568,63 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
 # --------------------------------------------------------------------------- #
 # public API
 # --------------------------------------------------------------------------- #
+def _cas_selector_gate(cas_guard: dict, raw: dict):
+    """A36 selector late gate: fail closed on an obsolete selection revision.
+
+    ``cas_guard`` carries {"task_key", "revision", "scope"} (+ optional
+    "state_dir" for the persisted chain). Hydrates a D23 store from the real
+    SQLite chain via dispatch.load_cas_store and runs the existing
+    check_late_result. Returns None when the result is current (caller
+    proceeds); returns a never-naked fail-closed selection dict with
+    source="late-result:stale" when the selection is obsolete or the gate
+    module is unreachable. Unknown late kinds surface as caller defects
+    (source="late-result:defect"), never silent passes.
+    """
+    import sqlite3 as _sqlite3  # noqa: PLC0415 (stdlib, deferred for import cost)
+
+    task_key = (cas_guard or {}).get("task_key", "")
+    revision = (cas_guard or {}).get("revision", 0)
+    scope = (cas_guard or {}).get("scope") or {}
+    state_dir = (cas_guard or {}).get("state_dir")
+    try:
+        from pathlib import Path as _Path  # noqa: PLC0415 (stdlib, deferred)
+        _cdir = _Path(__file__).resolve().parent / "decision_engine" / "commit"
+        sys.path.insert(0, str(_cdir))
+        import dispatch as _dispatch  # noqa: PLC0415 (runtime, path-set above)
+        con = None
+        try:
+            if state_dir is not None:
+                _db = _Path(state_dir) / "decision_revisions.db"
+                _db.parent.mkdir(parents=True, exist_ok=True)
+                con = _sqlite3.connect(str(_db), timeout=30)
+                con.row_factory = _sqlite3.Row
+            if con is None:
+                _commit = _dispatch._load_commit()
+                store = _commit.fresh_state(
+                    input_hash=_dispatch.scope_hash(scope))
+            else:
+                _commit, store = _dispatch.load_cas_store(
+                    con, task_key, _dispatch.scope_hash(scope))
+            _dispatch.guard_late_result(store, "selector", int(revision))
+        finally:
+            try:
+                if con is not None:
+                    con.close()
+            except _sqlite3.Error:
+                pass
+    except ValueError as exc:
+        return {"persona_id": None, "no_persona_required": False,
+                "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
+                "source": "late-result:defect", "error": str(exc),
+                "warnings": ["selector late gate defect: %s" % exc]}
+    except Exception as exc:  # noqa: BLE001 -- stale head or gate unreachable
+        return {"persona_id": None, "no_persona_required": False,
+                "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
+                "source": "late-result:stale", "error": str(exc),
+                "warnings": ["stale selector result refused: %s" % exc]}
+    return None
+
+
 def _fallback_persona(universe: list) -> "tuple[str, str]":
     """Resolve the guaranteed default persona and the reason tag. Never null."""
     uni = set(universe or [])
@@ -689,6 +746,18 @@ def persona_for_job(job_text: str, department: str, *,
     # 3) Ask the canonical selector (single-persona mode — unchanged).
     query = _compose_query(job_text, sop_slug, sop_hints)
     raw = _run_selector(query, department, record, timeout)
+
+    # JEV A36 (spec 10.3): selector late gate through the EXISTING D23 module
+    # (shared-utils/decision_engine/commit/dispatch.py) — imported by path,
+    # never restated. A stale selection (obsolete revision) fails closed with
+    # a typed refusal instead of silently clobbering a newer head. The gate
+    # only fires when the caller passes cas_guard={"task_key", "revision",
+    # "scope"}; every existing caller without it behaves byte-identically.
+    cas_guard = (sop_hints or {}).get("cas_guard") if isinstance(sop_hints, dict) else None
+    if raw is not None and not raw.get("error") and isinstance(cas_guard, dict):
+        _gate = _cas_selector_gate(cas_guard, raw)
+        if _gate is not None:
+            return _gate
 
     if raw is not None and not raw.get("error"):
         # 3a) mechanical / operational — truthful null persona + governance frame (Q1)
