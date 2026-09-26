@@ -1,0 +1,41 @@
+"""D16 persona evidence profiles (JEV spec 1.1, ss 8.1/8.2/8.3 + 10.2)."""
+
+from .evidence_profiles import (
+    ANSWER_INTENTS,
+    CONFIDENCE_LEVELS,
+    CONFIRMED_STATES,
+    DEFAULT_GOVERNANCE_PERSONA_ID,
+    KEYWORD_TRIGGERS,
+    MAX_TASK_PERSONAS,
+    RESOLUTION_STATES,
+    RESPONSIBILITIES,
+    PersonaEvidenceProfile,
+    assess_blend_applicability,
+    build_evidence_set,
+    build_task_persona_rows,
+    confirm_required_for,
+    make_profile,
+    resolve_audience,
+    validate_profile,
+    voice_basis_ok,
+)
+
+__all__ = [
+    "ANSWER_INTENTS",
+    "CONFIDENCE_LEVELS",
+    "CONFIRMED_STATES",
+    "DEFAULT_GOVERNANCE_PERSONA_ID",
+    "KEYWORD_TRIGGERS",
+    "MAX_TASK_PERSONAS",
+    "RESOLUTION_STATES",
+    "RESPONSIBILITIES",
+    "PersonaEvidenceProfile",
+    "assess_blend_applicability",
+    "build_evidence_set",
+    "build_task_persona_rows",
+    "confirm_required_for",
+    "make_profile",
+    "resolve_audience",
+    "validate_profile",
+    "voice_basis_ok",
+]

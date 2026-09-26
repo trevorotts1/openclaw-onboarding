@@ -1,0 +1,91 @@
+{
+  "mode": "blend",
+  "bundle_version": "1.0",
+  "persona_id": "audience-voice-alpha",
+  "persona_name": "Audience Voice Alpha",
+  "persona_version": 1,
+  "score": 2,
+  "interaction_mode": "leadership",
+  "task_category": "marketing-email",
+  "content_task": true,
+  "topic": "email-nurture",
+  "resolved_audience": {
+    "source": "operator_confirmed",
+    "candidates": [
+      {
+        "label": "new-business-owners",
+        "audience_persona_id": "audience-voice-alpha",
+        "matched_tags": ["new-business-owners"],
+        "why": "Audience voice for 'new-business-owners': its audiences[] match on ['new-business-owners'] (1 signal(s)); usable_as includes 'audience'."
+      }
+    ],
+    "confidence": "high",
+    "label": "new-business-owners",
+    "ask": null,
+    "confirm_required": false
+  },
+  "confirm_required": false,
+  "voice": {
+    "audience_persona": {
+      "id": "audience-voice-alpha",
+      "why": "Audience voice for 'new-business-owners': its audiences[] match on ['new-business-owners'] (1 signal(s)); usable_as includes 'audience'."
+    },
+    "topic_persona": {
+      "id": "topic-expert-beta",
+      "why": "Topic expertise: its topics[] match the job on ['email-nurture'] (1 signal(s))."
+    },
+    "collapsed": false,
+    "collapsed_persona_id": null,
+    "topic_as_task_guidance": true
+  },
+  "blend_directive": "Write in Audience Voice Alpha's VOICE (new-business-owners) — its cadence, devices and register — while carrying Topic Expert Beta's EXPERTISE on 'email-nurture'. Audience voice leads; topic expertise informs substance. STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the cadence, devices and register of the named voice(s) as an INSPIRATION only. Never claim to be the author, never write in their first person as if they authored this, never sign as them, never quote them as if verified, and never imply their endorsement. This clause may not be removed or weakened.",
+  "task_personas": [
+    {
+      "seq": 1,
+      "part": "subject line",
+      "persona_id": "task-craft-gamma",
+      "why": "Task part 'subject line' matched on ['email-nurture'] (1 signal(s)).",
+      "no_persona_required": false,
+      "governance_persona_id": null,
+      "task_category": "marketing-email"
+    },
+    {
+      "seq": 2,
+      "part": "body copy",
+      "persona_id": "topic-expert-beta",
+      "why": "Topic persona doubles as task guidance.",
+      "no_persona_required": false,
+      "governance_persona_id": null,
+      "task_category": "marketing-email"
+    }
+  ],
+  "conversion_goal": "book a discovery call",
+  "goal_source": "operator_confirmed",
+  "goal_confirm_required": false,
+  "resolved_goal": {
+    "value": "book a discovery call",
+    "source": "operator_confirmed",
+    "ask": null,
+    "confirm_required": false
+  },
+  "rationale": {
+    "audience_resolution": "source=operator_confirmed, confidence=high, candidates=['new-business-owners']",
+    "audience_persona": "Audience voice for 'new-business-owners': its audiences[] match (1 signal(s)).",
+    "topic_persona": "Topic expertise: its topics[] match the job on ['email-nurture'] (1 signal(s)).",
+    "collapse": "distinct audience + topic personas (blend)",
+    "voice_persona_mirror": "back-compat persona_id mirrors the voice persona audience-voice-alpha",
+    "task_decomposition": "2 part(s), 2 distinct persona(s) [tag-match] — topic persona doubles as task guidance",
+    "conversion_goal": "book a discovery call",
+    "goal_source": "operator_confirmed",
+    "chosen_closer": "task-craft-gamma",
+    "conversion_goal_resolution": "source=operator_confirmed, confirm_required=False"
+  },
+  "funnel": {"pool": 99, "category": 12, "semantic": 1},
+  "fallbacks": {
+    "default_persona": "blackceo-house-voice",
+    "default_persona_source": "default_persona",
+    "governance": "covey-7-habits",
+    "governance_source": "governance_default"
+  },
+  "catalog_version": "1.4"
+}
