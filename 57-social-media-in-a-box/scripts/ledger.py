@@ -32,6 +32,58 @@ import tempfile
 import time
 from pathlib import Path
 
+# JEV A36 (spec 10.3): producer-report late gate through the EXISTING D23
+# module (shared-utils/decision_engine/commit/dispatch.py) — imported by path,
+# never restated. A late producer report against an obsolete revision fails
+# closed instead of clobbering the newer head.
+_COMMIT_DIR = (Path(__file__).resolve().parent.parent.parent
+               / "shared-utils" / "decision_engine" / "commit")
+sys.path.insert(0, str(_COMMIT_DIR))
+try:
+    import dispatch as _cas_dispatch  # noqa: E402 -- JEV A36 late gate
+except Exception:  # noqa: BLE001 -- bare box: report gate reports unavailable
+    _cas_dispatch = None
+
+
+def gate_producer_report(task_key, result_revision, state_dir=None,
+                         scope=None):
+    """Producer-report late gate (A36) through existing D23 check_late_result.
+
+    Returns (ok, detail): ok True when the report is current; False with the
+    typed D23 failure when a stale report must not clobber the newer head.
+    kind is fixed to "producer_report" (D23 closed late-kind set).
+    """
+    if _cas_dispatch is None:
+        return False, {"error": "cas_unavailable"}
+    con = None
+    try:
+        if state_dir is not None:
+            cand = Path(state_dir) / "decision_revisions.db"
+            cand.parent.mkdir(parents=True, exist_ok=True)
+            con = sqlite3.connect(str(cand), timeout=30)
+            con.row_factory = sqlite3.Row
+        if con is None:
+            _commit = _cas_dispatch._load_commit()
+            store = _commit.fresh_state(
+                input_hash=_cas_dispatch.scope_hash(scope or {}))
+        else:
+            _commit, store = _cas_dispatch.load_cas_store(
+                con, task_key,
+                _cas_dispatch.scope_hash(scope or {}) if scope is not None else None)
+        ok = _cas_dispatch.guard_late_result(store, "producer_report",
+                                             int(result_revision))
+        return True, {"revision": store["decision_revision"], "ok": ok}
+    except Exception as exc:  # noqa: BLE001 -- typed D23 failure surfaces here
+        return False, {"error": type(exc).__name__, "detail": str(exc),
+                       "kind": "producer_report",
+                       "result_revision": result_revision}
+    finally:
+        try:
+            if con is not None:
+                con.close()
+        except sqlite3.Error:
+            pass
+
 EXIT_OK = 0
 EXIT_FLOOR = 2
 EXIT_DOUBLE = 2  # AF-SM-DOUBLE-POST (same fail-closed exit as a floor violation)

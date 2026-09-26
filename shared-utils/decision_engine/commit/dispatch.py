@@ -34,10 +34,22 @@ _COMMIT_PY = Path(__file__).resolve().parent / "commit.py"
 
 
 def _load_commit():
-    """Import the existing D23 module by path (never restated, never copied)."""
-    spec = importlib.util.spec_from_file_location(
-        "jev_d23_commit", str(_COMMIT_PY))
+    """Import the existing D23 module by path (never restated, never copied).
+
+    Registered under its file path in sys.modules so ``check_late_result``
+    failures raise the SAME class object every caller (and test) imports —
+    distinct ``spec_from_file_location`` loads would otherwise mint distinct
+    ``LateResultError`` identities that ``assertRaises`` cannot catch.
+    """
+    import sys as _sys  # noqa: PLC0415 (stdlib, deferred for import cost)
+
+    key = "jev_d23_commit:" + str(_COMMIT_PY)
+    cached = _sys.modules.get(key)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(key, str(_COMMIT_PY))
     mod = importlib.util.module_from_spec(spec)
+    _sys.modules[key] = mod
     spec.loader.exec_module(mod)
     return mod
 
