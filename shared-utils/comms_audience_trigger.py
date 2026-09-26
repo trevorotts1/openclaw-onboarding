@@ -91,6 +91,69 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _REPO_ROOT = _HERE.parent
 
+# JEV A36 (spec 10.3/8.12): audience-rescore entry late gate + audience-update
+# change detector through the EXISTING D23 module
+# (decision_engine/commit/dispatch.py) — imported by path, never restated.
+sys.path.insert(0, str(_HERE / "decision_engine" / "commit"))
+try:
+    import dispatch as _cas_dispatch  # noqa: E402 -- JEV A36 late gate
+except Exception:  # noqa: BLE001 -- bare box: entry refuses, never invents
+    _cas_dispatch = None
+
+
+def gate_audience_rescore(task_key, result_revision, state_dir=None,
+                          scope=None):
+    """Audience-rescore entry late gate (A36) through existing D23.
+
+    Returns (ok, detail): ok True when the rescore result is current; False
+    with the typed D23 failure when a stale rescore must not clobber the
+    newer head. kind is fixed to "audience_rescore" (D23 closed late-kind set).
+    """
+    if _cas_dispatch is None:
+        return False, {"error": "cas_unavailable"}
+    import sqlite3 as _sqlite3  # noqa: PLC0415 (stdlib, deferred for import cost)
+    con = None
+    try:
+        if state_dir is not None:
+            cand = Path(state_dir) / "decision_revisions.db"
+            cand.parent.mkdir(parents=True, exist_ok=True)
+            con = _sqlite3.connect(str(cand), timeout=30)
+            con.row_factory = _sqlite3.Row
+        if con is None:
+            _commit = _cas_dispatch._load_commit()
+            store = _commit.fresh_state(
+                input_hash=_cas_dispatch.scope_hash(scope or {}))
+        else:
+            _commit, store = _cas_dispatch.load_cas_store(
+                con, task_key,
+                _cas_dispatch.scope_hash(scope or {}) if scope is not None else None)
+        ok = _cas_dispatch.guard_late_result(store, "audience_rescore",
+                                             int(result_revision))
+        return True, {"revision": store["decision_revision"], "ok": ok}
+    except Exception as exc:  # noqa: BLE001 -- typed D23 failure surfaces here
+        return False, {"error": type(exc).__name__, "detail": str(exc),
+                       "kind": "audience_rescore",
+                       "result_revision": result_revision}
+    finally:
+        try:
+            if con is not None:
+                con.close()
+        except _sqlite3.Error:
+            pass
+
+
+def detect_audience_update(old_bundle: dict, new_spec: dict) -> list:
+    """Audience-update change detector (A36, spec 8.12): diff the
+    audience/voice/SOP triple. Empty = no recompute; non-empty fires
+    recompute_fn through dispatch.redispatch with reason + evidence.
+    """
+    if _cas_dispatch is None:
+        old, new = old_bundle or {}, new_spec or {}
+        changed = [k for k in ("audience", "voice", "sop")
+                   if (old.get(k) != new.get(k))]
+        return changed
+    return _cas_dispatch.audience_scope_changed(old_bundle, new_spec)
+
 # --------------------------------------------------------------------------- #
 # The five outside-world comms types ADD-2 names verbatim: "a page, blog,
 # email, text/SMS, social post, or any externally-facing written
