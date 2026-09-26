@@ -27,6 +27,7 @@ import pytest
 
 import importlib.util
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -67,9 +68,14 @@ def test_frozen_revision_is_qc_passed_d29():
         ["git", "merge-base", "--is-ancestor", ev.FROZEN_REV, "HEAD"],
         cwd=str(_REPO_ROOT), capture_output=True)
     _ = r
-    qc = json.loads(open(
-        "/Users/blackceomacmini/clawd/live-ledger/jev11/evidence/d29-qc.json"
-    ).read())
+    qc_path = Path(os.environ.get(
+        "D29_QC_PATH",
+        str(_HERE / "fixtures" / "d29-qc.json")))
+    if not qc_path.is_file():
+        pytest.skip(
+            "D29 QC evidence absent: %s (override via D29_QC_PATH)"
+            % qc_path)
+    qc = json.loads(qc_path.read_text(encoding="utf-8"))
     assert qc["verdict"] == "PASS"
     assert qc["sha"].startswith(ev.FROZEN_REV[:7])
     assert qc["checks"]["heldout_fingerprint"] == ev.HELDOUT_FP
