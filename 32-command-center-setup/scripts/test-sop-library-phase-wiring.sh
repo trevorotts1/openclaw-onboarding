@@ -637,14 +637,14 @@ HARNESSEOF
                                                                   '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
                                                                   "preserved-empty-role-lib"
 
-    # 4l: NO CLIENT_SLUG (live 2026-09-23 on Karen Vaughn's and LeAnne Dolce's
-    # boxes). The slug only scopes client_template_vars, so the phase must still
+    # 4l: NO CLIENT_SLUG (live 2026-09-23 on two client boxes).
+    # The slug only scopes client_template_vars, so the phase must still
     # ingest (slug 'default', like U6c), call the converge, and run the gate.
     _run_sandbox "4l NO CLIENT_SLUG (converge + gate still run; ingest uses 'default')" \
                                                                   2555  107   0    54    "no" \
                                                                   '{"ok":true,"sops":{"imported":107,"updated":0}}' 12 \
                                                                   "" ""
-    # 4m: role how-to.md files are SYMLINKS (live on Angeleen Harris's box: 448
+    # 4m: role how-to.md files are SYMLINKS (live on a client box: 448
     # of them, 0 counted without -L). A converge that imports nothing must still
     # FAIL -- counting 0 how-tos would drop the role floor to 0 (fail-open).
     _run_sandbox "4m SYMLINKED how-to.md + converge 0-imported (must fail, not floor 0)" \

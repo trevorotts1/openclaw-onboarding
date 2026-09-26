@@ -3,9 +3,9 @@
 # build state must also accept the `slug` key, and the role-library pin must
 # count symlinked how-to.md files.
 #
-# LIVE (2026-09-23): Karen Vaughn's build state stores the company slug under
+# LIVE (2026-09-23): a client box's build state stores the company slug under
 # `slug`; the readers only tried companySlug / clientSlug, so Phase 6i logged
-# "no CLIENT_SLUG resolved -- SKIPPING" on every run. Angeleen Harris's 448
+# "no CLIENT_SLUG resolved -- SKIPPING" on every run. A second client box's 448
 # how-to.md are symlinks, and `find -type f` without -L counted 0.
 # Runs the REAL jq filters extracted from the scripts against fixtures.
 set -uo pipefail
