@@ -61,6 +61,32 @@ __all__ = [
 ]
 
 
+def _load_modes():
+    """Return the REAL D34 modes module (decision_engine/modes/modes.py).
+
+    Package import first; file-location fallback when ladder.py is loaded
+    standalone (offline test convention). Never a copy: the configured-mode
+    authority stays in D34 (3.6/A62/A63), the ladder only obeys it.
+    """
+    try:
+        from .. import modes as _modes
+        return _modes
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    existing = sys.modules.get("d07_decision_modes")
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(
+        "d07_decision_modes",
+        Path(__file__).resolve().parent.parent / "modes" / "modes.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["d07_decision_modes"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _load_providers():
     """Return (typesafe_direct, openrouter_decisions, credential_resolver).
 
@@ -401,9 +427,19 @@ class DirectFirstLadder:
         return record
 
     def _run_provider(self, *, provider, cred_status, send, accounting,
-                      root, stage_start_s, purpose, order_log):
-        """One gated provider stage. Returns (stage_record, result-or-False)."""
+                      root, stage_start_s, purpose, order_log,
+                      mode_skip=None):
+        """One gated provider stage. Returns (stage_record, result-or-False).
+
+        ``mode_skip`` is the D34 configured-mode verdict. When set it is the
+        FIRST gate: no credential lookup, reservation, or send happens
+        (off/legacy/shadow emit ZERO JEV/probe traffic — A62/A63).
+        """
         remaining = root.remaining_ms()
+        if mode_skip is not None:
+            order_log.append("skip:%s:%s" % (provider, mode_skip))
+            return self._stage_record(provider, provider, "skipped",
+                                      mode_skip, 0, None, remaining), False
         if root.expired():
             return self._stage_record(provider, provider, "skipped",
                                       SKIP_ROOT_DEADLINE, 0, None,
@@ -468,7 +504,7 @@ class DirectFirstLadder:
             openrouter_expected=None, openrouter_candidates=(),
             purpose="decide", order_log=None, direct_http=None,
             openrouter_transport=None, root_deadline=None,
-            no_jev_fallback=None):
+            no_jev_fallback=None, config=None, mode_permissions=None):
         """Run direct -> OpenRouter -> no-JEV. Never raises on data.
 
         ``keys`` maps credential names to caller-supplied values (resolved
@@ -476,8 +512,41 @@ class DirectFirstLadder:
         environment here). ``direct_http`` / ``openrouter_transport`` inject
         fake transports for offline tests. Returns typed provenance; key
         material never appears in it.
+
+        ``config`` is the caller-supplied decision config (D34/D02 shape:
+        ``{"configuredMode": "auto"|"shadow"|"legacy"|"off", ...}``). Mode
+        semantics are owned by the REAL D34 module (``..modes``) and only
+        obeyed here (3.6/A62/A63): off/legacy/shadow emit ZERO JEV/probe
+        traffic — no credential resolution, no reservation, no send.
+        ``mode_permissions`` is an optional callable ``() -> dict`` with
+        ``spend_ok``/``transmit_ok``; it is consulted for ``auto`` only, and
+        when omitted auto stays eligible exactly as before (the per-provider
+        PermissionsGate remains the spending authority).
         """
         ts, oro, _ = _load_providers()
+        modes = _load_modes()
+        cfg = config if isinstance(config, dict) else {}
+        mode = cfg.get("configuredMode", "auto")
+        spend_ok = transmit_ok = True
+        if callable(mode_permissions):
+            try:
+                perms = dict(mode_permissions() or {})
+            except Exception as exc:
+                perms = {"spend_ok": False, "transmit_ok": False,
+                         "reason": "policy_error:%s" % type(exc).__name__}
+            spend_ok = bool(perms.get("spend_ok"))
+            transmit_ok = bool(perms.get("transmit_ok"))
+        effective = modes.resolve_effective_path(
+            mode, spend_ok=spend_ok, transmit_ok=transmit_ok)
+        mode_skip = None
+        if not modes.jev_traffic_permitted(mode):
+            mode_skip = {
+                "off": modes.REASON_MODE_OFF,
+                "legacy": modes.REASON_MODE_LEGACY,
+                "shadow": modes.REASON_MODE_SHADOW,
+            }[mode]
+        elif effective["effective_path"] == modes.EFFECTIVE_NO_JEV:
+            mode_skip = effective["reason"]
         log = order_log if order_log is not None else []
         accounting = AttemptAccounting()
         root = root_deadline or RootDeadline(
@@ -487,17 +556,27 @@ class DirectFirstLadder:
         stages = []
 
         key_map = dict(keys or {})
-        try:
-            creds = self._resolve(company_id, stores, context or {})
-        except Exception as exc:
+        if mode_skip is not None:
+            # Zero JEV-path work: no credential resolution, no reservation,
+            # no send. The no-JEV stage below is the only thing that runs.
             creds = {}
-            stages.append(self._stage_record(
-                "credentials", "none", "transport_error",
-                SKIP_TECHNICAL_UNAVAILABLE, 0, None, root.remaining_ms()))
-            log.append("skip:credentials:resolver_error:%s"
-                       % type(exc).__name__)
+            log.append("skip:credentials:%s" % mode_skip)
+        else:
+            try:
+                creds = self._resolve(company_id, stores, context or {})
+            except Exception as exc:
+                creds = {}
+                stages.append(self._stage_record(
+                    "credentials", "none", "transport_error",
+                    SKIP_TECHNICAL_UNAVAILABLE, 0, None, root.remaining_ms()))
+                log.append("skip:credentials:resolver_error:%s"
+                           % type(exc).__name__)
         direct_status = (creds or {}).get("direct")
         or_status = (creds or {}).get("openrouter")
+
+        mode_info = {"configuredMode": mode,
+                     "effectivePath": effective["effective_path"],
+                     "skipReason": effective["reason"]}
 
         # ── stage 1: direct (D04) ──
         def _send_direct(timeout_ms):
@@ -512,7 +591,7 @@ class DirectFirstLadder:
                 provider=PROVIDER_DIRECT, cred_status=direct_status,
                 send=_send_direct, accounting=accounting, root=root,
                 stage_start_s=stage_start_s, purpose=purpose,
-                order_log=log)
+                order_log=log, mode_skip=mode_skip)
         except (ValueError, TypeError) as exc:
             # Caller-shaped request defect (e.g. bad question shape): the
             # stage is unusable, not a transport failure. Never sent.
@@ -527,12 +606,12 @@ class DirectFirstLadder:
             if direct_specs is None:
                 self._circuit.record_success(PROVIDER_DIRECT)
                 return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root)
+                                     accounting, root, mode_info)
             ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
             if ok:
                 self._circuit.record_success(PROVIDER_DIRECT)
                 return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root)
+                                     accounting, root, mode_info)
             self._circuit.record_failure(PROVIDER_DIRECT)
             stages[-1]["outcome"] = "invalid_response"
         elif isinstance(result, dict):
@@ -552,12 +631,13 @@ class DirectFirstLadder:
         record, result = self._run_provider(
             provider=PROVIDER_OPENROUTER, cred_status=or_status,
             send=_send_openrouter, accounting=accounting, root=root,
-            stage_start_s=stage_start_s, purpose=purpose, order_log=log)
+            stage_start_s=stage_start_s, purpose=purpose, order_log=log,
+            mode_skip=mode_skip)
         stages.append(record)
         if isinstance(result, dict) and result.get("outcome") == "ok":
             self._circuit.record_success(PROVIDER_OPENROUTER)
             return self._verdict(PROVIDER_OPENROUTER, True, stages,
-                                 accounting, root)
+                                 accounting, root, mode_info)
         if isinstance(result, dict):
             self._circuit.record_failure(PROVIDER_OPENROUTER)
 
@@ -581,15 +661,18 @@ class DirectFirstLadder:
             SKIP_ROOT_DEADLINE if root.expired() else None, 0, None,
             root.remaining_ms()))
         verdict = self._verdict("no_jev", bool(dunk.get("ok")), stages,
-                                accounting, root)
+                                accounting, root, mode_info)
         verdict["fallback"] = {k: v for k, v in dunk.items()
                                if k != "decision_source"}
         return verdict
 
-    def _verdict(self, source, ok, stages, accounting, root):
-        return {"decision_source": source, "ok": bool(ok), "stages": stages,
-                "accounting": accounting.summary(),
-                "root": {"budget_ms": self.root_budget_ms,
-                         "remaining_ms": root.remaining_ms(),
-                         "expired": root.expired(),
-                         "expiry_ms": root.expiry_ms}}
+    def _verdict(self, source, ok, stages, accounting, root, mode_info=None):
+        verdict = {"decision_source": source, "ok": bool(ok), "stages": stages,
+                   "accounting": accounting.summary(),
+                   "root": {"budget_ms": self.root_budget_ms,
+                            "remaining_ms": root.remaining_ms(),
+                            "expired": root.expired(),
+                            "expiry_ms": root.expiry_ms}}
+        if mode_info is not None:
+            verdict["mode"] = mode_info
+        return verdict

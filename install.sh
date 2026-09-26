@@ -3935,6 +3935,9 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
         "decision_engine/personas/evidence_profiles.py" \
         "decision_engine/personas/voice_match.py" \
         "decision_engine/parts/__init__.py" \
+        "decision_engine/modes/__init__.py" \
+        "decision_engine/modes/modes.py" \
+        "decision_engine/modes/cohort.py" \
         "decision_engine/providers/typesafe_direct.py" \
         "decision_engine/providers/openrouter_decisions.py" \
         "decision_engine/providers/credential_resolver.py" \
