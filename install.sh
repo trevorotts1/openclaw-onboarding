@@ -3917,6 +3917,41 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
     chmod +x "$SKILLS_DIR/shared-utils/"*.sh 2>/dev/null || true
     chmod +x "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
     success "shared-utils installed to $SKILLS_DIR/shared-utils"
+    # JEV-027 D27 (ss 12.1/17.1, A54/A45): verify the canonical decision
+    # core + policy packs landed with the wholesale copy above. Additive
+    # check only — missing entries are a loud warning, never an abort;
+    # the updater's stamp gate (update-skills.sh _SHAREDUTILS_STATUS) is
+    # the enforcing side on existing boxes.
+    _D27_MISSING=""
+    for _D27_REL in \
+        "decision_engine/contracts/schema.py" \
+        "decision_engine/policies/question_pack.json" \
+        "decision_engine/policies/task_pack.json" \
+        "decision_engine/policies/mixed_pack.json" \
+        "decision_engine/policies/control_pack.json" \
+        "decision_engine/ladder/ladder.py" \
+        "decision_engine/evaluators/five_layer.py" \
+        "decision_engine/personas/collapse_policy.py" \
+        "decision_engine/personas/evidence_profiles.py" \
+        "decision_engine/personas/voice_match.py" \
+        "decision_engine/parts/__init__.py" \
+        "decision_engine/providers/typesafe_direct.py" \
+        "decision_engine/providers/openrouter_decisions.py" \
+        "decision_engine/providers/credential_resolver.py" \
+        "adaptive_weights.py" \
+        "semantic_task_fit.py" \
+        "embedding_engine.py" \
+        "ceo_execution_policy.py" \
+        "secret_helper.py"; do
+        [ -f "$SKILLS_DIR/shared-utils/$_D27_REL" ] || _D27_MISSING="${_D27_MISSING} ${_D27_REL}"
+    done
+    if [ -n "$_D27_MISSING" ]; then
+        warn "decision core incomplete on box (JEV D27): missing from $SKILLS_DIR/shared-utils:${_D27_MISSING}"
+        warn "  Re-run install.sh or update-skills.sh to repair; no config was touched by this check."
+    else
+        success "decision core verified in $SKILLS_DIR/shared-utils (JEV D27: contracts/policies/ladder/providers)"
+    fi
+    unset _D27_MISSING _D27_REL
 fi
 
 # v14.24.0: Install universal-sops/ SOP cluster (Skills 47/48 source tree).

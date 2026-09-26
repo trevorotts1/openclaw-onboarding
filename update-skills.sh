@@ -5972,6 +5972,40 @@ print(state + " " + str(len(headers)))
     _ocs_tree_compare "$EXTRACTED_DIR/shared-utils" "$SKILLS_DIR/shared-utils"
     _SU_MISSING="$_OC_TREE_MISSING"
     [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! shared-utils content differences:${_OC_TREE_DIFFERS}" || true
+    # JEV-027 D27 (ss 12.1/17.1, A43/A54): mixed-version guard for the
+    # canonical decision core. _ocs_tree_compare above asserts full-tree
+    # source ⊆ dest; this names the decision-core subset explicitly so a
+    # partial copy that drops exactly the new core (old box + new bundle,
+    # or truncated cp) withholds the stamp with an actionable line instead
+    # of shipping a box whose routing code and decision core disagree.
+    # Additive check only — it never deletes or rewrites box files.
+    _D27_CORE_MISSING=""
+    for _D27_REL in \
+        "decision_engine/contracts/schema.py" \
+        "decision_engine/policies/question_pack.json" \
+        "decision_engine/policies/task_pack.json" \
+        "decision_engine/policies/mixed_pack.json" \
+        "decision_engine/policies/control_pack.json" \
+        "decision_engine/ladder/ladder.py" \
+        "decision_engine/evaluators/five_layer.py" \
+        "decision_engine/personas/collapse_policy.py" \
+        "decision_engine/personas/evidence_profiles.py" \
+        "decision_engine/personas/voice_match.py" \
+        "decision_engine/parts/__init__.py" \
+        "decision_engine/providers/typesafe_direct.py" \
+        "decision_engine/providers/openrouter_decisions.py" \
+        "decision_engine/providers/credential_resolver.py" \
+        "adaptive_weights.py" \
+        "semantic_task_fit.py" \
+        "embedding_engine.py" \
+        "ceo_execution_policy.py" \
+        "secret_helper.py"; do
+      [ -f "$SKILLS_DIR/shared-utils/$_D27_REL" ] || _D27_CORE_MISSING="${_D27_CORE_MISSING} ${_D27_REL}"
+    done
+    if [ -n "$_D27_CORE_MISSING" ]; then
+      _SU_MISSING="${_SU_MISSING}${_D27_CORE_MISSING}"
+    fi
+    unset _D27_CORE_MISSING _D27_REL
     if [ -n "$_SU_MISSING" ]; then
       _SHAREDUTILS_STATUS="fail"
       echo "  ✗ shared-utils refresh INCOMPLETE — source entries missing from box:${_SU_MISSING}"
