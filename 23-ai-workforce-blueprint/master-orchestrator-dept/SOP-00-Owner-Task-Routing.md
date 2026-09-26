@@ -31,6 +31,11 @@ an assigned specialist into a router or lets the CEO take another agent's execut
 - For NEW client intake preserve the real originating requester_chat_id/requester_channel
   via MC_ROUTE_REQUESTER_CHAT_ID and MC_ROUTE_REQUESTER_CHANNEL on mc-route.sh. Never invent
   or reuse another client's chat ID. Existing executions retain their recorded requester.
+- NO UNIVERSAL DECISION-CALL RULE (spec 1.1 s5.4): do NOT treat the decision engine as
+  mandatory. Explicit owner pins, deterministic operations, a cached same-task decision,
+  and deployments without the decision engine configured all have legitimate no-call
+  paths. Answering conversation, running a pinned/deterministic job, and reusing an
+  already-committed same-task decision must never be blocked waiting for a decision call.
 <!-- END CEO_EXECUTION_POLICY_V3 -->
 ---
 
