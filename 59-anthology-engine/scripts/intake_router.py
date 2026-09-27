@@ -106,6 +106,59 @@ DEFAULT_STAGE_RUNNER = SCRIPTS / "stage_s0_intake.py"
 sys.path.insert(0, str(SCRIPTS))
 import standing_gate  # noqa: E402 -- Item 2: fleet-wide anthology approval gate
 
+# JEV A36 (spec 10.3): producer-ingest door late gate through the EXISTING D23
+# module (shared-utils/decision_engine/commit/dispatch.py) — imported by path,
+# never restated. Hydrates a store from the persisted decision_revisions chain
+# and fails a stale re-delivery cleanly instead of clobbering a newer head.
+_COMMIT_DIR = Path(__file__).resolve().parent.parent.parent / "shared-utils" / "decision_engine" / "commit"  # noqa: E501 -- repo-root layout: 59-anthology-engine/scripts -> repo/shared-utils
+sys.path.insert(0, str(_COMMIT_DIR))
+try:
+    import dispatch as _cas_dispatch  # noqa: E402 -- JEV A36 late gate
+except Exception:  # noqa: BLE001 -- bare box: door still routes, gate reports unavailable
+    _cas_dispatch = None
+
+
+def gate_late_result(task_key, kind, result_revision, state_dir=None,
+                     scope=None):
+    """Producer-ingest door late-result gate (A36) through existing D23.
+
+    Returns (ok, detail): ok True when the result is current; False with the
+    typed D23 failure (LateResultError / unknown-kind ValueError) when a stale
+    re-delivery must not clobber the newer head. scope supplies the input hash
+    when no revision row exists yet (first delivery).
+    """
+    if _cas_dispatch is None:
+        return False, {"error": "cas_unavailable"}
+    con = None
+    try:
+        db = None
+        if state_dir is not None:
+            cand = Path(state_dir) / "decision_revisions.db"
+            cand.parent.mkdir(parents=True, exist_ok=True)
+            db = str(cand)
+            con = sqlite3.connect(db, timeout=30)
+            con.row_factory = sqlite3.Row
+        _commit, store = _cas_dispatch.load_cas_store(
+            con, task_key,
+            _cas_dispatch.scope_hash(scope or {}) if scope is not None else None) \
+            if con is not None else (None, None)
+        if con is None:
+            _commit = _cas_dispatch._load_commit()
+            store = _commit.fresh_state(
+                input_hash=_cas_dispatch.scope_hash(scope or {}))
+        ok = _cas_dispatch.guard_late_result(store, kind, result_revision)
+        return True, {"revision": store["decision_revision"], "ok": ok}
+    except Exception as exc:  # noqa: BLE001 -- typed D23 failure surfaces here
+        return False, {"error": type(exc).__name__, "detail": str(exc),
+                       "kind": kind, "result_revision": result_revision}
+    finally:
+        try:
+            if con is not None:
+                con.close()
+        except sqlite3.Error:
+            pass
+
+
 # Terminal dedup outcomes: a replay of any of these is an acknowledged no-op.
 _TERMINAL_PREFIXES = ("routed", "noop", "exception:")
 
@@ -843,6 +896,14 @@ def route(raw_text, cfg, state_dir, args):
         if not (stage_token and stage_token.strip()):
             return capture("unroutable_missing_ids")
 
+        # -- 2.5. late-result BASIS read (A36, spec 10.3) ----------------------
+        # The decision revision THIS delivery is about to be routed on, read
+        # here -- before the tenant read, the stage classify and the write --
+        # so the gate below can tell whether the head moved while we routed.
+        _cas_pkey = participant_key(contact_id, anthology_id)
+        _cas_rev_at_start = (_cas_dispatch.head_revision(state_dir, _cas_pkey)
+                             if _cas_dispatch is not None else 0)
+
         # -- 3. tenant check + anthology existence (direct key reads; no scans) --
         con = _mirror_ro(state_dir)  # may raise LedgerUnreachable
         try:
@@ -887,6 +948,25 @@ def route(raw_text, cfg, state_dir, args):
             dedup.finalize(fp, "noop", participant_key=pkey)
             _log("intake re-stamp for existing participant %s; confirm-only no-op" % pkey)
             return ack("noop", EX_OK, fingerprint=fp, participant_key=pkey, duplicate=False)
+
+        # -- 4.5. late-result gate (A36, spec 10.3/10.5) ----------------------
+        # Immediately before the first durable write of this route (the
+        # participant upsert + stage spawn). A delivery whose routing basis went
+        # obsolete must fail cleanly rather than clobber the newer committed
+        # decision. Bare box (no D23 module): the door still routes, exactly as
+        # the import block's contract above states.
+        if _cas_dispatch is not None:
+            _gok, _gdetail = gate_late_result(_cas_pkey, "producer_report",
+                                              _cas_rev_at_start,
+                                              state_dir=state_dir)
+            if not _gok:
+                _log("stale producer-ingest delivery: basis r%s, head moved (%s); "
+                     "releasing the claim so a re-delivery re-routes on the new basis"
+                     % (_cas_rev_at_start,
+                        _gdetail.get("detail") or _gdetail.get("error")))
+                dedup.release(fp)
+                return ack("stale_refused", EX_LEDGER, fingerprint=fp,
+                           result_revision=_cas_rev_at_start, retryable=True)
 
         # -- 5. upsert the participant (create on first sight; via the sole writer) --
         scalars = {f: extract(payload, f, cfg) for f in cfg.get("upsert_scalar_fields", [])}

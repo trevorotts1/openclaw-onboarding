@@ -488,6 +488,19 @@ _is_excluded() {
     */42-personal-assistant-library/specialists/07-brainstorming-ideation/governing-personas.md) return 0 ;;
     */42-personal-assistant-library/specialists/07-brainstorming-ideation/how-to.md) return 0 ;;
     */52-avatar-alchemist/prompts/15-facebook-audiences/user.md) return 0 ;;
+    # HYG-001 (batch-2 hygiene, no false positives): persona-template public-
+    # figure quotations/biographies whose surnames are also standalone roster
+    # CS expansion forms. Same structural class as the v2.5.0 single-occurrence
+    # citations above: the persons named are published public figures (cited
+    # author / entrepreneur), not clients, and their name is the INTENDED
+    # content of the persona blueprint. Listed individually because each is an
+    # isolated collision in 23-ai-workforce-blueprint's persona product content
+    # (AGENTS.md N0 + memory [repo-is-fleet-wide-no-client-names]: book/persona
+    # content and public figures are exempt).
+    */23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/personas/personas/cialdini-influence/persona-blueprint.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/personas/personas/grover-relentless/persona-blueprint.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/personas/personas/kimbro-the-wealth-choice/persona-blueprint.md) return 0 ;;
+    */23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/personas/personas/kimbro-what-makes-great-great/persona-blueprint.md) return 0 ;;
     */44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh) return 0 ;;
   esac
   return 1
