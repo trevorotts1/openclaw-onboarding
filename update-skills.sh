@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.88"
+ONBOARDING_VERSION="v25.1.89"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1961,7 +1961,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.88 - safe_json_edit
+# v25.1.89 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5992,6 +5992,9 @@ print(state + " " + str(len(headers)))
         "decision_engine/personas/evidence_profiles.py" \
         "decision_engine/personas/voice_match.py" \
         "decision_engine/parts/__init__.py" \
+        "decision_engine/modes/__init__.py" \
+        "decision_engine/modes/modes.py" \
+        "decision_engine/modes/cohort.py" \
         "decision_engine/providers/typesafe_direct.py" \
         "decision_engine/providers/openrouter_decisions.py" \
         "decision_engine/providers/credential_resolver.py" \

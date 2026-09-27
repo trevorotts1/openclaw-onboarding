@@ -896,6 +896,14 @@ def route(raw_text, cfg, state_dir, args):
         if not (stage_token and stage_token.strip()):
             return capture("unroutable_missing_ids")
 
+        # -- 2.5. late-result BASIS read (A36, spec 10.3) ----------------------
+        # The decision revision THIS delivery is about to be routed on, read
+        # here -- before the tenant read, the stage classify and the write --
+        # so the gate below can tell whether the head moved while we routed.
+        _cas_pkey = participant_key(contact_id, anthology_id)
+        _cas_rev_at_start = (_cas_dispatch.head_revision(state_dir, _cas_pkey)
+                             if _cas_dispatch is not None else 0)
+
         # -- 3. tenant check + anthology existence (direct key reads; no scans) --
         con = _mirror_ro(state_dir)  # may raise LedgerUnreachable
         try:
@@ -940,6 +948,25 @@ def route(raw_text, cfg, state_dir, args):
             dedup.finalize(fp, "noop", participant_key=pkey)
             _log("intake re-stamp for existing participant %s; confirm-only no-op" % pkey)
             return ack("noop", EX_OK, fingerprint=fp, participant_key=pkey, duplicate=False)
+
+        # -- 4.5. late-result gate (A36, spec 10.3/10.5) ----------------------
+        # Immediately before the first durable write of this route (the
+        # participant upsert + stage spawn). A delivery whose routing basis went
+        # obsolete must fail cleanly rather than clobber the newer committed
+        # decision. Bare box (no D23 module): the door still routes, exactly as
+        # the import block's contract above states.
+        if _cas_dispatch is not None:
+            _gok, _gdetail = gate_late_result(_cas_pkey, "producer_report",
+                                              _cas_rev_at_start,
+                                              state_dir=state_dir)
+            if not _gok:
+                _log("stale producer-ingest delivery: basis r%s, head moved (%s); "
+                     "releasing the claim so a re-delivery re-routes on the new basis"
+                     % (_cas_rev_at_start,
+                        _gdetail.get("detail") or _gdetail.get("error")))
+                dedup.release(fp)
+                return ack("stale_refused", EX_LEDGER, fingerprint=fp,
+                           result_revision=_cas_rev_at_start, retryable=True)
 
         # -- 5. upsert the participant (create on first sight; via the sole writer) --
         scalars = {f: extract(payload, f, cfg) for f in cfg.get("upsert_scalar_fields", [])}

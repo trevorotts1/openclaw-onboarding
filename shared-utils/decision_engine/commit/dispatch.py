@@ -109,24 +109,66 @@ def ensure_revision_table(con: sqlite3.Connection) -> None:
     con.executescript(REVISION_DDL)
 
 
+def _row_dict(cur, row):
+    """Mapping view of a fetched row, whatever the connection's row_factory is.
+
+    Production callers hand us a plain ``sqlite3.Connection`` (tuples); only
+    tests set ``sqlite3.Row``. Reading by column name must not depend on that.
+    """
+    if row is None:
+        return None
+    if isinstance(row, sqlite3.Row):
+        return row
+    return dict(zip([d[0] for d in cur.description], row))
+
+
 def latest_revision(con: sqlite3.Connection, task_key: str):
     """Newest revision row for a task, or None (first dispatch)."""
     ensure_revision_table(con)
-    return con.execute(
+    cur = con.execute(
         "SELECT decision_id, task_key, revision, envelope, mirrors, reason,"
         " evidence, created_at FROM decision_revisions"
         " WHERE task_key=? ORDER BY revision DESC LIMIT 1",
-        (task_key,)).fetchone()
+        (task_key,))
+    return _row_dict(cur, cur.fetchone())
+
+
+def head_revision(state_dir, task_key: str) -> int:
+    """Head revision for ``task_key`` from the persisted chain beside the task.
+
+    The read-side convenience the production callers need before building a
+    result: a caller reads the head, computes, then hands that number to its
+    ``gate_*_result`` late gate, so a head that moved during the compute is
+    refused. 0 means "no committed decision yet" (the same value a fresh store
+    carries, so a first-time caller's gate passes). An absent or unreadable
+    chain also yields 0 here: the gate itself stays the fail-closed point.
+    """
+    if not state_dir:
+        return 0
+    db = Path(state_dir) / "decision_revisions.db"
+    if not db.exists():
+        return 0
+    con = None
+    try:
+        con = sqlite3.connect(str(db), timeout=30)
+        con.row_factory = sqlite3.Row
+        row = latest_revision(con, task_key)
+        return int(row["revision"]) if row is not None else 0
+    except sqlite3.Error:
+        return 0
+    finally:
+        if con is not None:
+            con.close()
 
 
 def revision_history(con: sqlite3.Connection, task_key: str) -> list:
     """Full version chain, oldest first (board/report-back surface)."""
     ensure_revision_table(con)
-    rows = con.execute(
+    cur = con.execute(
         "SELECT decision_id, revision, envelope, reason, evidence, created_at"
         " FROM decision_revisions WHERE task_key=? ORDER BY revision ASC",
-        (task_key,)).fetchall()
-    return [dict(r) for r in rows]
+        (task_key,))
+    return [_row_dict(cur, r) for r in cur.fetchall()]
 
 
 def load_cas_store(con: sqlite3.Connection, task_key: str,
@@ -154,18 +196,37 @@ def append_revision(con: sqlite3.Connection, task_key: str, revision: int,
 
     Row key is the task+revision pair, so a recomputed decision that reuses
     its own decisionId under a new revision never collides.
+
+    The primary key IS the cross-process compare-and-swap point (the in-memory
+    store's RLock cannot span two SQLite connections): a losing racer's INSERT
+    hits the unique constraint and is re-raised as the typed
+    ``ObsoleteRevisionError`` this module's contract already documents. Found
+    by the A36 real-DB test (GAP 3); the dict+RLock test could never reach it.
     """
     revision = int(revision)
     row_key = "%s#r%d" % (task_key, revision)
     decision = dict(decision or {})
     decision.setdefault("decisionId", row_key)
-    con.execute(
-        "INSERT INTO decision_revisions(decision_id, task_key, revision,"
-        " envelope, mirrors, reason, evidence, created_at)"
-        " VALUES(?,?,?,?,?,?,?,?)",
-        (row_key, task_key, int(revision), _canon(decision),
-         _canon(mirrors or {}), reason or "",
-         _canon(evidence or {}), time.time()))
+    try:
+        con.execute(
+            "INSERT INTO decision_revisions(decision_id, task_key, revision,"
+            " envelope, mirrors, reason, evidence, created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (row_key, task_key, int(revision), _canon(decision),
+             _canon(mirrors or {}), reason or "",
+             _canon(evidence or {}), time.time()))
+    except sqlite3.IntegrityError:
+        commit = _load_commit()
+        try:
+            con.rollback()
+        except sqlite3.Error:
+            pass
+        head = latest_revision(con, task_key)
+        actual = int(head["revision"]) if head is not None else revision
+        # The loser CAS'd from revision-1 to revision; report that basis so the
+        # typed message reads like a lost race (never "expected 2, head is 2").
+        raise commit.ObsoleteRevisionError(
+            max(revision - 1, 0), max(actual, revision))
     return row_key
 
 
@@ -199,6 +260,10 @@ def redispatch(con: sqlite3.Connection, task_key: str, new_scope: dict,
         decision = dict(decision or {})
         decision.setdefault("decisionId", "%s#r1" % task_key)
         decision["inputHash"] = new_hash
+        # Stamp the scope the reuse diff runs against (mirrors _recompute
+        # below): an honest recompute that does not echo the scope dict must
+        # still REUSE on an unchanged re-dispatch, per A35's first property.
+        decision.setdefault("scope", dict(new_scope or {}))
         new_rev = commit.cas_commit(store, 0, decision, dict(mirrors or {}))
         decision_id = append_revision(con, task_key, new_rev, decision,
                                       dict(mirrors or {}), reason, evidence)

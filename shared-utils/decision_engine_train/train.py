@@ -329,10 +329,50 @@ def attach_integration_qc(state, repository, batch_id, reviewer, reviewer_route,
     return manifest
 
 
-def promote(state, repository, batch_id, final_main_sha, force_push=False):
+def _load_cohort():
+    """Return the REAL D34 cohort module (decision_engine/modes/cohort.py).
+
+    Package import first; file-location fallback when train.py is loaded
+    standalone (offline test convention). Never a copy: the cross-repo
+    pairing authority stays in D34 (14.8/A53); this module only obeys it.
+    """
+    try:
+        from decision_engine.modes import cohort as _cohort
+        return _cohort
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    existing = sys.modules.get("d33_decision_cohort")
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(
+        "d33_decision_cohort",
+        Path(__file__).resolve().parent.parent / "decision_engine"
+        / "modes" / "cohort.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["d33_decision_cohort"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def promote(state, repository, batch_id, final_main_sha, force_push=False,
+            cohort=None, pairing=None, handshake_ok=False):
     """Promote only with PASS tests on the exact candidate plus independent approval.
 
     Never force-push: force_push=True is rejected outright.
+
+    ``cohort`` (14.8/A53) — optional release-cohort manifest dict
+    (``onb_sha``/``cc_sha`` exact 40-hex, ``onb_version``/``cc_version``/
+    ``contract`` non-empty, optional ``tested_pairs`` list of exact
+    ``(onb_sha, cc_sha)`` tuples). When supplied, the REAL D34 cohort
+    validator decides activation: a new+new pair is refused unless its
+    exact tested pair exists and the capability/version handshake passed —
+    a half-promoted pair must never activate an incompatible feature. A
+    new+old or old+new pair promotes on the compatible-fallback behaviour
+    with the truthful capability state recorded. When omitted, the
+    manifest records ``cohort.checked = False`` so the absence of
+    cross-repo evidence is visible rather than silent.
     """
     if force_push:
         raise ValueError("force-push is never permitted")
@@ -351,8 +391,40 @@ def promote(state, repository, batch_id, final_main_sha, force_push=False):
     results = manifest.get("test_results") or {}
     if not results or any(r.get("status") != "pass" for r in results.get("checks", [])):
         raise ValueError("promotion requires passing tests on the exact candidate")
+
+    cohort_record = {"checked": False, "reason": "no_cohort_manifest"}
+    if cohort is not None:
+        cm = _load_cohort()
+        ok, errors = cm.validate_cohort(cohort)
+        if not ok:
+            raise ValueError("cohort manifest invalid: %s" % "; ".join(errors))
+        tested = cohort.get("tested_pairs")
+        if not tested:
+            tested = [(cohort["onb_sha"], cohort["cc_sha"])]
+        verdict = cm.evaluate_pairing(
+            pairing=pairing, onb_sha=cohort["onb_sha"],
+            cc_sha=cohort["cc_sha"], tested_pairs=tested,
+            handshake_ok=bool(handshake_ok))
+        if verdict["behavior"] != cm.BEHAVIOR_FULL_CONTRACT and pairing == cm.PAIR_NEW_NEW:
+            raise ValueError(
+                "half-promoted pair must not activate: %s (pairing=%s, "
+                "onb=%s, cc=%s)"
+                % (verdict["reason"], pairing, cohort["onb_sha"],
+                   cohort["cc_sha"]))
+        cohort_record = {
+            "checked": True,
+            "pairing": pairing,
+            "behavior": verdict["behavior"],
+            "capability": verdict["capability"],
+            "reason": verdict["reason"],
+            "exact_match": verdict["exact_match"],
+            "onb_sha": cohort["onb_sha"],
+            "cc_sha": cohort["cc_sha"],
+        }
+
     manifest = copy.deepcopy(manifest)
-    manifest["promotion"] = {"final_main_sha": final_main_sha, "forced": False}
+    manifest["promotion"] = {"final_main_sha": final_main_sha, "forced": False,
+                             "cohort": cohort_record}
     state["batches"][key] = manifest
     w = state["windows"].setdefault(str(repository), {})
     w.update({"last_outcome": "promoted", "last_batch_id": batch_id, "in_flight": None})

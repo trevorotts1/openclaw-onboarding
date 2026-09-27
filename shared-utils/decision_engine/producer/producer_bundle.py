@@ -83,8 +83,14 @@ def _confirmation_evidenced(envelope, bundle) -> tuple[bool, str]:
     """Structural confirmation evidence (never a bare-ID claim)."""
     if bundle.get("no_persona_required") is True:
         return True, "mechanical: no persona required"
-    if isinstance(envelope.get("confirmation"), dict):
+    confirmation = envelope.get("confirmation")
+    if isinstance(confirmation, dict) and confirmation:
         return True, "envelope confirmation object present"
+    if isinstance(confirmation, dict):
+        return False, (
+            "confirmation object present but empty (hollow evidence, "
+            "not a confirmation)"
+        )
     if bundle.get("confirm_required") is False:
         ra = bundle.get("resolved_audience") or {}
         rg = bundle.get("resolved_goal") or {}
@@ -138,34 +144,45 @@ def ingest_producer_bundle(envelope, *, company_id, catalog_version,
                 "company mismatch: envelope companyId=%r != expected %r"
                 % (envelope.get("companyId"), company_id))
         bundle = envelope.get("personaBundle")
-        if envelope.get("status") == "committed":
-            if not isinstance(bundle, dict):
-                errors.append("committed producer bundle must be an object")
-                return False, errors, None
-            if not (isinstance(envelope.get("bundleHash"), str)
-                    and envelope["bundleHash"].strip()):
-                errors.append("committed producer bundle missing bundleHash")
-            if (envelope.get("candidateCatalogVersion") != catalog_version
-                    or bundle.get("catalog_version") != catalog_version):
-                errors.append(
-                    "catalog/content version mismatch: envelope=%r bundle=%r "
-                    "expected=%r" % (
-                        envelope.get("candidateCatalogVersion"),
-                        bundle.get("catalog_version"), catalog_version))
-            if (bundle.get("catalog_version")
-                    != envelope.get("candidateCatalogVersion")):
-                errors.append(
-                    "content version drift: bundle catalog_version=%r != "
-                    "envelope candidateCatalogVersion=%r" % (
-                        bundle.get("catalog_version"),
-                        envelope.get("candidateCatalogVersion")))
-            ra = bundle.get("resolved_audience") or {}
-            if ra.get("source") not in PROVENANCE_SOURCES:
-                errors.append(
-                    "source provenance %r not evidenced" % (ra.get("source"),))
-            evidenced, why = _confirmation_evidenced(envelope, bundle)
-            if not evidenced:
-                errors.append("persona confirmation bypass refused: " + why)
+        # Spec 10.5: validation of company, source provenance, catalog/content
+        # versions, schema, hash and confirmation evidence is UNCONDITIONAL —
+        # every envelope that reaches ingest is checked, whatever its status.
+        # A pending/uncommitted envelope must not fall through to reuse.
+        if not isinstance(bundle, dict):
+            errors.append(
+                "producer bundle must be an object (got %s)"
+                % type(bundle).__name__)
+            return False, errors, None
+        mechanical = bundle.get("no_persona_required") is True
+        if not mechanical and not (
+                isinstance(envelope.get("bundleHash"), str)
+                and envelope["bundleHash"].strip()):
+            # Presence/non-empty only: spec 1.1 declares no hash algorithm,
+            # so no recompute-compare is possible (follow-up recorded).
+            errors.append(
+                "producer bundle missing bundleHash (status %r)"
+                % (envelope.get("status"),))
+        if (envelope.get("candidateCatalogVersion") != catalog_version
+                or bundle.get("catalog_version") != catalog_version):
+            errors.append(
+                "catalog/content version mismatch: envelope=%r bundle=%r "
+                "expected=%r" % (
+                    envelope.get("candidateCatalogVersion"),
+                    bundle.get("catalog_version"), catalog_version))
+        if (bundle.get("catalog_version")
+                != envelope.get("candidateCatalogVersion")):
+            errors.append(
+                "content version drift: bundle catalog_version=%r != "
+                "envelope candidateCatalogVersion=%r" % (
+                    bundle.get("catalog_version"),
+                    envelope.get("candidateCatalogVersion")))
+        ra = bundle.get("resolved_audience") or {}
+        if ra.get("source") not in PROVENANCE_SOURCES:
+            errors.append(
+                "source provenance %r not evidenced" % (ra.get("source"),))
+        evidenced, why = _confirmation_evidenced(envelope, bundle)
+        if not evidenced:
+            errors.append("persona confirmation bypass refused: " + why)
         if (head_revision is not None
                 and _is_int(envelope.get("decisionRevision"))
                 and envelope["decisionRevision"] < head_revision):

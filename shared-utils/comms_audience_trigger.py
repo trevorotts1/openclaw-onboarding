@@ -310,12 +310,90 @@ def resolve_comms_audience(pb, catalog: dict, company_cfg: dict, soul_text: str 
 # --------------------------------------------------------------------------- #
 # the trigger — the ONE call site every comms-producing write path calls.
 # --------------------------------------------------------------------------- #
+def _audience_scope_from_bundle(bundle: dict) -> dict:
+    """The audience/voice/SOP triple as this path can truthfully derive it.
+
+    audience = the recorded choice (specific label, else the standard source);
+    voice = the bundle's resolved voice persona; sop = the caller's sop slug
+    when the bundle carries one (this path does not synthesize one).
+    """
+    b = bundle or {}
+    ra = b.get("resolved_audience") or {}
+    audience = ""
+    if b.get("audience_source") == "specific":
+        audience = str(ra.get("label") or "")
+    if not audience:
+        audience = str(b.get("audience_source") or ra.get("label") or "")
+    return {
+        "audience": audience,
+        "voice": str(b.get("persona_id") or ""),
+        "sop": str(b.get("sop_slug") or b.get("sop") or ""),
+    }
+
+
+def chain_audience_redispatch(bundle: dict, task_key: str, state_dir,
+                              reason: str = "audience-update") -> dict:
+    """A36 (spec 8.12/10.3): detector -> re-dispatch chain for comms writes.
+
+    The production seam GAP 2 asked for: the bundle this path just computed is
+    the recomputed component. Diff its audience/voice/SOP triple against the
+    committed decision (detect_audience_update), then hand the moved scope to
+    the EXISTING dispatch.redispatch -- so an audience update recommits with
+    reason + evidence instead of leaving both calls caller-supplied.
+
+    Returns {"cas_action", "cas_revision", "changed_fields", "error"}.
+    Never raises: an unreachable CAS module is reported, not fabricated.
+    """
+    if _cas_dispatch is None:
+        return {"cas_action": "unavailable", "cas_revision": 0,
+                "changed_fields": [], "error": "cas_unavailable"}
+    import sqlite3 as _sqlite3  # noqa: PLC0415 (stdlib, deferred for import cost)
+    con = None
+    try:
+        db = Path(state_dir) / "decision_revisions.db"
+        db.parent.mkdir(parents=True, exist_ok=True)
+        con = _sqlite3.connect(str(db), timeout=30)
+        con.row_factory = _sqlite3.Row
+        _commit, store = _cas_dispatch.load_cas_store(con, task_key)
+        committed = (store.get("decision") or {}).get("scope") or {}
+        new_scope = _audience_scope_from_bundle(bundle)
+        changed = detect_audience_update(committed, new_scope)
+        if not changed:
+            return {"cas_action": "reuse",
+                    "cas_revision": int(store.get("decision_revision") or 0),
+                    "changed_fields": [], "error": None}
+
+        def _recompute(_base, scope):
+            decision = dict(bundle)
+            decision["scope"] = dict(scope or {})
+            mirrors = {"topic": decision.get("topic"),
+                       "audience_source": decision.get("audience_source")}
+            return decision, mirrors
+
+        action, revision, _snap = _cas_dispatch.redispatch(
+            con, task_key, new_scope, _recompute, reason,
+            {"changed_fields": changed})
+        return {"cas_action": action, "cas_revision": int(revision),
+                "changed_fields": changed, "error": None}
+    except Exception as exc:  # noqa: BLE001 -- reported, never fabricated
+        return {"cas_action": "error", "cas_revision": 0,
+                "changed_fields": [], "error": "%s: %s" % (type(exc).__name__, exc)}
+    finally:
+        try:
+            if con is not None:
+                con.close()
+        except _sqlite3.Error:
+            pass
+
+
 def build_comms_trigger(comms_type: str, task_text: str, department: str = None, *,
                         paths: dict = None, db_path=None, catalog: dict = None,
                         company_cfg: dict = None, soul_text: str = "",
                         audience_override: str = "", topic_hint: str = "",
                         use_llm: bool = True, record: bool = True,
-                        max_task_personas: int = 10, variety: bool = True) -> dict:
+                        max_task_personas: int = 10, variety: bool = True,
+                        cas_task_key: str = None,
+                        cas_state_dir=None) -> dict:
     """Fire the U116 communication trigger for ONE outside-world comms write.
 
     Returns a dict:
@@ -363,6 +441,14 @@ def build_comms_trigger(comms_type: str, task_text: str, department: str = None,
         }
 
     # ── mandatory path ──────────────────────────────────────────────────────
+    # JEV A36 (spec 10.3): the audience-rescore revision this write is computed
+    # against, read BEFORE the topic/audience/blend work below. The gate near
+    # the return refuses the write if the head moved while we computed, so a
+    # stale rescore can never land on a newer committed decision.
+    _cas_rev = 0
+    if cas_task_key and _cas_dispatch is not None:
+        _cas_rev = _cas_dispatch.head_revision(cas_state_dir, cas_task_key)
+
     topic, topic_factored = _derive_topic(pb, comms_type, task_text, topic_hint)
     if not topic_factored:
         return {
@@ -413,6 +499,25 @@ def build_comms_trigger(comms_type: str, task_text: str, department: str = None,
     bundle["audience_source"] = audience_conf["audience_source"]
     bundle["audience_confirmation_prompt"] = STANDARD_OR_SPECIFIC_PROMPT
     bundle["comms_type"] = comms_type
+
+    # JEV A36 (spec 10.3): late-rescore gate at the last moment before this
+    # bundle is handed to the caller's write. Obsolescent basis -> refuse.
+    if cas_task_key and _cas_dispatch is not None:
+        _gok, _gdetail = gate_audience_rescore(cas_task_key, _cas_rev,
+                                               state_dir=cas_state_dir)
+        if not _gok:
+            return {
+                "comms_type": comms_type, "flag_enabled": True, "refused": True,
+                "refusal_reason": "stale_rescore_refused", "topic_factored": True,
+                "topic": topic, "audience_confirmation": audience_conf,
+                "bundle": None, "result_revision": _cas_rev,
+                "detail": _gdetail.get("detail") or _gdetail.get("error"),
+            }
+        # JEV A36 (spec 8.12): chain the change detector to re-dispatch on the
+        # SAME call path — the audience/voice/SOP diff of the bundle we just
+        # computed recommits through the existing dispatch.redispatch.
+        bundle["cas"] = chain_audience_redispatch(
+            bundle, cas_task_key, cas_state_dir, reason="comms-audience-update")
 
     return {
         "comms_type": comms_type, "flag_enabled": True, "refused": False,

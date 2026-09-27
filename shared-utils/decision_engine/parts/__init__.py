@@ -24,6 +24,11 @@ unresolved, mirroring the D02 bundle contract). Consumed hints round-trip:
 the blend path records exactly what it consumed, and the four-way check
 proves the record is SAME across paths.
 
+(f) D02 round-trip: ``emit_bundle_scope_goal`` materializes validated
+parts into a D02-compatible bundle/task_personas structure built from
+the REAL ``envelope_committed.json`` fixture and proven through the
+REAL ``contracts/schema.py`` validators (never reimplemented).
+
 Stdlib only. No network, no provider access, no state writes. Validators
 return ``(ok, errors)`` fail-closed; deciders raise ValueError on bad input
 (never a silent default).
@@ -35,6 +40,8 @@ same consumed-list schema (no API change).
 
 from __future__ import annotations
 
+import copy
+import json
 from pathlib import Path
 
 __all__ = [
@@ -46,6 +53,7 @@ __all__ = [
     "validate_part",
     "assert_four_way_agreement",
     "repair_slot_bindings",
+    "emit_bundle_scope_goal",
 ]
 
 
@@ -72,6 +80,12 @@ _cp = _by_path("d20_collapse_policy", _de / "personas" / "collapse_policy.py")
 # redefined here (spec 8.9: run the approved mechanism once).
 assert_single_decomposition = _cp.assert_single_decomposition
 check_slot_hint_propagation = _cp.check_slot_hint_propagation
+
+# REAL D02 contract module (contracts/schema.py), loaded by file location
+# under the repo-standard loader name. validate_envelope /
+# validate_persona_bundle are CALLS into this object, never redefinitions.
+_de_schema = _by_path("decision_engine_contracts_schema", _de / "contracts" / "schema.py")
+_FIX = _de / "contracts" / "fixtures"
 
 # Spec 8.9: communication parts vs agent execution tasks stay distinct.
 PART_KINDS = ("sop_slot", "comm_part", "agent_task")
@@ -284,3 +298,87 @@ def repair_slot_bindings(declared_slots, consumed_hints, *, scope_id="") -> dict
         "directives": directives,
         "scope_id": scope_id.strip(),
     }
+
+
+def emit_bundle_scope_goal(parts) -> dict:
+    """Materialize validated parts into a D02 bundle/task_personas bundle. Raises.
+
+    Takes caller-supplied parts carrying propagated per-part scope/seq/
+    goal/conversion-goal identity, validates every part with
+    ``validate_part`` (fail-closed before emission), and maps them onto
+    D02 ``task_personas`` rows inside a REAL ``envelope_committed.json``
+    carrier (deep-copied; fixture file never mutated):
+
+    - each row keeps the propagated ``seq`` verbatim (int, 1-based task
+      slot), the part's ``goal`` as the row's ``task_category``-adjacent
+      ``why`` provenance string, and its ``part_id`` as the row ``part``
+      label — no redefinitions of D02 field lists anywhere in this
+      function (D02 field names come from the REAL schema/validators);
+    - the propagated ``goal`` values are recorded verbatim on the rows
+      (``why``/``part`` provenance), and the first non-empty propagated
+      ``conversion_goal`` seeds the bundle ``conversion_goal`` /
+      ``resolved_goal.value`` (mirroring the D02 "empty when unresolved"
+      contract: empty string when no part resolves one).
+
+    Never raises on bad part CONTENT — malformed propagation raises
+    ValueError from ``validate_part`` errors (missing seq, duplicate
+    seq). D02-shape negatives (missing row seq, duplicate row seq,
+    over-the-10 cap, goal-source drift) surface as REAL D02
+    ``(False, errors)`` results from the imported validators — proven
+    in tests, never silent accepts.
+
+    Returns ``{envelope, bundle}`` where ``envelope`` is the carrier
+    envelope (``personaBundle`` replaced by the emitted bundle) and
+    ``bundle`` is the emitted bundle itself. Both are fresh deep copies.
+    """
+    if not isinstance(parts, (list, tuple)):
+        raise ValueError(
+            "parts: required non-empty list "
+            f"(got {type(parts).__name__})"
+        )
+    if not parts:
+        raise ValueError("parts: required non-empty list (got empty)")
+    seen_seq: set = set()
+    carrier = json.loads((_FIX / "envelope_committed.json").read_text(encoding="utf-8"))
+    template_rows = carrier["personaBundle"]["task_personas"]
+    template_pid = template_rows[0]["persona_id"]
+    template_category = template_rows[0]["task_category"]
+    rows: list[dict] = []
+    for i, part in enumerate(parts):
+        where = f"parts[{i}]"
+        ok, errs = validate_part(part)
+        if not ok:
+            raise ValueError(f"{where}: invalid part: {'; '.join(errs)}")
+        seq = part["seq"]
+        if seq in seen_seq:
+            raise ValueError(f"{where}: duplicate seq {seq}")
+        seen_seq.add(seq)
+        rows.append({
+            "seq": seq,
+            "part": part["part_id"],
+            "persona_id": template_pid,
+            "why": (
+                f"scope {part['scope_id']!r} goal {part['goal']!r} "
+                f"(source {part['source']!r})"
+            ),
+            "no_persona_required": False,
+            "governance_persona_id": None,
+            "task_category": template_category,
+        })
+    bundle = copy.deepcopy(carrier["personaBundle"])
+    bundle["task_personas"] = sorted(rows, key=lambda r: r["seq"])
+    resolved = next(
+        (p["conversion_goal"] for p in parts
+         if isinstance(p.get("conversion_goal"), str)
+         and p["conversion_goal"].strip()),
+        "",
+    ).strip()
+    bundle["conversion_goal"] = resolved
+    rg = bundle.get("resolved_goal")
+    if isinstance(rg, dict):
+        rg = copy.deepcopy(rg)
+        rg["value"] = resolved
+        bundle["resolved_goal"] = rg
+    envelope = copy.deepcopy(carrier)
+    envelope["personaBundle"] = copy.deepcopy(bundle)
+    return {"envelope": envelope, "bundle": bundle}
