@@ -30,13 +30,19 @@ Permissions (3.8): caller-supplied policy answers spend/transmit per
 remote call. Reservation happens BEFORE send, a policy recheck happens at
 the send boundary, reconcile happens after. Nothing gate-related runs
 inside the network call. ``not_authorized`` / ``data_not_permitted`` /
-``budget_exhausted`` are recorded separately from technical errors.
+``budget_exhausted`` are recorded separately from technical errors. A
+FAILED or REFUSED reservation fences the send: no reservation, no
+dispatch (A60). ``SqliteBudgetStore`` is the atomic engine underneath the
+reserve/reconcile hooks — one conditional ``UPDATE`` inside
+``BEGIN IMMEDIATE``, so concurrent reservations have exactly one winner.
 
 Callers inject fakes for offline tests; defaults wire the real modules.
 """
 
 from __future__ import annotations
 
+import math
+import sqlite3
 import time
 from pathlib import Path
 
@@ -72,8 +78,45 @@ __all__ = [
     "AttemptAccounting",
     "CircuitBreaker",
     "PermissionsGate",
+    "SqliteBudgetStore",
     "DirectFirstLadder",
 ]
+
+# Reserve-hook classification (A60). A reserve result that is NEITHER the
+# default no-op shape NOR a granted reservation is a failure/refusal.
+_RESERVE_NOOP_KEYS = frozenset(("reservation", "estimated"))
+_BUDGET_REFUSALS = frozenset((
+    "insufficient_remaining_budget",   # SqliteBudgetStore: debit lost
+    "unknown_budget_key",              # no configured allowance for key
+))
+
+
+def _reserve_error(reservation):
+    """Typed reason when a reserve result must fence the send, else None.
+
+    Grant (``reservation`` truthy) and the default no-op shape
+    (``{"reservation": None, "estimated": ...}``) both return None and let
+    the send proceed. Anything else — an ``error`` key (a refusal, e.g.
+    ``insufficient_remaining_budget``), a ``None``/non-dict/empty result,
+    or any extra non-grant key — is a failure/refusal and fences the send
+    (A60: no send without a successful reservation).
+    """
+    if not isinstance(reservation, dict):
+        return "reserve_failed"
+    if reservation.get("error"):
+        # fail-closed even if a token accompanies the error: money path
+        return str(reservation["error"])
+    if reservation.get("reservation"):
+        return None          # hold exists: proceeds; settled after the send
+    if set(reservation) <= _RESERVE_NOOP_KEYS and "estimated" in reservation:
+        return None                      # default no-op reserve: not a fence
+    return "reserve_failed"
+
+
+def _reservation_granted(reservation):
+    """True when a reserve result carries an actual hold."""
+    return (isinstance(reservation, dict)
+            and bool(reservation.get("reservation")))
 
 
 def _load_modes():
@@ -307,6 +350,257 @@ class CircuitBreaker:
             self._opened_at[provider] = self._now_ms()
 
 
+# ── atomic budget store (A60) ──────────────────────────────────────────
+_BUDGET_SCHEMA = """
+CREATE TABLE IF NOT EXISTS allowances (
+    budget_key TEXT PRIMARY KEY,
+    remaining  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reservations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    budget_key TEXT NOT NULL,
+    provider   TEXT NOT NULL,
+    estimated  REAL NOT NULL,
+    held       REAL NOT NULL,
+    actual     REAL,
+    state      TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+"""
+
+# One conditional write is the sole grant/refuse decision (A60).
+_BUDGET_DEBIT_SQL = (
+    "UPDATE allowances SET remaining = remaining - ? "
+    "WHERE budget_key = ? AND remaining >= ?")
+
+
+class SqliteBudgetStore:
+    """Atomic company budget store over a caller-supplied SQLite file.
+
+    WHY atomic: every reservation is ONE conditional write —
+    ``UPDATE allowances SET remaining = remaining - ? WHERE budget_key = ?
+    AND remaining >= ?`` — executed inside a ``BEGIN IMMEDIATE``
+    transaction. ``BEGIN IMMEDIATE`` takes SQLite's database write lock at
+    transaction start, so the check and the decrement cannot interleave
+    with any other writer (thread, process, or a restart racing the same
+    file); the statement's ``rowcount`` (1 = granted, 0 = refused) is the
+    winner/loser decision. This is a store-level conditional write, not an
+    application lock. State lives on disk, so holds survive restart.
+
+    ``reserve_fn(budget_key)`` binds the ladder's reserve hook shape
+    (``(provider, estimate)``); ``reconcile(provider, reservation,
+    actual)`` settles a hold and accepts either the gate's full reserve
+    result or the bare reservation token. Money rules: refunds happen only
+    for a measured underspend; ``actual=None`` (or corrupt values) marks
+    the hold uncertain and frees nothing; an overrun is debited only from
+    money actually available and ``remaining`` is never driven below zero.
+
+    Stdlib only. No network, no environment reads, no default path: the
+    caller supplies the database path. No key material is stored or read.
+    """
+
+    def __init__(self, db_path, allowances=None, timeout=10.0):
+        path = Path(db_path)
+        if not path.is_absolute():
+            # A relative path silently forks the store by working
+            # directory: two writers, two files, no shared atomicity.
+            raise ValueError("budget store path must be absolute")
+        self._path = str(path)
+        self._timeout = float(timeout)
+        con = self._connect()
+        try:
+            con.executescript(_BUDGET_SCHEMA)
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                for key, amount in dict(allowances or {}).items():
+                    amount = float(amount)
+                    if not math.isfinite(amount) or amount < 0:
+                        raise ValueError(
+                            "invalid allowance for %r" % (key,))
+                    # INSERT OR IGNORE: an existing row is never re-granted
+                    # (restart must not resurrect already-reserved money).
+                    con.execute(
+                        "INSERT OR IGNORE INTO allowances"
+                        "(budget_key, remaining) VALUES(?, ?)",
+                        (str(key), amount))
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+        finally:
+            con.close()
+
+    # ── internals ──────────────────────────────────────────────────────
+    def _connect(self):
+        # isolation_level=None: this class drives BEGIN/COMMIT explicitly.
+        return sqlite3.connect(self._path, timeout=self._timeout,
+                               isolation_level=None)
+
+    # ── reads ──────────────────────────────────────────────────────────
+    def remaining(self, budget_key):
+        """Current remaining amount, or None when the key is unknown."""
+        con = self._connect()
+        try:
+            row = con.execute(
+                "SELECT remaining FROM allowances WHERE budget_key = ?",
+                (str(budget_key),)).fetchone()
+        finally:
+            con.close()
+        return None if row is None else float(row[0])
+
+    def reservation(self, reservation_id):
+        """Raw reservation row as a dict, or None when absent."""
+        con = self._connect()
+        try:
+            con.row_factory = sqlite3.Row
+            row = con.execute(
+                "SELECT * FROM reservations WHERE id = ?",
+                (int(reservation_id),)).fetchone()
+        finally:
+            con.close()
+        return None if row is None else dict(row)
+
+    # ── reserve / reconcile ────────────────────────────────────────────
+    def reserve(self, budget_key, provider, amount):
+        """Atomically debit ``amount``; returns the gate-shaped result.
+
+        Granted -> ``{"reservation": token, "estimated": amount}``
+        Refused -> ``{"reservation": None, "error": ...
+                      ("insufficient_remaining_budget" | "unknown_budget_key")}``
+        Store down -> raises (the gate maps that to ``reserve_failed``).
+        """
+        key = str(budget_key)
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if not math.isfinite(amount) or amount <= 0:
+            return {"reservation": None, "estimated": amount,
+                    "error": "invalid_reservation_amount"}
+        con = self._connect()
+        try:
+            con.execute("BEGIN IMMEDIATE")     # write lock: check+debit
+            cur = con.execute(                 # no check-then-act race
+                _BUDGET_DEBIT_SQL, (amount, key, amount))
+            if cur.rowcount != 1:
+                row = con.execute(
+                    "SELECT remaining FROM allowances"
+                    " WHERE budget_key = ?", (key,)).fetchone()
+                con.rollback()
+                if row is None:
+                    return {"reservation": None, "estimated": amount,
+                            "error": "unknown_budget_key"}
+                return {"reservation": None, "estimated": amount,
+                        "error": "insufficient_remaining_budget",
+                        "reason": "budget", "remaining": float(row[0])}
+            cur = con.execute(
+                "INSERT INTO reservations"
+                "(budget_key, provider, estimated, held, actual, state,"
+                " created_at) VALUES(?, ?, ?, ?, NULL, 'held', ?)",
+                (key, str(provider), amount, amount, time.time()))
+            token = {"id": int(cur.lastrowid), "budget_key": key,
+                     "provider": str(provider), "amount": amount}
+            con.commit()
+            return {"reservation": token, "estimated": amount}
+        except Exception:
+            try:
+                con.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            con.close()
+
+    def reserve_fn(self, budget_key):
+        """The reserve hook (``(provider, estimate)``) bound to one key."""
+        key = str(budget_key)
+
+        def _reserve(provider, estimate):
+            return self.reserve(key, provider, estimate)
+
+        return _reserve
+
+    def reconcile(self, provider, reservation, actual):
+        """Settle the hold named by ``reservation`` (gate result or token).
+
+        Refunds ONLY a measured underspend. ``actual=None`` (or a
+        non-finite/negative actual) marks the hold uncertain and frees
+        nothing — uncertain usage is never released prematurely (A60).
+        Returns a typed dict, never raises on bad input; a store failure
+        raises and leaves the hold debited (the gate surfaces it).
+        """
+        token = reservation
+        if isinstance(token, dict) and "id" not in token:
+            inner = token.get("reservation")
+            token = inner if isinstance(inner, dict) else token
+        rid = token.get("id") if isinstance(token, dict) else None
+        if rid is None:
+            return {"ok": False, "error": "unknown_reservation"}
+        uncertain = actual is None
+        if not uncertain:
+            try:
+                actual = float(actual)
+            except (TypeError, ValueError):
+                uncertain = True
+            else:
+                if not math.isfinite(actual) or actual < 0:
+                    uncertain = True
+        con = self._connect()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                "SELECT budget_key, held, state FROM reservations"
+                " WHERE id = ?", (int(rid),)).fetchone()
+            if row is None:
+                con.rollback()
+                return {"ok": False, "error": "unknown_reservation"}
+            key, held, state = row[0], float(row[1]), row[2]
+            if state != "held":
+                con.rollback()
+                return {"ok": False, "error": "reservation_not_held"}
+            if uncertain:
+                con.execute(
+                    "UPDATE reservations SET state = 'uncertain'"
+                    " WHERE id = ?", (int(rid),))
+                con.commit()
+                return {"ok": True, "settled": False, "held": held,
+                        "released": 0.0,
+                        "reason": "uncertain_usage_held"}
+            released = 0.0
+            charged = float(actual)
+            if actual < held:                  # measured underspend refund
+                released = held - actual
+                con.execute(
+                    "UPDATE allowances SET remaining = remaining + ?"
+                    " WHERE budget_key = ?", (released, key))
+            elif actual > held:                # overrun: no fallback overdraw
+                extra = actual - held
+                cur = con.execute(
+                    _BUDGET_DEBIT_SQL, (extra, key, extra))
+                if cur.rowcount != 1:
+                    row = con.execute(
+                        "SELECT remaining FROM allowances"
+                        " WHERE budget_key = ?", (key,)).fetchone()
+                    charged = held + (float(row[0]) if row else 0.0)
+                    con.execute(
+                        "UPDATE allowances SET remaining = 0"
+                        " WHERE budget_key = ?", (key,))
+            con.execute(
+                "UPDATE reservations SET state = 'settled', actual = ?,"
+                " held = ? WHERE id = ?", (float(actual), charged, int(rid)))
+            con.commit()
+            return {"ok": True, "settled": True, "charged": charged,
+                    "released": released}
+        except Exception:
+            try:
+                con.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            con.close()
+
+
 # ── PermissionsGate ────────────────────────────────────────────────────
 class PermissionsGate:
     """Caller-supplied spend/transmit policy + reserve/reconcile hooks.
@@ -327,6 +621,11 @@ class PermissionsGate:
                 "reservation": None, "estimated": estimate})
         self._reconcile = reconcile_fn or (
             lambda provider, reservation, actual: None)
+        self.errors = []
+
+    def _note_error(self, kind, provider, detail):
+        self.errors.append({"kind": kind, "provider": provider,
+                            "detail": str(detail)})
 
     def check(self, provider, purpose="decide"):
         try:
@@ -352,17 +651,47 @@ class PermissionsGate:
         return None
 
     def reserve(self, provider, estimate):
+        """Never raises. A raised hook maps to a typed ``reserve_failed``
+        refusal so the caller can fence the send (A60)."""
         try:
             return self._reserve(provider, estimate)
-        except Exception:
+        except Exception as exc:
+            self._note_error("reserve_error", provider, type(exc).__name__)
             return {"reservation": None, "estimated": estimate,
                     "error": "reserve_failed"}
 
+    def spend_skip(self, provider, reservation):
+        """A60 fence: typed skip reason when the reservation is not good.
+
+        Returns ``None`` only for a granted hold or the default no-op
+        reserve; every other shape (raised hook, error key, None, empty)
+        is a failure/refusal and fences the send. Known budget sentinels
+        map to ``budget_exhausted``; everything else is a technical
+        failure (``technical_unavailable``) — an exact budget-exhausted
+        claim is only made when the store said so.
+        """
+        reason = _reserve_error(reservation)
+        if reason is None:
+            return None
+        if reason in _BUDGET_REFUSALS:
+            return SKIP_BUDGET_EXHAUSTED
+        return SKIP_TECHNICAL_UNAVAILABLE
+
     def reconcile(self, provider, reservation, actual):
+        """Never raises. Errors are recorded on ``self.errors`` and returned
+        as a typed dict — never swallowed (A60). The hold stays debited:
+        uncertain usage frees nothing until a successful settle."""
         try:
-            self._reconcile(provider, reservation, actual)
-        except Exception:
-            pass
+            out = self._reconcile(provider, reservation, actual)
+        except Exception as exc:
+            self._note_error("reconcile_error", provider,
+                             "%s: %s" % (type(exc).__name__, exc))
+            return {"ok": False, "error": "reconcile_failed",
+                    "detail": "%s: %s" % (type(exc).__name__, exc)}
+        if isinstance(out, dict) and out.get("error"):
+            self._note_error("reconcile_error", provider, out["error"])
+            return out
+        return {"ok": True} if out is None else out
 
 
 # ── default wiring: REAL D04/D05/D06 ───────────────────────────────────
@@ -547,6 +876,13 @@ class DirectFirstLadder:
                                       skip, 0, None, remaining), False
         reservation = self._gate.reserve(provider, 1.0)
         order_log.append("reserve:%s" % provider)
+        fence = self._gate.spend_skip(provider, reservation)
+        if fence is not None:
+            # A60: a FAILED or REFUSED reservation fences the send. No hold
+            # exists, so there is nothing to reconcile; nothing is spent.
+            order_log.append("skip:%s:%s" % (provider, fence))
+            return self._stage_record(provider, provider, "skipped",
+                                      fence, 0, None, remaining), False
         # Recheck at the send boundary; reservation already held, no DB
         # transaction spans the network call below.
         perms2 = self._gate.check(provider, purpose)
@@ -584,9 +920,13 @@ class DirectFirstLadder:
         except Exception as exc:
             raw = {"outcome": "transport_error", "attempts": 1,
                    "detail": "%s: %s" % (type(exc).__name__, exc)}
-        self._gate.reconcile(provider, reservation, 1.0)
-        order_log.append("reconcile:%s" % provider)
         result = _as_result(raw)
+        # Settle the hold with MEASURED usage. Only a proven-ok outcome has
+        # a measured actual; failure/uncertain usage settles with None so
+        # no money is freed prematurely (A60).
+        actual = result["actual_cost"] if result.get("outcome") == "ok" else None
+        self._gate.reconcile(provider, reservation, actual)
+        order_log.append("reconcile:%s" % provider)
         accounting.record(provider, result["attempts"],
                           result["estimated_cost"], result["actual_cost"])
         return self._stage_record(provider, provider, result["outcome"],
@@ -649,6 +989,7 @@ class DirectFirstLadder:
         elif effective["effective_path"] == modes.EFFECTIVE_NO_JEV:
             mode_skip = effective["reason"]
         log = order_log if order_log is not None else []
+        self._gate.errors = []      # per-run error surface (A60)
         accounting = AttemptAccounting()
         root = root_deadline or RootDeadline(
             self.root_budget_ms, clock=self._clock,
@@ -853,4 +1194,10 @@ class DirectFirstLadder:
             # at write time: a verdict whose generation moved between this
             # recheck and the commit is refused there too (3.5.3).
             verdict["fence_token"] = dict(fence_token)
+        errors = getattr(self._gate, "errors", None)
+        if errors:
+            # A60: reconcile/reserve errors are surfaced, never swallowed.
+            verdict["gate_errors"] = [dict(e) for e in errors]
+            if any(e.get("kind") == "reconcile_error" for e in errors):
+                verdict["accounting_uncertain"] = True
         return verdict
