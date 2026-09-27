@@ -12,7 +12,7 @@
 #      MANAGED_RECONCILE_CRONS. That list is the ONLY thing allowed to REPAIR
 #      an existing cron's delivery — a name missing from it is born loud and is
 #      never repaired on any box that already has it. This is exactly how
-#      bootstrap-validate-daily ended up failing 4x on rescue-leanne-dolce
+#      bootstrap-validate-daily ended up failing 4x on rescue-<client>
 #      while refusing to announce ("Refusing implicit isolated cron delivery").
 #
 # Check 2 is the one that regresses: it is a human lockstep rule in a comment.

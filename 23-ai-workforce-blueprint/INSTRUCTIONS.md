@@ -1097,12 +1097,12 @@ If client gives short answers, says "I don't know" twice, or pauses:
 
 ### If the Client Wants to Stop
 - Persist accepted answers and update the handoff/progress record before confirming that they were saved. In the web app, wait for the save acknowledgement; do not claim an unconfirmed in-flight answer was saved.
-- Tell the client: “You can return to your interview page after signing in. If you need a new private sign-in link, tell me ‘resume my interview.’ Your saved answers will still be there.”
+- Tell the client: “You can return to your interview page after signing in. If asked to sign in again, re-open this same link — no fresh link is needed. If you lost this link, tell me ‘resume my interview.’ Your saved answers will still be there.”
 - Leave the existing interview identity and answers in place. Do not restart the interview, fabricate answers, or mark it complete. The owner chooses when to continue.
 
 ### Interview Start and Resume Links — Client-Requested Renewal
 
-The initial invitation uses `bash scripts/send-interview-link.sh` on the client's own box. It verifies the client's public Command Center origin/readiness and sends one acknowledged Telegram message through that client's OpenClaw gateway. A private one-use `/interview#enroll=...` sign-in link and a separate stable `/interview` bookmark point to the same client's saved interview. Do not construct `/onboarding/resume/{slug}` or fall back to an unauthenticated/chat invitation when web readiness is missing.
+The initial invitation uses `bash scripts/send-interview-link.sh` on the client's own box. It verifies the client's public Command Center origin/readiness and sends one acknowledged Telegram message through that client's OpenClaw gateway. A private `/interview?enroll=...` sign-in link (older issuers mint `/interview#enroll=...`; both are accepted) and a separate stable `/interview` bookmark point to the same client's saved interview. Do not construct `/onboarding/resume/{slug}` or fall back to an unauthenticated/chat invitation when web readiness is missing.
 
 When that client says **“resume my interview”**, “Resume my AI workforce setup,” or “my link expired,” execute from the installed Skill 23 directory, using the already selected client root/workspace:
 
@@ -1121,7 +1121,7 @@ Normal install/resume cron replays do not renew an already acknowledged invitati
 - +3d idle: "Still want to finish your AI workforce setup? You stopped at: {last_question}. {link}"
 - +7d idle: "Last check-in - your AI workforce setup is still waiting for you. When you're ready to continue, open the link or message me and I'll pick up right where you left off. {link}"
 
-The +7d nudge is a RESUME INVITATION ONLY. It does NOT unlock any autonomous action. A reminder can reference the stable authenticated `/interview` page, but must not replay a one-use ticket or automatically mint another private sign-in link. If the client asks to continue and needs sign-in, use the explicit renewal command above.
+The +7d nudge is a RESUME INVITATION ONLY. It does NOT unlock any autonomous action. A reminder can reference the stable authenticated `/interview` page, but must not automatically mint another private sign-in link — the client's existing link stays valid until the interview is complete. If the client asks to continue and needs sign-in, use the explicit renewal command above.
 
 **NO-FABRICATION RULE (binding, no exceptions):** If the owner does not reply, mark the interview STALLED in `interview-handoff.md`, keep sending weekly reminders, and NEVER run Option B without the owner explicitly choosing it live in the current conversation. An unanswered message, a cron tick, a "do not stop" override, or any autonomous agent decision is NOT consent. NEVER write invented answers into `workforce-interview-answers.md`.
 

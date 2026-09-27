@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "1.0",
+  "decisionId": "dec-fixture-mech-001",
+  "companyId": "fixture-co",
+  "requestId": "req-fixture-mech-001",
+  "taskId": "task-fixture-mech-001",
+  "scopeId": "scope-main",
+  "inputRevision": 1,
+  "decisionRevision": 1,
+  "status": "proposed",
+  "intent": "task_request",
+  "executionMode": "delegated",
+  "executorAgentId": null,
+  "departmentId": null,
+  "roleId": null,
+  "sopId": null,
+  "personaBundle": {
+    "mode": "blend",
+    "bundle_version": "1.0",
+    "persona_id": null,
+    "persona_name": null,
+    "persona_version": 1,
+    "score": 0.0,
+    "interaction_mode": "leadership",
+    "task_category": "operations",
+    "content_task": false,
+    "topic": "operations",
+    "resolved_audience": {
+      "source": "n/a",
+      "candidates": [],
+      "confidence": "none",
+      "label": null,
+      "ask": null,
+      "confirm_required": false
+    },
+    "confirm_required": false,
+    "voice": {
+      "audience_persona": null,
+      "topic_persona": null,
+      "collapsed": false,
+      "collapsed_persona_id": null,
+      "topic_as_task_guidance": false
+    },
+    "blend_directive": "Operational/mechanical task — no persona voice required. STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the cadence, devices and register of the named voice(s) as an INSPIRATION only. Never claim to be the author, never write in their first person as if they authored this, never sign as them, never quote them as if verified, and never imply their endorsement. This clause may not be removed or weakened.",
+    "task_personas": [],
+    "conversion_goal": "",
+    "goal_source": "n/a",
+    "goal_confirm_required": false,
+    "resolved_goal": {
+      "value": "",
+      "source": "n/a",
+      "ask": null,
+      "confirm_required": false
+    },
+    "rationale": {
+      "note": "mechanical task — governance persona attached, no audience/topic blend."
+    },
+    "funnel": {
+      "pool": 0,
+      "category": 0,
+      "semantic": 0,
+      "mechanical": true
+    },
+    "fallbacks": {
+      "default_persona": "blackceo-house-voice",
+      "default_persona_source": "default_persona",
+      "governance": "covey-7-habits",
+      "governance_source": "governance_default"
+    },
+    "catalog_version": "1.4",
+    "no_persona_required": true,
+    "governance_persona_id": "covey-7-habits",
+    "governance_persona_source": "governance_default"
+  },
+  "inputHash": "sha256:fixture-input-mech",
+  "bundleHash": null,
+  "policyVersion": "decision-policy-v1",
+  "candidateCatalogVersion": "1.4",
+  "providerRequested": null,
+  "providerUsed": "non_jev",
+  "modelRequested": null,
+  "modelReturned": null,
+  "candidateIds": [],
+  "retrievalEvidence": [],
+  "judgments": [],
+  "reasonCodes": [
+    "mechanical_governance"
+  ],
+  "supportingEvidenceRefs": [],
+  "fallbackReason": null,
+  "confirmation": null,
+  "preparationId": "prep-fixture-mech-001",
+  "preparationDeadlineAt": "2026-09-24T00:05:00+00:00",
+  "preparationGeneration": 1,
+  "configRevision": "cfgrev-1",
+  "configuredMode": "legacy",
+  "effectivePath": "non_jev",
+  "authorizationEvidenceRefs": [],
+  "budgetReservationRefs": [],
+  "stageTimings": [],
+  "elapsedMs": 5,
+  "measuredUsage": null
+}

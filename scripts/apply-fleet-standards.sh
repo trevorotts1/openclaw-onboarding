@@ -2699,11 +2699,38 @@ fi
 # W6: full-context handoff standard — when routing a task or handing off to a
 # sub-agent the FULL context (not a pointer) must land in the handoff payload.
 # Idempotent: guarded by <!-- FULL_CONTEXT_HANDOFF_V1 -->.
+#
+# JEV D28 (spec 1.1 s5.4, "generators/installers that stamp managed sections"):
+# the canonical BODY for this block lives in shared-utils/agents-doctrine-blocks.sh
+# (emit_full_context_handoff_block / stamp_full_context_handoff). This script
+# previously carried its OWN inline copy of the body under the SAME marker, so a
+# box stamped by one writer and inspected against the other disagreed about the
+# same <!-- FULL_CONTEXT_HANDOFF_V1 --> block — the exact drift class s5.4 names.
+# Now: stamp by SOURCING the canonical stamper when it ships (it ships with
+# shared-utils on every install/update), and fall back to the legacy inline body
+# ONLY when the stamper is genuinely absent (an older bundle, first-ever install
+# order) so a box is never left unstamped.
 FULL_CONTEXT_HANDOFF_MARKER="<!-- FULL_CONTEXT_HANDOFF_V1 -->"
 
 if grep -qF "$FULL_CONTEXT_HANDOFF_MARKER" "$AGENTS_FILE"; then
   echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 already present in $AGENTS_FILE — no-op"
 else
+  _ADB_LIB=""
+  for _adb_candidate in "${ONBOARDING_DIR:-}/shared-utils/agents-doctrine-blocks.sh" \
+                       "${_FS_SCRIPT_DIR:-}/../shared-utils/agents-doctrine-blocks.sh" \
+                       "$OC_ROOT/skills/shared-utils/agents-doctrine-blocks.sh"; do
+    if [ -f "$_adb_candidate" ]; then _ADB_LIB="$_adb_candidate"; break; fi
+  done
+  if [ -n "$_ADB_LIB" ]; then
+    # shellcheck source=/dev/null
+    . "$_ADB_LIB"
+    if stamp_full_context_handoff "$AGENTS_FILE"; then
+      echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 stamped from canonical $_ADB_LIB"
+    else
+      echo "[apply-fleet-standards] canonical stamper FAILED for $AGENTS_FILE — leaving unchanged" >&2
+    fi
+  else
+    echo "[apply-fleet-standards] agents-doctrine-blocks.sh not found — using legacy inline body" >&2
   cat >> "$AGENTS_FILE" <<'FCHEOF'
 
 <!-- FULL_CONTEXT_HANDOFF_V1 -->
@@ -2719,7 +2746,9 @@ When handing a task to any department, sub-agent, or specialist, you MUST pass t
 4. **Session handoff.** When handing off between sessions, write the current task state, open threads, and next actions to `$WORKSPACE_DIR/MEMORY.md` before the session closes. The receiving agent reads MEMORY.md at session start.
 
 FCHEOF
-  echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 injected into $AGENTS_FILE"
+    echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 injected into $AGENTS_FILE (legacy inline body)"
+  fi
+  unset _ADB_LIB _adb_candidate
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then

@@ -276,6 +276,45 @@ per-process cache, cheap to rebuild on restart, and never shipped as a
 GitHub Release asset (department configs are per-client, not a shared
 library).
 
+## Runtime decision-engine retrieval (JEV 1.1, Python, this repo)
+
+The decision engine consumes embeddings; it never owns them. Two additive
+modules under `shared-utils/decision_engine/retrieval/` carry the spec-9
+rules. Both are stdlib-only, perform **zero embedding calls and zero
+network/provider access**, and take every provider/model/dimension fact from
+the caller — so they add no second embedding path.
+
+- `cache_identity.py` (spec 9.3/9.5/9.6) — the JEV cache-identity table (spec 9.5)
+  as code. Every 9.5 purpose has its own key builder
+  (`shared_doc_key`, `department_key`, `query_key`,
+  `alignment_evidence_key`, `same_task_decision_key`, `provider_health_key`);
+  keys are namespace-versioned (`jev1`/`v1`) and content-hashed, never
+  positional. `spaces_compatible`/`require_compatible` refuse cross-space
+  reuse (model, dimensions, task type, preprocessing version), and
+  `validate_vector` rejects fake/corrupt/wrong-dimension/zero-norm rows —
+  spec 9.3's "same dimension alone does not make two vector spaces
+  compatible". `QueryEmbeddingCache` is the 9.6 single-flight: N concurrent
+  identical queries cost exactly 1 embed call, and its caches are
+  per-instance (never process-global).
+- `asset_join.py` (spec 7.4/9.4) — joins the centrally shipped role-library
+  vectors (corpus 5's `role_library_embeddings`) to local role rows on EXACT
+  `(slug, content_version)`. A version bump is a miss, never a fuzzy match.
+  `plan_delta_embeds` is the delta-only planner: a rerun over unchanged shared
+  roles plans zero embeds, which is the regression lock for the reviewed
+  role-library-import fix (corpus 5's "clients install compatible assets, not
+  re-embed the whole shared corpus"). Tenant rows shadowing a shared slug
+  raise `DuplicateAssetError`; deferred/missing vectors stay in the candidate
+  pool rather than being silently dropped.
+
+**Not a seventh corpus.** These modules reference corpora 1-6 by key; they do
+not create a new index, store, or asset, and they do not flatten the six into
+one. `retrieval_query` / `retrieval_document` are the only cross-reusable task
+pair; every other task-type pairing is refused.
+
+Provider/model constants stay pinned in `embedding_engine.py` and the Command
+Center's own constants — the retrieval modules take them as call arguments and
+duplicate no model strings.
+
 ## Provider reliability (build pipeline)
 
 - Keys are read from ALL canonical secret stores and DEQUOTED

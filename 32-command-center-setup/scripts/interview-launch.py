@@ -55,8 +55,11 @@ def initialize(path, slug, name, email, env):
         s.setdefault('launchBootstrap', {'version':1, 'createdAt':now(), 'status':'identity-allocated'})
         # A requested hostname is not proof that DNS/tunnel exists. The strict
         # authenticated verifier alone promotes it into commandCenterPublicOrigin.
+        # Configured public URL wins (CC_PUBLIC_URL operator override, then the
+        # tunnel-ingress canonical MC_TENANT_PUBLIC_URL); the slug default is a
+        # candidate only, never a verified receipt (provision/invite enforce that).
         if fresh:
-            s.setdefault('commandCenterUrl', public_origin(env.get('MC_TENANT_PUBLIC_URL') or 'https://'+slug+'.zerohumanworkforce.com'))
+            s.setdefault('commandCenterUrl', public_origin((env.get('CC_PUBLIC_URL') or '').strip() or env.get('MC_TENANT_PUBLIC_URL') or 'https://'+slug+'.zerohumanworkforce.com'))
         lane = env.get('ONBOARDING_LANE') or ('standard-first' if fresh else None)
         if lane and lane not in ('standard-first', 'legacy'): raise ValueError('ONBOARDING_LANE must be standard-first or legacy')
         if lane and s.get('buildType') and s['buildType'] != lane:
@@ -388,7 +391,7 @@ def main():
             env=dict(os.environ)
             if a.app:
                 stored=env_read(a.app/'.env.local')
-                for key in ('MC_COMPANY_ID','MC_TENANT_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL'):
+                for key in ('MC_COMPANY_ID','MC_TENANT_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','CC_PUBLIC_URL'):
                     if env.get(key) and stored.get(key) and env[key]!=stored[key]: raise ValueError('service identity conflict: '+key)
                     if stored.get(key): env[key]=stored[key]
             initialize(a.state,a.slug,a.name,a.email,env)

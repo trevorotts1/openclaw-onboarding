@@ -903,7 +903,7 @@ SECRETS_ENV="$OPENCLAW_DIR/secrets/.env"
 # Brand/source files live in the workspace dir on OpenClaw >= 2026.x
 # ($OPENCLAW_DIR/workspace/SOUL.md), not the config root. Prefer workspace/,
 # fall back to config root (older layouts / container paths).
-# [fix 2026-09-08: Talaya box rc=3 — every cycle stopped, brand files unread]
+# [fix 2026-09-08: client box rc=3 — every cycle stopped, brand files unread]
 _ws="$OPENCLAW_DIR/workspace"
 SOUL_MD="$OPENCLAW_DIR/SOUL.md";      [ -f "$_ws/SOUL.md" ]      && SOUL_MD="$_ws/SOUL.md"
 IDENTITY_MD="$OPENCLAW_DIR/IDENTITY.md"; [ -f "$_ws/IDENTITY.md" ] && IDENTITY_MD="$_ws/IDENTITY.md"
