@@ -192,6 +192,69 @@ def test_miss_stays_in_pool_via_lexical_path():
     assert by_slug["setter"].score == pytest.approx(0.42)
 
 
+def test_deferred_hit_stays_in_pool_and_does_not_abort_it():
+    """A34: an exact (slug, version) asset row whose vector is deferred must
+    not abort pool assembly for the whole pool."""
+    idx = aj.index_asset_rows(
+        [_asset("closer", "v3"), {"slug": "deferred-coach", "content_version": "v1",
+                                  "space": _space()}]
+    )
+    joined = aj.join_roles(
+        [_role("closer", "v3"), _role("deferred-coach", "v1")], idx
+    )
+    assert "deferred-coach" in joined.hits  # exact join hit, vector deferred
+    pool = aj.build_pool(
+        joined,
+        query_vector=[1.0, 0.0, 0.0],
+        query_space=_space(task_type="retrieval_query"),
+        lexical_scores={"deferred-coach": 0.7},
+    )
+    by_slug = {e.slug: e for e in pool}
+    assert by_slug["deferred-coach"].mode == "lexical"
+    assert by_slug["deferred-coach"].score == pytest.approx(0.7)
+    assert by_slug["closer"].mode == "vector"  # embedded peer still ranked
+
+
+def test_deferred_hit_without_lexical_score_defaults_zero():
+    idx = aj.index_asset_rows(
+        [{"slug": "deferred-coach", "content_version": "v1", "space": _space()}]
+    )
+    joined = aj.join_roles([_role("deferred-coach", "v1")], idx)
+    pool = aj.build_pool(
+        joined, query_vector=[1.0, 0.0, 0.0],
+        query_space=_space(task_type="retrieval_query"),
+    )
+    assert pool == [
+        aj.PoolEntry(slug="deferred-coach", mode="lexical", score=0.0)
+    ]
+
+
+def test_deferred_prefix_distinguished_from_zero_norm_and_corrupt():
+    """A34 boundary: absent embedding is admitted lexically; a present but
+    ZERO or corrupt vector is still rejected, not conflated with deferred."""
+    # zero-norm row ships a vector: rejected at index (never silently deferred)
+    with pytest.raises(aj.InvalidVectorError):
+        aj.index_asset_rows(
+            [_asset("zero-role", "v1", vec=(0.0, 0.0, 0.0))]
+        )
+    # corrupt row shipping a vector: rejected at index
+    with pytest.raises(aj.InvalidVectorError):
+        aj.index_asset_rows(
+            [_asset("corrupt-role", "v1", vec=(1.0, float("nan"), 0.0))]
+        )
+    # absent vector: admitted to the pool via the lexical channel
+    idx = aj.index_asset_rows(
+        [{"slug": "deferred-role", "content_version": "v1", "space": _space()}]
+    )
+    joined = aj.join_roles([_role("deferred-role", "v1")], idx)
+    pool = aj.build_pool(
+        joined, query_vector=[1.0, 0.0, 0.0],
+        query_space=_space(task_type="retrieval_query"),
+        lexical_scores={"deferred-role": 0.5},
+    )
+    assert [(e.slug, e.mode) for e in pool] == [("deferred-role", "lexical")]
+
+
 def test_miss_without_lexical_score_defaults_zero():
     joined = aj.JoinResult(hits={}, misses=[{"slug": "ghost", "reason": "no-asset-row"}])
     pool = aj.build_pool(

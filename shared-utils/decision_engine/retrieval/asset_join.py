@@ -131,7 +131,8 @@ def index_asset_rows(rows: Any) -> dict:
 
     Raises :class:`DuplicateAssetError` on two rows sharing one key and
     :class:`InvalidVectorError` on a fake/corrupt/zero-norm row that ships
-    with a space (deferred rows carry no vector and validate at use).
+    with a space (deferred rows carry no vector and join the pool through
+    the lexical path).
     """
     try:
         items = list(rows)
@@ -267,9 +268,10 @@ def build_pool(
     """Build one ranked candidate pool from a :func:`join_roles` result.
 
     Hits score by D21-guarded cosine (``checked_cosine`` — cross-space reuse
-    and corrupt rows raise). Misses stay in the pool as ``lexical`` entries
-    with caller-supplied scores (default 0.0), so deferred/missing vectors
-    never disappear. Sorted by score desc, slug asc.
+    and corrupt rows raise). Hits whose vector is deferred (row present,
+    vector not provisioned) and misses both stay in the pool as ``lexical``
+    entries with caller-supplied scores (default 0.0), so deferred/missing
+    vectors never disappear (spec 7.4, A34). Sorted by score desc, slug asc.
     """
     if not isinstance(joined, JoinResult):
         raise AssetJoinError("joined: required JoinResult from join_roles()")
@@ -279,18 +281,26 @@ def build_pool(
     if not isinstance(lex, dict):
         raise AssetJoinError("lexical_scores: required mapping slug->number")
     pool: list[PoolEntry] = []
+    deferred: list[str] = []
     for slug, hit in joined.hits.items():
         asset = hit["asset"]
+        vector = asset.get("vector")
+        if vector is None:
+            # Deferred embedding: the exact (slug, version) asset exists but
+            # its vector is not provisioned yet. Joining the lexical channel
+            # keeps one deferred row from aborting the whole pool.
+            # ponytail: PoolEntry carries no admitting-stage field, so a
+            # deferred hit and a plain miss are both mode="lexical"; add a
+            # reason field when a caller must record the admitting stage.
+            deferred.append(slug)
+            continue
         raw_space = asset.get("space", asset_space)
         if raw_space is None:
             raise AssetJoinError(f"hit {slug!r}: no asset space and no asset_space")
-        if "vector" not in asset or asset["vector"] is None:
-            raise AssetJoinError(f"hit {slug!r}: asset row carries no vector")
         aspace = _as_space(raw_space, what=f"asset space for {slug!r}")
-        score = checked_cosine(query_vector, qspace, asset["vector"], aspace)
+        score = checked_cosine(query_vector, qspace, vector, aspace)
         pool.append(PoolEntry(slug=slug, mode="vector", score=score))
-    for miss in joined.misses:
-        slug = miss["slug"]
+    for slug in deferred + [m["slug"] for m in joined.misses]:
         score = lex.get(slug, 0.0)
         if isinstance(score, bool) or not isinstance(score, (int, float)):
             raise AssetJoinError(
