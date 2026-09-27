@@ -1,3 +1,19 @@
+## [v25.1.89]  -  2026-09-27  -  JEV 1.1 batch train lands on main: decision-engine continuation and modes, owner-direct execution policy, A36 selector-gate repair, D12/D28/D34 regressions, skill-version lockstep
+
+### Why
+`auto-tag-on-merge.yml` cut the annotated tag `v25.1.89` at main tip (`44f272fa0`) on the merge of PR #1257 (jev11/d33-batch-trains, 2026-09-27T19:16:35Z) and the version markers were rolled v25.1.88 -> v25.1.89, but no CHANGELOG entry was written for the release. The G2 gate requires a CHANGELOG header for every v11+ annotated tag, so the missing v25.1.89 entry failed G2 on main and, because that gate is a required status check, failed it on pull requests that had nothing to do with the release — PR #1258 among them. This entry documents the release that was already cut; no code, version marker, tag or pin is touched.
+
+### What changed
+- `shared-utils/decision_engine/continuation/{__init__,continuation}.py` (new), `shared-utils/decision_engine/modes/{__init__,cohort,modes}.py` (new), `shared-utils/decision_engine/parts/__init__.py` (new), `shared-utils/decision_engine/ladder/ladder.py`, `shared-utils/decision_engine/producer/producer_bundle.py`, `shared-utils/decision_engine/commit/dispatch.py` and `shared-utils/decision_engine_train/train.py`: decision-engine continuation policy, D34 cohort/modes wiring, part propagation and producer bundle gates.
+- `shared-utils/execution_policy/__init__.py` (new) and `shared-utils/ceo_execution_policy.py`: owner-direct execution policy (JEV-A35), with `shared-utils/persona_for_job.py` and `shared-utils/comms_audience_trigger.py`.
+- `23-ai-workforce-blueprint/scripts/backfill-build-state.py` and `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-00-Owner-Task-Routing.md`: REP-212 (A36) selector-gate wiring to real callers and the JEV-028 managed CEO/role instruction clause.
+- `59-anthology-engine/scripts/intake_router.py` and `59-anthology-engine/scripts/nudge_send.py`: decision-engine intake and nudge routing. `32-command-center-setup/scripts/move-task.py`: redispatch caller parity. `57-social-media-in-a-box/scripts/ledger.py` with its restamped `ENGINE-PIN.sha256` late gate. `06-ghl-install-pages/tools/browser_manager.{py,sh}`. `scripts/agent-browser-reaper.sh`, `scripts/guard-agent-browser-managed.sh` and `scripts/apply-fleet-standards.sh`. `extensions/ceo-routing-doctrine/dist/index.js` and `docs/EMBEDDINGS.md`.
+- Version markers rolled v25.1.88 -> v25.1.89 and skill dirs 23/32/57/59 bumped in lockstep (G3).
+- New tests: `tests/unit/test_a36_gate_wiring.py`, `test_a36_selector_gate_repair.py`, `test_continuation_policy.py`, `test_d12_assignment_races.py`, `test_d34_modes_cohort.py`, `test_d34_wiring.py`, `test_execution_policy.py`, `test_jev28_managed_instructions.py`, `test_move_task_redispatch_caller.py`, `test_part_propagation.py`, `test_producer_bundle.py`.
+
+### Tests
+Measured on `44f272fa0` (origin/main): G1, G1b, G3 and the version-marker check all pass; G2 fails solely for the missing v25.1.89 header this entry adds.
+
 ## [v25.1.88]  -  2026-09-26  -  JEV 1.1 batch 003 lands on main: decision-engine gates, offline evaluation harness, skill-version reconciliations
 
 ### Why
