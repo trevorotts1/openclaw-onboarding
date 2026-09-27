@@ -16,7 +16,12 @@ ladder.py) orchestrating the REAL D04/D05/D06 modules:
   * 3.8 permissions: caller policy checked before EVERY remote call;
     reserve -> recheck -> send -> reconcile ordering asserted via log;
     recheck denial blocks send; not_authorized / data_not_permitted /
-    budget_exhausted kept separate from technical errors.
+    budget_exhausted kept separate from technical errors;
+  * 3.5.3 late results: a provider ok that lands after the root expiry, or
+    after the wired D23 store's mode/policy revision moved, settles usage
+    accounting but is NEVER adopted as the verdict; the verdict carries
+    the store's fence token and the D23 cas_commit re-checks it at write
+    time (FencedError). In-time oks adopt exactly as before.
 
 Offline: fake D04/D05/D06 callables + fake clock only. No network, no
 disk, no environment reads. Fake key material never appears in verdicts.
@@ -203,6 +208,41 @@ class DirectFirstOrdering(unittest.TestCase):
         self.assertEqual(verdict["stages"][0]["outcome"],
                          "invalid_response")
 
+    def test_direct_foreign_model_rejected_both_accept_paths(self):
+        """Spec 3.7: an unapproved returned model is never accepted on the
+        direct path — with or without direct_specs — and the rejection is
+        typed provenance, not silence."""
+        for specs in (_select_specs(), None):
+            for model in ("gpt-4", "jev-2.0.0", "jev-1.131"):
+                payload = dict(_good_select_payload(), model=model)
+                log = []
+                lad, _, calls = make_ladder(
+                    direct=lambda **k: _ok(payload),
+                    resolve=lambda *a: _creds(direct=True, openrouter=False))
+                verdict = lad.run(company_id="acme", state={"s": 1},
+                                  questions=_qs(), keys={},
+                                  direct_specs=specs, order_log=log)
+                self.assertEqual(verdict["decision_source"], "no_jev", model)
+                self.assertEqual(verdict["stages"][0]["outcome"],
+                                 "model_foreign", model)
+                self.assertIn("skip:typesafe_direct:model_foreign", log)
+                self.assertEqual(len(calls["openrouter"]), 0)
+
+    def test_direct_approved_family_accepted(self):
+        """The requested snapshot and its dated member stay accepted."""
+        for model in (_TS.TYPESAFE_MODEL,
+                      _TS.TYPESAFE_MODEL + ".20260901"):
+            payload = dict(_good_select_payload(), model=model)
+            lad, _, _ = make_ladder(direct=lambda **k: _ok(payload),
+                                    resolve=lambda *a: _creds(
+                                        direct=True, openrouter=False))
+            verdict = lad.run(company_id="acme", state={"s": 1},
+                              questions=_qs(), keys={},
+                              direct_specs=_select_specs())
+            self.assertEqual(verdict["decision_source"],
+                             "typesafe_direct", model)
+            self.assertTrue(verdict["ok"])
+
     def test_key_material_never_in_verdict(self):
         lad, _, _ = make_ladder()
         verdict = lad.run(
@@ -255,8 +295,13 @@ class RootDeadlineSuite(unittest.TestCase):
             clk.advance(5)  # one slow 5s call against a 1s root
             return _fail("timeout")
 
+        # reserve pinned to 0: this test measures the root-expiry rule
+        # alone. With the 2000 ms default reserve the whole 1000 ms root
+        # sits inside the reserve and the send-boundary gate (A55 clause
+        # 2, tested below) would refuse to start any call at all.
         lad, _, calls = make_ladder(clock=clk, direct=_slow_direct,
-                                    root_budget_ms=1000)
+                                    root_budget_ms=1000,
+                                    settlement_reserve_ms=0)
         verdict = lad.run(company_id="acme", state={"s": 1},
                           questions=_qs(), keys={})
         expiry_holder["expiry"] = verdict["root"]["expiry_ms"]
@@ -279,6 +324,70 @@ class RootDeadlineSuite(unittest.TestCase):
         self.assertLessEqual(timeout_ms, 10000.0 - 2000.0)  # minus reserve
         self.assertEqual(verdict["stages"][0]["remaining_ms_at_entry"],
                          verdict["stages"][0]["remaining_ms_at_entry"])
+
+    def test_no_send_begins_inside_the_settlement_reserve(self):
+        """A55 clause 2 (spec 3.5.2): past the reserve, remote work stops.
+
+        Remaining 1000 ms against a 2000 ms reserve: the entry check
+        (root.expired() = start+budget) is FALSE here, so only a gate at
+        the send boundary can hold. Measured pre-fix the ladder dispatched
+        send(timeout_ms=0.0); it must skip instead.
+        """
+        clk = FakeClock()
+        lad, _, calls = make_ladder(clock=clk)
+        root = ladder.RootDeadline(300000, clock=clk,
+                                   settlement_reserve_ms=2000)
+        clk.advance(299.0)  # 1000 ms left, inside the 2000 ms reserve
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={}, root_deadline=root)
+        self.assertEqual(calls["direct"], [], "no direct call in reserve")
+        self.assertEqual(calls["openrouter"], [],
+                         "no OpenRouter call in reserve")
+        self.assertFalse(verdict["root"]["expired"],
+                         "entry check alone would not have caught this")
+        self.assertEqual([s["skip_reason"] for s in verdict["stages"][:2]],
+                         ["settlement_reserve", "settlement_reserve"])
+
+    def test_reserve_gate_holds_when_time_burns_after_entry(self):
+        """The gate cannot live at run() entry: time is spent before send.
+
+        Entry at 2500 ms is OUTSIDE the 2000 ms reserve, so an entry-only
+        check passes; the credential resolve then burns down to 1000 ms.
+        Only a boundary gate stops the send.
+        """
+        clk = FakeClock()
+
+        def _slow_resolve(*a):
+            clk.advance(1.5)  # 1500 ms spent before the send boundary
+            return _creds()
+
+        lad, _, calls = make_ladder(clock=clk, resolve=_slow_resolve)
+        root = ladder.RootDeadline(300000, clock=clk,
+                                   settlement_reserve_ms=2000)
+        clk.advance(297.5)  # 2500 ms at run() entry -> outside reserve
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={}, root_deadline=root)
+        self.assertEqual(calls["direct"], [])
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["stages"][0]["skip_reason"],
+                         "settlement_reserve")
+
+    def test_send_just_outside_the_reserve_still_dispatches(self):
+        """Control: the gate must not swallow legitimate sends.
+
+        Remaining 2500 ms > 2000 ms reserve, so a send is permitted and
+        gets exactly the reserve-excluded budget (500 ms).
+        """
+        clk = FakeClock()
+        lad, _, calls = make_ladder(clock=clk)
+        root = ladder.RootDeadline(300000, clock=clk,
+                                   settlement_reserve_ms=2000)
+        clk.advance(297.5)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={}, root_deadline=root)
+        self.assertEqual(len(calls["direct"]), 1)
+        self.assertEqual(calls["direct"][0]["timeout_ms"], 500.0)
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
 
 
 class AttemptAccountingSuite(unittest.TestCase):
@@ -468,6 +577,190 @@ class PermissionsGateSuite(unittest.TestCase):
         self.assertEqual(verdict["decision_source"], "openrouter")
         self.assertIn("typesafe_direct", seen)
         self.assertIn("openrouter", seen)
+
+
+class LateResultFencing(unittest.TestCase):
+    """3.5.3: post-expiry / post-revision oks settle usage, never verdict.
+
+    The D23 gates (commit/commit.py) are the fence authority; these tests
+    prove the ladder JOINS them — a late ok can neither be adopted as the
+    verdict nor committed afterwards.
+    """
+
+    def _fenced_ok_ladder(self, clk, store=None, **kw):
+        def _slow_ok(*, body, api_key, timeout_ms, http_post=None):
+            clk.advance(5)  # a 5s ok against a 1s root
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
+
+        return make_ladder(clock=clk, direct=_slow_ok, commit_store=store,
+                           root_budget_ms=1000, settlement_reserve_ms=0,
+                           **kw)
+
+    def test_post_expiry_ok_never_adopted_usage_still_settled(self):
+        clk = FakeClock()
+        lad, _, calls = self._fenced_ok_ladder(clk)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertNotEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["fence_reason"],
+                         "root_expired")
+        # Spec 3.5.3: the late response still settles usage accounting.
+        self.assertEqual(verdict["accounting"]["total_attempts"], 1)
+        # Stop spending: the fenced generation never buys OpenRouter.
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["stages"][1]["skip_reason"],
+                         "fenced_late_result")
+
+    def test_wired_store_fence_token_blocks_late_commit(self):
+        clk = FakeClock()
+        commit = ladder._load_commit()
+        store = commit.fresh_state(input_hash="h1", root_budget_s=1.0,
+                                   clock=clk)
+        lad, _, _ = self._fenced_ok_ladder(clk, store=store)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        # Verdict carries the D23 token when a store is wired.
+        self.assertIn("fence_token", verdict)
+        self.assertEqual(verdict["fence_token"],
+                         commit.issue_fence_token(store))
+        # A commit of the fenced generation is refused AT WRITE TIME.
+        store2 = commit.fresh_state(input_hash="h1", root_budget_s=1.0,
+                                    clock=clk)
+        token = commit.issue_fence_token(store2)
+        clk.advance(5)  # now past the store deadline
+        with self.assertRaises(commit.FencedError) as ctx:
+            commit.cas_commit(store2, 0,
+                              {"inputHash": "h1", "fence_token": token}, {})
+        self.assertEqual(ctx.exception.reason, "root_expired")
+
+    def test_mode_revision_change_during_call_fences_adoption(self):
+        clk = FakeClock()
+        commit = ladder._load_commit()
+        store = commit.fresh_state(input_hash="h1", clock=clk)
+
+        def _bump(*, body, api_key, timeout_ms, http_post=None):
+            store["fence"]["mode_revision"] += 1  # owner flipped the mode
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
+
+        lad, _, calls = make_ladder(clock=clk, direct=_bump,
+                                    commit_store=store,
+                                    root_budget_ms=300000)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["fence_reason"],
+                         "mode_changed")
+        self.assertEqual(calls["openrouter"], [])
+
+    def test_in_time_ok_still_adopted_with_token(self):
+        clk = FakeClock()
+        commit = ladder._load_commit()
+        store = commit.fresh_state(input_hash="h1", clock=clk)
+
+        def _fast(*, body, api_key, timeout_ms, http_post=None):
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
+
+        lad, _, _ = make_ladder(clock=clk, direct=_fast,
+                                commit_store=store)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertTrue(verdict["ok"])
+        self.assertEqual(verdict["fence_token"],
+                         {"mode_revision": 0, "policy_revision": 0,
+                          "deadline_s": None})
+        # And that token commits cleanly at the head revision.
+        rev = commit.cas_commit(
+            store, 0, {"decisionId": "d1", "inputHash": "h1",
+                       "fence_token": verdict["fence_token"]}, {})
+        self.assertEqual(rev, 1)
+
+    def test_no_store_wired_keeps_token_out_of_verdict(self):
+        # Unwired callers keep the exact pre-repair verdict shape.
+        clk = FakeClock()
+
+        def _fast(*, body, api_key, timeout_ms, http_post=None):
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
+
+        lad, _, _ = make_ladder(clock=clk, direct=_fast)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertNotIn("fence_token", verdict)
+
+class LowConfidenceHandling(unittest.TestCase):
+    """A08 / spec 3.4:276: a valid but low-confidence direct answer must not
+    be sent to another JEV endpoint to compare confidence; the calibrated
+    signal drives the non-JEV review instead of being discarded.
+    """
+
+    def _low_payload(self, max_prob):
+        return {"model": _TS.TYPESAFE_MODEL, "judgments": [{
+            "question_id": "q1", "type": "select", "answer": "a",
+            "probabilities": {"a": max_prob,
+                              "b": round(1.0 - max_prob, 2)}}]}
+
+    def test_low_confidence_valid_answer_no_endpoint_shopping(self):
+        lad, _, calls = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.55)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs())
+        # No second JEV endpoint called; the review path ran instead.
+        self.assertEqual(len(calls["direct"]), 1)
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["outcome"], "low_confidence")
+        self.assertEqual(verdict["stages"][1]["skip_reason"],
+                         "low_confidence_review")
+
+    def test_low_confidence_signal_reaches_verdict_and_review(self):
+        seen = {}
+
+        def _review(summary):
+            seen["low_confidence"] = summary.get("low_confidence")
+            return {"decision_source": "no_jev", "ok": True,
+                    "outcome": "non_jev_review"}
+
+        lad, _, _ = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.55)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs(),
+                          no_jev_fallback=_review)
+        # The calibrated signal is preserved, not discarded (the old
+        # `ok, _, _ = normalize_response(...)` dropped it).
+        self.assertEqual(verdict["low_confidence"][0]["code"],
+                         "low_confidence")
+        self.assertEqual(seen["low_confidence"][0]["code"],
+                         "low_confidence")
+        self.assertEqual(verdict["fallback"]["outcome"], "non_jev_review")
+
+    def test_high_confidence_control_consumed_directly(self):
+        lad, _, calls = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.95)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs())
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertTrue(verdict["ok"])
+        self.assertEqual(calls["openrouter"], [])
+        self.assertNotIn("low_confidence", verdict)
+        self.assertEqual(verdict["stages"][0]["outcome"], "ok")
+
+    def test_no_direct_specs_behaviour_unchanged(self):
+        # Callers that pass no direct_specs keep the old contract.
+        lad, _, calls = make_ladder()
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertEqual(calls["openrouter"], [])
+        self.assertNotIn("low_confidence", verdict)
 
 
 class OfflineHygiene(unittest.TestCase):

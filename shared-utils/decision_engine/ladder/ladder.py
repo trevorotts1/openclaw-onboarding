@@ -17,6 +17,15 @@ one direct attempt plus one OpenRouter attempt per run; provider-level
 retries inside a stage report their attempt counts and consume the SAME
 accounting (no nested retry multiplication).
 
+Late results (3.5.3): an ``ok`` provider result is adopted ONLY after the
+fence recheck. The ladder root expiry fences it directly, and when a D23
+commit store is supplied (``commit_store``) the verdict also carries that
+store's fence token and every adoption rechecks it through the REAL D23
+``check_fence`` (root expiry, mode/policy revision changes). A fenced
+late result may settle usage accounting but can never become the verdict:
+the run stops spending and falls to the no-JEV path. Committing the
+verdict re-checks the same token again inside ``cas_commit``.
+
 Permissions (3.8): caller-supplied policy answers spend/transmit per
 remote call. Reservation happens BEFORE send, a policy recheck happens at
 the send boundary, reconcile happens after. Nothing gate-related runs
@@ -37,8 +46,11 @@ SKIP_NOT_AUTHORIZED = "not_authorized"
 SKIP_DATA_NOT_PERMITTED = "data_not_permitted"
 SKIP_BUDGET_EXHAUSTED = "budget_exhausted"
 SKIP_ROOT_DEADLINE = "root_deadline_expired"
+SKIP_FENCED_LATE_RESULT = "fenced_late_result"
 SKIP_CIRCUIT_OPEN = "circuit_open"
 SKIP_TECHNICAL_UNAVAILABLE = "technical_unavailable"
+SKIP_LOW_CONFIDENCE = "low_confidence_review"
+SKIP_SETTLEMENT_RESERVE = "settlement_reserve"
 
 PROVIDER_DIRECT = "typesafe_direct"
 PROVIDER_OPENROUTER = "openrouter"
@@ -49,8 +61,11 @@ __all__ = [
     "SKIP_DATA_NOT_PERMITTED",
     "SKIP_BUDGET_EXHAUSTED",
     "SKIP_ROOT_DEADLINE",
+    "SKIP_FENCED_LATE_RESULT",
     "SKIP_CIRCUIT_OPEN",
     "SKIP_TECHNICAL_UNAVAILABLE",
+    "SKIP_LOW_CONFIDENCE",
+    "SKIP_SETTLEMENT_RESERVE",
     "PROVIDER_DIRECT",
     "PROVIDER_OPENROUTER",
     "RootDeadline",
@@ -83,6 +98,34 @@ def _load_modes():
         Path(__file__).resolve().parent.parent / "modes" / "modes.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules["d07_decision_modes"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_commit():
+    """Return the REAL D23 commit module (decision_engine/commit/commit.py).
+
+    Package import first; file-location fallback when ladder.py is loaded
+    standalone (offline test convention). Registered under one stable
+    ``sys.modules`` key (the key ``commit/dispatch.py`` already uses) so the
+    ``FencedError`` a caller catches is the SAME class the ladder raises.
+    The fence gates stay owned by D23; nothing is restated here.
+    """
+    try:
+        from ..commit import commit as _commit
+        return _commit
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    commit_py = Path(__file__).resolve().parent.parent / "commit" / "commit.py"
+    key = "jev_d23_commit:" + str(commit_py)
+    existing = sys.modules.get(key)
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(key, str(commit_py))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
     spec.loader.exec_module(module)
     return module
 
@@ -163,6 +206,15 @@ class RootDeadline:
         if stage_remaining_ms is not None:
             cands.append(float(stage_remaining_ms))
         return max(0.0, min(cands))
+
+    def inside_reserve(self):
+        """True when the settlement reserve has been reached (3.5.2).
+
+        Past this point the remaining root budget belongs to settlement:
+        the reserve is a START-GATE on remote work, not merely a discount
+        applied to the timeout argument. No send may begin here.
+        """
+        return self.remaining_ms() <= self.settlement_reserve_ms
 
 
 # ── AttemptAccounting ──────────────────────────────────────────────────
@@ -397,7 +449,8 @@ class DirectFirstLadder:
                  clock=None, circuit=None, failure_threshold=3,
                  cooldown_ms=60000, max_total_attempts=2,
                  root_budget_ms=300000, stage_budget_ms=6000,
-                 provider_timeout_ms=2500, settlement_reserve_ms=2000):
+                 provider_timeout_ms=2500, settlement_reserve_ms=2000,
+                 commit_store=None):
         self._resolve = resolve_credentials or _default_resolve
         self._direct = direct_call or _default_direct_call
         self._openrouter = openrouter_call or _default_openrouter_call
@@ -411,6 +464,33 @@ class DirectFirstLadder:
         self.stage_budget_ms = float(stage_budget_ms)
         self.provider_timeout_ms = float(provider_timeout_ms)
         self.settlement_reserve_ms = float(settlement_reserve_ms)
+        # Optional D23 store for this preparation generation. When supplied,
+        # the verdict carries that store's fence token and every adoption
+        # rechecks it through the REAL D23 ``check_fence`` (3.5.3).
+        self._commit_store = commit_store
+        self._commit = _load_commit() if commit_store is not None else None
+
+    def _issue_fence_token(self):
+        """D23 fence token for this run, or None when no store is wired."""
+        if self._commit is None:
+            return None
+        return self._commit.issue_fence_token(self._commit_store)
+
+    def _fence_reason(self, root, token):
+        """Recheck the late-result gates for a would-be-adopted ok (3.5.3).
+
+        Returns a typed reason when the result must be REFUSED (root expiry,
+        or the store's mode/policy revision moved mid-call), else None.
+        Fail-closed: an unexpected check error counts as fenced.
+        """
+        if root.expired():
+            return "root_expired"
+        if self._commit is not None and token is not None:
+            try:
+                self._commit.check_fence(self._commit_store, token)
+            except Exception as exc:
+                return getattr(exc, "reason", "fenced")
+        return None
 
     @property
     def circuit(self):
@@ -480,8 +560,22 @@ class DirectFirstLadder:
                                       skip2, 0, None, remaining), False
         elapsed_stage = (float(self._clock()) - stage_start_s) * 1000.0
         stage_left = self.stage_budget_ms - elapsed_stage
+        # Send-boundary reserve gate (3.5.2/A55 clause 2). The reserve is
+        # enforced HERE, at the one place a remote call begins, so the
+        # guarantee never depends on a caller's entry-time check: time may
+        # have been spent since entry (credential resolve, policy, queue
+        # waits) and the entry check cannot see that. A zero send budget
+        # means every remaining millisecond belongs to settlement.
         timeout_ms = root.send_budget_ms(self.provider_timeout_ms,
                                          stage_left)
+        if root.inside_reserve():
+            self._gate.reconcile(provider, reservation, 0.0)
+            order_log.append("reconcile:%s" % provider)
+            order_log.append("skip:%s:%s" % (provider,
+                                             SKIP_SETTLEMENT_RESERVE))
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_SETTLEMENT_RESERVE, 0,
+                                      timeout_ms, remaining), False
         order_log.append("send:%s" % provider)
         try:
             raw = send(timeout_ms)
@@ -522,6 +616,13 @@ class DirectFirstLadder:
         ``spend_ok``/``transmit_ok``; it is consulted for ``auto`` only, and
         when omitted auto stays eligible exactly as before (the per-provider
         PermissionsGate remains the spending authority).
+
+        When a D23 store is wired at construction (``commit_store``), the
+        verdict carries that store's fence token and an ``ok`` result is
+        adopted only after the D23 fence recheck (3.5.3): a late result that
+        lands after the root expiry, or after the store's mode/policy
+        revision moved, settles usage accounting but never becomes the
+        verdict — the run stops spending and falls to the no-JEV path.
         """
         ts, oro, _ = _load_providers()
         modes = _load_modes()
@@ -552,8 +653,12 @@ class DirectFirstLadder:
         root = root_deadline or RootDeadline(
             self.root_budget_ms, clock=self._clock,
             settlement_reserve_ms=self.settlement_reserve_ms)
+        fence_token = self._issue_fence_token()
         stage_start_s = float(self._clock())
         stages = []
+        fenced_reason = None
+        # Set when D04 flags a valid-but-low-confidence answer (3.4:276).
+        low_confidence = None
 
         key_map = dict(keys or {})
         if mode_skip is not None:
@@ -603,21 +708,62 @@ class DirectFirstLadder:
         stages.append(record)
         if isinstance(result, dict) and result.get("outcome") == "ok":
             payload = result.get("payload")
-            if direct_specs is None:
-                self._circuit.record_success(PROVIDER_DIRECT)
-                return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root, mode_info)
-            ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
-            if ok:
-                self._circuit.record_success(PROVIDER_DIRECT)
-                return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root, mode_info)
-            self._circuit.record_failure(PROVIDER_DIRECT)
-            stages[-1]["outcome"] = "invalid_response"
+            fenced_reason = self._fence_reason(root, fence_token)
+            if fenced_reason is not None:
+                # Late ok: usage already settled in accounting above; it
+                # may NOT become the verdict (3.5.3). Record the refusal;
+                # no circuit failure (the provider itself did not fail) and
+                # no further spending on this fenced generation.
+                record["fence_reason"] = fenced_reason
+                log.append("fenced:%s:%s" % (PROVIDER_DIRECT, fenced_reason))
+            else:
+                # A06 fence recheck passed: the ok may still be refused by
+                # the A07 approved-model gate (3.7) before adoption.
+                returned = payload.get("model") if isinstance(payload, dict) \
+                    else None
+                if returned is None:
+                    returned = result.get("model_snapshot")
+                if returned is not None and not ts.is_approved_model(returned):
+                    # Spec 3.7: never silently accept an unrelated model
+                    # version; the request is reusable against another route.
+                    self._circuit.record_failure(PROVIDER_DIRECT)
+                    stages[-1]["outcome"] = "model_foreign"
+                    log.append("skip:%s:model_foreign" % PROVIDER_DIRECT)
+                elif direct_specs is None:
+                    self._circuit.record_success(PROVIDER_DIRECT)
+                    return self._verdict(PROVIDER_DIRECT, True, stages,
+                                         accounting, root, mode_info,
+                                         fence_token)
+                else:
+                    ok, _, diags = ts.normalize_response(payload or {},
+                                                         direct_specs)
+                    if ok:
+                        self._circuit.record_success(PROVIDER_DIRECT)
+                        low = [d for d in (diags or []) if isinstance(d, dict)
+                               and d.get("code") == "low_confidence"]
+                        if not low:
+                            return self._verdict(PROVIDER_DIRECT, True, stages,
+                                                 accounting, root, mode_info,
+                                                 fence_token)
+                        # 3.4:276 valid but low-confidence: carry the
+                        # calibrated signal to the non-JEV review; never
+                        # discard it.
+                        low_confidence = low
+                        stages[-1]["outcome"] = "low_confidence"
+                        log.append("low_confidence:%s" % PROVIDER_DIRECT)
+                    else:
+                        self._circuit.record_failure(PROVIDER_DIRECT)
+                        stages[-1]["outcome"] = "invalid_response"
         elif isinstance(result, dict):
             self._circuit.record_failure(PROVIDER_DIRECT)
 
         # ── stage 2: OpenRouter (D05) ──
+        # 3.4:276: a valid but low-confidence direct answer must not be
+        # sent to another JEV endpoint to compare confidence; the calibrated
+        # signal already raised at stage 1 routes it to non-JEV review.
+        or_gate_skip = (SKIP_LOW_CONFIDENCE if low_confidence is not None
+                        else mode_skip)
+
         def _send_openrouter(timeout_ms):
             key, _ = oro.resolve_key(None, key_map)
             return self._openrouter(
@@ -628,25 +774,49 @@ class DirectFirstLadder:
                 timeout_s=timeout_ms / 1000.0,
                 transport=openrouter_transport)
 
-        record, result = self._run_provider(
-            provider=PROVIDER_OPENROUTER, cred_status=or_status,
-            send=_send_openrouter, accounting=accounting, root=root,
-            stage_start_s=stage_start_s, purpose=purpose, order_log=log,
-            mode_skip=mode_skip)
+        if fenced_reason is not None:
+            # Generation fenced mid-run: stop spending. No OpenRouter send;
+            # its ok could not be adopted either, under the same fence.
+            # ``result`` is cleared so the stage-1 ok can never be adopted
+            # under the OpenRouter label below.
+            result = None
+            record = self._stage_record(
+                PROVIDER_OPENROUTER, PROVIDER_OPENROUTER, "skipped",
+                SKIP_FENCED_LATE_RESULT, 0, None, root.remaining_ms())
+            record["fence_reason"] = fenced_reason
+            log.append("skip:%s:%s" % (PROVIDER_OPENROUTER,
+                                       SKIP_FENCED_LATE_RESULT))
+        else:
+            record, result = self._run_provider(
+                provider=PROVIDER_OPENROUTER, cred_status=or_status,
+                send=_send_openrouter, accounting=accounting, root=root,
+                stage_start_s=stage_start_s, purpose=purpose, order_log=log,
+                mode_skip=or_gate_skip)
         stages.append(record)
         if isinstance(result, dict) and result.get("outcome") == "ok":
-            self._circuit.record_success(PROVIDER_OPENROUTER)
-            return self._verdict(PROVIDER_OPENROUTER, True, stages,
-                                 accounting, root, mode_info)
-        if isinstance(result, dict):
+            fenced_reason = self._fence_reason(root, fence_token)
+            if fenced_reason is not None:
+                record["fence_reason"] = fenced_reason
+                log.append("fenced:%s:%s" % (PROVIDER_OPENROUTER,
+                                             fenced_reason))
+            else:
+                self._circuit.record_success(PROVIDER_OPENROUTER)
+                return self._verdict(PROVIDER_OPENROUTER, True, stages,
+                                     accounting, root, mode_info,
+                                     fence_token)
+        if isinstance(result, dict) and fenced_reason is None:
             self._circuit.record_failure(PROVIDER_OPENROUTER)
 
         # ── stage 3: no-JEV fallback hook (local, always permitted) ──
         fallback = no_jev_fallback or self._fallback
+        review = {"stages": stages,
+                  "accounting": accounting.summary(),
+                  "expired": root.expired()}
+        if low_confidence is not None:
+            # 3.4:276 the calibrated signal travels with the review.
+            review["low_confidence"] = low_confidence
         try:
-            dunk = fallback({"stages": stages,
-                             "accounting": accounting.summary(),
-                             "expired": root.expired()})
+            dunk = fallback(review)
         except Exception as exc:
             dunk = {"decision_source": "no_jev", "ok": False,
                     "outcome": "fallback_error",
@@ -661,12 +831,15 @@ class DirectFirstLadder:
             SKIP_ROOT_DEADLINE if root.expired() else None, 0, None,
             root.remaining_ms()))
         verdict = self._verdict("no_jev", bool(dunk.get("ok")), stages,
-                                accounting, root, mode_info)
+                                accounting, root, mode_info, fence_token)
         verdict["fallback"] = {k: v for k, v in dunk.items()
                                if k != "decision_source"}
+        if low_confidence is not None:
+            verdict["low_confidence"] = low_confidence
         return verdict
 
-    def _verdict(self, source, ok, stages, accounting, root, mode_info=None):
+    def _verdict(self, source, ok, stages, accounting, root, mode_info=None,
+                 fence_token=None):
         verdict = {"decision_source": source, "ok": bool(ok), "stages": stages,
                    "accounting": accounting.summary(),
                    "root": {"budget_ms": self.root_budget_ms,
@@ -675,4 +848,9 @@ class DirectFirstLadder:
                             "expiry_ms": root.expiry_ms}}
         if mode_info is not None:
             verdict["mode"] = mode_info
+        if fence_token is not None:
+            # Handed to the caller so the D23 ``cas_commit`` re-checks it
+            # at write time: a verdict whose generation moved between this
+            # recheck and the commit is refused there too (3.5.3).
+            verdict["fence_token"] = dict(fence_token)
         return verdict
