@@ -295,8 +295,13 @@ class RootDeadlineSuite(unittest.TestCase):
             clk.advance(5)  # one slow 5s call against a 1s root
             return _fail("timeout")
 
+        # reserve pinned to 0: this test measures the root-expiry rule
+        # alone. With the 2000 ms default reserve the whole 1000 ms root
+        # sits inside the reserve and the send-boundary gate (A55 clause
+        # 2, tested below) would refuse to start any call at all.
         lad, _, calls = make_ladder(clock=clk, direct=_slow_direct,
-                                    root_budget_ms=1000)
+                                    root_budget_ms=1000,
+                                    settlement_reserve_ms=0)
         verdict = lad.run(company_id="acme", state={"s": 1},
                           questions=_qs(), keys={})
         expiry_holder["expiry"] = verdict["root"]["expiry_ms"]
@@ -319,6 +324,70 @@ class RootDeadlineSuite(unittest.TestCase):
         self.assertLessEqual(timeout_ms, 10000.0 - 2000.0)  # minus reserve
         self.assertEqual(verdict["stages"][0]["remaining_ms_at_entry"],
                          verdict["stages"][0]["remaining_ms_at_entry"])
+
+    def test_no_send_begins_inside_the_settlement_reserve(self):
+        """A55 clause 2 (spec 3.5.2): past the reserve, remote work stops.
+
+        Remaining 1000 ms against a 2000 ms reserve: the entry check
+        (root.expired() = start+budget) is FALSE here, so only a gate at
+        the send boundary can hold. Measured pre-fix the ladder dispatched
+        send(timeout_ms=0.0); it must skip instead.
+        """
+        clk = FakeClock()
+        lad, _, calls = make_ladder(clock=clk)
+        root = ladder.RootDeadline(300000, clock=clk,
+                                   settlement_reserve_ms=2000)
+        clk.advance(299.0)  # 1000 ms left, inside the 2000 ms reserve
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={}, root_deadline=root)
+        self.assertEqual(calls["direct"], [], "no direct call in reserve")
+        self.assertEqual(calls["openrouter"], [],
+                         "no OpenRouter call in reserve")
+        self.assertFalse(verdict["root"]["expired"],
+                         "entry check alone would not have caught this")
+        self.assertEqual([s["skip_reason"] for s in verdict["stages"][:2]],
+                         ["settlement_reserve", "settlement_reserve"])
+
+    def test_reserve_gate_holds_when_time_burns_after_entry(self):
+        """The gate cannot live at run() entry: time is spent before send.
+
+        Entry at 2500 ms is OUTSIDE the 2000 ms reserve, so an entry-only
+        check passes; the credential resolve then burns down to 1000 ms.
+        Only a boundary gate stops the send.
+        """
+        clk = FakeClock()
+
+        def _slow_resolve(*a):
+            clk.advance(1.5)  # 1500 ms spent before the send boundary
+            return _creds()
+
+        lad, _, calls = make_ladder(clock=clk, resolve=_slow_resolve)
+        root = ladder.RootDeadline(300000, clock=clk,
+                                   settlement_reserve_ms=2000)
+        clk.advance(297.5)  # 2500 ms at run() entry -> outside reserve
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={}, root_deadline=root)
+        self.assertEqual(calls["direct"], [])
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["stages"][0]["skip_reason"],
+                         "settlement_reserve")
+
+    def test_send_just_outside_the_reserve_still_dispatches(self):
+        """Control: the gate must not swallow legitimate sends.
+
+        Remaining 2500 ms > 2000 ms reserve, so a send is permitted and
+        gets exactly the reserve-excluded budget (500 ms).
+        """
+        clk = FakeClock()
+        lad, _, calls = make_ladder(clock=clk)
+        root = ladder.RootDeadline(300000, clock=clk,
+                                   settlement_reserve_ms=2000)
+        clk.advance(297.5)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={}, root_deadline=root)
+        self.assertEqual(len(calls["direct"]), 1)
+        self.assertEqual(calls["direct"][0]["timeout_ms"], 500.0)
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
 
 
 class AttemptAccountingSuite(unittest.TestCase):
