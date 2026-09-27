@@ -197,6 +197,110 @@ class ForgedConfirmation(unittest.TestCase):
             self.assertIsNone(out)
 
 
+class UnconditionalValidation(unittest.TestCase):
+    """REP-024 regression: spec 10.5 validation is unconditional.
+
+    Before the repair the confirmation/provenance/version/hash checks were
+    nested inside ``status == 'committed'``, so every non-committed envelope
+    fell through to reuse. Each probe below was ok=True pre-repair.
+    """
+
+    def test_pending_confirmation_with_null_confirm_refused(self):
+        env = _env()
+        env["status"] = "pending_confirmation"
+        env["confirmation"] = None
+        bundle = env["personaBundle"]
+        bundle["confirm_required"] = True
+        bundle["resolved_audience"] = dict(bundle["resolved_audience"])
+        bundle["resolved_audience"]["source"] = "asked"
+        bundle["resolved_audience"]["confirm_required"] = True
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+        self.assertTrue(any("confirmation" in e for e in errs), errs)
+
+    def test_pending_confirmation_control_committed_same_body_refused(self):
+        env = _env()
+        env["status"] = "committed"
+        env["confirmation"] = None
+        bundle = env["personaBundle"]
+        bundle["confirm_required"] = True
+        bundle["resolved_audience"] = dict(bundle["resolved_audience"])
+        bundle["resolved_audience"]["source"] = "asked"
+        bundle["resolved_audience"]["confirm_required"] = True
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+        self.assertTrue(any("confirmation" in e for e in errs), errs)
+
+    def test_pending_confirmation_wrong_catalog_version_refused(self):
+        env = _env()
+        env["status"] = "pending_confirmation"
+        env["candidateCatalogVersion"] = "9.9"
+        env["personaBundle"]["catalog_version"] = "9.9"
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+        self.assertTrue(any("catalog/content version mismatch" in e
+                            for e in errs), errs)
+
+    def test_proposed_wrong_catalog_version_refused(self):
+        env = _env()
+        env["status"] = "proposed"
+        env["personaBundle"]["catalog_version"] = "9.9"
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+        self.assertTrue(any("catalog/content version mismatch" in e
+                            for e in errs), errs)
+
+    def test_committed_empty_dict_confirmation_refused(self):
+        env = _env()
+        env["status"] = "committed"
+        env["confirmation"] = {}
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+        self.assertTrue(any("empty" in e for e in errs), errs)
+
+    def test_uncommitted_missing_bundle_hash_refused(self):
+        # Presence/non-empty only: spec 1.1 defines no hash algorithm, so no
+        # recompute-compare exists (follow-up logged, not invented here).
+        env = _env()
+        env["status"] = "proposed"
+        env["bundleHash"] = None
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+        self.assertTrue(any("bundleHash" in e for e in errs), errs)
+
+    def test_pending_bad_provenance_source_refused(self):
+        env = _env()
+        env["status"] = "pending_confirmation"
+        env["personaBundle"]["resolved_audience"]["source"] = "invented"
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertFalse(ok)
+        self.assertIsNone(out)
+
+    def test_non_committed_good_bundle_still_reuses(self):
+        # Guard against a blanket "refuse anything not committed" repair:
+        # a complete, evidenced bundle reuses whatever its status.
+        env = _env()
+        env["status"] = "pending_confirmation"
+        ok, errs, out = prod.ingest_producer_bundle(
+            env, company_id=COMPANY, catalog_version=CATALOG)
+        self.assertTrue(ok, errs)
+        self.assertEqual(out["persona_id"],
+                         env["personaBundle"]["persona_id"])
+
+
 class PerPartExtensions(unittest.TestCase):
     def test_parts_map_to_rows_with_scope_goal_extensions(self):
         out = prod.parts_to_bundle([
