@@ -17,6 +17,7 @@ from .ladder import (
     DirectFirstLadder,
     PermissionsGate,
     RootDeadline,
+    SqliteBudgetStore,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "DirectFirstLadder",
     "PermissionsGate",
     "RootDeadline",
+    "SqliteBudgetStore",
 ]

@@ -9,8 +9,11 @@ heldout (the harness has zero trainable parameters; calibration is scored
 only, never used to adjust weights/thresholds).
 
 Coverage asserted per split x family (12 cells): intent run on all splits,
-provmode owned-scenario cells run, exec/capload cross-split NOT_RUN with
-exact missing revisions, provmode SHADOW/ATOMIC/OFF_EQUALS_LEGACY NOT_RUN.
+provmode owned-scenario cells run (BOTH_KEYS/OR_ONLY/NO_KEYS/DENIED/
+TENANT/DIRECT_FORBIDDEN/OR_FORBIDDEN/ROOT_BUDGET plus ATOMIC, which races
+two concurrent reservations through the real SqliteBudgetStore), exec/
+capload cross-split NOT_RUN with exact missing revisions, provmode
+SHADOW/OFF_EQUALS_LEGACY NOT_RUN.
 Offline proved by socket block; budgets proved by root-expiry row and
 attempt accounting; calibration NOT used for tuning (harness exposes no
 parameter to tune).
