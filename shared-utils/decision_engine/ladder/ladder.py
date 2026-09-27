@@ -39,6 +39,7 @@ SKIP_BUDGET_EXHAUSTED = "budget_exhausted"
 SKIP_ROOT_DEADLINE = "root_deadline_expired"
 SKIP_CIRCUIT_OPEN = "circuit_open"
 SKIP_TECHNICAL_UNAVAILABLE = "technical_unavailable"
+SKIP_SETTLEMENT_RESERVE = "settlement_reserve"
 
 PROVIDER_DIRECT = "typesafe_direct"
 PROVIDER_OPENROUTER = "openrouter"
@@ -51,6 +52,7 @@ __all__ = [
     "SKIP_ROOT_DEADLINE",
     "SKIP_CIRCUIT_OPEN",
     "SKIP_TECHNICAL_UNAVAILABLE",
+    "SKIP_SETTLEMENT_RESERVE",
     "PROVIDER_DIRECT",
     "PROVIDER_OPENROUTER",
     "RootDeadline",
@@ -163,6 +165,15 @@ class RootDeadline:
         if stage_remaining_ms is not None:
             cands.append(float(stage_remaining_ms))
         return max(0.0, min(cands))
+
+    def inside_reserve(self):
+        """True when the settlement reserve has been reached (3.5.2).
+
+        Past this point the remaining root budget belongs to settlement:
+        the reserve is a START-GATE on remote work, not merely a discount
+        applied to the timeout argument. No send may begin here.
+        """
+        return self.remaining_ms() <= self.settlement_reserve_ms
 
 
 # ── AttemptAccounting ──────────────────────────────────────────────────
@@ -480,8 +491,22 @@ class DirectFirstLadder:
                                       skip2, 0, None, remaining), False
         elapsed_stage = (float(self._clock()) - stage_start_s) * 1000.0
         stage_left = self.stage_budget_ms - elapsed_stage
+        # Send-boundary reserve gate (3.5.2/A55 clause 2). The reserve is
+        # enforced HERE, at the one place a remote call begins, so the
+        # guarantee never depends on a caller's entry-time check: time may
+        # have been spent since entry (credential resolve, policy, queue
+        # waits) and the entry check cannot see that. A zero send budget
+        # means every remaining millisecond belongs to settlement.
         timeout_ms = root.send_budget_ms(self.provider_timeout_ms,
                                          stage_left)
+        if root.inside_reserve():
+            self._gate.reconcile(provider, reservation, 0.0)
+            order_log.append("reconcile:%s" % provider)
+            order_log.append("skip:%s:%s" % (provider,
+                                             SKIP_SETTLEMENT_RESERVE))
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_SETTLEMENT_RESERVE, 0,
+                                      timeout_ms, remaining), False
         order_log.append("send:%s" % provider)
         try:
             raw = send(timeout_ms)
