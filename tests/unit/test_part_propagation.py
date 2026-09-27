@@ -380,6 +380,45 @@ class D02RoundTripRealValidators(unittest.TestCase):
         with self.assertRaises(ValueError):
             parts.emit_bundle_scope_goal("nope")
 
+    def test_every_part_field_carries_verbatim_on_its_row(self):
+        # A26: each caller-supplied part field survives the emit round trip
+        # VERBATIM as a row-level extension — not only as prose inside `why`.
+        p = _part(
+            part_id="part-α1",
+            kind="agent_task",
+            source="campaign_manifest",
+            scope_id="scope:beta/2026",
+            goal='send "first touch" —\tnewline-safe',
+            conversion_goal="book a call",
+            consumed_hints=["hint-a", "hint-b"],
+        )
+        out = parts.emit_bundle_scope_goal([p])
+        row = out["bundle"]["task_personas"][0]
+        for key, want in (
+            ("part", p["part_id"]),
+            ("seq", p["seq"]),
+            ("kind", p["kind"]),
+            ("source", p["source"]),
+            ("scope_id", p["scope_id"]),
+            ("goal", p["goal"]),
+            ("conversion_goal", p["conversion_goal"]),
+            ("consumed_hints", p["consumed_hints"]),
+        ):
+            self.assertEqual(row[key], want, f"row lost/changed {key}")
+        ok_b, errs_b = self.schema.validate_persona_bundle(
+            out["bundle"], company_id=self.carrier.get("companyId"))
+        self.assertTrue(ok_b, errs_b)
+
+    def test_goal_whitespace_never_coerced(self):
+        # spec 8.11: preserve explicit goal values; no silent coercion on the
+        # emit path (regression: the bundle-level value was previously
+        # .strip()ed while rows kept the raw string).
+        out = parts.emit_bundle_scope_goal(
+            self._parts(1, conversion_goal="  book a call  "))
+        self.assertEqual(out["bundle"]["conversion_goal"], "  book a call  ")
+        self.assertEqual(out["bundle"]["resolved_goal"]["value"],
+                         "  book a call  ")
+
 
 if __name__ == "__main__":
     unittest.main()
