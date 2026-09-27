@@ -12,7 +12,10 @@ Contract points (spec ranges 3.1/3.2, 3.4, 3.7):
   exactly ``{model, state, questions}``. ``messages``, ``reasoning_effort``,
   ``temperature`` and tool-call semantics are never sent.
 * Direct key name is ``TYPESAFE_API_KEY``; ``JEV_API_KEY`` is the explicitly
-  documented project compatibility alias (not TypeSafe's native SDK name).
+  documented project compatibility alias (not TypeSafe's native SDK name), and
+  ``JEV_TYPESAFE_API_KEY`` is the already-documented operator-store name read
+  by the operator's own ``jev-check.sh`` ladder. Any of the three resolves the
+  direct route, ``TYPESAFE_API_KEY`` first.
   Key presence means ``configured``, never ``verified working``. Empty,
   placeholder and malformed-reference values are rejected before any call.
   Key material never appears in results, diagnostics or logs.
@@ -44,7 +47,11 @@ TYPESAFE_MODEL = "jev-1.13.0"
 
 DIRECT_KEY_PRIMARY = "TYPESAFE_API_KEY"
 DIRECT_KEY_ALIAS = "JEV_API_KEY"  # documented project alias, not native SDK name
-DIRECT_KEY_NAMES = (DIRECT_KEY_PRIMARY, DIRECT_KEY_ALIAS)
+# Already-documented operator-store name (jev-check.sh's first rung). Kept
+# after the primary and the project alias so precedence is unchanged for
+# every name that resolved before.
+DIRECT_KEY_OPERATOR = "JEV_TYPESAFE_API_KEY"
+DIRECT_KEY_NAMES = (DIRECT_KEY_PRIMARY, DIRECT_KEY_ALIAS, DIRECT_KEY_OPERATOR)
 
 REQUIRED_BODY_KEYS = ("model", "state", "questions")
 # Chat-completion semantics that must never ride a decisions request (3.2).
@@ -88,6 +95,7 @@ __all__ = [
     "TYPESAFE_MODEL",
     "DIRECT_KEY_PRIMARY",
     "DIRECT_KEY_ALIAS",
+    "DIRECT_KEY_OPERATOR",
     "DIRECT_KEY_NAMES",
     "REQUIRED_BODY_KEYS",
     "FORBIDDEN_BODY_KEYS",
@@ -137,7 +145,9 @@ def _is_usable_value(value: object) -> tuple[bool, str]:
 def resolve_direct_key(mapping: dict) -> dict:
     """Resolve direct credential from an explicit caller-built mapping.
 
-    Tries ``TYPESAFE_API_KEY`` then the ``JEV_API_KEY`` alias. Returns
+    Tries each name in ``DIRECT_KEY_NAMES`` in order —
+    ``TYPESAFE_API_KEY``, then the ``JEV_API_KEY`` alias, then the operator
+    store's ``JEV_TYPESAFE_API_KEY``. Returns
     ``{"state", "key_name", "value", "reason"}``; ``state`` is
     ``"configured"`` or ``"absent"``. ``reason`` is a machine code, never
     the value. ``mapping`` is read-only; global environment untouched.
