@@ -176,6 +176,54 @@ def _gemini_index_path(paths: dict) -> Path:
             return candidate
     return paths.get("gemini_index", Path(""))
 
+# ── REP-032 / A32: stale-index gate ───────────────────────────────────────────
+# The identity gate (decision_engine/retrieval/cache_identity.py) can only see
+# what an index DECLARES. An index built from an older persona set, read after
+# the set moved on, declares the identical space and used to be scored as if
+# current (probe case 6b). The freshness check below compares the index's own
+# build stamp against the live persona set; a stale index yields the truthful
+# lexical fallback instead of a silent semantic answer. Fail-open: no stamp,
+# unreadable stamp or absent module all keep the previous behaviour.
+try:
+    import importlib.util as _ilu_r032
+
+    def _load_retrieval_guard():
+        _ret = Path(__file__).resolve().parent / "decision_engine" / "retrieval"
+        _f = _ret / "guarded_retrieval.py"
+        if not _f.is_file():
+            return None
+        _spec = _ilu_r032.spec_from_file_location("rep032_guarded_retrieval", _f)
+        _mod = _ilu_r032.module_from_spec(_spec)
+        sys.modules["rep032_guarded_retrieval"] = _mod
+        _spec.loader.exec_module(_mod)
+        return _mod
+
+    _GUARDED_RETRIEVAL = _load_retrieval_guard()
+except Exception:  # pragma: no cover — additive guard, never blocks selection
+    _GUARDED_RETRIEVAL = None
+
+def _persona_index_dir(paths: dict):
+    """Directory holding the index DB and the box's persona-set stamps."""
+    workspace = paths.get("workspace")
+    if workspace:
+        return Path(workspace) / "data" / "coaching-personas"
+    db = paths.get("gemini_index")
+    return Path(db).parent if db else None
+
+def _index_servable(paths: dict) -> "tuple[bool, str]":
+    """(servable, reason) for the persona index under ``paths``.
+
+    False only when the index build stamp disagrees with the live persona set;
+    absent module/stamp/error all return True with a note, never a refusal.
+    """
+    if _GUARDED_RETRIEVAL is None:
+        return True, "freshness guard module absent"
+    d = _persona_index_dir(paths)
+    if d is None:
+        return True, "no index dir resolvable"
+    v = _GUARDED_RETRIEVAL.check_index_freshness(d, d / "persona-categories.json")
+    return (v.servable, v.reason)
+
 
 def _get_google_api_key(paths: dict) -> str:
     """Resolve GOOGLE_API_KEY from env, openclaw.json, or secrets/.env."""
@@ -259,6 +307,32 @@ def _cosine(v1, v2) -> float:
     except ImportError:
         return 0.0
 
+
+def _vector_usable(vec) -> "tuple[bool, str]":
+    """A32: is a stored persona vector real? Returns ``(ok, reason)``.
+
+    The dimension guard elsewhere only compares SHAPES, so a NaN row and a
+    zero-norm row both sailed through and produced a score labelled
+    ``gemini_embedding`` with ``cos=nan`` / ``cos=0.000`` — a result that
+    claimed a path which could not have produced a real answer. Reject them
+    here and let the caller fall back truthfully. Accepts numpy arrays and
+    plain sequences (numpy scalars are not instances of ``float``).
+    """
+    import math
+    try:
+        vals = [float(v) for v in vec]
+    except (TypeError, ValueError):
+        return False, "vector is not numeric"
+    if not vals:
+        return False, "vector is empty"
+    norm_sq = 0.0
+    for i, f in enumerate(vals):
+        if not math.isfinite(f):
+            return False, f"vector[{i}] is non-finite ({f!r}; corrupt row)"
+        norm_sq += f * f
+    if norm_sq == 0.0:
+        return False, "zero-norm vector (no direction; cosine undefined)"
+    return True, "ok"
 
 def _current_gemini_model() -> str:
     """Model authority = shared-utils/embedding_engine.GEMINI_MODEL."""
@@ -396,7 +470,8 @@ def semantic_task_fit(
         }
 
     Order of attempts:
-      1. Gemini embedding similarity (best)
+      1. Gemini embedding similarity (best) — skipped when the index is STALE
+         (REP-032/A32), so a stale index never yields a semantic answer.
       2. Keyword overlap with persona id + blueprint summary
       3. Neutral 0.6
     """
@@ -405,10 +480,30 @@ def semantic_task_fit(
     if _try_import_genai() and not _EMBEDDING_UNAVAILABLE:
         api_key = _get_google_api_key(paths)
         db_path = _gemini_index_path(paths)
-        if api_key and db_path.exists():
+        _servable, _fresh_reason = _index_servable(paths)
+        if not _servable:
+            # REP-032/A32 (case 6b): a stale index is not served as current.
+            print(
+                f"[semantic_task_fit] index STALE — {_fresh_reason}; "
+                "using keyword overlap (run the persona-index rebuild to restore "
+                "semantic scoring).",
+                file=sys.stderr,
+            )
+        elif api_key and db_path.exists():
             task_vec = _task_embed(task_text, api_key)
             if task_vec is not None:
                 persona_vec = _persona_embedding_from_index(persona_id, db_path)
+                if persona_vec is not None:
+                    _v_ok, _v_reason = _vector_usable(persona_vec)
+                    if not _v_ok:
+                        # A32: a corrupt/zero-norm stored row must not be scored
+                        # as a semantic result. Fall through to keyword overlap.
+                        print(
+                            f"[semantic_task_fit] persona {persona_id!r} vector "
+                            f"rejected: {_v_reason}; using keyword overlap.",
+                            file=sys.stderr,
+                        )
+                        persona_vec = None
                 if persona_vec is not None:
                     cos = _cosine(task_vec, persona_vec)
                     # Cosine is [-1, 1]; map to [0, 1] via (cos + 1) / 2,
@@ -457,6 +552,15 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
     """
     if not _try_import_genai() or _EMBEDDING_UNAVAILABLE:
         return None
+    _servable, _fresh_reason = _index_servable(paths)
+    if not _servable:
+        # REP-032/A32 (case 6b): never rank candidates from a stale index.
+        print(
+            f"[semantic_task_fit] index STALE — {_fresh_reason}; "
+            "skipping in-process semantic retrieval.",
+            file=sys.stderr,
+        )
+        return None
     api_key = _get_google_api_key(paths)
     db_path = _gemini_index_path(paths)
     if not api_key or not db_path.exists():
@@ -498,6 +602,8 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
         pid = os.path.basename(os.path.dirname(file_path))
         if not pid or pid == "personas":
             continue
+        if not np.isfinite(vec).all():
+            continue  # A32: a corrupt row never ranks (its cosine is NaN)
         n = np.linalg.norm(vec)
         if n == 0:
             continue
