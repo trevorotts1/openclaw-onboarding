@@ -16,7 +16,12 @@ ladder.py) orchestrating the REAL D04/D05/D06 modules:
   * 3.8 permissions: caller policy checked before EVERY remote call;
     reserve -> recheck -> send -> reconcile ordering asserted via log;
     recheck denial blocks send; not_authorized / data_not_permitted /
-    budget_exhausted kept separate from technical errors.
+    budget_exhausted kept separate from technical errors;
+  * 3.5.3 late results: a provider ok that lands after the root expiry, or
+    after the wired D23 store's mode/policy revision moved, settles usage
+    accounting but is NEVER adopted as the verdict; the verdict carries
+    the store's fence token and the D23 cas_commit re-checks it at write
+    time (FencedError). In-time oks adopt exactly as before.
 
 Offline: fake D04/D05/D06 callables + fake clock only. No network, no
 disk, no environment reads. Fake key material never appears in verdicts.
@@ -468,6 +473,116 @@ class PermissionsGateSuite(unittest.TestCase):
         self.assertEqual(verdict["decision_source"], "openrouter")
         self.assertIn("typesafe_direct", seen)
         self.assertIn("openrouter", seen)
+
+
+class LateResultFencing(unittest.TestCase):
+    """3.5.3: post-expiry / post-revision oks settle usage, never verdict.
+
+    The D23 gates (commit/commit.py) are the fence authority; these tests
+    prove the ladder JOINS them — a late ok can neither be adopted as the
+    verdict nor committed afterwards.
+    """
+
+    def _fenced_ok_ladder(self, clk, store=None, **kw):
+        def _slow_ok(*, body, api_key, timeout_ms, http_post=None):
+            clk.advance(5)  # a 5s ok against a 1s root
+            return _ok({"model": "m", "judgments": []})
+
+        return make_ladder(clock=clk, direct=_slow_ok, commit_store=store,
+                           root_budget_ms=1000, **kw)
+
+    def test_post_expiry_ok_never_adopted_usage_still_settled(self):
+        clk = FakeClock()
+        lad, _, calls = self._fenced_ok_ladder(clk)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertNotEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["fence_reason"],
+                         "root_expired")
+        # Spec 3.5.3: the late response still settles usage accounting.
+        self.assertEqual(verdict["accounting"]["total_attempts"], 1)
+        # Stop spending: the fenced generation never buys OpenRouter.
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["stages"][1]["skip_reason"],
+                         "fenced_late_result")
+
+    def test_wired_store_fence_token_blocks_late_commit(self):
+        clk = FakeClock()
+        commit = ladder._load_commit()
+        store = commit.fresh_state(input_hash="h1", root_budget_s=1.0,
+                                   clock=clk)
+        lad, _, _ = self._fenced_ok_ladder(clk, store=store)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        # Verdict carries the D23 token when a store is wired.
+        self.assertIn("fence_token", verdict)
+        self.assertEqual(verdict["fence_token"],
+                         commit.issue_fence_token(store))
+        # A commit of the fenced generation is refused AT WRITE TIME.
+        store2 = commit.fresh_state(input_hash="h1", root_budget_s=1.0,
+                                    clock=clk)
+        token = commit.issue_fence_token(store2)
+        clk.advance(5)  # now past the store deadline
+        with self.assertRaises(commit.FencedError) as ctx:
+            commit.cas_commit(store2, 0,
+                              {"inputHash": "h1", "fence_token": token}, {})
+        self.assertEqual(ctx.exception.reason, "root_expired")
+
+    def test_mode_revision_change_during_call_fences_adoption(self):
+        clk = FakeClock()
+        commit = ladder._load_commit()
+        store = commit.fresh_state(input_hash="h1", clock=clk)
+
+        def _bump(*, body, api_key, timeout_ms, http_post=None):
+            store["fence"]["mode_revision"] += 1  # owner flipped the mode
+            return _ok({"model": "m", "judgments": []})
+
+        lad, _, calls = make_ladder(clock=clk, direct=_bump,
+                                    commit_store=store,
+                                    root_budget_ms=300000)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["fence_reason"],
+                         "mode_changed")
+        self.assertEqual(calls["openrouter"], [])
+
+    def test_in_time_ok_still_adopted_with_token(self):
+        clk = FakeClock()
+        commit = ladder._load_commit()
+        store = commit.fresh_state(input_hash="h1", clock=clk)
+
+        def _fast(*, body, api_key, timeout_ms, http_post=None):
+            return _ok({"model": "m", "judgments": []})
+
+        lad, _, _ = make_ladder(clock=clk, direct=_fast,
+                                commit_store=store)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertTrue(verdict["ok"])
+        self.assertEqual(verdict["fence_token"],
+                         {"mode_revision": 0, "policy_revision": 0,
+                          "deadline_s": None})
+        # And that token commits cleanly at the head revision.
+        rev = commit.cas_commit(
+            store, 0, {"decisionId": "d1", "inputHash": "h1",
+                       "fence_token": verdict["fence_token"]}, {})
+        self.assertEqual(rev, 1)
+
+    def test_no_store_wired_keeps_token_out_of_verdict(self):
+        # Unwired callers keep the exact pre-repair verdict shape.
+        clk = FakeClock()
+
+        def _fast(*, body, api_key, timeout_ms, http_post=None):
+            return _ok({"model": "m", "judgments": []})
+
+        lad, _, _ = make_ladder(clock=clk, direct=_fast)
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertNotIn("fence_token", verdict)
 
 
 class OfflineHygiene(unittest.TestCase):
