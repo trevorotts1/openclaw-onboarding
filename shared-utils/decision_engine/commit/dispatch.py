@@ -109,24 +109,38 @@ def ensure_revision_table(con: sqlite3.Connection) -> None:
     con.executescript(REVISION_DDL)
 
 
+def _row_dict(cur, row):
+    """Mapping view of a fetched row, whatever the connection's row_factory is.
+
+    Production callers hand us a plain ``sqlite3.Connection`` (tuples); only
+    tests set ``sqlite3.Row``. Reading by column name must not depend on that.
+    """
+    if row is None:
+        return None
+    if isinstance(row, sqlite3.Row):
+        return row
+    return dict(zip([d[0] for d in cur.description], row))
+
+
 def latest_revision(con: sqlite3.Connection, task_key: str):
     """Newest revision row for a task, or None (first dispatch)."""
     ensure_revision_table(con)
-    return con.execute(
+    cur = con.execute(
         "SELECT decision_id, task_key, revision, envelope, mirrors, reason,"
         " evidence, created_at FROM decision_revisions"
         " WHERE task_key=? ORDER BY revision DESC LIMIT 1",
-        (task_key,)).fetchone()
+        (task_key,))
+    return _row_dict(cur, cur.fetchone())
 
 
 def revision_history(con: sqlite3.Connection, task_key: str) -> list:
     """Full version chain, oldest first (board/report-back surface)."""
     ensure_revision_table(con)
-    rows = con.execute(
+    cur = con.execute(
         "SELECT decision_id, revision, envelope, reason, evidence, created_at"
         " FROM decision_revisions WHERE task_key=? ORDER BY revision ASC",
-        (task_key,)).fetchall()
-    return [dict(r) for r in rows]
+        (task_key,))
+    return [_row_dict(cur, r) for r in cur.fetchall()]
 
 
 def load_cas_store(con: sqlite3.Connection, task_key: str,
@@ -199,6 +213,10 @@ def redispatch(con: sqlite3.Connection, task_key: str, new_scope: dict,
         decision = dict(decision or {})
         decision.setdefault("decisionId", "%s#r1" % task_key)
         decision["inputHash"] = new_hash
+        # Stamp the scope the reuse diff runs against (mirrors _recompute
+        # below): an honest recompute that does not echo the scope dict must
+        # still REUSE on an unchanged re-dispatch, per A35's first property.
+        decision.setdefault("scope", dict(new_scope or {}))
         new_rev = commit.cas_commit(store, 0, decision, dict(mirrors or {}))
         decision_id = append_revision(con, task_key, new_rev, decision,
                                       dict(mirrors or {}), reason, evidence)
