@@ -1,0 +1,240 @@
+{
+  "unit": "KEY-001",
+  "criterion": "A01: Both keys present: direct JEV is used; OpenRouter receives zero selection calls for that successful stage (key-name half).",
+  "instrument": "RecordingStubTransport (direct + openrouter) - records endpoint chosen, counts calls; no network",
+  "fake_values_only": true,
+  "real_keys_used": 0,
+  "real_network_calls": 0,
+  "secrets_files_read": 0,
+  "alias_list_as_implemented": [
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 48,
+      "text": "DIRECT_KEY_PRIMARY = \"TYPESAFE_API_KEY\""
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 49,
+      "text": "DIRECT_KEY_ALIAS = \"JEV_API_KEY\"  # documented project alias, not native SDK name"
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 53,
+      "text": "DIRECT_KEY_OPERATOR = \"JEV_TYPESAFE_API_KEY\""
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 54,
+      "text": "DIRECT_KEY_NAMES = (DIRECT_KEY_PRIMARY, DIRECT_KEY_ALIAS, DIRECT_KEY_OPERATOR)"
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 96,
+      "text": "\"DIRECT_KEY_PRIMARY\","
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 97,
+      "text": "\"DIRECT_KEY_ALIAS\","
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 98,
+      "text": "\"DIRECT_KEY_OPERATOR\","
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 99,
+      "text": "\"DIRECT_KEY_NAMES\","
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 148,
+      "text": "Tries each name in ``DIRECT_KEY_NAMES`` in order \u2014"
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "line": 159,
+      "text": "for name in DIRECT_KEY_NAMES:"
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/credential_resolver.py",
+      "line": 63,
+      "text": "DIRECT_KEYS: Tuple[str, ...] = ("
+    },
+    {
+      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/credential_resolver.py",
+      "line": 227,
+      "text": "for key in ROUTE_KEYS[route]:"
+    }
+  ],
+  "direct_key_names_order": [
+    "TYPESAFE_API_KEY",
+    "JEV_API_KEY",
+    "JEV_TYPESAFE_API_KEY"
+  ],
+  "direct_keys_resolver_order": [
+    "TYPESAFE_API_KEY",
+    "JEV_API_KEY",
+    "JEV_TYPESAFE_API_KEY"
+  ],
+  "cases": {
+    "i_both_present_primary": {
+      "resolver": {
+        "direct": {
+          "state": "configured",
+          "key_name": "TYPESAFE_API_KEY",
+          "configured": true
+        },
+        "openrouter": {
+          "state": "configured",
+          "key_name": "OPENROUTER_API_KEY",
+          "configured": true
+        }
+      },
+      "decision_source": "typesafe_direct",
+      "ok": true,
+      "stage_outcomes": [
+        {
+          "stage": "typesafe_direct",
+          "outcome": "ok",
+          "skip_reason": null
+        }
+      ],
+      "order_log": [
+        "policy_check:typesafe_direct",
+        "reserve:typesafe_direct",
+        "policy_recheck:typesafe_direct",
+        "send:typesafe_direct",
+        "reconcile:typesafe_direct"
+      ],
+      "direct_transport_calls": 1,
+      "direct_endpoints": [
+        "https://api.typesafe.ai/v1/systemone"
+      ],
+      "openrouter_transport_calls": 0,
+      "openrouter_endpoints": []
+    },
+    "i_b_both_present_operator_store_name": {
+      "resolver": {
+        "direct": {
+          "state": "configured",
+          "key_name": "JEV_TYPESAFE_API_KEY",
+          "configured": true
+        },
+        "openrouter": {
+          "state": "configured",
+          "key_name": "OPENROUTER_API_KEY",
+          "configured": true
+        }
+      },
+      "decision_source": "typesafe_direct",
+      "ok": true,
+      "stage_outcomes": [
+        {
+          "stage": "typesafe_direct",
+          "outcome": "ok",
+          "skip_reason": null
+        }
+      ],
+      "order_log": [
+        "policy_check:typesafe_direct",
+        "reserve:typesafe_direct",
+        "policy_recheck:typesafe_direct",
+        "send:typesafe_direct",
+        "reconcile:typesafe_direct"
+      ],
+      "direct_transport_calls": 1,
+      "direct_endpoints": [
+        "https://api.typesafe.ai/v1/systemone"
+      ],
+      "openrouter_transport_calls": 0,
+      "openrouter_endpoints": []
+    },
+    "ii_alias_only_jev_api_key": {
+      "resolver": {
+        "direct": {
+          "state": "configured",
+          "key_name": "JEV_API_KEY",
+          "configured": true
+        },
+        "openrouter": {
+          "state": "configured",
+          "key_name": "OPENROUTER_API_KEY",
+          "configured": true
+        }
+      },
+      "decision_source": "typesafe_direct",
+      "ok": true,
+      "stage_outcomes": [
+        {
+          "stage": "typesafe_direct",
+          "outcome": "ok",
+          "skip_reason": null
+        }
+      ],
+      "order_log": [
+        "policy_check:typesafe_direct",
+        "reserve:typesafe_direct",
+        "policy_recheck:typesafe_direct",
+        "send:typesafe_direct",
+        "reconcile:typesafe_direct"
+      ],
+      "direct_transport_calls": 1,
+      "direct_endpoints": [
+        "https://api.typesafe.ai/v1/systemone"
+      ],
+      "openrouter_transport_calls": 0,
+      "openrouter_endpoints": []
+    },
+    "iii_neither_direct_alias_present": {
+      "resolver": {
+        "direct": {
+          "state": "absent",
+          "key_name": null,
+          "configured": false
+        },
+        "openrouter": {
+          "state": "configured",
+          "key_name": "OPENROUTER_API_KEY",
+          "configured": true
+        }
+      },
+      "decision_source": "openrouter",
+      "ok": true,
+      "stage_outcomes": [
+        {
+          "stage": "typesafe_direct",
+          "outcome": "skipped",
+          "skip_reason": "no_credential"
+        },
+        {
+          "stage": "openrouter",
+          "outcome": "ok",
+          "skip_reason": null
+        }
+      ],
+      "order_log": [
+        "skip:typesafe_direct:no_credential",
+        "policy_check:openrouter",
+        "reserve:openrouter",
+        "policy_recheck:openrouter",
+        "send:openrouter",
+        "reconcile:openrouter"
+      ],
+      "direct_transport_calls": 0,
+      "direct_endpoints": [],
+      "openrouter_transport_calls": 1,
+      "openrouter_endpoints": [
+        "https://openrouter.ai/api/alpha/decisions"
+      ]
+    }
+  },
+  "checks": {
+    "i_direct_chosen_or_zero": true,
+    "i_b_operator_name_direct_chosen_or_zero": true,
+    "ii_alias_only_direct_chosen": true,
+    "iii_absent_honest_no_fallthrough": true
+  },
+  "all_pass": true
+}
