@@ -39,6 +39,7 @@ SKIP_BUDGET_EXHAUSTED = "budget_exhausted"
 SKIP_ROOT_DEADLINE = "root_deadline_expired"
 SKIP_CIRCUIT_OPEN = "circuit_open"
 SKIP_TECHNICAL_UNAVAILABLE = "technical_unavailable"
+SKIP_LOW_CONFIDENCE = "low_confidence_review"
 
 PROVIDER_DIRECT = "typesafe_direct"
 PROVIDER_OPENROUTER = "openrouter"
@@ -51,6 +52,7 @@ __all__ = [
     "SKIP_ROOT_DEADLINE",
     "SKIP_CIRCUIT_OPEN",
     "SKIP_TECHNICAL_UNAVAILABLE",
+    "SKIP_LOW_CONFIDENCE",
     "PROVIDER_DIRECT",
     "PROVIDER_OPENROUTER",
     "RootDeadline",
@@ -554,6 +556,8 @@ class DirectFirstLadder:
             settlement_reserve_ms=self.settlement_reserve_ms)
         stage_start_s = float(self._clock())
         stages = []
+        # Set when D04 flags a valid-but-low-confidence answer (3.4:276).
+        low_confidence = None
 
         key_map = dict(keys or {})
         if mode_skip is not None:
@@ -607,17 +611,32 @@ class DirectFirstLadder:
                 self._circuit.record_success(PROVIDER_DIRECT)
                 return self._verdict(PROVIDER_DIRECT, True, stages,
                                      accounting, root, mode_info)
-            ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
+            ok, _, diags = ts.normalize_response(payload or {}, direct_specs)
             if ok:
                 self._circuit.record_success(PROVIDER_DIRECT)
-                return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root, mode_info)
-            self._circuit.record_failure(PROVIDER_DIRECT)
-            stages[-1]["outcome"] = "invalid_response"
+                low = [d for d in (diags or []) if isinstance(d, dict)
+                       and d.get("code") == "low_confidence"]
+                if not low:
+                    return self._verdict(PROVIDER_DIRECT, True, stages,
+                                         accounting, root, mode_info)
+                # 3.4:276 valid but low-confidence: carry the calibrated
+                # signal to the non-JEV review; never discard it.
+                low_confidence = low
+                stages[-1]["outcome"] = "low_confidence"
+                log.append("low_confidence:%s" % PROVIDER_DIRECT)
+            else:
+                self._circuit.record_failure(PROVIDER_DIRECT)
+                stages[-1]["outcome"] = "invalid_response"
         elif isinstance(result, dict):
             self._circuit.record_failure(PROVIDER_DIRECT)
 
         # ── stage 2: OpenRouter (D05) ──
+        # 3.4:276: a valid but low-confidence direct answer must not be
+        # sent to another JEV endpoint to compare confidence; the calibrated
+        # signal already raised at stage 1 routes it to non-JEV review.
+        or_gate_skip = (SKIP_LOW_CONFIDENCE if low_confidence is not None
+                        else mode_skip)
+
         def _send_openrouter(timeout_ms):
             key, _ = oro.resolve_key(None, key_map)
             return self._openrouter(
@@ -632,7 +651,7 @@ class DirectFirstLadder:
             provider=PROVIDER_OPENROUTER, cred_status=or_status,
             send=_send_openrouter, accounting=accounting, root=root,
             stage_start_s=stage_start_s, purpose=purpose, order_log=log,
-            mode_skip=mode_skip)
+            mode_skip=or_gate_skip)
         stages.append(record)
         if isinstance(result, dict) and result.get("outcome") == "ok":
             self._circuit.record_success(PROVIDER_OPENROUTER)
@@ -643,10 +662,14 @@ class DirectFirstLadder:
 
         # ── stage 3: no-JEV fallback hook (local, always permitted) ──
         fallback = no_jev_fallback or self._fallback
+        review = {"stages": stages,
+                  "accounting": accounting.summary(),
+                  "expired": root.expired()}
+        if low_confidence is not None:
+            # 3.4:276 the calibrated signal travels with the review.
+            review["low_confidence"] = low_confidence
         try:
-            dunk = fallback({"stages": stages,
-                             "accounting": accounting.summary(),
-                             "expired": root.expired()})
+            dunk = fallback(review)
         except Exception as exc:
             dunk = {"decision_source": "no_jev", "ok": False,
                     "outcome": "fallback_error",
@@ -664,6 +687,8 @@ class DirectFirstLadder:
                                 accounting, root, mode_info)
         verdict["fallback"] = {k: v for k, v in dunk.items()
                                if k != "decision_source"}
+        if low_confidence is not None:
+            verdict["low_confidence"] = low_confidence
         return verdict
 
     def _verdict(self, source, ok, stages, accounting, root, mode_info=None):
