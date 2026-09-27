@@ -1,4 +1,38 @@
 #!/usr/bin/env bash
+
+# CORE_REFERENCE_ENTRY_HOLD_V1: compact workspaces never run legacy update paths.
+# Keep receipts and proposals out of bootstrap; preserve legacy behavior elsewhere.
+_oc_compact_entry=0
+for _oc_ws in "${OPENCLAW_WORKSPACE:-$HOME/clawd}" "$HOME/clawd" "$HOME/.openclaw/workspace" "$HOME/.openclaw"; do
+  for _oc_core in AGENTS.md MEMORY.md TOOLS.md; do
+    if grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$_oc_ws/$_oc_core" 2>/dev/null; then
+      _oc_compact_entry=1
+    fi
+  done
+done
+if [ "$_oc_compact_entry" = 1 ]; then
+  python3 - "${BASH_SOURCE[0]:-$0}" <<'CORE_ENTRY_HOLD_PY'
+from pathlib import Path
+import datetime,hashlib,json,os,sys,tempfile
+source=Path(sys.argv[1])
+identity=hashlib.sha256(str(source.resolve()).encode()).hexdigest()[:16]
+state=Path.home()/'.openclaw/state/core-update-review/legacy-entrypoints'/identity
+state.mkdir(parents=True,exist_ok=True)
+status={'status':'pending-compatible-updater','source':str(source.resolve()),'applied':False,'updated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+for name,data in [('candidate.sh',source.read_bytes()),('status.json',(json.dumps(status,indent=2)+'\n').encode())]:
+ fd,tmp=tempfile.mkstemp(prefix='.pending-',dir=state)
+ try:
+  with os.fdopen(fd,'wb') as f:f.write(data)
+  os.replace(tmp,state/name)
+ finally:
+  if os.path.exists(tmp):os.unlink(tmp)
+print('[compact-core] PENDING: legacy entrypoint held before downloads, messages, or core writes. Proposal: '+str(state),file=sys.stderr)
+print('[compact-core] Use the guarded ~/.openclaw/skills/.update-restart-if-needed intake and References 4 Bootstrap/writer-review-procedure.md. No update applied.',file=sys.stderr)
+CORE_ENTRY_HOLD_PY
+  exit 75
+fi
+unset _oc_compact_entry _oc_ws _oc_core
+
 #  OpenClaw Onboarding Installer — Unified (Mac + VPS)
 #  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
 #  Requires bash (uses `< <(...)`, `[[ ]]`, arrays). Shebang added v16.2.12 so a
@@ -26,7 +60,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.1.84"
+ONBOARDING_VERSION="v25.1.85"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)

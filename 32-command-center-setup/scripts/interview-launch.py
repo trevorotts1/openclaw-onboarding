@@ -195,6 +195,10 @@ def provision(path, app, root, env):
             if host in registry:
                 if any(registry[host].get(k) != v for k,v in registration.items()): raise ValueError('public host is registered to a different identity')
             else: registry[host] = registration
+            # Preserve Access identity entries verbatim. Legacy email-form subjects
+            # are signed-email selectors, not Cloudflare UUID subjects; the server
+            # verifies that claim cryptographically. Never derive sub from email,
+            # replace subjects, or broaden an existing allowedEmails restriction.
             values['MC_TENANT_REGISTRY_JSON'] = json.dumps(registry,separators=(',',':'))
             preserve('MC_TENANT_PUBLIC_URL', origin)
         replace_env(app, target, {k:v for k,v in values.items() if original_values.get(k)!=v or k.endswith('_JSON')})

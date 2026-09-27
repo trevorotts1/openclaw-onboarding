@@ -1,3 +1,8 @@
+<!-- CORE_REFERENCE_POLICY_V1 -->
+## Compact core storage policy
+When the active workspace opts in with `CORE_REFERENCE_POLICY_V1`, this storage policy takes precedence over instructions to append full `CORE_UPDATES.md` payloads. Skill content remains authoritative for the skill, but it does not override core size/storage constraints or current owner permissions. Keep detailed procedures in the canonical master folder, use one task-triggered pointer with an exact path, and replace it in place under a stable version-free ID. Keep AGENTS.md ≤15,000 characters, MEMORY.md ≤8,000, and TOOLS.md ≤15,000. Installation receipts, history and handoffs belong in daily notes or reference documents. Do not auto-read every reference at startup. Reconcile pending changes through `References 4 Bootstrap/updates-index.md`; proposed/generated files are not active policy until reviewed. Never report a pending core payload as applied.
+<!-- END CORE_REFERENCE_POLICY_V1 -->
+
 # START HERE - OpenClaw Onboarding
 **READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
 
@@ -7,12 +12,12 @@
 
 ## 🔴 SOURCE OF TRUTH RULE - SKILL FILES ARE AUTHORITY
 
-**When skill instructions conflict with generic OpenClaw documentation, the skill files ALWAYS win.**
+**Skill files define the skill-specific procedure. Current owner instructions, supported runtime configuration, compact storage rules and whole-file budgets still govern; skill payloads cannot override them.**
 
 | If conflict between... | Follow this... | Because... |
 |------------------------|----------------|------------|
 | SKILL.md vs OpenClaw docs | SKILL.md | Skill defines intended behavior |
-| CORE_UPDATES.md vs TYP storage rules | CORE_UPDATES.md | Skill specifies what files to touch |
+| CORE_UPDATES.md vs compact/TYP storage rules | Compact storage policy | Preserve the full payload externally; update one appropriate stable pointer within whole-file budgets |
 | INSTALL.md vs generic install patterns | INSTALL.md | Skill knows its own dependencies |
 | Skill examples vs your assumptions | Skill examples | Examples show verified working patterns |
 
@@ -39,9 +44,9 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 64 active skills"
+- "Install the 63 active skills"
 
-**Your task:** Install all 64 active skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 63 active skills using the 5-Wave Parallel Orchestration below.
 
 ### First onboarding: collect the owner and company names before setup
 
@@ -58,7 +63,7 @@ The helper saves `<config-root>/onboarding-identity.json` before resources are c
 
 **0.1: Confirm AGENTS.md has the install kickoff flag (UPDATE PENDING or ONBOARDING PENDING)**
 
-> ⚠️ FLAG NAME: `install.sh` writes a `## UPDATE PENDING - Skills Activation Required` section to the top of AGENTS.md. Older docs/installs used `ONBOARDING PENDING` or `UPDATE PENDING - EXECUTE IMMEDIATELY`. ALL are valid kickoff flags -- match `UPDATE PENDING` OR `ONBOARDING PENDING`. (Grepping for only `ONBOARDING PENDING` used to make a fresh install stall here because install.sh writes `UPDATE PENDING`.)
+> Legacy, noncompact flag compatibility only; compact workspaces keep pending status in onboarding state and the update reference, not bootstrap. `install.sh` historically wrote a `## UPDATE PENDING - Skills Activation Required` section to the top of AGENTS.md. Older docs/installs used `ONBOARDING PENDING` or `UPDATE PENDING - EXECUTE IMMEDIATELY`. ALL are valid kickoff flags -- match `UPDATE PENDING` OR `ONBOARDING PENDING`. (Grepping for only `ONBOARDING PENDING` used to make a fresh install stall here because install.sh writes `UPDATE PENDING`.)
 
 Search ALL possible AGENTS.md locations. The path differs between Mac and VPS:
 ```bash
@@ -92,7 +97,7 @@ If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use 
 If `sessions_spawn` fails: Use Sequential Mode (install 01→31 one at a time, skipping 13 which is archived).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 64 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 63 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -110,7 +115,7 @@ These 7 files are your AI's memory and identity. Keep them LEAN.
 7. TOOLS.md - Tool capabilities and how-to guides
 
 **THE RULE:**
-- Core.md files: 10-25 lines maximum
+- Core files: one short trigger and exact-path pointer per topic; whole-file budgets are AGENTS 15,000, MEMORY 8,000 and TOOLS 15,000 characters
 - Full documentation: Goes to ~/Downloads/openclaw-master-files/
 - Never dump thousands of lines into core files
 - Always use pointers: "See full guide at: [path]"
@@ -130,7 +135,7 @@ The QC agent verifies each skill installation by checking:
 - Did it NOT take shortcuts?
 
 ### 2. Core.md Files Protection
-Core.md files must stay LEAN (10-25 lines max):
+Core files keep essential facts/rules and short pointers; enforce whole-file character budgets:
 - USER.md - About the human
 - IDENTITY.md - Who the AI is
 - SOUL.md - Core principles
@@ -139,7 +144,7 @@ Core.md files must stay LEAN (10-25 lines max):
 - MEMORY.md - Long-term memory
 - TOOLS.md - Tool capabilities
 
-VERIFICATION: Check each core.md file has only lightweight summaries with pointers to master-files. NEVER full documentation.
+VERIFICATION: Check each core.md file has only short task-triggered pointers with pointers to master-files. NEVER full documentation.
 
 ### 3. Master Files Creation
 - Did it create proper subfolder in openclaw-master-files/?
@@ -225,7 +230,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 64 active skills: final complete index
+- After all 63 active skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -284,7 +289,7 @@ The following are FORBIDDEN and will cause installation failures:
 Every skill has a specific install sequence. Follow it exactly:
 - If INSTALL.md says "Step 1, Step 2, Step 3" → do them in that order
 - If SKILL.md has prerequisites → verify they're met before proceeding
-- If CORE_UPDATES.md lists files to update → update ALL of them
+- Read every proposed CORE_UPDATES.md change, store detailed content externally, and reconcile one pointer in the appropriate core file. Change another core only for a distinct durable fact or essential rule.
 - If the skill requires API keys → prompt for them or skip with reminder
 - **VERIFICATION:** After each step, explicitly state "Step X complete"
 
@@ -294,7 +299,7 @@ Every skill has a specific install sequence. Follow it exactly:
 - [ ] Verify all files were created/modified as specified
 - [ ] Verify all API keys/credentials are properly stored
 - [ ] Run any verification commands specified in the skill docs
-- [ ] Confirm TYP was applied (core files updated with lightweight summary)
+- [ ] Confirm TYP was applied (core files updated with short task-triggered pointer)
 - [ ] Explicitly state: "[Skill-name] installation verified complete"
 
 ### STEP 5: NO GLOBAL "DONE" UNTIL ALL 30 ARE DONE
@@ -302,7 +307,7 @@ Every skill has a specific install sequence. Follow it exactly:
 - Do NOT skip skills because they "seem optional"
 - Install skills 01-30 in order, confirm each one individually
 - Only after skill 31 (Upgraded Memory System) is verified complete → remove ONBOARDING PENDING flag
-- Only after skill 31 (Upgraded Memory System) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
+- Only after skill 31 (Upgraded Memory System) is verified complete → record verified ONBOARDING COMPLETE in onboarding state and the installation changelog, never MEMORY.md
 - NOTE: Former Skills 33 (Department Heads) and 34 (Intelligent Staffing) have been merged INTO Skill 23 (AI Workforce Blueprint). They no longer exist as separate skills. Their folders are archived as 33-department-heads-ARCHIVED and 34-intelligent-staffing-ARCHIVED.
 
 ---
@@ -325,24 +330,17 @@ Every skill has a specific install sequence. Follow it exactly:
 
 ### Protection Rules
 
-1. **NEVER dump large content into core files.** Each skill's CORE_UPDATES.md contains the EXACT text to add. Add ONLY what CORE_UPDATES.md specifies. Nothing more.
+1. **Keep detailed procedures outside bootstrap.** CORE_UPDATES.md describes proposed skill changes; reconcile them with current owner decisions and compact storage policy before writing an essential rule or short pointer.
 
 2. **NEVER copy full documentation into core files.** Core files are INDEX POINTERS, not storage. They say "Full guide at ~/path/to/file.md" instead of pasting the guide contents.
 
-3. **NEVER overwrite core files.** Always APPEND the specific CORE_UPDATES.md entries. Never replace existing content.
+3. **Update owned pointers in place.** Use stable version-free IDs, preserve unrelated owner content, compare the expected hash, and write atomically. Do not append another version of an existing instruction.
 
-4. **NEVER add the same entry twice.** Before adding a CORE_UPDATES.md entry, check if it already exists in the target core file. If it does, skip it.
+4. **Deduplicate by topic and stable ID.** Replace an outdated owned pointer, retain an identical pointer unchanged, and remove superseded duplicates only after resolving their boundaries and meaning. A second identical run creates no writes or backups.
 
-5. **Maximum addition per skill:** No more than 20 lines per core file per skill. If a skill's CORE_UPDATES.md exceeds 20 lines for any single core file, something is wrong. Stop and ask the user.
+5. **Whole-file budgets govern every skill.** AGENTS.md ≤15,000 characters, MEMORY.md ≤8,000, TOOLS.md ≤15,000. There is no per-skill line allowance. Move detail into references and reconcile a concise pointer; do not expand bootstrap to fit installer prose.
 
-6. **If a core file exceeds these sizes, it is bloated and needs cleanup:**
-   - MEMORY.md: over 2000 lines
-   - AGENTS.md: over 500 lines
-   - TOOLS.md: over 500 lines
-   - USER.md: over 200 lines
-   - IDENTITY.md: over 100 lines
-   - SOUL.md: over 100 lines
-   - HEARTBEAT.md: over 200 lines
+6. **Measure whole-file characters, not line counts.** Enforce AGENTS.md 15,000, MEMORY.md 8,000 and TOOLS.md 15,000. Review the remaining identity/profile files for necessary content without discarding owner facts just to meet a line count.
 
 ### Why This Matters
 
@@ -482,14 +480,14 @@ Check onboarding status:
 2. Count how many skills are INSTALLED vs remaining
 3. If skills remain and you are not currently installing one, resume from the next unfinished skill
 4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
-5. Report progress: "[X] of 64 active skills installed. Currently on: [skill name]."
+5. Report progress: "[X] of 63 active skills installed. Currently on: [skill name]."
 
-DO NOT REMOVE this block until all 64 active skills are installed or attempted.
+DO NOT REMOVE this block until all 63 active skills are installed or attempted.
 ```
 
 **Step 3: After onboarding completes, clean up**
 
-When all 64 active skills are installed (or attempted), the agent MUST:
+When all 63 active skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
 2. Reset the heartbeat interval back to the sane default (6h, main-only):
 ```json
@@ -537,17 +535,17 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 ### Progress Reporting
 
 After every 5 skills completed, send the user a brief progress update:
-"Onboarding progress: [X] of 64 active skills installed. Currently on: [skill name]. [Y] skills remaining."
+"Onboarding progress: [X] of 63 active skills installed. Currently on: [skill name]. [Y] skills remaining."
 
 ### Completion
 
-When all 64 active skills are installed:
-1. Count and verify: all 64 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
+When all 63 active skills are installed:
+1. Count and verify: all 53 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
 2. Check the status file for any FAILED skills
 3. If any failed, attempt to re-install them one more time
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
-   "All 64 active skills are installed. To activate the changes, please type /restart in Telegram."
+   "All 63 active skills are installed. To activate the changes, please type /restart in Telegram."
 
 ### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
 
@@ -581,7 +579,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 - Agent forgetting where it was after compaction
 - Agent triggering restarts on its own (NEVER do this)
 
-**ZERO TOLERANCE: The onboarding does not end until all 64 active skills have been attempted. If you stop early, you failed.**
+**ZERO TOLERANCE: The onboarding does not end until all 63 active skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -595,7 +593,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 When reading a skill's .md files:
 - If INSTALL.md lists 5 steps → do ALL 5 steps
 - If SKILL.md mentions 3 dependencies → install ALL 3
-- If CORE_UPDATES.md says update 4 files → update ALL 4
+- CORE_UPDATES.md may propose changes in several files; reconcile those proposals against compact policy instead of duplicating one topic across all cores.
 - If there are sub-tasks (A, B, C) → complete ALL sub-tasks
 
 ### The Only Way to Know: Read ALL .md Files
@@ -757,7 +755,7 @@ All skill content goes inside the master files folder:
 | Core File | Purpose | Location |
 |-----------|---------|----------|
 | AGENTS.md | Behavior rules, operating doctrine | `~/clawd/AGENTS.md` |
-| MEMORY.md | Persistent state, project status | `~/clawd/MEMORY.md` |
+| MEMORY.md | Durable private facts and decisions; project status stays in task records | `~/clawd/MEMORY.md` |
 | TOOLS.md | Tool setup, API credentials | `~/clawd/TOOLS.md` |
 | USER.md | User preferences, context | `~/clawd/USER.md` |
 | IDENTITY.md | Agent identity, persona | `~/clawd/IDENTITY.md` |
@@ -765,25 +763,25 @@ All skill content goes inside the master files folder:
 | HEARTBEAT.md | Current priorities, active tasks | `~/clawd/HEARTBEAT.md` |
 
 ### TYP Storage Rules
-- **Core files:** 10-25 line summaries ONLY, with pointers to deep files
+- **Core files:** short task-triggered pointers with exact paths; full procedures stay in deep files
 - **Deep files:** Complete, unabridged content in `~/Downloads/openclaw-master-files/`
 
 ### TYP Conflict Resolution
 | Scenario | Rule |
 |----------|------|
-| Skill asks for core file update → **matches TYP** | Follow TYP (lean summary + deep file) |
-| Skill asks for core file update → **conflicts with TYP** | **Skill wins** - follow skill's specific instructions |
+| Skill asks for core file update → **matches TYP** | Follow TYP (short trigger pointer + complete deep reference) |
+| Skill asks for core file update → **conflicts with compact/TYP storage** | Compact storage policy governs: preserve skill detail externally and reconcile one short owned pointer within whole-file budgets |
 | Skill is silent on storage method | Default to TYP |
 
 ### Forbidden Actions
 - Do NOT dump full content into core files (causes bloat)
-- Do NOT create orphan deep files with no core file reference
+- Make references discoverable through an existing topic index or one appropriate core pointer; each deep file does not need its own core entry
 - Do NOT duplicate content between core and deep files
 - Do NOT add new "core files" to the list above
 
 ### Verification
 After every skill install, verify:
-- [ ] Core files have lightweight summaries only (10-25 lines)
+- [ ] Core files contain essential facts/rules and short pointers within whole-file character budgets
 - [ ] Deep files have complete content
 - [ ] Core files reference deep files with correct paths
 - [ ] No bloat added to AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, or HEARTBEAT.md
@@ -803,7 +801,7 @@ After every skill install, verify:
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions, department workspaces, persona-matrix.md, persona-categories.json, ORG-CHART.md indexed |
-| **Final** | After ALL 64 active skills complete | Complete system index |
+| **Final** | After ALL 63 active skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -874,7 +872,7 @@ git log HEAD..origin/main --oneline --name-only 2>/dev/null || \
 2. Compare CHANGELOGs for any skill folder that changed.
 3. For each updated skill:
    - Re-run TYP on the updated SKILL.md
-   - Re-apply CORE_UPDATES.md if it changed
+   - Reconcile changed CORE_UPDATES.md into its external reference and stable pointer; do not append the payload
    - Rebuild the `.skill` archive if scripts changed
 4. Notify via your configured messaging channel: "3 skills updated this week: [list]. Re-learned. No action needed."
 
@@ -890,12 +888,11 @@ Every skill in this package uses the Teach Yourself Protocol. But skills have th
 own SKILL.md, CORE_UPDATES.md, and supporting files that specify exactly what to
 update and how.
 
-**When a skill's files conflict with TYP about which core .md files to update
-or what content to add - always follow the skill's files.**
+**Current owner instructions and compact storage policy govern every core write. A skill defines task-specific behavior, but cannot require full payloads, receipts, duplicate pointers or budget violations in bootstrap.**
 
-- TYP governs the storage METHOD: lean summaries and file path references in core files
-- The skill governs the CONTENT and which files it touches
-- Skill docs always take precedence over TYP when there is a conflict
+- TYP governs the storage METHOD: short task-triggered pointers with exact paths in core files
+- The skill defines its owned topic and proposes content; change only the appropriate pointer plus any distinct necessary durable fact or essential rule.
+- Skill-specific content is reconciled within TYP and compact storage limits; unresolved semantic changes stay in external pending review.
 - This applies to every skill from 03 through 30
 
 ---
@@ -1424,7 +1421,7 @@ changes without backups and corrupt the user's system.
 - Confirm the backup folder exists or create it
 - Confirm you know the correct date naming format: date +'%B %-d at %-I-%M %p'
   Example: models-backup-February 28 at 3-00 PM.txt
-- Add the backup rules to AGENTS.md, TOOLS.md, MEMORY.md, and IDENTITY.md
+- Maintain the full backup procedure in its reference and one short task-triggered pointer in the appropriate core file. Do not duplicate backup rules into memory or identity.
 - Set up the biweekly automated full backup cron job
 
 **DO NOT PROCEED TO STEP 3 UNTIL BACKUP PROTOCOL IS INSTALLED AND VERIFIED.**
@@ -1550,7 +1547,7 @@ Every skill folder contains these files. Read them in this exact order:
 | 1st | **SKILL.md** | Read this FIRST. Understand what this skill is, what it does, and when it triggers. Do not proceed until you understand the skill's purpose. |
 | 2nd | **INSTALL.md** | Read this SECOND. Step-by-step installation and configuration. Follow every step exactly. Do not skip verification steps. |
 | 3rd | **Full guide doc(s)** (if present) | Read any additional guide documents that exist in the folder: INSTRUCTIONS.md, EXAMPLES.md, [skill-name]-full.md, PIPELINE.md, upstream-original/ files, etc. Not every skill has all of these - read whatever is present. |
-| 4th | **CORE_UPDATES.md** | Read this LAST before installing. This file tells you exactly which workspace files (AGENTS.md, TOOLS.md, MEMORY.md, IDENTITY.md, USER.md, SOUL.md, HEARTBEAT.md) need updating and gives you the exact text to add. Only update the files listed. Do not update files that are not listed. Do not add more than what is written. |
+| 4th | **CORE_UPDATES.md** | Read this LAST before installing. This file proposes skill-specific workspace changes. Keep its full text in a reference, reconcile one stable trigger/path pointer in the appropriate core file, and change other cores only for distinct durable facts or essential rules. Current owner policy and whole-file character budgets govern. |
 | Final | **[skill-name].skill** | This is an archive of the skill folder. No installation command exists - the skill is installed by following SKILL.md, INSTALL.md, and CORE_UPDATES.md above. Simply copy the folder into ~/.openclaw/skills/ and the agent reads the .md files |
 
 ### For Each Skill, Follow This Process
@@ -1560,7 +1557,7 @@ Every skill folder contains these files. Read them in this exact order:
 3. Read INSTALL.md completely - build a mental checklist of everything it requires
 4. Execute the INSTALL.md steps one by one - do not skip any step
 5. Read all full guide docs that exist in this folder (INSTRUCTIONS.md, EXAMPLES.md, [skill-name]-full.md, PIPELINE.md, upstream-original/ files, etc.) - read whatever is present
-6. Read CORE_UPDATES.md - update ONLY the workspace files it specifies, with ONLY the text it provides
+6. Read CORE_UPDATES.md; keep the full payload outside bootstrap and reconcile one stable short pointer in the appropriate core file. Additional changes require distinct durable facts or essential rules.
 7. Install the .skill package file (if one exists in this folder)
 8. Verify the skill is working
 9. **Report to the user:** "Skill [number] of 30 installed. [Skill name] is complete." Then proceed to the next skill immediately. Do not wait for acknowledgment.
@@ -1574,13 +1571,13 @@ information. CORE_UPDATES.md removes the guesswork.
 
 It tells you:
 - Which workspace files to update (AGENTS.md, TOOLS.md, MEMORY.md, IDENTITY.md, USER.md, SOUL.md, HEARTBEAT.md)
-- The exact text to add to each file
+- The skill changes to reconcile against current owner policy; full text stays in external references
 - Which files to NOT touch for this skill
-- Where in each file to add the new content
+- The owned topic/pointer to replace in place if a core change is needed
 
 **Rules for CORE_UPDATES.md:**
-- Only update the files it lists. If a file is not listed, do not touch it.
-- Use the exact text provided. Do not rewrite it, expand it, or summarize it.
+- Treat listed files as proposed scope, not mandatory fanout. Update only what is needed for an essential rule, durable fact or one task-triggered pointer.
+- Preserve detailed skill text in its reference. Reconcile a short trigger and exact-path pointer in bootstrap; do not copy the full payload.
 - Add summaries and file path references only. Full documentation stays in the skill folder.
 - This follows the Teach Yourself Protocol. If you have not learned TYP, go back to Step 1.
 
@@ -1813,7 +1810,7 @@ All skill folders are located inside:
 
 - Install TYP (01) FIRST. Install Back Yourself Up Protocol (02) SECOND. No exceptions.
 - Every skill from 03 onward requires TYP to be confirmed before its install begins
-- When a skill's files conflict with TYP about which core files to update - the skill wins
+- When a skill proposes conflicting core updates, apply current owner decisions and compact storage rules; preserve detailed proposals externally for reconciliation.
 - TYP governs storage method. The skill governs content and which files it touches.
 - Do NOT change any API keys, terminal commands, or config values from what is written
 - Do NOT add steps that are not in the instructions
@@ -1825,7 +1822,7 @@ All skill folders are located inside:
 - Do NOT tell the user a skill is installed until you have verified it works
 - Do NOT bloat AGENTS.md, TOOLS.md, or MEMORY.md with full documentation
 - Do NOT update workspace files that CORE_UPDATES.md does not list for that skill
-- Do NOT rewrite the text provided in CORE_UPDATES.md - use it exactly as written
+- Preserve full CORE_UPDATES.md text in a reference document; summarize only its task trigger and path in compact core files
 - Do NOT silently skip any skill
 - Optional skills with missing account/API may be marked SKIPPED with reason and onboarding should continue
 - Core skills (01, 02, 03) cannot be skipped
@@ -1848,7 +1845,7 @@ Skills 16 through 30 are imported or recreated skills. Many preserve upstream so
 3. Read all full guide docs present in the folder (INSTRUCTIONS.md, EXAMPLES.md, [skill-name]-full.md, PIPELINE.md, upstream-original/ files, etc.)
 4. Read `CORE_UPDATES.md` last before installing
 
-**Conflict rule:** If TYP wrapper instructions conflict with a skill's own `SKILL.md` or `CORE_UPDATES.md`, follow the skill's files. TYP governs storage method; the skill governs content.
+**Conflict rule:** TYP and the compact core storage policy govern storage and size. Skill documents govern task-specific content within those constraints; they do not authorize full-document append operations or override the owner's current permissions.
 
 **Mandatory TYP file-read rule:**
 1. Discover every `.md` file in the skill folder (including all subfolders).
@@ -1857,7 +1854,7 @@ Skills 16 through 30 are imported or recreated skills. Many preserve upstream so
 4. If counts do not match, stop and mark install as failed.
 
 **Core file update rule:**
-- Apply only the updates listed in that skill's `CORE_UPDATES.md`.
+- Reconcile the skill's `CORE_UPDATES.md` with compact policy; apply only necessary owned pointer/fact changes within whole-file budgets.
 - Do not edit workspace files that CORE_UPDATES.md does not list for that skill.
 
 ---
@@ -2085,8 +2082,8 @@ label: "wave4-agent-f"
    - Open `~/clawd/AGENTS.md`
    - Delete the ONBOARDING PENDING block
 
-4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 64 active skills installed."
+4. **Record verified completion in onboarding state and the installation changelog**
+   - Record the verified date and actually QC-passed skills outside bootstrap. Do not create a MEMORY.md installation receipt.
 
 5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
 
@@ -2104,7 +2101,7 @@ label: "wave4-agent-f"
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install 64 active skills one at a time:
+If `sessions_spawn` doesn't work, install 63 active skills one at a time:
 
 ```
 For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 35:
@@ -2136,7 +2133,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 64 active skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 63 active skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -2497,13 +2494,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 64 active skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 63 active skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 64 active skills are installed, run this as the final step.
+After all 63 active skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2547,7 +2544,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 64 active skills are installed, run the final Gemini Engine indexing:
+After all 63 active skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2570,12 +2567,12 @@ python3 ~/.openclaw/scripts/gemini-indexer.py --status
 - If running in an active chat session: post the summary in that chat.
 - If running as a background or sub-agent task: send the summary via the configured
   messaging channel (detected in prerequisites).
-- Format the 64-skill status report as a table: Skill | Name | Status | Notes
+- Format the 52-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 64 active skills processed"
+Then record verified ONBOARDING COMPLETE and the actual per-skill results in onboarding state and the installation changelog, never MEMORY.md.
 
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was install 64 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was install 52 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)

@@ -137,16 +137,15 @@ COUNT_C=$(grep -c -F "## Owner Reporting Rules" "$F_C")
 grep -qF '<!-- OWNER_REPORTING_V1 -->' "$F_C" && ok "(c) the MARKED copy is the one that survived" || bad "(c) the MARKED copy is the one that survived"
 
 # ---------------------------------------------------------------------------
-# (d) BEGIN/END pairs stay balanced -- refuses to write an unbalanced result
+# (d) Marker-bearing containers are preserved, including malformed legacy regions
 # ---------------------------------------------------------------------------
 echo "-- (d) BEGIN/END pairs stay balanced --"
 F_D="$WORK/d-AGENTS.md"
 # Three byte-identical "## Foo" occurrences (each body includes its own
 # trailing END line as literal text): copy 0 carries the file's ONLY BEGIN
 # prefix; copy 1 has no prefix; copy 2 carries a single-token marker prefix.
-# Rule 4 prefers the MARKED copy (2) over "first occurrence" (0), so copy 0 --
-# and with it the only BEGIN -- is removed, while a surviving copy's body
-# still contains an END. That is a genuine BEGIN=0/END=1 imbalance.
+# A heading-only parser used to prefer copy 2 and lose the only BEGIN.
+# The repaired parser conservatively protects all marker-bearing units.
 cat > "$F_D" <<'EOF'
 # AGENTS.md
 
@@ -170,7 +169,7 @@ Shared body text.
 EOF
 cp "$F_D" "$WORK/d-before.md"
 OUT_D="$(run_dedup "$F_D" --apply)"; RC_D=$?
-[ "$RC_D" -eq 3 ] && ok "(d) exit code 3 on refused write" || bad "(d) exit code 3 on refused write (rc=$RC_D)"
+[ "$RC_D" -eq 0 ] && ok "(d) unsafe marker-bearing duplicates preserved without refusing unrelated work" || bad "(d) unsafe marker-bearing duplicates preserved without refusing unrelated work (rc=$RC_D)"
 if cmp -s "$F_D" "$WORK/d-before.md"; then
   ok "(d) file left untouched when write would unbalance BEGIN/END"
 else

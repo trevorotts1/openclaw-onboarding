@@ -1,157 +1,58 @@
 # Teach Yourself Protocol - How to Use
 
-## Step-by-Step Process
+## 1. Announce and understand
 
-### 1. Announce
-Tell the user: "I am activating the Teach Yourself Protocol to permanently retain this knowledge."
-Never execute TYP silently. The user must always know when it is running.
+Briefly announce TYP when retaining lasting knowledge. Identify the topic, source, owner/client scope and intended future use. Explicit learning requests authorize this work. Temporary task inputs stay with their task; a long attachment alone is not evidence that every detail belongs in permanent memory. Resolve ambiguous intent only when it matters.
 
-### 2. Understand What You Are Learning
-- What category? (tool, API, process, preference, contact, credential, playbook/SOP)
-- How often will you use it? (daily, weekly, rarely)
-- What priority? (CRITICAL, HIGH, STANDARD, REFERENCE)
+## 2. Search before creating
 
-### 3. Assess Size
-| Content Size | Classification | What to Do |
-|-------------|---------------|------------|
-| 1-10 lines | Small | Core files only |
-| 11-25 lines | Medium | Core files only, be concise |
-| 25-100 lines | Large | Deep file in master folder + core summary |
-| 100+ lines | Very Large | Deep file in master folder + core summary |
-| Multi-topic / API docs | Massive | Folder structure + deep files + core summary |
+Search the relevant core entries, installed skill and canonical master folder for this topic. Update the authoritative existing document. Follow current owner corrections; use source evidence to resolve stale instructions. Ask only when a material contradiction remains genuinely unresolved. Never create another master folder because the first search missed the existing one.
 
-### 4. Check for Existing Knowledge
-Search ALL core files and the master files folder BEFORE creating anything new.
-- If found and matches: update it, do not duplicate
-- If found but conflicts: flag to user, ask which version is correct
-- If not found: proceed to create new
+## 3. Choose storage by purpose
 
-### 5. Create Deep File (If Needed)
+| Content | Destination |
+|---|---|
+| API/tool procedure, model list, pricing, endpoint details | Canonical deep reference, with one TOOLS.md pointer if needed |
+| Workflow/playbook/SOP | `playbooks/` reference, with one AGENTS.md pointer if needed |
+| Durable owner preference or fact | Its existing appropriate USER.md or MEMORY.md entry; no automatic duplicate |
+| Essential global behavioral rule | Concise AGENTS.md rule, only if it applies generally |
+| Installation/learning receipt or diagnostic history | Installation log, changelog or task record outside bootstrap |
+| Task state/handoff | Project PRD/TODO or active task record |
+| Related subtopic already reachable from a core index | Link from that reference index; no additional core entry |
 
-**STORAGE PATH (canonical, non-negotiable):**
-- Mac: `~/Downloads/openclaw-master-files/<typ-subfolder>/` (e.g., `playbooks/`, `processes/`, `apis/`, `skills/`, `references/`)
-- VPS: `/data/.openclaw/master-files/<typ-subfolder>/` (same subfolder names)
+Content length does not make a procedure eligible for bootstrap. A short procedure still belongs in its reference. A single durable fact does not require a new deep file or a version-history table.
 
-**PERSISTENCE NOTE (VPS — MANDATORY CHECK):**
-On a Hostinger Docker VPS, ALL files MUST live under `/data/.openclaw/` (the bind-mounted
-persistent volume). Files written anywhere else — `/tmp/`, the container's root filesystem,
-or any path NOT under `/data/` — are EPHEMERAL and will be WIPED on container restart. Before
-saving any deep file or playbook, confirm the path starts with `/data/.openclaw/`.
+## 4. Store the complete reference
 
-**DEDICATED PLAYBOOK SUBFOLDER — ENFORCED:**
-When the user invokes TYP on a playbook, book, SOP, or process document (e.g., "use
-the Teach Yourself Protocol on this playbook"), the content MUST be placed in a dedicated
-subfolder named `playbooks/` inside the master files root:
-- Mac:  `~/Downloads/openclaw-master-files/playbooks/`
-- VPS:  `/data/.openclaw/master-files/playbooks/`
+Reuse the existing canonical root:
 
-If this subfolder does not exist yet, CREATE it before saving the file. Never store
-playbooks loose in the master files root or inside a different subfolder type.
+- Mac: `~/Downloads/openclaw-master-files/` (resolve the home directory in actual pointers).
+- Documented Docker VPS layout: `/data/.openclaw/master-files/`.
 
-Save COMPLETE, UNABRIDGED content to that path with this header:
-```
-# [Topic Name]
-- Source: [where this came from]
-- Date learned: [date]
-- Priority: [CRITICAL/HIGH/STANDARD/REFERENCE]
-- Referenced by: [which core files point to this]
-```
-NEVER truncate the deep file. It is the full reference.
+Use `apis/`, `skills/`, `processes/`, `references/`, or the dedicated `playbooks/` subfolder for playbooks/books/SOPs. Create only a needed subfolder. On a Docker VPS verify that the destination is inside its persistent bind mount before writing; the documented deployment uses `/data/.openclaw/`. Do not treat temporary/container-root paths as durable storage.
 
-**POINTER FORMAT (required in every core file that references a deep file):**
-```
-- Full reference: ~/Downloads/openclaw-master-files/<subfolder>/<filename>.md
-- When to go deeper: [specific trigger — e.g., first use, hitting errors, complex task]
-```
+Preserve the complete supplied reference or its original source alongside an organized guide. Do not silently discard source details. Record source, scope, last verification date, version and related documents in the deep file. Keep history there, not in bootstrap. Credentials remain in the authorized secret store; references describe how to retrieve them without copying secret values.
 
-### MANDATORY — NO-PASTE RULE
-**Long playbooks, SOPs, API docs, and any document over ~25 lines MUST NEVER be pasted into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder. Add only a hyper-concise summary (10–25 lines max) plus the explicit pointer to the file. Vagueness about storage path or pointer format is what causes bloat — this rule is absolute.
+## 5. Write one short pointer, if needed
 
-### 6. Write Core File Summaries (HYPER-CONCISE BLOCK — ENFORCED)
+Use one sentence stating the task trigger, what the reference covers and its exact absolute path. Example template:
 
-Add lightweight summaries (10-25 lines based on priority) to the relevant core file(s).
-The agent decides whether AGENTS.md, TOOLS.md, or both should get the entry — but at
-minimum ONE of them MUST receive it. Every summary block MUST answer all four of these:
+`Before using ClickUp, read <absolute-canonical-root>/apis/clickup.md for setup, API operations and troubleshooting.`
 
-1. **WHAT it is** — one sentence description
-2. **WHEN to use it** — the explicit trigger(s) that cause the agent to reach for it
-3. **WHY / what it does** — the outcome or value it delivers
-4. **POINTER REFERENCE** — the EXACT file path to the playbook/deep file so the agent
-   can find, read, and execute it (full absolute path, no vagueness)
+Resolve the placeholder and verify the file before installing the pointer. Load the relevant reference before acting, including routine use; do not expect the pointer to contain the procedure. There is no minimum length or requirement to answer operational questions in core. Expand the reference itself when details are missing.
 
-If any of the four are missing, the block does NOT earn its place in the bootstrap file.
+Prefer one appropriate core file, or an already-linked reference index. Do not add duplicate pointers to every core file and do not record “learned/installed [date]” in MEMORY.md. Independent durable facts may be revised where they already belong. Use a stable version-free block ID for managed pointers, replacing it in place.
 
-Every summary must also pass the Five Question Test:
-1. What is this? (one sentence)
-2. When do I use it? (triggers)
-3. What do I need to know right now? (key facts)
-4. Where is the full reference? (file path)
-5. When should I go deeper? (scenarios requiring the full doc)
+## 6. Validate and commit safely
 
-### 7. Confirm to User
-Report:
-- What you learned
-- Where the full document is stored (exact path)
-- Which core files were updated and what was added to each
-- Confirmation that the playbook subfolder was created/used (if applicable)
-- Confirmation that the path is persistence-safe (VPS: under /data/.openclaw/)
+On compact workspaces, check whole-file character budgets: AGENTS.md ≤15,000; MEMORY.md ≤8,000; TOOLS.md ≤15,000. Preserve exact owner facts, reference paths and balanced markers. Compare the expected current hash, use the shared writer lock and atomic replacement, and coordinate deliberate shrinkage with the approved watcher baseline. Run the installed core validator. An identical second run must change no core bytes and create no backup. Stage unresolved core changes for review; never claim pending work applied.
 
-## Priority Tags
+Current explicit owner instructions override historical source examples and default storage choices. Honor a deliberate owner exception without silently bypassing the validator or recovery baseline; report and coordinate the required exception.
 
-| Priority | Tag | Use When | Summary Length |
-|----------|-----|----------|---------------|
-| CRITICAL | [PRIORITY: CRITICAL] | Daily use, core operations | 20-25 lines |
-| HIGH | [PRIORITY: HIGH] | Weekly use, quality matters | 15-20 lines |
-| STANDARD | [PRIORITY: STANDARD] | Occasional use | 10-15 lines |
-| REFERENCE | [PRIORITY: REFERENCE] | Rare, edge cases | 5-10 lines |
+## 7. Confirm
 
-## Staleness Detection
-- Under 30 days: Fresh. Use confidently.
-- 30-90 days: Aging. Note the age if errors occur.
-- Over 90 days: Stale. Verify before relying on it.
+Tell the user what was stored or corrected, the authoritative location, and which entries changed. State when an existing pointer made core changes unnecessary. Keep the installation/learning receipt in this completion or task record, not in MEMORY.md.
 
-## Which Core File Gets What
+## Priority and maintenance
 
-| Knowledge Type | Primary File | Secondary Files |
-|---------------|-------------|-----------------|
-| Tool/API usage | TOOLS.md | MEMORY.md |
-| Behavioral rules | AGENTS.md | IDENTITY.md |
-| User preferences | USER.md | MEMORY.md |
-| Personal identity | IDENTITY.md | SOUL.md |
-| Recurring tasks | HEARTBEAT.md | MEMORY.md |
-| Contact info | USER.md | MEMORY.md |
-| Lessons learned | MEMORY.md | IDENTITY.md |
-| Playbook/SOP/Process | AGENTS.md or TOOLS.md | MEMORY.md |
-
-## Common Mistakes
-
-1. Dumping full content into core files (causes bloat, burns tokens) — **the #1 root cause of bootstrap file inflation**
-2. Vague storage path — "somewhere in master-files" is not a path; use the canonical path (Mac: `~/Downloads/openclaw-master-files/<subfolder>/`; VPS: `/data/.openclaw/master-files/<subfolder>/`)
-3. Missing or incomplete pointer in the core file — every deep file reference needs the full path AND a "when to go deeper" trigger
-4. Creating deep file but not referencing it from any core file (orphan file, invisible)
-5. Creating duplicate master files folders (search first)
-6. Skipping the announcement (user must know TYP is active)
-7. Summarizing the deep file (deep file is COMPLETE, never truncate)
-8. Not checking for existing knowledge (always search first)
-9. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)
-10. Under-summarizing (if the summary is 30+ lines, it is too thick)
-11. **Storing a playbook in the wrong subfolder** — playbooks/SOPs always go in `playbooks/`, not loosely in the master-files root or in `processes/` by default
-12. **Writing a 4-part pointer block that omits the trigger or exact path** — all four elements (WHAT, WHEN, WHY, POINTER) are required for the block to earn its place
-13. **VPS: writing files outside /data/.openclaw/** — any path not under the bind-mount is wiped on container restart; always verify the storage path before writing
-
-## Self-Heal Migration (Existing Clients)
-
-If the workspace was created before the mandatory storage path rules were introduced
-(v10.15.37+ Mac / v10.16.36+ VPS), run the migration script to fix bloat and
-misplaced documents:
-
-```bash
-bash scripts/typ-migrate.sh --dry-run    # preview issues
-bash scripts/typ-migrate.sh              # apply fixes
-```
-
-**Platform detection** (automatic, same logic as apply-fleet-standards.sh):
-- `/data/.openclaw/openclaw.json` exists → VPS → `MASTER_FILES_ROOT=/data/.openclaw/master-files`
-- else → Mac → `MASTER_FILES_ROOT=$HOME/Downloads/openclaw-master-files`
-
-See `MIGRATION-TYP.md` in this folder for the complete procedure.
+Priority (CRITICAL, HIGH, STANDARD, REFERENCE) controls retrieval/review urgency, never pointer length or number of core copies. Verify volatile facts before relying on them; old verification dates and unexpected errors are prompts to recheck. Update broken paths and source conflicts in place. See MIGRATION-TYP.md for legacy cleanup and teach-yourself-protocol-full.md for the complete protocol.

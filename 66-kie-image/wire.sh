@@ -71,6 +71,14 @@ PY
 }
 WS="$(resolve_workspace)"
 
+# CORE_REFERENCE_POLICY_V1 media writer: isolate bootstrap receipts and proposals.
+if [ "${CORE_REFERENCE_POLICY_STAGE:-0}" != 1 ] && grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$WS/AGENTS.md" 2>/dev/null; then
+  _CORE_GUARD="$HOME/.openclaw/scripts/core-reference-guard.py"
+  [ -f "$_CORE_GUARD" ] || { echo 'Missing compact-core writer guard; refusing core writes' >&2; exit 75; }
+  exec python3 "$_CORE_GUARD" run-writer --workspace "$WS" -- bash "${BASH_SOURCE[0]}" "$@"
+fi
+
+
 # ── Resolve the master-files root (absolute — never a rootless path) ─────────
 if [ -n "${OPENCLAW_MASTER_FILES_DIR:-}" ]; then
   MFD="$OPENCLAW_MASTER_FILES_DIR"

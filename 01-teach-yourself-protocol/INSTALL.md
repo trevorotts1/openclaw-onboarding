@@ -52,36 +52,36 @@ mkdir -p ~/.openclaw/skills/01-teach-yourself-protocol
 cp -r "$(dirname "$0")"/* ~/.openclaw/skills/01-teach-yourself-protocol/
 ```
 
-If a `.skill` file exists in this folder, it is the skill package archive. The agent does NOT need to run any `openclaw skill install` command - that command does not exist. Simply copy the files.
+If a `.skill` file exists in this folder, it is the skill package archive. Verify that its documents match the reviewed source folder before using it; an older package must not overwrite corrected policy. The agent does NOT need to run any `openclaw skill install` command - that command does not exist. Simply copy the files.
 
 ## Step 4: Read the Full Protocol
 
 Read teach-yourself-protocol-full.md completely. This contains:
-- The three-layer knowledge architecture (core summaries, deep files, folder structures)
-- The decision tree (understand, assess size, check conflicts, create files, write summaries)
+- The three-layer knowledge architecture (core pointers, deep files, folder structures)
+- The decision tree (understand, assess size, check conflicts, create files, write one short retrieval pointer if needed)
 - Trigger recognition (explicit and implicit)
 - Conflict resolution procedures
 - Priority tagging system
-- The Five Question Test for lightweight summaries
+- The trigger-and-exact-path test for retrieval pointers
 - Staleness detection rules
 - 19 common mistakes to avoid
 
 ## Step 5: Update Core Workspace Files
 
-Follow CORE_UPDATES.md exactly. It tells you which files to update and provides the exact text.
+Follow CORE_UPDATES.md: reuse or update one existing AGENTS.md/index pointer under a stable version-free ID. Resolve its template path, validate the whole-file character budget and coordinate the guarded writer. No installation receipt or parallel entry belongs in MEMORY.md or other core files. A staged change is pending, not applied.
 
 ## Step 6: Verify Installation
 
 Ask the agent these questions. It must answer all correctly:
 
 1. "What is the Teach Yourself Protocol?"
-   Expected: Structured learning protocol with three layers - core summaries, deep files, folder structures
+   Expected: Structured learning protocol with three layers - core pointers, deep files, folder structures
 
 2. "Where do full documents go?"
    Expected: Master files folder (not core workspace files)
 
 3. "What goes in AGENTS.md or TOOLS.md?"
-   Expected: Lightweight summaries (10-25 lines) with file path references
+   Expected: One short task trigger and exact reference path; read the reference before use
 
 4. "What triggers TYP?"
    Expected: Explicit ("teach yourself this") and implicit (large documents, corrections, preferences)

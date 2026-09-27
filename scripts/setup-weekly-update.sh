@@ -51,6 +51,17 @@ fi
 # the agent picks up on its next session (see the SILENT-OPERATOR-CRON note below)
 RESTART_SCRIPT="$HOME/.openclaw/skills/.update-restart-if-needed"
 
+# CORE_REFERENCE_POLICY_V1 wrapper preservation: do not reinstall curl|bash behavior.
+if grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$HOME/clawd/AGENTS.md" 2>/dev/null; then
+  if grep -qF 'Compact-core-aware scheduled update intake' "$RESTART_SCRIPT" 2>/dev/null; then
+    echo '[setup-weekly-update] Compact-core update review wrapper preserved; schedule unchanged.'
+    exit 0
+  fi
+  echo '[setup-weekly-update] Compact core requires a reviewed update wrapper; refusing legacy overwrite.' >&2
+  exit 75
+fi
+
+
 # Back up an existing restart script before overwriting, so a box-local change
 # is never destroyed silently and the previous URL stays auditable.
 if [ -f "$RESTART_SCRIPT" ]; then

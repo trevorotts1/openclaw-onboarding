@@ -83,6 +83,13 @@ WS="${OPENCLAW_WORKSPACE:-$WS_DEFAULT}"
 MEM_MD="$WS/MEMORY.md"
 [ -f "$MEM_MD" ] || { echo "[skill 38] $MEM_MD not found — skipping"; exit 0; }
 
+# CORE_REFERENCE_POLICY_V1 writer gate — stage changed instructions, never re-bloat.
+if [ "${CORE_REFERENCE_POLICY_STAGE:-0}" != 1 ] && grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$MEM_MD" 2>/dev/null; then
+  _CORE_GUARD="$HOME/.openclaw/scripts/core-reference-guard.py"
+  [ -f "$_CORE_GUARD" ] || { echo 'Missing compact-core writer guard; refusing core writes' >&2; exit 75; }
+  exec python3 "$_CORE_GUARD" run-writer --workspace "$WS" -- bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 # ── Resolve the master-files root ────────────────────────────────────────────
 # Order: explicit override > the folder script 01 persisted > platform default.
 # Platform default mirrors scripts/typ-migrate.sh and scripts/apply-fleet-standards.sh:

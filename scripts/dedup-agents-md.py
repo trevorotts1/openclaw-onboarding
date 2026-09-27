@@ -208,18 +208,21 @@ def resolve_agents_md(agent_id: str, explicit: str | None):
 # ---------------------------------------------------------------------------
 
 def _fenced_line_flags(lines):
-    """list[bool], same length as lines — True if that line sits inside a
-    fenced ``` code block. A line that itself opens/closes a fence counts as
-    'inside' (excluded from heading detection either way)."""
-    flags = [False] * len(lines)
-    in_fence = False
-    for i, ln in enumerate(lines):
-        stripped = ln.rstrip("\r\n")
-        if FENCE_RE.match(stripped):
-            flags[i] = True
-            in_fence = not in_fence
-            continue
-        flags[i] = in_fence
+    """Exclude backtick/tilde fenced examples, respecting fence length."""
+    flags = []
+    fence = None
+    for line in lines:
+        m = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
+        if fence is None:
+            if m:
+                fence = (m.group(1)[0], len(m.group(1)))
+                flags.append(True)
+            else:
+                flags.append(False)
+        else:
+            flags.append(True)
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
+                fence = None
     return flags
 
 
@@ -260,22 +263,28 @@ def parse_blocks(text: str):
         if HEADING_RE.match(ln.rstrip("\r\n")):
             heading_idx.append(i)
 
+    # Pull every contiguous recognized prefix (including a blank separator)
+    # into its own heading. Never steal an END from its owner.
     n = len(heading_idx)
     block_start = [0] * n
-    marker_tok: list = [None] * n
+    marker_tok = [None] * n
     for k, hidx in enumerate(heading_idx):
-        prefix_idx = None
-        tok = None
-        if hidx - 1 >= 0:
-            prev = lines[hidx - 1].rstrip("\r\n")
+        start = hidx
+        j = hidx - 1
+        while j >= 0 and not in_fence[j]:
+            prev = lines[j].rstrip("\r\n")
+            if not prev.strip():
+                j -= 1
+                continue
             m = MARKER_RE.match(prev)
-            if m:
-                prefix_idx = hidx - 1
-                tok = m.group(1)
-            elif BEGIN_RE.match(prev):
-                prefix_idx = hidx - 1
-        block_start[k] = prefix_idx if prefix_idx is not None else hidx
-        marker_tok[k] = tok
+            if m or BEGIN_RE.match(prev):
+                start = j
+                if m:
+                    marker_tok[k] = m.group(1)
+                j -= 1
+                continue
+            break
+        block_start[k] = start
 
     preamble_end = block_start[0] if n else len(lines)
 
@@ -291,6 +300,7 @@ def parse_blocks(text: str):
                 "heading": heading_text,
                 "body": body_text,
                 "marker": marker_tok[k],
+                "protected": bool(re.search(r"<!--\s*(?:BEGIN|END)\s", "".join(lines[block_start[k]:end]))),
             }
         )
     return lines, preamble_end, blocks
@@ -317,7 +327,8 @@ def decide_removals(blocks):
 
         body_clusters = OrderedDict()
         for i in idxs:
-            body_clusters.setdefault(blocks[i]["body"], []).append(i)
+            key = (blocks[i]["body"], i if blocks[i].get("protected") else None)
+            body_clusters.setdefault(key, []).append(i)
 
         removed_here = 0
         for _body, cluster_idxs in body_clusters.items():
@@ -355,7 +366,11 @@ def rebuild(lines, preamble_end, blocks, removed):
 def begin_end_counts(text: str):
     begin_counts = {}
     end_counts = {}
-    for ln in text.splitlines():
+    # Token scanning recognizes concatenated comments; fenced examples are data.
+    lines = text.splitlines(keepends=True)
+    flags = _fenced_line_flags(lines)
+    visible = "".join(ln for i, ln in enumerate(lines) if not flags[i])
+    for ln in re.findall(r"<!--\s*(?:BEGIN|END)\s+skill:[^>]*?-->", visible):
         m = BEGIN_RE.match(ln)
         if m:
             key = (m.group(1), m.group(2))
@@ -466,15 +481,18 @@ def main(argv=None) -> int:
     if after_chars > hard_cap:
         print(
             f"[dedup-agents-md] ⛔ WARNING: resulting size {after_chars:,} chars STILL EXCEEDS the hard cap "
-            f"{hard_cap:,} — past this point the gateway is empirically known to SILENTLY TRUNCATE injected "
-            f"context (no error, no log). Manual review of the NEAR-DUP list above (if any) and/or further "
+            f"{hard_cap:,} — this is a configured review threshold, not a universal runtime limit. "
+            f"Check this installed OpenClaw version and bootstrap limits. Manual review and/or further "
             f"trimming is needed."
         )
+
+    if any(b.get("protected") for b in blocks):
+        print("[dedup-agents-md] marker-bearing blocks protected, including unbalanced legacy containers; no marker is discarded")
 
     if blocks_removed_total == 0:
         print(
             f"[AGENTS DEDUP] before={before_bytes} after={after_bytes} saved=0 blocks_removed=0 "
-            f"near_dups={near_dup_count} — already deduplicated (idempotent no-op)"
+            f"near_dups={near_dup_count} — no safe exact duplicates outside protected containers (idempotent no-op)"
         )
         return 0
 

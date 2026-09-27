@@ -1,72 +1,31 @@
 # Teach Yourself Protocol - Examples
 
-## Example 1: Large API Reference (Layer 2 + Layer 1)
+## Large API reference
 
-**User says:** "Here is the KIE.ai API reference. Learn this." (176K chars)
+User: “Here is the KIE.ai API reference. Learn this.”
 
-**Agent process:**
-1. Announces TYP activation
-2. Category: API reference. Priority: CRITICAL. Size: Very Large.
-3. Searches core files and master folder - no existing KIE.ai knowledge found
-4. Creates deep file: `[MASTER_FILES_FOLDER]/apis/kie-ai/kie-ai-api-reference.md` (full 176K, untruncated)
-5. Writes 20-line summary in TOOLS.md: auth method, base URL, rate limit, pricing, model list, common pitfalls, file path, "when to go deeper" triggers
-6. Writes memory entry in MEMORY.md: "KIE.ai API learned [date]. Full doc at [path]."
-7. Confirms to user: what was stored, where, which files updated
+Announce TYP, find or update the existing API reference, and preserve the complete supplied source. Keep auth conventions, endpoint details, provider selection, pricing and examples in that reference. Add or update one TOOLS.md trigger with its exact path only when the existing index does not already cover it. Before using the API, read the relevant reference. Record the update in its changelog; do not add a learned-date receipt to MEMORY.md.
 
-**Does NOT:** Paste 176K into TOOLS.md. Create a duplicate folder. Skip announcement.
+## Durable preference
 
-## Example 2: Short Preference (Layer 1 Only)
+User: “Never use em dashes in any output.”
 
-**User says:** "Never use em dashes in any output."
+Find the existing writing preference and revise that one authoritative preference entry. If none exists, choose the appropriate owner preference file. This short durable preference may live directly in core. Do not copy it into AGENTS.md, TOOLS.md, IDENTITY.md and MEMORY.md simply because all files exist. Preserve the owner's exact intent.
 
-**Agent process:**
-1. Announces TYP activation
-2. Category: Preference/rule. Priority: CRITICAL. Size: Small (one rule).
-3. Searches core files - no existing em dash rule found
-4. No deep file needed (under 25 lines)
-5. Adds rule directly to AGENTS.md, TOOLS.md, IDENTITY.md
-6. Adds to MEMORY.md with date
-7. Confirms
+## Multi-part skill collection
 
-**Does NOT:** Create a deep file for one sentence. Skip searching for existing rules.
+For an explicitly requested lasting collection of 14 skills, retain their source documents and create a reference index. Install each skill according to its declared dependencies and read order. Use one relevant index pointer if discovery needs it. Skill rules remain in the skill documents; essential truly global owner rules may separately belong in AGENTS.md. Installation records go in the installation log, not MEMORY.md.
 
-## Example 3: Multi-Part Knowledge Base (Layer 3 + Layer 2 + Layer 1)
+## Correcting an existing API scope
 
-**User shares:** 14 skill files from a GitHub repository
+User: “Use calendar, not calendar.readonly, for this Google API scope.”
 
-**Agent process:**
-1. Announces TYP
-2. Category: Skills/knowledge base. Priority: HIGH. Size: Massive (14 files, multiple topics).
-3. Creates folder structure: `[MASTER_FILES_FOLDER]/superpowers/skills/` with 14 subfolders
-4. Stores all files unabridged in their subfolders
-5. Behavioral rules (Iron Laws) go directly in AGENTS.md (they ARE behavioral rules)
-6. Tool trigger map goes in TOOLS.md
-7. Install record goes in MEMORY.md
-8. Confirms: 14 skills stored, 3 core files updated, full docs at [path]
+Confirm the intended operation and current authorization, then update the canonical scope guidance and any existing stale literal copies. Do not create a new memory entry just to record that the correction occurred. Preserve historical explanation in the reference changelog when useful. Report the actual corrected locations.
 
-## Example 4: Correcting Existing Knowledge (Update, Not Duplicate)
+## Ambiguous attachment
 
-**User says:** "Use 'calendar' not 'calendar.readonly' for Google API scope."
+A user says “here you go” with a PDF. Read enough to understand its role in the current task. Store it as task material when it is a one-time input. If lasting knowledge is clearly intended, announce and follow TYP; if the distinction matters and is unresolved, ask. Document length alone does not require permanent retention.
 
-**Agent process:**
-1. Announces TYP
-2. Category: Correction. Priority: CRITICAL. Size: Small.
-3. Searches core files - finds old scope in TOOLS.md and MEMORY.md
-4. UPDATES existing entries (does not create new ones)
-5. Updates deep file if one exists with the old value
-6. Confirms: "Updated Google API scope from calendar.readonly to calendar in TOOLS.md and MEMORY.md"
+## Stable pointer update
 
-**Does NOT:** Create a second entry alongside the old one. Leave the old value in place.
-
-## Example 5: Implicit Trigger (File Shared Without Instructions)
-
-**User uploads a PDF and says:** "here you go"
-
-**Agent process:**
-1. Reads the file to understand what it is
-2. Recognizes implicit TYP trigger
-3. Confirms: "This looks like [description]. I am activating TYP to store this permanently. Let me know if this is just for this session."
-4. If user confirms or says nothing, follows standard TYP process
-5. If user says "just for now", skips TYP
-
-**Key:** When trigger is implicit, confirm before executing.
+Version 2 of a service guide replaces version 1. Update the same canonical reference and the same stable pointer block if its path/trigger changed. If neither changed, leave the core untouched. A second identical installation produces no second block, no core receipt and no new backup.

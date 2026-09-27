@@ -32,6 +32,13 @@ if [ -z "$WORKSPACE_MEMORY" ]; then
   echo "[O.7] Created empty MEMORY.md at $WORKSPACE_MEMORY"
 fi
 
+# CORE_REFERENCE_POLICY_V1 writer gate — stage changed instructions, never re-bloat.
+if [ "${CORE_REFERENCE_POLICY_STAGE:-0}" != 1 ] && grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$WORKSPACE_MEMORY" 2>/dev/null; then
+  _CORE_GUARD="$HOME/.openclaw/scripts/core-reference-guard.py"
+  [ -f "$_CORE_GUARD" ] || { echo 'Missing compact-core writer guard; refusing core writes' >&2; exit 75; }
+  exec python3 "$_CORE_GUARD" run-writer --workspace "$(dirname "$WORKSPACE_MEMORY")" --target-env WORKSPACE_MEMORY --target MEMORY.md -- bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 BEGIN_MARK="<!-- BEGIN skill-38 design-principles-1-5 -->"
 END_MARK="<!-- END skill-38 design-principles-1-5 -->"
 

@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+
+# CORE_REFERENCE_POLICY_V1 migration guard: this installation is already migrated.
+if grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$HOME/clawd/AGENTS.md" 2>/dev/null; then
+  echo '[typ-migrate] Compact reference migration already active; legacy append/folder migration skipped.'
+  exit 0
+fi
 # typ-migrate.sh — TYP Self-Heal Migration
 #
 # PURPOSE

@@ -77,6 +77,25 @@ else
 fi
 
 OC_CONFIG="$OC_ROOT/openclaw.json"
+
+# CORE_REFERENCE_POLICY_V1: stage core changes for semantic reconciliation.
+# This local opt-in does not change runtime permissions, routing or configuration.
+_CORE_GUARD="$HOME/.openclaw/scripts/core-reference-guard.py"
+if [ "${CORE_REFERENCE_POLICY_STAGE:-0}" != 1 ]; then
+  _CORE_WS=$(python3 - "$OC_CONFIG" <<'CORE_WS_PY'
+import json,os,sys
+c=json.load(open(sys.argv[1]));a=c.get('agents',{});w=a.get('defaults',{}).get('workspace',os.path.expanduser('~/.openclaw/workspace'))
+for x in a.get('list',[]):
+ if x.get('id')=='main':w=x.get('workspace',w);break
+print(os.path.expanduser(w))
+CORE_WS_PY
+)
+  if grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$_CORE_WS/AGENTS.md" 2>/dev/null; then
+    [ -f "$_CORE_GUARD" ] || { echo 'Missing compact-core writer guard; refusing core writes' >&2; exit 75; }
+    exec python3 "$_CORE_GUARD" run-writer --workspace "$_CORE_WS" -- bash "${BASH_SOURCE[0]}" "$@"
+  fi
+fi
+
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 OC_BACKUP="$OC_CONFIG.bak-fleet-$TIMESTAMP"
 
@@ -1135,6 +1154,9 @@ fi
 # The inline 3-step fallback is kept for early-boot/install-time compatibility.
 
 _resolve_workspace_via_shared_helper() {
+  if [ -n "${CORE_REFERENCE_POLICY_STAGE_WORKSPACE:-}" ]; then
+    printf '%s\n' "$CORE_REFERENCE_POLICY_STAGE_WORKSPACE"; return 0
+  fi
   # Try the shared Python helper first (PRD 1.11 single-source-of-truth).
   local SCRIPT_DIR
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

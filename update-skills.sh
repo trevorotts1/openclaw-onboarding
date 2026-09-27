@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+
+# CORE_REFERENCE_POLICY_V1 updater entry gate: legacy writers need reconciliation.
+if grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$HOME/clawd/AGENTS.md" 2>/dev/null && ! python3 "$HOME/.openclaw/scripts/core-reference-guard.py" is-updater-approved --file "${BASH_SOURCE[0]}"; then
+  python3 - "${BASH_SOURCE[0]}" <<'COMPACT_UPDATE_PENDING'
+import importlib.util,sys
+from pathlib import Path
+p=Path.home()/'.openclaw/scripts/core-reference-guard.py'
+s=importlib.util.spec_from_file_location('guard',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+x=Path(sys.argv[1]);m.record(m.DEFAULT_REF,'manual-updater',{'update-skills.sh':('',x.read_text())})
+print('[update-skills] PENDING: compact core policy requires review of this updater; no update applied.',file=sys.stderr)
+COMPACT_UPDATE_PENDING
+  exit 75
+fi
 #  PRD 2.1 -- unified repo (trevorotts1/openclaw-onboarding)
 #
 #  NOTE: this script REQUIRES bash (uses process substitution `< <(...)`, `[[ ]]`,
@@ -14,7 +27,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.84"
+ONBOARDING_VERSION="v25.1.85"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1961,7 +1974,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.84 - safe_json_edit
+# v25.1.85 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -7218,6 +7231,24 @@ def _oc_write_failed(path, exc):
  master_files_dir) = sys.argv[1:]
 strict = (strict_mode == "1")
 
+# CORE_REFERENCE_POLICY_V1 merger gate. Do not claim the skill payload applied.
+try:
+    compact = '<!-- CORE_REFERENCE_POLICY_V1 -->' in open(agents_f).read()
+except OSError:
+    compact = False
+if compact:
+    import importlib.util
+    helper = os.path.expanduser('~/.openclaw/scripts/core-reference-guard.py')
+    spec = importlib.util.spec_from_file_location('core_reference_guard', helper)
+    guard = importlib.util.module_from_spec(spec); spec.loader.exec_module(guard)
+    from pathlib import Path
+    payload = Path(cu_path).read_text()
+    guard.record(Path(master_files_dir) / 'References 4 Bootstrap', 'skill-' + skill_folder,
+                 {'CORE_UPDATES.md': ('', payload)})
+    print('[CORE_UPDATES] PENDING semantic reconciliation: '+skill_folder+'; compact core unchanged; not marked applied', file=sys.stderr)
+    sys.exit(75)
+
+
 target_map = {
     'agents':   agents_f,
     'tools':    tools_f,
@@ -7587,6 +7618,8 @@ if sentinel not in existing:
 
 # <<< CORE-UPDATES-PY-END
 PYEOF
+    _core_merge_rc=$?
+    [ "$_core_merge_rc" -eq 0 ] || return "$_core_merge_rc"
     # v14.3.15 dual-write: stamp sentinel to the 2026.x agent dir AGENTS.md too.
     # On VPS boxes that have a legacy $HOME/clawd/ (or /data/clawd/), the Python
     # block above writes to WIRE_WORKSPACE_DIR/AGENTS.md.  If the running agent

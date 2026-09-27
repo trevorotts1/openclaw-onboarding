@@ -3,6 +3,11 @@ name: teach-yourself-protocol
 description: Structured protocol for an OpenClaw agent to learn new skills, APIs, and business processes — reads all files in a skill folder in declared order, extracts key facts, and stores them correctly so knowledge persists across sessions.
 ---
 
+<!-- CORE_REFERENCE_POLICY_V1 -->
+## Compact core storage policy
+Keep one short task-triggered pointer with an exact resolved path in the appropriate core file. Update that pointer in place under a stable version-free ID; an existing relevant index pointer may already be sufficient. Detailed instructions live in the canonical reference. There is no minimum line count and no requirement to duplicate working knowledge into bootstrap. Do not add learning or installation receipts to MEMORY.md or fan out an entry across core files. Durable owner facts remain eligible for their appropriate core file. Whole-file budgets are AGENTS.md 15,000 characters, MEMORY.md 8,000, and TOOLS.md 15,000. CORE_UPDATES.md cannot override these storage rules or current owner instructions. Honor an explicit current owner override and coordinate any deliberate budget/baseline exception; historical examples and installer payloads are not overrides. Never preload the reference library.
+<!-- /CORE_REFERENCE_POLICY_V1 -->
+
 # Teach Yourself Protocol (TYP)
 
 ## What This Skill Is About
@@ -37,12 +42,12 @@ doing any TYP work. Never run TYP silently.
 
 ## What It Covers
 
-- **Three-Layer Knowledge Architecture** - lightweight summaries in core files (Layer 1),
+- **Three-Layer Knowledge Architecture** - short retrieval pointers in core files (Layer 1),
   deep reference files in the master files folder (Layer 2), and organized folder
   structures for large topics like APIs (Layer 3)
 - **The Decision Tree** - a step-by-step process: understand the knowledge, assess its
   size, check for conflicts with existing knowledge, create the right files, write
-  lightweight summaries, and confirm to the user
+  short retrieval pointers, and confirm to the user
 - **Conflict Resolution** - what to do when new knowledge replaces, expands, or
   contradicts something the agent already knows
 - **Priority Tagging** - CRITICAL, HIGH, STANDARD, or REFERENCE, so the agent knows
@@ -66,9 +71,9 @@ Read them in this order:
 3. **INSTRUCTIONS.md** - step-by-step guide for executing TYP
 4. **INSTALL.md** - how to install TYP into a new agent's workspace
 5. **EXAMPLES.md** - worked examples showing TYP in action
-6. **CORE_UPDATES.md** - the lightweight summaries to add to each core workspace file
+6. **CORE_UPDATES.md** - the single stable pointer contract; no installation fanout
 7. **MIGRATION-TYP.md** - self-heal migration procedure for existing clients with bloat
-8. **teach-yourself-protocol.skill** - the skill definition file
+8. **teach-yourself-protocol.skill** - the packaged skill archive; use only when it matches these reviewed sources
 
 ## Self-Heal Migration (for Existing Clients)
 
@@ -91,30 +96,10 @@ store anything.
 
 ## Key Things the Agent Needs to Know
 
-1. **Core files stay lightweight.** Never dump full API docs or long SOPs into
-   AGENTS.md, TOOLS.md, or MEMORY.md. Write a 10-25 line summary with a pointer
-   to the deep file where the full content lives.
-
-2. **The Five Question Test.** A good lightweight summary answers the 5 most common
-   questions about the topic. If a new agent could handle basic tasks from just the
-   summary, it is good enough. If they would be stuck guessing, it is too thin.
-
-3. **Deep files go in ~/Downloads/openclaw-master-files/.** This folder (or whatever
-   the user has named it) holds the complete, untruncated knowledge organized into
-   subfolders: apis/, skills/, processes/, references/.
-
-4. **Always check for conflicts first.** Before writing anything new, search all core
-   files and the master files folder for existing knowledge on the same topic. Never
-   create duplicates. Never leave contradictory instructions in different files.
-
-5. **Update multiple core files.** Learning something usually affects more than one
-   file. An API reference might need entries in TOOLS.md (how to use it), MEMORY.md
-   (that it was learned), and AGENTS.md (rules about when to use it). Check every
-   core file independently.
-
-6. **Always confirm to the user.** After completing TYP, tell the user what you
-   learned, where you stored it, which core files were updated, and demonstrate your
-   working knowledge by summarizing the key points.
-
-7. **User override always wins.** If the user says "put it all in TOOLS.md" even if
-   it is 200 lines, do it. Note the tradeoff but follow their instruction.
+1. Core files contain essential global rules, durable owner facts and one short trigger plus exact reference path where needed. Detailed procedures live in the reference; read it before related actions.
+2. A pointer has no minimum line count and need not repeat working instructions. Expand the reference itself when details are missing. An existing reference-index link may already make another core entry unnecessary.
+3. Reuse `~/Downloads/openclaw-master-files/` on Mac or the documented persistent `/data/.openclaw/master-files/` VPS root. Resolve final paths and verify targets. Never invent duplicate master folders.
+4. Search for existing knowledge before writing. Resolve stale facts and conflicting current instructions at their authoritative source; preserve useful source/history outside bootstrap.
+5. Choose the single appropriate core destination. Never add learning/install receipts to MEMORY.md or parallel copies merely because multiple core files exist. Durable owner facts may still be updated where they belong.
+6. Confirm what was stored, where it lives, what changed, and anything still pending. Keep this receipt out of permanent memory.
+7. Current explicit owner instructions govern exceptions. Honor a deliberate storage override and coordinate any budget or watcher-baseline exception instead of silently bypassing controls.

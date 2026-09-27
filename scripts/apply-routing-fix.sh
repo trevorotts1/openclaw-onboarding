@@ -155,6 +155,15 @@ if [ "$DRY_RUN" = "0" ]; then
   mkdir -p "$WORKSPACE_DIR"
 fi
 
+# CORE_REFERENCE_POLICY_V1 routing writer — preserve active compact rules.
+if [ -n "${CORE_REFERENCE_POLICY_STAGE_WORKSPACE:-}" ]; then
+  WORKSPACE_DIR="$CORE_REFERENCE_POLICY_STAGE_WORKSPACE"
+elif grep -qF '<!-- CORE_REFERENCE_POLICY_V1 -->' "$WORKSPACE_DIR/AGENTS.md" 2>/dev/null; then
+  _CORE_GUARD="$HOME/.openclaw/scripts/core-reference-guard.py"
+  [ -f "$_CORE_GUARD" ] || { echo 'Missing compact-core writer guard; refusing core writes' >&2; exit 75; }
+  exec python3 "$_CORE_GUARD" run-writer --workspace "$WORKSPACE_DIR" -- bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
 SOUL_FILE="$WORKSPACE_DIR/SOUL.md"
 
