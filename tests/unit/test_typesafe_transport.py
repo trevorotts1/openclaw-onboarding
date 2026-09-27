@@ -300,6 +300,25 @@ class StrictNormalization(unittest.TestCase):
         self.assertEqual(payload["extra"], {"note": "keep"})
         self.assertEqual(payload["vendor"], "typesafe")
 
+    def test_returned_model_snapshot_validated(self):
+        """Spec 3.7: dated family member accepted, unrelated version is a
+        typed rejection — never silently accepted."""
+        for good in (ts.TYPESAFE_MODEL, ts.TYPESAFE_MODEL + ".20260901"):
+            payload = dict(_good_select_payload(), model=good)
+            ok, _, _ = ts.normalize_response(payload, _select_specs())
+            self.assertTrue(ok, good)
+        for foreign in ("gpt-4", "jev-2.0.0", "jev-1.131"):
+            payload = dict(_good_select_payload(), model=foreign)
+            ok, judgments, diags = ts.normalize_response(
+                payload, _select_specs())
+            self.assertFalse(ok, foreign)
+            self.assertIsNone(judgments)
+            self.assertEqual(diags[0]["code"], "model_foreign")
+        # A payload carrying no model claim has nothing to validate.
+        ok, _, _ = ts.normalize_response(_good_select_payload(),
+                                         _select_specs())
+        self.assertTrue(ok)
+
     def test_never_raises_on_bad_input(self):
         for bad in (None, 42, {"judgments": [{"question_id": 7}]},
                     {"judgments": [{"question_id": "q1"}]}):
