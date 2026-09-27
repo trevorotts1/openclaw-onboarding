@@ -36,6 +36,7 @@ __all__ = [
     "ObsoleteInputError",
     "ObsoleteRevisionError",
     "PendingSelection",
+    "adopt_generation",
     "cas_commit",
     "check_fence",
     "check_late_result",
@@ -43,6 +44,7 @@ __all__ = [
     "fresh_state",
     "issue_fence_token",
     "on_wait_tick",
+    "preparation_record",
     "recommit_scope",
     "selfheal_sweep",
     "start_execution",
@@ -298,3 +300,55 @@ def start_execution(store):
         store["running_snapshot"] = copy.deepcopy(store["decision"])
         store["running_revision"] = store["decision_revision"]
         return copy.deepcopy(store["running_snapshot"])
+
+
+def preparation_record(store):
+    """Copy of the attached preparation-generation record, or None.
+
+    Attached by :func:`adopt_generation` when a persisted generation is
+    restored (restart/failover hydrate). Read-only for everyone else.
+    """
+    with store["_lock"]:
+        rec = store.get("preparation")
+        return copy.deepcopy(rec) if isinstance(rec, dict) else None
+
+
+def adopt_generation(store, record):
+    """Restore a persisted preparation generation onto a hydrated store.
+
+    Spec 3.5.4: the SAME generation keeps the SAME deadline across
+    restarts, failovers, and sweeps. The fence deadline is set FROM the
+    record and nothing in this module ever re-stamps it. Retry accounting
+    and the pending selection are restored too, so exhausted or held work
+    stays settled across the process boundary: a sweep finds the record
+    and refuses to spawn, and ``consume_retry`` keeps its guard.
+    """
+    with store["_lock"]:
+        rec = copy.deepcopy(dict(record))
+        store["preparation"] = rec
+        deadline = rec.get("deadline_s")
+        if deadline is not None:
+            store["fence"]["deadline_s"] = float(deadline)
+        store["fence"]["generation"] = int(rec.get("generation", 0))
+        retry = store["retry"]
+        remaining = rec.get("retry_remaining")
+        consumed = rec.get("retry_consumed")
+        if remaining is None or consumed is None:
+            # Ledger rows from older writers may lack the counters: fall
+            # back to the persisted attempt count against the store budget.
+            attempts = max(0, int(rec.get("attempts", 0) or 0))
+            budget = int(retry["remaining"]) + int(retry["consumed"])
+            consumed = min(attempts, budget)
+            remaining = budget - consumed
+        # The persisted counters ARE the generation's retry state: restore
+        # them exactly so an exhausted budget stays exhausted after restart.
+        retry["remaining"] = max(0, int(remaining))
+        retry["consumed"] = max(0, int(consumed))
+        prep_id = rec.get("preparation_id")
+        if prep_id:
+            sel = PendingSelection(prep_id, rec.get("generation", 0))
+            if rec.get("status") != PENDING:
+                sel.reason = str(rec.get("status") or "settled")
+                sel.status = "held"
+            store["pending"] = sel
+        return copy.deepcopy(rec)

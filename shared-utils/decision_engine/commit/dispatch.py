@@ -27,6 +27,7 @@ import hashlib
 import importlib.util
 import json
 import sqlite3
+import sys
 import time
 from pathlib import Path
 
@@ -54,6 +55,28 @@ def _load_commit():
     return mod
 
 
+_EP_PY = (Path(__file__).resolve().parent.parent.parent
+          / "execution_policy" / "__init__.py")
+
+
+def _load_execution_policy():
+    """Import the D11 execution-policy module by path (validator reused).
+
+    Never re-implements owner-confirmation validation: the D11
+    ``validate_record`` is the single authorizing gate for the A56
+    linked-amendment clause.
+    """
+    key = "jev_d11_execution_policy:" + str(_EP_PY)
+    cached = sys.modules.get(key)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(key, str(_EP_PY))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[key] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 # Spec 8.12 reuse-invalidation dimensions, as scope-dict keys.
 SCOPE_FIELDS = (
     "title", "description", "audience", "voice", "sop", "catalog",
@@ -76,6 +99,34 @@ CREATE TABLE IF NOT EXISTS decision_revisions (
 );
 CREATE INDEX IF NOT EXISTS ix_decision_revisions_task
   ON decision_revisions(task_key, revision);
+"""
+
+# Persisted preparation-generation ledger (spec 3.5.3/3.5.4, A56). One row
+# per (task, generation): the deadline, cumulative consumed time, attempt
+# count, exhausted state, and the amendment link survive a process restart.
+# `deadline_s` is the persisted equivalent of the D23 fence `deadline_s`;
+# nothing here ever recomputes it for the same (task, generation).
+GENERATION_DDL = """
+CREATE TABLE IF NOT EXISTS preparation_generations (
+  task_key        TEXT NOT NULL,
+  generation      INTEGER NOT NULL,
+  preparation_id  TEXT NOT NULL,
+  deadline_s      REAL,
+  consumed_ms     REAL NOT NULL DEFAULT 0,
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL DEFAULT 'preparing',
+  retry_remaining INTEGER NOT NULL DEFAULT 0,
+  retry_consumed  INTEGER NOT NULL DEFAULT 0,
+  amended_from    INTEGER,
+  confirmed_by    TEXT,
+  policy_revision INTEGER,
+  attempts_json   TEXT NOT NULL DEFAULT '{}',
+  created_at      REAL NOT NULL,
+  updated_at      REAL NOT NULL,
+  PRIMARY KEY (task_key, generation)
+);
+CREATE INDEX IF NOT EXISTS ix_prep_generations_task
+  ON preparation_generations(task_key, generation);
 """
 
 
@@ -107,6 +158,7 @@ def audience_scope_changed(old_bundle: dict, new_spec: dict) -> list:
 def ensure_revision_table(con: sqlite3.Connection) -> None:
     """Create the audit sidecar if absent. No schema-version bump: additive."""
     con.executescript(REVISION_DDL)
+    con.executescript(GENERATION_DDL)
 
 
 def _row_dict(cur, row):
@@ -177,16 +229,194 @@ def load_cas_store(con: sqlite3.Connection, task_key: str,
 
     Returns ``(commit_module, store)``. First dispatch yields revision 0 with
     no decision; otherwise head revision + committed envelope.
+
+    Restart/failover survival (A56): when a preparation-generation row is
+    persisted for this task, it is adopted onto the store (deadline, retry,
+    pending selection), so a restart or failover reconstructs the SAME
+    generation's deadline instead of a fresh one. Adoption stays within the
+    latest generation's chain: amending an earlier generation makes the
+    later one unreachable by design.
     """
     commit = _load_commit()
     row = latest_revision(con, task_key)
     if row is None:
-        return commit, commit.fresh_state(input_hash=input_hash)
-    store = commit.fresh_state(input_hash=row["envelope"] and input_hash)
-    store["decision_revision"] = int(row["revision"])
-    store["decision"] = json.loads(row["envelope"])
-    store["mirrors"] = json.loads(row["mirrors"] or "{}")
-    return commit, store
+        store0 = commit.fresh_state(input_hash=input_hash)
+    else:
+        store0 = commit.fresh_state(input_hash=row["envelope"] and input_hash)
+        store0["decision_revision"] = int(row["revision"])
+        store0["decision"] = json.loads(row["envelope"])
+        store0["mirrors"] = json.loads(row["mirrors"] or "{}")
+    gens = generation_rows(con, task_key)
+    if gens:
+        tail = gens[-1]
+        children = [g for g in gens if g["amended_from"] == tail["generation"]]
+        latest = children[-1] if children else tail
+        commit.adopt_generation(store0, latest)
+    return commit, store0
+
+
+# ── persisted preparation-generation ledger (A56) ──────────────────────
+_GEN_FIELDS = ("task_key", "generation", "preparation_id", "deadline_s",
+               "consumed_ms", "attempts", "status", "retry_remaining",
+               "retry_consumed", "amended_from", "confirmed_by",
+               "policy_revision", "attempts_json")
+
+
+def generation_rows(con: sqlite3.Connection, task_key: str) -> list:
+    """Every generation row for a task, oldest first (raw, undecoded)."""
+    ensure_revision_table(con)
+    cur = con.execute(
+        "SELECT " + ", ".join(_GEN_FIELDS) + " FROM preparation_generations"
+        " WHERE task_key=? ORDER BY generation", (task_key,))
+    return [_row_dict(cur, r) for r in cur.fetchall()]
+
+
+def load_generation(con: sqlite3.Connection, task_key: str,
+                    generation: int | None = None):
+    """Decoded generation record for a task (latest when ``generation`` None).
+
+    The row's ``deadline_s`` is the authoritative persisted deadline for that
+    generation; readers must never recompute it (spec 3.5.5).
+    """
+    ensure_revision_table(con)
+    if generation is None:
+        rows = generation_rows(con, task_key)
+        return _decode_gen(rows[-1]) if rows else None
+    cur = con.execute(
+        "SELECT " + ", ".join(_GEN_FIELDS) + " FROM preparation_generations"
+        " WHERE task_key=? AND generation=?", (task_key, int(generation)))
+    row = _row_dict(cur, cur.fetchone())
+    return _decode_gen(row) if row is not None else None
+
+
+def _decode_gen(row):
+    rec = dict(row)
+    rec["attempts_json"] = json.loads(rec.get("attempts_json") or "{}")
+    return rec
+
+
+def begin_generation(con: sqlite3.Connection, task_key: str,
+                     preparation_id: str, generation: int, deadline_s,
+                     *, attempts=0, retry_budget=3, commit_in: bool = True):
+    """Persist a NEW preparation generation with its one fixed deadline.
+
+    Re-beginning an existing generation is refused rather than silently
+    re-stamping its deadline: the deadline belongs to the generation, not to
+    whoever restarts (spec 3.5.3). An amendment goes through
+    :func:`amend_generation` instead, which is owner-gated and linked.
+    """
+    ensure_revision_table(con)
+    generation = int(generation)
+    row = load_generation(con, task_key, generation)
+    if row is not None:
+        raise ValueError(
+            "generation %d already persisted for %r; deadline fixed at %r"
+            % (generation, task_key, row["deadline_s"]))
+    now = time.time()
+    con.execute(
+        "INSERT INTO preparation_generations(task_key, generation,"
+        " preparation_id, deadline_s, consumed_ms, attempts, status,"
+        " retry_remaining, retry_consumed, amended_from, confirmed_by,"
+        " policy_revision, attempts_json, created_at, updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (task_key, generation, str(preparation_id),
+         None if deadline_s is None else float(deadline_s), 0.0, int(attempts),
+         "preparing", int(retry_budget) - int(attempts), int(attempts),
+         None, None, None, "{}", now, now))
+    if commit_in:
+        con.commit()
+    return load_generation(con, task_key, generation)
+
+
+def update_generation(con: sqlite3.Connection, task_key: str, generation: int,
+                      *, consumed_ms=None, attempts=None, status=None,
+                      attempts_json=None, commit_in: bool = True):
+    """Record usage/attempts/exhaustion on an EXISTING generation only.
+
+    Never touches ``deadline_s``. Missing generation is caller defect.
+    """
+    ensure_revision_table(con)
+    generation = int(generation)
+    sets, params = [], []
+    if consumed_ms is not None:
+        sets.append("consumed_ms=?")
+        params.append(float(consumed_ms))
+    if attempts is not None:
+        sets.append("attempts=?")
+        params.append(int(attempts))
+        sets.append("retry_consumed=?")
+        params.append(int(attempts))
+        row = load_generation(con, task_key, generation)
+        budget = (row["retry_remaining"] + row["retry_consumed"]
+                  if row is not None else int(attempts))
+        sets.append("retry_remaining=?")
+        params.append(max(0, budget - int(attempts)))
+    if status is not None:
+        sets.append("status=?")
+        params.append(str(status))
+    if attempts_json is not None:
+        sets.append("attempts_json=?")
+        params.append(_canon(attempts_json))
+    if not sets:
+        return load_generation(con, task_key, generation)
+    sets.append("updated_at=?")
+    params.append(time.time())
+    cur = con.execute(
+        "UPDATE preparation_generations SET " + ", ".join(sets)
+        + " WHERE task_key=? AND generation=?",
+        params + [task_key, generation])
+    if cur.rowcount == 0:
+        raise ValueError("no persisted generation %d for %r"
+                         % (generation, task_key))
+    if commit_in:
+        con.commit()
+    return load_generation(con, task_key, generation)
+
+
+def exhaust_generation(con: sqlite3.Connection, task_key: str, generation: int,
+                       *, status="exhausted", commit_in: bool = True):
+    """Mark a generation settled/exhausted in the persisted ledger.
+
+    After this, ``load_cas_store`` restores the exhausted state, so a sweep
+    or a retry spend after a restart finds settled work — never a fresh
+    budget (the no-self-retry half of A56).
+    """
+    return update_generation(con, task_key, generation, status=status,
+                             commit_in=commit_in)
+
+
+def sync_usage(store, con: sqlite3.Connection, task_key: str,
+               generation: int, *, commit_in: bool = True):
+    """Flush cross-process-visible usage from a live D23 store to the ledger.
+
+    ``retry`` is authoritative in the store (the in-process guard lives
+    there); the ledger mirrors it for the next hydrate. Fence ``deadline_s``
+    is written only when THIS generation has none yet — restarts after a
+    hydrate carry the persisted stamp and never replace it.
+    """
+    ensure_revision_table(con)
+    generation = int(generation)
+    retry = store["retry"]
+    consumed = int(retry["consumed"])
+    sets = ["retry_remaining=?", "retry_consumed=?", "attempts=?",
+            "updated_at=?"]
+    params = [int(retry["remaining"]), consumed, consumed, time.time()]
+    row = load_generation(con, task_key, generation)
+    if row is not None and row["deadline_s"] is None:
+        fence_deadline = store["fence"].get("deadline_s")
+        if fence_deadline is not None:
+            sets.append("deadline_s=?")
+            params.append(float(fence_deadline))
+    params += [task_key, generation]
+    cur = con.execute(
+        "UPDATE preparation_generations SET " + ", ".join(sets)
+        + " WHERE task_key=? AND generation=?", params)
+    if cur.rowcount == 0:
+        raise ValueError("no persisted generation %d for %r"
+                         % (generation, task_key))
+    if commit_in:
+        con.commit()
+    return load_generation(con, task_key, generation)
 
 
 def append_revision(con: sqlite3.Connection, task_key: str, revision: int,
@@ -308,3 +538,87 @@ def redispatch(con: sqlite3.Connection, task_key: str, new_scope: dict,
     return ("recommitted", new_rev,
             {"decision_id": decision_id, "revision": new_rev,
              "decision": snapshot})
+
+
+def amend_generation(con: sqlite3.Connection, task_key: str, new_scope: dict,
+                     recompute_fn, confirmation, reason: str, evidence=None,
+                     generation: int | None = None, deadline_s=None,
+                     commit_in: bool = True):
+    """Owner-confirmed linked amendment (spec 3.5.4/3.5.5; A56 clause 3).
+
+    A REAL owner confirmation — a D11 :class:`ExecutionPolicyRecord` that
+    is ``owner_direct``, authenticated, and sourced from trusted context —
+    is the only thing that opens a new generation. The new generation is
+    LINKED to the prior one (``amended_from``) and the prior row keeps its
+    usage/attempts (``consumed_ms``, ``attempts``, retry counters) exactly
+    as they were: the amendment never erases what already happened.
+
+    The new generation never inherits the prior generation's deadline (an
+    exhausted prior generation would be born expired): the caller passes
+    ``deadline_s`` for the new clock, or leaves it NULL until the new
+    generation's start stamps it.
+
+    Without a valid confirmation the call refuses with
+    ``UnauthorizedAmendmentError`` and writes nothing. An amendment of an
+    otherwise unchanged scope still requires the confirmation (it is the
+    authorized explicit retry of settled work), while the decision chain
+    keeps reusing the committed selection under the existing A35 semantics.
+    """
+    commit = _load_commit()
+    ep = _load_execution_policy()
+    ok, why = ep.validate_record(confirmation)
+    if not ok:
+        raise UnauthorizedAmendmentError(why)
+    ensure_revision_table(con)
+    prior = load_generation(con, task_key, generation) if generation is not None \
+        else load_generation(con, task_key)
+    if prior is None:
+        raise ValueError("no prior generation to amend for %r" % (task_key,))
+    confirmed_by = "%s:%s" % (confirmation.source_message_id,
+                              confirmation.evidence_span)
+    new_generation = int(prior["generation"]) + 1
+    if load_generation(con, task_key, new_generation) is not None:
+        raise ValueError("generation %d already exists for %r"
+                         % (new_generation, task_key))
+    # The decision chain first (CAS refused => nothing linked, nothing
+    # amended): unchanged scope reuses the committed selection, changed
+    # scope recommits with reason + evidence — both via the existing A35
+    # ``redispatch``, never restated here.
+    mode, revision, payload = redispatch(
+        con, task_key, new_scope, recompute_fn, reason,
+        dict(evidence or {}, amended_from_prior=True,
+             confirmed_by=confirmed_by), commit_in=False)
+    now = time.time()
+    con.execute(
+        "INSERT INTO preparation_generations(task_key, generation,"
+        " preparation_id, deadline_s, consumed_ms, attempts, status,"
+        " retry_remaining, retry_consumed, amended_from, confirmed_by,"
+        " policy_revision, attempts_json, created_at, updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (task_key, new_generation, str(prior["preparation_id"]),
+         None if deadline_s is None else float(deadline_s),
+         0.0, 0, "preparing", int(prior["retry_remaining"]), 0,
+         int(prior["generation"]), confirmed_by,
+         int(confirmation.policy_revision), "{}", now, now))
+    if commit_in:
+        con.commit()
+    return {
+        "action": mode, "revision": revision,
+        "generation": new_generation,
+        "amended_from": int(prior["generation"]),
+        "confirmed_by": confirmed_by,
+        "prior_usage": {"consumed_ms": prior["consumed_ms"],
+                        "attempts": prior["attempts"],
+                        "retry_remaining": prior["retry_remaining"],
+                        "retry_consumed": prior["retry_consumed"],
+                        "status": prior["status"]},
+        "decision": payload.get("decision"),
+    }
+
+
+class UnauthorizedAmendmentError(Exception):
+    """No real owner confirmation: amendment refused, nothing written."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__("unauthorized amendment: %s" % (reason,))
