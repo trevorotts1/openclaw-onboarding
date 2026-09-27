@@ -521,7 +521,8 @@ class LateResultFencing(unittest.TestCase):
     def _fenced_ok_ladder(self, clk, store=None, **kw):
         def _slow_ok(*, body, api_key, timeout_ms, http_post=None):
             clk.advance(5)  # a 5s ok against a 1s root
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         return make_ladder(clock=clk, direct=_slow_ok, commit_store=store,
                            root_budget_ms=1000, **kw)
@@ -571,7 +572,8 @@ class LateResultFencing(unittest.TestCase):
 
         def _bump(*, body, api_key, timeout_ms, http_post=None):
             store["fence"]["mode_revision"] += 1  # owner flipped the mode
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         lad, _, calls = make_ladder(clock=clk, direct=_bump,
                                     commit_store=store,
@@ -589,7 +591,8 @@ class LateResultFencing(unittest.TestCase):
         store = commit.fresh_state(input_hash="h1", clock=clk)
 
         def _fast(*, body, api_key, timeout_ms, http_post=None):
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         lad, _, _ = make_ladder(clock=clk, direct=_fast,
                                 commit_store=store)
@@ -611,13 +614,83 @@ class LateResultFencing(unittest.TestCase):
         clk = FakeClock()
 
         def _fast(*, body, api_key, timeout_ms, http_post=None):
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         lad, _, _ = make_ladder(clock=clk, direct=_fast)
         verdict = lad.run(company_id="acme", state={"s": 1},
                           questions=_qs(), keys={})
         self.assertEqual(verdict["decision_source"], "typesafe_direct")
         self.assertNotIn("fence_token", verdict)
+
+class LowConfidenceHandling(unittest.TestCase):
+    """A08 / spec 3.4:276: a valid but low-confidence direct answer must not
+    be sent to another JEV endpoint to compare confidence; the calibrated
+    signal drives the non-JEV review instead of being discarded.
+    """
+
+    def _low_payload(self, max_prob):
+        return {"model": _TS.TYPESAFE_MODEL, "judgments": [{
+            "question_id": "q1", "type": "select", "answer": "a",
+            "probabilities": {"a": max_prob,
+                              "b": round(1.0 - max_prob, 2)}}]}
+
+    def test_low_confidence_valid_answer_no_endpoint_shopping(self):
+        lad, _, calls = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.55)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs())
+        # No second JEV endpoint called; the review path ran instead.
+        self.assertEqual(len(calls["direct"]), 1)
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["outcome"], "low_confidence")
+        self.assertEqual(verdict["stages"][1]["skip_reason"],
+                         "low_confidence_review")
+
+    def test_low_confidence_signal_reaches_verdict_and_review(self):
+        seen = {}
+
+        def _review(summary):
+            seen["low_confidence"] = summary.get("low_confidence")
+            return {"decision_source": "no_jev", "ok": True,
+                    "outcome": "non_jev_review"}
+
+        lad, _, _ = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.55)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs(),
+                          no_jev_fallback=_review)
+        # The calibrated signal is preserved, not discarded (the old
+        # `ok, _, _ = normalize_response(...)` dropped it).
+        self.assertEqual(verdict["low_confidence"][0]["code"],
+                         "low_confidence")
+        self.assertEqual(seen["low_confidence"][0]["code"],
+                         "low_confidence")
+        self.assertEqual(verdict["fallback"]["outcome"], "non_jev_review")
+
+    def test_high_confidence_control_consumed_directly(self):
+        lad, _, calls = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.95)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs())
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertTrue(verdict["ok"])
+        self.assertEqual(calls["openrouter"], [])
+        self.assertNotIn("low_confidence", verdict)
+        self.assertEqual(verdict["stages"][0]["outcome"], "ok")
+
+    def test_no_direct_specs_behaviour_unchanged(self):
+        # Callers that pass no direct_specs keep the old contract.
+        lad, _, calls = make_ladder()
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertEqual(calls["openrouter"], [])
+        self.assertNotIn("low_confidence", verdict)
 
 
 class OfflineHygiene(unittest.TestCase):
