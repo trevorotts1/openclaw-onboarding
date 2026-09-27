@@ -24,6 +24,7 @@ profile schema (no API change).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # Spec 8.1: five distinct responsibilities. Never confused, never merged.
@@ -61,6 +62,27 @@ _AUDIENCE_SIGNALS = (
     "sales email", "nurture", "newsletter", "landing page", "ad copy",
     "campaign", "announcement", "blog post", "social post", "episode script",
     "webinar", "vsl",
+    # Spec 8.2 line 666/A28: professional content artifacts. Their absence let
+    # "Write the launch post and chmod ..." fall to mechanical/persona-free on
+    # the default caller path. Multi-word on purpose: bare keywords (post,
+    # update) are KEYWORD_TRIGGERS and must never alone force a voice.
+    "launch post", "client update", "status update", "project update",
+    "project brief", "customer email", "client email", "follow-up email",
+    "welcome email", "press release", "case study", "pitch deck",
+    "meeting notes", "release notes", "proposal",
+)
+# Spec 8.2 line 668 / A28: bounded content-work class — a content-creation
+# verb acting on a content artifact ("write the customer email", "draft the
+# annual report"). Keyword ALONE still never forces a voice: both sides of
+# the pair are required, so "write", "post", "video" stay powerless
+# (KEYWORD_TRIGGERS). Deliberately excludes ambiguous ops verbs (update,
+# create, fix), content words that are also shell/ops nouns (release, note,
+# script), and is suppressed by code signals so 8.2's "Writing a Python
+# script: not automatically audience-facing copy" is preserved.
+_CONTENT_VERB_RE = re.compile(r"\b(?:write|draft|send)\b")
+_CONTENT_NOUN_RE = re.compile(
+    r"\b(?:post|email|brief|report|guide|page|copy|deck|article"
+    r"|announcement|story|blog|presentation)s?\b"
 )
 _CODE_SIGNALS = (
     "python script", ".py", "traceback", "def ", "import ", "compile",
@@ -247,12 +269,22 @@ def assess_blend_applicability(
         text = message.lower() if isinstance(message, str) else ""
         intent = artifact_intent if isinstance(artifact_intent, str) else "unknown"
         ttype = task_type if isinstance(task_type, str) else "unknown"
+        code = intent in CODE_INTENTS or any(s in text for s in _CODE_SIGNALS)
+        # Spec 8.2 line 668 / A28 content-work class: a creation verb acting on
+        # a content artifact is professional content work even when the same
+        # message also carries a shell command. Suppressed by code signals
+        # (Python-script example stays task_only); keyword alone never fires.
+        content_work = (
+            not code
+            and _CONTENT_VERB_RE.search(text) is not None
+            and _CONTENT_NOUN_RE.search(text) is not None
+        )
         aud = (
             has_audience_hint is True
             or intent in AUDIENCE_FACING_INTENTS
             or any(s in text for s in _AUDIENCE_SIGNALS)
+            or content_work
         )
-        code = intent in CODE_INTENTS or any(s in text for s in _CODE_SIGNALS)
         mech = intent in OPERATIONAL_INTENTS or any(s in text for s in _MECHANICAL_SIGNALS)
         answ = (ttype in ANSWER_INTENTS) or (
             any(s in text for s in _ANSWER_SIGNALS) and not aud

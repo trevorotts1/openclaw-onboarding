@@ -190,6 +190,53 @@ class BlendApplicability(unittest.TestCase):
         self.assertEqual(r["mode"], "mixed")
         self.assertTrue(r["audience_facing"] and r["task_persona_needed"])
 
+    def test_mixed_chmod_default_path(self):
+        # A28: the SAME spec-8.2 string on the real default caller path
+        # (no artifact_intent supplied; production only passes message).
+        r = ep.assess_blend_applicability(
+            "Write the launch post and chmod the asset dir")
+        self.assertEqual(r["mode"], "mixed")
+        self.assertTrue(r["audience_facing"] and r["task_persona_needed"])
+
+    def test_mixed_chmod_default_path_variants(self):
+        # A28 class, not the one string: verb/order/article phrased either way.
+        for msg in (
+            "Draft the client update and chmod the deploy dir",
+            "chmod the deploy dir then send the client update",
+            "Write the customer email and chmod the assets",
+        ):
+            r = ep.assess_blend_applicability(msg)
+            self.assertEqual(r["mode"], "mixed", msg)
+            self.assertTrue(r["audience_facing"] and r["task_persona_needed"], msg)
+
+    def test_content_work_outside_phrase_list(self):
+        # A28 class generalization: professional artifact not in the phrase
+        # list still counts as content work (verb + artifact noun).
+        r = ep.assess_blend_applicability(
+            "Draft the annual report and chmod the assets")
+        self.assertEqual(r["mode"], "mixed")
+        self.assertTrue(r["audience_facing"] and r["task_persona_needed"])
+
+    def test_code_work_is_not_content_work(self):
+        # 8.2 line 668 guard: a script-writing task stays task_only even
+        # though "write"/"report" appear; code signals suppress the class.
+        r = ep.assess_blend_applicability(
+            "Write a Python script that drafts the report")
+        self.assertEqual(r["mode"], "task_only")
+        self.assertFalse(r["audience_facing"])
+
+    def test_mechanical_content_verb_stays_persona_free(self):
+        # Counter-case for the new class: ops verbs (update/create/fix) and
+        # shell nouns must NOT trip it.
+        for msg in (
+            "chmod the deploy dir and update the backup config",
+            "chmod the deploy dir",
+            "Repair the podcast file path",
+        ):
+            r = ep.assess_blend_applicability(msg)
+            self.assertEqual(r["mode"], "mechanical", msg)
+            self.assertFalse(r["audience_facing"] and r["task_persona_needed"], msg)
+
     def test_bare_keywords_never_force_voice(self):
         for msg in ("write", "script", "post", "video", "write that up"):
             r = ep.assess_blend_applicability(msg)
