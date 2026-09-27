@@ -10,8 +10,10 @@ Contract (spec 3.2): decisions API, NOT chat completions::
     model: typesafe/jev-1.13
     key:   OPENROUTER_API_KEY (bearer)
 
-Body holds ``model`` + ``state`` + typed ``questions`` only. Never fabricate
-``messages``, ``reasoning_effort``, temperature, or tool-call semantics.
+Body holds ``model`` + ``state`` + typed ``questions`` only, where
+``questions`` is a RECORD keyed by question id (array form is refused by
+the provider with 400). Never fabricate ``messages``, ``reasoning_effort``,
+temperature, or tool-call semantics.
 
 Response validation (spec 3.7): required question IDs, matching answer
 types, allowed candidate IDs, finite numerics, bounds, complete expected
@@ -113,8 +115,28 @@ def estimate_tokens(payload: dict) -> int:
 
 
 def build_request(state, questions: list, model: str = REQUESTED_MODEL) -> dict:
-    """Pack ``{model, state, questions}``. No chat-completions fields."""
-    body = {"model": model, "state": state, "questions": list(questions)}
+    """Pack ``{model, state, questions}``. No chat-completions fields.
+
+    ``questions`` on the wire is the documented RECORD keyed by question id
+    (``{"reachable": {"type": "noul", ...}}``), never an array; the provider
+    refuses the array form with 400 "expected record, received array". The
+    id is plumbing and lives only in the record key. Raises
+    ``ValueError``/``TypeError`` on bad question input (caller bug, matching
+    ``typesafe_direct.build_request``).
+    """
+    record: dict = {}
+    for i, q in enumerate(questions or []):
+        if not isinstance(q, dict):
+            raise TypeError(f"questions[{i}] must be an object")
+        qid, qtype = q.get("id"), q.get("type")
+        if not isinstance(qid, str) or not qid.strip():
+            raise ValueError(f"questions[{i}]: required non-empty 'id'")
+        if not isinstance(qtype, str) or not qtype.strip():
+            raise ValueError(f"questions[{i}]: required non-empty 'type'")
+        if qid in record:
+            raise ValueError(f"questions[{i}]: duplicate id {qid!r}")
+        record[qid] = {k: v for k, v in q.items() if k != "id"}
+    body = {"model": model, "state": state, "questions": record}
     for key in FORBIDDEN_BODY_KEYS:
         body.pop(key, None)
     return body
@@ -338,7 +360,13 @@ def send_decisions(
                 "errors": [f"{API_KEY_NAME}: not configured (source {source})"],
                 "key_source": source,
             }
-        body = build_request(state, questions)
+        try:
+            body = build_request(state, questions)
+        except (ValueError, TypeError) as exc:
+            # Caller-shaped request bug: defect class, never sent, no replay.
+            return "request_defect", {
+                "errors": [f"malformed questions: {exc}"],
+            }
         if estimate_tokens(body) > PACK_TOKEN_TARGET:
             return "over_budget", {
                 "errors": [

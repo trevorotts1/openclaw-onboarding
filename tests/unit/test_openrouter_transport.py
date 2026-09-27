@@ -3,6 +3,7 @@
 
 Proves, against the REAL providers/openrouter_decisions.py implementation:
   * request packs {model,state,questions} with model typesafe/jev-1.13,
+    questions as a RECORD keyed by question id (provider refuses arrays),
     no chat-completions keys, bearer key, correct endpoint;
   * strict normalization: required question IDs, choice/score/distribution
     types, candidate allow-list, probability keys exact, bounds, unit-sum
@@ -81,13 +82,52 @@ class OpenRouterContract(unittest.TestCase):
         self.assertEqual(mod.API_KEY_NAME, "OPENROUTER_API_KEY")
 
     def test_body_has_no_chat_keys(self):
-        body = mod.build_request({"text": "hi"}, [{"question_id": "q1"}])
+        body = mod.build_request(
+            {"text": "hi"},
+            [{"id": "q1", "type": "noul",
+              "instructions": "is this a probe?",
+              "criteria": {"true": "yes", "false": "no"}}],
+        )
         self.assertEqual(
             sorted(body.keys()), ["model", "questions", "state"]
         )
         self.assertEqual(body["model"], "typesafe/jev-1.13")
         for key in mod.FORBIDDEN_BODY_KEYS:
             self.assertNotIn(key, body)
+
+    def test_questions_is_record_keyed_by_id(self):
+        """Provider contract: questions is a RECORD, not an array (400)."""
+        body = mod.build_request(
+            {"text": "hi"},
+            [{"id": "q_intent", "type": "select",
+              "instructions": "pick", "candidates": ["a", "b"]}],
+        )
+        q = body["questions"]
+        self.assertIsInstance(q, dict)
+        self.assertEqual(list(q.keys()), ["q_intent"])
+        spec = q["q_intent"]
+        self.assertNotIn("id", spec)          # id is plumbing: the record key
+        self.assertEqual(spec["type"], "select")
+        self.assertEqual(spec["candidates"], ["a", "b"])
+
+    def test_questions_multi_and_order_preserved(self):
+        body = mod.build_request(
+            {}, [{"id": "b", "type": "score", "levels": 3},
+                 {"id": "a", "type": "noul",
+                  "instructions": "x", "criteria": {"true": "t", "false": "f"}}],
+        )
+        self.assertEqual(list(body["questions"].keys()), ["b", "a"])
+
+    def test_build_request_rejects_bad_questions(self):
+        for bad, exc in (
+            ([{"type": "select"}], ValueError),            # missing id
+            ([{"id": "q", "type": "select"},
+              {"id": "q", "type": "select"}], ValueError), # duplicate id
+            ([{"id": "q"}], ValueError),                   # missing type
+            (["nope"], TypeError),                         # not an object
+        ):
+            with self.assertRaises(exc):
+                mod.build_request({}, bad)
 
     def test_valid_response_normalizes_and_preserves_extra(self):
         body = dict(_good_body())
@@ -202,7 +242,7 @@ class OpenRouterContract(unittest.TestCase):
         calls = []
         outcome, detail = mod.send_decisions(
             {"text": "hi"},
-            [{"question_id": "q_intent"}],
+            [{"id": "q_intent", "type": "select", "candidates": ["cand-a"]}],
             _expected(["cand-a", "cand-b"]),
             api_key=None,
             env={},
@@ -252,7 +292,7 @@ class OpenRouterContract(unittest.TestCase):
 
         outcome, norm = mod.send_decisions(
             {"text": "hi"},
-            [{"question_id": "q1"}],
+            [{"id": "q1", "type": "select", "candidates": ["cand-a"]}],
             _expected(["cand-a", "cand-b"]),
             api_key="k-real-enough",
             allowed_candidates=["cand-a", "cand-b"],
@@ -266,6 +306,23 @@ class OpenRouterContract(unittest.TestCase):
         )
         self.assertNotIn("k-real-enough"[3:], json.dumps(seen["payload"]))
         self.assertEqual(seen["payload"]["model"], "typesafe/jev-1.13")
+        # The recorded body carries questions as a RECORD keyed by id.
+        self.assertIsInstance(seen["payload"]["questions"], dict)
+        self.assertEqual(seen["payload"]["questions"]["q1"]["type"], "select")
+
+    def test_send_decisions_malformed_questions_is_request_defect(self):
+        """Caller-shaped bug -> request_defect, never sent, no replay."""
+        calls = []
+        outcome, detail = mod.send_decisions(
+            {"t": "x"},
+            [{"question_id": "no_id_field"}],
+            [],
+            api_key="k-real-enough",
+            transport=lambda *a: (calls.append(a), (200, _good_body()))[1],
+        )
+        self.assertEqual(outcome, "request_defect")
+        self.assertEqual(calls, [])
+        self.assertTrue(detail["errors"])
 
     def test_model_foreign_and_invalid_classes(self):
         bad = _good_body(model="other/model-9")
@@ -280,7 +337,7 @@ class OpenRouterContract(unittest.TestCase):
         broken = {"model": "typesafe/jev-1.13", "judgments": [{"nope": 1}]}
         outcome2, detail2 = mod.send_decisions(
             {},
-            [{"question_id": "q_missing"}],
+            [{"id": "q_missing", "type": "select", "candidates": ["a"]}],
             [{"question_id": "q_missing", "answer": "choice", "choices": ["a"]}],
             api_key="k-real-enough",
             transport=lambda *a: (200, broken),
@@ -298,7 +355,8 @@ class OpenRouterContract(unittest.TestCase):
         big = {"text": "x" * (mod.PACK_TOKEN_TARGET * 4 + 100)}
         outcome, detail = mod.send_decisions(
             big,
-            [{"question_id": "q"}],
+            [{"id": "q", "type": "noul",
+              "instructions": "x", "criteria": {"true": "t", "false": "f"}}],
             [],
             api_key="k-real-enough",
             transport=lambda *a: (200, _good_body()),
