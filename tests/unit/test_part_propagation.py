@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """D20 SOP-slot/hint propagation tests (JEV spec 1.1, ss 8.9/8.10; 4.5).
-
 Proves, against the REAL shared-utils/decision_engine/parts/__init__.py:
   * parts are caller-supplied with declared-first sources only — JEV never
     originates a part (jev_*/unknown source rejected);
@@ -15,14 +14,22 @@ Proves, against the REAL shared-utils/decision_engine/parts/__init__.py:
   * slot/hint repair: a missing hint yields an explicit bind directive
     (directive count == missing count; never silently dropped);
   * single-decomposition guard and slot/hint check are the REAL D19
-    functions (identity, not reimplementation).
+    functions (identity, not reimplementation);
+  * D02 round-trip: ``emit_bundle_scope_goal`` materializes validated parts
+    into a REAL ``envelope_committed.json`` carrier proven through the REAL
+    ``contracts/schema.py`` validators (never reimplemented) — emitted
+    bundle AND envelope validate True; D02-shape negatives (over-the-10
+    cap, goal-source drift, missing/dup row seq) surface as REAL
+    ``(False, errors)`` results.
 
 Run: pytest tests/unit/test_part_propagation.py -q
 """
 
 from __future__ import annotations
 
+import copy
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -249,6 +256,129 @@ class D19ReuseNotReimplementation(unittest.TestCase):
         out = parts.check_slot_hint_propagation(["slot-a", "slot-b"], ["slot-a"])
         self.assertFalse(out["ok"])
         self.assertEqual(out["missing"], ["slot-b"])
+
+
+class D02RoundTripRealValidators(unittest.TestCase):
+    """scope/seq/goal/conversion-goal survive a REAL D02 round-trip.
+
+    ``emit_bundle_scope_goal`` materializes validated parts into a REAL
+    ``envelope_committed.json`` carrier; the REAL ``contracts/schema.py``
+    validators (imported, never redefined) accept the emitted bundle AND
+    envelope. D02-shape negatives surface as REAL ``(False, errors)``
+    results — never silent accepts.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        # SAME loader name as parts/__init__.py uses internally
+        # ("decision_engine_contracts_schema"): sys.modules returns the one
+        # schema module object, so identity below proves
+        # import-not-reimplement (distinct names would exec a second copy).
+        cls.schema = _load(
+            "decision_engine_contracts_schema", _DE / "contracts" / "schema.py"
+        )
+        cls.fixture_path = _DE / "contracts" / "fixtures" / "envelope_committed.json"
+        cls.carrier = json.loads(cls.fixture_path.read_text(encoding="utf-8"))
+
+    def _parts(self, n=2, conversion_goal="book a call"):
+        return [
+            _part(
+                part_id=f"part-{i}",
+                seq=i,
+                scope_id="scope-A",
+                goal="onboard new member",
+                conversion_goal=conversion_goal,
+            )
+            for i in range(1, n + 1)
+        ]
+
+    def test_validators_are_real_not_redefined(self):
+        self.assertIs(parts._de_schema, self.schema)
+        src = (_DE / "parts" / "__init__.py").read_text(encoding="utf-8")
+        self.assertNotIn("def validate_envelope", src)
+        self.assertNotIn("def validate_persona_bundle", src)
+        self.assertTrue(callable(self.schema.validate_envelope))
+        self.assertTrue(callable(self.schema.validate_persona_bundle))
+
+    def test_fixture_carrier_itself_valid_control(self):
+        ok_b, errs_b = self.schema.validate_persona_bundle(
+            self.carrier["personaBundle"], company_id=self.carrier.get("companyId")
+        )
+        self.assertTrue(ok_b, errs_b)
+        ok_e, errs_e = self.schema.validate_envelope(self.carrier)
+        self.assertTrue(ok_e, errs_e)
+
+    def test_emitted_bundle_and_envelope_validate_true(self):
+        out = parts.emit_bundle_scope_goal(self._parts(2))
+        ok_b, errs_b = self.schema.validate_persona_bundle(
+            out["bundle"], company_id=self.carrier.get("companyId")
+        )
+        self.assertTrue(ok_b, errs_b)
+        ok_e, errs_e = self.schema.validate_envelope(out["envelope"])
+        self.assertTrue(ok_e, errs_e)
+
+    def test_scope_seq_goal_provenance_survives(self):
+        out = parts.emit_bundle_scope_goal(self._parts(3))
+        rows = out["bundle"]["task_personas"]
+        self.assertEqual([r["seq"] for r in rows], [1, 2, 3])
+        self.assertEqual([r["part"] for r in rows], ["part-1", "part-2", "part-3"])
+        for r in rows:
+            self.assertIn("scope-A", r["why"])
+            self.assertIn("onboard new member", r["why"])
+        self.assertEqual(out["bundle"]["conversion_goal"], "book a call")
+        self.assertEqual(out["bundle"]["resolved_goal"]["value"], "book a call")
+
+    def test_unresolved_conversion_goal_stays_empty(self):
+        out = parts.emit_bundle_scope_goal(self._parts(2, conversion_goal=""))
+        self.assertEqual(out["bundle"]["conversion_goal"], "")
+        self.assertEqual(out["bundle"]["resolved_goal"]["value"], "")
+        ok_b, errs_b = self.schema.validate_persona_bundle(
+            out["bundle"], company_id=self.carrier.get("companyId")
+        )
+        self.assertTrue(ok_b, errs_b)
+
+    def test_fixture_file_never_mutated(self):
+        before = self.fixture_path.read_text(encoding="utf-8")
+        parts.emit_bundle_scope_goal(self._parts(2))
+        after = self.fixture_path.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
+
+    def test_over_ten_cap_is_real_d02_false(self):
+        out = parts.emit_bundle_scope_goal(self._parts(11))
+        ok_b, errs_b = self.schema.validate_persona_bundle(out["bundle"])
+        self.assertFalse(ok_b)
+        self.assertTrue(any("exceed" in e for e in errs_b))
+
+    def test_goal_source_drift_is_real_d02_false(self):
+        out = parts.emit_bundle_scope_goal(self._parts(2))
+        drifted = copy.deepcopy(out["bundle"])
+        drifted["goal_source"] = "asked"
+        ok_b, errs_b = self.schema.validate_persona_bundle(drifted)
+        self.assertFalse(ok_b)
+
+    def test_missing_row_seq_is_real_d02_false(self):
+        out = parts.emit_bundle_scope_goal(self._parts(2))
+        broken = copy.deepcopy(out["bundle"])
+        del broken["task_personas"][0]["seq"]
+        ok_b, _ = self.schema.validate_persona_bundle(broken)
+        self.assertFalse(ok_b)
+
+    def test_duplicate_row_seq_is_real_d02_false(self):
+        out = parts.emit_bundle_scope_goal(self._parts(2))
+        broken = copy.deepcopy(out["bundle"])
+        broken["task_personas"][1]["seq"] = broken["task_personas"][0]["seq"]
+        ok_b, _ = self.schema.validate_persona_bundle(broken)
+        self.assertFalse(ok_b)
+
+    def test_bad_propagation_raises_never_silent(self):
+        dup = self._parts(2)
+        dup[1]["seq"] = dup[0]["seq"]
+        with self.assertRaises(ValueError):
+            parts.emit_bundle_scope_goal(dup)
+        with self.assertRaises(ValueError):
+            parts.emit_bundle_scope_goal([])
+        with self.assertRaises(ValueError):
+            parts.emit_bundle_scope_goal("nope")
 
 
 if __name__ == "__main__":
