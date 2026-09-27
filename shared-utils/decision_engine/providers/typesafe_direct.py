@@ -301,8 +301,11 @@ def normalize_response(payload: dict, question_specs: dict,
     ``candidates`` for ``select``). Returns ``(ok, judgments, diagnostics)``.
     ``ok=True`` may still carry a ``low_confidence`` warning entry; a bad
     judgment yields ``(False, None, diagnostics)`` — rejected, never coerced.
-    Unknown extra metadata is preserved verbatim. No ``confidence`` field is
-    ever synthesized.
+    A present ``model`` snapshot is validated against the approved mapping
+    (spec 3.7): the requested snapshot or its dated family member is kept,
+    an unrelated version is rejected as ``model_foreign``. A payload with no
+    ``model`` claim carries nothing to validate. Unknown extra metadata is
+    preserved verbatim. No ``confidence`` field is ever synthesized.
     """
     diags: list = []
 
@@ -318,6 +321,10 @@ def normalize_response(payload: dict, question_specs: dict,
     if not isinstance(judgments, list) or not judgments:
         return bad("missing_answer", None,
                    "'judgments' must be a non-empty list")
+    if "model" in payload and not is_approved_model(payload.get("model")):
+        return bad("model_foreign", None,
+                   "returned model %r is neither the requested snapshot "
+                   "nor an approved dated member" % (payload.get("model"),))
 
     by_id = {}
     for j in judgments:

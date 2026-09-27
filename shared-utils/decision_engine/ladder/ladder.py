@@ -687,20 +687,33 @@ class DirectFirstLadder:
                 # no further spending on this fenced generation.
                 record["fence_reason"] = fenced_reason
                 log.append("fenced:%s:%s" % (PROVIDER_DIRECT, fenced_reason))
-            elif direct_specs is None:
-                self._circuit.record_success(PROVIDER_DIRECT)
-                return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root, mode_info,
-                                     fence_token)
             else:
-                ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
-                if ok:
+                # A06 fence recheck passed: the ok may still be refused by
+                # the A07 approved-model gate (3.7) before adoption.
+                returned = payload.get("model") if isinstance(payload, dict) \
+                    else None
+                if returned is None:
+                    returned = result.get("model_snapshot")
+                if returned is not None and not ts.is_approved_model(returned):
+                    # Spec 3.7: never silently accept an unrelated model
+                    # version; the request is reusable against another route.
+                    self._circuit.record_failure(PROVIDER_DIRECT)
+                    stages[-1]["outcome"] = "model_foreign"
+                    log.append("skip:%s:model_foreign" % PROVIDER_DIRECT)
+                elif direct_specs is None:
                     self._circuit.record_success(PROVIDER_DIRECT)
                     return self._verdict(PROVIDER_DIRECT, True, stages,
                                          accounting, root, mode_info,
                                          fence_token)
-                self._circuit.record_failure(PROVIDER_DIRECT)
-                stages[-1]["outcome"] = "invalid_response"
+                else:
+                    ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
+                    if ok:
+                        self._circuit.record_success(PROVIDER_DIRECT)
+                        return self._verdict(PROVIDER_DIRECT, True, stages,
+                                             accounting, root, mode_info,
+                                             fence_token)
+                    self._circuit.record_failure(PROVIDER_DIRECT)
+                    stages[-1]["outcome"] = "invalid_response"
         elif isinstance(result, dict):
             self._circuit.record_failure(PROVIDER_DIRECT)
 
