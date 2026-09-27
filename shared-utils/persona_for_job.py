@@ -568,6 +568,54 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
 # --------------------------------------------------------------------------- #
 # public API
 # --------------------------------------------------------------------------- #
+def _cas_basis(sop_hints, cas_task_key, cas_state_dir) -> "dict | None":
+    """Resolve the A36 selector CAS basis, most specific first.
+
+    Explicit kwargs > the legacy ``sop_hints={"cas_guard": {...}}`` hint >
+    the box env (PERSONA_FOR_JOB_CAS_TASK_KEY / PERSONA_FOR_JOB_CAS_STATE_DIR).
+    Returns None when no basis is supplied anywhere: the box has no selector
+    decision chain, so pre-A36 behavior is unchanged byte-for-byte.
+
+    The repair this closes (ONB-212 QC): pre-fix the gate was reachable ONLY
+    through a dict ``cas_guard`` hint that no production caller ever passed,
+    so the selector leg of A36 never actually ran.
+    """
+    guard = (sop_hints or {}).get("cas_guard") if isinstance(sop_hints, dict) else None
+    if isinstance(guard, dict) and guard.get("task_key"):
+        return guard
+    task_key = (cas_task_key
+                or os.environ.get("PERSONA_FOR_JOB_CAS_TASK_KEY", "")).strip()
+    state_dir = (cas_state_dir
+                 or os.environ.get("PERSONA_FOR_JOB_CAS_STATE_DIR", "")).strip()
+    if task_key and state_dir:
+        return {"task_key": task_key, "state_dir": state_dir}
+    return None
+
+
+def _cas_head_revision(basis) -> "int | None":
+    """Head revision of the selector's decision chain, read BEFORE the spawn.
+
+    This is the CAS basis the gate below compares against: read here, then the
+    selector runs, then the gate refuses if the head moved in between (the
+    sibling call sites' pattern — backfill / intake door / nudge sweep /
+    comms trigger all read-then-gate the same way).
+
+    None when CAS is off, or when the D23 module is unreachable (bare box:
+    there is no chain to clobber, so the flow proceeds exactly as pre-A36).
+    Never raises: an unreadable chain reads as 0, and the gate stays the
+    fail-closed point.
+    """
+    if basis is None:
+        return None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent
+                               / "decision_engine" / "commit"))
+        import dispatch as _dispatch  # noqa: PLC0415 (runtime, path-set above)
+    except Exception:  # noqa: BLE001 -- bare box: no chain, no gate
+        return None
+    return _dispatch.head_revision(basis.get("state_dir"), basis.get("task_key"))
+
+
 def _cas_selector_gate(cas_guard: dict, raw: dict):
     """A36 selector late gate: fail closed on an obsolete selection revision.
 
@@ -672,6 +720,8 @@ def persona_for_job(job_text: str, department: str, *,
                     record: bool = True, timeout: int = DEFAULT_SELECTOR_TIMEOUT,
                     section4_chars: int = 1400,
                     blend: bool = False,
+                    cas_task_key: "str | None" = None,
+                    cas_state_dir: "str | None" = None,
                     topic_hint: "str | None" = None) -> dict:
     """Resolve the best persona for a content-engine job. See module docstring.
 
@@ -745,17 +795,30 @@ def persona_for_job(job_text: str, department: str, *,
 
     # 3) Ask the canonical selector (single-persona mode — unchanged).
     query = _compose_query(job_text, sop_slug, sop_hints)
+    # JEV A36 (spec 10.3): the selection revision this result is computed
+    # against, read BEFORE the spawn — the same read-then-gate pattern the
+    # sibling call sites use (backfill / intake door / nudge sweep / comms
+    # trigger). None == CAS off on this box: pre-A36 behavior, byte-identical.
+    _basis = _cas_basis(sop_hints, cas_task_key, cas_state_dir)
+    # An explicit caller-supplied revision IS the basis (the legacy guard
+    # hint's contract, and its tests): do not second-guess it with a fresh
+    # read. Otherwise read the head now, before the spawn, so a head that
+    # moves during the selector run is refused by the gate below.
+    _rev_before = (_basis.get("revision") if _basis and "revision" in _basis
+                   else _cas_head_revision(_basis))
     raw = _run_selector(query, department, record, timeout)
 
     # JEV A36 (spec 10.3): selector late gate through the EXISTING D23 module
     # (shared-utils/decision_engine/commit/dispatch.py) — imported by path,
     # never restated. A stale selection (obsolete revision) fails closed with
-    # a typed refusal instead of silently clobbering a newer head. The gate
-    # only fires when the caller passes cas_guard={"task_key", "revision",
-    # "scope"}; every existing caller without it behaves byte-identically.
-    cas_guard = (sop_hints or {}).get("cas_guard") if isinstance(sop_hints, dict) else None
-    if raw is not None and not raw.get("error") and isinstance(cas_guard, dict):
-        _gate = _cas_selector_gate(cas_guard, raw)
+    # a typed refusal instead of silently clobbering a newer head. ONB-212
+    # repair: the basis now comes from the kwargs / env (real callers) as well
+    # as the legacy sop_hints hint, so the gate actually RUNS in production —
+    # pre-repair it needed a dict hint no caller ever supplied. A box with no
+    # basis and no chain still behaves byte-identically to pre-A36.
+    if _rev_before is not None and raw is not None and not raw.get("error"):
+        _gate = _cas_selector_gate(
+            dict(_basis, revision=_rev_before), raw)
         if _gate is not None:
             return _gate
 
@@ -810,7 +873,9 @@ def persona_for_jobs(jobs: list) -> list:
             record=spec.get("record", True),
             timeout=spec.get("timeout", DEFAULT_SELECTOR_TIMEOUT),
             section4_chars=spec.get("section4_chars", 1400),
-            blend=spec.get("blend", False), topic_hint=spec.get("topic_hint")))
+            blend=spec.get("blend", False), topic_hint=spec.get("topic_hint"),
+            cas_task_key=spec.get("cas_task_key"),
+            cas_state_dir=spec.get("cas_state_dir")))
     return out
 
 
@@ -840,6 +905,15 @@ def main(argv: list) -> int:
                          "single-persona callers are completely unaffected).")
     ap.add_argument("--topic-hint", dest="topic_hint", default=None,
                     help="(--blend) optional explicit topic hint for the job.")
+    ap.add_argument("--cas-task-key", dest="cas_task_key", default=None,
+                    help="(A36) decision-chain task key whose head is the "
+                         "selection basis; with --cas-state-dir, a stale "
+                         "selection is refused instead of returned. Also "
+                         "honored via PERSONA_FOR_JOB_CAS_TASK_KEY.")
+    ap.add_argument("--cas-state-dir", dest="cas_state_dir", default=None,
+                    help="(A36) directory holding decision_revisions.db for "
+                         "--cas-task-key. Also honored via "
+                         "PERSONA_FOR_JOB_CAS_STATE_DIR.")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run the fail-closed consumer contract self-test")
     a = ap.parse_args(argv)
@@ -853,7 +927,9 @@ def main(argv: list) -> int:
     sel = persona_for_job(a.job, a.department, sop_slug=a.sop_slug, sop_hints=hints,
                           client_persona_id=a.client_persona_id,
                           persona_source=a.persona_source, record=a.record,
-                          timeout=a.timeout, blend=a.blend, topic_hint=a.topic_hint)
+                          timeout=a.timeout, blend=a.blend, topic_hint=a.topic_hint,
+                          cas_task_key=a.cas_task_key,
+                          cas_state_dir=a.cas_state_dir)
     print(json.dumps(sel, indent=2))
     # exit 0 always; the selection is guaranteed usable. Callers inspect JSON.
     return 0
