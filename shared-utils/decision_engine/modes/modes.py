@@ -257,13 +257,19 @@ def shadow_dedup_key(*, company, scope, input_hash, stage,
 
 
 def shadow_sample_allowed(*, sample_rate, draw, quota_remaining,
-                          in_flight, max_in_flight, permission_ok):
+                          in_flight, max_in_flight, permission_ok,
+                          deadline_ms=None):
     """Pure sample gate predicate (3.9). Reads caller-owned quota numbers.
 
     This is NOT a budget engine: quotas live with existing accounting
     (D07/D30); here only the admission decision. ``draw`` is the caller's
-    [0,1) draw for ``sample_rate``. Returns ``(allowed, reason)`` with
-    typed reasons; any denial skips with a recorded reason, never a retry.
+    [0,1) draw for ``sample_rate``. ``deadline_ms`` is the evaluation's own
+    remaining allowance (spec 3.6 ``evaluation_deadline_ms``); omit it when
+    the caller holds no evaluation clock — a supplied deadline that has run
+    out denies with ``deadline_expired`` and the sample skips with that
+    recorded reason, exactly like the other typed denials. Returns
+    ``(allowed, reason)`` with typed reasons; any denial skips with a
+    recorded reason, never a retry.
     """
     try:
         rate = float(sample_rate)
@@ -286,6 +292,13 @@ def shadow_sample_allowed(*, sample_rate, draw, quota_remaining,
         return False, "in_flight_capped"
     if flying >= cap:
         return False, "in_flight_capped"
+    if deadline_ms is not None:
+        try:
+            left = float(deadline_ms)
+        except (TypeError, ValueError):
+            return False, "deadline_expired"
+        if left <= 0.0:
+            return False, "deadline_expired"
     try:
         draw_f = float(draw)
     except (TypeError, ValueError):
