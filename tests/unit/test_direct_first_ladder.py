@@ -208,6 +208,41 @@ class DirectFirstOrdering(unittest.TestCase):
         self.assertEqual(verdict["stages"][0]["outcome"],
                          "invalid_response")
 
+    def test_direct_foreign_model_rejected_both_accept_paths(self):
+        """Spec 3.7: an unapproved returned model is never accepted on the
+        direct path — with or without direct_specs — and the rejection is
+        typed provenance, not silence."""
+        for specs in (_select_specs(), None):
+            for model in ("gpt-4", "jev-2.0.0", "jev-1.131"):
+                payload = dict(_good_select_payload(), model=model)
+                log = []
+                lad, _, calls = make_ladder(
+                    direct=lambda **k: _ok(payload),
+                    resolve=lambda *a: _creds(direct=True, openrouter=False))
+                verdict = lad.run(company_id="acme", state={"s": 1},
+                                  questions=_qs(), keys={},
+                                  direct_specs=specs, order_log=log)
+                self.assertEqual(verdict["decision_source"], "no_jev", model)
+                self.assertEqual(verdict["stages"][0]["outcome"],
+                                 "model_foreign", model)
+                self.assertIn("skip:typesafe_direct:model_foreign", log)
+                self.assertEqual(len(calls["openrouter"]), 0)
+
+    def test_direct_approved_family_accepted(self):
+        """The requested snapshot and its dated member stay accepted."""
+        for model in (_TS.TYPESAFE_MODEL,
+                      _TS.TYPESAFE_MODEL + ".20260901"):
+            payload = dict(_good_select_payload(), model=model)
+            lad, _, _ = make_ladder(direct=lambda **k: _ok(payload),
+                                    resolve=lambda *a: _creds(
+                                        direct=True, openrouter=False))
+            verdict = lad.run(company_id="acme", state={"s": 1},
+                              questions=_qs(), keys={},
+                              direct_specs=_select_specs())
+            self.assertEqual(verdict["decision_source"],
+                             "typesafe_direct", model)
+            self.assertTrue(verdict["ok"])
+
     def test_key_material_never_in_verdict(self):
         lad, _, _ = make_ladder()
         verdict = lad.run(
@@ -486,7 +521,8 @@ class LateResultFencing(unittest.TestCase):
     def _fenced_ok_ladder(self, clk, store=None, **kw):
         def _slow_ok(*, body, api_key, timeout_ms, http_post=None):
             clk.advance(5)  # a 5s ok against a 1s root
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         return make_ladder(clock=clk, direct=_slow_ok, commit_store=store,
                            root_budget_ms=1000, **kw)
@@ -536,7 +572,8 @@ class LateResultFencing(unittest.TestCase):
 
         def _bump(*, body, api_key, timeout_ms, http_post=None):
             store["fence"]["mode_revision"] += 1  # owner flipped the mode
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         lad, _, calls = make_ladder(clock=clk, direct=_bump,
                                     commit_store=store,
@@ -554,7 +591,8 @@ class LateResultFencing(unittest.TestCase):
         store = commit.fresh_state(input_hash="h1", clock=clk)
 
         def _fast(*, body, api_key, timeout_ms, http_post=None):
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         lad, _, _ = make_ladder(clock=clk, direct=_fast,
                                 commit_store=store)
@@ -576,7 +614,8 @@ class LateResultFencing(unittest.TestCase):
         clk = FakeClock()
 
         def _fast(*, body, api_key, timeout_ms, http_post=None):
-            return _ok({"model": "m", "judgments": []})
+            return _ok({"model": _TS.TYPESAFE_MODEL,
+                        "judgments": []})
 
         lad, _, _ = make_ladder(clock=clk, direct=_fast)
         verdict = lad.run(company_id="acme", state={"s": 1},
