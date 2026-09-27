@@ -603,17 +603,28 @@ class DirectFirstLadder:
         stages.append(record)
         if isinstance(result, dict) and result.get("outcome") == "ok":
             payload = result.get("payload")
-            if direct_specs is None:
+            returned = payload.get("model") if isinstance(payload, dict) \
+                else None
+            if returned is None:
+                returned = result.get("model_snapshot")
+            if returned is not None and not ts.is_approved_model(returned):
+                # Spec 3.7: never silently accept an unrelated model
+                # version; the request is reusable against another route.
+                self._circuit.record_failure(PROVIDER_DIRECT)
+                stages[-1]["outcome"] = "model_foreign"
+                log.append("skip:%s:model_foreign" % PROVIDER_DIRECT)
+            elif direct_specs is None:
                 self._circuit.record_success(PROVIDER_DIRECT)
                 return self._verdict(PROVIDER_DIRECT, True, stages,
                                      accounting, root, mode_info)
-            ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
-            if ok:
-                self._circuit.record_success(PROVIDER_DIRECT)
-                return self._verdict(PROVIDER_DIRECT, True, stages,
-                                     accounting, root, mode_info)
-            self._circuit.record_failure(PROVIDER_DIRECT)
-            stages[-1]["outcome"] = "invalid_response"
+            else:
+                ok, _, _ = ts.normalize_response(payload or {}, direct_specs)
+                if ok:
+                    self._circuit.record_success(PROVIDER_DIRECT)
+                    return self._verdict(PROVIDER_DIRECT, True, stages,
+                                         accounting, root, mode_info)
+                self._circuit.record_failure(PROVIDER_DIRECT)
+                stages[-1]["outcome"] = "invalid_response"
         elif isinstance(result, dict):
             self._circuit.record_failure(PROVIDER_DIRECT)
 

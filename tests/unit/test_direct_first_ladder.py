@@ -203,6 +203,41 @@ class DirectFirstOrdering(unittest.TestCase):
         self.assertEqual(verdict["stages"][0]["outcome"],
                          "invalid_response")
 
+    def test_direct_foreign_model_rejected_both_accept_paths(self):
+        """Spec 3.7: an unapproved returned model is never accepted on the
+        direct path — with or without direct_specs — and the rejection is
+        typed provenance, not silence."""
+        for specs in (_select_specs(), None):
+            for model in ("gpt-4", "jev-2.0.0", "jev-1.131"):
+                payload = dict(_good_select_payload(), model=model)
+                log = []
+                lad, _, calls = make_ladder(
+                    direct=lambda **k: _ok(payload),
+                    resolve=lambda *a: _creds(direct=True, openrouter=False))
+                verdict = lad.run(company_id="acme", state={"s": 1},
+                                  questions=_qs(), keys={},
+                                  direct_specs=specs, order_log=log)
+                self.assertEqual(verdict["decision_source"], "no_jev", model)
+                self.assertEqual(verdict["stages"][0]["outcome"],
+                                 "model_foreign", model)
+                self.assertIn("skip:typesafe_direct:model_foreign", log)
+                self.assertEqual(len(calls["openrouter"]), 0)
+
+    def test_direct_approved_family_accepted(self):
+        """The requested snapshot and its dated member stay accepted."""
+        for model in (_TS.TYPESAFE_MODEL,
+                      _TS.TYPESAFE_MODEL + ".20260901"):
+            payload = dict(_good_select_payload(), model=model)
+            lad, _, _ = make_ladder(direct=lambda **k: _ok(payload),
+                                    resolve=lambda *a: _creds(
+                                        direct=True, openrouter=False))
+            verdict = lad.run(company_id="acme", state={"s": 1},
+                              questions=_qs(), keys={},
+                              direct_specs=_select_specs())
+            self.assertEqual(verdict["decision_source"],
+                             "typesafe_direct", model)
+            self.assertTrue(verdict["ok"])
+
     def test_key_material_never_in_verdict(self):
         lad, _, _ = make_ladder()
         verdict = lad.run(
