@@ -594,7 +594,8 @@ class LateResultFencing(unittest.TestCase):
                         "judgments": []})
 
         return make_ladder(clock=clk, direct=_slow_ok, commit_store=store,
-                           root_budget_ms=1000, **kw)
+                           root_budget_ms=1000, settlement_reserve_ms=0,
+                           **kw)
 
     def test_post_expiry_ok_never_adopted_usage_still_settled(self):
         clk = FakeClock()
