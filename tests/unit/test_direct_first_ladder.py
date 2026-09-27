@@ -623,6 +623,75 @@ class LateResultFencing(unittest.TestCase):
         self.assertEqual(verdict["decision_source"], "typesafe_direct")
         self.assertNotIn("fence_token", verdict)
 
+class LowConfidenceHandling(unittest.TestCase):
+    """A08 / spec 3.4:276: a valid but low-confidence direct answer must not
+    be sent to another JEV endpoint to compare confidence; the calibrated
+    signal drives the non-JEV review instead of being discarded.
+    """
+
+    def _low_payload(self, max_prob):
+        return {"model": _TS.TYPESAFE_MODEL, "judgments": [{
+            "question_id": "q1", "type": "select", "answer": "a",
+            "probabilities": {"a": max_prob,
+                              "b": round(1.0 - max_prob, 2)}}]}
+
+    def test_low_confidence_valid_answer_no_endpoint_shopping(self):
+        lad, _, calls = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.55)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs())
+        # No second JEV endpoint called; the review path ran instead.
+        self.assertEqual(len(calls["direct"]), 1)
+        self.assertEqual(calls["openrouter"], [])
+        self.assertEqual(verdict["decision_source"], "no_jev")
+        self.assertEqual(verdict["stages"][0]["outcome"], "low_confidence")
+        self.assertEqual(verdict["stages"][1]["skip_reason"],
+                         "low_confidence_review")
+
+    def test_low_confidence_signal_reaches_verdict_and_review(self):
+        seen = {}
+
+        def _review(summary):
+            seen["low_confidence"] = summary.get("low_confidence")
+            return {"decision_source": "no_jev", "ok": True,
+                    "outcome": "non_jev_review"}
+
+        lad, _, _ = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.55)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs(),
+                          no_jev_fallback=_review)
+        # The calibrated signal is preserved, not discarded (the old
+        # `ok, _, _ = normalize_response(...)` dropped it).
+        self.assertEqual(verdict["low_confidence"][0]["code"],
+                         "low_confidence")
+        self.assertEqual(seen["low_confidence"][0]["code"],
+                         "low_confidence")
+        self.assertEqual(verdict["fallback"]["outcome"], "non_jev_review")
+
+    def test_high_confidence_control_consumed_directly(self):
+        lad, _, calls = make_ladder(
+            direct=lambda **k: _ok(self._low_payload(0.95)))
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={},
+                          direct_specs=_select_specs())
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertTrue(verdict["ok"])
+        self.assertEqual(calls["openrouter"], [])
+        self.assertNotIn("low_confidence", verdict)
+        self.assertEqual(verdict["stages"][0]["outcome"], "ok")
+
+    def test_no_direct_specs_behaviour_unchanged(self):
+        # Callers that pass no direct_specs keep the old contract.
+        lad, _, calls = make_ladder()
+        verdict = lad.run(company_id="acme", state={"s": 1},
+                          questions=_qs(), keys={})
+        self.assertEqual(verdict["decision_source"], "typesafe_direct")
+        self.assertEqual(calls["openrouter"], [])
+        self.assertNotIn("low_confidence", verdict)
+
 
 class OfflineHygiene(unittest.TestCase):
     def test_no_environ_mutation_no_socket_use(self):
