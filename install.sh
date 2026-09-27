@@ -3945,7 +3945,8 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
         "semantic_task_fit.py" \
         "embedding_engine.py" \
         "ceo_execution_policy.py" \
-        "secret_helper.py"; do
+        "secret_helper.py" \
+        "decision-engine.py"; do
         [ -f "$SKILLS_DIR/shared-utils/$_D27_REL" ] || _D27_MISSING="${_D27_MISSING} ${_D27_REL}"
     done
     if [ -n "$_D27_MISSING" ]; then
