@@ -1,3 +1,17 @@
+## [v25.1.88]  -  2026-09-26  -  JEV 1.1 batch 003 lands on main: decision-engine gates, offline evaluation harness, skill-version reconciliations
+
+### Why
+PR #1254 (jev11/integration-batch-003) merged the JEV 1.1 batch to main, and the release markers were rolled to v25.1.88 in the same window (`a0f20af7b`), but no CHANGELOG entry was written for the release. The G2 gate requires a CHANGELOG header for every v11+ annotated tag, so the missing v25.1.88 entry failed G2 on main and, because that gate is a required status check, failed it on pull requests that had nothing to do with the release. This entry documents the release that was already cut.
+
+### changed
+- `23-ai-workforce-blueprint/scripts/backfill-build-state.py` and `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-00-Owner-Task-Routing.md`: JEV-A36 CAS selector, backfill, producer and audience-rescore gates; the owner-direct execution policy record; the D28 managed CEO/role instruction clause.
+- `59-anthology-engine/scripts/intake_router.py` and `59-anthology-engine/scripts/nudge_send.py`: decision-engine intake and nudge routing.
+- `32-command-center-setup/scripts/move-task.py`: redispatch caller parity.
+- Skills 32, 35, 57 and 59 reconciled against origin/main to v13.1.30, v3.6.7, v1.7.2 and v1.0.5; the Skill 57 late gate re-pinned; MRG-103 QC path made repo-relative; the frozen D29 corpus and the D30 offline evaluation harness landed.
+
+### Tests
+Measured on `718f2b0ab` (origin/main): G1, G1b, G3 and the version-marker check all pass; G2 fails solely for the missing v25.1.88 header this entry adds.
+
 ## [v25.1.87]  -  2026-09-26  -  Interview transcript-lock correctness pinned, cross-repo pin proof, reusable-link wording
 
 ### Why
