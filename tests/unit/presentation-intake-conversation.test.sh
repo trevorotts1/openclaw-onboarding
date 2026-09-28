@@ -209,8 +209,8 @@ if [ -f "$DRIVER" ]; then
 
   PLAN_OUT="$("$PY" "$DRIVER" --signature --plan 2>&1)"
   if printf '%s' "$PLAN_OUT" | grep -q '"questions"' \
-     && printf '%s' "$PLAN_OUT" | grep -q '"frame_selection_question"'; then
-    ok "--signature --plan still emits the full read-only dry-run payload (explicit escape hatch preserved)"
+     && printf '%s' "$PLAN_OUT" | grep -q '"frame_question"'; then
+    ok "--signature --plan still emits the full read-only dry-run payload (explicit escape hatch preserved; Fix 31: canonical dept driver shape)"
   else
     bad "--signature --plan no longer emits the full intake plan"
     printf '%s\n' "$PLAN_OUT" | sed 's/^/         /' >&2

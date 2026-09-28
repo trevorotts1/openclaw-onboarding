@@ -200,6 +200,44 @@ def delegate_standard_mode(run_dir: pathlib.Path, tail: list,
     return proc.returncode
 
 
+def delegate_signature_mode(tail: list,
+                            run_dir: "pathlib.Path | None" = None) -> int:
+    """Fix 31 (M18 + D1): run the canonical driver for one signature command.
+
+    The skill-level signature interview is RETIRED. The department driver
+    (templates/role-library/presentations/scripts/deck-intake-driver.py) is
+    the ONE signature-intake implementation. Legacy --signature --next /
+    --answer calls translate to --signature --sig-next / --sig-answer so old
+    callers keep working; --plan/--record translate to --sig-plan/--sig-record;
+    --selftest and bare --signature delegate verbatim.
+
+    stdout/stderr are inherited, so the caller sees the canonical driver's own
+    JSON verbatim -- no reformatting, no summarising, no swallowed diagnostics.
+
+    run_dir may be None for commands that need no workspace (bare --signature
+    pointer, --selftest, --sig-plan): a temp dir satisfies the canonical
+    driver's --run-dir requirement without touching the caller's cwd.
+    """
+    import subprocess
+    import tempfile
+    cleanup = None
+    if run_dir is None:
+        cleanup = tempfile.TemporaryDirectory()
+        run_dir = pathlib.Path(cleanup.name)
+    try:
+        driver = find_canonical_driver()
+    except FileNotFoundError as exc:
+        print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
+        return 3
+    proc = subprocess.run(
+        [sys.executable, str(driver), "--run-dir", str(run_dir)] + list(tail)
+    )
+    rc = proc.returncode
+    if cleanup is not None:
+        cleanup.cleanup()
+    return rc
+
+
 # ---------------------------------------------------------------------------
 # Answer file I/O
 # ---------------------------------------------------------------------------
@@ -2485,44 +2523,51 @@ def main() -> None:
         cmd_selftest()
         return  # cmd_selftest exits internally
 
-    # Signature mode is self-contained: emit-block needs no run dir; --record and
-    # the SP self-test resolve everything themselves. Route it BEFORE the generic
-    # per-turn --run-dir requirement below.
+    # Fix 31 (M18 + D1): SIGNATURE MODE IS RETIRED -- delegated to the
+    # canonical department driver
+    # (templates/role-library/presentations/scripts/deck-intake-driver.py).
+    # The skill-level signature interview no longer exists as a separate
+    # implementation. Every --signature command hands off:
+    #   --signature --next            -> --signature --sig-next
+    #   --signature --answer ID TEXT  -> --signature --sig-answer ID TEXT
+    #   --signature --plan            -> --signature --sig-plan
+    #   --signature --record FILE     -> --signature --sig-record FILE
+    #   --signature --selftest        -> --selftest
+    #   --signature (bare)            -> --signature
+    # The local cmd_sp_next / cmd_sp_answer / cmd_signature /
+    # cmd_signature_pointer / signature_selftest functions below are RETIRED
+    # dead code, kept only so the module still imports for the standard-mode
+    # surface (derive_legacy_fields, etc.). Do not call them.
     if args.signature:
         if args.selftest:
-            sys.exit(0 if signature_selftest() else 1)
+            sys.exit(delegate_signature_mode(["--selftest"], None))
         if args.next or args.answer:
-            # --signature --next / --signature --answer: the REAL turn-gate.
-            # Runs the SAME blocked/validated ledger machinery as the standard
-            # flow, over sp-8-questions.json (choice question first, q1..q8,
-            # then the frame question) — no batch payload on this path.
             if not args.run_dir:
                 parser.error("--run-dir DIR is required for --signature --next/--answer")
             sp_run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
             if not sp_run_dir.exists():
-                print(json.dumps({"status": "error", "message": f"--run-dir not found: {sp_run_dir}"}))
+                print(json.dumps({"status": "error",
+                                  "message": f"--run-dir not found: {sp_run_dir}"}))
                 sys.exit(1)
-            try:
-                sp_spec = json.loads(find_sp_spec(args.sp_spec).read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
-                print(json.dumps({"status": "error", "message": f"cannot load SP spec: {exc}"}))
-                sys.exit(3)
-            sp_ledger = load_ledger(sp_run_dir, SP_LEDGER_REL)
             if args.next:
-                cmd_sp_next(sp_run_dir, sp_spec, sp_ledger)
+                tail = ["--signature", "--sig-next"]
             else:
-                cmd_sp_answer(sp_run_dir, sp_spec, sp_ledger, args.answer[0], args.answer[1])
-            return  # both exit internally
-        if args.plan or args.record:
-            # --signature --plan (read-only dry-run) or --signature --record FILE
-            # (assemble a pre-gathered answers file). Both are explicit, named
-            # escape hatches from the turn-gate — never the bare-call default.
-            cmd_signature(args)
-            return  # cmd_signature exits internally
-        # E5 fix: bare --signature (no --next/--answer/--record/--plan) MUST NOT
-        # leak the full question payload — point at the required turn-gate instead.
-        cmd_signature_pointer(args)
-        return  # cmd_signature_pointer exits internally
+                tail = ["--signature", "--sig-answer", args.answer[0], args.answer[1]]
+            sys.exit(delegate_signature_mode(tail, sp_run_dir))
+        if args.plan:
+            rd = (pathlib.Path(args.run_dir).expanduser().resolve()
+                  if args.run_dir else None)
+            sys.exit(delegate_signature_mode(["--signature", "--sig-plan"], rd))
+        if args.record:
+            if not args.run_dir:
+                parser.error("--run-dir DIR is required for --signature --record")
+            sp_run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+            sys.exit(delegate_signature_mode(
+                ["--signature", "--sig-record", args.record], sp_run_dir))
+        # Bare --signature: delegate for the canonical use_turn_gate pointer.
+        rd = (pathlib.Path(args.run_dir).expanduser().resolve()
+              if args.run_dir else None)
+        sys.exit(delegate_signature_mode(["--signature"], rd))
 
     # All other commands require --run-dir
     if not args.run_dir:

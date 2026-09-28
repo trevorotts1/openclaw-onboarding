@@ -3845,8 +3845,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="THE ONE sanctioned intake bridge for Presentations. "
                     "Writes deck_type via derive_legacy_fields() -- never "
                     "hardcoded, never hand-typed.")
-    p.add_argument("--run-dir", type=Path, required=True,
-                   help="the deck's run directory")
+    p.add_argument("--run-dir", type=Path, required=False, default=None,
+                   help="the deck's run directory (not needed for --selftest)")
     p.add_argument("--selftest", action="store_true",
                    help="run offline self-test in a temp dir; exits 0 on pass")
 
@@ -3936,15 +3936,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
+    # Fix 7 (D1): offline self-test runs without --run-dir.
+    if getattr(args, "selftest", False):
+        return cmd_selftest()
+
     if not args.run_dir:
         print("FATAL: --run-dir is required", file=sys.stderr)
         return 2
 
     run_dir = args.run_dir.expanduser().resolve()
-
-    # Fix 7 (D1): offline self-test.
-    if getattr(args, "selftest", False):
-        return cmd_selftest()
 
     # --question-set
     if args.question_set:
