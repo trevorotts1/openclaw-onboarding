@@ -1,3 +1,5 @@
+## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
+
 ## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
 
 ### Why
