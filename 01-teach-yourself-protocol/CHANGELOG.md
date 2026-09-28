@@ -39,7 +39,7 @@ No functional changes. Version advanced to the next major generation alongside t
 ## [7.0.1] - 2026-09-28 - Pointer standard: remove contradictions with Skill 70
 
 Skill 01 stays the skill for LEARNING new knowledge. This patch only removes the places
-where it contradicted Skill 70 (The Power of Pointer References, folder 70-pointer-references).
+where it contradicted Skill 70 (Lean Core File System, folder 70-lean-core-file-system).
 
 - Core-file entries are now one-line pointers of at most two sentences (WHAT it is, WHERE
   it lives, WHEN to read it) instead of 10 to 25 line summaries. Always-on rules (safety

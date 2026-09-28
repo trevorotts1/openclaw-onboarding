@@ -95,8 +95,8 @@ store anything.
    AGENTS.md, TOOLS.md, or MEMORY.md. Write a pointer of one line, at most two
    sentences, that says WHAT it is, WHERE the deep file lives, and WHEN to read it.
    Always-on rules (safety rules, never-do rules, identity essentials, hard
-   constraints) stay inline in the core file, shortened. Skill 70 (The Power of
-   Pointer References, folder 70-pointer-references) owns core-file size and the
+   constraints) stay inline in the core file, shortened. Skill 70 (Lean Core
+   File System, folder 70-lean-core-file-system) owns core-file size and the
    weekly core-file audit.
 
 2. **The pointer test.** A good pointer names WHAT it is, gives the exact WHERE

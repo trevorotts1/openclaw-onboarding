@@ -509,7 +509,7 @@ These rules prevent the core files from growing out of control:
 No full API references in core files. Pointers only. Full docs go in the master-files folder.
 No full SOPs in core files. Pointer only. Full SOP goes in master-files.
 No duplicated content across core files. If TOOLS.md has the pointer, MEMORY.md just needs a one-line note - not a second copy.
-Size and audit belong to Skill 70. Skill 70 (The Power of Pointer References, folder 70-pointer-references) owns core-file size and the weekly core-file audit; follow its target and schedule, not a line count here.
+Size and audit belong to Skill 70. Skill 70 (Lean Core File System, folder 70-lean-core-file-system) owns core-file size and the weekly core-file audit; follow its target and schedule, not a line count here.
 One source of truth. The deep file is authoritative. Core file pointers point TO it. If there's ever a discrepancy, the deep file wins.
 Clean up dead references. If a deep file is deleted or moved, immediately update all core files that pointed to it.
 No "just in case" entries. Don't add pointers for knowledge that has zero chance of being needed. Not everything needs to be in the core files.
