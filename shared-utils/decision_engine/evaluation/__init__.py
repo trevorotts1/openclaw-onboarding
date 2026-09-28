@@ -11,10 +11,17 @@ two REAL paths and reports measured numbers only:
     provider / mode / tenant rows.
 
 Rows whose exact implementation revisions are absent from this checkout
-(exec/D11, capload/D13-D15/D20-D22/D24, shadow + atomic + off/legacy provmode
+(exec/D11, capload/D13-D15/D20-D22/D24, shadow + off/legacy provmode
 rows) are reported NOT_RUN with the missing revision named. Nothing guessed.
 Nothing tuned on heldout -- or on any split: the harness has zero trainable
 parameters, and the calibration split is scored only.
+
+The ATOMIC provmode row DOES run: the real SqliteBudgetStore (ladder.py)
+is driven with two barrier-forced concurrent reservations against one
+allowance, and the row passes only when exactly one send happens and the
+store's remaining balance never goes negative. That run writes one
+temporary SQLite file under the OS temp dir and removes it before return;
+it is the harness's only disk write.
 
 OFFLINE PROOF: corpus loaded via immutable `git show FROZEN_REV:path` (no
 working-tree copy exists to tune); sockets blocked during evaluation; every
@@ -23,7 +30,7 @@ openrouter / fixture_lookup; evaluation-run counts as provmode_runs;
 embedding / probe / shadow sources have no implementation in this
 checkout and count 0).
 
-Stdlib only. No network, no disk writes, no environment reads.
+Stdlib only. No network, no environment reads.
 Run: python3 -m pytest tests/unit/test_offline_eval_d30.py -q  (from repo root)
  or: python3 shared-utils/decision_engine/evaluation/__init__.py --out report.json
 """
@@ -34,10 +41,13 @@ import argparse
 import importlib.util
 import json
 import re
+import shutil
 import socket
 import statistics
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -58,8 +68,6 @@ MISSING_REVISIONS = {
                "integrated in base 404347fb (off/legacy equivalence unowned)",
     "SHADOW": "no shadow sampler in base 404347fb; remote shadow needs an "
               "approved allowance per spec 3.9 (none granted)",
-    "ATOMIC": "production budget store with atomic CAS absent offline; "
-              "concurrent reservation overdraw unprovable with fakes",
 }
 
 _HERE = Path(__file__).resolve()
@@ -333,6 +341,84 @@ def run_provmode(case, lad_mod):
                   and calls["openrouter"] == 0
                   and skips.get("typesafe_direct") == "root_deadline_expired"
                   and skips.get("openrouter") == "root_deadline_expired")
+    elif key == "ATOMIC":
+        # Two standing-authorized runs race for ONE allowance through the
+        # REAL SqliteBudgetStore (ladder.py). The per-run barrier forces
+        # both first policy checks together, so both reservations reach
+        # the store concurrently: exactly one may win, only the winner may
+        # reach a transport, and the balance must never go negative. The
+        # winner's sender sleeps briefly so the loser's refusal path
+        # completes while the hold is still debited (the zero-cost fake
+        # transport's later refund cannot reopen the race in this run).
+        tmp = tempfile.mkdtemp(prefix="jev-d30-atomic-")
+        try:
+            store = lad_mod.SqliteBudgetStore(
+                Path(tmp) / "budget.sqlite", {co: 1.0})
+            barrier = threading.Barrier(2)
+            calls_lock = threading.Lock()
+
+            def slow_direct(url, body, headers, timeout_s):
+                with calls_lock:               # exact count under races
+                    calls["typesafe_direct"] += 1
+                time.sleep(0.05)
+                return 200, {"model": "jev-1.13.0", "judgments": []}
+
+            outcomes = {}
+            logs = {}
+
+            def worker(tag):
+                seen = {"n": 0}
+                log_i = []
+                logs[tag] = log_i
+
+                def pol(p, purpose):
+                    seen["n"] += 1
+                    if seen["n"] == 1:
+                        barrier.wait(timeout=10)   # force concurrent reserve
+                    return {"spend_ok": True, "transmit_ok": True,
+                            "reason": "standing"}
+
+                try:
+                    lad = lad_mod.DirectFirstLadder(
+                        policy_fn=pol, reserve_fn=store.reserve_fn(co),
+                        reconcile_fn=store.reconcile)
+                    outcomes[tag] = lad.run(
+                        company_id=co, stores=both_stores, context={},
+                        state={}, questions=questions, keys=dict(both),
+                        direct_http=slow_direct,
+                        openrouter_transport=fake_or, order_log=log_i)
+                except Exception as exc:
+                    outcomes[tag] = {"error": "%s: %s"
+                                     % (type(exc).__name__, exc)}
+
+            threads = [threading.Thread(target=worker, args=(i,),
+                                        daemon=True) for i in (0, 1)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=15)
+            for tag in sorted(logs):
+                order_log.extend(logs[tag])
+            remaining = store.remaining(co)
+            granted = [o for o in outcomes.values()
+                       if isinstance(o, dict)
+                       and o.get("decision_source") == "typesafe_direct"]
+            refused = [o for o in outcomes.values()
+                       if isinstance(o, dict)
+                       and any(s.get("skip_reason") == "budget_exhausted"
+                               for s in o.get("stages", []))]
+            passed = (len(granted) == 1 and len(refused) == 1
+                      and calls["typesafe_direct"] == 1
+                      and calls["openrouter"] == 0
+                      and not any(t.is_alive() for t in threads)
+                      and remaining is not None and remaining >= 0.0)
+            verdict = granted[0] if granted else (outcomes.get(0) or {})
+            if not isinstance(verdict, dict) or "root" not in verdict:
+                verdict = {"decision_source": "no_jev", "ok": False,
+                           "stages": [], "root": {"remaining_ms": 0.0},
+                           "accounting": {"total_attempts": 0}}
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
     else:
         return {"id": case["id"], "family": "provmode",
                 "split": case["split"], "scenario": key,
@@ -535,7 +621,7 @@ def evaluate(repo_root=None):
             for fam in ("exec", "capload", "provmode", "intent")},
         "not_run_reasons": {k: MISSING_REVISIONS[k] for k in
                             ("exec", "capload", "OFF_EQUALS_LEGACY",
-                             "SHADOW", "ATOMIC")},
+                             "SHADOW")},
         "missing_revisions_note": "Full D30 needs D14-D24 exact integrated "
             "revisions; this base holds D16/D17/D18/D19/D23 only. "
             "D08/D10/D11/D13-D15/D20-D22/D24 rows are NOT_RUN, never guessed.",
