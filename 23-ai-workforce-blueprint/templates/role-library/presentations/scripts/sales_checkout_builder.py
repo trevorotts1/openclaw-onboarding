@@ -795,6 +795,21 @@ def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
       <p>{_cta_escape_text(fields.get('proof', ''))}</p>
     </div>"""
     else:
+        # Fix 1 (D3): the checkout form collects a phone number, so it
+        # carries the two SMS consent checkboxes (transactional +
+        # marketing). Both are unchecked by default and optional; buying
+        # never requires either one (TCPA). The live GHL form keeps its own
+        # "Terms & Conditions" element with the same wording (the contract
+        # "consent" block in checkout_form_builder.py).
+        from checkout_form_builder import (
+            resolve_consent_copy as _consent_copy)
+        _consent = _consent_copy({"company": client_name}, {})
+        consent_html = "".join(
+            f'<label class="consent"><input type="checkbox" '
+            f'name="consent_{b["kind"].replace("_sms", "")}" value="yes" />'
+            f"{_cta_escape_text(b['text'])}</label>"
+            for b in _consent["boxes"]
+        )
         body_extra = f"""
     <div class="order-summary">
       <p>{_cta_escape_text(fields.get('order_line', ''))}</p>
@@ -808,6 +823,7 @@ def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
         <label>Email Address <input type="email" name="email" required /></label>
         <label>Full Name <input type="text" name="full_name" required /></label>
         <label>Cell Phone <input type="tel" name="phone" /></label>
+        {consent_html}
         <button type="submit" class="cta-button">{cta} — Complete Order</button>
       </form>
     </div>"""
