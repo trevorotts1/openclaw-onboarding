@@ -1,3 +1,28 @@
+## [v25.1.105]  -  2026-09-28  -  Merge train: #1323 docs(batch-merger-proof): remove the scratch proof docs; #1324 Fix qc-system-integrity.sh CHECK 2.3: real-file copies PASS, symlinks…; #1326 fix(PRES-057): reconcile refuses a live cron edit from an ephemeral…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1323 — docs(batch-merger-proof): remove the scratch proof docs
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1324 — [v25.1.104]  -  2026-09-28  -  qc-system-integrity.sh CHECK 2.3 scored the opposite of CHECK 9.9/N29 — fixed
+
+#### Why
+While rewriting SYSTEM-DIAGNOSTIC-CHECKLIST.md (v25.1.102) it surfaced that `scripts/qc-system-integrity.sh`'s own CHECK 2.3 (department AGENTS.md/TOOLS.md/USER.md) directly contradicted CHECK 9.9 in the same script: 2.3 printed a green PASS when those files were SYMLINKED and a yellow WARN ("should be symlinked") when they were real-file copies, while 9.9 hard-fails a symlink and requires a real-file copy. N29 (amended 2026-07-31) made real-file copies canonical — the runtime's workspace-root boundary guard rejects a symlink outright, regardless of target — so 2.3 had been printing a misleading warning on every healthy, N29-compliant box since the boundary guard landed. 2.3's logic was never touched after it was written (PR #1059) and had simply never been updated when N29 was amended.
+
+#### What changed
+- scripts/qc-system-integrity.sh CHECK 2.3: swapped the pass/warn branches so real-file copies (COPIED>0, SYMLINKED=0) now PASS and symlinks (SYMLINKED>0, COPIED=0) now WARN, with corrected messages and remedies pointing at `update-skills.sh`/`install.sh` Step 10a (`link_shared_core_files`) and cross-referencing CHECK 9.9. The mixed-copies-and-symlinks branch is unchanged (still WARN) — nothing else in the file was touched.
+- tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh (new): extracts the real CHECK 2.3 block and the real green/yellow/na helpers from the script and runs them, unmodified, against synthetic department trees — real-file copies only, symlinks only, and mixed — asserting the PASS/WARN counters move the way N29/9.9 require. A mutation-proof step reverts the extracted block to the pre-fix (backwards) condition ordering and proves the test would have failed against the original bug (verified directly against the pre-fix script content, not just the synthetic mutation, before this entry was written).
+- version, install.sh, update-skills.sh, 23-ai-workforce-blueprint/skill-version.txt, 23-ai-workforce-blueprint/templates/role-library/_index.json, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md, cc-compat.json, 23-ai-workforce-blueprint/SKILL.md: v25.1.103 -> v25.1.104 via `scripts/bump-version.sh`; docs/interview-launch-recovery.md's paired-release line hand-fixed to match (check-doc-currency-guards.sh guard #2).
+
+#### Tests
+`bash tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh` (new, 7/7 pass; independently confirmed to fail 3/7 when run against the pre-fix script); `bash -n` on both changed files; `scripts/check-doc-currency-guards.sh` and `scripts/bump-version.sh --check` (both pass at v25.1.104).
+
+### #1326 — fix(PRES-057): reconcile refuses a live cron edit from an ephemeral OPENCLAW_ROOT
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v25.1.104]  -  2026-09-28  -  Merge train: #1311 fix(shared-utils): fleet_notify.send_telegram returns the delivered…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -24,19 +49,6 @@ tests/unit/fleet-refresh-roll-safety.test.py: 60/60 pass unchanged (existing moc
 2-tuples for `send_telegram`; nothing indexed past `[0]`/`[1]`, so they are unaffected by the
 added third element). Verified live against the (already-updated) n8n workflow end to end: a
 real webhook call now returns `{"ok": true, "result": {"message_id": ...}}`.
-## [v25.1.104]  -  2026-09-28  -  qc-system-integrity.sh CHECK 2.3 scored the opposite of CHECK 9.9/N29 — fixed
-
-### Why
-While rewriting SYSTEM-DIAGNOSTIC-CHECKLIST.md (v25.1.102) it surfaced that `scripts/qc-system-integrity.sh`'s own CHECK 2.3 (department AGENTS.md/TOOLS.md/USER.md) directly contradicted CHECK 9.9 in the same script: 2.3 printed a green PASS when those files were SYMLINKED and a yellow WARN ("should be symlinked") when they were real-file copies, while 9.9 hard-fails a symlink and requires a real-file copy. N29 (amended 2026-07-31) made real-file copies canonical — the runtime's workspace-root boundary guard rejects a symlink outright, regardless of target — so 2.3 had been printing a misleading warning on every healthy, N29-compliant box since the boundary guard landed. 2.3's logic was never touched after it was written (PR #1059) and had simply never been updated when N29 was amended.
-
-### What changed
-- scripts/qc-system-integrity.sh CHECK 2.3: swapped the pass/warn branches so real-file copies (COPIED>0, SYMLINKED=0) now PASS and symlinks (SYMLINKED>0, COPIED=0) now WARN, with corrected messages and remedies pointing at `update-skills.sh`/`install.sh` Step 10a (`link_shared_core_files`) and cross-referencing CHECK 9.9. The mixed-copies-and-symlinks branch is unchanged (still WARN) — nothing else in the file was touched.
-- tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh (new): extracts the real CHECK 2.3 block and the real green/yellow/na helpers from the script and runs them, unmodified, against synthetic department trees — real-file copies only, symlinks only, and mixed — asserting the PASS/WARN counters move the way N29/9.9 require. A mutation-proof step reverts the extracted block to the pre-fix (backwards) condition ordering and proves the test would have failed against the original bug (verified directly against the pre-fix script content, not just the synthetic mutation, before this entry was written).
-- version, install.sh, update-skills.sh, 23-ai-workforce-blueprint/skill-version.txt, 23-ai-workforce-blueprint/templates/role-library/_index.json, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md, cc-compat.json, 23-ai-workforce-blueprint/SKILL.md: v25.1.103 -> v25.1.104 via `scripts/bump-version.sh`; docs/interview-launch-recovery.md's paired-release line hand-fixed to match (check-doc-currency-guards.sh guard #2).
-
-### Tests
-`bash tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh` (new, 7/7 pass; independently confirmed to fail 3/7 when run against the pre-fix script); `bash -n` on both changed files; `scripts/check-doc-currency-guards.sh` and `scripts/bump-version.sh --check` (both pass at v25.1.104).
-
 ## [v25.1.103]  -  2026-09-28  -  Merge train: #1298 presentations: Step 5 — Fix 7, then Fix 31; #1316 Rewrite SYSTEM-DIAGNOSTIC-CHECKLIST.md — 16-release stale content pass; #1317 docs(batch-merger-proof): isolation proof A (clean); #1318 docs(batch-merger-proof): isolation proof B (clean); #1319 docs(batch-merger-proof): isolation proof C (clean); #1321 fleet-refresh: name every box by its client, not its box id; per-box…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
