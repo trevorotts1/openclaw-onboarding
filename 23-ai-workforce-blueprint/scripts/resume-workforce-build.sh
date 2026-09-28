@@ -523,7 +523,7 @@ if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )
           openclaw message send --channel telegram -t "$_operator_chat" \
             -m "⛔ workforce-build-resume on $(hostname) PARKED + DISABLED after ${_stuck} consecutive no-progress fires (v14.1.5 hard stuck-cap). It will NOT re-fire until you un-park: scripts/unpark-build.sh. State: $STATE_FILE" >>"$LOG_FILE" 2>&1 || true
         fi
-        _tmp_se=$(mktemp); workforce_state_set "$STATE_FILE" '.stuckParkEscalated = true'
+        workforce_state_set "$STATE_FILE" '.stuckParkEscalated = true'
       fi
     fi
     echo "PARKED + DISABLED — ${_stuck} consecutive no-progress fires hit the hard cap ($MAX_STUCK_FIRES). The resume cron is removed; un-park is operator-only (scripts/unpark-build.sh). STOP."
@@ -1144,7 +1144,6 @@ if (( attempts >= max_attempts )); then
         '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
       curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
     fi
-    _tmp_cap=$(mktemp)
     workforce_state_set "$STATE_FILE" '.resumeCapEscalated = true'
   fi
   # Slow-backoff past the cap: act roughly every 2h (every 8th */15 fire) but
@@ -1154,7 +1153,7 @@ if (( attempts >= max_attempts )); then
   if (( _attempts_over % 8 != 0 )); then
     log "slow-retry: attempt $attempts past cap - backoff skip this fire (will dispatch on the next ~2h boundary)."
     # still bump the counter so backoff advances
-    _tmp_a=$(mktemp); workforce_state_set "$STATE_FILE" ".resumeAttempts = $((attempts + 1))"
+    workforce_state_set "$STATE_FILE" ".resumeAttempts = $((attempts + 1))"
     exit 0
   fi
   log "slow-retry: attempt $attempts past cap - dispatching a resume self-ping (2h boundary)."
@@ -1180,7 +1179,6 @@ if (( library_dirty == 1 )) && (( attempts >= near_cap_threshold )); then
       openclaw message send --channel telegram -t "$_operator_chat" -m "$STATUS_LINE" 2>>"$LOG_FILE" || true
     fi
     # Mark notified so we surface this once, not on every remaining cycle.
-    _tmp_notif=$(mktemp)
     workforce_state_set "$STATE_FILE" '.librariesNearCapNotified = true'
   fi
 fi
@@ -1209,7 +1207,7 @@ if (( _total_pings >= MAX_TOTAL_RESUME_PINGS )); then
       _operator_chat="$(resolve_operator_chat_id)"
       [[ -n "$_operator_chat" ]] && openclaw message send --channel telegram -t "$_operator_chat" \
         -m "⛔ workforce-build-resume on $(hostname) PARKED + DISABLED after ${_total_pings} total resume self-pings (absolute ceiling ${MAX_TOTAL_RESUME_PINGS}). It will NOT re-fire until you un-park: scripts/unpark-build.sh. State: $STATE_FILE" >>"$LOG_FILE" 2>&1 || true
-      _tmp_pc=$(mktemp); workforce_state_set "$STATE_FILE" '.pingCeilingEscalated = true'
+      workforce_state_set "$STATE_FILE" '.pingCeilingEscalated = true'
     fi
   fi
   echo "PARKED + DISABLED — ${_total_pings} total resume pings hit the absolute ceiling ($MAX_TOTAL_RESUME_PINGS). The resume cron is removed; un-park is operator-only (scripts/unpark-build.sh). STOP."
@@ -1262,7 +1260,6 @@ if [[ "$_rl_next_allowed_epoch" -gt "$_rl_now_epoch" ]]; then
 fi
 
 # ---- bump attempt counter atomically ----
-tmp_state=$(mktemp)
 workforce_state_set "$STATE_FILE" ".resumeAttempts = $((attempts + 1))"
 
 # ---- compose the resume message + dispatch ----

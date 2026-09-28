@@ -68,6 +68,7 @@ self_test() {
   echo "[stamp-rescue] self-test: render tokens + idempotent append"
   local tpl; tpl="$(_default_tpl)" || { echo "template not found" >&2; return 1; }
   local tmp; tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"; trap - RETURN' RETURN  # also on the FAIL returns below
   local agents="$tmp/AGENTS.md"
   printf '# Agent Instructions\n\nExisting content.\n' > "$agents"
   stamp "$agents" "$tpl" "Jane Doe" "acme" "Aria" "acme-mac" "Mac Mini" "2026.5.22" "123456"

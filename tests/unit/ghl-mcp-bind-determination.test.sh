@@ -44,6 +44,8 @@ command -v python3 >/dev/null 2>&1 || { printf 'FATAL: python3 required\n' >&2; 
 BOX="$(mktemp -d "${TMPDIR:-/tmp}/ghl-bind-box.XXXXXX")"
 cleanup() {
   [ -n "${LISTENER_PID:-}" ] && kill "$LISTENER_PID" 2>/dev/null
+  # The gate runs pm2 with HOME=$BOX, which starts a daemon there; stop it before its home is deleted.
+  [ -f "$BOX/.pm2/pm2.pid" ] && PM2_HOME="$BOX/.pm2" pm2 kill >/dev/null 2>&1
   rm -rf "$BOX"
 }
 trap cleanup EXIT

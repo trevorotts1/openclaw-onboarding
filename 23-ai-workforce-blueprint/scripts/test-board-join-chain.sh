@@ -111,7 +111,15 @@ for f in "$JOIN_PY" "$SEEDER" "$QC_GATE"; do
 done
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+cleanup() {
+  # Steps run with HOME under $TMP, which starts a pm2 daemon there; stop each before its home is deleted.
+  local h
+  for h in "$TMP"/*/.pm2; do
+    [ -f "$h/pm2.pid" ] && PM2_HOME="$h" pm2 kill >/dev/null 2>&1
+  done
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 
 SANDBOX_HOME="$TMP/home"
 COMPANY_DIR="$SANDBOX_HOME/clawd/zero-human-company/acme"

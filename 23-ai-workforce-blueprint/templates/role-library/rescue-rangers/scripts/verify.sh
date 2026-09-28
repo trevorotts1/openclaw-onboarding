@@ -58,13 +58,17 @@ else
   harness_case UNIT "instrument control: node exists and runs" -- "$NODE" -e "assert(1 === 1)"
 fi
 
+# Scratch for the whole battery (mutation copies + self-test state dirs); removed on exit.
+MUT="$(mktemp -d)"
+trap 'rm -rf "$MUT"' EXIT
+
 # ---------------------------------------------------------------------------
 # GATE: UNIT — each tool's self-test (unchanged batteries, now observed in
 # the parent shell via the harness).
 # ---------------------------------------------------------------------------
 if [ -n "$PY" ]; then
   harness_case UNIT "rescue_ledger.py --self-test" \
-    -- env RESCUE_STATE_DIR="$(mktemp -d)" "$PY" "$HERE/rescue_ledger.py" --self-test
+    -- env RESCUE_STATE_DIR="$(mktemp -d "$MUT/state.XXXXXX")" "$PY" "$HERE/rescue_ledger.py" --self-test
   harness_case UNIT "rescue_cc_board.py --self-test" \
     -- "$PY" "$HERE/rescue_cc_board.py" --self-test
   harness_case UNIT "migrate-rescue-staticdata.py --self-test" \
@@ -92,9 +96,6 @@ fi
 # GATE: MUTATION (UNIT class) — break each checker in a copy; the copied gate
 # must go nonzero. Assumption control: the pristine copy must stay green.
 # ---------------------------------------------------------------------------
-MUT="$(mktemp -d)"
-trap 'rm -rf "$MUT"' EXIT
-
 if [ -n "$PY" ]; then
   # RR-030 note: mutation breakers are written to FILES and invoked as plain
   # commands — never heredocs inside compound commands (a `fi` directly after
@@ -134,7 +135,7 @@ MUTPY
   # mutated code that assert must fire (nonzero).
   if "$PY" "$MUTATOR" "$MUT/anchor2.txt" "$MUT/repl2.txt" "$MUT/rescue_ledger_idem.py"; then
     harness_case_negative UNIT "MUTATION: non-idempotent open_ticket must FAIL rescue_ledger --self-test" \
-      -- env RESCUE_STATE_DIR="$(mktemp -d)" "$PY" "$MUT/rescue_ledger_idem.py" --self-test
+      -- env RESCUE_STATE_DIR="$(mktemp -d "$MUT/state.XXXXXX")" "$PY" "$MUT/rescue_ledger_idem.py" --self-test
   else
     harness_gate_fail UNIT "mutation setup: INSERT OR IGNORE anchor drifted in rescue_ledger.py"
   fi
