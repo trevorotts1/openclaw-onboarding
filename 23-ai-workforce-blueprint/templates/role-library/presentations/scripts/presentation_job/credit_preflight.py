@@ -768,6 +768,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     v = launcher_gate(Path(args.run_dir).expanduser() if args.run_dir
                       else None, args.mode)
     print(json.dumps(v, indent=2, sort_keys=True, default=str))
+    # FIX 5: a disabled preflight never blocks -- the flag-off "skipped"
+    # result exits 0 exactly like a proceed verdict.
+    if v.get("skipped") is not None:
+        return 0
     if args.quiet:
         v = dict(v)
         v["notify"] = []  # nothing is dispatched; the verdict stands

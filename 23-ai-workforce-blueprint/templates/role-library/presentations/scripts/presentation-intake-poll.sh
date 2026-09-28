@@ -1275,19 +1275,47 @@ except Exception:
             log "  [launch-plan] $line"
         done
 
+        # >>> FIX5-PREFLIGHT-GATE-BEGIN
+        # FIX 5 (H2) -- fresh-intake credit preflight. This branch calls the
+        # engine directly, bypassing the launcher, so the launcher's
+        # credit_preflight gate never ran for it. When RUN_MODE is set, run
+        # the preflight here; a non-zero exit refuses the run and the engine
+        # is never started. Do NOT re-route --new through the launcher.
+        # (Fix 61 step 4 later adds the ultra-only checks at this same spot.)
+        PREFLIGHT_RC=0
+        if [ -n "${RUN_MODE:-}" ]; then
+            ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.credit_preflight \
+                --run-dir "$run_dir" --mode "$RUN_MODE" ) 2>&1 | while IFS= read -r line; do
+                log "  [credit-preflight] $line"
+            done
+            # LAUNCH ACCOUNTING: the preflight's own exit status, not the log loop's.
+            PREFLIGHT_RC=${PIPESTATUS[0]}
+            if [ "$PREFLIGHT_RC" -ne 0 ]; then
+                log "  NOT LAUNCHED: credit preflight refused $run_dir (mode $RUN_MODE, rc $PREFLIGHT_RC) -- engine not started. Counted as REFUSED, never as a launch."
+                REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+            fi
+        fi
+
         # Create the engine job then run it.
         # FIX 11 client path: this branch calls the ENGINE directly, not the
         # launcher, so the mode travels as PRESENTATION_MODE rather than as
         # --mode -- the engine entry has no such flag, by design. See the
         # dispatch-mode note above.
+        # FIX 5: the engine is never started when the credit preflight refused.
+        CREATE_RC=$PREFLIGHT_RC
+        if [ "$PREFLIGHT_RC" -eq 0 ]; then
         env ${RUN_MODE:+PRESENTATION_MODE="$RUN_MODE"} python3 "$ENGINE_ENTRY" --new --run-dir "$run_dir" --intake "$ENGINE_INTAKE_TMP" 2>&1 | while IFS= read -r line; do
             log "  [create] $line"
         done
         # LAUNCH ACCOUNTING (see the resume branch): the ENGINE's own exit
         # status, not the log loop's. A --new that fails leaves no job to run.
         CREATE_RC=${PIPESTATUS[0]}
+        fi
+        # <<< FIX5-PREFLIGHT-GATE-END
 
-        if [ "$CREATE_RC" -ne 0 ]; then
+        if [ "$PREFLIGHT_RC" -ne 0 ]; then
+            : # FIX 5: preflight refusal already logged and counted at the gate above
+        elif [ "$CREATE_RC" -ne 0 ]; then
             log "  NOT LAUNCHED: engine --new exited $CREATE_RC for $run_dir -- no job was created. Counted as REFUSED, never as a launch."
             REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
         elif [ -f "$run_dir/state.json" ]; then
