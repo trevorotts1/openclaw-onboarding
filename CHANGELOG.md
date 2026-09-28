@@ -1,7 +1,7 @@
-## [v25.1.96]  -  2026-09-28  -  Fleet roll safety: 999-setup refresh, post-update health gate with automatic rollback, waves, boxes-file generator, Sunday = operator roll, Command Center pin v7.6.70
+## [v25.1.97]  -  2026-09-28  -  Fleet roll safety: 999-setup refresh, post-update health gate with automatic rollback, waves, boxes-file generator, Sunday = operator roll, Command Center pin v7.6.70
 
 ### Why
-A fleet roll must spend no AI tokens and prove every client box is still up afterwards. fleet-refresh.sh could deploy but could not tell whether it broke a box, could not undo it, and the box's own Sunday update ran a different (onboarding-only) path. Version markers rolled v25.1.95 -> v25.1.96 via scripts/bump-version.sh.
+A fleet roll must spend no AI tokens and prove every client box is still up afterwards. fleet-refresh.sh could deploy but could not tell whether it broke a box, could not undo it, and the box's own Sunday update ran a different (onboarding-only) path. Version markers rolled v25.1.96 -> v25.1.97 via scripts/bump-version.sh.
 
 ### What changed
 - shared-utils/fleet_refresh_runner.py: before any change, snapshots the box (onboarding stamp + clone SHA/tag, Command Center SHA/tag/version, a tarball of only the onboarding-managed skill trees, a copy of openclaw.json) and its health. After the update a read-only, platform-aware health gate runs: gateway process, gateway /health, Telegram Bot API getMe (a read, never sendMessage), Command Center /api/health three times, and the main-agent session reset. A check that passed before and fails after, or a half-applied onboarding step (or Command Center step whose checkout moved), rolls the box back to the snapshot (clone, skill trees, stamp, Command Center rebuilt and restarted at its previous SHA through atomic-deploy.sh), re-checks health, and records ROLLED_BACK with the failing check named. No restorable snapshot means no update. Each box reports UPDATED / ROLLED_BACK / FAILED / SKIPPED. A per-box lock keeps the operator roll and the Sunday run from interleaving.
@@ -15,6 +15,16 @@ A fleet roll must spend no AI tokens and prove every client box is still up afte
 
 ### Tests
 tests/unit/fleet-refresh-roll-safety.test.py (31 tests, wired into qc-static): snapshot, gate pass, gate fail -> full rollback, half-applied step -> rollback, Command Center step failure without a checkout move -> no rollback, rollback that does not restore health -> FAILED, pre-existing failures not blamed, update-skills exit 2 advisory, build exit 2 = old build serving, 999 present / absent / archive extract / hand-managed / found via skill link / dry-run, Telegram getMe only with the token never reported, box lock, boxes-file generator with a fixture roster, waves and the outcome table through fake ssh/docker, the --local --apply checkout guard, weekly-full-update.sh, and the Sunday cron heal. scripts/test-fleet-refresh.sh 40/40, fleet-refresh-cc-main-convergence and cc-runtime-preflight pass.
+
+## [v25.1.96]  -  2026-09-28  -  Batch auto-merge: A47 accepts any route, ACC-052 batch docs, README current-release refresh
+
+### Why
+The batch auto-merge (PR #1305) rolled the version markers v25.1.95 -> v25.1.96 and was tagged without a CHANGELOG header; the G2 gate requires one for every v11+ annotated tag. This entry records what that release contains (from its commits).
+
+### What changed
+- fix(A47): accept any route (no allowlist, never block) while keeping requested-vs-served recording.
+- docs(jev11): ACC-052 batch tick state machine, daemon skip and fail-open rationale, batch-train label governs enrollment, daemon required contexts.
+- readme: refresh the current-release section and guard against future drift (scripts/check-readme-current-release.sh + its test).
 
 ## [v25.1.95]  -  2026-09-28  -  Presentations Step 4 lands on main: retired text-overlay doctrine (Fix 4), canonical assembler steps (Fix 20), installer-managed watchdog (Fix 49)
 
