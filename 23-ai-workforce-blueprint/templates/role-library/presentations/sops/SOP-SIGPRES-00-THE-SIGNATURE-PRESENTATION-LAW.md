@@ -2,7 +2,7 @@
 
 **Cluster:** Signature Presentation Doctrine (Skill 51 — the SACRED Trevor Otts method, run THROUGH the Presentations engine).
 **Doctrine parent:** none — this is the root of the SIGPRES family (SOP-SIGPRES-00…06). Method authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1–14).
-**Owning roles at write time:** Signature Presentation Architect (`signature-presentation-architect.md`) owns intake→structure lock; QC Specialist (Signature Presentations) (`qc-specialist-signature-presentations.md`) grades independently. Front door: Brainstorming Buddy (signature mode) via `23-ai-workforce-blueprint/scripts/deck-intake-driver.py --signature`.
+**Owning roles at write time:** Signature Presentation Architect (`signature-presentation-architect.md`) owns intake→structure lock; QC Specialist (Signature Presentations) (`qc-specialist-signature-presentations.md`) grades independently. Front door: Brainstorming Buddy (signature mode) via `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py --signature`.
 **Enforced at the gate by:** three fail-closed provers wired as manifest phases — `prove_sp_intake.py` (**P-SP-INTAKE**), `prove_sp_structure.py` (**P-SP-STRUCTURE**), `prove_sp_no_pitch.py` (**P-SP-P3-HYGIENE**) — via the `_chk_sp_intake` / `_chk_sp_structure` / `_chk_sp_no_pitch` preflight wrappers in `scripts/build_deck.py`, all of which **DEFER for every non-signature deck type**.
 **Status:** Doctrine SOP. Encodes MASTERDOC Prime Directives 1–14 and the SACRED-structure contract `51-signature-presentation/structure/sp_structure.json`. This value is a FLOOR, never a cap — never floor, cap, reorder, or reinterpret it.
 
