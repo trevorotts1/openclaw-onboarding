@@ -155,7 +155,7 @@ Audit the QC criteria themselves. Are all criteria still relevant? Has the maste
 - working/qc/image_qc_report.json (write; includes the deck-wide representation_tally)
 - working/qc/final_deck_qc.json (write; THE delivery pass-artifact -- this exact filename gates delivery via SOP 9.6)
 - working/qc/finalrender/page-*.png (the PPTX->PDF->PNG render the assembled-slide asserts run on)
-- working/checkpoints/pptx_text_overlays.json (read; every native overlay element to collision-check)
+- ~~working/checkpoints/pptx_text_overlays.json (read)~~ -- ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED). There are no native overlay elements; the file must NOT exist (its presence is a hard auto-fail).
 - soffice --headless (PPTX->PDF render) and pdftoppm -png (PDF->PNG); python-pptx (read shape geometry) -- the assembled-slide assert toolchain
 - minimax-m3:cloud (primary scoring model), DeepSeek v4 Flash (fallback)
 
@@ -732,7 +732,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 - The portable-document-format export that ships alongside the PPTX (output/[DECK_SLUG].pdf) and output/render_log.json (for the AF-F11 portable-document-export assert)
 - The PDF-rendered pages (PNG files at 100 DPI in working/qc/finalrender/)
 - The PPTX shape geometry (every text box and overlay element's x / y / w / h, read from the PPTX XML via python-pptx)
-- working/checkpoints/pptx_text_overlays.json (every native PPTX text-overlay element added at assembly per SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (PRESENTATION-MASTER-DOCTRINE.md §4))
+- ~~working/checkpoints/pptx_text_overlays.json~~ -- ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED). No native PPTX text-overlay elements exist at assembly.
 - working/copy/slides_copy.md (for copy verification in the assembled deck)
 - working/copy/presenter_notes.json (for speaker notes verification)
 - working/brand/style_block.md + the captured REPRESENTATION_MIX (for the tally re-run)
@@ -744,8 +744,8 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 **Steps:**
 
 1. **CODED ASSEMBLED-SLIDE ASSERTS (P3) -- run on EVERY composed slide, mechanically, before any score.** These are the auto-fails AF-F1 through AF-F4 plus AF-F6 through AF-F14 (above). For each slide:
-   a. **Collision assert (AF-F1):** read the bounding box (x, y, w, h) of every text box and every overlay element from the PPTX geometry; additionally detect focal faces in the rendered PNG. Compute pairwise intersection of all text/overlay boxes with each other, with the logo chip, and with detected faces. ANY intersection = AF-F1 collision auto-fail on that slide. A non-overlapping layout has zero intersecting boxes.
-   b. **Per-overlay collision assert (AF-F4):** every element listed in pptx_text_overlays.json for this slide MUST have been run through the collision assert in 1a. If a slide carries an overlay element that was not collision-checked, that is AF-F4. You cannot pass a slide whose overlay you never checked.
+   a. **Collision assert (AF-F1):** read the bounding box (x, y, w, h) of every text box from the PPTX geometry; additionally detect focal faces in the rendered PNG. Compute pairwise intersection of all text boxes with each other, with the logo chip, and with detected faces. ANY intersection = AF-F1 collision auto-fail on that slide. (The former per-overlay collision checks are ELIMINATED with the overlay path -- Decision 5C, AF-OVERLAY-DELIVERED.)
+   b. **Per-overlay collision assert (AF-F4) -- ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED).** The native overlay path no longer exists; there are no overlay elements to collision-check.
    c. **Contrast assert (AF-F2):** for every text element, sample the rendered PNG pixels in the text element's bounding region and behind it; compute the WCAG-AA contrast ratio (text luminance vs background luminance). Below 4.5:1 for normal text (or below 3:1 for large text >= 24px equivalent) = AF-F2 contrast auto-fail.
    d. **Legibility assert (AF-F3):** verify every text element renders at or above the minimum legible size (as a fraction of slide height) and is not clipped, truncated, or running off the slide edge = AF-F3 if it fails.
    e. **Image-position-variety assert (AF-F6, FIX-9):** record each slide's image zone (left / right / top / bottom / full-bleed / none). Walk the full slide sequence and flag any run of MORE THAN 2 CONSECUTIVE slides with the same image position = AF-F6. Additionally verify hook slides are type-driven (no image, or a <=15% opacity background image with large designed type over it); a hook slide with a full-strength image fails AF-F6.
