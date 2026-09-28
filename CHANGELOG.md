@@ -1,3 +1,16 @@
+## [v25.1.92]  -  2026-09-28  -  Interview prior-declaration batch (INT-001..INT-005) lands on main; supersedes the unmerged PR #1249
+
+### Why
+PR #1249 carried this batch as "v25.1.85", but it never merged and that version was later used on main by PR #1247. The batch is re-applied onto current main under the next free version. The v25.1.85 tag is unchanged.
+
+### What changed
+- `shared-utils/interview_completion.py` (new): a read-only check that decides whether the owner may be prompted about the interview. It returns COMPLETE (the state says so), DECLARED (the owner recorded a prior completion in the Command Center table `interview_prior_completion_declarations`), INCOMPLETE (proven not done), or UNKNOWN (identity missing, store not pinned, or table not there yet). Only INCOMPLETE allows a prompt. It never writes state, and it never counts as permission to build or to pass QC.
+- `23-ai-workforce-blueprint/scripts/send-interview-link.sh`: refuses (exit 3) on COMPLETE or DECLARED, and stays pending (exit 8) on UNKNOWN. `interview-nudge-cron.sh`: sends no reminder unless the status is INCOMPLETE.
+- `shared-utils/interview_invitation.py`: gates public-origin resolution and re-checks just before enrollment. `shared-utils/nudge-incomplete-interviews.py`: completion is terminal (a stale false can no longer overwrite a completed handoff), and the reminder is skipped on COMPLETE, DECLARED, UNKNOWN or a company slug mismatch.
+- Tests: `tests/unit/interview-completion.test.py` (new). `test_interview_invitation.py` fixtures now pin identity and the database. `interview-launch.test.py` checks that completed state and tenant registry selectors survive a reprovision. `standard-first-cron-awareness.test.sh` nudge fixtures stub the completion reader as INCOMPLETE, so they still reach the paths behind the new gate. `.github/workflows/interview-launch-contract.yml` now runs the new test (the follow-up #1249 left open).
+- Pairs with the Command Center declaration table, which is present at the pinned CC v7.6.68. The CC pin is unchanged.
+- Version markers rolled v25.1.91 -> v25.1.92 by `scripts/bump-version.sh` (G3: skill 23 content changed).
+
 ## [v25.1.91]  -  2026-09-27  -  Presentations Step 2 lands on main: Kie.ai spend ceilings fail-closed (Fix 10), fresh-intake credit preflight gate (Fix 5), OpenRouter live pricing (Fix 6)
 
 ### Why

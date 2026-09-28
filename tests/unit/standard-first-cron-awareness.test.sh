@@ -724,6 +724,10 @@ with open(os.path.join("$oc", "worker.log"), "a") as fh:
     fh.write(line)
 sys.exit(0)
 PYEOF
+  # Stub completion reader: these groups exercise the nudge paths behind the
+  # prior-declaration gate, so the box is proven INCOMPLETE (covered by
+  # tests/unit/interview-completion.test.py).
+  echo 'print("INCOMPLETE")' > "$repo/shared-utils/interview_completion.py"
 
   cat > "$SANDBOX/$name/bin/openclaw" <<SHIM
 #!/usr/bin/env bash

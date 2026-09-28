@@ -61,6 +61,8 @@ on:
       - 'docs/portable-onboarding-platforms.md'
       - 'tests/unit/interview-launch.test.py'
       - 'tests/unit/test_interview_invitation.py'
+      - 'shared-utils/interview_completion.py'
+      - 'tests/unit/interview-completion.test.py'
       - '.github/workflows/interview-launch-contract.yml'
   workflow_dispatch:
 jobs:
@@ -164,6 +166,8 @@ jobs:
         run: python3 tests/unit/interview-launch.test.py
       - name: Authenticated public origin and acknowledged gateway invitation fixtures
         run: python3 tests/unit/test_interview_invitation.py
+      - name: Interview prior-declaration prompt admission (INT-001..INT-005)
+        run: python3 tests/unit/interview-completion.test.py
       - name: Paired Command Center invitation URL passes onboarding validator
         run: |
           python3 - <<'PY'
