@@ -997,6 +997,18 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
     return pinned_tag
 
 
+def load_warning(res: BoxResult) -> None:
+    """A box whose CPU is saturated (a days-old agent-browser Chrome at ~940%
+    on a 10-core Mac) cannot answer the deploy's health check in time; say so
+    before the deploy rather than after the outage."""
+    load, cores = os.getloadavg()[0], os.cpu_count() or 1
+    if load > 2 * cores:
+        msg = (f"load {load:.1f} on {cores} cores is over 2x: the Command Center deploy's health check may "
+               "time out; look for a runaway process (e.g. a days-old agent-browser Chrome) first")
+        _warn(f"  {msg}")
+        res.steps["load"] = f"ok:advisory: {msg}"
+
+
 def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_cc: bool = False) -> None:
     """Step 3: converge the Command Center checkout to latest origin/main.
 
@@ -1026,6 +1038,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         if why:
             res.step_fail("pull-cc", f"{why}. Nothing was changed.")
             return
+        load_warning(res)
         subprocess.run(
             # Explicit refspec: a clone whose configured refspec names only a tag
             # (seen on client boxes) leaves origin/main stale on a bare `fetch origin main`.

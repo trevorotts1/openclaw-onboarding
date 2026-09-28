@@ -878,6 +878,18 @@ class BillingHoldIsNotAFailure(unittest.TestCase):
             self.assertIn("ERROR: bootstrap could not source X", res.steps["pull-onboarding"])
 
 
+class LoadWarning(unittest.TestCase):
+    def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
+        for load, expect in ((25.0, True), (3.0, False)):
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(fr.os, "getloadavg", return_value=(load, 0, 0)), \
+                 mock.patch.object(fr.os, "cpu_count", return_value=10):
+                fr.load_warning(res)
+            self.assertEqual("load" in res.steps, expect)
+            if expect:
+                self.assertTrue(res.steps["load"].startswith("ok:advisory: load 25.0 on 10 cores"))
+
+
 class RollHoldsOneCommit(unittest.TestCase):
     """A PR merged mid-roll reached the boxes that started (or self-synced) after
     it: two boxes pulled v25.2.5 on a v25.2.3 roll and were rolled back."""
