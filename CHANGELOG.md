@@ -1,3 +1,13 @@
+## [v25.2.3]  -  2026-09-28  -  Pin Command Center v7.6.74 (zero-downtime update)
+
+### Why
+v25.2.2 routes update-only Command Center refreshes through origin/main's `update.sh`. Command Center v7.6.74 is the release whose `update.sh` builds beside the running release and promotes it, and the paired pin should name that release.
+
+### What changed
+- cc-compat.json: `pinnedTag` v7.6.72 -> v7.6.74. `minVersion` is unchanged (v7.4.0); v7.6.74 adds no endpoint and no schema change.
+- README.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, docs/interview-launch-recovery.md: paired Command Center v7.6.74.
+- tests/unit/cc-runtime-preflight.test.py: `CC_PIN` = v7.6.74.
+
 ## [v25.2.2]  -  2026-09-28  -  Zero-downtime Command Center update; a box's own update names its client
 
 ### Why
