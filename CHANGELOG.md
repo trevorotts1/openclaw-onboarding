@@ -1,3 +1,19 @@
+## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
+
+### Why
+`check-credential.sh` rejected known-good secrets whenever a provider was referenced under an alternate name (xiaomi vs mimo, 9router's several spellings), and its SecretRef handling did not cover the dict-with-apiKey shape. Separately, the skill-32 daily-update path derived `commandCenterStatus` from a throwaway rebuild instead of asking the running Command Center whether it was actually healthy and current. Version markers rolled v25.1.99 -> v25.1.100 via scripts/bump-version.sh (v25.1.98 and v25.1.99 were claimed by open PR #1296's obsolete pin commits and PR #1306 respectively; no Command Center pin change — main already pins v7.6.72).
+
+### What changed
+- shared-utils/secret_names.json: added credential key aliases so xiaomi/mimo and the several 9router spellings resolve to the same secret.
+- shared-utils/check-credential.sh: agnes/xiaomi/moonshot/9router alias maps; a hermetic `OC_CONFIG_FILE`-scoped self-test; SecretRef dict `apiKey` handling so a `{apiKey: ...}` shaped ref is read correctly instead of failing closed.
+- shared-utils/key_resolver.py: alias resolution support for the new key names.
+- 32-command-center-setup/scripts/run-full-install.sh: the daily-update `commandCenterStatus` now comes from the live Command Center's `/api/health` returning 200 with migrations current, not from a spare rebuild that could pass while the running instance was actually unhealthy or behind.
+- tests/unit/check-credential-aliases-secretref.test.sh: chmod 600 the temp secrets/.env fixture so the test does not leave a world-readable secrets file behind.
+- 32-command-center-setup/skill-version.txt: v13.1.31 -> v13.1.32 (G3: run-full-install.sh content changed).
+
+### Tests
+tests/unit/check-credential-aliases-secretref.test.sh (hermetic self-test, alias maps, SecretRef dict apiKey, chmod 600 fixture); tests/unit/cc-status-from-live-health.test.sh; tests/probe/test-cc-route-update-canonical-path.sh; tests/unit/full-update-path-contract.test.sh.
+
 ## [v25.1.99]  -  2026-09-28  -  Fleet roll: fix first then roll back, content integrity checks, operator alerts, Drive backup of the box list, Command Center pin v7.6.72
 
 ### Why

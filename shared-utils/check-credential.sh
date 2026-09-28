@@ -135,11 +135,14 @@ detect_docker_container() {
 PLATFORM="$(detect_platform)"
 
 # ─── Locate openclaw.json ────────────────────────────────────────────────────
+# An explicit OC_CONFIG_FILE is the ONLY config scanned (hermetic self-tests:
+# the box's real openclaw.json must never leak into an injected run).
 CONFIG_CANDIDATES=()
 if [[ -n "${OC_CONFIG_FILE:-}" ]]; then
   CONFIG_CANDIDATES+=("$OC_CONFIG_FILE")
+else
+  CONFIG_CANDIDATES+=("${HOME}/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json")
 fi
-CONFIG_CANDIDATES+=("${HOME}/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json")
 
 # ─── Args ────────────────────────────────────────────────────────────────────
 PROVIDER_MODE=0
@@ -299,6 +302,16 @@ PROVIDER_KEY_MAP = {
     "fish-audio":   ["FISH_AUDIO_API_KEY"],
     "replicate":    ["REPLICATE_API_TOKEN"],
     "huggingface":  ["HUGGINGFACE_API_KEY", "HF_TOKEN"],
+    # Alias families mirror shared-utils/secret_names.json. 9ROUTER_API_KEY is
+    # not a valid shell name: it is only ever matched as text here, never
+    # expanded or exported by bash.
+    "agnes":        ["AGNES_API_KEY", "AGNES_AI_API_KEY", "AGNES_KEY"],
+    "xiaomi":       ["XIAOMI_API_KEY", "MIMO_API_KEY"],
+    "mimo":         ["XIAOMI_API_KEY", "MIMO_API_KEY"],
+    "moonshot":     ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
+    "kimi":         ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
+    "9router":      ["NINEROUTER_API_KEY", "NINE_ROUTER_API_KEY", "ROUTER_API_KEY", "9ROUTER_API_KEY"],
+    "ninerouter":   ["NINEROUTER_API_KEY", "NINE_ROUTER_API_KEY", "ROUTER_API_KEY", "9ROUTER_API_KEY"],
 }
 
 PROVIDER_BLOCK_TEMPLATES = {
@@ -314,11 +327,12 @@ PROVIDER_BLOCK_TEMPLATES = {
 candidate_keys = PROVIDER_KEY_MAP.get(prov, [provider_name_raw])
 
 # ── Config file candidates ────────────────────────────────────────────────────
-config_candidates = []
-if oc_config_file:
-    config_candidates.append(oc_config_file)
 home = os.path.expanduser("~")
-config_candidates += [f"{home}/.openclaw/openclaw.json", "/data/.openclaw/openclaw.json"]
+# An explicit OC_CONFIG_FILE is the ONLY config scanned (hermetic self-tests).
+if oc_config_file:
+    config_candidates = [oc_config_file]
+else:
+    config_candidates = [f"{home}/.openclaw/openclaw.json", "/data/.openclaw/openclaw.json"]
 
 # ── 4-layer key search ────────────────────────────────────────────────────────
 where_found = []
@@ -490,6 +504,10 @@ for cfg_path in config_candidates:
         if not isinstance(block_cfg, dict):
             continue
         api_key_val = block_cfg.get("apiKey", "")
+        # SecretRef object ({"source": "env", "provider": "default", "id": "KEY"})
+        # is a reference, not an inline credential: match on its id only.
+        if isinstance(api_key_val, dict):
+            api_key_val = api_key_val.get("id", "")
         if not isinstance(api_key_val, str):
             continue
         # Normalize: strip $, ${}, braces

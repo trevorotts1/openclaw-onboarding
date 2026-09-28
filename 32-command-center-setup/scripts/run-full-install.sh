@@ -1193,9 +1193,10 @@ cc_git_sync_to_default_branch() {
 # Sets state keys .commandCenterLastUpdateVerified AND .commandCenterBuildFresh
 # (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build, and the
 # FINAL degraded check requires commandCenterBuildFresh.
-# Returns 0 if the box ends the call GREEN (fresh build + healthy), 1 otherwise
-# (the box may still be safely serving the PRIOR build — that is success from
-# the "never half-updated" invariant's point of view, just not a fresh deploy).
+# Returns 0 if the RUNNING CC ends the call healthy (/api/health 200, status ok,
+# migrations current) — a failed rebuild in this call is then a WARNING, not a
+# failure; commandCenterBuildFresh records whether the served build is current.
+# Returns 1 only when the running CC is unhealthy.
 cc_route_update_through_canonical_path() {
   local pull_ts build_id_file build_id_mtime health_code tier
   local update_sh="$DASHBOARD_DIR/update.sh"
@@ -1299,13 +1300,45 @@ cc_route_update_through_canonical_path() {
     [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true | .commandCenterBuildFresh = true' 2>/dev/null || true
     return 0
   fi
-  if [[ "$health_code" == "200" ]]; then
-    log "WARN" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 but BUILD_ID does NOT postdate the pull — server is GREEN on the PRIOR build (rolled back), the update did NOT take effect. commandCenterLastUpdateVerified=false (not a half-updated CC — box is safely serving the old build; see $LOG_FILE)."
-  else
-    log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code. CC may be down; this box needs operator attention (see $LOG_FILE)."
+  # No fresh BUILD_ID from THIS call's rebuild. That rebuild is not the verdict:
+  # when the CC was already deployed at this revision, it is a spare rebuild,
+  # and it can fail for reasons unrelated to the running app (e.g. a build-time
+  # font fetch) and roll back safely. commandCenterStatus comes from the CC that
+  # is ACTUALLY RUNNING: /api/health 200 with status=ok and no pending
+  # migrations. Only an unhealthy running CC returns 1 (-> fail_install).
+  if cc_live_health_ok; then
+    if cc_served_build_current; then
+      log "WARN" "phase=6 (update-only): this run's rebuild produced no fresh BUILD_ID (tier=$tier; see $LOG_FILE) — WARNING only: the RUNNING Command Center is healthy, migrations current, and its served build verifies against the current checkout (build-inventory VERIFIED). The update is in effect."
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true | .commandCenterBuildFresh = true' 2>/dev/null || true
+    else
+      log "WARN" "phase=6 (update-only): this run's rebuild produced no fresh BUILD_ID (tier=$tier; see $LOG_FILE) — the RUNNING Command Center is healthy with migrations current, but its served build could not be verified against the current checkout (prior build?). Not a failure; commandCenterBuildFresh=false keeps the FINAL status done-degraded so recovery retries."
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false | .commandCenterBuildFresh = false' 2>/dev/null || true
+    fi
+    return 0
   fi
+  log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code; the RUNNING Command Center is not healthy (needs /api/health 200, status=ok, no pending migrations). This box needs operator attention (see $LOG_FILE)."
   [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false | .commandCenterBuildFresh = false' 2>/dev/null || true
   return 1
+}
+
+# cc_live_health_ok — the RUNNING CC answers the repo's existing /api/health
+# with HTTP 200 (curl -f), status "ok", and zero pending migrations (the route
+# reports status=ok only when migrations.pending is empty; 503 on a failed one).
+cc_live_health_ok() {
+  curl -fsS --max-time 10 "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null \
+    | python3 -c 'import json,sys
+d=json.load(sys.stdin); m=d.get("migrations") or {}
+sys.exit(0 if d.get("status")=="ok" and m.get("gap")==0 and not m.get("pending") else 1)' 2>/dev/null
+}
+
+# cc_served_build_current — the CC's own content oracle (scripts/lib/
+# build-inventory.sh --verify, shared with atomic-deploy/cc-start/health) says
+# the served .next was built from the current checkout. Absent script = unproven.
+cc_served_build_current() {
+  local inv="$DASHBOARD_DIR/scripts/lib/build-inventory.sh" bash4
+  [[ -f "$inv" ]] || return 1
+  bash4="$(_cc_resolve_bash4)" || bash4=bash
+  "$bash4" "$inv" --verify "$DASHBOARD_DIR" >>"$LOG_FILE" 2>&1
 }
 
 # Shared fail-closed runtime gate: both fresh and update-only installs stop
@@ -1972,7 +2005,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # Kanban-dead fix (BUILD-05) AND the "broken build shipped anyway" gap —
   # a pull-without-a-verified-rebuild is now structurally impossible.
   cc_route_update_through_canonical_path || \
-    fail_install "phase=6 (update-only): Command Center did not end GREEN on the fresh build. A rollback means the update did NOT take effect; refusing to report this box current. See the post-update assertion and $LOG_FILE."
+    fail_install "phase=6 (update-only): the running Command Center is not healthy after the update (/api/health not 200/ok, or migrations pending). See the post-update assertion and $LOG_FILE."
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
