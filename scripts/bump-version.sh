@@ -762,6 +762,44 @@ else:
 PYEOF
 fi
 
+# 13. README.md prose version tokens outside the tracked marker pair (added
+#     alongside scripts/check-readme-current-release.sh). Two more README
+#     version numbers go stale on every release because nothing rolled them:
+#     the "## Current release: vX.Y.Z" heading and the top banner's own
+#     "> **vX.Y.Z — ...**" token. (The banner's description prose still needs
+#     a human/agent rewrite each release — this only keeps the NUMBER from
+#     drifting, exactly like markers #6/#9 above.) The banner's "Paired
+#     Command Center: **vX.Y.Z**" token is rolled from cc-compat.json's
+#     commandCenter.pinnedTag — a DIFFERENT source of truth than /version —
+#     every bump, so it can never silently lag behind the pin again (it sat
+#     at v7.1.5 while pinnedTag reached v7.6.68). Checked in CI by
+#     check-readme-current-release.sh.
+if [ -f "$F_README" ]; then
+  python3 - <<PYEOF
+import re
+p = "$F_README"
+target = "$TARGET"
+content = open(p).read()
+new = re.sub(r'(^## Current release: )v[0-9]+\.[0-9]+\.[0-9]+',
+             r'\1' + target, content, count=1, flags=re.MULTILINE)
+new = re.sub(r'(^> \*\*)v[0-9]+\.[0-9]+\.[0-9]+( )',
+             r'\1' + target + r'\2', new, count=1, flags=re.MULTILINE)
+open(p, "w").write(new)
+PYEOF
+  if [ -f "$F_CC_COMPAT" ]; then
+    python3 - <<PYEOF
+import json, re
+readme_path = "$F_README"
+pinned = json.load(open("$F_CC_COMPAT")).get("commandCenter", {}).get("pinnedTag")
+if pinned:
+    content = open(readme_path).read()
+    new = re.sub(r'(Paired Command Center: \*\*)v[0-9]+\.[0-9]+\.[0-9]+(\*\*)',
+                 r'\1' + pinned + r'\2', content, count=1)
+    open(readme_path, "w").write(new)
+PYEOF
+  fi
+fi
+
 echo ""
 echo "Result:"
 print_state

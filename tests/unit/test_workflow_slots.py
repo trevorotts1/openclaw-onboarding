@@ -123,9 +123,16 @@ class SlotTests(unittest.TestCase):
         self.call('open', workflow_id='replacement')
 
     def test_route_validation_and_duplicate_race(self):
+        # A47: any route is accepted -- there is no allowlist. Only an empty or
+        # missing route on a role with no default is refused.
         self.call('open', workflow_id='w')
-        for role, route in [('builder', 'Opus-chain'), ('reviewer', 'opus-chain'), ('merge_operator', 'claude-haiku'), ('unknown', 'opus-chain')]:
-            with self.assertRaisesRegex(ValueError, 'role/route mismatch'):
+        for index, (role, route) in enumerate([('builder', 'Opus-chain'), ('reviewer', 'opus-chain'), ('merge_operator', 'claude-haiku'), ('unknown', 'opus-chain')]):
+            row = execute(self.database, {**reservation('w', f'a{index}'), 'role': role, 'route': route})
+            self.assertEqual(row['route'], route)
+            self.call('release', reservation_id=f'a{index}', fence=row['fence'],
+                      evidence=dict(verified=True, kind='launch_cancelled', reference='not submitted'))
+        for role, route in [('builder', ''), ('builder', '   '), ('unknown', ''), ('unknown', None)]:
+            with self.assertRaisesRegex(ValueError, 'route required|invalid route'):
                 execute(self.database, {**reservation('w', 'a'), 'role': role, 'route': route})
         for seconds in [True, 0, -1, float('nan'), float('inf'), '3600']:
             with self.assertRaisesRegex(ValueError, 'lease_seconds'):
@@ -133,10 +140,10 @@ class SlotTests(unittest.TestCase):
         results = self.race([reservation('w', 'a')] * 4)
         self.assertEqual(results.count('accepted'), 1)
         self.assertEqual(self.call('snapshot')['reserved_or_live'], 1)
-        row = self.call('snapshot')['slots'][0]
+        row = next(r for r in self.call('snapshot')['slots'] if r['reservation_id'] == 'a')
         self.call('release', reservation_id='a', fence=row['fence'], evidence=dict(verified=True, kind='launch_cancelled', reference='not submitted'))
         for role, route in [('reviewer', 'sonnet-chain'), ('merge_operator', 'haiku-chain')]:
-            execute(self.database, {**reservation('w', role), 'role': role, 'route': route})
+            self.assertEqual(execute(self.database, {**reservation('w', role), 'role': role, 'route': route})['route'], route)
 
     def test_coordinator_binding_and_renewal(self):
         self.call('open', workflow_id='w')
@@ -164,6 +171,73 @@ class SlotTests(unittest.TestCase):
             out = subprocess.run(argv, input=payload, text=True, capture_output=True, timeout=10)
             self.assertEqual(out.returncode, code, out.stderr)
             self.assertEqual(json.loads(out.stdout)['ok'], code == 0)
+
+
+class AnyRouteTests(unittest.TestCase):
+    """A47: no allowlist. ANY route is accepted and served; only recording is owed."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.database = str(Path(self.temp.name) / 'slots.sqlite')
+        execute(self.database, dict(action='init', coordinator='coordinator'))
+        self.call('open', workflow_id='w')
+
+    def call(self, action, **kwargs):
+        return execute(self.database, dict(action=action, coordinator='coordinator', **kwargs))
+
+    def bind(self, agent, role='builder', route='opus-chain', served='opus-chain'):
+        command = dict(action='reserve', coordinator='coordinator', workflow_id='w', reservation_id=agent,
+                       role=role, parent='coordinator', unit='U', lease_seconds=3600)
+        if route is not None:
+            command['route'] = route
+        row = execute(self.database, command)
+        original = workflow_slots.served_route
+        workflow_slots.served_route = lambda aid: served
+        try:
+            return self.call('start', reservation_id=agent, fence=row['fence'],
+                             session_ref='session-' + agent, agent_id=agent)
+        finally:
+            workflow_slots.served_route = original
+
+    def test_novel_and_nonsense_routes_are_accepted_and_served(self):
+        # deepseek-chain is a real route the run requests; frobnicate-chain is
+        # nonsense. Neither may be blocked, and both must be served as asked.
+        for agent, route in (('a-deepseek', 'deepseek-chain'), ('a-nonsense', 'frobnicate-chain')):
+            bound = self.bind(agent, route=route, served=route)
+            self.assertEqual(bound['route'], route, 'requested route was not persisted')
+            self.assertEqual(bound['served_route'], route)
+            self.assertEqual(bound['route_binding'], 'match')
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 0)
+        self.assertEqual(snapshot['route_unrecorded_count'], 0)
+        self.assertEqual(snapshot['route_alarm'], '')
+
+    def test_requested_versus_served_is_bound_not_assumed(self):
+        # requested deepseek-chain, harness actually served opus-chain.
+        bound = self.bind('a-diff', role='merge_operator', route='deepseek-chain', served='opus-chain')
+        self.assertEqual(bound['route'], 'deepseek-chain')
+        self.assertEqual(bound['served_route'], 'opus-chain')
+        self.assertEqual(bound['route_binding'], 'substitution')
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 1)
+        self.assertIn('requested=deepseek-chain served=opus-chain', snapshot['route_alarm'])
+
+    def test_no_route_defaults_to_role_chain(self):
+        for role, default in (('builder', 'opus-chain'), ('reviewer', 'sonnet-chain'), ('merge_operator', 'haiku-chain')):
+            bound = self.bind('a-' + role, role=role, route=None, served=default)
+            self.assertEqual(bound['route'], default)
+            self.assertEqual(bound['served_route'], default)
+            self.assertEqual(bound['route_binding'], 'match')
+
+    def test_unknown_role_without_route_is_refused_but_with_route_is_served(self):
+        with self.assertRaisesRegex(ValueError, 'route required'):
+            execute(self.database, dict(action='reserve', coordinator='coordinator', workflow_id='w',
+                                        reservation_id='a-none', role='unknown', parent='coordinator',
+                                        unit='U', lease_seconds=3600))
+        bound = self.bind('a-unknown', role='unknown', route='glm-chain', served='glm-chain')
+        self.assertEqual(bound['route'], 'glm-chain')
+        self.assertEqual(bound['route_binding'], 'match')
 
 
 class RouteBindingTests(unittest.TestCase):
