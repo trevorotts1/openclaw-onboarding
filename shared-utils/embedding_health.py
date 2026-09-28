@@ -5,7 +5,8 @@ embedding_health.py — PRD Addendum B item B.6 (P1)
 Per-box embedding-provider health check, covering ALL THREE embedding consumers:
 
   Index 1 — OpenClaw memory search
-             (agents.defaults.memorySearch; ~/.openclaw/memory/*.sqlite meta stamp)
+             (memory.search, or agents.defaults.memorySearch on older OpenClaw;
+              ~/.openclaw/memory/*.sqlite meta stamp)
   Index 2 — Persona gemini-index
              (gemini-embedding-2 @3072; ~/.openclaw/gemini-index/ stamp)
   Index 3 — CC SOP embeddings
@@ -21,7 +22,8 @@ For EACH index three legs are checked:
 Failures are LOUD and name both the index and the specific failed leg.
 
 Also verifies that the memorySearch fallback config (PRD item 2.6) is present
-(agents.defaults.memorySearch.fallback exists and is non-empty).
+(memory.search.fallback -- agents.defaults.memorySearch.fallback on older
+OpenClaw -- exists and is non-empty).
 
 This module is designed to run:
   - Inline, called from fleet_refresh_runner.py (step_embedding_health)
@@ -134,32 +136,28 @@ def _is_ollama_cloud(openclaw_json: dict) -> bool:
         return False
 
 
-def _resolve_memory_search_provider(openclaw_json: dict) -> Optional[str]:
-    """Return agents.defaults.memorySearch.provider from openclaw.json."""
+def _memory_search_cfg(openclaw_json: dict) -> dict:
+    """The memory-search block. Current OpenClaw keeps it at top-level
+    memory.search; older releases at agents.defaults.memorySearch. Reading only
+    the old key failed Index 1 on every current box ("no memorySearch.provider
+    configured") while memory search was configured and on."""
     try:
-        return (
-            openclaw_json
-            .get("agents", {})
-            .get("defaults", {})
-            .get("memorySearch", {})
-            .get("provider")
-        )
-    except Exception:
-        return None
+        cur = (openclaw_json.get("memory") or {}).get("search")
+        if isinstance(cur, dict) and cur:
+            return cur
+        return ((openclaw_json.get("agents") or {}).get("defaults") or {}).get("memorySearch") or {}
+    except AttributeError:
+        return {}
+
+
+def _resolve_memory_search_provider(openclaw_json: dict) -> Optional[str]:
+    """Return the memory-search provider (memory.search / agents.defaults.memorySearch)."""
+    return _memory_search_cfg(openclaw_json).get("provider")
 
 
 def _resolve_memory_search_fallback(openclaw_json: dict) -> Optional[str]:
-    """Return agents.defaults.memorySearch.fallback (PRD 2.6)."""
-    try:
-        return (
-            openclaw_json
-            .get("agents", {})
-            .get("defaults", {})
-            .get("memorySearch", {})
-            .get("fallback")
-        )
-    except Exception:
-        return None
+    """Return the memory-search fallback (PRD 2.6)."""
+    return _memory_search_cfg(openclaw_json).get("fallback")
 
 
 def _openclaw_env_vars(openclaw_json: Optional[dict]) -> dict:
@@ -727,15 +725,15 @@ def check_memory_search_index(
     openclaw_json: dict,
     generative_provider: Optional[str],
 ) -> dict:
-    """Check Index 1: OpenClaw memory search (agents.defaults.memorySearch)."""
-    res = _make_index_result("memory_search (agents.defaults.memorySearch)")
+    """Check Index 1: OpenClaw memory search (memory.search / agents.defaults.memorySearch)."""
+    res = _make_index_result("memory_search (memory.search)")
     LBL = "Index 1 (memory_search)"
 
     mem_provider = _resolve_memory_search_provider(openclaw_json)
 
     # ── Leg (a) ────────────────────────────────────────────────────────────────
     if not mem_provider:
-        msg = f"{LBL} leg-a FAIL: no memorySearch.provider configured in openclaw.json"
+        msg = f"{LBL} leg-a FAIL: no memory.search.provider configured in openclaw.json"
         res["errors"].append(msg)
         _err(msg)
     elif _provider_is_ollama_cloud(mem_provider, openclaw_json):
@@ -1281,7 +1279,7 @@ def run_embedding_health(
     else:
         _warn(
             "memorySearch fallback (PRD 2.6) is missing or empty. "
-            "Set agents.defaults.memorySearch.fallback in openclaw.json "
+            "Set memory.search.fallback in openclaw.json "
             "(e.g. 'openai' or 'google')."
         )
 
@@ -1292,7 +1290,7 @@ def run_embedding_health(
     if not fallback_ok:
         all_warnings.append(
             "memorySearch fallback (PRD 2.6) missing or empty — "
-            "set agents.defaults.memorySearch.fallback in openclaw.json"
+            "set memory.search.fallback in openclaw.json"
         )
 
     needs_reindex_any = (
@@ -1331,7 +1329,7 @@ def run_embedding_health(
             "(acceptable on a fresh box — build the index to get a stamp).",
             "needs_reindex=true means the index was built with a different provider; "
             "the existing vectors are stale and MUST be rebuilt.",
-            "PRD 2.6: agents.defaults.memorySearch.fallback must be set to a "
+            "PRD 2.6: memory.search.fallback must be set to a "
             "non-empty string (e.g. 'openai' or 'google').",
             "N32: a model-provider change is NOT complete until embedding-health passes on this box.",
         ],

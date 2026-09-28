@@ -735,6 +735,24 @@ class MainSessionKey(unittest.TestCase):
                 self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}),
                                  "agent:main:telegram:operator:direct:111")
 
+    def test_owner_agent_is_the_telegram_bound_agent(self):
+        # Many client boxes have no agent named "main": the CEO is the agent the
+        # Telegram channel is bound to (e.g. dept-master-orchestrator).
+        calls = []
+
+        def run_out(cmd, timeout=10):
+            calls.append(cmd[cmd.index("--agent") + 1])
+            rows = {"dept-master-orchestrator": [{"key": "agent:dept-master-orchestrator:main", "updatedAt": 5},
+                                                 {"key": "agent:dept-master-orchestrator:cron:x", "updatedAt": 9}]}
+            return json.dumps({"sessions": rows.get(cmd[cmd.index("--agent") + 1], [])})
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(fr, "_run_out", side_effect=run_out), \
+             mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}):
+            Path(td, "openclaw.json").write_text(json.dumps(
+                {"bindings": [{"agentId": "rescue-bot", "match": {"channel": "telegram", "accountId": "rescue"}},
+                              {"agentId": "dept-master-orchestrator", "match": {"channel": "telegram", "accountId": "*"}}]}))
+            self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}), "agent:dept-master-orchestrator:main")
+            self.assertEqual(calls[0], "dept-master-orchestrator")
+
     def test_legacy_sessions_json_still_works(self):
         with tempfile.TemporaryDirectory() as td:
             f = Path(td, "agents", "main", "sessions", "sessions.json")
@@ -772,6 +790,59 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             self.assertEqual(marker.read_text().strip(), "target-updater")
             self.assertTrue((live / "new.txt").is_file())
 
+    def test_a_tag_only_clone_still_sees_the_latest_main(self):
+        # A client Command Center cloned with a single-tag refspec: a bare
+        # `git fetch origin main` never moves origin/main, and the floor check then
+        # read an ancient package.json (6.0.89) and refused the update.
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        with tempfile.TemporaryDirectory() as td:
+            origin = new_repo(Path(td, "origin"))
+            commit(origin, {"package.json": json.dumps({"version": "6.0.89"}), "update.sh": "exit 0\n"}, "old")
+            git(origin, "tag", "v6.0.89")
+            live = Path(td, "live")
+            subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+            git(live, "config", "remote.origin.fetch", "+refs/tags/v6.0.89:refs/tags/v6.0.89")
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                            "update.sh": "git merge -q --ff-only origin/main\n"}, "new")
+            res = fr.BoxResult("t", dry_run=False)
+            import cc_runtime_preflight
+            with mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"):
+                fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(git(live, "rev-parse", "origin/main"), git(origin, "rev-parse", "HEAD"))
+
+
+class CommandCenterPm2Preflight(unittest.TestCase):
+    """The deploy restarts the Command Center through pm2. A box where that
+    cannot work fails up front, by name, with nothing changed -- not half way
+    through the deploy ("Required dependency missing: pm2")."""
+
+    def problem(self, managed, which="/usr/local/bin/pm2", pids=""):
+        with mock.patch.object(fr, "cc_pm2_managed", return_value=managed), \
+             mock.patch.object(fr.shutil, "which", return_value=which), \
+             mock.patch.object(fr, "_run_out", return_value=pids):
+            return fr.cc_pm2_problem()
+
+    def test_each_way_pm2_cannot_restart_it(self):
+        self.assertIsNone(self.problem(None))                          # nothing serving: the deploy starts it
+        self.assertIn("not under pm2", self.problem(False))
+        self.assertIn("not on this shell's PATH", self.problem(True, which=None))
+        self.assertIn("PM2_HOME", self.problem(True, pids="0\n"))     # a stray empty PM2_HOME
+        self.assertIsNone(self.problem(True, pids="4242\n"))
+
+    def test_pull_cc_refuses_before_changing_anything(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}), \
+             mock.patch.object(fr, "cc_pm2_problem", return_value="Command Center not under pm2: x"), \
+             mock.patch.object(fr.subprocess, "run") as run:
+            import cc_runtime_preflight
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(cc_runtime_preflight, "check_node"):
+                fr.step_pull_cc({"cc_dir": Path(td)}, "v1", res, dry_run=False)
+        run.assert_not_called()
+        self.assertEqual(res.steps["pull-cc"], "failed:Command Center not under pm2: x. Nothing was changed.")
+
 
 class CommandCenterOnlyFailureIsExplicit(unittest.TestCase):
     """A Command Center step that failed without changing anything is not
@@ -795,6 +866,32 @@ class CommandCenterOnlyFailureIsExplicit(unittest.TestCase):
         self.assertTrue(res.outcome_detail.startswith(
             "onboarding updated to v25.1.105, Command Center NOT updated (still v7.6.71, healthy): pull-cc:"),
             res.outcome_detail)
+
+
+class CurrentOpenClawConfigShapes(unittest.TestCase):
+    def test_memory_search_is_read_from_memory_search(self):
+        import embedding_health as eh
+        cur = {"memory": {"search": {"provider": "gemini", "fallback": "openai"}}}
+        self.assertEqual((eh._resolve_memory_search_provider(cur), eh._resolve_memory_search_fallback(cur)),
+                         ("gemini", "openai"))
+        old = {"agents": {"defaults": {"memorySearch": {"provider": "openai", "fallback": "none"}}}}
+        self.assertEqual(eh._resolve_memory_search_provider(old), "openai")
+        self.assertIsNone(eh._resolve_memory_search_provider({}))
+
+    def test_an_advisory_is_not_a_failing_check(self):
+        res = fr.BoxResult("t", dry_run=False)
+        res.steps.update({"pull-onboarding": "ok:advisory: update-skills.sh exit 2 (content current)",
+                          "embedding-health": "failed:no key"})
+        quiet = [mock.patch.object(fr, n) for n in (
+            "_check_deployed", "_verify_loaded", "step_embedding_health", "step_persona_embedding_drift",
+            "step_persona_grounding_health", "step_provisioning_completeness", "step_log")]
+        for q in quiet:
+            q.start()
+            self.addCleanup(q.stop)
+        fr._finish_run(res, {}, "v1", {}, Path("."), Path("."), False, False, "v7", None)
+        self.assertIn("checks failing: embedding-health", res.outcome_detail)
+        self.assertIn("succeeded with advisories: pull-onboarding", res.outcome_detail)
+        self.assertNotIn("checks failing: pull-onboarding", res.outcome_detail)
 
 
 class UpdaterTimeoutAndDuckNode(unittest.TestCase):

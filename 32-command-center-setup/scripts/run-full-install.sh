@@ -1150,7 +1150,8 @@ cc_git_sync_to_default_branch() {
   local dir="$1" branch current
   branch="$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
   [[ -n "$branch" ]] || branch="main"
-  git -C "$dir" fetch --quiet origin "$branch" >>"$LOG_FILE" 2>&1 || return 1
+  # Explicit refspec: a tag-only clone's `fetch origin <branch>` never moves origin/<branch>.
+  git -C "$dir" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" >>"$LOG_FILE" 2>&1 || return 1
 
   current="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   if ! git -C "$dir" -c user.name="Command Center Updater" -c user.email="updater@localhost" \
@@ -1188,7 +1189,7 @@ cc_git_sync_to_default_branch() {
 # on 2026-09-28. Anything else takes the merge path (cc_git_sync_to_default_branch).
 cc_zero_downtime_ready() {
   local dir="$1"
-  git -C "$dir" fetch --quiet origin main >>"$LOG_FILE" 2>&1 || return 1
+  git -C "$dir" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main >>"$LOG_FILE" 2>&1 || return 1
   git -C "$dir" merge-base --is-ancestor HEAD origin/main 2>/dev/null || return 1
   [[ -z "$(git -C "$dir" status --porcelain --untracked-files=no 2>/dev/null)" ]] || return 1
   if git -C "$dir" show-ref --verify --quiet refs/heads/main; then

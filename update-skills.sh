@@ -61,7 +61,9 @@ self_sync_guard() {
   esac
 
   [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] && dirty=1
-  git -C "$repo_root" fetch --quiet origin main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
+  # Explicit refspec: a clone whose configured refspec names only a tag leaves
+  # origin/main stale on `fetch origin main` -- and this would then "sync" to it.
+  git -C "$repo_root" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
   local_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
   remote_sha="$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)"
   [ -n "$remote_sha" ] && [ "$local_sha" != "$remote_sha" ] && behind=1
@@ -73,7 +75,7 @@ self_sync_guard() {
 
   if [ "${OPENCLAW_UPDATE_AUTO_SYNC:-0}" = "1" ]; then
     echo "  [self-sync] checkout is $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'BEHIND ' )— OPENCLAW_UPDATE_AUTO_SYNC=1: hard-syncing to origin/main"
-    git -C "$repo_root" fetch origin main
+    git -C "$repo_root" fetch origin +refs/heads/main:refs/remotes/origin/main
     git -C "$repo_root" reset --hard origin/main
     echo "  [self-sync] re-syncing complete — re-exec'ing the intended version before platform bootstrap"
     OPENCLAW_UPDATE_SELF_SYNCED=1 exec bash "$src" "${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}"

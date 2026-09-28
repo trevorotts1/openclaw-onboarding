@@ -377,6 +377,48 @@ def _proc_cwd(pid: int) -> Optional[Path]:
     return Path(m.group(1)) if m else None
 
 
+def cc_pm2_managed() -> Optional[bool]:
+    """Whether the process serving the Command Center port runs under pm2 (a
+    pm2 daemon among its ancestors). None when nothing serves the port.
+    atomic-deploy.sh / update.sh restart the app through pm2: a Command Center
+    started some other way cannot be deployed, and used to fail half way through
+    the deploy ("Required dependency missing: pm2") instead of up front."""
+    pids = _port_pids(int(os.environ.get("CC_PORT") or 4000))
+    if not pids:
+        return None
+    for pid in pids:
+        cur = str(pid)
+        for _ in range(8):
+            out = _run_out(["ps", "-o", "ppid=,command=", "-p", cur]).strip()
+            if not out:
+                break
+            ppid, _, cmd = out.partition(" ")
+            if re.search(r"\bPM2\b|pm2", cmd):
+                return True
+            cur = ppid.strip()
+            if cur in ("", "0", "1"):
+                break
+    return False
+
+
+def cc_pm2_problem() -> Optional[str]:
+    """Why the deploy could not restart this box's Command Center through pm2,
+    or None. Checked before anything changes, instead of failing mid-deploy."""
+    managed = cc_pm2_managed()
+    if managed is None:
+        return None   # nothing serves the port: the deploy starts it
+    if managed is False:
+        return ("Command Center not under pm2: the process serving its port was not started by pm2, "
+                "and the deploy restarts it through pm2")
+    if not shutil.which("pm2"):
+        return ("Command Center runs under pm2, but pm2 is not on this shell's PATH "
+                "(the deploy could not restart it)")
+    if not any(p.isdigit() and p != "0" for n in _CC_PM2_NAMES for p in _run_out(["pm2", "pid", n]).split()):
+        return ("Command Center runs under pm2, but this shell's pm2 (PM2_HOME) does not list it "
+                f"as any of {', '.join(_CC_PM2_NAMES)} (the deploy could not restart it)")
+    return None
+
+
 def find_cc_dir(root: Path) -> tuple[Optional[Path], str]:
     """(code checkout, how it was found) or (None, why not)."""
     for var in ("CC_APP_DIR", "BLACKCEO_COMMAND_CENTER_ROOT"):
@@ -404,14 +446,29 @@ def find_cc_dir(root: Path) -> tuple[Optional[Path], str]:
 
 # ── Session key resolution ────────────────────────────────────────────────────
 
-_OWNER_DM_RE = re.compile(r"^agent:main:telegram:(?:[^:]+:)?direct:\d+$")
+def _owner_agent_ids(paths: dict) -> list[str]:
+    """The agent the owner talks to: the one the owner's own (default-account)
+    Telegram bot is bound to -- many client boxes have no agent named "main" at
+    all, their CEO is e.g. dept-master-orchestrator -- then "main"."""
+    ids = []
+    try:
+        cfg = json.loads((Path(paths["root"]) / "openclaw.json").read_text())
+        for b in cfg.get("bindings") or []:
+            m = (b.get("match") or {}) if isinstance(b, dict) else {}
+            # the owner's own bot: the default account ("*"/"default"/unset); a
+            # binding for a named extra bot (rescue, operator...) is not the owner's
+            if m.get("channel") == "telegram" and m.get("accountId") in (None, "*", "default") and b.get("agentId"):
+                ids.append(b["agentId"])
+    except (OSError, ValueError, KeyError):
+        pass
+    return list(dict.fromkeys(ids + ["main"]))
 
 
-def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
-    """(key, updatedAt) of the main agent's sessions. OpenClaw before 2026.8
-    kept them in agents/main/sessions/sessions.json; later releases keep them
-    in the agent's SQLite store, read through `openclaw sessions list`."""
-    legacy = Path(paths["root"]) / "agents" / "main" / "sessions" / "sessions.json"
+def _agent_session_keys(paths: dict, agent: str) -> list[tuple[str, float]]:
+    """(key, updatedAt) of one agent's sessions. OpenClaw before 2026.8 kept
+    them in agents/<id>/sessions/sessions.json; later releases keep them in the
+    agent's SQLite store, read through `openclaw sessions list`."""
+    legacy = Path(paths["root"]) / "agents" / agent / "sessions" / "sessions.json"
     if legacy.is_file():
         try:
             data = json.loads(legacy.read_text())
@@ -420,7 +477,7 @@ def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
             _warn(f"Could not parse {legacy}: {e}")
     if os.environ.get("FLEET_REFRESH_ROOT", "").strip():
         return []   # fixture mode: never the test machine's gateway
-    out = _run_out(["openclaw", "sessions", "list", "--agent", "main", "--json", "--limit", "all"], timeout=90)
+    out = _run_out(["openclaw", "sessions", "list", "--agent", agent, "--json", "--limit", "all"], timeout=90)
     try:
         rows = (json.loads(out) or {}).get("sessions") or []
     except ValueError:
@@ -430,17 +487,21 @@ def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
 
 def _resolve_ceo_session_key(paths: dict) -> Optional[str]:
     """
-    The main agent's owner-facing session: a Telegram direct session
-    (agent:main:telegram[:<account>]:direct:<id>) or, where DMs collapse into
-    it (session.dmScope "main", the default), agent:main:main. The most
-    recently used one wins. None when neither exists.
+    The owner agent's owner-facing session: a Telegram direct session
+    (agent:<id>:telegram[:<account>]:direct:<n>) or, where DMs collapse into it
+    (session.dmScope "main", the default), agent:<id>:main. The owner agent is
+    the Telegram-bound agent, else "main"; the most recently used session wins.
+    None when neither exists.
     (Never docker logs or ownerAllowFrom -- per memory rules.)
     """
-    keys = [(k, t) for k, t in _main_session_keys(paths) if _OWNER_DM_RE.match(k) or k == "agent:main:main"]
-    if not keys:
-        _warn("No main-agent owner session (agent:main:telegram:...:direct:<id> or agent:main:main) found")
-        return None
-    return max(keys, key=lambda kt: kt[1])[0]
+    for agent in _owner_agent_ids(paths):
+        dm = re.compile(rf"^agent:{re.escape(agent)}:telegram:(?:[^:]+:)?direct:\d+$")
+        keys = [(k, t) for k, t in _agent_session_keys(paths, agent) if dm.match(k) or k == f"agent:{agent}:main"]
+        if keys:
+            return max(keys, key=lambda kt: kt[1])[0]
+    _warn(f"No owner session (agent:<id>:telegram:...:direct:<n> or agent:<id>:main) found for agents "
+          f"{', '.join(_owner_agent_ids(paths))}")
+    return None
 
 
 # ── Version helpers ───────────────────────────────────────────────────────────
@@ -940,12 +1001,17 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
     if not Path(cc_dir).is_dir():
         res.step_fail("pull-cc", f"CC dir not found: {cc_dir}")
         return
-
     try:
         from cc_runtime_preflight import check_node, assert_cc_package, check_checkout
         check_node()
+        why = None if os.environ.get("FLEET_REFRESH_ROOT", "").strip() else cc_pm2_problem()
+        if why:
+            res.step_fail("pull-cc", f"{why}. Nothing was changed.")
+            return
         subprocess.run(
-            ["git", "-C", str(cc_dir), "fetch", "origin", "main"],
+            # Explicit refspec: a clone whose configured refspec names only a tag
+            # (seen on client boxes) leaves origin/main stale on a bare `fetch origin main`.
+            ["git", "-C", str(cc_dir), "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main"],
             check=True, capture_output=True, timeout=60,
         )
 
@@ -1354,7 +1420,7 @@ def step_sessions_reset_ceo(
     if not ceo_session_key:
         res.step_fail("sessions-reset-CEO",
             "CEO session key unresolved; cannot reset "
-            "(no agent:main:telegram:...:direct:<id> or agent:main:main session).")
+            "(no owner session on the Telegram-bound agent or main).")
         return
 
     try:
@@ -3406,7 +3472,10 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
             res.outcome_detail = why
         else:
             res.outcome = "UPDATED"
-            warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]
+            warn = [k for k, v in res.steps.items() if str(v).startswith("failed")]
+            # ok:advisory = the step succeeded with a note (e.g. update-skills.sh exit 2:
+            # content current and stamped). It is not a failing check.
+            advisory = [k for k, v in res.steps.items() if str(v).startswith("ok:advisory")]
             pre = res.health.get("preexisting_failures") or []
             healed = len(res.heal.get("attempts") or [])
             gaps = res.health.get("content_gaps_preexisting") or {}
@@ -3417,6 +3486,7 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
                 + "; ".join(f"{k}: {v}" for k, v in gaps.items()) if gaps else "",
                 f"fixed after {healed} attempt(s)" if healed else "",
                 f"checks failing: {', '.join(warn)}" if warn else "",
+                f"succeeded with advisories: {', '.join(advisory)}" if advisory else "",
                 f"already unhealthy before update: {', '.join(pre)}" if pre else "",
             ]))
 
