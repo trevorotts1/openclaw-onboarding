@@ -115,7 +115,9 @@ def main():
     ap.add_argument("--tpl", required=True)
     ap.add_argument("--config", default="")
     args = ap.parse_args()
-    path = args.agents
+    # Write through a symlinked AGENTS.md (shared-core layouts): os.replace on
+    # the link itself would silently turn it into a detached plain file.
+    path = os.path.realpath(args.agents)
     cfg_vars = env_vars(args.config) if args.config else {}
 
     try:

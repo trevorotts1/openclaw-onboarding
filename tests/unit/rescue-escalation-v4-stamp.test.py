@@ -13,7 +13,9 @@
 #      to V4, no orphaned V3 marker, no leftover tail, no duplicate heading.
 #   4. V1-marked and unmarked sections -> upgraded, no orphaned marker.
 #   5. OPERATOR box with no section -> skipped, untouched, no backup.
-#   6. 5j itself calls the stamper and no longer refuses to create the section.
+#   6. unseeded box slug -> section still inserted, with an honest note.
+#   7. a symlinked AGENTS.md is written through, the link preserved.
+#   8. 5j itself calls the stamper and no longer refuses to create the section.
 # Hermetic: temp files only. Run: python3 tests/unit/rescue-escalation-v4-stamp.test.py
 import glob
 import json
@@ -137,7 +139,16 @@ d, a, cfg = box(plain, {})
 verdict = stamp(a, cfg)
 check(verdict.startswith("insert:") and "NOT SEEDED YET" in read(a), "section inserted, says the slug is missing", verdict)
 
-print("== 7. section 5j calls the stamper ==")
+print("== 7. a symlinked AGENTS.md stays a symlink ==")
+d, a, cfg = box(plain)
+real = os.path.join(d, "shared-AGENTS.md")
+os.rename(a, real)
+os.symlink(real, a)
+verdict = stamp(a, cfg)
+check(verdict.startswith("insert:") and os.path.islink(a) and V4 in read(real),
+      "insert writes through the link; the link is preserved", verdict)
+
+print("== 8. section 5j calls the stamper ==")
 afs = read(AFS)
 check("stamp-rescue-escalation.py" in afs, "apply-fleet-standards.sh 5j invokes stamp-rescue-escalation.py")
 check("not creating one" not in afs, "5j no longer refuses to create a missing section")

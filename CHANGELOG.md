@@ -32,7 +32,8 @@ the client it had been sent. Email creates no ticket. Root causes, all verified 
   `install.sh`: on a CLIENT box a missing section is INSERTED after the first top-level block (never
   inside another marker pair or a code fence, far below 150,000 chars) after a timestamped
   `AGENTS.md.bak-rescue-esc-<ts>` backup; V1-V3 and unmarked sections are upgraded in place (V3 tail
-  consumed); re-run is a byte-identical no-op; writes are atomic under an flock; the operator box
+  consumed); re-run is a byte-identical no-op; writes are atomic under an flock and go through a symlinked
+  AGENTS.md without breaking the link; the operator box
   (`IS_OPERATOR_BOX`/`OPERATOR_BOX`, or the `N8N_API_KEY` signal 5k uses) is skipped.
 - `install.sh`: ships `rr-escalate.sh`, the stamper and the template to `~/.openclaw/scripts/`, and
   runs the stamper on the workspace AGENTS.md. (`update-skills.sh` already delivers all of
