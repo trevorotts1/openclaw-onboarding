@@ -103,6 +103,10 @@ def wave5_deploy_preflight() -> None:
     import urllib.request
     import urllib.error
 
+    global _WAVE5_PASSED
+    if _WAVE5_PASSED:   # same check, same run, minutes earlier: re-asking GitHub only adds flake
+        return
+
     _info("Wave-5 deploy preflight: checking B.1 + B.2 + B.3 on origin/main of blackceo-command-center ...")
 
     missing: list[tuple[str, str]] = []
@@ -170,6 +174,10 @@ def wave5_deploy_preflight() -> None:
         sys.exit(1)
 
     _ok("Wave-5 deploy preflight PASSED — B.1 + B.2 + B.3 all present on origin/main.")
+    _WAVE5_PASSED = True
+
+
+_WAVE5_PASSED = False
 
 
 # ── Box result schema ─────────────────────────────────────────────────────────
@@ -751,6 +759,12 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
         if result.returncode == 0 and post_stamp == pinned_tag:
             res.onboarding_version = post_stamp
             res.step_ok("pull-onboarding")
+        elif result.returncode == 2 and post_stamp == pinned_tag:
+            # update-skills.sh exit 2 = skills content current and stamped, some
+            # infrastructure needs attention (advisory, not a half-applied run).
+            res.onboarding_version = post_stamp
+            res.steps["pull-onboarding"] = ("ok:advisory: update-skills.sh exit 2 (content current; "
+                                            f"infrastructure needs attention): {result.stdout[-160:].strip()}")
         else:
             res.step_fail(
                 "pull-onboarding",
@@ -2340,7 +2354,9 @@ def rollback_box(paths: dict, repo_root: Path, res: BoxResult, reasons: list[str
     reset the main session so it reloads the restored files. Returns True when
     every restore action succeeded."""
     snap = res.snapshot
-    rb: dict = {"reasons": reasons, "actions": [], "errors": []}
+    rb: dict = {"reasons": reasons, "actions": [], "errors": [],
+                "not_restored": "workspace files update-skills.sh rewrote (AGENTS.md etc.), openclaw.json "
+                                "(pre-update copy kept in backup_dir), cron scripts, 999-setup"}
     res.rollback = rb
     _warn(f"  ROLLBACK: {'; '.join(reasons)}")
 
@@ -2433,9 +2449,14 @@ class _BoxLock:
                 return None
             except FileExistsError:
                 try:
-                    pid = int((self.path / "pid").read_text().strip())
-                    os.kill(pid, 0)
                     age = time.time() - self.path.stat().st_mtime
+                    try:
+                        pid = int((self.path / "pid").read_text().strip())
+                    except (OSError, ValueError):
+                        if age < 60:   # the other run is between mkdir and writing its pid
+                            return "another fleet-refresh is starting on this box"
+                        raise
+                    os.kill(pid, 0)
                     if age < 4 * 3600:
                         return f"another fleet-refresh (pid {pid}) is running on this box"
                 except (OSError, ValueError):
@@ -2674,7 +2695,7 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             res.outcome_detail = "; ".join(f"{s}: {res.steps[s][7:120]}" for s in broken)
         else:
             res.outcome = "UPDATED"
-            warn = [k for k, v in res.steps.items() if str(v).startswith("failed")]
+            warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]
             pre = res.health.get("preexisting_failures") or []
             res.outcome_detail = "; ".join(filter(None, [
                 f"checks failing: {', '.join(warn)}" if warn else "",
@@ -2689,13 +2710,24 @@ def _health_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict,
     """Post-update health gate. Rolls the box back to its snapshot when a check
     that passed before now fails, or a mutating step failed part-way. Returns
     the onboarding version the box should now be judged against."""
+    if "timed out" in str(res.steps.get("sessions-reset-CEO", "")):   # one retry before judging
+        step_sessions_reset_ceo(_resolve_ceo_session_key(paths), res, dry_run=False)
     post = probe_health(paths, res)
     res.health["post"] = post
     regressed = health_regressions(baseline, post)
     reasons = [f"{n}: {post[n]['detail']}" for n in regressed]
-    reasons += [f"{s} failed" for s in _MUTATING_STEPS
-                if str(res.steps.get(s, "")).startswith("failed")
-                and "[exit-3]" not in str(res.steps.get(s))]
+    # A failed step means a half-applied box -- except a Command Center step
+    # that failed while the checkout never moved (nothing of it was changed;
+    # e.g. no Command Center at this box's path).
+    snap_cc = (res.snapshot.get("cc") or {}).get("sha")
+    cc_moved = bool(snap_cc) and _git(Path(res.snapshot["cc"]["dir"]), "rev-parse", "HEAD") != snap_cc
+    for step in _MUTATING_STEPS:
+        v = str(res.steps.get(step, ""))
+        if not v.startswith("failed") or "[exit-3]" in v:
+            continue
+        if step != "pull-onboarding" and not cc_moved:
+            continue
+        reasons.append(f"{step} failed")
     res.health["regressions"] = regressed
     if not reasons:
         res.step_ok("health-gate")

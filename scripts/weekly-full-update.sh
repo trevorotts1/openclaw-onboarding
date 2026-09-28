@@ -55,6 +55,13 @@ if [ -z "$R" ]; then
   log "cloned onboarding to $R"
 fi
 
+# Never move the clone under a run that is already in progress (e.g. the
+# operator's roll): its lock lives in the OpenClaw root.
+for L in "${OPENCLAW_ROOT:-/nonexistent}" /data/.openclaw "$HOME/.openclaw"; do
+  P="$(cat "$L/.fleet-refresh.lock/pid" 2>/dev/null)" && kill -0 "$P" 2>/dev/null && {
+    log "another fleet-refresh (pid $P) is running on this box — nothing changed"; exit 0; }
+done
+
 PREV="$(git -C "$R" rev-parse HEAD 2>/dev/null || true)"
 if ! { git -C "$R" fetch -q origin main && git -C "$R" reset -q --hard origin/main; }; then
   log "ERROR: could not sync $R to origin/main — nothing was changed on this box"

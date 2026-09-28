@@ -476,7 +476,11 @@ if [ -d /data/.openclaw ]; then printf 'NONE /data/openclaw-onboarding\\n'; else
   # target. Dry-run never touches the clone.
   local prep=""
   if [ $APPLY -eq 1 ]; then
-    prep="R=$(sq "$remote_root")
+    prep="for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do
+  P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && {
+    echo '{\"box\":\"'$box'\",\"result\":\"skipped\",\"outcome\":\"SKIPPED\",\"outcome_detail\":\"another fleet-refresh is running on this box\"}'; exit 0; }
+done
+R=$(sq "$remote_root")
 if [ ! -d \"\$R/.git\" ] && [ ! -e \"\$R\" ]; then
   mkdir -p \"\$(dirname \"\$R\")\" && git clone -q https://github.com/trevorotts1/openclaw-onboarding.git \"\$R\" || exit 97
 fi
@@ -485,7 +489,13 @@ if [ -d \"\$R/.git\" ]; then git -C \"\$R\" fetch -q origin main && git -C \"\$R
 export FLEET_PREV_ONBOARDING_SHA=\"\$PREV\"
 "
   fi
-  local run_script="${prep}python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS"
+  # A dropped SSH session must not kill the runner half way through an update
+  # or a rollback: ignore SIGHUP and write to files on the box, echoing them
+  # back at the end. (If the session does drop, the result stays at $O.)
+  local run_script="trap '' HUP
+${prep}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS > \"\$O\" 2> \"\$E\"
+rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
 
   local rc=0
   # shellcheck disable=SC2086
@@ -659,9 +669,10 @@ LOADED_STATE_FILE="$REPO_ROOT/.fleet-loaded-state.json"
 RETIREMENT_ISSUE_TITLE="Retire legacy shim + clawd fallbacks (auto-triggered: all boxes loaded)"
 RETIREMENT_ISSUE_LABEL="retirement-tracker"
 
-# Only run the retirement-trigger machinery in APPLY mode.
-# Dry-run and verify-only are 100% inert for this path.
-if [ $APPLY -eq 1 ]; then
+# Only run the retirement-trigger machinery in APPLY mode, and never for a
+# single-box --local run (every box's Sunday run is one): "all boxes loaded"
+# is a fleet-wide fact. Dry-run and verify-only are 100% inert for this path.
+if [ $APPLY -eq 1 ] && [ $LOCAL -eq 0 ]; then
   python3 - <<PYEOF || echo "[fleet-refresh] WARNING: retirement check failed (non-fatal)" >&2
 import json, os, sys, subprocess, time
 from pathlib import Path

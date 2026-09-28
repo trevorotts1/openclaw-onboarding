@@ -163,6 +163,33 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertIn("pull-onboarding failed", self.res.outcome_detail)
         self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v1")
 
+    def test_cc_step_failure_with_unchanged_checkout_is_not_rolled_back(self):
+        self.snapshot()
+        self.res.steps["pull-cc"] = "failed:CC dir not found: /elsewhere"
+        with mock.patch.object(fr, "probe_health", return_value=health()):
+            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vA")
+        self.assertEqual(self.res.steps["health-gate"], "ok")
+        self.assertEqual(self.res.rollback, {})
+
+    def test_cc_step_failure_after_the_checkout_moved_rolls_back(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        self.res.steps["build-cc"] = "failed:atomic-deploy.sh exited 2 (pre-flight/build failed; previous build left serving)"
+        with mock.patch.object(fr, "probe_health", return_value=health()):
+            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vB")
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
+        self.assertEqual(git(self.box.cc, "rev-parse", "HEAD"), self.box.cc_a)
+
+    def test_update_skills_exit_2_is_advisory_not_a_failure(self):
+        stamp = self.box.skills / ".onboarding-version"
+        pinned = json.loads((self.box.onb / "cc-compat.json").read_text())["onboardingVersion"]
+        (self.box.onb / "update-skills.sh").write_text(f'#!/usr/bin/env bash\necho {pinned} > "{stamp}"\nexit 2\n')
+        fr.step_pull_onboarding(self.box.paths, self.box.onb, pinned, self.res, dry_run=False)
+        self.assertTrue(self.res.steps["pull-onboarding"].startswith("ok:advisory"), self.res.steps["pull-onboarding"])
+        (self.box.onb / "update-skills.sh").write_text('#!/usr/bin/env bash\nexit 1\n')
+        fr.step_pull_onboarding(self.box.paths, self.box.onb, pinned, self.res, dry_run=False)
+        self.assertTrue(self.res.steps["pull-onboarding"].startswith("failed"))
+
     def test_rollback_that_does_not_restore_health_is_failed(self):
         self.snapshot()
         self.box.apply_release_b()
@@ -478,6 +505,56 @@ class WrapperWaves(unittest.TestCase):
             r = run()
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("UPDATED=1", r.stdout)
+
+    def test_apply_through_ssh_and_docker_exec_quoting(self):
+        """Real shells end to end: fake ssh runs its command with sh -c, fake
+        docker runs `bash -lc <script>`. Proves the nested quoting, the clone
+        sync to origin/main, the pre-sync SHA hand-off and the result pickup."""
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            wrapper_repo = td / "operator-clone"
+            (wrapper_repo / "scripts").mkdir(parents=True)
+            (wrapper_repo / "shared-utils").mkdir()
+            (wrapper_repo / "scripts/fleet-refresh.sh").write_text((REPO / "scripts/fleet-refresh.sh").read_text())
+            (wrapper_repo / "shared-utils/fleet_refresh_runner.py").write_text("")
+            (wrapper_repo / "cc-compat.json").write_text((REPO / "cc-compat.json").read_text())
+            # the box: a clone of an origin that has moved on
+            origin = td / "origin.git"
+            origin.mkdir()
+            git(origin, "init", "-q", "--bare", "-b", "main")
+            seed = new_repo(td / "seed")
+            stub = ('import json,os,sys\n'
+                    'print("banner from a login shell")\n'
+                    'print(json.dumps({"box": sys.argv[sys.argv.index("--box")+1], "result": "ok", "outcome": "UPDATED",\n'
+                    '  "outcome_detail": "prev=" + os.environ.get("FLEET_PREV_ONBOARDING_SHA", "") + " args=" + " ".join(sys.argv[1:])}))\n')
+            commit(seed, {"shared-utils/fleet_refresh_runner.py": stub}, "one")
+            git(seed, "remote", "add", "origin", str(origin))
+            git(seed, "push", "-q", "origin", "main")
+            home = td / "home"
+            box_clone = home / "clawd/openclaw-onboarding"
+            box_clone.parent.mkdir(parents=True)
+            subprocess.run(["git", "clone", "-q", str(origin), str(box_clone)], check=True, env=GIT_ENV)
+            old = git(box_clone, "rev-parse", "HEAD")
+            commit(seed, {"x": "2"}, "two")
+            git(seed, "push", "-q", "origin", "main")
+            fake = td / "bin"
+            fake.mkdir()
+            (fake / "curl").write_text("#!/bin/sh\necho 200\n")
+            (fake / "ssh").write_text('#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
+            (fake / "docker").write_text('#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\nexec bash -c "$3"\n')
+            for f in fake.iterdir():
+                f.chmod(0o755)
+            Path(td, "b.json").write_text(json.dumps([{"name": "box-1", "ssh_target": "h", "platform": "hostinger",
+                                                       "container": "c-1", "wave": "canary"}]))
+            env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home)}
+            r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "canary",
+                                "--boxes-file", str(td / "b.json"), "--apply"],
+                               capture_output=True, text=True, env=env, timeout=120)
+            self.assertIn("UPDATED=1", r.stdout, r.stdout + r.stderr)
+            row = json.loads((wrapper_repo / ".fleet-refresh-summary.json").read_text())[0]
+            self.assertIn(f"prev={old} args=--box box-1 --shared-utils {box_clone}/shared-utils", row["outcome_detail"])
+            self.assertIn(" --apply", row["outcome_detail"])
+            self.assertEqual(git(box_clone, "rev-parse", "HEAD"), git(seed, "rev-parse", "HEAD"))
 
     def test_bad_wave_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
