@@ -1,0 +1,73 @@
+# Annotated version tags with NO CHANGELOG.md entry, grandfathered.
+#
+# Read by scripts/check-changelog-full-history.py (guard G2-EXT).
+#
+# G2 (version-consistency.yml) already requires a CHANGELOG.md entry for every
+# annotated tag from v11.0.0 up, and scopes itself there on purpose: pre-v11
+# tags predate the CHANGELOG-on-tag discipline entirely, and CHANGELOG.md has
+# no coverage for that era at all (verified 2026-09-28 via
+# `git for-each-ref --format='%(refname:short) %(objecttype)' refs/tags`,
+# filtered to objecttype=tag i.e. ANNOTATED only, matched against the same
+# "## [vX.Y.Z]" / "## vX.Y.Z" header G2 checks): every one of these 40
+# annotated pre-v11 tags has zero matching header. Many pre-v11 vX.Y.Z-looking
+# refs are LIGHTWEIGHT tags (git cat-file -t == commit, not tag) and are
+# correctly invisible to this guard already, exactly like G2/G4 — only the
+# ANNOTATED ones are listed here.
+#
+# G2-EXT closes the gap ABOVE this ledger: it walks every annotated tag in the
+# whole repo, not just v11+, so any NEW gap anywhere in history (a tag pushed
+# without a CHANGELOG entry, at any version) is caught going forward. Only the
+# 40 tags below — the pre-v11 backlog that predates the guard by construction
+# — are exempt.
+#
+# ENFORCED IN BOTH DIRECTIONS, exactly like .github/known-orphan-tags.txt and
+# .github/known-untagged-releases.txt:
+#   * a tag missing its CHANGELOG entry that is NOT listed here fails the
+#     build (catches regressions, at any version, not just v11+);
+#   * a listed tag that NOW has a matching CHANGELOG entry ALSO fails the
+#     build, so this list is forced to shrink as debt is repaid and can never
+#     rot into a blanket exemption that swallows the next real gap.
+#
+# DO NOT ADD A LINE HERE TO MAKE A RED CHECK GO AWAY. A red G2-EXT on a v11+
+# tag means G2 itself is already failing too — fix the CHANGELOG, don't
+# grandfather it. This ledger is for the pre-v11 backlog only.
+v0.1.12  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.13  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.14  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.15  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.16  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.17  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.19  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.20  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.21  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.25  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v0.1.27  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v1.2.1  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.7.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.8.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.9.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.10.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.11.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.12.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.13.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.13.1  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.0  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.1  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.2  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.3  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.11  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.12  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.13  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.17  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.22  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.23  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.32  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.34  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.36  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.37  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.39  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.41  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.42  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.43  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.46  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
+v10.15.48  # pre-v11, predates G2 (CHANGELOG gate); no commit ever carried a matching entry
