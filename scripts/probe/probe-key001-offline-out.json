@@ -8,62 +8,62 @@
   "secrets_files_read": 0,
   "alias_list_as_implemented": [
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 48,
       "text": "DIRECT_KEY_PRIMARY = \"TYPESAFE_API_KEY\""
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 49,
       "text": "DIRECT_KEY_ALIAS = \"JEV_API_KEY\"  # documented project alias, not native SDK name"
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 53,
       "text": "DIRECT_KEY_OPERATOR = \"JEV_TYPESAFE_API_KEY\""
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 54,
       "text": "DIRECT_KEY_NAMES = (DIRECT_KEY_PRIMARY, DIRECT_KEY_ALIAS, DIRECT_KEY_OPERATOR)"
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 96,
       "text": "\"DIRECT_KEY_PRIMARY\","
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 97,
       "text": "\"DIRECT_KEY_ALIAS\","
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 98,
       "text": "\"DIRECT_KEY_OPERATOR\","
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 99,
       "text": "\"DIRECT_KEY_NAMES\","
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 148,
       "text": "Tries each name in ``DIRECT_KEY_NAMES`` in order \u2014"
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/typesafe_direct.py",
+      "file": "shared-utils/decision_engine/providers/typesafe_direct.py",
       "line": 159,
       "text": "for name in DIRECT_KEY_NAMES:"
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/credential_resolver.py",
+      "file": "shared-utils/decision_engine/providers/credential_resolver.py",
       "line": 63,
       "text": "DIRECT_KEYS: Tuple[str, ...] = ("
     },
     {
-      "file": "/Users/blackceomacmini/clawd/live-ledger/scratchpad/lanes/KEY-001-lane/onb-wt/shared-utils/decision_engine/providers/credential_resolver.py",
+      "file": "shared-utils/decision_engine/providers/credential_resolver.py",
       "line": 227,
       "text": "for key in ROUTE_KEYS[route]:"
     }

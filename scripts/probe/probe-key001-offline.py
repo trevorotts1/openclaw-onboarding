@@ -169,7 +169,7 @@ for path, names in (
     for i, line in enumerate(src_lines, 1):
         if any(n in line for n in names):
             LOOKUPS.append({
-                "file": str(path),
+                "file": str(path.relative_to(ROOT)),
                 "line": i,
                 "text": line.strip()[:100],
             })
