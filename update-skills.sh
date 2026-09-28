@@ -5826,33 +5826,50 @@ print(state + " " + str(len(headers)))
     echo "  ⚠ obs_resolve_workspace() is therefore UNDEFINED for this run -- workspace lookups will use the announced openclaw.json fallback, and will REFUSE to write if that fails."
   fi
 
-  # Backup existing skills.
-  #
-  # RETENTION (OPENCLAW-BACKUP-RETENTION-V1): this used to write one
-  # skills-backup-<ts> directory per run and never remove one, so every box
-  # grew an unbounded pile of full skills-tree copies. Now: pre-check disk
-  # BEFORE copying a byte (a half-written backup is worse than no backup, and
-  # a failed backup aborts the box), then prune to the newest N only AFTER
-  # this run's copy has already landed.
+  # A way back from this update, WITHOUT copying the skills folder.
+  # NO-SKILLS-BACKUP-COPY-V1: this used to write a full skills-backup-<ts> copy of
+  # $SKILLS_DIR (hundreds of MB) on every run. The repo-owned folders are files from one
+  # commit of the onboarding repo, recorded in the content manifest, so the previous state
+  # is that commit plus a small patch of this box's own changes. scripts/skills-rollback.sh
+  # records exactly that (restore: `skills-rollback.sh restore <dir>`). Only a box with no
+  # recorded commit at all (exit 3: fresh or pre-manifest install) or a failed record falls
+  # back to the old one-time copy, so an update is never left with no way back.
   _SKILLS_BACKUP_ROOT="$HOME/Downloads/openclaw-backups"
   if [ -d "$SKILLS_DIR" ] && [ "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]; then
-    BACKUP_DIR="$_SKILLS_BACKUP_ROOT/skills-backup-$(date +%Y%m%d-%H%M%S)"
-    _SKILLS_BACKUP_KB="$(oc_backup_size_kb "$SKILLS_DIR")"
-    if ! oc_backup_precheck_disk "$BACKUP_DIR" "$_SKILLS_BACKUP_KB" "skills backup of $SKILLS_DIR"; then
-      echo "  ✗ Refusing to update skills without a backup. Free disk and re-run."
-      exit 1
-    fi
-    echo "  Creating backup: $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR"
-    cp -r "$SKILLS_DIR"/* "$BACKUP_DIR/" 2>/dev/null || true
-    # Prune ONLY after the new backup exists — never delete the only good one
-    # to make room for one that then fails.
-    if [ -d "$BACKUP_DIR" ]; then
-      oc_backup_prune "$_SKILLS_BACKUP_ROOT" "skills-backup-" "$BACKUP_DIR"
+    ROLLBACK_DIR="$_SKILLS_BACKUP_ROOT/skills-rollback-$(date +%Y%m%d-%H%M%S)"
+    _RB_GITDIR=""; [ -d "$EXTRACTED_DIR/.git" ] && _RB_GITDIR="$EXTRACTED_DIR/.git"
+    _rb_rc=0
+    bash "$EXTRACTED_DIR/scripts/skills-rollback.sh" snapshot "$SKILLS_DIR" "$ROLLBACK_DIR" "$_RB_GITDIR" || _rb_rc=$?
+    if [ "$_rb_rc" -eq 0 ]; then
+      oc_backup_prune "$_SKILLS_BACKUP_ROOT" "skills-rollback-" "$ROLLBACK_DIR"
     else
-      echo "  [backup-prune] SKIPPED: this run's backup dir was not created — nothing pruned"
+      if [ "$_rb_rc" -eq 3 ]; then
+        echo "  No previous commit is recorded on this box yet -- one-time full skills backup."
+      else
+        echo "  ⚠ Could not record the no-copy rollback (rc=$_rb_rc) -- falling back to a full skills backup."
+      fi
+      rm -rf "$ROLLBACK_DIR" 2>/dev/null || true
+      # RETENTION (OPENCLAW-BACKUP-RETENTION-V1): pre-check disk BEFORE copying a byte (a
+      # half-written backup is worse than none), prune to the newest N only AFTER this
+      # run's copy has landed.
+      BACKUP_DIR="$_SKILLS_BACKUP_ROOT/skills-backup-$(date +%Y%m%d-%H%M%S)"
+      _SKILLS_BACKUP_KB="$(oc_backup_size_kb "$SKILLS_DIR")"
+      if ! oc_backup_precheck_disk "$BACKUP_DIR" "$_SKILLS_BACKUP_KB" "skills backup of $SKILLS_DIR"; then
+        echo "  ✗ Refusing to update skills without a way back. Free disk and re-run."
+        exit 1
+      fi
+      echo "  Creating backup: $BACKUP_DIR"
+      mkdir -p "$BACKUP_DIR"
+      cp -r "$SKILLS_DIR"/* "$BACKUP_DIR/" 2>/dev/null || true
+      # Prune ONLY after the new backup exists — never delete the only good one.
+      if [ -d "$BACKUP_DIR" ]; then
+        oc_backup_prune "$_SKILLS_BACKUP_ROOT" "skills-backup-" "$BACKUP_DIR"
+      else
+        echo "  [backup-prune] SKIPPED: this run's backup dir was not created — nothing pruned"
+      fi
     fi
   fi
+  # END NO-SKILLS-BACKUP-COPY-V1
 
   # Ensure skills directory exists
   mkdir -p "$SKILLS_DIR"

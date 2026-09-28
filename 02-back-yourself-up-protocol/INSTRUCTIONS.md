@@ -39,7 +39,7 @@ edit the config until I can create a valid backup." Fix the backup problem first
 | Workspace .md files | AGENTS.md, TOOLS.md, MEMORY.md, IDENTITY.md, USER.md, SOUL.md, HEARTBEAT.md |
 | Memory logs | memory/*.md |
 | Secrets | ~/.openclaw/secrets/.env (if exists) |
-| Installed skills | ~/.openclaw/skills/ |
+| Skills | ~/.openclaw/skills/.onboarding-version + .onboarding-content-manifest.json, and custom skills only (never the onboarding repo's skills or any openclaw-onboarding clone; they re-install from GitHub) |
 | Cron jobs | openclaw cron list (export) |
 | **Zero Human Company tree** | **~/Downloads/openclaw-master-files/zero-human-company/** (Mac) or **/data/openclaw-master-files/zero-human-company/** (VPS) — this is the entire AI workforce; ALL subdirectories must be included |
 
