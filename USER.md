@@ -14,7 +14,7 @@ _(What do they care about? What projects are they working on? What annoys them? 
 
 ## MANDATORY — Teach Yourself Protocol (TYP) Storage Rule
 
-**NEVER paste long documents or detailed references (anything over ~25 lines) into this file.** Store the full document in the master-files TYP subfolder and write only a concise summary + explicit path pointer here. See the Teach Yourself Protocol skill (01-teach-yourself-protocol).
+**NEVER paste long documents or detailed references (any block longer than about five sentences) into this file.** Store the full document in the master-files TYP subfolder and leave only a one-to-two-sentence pointer that says WHAT it is, WHERE it lives (the full absolute path) and WHEN to open it (trigger words) here. See the Teach Yourself Protocol skill (01-teach-yourself-protocol) for storage. The Lean Core File System skill (70-lean-core-file-system) owns core-file size (each file under 40,000 characters) and the weekly audit.
 
 ---
 

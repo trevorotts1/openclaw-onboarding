@@ -4,7 +4,7 @@ only by tests/test-install-weekly-cron.sh. It never talks to a gateway.
 
 Surface (only what install-weekly-cron.sh calls):
   cron add --help | cron list --help | cron edit --help   (flag lists copied
-      from OpenClaw 2026.9.6 help text, trimmed to the flags that matter)
+      from OpenClaw 2026.9.4 help text, trimmed to the flags that matter)
   models list --json      -> $FAKE_MODELS_FILE contents (exit 1 if $FAKE_MODELS_FAIL)
   cron list --json [--all]-> {"jobs": [...]} from $FAKE_JOBS_FILE
   cron add ... / cron edit <id> ...  -> mutate $FAKE_JOBS_FILE

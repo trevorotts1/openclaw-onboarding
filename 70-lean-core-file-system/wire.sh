@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# wire.sh - Skill 70 (Pointer References) installer. update-skills.sh runs it
+# wire.sh - Skill 70 (Lean Core File System) installer. update-skills.sh runs it
 # automatically on every fleet update (`bash wire.sh --idempotent`); INSTALL.md
 # runs it by hand. Safe to run any number of times.
 #
 # WHAT IT DOES, IN ORDER
 #   1. Installs the playbook where the AGENTS.md pointer says it lives:
-#        <master-files>/70-pointer-references/pointer-references-full.md
+#        <master-files>/70-lean-core-file-system/lean-core-file-system-full.md
 #      (refreshed only when the skill's copy differs).
 #   2. Creates <master-files>/playbooks/ and its README.md master index if they
 #      do not exist. An existing index is never touched.
 #   3. Writes the two CORE_UPDATES.md payloads (the AGENTS.md pointer and the
 #      MEMORY.md "core files" definition) between this skill's own
 #      BEGIN/END markers, REPLACE-IN-PLACE, with [MASTER_FILES_FOLDER] resolved.
-#      Each file is backed up into <backups>/pointer-references/wire-<stamp>/
+#      Each file is backed up into <backups>/lean-core-file-system/wire-<stamp>/
 #      before it changes; an unchanged file is neither backed up nor written.
-#   4. Stamps <!-- skill:70-pointer-references:core-update-applied --> into
+#   4. Stamps <!-- skill:70-lean-core-file-system:core-update-applied --> into
 #      AGENTS.md (add-only) so the generic CORE_UPDATES merger never pastes the
 #      payloads a second time.
 #   5. Registers the weekly cron job (scripts/install-weekly-cron.sh --apply).
@@ -22,7 +22,7 @@
 #      command line lacks a flag) or fails, wire.sh exits non-zero so the next
 #      fleet update retries it; steps 1 to 4 have already landed by then.
 #
-# It only ever touches its OWN skill:70-pointer-references markers; no other
+# It only ever touches its OWN skill:70-lean-core-file-system markers; no other
 # skill's block or stamp is read, moved or removed. It never reads or writes
 # agents.defaults.bootstrapMaxChars or bootstrapTotalMaxChars.
 #
@@ -31,7 +31,7 @@
 # EXIT: 0 done | non-zero = the step that failed (see the message).
 
 set -euo pipefail
-SKILL_SLUG="70-pointer-references"
+SKILL_SLUG="70-lean-core-file-system"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=scripts/lib-paths.sh
 . "$SKILL_DIR/scripts/lib-paths.sh"
@@ -50,12 +50,12 @@ WS="$(pr_workspace)"
 MFD="$(pr_master_files)"
 HOME70="$MFD/$SKILL_SLUG"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_DIR="$(pr_backup_root)/pointer-references/wire-$STAMP"
+BACKUP_DIR="$(pr_backup_root)/lean-core-file-system/wire-$STAMP"
 mkdir -p "$WS" "$HOME70/reports" "$MFD/playbooks"
 
 # 1. Playbook copy -------------------------------------------------------------
-SRC="$SKILL_DIR/pointer-references-full.md"
-DST="$HOME70/pointer-references-full.md"
+SRC="$SKILL_DIR/lean-core-file-system-full.md"
+DST="$HOME70/lean-core-file-system-full.md"
 if [ "$SRC" != "$DST" ] && ! cmp -s "$SRC" "$DST" 2>/dev/null; then
   cp "$SRC" "$DST"
   echo "[skill 70] installed playbook -> $DST"
@@ -69,7 +69,7 @@ if [ ! -f "$INDEX" ]; then
 
 One line per playbook: a dash, the system name as a link to its file, what it
 covers, and its last verified date (full format and an example: section 5 of
-the Pointer References playbook, skill 70). Every playbook in this folder is
+the Lean Core File System playbook, skill 70). Every playbook in this folder is
 listed here exactly once, and every playbook has a one-line pointer in a core
 file. One system = one playbook.
 

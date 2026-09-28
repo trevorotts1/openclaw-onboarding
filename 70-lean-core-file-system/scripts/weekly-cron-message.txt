@@ -1,4 +1,4 @@
-Weekly Pointer References maintenance (skill 70). This is an unattended scheduled run: nobody is watching, so do the work, do not ask questions in this session.
+Weekly Lean Core File System maintenance (skill 70). This is an unattended scheduled run: nobody is watching, so do the work, do not ask questions in this session.
 
 Read the playbook at {{PLAYBOOK}} and follow its section "Weekly run procedure" step by step, exactly as written. The audit script is {{AUDIT}}. Write this run's report into {{REPORTS_DIR}}.
 

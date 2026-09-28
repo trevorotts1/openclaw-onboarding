@@ -45,7 +45,7 @@ RULE 5: CHECK YOURSELF AGAINST THE CHECKLIST WHEN DONE.
 RULE 6: REPORT WHAT YOU DID.
 
 ══════════════════════════════════════════════════════════════════
-POINTER REFERENCES (70) - INSTALLATION GUIDE
+LEAN CORE FILE SYSTEM (70) - INSTALLATION GUIDE
 ══════════════════════════════════════════════════════════════════
 
 "Installing" this skill means exactly four things, all done by ONE command:
@@ -54,7 +54,7 @@ POINTER REFERENCES (70) - INSTALLATION GUIDE
   2. the playbooks folder and its README.md master index exist,
   3. AGENTS.md gets a one-line pointer to the playbook and MEMORY.md gets the
      definition of "core files" (backed up first, idempotent),
-  4. the weekly OpenClaw cron job `pointer-references-weekly` exists with the
+  4. the weekly OpenClaw cron job `lean-core-file-system-weekly` exists with the
      right model order.
 
 It does NOT move anything out of your core files. Moving is agent judgment,
@@ -65,9 +65,9 @@ first run on every box only shows a dry-run diff.
 
 | | Mac | Server (virtual private server, Docker) |
 | --- | --- | --- |
-| Skill folder | `~/.openclaw/skills/70-pointer-references/` | `/data/.openclaw/skills/70-pointer-references/` |
+| Skill folder | `~/.openclaw/skills/70-lean-core-file-system/` | `/data/.openclaw/skills/70-lean-core-file-system/` |
 | Master files | `~/Downloads/openclaw-master-files/` | `/data/.openclaw/master-files/` |
-| Backups | `~/Downloads/openclaw-backups/pointer-references/` | `/data/.openclaw/backups/pointer-references/` |
+| Backups | `~/Downloads/openclaw-backups/lean-core-file-system/` | `/data/.openclaw/backups/lean-core-file-system/` |
 
 On a server, run every command INSIDE the OpenClaw container (for example
 `docker exec -it <container> bash`), as the same user the gateway runs as.
@@ -75,8 +75,8 @@ On a server, run every command INSIDE the OpenClaw container (for example
 ## Step 1: Pre-flight (read-only)
 
 ```bash
-S=~/.openclaw/skills/70-pointer-references        # server: /data/.openclaw/skills/70-pointer-references
-bash "$S/qc-70-pointer-references.sh"             # must end with "PASS"
+S=~/.openclaw/skills/70-lean-core-file-system        # server: /data/.openclaw/skills/70-lean-core-file-system
+bash "$S/qc-70-lean-core-file-system.sh"             # must end with "PASS"
 bash "$S/scripts/install-weekly-cron.sh" --dry-run
 ```
 
@@ -104,7 +104,7 @@ It prints each file it changed and where the backup went, then the cron job
 read-back:
 
 ```
-PASS [install-weekly-cron.sh]: read-back confirms exactly one 'pointer-references-weekly' job with the intended model order, schedule, session, thinking and quiet delivery
+PASS [install-weekly-cron.sh]: read-back confirms exactly one 'lean-core-file-system-weekly' job with the intended model order, schedule, session, thinking and quiet delivery
 [skill 70] wiring complete (...)
 ```
 
@@ -117,7 +117,7 @@ on the next update. Running it again changes nothing.
 ```bash
 bash "$S/scripts/install-weekly-cron.sh" --check     # exit 0
 bash "$S/scripts/pointer-audit.sh" --dry-run         # read the size table
-grep -c 'BEGIN skill:70-pointer-references' ~/.openclaw/workspace/AGENTS.md   # 1 (use your workspace path)
+grep -c 'BEGIN skill:70-lean-core-file-system' ~/.openclaw/workspace/AGENTS.md   # 1 (use your workspace path)
 ```
 
 The audit may report findings on an existing box (large files, older pointers

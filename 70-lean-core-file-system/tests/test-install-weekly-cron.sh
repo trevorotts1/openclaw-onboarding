@@ -42,7 +42,7 @@ expect() { # expect <name> <want-exit> <needle> -- args
 job_field() { # job_field count | job_field <dotted.path> (from the first matching job)
   python3 - "$FAKE_JOBS_FILE" "$1" <<'PY'
 import json, sys
-jobs = [x for x in json.load(open(sys.argv[1])) if x.get("name") == "pointer-references-weekly"]
+jobs = [x for x in json.load(open(sys.argv[1])) if x.get("name") == "lean-core-file-system-weekly"]
 if sys.argv[2] == "count":
     print(len(jobs)); sys.exit(0)
 v = jobs[0]
@@ -68,7 +68,7 @@ expect "apply creates and reads back" 0 "PASS [install-weekly-cron.sh]: read-bac
 [ "$(job_field sessionTarget)" = "isolated" ] && ok "isolated session" || bad "session wrong"
 [ "$(job_field delivery.mode)" = "none" ] && ok "quiet delivery (none)" || bad "delivery wrong"
 [ "$(job_field schedule.expr)" = "30 5 * * 0" ] && ok "weekly schedule stored exactly" || bad "schedule wrong: $(job_field schedule.expr)"
-job_field payload.message | grep -q "pointer-references-full.md" && ok "message names the playbook" || bad "message lacks playbook path"
+job_field payload.message | grep -q "lean-core-file-system-full.md" && ok "message names the playbook" || bad "message lacks playbook path"
 job_field payload.message | grep -q "{{" && bad "message has an unfilled placeholder" || ok "message placeholders all filled"
 
 : > "$FAKE_CALLS_FILE"
@@ -82,7 +82,7 @@ expect "apply edits the drifted job in place" 0 "edited job job-1 in place (mode
 [ "$(job_field count)" = "1" ] && ok "still exactly one job after edit" || bad "edit duplicated the job"
 
 python3 -c "import json;p='$FAKE_JOBS_FILE';j=json.load(open(p));k=dict(j[0]);k['id']='job-2';j.append(k);json.dump(j,open(p,'w'))"
-expect "duplicates are reported, never deleted" 1 "2 jobs named 'pointer-references-weekly'" -- --apply
+expect "duplicates are reported, never deleted" 1 "2 jobs named 'lean-core-file-system-weekly'" -- --apply
 [ "$(job_field count)" = "2" ] && ok "no job was deleted" || bad "a job was deleted"
 
 reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"}]}'

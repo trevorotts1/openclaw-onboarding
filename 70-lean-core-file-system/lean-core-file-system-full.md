@@ -1,6 +1,6 @@
-# Pointer References playbook (skill 70)
+# Lean Core File System playbook (skill 70)
 
-System: Pointer References (core-file upkeep)
+System: Lean Core File System (core-file upkeep)
 Last verified: 2026-09-28
 Triggers: core files, core.md files, bootstrap files, bloat, slim down, 40,000 characters, playbook, pointer, AGENTS.md too long, MEMORY.md too long, TOOLS.md too long
 
@@ -34,6 +34,10 @@ collect almost all the bloat, because every new rule, tool note and memory gets
 appended to them: **AGENTS.md, TOOLS.md and MEMORY.md**. Those three are this
 playbook's focus.
 
+The Lean Core File System uses **pointer references**: a long situational block
+moves into its own playbook and a one-line pointer (WHAT, WHERE, WHEN) stays
+behind in the core file. Section 3 defines the pointer format.
+
 **The target: no core file above 40,000 characters.** OpenClaw can be
 configured to accept far more per file (fleet boxes allow up to 200,000), but
 the limit is not the goal. Every character in a core file is paid for on every
@@ -50,7 +54,7 @@ Why smaller core files make the agent faster and better:
 - **No silent cut-off.** When a file or the running total is over its limit,
   OpenClaw does not refuse; it silently cuts the **middle** out of the file and
   keeps the beginning and the end (verified in the installed OpenClaw
-  2026.9.6 code: ordinary files keep 75 percent head and 25 percent tail;
+  2026.9.4 code: ordinary files keep 75 percent head and 25 percent tail;
   AGENTS.md keeps 45 percent head, a short policy digest, and 15 percent tail).
   Files load in a fixed order (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, then
   MEMORY.md) and each takes its share of the total budget in that order, so
@@ -82,7 +86,7 @@ The two skills do different jobs:
 - **Skill 01, Teach Yourself Protocol:** how the agent LEARNS new knowledge and
   where the full document is stored (the master files folder, playbooks in the
   `playbooks/` subfolder).
-- **Skill 70, Pointer References (this playbook):** how the agent keeps the
+- **Skill 70, Lean Core File System (this playbook):** how the agent keeps the
   core files LEAN over time: what is allowed to stay in a core file, the exact
   pointer format, one playbook per system, the master index, contradiction
   handling, and the weekly upkeep.
@@ -98,8 +102,9 @@ INSTALL.md says the same: the skill governs core-file content):
 | Storage | master files folder, `playbooks/` subfolder | the same folder, unchanged |
 | Index | README.md index for API folders | the same README.md convention, used for `playbooks/` |
 
-Nothing else in skill 01 changes. Storage paths are identical on purpose, so
-there is exactly one playbooks folder on every box.
+Nothing else in skill 01 changes, and skill 01 v7.0.1 adopts this pointer
+standard in its own files, so the two skills now agree. Storage paths are
+identical on purpose, so there is exactly one playbooks folder on every box.
 
 ---
 
@@ -284,8 +289,8 @@ Run this check every time you move, add or update anything:
 - **Back up every touched file first.** Run the audit script with `--backup`
   before the first edit of a run; it copies every core file and the whole
   playbooks folder into a timestamped folder and prints its path. Mac:
-  `~/Downloads/openclaw-backups/pointer-references/<stamp>/`; server:
-  `/data/.openclaw/backups/pointer-references/<stamp>/`.
+  `~/Downloads/openclaw-backups/lean-core-file-system/<stamp>/`; server:
+  `/data/.openclaw/backups/lean-core-file-system/<stamp>/`.
 - **Never delete, only move.** Text leaves a core file only after it exists in
   a playbook archive. Playbooks are never deleted; duplicates are merged into
   one and the merged-away file's content goes into the survivor's archive.
@@ -299,7 +304,7 @@ Run this check every time you move, add or update anything:
 - **The first run shows a dry-run diff.** On a box's first run, nothing in the
   core files changes. Prepare the edited copies in `<backup>/proposed/`, show
   `diff -u` of each core file against its proposed copy, and save that diff to
-  `<master-files>/70-pointer-references/first-dry-run.md`. A run someone asked
+  `<master-files>/70-lean-core-file-system/first-dry-run.md`. A run someone asked
   for then asks "Apply these moves?" once and continues on yes. The unattended
   weekly job applies nothing on its first run; from the second run on (the
   file above exists) it applies normally.
@@ -319,7 +324,7 @@ playbooks folder.
 
 | | Mac | Server (inside the container) |
 | --- | --- | --- |
-| `$AUDIT` | `~/.openclaw/skills/70-pointer-references/scripts/pointer-audit.sh` | `/data/.openclaw/skills/70-pointer-references/scripts/pointer-audit.sh` |
+| `$AUDIT` | `~/.openclaw/skills/70-lean-core-file-system/scripts/pointer-audit.sh` | `/data/.openclaw/skills/70-lean-core-file-system/scripts/pointer-audit.sh` |
 | `$PB` | `~/Downloads/openclaw-master-files/playbooks` | `/data/.openclaw/master-files/playbooks` |
 
 `$WS` is the main agent's workspace; the audit prints it on its first line.
@@ -453,7 +458,7 @@ The job is an OpenClaw **cron job** (an "automation"), not a heartbeat task:
 
 | Setting | Value |
 | --- | --- |
-| Name | `pointer-references-weekly` |
+| Name | `lean-core-file-system-weekly` |
 | Schedule | `30 5 * * 0` (Sunday 05:30 gateway local time, after the Sunday 03:00 fleet update) |
 | Session | isolated (fresh session every run) |
 | Thinking | high |
@@ -538,7 +543,7 @@ if one is missing). Commands:
 - Prompt caching: any change in the cached prefix invalidates everything after
   it. https://platform.claude.com/docs/en/build-with-claude/prompt-caching and
   https://docs.openclaw.ai/reference/prompt-caching
-- OpenClaw ground truth (installed package 2026.9.6): bootstrap order and
+- OpenClaw ground truth (installed package 2026.9.4): bootstrap order and
   head/tail truncation in `dist/bootstrap-*.mjs` and
   `dist/workspace-bootstrap-policy-*.mjs`; limits and truncation notice in
   `docs/concepts/system-prompt.md`; cron flags in `openclaw cron add --help`

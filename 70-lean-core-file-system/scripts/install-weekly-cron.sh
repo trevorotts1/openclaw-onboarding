@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# install-weekly-cron.sh - Skill 70 (Pointer References): register the weekly
+# install-weekly-cron.sh - Skill 70 (Lean Core File System): register the weekly
 # maintenance run as an OpenClaw cron job (an automation, NOT a heartbeat).
 #
 # THE JOB (exactly one per box, found by its name):
-#   name      pointer-references-weekly
+#   name      lean-core-file-system-weekly
 #   schedule  30 5 * * 0  (Sunday 05:30, gateway host local time; after the
 #             Sunday 03:00 fleet update, so it audits freshly updated files)
 #   session   isolated (a fresh session every run, no chat history)
@@ -57,7 +57,7 @@ SKILL_DIR="$(cd "$SELF_DIR/.." && pwd)"
 # shellcheck source=lib-paths.sh
 . "$SELF_DIR/lib-paths.sh"
 
-JOB_NAME="pointer-references-weekly"
+JOB_NAME="lean-core-file-system-weekly"
 SCHEDULE="30 5 * * 0"
 THINKING="high"
 TIMEOUT_S="3600"
@@ -169,12 +169,12 @@ fi
 
 # ── 3. Desired job ───────────────────────────────────────────────────────────
 MFD="$(pr_master_files)"
-HOME70="$MFD/70-pointer-references"
-PLAYBOOK="$HOME70/pointer-references-full.md"
-[ -f "$PLAYBOOK" ] || PLAYBOOK="$SKILL_DIR/pointer-references-full.md"
+HOME70="$MFD/70-lean-core-file-system"
+PLAYBOOK="$HOME70/lean-core-file-system-full.md"
+[ -f "$PLAYBOOK" ] || PLAYBOOK="$SKILL_DIR/lean-core-file-system-full.md"
 MSG="$(sed -e "s|{{PLAYBOOK}}|$PLAYBOOK|g" -e "s|{{AUDIT}}|$SKILL_DIR/scripts/pointer-audit.sh|g" \
            -e "s|{{REPORTS_DIR}}|$HOME70/reports|g" "$SELF_DIR/weekly-cron-message.txt")"
-DESC="Skill 70 Pointer References: weekly core-file audit and playbook upkeep (quiet; report file only)"
+DESC="Skill 70 Lean Core File System: weekly core-file audit and playbook upkeep (quiet; report file only)"
 
 # ── 4. Existing job(s) ───────────────────────────────────────────────────────
 read_state() { # prints COUNT=, ID=, KIND=, DIFF=

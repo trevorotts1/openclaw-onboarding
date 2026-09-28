@@ -23,13 +23,13 @@ printf '# Agent rules\n\n## Hard rules\n- Never share credentials.\n' > "$ROOT/w
 printf '# Memory\n\n- The owner prefers short answers.\n' > "$ROOT/ws/MEMORY.md"
 
 bash "$SKILL/wire.sh" --no-cron >/dev/null 2>&1 && ok "first run exits 0" || bad "first run failed"
-[ "$(grep -c 'BEGIN skill:70-pointer-references:agents' "$ROOT/ws/AGENTS.md")" = "1" ] && ok "AGENTS.md block present once" || bad "AGENTS.md block count wrong"
-[ "$(grep -c 'BEGIN skill:70-pointer-references:memory' "$ROOT/ws/MEMORY.md")" = "1" ] && ok "MEMORY.md block present once" || bad "MEMORY.md block count wrong"
-grep -q "$ROOT/mf/70-pointer-references/pointer-references-full.md" "$ROOT/ws/AGENTS.md" && ok "pointer path resolved to the absolute master files path" || bad "pointer path not resolved"
+[ "$(grep -c 'BEGIN skill:70-lean-core-file-system:agents' "$ROOT/ws/AGENTS.md")" = "1" ] && ok "AGENTS.md block present once" || bad "AGENTS.md block count wrong"
+[ "$(grep -c 'BEGIN skill:70-lean-core-file-system:memory' "$ROOT/ws/MEMORY.md")" = "1" ] && ok "MEMORY.md block present once" || bad "MEMORY.md block count wrong"
+grep -q "$ROOT/mf/70-lean-core-file-system/lean-core-file-system-full.md" "$ROOT/ws/AGENTS.md" && ok "pointer path resolved to the absolute master files path" || bad "pointer path not resolved"
 grep -q 'MASTER_FILES_FOLDER' "$ROOT/ws/AGENTS.md" "$ROOT/ws/MEMORY.md" && bad "placeholder left unresolved" || ok "no placeholder left"
 grep -q 'Never share credentials' "$ROOT/ws/AGENTS.md" && grep -q 'short answers' "$ROOT/ws/MEMORY.md" && ok "existing content preserved" || bad "existing content lost"
-grep -qF '<!-- skill:70-pointer-references:core-update-applied -->' "$ROOT/ws/AGENTS.md" && ok "sentinel stamped" || bad "sentinel missing"
-[ -f "$ROOT/mf/70-pointer-references/pointer-references-full.md" ] && ok "playbook installed where the pointer says" || bad "playbook not installed"
+grep -qF '<!-- skill:70-lean-core-file-system:core-update-applied -->' "$ROOT/ws/AGENTS.md" && ok "sentinel stamped" || bad "sentinel missing"
+[ -f "$ROOT/mf/70-lean-core-file-system/lean-core-file-system-full.md" ] && ok "playbook installed where the pointer says" || bad "playbook not installed"
 [ -f "$ROOT/mf/playbooks/README.md" ] && ok "master index created" || bad "master index missing"
 nb="$(find "$ROOT/bk" -type f | wc -l | tr -d ' ')"; [ "$nb" -ge 2 ] && ok "backups taken before the first change ($nb files)" || bad "no backups taken"
 
@@ -50,7 +50,7 @@ open(p, "w").write(s)
 PY
 bash "$SKILL/wire.sh" --no-cron >/dev/null 2>&1
 grep -q 'OLD STALE WORDING' "$ROOT/ws/AGENTS.md" && bad "stale block not healed" || ok "stale block healed in place"
-[ "$(grep -c 'BEGIN skill:70-pointer-references:agents' "$ROOT/ws/AGENTS.md")" = "1" ] && ok "still one block after healing" || bad "healing duplicated the block"
+[ "$(grep -c 'BEGIN skill:70-lean-core-file-system:agents' "$ROOT/ws/AGENTS.md")" = "1" ] && ok "still one block after healing" || bad "healing duplicated the block"
 
 rm -f "$ROOT/mf/playbooks/README.md.bak"; sed -i.bak '/My system/d' "$ROOT/mf/playbooks/README.md"; rm -f "$ROOT/mf/playbooks/README.md.bak"
 out="$(bash "$SKILL/scripts/pointer-audit.sh" --dry-run 2>&1)"; rc=$?
@@ -71,11 +71,11 @@ echo '[]' > "$FAKE_JOBS_FILE"
 echo '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"}]}' > "$FAKE_MODELS_FILE"
 rm -rf "$ROOT/ws3"; mkdir -p "$ROOT/ws3"; echo '# rules' > "$ROOT/ws3/AGENTS.md"
 OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&1; rc=$?
-[ "$rc" = "4" ] && grep -q 'BEGIN skill:70-pointer-references:agents' "$ROOT/ws3/AGENTS.md" \
+[ "$rc" = "4" ] && grep -q 'BEGIN skill:70-lean-core-file-system:agents' "$ROOT/ws3/AGENTS.md" \
   && ok "refused cron job: wire.sh exits 4 after wiring the core files (retried next update)" || bad "refused cron path (exit $rc)"
 echo '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}' > "$FAKE_MODELS_FILE"
 OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&1; rc=$?
-[ "$rc" = "0" ] && [ "$(grep -c pointer-references-weekly "$FAKE_JOBS_FILE")" = "1" ] && ok "provable models: wire.sh creates the job and exits 0" || bad "cron path (exit $rc)"
+[ "$rc" = "0" ] && [ "$(grep -c lean-core-file-system-weekly "$FAKE_JOBS_FILE")" = "1" ] && ok "provable models: wire.sh creates the job and exits 0" || bad "cron path (exit $rc)"
 
 echo "wire.sh battery: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

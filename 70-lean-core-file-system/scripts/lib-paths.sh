@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib-paths.sh - Skill 70 (Pointer References): one place that resolves the
+# lib-paths.sh - Skill 70 (Lean Core File System): one place that resolves the
 # box paths every Skill 70 script needs. Sourced, never executed.
 #
 # Platform rule (same one update-skills.sh and the other skill installers use):
@@ -62,8 +62,8 @@ PY
 }
 
 # Where the installed skill folder lives on this box.
-pr_skill_dir() { printf '%s' "$(pr_ocroot)/skills/70-pointer-references"; }
+pr_skill_dir() { printf '%s' "$(pr_ocroot)/skills/70-lean-core-file-system"; }
 
 # Skill 70's own folder inside the master files folder: the installed copy of
 # the playbook, the weekly reports and the first-run marker live here.
-pr_skill_home() { printf '%s' "$(pr_master_files)/70-pointer-references"; }
+pr_skill_home() { printf '%s' "$(pr_master_files)/70-lean-core-file-system"; }

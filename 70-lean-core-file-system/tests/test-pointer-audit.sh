@@ -133,10 +133,10 @@ expect "missing index is caught" 1 "INDEX MISSING" -- $(run_audit_args "$I") --d
 R="$ROOT/report"; make_clean "$R"
 # shellcheck disable=SC2046
 bash "$AUDIT" $(run_audit_args "$R") --dry-run >/dev/null 2>&1
-if [ -d "$R/mf/70-pointer-references" ]; then bad "dry run wrote files"; else ok "dry run wrote nothing"; fi
+if [ -d "$R/mf/70-lean-core-file-system" ]; then bad "dry run wrote files"; else ok "dry run wrote nothing"; fi
 # shellcheck disable=SC2046
-expect "normal run writes a report" 0 "Report: $R/mf/70-pointer-references/reports/pointer-audit-" -- $(run_audit_args "$R")
-n="$(find "$R/mf/70-pointer-references/reports" -name 'pointer-audit-*.md' | wc -l | tr -d ' ')"
+expect "normal run writes a report" 0 "Report: $R/mf/70-lean-core-file-system/reports/pointer-audit-" -- $(run_audit_args "$R")
+n="$(find "$R/mf/70-lean-core-file-system/reports" -name 'pointer-audit-*.md' | wc -l | tr -d ' ')"
 [ "$n" = "1" ] && ok "exactly one report file" || bad "expected 1 report file, found $n"
 
 # 10. backup mode copies core files and playbooks

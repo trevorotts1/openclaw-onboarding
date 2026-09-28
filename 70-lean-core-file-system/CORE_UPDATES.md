@@ -1,15 +1,15 @@
-# Pointer References (70) - Core File Updates
+# Lean Core File System (70) - Core File Updates
 
 Update ONLY the files listed below. Use the EXACT text provided.
 Do not update files marked NO UPDATE NEEDED.
 
 These payloads are applied by this skill's own `wire.sh`, which
 `update-skills.sh` runs automatically (and which INSTALL.md runs by hand). It
-writes each block between `<!-- BEGIN/END skill:70-pointer-references:<target> -->`
+writes each block between `<!-- BEGIN/END skill:70-lean-core-file-system:<target> -->`
 markers, REPLACE-IN-PLACE, so a re-run changes nothing and an older copy is
 healed rather than duplicated. It resolves `[MASTER_FILES_FOLDER]` to this box's
 absolute master files path, backs up each file before changing it, and stamps
-`<!-- skill:70-pointer-references:core-update-applied -->` into AGENTS.md so the
+`<!-- skill:70-lean-core-file-system:core-update-applied -->` into AGENTS.md so the
 generic merger in `update-skills.sh` never pastes these blocks a second time.
 Do NOT paste them by hand.
 
@@ -27,13 +27,13 @@ AGENTS.md. Without it the gate would look for the word "Add:".
 ---
 
 ## AGENTS.md - UPDATE REQUIRED
-<!-- skill:70-pointer-references:core-update-applied -->
+<!-- skill:70-lean-core-file-system:core-update-applied -->
 
 Add:
 
 ```
-## Pointer References (70)
-Core-file upkeep: the playbook at [MASTER_FILES_FOLDER]/70-pointer-references/pointer-references-full.md governs keeping AGENTS.md, TOOLS.md and MEMORY.md under 40,000 characters by moving situational blocks into playbooks behind one-line pointers, and its one-line pointer format replaces the older 10-to-25-line summary size from the Teach Yourself Protocol. Read it whenever a core file passes 40,000 characters, before adding a block longer than five sentences to a core file, or when the user mentions core files, bloat, slimming down, playbooks or pointers.
+## Lean Core File System (70)
+Core-file upkeep: the playbook at [MASTER_FILES_FOLDER]/70-lean-core-file-system/lean-core-file-system-full.md governs keeping AGENTS.md, TOOLS.md and MEMORY.md under 40,000 characters by moving situational blocks into playbooks behind one-line pointers, and its one-line pointer format replaces the older 10-to-25-line summary size from the Teach Yourself Protocol. Read it whenever a core file passes 40,000 characters, before adding a block longer than five sentences to a core file, or when the user mentions core files, bloat, slimming down, playbooks or pointers.
 ```
 
 ---

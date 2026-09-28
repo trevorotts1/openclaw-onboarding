@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# qc-70-pointer-references.sh - Skill 70 quality-control gate.
+# qc-70-lean-core-file-system.sh - Skill 70 quality-control gate.
 #
 # Run by the onboarding verification gate (oc_gate_skill in
 # lib-onboarding-state.sh) with no arguments, and by hand from the repo or from
@@ -26,10 +26,10 @@ FAILS=0
 pass() { echo "  PASS $*"; }
 fail() { echo "  FAIL $*"; FAILS=$((FAILS + 1)); }
 
-echo "qc-70-pointer-references"
+echo "qc-70-lean-core-file-system"
 
-for f in SKILL.md pointer-references-full.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md QC.md \
-         CHANGELOG.md skill-version.txt pointer-references.skill wire.sh \
+for f in SKILL.md lean-core-file-system-full.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md QC.md \
+         CHANGELOG.md skill-version.txt lean-core-file-system.skill wire.sh \
          scripts/lib-paths.sh scripts/pointer-audit.sh scripts/install-weekly-cron.sh scripts/weekly-cron-message.txt \
          tests/test-pointer-audit.sh tests/test-install-weekly-cron.sh tests/test-wire.sh tests/fake-openclaw.py; do
   [ -f "$D/$f" ] || fail "missing file: $f"
@@ -37,7 +37,7 @@ done
 [ "$FAILS" -eq 0 ] && pass "all shipped files present"
 
 n0=$FAILS
-for s in "$D/wire.sh" "$D/qc-70-pointer-references.sh" "$D"/scripts/*.sh "$D"/tests/*.sh; do
+for s in "$D/wire.sh" "$D/qc-70-lean-core-file-system.sh" "$D"/scripts/*.sh "$D"/tests/*.sh; do
   bash -n "$s" 2>/dev/null || fail "bash -n: ${s#"$D"/}"
   if [ -x /bin/bash ] && /bin/bash --version 2>/dev/null | grep -q 'version 3\.'; then
     /bin/bash -n "$s" 2>/dev/null || fail "bash 3.2 -n: ${s#"$D"/}"
@@ -57,7 +57,7 @@ for t in ("AGENTS", "MEMORY"):
     if not f:
         sys.exit("no fenced payload for %s.md" % t)
     if t == "AGENTS":
-        if not m.group(1).lstrip("\n").startswith("<!-- skill:70-pointer-references:core-update-applied -->"):
+        if not m.group(1).lstrip("\n").startswith("<!-- skill:70-lean-core-file-system:core-update-applied -->"):
             sys.exit("AGENTS.md section must open with the sentinel line")
         lines = [l for l in f.group(1).splitlines() if l.strip() and not l.startswith("#")]
         if len(lines) != 1:
@@ -93,5 +93,5 @@ for t in test-pointer-audit.sh test-install-weekly-cron.sh test-wire.sh; do
   if [ "$rc" -eq 0 ]; then pass "$t: $last"; else fail "$t (exit $rc): $last"; printf '%s\n' "$out" | grep FAIL | sed 's/^/       /'; fi
 done
 
-if [ "$FAILS" -eq 0 ]; then echo "qc-70-pointer-references: PASS"; exit 0; fi
-echo "qc-70-pointer-references: FAIL ($FAILS check(s))"; exit 1
+if [ "$FAILS" -eq 0 ]; then echo "qc-70-lean-core-file-system: PASS"; exit 0; fi
+echo "qc-70-lean-core-file-system: FAIL ($FAILS check(s))"; exit 1

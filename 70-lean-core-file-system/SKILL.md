@@ -1,10 +1,10 @@
 ---
-name: pointer-references
+name: lean-core-file-system
 version: 1.0.0
 description: Keeps an OpenClaw agent's core files (AGENTS.md, TOOLS.md, MEMORY.md, and also USER.md, IDENTITY.md, SOUL.md) under 40,000 characters each by moving situational blocks into one-playbook-per-system documents in the master files folder and leaving a one-line pointer (WHAT, WHERE, WHEN) behind, while always-on rules stay inline. Ships an audit script (sizes, candidate blocks, broken pointers, orphans, duplicates, index consistency, content-preservation proof) and a quiet weekly OpenClaw cron job. Use when a core file is too long or truncated, before adding a long block to a core file, or when the user mentions core files, core.md files, bootstrap files, bloat, slimming down, playbooks, or pointers.
 ---
 
-# Pointer References (skill 70)
+# Lean Core File System (skill 70)
 
 ## What this skill is about
 
@@ -14,7 +14,9 @@ its memory, and the more likely OpenClaw silently cuts the middle out of the
 last-loaded file (MEMORY.md). This skill keeps the core files lean: any block
 longer than a short paragraph that is only needed for one topic moves into that
 topic's playbook, and a one-line pointer stays behind that says WHAT it is,
-WHERE it lives, and WHEN to open it.
+WHERE it lives, and WHEN to open it. The Lean Core File System uses pointer
+references: that one-line pointer is the technique, and this skill owns
+core-file size and the weekly audit that keeps it that way.
 
 This is a standalone skill. It is NOT part of skill 01 (Teach Yourself
 Protocol): skill 01 is about learning new knowledge and where to store it;
@@ -53,21 +55,21 @@ differ on what may sit in a core file, skill 70 is the newer rule (see section
 ## Files in this folder (read in this order)
 
 1. **SKILL.md** (this file): overview.
-2. **pointer-references-full.md**: the complete playbook. The authoritative
+2. **lean-core-file-system-full.md**: the complete playbook. The authoritative
    reference; everything else points into it.
 3. **INSTRUCTIONS.md**: day-to-day use, the short version.
 4. **INSTALL.md**: installation and verification.
 5. **EXAMPLES.md**: worked examples with real commands and output.
 6. **CORE_UPDATES.md**: the AGENTS.md pointer and the MEMORY.md "core files"
    definition (applied by `wire.sh`, never by hand).
-7. **QC.md**: the quality-control checklist; `qc-70-pointer-references.sh` runs
+7. **QC.md**: the quality-control checklist; `qc-70-lean-core-file-system.sh` runs
    it.
 8. **wire.sh**: the installer that `update-skills.sh` runs on every update.
 9. **scripts/**: `pointer-audit.sh` (audit, backup, proof),
    `install-weekly-cron.sh` (the weekly job), `lib-paths.sh` (shared paths),
    `weekly-cron-message.txt` (the job's instructions).
 10. **tests/**: fixture batteries for the three scripts.
-11. **pointer-references.skill**: the packaged skill definition.
+11. **lean-core-file-system.skill**: the packaged skill definition.
 12. **CHANGELOG.md**, **skill-version.txt**.
 
 ## Prerequisites

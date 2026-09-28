@@ -1,6 +1,6 @@
-# Pointer References (70) - Instructions
+# Lean Core File System (70) - Instructions
 
-The full procedure is in `pointer-references-full.md` (the playbook). This page
+The full procedure is in `lean-core-file-system-full.md` (the playbook). This page
 is the short version for day-to-day use.
 
 ## When to act
@@ -31,7 +31,7 @@ is the short version for day-to-day use.
 ## Commands
 
 ```bash
-S=~/.openclaw/skills/70-pointer-references    # server: /data/.openclaw/skills/70-pointer-references
+S=~/.openclaw/skills/70-lean-core-file-system    # server: /data/.openclaw/skills/70-lean-core-file-system
 bash $S/scripts/pointer-audit.sh --backup                 # 1. backup; prints the folder
 bash $S/scripts/pointer-audit.sh --dry-run                # 2. sizes, findings, candidate blocks
 #    ... move blocks per the playbook, section 8 ...

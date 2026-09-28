@@ -1,6 +1,6 @@
-# QC Checklist: Pointer References (70)
+# QC Checklist: Lean Core File System (70)
 
-The automated part of this checklist is `qc-70-pointer-references.sh` (exit 0
+The automated part of this checklist is `qc-70-lean-core-file-system.sh` (exit 0
 PASS, 1 FAIL, 2 tooling). The onboarding verification gate runs it with no
 arguments. It is read-only toward the box: every test uses throwaway folders
 and a fake `openclaw`.
@@ -14,7 +14,7 @@ inline, and runs that upkeep weekly as a quiet OpenClaw cron job.
 ## 2. Package checks (automated)
 - [ ] Every shipped file is present (SKILL.md, the full playbook, INSTALL.md,
       INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, QC.md, CHANGELOG.md,
-      skill-version.txt, pointer-references.skill, wire.sh, scripts/, tests/).
+      skill-version.txt, lean-core-file-system.skill, wire.sh, scripts/, tests/).
 - [ ] Every shell script parses under the current bash and under macOS bash 3.2.
 - [ ] CORE_UPDATES.md: AGENTS.md payload is one line, at most two sentences,
       has a WHEN; the AGENTS.md section opens with the gate-visible sentinel.

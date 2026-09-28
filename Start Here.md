@@ -110,7 +110,8 @@ These 7 files are your AI's memory and identity. Keep them LEAN.
 7. TOOLS.md - Tool capabilities and how-to guides
 
 **THE RULE:**
-- Core.md files: 10-25 lines maximum
+- Core.md files: always-on rules stay inline, shortened; everything situational is a one-to-two-sentence pointer (WHAT, WHERE, WHEN)
+- Core-file size (each file under 40,000 characters) and the weekly audit belong to skill 70, the Lean Core File System
 - Full documentation: Goes to ~/Downloads/openclaw-master-files/
 - Never dump thousands of lines into core files
 - Always use pointers: "See full guide at: [path]"
@@ -130,7 +131,7 @@ The QC agent verifies each skill installation by checking:
 - Did it NOT take shortcuts?
 
 ### 2. Core.md Files Protection
-Core.md files must stay LEAN (10-25 lines max):
+Core.md files must stay LEAN: always-on rules inline and shortened, everything situational as a one-to-two-sentence pointer (WHAT, WHERE, WHEN), each file under 40,000 characters (skill 70, the Lean Core File System, owns core-file size):
 - USER.md - About the human
 - IDENTITY.md - Who the AI is
 - SOUL.md - Core principles
@@ -765,7 +766,7 @@ All skill content goes inside the master files folder:
 | HEARTBEAT.md | Current priorities, active tasks | `~/clawd/HEARTBEAT.md` |
 
 ### TYP Storage Rules
-- **Core files:** 10-25 line summaries ONLY, with pointers to deep files
+- **Core files:** always-on rules (shortened) plus one-to-two-sentence pointers (WHAT, WHERE, WHEN) to deep files ONLY; skill 70, the Lean Core File System, owns core-file size
 - **Deep files:** Complete, unabridged content in `~/Downloads/openclaw-master-files/`
 
 ### TYP Conflict Resolution
@@ -783,7 +784,7 @@ All skill content goes inside the master files folder:
 
 ### Verification
 After every skill install, verify:
-- [ ] Core files have lightweight summaries only (10-25 lines)
+- [ ] Core files hold only always-on rules and one-to-two-sentence pointers (WHAT, WHERE, WHEN)
 - [ ] Deep files have complete content
 - [ ] Core files reference deep files with correct paths
 - [ ] No bloat added to AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, or HEARTBEAT.md

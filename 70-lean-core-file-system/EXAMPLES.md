@@ -1,20 +1,20 @@
-# Pointer References (70) - Examples
+# Lean Core File System (70) - Examples
 
 Real commands with the output they produced on a throwaway demo workspace
 (paths shortened to `<demo>`). `S` is the skill folder:
-`~/.openclaw/skills/70-pointer-references` on a Mac,
-`/data/.openclaw/skills/70-pointer-references` on a server.
+`~/.openclaw/skills/70-lean-core-file-system` on a Mac,
+`/data/.openclaw/skills/70-lean-core-file-system` on a server.
 
 ## Example 1: install on a box (core files only, no cron job)
 
 ```
 $ bash $S/wire.sh --no-cron
-[skill 70] installed playbook -> <demo>/mf/70-pointer-references/pointer-references-full.md
+[skill 70] installed playbook -> <demo>/mf/70-lean-core-file-system/lean-core-file-system-full.md
 [skill 70] created master index <demo>/mf/playbooks/README.md
-[skill 70] AGENTS.md: wrote block 'agents' (backup: <demo>/bk/pointer-references/wire-20260928T180414Z/AGENTS.md)
-[skill 70] MEMORY.md: wrote block 'memory' (backup: <demo>/bk/pointer-references/wire-20260928T180414Z/MEMORY.md)
-[skill 70] stamped <!-- skill:70-pointer-references:core-update-applied -->
-[skill 70] wiring complete (workspace: <demo>/ws; playbook: <demo>/mf/70-pointer-references/pointer-references-full.md)
+[skill 70] AGENTS.md: wrote block 'agents' (backup: <demo>/bk/lean-core-file-system/wire-20260928T180414Z/AGENTS.md)
+[skill 70] MEMORY.md: wrote block 'memory' (backup: <demo>/bk/lean-core-file-system/wire-20260928T180414Z/MEMORY.md)
+[skill 70] stamped <!-- skill:70-lean-core-file-system:core-update-applied -->
+[skill 70] wiring complete (workspace: <demo>/ws; playbook: <demo>/mf/70-lean-core-file-system/lean-core-file-system-full.md)
 ```
 
 Running it again prints `block 'agents' already current, no change` for each
@@ -46,8 +46,8 @@ Exit 0: a candidate is a question for the agent, not a failure.
 1. Backup:
    ```
    $ bash $S/scripts/pointer-audit.sh --backup
-   BACKUP [pointer-audit.sh]: 2 core file(s) and playbooks copied to <demo>/bk/pointer-references/20260928T180427Z
-   <demo>/bk/pointer-references/20260928T180427Z
+   BACKUP [pointer-audit.sh]: 2 core file(s) and playbooks copied to <demo>/bk/lean-core-file-system/20260928T180427Z
+   <demo>/bk/lean-core-file-system/20260928T180427Z
    ```
 2. Create `<master-files>/playbooks/quickbooks-online.md` from the template:
    current rules on top, a "What changed" line, and the original block pasted
@@ -68,7 +68,7 @@ Exit 0: a candidate is a question for the agent, not a failure.
 6. Final audit (writes the report):
    ```
    $ bash $S/scripts/pointer-audit.sh
-   Report: <demo>/mf/70-pointer-references/reports/pointer-audit-20260928T180427Z.md
+   Report: <demo>/mf/70-lean-core-file-system/reports/pointer-audit-20260928T180427Z.md
    PASS [pointer-audit.sh]: 0 finding(s), 0 candidate block(s), 1 playbook(s), 1539 total core characters
    ```
 
@@ -100,7 +100,7 @@ again before continuing.
 
 ```
 $ bash $S/scripts/install-weekly-cron.sh --dry-run
-[install-weekly-cron.sh] job 'pointer-references-weekly' agent=main schedule='30 5 * * 0' session=isolated thinking=high delivery=none
+[install-weekly-cron.sh] job 'lean-core-file-system-weekly' agent=main schedule='30 5 * * 0' session=isolated thinking=high delivery=none
 [install-weekly-cron.sh] primary model:  ollama/deepseek-v4.1-flash:cloud
 [install-weekly-cron.sh] fallback model: openrouter/deepseek/deepseek-v4.1-flash
 [install-weekly-cron.sh] existing jobs with this name: 0

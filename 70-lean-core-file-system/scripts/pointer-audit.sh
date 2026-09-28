@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pointer-audit.sh - Skill 70 (Pointer References) audit, backup and
+# pointer-audit.sh - Skill 70 (Lean Core File System) audit, backup and
 # content-preservation proof.
 #
 # WHAT IT DOES (read-only against core files and playbooks, always):
@@ -46,7 +46,7 @@
 #   --playbooks DIR     playbooks folder (default: <master-files>/playbooks)
 #   --index FILE        master index (default: <playbooks>/README.md)
 #   --limit N           per-file target in characters (default 40000)
-#   --report FILE       report path (default: <master-files>/70-pointer-references/reports/pointer-audit-<UTC stamp>.md)
+#   --report FILE       report path (default: <master-files>/70-lean-core-file-system/reports/pointer-audit-<UTC stamp>.md)
 #   --backup-root DIR   backup root (default: platform rule)
 #   -h, --help
 #
@@ -162,7 +162,7 @@ fi
 # ─────────────────────────────── --backup ────────────────────────────────────
 if [ "$MODE" = "backup" ]; then
   STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-  DEST="$BACKUP_ROOT/pointer-references/$STAMP"
+  DEST="$BACKUP_ROOT/lean-core-file-system/$STAMP"
   mkdir -p "$DEST/core" || die_tool "cannot create backup folder $DEST"
   n=0
   for f in $CORE_FILES; do
@@ -350,7 +350,7 @@ NC="$(grep -c '^|' "$CAND" 2>/dev/null || true)"; NC="${NC:-0}"
 VERDICT="PASS"; [ "$NF" -gt 0 ] && VERDICT="FINDINGS"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 build_report() {
-  echo "# Pointer References audit"
+  echo "# Lean Core File System audit"
   echo
   echo "Run: $NOW (Coordinated Universal Time). Verdict: **$VERDICT** ($NF finding(s), $NC candidate block(s), $PB_COUNT playbook(s))."
   echo "Workspace: $WS"
@@ -386,7 +386,7 @@ if [ "$DRY" -eq 1 ]; then
   echo
   echo "(dry run: no report file written)"
 else
-  [ -n "$REPORT" ] || REPORT="$MFD/70-pointer-references/reports/pointer-audit-$(date -u +%Y%m%dT%H%M%SZ).md"
+  [ -n "$REPORT" ] || REPORT="$MFD/70-lean-core-file-system/reports/pointer-audit-$(date -u +%Y%m%dT%H%M%SZ).md"
   mkdir -p "$(dirname "$REPORT")" 2>/dev/null || die_tool "cannot create report folder for $REPORT"
   build_report > "$REPORT" || die_tool "cannot write report $REPORT"
   echo "Report: $REPORT"
