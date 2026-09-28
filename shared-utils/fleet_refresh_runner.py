@@ -470,6 +470,21 @@ def _owner_agent_ids(paths: dict) -> list[str]:
     return list(dict.fromkeys(direct + catch_all + ["main"]))
 
 
+def _owner_workspace(paths: dict) -> Optional[Path]:
+    """The owner agent's own workspace when its config names one (e.g.
+    ~/.openclaw/workspace-nova), else None."""
+    try:
+        agents = json.loads((Path(paths["root"]) / "openclaw.json").read_text()).get("agents") or {}
+        entries = agents.get("entries") or {a.get("id"): a for a in agents.get("list") or [] if isinstance(a, dict)}
+        for agent in _owner_agent_ids(paths):
+            ws = (entries.get(agent) or {}).get("workspace")
+            if ws:
+                return Path(os.path.expanduser(ws))
+    except (OSError, ValueError, KeyError, AttributeError):
+        pass
+    return None
+
+
 def _agent_session_keys(paths: dict, agent: str) -> list[tuple[str, float]]:
     """(key, updatedAt) of one agent's sessions. OpenClaw before 2026.8 kept
     them in agents/<id>/sessions/sessions.json; later releases keep them in the
@@ -1929,6 +1944,16 @@ def _prov_read_json(path) -> Optional[Any]:
     return None
 
 
+def _existing_or_owner(paths: dict, p: Path) -> Path:
+    """p, or the same file in the owner agent's own workspace when only that one
+    exists (a box whose CEO agent runs from workspace-nova, not workspace)."""
+    if p.exists() or "root" not in paths:
+        return p
+    ows = _owner_workspace(paths)
+    alt = (ows / p.name) if ows else None
+    return alt if alt and alt.exists() else p
+
+
 def _resolve_provisioning_paths(paths: dict) -> dict:
     """
     Resolve the on-box provisioning artifacts the completeness gate reads.
@@ -1992,7 +2017,8 @@ def _resolve_provisioning_paths(paths: dict) -> dict:
         "zhc_company_config": _pick("company_config", "company-config.json"),
         "coaching_personas":  coaching_personas,
         "personas_dir":       coaching_personas / "personas",
-        "build_state":        Path(paths.get("build_state") or (workspace / ".workforce-build-state.json")),
+        "build_state":        _existing_or_owner(paths, Path(paths.get("build_state")
+                                                         or (workspace / ".workforce-build-state.json"))),
         "cc_dir":             cc_dir,
         "cc_company_config":  (cc_dir / "config" / "company-config.json") if cc_dir else None,
         "cc_logo_config":     (cc_dir / "public" / "logo-config.json") if cc_dir else None,

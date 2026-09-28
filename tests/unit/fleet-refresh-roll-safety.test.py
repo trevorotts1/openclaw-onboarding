@@ -909,6 +909,18 @@ class ProvisioningPathsPreferTheRealCompanyDir(unittest.TestCase):
             self.assertEqual(out.stdout.split(), [str(slug / "company-config.json"), str(slug / "departments.json")],
                              out.stderr)
 
+    def test_build_state_found_in_the_owner_agents_own_workspace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nova = root / "workspace-nova"
+            nova.mkdir()
+            (nova / ".workforce-build-state.json").write_text("{}")
+            (root / "openclaw.json").write_text(json.dumps({
+                "bindings": [{"agentId": "thea", "match": {"channel": "telegram", "accountId": "default"}}],
+                "agents": {"entries": {"thea": {"workspace": str(nova)}}}}))
+            got = fr._resolve_provisioning_paths({"root": root, "workspace": root / "workspace", "company_dir": None})
+            self.assertEqual(got["build_state"], nova / ".workforce-build-state.json")
+
     def test_an_existing_flat_file_still_wins(self):
         with tempfile.TemporaryDirectory() as td:
             ws = Path(td, "workspace")
