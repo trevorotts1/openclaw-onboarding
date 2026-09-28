@@ -111,7 +111,7 @@ def test_openrouter_falls_back_to_catalog(monkeypatch):
     finally:
         cp._reset_openrouter_pricing_cache()
     assert rate["status"] == "priced"
-    assert rate["rate_source"] != "openrouter live list"
+    assert rate.get("rate_source") != "openrouter live list"
     assert rate["per_million_tokens_in_usd"] == 0.15
     assert rate["per_million_tokens_out_usd"] == 0.6
 
