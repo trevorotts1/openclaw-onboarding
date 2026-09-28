@@ -1268,6 +1268,25 @@ class OperatorAlert(unittest.TestCase):
             self.assertIsNone(fleet_notify.passed_note({**ok, **bad}))
         self.assertEqual(fleet_notify.client_label({"name": "b9", "platform": "mac"}), "UNKNOWN CLIENT (b9) (Mac)")
 
+    def test_telegram_text_survives_the_webhooks_legacy_markdown(self):
+        # A lone "_" made Telegram reject the whole alert (HTTP 500 from the webhook).
+        sent = {}
+
+        class Resp:
+            status = 200
+            def read(self): return b'{"ok": true, "result": {"message_id": 7}}'
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def urlopen(req, timeout):
+            sent["text"] = json.loads(req.data)["text"]
+            return Resp()
+        with mock.patch.object(fleet_notify, "alert_target", return_value=("https://x/alert", "H", "s")), \
+             mock.patch.object(fleet_notify.urllib.request, "urlopen", side_effect=urlopen):
+            ok = fleet_notify.send_telegram("reset refused: scripts/watchdog-cc.sh not_restored *x* [y]")
+        self.assertTrue(ok[0])
+        self.assertEqual(sent["text"], "reset refused: scripts/watchdog-cc.sh not\\_restored \\*x\\* \\[y]")
+
     def test_alert_webhook_is_derived_from_the_gate_credentials(self):
         with mock.patch.dict(os.environ, {"FLEET_STANDING_GATE_URL": "https://n8n.example/webhook/fleet-standing-check",
                                           "FLEET_STANDING_GATE_SECRET": "s"}):
