@@ -1373,7 +1373,7 @@ def acquire(
                 st.day_count = 0
             daily_ok = cfg["daily_cap"] <= 0 or st.day_count + n <= cfg["daily_cap"]
             if not daily_ok:
-                raise GovernorTimeout(
+                raise GovernorDailyCapReached(
                     f"governor: daily_cap {cfg['daily_cap']} reached for {provider}"
                 )
             # rate scale expiry (report_429 halving lasts 60 s)
@@ -1475,6 +1475,15 @@ def acquire(
 class GovernorTimeout(TimeoutError):
     """Raised by :func:`acquire` when the timeout elapses or the daily cap
     is exhausted."""
+
+
+class GovernorDailyCapReached(GovernorTimeout):
+    """Raised by :func:`acquire` when the provider's daily cap is exhausted.
+
+    FIX 10: this is NEVER fail-soft. Callers must re-raise it (never swallow
+    it into an unthrottled proceed) so a capped phase parks instead of
+    spending.
+    """
 
 
 def release(lease: Optional[Lease]) -> None:
