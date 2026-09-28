@@ -33,6 +33,7 @@ ccp() {  # ccp <out-prefix> <cfg> <store> <provider>
 
 # ── 1. key_resolver shorthands ────────────────────────────────────────────────
 printf '9ROUTER_API_KEY=%s\nMIMO_API_KEY=%s\n' "$FAKE" "$FAKE" > "$H/.openclaw/secrets/.env"
+chmod 600 "$H/.openclaw/secrets/.env"   # secrets/.env hygiene (QC static gate)
 if out="$(env -i HOME="$H" PATH="$PATH" python3 - "$ROOT/shared-utils" <<'PY' 2>&1
 import sys; sys.path.insert(0, sys.argv[1])
 import key_resolver as k
@@ -107,6 +108,7 @@ grep -q suggested_block "$TMP/n.out" && fail "9router got a suggested provider b
   || pass "no 9router block template is suggested"
 
 echo "9ROUTER_API_KEY=$FAKE" > "$H/.openclaw/secrets/.env"
+chmod 600 "$H/.openclaw/secrets/.env"   # secrets/.env hygiene (QC static gate)
 env HOME="$H" OC_CONFIG_FILE="$EMPTY" bash "$CC" 9ROUTER_API_KEY --json >"$TMP/k.out" 2>"$TMP/k.err"; rc=$?
 [[ $rc -eq 0 ]] && ! grep -qiE 'bad substitution|not a valid identifier|syntax error' "$TMP/k.err" \
   && pass "key mode: 9ROUTER_API_KEY found, no bash error" \
