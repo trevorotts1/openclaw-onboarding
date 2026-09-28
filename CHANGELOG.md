@@ -1,9 +1,31 @@
-## [v25.2.0]  -  2026-09-28  -  Skill 70 Lean Core File System: lean core files through pointer references, one playbook per system, weekly cron job
+## [v25.2.1]  -  2026-09-28  -  Merge train: #1327 skill31: nightly memory maintenance — prune dead embedding-cache…; #1329 Skill 01: adopt the Lean Core File System (skill 70) pointer standard…; #1331 Skill 70: Lean Core File System; #1332 fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test…; #1334 fleet roll: each box's own Command Center, the roll's own onboarding…
 
-### Why
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1327 — [v25.1.105]  -  2026-09-28  -  Skill 31: nightly memory maintenance — prune dead embedding-cache rows, report index drift (never re-embeds)
+
+#### Why
+Nothing ever deleted a `memory_embedding_cache` row. Rows under an old provider key, and rows whose chunk was edited or deleted, stayed in every agent DB forever: one box held 7,133 of them (0.47 GB) across 5 agents. The 2026.9.6 schema migration also left 2.6 GB of free pages behind on that box. And an agent whose index stamp drifted from the live embedding identity lost vector search silently.
+
+#### What changed
+- `31-upgraded-memory-system/scripts/memory-cache-prune.sh` deletes stale-key rows and orphans older than 7 days. It judges each agent by its own index stamp, compacts DBs holding 256 MB or more of free pages when the disk has room, and uses python3 stdlib only.
+- `31-upgraded-memory-system/scripts/memory-index-check.sh` is a READ-ONLY drift report. It never reindexes or re-embeds.
+- `31-upgraded-memory-system/install.sh` schedules both as silent `openclaw cron --command` jobs (`memory-index-check` 02:00, `memory-cache-prune` 02:40, `--no-deliver`). It is idempotent by name and honors tombstones. Root `install.sh` calls it on a fresh install; `update-skills.sh` runs it through the per-skill wiring loop on every roll, on Mac and Docker.
+- Skill 31 is now v8.1.0. Guarded by `tests/unit/memory-cache-prune.test.sh` and `.github/workflows/memory-cache-prune-guard.yml`.
+
+#### Risk
+Low. The prune runs while the gateway is up (SQLite locking and WAL); a busy DB is skipped until the next run. The worst case of an orphan prune is one extra embed call for text restored after 7 days. Nothing re-embeds automatically.
+
+### #1329 — Skill 01: adopt the Lean Core File System (skill 70) pointer standard for core-file entries (v7.0.1)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1331 — [v25.2.0]  -  2026-09-28  -  Skill 70 Lean Core File System: lean core files through pointer references, one playbook per system, weekly cron job
+
+#### Why
 Core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) are sent to the model with every message. They grow without limit, which slows every reply, raises cost, brings compaction sooner, and past the configured limit OpenClaw silently cuts the middle out of the file (verified in the installed OpenClaw 2026.9.4 code: 75 percent head plus 25 percent tail kept; AGENTS.md 45 percent head, a policy digest, 15 percent tail; MEMORY.md loads last and is cut first). Nothing in the fleet kept them lean over time. Skill 01 (Teach Yourself Protocol) covers learning and storage, not ongoing upkeep, and its 10-to-25-line summary size conflicts with a one-line pointer.
 
-### What changed
+#### What changed
 - New standalone skill `70-lean-core-file-system` (Lean Core File System, v1.0.0), not part of skill 01. The technique it uses is called pointer references. Contents: the full playbook (doctrine, pointer format with good and bad examples, earn-your-place rule with always-on rules kept inline, one system one playbook, master index, contradiction handling with dated superseded rules, backup and content-preservation proof, first-run dry-run diff, step-by-step and weekly procedures, test battery, landmines, sourced rationale); `scripts/pointer-audit.sh` (sizes against 40,000, candidate blocks, broken pointers, orphans, duplicates, index consistency, `--backup`, `--prove-moved`, `--dry-run`; exit 0 PASS, 1 FINDINGS, 2 tooling; macOS bash 3.2 and Linux); `scripts/install-weekly-cron.sh` (idempotent weekly OpenClaw cron job `lean-core-file-system-weekly`: isolated session, thinking high, no delivery, primary DeepSeek V4.1 Flash on Ollama Cloud and fallback DeepSeek V4.1 Flash on OpenRouter, both discovered from the box's own model list, refuses with exit 4 rather than guess, checks every flag against `--help`); `wire.sh` (AGENTS.md pointer and MEMORY.md core-files definition, backup first, replace-in-place, idempotent; runs automatically on every update through the existing `wire.sh` hook in `update-skills.sh`); `qc-70-lean-core-file-system.sh` and three fixture batteries.
 - For core-file content only, skill 70 supersedes skill 01's 10-to-25-line summary size and four-part pointer block (skill 70 is the newer rule; the INSTALL.md conflict rule already says the skill governs core-file content). Skill 01's own files are reconciled in the paired pull request #1329; its storage paths are shared unchanged.
 - One pointer standard repo-wide: the Teach Yourself Protocol storage rule in the root `AGENTS.md`, `TOOLS.md` and `USER.md` templates, the core-file rules and quality-control checklist in `Start Here.md`, and the text `scripts/typ-migrate.sh` injects (its AGENTS.md rule block and both migration notices) now all say the same thing: a situational block longer than about five sentences moves to the master files folder and leaves a one-to-two-sentence pointer (WHAT, WHERE, WHEN); always-on rules stay inline, shortened; skill 70 owns core-file size (40,000 characters per file) and the weekly audit. The old "10-25 lines" and "~25 lines" guidance is gone. `typ-migrate.sh` detection (BLOAT_THRESHOLD) and its rule marker are unchanged.
@@ -12,25 +34,30 @@ Core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) are s
 - `23-ai-workforce-blueprint/skill-department-map.json`: skill 70 entry (not client facing, owner openclaw-maintenance), so the repo-consistency gate's skill-folder coverage check passes.
 - Version markers rolled v25.1.105 -> v25.2.0 via `scripts/bundle-release-in-branch.sh` (minor: new skill).
 
-### Migration notes
+#### Migration notes
 - Existing boxes pick the skill up on the next fleet update: the generic `[0-9]*/` copy plus the skill's own `wire.sh`. A box whose configured model list lacks either DeepSeek V4.1 Flash identifier gets the core-file wiring and a named refusal for the cron job (retried each update); nothing substitutes another model.
 - The first weekly run on each box changes no core file; it saves a dry-run diff. Risk: LOW.
 - `agents.defaults.bootstrapMaxChars` and `agents.defaults.bootstrapTotalMaxChars` are never read or written.
 
-### Tests
+#### Tests
 `bash 70-lean-core-file-system/qc-70-lean-core-file-system.sh` (PASS: audit battery, cron installer battery and wire battery, under macOS bash 3.2 and bash 5); `python3 scripts/qc-assert-wave-list-integrity.py` (PASS, 49 entries); `bash scripts/bump-version.sh --check` (all markers agree); `scripts/typ-migrate.sh` run against throwaway fixture workspaces (section bloat, whole-file bloat, missing rule, re-run) with the same exit codes as the previous version.
-## [v25.2.1]  -  2026-09-28  -  Fleet roll: each box's own Command Center, the roll's own onboarding copy, rollback never blocked
 
-### Why
+### #1332 — fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test harness
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1334 — [v25.2.1]  -  2026-09-28  -  Fleet roll: each box's own Command Center, the roll's own onboarding copy, rollback never blocked
+
+#### Why
 The first real fleet rolls failed on three client boxes and the operator's Mac for reasons that had nothing to do with the release. The runner looked for the Command Center at one fixed path, while every box keeps its own elsewhere. The roll ran from whichever old onboarding clone a box had, and one was shallow and tag-only. A modified file blocked a rollback. The main-agent session store moved out of sessions.json. The duck test ran on the wrong Node, and a 20-minute updater cap left an orphaned updater running during a rollback.
 
-### What changed
+#### What changed
 - shared-utils/fleet_refresh_runner.py: the Command Center code checkout is found ON each box: the process serving the Command Center port (lsof, ss, or /proc in a slim container), then pm2's app, then update-skills.sh's validated candidate list plus the OpenClaw root's command-center. A folder that holds the live mission-control.db but not the code is never chosen and never touched; the database is still located through resolve_db.py. When none is found, the Command Center steps are skipped as "Command Center not found on this box" and the other steps still run.
 - shared-utils/fleet_refresh_runner.py: 999-setup with the owner's local changes is SKIPPED ("999 has local changes, not updated"), not failed. The main-agent session key is read through `openclaw sessions list` (sessions.json no longer exists on 2026.8+), and agent:main:main counts as the owner's session. On rollback, modified tracked files in the Command Center checkout are saved beside the snapshot and the reset is then forced. update-skills.sh gets 90 minutes, and on timeout its whole process tree is stopped. The duck test runs with the Node that can load the Command Center's native modules. A Command Center step that failed without changing anything reports "onboarding updated to vX, Command Center NOT updated (still vY, healthy)".
 - shared-utils/fleet_notify.py: the operator alert's Telegram leg failed on any '_' in the text. The webhook's Telegram node sends legacy Markdown, so Telegram answered "can't parse entities" and the webhook returned HTTP 500. The four legacy-Markdown markers are now escaped.
 - scripts/fleet-roll-copy.sh (new), scripts/fleet-refresh.sh, scripts/weekly-full-update.sh: the roll runs from ONE dedicated copy per box, <OpenClaw root>/fleet-refresh/onboarding (inside the container on Docker boxes), refreshed to origin/main every run. The box's own clones are never used, changed or deleted.
 
-### Tests
+#### Tests
 tests/unit/fleet-refresh-roll-safety.test.py (75 pass): code checkout found past a live-DB folder (DB untouched), the serving process wins, a Contabo root Command Center, none found is a named skip; session key from the session store and from legacy sessions.json; 999 local changes skipped; rollback saves a dirty file and forces the reset; the updater timeout kills the whole process tree; the duck-test Node; the explicit Command Center-only failure; the roll copy with a shallow tag-only client clone left untouched; the Sunday update's copy.
 
 ## [v25.1.105]  -  2026-09-28  -  Merge train: #1323 docs(batch-merger-proof): remove the scratch proof docs; #1324 Fix qc-system-integrity.sh CHECK 2.3: real-file copies PASS, symlinks…; #1326 fix(PRES-057): reconcile refuses a live cron edit from an ephemeral…
@@ -57,20 +84,6 @@ While rewriting SYSTEM-DIAGNOSTIC-CHECKLIST.md (v25.1.102) it surfaced that `scr
 ### #1326 — fix(PRES-057): reconcile refuses a live cron edit from an ephemeral OPENCLAW_ROOT
 
 (This pull request carried no CHANGELOG entry of its own.)
-## [v25.1.105]  -  2026-09-28  -  Skill 31: nightly memory maintenance — prune dead embedding-cache rows, report index drift (never re-embeds)
-
-### Why
-Nothing ever deleted a `memory_embedding_cache` row. Rows under an old provider key, and rows whose chunk was edited or deleted, stayed in every agent DB forever: one box held 7,133 of them (0.47 GB) across 5 agents. The 2026.9.6 schema migration also left 2.6 GB of free pages behind on that box. And an agent whose index stamp drifted from the live embedding identity lost vector search silently.
-
-### What changed
-- `31-upgraded-memory-system/scripts/memory-cache-prune.sh` deletes stale-key rows and orphans older than 7 days. It judges each agent by its own index stamp, compacts DBs holding 256 MB or more of free pages when the disk has room, and uses python3 stdlib only.
-- `31-upgraded-memory-system/scripts/memory-index-check.sh` is a READ-ONLY drift report. It never reindexes or re-embeds.
-- `31-upgraded-memory-system/install.sh` schedules both as silent `openclaw cron --command` jobs (`memory-index-check` 02:00, `memory-cache-prune` 02:40, `--no-deliver`). It is idempotent by name and honors tombstones. Root `install.sh` calls it on a fresh install; `update-skills.sh` runs it through the per-skill wiring loop on every roll, on Mac and Docker.
-- Skill 31 is now v8.1.0. Guarded by `tests/unit/memory-cache-prune.test.sh` and `.github/workflows/memory-cache-prune-guard.yml`.
-
-### Risk
-Low. The prune runs while the gateway is up (SQLite locking and WAL); a busy DB is skipped until the next run. The worst case of an orphan prune is one extra embed call for text restored after 7 days. Nothing re-embeds automatically.
-
 ## [v25.1.104]  -  2026-09-28  -  Merge train: #1311 fix(shared-utils): fleet_notify.send_telegram returns the delivered…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
