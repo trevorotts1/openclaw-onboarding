@@ -31,7 +31,10 @@ at the send boundary) must answer those.
 
 Key names (spec 3.3): ``TYPESAFE_API_KEY`` is the documented direct key,
 ``JEV_API_KEY`` is the explicitly documented project compatibility alias for
-the direct route (not a claim about TypeSafe's native SDK), and
+the direct route (not a claim about TypeSafe's native SDK),
+``JEV_TYPESAFE_API_KEY`` is the already-documented operator-store name (the
+first rung of the operator's own ``spec-protocol/tools/jev-check.sh`` ladder,
+which parses it out of ``~/.openclaw/secrets/.env`` on both platforms), and
 ``OPENROUTER_API_KEY`` serves OpenRouter. The extra OpenRouter aliases below
 are already-documented names found in this repository's own readers
 (``api_key_utils.KEY_PATTERNS``); the route key sets are closed and disjoint —
@@ -49,10 +52,19 @@ OPENROUTER_ROUTE = "openrouter"
 
 TYPESAFE_API_KEY = "TYPESAFE_API_KEY"
 JEV_API_KEY = "JEV_API_KEY"  # project compatibility alias for the direct route
+# Already-documented operator-store name: the first rung of jev-check.sh's
+# ladder (spec-protocol/tools/jev-check.sh reads it from ~/.openclaw/secrets/
+# .env). Included additively so the direct route resolves on the operator box
+# as configured; precedence still puts TYPESAFE_API_KEY first.
+JEV_TYPESAFE_API_KEY = "JEV_TYPESAFE_API_KEY"
 OPENROUTER_API_KEY = "OPENROUTER_API_KEY"
 
 # Closed per-route key sets. Disjoint by construction (collision test locks it).
-DIRECT_KEYS: Tuple[str, ...] = (TYPESAFE_API_KEY, JEV_API_KEY)
+DIRECT_KEYS: Tuple[str, ...] = (
+    TYPESAFE_API_KEY,
+    JEV_API_KEY,
+    JEV_TYPESAFE_API_KEY,
+)
 OPENROUTER_KEYS: Tuple[str, ...] = (
     OPENROUTER_API_KEY,
     "OPENROUTER_KEY",
