@@ -1,0 +1,73 @@
+{
+  "probedAt": "2026-09-27T14:52:24Z",
+  "platform": "mac",
+  "openclaw": {
+    "cliPresent": false,
+    "version": "",
+    "semver": null,
+    "is2xOrNewer": false
+  },
+  "lanes": {
+    "agent_browser": {
+      "available": true,
+      "version": "0.27.0",
+      "path": "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T//bm-suite.O9J6jr/detach-fail/bin/agent-browser"
+    },
+    "openclaw_managed_browser": {
+      "pluginEnabled": false,
+      "cliWorks": false,
+      "playwrightAvailable": false,
+      "profile": "openclaw",
+      "doctorOk": false
+    },
+    "existing_session": {
+      "userProfileConfigured": false,
+      "chromeExtension": false
+    },
+    "playwright_direct": {
+      "available": false,
+      "browsersInstalled": false
+    },
+    "cua": {
+      "pluginEnabled": false,
+      "appPresent": true,
+      "driverPresent": true,
+      "providerSelected": "peekaboo"
+    },
+    "computer_peekaboo": {
+      "likely": true
+    }
+  },
+  "secrets": {
+    "firebaseRefreshToken": false,
+    "locationPit": false,
+    "locationId": false,
+    "kieApiKey": false
+  },
+  "selectedLane": "agent_browser",
+  "fallbackChain": [
+    "agent_browser",
+    "cua_last_resort"
+  ],
+  "optimizations": {
+    "preferHeadless": true,
+    "maxParallelTabs": 1,
+    "snapshotMode": "efficient",
+    "iframeStrategy": "frame_scoped_snapshot"
+  },
+  "iframeDrag": {
+    "available": false,
+    "requires": "playwright+cdp",
+    "degradedWithout": "STOP on cross-origin tile/drag"
+  },
+  "blockers": [],
+  "warnings": [
+    "openclaw --version probe failed (missing, timeout, or error)",
+    "playwright python package not importable",
+    "openclaw CLI absent \u2014 managed-browser lane not probed",
+    "no Firebase refresh token alias found in env (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN / FIREBASE_REFRESH_TOKEN)",
+    "no LOCATION PIT alias found in env (GOHIGHLEVEL_API_KEY / GHL_API_KEY / GOHIGHLEVEL_LOCATION_PIT / GHL_LOCATION_PIT)",
+    "no location id alias found in env (GOHIGHLEVEL_LOCATION_ID / GHL_LOCATION_ID)",
+    "agent-browser present without Playwright \u2014 cross-origin iframe drag unavailable (lane degrades to partial)"
+  ]
+}
