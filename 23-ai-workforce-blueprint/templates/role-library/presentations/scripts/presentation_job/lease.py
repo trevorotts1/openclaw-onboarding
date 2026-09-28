@@ -248,13 +248,16 @@ class Lease:
 
 def acquire(run_dir: Path, holder: Optional[Dict[str, Any]] = None,
             ttl_s: float = DEFAULT_TTL_S, wait_s: float = 0.0,
-            poll_s: float = 0.25) -> Optional[Lease]:
+            poll_s: float = 0.25, pid: Optional[int] = None) -> Optional[Lease]:
     """Acquire the run lease, or return None when a live holder keeps it.
 
     holder: caller-supplied identity merged into the document (e.g.
     {"who": "bridge"}); pid/host/session/acquired_at/expires_at are always
     written here. wait_s > 0 polls that long for a dead holder's lease to
     expire before giving up.
+    pid: optional explicit pid to record (FIX 14); defaults to os.getpid().
+    A shell caller passes its own $$ so liveness checks anchor on the real
+    actor, not a short-lived python3 child.
     """
     run_dir = Path(run_dir)
     work = run_dir / "working"
@@ -294,8 +297,10 @@ def acquire(run_dir: Path, holder: Optional[Dict[str, Any]] = None,
             time.sleep(max(0.05, poll_s))
             continue
 
+        # FIX 14: explicit pid overrides os.getpid() for shell callers.
+        _pid = pid if isinstance(pid, int) and pid > 0 else os.getpid()
         doc: Dict[str, Any] = {
-            "pid": os.getpid(),
+            "pid": _pid,
             "host": hostname,
             "session": _session_now(),
             "acquired_at": _iso(now),
