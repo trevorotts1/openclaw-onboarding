@@ -559,7 +559,7 @@ Rules:
 - Price-drop slide prompts with the price-tag motif, the drawn-line strike, and new-price formatting instructions
 - ~~working/checkpoints/pptx_text_overlays.json entries~~ -- ELIMINATED (Decision 5C). No overlay entries are written.
 
-**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (for any pptx_text_overlays.json fallback entries)
+**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (receives the composed slide images -- the native-text overlay fallback is ELIMINATED, Decision 5C, AF-OVERLAY-DELIVERED; never write `pptx_text_overlays.json`)
 
 **Failure mode:** If a price-drop slide's copy in slides_copy.md shows a price that does not match price_ladder.json, halt and flag to the Director: "Price discrepancy on slide N -- slides_copy.md shows $X but price_ladder.json shows $Y. Offer Price Strategist must resolve before prompt can be written."
 
