@@ -1,3 +1,28 @@
+## [v25.2.6]  -  2026-09-28  -  Merge train: #1339 No full copies of the skills folder or onboarding repo in backups;…; #1341 fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1339 — [v25.2.4]  -  2026-09-28  -  No full copies of the skills folder or the onboarding repo in backups; updates keep a no-copy rollback
+
+#### Why
+Every update wrote a full `skills-backup-<ts>` copy of the skills folder (hundreds of MB) into `~/Downloads/openclaw-backups` (`/data/Downloads/openclaw-backups` on a VPS), and the Back Yourself Up full backup copied the whole skills folder into every backup. Agents following skill 02 also put the skills folder and onboarding clones into backup jobs they set up themselves, nightly ones included. All of it is re-installable from this repo: a fleet-wide cleanup on 2026-09-28 removed 314 such copies (about 63 GB).
+
+#### What changed
+- `scripts/skills-rollback.sh` (new): `snapshot` records the previous commit (content manifest `src_git_sha`, else the version tag) plus a patch of the box's own changes to the repo-owned folders (edits, deletions, extra files; caches such as node_modules and __pycache__ left out). The patch is made by staging the installed files over that commit in a temporary git index, so nothing is copied. `restore <dir>` checks the commit back out, re-applies the patch, removes repo-owned folders the update added, and restores the version stamp and manifest.
+- `update-skills.sh` (NO-SKILLS-BACKUP-COPY-V1): records the no-copy rollback in `skills-rollback-<ts>` (a few KB; retention as before). Only a box with no recorded commit (exit 3: fresh or pre-manifest install) or a failed record falls back to the old one-time full copy, so an update is never left without a way back.
+- Skill 02 (Back Yourself Up) v7.1.0: `scripts/full-backup.sh` records the installed version and copies only custom skills (folders the manifest does not list); with no manifest the whole folder is still copied. The projects copy skips an `openclaw-onboarding/` clone. The protocol docs tell agents to leave the skills folder and every onboarding clone out of any backup job, nightly ones included. The `.skill` bundle is rebuilt.
+- `ONBOARDING-TRIGGERS.md`: the update output now shows the rollback line.
+
+#### Not changed
+The fleet roll runner is untouched: the current roll keeps one persistent clone per box (`scripts/fleet-roll-copy.sh`), and no code in this repo creates `roll-XXXXXX` temp clones, `skills.bak-*`, `skills-pre-v*` or `onboarding.bak-*` copies any more; those on boxes were left by older code.
+
+#### Tests
+`tests/unit/skills-rollback-no-copy.test.sh` (13 pass): the snapshot holds no directories and a few KB; the patch carries edits, deletions and extra files but no caches; after an update, restore returns the previous commit's files plus local changes, removes the added folder, keeps a custom skill and restores stamp + manifest; a box with no commit exits 3 and writes nothing; a version-tag-only box resolves; the updater's normal path copies nothing. Control: a real full copy fails the no-copy predicate. `tests/unit/full-backup-no-repo-skills-copy.test.sh` (6 pass, with a no-manifest control). `backup-retention` 40/40, `full-backup-prune-after-verify` 12/12. Guarded by `.github/workflows/no-backup-copies-guard.yml`.
+
+### #1341 — fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why
@@ -35,23 +60,6 @@ precedence collision on every scan.
 throwaway `$HOME`) covering the legacy-only, new-only, and both-present migration cases, run twice to
 confirm the second pass is a no-op; venv ends outside the skills root, `<VC_DIR>/venv` never exists,
 no `SKILL.md` in the runtime copy, exit code 0 in every case.
-## [v25.2.4]  -  2026-09-28  -  No full copies of the skills folder or the onboarding repo in backups; updates keep a no-copy rollback
-
-### Why
-Every update wrote a full `skills-backup-<ts>` copy of the skills folder (hundreds of MB) into `~/Downloads/openclaw-backups` (`/data/Downloads/openclaw-backups` on a VPS), and the Back Yourself Up full backup copied the whole skills folder into every backup. Agents following skill 02 also put the skills folder and onboarding clones into backup jobs they set up themselves, nightly ones included. All of it is re-installable from this repo: a fleet-wide cleanup on 2026-09-28 removed 314 such copies (about 63 GB).
-
-### What changed
-- `scripts/skills-rollback.sh` (new): `snapshot` records the previous commit (content manifest `src_git_sha`, else the version tag) plus a patch of the box's own changes to the repo-owned folders (edits, deletions, extra files; caches such as node_modules and __pycache__ left out). The patch is made by staging the installed files over that commit in a temporary git index, so nothing is copied. `restore <dir>` checks the commit back out, re-applies the patch, removes repo-owned folders the update added, and restores the version stamp and manifest.
-- `update-skills.sh` (NO-SKILLS-BACKUP-COPY-V1): records the no-copy rollback in `skills-rollback-<ts>` (a few KB; retention as before). Only a box with no recorded commit (exit 3: fresh or pre-manifest install) or a failed record falls back to the old one-time full copy, so an update is never left without a way back.
-- Skill 02 (Back Yourself Up) v7.1.0: `scripts/full-backup.sh` records the installed version and copies only custom skills (folders the manifest does not list); with no manifest the whole folder is still copied. The projects copy skips an `openclaw-onboarding/` clone. The protocol docs tell agents to leave the skills folder and every onboarding clone out of any backup job, nightly ones included. The `.skill` bundle is rebuilt.
-- `ONBOARDING-TRIGGERS.md`: the update output now shows the rollback line.
-
-### Not changed
-The fleet roll runner is untouched: the current roll keeps one persistent clone per box (`scripts/fleet-roll-copy.sh`), and no code in this repo creates `roll-XXXXXX` temp clones, `skills.bak-*`, `skills-pre-v*` or `onboarding.bak-*` copies any more; those on boxes were left by older code.
-
-### Tests
-`tests/unit/skills-rollback-no-copy.test.sh` (13 pass): the snapshot holds no directories and a few KB; the patch carries edits, deletions and extra files but no caches; after an update, restore returns the previous commit's files plus local changes, removes the added folder, keeps a custom skill and restores stamp + manifest; a box with no commit exits 3 and writes nothing; a version-tag-only box resolves; the updater's normal path copies nothing. Control: a real full copy fails the no-copy predicate. `tests/unit/full-backup-no-repo-skills-copy.test.sh` (6 pass, with a no-manifest control). `backup-retention` 40/40, `full-backup-prune-after-verify` 12/12. Guarded by `.github/workflows/no-backup-copies-guard.yml`.
-
 ## [v25.2.3]  -  2026-09-28  -  Pin Command Center v7.6.74 (zero-downtime update)
 
 ### Why
