@@ -1,3 +1,15 @@
+## [v25.1.93]  -  2026-09-28  -  Presentations: Docker release-matrix pin to deb13u7, #1273 Fix 3 test fixture, #1277 test-isolation fixes
+
+### Why
+Three fix PRs (#1282, #1283, #1284) each change content under 23-ai-workforce-blueprint/, so each one alone fails G3 (a skill content change needs a skill-version.txt bump), and three separate bumps would collide. This release lands all three with one lockstep bump, cut from current main (v25.1.92, #1286). It supersedes #1287, #1282, #1283 and #1284. #1287 carried the same three fixes as v25.1.93 but conflicted after #1286 merged. It never merged, and no v25.1.93 tag exists.
+
+### What changed
+- #1282 (Docker release-matrix legs): the libreoffice-impress pin moves from 4:25.2.3-2+deb13u6 to 4:25.2.3-2+deb13u7 in release-matrix/Dockerfile.hostinger, release-matrix/Dockerfile.contabo and release-matrix/pins.yaml. The Docker failure came from Debian's trixie-security update to libreoffice 4:25.2.3-2+deb13u7: the unpinned libreoffice-uiconfig-impress dependency moved to deb13u7, so the deb13u6 pin could no longer install. PR #1277 did not cause it.
+- #1283 (#1273 Fix 3 test fixture): tests/test_fix03_env_store_restored.py writes its scratch store inside the client root (tmp_path/home/.openclaw/secrets/.env), so oc_paths no longer rejects it as escaping the client installation. Test-only.
+- #1284 (#1277 test isolation): test_fix10_daily_cap_failclosed.py resets the governor_store._STORE singleton for each test, and test_fix6_openrouter_pricing.py reads rate_source with .get() on the catalog-fallback row. Test-only.
+- Version markers rolled v25.1.92 -> v25.1.93 by `scripts/bump-version.sh` (G3).
+- `release-cohort.json` restamped to onb_version v25.1.93 and onb_sha = the origin/main tip this release was tested on, so `tests/unit/test_release_cohort_manifest.py` stays green after the bump. #1288 fixed the same drift after v25.1.92.
+
 ## [v25.1.92]  -  2026-09-28  -  Interview prior-declaration batch (INT-001..INT-005) lands on main; supersedes the unmerged PR #1249
 
 ### Why
