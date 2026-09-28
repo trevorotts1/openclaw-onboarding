@@ -72,6 +72,15 @@ if [ "$IS_COMPLETE" = "1" ]; then
   exit 3
 fi
 
+COMPLETION_READER="$SCRIPT_DIR/../../shared-utils/interview_completion.py"
+if [ ! -f "$COMPLETION_READER" ]; then COMPLETION_READER="$SCRIPT_DIR/../../../shared-utils/interview_completion.py"; fi
+COMPLETION_STATUS="$(python3 "$COMPLETION_READER" "$STATE_FILE" 2>/dev/null)" || COMPLETION_STATUS="UNKNOWN"
+case "$COMPLETION_STATUS" in
+  COMPLETE|DECLARED) echo "[send-interview-link] REFUSED: prior interview completion recorded." >&2; exit 3 ;;
+  INCOMPLETE) ;;
+  *) echo "[send-interview-link] PENDING: completion scope/store unknown; no invitation sent." >&2; exit 8 ;;
+esac
+
 # Started = a handoff exists AND we have a slug to build the resume link with.
 MODE="start"
 if [ "$RESUME_REQUESTED" = "1" ] || { [ -f "$HANDOFF_FILE" ] && [ -n "$SLUG" ]; }; then
