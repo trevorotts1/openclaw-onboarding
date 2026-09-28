@@ -169,6 +169,25 @@ else
   bad "deck-intake-driver.py missing at $DRIVER"
 fi
 
+# ---- (H2) Fix 7 (D1): the CANONICAL department driver has its own --selftest ----
+# The department driver (templates/role-library/presentations/scripts/
+# deck-intake-driver.py) is canonical per D1. Its --selftest exercises the
+# --sig-* turn-gate offline: --sig-next/--sig-answer work, legacy
+# --signature --next/--answer are rejected non-zero naming the --sig-* flag,
+# and bare --signature returns the use_turn_gate pointer.
+echo "--- SIGNATURE mode (canonical dept driver): --selftest green ---"
+DEPT_DRIVER="$ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py"
+if [ -f "$DEPT_DRIVER" ]; then
+  if OUT="$("$PY" "$DEPT_DRIVER" --selftest 2>&1)"; then
+    ok "canonical dept deck-intake-driver.py --selftest PASS (--sig-* turn-gate)"
+  else
+    bad "canonical dept deck-intake-driver.py --selftest FAILED"
+    printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+  fi
+else
+  bad "canonical dept deck-intake-driver.py missing at $DEPT_DRIVER"
+fi
+
 # ---- (J) E5 REGRESSION GUARD: the SIGNATURE turn-gate is REQUIRED, not optional ----
 # Before this fix, a bare `--signature` call (no --next/--answer/--record) fell
 # through to the SAME full 8-Questions-plus-frame payload as the dry-run plan --
