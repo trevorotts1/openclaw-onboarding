@@ -253,6 +253,7 @@ chmod +x "$CURLBIN/curl"
 mkdir -p "$SANDBOX/home-a5/.openclaw/secrets"
 printf '%s' '{"env":{"vars":{"FLEET_STANDING_BOX_SLUG":"box-a5-fixture"}}}' > "$SANDBOX/home-a5/.openclaw/openclaw.json"
 printf 'RESCUE_RANGERS_WEBHOOK_SECRET=fixture-secret\n' > "$SANDBOX/home-a5/.openclaw/secrets/.env"
+chmod 600 "$SANDBOX/home-a5/.openclaw/secrets/.env"
 
 set +e
 A5_ERR="$(HOME="$SANDBOX/home-a5" OC_ROOT="$SANDBOX/home-a5/.openclaw" \
