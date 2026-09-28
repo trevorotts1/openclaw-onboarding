@@ -103,12 +103,24 @@ def main() -> int:
         print("  Ensure the workflow uses fetch-depth: 0 (tags must be present).")
         return 2
 
+    tag_set = set(tags)
     missing = [t for t in tags if not has_changelog_entry(t, changelog_text)]
     new_gaps = [t for t in missing if t not in ledger]
-    repaid = [t for t in ledger if t not in missing]
+    # "Repaid" means the tag STILL EXISTS and NOW has a CHANGELOG entry -- not
+    # merely "absent from missing". A ledger tag that was deleted entirely
+    # (e.g. a legacy-tag cleanup) is also absent from `missing` (it is not in
+    # `tags` at all), which would otherwise be misreported as "repaid" when
+    # nobody added an entry for it. Gone is not fixed.
+    repaid = [t for t in ledger if t in tag_set and t not in missing]
+    vanished = [t for t in ledger if t not in tag_set]
 
     print(f"Checked {len(tags)} annotated version tags (full history) against {args.changelog}.")
     print(f"Missing CHANGELOG entries: {len(missing)} | grandfathered in ledger: {len(ledger)}")
+    if vanished:
+        print(f"Note: {len(vanished)} ledger entr{'y is' if len(vanished) == 1 else 'ies are'} for tag(s)")
+        print("that no longer exist in the repo (deleted, not repaid) -- harmless, not a failure:")
+        for t in sorted(vanished):
+            print(f"  {t}")
 
     failed = False
 

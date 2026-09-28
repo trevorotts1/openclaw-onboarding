@@ -112,6 +112,20 @@ EOF
 echo "v1.0.0  # pre-v11 backlog, test fixture" > "$TMP/ledger.txt"
 expect_fail "stale ledger entry (already repaid) fails"
 
+# 6. Ledger entry for a tag that was DELETED entirely (not repaid, just
+#    gone) -> passes. This is the exact live regression found on PR #1312:
+#    a concurrent tag cleanup deleted v0.1.19/20/21 from the remote, which
+#    made them vanish from `tags` entirely and made the naive "not in
+#    missing" check misreport them as "repaid" (nobody added an entry; the
+#    tag just stopped existing). Deleted is not fixed, and must not fail.
+cat > "$TMP/CHANGELOG.md" <<'EOF'
+## [v25.1.0]  -  2026-01-01  -  Something shipped.
+
+## [v1.0.0]  -  2025-01-01  -  Initial release.
+EOF
+echo "v9.0.0-does-not-exist  # simulates a tag deleted after grandfathering" > "$TMP/ledger.txt"
+expect_pass "ledger entry for a deleted (never-existed-here) tag does not fail"
+
 echo ""
 echo "check-changelog-full-history.test.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
