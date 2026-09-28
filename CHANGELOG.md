@@ -1,3 +1,52 @@
+## [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order, build state first, so builds complete on every layout
+
+### Why
+The build writes the company where `resolve_company_paths()` puts it and records that as
+`companyRoot` in `.workforce-build-state.json`. The readers each guessed a location of their own,
+so on some layouts the build never completed.
+
+- **Mac.** The Skill 23 `lib/detect_platform.py` answered `~/clawd/zero-human-company`
+  (or `<workspace>/zero-human-company`) while the build wrote
+  `~/Downloads/openclaw-master-files/zero-human-company/<slug>`. `_qc_company_info.py` also
+  rejected every path under `openclaw-master-files` as a "template", including the build's own
+  company. qc-completeness audited a stale tree, `completionVerification` stayed pending, and
+  `buildCompletedAt` was never written.
+- **Contabo `/home/node`.** The shared resolver looked only in `/data/openclaw-master-files/zero-human-company`,
+  which is empty there. The workforce lives in `<workspace>/zero-human-company/<slug>`, so
+  `company_dir` was `None` and the reconcile and DEPARTMENTS checks failed.
+- **Floor-fill stubs audited instead of the build.** The QC checker's first choice was the live
+  `<workspace>/departments` tree, and floor-fill wrote there too. On a box whose build wrote the
+  zero-human-company tree, where `materialize-dept-agents.sh` registers the department agents, the
+  gate audited floor-fill stubs instead of the workforce the agents run.
+
+### What changed
+- `shared-utils/detect_platform.py` and `23-ai-workforce-blueprint/lib/detect_platform.py` now
+  share one resolver, byte-identical and pinned by a test: `build_state_company()`,
+  `known_company_roots()` and `resolve_active_company_dir()`. The order is:
+  1. the build state's `companyRoot`, unless `$OPENCLAW_COMPANY_SLUG` names another company;
+  2. the explicit slug, then the build state's `companySlug`;
+  3. the single company in the first layout that holds one: master-files, then
+     `<workspace>/zero-human-company`, then the legacy clawd tree.
+
+  `company_root`, the write target, is unchanged.
+- `_qc_paths.departments_root_for()` (new) and `live_departments_dir()` put the build state's
+  `companyRoot/departments` first, then `<workspace>/departments`. The QC checker,
+  `department-floor.py`, `detect-stale-artifacts.py`, `floor-fill-driver.py` (default, or with the
+  new `--workspace-root` option) and `migrate-existing-workforce.sh` all use it, so the checker and
+  the repairer measure the same tree.
+- `_qc_company_info.py` `_is_template_path()` no longer rejects
+  `openclaw-master-files/zero-human-company/<slug>`, where the build writes every company. All other
+  `openclaw-master-files` content is still treated as a template and rejected.
+- `materialize-dept-agents.sh` scans the build state's `companyRoot/departments` first, and also
+  `$OC_ROOT/workspace/zero-human-company`. Skill 32 bumped to v13.1.35.
+- Tests:
+  - `tests/unit/test_company_root_resolution.py` (new, 9 tests; 8 fail on the previous main).
+    Layouts covered: Mac with `~/clawd` plus master-files, Mac master-files only, Hostinger `/data`,
+    Contabo `/home/node`, and the build tree against floor-fill stubs. It also checks that a genuine
+    template dir is still rejected and that both resolver copies are identical.
+  - `test-gate-company-dir-resolution.sh` T2 and `qc-departments-tree-resolution.test.sh` S7/S8 now
+    encode the corrected template rule. They run in `qc-departments-tree-guard.yml`.
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why
