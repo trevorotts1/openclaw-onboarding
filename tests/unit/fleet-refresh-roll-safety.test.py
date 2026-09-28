@@ -1723,6 +1723,18 @@ class BoxListDriveBackup(unittest.TestCase):
         self.assertIn("ROLLED_BACK", up.call_args.args[1])
         self.assertEqual(json.loads((self.m.FLEET_DIR / "boxes-sheet.json").read_text())["id"], "sheet-1")
 
+    def test_a_subset_roll_publishes_the_whole_fleet_to_the_sheet(self):
+        master = [{"name": f"b{i}", "ssh_target": "x", "platform": "mac"} for i in range(36)]
+        (self.m.FLEET_DIR / "boxes.json").write_text(json.dumps(master))
+        subset = Path(self._td.name, "boxes-roll-one.json")
+        subset.write_text(json.dumps(master[:1]))
+        summ = Path(self._td.name, "s1.json")
+        summ.write_text(json.dumps([{"box": "b0", "outcome": "UPDATED"}]))
+        with mock.patch.object(self.m, "sync_sheet", return_value="refreshed") as sync, \
+             mock.patch.object(sys, "argv", ["x", "--out", str(subset), "--record-roll", str(summ)]):
+            self.assertEqual(self.m.main(), 0)
+        self.assertEqual(len(sync.call_args.args[0]), 36)
+
     def test_rebuild_from_sheet_when_the_roster_is_gone(self):
         csv_text = self.m.sheet_rows([{"name": "b1", "ssh_target": "t1", "platform": "contabo",
                                        "container": "oc-b1", "openclaw_root": "/home/node/.openclaw"}], {})
