@@ -820,7 +820,9 @@ def _write_engine_pid(run_dir: str | Path, pid: int) -> None:
 
 
 def _read_engine_pid(run_dir: str | Path) -> Optional[int]:
-    """Read the recorded engine PID: state.json first, .engine.pid sidecar second."""
+    """Read the recorded engine PID: state.json first, .engine.pid sidecar
+    second, .job.lock third (FIX 13: RunLock writes "<pid> <timestamp>" there,
+    so a directly-run engine is visible even before state.json records it)."""
     run_path = Path(run_dir).expanduser().resolve()
     state_path = run_path / "state.json"
     if state_path.is_file():
@@ -838,6 +840,14 @@ def _read_engine_pid(run_dir: str | Path) -> Optional[int]:
             if pid > 0:
                 return pid
         except (OSError, ValueError):
+            pass
+    job_lock = run_path / ".job.lock"
+    if job_lock.is_file():
+        try:
+            pid = int(job_lock.read_text(encoding="utf-8").split()[0])
+            if pid > 0:
+                return pid
+        except (OSError, ValueError, IndexError):
             pass
     return None
 

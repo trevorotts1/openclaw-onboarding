@@ -1027,14 +1027,9 @@ except Exception:
         fi
 
         # Check if already running (PID exists + alive)
-        PID=$(python3 -c "
-import json, sys
-try:
-    s = json.load(open('$STATE_JSON'))
-    print(s.get('engine_pid',''))
-except Exception:
-    print('')
-" 2>/dev/null)
+        # FIX 13: use read_engine_pid (state.json, .engine.pid, .job.lock)
+        # so directly-run engines are seen, not just launcher-spawned ones.
+        PID=$(read_engine_pid "$run_dir")
         if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
             # Already running
             SKIPPED_RUNNING=$((SKIPPED_RUNNING + 1))

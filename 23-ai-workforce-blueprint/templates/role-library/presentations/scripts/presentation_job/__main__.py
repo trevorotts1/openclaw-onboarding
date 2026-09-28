@@ -1178,6 +1178,11 @@ def main(argv: Optional[List[str]] = None) -> int:
       with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
+        # FIX 13: the engine records its own pid so the poller's
+        # "already running" check sees runs started through the canonical
+        # entry (which runs the engine directly, not via the launcher).
+        state["engine_pid"] = os.getpid()
+        store.save(state)
         manifest_path = Path(state.get("manifest_path") or
                              resolve_manifest(args.manifest, run_dir, scripts_dir))
         if not manifest_path.is_file():
