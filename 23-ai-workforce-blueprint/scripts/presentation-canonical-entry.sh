@@ -270,7 +270,12 @@ fi
 # agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
 # dir must never consume its entry budget.
 # ---------------------------------------------------------------------------
-if [ "$PLAN" -eq 0 ]; then
+# FIX 11: a --resume of an existing run is a continuation, not a new
+# attempt — it must not consume the entry budget.
+# FIX 11: declare a safe default so the success-path reset below is a no-op
+# when the increment is skipped (set -u is active; rm -f "" is harmless).
+_ATTEMPT_FILE=""
+if [ "$PLAN" -eq 0 ] && { [ "$RESUME" -eq 0 ] || [ ! -f "$RUN_DIR/state.json" ]; }; then
     _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
     mkdir -p "$(dirname "$_ATTEMPT_FILE")"
     _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
@@ -1248,6 +1253,8 @@ $_CREATE_OUT"
     note "run: ${_ENGINE_RUN_CMD[*]}"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
+    # FIX 11: a successful engine run resets the entry-attempt budget.
+    [ "$_ENGINE_RC" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
     rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
     exit "$_ENGINE_RC"
 else
@@ -1350,5 +1357,7 @@ trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM
 
 "${cmd[@]}"
 _rc=$?
+# FIX 11: a successful fallback run resets the entry-attempt budget.
+[ "$_rc" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
 rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"
