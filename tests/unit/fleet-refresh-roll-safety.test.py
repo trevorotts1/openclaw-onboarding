@@ -960,6 +960,35 @@ class RefreshStaleRolesNeverInventsABuild(unittest.TestCase):
             self.assertEqual(d["artifactProvenance"]["roles"]["d/r"]["source_content_sha"], "x")
 
 
+class ContaboStartupTemplate(unittest.TestCase):
+    """Hostinger parity: a shell without PM2_HOME must reach the one pm2 daemon."""
+
+    def test_links_home_pm2_moves_a_stray_aside_and_execs_the_gateway(self):
+        with tempfile.TemporaryDirectory() as td:
+            home, oc, bin_ = Path(td, "home"), Path(td, "oc"), Path(td, "bin")
+            (home / ".pm2").mkdir(parents=True)
+            (home / ".pm2" / "dump.pm2").write_text("stray")
+            bin_.mkdir()
+            (bin_ / "node").write_text(f'#!/bin/sh\necho "$@" > {td}/node-args\n')
+            (bin_ / "pm2").write_text(f'#!/bin/sh\necho "$@ $PM2_HOME" >> {td}/pm2-calls\n')
+            for f in bin_.iterdir():
+                f.chmod(0o755)
+            env = {"HOME": str(home), "OPENCLAW_ROOT": str(oc), "PATH": f"{bin_}:/usr/bin:/bin",
+                   "PM2_RESURRECT_DELAY": "0"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/contabo/container-startup.sh")],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(os.readlink(home / ".pm2"), str(oc / ".pm2"))
+            strays = [p for p in home.iterdir() if p.name.startswith(".pm2.stray-")]
+            self.assertEqual([(p / "dump.pm2").read_text() for p in strays], ["stray"])
+            self.assertEqual(Path(td, "node-args").read_text().split(), ["openclaw.mjs", "gateway"])
+            for _ in range(50):
+                if Path(td, "pm2-calls").exists():
+                    break
+                time.sleep(0.1)
+            self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
+
+
 class LoadWarning(unittest.TestCase):
     def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
         for load, expect in ((25.0, True), (3.0, False)):
@@ -1037,9 +1066,11 @@ class CommandCenterPm2Preflight(unittest.TestCase):
     cannot work fails up front, by name, with nothing changed -- not half way
     through the deploy ("Required dependency missing: pm2")."""
 
-    def problem(self, managed, which="/usr/local/bin/pm2", pids=""):
+    def problem(self, managed, which="/usr/local/bin/pm2", pids="", alive=True, god=""):
         with mock.patch.object(fr, "cc_pm2_managed", return_value=managed), \
+             mock.patch.object(fr, "_cc_pm2_ancestor", return_value=god), \
              mock.patch.object(fr.shutil, "which", return_value=which), \
+             mock.patch.object(fr, "_pm2_home_daemon_alive", return_value=alive), \
              mock.patch.object(fr, "_run_out", return_value=pids):
             return fr.cc_pm2_problem()
 
@@ -1049,6 +1080,12 @@ class CommandCenterPm2Preflight(unittest.TestCase):
         self.assertIn("not on this shell's PATH", self.problem(True, which=None))
         self.assertIn("PM2_HOME", self.problem(True, pids="0\n"))     # a stray empty PM2_HOME
         self.assertIsNone(self.problem(True, pids="4242\n"))
+        self.assertIn("PM2_HOME", self.problem(True, pids="4242\n", alive=False))   # never spawn a daemon to ask
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"PM2_HOME": f"{td}/stray"}):
+            split = self.problem(True, pids="4242\n", god=f"PM2 v7.0.4: God Daemon ({td}/.pm2)")
+            self.assertIn("split PM2_HOME", split)
+            os.symlink(f"{td}/.pm2", f"{td}/stray")          # the Contabo fix: $HOME/.pm2 -> PM2_HOME
+            self.assertIsNone(self.problem(True, pids="4242\n", god=f"PM2 v7.0.4: God Daemon ({td}/.pm2)"))
 
     def test_pull_cc_refuses_before_changing_anything(self):
         with tempfile.TemporaryDirectory() as td, \

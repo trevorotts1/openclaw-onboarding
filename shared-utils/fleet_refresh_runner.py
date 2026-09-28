@@ -377,12 +377,10 @@ def _proc_cwd(pid: int) -> Optional[Path]:
     return Path(m.group(1)) if m else None
 
 
-def cc_pm2_managed() -> Optional[bool]:
-    """Whether the process serving the Command Center port runs under pm2 (a
-    pm2 daemon among its ancestors). None when nothing serves the port.
-    atomic-deploy.sh / update.sh restart the app through pm2: a Command Center
-    started some other way cannot be deployed, and used to fail half way through
-    the deploy ("Required dependency missing: pm2") instead of up front."""
+def _cc_pm2_ancestor() -> Optional[str]:
+    """Command line of the pm2 process among the ancestors of whatever serves
+    the Command Center port; "" when it is not under pm2, None when nothing
+    serves the port."""
     pids = _port_pids(int(os.environ.get("CC_PORT") or 4000))
     if not pids:
         return None
@@ -394,11 +392,33 @@ def cc_pm2_managed() -> Optional[bool]:
                 break
             ppid, _, cmd = out.partition(" ")
             if re.search(r"\bPM2\b|pm2", cmd):
-                return True
+                return cmd.strip()
             cur = ppid.strip()
             if cur in ("", "0", "1"):
                 break
-    return False
+    return ""
+
+
+def cc_pm2_managed() -> Optional[bool]:
+    """Whether the process serving the Command Center port runs under pm2 (a
+    pm2 daemon among its ancestors). None when nothing serves the port.
+    atomic-deploy.sh / update.sh restart the app through pm2: a Command Center
+    started some other way cannot be deployed, and used to fail half way through
+    the deploy ("Required dependency missing: pm2") instead of up front."""
+    cmd = _cc_pm2_ancestor()
+    return None if cmd is None else bool(cmd)
+
+
+def _pm2_home_daemon_alive() -> bool:
+    """Whether this shell's PM2_HOME has a running daemon. Checked from its pid
+    file: any pm2 command against an empty home would itself spawn the stray
+    second daemon this preflight exists to catch."""
+    home = Path(os.environ.get("PM2_HOME") or Path.home() / ".pm2")
+    try:
+        os.kill(int((home / "pm2.pid").read_text().strip()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def cc_pm2_problem() -> Optional[str]:
@@ -413,7 +433,14 @@ def cc_pm2_problem() -> Optional[str]:
     if not shutil.which("pm2"):
         return ("Command Center runs under pm2, but pm2 is not on this shell's PATH "
                 "(the deploy could not restart it)")
-    if not any(p.isdigit() and p != "0" for n in _CC_PM2_NAMES for p in _run_out(["pm2", "pid", n]).split()):
+    # The daemon that runs the Command Center names its home: "God Daemon (<home>)".
+    here = Path(os.environ.get("PM2_HOME") or Path.home() / ".pm2")
+    m = re.search(r"God Daemon \((.+)\)", _cc_pm2_ancestor() or "")
+    if m and Path(m.group(1)).resolve() != here.resolve():
+        return (f"Command Center runs under the pm2 daemon of {m.group(1)}, but this shell's PM2_HOME is "
+                f"{here} (a split PM2_HOME: the deploy would restart nothing)")
+    if not _pm2_home_daemon_alive() or not any(
+            p.isdigit() and p != "0" for n in _CC_PM2_NAMES for p in _run_out(["pm2", "pid", n]).split()):
         return ("Command Center runs under pm2, but this shell's pm2 (PM2_HOME) does not list it "
                 f"as any of {', '.join(_CC_PM2_NAMES)} (the deploy could not restart it)")
     return None
