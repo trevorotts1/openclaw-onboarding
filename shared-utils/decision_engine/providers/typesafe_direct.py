@@ -185,6 +185,13 @@ def describe_availability(mapping: dict) -> dict:
 def build_request(state: dict, questions: list, model: str = TYPESAFE_MODEL) -> dict:
     """Build the exact decisions body ``{model, state, questions}``.
 
+    ``questions`` on the wire is the RECORD keyed by question id
+    (``{"reachable": {"type": "noul", ...}}``), never an array: the
+    ``/v1/systemone`` endpoint refuses the array form with HTTP 422
+    ``dict_type at [body, questions]: Input should be a valid dictionary``.
+    The id is plumbing and lives only in the record key. Same wire contract
+    as ``openrouter_decisions.build_request``.
+
     Raises ``ValueError``/``TypeError`` on bad inputs (caller bug, not a
     transport outcome). Deep-copies inputs so later caller mutation cannot
     alter the packed body.
@@ -195,7 +202,7 @@ def build_request(state: dict, questions: list, model: str = TYPESAFE_MODEL) -> 
         raise TypeError(f"state must be an object, got {type(state).__name__}")
     if not isinstance(questions, list) or not questions:
         raise ValueError("questions must be a non-empty list")
-    seen = set()
+    record: dict = {}
     for i, q in enumerate(questions):
         if not isinstance(q, dict):
             raise TypeError(f"questions[{i}] must be an object")
@@ -204,11 +211,11 @@ def build_request(state: dict, questions: list, model: str = TYPESAFE_MODEL) -> 
             raise ValueError(f"questions[{i}]: required non-empty 'id'")
         if not isinstance(qtype, str) or not qtype.strip():
             raise ValueError(f"questions[{i}]: required non-empty 'type'")
-        if qid in seen:
+        if qid in record:
             raise ValueError(f"questions[{i}]: duplicate id {qid!r}")
-        seen.add(qid)
+        record[qid] = {k: v for k, v in q.items() if k != "id"}
     return {"model": model, "state": copy.deepcopy(state),
-            "questions": copy.deepcopy(questions)}
+            "questions": copy.deepcopy(record)}
 
 
 def check_body_clean(body: dict) -> list[str]:
