@@ -4456,20 +4456,13 @@ def build_from_config(config):
             # via explicit tools.allow on each generation dept agent (see
             # add_agent_to_config below).
             #
-            # GOAL-4 D4 (4B+4C) — NO-REFUSAL TOOL BASELINE at build origin.
-            # Mirrors apply-fleet-standards.sh: agents.defaults.tools.allow=["*"]
-            # so a freshly-built box is BORN with departments + sub-agents able to
-            # run exec / file ops / web / MCP / Kie HTTP without ever refusing a
-            # job. This is the VALID defaults-level key (allow) — NOT the poison
-            # key (exec). Under RESTRICT-ONLY precedence the CEO/main per-agent
-            # deny (set in add_agent_to_config) STILL wins, so the wildcard does
-            # NOT re-open the CEO. Idempotent: only fills the key if absent so a
-            # client customization is never clobbered.
-            _defaults = config_data.setdefault("agents", {}).setdefault("defaults", {})
-            _defaults_tools = _defaults.setdefault("tools", {})
-            if "allow" not in _defaults_tools:
-                _defaults_tools["allow"] = ["*"]
-                print("[NON-INTERACTIVE] no-refusal baseline: agents.defaults.tools.allow=['*'] (GOAL-4 D4)", file=sys.stderr)
+            # agents.defaults is NEVER written by the build. The GOAL-4 D4
+            # no-refusal baseline used to be written here as
+            # agents.defaults.tools.allow=["*"]; OpenClaw >= 2026.6.8 rejects ANY
+            # agents.defaults.tools key ("agents.defaults: Unrecognized key
+            # \"tools\""), so the next gateway restart fails. The baseline is
+            # owned by scripts/apply-fleet-standards.sh, which writes the
+            # schema-valid form for the box's own OpenClaw version.
 
             registration_failures = []
             if any(os.path.isfile(os.path.join(DEPARTMENTS_DIR, d, "SOUL.md")) for d in ("master-orchestrator", "ceo")):
@@ -6461,7 +6454,7 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         if _ENGINE_ROLE_WRITER_AVAILABLE:
             try:
                 _engine_path = _crw_create_role_workspace(
-                    dept_dir, role['name'], (COMPANY_DIR or WORKSPACE_ROOT),
+                    dept_dir, role['name'], WORKSPACE_ROOT,
                     role_metadata=_role_metadata)
                 role_dir = str(_engine_path)
                 folder_name = os.path.basename(role_dir)
@@ -7959,6 +7952,13 @@ def add_agent_to_config(config, dept_id, dept_info):
             unchanged = isinstance(orig, dict) and dict(orig, id=rid) == dict(entry, id=rid)
             entries[rid] = orig if unchanged else entry
         normalized["agents"]["entries"] = entries
+        if (changed and len(entries) > 1 and "ownership" not in normalized["agents"]
+                and not any(isinstance(e, dict) and e.get("default") is True for e in entries.values())):
+            # The schema rejects a multi-agent entries roster with neither
+            # ownership="explicit" nor one default=true marker. Set it only when
+            # THIS write made the roster multi-agent; an existing value is kept.
+            # Same rule as materialize-dept-agents.sh.
+            normalized["agents"]["ownership"] = "explicit"
         if "list" in config["agents"]:
             # The box's own (empty) legacy key is left exactly as found.
             normalized["agents"]["list"] = config["agents"]["list"]
@@ -7991,25 +7991,16 @@ def add_agent_to_config(config, dept_id, dept_info):
               f"- left untouched.", file=sys.stderr)
         return False
 
-    # U135 (July 23): Use the canonical model resolution chain instead of any
-    # hardcoded model name. resolve_dept_agent_model() drives the capability-class
-    # cascade, which selects from the box's AVAILABLE models (never a fixed id).
-    # If select_model.py is unreachable at install time, fall back to a
-    # safe default that Anthropic-strips and matches the July 23 fleet config.
+    # MODEL: a NEW agent gets NO "model" key -- it inherits agents.defaults, the
+    # model the box owner already chose. The build never writes model ids into
+    # openclaw.json: build-picked ids were not on client allowlists, and a bare
+    # "ollama/..." id hits the provider-namespace trap on boxes that register the
+    # provider as "ollama-cloud" (silent until the agent launches). N31 (object
+    # form) still binds anyone who DOES write a model; the build no longer does.
     #
-    # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
-    # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
-    # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
-    #
-    # MSF (v12.x): the dept-head model now comes from the capability-class layer.
-    # resolve_dept_agent_model() (a) honors any Layer-0 explicit pin on a seed
-    # entry, (b) infers the dept's DOMINANT capability class and resolves a
-    # concrete model from the box's AVAILABLE models via resolve_role_model(),
-    # and (c) falls straight through to the legacy _resolve_dept_default_model()
-    # cascade when model_selector is unavailable / no class model resolves.
-    # GENERATION roles never pull a dept HEAD off an LLM (the head is a router),
-    # and the per-role GENERATION gate inside resolve_role_model keeps individual
-    # generation roles off LLMs.
+    # resolve_dept_agent_model() below feeds ONLY the Command Center Layer-1
+    # dept-default artifact (dept-default-models.json -> agent_settings rows),
+    # never the openclaw.json entry.
     _seed_entry = next(
         (a for a in agents_list if isinstance(a, dict) and a.get("id") == agent_id),
         None,
@@ -8029,14 +8020,6 @@ def add_agent_to_config(config, dept_id, dept_info):
     # Record the dept default so the CC seeding step can write the
     # agent_settings (role_id IS NULL, setting_type='model') row (PLAN.md §3.2).
     _record_dept_default(dept_id, _dept_default, _primary)
-    model = {
-        "primary": _primary,
-        "fallbacks": [
-            "openrouter/moonshotai/kimi-k2.6",
-            "ollama/deepseek-v4-pro:cloud",
-            "openrouter/deepseek/deepseek-v4-pro",
-        ],
-    }
     workspace = os.path.join(DEPARTMENTS_DIR, dept_id)
     agent_dir = _agent_dir_for(agent_id)
 
@@ -8056,17 +8039,8 @@ def add_agent_to_config(config, dept_id, dept_info):
 
     # BUG 4 FIX: schema-valid subagents block ONLY. The strict 2026.5.22
     # AgentEntrySchema permits exactly { allowAgents, model } under subagents.
-    canonical_subagents = {
-        "allowAgents": ["*"],
-        "model": {
-            "fallbacks": [
-                "ollama/kimi-k2.6:cloud",
-                "openrouter/moonshot/kimi-k2.6",
-                "ollama/deepseek-v4-pro:cloud",
-                "openrouter/deepseek/deepseek-v4-pro",
-            ]
-        },
-    }
+    # No subagents.model either: sub-agents inherit the box's own model chain.
+    canonical_subagents = {"allowAgents": ["*"]}
 
     # CEO / Master Orchestrator agent - pure router, NEVER executes production work.
     # Setting skills:[] blocks ALL installed OpenClaw skills for this agent so it
@@ -8212,7 +8186,6 @@ def add_agent_to_config(config, dept_id, dept_info):
         "workspace": workspace,
         # BUG 2 FIX: unique per-agent agentDir derived from the unique id.
         "agentDir": agent_dir,
-        "model": model,
         "subagents": canonical_subagents,
     }
     if is_ceo_agent:

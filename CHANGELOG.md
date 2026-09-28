@@ -34,12 +34,34 @@ Running the Skill 23 build on a client box that already had departments and agen
 - `add_agent_to_config()` on an `agents.entries` box writes unchanged entries back exactly as found
   and keeps the box's own `agents.list` key. An agent that already exists is never given a model or
   changed model, and `agents.defaults` is never touched by registration.
-- Tests: `tests/unit/test_skill23_build_nondestructive.py` (new, 10 hermetic tests, 8 of which fail
+- Tests: `tests/unit/test_skill23_build_nondestructive.py` (new, 13 hermetic tests, 11 of which fail
   on the previous main) covers real core files kept byte-identical across two build runs, symlinks
   migrated, role folders, `scaffold-agent-files.sh`, existing models untouched in both schemas,
   registration under another key, a second-run no-op on an `agents.entries` box, and an end-to-end
   `materialize-dept-agents.sh` run. `test_role_workspace_symlinks.py` was updated to the N29
   contract. Both now run in `skill23-provisioning-tests.yml`.
+- A NEW department agent gets no `model` key and no `subagents.model`: it inherits `agents.defaults`.
+  The build used to write a resolved primary plus hardcoded fallbacks
+  (`openrouter/moonshotai/kimi-k2.6`, `ollama/deepseek-v4-pro:cloud`,
+  `openrouter/deepseek/deepseek-v4-pro`). Those were not on client allowlists, and a bare `ollama/`
+  id hits the provider-namespace trap on boxes that register the provider as `ollama-cloud`.
+  `resolve_dept_agent_model()` now feeds only the Command Center `dept-default-models.json` artifact.
+- The non-interactive build no longer writes `agents.defaults.tools.allow=["*"]`. OpenClaw 2026.6.8
+  and later rejects any `agents.defaults.tools` key (`agents.defaults: Unrecognized key "tools"`),
+  so the next gateway restart failed. `scripts/apply-fleet-standards.sh` still owns that baseline
+  in its schema-valid form.
+- When registration turns a single-agent `agents.entries` roster into a multi-agent one,
+  `add_agent_to_config()` sets `agents.ownership="explicit"` (only if absent and no entry is marked
+  `default`). Without it the config fails validation. This is the same rule
+  `materialize-dept-agents.sh` already applies.
+- The build hands `create_role_workspace()` the workspace root, not the company root, so role
+  folders copy the canonical `TOOLS.md` / `USER.md`. Previously they got dangling symlinks into the
+  company tree.
+- `tests/unit/test_skill23_build_nondestructive.py` now has 13 tests (11 fail on the previous
+  main). They add: new agents carry no model and `agents.defaults` is unchanged; a source guard
+  that the build never writes into `agents.defaults`; and the post-build config passes the real
+  `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
+  control proving the validator rejects the old key.
 - Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
 
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration

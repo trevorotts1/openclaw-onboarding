@@ -195,6 +195,67 @@ class TestAgentRegistration(_Box):
         self.assertEqual(len(workspaces), len(set(workspaces)), "duplicate registration of one workspace")
 
 
+class TestNewAgentsInheritModelAndConfigValidates(_Box):
+    DEFAULTS = {"model": {"primary": "ollama-cloud/owner-default:cloud", "fallbacks": ["ollama-cloud/owner-fb:cloud"]},
+                "workspace": "OWNER"}
+    DEPTS = ["master-orchestrator", "marketing", "presentations", "quality-control", "graphics"]
+
+    def _post_build_cfg(self):
+        cfg = {"agents": {"defaults": copy.deepcopy(self.DEFAULTS),
+                          "entries": {"main": {"workspace": str(self.ws)}}}}
+        for dept_id in self.DEPTS:
+            (self.depts / dept_id).mkdir(exist_ok=True)
+            BW.add_agent_to_config(cfg, dept_id, {"head": f"{dept_id} head"})
+        return cfg
+
+    def test_new_agents_get_no_model_and_defaults_untouched(self):
+        cfg = self._post_build_cfg()
+        self.assertEqual(cfg["agents"]["defaults"], self.DEFAULTS)
+        for dept_id in self.DEPTS:
+            entry = cfg["agents"]["entries"][f"dept-{dept_id}"]
+            self.assertNotIn("model", entry, f"dept-{dept_id} must inherit agents.defaults")
+            self.assertEqual(entry["subagents"], {"allowAgents": ["*"]})
+        self.assertNotRegex(str(cfg["agents"]["entries"]), r"(ollama|openrouter)(-cloud)?/",
+                            "the build must never write a model id into openclaw.json")
+
+    def test_build_source_never_writes_agents_defaults(self):
+        import re
+        src = (SCRIPTS / "build-workforce.py").read_text()
+        self.assertIsNone(re.search(r'setdefault\(\s*["\']defaults["\']|\[["\']defaults["\']\]\s*\[[^\]]+\]\s*=', src),
+                          "build-workforce.py writes into agents.defaults")
+
+    def test_post_build_config_passes_openclaw_config_validate(self):
+        import json
+        import shutil
+        oc = shutil.which("openclaw")
+        if not oc:
+            if os.environ.get("REQUIRE_OPENCLAW_VALIDATE") == "1":
+                self.fail("REQUIRE_OPENCLAW_VALIDATE=1 but no openclaw CLI on PATH")
+            self.skipTest("openclaw CLI not on PATH (the no-model / no-defaults tests above still gate CI)")
+        cfg = self._post_build_cfg()
+        cfg["agents"]["defaults"]["workspace"] = str(self.ws)
+
+        def validate(doc):
+            d = Path(self._tmp.name) / "validate"
+            (d / ".openclaw").mkdir(parents=True, exist_ok=True)
+            p = d / ".openclaw" / "openclaw.json"
+            p.write_text(json.dumps(doc))
+            env = dict(os.environ, HOME=str(d), OPENCLAW_STATE_DIR=str(d / ".openclaw"),
+                       OPENCLAW_CONFIG_PATH=str(p))
+            r = subprocess.run([oc, "config", "validate", "--json"], capture_output=True, text=True,
+                               env=env, timeout=120)
+            out = json.loads(r.stdout[r.stdout.index("{"):])
+            self.assertEqual(Path(out["path"]).resolve(), p.resolve(), "validated the wrong file")
+            return out
+
+        # Control: the instrument must reject the key the old build wrote.
+        bad = copy.deepcopy(cfg)
+        bad["agents"]["defaults"]["tools"] = {"allow": ["*"]}
+        self.assertFalse(validate(bad)["valid"], "validator did not reject agents.defaults.tools")
+        result = validate(cfg)
+        self.assertTrue(result["valid"], result.get("issues"))
+
+
 class TestMaterializeDeptAgents(unittest.TestCase):
     """The build's wiring-repair step (Skill 32 materialize-dept-agents.sh) on an entries box."""
 
