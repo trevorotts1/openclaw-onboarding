@@ -8,7 +8,20 @@ CLIENT_SLUG="${1:?Usage: ./create-tunnel.sh <client-slug> <company-name> <contac
 COMPANY_NAME="${2:?Missing company name}"
 CONTACT_EMAIL="${3:?Missing contact email}"
 WEBHOOK_URL="https://main.blackceoautomations.com/webhook/command-center-register-v3"
-OC_ROOT="${OPENCLAW_ROOT:-$HOME/.openclaw}"
+# One home-path resolver: an explicit OPENCLAW_ROOT/OC_ROOT pin wins, else
+# shared-utils/resolve-oc-root.sh decides (/data/.openclaw on VPS/Docker,
+# $HOME/.openclaw on Mac) -- never a second inline copy of the rule.
+_OC_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/resolve-oc-root.sh"
+if [[ -n "${OPENCLAW_ROOT:-${OC_ROOT:-}}" && -d "${OPENCLAW_ROOT:-${OC_ROOT:-}}" ]]; then
+  OC_ROOT="${OPENCLAW_ROOT:-${OC_ROOT:-}}"
+elif [[ -f "$_OC_RESOLVER" ]]; then
+  # shellcheck source=/dev/null
+  source "$_OC_RESOLVER"
+  OC_ROOT="$(resolve_oc_root 2>/dev/null || true)"
+  [[ -n "$OC_ROOT" ]] || OC_ROOT="${OPENCLAW_ROOT:-$HOME/.openclaw}"
+else
+  OC_ROOT="${OPENCLAW_ROOT:-$HOME/.openclaw}"
+fi
 
 : "${CC_TUNNEL_IDEMPOTENCY_KEY:?invoke through run-full-install.sh for a persistent installation-scoped request key}"
 : "${CC_TUNNEL_EXPECTED_HOST:?invoke through run-full-install.sh for the registered client hostname}"
@@ -88,8 +101,17 @@ mv "$TMP_SECRETS" "$OC_ROOT"/secrets/.env
 chmod 600 "$OC_ROOT"/secrets/.env
 
 echo "[3/5] Starting tunnel via PM2"
+# The connector token is a bearer credential: never on argv (visible in ps).
+# cloudflared reads it from a mode-600 file via --token-file (same flag the
+# Mac tunnel daemon already uses); --token-file also takes precedence over a
+# stale TUNNEL_TOKEN in the environment.
+TOKEN_FILE="$OC_ROOT/secrets/tunnel-command-center.token"
+( umask 077; mkdir -p "$(dirname "$TOKEN_FILE")" )
+printf '%s' "$TUNNEL_TOKEN" > "$TOKEN_FILE"
+chmod 600 "$TOKEN_FILE"
+TUNNEL_TOKEN=""
 pm2 delete cloudflare-tunnel >/dev/null 2>&1 || true
-pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN" --name cloudflare-tunnel >/dev/null
+pm2 start "cloudflared tunnel run --token-file $TOKEN_FILE" --name cloudflare-tunnel >/dev/null
 pm2 save >/dev/null
 
 echo "[4/5] Waiting for tunnel to come online..."
@@ -98,6 +120,10 @@ sleep 15
 # shared-utils/cc-tunnel-ingress.sh (CC_INGRESS_PORT) and run-full-install.sh
 # (DASHBOARD_PORT=4000). tests/unit/cc-tunnel-ingress-guard.test.sh asserts this
 # literal stays equal to the lib's CC_INGRESS_PORT so the two can never drift.
+# shellcheck source=/dev/null
+if [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/cc-tunnel-ingress.sh" ]]; then
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/cc-tunnel-ingress.sh"
+fi
 CC_INGRESS_PORT="${CC_INGRESS_PORT:-4000}"
 LOCAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${CC_INGRESS_PORT}" 2>/dev/null || echo "000")
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN" 2>/dev/null || echo "000")

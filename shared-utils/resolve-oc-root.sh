@@ -28,8 +28,39 @@
 
 # resolve_oc_root: echo the resolved OpenClaw root and return 0, or return 1
 # (and echo nothing) when no root exists. Never exits — the caller decides.
+#
+# Precedence, highest first:
+#   1. $OPENCLAW_ROOT / $OC_ROOT when set to an existing directory (explicit
+#      operator pin always wins — e.g. OPENCLAW_CONTAINER_NAME flows that
+#      select one client container among several on a shared Contabo host).
+#   2. /data/.openclaw when it is a directory (VPS/Docker first).
+#   3. $HOME/.openclaw when it is a directory (Mac fallback).
+# A /data path that canonicalizes to the same directory as $HOME/.openclaw
+# (container image symlinking /data into the node user's home) is ONE
+# installation, not two — prefer the $HOME spelling, matching
+# platform/common.sh's canonical-path rule. Never prints secrets.
 resolve_oc_root() {
+  local _rr
+  for _rr in "${OPENCLAW_ROOT:-}" "${OC_ROOT:-}"; do
+    if [ -n "$_rr" ] && [ -d "$_rr" ]; then
+      printf '%s\n' "$_rr"
+      return 0
+    fi
+  done
   if [ -d /data/.openclaw ]; then
+    if [ -d "$HOME/.openclaw" ]; then
+      if command -v python3 >/dev/null 2>&1; then
+        _rr="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' /data/.openclaw 2>/dev/null)" || _rr=""
+        _hh="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$HOME/.openclaw" 2>/dev/null)" || _hh=""
+        if [ -n "$_rr" ] && [ "$_rr" = "$_hh" ]; then
+          printf '%s\n' "$HOME/.openclaw"
+          return 0
+        fi
+      elif [ /data/.openclaw -ef "$HOME/.openclaw" ]; then
+        printf '%s\n' "$HOME/.openclaw"
+        return 0
+      fi
+    fi
     printf '%s\n' /data/.openclaw
     return 0
   fi

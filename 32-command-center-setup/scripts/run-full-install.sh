@@ -467,7 +467,7 @@ cc_pm2_start_canonical() {
 #
 # The two guards below make a converge self-healing + idempotent:
 #   (1) cc_ensure_fresh_build  — rebuild `.next` IFF it is stale vs source.
-#   (2)+(3)+(4)+(5) cc_write_env_local — additively provision the four env families
+#   (2)+(3)+(4)+(5)+(6) cc_write_env_local — additively provision the five env families
 #       into CC .env.local (0600) from the box's OWN gateway token + primary TEXT
 #       model + on-disk role library. Existing operator values are ALWAYS
 #       preserved; generated secrets are written once and reused (never rotated).
@@ -768,7 +768,7 @@ cc_mirror_api_auth_to_agent_secrets() {
   return 0
 }
 
-# cc_write_env_local — fixes (2)+(3)+(4)+(5). Provisions CC .env.local from the
+# cc_write_env_local — fixes (2)+(3)+(4)+(5)+(6). Provisions CC .env.local from the
 # box's own config so a rebuild/reboot can never silently fail closed. Idempotent
 # + additive; safe to re-run on every install/update/resume.
 cc_write_env_local() {
@@ -971,6 +971,28 @@ cc_write_env_local() {
      && ! cc_env_has_nonempty "$OC_ROOT/secrets/.env" MC_API_TOKEN; then
     log "ERROR" "cc-env: POST-CONDITION FAILED — MC_API_TOKEN is in CC .env.local but was NOT mirrored to $OC_ROOT/secrets/.env. Dept-agent write-backs will 401 and finished tasks freeze in_progress. Likely a STALE on-box Skill-32 checkout: update Skill 32 to current (>= v12.9.31) and re-run this installer."
   fi
+
+  # ---- (6) OPENCLAW_PLATFORM for the Command Center boundary ----
+  # The Command Center's platform.ts reads ONLY 'mac-mini' | 'vps-docker'
+  # (plus a /data/.openclaw marker fallback). Onboarding speaks 'mac' | 'vps'
+  # and must never rename its own consumers, so translate at this boundary:
+  # vps -> vps-docker, mac -> mac-mini. Additive + idempotent like every other
+  # family here (an operator-set value is preserved, never overwritten), so a
+  # Docker install can never boot a Mac-shaped server and vice versa.
+  local plat_status plat_value
+  plat_value=""
+  case "${OPENCLAW_PLATFORM:-}" in
+    vps) plat_value="vps-docker" ;;
+    mac) plat_value="mac-mini" ;;
+  esac
+  if cc_env_has_nonempty "$envf" OPENCLAW_PLATFORM; then
+    plat_status="preserved(existing)"
+  elif [[ -n "$plat_value" ]] && cc_env_set_if_absent "$envf" OPENCLAW_PLATFORM "$plat_value" >/dev/null; then
+    plat_status="set($plat_value)"
+  else
+    plat_status="skipped(no-platform-detected)"
+  fi
+  log "INFO" "cc-env: OPENCLAW_PLATFORM ${plat_status}"
 
   chmod 600 "$envf" 2>/dev/null || true
   [[ -f "$STATE_FILE" ]] && state_set '.commandCenterEnvLocalProvisioned = true' 2>/dev/null || true
