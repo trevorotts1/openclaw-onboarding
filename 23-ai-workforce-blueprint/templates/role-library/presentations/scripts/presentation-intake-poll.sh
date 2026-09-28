@@ -242,8 +242,14 @@ _pres35_finish_interpreter() {
         if [ -n "$_resolved" ]; then _src="pipeline_interp(client-venv-or-path)"; fi
     fi
     if [ -z "$_resolved" ]; then
-        _resolved="python3"; _src="PATH-last-resort"
+        _resolved="$(command -v python3 2>/dev/null)"; _src="PATH-last-resort"
     fi
+    # Fix 2 (C3): refuse a non-absolute interpreter on EVERY branch
+    # (schedule-pin included), and refuse anything inside the shim dir.
+    # A bare name reaching the PATH-front shim as `exec "python3" "$@"`
+    # is an infinite self-exec: the tick never finishes, intake stalls.
+    case "$_resolved" in /*) ;; *) log "  [interp] non-absolute interpreter '$_resolved' refused"; return 1;; esac
+    case "$_resolved" in "$RUNS_ROOT/working/.interp-shim-"*) log "  [interp] interpreter inside shim dir '$_resolved' refused"; return 1;; esac
     if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ "$_src" != "schedule-pin" ]; then
         log "  [interp] schedule pin ${PRESENTATION_PIPELINE_INTERPRETER} unusable (missing or not executable) — fell through to $_resolved ($_src); fix the pin or re-run update-skills.sh"
     fi
