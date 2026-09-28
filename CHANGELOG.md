@@ -1,3 +1,5 @@
+## [v25.1.96]  -  2026-09-28  -  README current-release drift guard: bump-version.sh now rolls the README banner/heading, CI catches drift
+
 ## [v25.1.95]  -  2026-09-28  -  Presentations Step 4 lands on main: retired text-overlay doctrine (Fix 4), canonical assembler steps (Fix 20), installer-managed watchdog (Fix 49)
 
 ### Why

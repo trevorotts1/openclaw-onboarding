@@ -1,15 +1,15 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.1.95 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.68**.
+> **v25.1.96 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.68**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.1.95.
+> **Version:** see `/version` - this repo at v25.1.96.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v25.1.95
+## Current release: v25.1.96
 
 Presentations Step 4 lands the retired text-overlay doctrine, the canonical assembler steps and an installer-managed watchdog; the interview prior-completion declaration batch (INT-001..INT-005) supersedes the earlier unmerged PR #1249. Command Center installation and refresh still require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.6.68 or newer** (minimum v7.4.0). Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment.
 
@@ -17,6 +17,7 @@ Fresh and update-only dependency installs use the shipped `package-lock.json` th
 
 **Recent releases** (since v25.0.10 — full per-release history in [CHANGELOG.md](CHANGELOG.md)):
 
+- **v25.1.96** (Sep 28) - This README's current-release section, frozen at v25.0.16/v25.0.10 for weeks, is rewritten and CI-guarded so it can't drift again.
 - **v25.1.92-v25.1.95** (Sep 27-28) - Interview prior-completion declaration batch; Presentations Steps 3-4 land on main (attempt-counter reset, engine pid recording, retired text-overlay doctrine, installer-managed watchdog).
 - **v25.1.70-v25.1.91** (Sep 21-27) - Content-pipeline fail-closed guards, interview-link reliability (ILJ waves), the JEV 1.1 decision-engine batch trains, and Presentations Steps 1-2 (Kie.ai spend ceilings, fresh-intake credit preflight, OpenRouter live pricing).
 - **v25.1.33-v25.1.69** (Sep 16-21) - Provider-routing and Stage-D scoring hardening (Ollama Cloud fallback chain, concurrent finalist scoring), plus departments.json and company-id normalization fixes.
@@ -163,7 +164,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.1.95** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.1.96** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
