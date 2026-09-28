@@ -556,6 +556,7 @@ export FLEET_PREV_ONBOARDING_SHA=$(sq "${prev_sha#-}")
   runner_cmd() {   # $1 = shell prefix, $2 = extra runner flags
     printf '%s' "trap '' HUP
 ${1}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+rm -f \"\$O\"
 python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS $2 > \"\$O\" 2> \"\$E\"
 rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
   }
@@ -565,6 +566,33 @@ rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
   env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$(runner_cmd "$prep" "$extra")")" \
     > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
   finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner"
+
+  # A dropped SSH session (exit 255) does not stop the runner: it ignores
+  # SIGHUP and writes its result on the box. Wait for it there and read that
+  # result, instead of reporting a box that updated fine as FAILED.
+  if [ "$rc" -eq 255 ]; then
+    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
+    local try back_rc=255
+    for try in 1 2 3; do
+      back_rc=0
+      # shellcheck disable=SC2086
+      env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$waitcmd")" \
+        > "$raw.back" 2>> "$RUN_LOG_DIR/${box}.log" || back_rc=$?
+      [ "$back_rc" -ne 255 ] && break
+      sleep 30
+    done
+    if [ "$back_rc" -ne 255 ] && grep -q '"box"' "$raw.back" 2>/dev/null; then
+      cp "$raw.back" "$raw"
+      finish_result "$box" 0 "$raw" "$result_file" "ssh/runner (read back)"
+      rc=$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["outcome_detail"] = (d.get("outcome_detail") or "") + " (read back from the box after the SSH session dropped)"
+json.dump(d, open(sys.argv[1], "w"))
+print(4 if d.get("outcome") == "PENDING" else 0)
+' "$result_file")
+    fi
+  fi
 
   # Fix loop, host half: restart the container the way this platform needs,
   # then let the runner re-check and continue (it caps the attempts at 3).

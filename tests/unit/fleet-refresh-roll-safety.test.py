@@ -1233,7 +1233,7 @@ class WrapperWaves(unittest.TestCase):
             row = json.loads((clone / ".fleet-refresh-summary.json").read_text())[0]
             self.assertEqual((row["client"], row["label"]), ("Client One", "Client One (Mac)"))
 
-    def test_apply_through_ssh_and_docker_exec_quoting(self):
+    def test_apply_through_ssh_and_docker_exec_quoting(self, ssh_stub=None):
         """Real shells end to end: fake ssh runs its command with sh -c, fake
         docker runs `bash -lc <script>`. Proves the nested quoting, the roll
         copy's sync to origin/main, the pre-sync SHA hand-off and the result
@@ -1278,7 +1278,7 @@ class WrapperWaves(unittest.TestCase):
             fake = td / "bin"
             fake.mkdir()
             (fake / "curl").write_text("#!/bin/sh\necho 200\n")
-            (fake / "ssh").write_text('#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
+            (fake / "ssh").write_text(ssh_stub or '#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
             (fake / "docker").write_text('#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\nexec bash -c "$3"\n')
             for f in fake.iterdir():
                 f.chmod(0o755)
@@ -1305,6 +1305,17 @@ class WrapperWaves(unittest.TestCase):
                              stale_state)   # the client's clone: untouched
             self.assertEqual(json.loads((home / ".openclaw/fleet-refresh/client.json").read_text()),
                              {"client": "Client One", "label": "Client One (Hostinger)"})   # the box can name itself
+            return row
+
+    def test_a_dropped_ssh_session_reads_the_boxs_own_result(self):
+        # The runner ignores SIGHUP and finishes on the box; the roll reported
+        # three boxes that updated fine as FAILED ("ssh/runner exited 255").
+        drop = ('#!/bin/sh\nfor a; do last="$a"; done\n'
+                'case "$last" in *--shared-utils*) sh -c "$last" >/dev/null 2>&1; exit 255;; esac\n'
+                'exec sh -c "$last"\n')
+        row = self.test_apply_through_ssh_and_docker_exec_quoting(ssh_stub=drop)
+        self.assertEqual(row["outcome"], "UPDATED")
+        self.assertIn("read back from the box after the SSH session dropped", row["outcome_detail"])
 
     def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),
