@@ -858,6 +858,42 @@ class BillingHoldIsNotAFailure(unittest.TestCase):
             self.assertIn("ERROR: bootstrap could not source X", res.steps["pull-onboarding"])
 
 
+class RollHoldsOneCommit(unittest.TestCase):
+    """A PR merged mid-roll reached the boxes that started (or self-synced) after
+    it: two boxes pulled v25.2.5 on a v25.2.3 roll and were rolled back."""
+
+    def test_roll_copy_stays_on_the_rolls_commit_after_main_moves(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin = Path(td, "origin.git")
+            origin.mkdir()
+            git(origin, "init", "-q", "--bare", "-b", "main")
+            seed = new_repo(Path(td, "seed"))
+            commit(seed, {"shared-utils/fleet_refresh_runner.py": ""}, "roll")
+            roll_sha = git(seed, "rev-parse", "HEAD")
+            git(seed, "remote", "add", "origin", str(origin))
+            git(seed, "push", "-q", "origin", "main")
+            commit(seed, {"x": "merged mid-roll"}, "later")
+            git(seed, "push", "-q", "origin", "main")
+            home = Path(td, "home")
+            env = {**GIT_ENV, "HOME": str(home), "FLEET_ROLL_REPO_URL": str(origin), "FLEET_ROLL_SHA": roll_sha}
+            for _ in ("cloned", "updated"):
+                r = subprocess.run(["bash", str(REPO / "scripts/fleet-roll-copy.sh")],
+                                   capture_output=True, text=True, env=env, timeout=60)
+                self.assertTrue(r.stdout.startswith("COPY "), r.stdout + r.stderr)
+                self.assertEqual(git(home / ".openclaw/fleet-refresh/onboarding", "rev-parse", "HEAD"), roll_sha)
+
+    def test_runner_keeps_update_skills_off_main_in_the_roll_copy(self):
+        with tempfile.TemporaryDirectory() as td:
+            copy = Path(td, "fleet-refresh", "onboarding")
+            copy.mkdir(parents=True)
+            (copy / "update-skills.sh").write_text("")
+            with mock.patch.object(fr, "_run_tree",
+                                   return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+                fr.step_pull_onboarding({"root": Path(td), "skills": Path(td, "skills")}, copy, "v1",
+                                        fr.BoxResult("t", dry_run=False), dry_run=False)
+            self.assertEqual(run.call_args.kwargs["env"].get("OPENCLAW_UPDATE_SKIP_SELF_SYNC"), "1")
+
+
 class UnreadableFoldersAndNoCommandCenter(unittest.TestCase):
     def test_an_unreadable_folder_fails_by_name_not_a_traceback(self):
         # macOS refused ~/Downloads to the SSH process: scandir raised EINTR.

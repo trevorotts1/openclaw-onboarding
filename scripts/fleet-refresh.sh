@@ -278,6 +278,11 @@ RUNNER_FLAGS=""
 [ $FORCE_CC -eq 1 ]    && RUNNER_FLAGS="$RUNNER_FLAGS --force-cc"
 [ -n "$EXPECTED_SHA" ] && RUNNER_FLAGS="$RUNNER_FLAGS --expected-sha $EXPECTED_SHA"
 
+# One commit for the whole roll: a PR merged while the roll runs must not reach
+# the boxes that happen to start (or self-sync) after it.
+ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
+[ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
+
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RESULTS"' EXIT
@@ -510,7 +515,7 @@ PY
   local client_json
   client_json=$(awk -F'\t' -v b="$box" '$1 == b && $2 !~ /^UNKNOWN CLIENT/ { printf "{\"client\": \"%s\", \"label\": \"%s\"}", $2, $3; exit }' "$LABELS_FILE")
   copied=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
-    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json")
+    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json") FLEET_ROLL_SHA=$(sq "$ROLL_SHA")
 $(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
     2>>"$RUN_LOG_DIR/${box}.log" | grep -E '^(COPY|COPYFAIL) ' | tail -1 | tr -d '\r' || true)
   if [ -z "$copied" ]; then
