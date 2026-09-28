@@ -1,3 +1,18 @@
+## [v25.1.99]  -  2026-09-28  -  Fleet roll: fix first then roll back, content integrity checks, operator alerts, Drive backup of the box list, Command Center pin v7.6.72
+
+### Why
+Trevor's scope for the fleet roll: a failed check after an update must be FIXED before anything is undone, the box must be proven to hold the release's content (not just to have exited 0), he must hear about every roll-back or failure without a client ever hearing, and the private box list must survive the loss of his Mac. Version markers rolled v25.1.97 -> v25.1.99 via scripts/bump-version.sh (v25.1.98 is claimed by open PR #1296).
+
+### What changed
+- shared-utils/fleet_refresh_runner.py: after the update, failing checks get up to 3 fix attempts chosen by what is failing (restart the gateway; re-run the failed step; rebuild and restart the Command Center; re-run update-skills.sh for a content gap; reset the main session), with every attempt recorded in the per-box result, before the existing roll-back to the snapshot. Gateway restart: Mac `launchctl kickstart -k` (a booted-out label is bootstrapped from its plist first, as the gateway watchdog does; exit 125/126 falls back to `launchctl stop`); Hostinger `docker compose up -d --force-recreate <service>` and Contabo `docker restart <container>`, run on the host by fleet-refresh.sh (runner exits 4 and is resumed with --continue-heal; a failed host restart resumes without it, and no box is ever left pending).
+- Content integrity gate (same signals as update-skills.sh's own probes): persona index sentinel == manifest release_tag; persona embeddings vs the manifest count (honest deferral receipts count); SOP library rows vs the canonical count; SOP embeddings coverage vs the embeddings manifest; the installed skill-23 digest (role library) vs the digest update-skills.sh recorded from the release; the department intake receipt from this run and role folders for every declared department. A gap that was already there before the update is reported and alerted but never rolled back.
+- shared-utils/fleet_notify.py + shared-utils/operator_google.py: on ROLLED_BACK, FAILED or a pre-existing content gap, the operator (only) gets a Telegram note through his own agent's bot via the fleet-standing-operator-alert webhook (reachable from client boxes with the credentials they already carry, so a box's own Sunday update alerts too) and, on his Mac, an email sent through his Google service account. Never the gws CLI; never a client chat; secrets scrubbed.
+- scripts/make-fleet-boxes-file.py: refreshes a private Google Sheet backup of the box list on every run (env-var names only), records each roll's result, date and 999 presence (--record-roll, called by fleet-refresh.sh after every --apply), and rebuilds boxes.json from the sheet with --from-sheet or automatically when the local roster is missing.
+- cc-compat.json: Command Center pinnedTag v7.6.70 -> v7.6.72 (newest tag at release time).
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py: 60 tests (fix-first healing, 3-attempt cap then roll-back, content gaps, pre-existing gaps not rolled back, container host-restart hand-off and resume for Hostinger and Contabo end to end through fake ssh/docker, failed host restart, Mac launchd restart incl. booted-out label, each content check both ways, parity of the SOP checks with update-skills.sh's own probe, operator alerts and operator-only email, Drive sheet round trip and rebuild). scripts/test-fleet-refresh.sh 40/40.
+
 ## [v25.1.97]  -  2026-09-28  -  Fleet roll safety: 999-setup refresh, post-update health gate with automatic rollback, waves, boxes-file generator, Sunday = operator roll, Command Center pin v7.6.70
 
 ### Why
