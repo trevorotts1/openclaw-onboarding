@@ -43,6 +43,8 @@
 #   JSON array of objects:
 #   [
 #     {
+#       "client": "Client Name",         # whose box it is: every line and alert names
+#                                        # the box "Client Name (Platform)", never its id
 #       "name": "client-box-01",
 #       "ssh_target": "clientuser@<host>",
 #       "cf_tunnel_id": "bfbd47ae...",
@@ -319,9 +321,48 @@ PY
   echo "[fleet-refresh] Loaded ${#BOX_ENTRIES[@]} boxes from $BOXES_FILE${WAVE:+ (wave: $WAVE)}"
 fi
 
+# Every human-facing line names a box by its CLIENT: "Client Name (Platform)".
+# box id <TAB> client <TAB> label, from the private boxes file (none: the id).
+LABELS_FILE="$TMPDIR_RESULTS/labels.tsv"
+: > "$LABELS_FILE"
+if [ -n "$BOXES_FILE" ] && [ -f "$BOXES_FILE" ]; then
+  python3 - "$BOXES_FILE" "$SHARED_UTILS" > "$LABELS_FILE" <<'PY' || true
+import json, sys
+sys.path.insert(0, sys.argv[2])
+from fleet_notify import client_label
+for e in json.load(open(sys.argv[1])):
+    if e.get('name'):
+        client = e.get('client') or f"UNKNOWN CLIENT ({e['name']})"
+        print('\t'.join((e['name'], client, client_label({**e, 'client': client}))))
+PY
+fi
+# label_of <box> [id]: "Client Name (Platform)"; with "id", the box id once too:
+# "Client Name (Platform, box <id>)" -- for lines used to find a box's log.
+label_of() {
+  local l
+  l=$(awk -F'\t' -v b="$1" '$1 == b { print $3; exit }' "$LABELS_FILE")
+  if [ -z "$l" ]; then printf '%s' "$1"
+  elif [ "${2:-}" = id ]; then printf '%s' "${l%)}, box $1)"
+  else printf '%s' "$l"; fi
+}
+labels_of() { local b out=""; for b in "$@"; do out="${out:+$out, }$(label_of "$b")"; done; printf '%s' "$out"; }
+
+# Add the client's name to a box result: the runner on the box never knows it.
+stamp_client() {
+  local box="$1" result_file="$TMPDIR_RESULTS/$1.json" client
+  client=$(awk -F'\t' -v b="$box" '$1 == b { print $2; exit }' "$LABELS_FILE")
+  [ -n "$client" ] && [ -f "$result_file" ] || return 0
+  python3 - "$result_file" "$client" "$(label_of "$box")" <<'PY' || true
+import json, sys
+d = json.load(open(sys.argv[1]))
+d.update(client=sys.argv[2], label=sys.argv[3])
+json.dump(d, open(sys.argv[1], "w"))
+PY
+}
+
 # If specific boxes named, use those
 if [ ${#BOX_NAMES[@]} -gt 0 ]; then
-  echo "[fleet-refresh] Restricting to boxes: ${BOX_NAMES[*]}"
+  echo "[fleet-refresh] Restricting to boxes: $(labels_of "${BOX_NAMES[@]}")"
 fi
 
 # Determine final box set
@@ -338,7 +379,7 @@ else
   exit 1
 fi
 
-echo "[fleet-refresh] Running on ${#FINAL_BOXES[@]} box(es): ${FINAL_BOXES[*]}"
+echo "[fleet-refresh] Running on ${#FINAL_BOXES[@]} box(es): $(labels_of "${FINAL_BOXES[@]}")"
 echo "[fleet-refresh] max-parallel: $MAX_PARALLEL"
 echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 echo ""
@@ -476,7 +517,7 @@ if [ -d /data/.openclaw ]; then printf 'NONE /data/openclaw-onboarding\\n'; else
     echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"SKIPPED\",\"outcome_detail\":\"no onboarding clone on box (--apply clones it to $remote_root)\",\"errors\":[\"onboarding clone not found on box\"]}" > "$result_file"
     return 2
   fi
-  echo "[fleet-refresh]   $box — onboarding clone: $remote_root${verdict:+ ($verdict)}" >&2
+  echo "[fleet-refresh]   $(label_of "$box") — onboarding clone: $remote_root${verdict:+ ($verdict)}" >&2
 
   # --apply: bring the box's clone (and therefore the runner itself) to
   # origin/main BEFORE running it, so every box gets this release's
@@ -534,7 +575,7 @@ rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
       # Hostinger: 'up -d' (re-reads env), forced so a hung gateway is replaced.
       host_cmd="d=\$(docker inspect -f '{{ index .Config.Labels \"com.docker.compose.project.working_dir\" }}' $(sq "$container")) && svc=\$(docker inspect -f '{{ index .Config.Labels \"com.docker.compose.service\" }}' $(sq "$container")) && [ -n \"\$d\" ] && cd \"\$d\" && docker compose up -d --force-recreate \"\$svc\" >/dev/null 2>&1 && echo \"docker compose up -d --force-recreate \$svc ok\""
     fi
-    echo "[fleet-refresh]   $box — fix attempt needs the gateway restarted: $host_cmd" >&2
+    echo "[fleet-refresh]   $(label_of "$box") — fix attempt needs the gateway restarted: $host_cmd" >&2
     # shellcheck disable=SC2086
     host_out=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$host_cmd; for i in \$(seq 1 24); do [ \"\$(docker inspect -f '{{.State.Running}}' $(sq "$container") 2>/dev/null)\" = true ] && break; sleep 5; done" 2>>"$RUN_LOG_DIR/${box}.log" | tail -1 | tr -d "'\"") || true
     # If the host restart failed, resume WITHOUT --host-restart: the runner
@@ -557,6 +598,17 @@ d.update(result="failed", outcome="FAILED",
                         "the box was left mid-fix - check it by hand")
 json.dump(d, open(sys.argv[1], "w"))
 PY
+  fi
+}
+
+# As each box finishes: name its client in the result and, on an operator roll,
+# tell the operator the moment a box passes (Telegram only; the end-of-run
+# alert covers roll-backs and failures, by Telegram and email).
+finish_box() {
+  stamp_client "$1"
+  if [ $APPLY -eq 1 ] && [ $LOCAL -eq 0 ] && [ -f "$TMPDIR_RESULTS/$1.json" ]; then
+    python3 "$SHARED_UTILS/fleet_notify.py" --passed "$TMPDIR_RESULTS/$1.json" 2>&1 \
+      | sed 's/^/[fleet-refresh] pass note: /' || true
   fi
 }
 
@@ -583,16 +635,16 @@ run_with_concurrency() {
   done
 
   if [ $LOCAL -eq 1 ] || [ "$box" = "local" ] || [ -z "$BOXES_FILE" ]; then
-    run_box_local "$box" &
+    { run_box_local "$box" || true; finish_box "$box"; } &
   else
-    run_box_ssh "$box" &
+    { run_box_ssh "$box" || true; finish_box "$box"; } &
   fi
   PIDS+=($!)
   PID_BOXES+=("$box")
 }
 
 for box in "${FINAL_BOXES[@]}"; do
-  echo "[fleet-refresh] Queuing box: $box"
+  echo "[fleet-refresh] Queuing $(label_of "$box" id)"
   run_with_concurrency "$box"
 done
 
@@ -614,16 +666,18 @@ ANY_UNKNOWN=0
 
 for box in "${FINAL_BOXES[@]}"; do
   result_file="$TMPDIR_RESULTS/${box}.json"
+  label="$(label_of "$box")"
   if [ ! -f "$result_file" ]; then
-    echo "[fleet-refresh]   $box — FATAL: no result file"
+    echo "[fleet-refresh]   $label — FATAL: no result file"
     echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"FAILED\",\"outcome_detail\":\"no result file\"}" > "$result_file"
+    stamp_client "$box"
   fi
 
   box_result=$(cat "$result_file")
 
   # Validate JSON
   if ! echo "$box_result" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
-    echo "[fleet-refresh]   $box — FATAL: invalid JSON result"
+    echo "[fleet-refresh]   $label — FATAL: invalid JSON result"
     echo "$box_result" | head -5
     ANY_FAILED=1
     continue
@@ -675,7 +729,7 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
 " 2>/dev/null || echo "no")
       if [ "$has_exit3" = "yes" ]; then
         icon="?"; ANY_UNKNOWN=1
-        echo "[fleet-refresh]   ? $box — TRANSIENT (exit-3): retry then mark UNKNOWN if repeated"
+        echo "[fleet-refresh]   ? $label — TRANSIENT (exit-3): retry then mark UNKNOWN if repeated"
       else
         icon="△"; ANY_FAILED=1
       fi
@@ -685,7 +739,7 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
   esac
 
   outcome_val=$(echo "$box_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('outcome','?'))" 2>/dev/null || echo "?")
-  echo "[fleet-refresh]   $icon  $box  [$outcome_val  result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
+  echo "[fleet-refresh]   $icon  $label  [$outcome_val  result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
   [ -n "$errors" ] && echo "[fleet-refresh]        ERRORS: $errors"
 
   # Accumulate into fleet summary JSON
@@ -935,15 +989,16 @@ def outcome(r):
     if o in order:
         return o
     return {"ok": "UPDATED", "dry-run": "SKIPPED", "rolled_back": "ROLLED_BACK"}.get(r.get("result"), "FAILED")
-rows = sorted(rows, key=lambda r: (order[outcome(r)], str(r.get("box"))))
-w = max([len(str(r.get("box", ""))) for r in rows] + [3])
+name = lambda r: str(r.get("label") or r.get("box"))   # "Client Name (Platform)"
+rows = sorted(rows, key=lambda r: (order[outcome(r)], name(r)))
+w = max([len(name(r)) for r in rows] + [6])
 print("")
 print("=" * 78)
-print(f" {'BOX':<{w}}  {'OUTCOME':<11}  DETAIL")
+print(f" {'CLIENT':<{w}}  {'OUTCOME':<11}  DETAIL")
 print("-" * 78)
 for r in rows:
     detail = r.get("outcome_detail") or "; ".join(r.get("errors") or [])[:140]
-    print(f" {str(r.get('box')):<{w}}  {outcome(r):<11}  {detail[:140]}")
+    print(f" {name(r):<{w}}  {outcome(r):<11}  {detail[:140]}")
 counts = {}
 for r in rows:
     counts[outcome(r)] = counts.get(outcome(r), 0) + 1

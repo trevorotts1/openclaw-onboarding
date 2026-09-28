@@ -684,11 +684,12 @@ class BoxesFileGenerator(unittest.TestCase):
 
     def fixture(self, td):
         roster = {"boxes": {
-            "mac-b": {"provider": "mac", "kind": "mac", "registry_id": "mac-b"},
-            "mac-a": {"provider": "mac", "kind": "mac", "registry_id": "mac-a"},
-            "vps-a": {"provider": "hostinger", "kind": "vps", "registry_id": "vps-a"},
-            "ctb-a": {"provider": "contabo", "kind": "contabo", "registry_id": "ctb-a"},
-            "op": {"provider": "operator", "kind": "local", "registry_id": "op"},
+            "mac-b": {"client": "Client Two (Mac mini)", "provider": "mac", "kind": "mac", "registry_id": "mac-b"},
+            "mac-a": {"client": "Client Two (MacBook)", "provider": "mac", "kind": "mac", "registry_id": "mac-a"},
+            "vps-a": {"client": "Client One", "provider": "hostinger", "kind": "vps", "registry_id": "vps-a"},
+            "ctb-a": {"client": "Client Three (Example Co — Contabo)", "provider": "contabo", "kind": "contabo",
+                      "registry_id": "ctb-a"},
+            "op": {"client": "Operator", "provider": "operator", "kind": "local", "registry_id": "op"},
         }}
         registry = {"boxes": {
             "mac-a": {"ssh_alias": "alias-a", "tunnel_id": "tun-1", "svc_env_prefix": "CF_X"},
@@ -719,6 +720,31 @@ class BoxesFileGenerator(unittest.TestCase):
             first = sorted(n for n, e in boxes.items() if e["wave"] == "first")
             self.assertEqual(first, ["ctb-a", "mac-a", "vps-a"])   # one per platform
             self.assertEqual(boxes["mac-b"]["wave"], "rest")
+
+    def test_every_box_names_its_client(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.fixture(td)
+            r = self.run_gen(td)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            boxes = {e["name"]: e for e in json.loads(Path(td, "out", "boxes.json").read_text())}
+            self.assertEqual(boxes["vps-a"]["client"], "Client One")
+            self.assertEqual(boxes["ctb-a"]["client"], "Client Three")          # business note dropped
+            self.assertEqual(boxes["mac-a"]["client"], "Client Two, MacBook")   # two Macs: note kept
+            self.assertEqual(boxes["mac-b"]["client"], "Client Two, Mac mini")
+            self.assertIn("Client Three (Contabo), Client Two, MacBook (Mac), Client One (Hostinger)", r.stdout)
+            self.assertNotIn("WARNING", r.stderr)
+
+    def test_box_without_a_client_is_unknown_and_warned(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.fixture(td)
+            roster = json.loads(Path(td, "roster.json").read_text())
+            del roster["boxes"]["vps-a"]["client"]
+            Path(td, "roster.json").write_text(json.dumps(roster))
+            r = self.run_gen(td)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            boxes = {e["name"]: e for e in json.loads(Path(td, "out", "boxes.json").read_text())}
+            self.assertEqual(boxes["vps-a"]["client"], "UNKNOWN CLIENT (vps-a)")
+            self.assertIn("WARNING: NO CLIENT NAME for box vps-a", r.stderr)
 
     def test_first_wave_override_and_unroutable_exit_2(self):
         with tempfile.TemporaryDirectory() as td:
@@ -760,18 +786,24 @@ class WrapperWaves(unittest.TestCase):
     def test_first_wave_only_and_summary_table(self):
         with tempfile.TemporaryDirectory() as td:
             Path(td, "b.json").write_text(json.dumps([
-                {"name": "first-box", "ssh_target": "c", "platform": "mac", "wave": "first"},
+                {"client": "Client One", "name": "first-box", "ssh_target": "c", "platform": "mac", "wave": "first"},
                 {"name": "rest-box", "ssh_target": "r", "platform": "hostinger", "container": "ctr"}]))
             r = self.run_wrapper(td, "--wave", "first", "--boxes-file", f"{td}/b.json")
-            self.assertIn("first-box", r.stdout)
+            self.assertIn("Queuing Client One (Mac, box first-box)", r.stdout)   # the id, once, for the log
+            self.assertIn("Running on 1 box(es): Client One (Mac)", r.stdout)
+            self.assertIn("Client One (Mac)  [SKIPPED", r.stdout)
             self.assertNotIn("rest-box", r.stdout)
-            self.assertRegex(r.stdout, r"first-box\s+SKIPPED\s+no onboarding clone")
+            self.assertRegex(r.stdout, r"CLIENT\s+OUTCOME")
+            self.assertRegex(r.stdout, r"\n Client One \(Mac\)\s+SKIPPED\s+no onboarding clone")
+            self.assertEqual(r.stdout.count("first-box"), 1, r.stdout)
+            row = json.loads((REPO / ".fleet-refresh-summary.json").read_text())[0]
+            self.assertEqual((row["client"], row["label"]), ("Client One", "Client One (Mac)"))
             self.assertIn("UPDATED=0   ROLLED_BACK=0   FAILED=0   SKIPPED=1", r.stdout)
             self.assertIn("zsh -lc", Path(td, "ssh.log").read_text())   # Mac: login shell
 
             r = self.run_wrapper(td, "--wave", "rest", "--boxes-file", f"{td}/b.json")
-            self.assertIn("rest-box", r.stdout)
-            self.assertNotIn("first-box ", r.stdout)
+            self.assertIn("UNKNOWN CLIENT (rest-box) (Hostinger)", r.stdout)   # no client: said loudly
+            self.assertNotIn("first-box", r.stdout)
             self.assertIn("docker exec -u 'node'  'ctr' bash -lc", Path(td, "ssh.log").read_text())
 
     def test_local_apply_refuses_a_dev_checkout(self):
@@ -841,13 +873,19 @@ class WrapperWaves(unittest.TestCase):
             (fake / "docker").write_text('#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\nexec bash -c "$3"\n')
             for f in fake.iterdir():
                 f.chmod(0o755)
-            Path(td, "b.json").write_text(json.dumps([{"name": "box-1", "ssh_target": "h", "platform": "hostinger",
-                                                       "container": "c-1", "wave": "first"}]))
+            Path(td, "b.json").write_text(json.dumps([{"client": "Client One", "name": "box-1", "ssh_target": "h",
+                                                       "platform": "hostinger", "container": "c-1", "wave": "first"}]))
+            (wrapper_repo / "shared-utils/fleet_notify.py").write_text((REPO / "shared-utils/fleet_notify.py").read_text())
+            (wrapper_repo / "shared-utils/operator_google.py").write_text(
+                (REPO / "shared-utils/operator_google.py").read_text())
             env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home)}
             r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
                                 "--boxes-file", str(td / "b.json"), "--apply"],
                                capture_output=True, text=True, env=env, timeout=120)
             self.assertIn("UPDATED=1", r.stdout, r.stdout + r.stderr)
+            # stub result is result=ok/UPDATED: the pass note names the client (webhook unset here: not sent)
+            self.assertIn("pass note: ", r.stdout)
+            self.assertIn("✅ Client One (Hostinger) updated and passed", r.stdout)
             row = json.loads((wrapper_repo / ".fleet-refresh-summary.json").read_text())[0]
             self.assertIn(f"prev={old} args=--box box-1 --shared-utils {box_clone}/shared-utils", row["outcome_detail"])
             self.assertIn(" --apply", row["outcome_detail"])
@@ -968,7 +1006,7 @@ class WeeklyFullUpdate(unittest.TestCase):
 
 
 class OperatorAlert(unittest.TestCase):
-    ROWS = [{"box": "box-a", "outcome": "ROLLED_BACK", "outcome_detail": "3 fix attempt(s) failed; cc-health",
+    ROWS = [{"box": "box-a", "client": "Client One", "label": "Client One (Hostinger)", "outcome": "ROLLED_BACK", "outcome_detail": "3 fix attempt(s) failed; cc-health",
              "heal": {"attempts": [{}, {}, {}]}, "rollback": {"not_restored": "openclaw.json"}},
             {"box": "box-b", "outcome": "FAILED",
              "outcome_detail": "token 123456789:AAHfakefakefakefakefakefakefake1234 leaked"},
@@ -999,7 +1037,10 @@ class OperatorAlert(unittest.TestCase):
     def test_note_names_boxes_and_never_carries_a_secret(self):
         subject, body = fleet_notify.compose(self.ROWS, "operator roll")
         self.assertIn("1 rolled back, 1 failed", subject)
-        self.assertIn("Box box-a", body)
+        self.assertIn("- Client One (Hostinger) rolled back (put back to how it was before the update): "
+                      "3 fix attempt(s) failed; cc-health", body)
+        self.assertNotIn("box-a", body)
+        self.assertIn("- box box-b FAILED", body)   # a result with no client name falls back to its id
         self.assertIn("Fix attempts made before that: 3", body)
         self.assertIn("Nothing was sent to any client", body)
         self.assertNotIn("AAHfakefake", body)
@@ -1019,6 +1060,21 @@ class OperatorAlert(unittest.TestCase):
             r = fleet_notify.notify(self.ROWS, "a client box (its own update)")
         tg.assert_called_once()
         self.assertFalse(r["email"][0])
+
+    def test_pass_note_names_the_client_and_goes_by_telegram_only(self):
+        ok = {"box": "box-c", "client": "Client Two", "label": "Client Two (Contabo)", "outcome": "UPDATED",
+              "result": "ok", "onboarding_version": "v1.2.3", "cc_version": "4.5.6"}
+        self.assertEqual(fleet_notify.passed_note(ok),
+                         "\u2705 Client Two (Contabo) updated and passed. Onboarding v1.2.3, Command Center v4.5.6")
+        with mock.patch.object(fleet_notify, "send_telegram", return_value=(True, "ok")) as tg, \
+             mock.patch.object(fleet_notify.operator_google, "send_email") as em:
+            fleet_notify.notify_passed(ok)
+        tg.assert_called_once_with(fleet_notify.passed_note(ok))
+        em.assert_not_called()
+        for bad in ({"outcome": "ROLLED_BACK", "result": "rolled_back"}, {"outcome": "FAILED"},
+                    {"heal": {"needs_attention": True}}):
+            self.assertIsNone(fleet_notify.passed_note({**ok, **bad}))
+        self.assertEqual(fleet_notify.client_label({"name": "b9", "platform": "mac"}), "UNKNOWN CLIENT (b9) (Mac)")
 
     def test_alert_webhook_is_derived_from_the_gate_credentials(self):
         with mock.patch.dict(os.environ, {"FLEET_STANDING_GATE_URL": "https://n8n.example/webhook/fleet-standing-check",
@@ -1043,13 +1099,15 @@ class BoxListDriveBackup(unittest.TestCase):
         self._td.cleanup()
 
     def test_sheet_round_trip_carries_no_secret_values(self):
-        entries = [{"name": "b1", "ssh_target": "root@192.0.2.9", "platform": "hostinger",
+        entries = [{"client": "Client One", "name": "b1", "ssh_target": "root@192.0.2.9", "platform": "hostinger",
                     "container": "c1", "docker_exec_user": "node", "wave": "first"},
                    {"name": "b2", "ssh_target": "alias-2", "platform": "mac", "wave": "rest",
                     "tunnel_host": "b2.example.com", "cf_token_env_vars": "CF_X_ID CF_X_SECRET",
                     "cf_access_env_prefix": "CF_X", "cf_tunnel_id": "tun-9"}]
         text = self.m.sheet_rows(entries, {"b1": {"result": "UPDATED", "date": "2026-09-28", "nine99": "n"}})
+        self.assertTrue(text.startswith("client,name,"))   # the client is the first column
         self.assertTrue(text.startswith(",".join(self.m.SHEET_COLUMNS)))
+        self.assertIn("\nClient One,b1,", text)
         self.assertIn("CF_X_ID CF_X_SECRET", text)
         self.assertIn("UPDATED", text)
         back = self.m.entries_from_sheet_csv(text)
@@ -1057,6 +1115,7 @@ class BoxListDriveBackup(unittest.TestCase):
         self.assertEqual([(e["name"], e["ssh_target"], e["platform"], e["wave"]) for e in back],
                          [("b1", "root@192.0.2.9", "hostinger", "first"), ("b2", "alias-2", "mac", "rest")])
         self.assertEqual(back[0]["container"], "c1")
+        self.assertEqual(back[0]["client"], "Client One")
         self.assertNotIn("cf_access_env_prefix", back[0])
 
     def test_ssh_route_reads_names_not_values(self):
