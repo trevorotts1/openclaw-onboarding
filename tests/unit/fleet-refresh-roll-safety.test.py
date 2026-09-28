@@ -419,21 +419,21 @@ class BoxesFileGenerator(unittest.TestCase):
             self.assertEqual(boxes["vps-a"]["docker_exec_user"], "node")
             self.assertEqual(boxes["ctb-a"]["openclaw_root"], "/home/node/.openclaw")
             self.assertEqual(boxes["ctb-a"]["platform"], "contabo")
-            canary = sorted(n for n, e in boxes.items() if e["wave"] == "canary")
-            self.assertEqual(canary, ["ctb-a", "mac-a", "vps-a"])   # one per platform
+            first = sorted(n for n, e in boxes.items() if e["wave"] == "first")
+            self.assertEqual(first, ["ctb-a", "mac-a", "vps-a"])   # one per platform
             self.assertEqual(boxes["mac-b"]["wave"], "rest")
 
-    def test_canary_override_and_unroutable_exit_2(self):
+    def test_first_wave_override_and_unroutable_exit_2(self):
         with tempfile.TemporaryDirectory() as td:
             self.fixture(td)
             reg = json.loads(Path(td, "registry.json").read_text())
             reg["boxes"]["mac-a"] = {}
             Path(td, "registry.json").write_text(json.dumps(reg))
-            r = self.run_gen(td, "--canary", "mac-b")
+            r = self.run_gen(td, "--first", "mac-b")
             self.assertEqual(r.returncode, 2)
             self.assertIn("UNROUTABLE", r.stderr)
             boxes = {e["name"]: e for e in json.loads(Path(td, "out", "boxes.json").read_text())}
-            self.assertEqual([n for n, e in boxes.items() if e["wave"] == "canary"], ["mac-b"])
+            self.assertEqual([n for n, e in boxes.items() if e["wave"] == "first"], ["mac-b"])
 
     def test_refuses_to_write_into_a_git_tree(self):
         with tempfile.TemporaryDirectory() as td:
@@ -460,21 +460,21 @@ class WrapperWaves(unittest.TestCase):
         return subprocess.run(["bash", str(REPO / "scripts" / "fleet-refresh.sh"), *args],
                               capture_output=True, text=True, env=env, timeout=120)
 
-    def test_canary_wave_only_and_summary_table(self):
+    def test_first_wave_only_and_summary_table(self):
         with tempfile.TemporaryDirectory() as td:
             Path(td, "b.json").write_text(json.dumps([
-                {"name": "canary-box", "ssh_target": "c", "platform": "mac", "wave": "canary"},
+                {"name": "first-box", "ssh_target": "c", "platform": "mac", "wave": "first"},
                 {"name": "rest-box", "ssh_target": "r", "platform": "hostinger", "container": "ctr"}]))
-            r = self.run_wrapper(td, "--wave", "canary", "--boxes-file", f"{td}/b.json")
-            self.assertIn("canary-box", r.stdout)
+            r = self.run_wrapper(td, "--wave", "first", "--boxes-file", f"{td}/b.json")
+            self.assertIn("first-box", r.stdout)
             self.assertNotIn("rest-box", r.stdout)
-            self.assertRegex(r.stdout, r"canary-box\s+SKIPPED\s+no onboarding clone")
+            self.assertRegex(r.stdout, r"first-box\s+SKIPPED\s+no onboarding clone")
             self.assertIn("UPDATED=0   ROLLED_BACK=0   FAILED=0   SKIPPED=1", r.stdout)
             self.assertIn("zsh -lc", Path(td, "ssh.log").read_text())   # Mac: login shell
 
             r = self.run_wrapper(td, "--wave", "rest", "--boxes-file", f"{td}/b.json")
             self.assertIn("rest-box", r.stdout)
-            self.assertNotIn("canary-box ", r.stdout)
+            self.assertNotIn("first-box ", r.stdout)
             self.assertIn("docker exec -u 'node'  'ctr' bash -lc", Path(td, "ssh.log").read_text())
 
     def test_local_apply_refuses_a_dev_checkout(self):
@@ -545,9 +545,9 @@ class WrapperWaves(unittest.TestCase):
             for f in fake.iterdir():
                 f.chmod(0o755)
             Path(td, "b.json").write_text(json.dumps([{"name": "box-1", "ssh_target": "h", "platform": "hostinger",
-                                                       "container": "c-1", "wave": "canary"}]))
+                                                       "container": "c-1", "wave": "first"}]))
             env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home)}
-            r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "canary",
+            r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
                                 "--boxes-file", str(td / "b.json"), "--apply"],
                                capture_output=True, text=True, env=env, timeout=120)
             self.assertIn("UPDATED=1", r.stdout, r.stdout + r.stderr)
@@ -560,7 +560,7 @@ class WrapperWaves(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             r = self.run_wrapper(td, "--wave", "bogus")
             self.assertEqual(r.returncode, 1)
-            self.assertIn("--wave must be canary or rest", r.stderr)
+            self.assertIn("--wave must be first or rest", r.stderr)
 
 
 class WeeklyFullUpdate(unittest.TestCase):

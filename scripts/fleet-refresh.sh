@@ -21,14 +21,15 @@
 #   bash scripts/fleet-refresh.sh --max-parallel N   # concurrency cap (default 8)
 #   bash scripts/fleet-refresh.sh --force-cc         # stash CC dirty tree instead of aborting
 #   bash scripts/fleet-refresh.sh --expected-sha <s> # inform verifier of expected onboarding SHA
-#   bash scripts/fleet-refresh.sh --wave canary|rest # only the boxes-file entries in that wave
+#   bash scripts/fleet-refresh.sh --wave first|rest  # only the boxes-file entries in that wave
 #                                                    # (implies --boxes-file ~/.openclaw/fleet/boxes.json)
 #   bash scripts/fleet-refresh.sh --help
 #
 # ROLL ORDER (see scripts/make-fleet-boxes-file.py):
 #   1. operator box:  bash scripts/fleet-refresh.sh --local --apply
-#   2. canary wave:   bash scripts/fleet-refresh.sh --wave canary --apply
-#   3. everyone else: bash scripts/fleet-refresh.sh --wave rest --apply
+#   2. first three client boxes (one Mac, one Hostinger, one Contabo):
+#                     bash scripts/fleet-refresh.sh --wave first --apply
+#   3. every other client box: bash scripts/fleet-refresh.sh --wave rest --apply
 #   Each run ends with a one-screen UPDATED / ROLLED_BACK / FAILED / SKIPPED table.
 #   Every box is snapshotted first, health-gated after, and rolled back on any
 #   regression (shared-utils/fleet_refresh_runner.py). Nothing messages a chat.
@@ -45,7 +46,7 @@
 #       "container": "<name>",           # optional: run inside it via docker exec
 #       "docker_exec_user": "node",      # optional (default node)
 #       "openclaw_root": "/path",        # optional: exported as OPENCLAW_ROOT
-#       "wave": "canary"                 # optional: canary | rest (default rest)
+#       "wave": "first"                  # optional: first | rest (default rest)
 #     },
 #     ...
 #   ]
@@ -113,8 +114,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$WAVE" in
-  ""|canary|rest) ;;
-  *) echo "FATAL: --wave must be canary or rest (got: $WAVE)" >&2; exit 1 ;;
+  ""|first|rest) ;;
+  *) echo "FATAL: --wave must be first or rest (got: $WAVE)" >&2; exit 1 ;;
 esac
 if [ -n "$WAVE" ] && [ -z "$BOXES_FILE" ]; then
   BOXES_FILE="$HOME/.openclaw/fleet/boxes.json"

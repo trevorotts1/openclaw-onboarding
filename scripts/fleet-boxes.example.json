@@ -3,7 +3,7 @@
     "name": "example-mac-box",
     "ssh_target": "example-mac-ssh-alias",
     "platform": "mac",
-    "wave": "canary"
+    "wave": "first"
   },
   {
     "name": "example-hostinger-box",
@@ -11,7 +11,7 @@
     "platform": "hostinger",
     "container": "example-openclaw-1",
     "docker_exec_user": "node",
-    "wave": "canary"
+    "wave": "first"
   },
   {
     "name": "example-contabo-box",

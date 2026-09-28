@@ -18,10 +18,11 @@ names and hostnames, so it is refused anywhere inside a git work tree.
 The operator box (provider "operator" / kind "local") is left out: it is rolled
 with `fleet-refresh.sh --local --apply` from its own clone.
 
-Waves: one box per platform (mac, hostinger, contabo) is marked "canary" --
-the first by name unless --canary names them -- and every other box "rest":
+Waves: one client box per platform (one Mac, one Hostinger, one Contabo) is
+put in wave "first" -- the first by name unless --first names them -- and every
+other client box in wave "rest". Roll the first three, check them, then the rest:
 
-    bash scripts/fleet-refresh.sh --wave canary --apply
+    bash scripts/fleet-refresh.sh --wave first --apply
     bash scripts/fleet-refresh.sh --wave rest --apply
 
 Exit: 0 written; 1 bad input / refused output path; 2 written, but some boxes
@@ -52,7 +53,7 @@ def _load_boxes(path: Path, required: bool = True) -> dict:
     return boxes
 
 
-def build(roster: dict, registry: dict, pins: dict, canary: list[str]) -> tuple[list[dict], list[str], list[str]]:
+def build(roster: dict, registry: dict, pins: dict, first: list[str]) -> tuple[list[dict], list[str], list[str]]:
     entries, skipped, unroutable = [], [], []
     for name in sorted(roster):
         box = roster[name]
@@ -83,17 +84,17 @@ def build(roster: dict, registry: dict, pins: dict, canary: list[str]) -> tuple[
         entries.append(entry)
 
     names = {e["name"] for e in entries}
-    unknown = [c for c in canary if c not in names]
+    unknown = [c for c in first if c not in names]
     if unknown:
-        raise SystemExit(f"FATAL: --canary names not in the boxes file: {', '.join(unknown)}")
-    picks = set(canary)
+        raise SystemExit(f"FATAL: --first names not in the boxes file: {', '.join(unknown)}")
+    picks = set(first)
     if not picks:
         for plat in PLATFORMS:
-            first = next((e["name"] for e in entries if e["platform"] == plat), None)
-            if first:
-                picks.add(first)
+            pick = next((e["name"] for e in entries if e["platform"] == plat), None)
+            if pick:
+                picks.add(pick)
     for e in entries:
-        e["wave"] = "canary" if e["name"] in picks else "rest"
+        e["wave"] = "first" if e["name"] in picks else "rest"
     return entries, skipped, unroutable
 
 
@@ -112,8 +113,8 @@ def main() -> int:
     ap.add_argument("--registry", default=str(HOME / "clawd/fleet-prover/box-registry.json"))
     ap.add_argument("--pins", default=str(HOME / "clawd/fleet-prover/fleet-roster.json"))
     ap.add_argument("--out", default=str(HOME / ".openclaw/fleet/boxes.json"))
-    ap.add_argument("--canary", action="append", default=[], metavar="NAME",
-                    help="box to put in the canary wave (repeatable); default: first per platform")
+    ap.add_argument("--first", action="append", default=[], metavar="NAME",
+                    help="client box to roll in the first wave (repeatable); default: one per platform")
     args = ap.parse_args()
 
     out = Path(args.out).expanduser().resolve()
@@ -126,7 +127,7 @@ def main() -> int:
         _load_boxes(Path(args.roster).expanduser()),
         _load_boxes(Path(args.registry).expanduser()),
         _load_boxes(Path(args.pins).expanduser(), required=False),
-        args.canary,
+        args.first,
     )
 
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +141,8 @@ def main() -> int:
     by = {p: sum(1 for e in entries if e["platform"] == p) for p in PLATFORMS}
     print(f"wrote {len(entries)} boxes to {out} (mode 600): "
           + ", ".join(f"{p}={n}" for p, n in by.items()))
-    print("canary wave: " + ", ".join(f"{e['name']} ({e['platform']})" for e in entries if e["wave"] == "canary"))
+    print("first wave (rolled before everyone else): "
+          + ", ".join(f"{e['name']} ({e['platform']})" for e in entries if e["wave"] == "first"))
     for s in skipped:
         print(f"  not in file: {s}")
     for u in unroutable:
