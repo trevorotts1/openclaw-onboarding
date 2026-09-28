@@ -488,14 +488,14 @@ def promote(state, repository, batch_id, final_main_sha, force_push=False,
     manifest records ``cohort.checked = False`` so the absence of
     cross-repo evidence is visible rather than silent.
 
-    promote() refuses a candidate that is not the exact ONB+CC pair the
-    committed release-cohort instance names (check_release_cohort called
-    with ``repository=``/``candidate_sha=``) — without that binding the
-    cohort record proves a whole-release pairing while governing nothing
-    about the candidate actually activating (A53). The committed
-    release-cohort manifest INSTANCE
-    (``<repo root>/release-cohort.json``) is enforced separately by
-    :func:`check_release_cohort`, which binds a release to the tested
+    This function does NOT call :func:`check_release_cohort`: ``cohort``
+    arrives already loaded from the caller, and ``repository`` (below) is
+    this repo's train lane, not a release-cohort repository key. So the
+    candidate-pair binding that function now offers governs only where a
+    caller consults it — it does not govern activation here (A53). The
+    committed release-cohort manifest INSTANCE
+    (``<repo root>/release-cohort.json``) is validated by
+    :func:`check_release_cohort`, which binds a release to the exact tested
     ONB+CC pair the instance names (14.8/17.4).
     """
     if force_push:
