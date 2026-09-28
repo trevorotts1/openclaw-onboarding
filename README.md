@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.0.16 — Private interview renewal and pause/resume on Mac and VPS.** Resume partial onboarding without replacing client identity; preserve service configuration, migrate the correct database and reconcile the client’s standard board foundation. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.1.5**.
+> **v25.1.95 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.68**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v25.1.95.
@@ -9,15 +9,20 @@
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v25.0.10
+## Current release: v25.1.95
 
-Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.5 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
+Presentations Step 4 lands the retired text-overlay doctrine, the canonical assembler steps and an installer-managed watchdog; the interview prior-completion declaration batch (INT-001..INT-005) supersedes the earlier unmerged PR #1249. Command Center installation and refresh still require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.6.68 or newer** (minimum v7.4.0). Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment.
 
 Fresh and update-only dependency installs use the shipped `package-lock.json` through `npm ci`; a missing lock or failed install stops before migrations/deployment. There is no fallback that resolves a different dependency graph.
 
-The paired pin and minimum are both **v7.1.5**, including authenticated interview launch, verified foundations, the security upgrade and General/CEO fallback execution. Deploy that paired Command Center release before onboarding v25.0.16. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
+**Recent releases** (since v25.0.10 — full per-release history in [CHANGELOG.md](CHANGELOG.md)):
 
-Recovery now also handles the exact empty completion stub without deleting state, accepts the verified CEO board alias, and finds the installed invitation CLI under restricted service PATH. Readiness and QC commands have bounded deadlines with private failure diagnostics. Shared paths and the GHL QC probe retain the selected client installation. Scheduler configuration is validated before replacing a working job, including paths with special characters.
+- **v25.1.92-v25.1.95** (Sep 27-28) - Interview prior-completion declaration batch; Presentations Steps 3-4 land on main (attempt-counter reset, engine pid recording, retired text-overlay doctrine, installer-managed watchdog).
+- **v25.1.70-v25.1.91** (Sep 21-27) - Content-pipeline fail-closed guards, interview-link reliability (ILJ waves), the JEV 1.1 decision-engine batch trains, and Presentations Steps 1-2 (Kie.ai spend ceilings, fresh-intake credit preflight, OpenRouter live pricing).
+- **v25.1.33-v25.1.69** (Sep 16-21) - Provider-routing and Stage-D scoring hardening (Ollama Cloud fallback chain, concurrent finalist scoring), plus departments.json and company-id normalization fixes.
+- **v25.1.1-v25.1.32** (Sep 14-16) - Presentation deck-engine correctness pass: phase resume, fan-out funding and budget accounting, and slide-copy metadata-leak fixes.
+- **v25.1.0** (Sep 14) - Added Skill 69 (archify), a verifiable diagram engine, gated in Wave 6.
+- **v25.0.11-v25.0.61** (Sep 6-14) - Presentations department build-out (deck engine resume/retry/budget), social media planner waves W1-W5, Rescue Rangers batches, and the GPT-image-2.5 migration.
 
 ## v25.0.0 major milestone
 
