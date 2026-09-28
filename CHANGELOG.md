@@ -1,3 +1,17 @@
+## [v25.1.93]  -  2026-09-28  -  Presentations: Docker release-matrix pin to deb13u7, #1273 Fix 3 test fixture, #1277 test-isolation fixes
+
+### Why
+Three fix PRs (#1282, #1283, #1284) each change content under 23-ai-workforce-blueprint/, so each alone fails G3 (skill content change requires a skill-version.txt bump), and three separate bumps would collide. This release lands all three with one lockstep bump. It supersedes #1282, #1283 and #1284.
+
+### What changed
+- #1282 (Docker release-matrix legs): libreoffice-impress pin 4:25.2.3-2+deb13u6 -> 4:25.2.3-2+deb13u7 in release-matrix/Dockerfile.hostinger, release-matrix/Dockerfile.contabo and release-matrix/pins.yaml. The Docker failure came from Debian's trixie-security update to libreoffice 4:25.2.3-2+deb13u7 (the unpinned libreoffice-uiconfig-impress dependency moved to deb13u7, so the deb13u6 pin could no longer install). PR #1277 did not cause it.
+- #1283 (#1273 Fix 3 test fixture): tests/test_fix03_env_store_restored.py writes its scratch store inside the client root (tmp_path/home/.openclaw/secrets/.env), so oc_paths no longer rejects it as escaping the client installation. Test-only.
+- #1284 (#1277 test isolation): test_fix10_daily_cap_failclosed.py resets the governor_store._STORE singleton per test; test_fix6_openrouter_pricing.py reads rate_source with .get() on the catalog-fallback row. Test-only.
+- Version markers rolled v25.1.91 -> v25.1.93 via scripts/bump-version.sh (G3). v25.1.92 is reserved by PR #1286.
+
+### Tests
+On this branch: test_fix03_env_store_restored.py 1 passed; test_fix10_daily_cap_failclosed.py + test_fix5_fresh_intake_preflight.py + test_fix6_openrouter_pricing.py 14 passed. scripts/bump-version.sh --check: all 10 markers agree at v25.1.93. Docker legs are verified by this PR's CI run.
+
 ## [v25.1.91]  -  2026-09-27  -  Presentations Step 2 lands on main: Kie.ai spend ceilings fail-closed (Fix 10), fresh-intake credit preflight gate (Fix 5), OpenRouter live pricing (Fix 6)
 
 ### Why
