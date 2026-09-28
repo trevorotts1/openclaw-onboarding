@@ -6,8 +6,9 @@ Proves the COMMITTED instance, not a fixture:
     validator (shared-utils/decision_engine/modes/cohort.py);
   * its onb_sha/cc_sha/versions match the live repo contracts
     (/version and cc-compat.json), so the pair cannot silently drift;
-  * train.promote() consumes the instance and REFUSES a mismatched
-    pair — a mutated manifest (wrong cc_sha) is rejected;
+  * train.check_release_cohort() reads the instance and REFUSES a
+    mismatched pair — a mutated manifest (wrong cc_sha) is rejected;
+  * train.promote() records the verified pair and refuses a drifted one;
   * a malformed instance fails the loader closed.
 
 Run: python3 -m pytest tests/unit/test_release_cohort_manifest.py -q
