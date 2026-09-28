@@ -1,3 +1,9 @@
+## [v25.1.90]  -  2026-09-27  -  Batch train (KEY-001 + REP-060): direct-JEV resolves operator-store key name JEV_TYPESAFE_API_KEY; A60 reserve-failure fence and shipped atomic budget store
+
+- KEY-001 (A01, spec 16.2): `credential_resolver.DIRECT_KEYS` and `typesafe_direct.DIRECT_KEY_NAMES` gain `JEV_TYPESAFE_API_KEY` additively and LAST — the operator store's own key name, previously absent from both closed sets, which fell through to OpenRouter when the box carried only that name. Precedence unchanged for every name that resolved before. Runnable probe `scripts/probe/probe-key001-offline.py` committed with raw output; at base the box-as-configured case fails, post-fix it passes with zero OpenRouter selection calls. Folded from branch `jev11/KEY-001-keyname` (be418995).
+- REP-060 (A60, spec 3.8): `PermissionsGate.reserve` failures are classified and fence the send in `_run_provider` (budget_exhausted / technical_unavailable) instead of letting a failed reservation send; reconcile errors surface as `gate_errors` with `accounting_uncertain`; `SqliteBudgetStore` (atomic reservation rows) shipped and wired into the D30 harness; permanent regression `tests/unit/test_a60_budget_atomic.py` (12 tests). Folded from branch `jev11/rep-060-a60-atomic-budget` (f4c53c579), conflict in `ladder.py` `_verdict` resolved keeping main's fence_token block and appending A60's error-surfacing block.
+- Version markers rolled v25.1.89 -> v25.1.90 by `scripts/bump-version.sh` (15 marker files, one consistent entry).
+
 ## [v25.1.89]  -  2026-09-27  -  JEV 1.1 batch train lands on main: decision-engine continuation and modes, owner-direct execution policy, A36 selector-gate repair, D12/D28/D34 regressions, skill-version lockstep
 
 ### Why
