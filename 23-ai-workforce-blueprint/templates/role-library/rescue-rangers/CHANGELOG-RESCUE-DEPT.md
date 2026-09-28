@@ -92,4 +92,6 @@ sufficient to make it a valid `dept_owner`.
 2. VPS outbound-only status-poll return leg armed on live VPS boxes (batched roll).
 3. `add-department.sh rescue-rangers` on the live Command Center (board column/topic).
 4. Aging/SLA cron scheduled beside the CC stale-task sweep.
-5. `stamp-rescue-escalation-section.sh` wired into install.sh (client role) for fresh boxes.
+5. DONE (V4): fresh-box stamping is wired. install.sh runs `scripts/stamp-rescue-escalation.py`
+   against the workspace AGENTS.md, and `apply-fleet-standards.sh` section 5j runs the same stamper
+   on every roll (it now inserts a missing section on client boxes instead of logging a gap).

@@ -36,7 +36,7 @@ and cloud (documented here, run by the operator — see "DEFERRED live steps").
 
 | Tool | Where | What it does |
 |---|---|---|
-| **n8n "Rescue Rangers Relay"** | `main.blackceoautomations.com` | **RETIRED (RR-017):** inactive legacy path. Canonical intake is `rr-v2-intake` (RR-01). A box env still carrying the old `webhook/rescue-rangers` URL is a false-pass trap — rr-reconcile.sh check 5 reports it. Do not reactivate as a state writer. |
+| **n8n "Rescue Rangers Relay"** | `main.blackceoautomations.com` | **RETIRED (RR-017):** inactive legacy path. Canonical intake is `rr-v2-intake` (RR-01). A box env still carrying the old Relay URL (any intake URL that is not `rr-v2-intake`) is a false-pass trap — rr-reconcile.sh check 5 reports it. Do not reactivate as a state writer. |
 | **`rescue-receiver.mjs`** | operator Mac `127.0.0.1:8799` (launchd), CF tunnel `rescue-gw.zerohumanworkforce.com/rescue` | Push transport: authenticated POST runs ONE turn of the rescue agent; tier routing; structured `remediate.sh` fixer (DRY-RUN default); posts the answer back to the relay. |
 | **`rescue-rangers-poller.sh`** | operator Mac cron `*/10` | Pull transport (fallback): drains `{action:"pending"}`, runs one agent turn per ticket, posts answers back; idempotent. |
 | **`rescue-receiver-watchdog.sh`** | operator Mac cron (every minute) | Health-checks :8799, kickstarts, bounded at MAX_RESTARTS=5 (anti-crash-loop), one deduped alarm to the Fixer topic. |

@@ -8,11 +8,16 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.5.2"
+  version: "v23.5.3"
   priority: HIGH
 ---
 
 # Rescue Receiver (Skill 65)
+
+> **Sending an escalation? Use `~/.openclaw/scripts/rr-escalate.sh`** (VPS:
+> `/data/.openclaw/scripts/rr-escalate.sh`). This skill only RECEIVES answers;
+> it has no send path. Never email Rescue Rangers and never post in its
+> Telegram group: neither creates a ticket.
 
 ## What this is
 

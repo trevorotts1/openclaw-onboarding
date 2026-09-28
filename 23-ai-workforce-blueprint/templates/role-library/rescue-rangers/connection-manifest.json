@@ -11,7 +11,7 @@
     },
     "legacy_paths": [
         {
-            "path": "old Relay webhook (webhook/rescue-rangers)",
+            "path": "old Relay webhook (retired pre-RR-01 path)",
             "classification": "retired",
             "rule": "inactive; canonical intake is rr-v2-intake; any box env still carrying this URL is a false-pass trap (rr-reconcile.sh check 5)"
         },
@@ -29,7 +29,7 @@
     "connection_points": [
         {
             "name": "rescue-rangers-webhook-url",
-            "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rr-v2-intake. The retired /webhook/rescue-rangers path must not be used.",
+            "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rr-v2-intake. The retired pre-RR-01 Relay path must not be used.",
             "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_URL",
             "required": true
         },

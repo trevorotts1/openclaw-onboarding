@@ -640,66 +640,41 @@ After these events, **ALWAYS** run: `python3 ~/.openclaw/scripts/gemini-indexer.
 
 ## 🔴 Rescue Rangers — how to escalate + resolution / loop-stop
 
-**HOW TO ESCALATE (the ONLY supported method).** When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound. Do **NOT** use `openclaw message send -t <group/chat>` to escalate — bots cannot read other bots, so the old bot-to-bot Telegram group post NEVER reached the rescue agent.
+**HOW TO ESCALATE (the ONLY supported method).** When you hit a problem you cannot solve on your own, escalate to Rescue Rangers with `bash ~/.openclaw/scripts/rr-escalate.sh` (VPS: `/data/.openclaw/scripts/rr-escalate.sh`). It POSTs the n8n intake webhook for you with the box identity and secret filled in. Do **NOT** use `openclaw message send -t <group/chat>` to escalate — bots cannot read other bots, so the old bot-to-bot Telegram group post NEVER reached the rescue agent.
 
-**No other path reaches Rescue Rangers.** A Telegram DM that a HUMAN client sends to YOU (the agent bot) is a message to YOU, not to Rescue Rangers — you are the one who must escalate it. Telegram DMs sent to `@Rescue_Rangers_Bot` itself are never read by anyone: that bot is outbound-only. Posting into the Rescue Rangers Telegram group is also NOT an escalation — only the webhook POST mints a ticket, enters the coaching queue, and produces a delivered answer. When a client says "use your rescue rangers" or "send this to your rescue team", that instruction is aimed at YOU: POST the webhook yourself with the client's problem in `problem`, their name in `person`, and their chat id in `returnTo`, then tell the client you did it. Never answer "I don't have a rescue rangers tool or team" — you are a member box of it; your escalation tool is the webhook POST below, and the env vars for it are seeded on this box.
+**No other path reaches Rescue Rangers.** A Telegram DM that a HUMAN client sends to YOU (the agent bot) is a message to YOU, not to Rescue Rangers — you are the one who must escalate it. Telegram DMs sent to `@Rescue_Rangers_Bot` itself are never read by anyone: that bot is outbound-only. Posting into the Rescue Rangers Telegram group is also NOT an escalation — only the webhook POST mints a ticket, enters the coaching queue, and produces a delivered answer. Email is not an escalation either: it creates no ticket. When a client says "use your rescue rangers" or "send this to your rescue team", that instruction is aimed at YOU: run `rr-escalate.sh` yourself with the client's problem in `--problem`, their name in `--person`, and their chat id in `--return-to`. Tell the client it was sent ONLY when the script exited 0 and printed a ticket number, and give them that number; if it exited non-zero, tell them it failed and quote its reason line. Never answer "I don't have a rescue rangers tool or team" — you are a member box of it; your escalation tool is `rr-escalate.sh`, and the env vars it reads are seeded on this box.
 
-**The escalation payload MUST carry all nine fields** — partial payloads are rejected:
+**The escalation command** (the script fills `boxName` from `FLEET_STANDING_BOX_SLUG`, plus `clientName`, `agentName`, `boxType` and `openclawVersion`, and sends the `X-Rescue-Secret` header):
 
 ```bash
-_RR_SECRET_ARGS=()
-[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  -d '{
-    "action":         "escalate",
-    "person":         "<name of the owner or end user this agent serves>",
-    "clientName":     "<client display name, e.g. sample-client>",
-    "agentName":      "<agent persona name, e.g. Jordan>",
-    "boxName":        "<hostname or box label, e.g. openclaw-xxxx>",
-    "boxType":        "<VPS | Mac Mini | MacBook Pro>",
-    "openclawVersion":"<run: openclaw --version>",
-    "problem":        "<concise one-paragraph description of the problem>",
-    "alreadyTried":   "<numbered list of what you already tried>",
-    "returnTo":       "<Telegram chat ID the answer should be posted back to>"
-  }'
+bash ~/.openclaw/scripts/rr-escalate.sh \
+  --problem "<concise one-paragraph description of the problem>" \
+  --tried "<numbered list of what you already tried>" \
+  --person "<name of the owner or end user this agent serves>" \
+  --return-to "<Telegram chat ID the answer should be posted back to>"
 ```
 
-**Field guide:**
-
-| Field | What to put |
-|-------|-------------|
-| `person` | The real name of the owner or end user whose experience is broken |
-| `clientName` | Short client label matching the roster (e.g. `sample-client`, `acme-co`) |
-| `agentName` | The persona display name of the agent sending this (e.g. `Stefanie`, `<agent-persona>`) |
-| `boxName` | Hostname or compose-project label for this box (e.g. `openclaw-hy5t`, `<client>-mini`) |
-| `boxType` | One of exactly: `VPS`, `Mac Mini`, `MacBook Pro` |
-| `openclawVersion` | Exact string from `openclaw --version` — no paraphrasing |
-| `problem` | A short, self-contained description — what is happening and what the expected behavior is |
-| `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
-| `returnTo` | The Telegram chat ID where the Rescue Rangers answer must be posted (your client's chat) |
-
-- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rr-v2-intake`). Reference the env var, never a hardcoded URL.
-- `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded at install. The array pattern above correctly skips the header when the var is unset (backward-compatible).
+- Success prints `ticket=<id>` and `incident_id=<id>` and exits 0. Any non-zero exit means NOTHING was sent.
+- `bash ~/.openclaw/scripts/rr-escalate.sh --selftest` checks the channel without creating a ticket (expects `status=test_suppressed`).
+- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rr-v2-intake`); `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded alongside it. The script reads both.
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
 - The rescue agent will reply with a solution delivered to the chat you put in `returnTo` (your client's chat) — the delivery is done by the Rescue Rangers receiver, not by you; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
 
 Once a rescue agent helps you, you MUST cooperate with the resolution protocol so the loop ends as soon as the problem is fixed (and never runs to the cap unnecessarily):
 
-- **When the rescue fix works:** POST `✅ RESOLVED: <one-line what fixed it>` to `$RESCUE_RANGERS_WEBHOOK_URL` (same curl command, same `clientName`/`agentName` fields, set `"action":"escalate"`) and **STOP escalating.** The relay detects the resolution sentinel and closes the ticket. Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue.
+- **When the rescue fix works:** run `bash ~/.openclaw/scripts/rr-escalate.sh --resolve "<incident_id>" --problem "✅ RESOLVED: <one-line what fixed it>"` and **STOP escalating.** The relay detects the resolution sentinel and closes the ticket. Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue.
 - **You MUST tell the end user the outcome** in clear language. State which of these three it was:
   - **(a) We solved it** — describe what was fixed and confirm normal operation is restored.
   - **(b) Here is what you should do** — give the owner/user the actionable next step they must take.
   - **(c) Here is the answer** — relay the Rescue Rangers response verbatim if it is informational rather than a fix.
   Never leave the end user in the dark about what happened or what comes next. This step is non-negotiable.
 - **A message is a RESOLUTION SIGNAL** (case-insensitive) if it contains the sentinel `✅ RESOLVED` OR any of: "resolved", "problem solved", "problem complete", "problem completed", "problem done", "issue resolved", "issue fixed", "it's fixed", "fixed it", "working now", "back to working", "all good now", "we're good", "no longer needed". Once a resolution signal is posted, the back-and-forth is OVER — neither side produces another fix.
-- **If still broken after the rescue agent replies:** POST ONE focused follow-up to the same `$RESCUE_RANGERS_WEBHOOK_URL` (what's still failing + the exact new error), then wait. Do not spam.
+- **If still broken after the rescue agent replies:** send ONE focused follow-up with `rr-escalate.sh --problem` (what's still failing + the exact new error), then wait. Do not spam.
 - **Hard cap: 25 exchanges per client per day** — the backstop for conversations that never resolve / loop. Resolve early; don't run to the cap.
 
 **File every bug (mandatory).** When any department hits a defect, FIRST write a Bug Ticket (schema in `templates/role-library/bugs/bug-ticket-schema.json`) to `working/healer/bug_tickets/BUG-YYYYMMDD-NNN.json`, then keep stabilizing. An unfiled bug is a future repeat. The Bugs + Healer departments route and heal it; the same bug never happens twice.
 
-**Provisioning asks use this same channel.** Rescue Rangers is not only for bugs — any time a self-hosted service on this box (a self-hosted n8n instance is the flagship case) needs a NEW public hostname, the ask goes through this exact webhook, packed into the `problem`/`alreadyTried` fields above. See `universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md` for the required fields and the guardrail against ever running `cloudflared tunnel login` on a client box.
+**Provisioning asks use this same channel.** Rescue Rangers is not only for bugs — any time a self-hosted service on this box (a self-hosted n8n instance is the flagship case) needs a NEW public hostname, the ask goes through `rr-escalate.sh`, packed into `--problem` / `--tried`. See `universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md` for the required fields and the guardrail against ever running `cloudflared tunnel login` on a client box.
 
 ---
 

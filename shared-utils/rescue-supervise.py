@@ -374,6 +374,15 @@ def _call_fence_adapter(path, payload):
                 "reason": exc.__class__.__name__}
 
 
+def _bare_gen(value):
+    """Generation as a bare string: str(), surrounding whitespace and one pair
+    of matching JSON quotes stripped."""
+    v = str(value).strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1].strip()
+    return v
+
+
 def cmd_lock_acquire(args):
     record = _read_record(args.dir)
     # The lock is held by the CALLER's long-lived process, never by this
@@ -426,7 +435,11 @@ def cmd_lock_acquire(args):
             _emit({"ok": False, "error": "lock_held",
                    "reason": "takeover_generation_required"})
             return EX_REFUSED
-        if str(args.takeover_generation) != str(record.get("generation")):
+        # A generation may be recorded as a JSON string or a number, and a
+        # shell caller may pass it with its JSON quotes still attached
+        # ('"83799"'). Compare the bare values so neither shape can turn a
+        # legitimate reconciled takeover into a permanent mismatch.
+        if _bare_gen(args.takeover_generation) != _bare_gen(record.get("generation")):
             _emit({"ok": False, "error": "lock_held",
                    "reason": "takeover_generation_mismatch",
                    "observed_generation": record.get("generation")})

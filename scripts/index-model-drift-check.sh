@@ -222,12 +222,13 @@ if [[ "$rc" -eq 4 ]]; then
   # Optional operator escalation — one line, only if explicitly enabled AND CLI present.
   if [[ "${OC_DRIFT_ESCALATE:-0}" == "1" ]] && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]]; then
     _esc_msg="[index-drift] $(hostname): memory index built for a model that no longer matches config. Run a reindex before it thrashes. See $MARKER_FILE."
-    _esc_msg="${_esc_msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
-    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-      -H 'Content-Type: application/json' \
-      ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-      -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"index-model-drift-check\",\"message\":\"${_esc_msg}\"}" \
-      --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
+    # rr-escalate.sh adds the box slug the intake requires and exits non-zero
+    # unless a ticket was minted: a refusal is a WARN, never a silent "sent".
+    if _rr_out="$(bash "$(dirname "${BASH_SOURCE[0]}")/rr-escalate.sh" --agent index-model-drift-check --problem "$_esc_msg" 2>&1)"; then
+      log "INFO" "escalated to Rescue Rangers: ${_rr_out//$'\n'/ }"
+    else
+      log "WARN" "Rescue Rangers escalation REJECTED (rc=$?, non-fatal): ${_rr_out//$'\n'/ }"
+    fi
   fi
   exit 4
 fi

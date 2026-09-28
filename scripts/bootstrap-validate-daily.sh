@@ -166,17 +166,14 @@ if [ "$OVERALL_EXIT" -ne 0 ]; then
   _BOX="$(hostname 2>/dev/null || echo box)"
   _ESC_MSG="[bootstrap-validate] ${_BOX}: lean-bootstrap validation FAILED (exit ${OVERALL_EXIT}). Core files are over cap, a pointer dangles, or a ledgered block drifted. Run: bash ${BASH_SOURCE[0]:-bootstrap-validate-daily.sh}"
   if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
-    _ESC_JSON_MSG="${_ESC_MSG//\\/\\\\}"; _ESC_JSON_MSG="${_ESC_JSON_MSG//\"/\\\"}"
-    if curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-         -H 'Content-Type: application/json' \
-         ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-         -d "{\"action\":\"escalate\",\"client\":\"${_BOX}\",\"agent\":\"bootstrap-validate-daily\",\"message\":\"${_ESC_JSON_MSG}\"}" \
-         --max-time 15 >/dev/null 2>&1; then
-      echo "ESCALATED to operator (rescue-rangers): ${_ESC_MSG}" >&2
+    # rr-escalate.sh adds the box slug the intake requires and exits non-zero
+    # unless a ticket was minted, so only a real ticket counts as delivered.
+    if _RR_OUT="$(bash "$(dirname "${BASH_SOURCE[0]}")/rr-escalate.sh" --agent bootstrap-validate-daily --problem "$_ESC_MSG" 2>&1)"; then
+      echo "ESCALATED to operator (rescue-rangers): ${_ESC_MSG} [${_RR_OUT//$'\n'/ }]" >&2
     else
       # The escalation itself failed. That is the silent-failure class this
       # block exists to kill, so it is reported LOUDLY rather than swallowed.
-      echo "ALERT-UNDELIVERED: bootstrap validation FAILED and the operator escalation POST did not succeed." >&2
+      echo "ALERT-UNDELIVERED: bootstrap validation FAILED and the operator escalation was REJECTED (rc=$?): ${_RR_OUT//$'\n'/ }" >&2
       echo "ALERT-UNDELIVERED: ${_ESC_MSG}" >&2
     fi
   else

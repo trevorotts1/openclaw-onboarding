@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.2.5"
+ONBOARDING_VERSION="v25.2.7"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4217,6 +4217,19 @@ for SCRIPT in bootstrap-validate-daily.sh bootstrap-compact-weekly.sh compact-bo
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
         success "Installed lean-bootstrap script: $SCRIPT"
+    fi
+done
+
+# RESCUE RANGERS: the one escalation sender, plus the stamper and template that
+# teach a client agent to use it. The memory-health / lean-bootstrap scripts
+# above call rr-escalate.sh from this same dir, and the stamped AGENTS.md
+# section tells the agent to run it from here. update-skills.sh delivers the
+# whole scripts/ tree; install.sh copies by name, so they are named here.
+for SCRIPT in rr-escalate.sh stamp-rescue-escalation.py rescue-escalation-section.md.tpl; do
+    if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
+        cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
+        case "$SCRIPT" in *.tpl) ;; *) chmod +x "$SCRIPTS_DIR/$SCRIPT" ;; esac
+        success "Installed Rescue Rangers escalation file: $SCRIPT"
     fi
 done
 
@@ -9306,6 +9319,29 @@ if [ -f "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" ]; then
 else
     warn "Fleet standards script not found at $ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
 fi
+echo ""
+
+# Rescue Rangers escalation section -> the WORKSPACE AGENTS.md (the only
+# AGENTS.md a client agent loads). apply-fleet-standards.sh 5j above runs the
+# same stamper on the workspace it resolves; this runs it explicitly on the
+# installer's workspace so a fresh box can never finish install without the
+# section (it used to: nothing on the install path ever created it). Operator
+# box is skipped by the stamper itself. Idempotent: a second pass is a no-op.
+_RR_STAMP_PY="$ONBOARDING_DIR/scripts/stamp-rescue-escalation.py"
+_RR_STAMP_TPL="$ONBOARDING_DIR/scripts/rescue-escalation-section.md.tpl"
+if [ -f "$_RR_STAMP_PY" ] && [ -f "$_RR_STAMP_TPL" ] && [ -f "$OC_WORKSPACE/AGENTS.md" ]; then
+    _RR_STAMP_V="$(python3 "$_RR_STAMP_PY" --agents "$OC_WORKSPACE/AGENTS.md" \
+        --tpl "$_RR_STAMP_TPL" --config "$OC_JSON" 2>/dev/null)" || _RR_STAMP_V="error"
+    case "$_RR_STAMP_V" in
+        insert:*|upgrade:*|replace:*|noop) success "Rescue Rangers escalation section present in $OC_WORKSPACE/AGENTS.md ($_RR_STAMP_V)" ;;
+        skipped-operator) note "Rescue Rangers escalation section not stamped: operator box" ;;
+        *) warn "Rescue Rangers escalation section NOT stamped into $OC_WORKSPACE/AGENTS.md (${_RR_STAMP_V:-error}); the next update roll retries" ;;
+    esac
+    unset _RR_STAMP_V
+else
+    warn "Rescue Rangers escalation section NOT stamped: stamper, template or $OC_WORKSPACE/AGENTS.md missing"
+fi
+unset _RR_STAMP_PY _RR_STAMP_TPL
 echo ""
 
 # ----------------------------------------------------------

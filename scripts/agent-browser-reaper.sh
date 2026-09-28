@@ -64,7 +64,7 @@
 #   bash 3.2.57 and bash 5.x. Do NOT reintroduce `declare -A` / `mapfile` here.
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v25.2.5"
+AGENT_BROWSER_REAPER_VERSION="v25.2.7"
 
 set -u
 
@@ -286,12 +286,13 @@ if (( live_count > MAX_LIVE )); then
     # path the rescue agent reads. Never use openclaw message send to a Telegram group
     # for escalation: bots cannot read other bots, so that path is silently dropped.
     if [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "$DRY_RUN" != "1" ]]; then
-      local _esc_msg="${msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
-      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-        -H 'Content-Type: application/json' \
-        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-        -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"agent-browser-reaper\",\"message\":\"${_esc_msg}\"}" \
-        --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
+      # rr-escalate.sh adds the box slug the intake requires and exits non-zero
+      # unless a ticket was minted: a refusal is a WARN, never a silent "sent".
+      if _rr_out="$(bash "$(dirname "${BASH_SOURCE[0]}")/rr-escalate.sh" --agent agent-browser-reaper --problem "$msg" 2>&1)"; then
+        log "INFO" "escalated to Rescue Rangers: ${_rr_out//$'\n'/ }"
+      else
+        log "WARN" "Rescue Rangers escalation REJECTED (rc=$?, non-fatal): ${_rr_out//$'\n'/ }"
+      fi
     fi
     [[ "$DRY_RUN" != "1" ]] && date -u +%Y-%m-%dT%H:%M:%SZ > "$TRIPWIRE_STAMP" 2>/dev/null || true
   else

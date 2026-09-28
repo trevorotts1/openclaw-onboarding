@@ -248,6 +248,46 @@ mkdir -p "$_TMP" 2>/dev/null || exit 0
 chmod 700 "$_TMP" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# Minimal log helper. Logs are best-effort and must NEVER contain the token or
+# the payload. Lines are deliberately terse.
+# ---------------------------------------------------------------------------
+_log() {
+    printf '%s rr-poll %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >>"$_LOG" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# A safe JSON string: strip bytes that would break a JSON string literal.
+# box_slug and echoed fields are enroll-time values; this is belt-and-braces so a
+# hostile slug can never corrupt the request body.
+# ---------------------------------------------------------------------------
+_json_str() {
+    printf '%s' "$1" | tr -d '"' | tr -d '\\' | tr -d '\n\r\t'
+}
+
+# _lock_field <json> <key>... -- the first present key's value, parsed with
+# python3 json (dotted keys walk nested objects). A generation may be a JSON
+# string ("83799") or a number (83799); both come back as the bare 83799. The
+# old sed extraction kept the quotes of a string generation, the supervisor
+# compared '"83799"' to '83799', refused the takeover as
+# takeover_generation_mismatch, and the poll exited 0 silently -- so a poll that
+# died holding the lock blocked the return leg forever.
+_lock_field() {
+    _lf_json="$1"; shift
+    printf '%s' "$_lf_json" | python3 -c 'import json, sys
+try:
+    d = json.loads(sys.stdin.read() or "{}")
+except ValueError:
+    sys.exit(0)
+for key in sys.argv[1:]:
+    cur = d
+    for part in key.split("."):
+        cur = cur.get(part) if isinstance(cur, dict) else None
+    if cur is not None and cur != "":
+        print(str(cur).lower() if isinstance(cur, bool) else cur)
+        break' "$@" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
 # RR-026 lock: a RECORD with an owner identity, never a bare mkdir, and never
 # age-based (v1.6.0).
 #
@@ -324,6 +364,7 @@ _try_lock() {
     if [ "$_tl_rc" -eq 0 ]; then
         _LOCK_OWNER_TOKEN="$_tl_token"
         _LOCK_HELD=1
+        rm -f "$_STATE/rejected/lock-contended.json" 2>/dev/null || true
         return 0
     fi
 
@@ -335,7 +376,7 @@ _try_lock() {
     if [ "$_tl_rc" -eq 2 ]; then
         mkdir -p "$_STATE/rejected" 2>/dev/null || true
         printf '{"schema_version":1,"at":"%s","kind":"degraded_lock_subsystem","reason":"%s","next_owner":"operator","box":"%s"}\n' \
-            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_json_str "$(printf '%s' "$_tl_out" | sed -n 's/.*"reason": *"\([^"]*\)".*/\1/p')")" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_json_str "$(_lock_field "$_tl_out" reason error)")" \
             "$(_json_str "${RR_BOX_SLUG:-}")" \
             > "$_STATE/rejected/degraded-lock-subsystem.json" 2>/dev/null || true
         _log "lock-degraded supervisor=rescue-supervise.py rc=2 acked=false next_owner=operator (lock subsystem unusable; NOT treated as contention)"
@@ -348,9 +389,8 @@ _try_lock() {
     # naming the evidence — the fence contract's takeover protocol.
     case "$_tl_out" in
         *'"reason": "lapsed_without_reconciliation"'*|*'"prior_state": "dead"'*|*'"prior_state": "reused"'*)
-            _tl_gen=$(printf '%s' "$_tl_out" | sed -n 's/.*"observed_generation": *\([^,}]*\).*/\1/p')
-            [ -n "$_tl_gen" ] || _tl_gen=$(_rr_sup lock inspect --dir "$_LOCK_DIR" 2>/dev/null \
-                | sed -n 's/.*"generation": *\([^,}]*\).*/\1/p')
+            _tl_gen=$(_lock_field "$_tl_out" observed_generation holder_generation)
+            [ -n "$_tl_gen" ] || _tl_gen=$(_lock_field "$(_rr_sup lock inspect --dir "$_LOCK_DIR" 2>/dev/null)" record.generation)
             [ -n "$_tl_gen" ] || _tl_gen="null"
             _tl_out2=$(_rr_sup lock acquire \
                 --dir "$_LOCK_DIR" \
@@ -369,10 +409,24 @@ _try_lock() {
                 _LOCK_OWNER_TOKEN="$_tl_token"
                 _LOCK_HELD=1
                 _LOCK_TAKEOVER_NOTE="prior_generation=$_tl_gen"
+                rm -f "$_STATE/rejected/lock-contended.json" 2>/dev/null || true
+                _log "lock-takeover prior_generation=$_tl_gen"
                 return 0
             fi
+            _tl_out="$_tl_out2"
             ;;
     esac
+    # Contended. Never silent: a lock that is never released would otherwise
+    # look exactly like a quiet healthy box. One overwritten marker, not a pile.
+    _tl_reason=$(_lock_field "$_tl_out" reason error)
+    _tl_holder=$(_lock_field "$_tl_out" holder_generation observed_generation)
+    [ -n "$_tl_holder" ] || _tl_holder="${_tl_gen:-unknown}"
+    _log "lock-contended reason=${_tl_reason:-unknown} holder_gen=${_tl_holder}"
+    mkdir -p "$_STATE/rejected" 2>/dev/null || true
+    printf '{"schema_version":1,"at":"%s","kind":"lock_contended","reason":"%s","holder_generation":"%s","box":"%s"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_json_str "${_tl_reason:-unknown}")" \
+        "$(_json_str "$_tl_holder")" "$(_json_str "${RR_BOX_SLUG:-}")" \
+        > "$_STATE/rejected/lock-contended.json" 2>/dev/null || true
     return 1
 }
 
@@ -405,14 +459,6 @@ fi
 trap _release_lock EXIT HUP INT TERM
 
 # ---------------------------------------------------------------------------
-# Minimal log helper. Logs are best-effort and must NEVER contain the token or
-# the payload. Lines are deliberately terse.
-# ---------------------------------------------------------------------------
-_log() {
-    printf '%s rr-poll %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >>"$_LOG" 2>/dev/null || true
-}
-
-# ---------------------------------------------------------------------------
 # Jitter: 0-45s derived from the slug hash (the design's simultaneous-burst
 # avoidance). Skipped entirely if no hash tool is present (jitter 0 is fine).
 # ---------------------------------------------------------------------------
@@ -434,15 +480,6 @@ _sleep_jitter() {
             sleep "$_j"
         fi
     fi
-}
-
-# ---------------------------------------------------------------------------
-# A safe JSON string: strip bytes that would break a JSON string literal.
-# box_slug and echoed fields are enroll-time values; this is belt-and-braces so a
-# hostile slug can never corrupt the request body.
-# ---------------------------------------------------------------------------
-_json_str() {
-    printf '%s' "$1" | tr -d '"' | tr -d '\\' | tr -d '\n\r\t'
 }
 
 # ---------------------------------------------------------------------------

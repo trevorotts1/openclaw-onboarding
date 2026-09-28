@@ -1,155 +1,49 @@
-<!-- RESCUE_ESCALATION_BOXNAME_V3 -->
+<!-- RESCUE_ESCALATION_BOXNAME_V4 -->
 ## Escalate to Rescue Rangers (when you are stuck)
 
-When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound.
+Rescue Rangers is this fleet's escalation team, and this box is a member of it. If a client asks what it is, or asks you to "send this to Rescue Rangers", the answer is YES and your tool is the script below. Never say you have no such tool or team.
 
-**When to escalate:** triple-failure on the same symptom; a schema/validation error that `openclaw doctor --fix` did not resolve; an unknown error class you cannot match in docs.openclaw.ai or the GitHub repo; anything needing a credential rotation, a Hostinger/Cloudflare/DNS change, or another box. Do NOT escalate for routine ops you handle competently.
-
-**IDENTITY IS MANDATORY AND IT IS NOT FREE TEXT.** The `boxName` field MUST be this box's canonical fleet slug, which is the value of the environment variable `FLEET_STANDING_BOX_SLUG`. For this box that value is `{{BOX_NAME}}`.
-
-Never send any of these as `boxName`:
-- a hostname (anything ending `.local`, or `mac.lan`)
-- a Docker container id
-- a company, brand, or trading name
-- the word `TBD`, `unknown`, `n/a`, or a blank string
-
-An escalation that arrives with the wrong `boxName` cannot be attributed to you, is not counted against your own daily cap, and cannot be checked against your account standing. Getting this field right is the whole point of the field.
-
-**The escalation payload MUST carry all nine fields** -- partial payloads are rejected.
-
-**Loop / stuck / no-reply symptoms get a `LOOP:` prefix.** If the problem you are escalating is "it keeps looping", "it's stuck", "I got nothing back", or anything else where the client experience is repetition or silence, prefix the `problem` field with `LOOP:` (e.g. `"problem": "LOOP: agent re-ran the same tool call five times with no reply"`). This routes the ticket to the loop/stuck/no-reply triage runbook (`universal-sops/SOP-RR-LOOP-TRIAGE.md`) so a responder -- or an automated first pass running `scripts/rr-triage.sh` -- starts at that runbook's Step 0 instead of guessing the mechanism from free text. Do not prefix anything else with `LOOP:` -- it is a routing signal, not emphasis.
+**When to escalate:** triple-failure on the same symptom; a schema/validation error that `openclaw doctor --fix` did not resolve; an unknown error class you cannot match in docs.openclaw.ai or the GitHub repo; anything needing a credential rotation, a Hostinger/Cloudflare/DNS change, or another box; or the client asks you to escalate. Do NOT escalate for routine ops you handle competently.
 
 **How to escalate (the ONLY supported method):**
 
-```
-_RR_SECRET_ARGS=()
-[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-_RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-cat > /tmp/rr-escalation.json <<JSON
-{
-  "action":          "escalate",
-  "person":          "<real name of the owner or end user this agent serves>",
-  "clientName":      "{{CLIENT}}",
-  "agentName":       "{{AGENT}}",
-  "boxName":         "$_RR_BOX",
-  "boxType":         "{{BOX_TYPE}}",
-  "openclawVersion": "<run: openclaw --version>",
-  "problem":         "<one paragraph, plain text, no double-quote characters>",
-  "alreadyTried":    "<numbered list, plain text, no double-quote characters>",
-  "returnTo":        "{{RETURN_TO}}"
-}
-JSON
-_RR_RESP="$(curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-escalation.json)"
-rm -f /tmp/rr-escalation.json
-# RR-002: KEEP THE ADMISSION TICKET ID. The response carries `ticketId`; that
-# id IS the canonical `incident_id` for this incident and it is the ONLY thing
-# that lets your later resolution name the exact ticket it closes. Record it in
-# your task journal (and anywhere you keep this incident's state) as
-# `incident_id`. A resolution that does not carry it cannot be correlated and
-# will NOT close anything automatically.
-printf '%s\n' "$_RR_RESP"
-_RR_TICKET="$(printf '%s' "$_RR_RESP" | sed -n 's/.*"ticketId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-if [ -n "$_RR_TICKET" ]; then
-  printf 'incident_id=%s\n' "$_RR_TICKET"   # <-- journal this against the incident
-fi
+```bash
+bash ~/.openclaw/scripts/rr-escalate.sh \
+  --problem "<one paragraph, plain text: what is broken>" \
+  --tried "<numbered list of every fix already attempted>"
 ```
 
-The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$_RR_BOX` expands to the real slug. Do not quote it. Do not inline the JSON into `-d '...'` single quotes -- the variable would not expand and you would send the literal text `$_RR_BOX`.
+On a VPS whose OpenClaw root is `/data/.openclaw`, run `bash /data/.openclaw/scripts/rr-escalate.sh` with the same arguments. Optional: `--person "<name of the owner or user affected>"` and `--return-to "<chat id the answer should go to>"`.
 
-**Field guide:**
+The script fills in everything else itself: the box name (from `FLEET_STANDING_BOX_SLUG`; for this box `{{BOX_NAME}}`), client, agent, box type and OpenClaw version, and it sends the webhook secret. On success it prints `ticket=<id>` and `incident_id=<id>`. Journal the `incident_id` against the incident; your resolution needs it.
 
-| Field | What to put |
-|-------|-------------|
-| `person` | The real name of the owner or end user whose experience is broken |
-| `clientName` | Pre-filled: {{CLIENT}} |
-| `agentName` | Pre-filled: {{AGENT}} |
-| `boxName` | The value of `$FLEET_STANDING_BOX_SLUG`. For this box: `{{BOX_NAME}}` |
-| `boxType` | Pre-filled: {{BOX_TYPE}} |
-| `openclawVersion` | Exact string from `openclaw --version` -- no paraphrasing |
-| `problem` | Short, self-contained description of what is happening |
-| `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
-| `returnTo` | The Telegram chat ID where the Rescue Rangers answer must be posted |
+**Rules (non-negotiable):**
+1. The escalation was sent ONLY if the script exited 0 AND printed a ticket number. Only then may you tell the client it was sent, and you give them the ticket number.
+2. If the script exits non-zero, NOTHING was sent. Tell the client plainly that the escalation failed and quote the `rr-escalate:` reason line it printed. Never say "sent" without a ticket number.
+3. Never email Rescue Rangers. Email creates no ticket and nobody triages it.
+4. Never post in the Rescue Rangers Telegram group or message its bot. Bots cannot read other bots, so nothing arrives.
+5. Skill `65-rescue-receiver` only RECEIVES answers. It cannot send an escalation.
+6. Never put secrets (API keys, tokens, passwords) in any field. Name the env var instead.
 
-- `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If missing, report to Trevor's chat `5252140759`.
-- `RESCUE_RANGERS_WEBHOOK_SECRET` is set alongside the URL. The array pattern above skips the header when unset.
-- `FLEET_STANDING_BOX_SLUG` is set in your environment. If it is missing, that is itself a setup gap -- use the literal `{{BOX_NAME}}` and report the gap to Trevor's chat `5252140759`.
-- Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
+**Loop / stuck / no-reply symptoms get a `LOOP:` prefix.** If the problem is "it keeps looping", "it's stuck", "I got nothing back", or anything else where the client experience is repetition or silence, start `--problem` with `LOOP:` (e.g. `--problem "LOOP: agent re-ran the same tool call five times with no reply"`). This routes the ticket to the loop/stuck/no-reply triage runbook (`universal-sops/SOP-RR-LOOP-TRIAGE.md`, automated first pass `scripts/rr-triage.sh`). Do not prefix anything else with `LOOP:`; it is a routing signal, not emphasis.
 
-**When the fix works**, POST the resolution signal and STOP escalating:
+**Check the channel without creating a ticket:** `bash ~/.openclaw/scripts/rr-escalate.sh --selftest` exits 0 and prints `status=test_suppressed` when the URL, the secret and the box name are all accepted. Anything else names the exact problem (a missing variable, a 403 wrong secret, a transport failure). Report that exact line; do not guess.
 
-```
-_RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-_RR_INCIDENT="<the incident_id you journalled from the escalation response>"
-_RR_ATTEMPT="<the attempt id that produced this fix>"
-_RR_OP="res-$_RR_INCIDENT-$(date -u +%Y%m%dT%H%M%SZ)"
-_RR_DIGEST="sha256-$(printf '%s' "RESOLVED: <one-line what fixed it>" | shasum -a 256 | cut -d' ' -f1)"
-cat > /tmp/rr-resolved.json <<JSON
-{
-  "action":        "escalate",
-  "clientName":    "{{CLIENT}}",
-  "agentName":     "{{AGENT}}",
-  "boxName":       "$_RR_BOX",
-  "runtime_id":    "$_RR_BOX",
-  "incident_id":   "$_RR_INCIDENT",
-  "operation_id":  "$_RR_OP",
-  "attempt_id":    "$_RR_ATTEMPT",
-  "result_digest": "$_RR_DIGEST",
-  "problem":       "RESOLVED: <one-line what fixed it>"
-}
-JSON
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-resolved.json
-rm -f /tmp/rr-resolved.json
-```
-
-**A resolution MUST name the incident it closes.** `incident_id` is the ticket
-id the escalation response returned (journalled as `incident_id` above).
-`operation_id` is unique to THIS resolution attempt and is what makes a replayed
-post an idempotent receipt instead of a second close. Without `incident_id` the
-resolution is treated as LEGACY: it can never guess which ticket to close, so
-nothing is closed and you get a visible correlation error naming same-box
-candidates instead. Re-posting a resolution whose `operation_id` you already
-sent is a no-op receipt -- never a second close, and never a different ticket.
-If you did not journal the `incident_id`, say so and ask the operator; do NOT
-substitute a different ticket id or invent one.
-
-**You MUST tell the end user the outcome** in clear language. State which of these three it was:
-- **(a) We solved it** -- describe what was fixed and confirm normal operation is restored.
-- **(b) Here is what you should do** -- give the owner/user the actionable next step they must take.
-- **(c) Here is the answer** -- relay the Rescue Rangers response verbatim if it is informational.
-Never leave the end user in the dark about what happened or what comes next. This is non-negotiable.
-
-**Hard cap: 25 exchanges per client per day.** Do not loop endlessly; if unresolved after several exchanges, ping Trevor's chat `5252140759` directly.
-
-> DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
-<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->
-
-## What Rescue Rangers IS + your own wiring (READ BEFORE ANSWERING)
-
-Rescue Rangers is this fleet's escalation team. If a client asks what it is or whether you have a rescue team, answer YES and point at this section. Never say you have no such tool or team.
-
-Your box carries the wiring in three places — read ALL THREE before you ever tell a client you lack a credential or a URL:
-
-1. Runtime env: `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `RESCUE_RANGERS_HELP_CHAT_ID` (deprecated — may legitimately be absent), `OPENCLAW_DASHBOARD_URL` (only on boxes with an interview dashboard). The URL may live ONLY in the secrets file, not in the runtime env — always check both.
-2. Secrets file: `$HOME/.openclaw/secrets/.env` (Mac), `/home/node/.openclaw/secrets/.env` (container; Contabo host path `/opt/clients/<client>/data/...`), `/data/.openclaw/secrets/.env` (VPS). Source it, then check the same names. The `X-Rescue-Secret` and Cloudflare Access service tokens live here.
-3. This AGENTS.md and the skills tree (`65-rescue-receiver`).
-
-HARD RULE — never tell a client "I don't have your credentials" before reading all three sources and naming what you checked. Absence must be proven the same way presence is.
-
-SELF-VERIFY before asking the client for anything (headless):
+**When the fix works**, close the ticket and STOP escalating:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true   # 404 or 302 is NORMAL (webhook is POST-only)
-_RR_SECRET_ARGS=()
-[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  -d '{"action":"escalate","clientName":"__AUTHTEST__","problem":"channel self-check"}'; echo
+bash ~/.openclaw/scripts/rr-escalate.sh --resolve "<incident_id from the escalation>" \
+  --problem "RESOLVED: <one line: what fixed it>" --attempt "<attempt id, if you have one>"
 ```
 
-`{"accepted":true,"ticketId":null,"status":"test_suppressed"}` = the channel works end-to-end with zero ticket residue. 403 = wrong secret. 200 `missing_message` = OLD relay (wrong URL).
+A resolution MUST name the incident it closes. If you did not journal the `incident_id`, say so and ask the operator; never substitute or invent a ticket id.
+
+**You MUST tell the end user the outcome** in clear language. State which of these three it was:
+- **(a) We solved it**: describe what was fixed and confirm normal operation is restored.
+- **(b) Here is what you should do**: give the owner/user the actionable next step they must take.
+- **(c) Here is the answer**: relay the Rescue Rangers response verbatim if it is informational.
+
+**Hard cap: 25 exchanges per client per day.** Do not loop endlessly.
+
+**Where the wiring lives** (the script reads all three; read them yourself before telling a client something is missing): the runtime env (`RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET`, `FLEET_STANDING_BOX_SLUG`), `openclaw.json` `env.vars`, and the secrets file (`$HOME/.openclaw/secrets/.env` on a Mac or container, `/data/.openclaw/secrets/.env` on a VPS). Absence must be proven the same way presence is: name the variable and the places you checked.
+<!-- END RESCUE_ESCALATION_BOXNAME_V4 -->

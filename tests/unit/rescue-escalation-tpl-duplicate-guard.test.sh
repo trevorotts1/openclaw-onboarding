@@ -11,8 +11,8 @@
 # tooling (apply-fleet-standards.sh §5j and stamp-rescue-escalation-section.sh)
 # and the repo-root file is the declared SINGLE SOURCE OF TRUTH -- so the two
 # copies MUST stay byte-identical. This test proves that on every run, and
-# exits 2 (loud) on marker drift the way the sibling
-# rescue-escalation-v2-marker-bump.test.sh does.
+# exits 2 (loud) on a missing copy. The stamper behaviour itself is proven by
+# rescue-escalation-v4-stamp.test.py.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -42,27 +42,33 @@ else
   diff -u "$CANONICAL" "$ROLE_LIB" | sed 's/^/    /' | head -60
 fi
 
-# The role-library copy must carry the V2 marker pair and the LOOP: line --
+# The role-library copy must carry the V4 marker pair and the LOOP: line --
 # otherwise a box materialized from the role-library learns a stale shape.
-if grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$ROLE_LIB"; then
-  ok "role-library copy carries the V3 marker pair (RR-002 correlation version)"
+if grep -q "RESCUE_ESCALATION_BOXNAME_V4" "$ROLE_LIB"; then
+  ok "role-library copy carries the V4 marker pair (rr-escalate.sh sender)"
 else
-  bad "role-library copy is missing the V3 marker"
+  bad "role-library copy is missing the V4 marker"
 fi
-# RR-002: the resolution protocol must carry the canonical correlation fields
-# in BOTH copies, or a box materialized from the role-library learns a
-# resolution shape the intake cannot correlate.
+# V4 moved both hand-built curls into scripts/rr-escalate.sh: the template must
+# point at the script and carry no curl, and the RR-002 correlation fields must
+# live in the sender, or a resolution cannot name the ticket it closes.
 for _f in "$CANONICAL" "$ROLE_LIB"; do
-  _miss=""
-  for _k in incident_id operation_id attempt_id result_digest runtime_id; do
-    grep -q "\"$_k\"" "$_f" || _miss="$_miss $_k"
-  done
-  if [ -z "$_miss" ]; then
-    ok "carries the RR-002 correlation fields: $(basename "$(dirname "$(dirname "$_f")")")/$_k-set"
+  if grep -q "rr-escalate.sh" "$_f" && ! grep -q "curl " "$_f"; then
+    ok "sends through rr-escalate.sh, no hand-built curl: $_f"
   else
-    bad "MISSING RR-002 correlation fields in $_f:$_miss"
+    bad "template still hand-builds a curl or does not name rr-escalate.sh: $_f"
   fi
 done
+_SENDER="$REPO_ROOT/scripts/rr-escalate.sh"
+_miss=""
+for _k in incident_id operation_id attempt_id result_digest runtime_id; do
+  grep -q "\"$_k\"" "$_SENDER" || _miss="$_miss $_k"
+done
+if [ -z "$_miss" ]; then
+  ok "rr-escalate.sh --resolve carries the RR-002 correlation fields"
+else
+  bad "MISSING RR-002 correlation fields in $_SENDER:$_miss"
+fi
 if grep -q "LOOP:" "$ROLE_LIB"; then
   ok "role-library copy carries the LOOP: routing line"
 else

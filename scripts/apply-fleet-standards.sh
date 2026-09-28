@@ -3055,230 +3055,62 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
-# ─── 5j. Stamp the Rescue Rangers escalation section (RESCUE_ESCALATION_BOXNAME_V1)
-# WHY. The escalation section in a box's AGENTS.md historically pre-filled
-# "boxName" with the box's HOSTNAME or docker compose-project label. A hostname
-# is not a join key: the Fleet Standing Gate matches on the canonical slug
-# (fleet_standing.box_slug), so a hostname makes every request from that box
-# ledger as unmatched / no_record_found, renders operator ticket headers as
-# "(unknown)", and silently neutralises the gate for that box. The gate is
-# fail-open by design, so bad identity does not error — it just stops gating.
+# ─── 5j. Stamp the Rescue Rangers escalation section (RESCUE_ESCALATION_BOXNAME_V4)
+# WHY. A client agent loads bootstrap files ONLY from its workspace
+# (workspace/AGENTS.md). This step used to UPGRADE an existing
+# "## Escalate to Rescue Rangers" section and merely LOG a wiring gap when the
+# section was absent. No client box had one, so an agent asked to "send this to
+# Rescue Rangers" improvised: it emailed the problem (email creates no ticket)
+# and told the client it had been sent.
 #
-# WHAT. Re-render the escalation section from the ONE canonical template,
-# scripts/rescue-escalation-section.md.tpl (shipped beside this script and
-# persisted on-box by update-skills.sh), with boxName bound to this box's
-# FLEET_STANDING_BOX_SLUG, and replace the existing section in place.
-#
-# SINGLE SOURCE OF TRUTH. The template is authoritative. This script renders it;
-# so does the standalone stamp-rescue-escalation-section.sh in the Rescue
-# Rangers role library. Neither carries its own copy of the prose. Editing the
-# template is the only way to change what boxes are taught.
-#
-# CONTRACT.
-#   - Marker PAIR <!-- RESCUE_ESCALATION_BOXNAME_V1 --> / <!-- END ... -->,
-#     the same convention every other block in this script uses, so a re-stamp
-#     REPLACES rather than appends. (This script has re-appended unmarked blocks
-#     up to 8x on a single box; the pair is what prevents that.)
-#   - Idempotent BY CONTENT: re-render, compare, write only on a real diff.
-#     A second run is a no-op even though the marker is already present, and a
-#     hand-edited boxName is repaired on the next roll. Self-healing, not
-#     one-shot.
-#   - PRESERVES per-box identity. clientName / agentName / boxType / returnTo
-#     are harvested from whatever is already in the box's section and carried
-#     forward verbatim. Only boxName is asserted from FLEET_STANDING_BOX_SLUG.
-#     A fleet roll therefore cannot downgrade identity a per-box propagation run
-#     already wrote.
-#   - NEVER CREATES a section. A box with no escalation section is left alone
-#     and logged as a wiring gap: creating one needs roster data this script
-#     does not have, and the operator box deliberately has no such section.
-#     Section creation stays with propagate-rescue-webhook.sh /
-#     stamp-rescue-escalation-section.sh.
-#   - FAIL-OPEN everywhere: no slug, no template, no section, parse error or
-#     write error => log and skip WITHOUT writing the marker, so a later roll
-#     retries. This step can never fail a roll.
-# Spec: scripts/fleet-standing/NEW-BOX-WIRING.md §2.
-#
-# R7 (2026-08-11): marker bumped V1 -> V2 for the one-line `LOOP:` routing
-# addition to the template (see rescue-escalation-section.md.tpl). A box
-# still carrying the V1 marker pair is found via the "replace" branch below
-# on its next roll (V1 start/end still matched there); a box with no marker
-# at all still upgrades via the "upgrade" (bare-heading) branch. Either path
-# lands the box on V2. Content-diff idempotency means a version bump was not
-# strictly required for THIS change to propagate -- it is done anyway so the
-# faster "replace" path (rather than the heading-regex "upgrade" fallback)
-# stays the steady-state path on every future roll, not a permanent detour.
-RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
+# WHAT. scripts/stamp-rescue-escalation.py (shipped beside this script, and
+# also run by install.sh) renders scripts/rescue-escalation-section.md.tpl --
+# the single source of truth -- and:
+#   - V4 marker pair present      -> re-render in place; identical = no-op.
+#   - V1-V3 / unmarked section     -> upgrade in place (stale opening marker
+#                                     and the V3 tail section consumed).
+#   - no section, CLIENT box       -> back up AGENTS.md (timestamped .bak next
+#                                     to it) and INSERT the section after the
+#                                     first top-level block, far below the
+#                                     150,000-char bootstrap target, never
+#                                     inside another marker pair or code fence.
+#   - no section, OPERATOR box     -> skipped (IS_OPERATOR_BOX / OPERATOR_BOX,
+#                                     or the N8N_API_KEY signal 5k uses).
+# The section tells the agent to run scripts/rr-escalate.sh, which resolves
+# the box slug, client, agent and secret at SEND time -- so a box whose
+# FLEET_STANDING_BOX_SLUG is not seeded yet still gets the section (the script
+# refuses loudly until the slug exists instead of the agent improvising).
+# Idempotent (marker-guarded, content-compared, flock-serialized) and
+# FAIL-OPEN: any problem is logged and the roll continues.
 RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
+RESCUE_ESC_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/stamp-rescue-escalation.py"
 
 if [ ! -f "$AGENTS_FILE" ]; then
-  echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — no AGENTS.md at $AGENTS_FILE"
-elif [ ! -f "$RESCUE_ESC_TPL" ]; then
-  echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — template not found beside this script ($RESCUE_ESC_TPL); older bundle, next roll retries"
+  echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 skipped — no AGENTS.md at $AGENTS_FILE"
+elif [ ! -f "$RESCUE_ESC_TPL" ] || [ ! -f "$RESCUE_ESC_PY" ]; then
+  echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 skipped — template or stamper not found beside this script; older bundle, next roll retries"
 else
-  # Resolve the canonical slug exactly the way update-skills.sh's
-  # FLEET-STANDING-GATE-V1 block does: env var first, then openclaw.json
-  # env.vars. The secrets store is deliberately NOT read — the slug is written
-  # to both by propagate-fleet-standing-gate.sh, and reading openclaw.json keeps
-  # this step away from secret material entirely.
-  _RESCUE_BOX_SLUG="${FLEET_STANDING_BOX_SLUG:-}"
-  if [ -z "$_RESCUE_BOX_SLUG" ] && [ -f "$OC_CONFIG" ]; then
-    _RESCUE_BOX_SLUG="$(python3 - "$OC_CONFIG" <<'SLUGPY' 2>/dev/null || true
-import json, sys
-try:
-    d = json.load(open(sys.argv[1], encoding="utf-8"))
-    print((((d.get("env") or {}).get("vars") or {}).get("FLEET_STANDING_BOX_SLUG", "") or "").strip())
-except Exception:
-    print("")
-SLUGPY
-)"
-  fi
-
-  if [ -z "$_RESCUE_BOX_SLUG" ]; then
-    echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — FLEET_STANDING_BOX_SLUG not seeded on this box (run propagate-fleet-standing-gate.sh; marker NOT written, next roll retries)"
-  else
-    _RESCUE_IS_VPS=0
-    [ "$OC_ROOT" = "/data/.openclaw" ] && _RESCUE_IS_VPS=1
-    _RESCUE_ESC_RESULT=""
-    _RESCUE_ESC_RESULT="$(
-      RESCUE_BOX_SLUG="$_RESCUE_BOX_SLUG" RESCUE_TPL="$RESCUE_ESC_TPL" \
-      _RESCUE_IS_VPS="$_RESCUE_IS_VPS" \
-      python3 - "$AGENTS_FILE" 2>/dev/null <<'ESCPY'
-import os, re, sys
-
-path = sys.argv[1]
-slug = os.environ["RESCUE_BOX_SLUG"]
-tpl_path = os.environ["RESCUE_TPL"]
-
-# RR-002 compatibility versioning: V2 -> V3 adds the canonical correlation
-# fields (incident_id / operation_id / attempt_id / result_digest / runtime_id)
-# to the resolution protocol. A box still carrying V2 is NOT matched by this
-# START/END pair, so it takes the `upgrade` branch below -- whose stale-marker
-# regex consumes the V2 opening tag (any V\d+) and re-renders the section, so
-# the migration is one roll and leaves no orphaned older marker behind.
-START = "<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
-END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->"
-# R7: a box still carrying the V1 marker pair falls through to the "upgrade"
-# (bare heading) branch below on its first V2 roll -- it is not matched by
-# the V2 START/END pair above, so `si == -1`, and the code takes the
-# `re.search(r'^## Escalate to Rescue Rangers...')` path instead. That path
-# replaces the whole section (V1 markers included) with the V2-rendered
-# template. Every roll after that one finds the V2 pair directly.
-
-try:
-    txt = open(path, encoding="utf-8").read()
-    tpl = open(tpl_path, encoding="utf-8").read()
-except Exception:
-    print("error"); raise SystemExit(0)
-
-# --- locate the block we own -------------------------------------------------
-# Preferred: the marker pair (previous stamp, or a per-box propagation that
-# already wrote v2). Fallback: the bare heading through the next top-level "## "
-# heading — the same boundary propagate-rescue-webhook.sh uses — which is the
-# one-time upgrade path from an unmarked section.
-si = txt.find(START)
-ei = txt.find(END)
-if si != -1 and ei != -1 and ei > si:
-    cur_start, cur_end = si, ei + len(END)
-    mode = "replace"
-    # IDEMPOTENCY DEFECT (found by tests/unit/rescue-escalation-v2-marker-bump
-    # .test.sh SCENARIO 3, reproducible on origin/main before the RR-002 bump):
-    # the template renders content BEYOND the END marker (the
-    # "## What Rescue Rangers IS + your own wiring" section). The replace
-    # branch above only covered START..END, so every re-stamp spliced the whole
-    # template back in while leaving the tail of the PREVIOUS render in place --
-    # duplicating that section on every roll. The re-stamp runs unconditionally
-    # on every fleet roll, so this accumulated silently per box. Consume the
-    # tail we ourselves rendered last time, if it is sitting right there.
-    # (No apostrophe in prose anywhere in this heredoc: it sits inside $(...),
-    # and macOS /bin/bash 3.2 then pairs a lone apostrophe and fails to parse
-    # the whole script from here on.)
-    _tpl_ei = tpl.find(END)
-    if _tpl_ei != -1:
-        _tail = tpl[_tpl_ei + len(END):]
-        if _tail and txt[cur_end:cur_end + len(_tail)] == _tail:
-            cur_end += len(_tail)
-else:
-    # R7: also consume a STALE marker-comment line of ANY version number
-    # immediately above the heading (e.g. a lingering V1 opening tag left
-    # over on the first roll after a V1->V2 bump). Without this, a version
-    # bump leaves the old opening `<!-- RESCUE_ESCALATION_BOXNAME_V1 -->`
-    # tag orphaned one line above the freshly-rendered V2 section forever --
-    # harmless to rendering, but it is dead text nobody asked for and it
-    # would keep accumulating on every future version bump. The optional
-    # group only matches this exact marker naming shape, never an unrelated
-    # HTML comment added to a box by hand.
-    m = re.search(
-        r'(?:^<!-- RESCUE_ESCALATION_BOXNAME_V\d+ -->\n)?'
-        r'^## Escalate to Rescue Rangers.*?(?=^## |\Z)',
-        txt, re.MULTILINE | re.DOTALL)
-    if not m:
-        # No section at all. Do NOT create one — see the contract above.
-        print("absent"); raise SystemExit(0)
-    cur_start, cur_end = m.start(), m.end()
-    mode = "upgrade"
-
-current = txt[cur_start:cur_end]
-
-# --- carry per-box identity forward -----------------------------------------
-def harvest(field, default):
-    mm = re.search(r'"%s"\s*:\s*"([^"]*)"' % field, current)
-    if mm and mm.group(1).strip() and not mm.group(1).startswith("<"):
-        return mm.group(1)
-    return default
-
-# boxType default from the platform this script already detected.
-default_boxtype = "VPS" if os.environ.get("_RESCUE_IS_VPS") == "1" else "Mac Mini"
-tokens = {
-    "BOX_NAME":  slug,                                   # authoritative
-    "CLIENT":    harvest("clientName", slug),
-    "AGENT":     harvest("agentName", "main"),
-    "BOX_TYPE":  harvest("boxType", default_boxtype),
-    "RETURN_TO": harvest("returnTo", ""),
-}
-
-rendered = tpl
-for k, v in tokens.items():
-    rendered = rendered.replace("{{%s}}" % k, v)
-if re.search(r'\{\{[A-Z_]+\}\}', rendered):
-    # An unrendered token would teach the box a literal {{...}} — refuse.
-    print("unrendered"); raise SystemExit(0)
-rendered = rendered.rstrip("\n") + "\n"
-
-if current.rstrip("\n") + "\n" == rendered:
-    print("noop"); raise SystemExit(0)
-
-out = txt[:cur_start] + rendered + txt[cur_end:]
-tmp = path + ".tmp-rescue-esc"
-try:
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(out)
-    os.replace(tmp, path)
-except Exception:
-    try: os.unlink(tmp)
-    except Exception: pass
-    print("error"); raise SystemExit(0)
-
-print("%s:%d:%d" % (mode, len(current), len(rendered)))
-ESCPY
-    )" || _RESCUE_ESC_RESULT="error"
-    [ -n "$_RESCUE_ESC_RESULT" ] || _RESCUE_ESC_RESULT="error"
-    case "$_RESCUE_ESC_RESULT" in
-      replace:*)
-        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 re-stamped in $AGENTS_FILE (boxName=\"$_RESCUE_BOX_SLUG\"; ${_RESCUE_ESC_RESULT#replace:} chars old:new)" ;;
-      upgrade:*)
-        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 upgraded the unmarked escalation section in $AGENTS_FILE (boxName=\"$_RESCUE_BOX_SLUG\"; ${_RESCUE_ESC_RESULT#upgrade:} chars old:new)" ;;
-      noop)
-        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 already current in $AGENTS_FILE — no-op" ;;
-      absent)
-        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — no '## Escalate to Rescue Rangers' section on this box; not creating one (WIRING GAP for a client box: propagate the section first). Marker NOT written." ;;
-      unrendered)
-        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — template left an unrendered {{TOKEN}}; refusing to write (fail-open, next roll retries)" ;;
-      *)
-        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — could not rewrite $AGENTS_FILE (fail-open; marker NOT written, next roll retries)" ;;
-    esac
-    unset _RESCUE_ESC_RESULT
-  fi
-  unset _RESCUE_BOX_SLUG
+  _RESCUE_ESC_RESULT="$(TIMESTAMP="$TIMESTAMP" python3 "$RESCUE_ESC_PY" \
+      --agents "$AGENTS_FILE" --tpl "$RESCUE_ESC_TPL" --config "$OC_CONFIG" 2>/dev/null)" \
+    || _RESCUE_ESC_RESULT="error"
+  [ -n "$_RESCUE_ESC_RESULT" ] || _RESCUE_ESC_RESULT="error"
+  case "$_RESCUE_ESC_RESULT" in
+    replace:*)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 re-stamped in $AGENTS_FILE (${_RESCUE_ESC_RESULT#replace:} chars old:new; backup $AGENTS_FILE.bak-rescue-esc-$TIMESTAMP)" ;;
+    upgrade:*)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 upgraded the older escalation section in $AGENTS_FILE (${_RESCUE_ESC_RESULT#upgrade:} chars old:new; backup $AGENTS_FILE.bak-rescue-esc-$TIMESTAMP)" ;;
+    insert:*)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 INSERTED the missing escalation section into $AGENTS_FILE (${_RESCUE_ESC_RESULT#insert:} at-char:chars; backup $AGENTS_FILE.bak-rescue-esc-$TIMESTAMP)" ;;
+    noop)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 already current in $AGENTS_FILE — no-op" ;;
+    skipped-operator)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 skipped — operator box (no section inserted by design)" ;;
+    unrendered)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 skipped — template left an unrendered {{TOKEN}}; refusing to write (fail-open, next roll retries)" ;;
+    *)
+      echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V4 skipped — could not rewrite $AGENTS_FILE (fail-open; next roll retries)" ;;
+  esac
+  unset _RESCUE_ESC_RESULT
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then

@@ -135,10 +135,8 @@ _alert_operator() {
   if [ -z "$url" ]; then
     return 0
   fi
-  local _esc="${msg//\\/\\\\}"; _esc="${_esc//\"/\\\"}"
-  curl -s -X POST "$url" \
-    -H 'Content-Type: application/json' \
-    ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-    -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"check-company-root\",\"message\":\"${_esc}\"}" \
-    --max-time 15 >/dev/null 2>&1 || true
+  local _rr_out
+  if ! _rr_out="$(bash "$(dirname "${BASH_SOURCE[0]}")/rr-escalate.sh" --agent check-company-root --problem "$msg" 2>&1)"; then
+    echo "WARN: Rescue Rangers escalation REJECTED (rc=$?): ${_rr_out//$'\n'/ }" >&2
+  fi
 }

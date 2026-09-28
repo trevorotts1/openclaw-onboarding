@@ -87,8 +87,8 @@ the attempts and evidence.
 
 1. **Client side (the distress call).** The stuck agent POSTs a **nine-field**
    escalation to the fleet intake webhook (`RESCUE_RANGERS_WEBHOOK_URL`,
-   canonical `rr-v2-intake` on RR-01; the old `/webhook/rescue-rangers` Relay
-   path is **retired**), with `X-Rescue-Secret`. The nine fields are: `person`,
+   canonical `rr-v2-intake` on RR-01; the old Relay path is
+   **retired**), with `X-Rescue-Secret`. The nine fields are: `person`,
    `clientName`, `agentName`, `boxName`, `boxType`, `openclawVersion`, `problem`,
    `alreadyTried`, `returnTo`. The canonical instructions live in each box's
    AGENTS.md (rendered from `scripts/rescue-escalation-section.md.tpl`). Hard cap:
