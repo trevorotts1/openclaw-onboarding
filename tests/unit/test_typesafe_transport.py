@@ -93,6 +93,29 @@ class PinnedContract(unittest.TestCase):
         self.assertEqual(body["model"], "jev-1.13.0")
         self.assertEqual(ts.check_body_clean(body), [])
 
+    def test_questions_is_record_keyed_by_id(self):
+        """Endpoint contract: questions is a RECORD, not an array (422).
+
+        ``/v1/systemone`` rejects the array form with ``dict_type at
+        [body, questions]: Input should be a valid dictionary``; the array
+        shape silently fell through to OpenRouter.
+        """
+        body = ts.build_request({"s": 1},
+                                [{"id": "q1", "type": "select",
+                                  "candidates": ["a", "b"]}])
+        q = body["questions"]
+        self.assertIsInstance(q, dict)
+        self.assertEqual(list(q.keys()), ["q1"])
+        spec = q["q1"]
+        self.assertNotIn("id", spec)          # id is plumbing: the record key
+        self.assertEqual(spec["type"], "select")
+        self.assertEqual(spec["candidates"], ["a", "b"])
+
+    def test_questions_multi_and_order_preserved(self):
+        body = ts.build_request({}, [{"id": "b", "type": "score"},
+                                     {"id": "a", "type": "noul"}])
+        self.assertEqual(list(body["questions"].keys()), ["b", "a"])
+
     def test_build_request_rejects_duplicate_ids(self):
         with self.assertRaises(ValueError):
             ts.build_request({}, [{"id": "q", "type": "select"},
