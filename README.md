@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.1.98 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.71**.
+> **v25.1.98 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.72**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v25.1.98.

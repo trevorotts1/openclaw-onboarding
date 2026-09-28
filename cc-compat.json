@@ -5,7 +5,7 @@
     "minVersion": "v7.4.0",
     "maxVersion": null,
     "repo": "trevorotts1/blackceo-command-center",
-    "pinnedTag": "v7.6.71"
+    "pinnedTag": "v7.6.72"
   },
   "decisionEngine": {
     "onboardingMainSha": "48db9f54eb551086563168e38f67731e1d52b6a2",
