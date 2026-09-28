@@ -81,9 +81,13 @@ grep -q 'could not converge Command Center checkout onto the latest origin defau
   && ok "Command Center branch or deploy rollback fails the update loudly" \
   || bad "Command Center convergence/deploy failures are still advisory"
 
-grep -q 'main/update-skills.sh' "$CRON_SETUP" \
+# Since v25.1.96 the Sunday script runs the operator roll's exact path
+# (scripts/weekly-full-update.sh -> fleet-refresh.sh --local --apply, which
+# runs the root updater), never the legacy scripts/update-skills.sh.
+grep -q 'UPDATE_SCRIPT_URL=.*main/scripts/weekly-full-update.sh' "$CRON_SETUP" \
   && ! grep -q 'UPDATE_SCRIPT_URL=.*main/scripts/update-skills.sh' "$CRON_SETUP" \
-  && ok "Sunday restart script downloads the root updater" \
+  && grep -q 'fleet-refresh.sh" --local --apply' "$(dirname "$CRON_SETUP")/weekly-full-update.sh" \
+  && ok "Sunday restart script runs the full update (weekly-full-update.sh -> fleet-refresh --local --apply)" \
   || bad "Sunday restart script points at the legacy updater"
 grep -q '_UPDATE_RC=\$?' "$CRON_SETUP" \
   && grep -q 'exit "\$_UPDATE_RC"' "$CRON_SETUP" \
