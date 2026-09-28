@@ -1,0 +1,65 @@
+name: no-backup-copies-guard
+
+# Guards NO-SKILLS-BACKUP-COPY-V1: no full copies of the skills folder or of the
+# onboarding repo in any backup, and a working way back from every update.
+#
+#   update-skills.sh used to write a full skills-backup-<ts> copy of the skills folder
+#   (hundreds of MB) on every update. It now records the previous commit plus a small
+#   patch of the box's own changes (scripts/skills-rollback.sh) and restores from git.
+#   The Back Yourself Up full backup used to copy the whole skills folder; it now
+#   records the installed version and copies only the box's own custom skills.
+#
+# ANTI-FALSE-POSITIVE CONTROLS: a real full copy must FAIL the no-copy predicate, and a
+# box with no content manifest must still get its whole skills folder backed up (a
+# "fix" that simply backs up nothing must not pass).
+#
+# Hermetic: local file:// origin and fixture HOMEs in a tempdir. No network, no box.
+#
+# Security note: this workflow consumes only repo file content (no untrusted GitHub
+# event fields), so there is no injection surface in the run: blocks.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/skills-rollback.sh"
+      - "update-skills.sh"
+      - "02-back-yourself-up-protocol/scripts/full-backup.sh"
+      - "tests/unit/skills-rollback-no-copy.test.sh"
+      - "tests/unit/full-backup-no-repo-skills-copy.test.sh"
+      - ".github/workflows/no-backup-copies-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/skills-rollback.sh"
+      - "update-skills.sh"
+      - "02-back-yourself-up-protocol/scripts/full-backup.sh"
+      - "tests/unit/skills-rollback-no-copy.test.sh"
+      - "tests/unit/full-backup-no-repo-skills-copy.test.sh"
+      - ".github/workflows/no-backup-copies-guard.yml"
+
+jobs:
+  no-backup-copies-guard:
+    name: No full copies of skills/onboarding in backups; rollback still works
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/skills-rollback.sh
+          bash -n 02-back-yourself-up-protocol/scripts/full-backup.sh
+          bash -n tests/unit/skills-rollback-no-copy.test.sh
+          bash -n tests/unit/full-backup-no-repo-skills-copy.test.sh
+          echo "syntax OK"
+
+      - name: Updater records a no-copy rollback that restores
+        shell: bash
+        run: bash tests/unit/skills-rollback-no-copy.test.sh
+
+      - name: Full backup copies only the box's own skills
+        shell: bash
+        run: bash tests/unit/full-backup-no-repo-skills-copy.test.sh

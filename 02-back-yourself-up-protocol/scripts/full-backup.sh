@@ -137,8 +137,36 @@ copy_if_present "bin"                  "$HOME/clawd/bin"                 "$NEW_B
 copy_if_present "scripts"              "$HOME/clawd/scripts"             "$NEW_BACKUP/scripts/"
 copy_if_present "tools"                "$HOME/clawd/tools"               "$NEW_BACKUP/scripts/"
 
-# ── Step 8: Copy Skills ─────────────────────────────────────────────────────
-copy_if_present "installed skills"     "$HOME/.openclaw/skills"          "$NEW_BACKUP/skills/"
+# ── Step 8: Record Skills (copy only the box's own) ─────────────────────────
+# The onboarding skills are files from one commit of a public GitHub repo and are
+# re-installed from it, so copying them into every backup only duplicated hundreds of
+# MB. Record which version/commit is installed, and copy only the skills the repo does
+# NOT own: the box's own custom skills. Without a content manifest there is no record
+# of what the repo owns, so the whole folder is still copied.
+SK="$HOME/.openclaw/skills"
+MANIFEST="$SK/.onboarding-content-manifest.json"
+if [ ! -d "$SK" ]; then
+    echo "  --   installed skills: not present on this box (skipped)"
+elif [ ! -f "$MANIFEST" ]; then
+    copy_if_present "installed skills (no manifest: full copy)" "$SK" "$NEW_BACKUP/skills/"
+else
+    for f in .onboarding-version .onboarding-content-manifest.json; do
+        [ -f "$SK/$f" ] || continue
+        cp "$SK/$f" "$NEW_BACKUP/skills/" || record_failure "skills record: copy FAILED ($f)"
+    done
+    REPO_SKILLS="$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1])).get("skills", {})))' "$MANIFEST" 2>/dev/null)"
+    CUSTOM_COUNT=0
+    for d in "$SK"/*/; do
+        [ -d "$d" ] || continue
+        n="$(basename "$d")"
+        case "$n" in shared-utils|universal-sops) continue ;; esac
+        printf '%s\n' "$REPO_SKILLS" | grep -qxF -- "$n" && continue
+        # a clone of the onboarding repo itself is re-cloneable, not the box's own work
+        case "$(git -C "$d" config --get remote.origin.url 2>/dev/null)" in *trevorotts1/openclaw-onboarding*) continue ;; esac
+        copy_if_present "custom skill $n" "${d%/}" "$NEW_BACKUP/skills/" && CUSTOM_COUNT=$((CUSTOM_COUNT + 1))
+    done
+    echo "  ok   skills recorded: onboarding $(head -1 "$SK/.onboarding-version" 2>/dev/null || echo unknown), $CUSTOM_COUNT custom skill(s) copied, repo skills re-installed from GitHub"
+fi
 
 # ── Step 9: Export Cron Jobs ────────────────────────────────────────────────
 if command -v openclaw >/dev/null 2>&1 && openclaw cron list > "$NEW_BACKUP/cron-jobs-export.txt" 2>&1; then
@@ -154,7 +182,7 @@ if [ -d "$HOME/clawd/projects" ]; then
     if rsync -a \
         --exclude='node_modules/' --exclude='.git/' --exclude='__pycache__/' \
         --exclude='.cache/' --exclude='cache/' --exclude='tmp/' --exclude='temp/' \
-        --exclude='.DS_Store' \
+        --exclude='.DS_Store' --exclude='openclaw-onboarding/' \
         --exclude='*.mp4' --exclude='*.mov' --exclude='*.avi' --exclude='*.mkv' \
         --exclude='*.webm' --exclude='*.mp3' --exclude='*.wav' --exclude='*.aac' \
         --exclude='*.flac' --exclude='*.log' \
