@@ -205,13 +205,16 @@ def ingest_producer_bundle(envelope, *, company_id, catalog_version,
 def parts_to_bundle(parts) -> dict:
     """Map validated D20 parts into D02 task_personas rows. Raises.
 
-    Every part is validated by the REAL D20 ``validate_part``; per-part
-    scope_id/seq/goal/conversion_goal travel as additive row extensions
-    (``scope_id``/``goal``/``conversion_goal`` keys plus ``why``/``part``
-    provenance strings). The first non-empty conversion_goal seeds the
-    bundle ``conversion_goal``/``resolved_goal.value`` (D02 "empty when
-    unresolved"). The emitted bundle revalidates clean through the REAL
-    D02 ``validate_persona_bundle``. Returns ``{envelope, bundle}``.
+    Every part is validated by the REAL D20 ``validate_part``; EVERY
+    caller-supplied part field (``scope_id``/``seq``/``goal``/
+    ``conversion_goal``/``kind``/``source``/``consumed_hints``) travels as
+    additive row extensions verbatim (plus ``why``/``part`` provenance
+    strings), so each field round-trips exactly (A26). The first non-empty
+    conversion_goal seeds the bundle ``conversion_goal``/
+    ``resolved_goal.value`` (D02 "empty when unresolved", value kept
+    verbatim — no coercive strip). The emitted bundle revalidates clean
+    through the REAL D02 ``validate_persona_bundle``. Returns
+    ``{envelope, bundle}``.
     """
     if not isinstance(parts, (list, tuple)):
         raise ValueError(
@@ -259,9 +262,16 @@ def parts_to_bundle(parts) -> dict:
             "no_persona_required": False,
             "governance_persona_id": None,
             "task_category": template_category,
+            # A26 additive row extensions: EVERY caller-supplied part field
+            # (spec 8.9/8.10/10.2) travels verbatim on its own row — kind and
+            # source and consumed_hints included, same carry convention as
+            # the D20 emit path (parts/__init__.py).
             "scope_id": part["scope_id"],
             "goal": part["goal"],
             "conversion_goal": part["conversion_goal"],
+            "kind": part["kind"],
+            "source": part["source"],
+            "consumed_hints": list(part["consumed_hints"]),
         })
     bundle = copy.deepcopy(carrier["personaBundle"])
     bundle["task_personas"] = sorted(rows, key=lambda r: r["seq"])
@@ -270,7 +280,6 @@ def parts_to_bundle(parts) -> dict:
          if isinstance(p.get("conversion_goal"), str)
          and p["conversion_goal"].strip()),
         "")
-    resolved = resolved.strip()
     bundle["conversion_goal"] = resolved
     rg = bundle.get("resolved_goal")
     if isinstance(rg, dict):

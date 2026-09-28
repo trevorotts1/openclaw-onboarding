@@ -314,6 +314,11 @@ def emit_bundle_scope_goal(parts) -> dict:
       ``why`` provenance string, and its ``part_id`` as the row ``part``
       label — no redefinitions of D02 field lists anywhere in this
       function (D02 field names come from the REAL schema/validators);
+    - every caller-supplied part field (``kind``, ``source``, ``scope_id``,
+      ``goal``, ``conversion_goal``, ``consumed_hints``) additionally
+      travels on its own row as a verbatim additive extension, so the row
+      round-trips each field exactly (spec 8.9/8.10/10.2; A26) rather than
+      only as a repr-escaped copy inside ``why`` prose;
     - the propagated ``goal`` values are recorded verbatim on the rows
       (``why``/``part`` provenance), and the first non-empty propagated
       ``conversion_goal`` seeds the bundle ``conversion_goal`` /
@@ -364,6 +369,17 @@ def emit_bundle_scope_goal(parts) -> dict:
             "no_persona_required": False,
             "governance_persona_id": None,
             "task_category": template_category,
+            # A26 round-trip carry (spec 8.9/8.10/10.2): every caller-supplied
+            # part field travels on its own row VERBATIM — a repr-escaped copy
+            # inside ``why`` prose is not a round trip. Additive extensions:
+            # the D02 validators accept unknown row keys and ``normalize_bundle``
+            # preserves them (producer rows already carry the scope/goal trio).
+            "kind": part["kind"],
+            "source": part["source"],
+            "scope_id": part["scope_id"],
+            "goal": part["goal"],
+            "conversion_goal": part["conversion_goal"],
+            "consumed_hints": list(part["consumed_hints"]),
         })
     bundle = copy.deepcopy(carrier["personaBundle"])
     bundle["task_personas"] = sorted(rows, key=lambda r: r["seq"])
@@ -372,7 +388,7 @@ def emit_bundle_scope_goal(parts) -> dict:
          if isinstance(p.get("conversion_goal"), str)
          and p["conversion_goal"].strip()),
         "",
-    ).strip()
+    )
     bundle["conversion_goal"] = resolved
     rg = bundle.get("resolved_goal")
     if isinstance(rg, dict):

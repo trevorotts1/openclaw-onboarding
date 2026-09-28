@@ -329,6 +329,43 @@ class PerPartExtensions(unittest.TestCase):
         ok, errs = de.validate_envelope(out["envelope"])
         self.assertTrue(ok, errs)
 
+    def test_every_part_field_carries_verbatim_on_its_row(self):
+        # A26: producer rows carry EVERY caller-supplied part field verbatim
+        # (kind/source/consumed_hints included, same carry convention as the
+        # D20 emit path) and the emitted bundle revalidates clean.
+        p = _part(
+            part_id="part-α1",
+            kind="agent_task",
+            source="campaign_manifest",
+            scope_id="scope:beta/2026",
+            goal='send "first touch" —\tquoted',
+            conversion_goal="book a call",
+            consumed_hints=["hint-a", "hint-b"],
+        )
+        out = prod.parts_to_bundle([p])
+        row = out["bundle"]["task_personas"][0]
+        for key, want in (
+            ("part", p["part_id"]),
+            ("seq", p["seq"]),
+            ("kind", p["kind"]),
+            ("source", p["source"]),
+            ("scope_id", p["scope_id"]),
+            ("goal", p["goal"]),
+            ("conversion_goal", p["conversion_goal"]),
+            ("consumed_hints", p["consumed_hints"]),
+        ):
+            self.assertEqual(row[key], want, f"row lost/changed {key}")
+        ok, errs = de.validate_persona_bundle(
+            out["bundle"], company_id=COMPANY)
+        self.assertTrue(ok, errs)
+
+    def test_goal_whitespace_never_coerced(self):
+        # spec 8.11: no silent coercion of explicit goal values.
+        out = prod.parts_to_bundle([_part(conversion_goal="  book a call  ")])
+        self.assertEqual(out["bundle"]["conversion_goal"], "  book a call  ")
+        self.assertEqual(out["bundle"]["resolved_goal"]["value"],
+                         "  book a call  ")
+
     def test_bad_part_raises_through_real_d20_validator(self):
         with self.assertRaises(ValueError):
             prod.parts_to_bundle([_part(source="jev_generated")])
