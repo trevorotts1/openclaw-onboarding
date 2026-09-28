@@ -140,6 +140,10 @@ def get_openclaw_paths() -> dict:
     legacy_company_roots = []
     if platform == "vps":
         legacy_company_roots.append(Path("/data/clawd/zero-human-company"))
+    # Boxes whose workforce was built under the workspace itself
+    # (workspace/zero-human-company/<slug>/): company-config.json and
+    # departments.json were then resolved to flat workspace paths that do not exist.
+    legacy_company_roots.append(workspace / "zero-human-company")
 
     # --- derived paths ---
     # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/

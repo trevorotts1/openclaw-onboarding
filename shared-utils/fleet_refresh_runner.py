@@ -1948,28 +1948,37 @@ def _resolve_provisioning_paths(paths: dict) -> dict:
     # company_dir: the active <slug>/ under company_root. Prefer an explicit key;
     # else pick the first child dir that actually carries a company-config.json or
     # departments.json (mirrors resolve_active_company_dir's "real workforce" pick).
+    # A box can keep its workforce under workspace/zero-human-company/<slug>/
+    # while get_openclaw_paths() points at a flat workspace/departments.json
+    # that does not exist (DEPARTMENTS then failed falsely on a box with 30).
+    # Prefer a <slug>/ that carries both files, then one carrying either.
     company_dir = paths.get("company_dir")
     if company_dir:
         company_dir = Path(company_dir)
     else:
         company_dir = None
-        try:
-            if company_root.is_dir():
-                for child in sorted(company_root.iterdir()):
-                    if child.is_dir() and (
-                        (child / "company-config.json").is_file()
-                        or (child / "departments.json").is_file()
-                    ):
-                        company_dir = child
-                        break
-        except OSError:
-            company_dir = None
+        children = []
+        for root in dict.fromkeys((company_root, workspace / "zero-human-company")):
+            try:
+                if root.is_dir():
+                    children += [c for c in sorted(root.iterdir()) if c.is_dir()]
+            except OSError:
+                pass
+        def has(c, n):
+            return (c / n).is_file()
+        for need in (2, 1):
+            company_dir = next((c for c in children
+                                if has(c, "company-config.json") + has(c, "departments.json") >= need), None)
+            if company_dir:
+                break
 
     def _pick(key: str, rel: str) -> Path:
         v = paths.get(key)
-        if v:
+        if v and Path(v).exists():
             return Path(v)
-        return (company_dir / rel) if company_dir else (workspace / rel)
+        if company_dir:
+            return company_dir / rel
+        return Path(v) if v else (workspace / rel)
 
     coaching_personas = Path(
         paths.get("coaching_personas") or (workspace / "data" / "coaching-personas")

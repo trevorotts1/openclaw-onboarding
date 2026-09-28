@@ -878,6 +878,47 @@ class BillingHoldIsNotAFailure(unittest.TestCase):
             self.assertIn("ERROR: bootstrap could not source X", res.steps["pull-onboarding"])
 
 
+class ProvisioningPathsPreferTheRealCompanyDir(unittest.TestCase):
+    def test_zhc_slug_dir_wins_over_a_missing_flat_departments_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            ws = Path(td, "workspace")
+            slug = ws / "zero-human-company" / "some-company"
+            slug.mkdir(parents=True)
+            (slug / "departments.json").write_text("[]")
+            (slug / "company-config.json").write_text("{}")
+            got = fr._resolve_provisioning_paths({
+                "workspace": ws, "company_root": Path(td, "master-files", "zero-human-company"),
+                "company_dir": None, "departments_json": ws / "departments.json",
+                "company_config": ws / "company-config.json"})
+            self.assertEqual(got["departments_json"], slug / "departments.json")
+            self.assertEqual(got["zhc_company_config"], slug / "company-config.json")
+
+    def test_get_openclaw_paths_finds_a_workspace_zhc_company(self):
+        # persona-selector and every other get_openclaw_paths() reader had the same
+        # flat-path assumption for company-config.json.
+        with tempfile.TemporaryDirectory() as td:
+            slug = Path(td, ".openclaw", "workspace", "zero-human-company", "some-company")
+            slug.mkdir(parents=True)
+            (slug / "company-config.json").write_text("{}")
+            out = subprocess.run(
+                [sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import detect_platform as d; "
+                 "p = d.get_openclaw_paths(); print(p['company_config']); print(p['departments_json'])",
+                 str(REPO / "shared-utils")],
+                capture_output=True, text=True, env={**os.environ, "HOME": td, "OPENCLAW_PLATFORM": "",
+                                                     "MASTER_FILES_DIR": "", "OPENCLAW_COMPANY_SLUG": ""})
+            self.assertEqual(out.stdout.split(), [str(slug / "company-config.json"), str(slug / "departments.json")],
+                             out.stderr)
+
+    def test_an_existing_flat_file_still_wins(self):
+        with tempfile.TemporaryDirectory() as td:
+            ws = Path(td, "workspace")
+            ws.mkdir()
+            (ws / "departments.json").write_text("[]")
+            got = fr._resolve_provisioning_paths({"workspace": ws, "company_dir": None,
+                                                 "departments_json": ws / "departments.json"})
+            self.assertEqual(got["departments_json"], ws / "departments.json")
+
+
 class LoadWarning(unittest.TestCase):
     def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
         for load, expect in ((25.0, True), (3.0, False)):
