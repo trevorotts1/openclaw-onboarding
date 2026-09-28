@@ -26,14 +26,20 @@ Run:
 """
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import json
+import shutil
 import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+# Every temp file/dir this test makes lands in one sandbox, removed at exit (pass or fail).
+tempfile.tempdir = tempfile.mkdtemp(prefix="onb-test-")
+atexit.register(shutil.rmtree, tempfile.tempdir, True)
 
 _HERE = Path(__file__).parent
 _REPO_ROOT = _HERE.parent.parent

@@ -39,6 +39,7 @@ PASS=0
 FAIL=0
 TMPDIR_TEST="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
+export TMPDIR="$TMPDIR_TEST"  # embedded python mkdtemp() calls land inside the trapped dir
 
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
