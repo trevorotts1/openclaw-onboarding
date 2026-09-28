@@ -282,6 +282,13 @@ RUNNER_FLAGS=""
 # the boxes that happen to start (or self-sync) after it.
 ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
 [ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
+# Same for the Command Center: pull-cc and update.sh deploy this commit, not a
+# main that moved after the roll started.
+ROLL_CC_SHA=$(git ls-remote "${FLEET_ROLL_CC_REPO_URL:-https://github.com/trevorotts1/blackceo-command-center.git}" refs/heads/main 2>/dev/null | cut -f1)
+if [ -n "$ROLL_CC_SHA" ]; then
+  export CC_UPDATE_TARGET="$ROLL_CC_SHA"
+  echo "[fleet-refresh] Rolling Command Center main at ${ROLL_CC_SHA:0:12}"
+fi
 
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"
@@ -555,7 +562,8 @@ export FLEET_PREV_ONBOARDING_SHA=$(sq "${prev_sha#-}")
   [ -n "$container" ] && [ $APPLY -eq 1 ] && extra="--host-restart"
   runner_cmd() {   # $1 = shell prefix, $2 = extra runner flags
     printf '%s' "trap '' HUP
-${1}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+${1}${CC_UPDATE_TARGET:+export CC_UPDATE_TARGET=$CC_UPDATE_TARGET
+}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
 rm -f \"\$O\"
 python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS $2 > \"\$O\" 2> \"\$E\"
 rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"

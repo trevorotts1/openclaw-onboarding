@@ -791,6 +791,26 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             self.assertEqual(marker.read_text().strip(), "target-updater")
             self.assertTrue((live / "new.txt").is_file())
 
+    def test_pull_cc_deploys_the_rolls_commit_not_a_later_main(self):
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        with tempfile.TemporaryDirectory() as td:
+            origin = new_repo(Path(td, "origin"))
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}), "update.sh": "exit 0\n"}, "old")
+            live = Path(td, "live")
+            subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                            "update.sh": 'git merge -q --ff-only "${CC_UPDATE_TARGET:-origin/main}"\n'}, "roll")
+            roll = git(origin, "rev-parse", "HEAD")
+            commit(origin, {"later.txt": "merged mid-roll"}, "later")
+            res = fr.BoxResult("t", dry_run=False)
+            import cc_runtime_preflight
+            with mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"), \
+                 mock.patch.dict(os.environ, {"CC_UPDATE_TARGET": roll}):
+                fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(git(live, "rev-parse", "HEAD"), roll)
+
     def test_a_tag_only_clone_still_sees_the_latest_main(self):
         # A client Command Center cloned with a single-tag refspec: a bare
         # `git fetch origin main` never moves origin/main, and the floor check then

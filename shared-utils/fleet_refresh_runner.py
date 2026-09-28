@@ -1033,8 +1033,12 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
             check=True, capture_output=True, timeout=60,
         )
 
+        # CC_UPDATE_TARGET: the roll's Command Center commit, resolved once by
+        # fleet-refresh.sh, so a merge landing mid-roll never reaches the boxes
+        # that update after it. Exported, so update.sh honours it too.
+        target_ref = os.environ.get("CC_UPDATE_TARGET", "").strip() or "origin/main"
         target = subprocess.run(
-            ["git", "-C", str(cc_dir), "show", "origin/main:package.json"],
+            ["git", "-C", str(cc_dir), "show", f"{target_ref}:package.json"],
             check=True, capture_output=True, text=True, timeout=10,
         )
         assert_cc_package(json.loads(target.stdout))
@@ -1047,7 +1051,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
             if branch.returncode != 0 or branch.stdout.strip() != "main":
                 return False
             ancestry = subprocess.run(
-                ["git", "-C", str(cc_dir), "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+                ["git", "-C", str(cc_dir), "merge-base", "--is-ancestor", target_ref, "HEAD"],
                 capture_output=True, timeout=10,
             )
             return ancestry.returncode == 0
@@ -1064,7 +1068,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
             # Run origin/main's updater, not the live checkout's: the target's
             # update.sh builds beside the running release and promotes it
             # (zero-downtime), so the live tree is never moved before the build.
-            target = subprocess.run(["git", "-C", str(cc_dir), "show", "origin/main:update.sh"],
+            target = subprocess.run(["git", "-C", str(cc_dir), "show", f"{target_ref}:update.sh"],
                                     capture_output=True, text=True, timeout=30)
             with tempfile.NamedTemporaryFile("w", suffix="-cc-update.sh", delete=False) as fh:
                 fh.write(target.stdout if target.returncode == 0 and target.stdout else updater.read_text())
