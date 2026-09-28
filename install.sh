@@ -3956,6 +3956,35 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
         success "decision core verified in $SKILLS_DIR/shared-utils (JEV D27: contracts/policies/ladder/providers)"
     fi
     unset _D27_MISSING _D27_REL
+
+    # >>> DECISION-MODE-PRESERVE-BEGIN  (A62 clause 4)
+    # A62: "Explicit modes survive install/update." The store is
+    # $OC_CONFIG/decision-engine-mode.conf (one word: auto|shadow|legacy|off)
+    # and NO step in this repo writes it — that absence IS the preservation
+    # guarantee, because there is no release-default write for an explicit
+    # client value to lose to. What was missing was a RECEIPT: nothing proved
+    # an explicit off/legacy/shadow reached the installed core, so a box could
+    # run the release default for its whole life with every gate green. This
+    # step runs INSIDE the shared-utils block, after the canonical core is
+    # verified above, and asks the SAME authority the decision core uses
+    # (decision_engine.modes) rather than re-implementing the merge. A CORRUPT
+    # value is never rewritten and never silently absorbed by the default.
+    # NON-FATAL by design: a mode-store typo must not abort fleet install
+    # (see update-skills.sh for the enforcing side). rc 2 = unprovable receipt,
+    # which is reported as such and never as a pass.
+    if [ -f "$ONBOARDING_DIR/scripts/decision-engine-mode.py" ]; then
+        _DEM_RC=0
+        python3 "$ONBOARDING_DIR/scripts/decision-engine-mode.py" \
+            --shared-utils "$SKILLS_DIR/shared-utils" \
+            --oc-config "$OC_CONFIG" --assert-preserved || _DEM_RC=$?
+        case "$_DEM_RC" in
+            0) : ;;
+            1) warn "decision-engine mode store is CORRUPT — see the ACTION above. No file was written; the box keeps running the stored value until you fix it." ;;
+            *) warn "decision-engine mode receipt could not be produced (rc=$_DEM_RC) — the canonical modes module was not loadable from $SKILLS_DIR/shared-utils. An UNPROVEN receipt is not a pass." ;;
+        esac
+        unset _DEM_RC
+    fi
+    # <<< DECISION-MODE-PRESERVE-END
 fi
 
 # v14.24.0: Install universal-sops/ SOP cluster (Skills 47/48 source tree).
