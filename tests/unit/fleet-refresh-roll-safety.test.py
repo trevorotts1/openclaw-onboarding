@@ -919,6 +919,35 @@ class ProvisioningPathsPreferTheRealCompanyDir(unittest.TestCase):
             self.assertEqual(got["departments_json"], ws / "departments.json")
 
 
+class RefreshStaleRolesNeverInventsABuild(unittest.TestCase):
+    """On a box with no interview, the roll's role refresh created a roles-only
+    .workforce-build-state.json the interview crons then read as a build."""
+
+    def load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "refresh_stale_roles", REPO / "23-ai-workforce-blueprint/scripts/refresh-stale-roles.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_no_state_file_is_not_created(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as td:
+            self.assertTrue(mod._apply_state_restamps(Path(td), {}, {}, {"d/r": {"source_content_sha": "x"}}))
+            self.assertFalse(Path(td, ".workforce-build-state.json").exists())
+
+    def test_an_existing_state_file_is_still_restamped(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td, ".workforce-build-state.json")
+            f.write_text(json.dumps({"interviewComplete": True}))
+            self.assertTrue(mod._apply_state_restamps(Path(td), {}, {}, {"d/r": {"source_content_sha": "x"}}))
+            d = json.loads(f.read_text())
+            self.assertTrue(d["interviewComplete"])
+            self.assertEqual(d["artifactProvenance"]["roles"]["d/r"]["source_content_sha"], "x")
+
+
 class LoadWarning(unittest.TestCase):
     def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
         for load, expect in ((25.0, True), (3.0, False)):
