@@ -2256,6 +2256,26 @@ def cmd_signature(args) -> int:
     turn-gate. The old escape hatch that dumped the full payload is gone."""
     run_dir = args.run_dir.expanduser().resolve()
 
+    # Fix 7 (C1): --signature combined with the STANDARD-mode --next / --answer
+    # flags is a caller error -- the signature turn-gate is --sig-next /
+    # --sig-answer. Fail closed with a message naming the right flag instead of
+    # silently ignoring the legacy flag (old behavior: exit 0, answer dropped).
+    if getattr(args, 'next', False):
+        print(json.dumps({
+            "status": "error",
+            "message": "with --signature, use --sig-next (not --next): "
+                       "deck-intake-driver.py --run-dir <RUN_DIR> --signature --sig-next",
+        }))
+        return 2
+    if getattr(args, 'answer', None):
+        print(json.dumps({
+            "status": "error",
+            "message": "with --signature, use --sig-answer ID TEXT (not --answer): "
+                       "deck-intake-driver.py --run-dir <RUN_DIR> --signature "
+                       '--sig-answer <ID> "<TEXT>"',
+        }))
+        return 2
+
     if getattr(args, 'sig_next', False):
         return _sig_next(run_dir)
     if getattr(args, 'sig_answer', None):
@@ -3743,14 +3763,92 @@ def cmd_style_pick(args) -> int:
     return 0
 
 
+def cmd_selftest() -> int:
+    """Fix 7 (D1) --selftest: exercise the canonical --sig-* turn-gate offline.
+
+    Runs in a temp run dir, in-process. Exits 0 on pass, 1 on failure.
+    """
+    import io
+    import tempfile
+    from contextlib import redirect_stdout
+
+    failures = []
+
+    def check(name, cond, detail=""):
+        if cond:
+            print(f"[selftest] PASS: {name}")
+        else:
+            print(f"[selftest] FAIL: {name} {detail}")
+            failures.append(name)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rd = str(tmpdir)
+
+        # 1. --signature --sig-next returns the choice-first question.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--sig-next"])
+        try:
+            out = json.loads(buf.getvalue())
+        except (json.JSONDecodeError, ValueError):
+            out = {}
+        check("--sig-next exits 0", rc == 0, f"rc={rc}")
+        check("--sig-next returns sp_mode choice-first",
+              out.get("question_id") == "sp_mode", f"out={buf.getvalue()[:200]}")
+
+        # 2. --signature --sig-answer records the choice.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--sig-answer",
+                       "sp_mode", "QUICK"])
+        check("--sig-answer exits 0", rc == 0, f"rc={rc}")
+
+        # 3. Legacy --signature --next is rejected (non-zero, names --sig-next).
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--next"])
+        check("--signature --next exits non-zero", rc != 0, f"rc={rc}")
+        check("--signature --next names --sig-next",
+              "--sig-next" in buf.getvalue(), f"out={buf.getvalue()[:200]}")
+
+        # 4. Legacy --signature --answer is rejected (non-zero, names --sig-answer).
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--answer",
+                       "sp_mode", "QUICK"])
+        check("--signature --answer exits non-zero", rc != 0, f"rc={rc}")
+        check("--signature --answer names --sig-answer",
+              "--sig-answer" in buf.getvalue(), f"out={buf.getvalue()[:200]}")
+
+        # 5. Bare --signature still returns the use_turn_gate pointer.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature"])
+        try:
+            out = json.loads(buf.getvalue())
+        except (json.JSONDecodeError, ValueError):
+            out = {}
+        check("bare --signature exits 0", rc == 0, f"rc={rc}")
+        check("bare --signature returns use_turn_gate pointer",
+              out.get("status") == "use_turn_gate", f"out={buf.getvalue()[:200]}")
+
+    if failures:
+        print(f"[selftest] FAILED: {failures}", file=sys.stderr)
+        return 1
+    print("[selftest] ALL PASS")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="deck-intake-driver.py",
         description="THE ONE sanctioned intake bridge for Presentations. "
                     "Writes deck_type via derive_legacy_fields() -- never "
                     "hardcoded, never hand-typed.")
-    p.add_argument("--run-dir", type=Path, required=True,
-                   help="the deck's run directory")
+    p.add_argument("--run-dir", type=Path, required=False, default=None,
+                   help="the deck's run directory (not needed for --selftest)")
+    p.add_argument("--selftest", action="store_true",
+                   help="run offline self-test in a temp dir; exits 0 on pass")
 
     # Standard mode
     std = p.add_argument_group("standard mode (one question per turn)")
@@ -3837,6 +3935,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Fix 7 (D1): offline self-test runs without --run-dir.
+    if getattr(args, "selftest", False):
+        return cmd_selftest()
 
     if not args.run_dir:
         print("FATAL: --run-dir is required", file=sys.stderr)

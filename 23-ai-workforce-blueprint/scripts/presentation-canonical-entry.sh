@@ -457,7 +457,7 @@ trace_fail() {
     echo "This gate is the intake-CONVERSATION EVIDENCE gate and has NO owner override:" >&2
     echo "the intake transcript is proof the interview was CONDUCTED, not a skippable" >&2
     echo "permission. Run the real interview (deck-intake-driver.py --signature" >&2
-    echo "  --next/--answer) so the driver writes the transcript itself." >&2
+    echo "  --sig-next/--sig-answer) so the driver writes the transcript itself." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
@@ -598,7 +598,7 @@ check_intake_trace() {
     [ "$PLAN" -eq 1 ] && return 0
     _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
     if [ ! -f "$_INT_TRACE" ]; then
-        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --sig-next/--sig-answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
     fi
     if command -v python3 >/dev/null 2>&1; then
         local _trace_bytes
@@ -614,7 +614,7 @@ print('%d' % len(raw.strip()))
 " 2>/dev/null)"
         _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
         if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
-            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
+            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --sig-next/--sig-answer/--sig-record and do NOT hand-write the transcript. No owner override for the trace."
         fi
     else
         # python3 absent: size-only fallback.
