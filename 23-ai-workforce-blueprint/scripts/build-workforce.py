@@ -115,6 +115,7 @@ _BW_SHARED_UTILS = os.path.join(
 )
 sys.path.insert(0, os.path.normpath(_BW_SHARED_UTILS))
 from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy, registry_rows as _registry_rows
+from shared_core_copy import ensure_core_copy
 try:
     from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
     _HAS_CANONICAL_SLUG = True
@@ -4664,7 +4665,7 @@ def build_from_config(config):
 
     # v10.5.1: Run v2.1 post-build augmentation - adds IDENTITY.md, SOUL.md,
     # MEMORY.md, HEARTBEAT.md, how-to.md (universal 18-section template), and
-    # AGENTS/TOOLS/USER symlinks to every role folder created above. Master
+    # AGENTS/TOOLS/USER real-file copies to every role folder created above. Master
     # Orchestrator (CEO) gets the CEO variant of the deferral clause. Idempotent.
     #
     # v10.15.4: Stream stdout/stderr live (no capture_output). Record return
@@ -5363,38 +5364,15 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(da_sop_path, 'w') as f:
             f.write(da_sop_content)
 
-    # v9.6.1: SHARED files (AGENTS.md / TOOLS.md / USER.md) are SYMLINKED,
-    # not copied. Every dept director, specialist, and sub-agent reads the
-    # SAME master file at ~/clawd/. When any agent writes to its AGENTS.md,
-    # TOOLS.md, or USER.md, the write lands in the universal file and ALL
-    # other agents pick it up on next read.
-    #
-    # Reason: prior `shutil.copy2()` was creating per-dept duplicates that
-    # diverged from the master over time, defeating the purpose of a shared
-    # operating playbook (AGENTS.md), shared tool registry (TOOLS.md), and
-    # shared owner profile (USER.md).
+    # SHARED files (AGENTS.md / TOOLS.md / USER.md) are REAL-FILE COPIES of the
+    # workspace root's canonical (N29, amended 2026-07-31). A symlink here is
+    # rejected by the runtime's workspace-root boundary guard and the dept agent
+    # silently runs on a ~107-char stub. An existing real, non-empty file is
+    # NEVER deleted or overwritten -- the updater's link_shared_core_files()
+    # refreshes it with backup + content preservation on every roll.
     for filename in INHERITED_FILES:
-        src = os.path.join(WORKSPACE_ROOT, filename)
-        dst = os.path.join(dept_dir, filename)
-        if not os.path.isfile(src):
-            continue
-        # If a stale copy or wrong symlink exists, remove it before re-linking
-        if os.path.lexists(dst):
-            # Already a correct symlink pointing to the master? Skip.
-            if os.path.islink(dst) and os.readlink(dst) == src:
-                continue
-            try:
-                os.remove(dst)
-            except OSError as e:
-                print(f"[INHERITED-FILES WARN] Could not replace {dst}: {e}", file=sys.stderr)
-                continue
-        try:
-            os.symlink(src, dst)
-        except OSError as e:
-            # Fallback to copy only if symlink unsupported (rare - Windows w/o admin)
-            print(f"[INHERITED-FILES WARN] symlink failed for {filename}: {e}; falling back to copy",
-                  file=sys.stderr)
-            shutil.copy2(src, dst)
+        ensure_core_copy(os.path.join(WORKSPACE_ROOT, filename),
+                         os.path.join(dept_dir, filename))
 
     # G5: detect CEO dept - canonical orchestrator rule is PREPENDED to its
     # MEMORY.md / SOUL.md / IDENTITY.md (NOT to AGENTS.md/TOOLS.md which are
@@ -5421,7 +5399,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
     # v10.13.23 - Create IDENTITY.md for the dept head (Trevor's agent-file
     # architecture). Per the spec: every top-level agent gets its own
     # IDENTITY/SOUL/MEMORY/HEARTBEAT; the SHARED files (USER/AGENTS/TOOLS)
-    # stay symlinked at the workspace root. Sub-agents (role folders inside
+    # are real-file copies of the workspace root (N29). Sub-agents (role folders inside
     # this dept) get their IDENTITY.md via post-build-role-workspaces.py.
     identity_path = os.path.join(dept_dir, "IDENTITY.md")
     if not os.path.isfile(identity_path):
@@ -5577,7 +5555,7 @@ def generate_identity_md(dept_id, dept_info, interview_answers):
 
     Trevor's agent-file architecture (v10.13.23): every top-level agent has
     its own IDENTITY/SOUL/MEMORY/HEARTBEAT. Sub-agents inherit. SHARED files
-    (USER/AGENTS/TOOLS) live at the workspace root and are symlinked.
+    (USER/AGENTS/TOOLS) are real-file copies of the workspace root (N29).
 
     Kept intentionally lightweight - the agent fills in its persona name and
     voice during the first conversation with the owner.
@@ -5633,9 +5611,9 @@ department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 - I back up the local OpenClaw config before any change.
 - I follow the Teach Yourself Protocol (TYP) for substantial new knowledge.
 - I investigate root cause before fixing. I never claim done without verifying.
-- I use the symlinked TOOLS.md to know what tools are available.
-- I use the symlinked AGENTS.md to know how to behave and who to escalate to.
-- I use the symlinked USER.md to know who I work for and how they communicate.
+- I use the shared TOOLS.md to know what tools are available.
+- I use the shared AGENTS.md to know how to behave and who to escalate to.
+- I use the shared USER.md to know who I work for and how they communicate.
 {production_tools_note}
 ## Persona Governance
 
@@ -6477,7 +6455,7 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         # no-slug fallback), so the folder name is byte-identical to the role-library
         # .md filename and the floor-manifest slug. It also writes the unique
         # IDENTITY/SOUL/MEMORY/HEARTBEAT files, the SOP/00-INDEX.md, and the shared
-        # AGENTS/TOOLS/USER symlinks. build-workforce then writes its EXTRA artifacts
+        # AGENTS/TOOLS/USER real-file copies. build-workforce then writes its EXTRA artifacts
         # (how-to.md from the role-library, 00-START-HERE.md, governing-personas.md,
         # and SOP stubs) INTO the engine-created role_path. role_dir/folder_name are
         # derived FROM the engine result so the two paths can never drift again.
@@ -7966,8 +7944,14 @@ def add_agent_to_config(config, dept_id, dept_info):
         for entry in normalized["agents"].pop("list"):
             entry = dict(entry)
             rid = entry.pop("id")
-            entries[rid] = entry
+            orig = config["agents"]["entries"].get(rid)
+            # An entry the registration did not change is written back as found.
+            unchanged = isinstance(orig, dict) and dict(orig, id=rid) == dict(entry, id=rid)
+            entries[rid] = orig if unchanged else entry
         normalized["agents"]["entries"] = entries
+        if "list" in config["agents"]:
+            # The box's own (empty) legacy key is left exactly as found.
+            normalized["agents"]["list"] = config["agents"]["list"]
         config.clear()
         config.update(normalized)
         return changed

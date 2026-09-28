@@ -809,10 +809,10 @@ if [[ $RC -ne 0 ]]; then
   exit $RC
 fi
 
-# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + symlinks ───
+# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + shared copies ─
 # Trevor's agent-file architecture (v10.14.29):
-#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (one copy at
-#     $OC_ROOT/workspace/, each dept-head agent symlinks to them)
+#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (canonical at
+#     $OC_ROOT/workspace/, each dept-head agent holds a REAL-FILE copy -- N29)
 #   - PER-AGENT (each agent has its own): IDENTITY.md, SOUL.md, MEMORY.md,
 #     HEARTBEAT.md (in the agent's workspace folder)
 #   - Sub-agents (role folders inside a dept) are EXCLUDED — they have their
