@@ -1964,11 +1964,21 @@ sed '$d' "$S" > "$T"
 declare -F link_skills_into_root >/dev/null || { echo "installer has no link_skills_into_root" >&2; exit 3; }
 REPO_ROOT="$R"; REPO_SKILL_DIR="$R/.claude/skills/nine-router-setup"
 PRIMARY="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-rc=0
-link_skills_into_root "$PRIMARY" || rc=$?
+ROOTS="$PRIMARY"
 if [ -f "$HOME/.claude-nine/settings.json" ] && [ "$HOME/.claude-nine" != "$PRIMARY" ]; then
-  link_skills_into_root "$HOME/.claude-nine" || rc=$((rc + $?))
+  ROOTS="$ROOTS $HOME/.claude-nine"
 fi
+# A bundled skill that is a real directory (not the installer's link) is a
+# hand-managed copy; relinking would swap it out. Leave the links alone then.
+hand=""
+for root in $ROOTS; do
+  while IFS= read -r s; do
+    [ -n "$s" ] && [ -e "$root/skills/$s" ] && [ ! -L "$root/skills/$s" ] && hand="$hand $root/skills/$s"
+  done < <(bundled_skills)
+done
+if [ -n "$hand" ]; then echo "HAND-MANAGED:$hand"; exit 0; fi
+rc=0
+for root in $ROOTS; do link_skills_into_root "$root" || rc=$((rc + $?)); done
 exit "$rc"
 '''
 
@@ -2030,6 +2040,10 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
     res.update_999["installer"] = (link.stdout + link.stderr).strip()[-400:]
     if link.returncode != 0:
         res.step_fail("update-999", f"installer skill step exited {link.returncode}: {link.stderr.strip()[-200:]}")
+        return
+    if "HAND-MANAGED:" in link.stdout:
+        res.steps["update-999"] = ("ok:pulled; skill links left alone (hand-managed copies:"
+                                   + link.stdout.split("HAND-MANAGED:", 1)[1].strip()[:200] + ")")
         return
     res.step_ok("update-999")
 

@@ -238,6 +238,7 @@ class Update999(unittest.TestCase):
         installer = (
             "#!/usr/bin/env bash\nset -euo pipefail\n"
             f'link_skills_into_root() {{ echo "linked $1 from $REPO_ROOT" >> "{marker}"; }}\n'
+            'bundled_skills() { sed -e "/^$/d" "$REPO_ROOT/CONTROL/bundled-skills.txt"; }\n'
             f'main() {{ echo FULL-ORCHESTRATOR-RAN >> "{marker}"; }}\n'
             'main "$@"\n'
         )
@@ -282,6 +283,15 @@ class Update999(unittest.TestCase):
         ran = marker.read_text()
         self.assertIn(f"linked {self.home}/.claude from {repo}", ran)
         self.assertNotIn("FULL-ORCHESTRATOR-RAN", ran)   # no model call, no provider rewiring
+
+    def test_hand_managed_skill_copy_is_not_relinked(self):
+        repo, marker, new_sha = self.make_999("Downloads/999-setup")
+        (self.home / ".claude/skills/nine-router-setup").mkdir(parents=True)   # a real dir, not a link
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_update_999(res, dry_run=False)
+        self.assertEqual(git(repo, "rev-parse", "HEAD"), new_sha)              # still pulled
+        self.assertIn("hand-managed", res.steps["update-999"])
+        self.assertFalse(marker.exists())                                      # links untouched
 
     def test_found_through_the_installed_skill_link(self):
         repo, _marker, _sha = self.make_999("somewhere/unusual/999-setup")
@@ -439,6 +449,35 @@ class WrapperWaves(unittest.TestCase):
             self.assertIn("rest-box", r.stdout)
             self.assertNotIn("canary-box ", r.stdout)
             self.assertIn("docker exec -u 'node'  'ctr' bash -lc", Path(td, "ssh.log").read_text())
+
+    def test_local_apply_refuses_a_dev_checkout(self):
+        # A throwaway clone whose runner is a stub: nothing real can be applied.
+        with tempfile.TemporaryDirectory() as td:
+            clone = new_repo(Path(td, "clone"))
+            stub = 'import json,sys; print(json.dumps({"box": "local", "result": "ok", "outcome": "UPDATED"}))\n'
+            commit(clone, {"scripts/fleet-refresh.sh": (REPO / "scripts/fleet-refresh.sh").read_text(),
+                           "shared-utils/fleet_refresh_runner.py": stub,
+                           "cc-compat.json": (REPO / "cc-compat.json").read_text()}, "one")
+            fake = Path(td, "bin")
+            fake.mkdir()
+            (fake / "curl").write_text("#!/bin/sh\necho 200\n")
+            (fake / "curl").chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
+            run = lambda: subprocess.run(["bash", str(clone / "scripts/fleet-refresh.sh"), "--local", "--apply"],
+                                         capture_output=True, text=True, env=env, timeout=120)
+            git(clone, "checkout", "-q", "-b", "feature")
+            r = run()
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("clean onboarding clone on main", r.stderr)
+            git(clone, "checkout", "-q", "main")
+            (clone / "cc-compat.json").write_text("{}")
+            r = run()
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("uncommitted changes", r.stderr)
+            git(clone, "checkout", "-q", "--", "cc-compat.json")
+            r = run()
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("UPDATED=1", r.stdout)
 
     def test_bad_wave_is_refused(self):
         with tempfile.TemporaryDirectory() as td:

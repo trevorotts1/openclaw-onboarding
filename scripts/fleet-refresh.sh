@@ -235,6 +235,19 @@ wave5_deploy_preflight() {
 
 wave5_deploy_preflight
 
+# --local --apply updates THIS checkout in place (update-skills.sh hard-syncs it
+# to origin/main; a rollback resets it to the snapshot). Never do that to a
+# development checkout: require a clean clone on main.
+if [ $LOCAL -eq 1 ] && [ $APPLY -eq 1 ] && [ -d "$REPO_ROOT/.git" ]; then
+  _branch="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
+  if [ "$_branch" != "main" ] || [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "FATAL: --local --apply must run from a clean onboarding clone on main" >&2
+    echo "       ($REPO_ROOT is on '$_branch'$( [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ] && printf ' with uncommitted changes')). This run would reset it." >&2
+    echo "       Use a dedicated clone, e.g.: git clone https://github.com/trevorotts1/openclaw-onboarding.git ~/clawd/openclaw-onboarding" >&2
+    exit 1
+  fi
+fi
+
 # ── Mode banner ───────────────────────────────────────────────────────────────
 if [ $APPLY -eq 1 ]; then
   echo "[fleet-refresh] MODE: APPLY (--apply passed)"
@@ -649,7 +662,7 @@ RETIREMENT_ISSUE_LABEL="retirement-tracker"
 # Only run the retirement-trigger machinery in APPLY mode.
 # Dry-run and verify-only are 100% inert for this path.
 if [ $APPLY -eq 1 ]; then
-  python3 - <<PYEOF
+  python3 - <<PYEOF || echo "[fleet-refresh] WARNING: retirement check failed (non-fatal)" >&2
 import json, os, sys, subprocess, time
 from pathlib import Path
 
@@ -761,7 +774,9 @@ Follow the plan in \`docs/LEGACY-RETIREMENT.md\`:
 _Auto-opened by fleet-refresh.sh v11.13.0 retirement-clock._
 """
 
-# Attempt to create/update the GitHub issue via `gh`.
+# Attempt to create/update the GitHub issue via the gh CLI.
+# (No backticks in this unquoted heredoc: the shell would run them -- a bare
+# gh here injected its help text and crashed every --apply run.)
 gh_bin = subprocess.run(["which", "gh"], capture_output=True, text=True).stdout.strip()
 if not gh_bin:
     print("[fleet-refresh] WARNING: gh not on PATH — writing trigger sentinel file instead.")
