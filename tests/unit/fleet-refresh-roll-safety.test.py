@@ -9,6 +9,7 @@ probes that would touch live services are replaced with fakes. Run:
 """
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -200,6 +201,16 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(git(self.box.cc, "rev-parse", "HEAD"), self.box.cc_a)
         self.assertIn(f"--revision {self.box.cc_a}", self.box.deploy_log.read_text())
         self.assertTrue(self.res.rollback["health_restored"])
+
+    def test_rollback_saves_a_dirty_file_then_forces_the_reset(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        (self.box.cc / "scripts" / "atomic-deploy.sh").write_text("#!/usr/bin/env bash\n# patched on the box\nexit 0\n")
+        self.assertTrue(fr.rollback_box(self.box.paths, self.box.onb, self.res, ["x"]), self.res.rollback)
+        self.assertEqual(git(self.box.cc, "rev-parse", "HEAD"), self.box.cc_a)
+        saved = next(a for a in self.res.rollback["actions"] if "local changes saved" in a).rsplit(" ", 1)[1]
+        self.assertIn("# patched on the box", Path(saved, "scripts", "atomic-deploy.sh").read_text())
+        self.assertIn("patched on the box", Path(saved, "changes.diff").read_text())
 
     def test_half_applied_step_is_retried_then_rolled_back(self):
         self.snapshot()
@@ -607,6 +618,17 @@ class Update999(unittest.TestCase):
         self.assertIn(f"linked {self.home}/.claude from {repo}", ran)
         self.assertNotIn("FULL-ORCHESTRATOR-RAN", ran)   # no model call, no provider rewiring
 
+    def test_local_changes_are_skipped_never_pulled_over(self):
+        repo, marker, new_sha = self.make_999("Downloads/999-setup")
+        before = git(repo, "rev-parse", "HEAD")
+        (repo / "AGENT_INSTALL.md").write_text("the owner's own edit")
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_update_999(res, dry_run=False)
+        self.assertEqual(res.steps["update-999"], "skip:999 has local changes, not updated")
+        self.assertEqual(git(repo, "rev-parse", "HEAD"), before)
+        self.assertEqual((repo / "AGENT_INSTALL.md").read_text(), "the owner's own edit")
+        self.assertFalse(marker.exists())
+
     def test_hand_managed_skill_copy_is_not_relinked(self):
         repo, marker, new_sha = self.make_999("Downloads/999-setup")
         (self.home / ".claude/skills/nine-router-setup").mkdir(parents=True)   # a real dir, not a link
@@ -629,6 +651,150 @@ class Update999(unittest.TestCase):
         fr.step_update_999(res, dry_run=True)
         self.assertTrue(res.steps["update-999"].startswith("skip:dry-run"))
         self.assertEqual(git(repo, "rev-parse", "HEAD"), before)
+
+
+class CommandCenterDiscovery(unittest.TestCase):
+    """The runner finds the box's OWN Command Center code checkout, and never
+    touches a folder that holds the live database."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = Path(self._td.name)
+        self.patches = [mock.patch.dict(os.environ),
+                        mock.patch.object(Path, "home", return_value=self.home),
+                        mock.patch.object(fr, "_port_pids", return_value=[]),
+                        mock.patch.object(fr, "_run_out", return_value="")]
+        for pt in self.patches:
+            pt.start()
+            self.addCleanup(pt.stop)
+        for k in ("CC_APP_DIR", "BLACKCEO_COMMAND_CENTER_ROOT", "CC_PORT"):
+            os.environ.pop(k, None)
+        # the operator Mac's layout: the DB folder first in the candidate list, the code elsewhere
+        self.db_dir = self.home / "projects" / "command-center"
+        self.db_dir.mkdir(parents=True)
+        (self.db_dir / "mission-control.db").write_bytes(b"live db")
+        (self.db_dir / "mission-control.db-wal").write_bytes(b"wal")
+        self.code = new_repo(self.home / "blackceo-command-center")
+        commit(self.code, {"package.json": '{"version": "7.6.71"}'}, "A")
+        git(self.code, "remote", "add", "origin", "https://github.com/trevorotts1/blackceo-command-center.git")
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def db_state(self):
+        return sorted((p.name, p.read_bytes()) for p in self.db_dir.iterdir())
+
+    def test_code_checkout_is_found_past_the_database_folder(self):
+        before = self.db_state()
+        d, how = fr.find_cc_dir(self.home / ".openclaw")
+        self.assertEqual((d, how), (self.code, "candidate list"))
+        self.assertEqual(self.db_state(), before)   # the DB folder is never touched
+
+    def test_the_process_serving_the_port_wins(self):
+        other = new_repo(self.home / "clients" / "cc")
+        commit(other, {"package.json": "{}"}, "A")
+        git(other, "remote", "add", "origin", "git@github.com:trevorotts1/blackceo-command-center.git")
+        with mock.patch.object(fr, "_port_pids", return_value=[4242]), \
+             mock.patch.object(fr, "_proc_cwd", return_value=other / ".next" / "standalone"):
+            self.assertEqual(fr.find_cc_dir(self.home), (other, "the process serving port 4000"))
+
+    def test_a_contabo_root_command_center_is_a_candidate(self):
+        shutil.rmtree(self.code)
+        root = self.home / ".openclaw"
+        cc = new_repo(root / "command-center")
+        commit(cc, {"package.json": "{}"}, "A")
+        git(cc, "remote", "add", "origin", "https://github.com/trevorotts1/blackceo-command-center")
+        self.assertEqual(fr.find_cc_dir(root)[0], cc)
+
+    def test_none_found_skips_the_command_center_steps_by_name(self):
+        shutil.rmtree(self.code)
+        self.assertEqual(fr.find_cc_dir(self.home), (None, fr.CC_NOT_FOUND))
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_pull_cc({"cc_dir": None}, "v1", res, dry_run=False)
+        with mock.patch.object(fr, "wave5_deploy_preflight"):
+            fr.step_build_cc({"cc_dir": None}, res, dry_run=False)
+            fr.step_restart_cc({"cc_dir": None}, res, dry_run=False)
+        for step in ("pull-cc", "build-cc", "restart-cc"):
+            self.assertEqual(res.steps[step], "skip:Command Center not found on this box")
+
+
+class MainSessionKey(unittest.TestCase):
+    def sessions(self, rows):
+        return mock.patch.object(fr, "_run_out", return_value=json.dumps({"sessions": rows}))
+
+    def test_session_store_through_the_cli(self):
+        rows = [{"key": "agent:main:rescue-reply:x-1", "updatedAt": 99},
+                {"key": "agent:main:telegram:operator:direct:111", "updatedAt": 5},
+                {"key": "agent:main:main", "updatedAt": 50},
+                {"key": "agent:main:cron:abc", "updatedAt": 90}]
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}):
+            with self.sessions(rows):   # the most recently used owner session wins
+                self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}), "agent:main:main")
+            rows[1]["updatedAt"] = 60
+            with self.sessions(rows):
+                self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}),
+                                 "agent:main:telegram:operator:direct:111")
+
+    def test_legacy_sessions_json_still_works(self):
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td, "agents", "main", "sessions", "sessions.json")
+            f.parent.mkdir(parents=True)
+            f.write_text(json.dumps({"agent:main:telegram:direct:222": {"updatedAt": 1}, "agent:main:x": {}}))
+            self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}), "agent:main:telegram:direct:222")
+
+    def test_nothing_found_is_none(self):
+        with tempfile.TemporaryDirectory() as td, self.sessions([{"key": "agent:main:cron:1"}]), \
+             mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}):
+            self.assertIsNone(fr._resolve_ceo_session_key({"root": Path(td)}))
+
+
+class CommandCenterOnlyFailureIsExplicit(unittest.TestCase):
+    """A Command Center step that failed without changing anything is not
+    rolled back (nothing to undo) -- and the result says exactly that."""
+
+    def test_detail_names_the_real_state(self):
+        res = fr.BoxResult("t", dry_run=False)
+        res.onboarding_version = "v25.1.105"
+        res.snapshot = {"cc": {"version": "7.6.71"}}
+        res.health = {"post": {"cc-health": hc("pass")}}
+        res.steps.update({"pull-onboarding": "ok", "pull-cc": "failed:not a git repository",
+                          "restart-cc": "failed:package.json missing"})
+        quiet = [mock.patch.object(fr, n) for n in (
+            "_check_deployed", "_verify_loaded", "step_embedding_health", "step_persona_embedding_drift",
+            "step_persona_grounding_health", "step_provisioning_completeness", "step_log")]
+        for q in quiet:
+            q.start()
+            self.addCleanup(q.stop)
+        fr._finish_run(res, {}, "v25.1.105", {}, Path("."), Path("."), False, False, "v7", None)
+        self.assertEqual(res.outcome, "FAILED")
+        self.assertTrue(res.outcome_detail.startswith(
+            "onboarding updated to v25.1.105, Command Center NOT updated (still v7.6.71, healthy): pull-cc:"),
+            res.outcome_detail)
+
+
+class UpdaterTimeoutAndDuckNode(unittest.TestCase):
+    def test_timeout_kills_the_whole_process_tree(self):
+        with tempfile.TemporaryDirectory() as td:
+            pidf = Path(td, "child.pid")
+            with self.assertRaises(subprocess.TimeoutExpired):
+                fr._run_tree(["bash", "-c", f"sleep 60 & echo $! > {pidf}; wait"], timeout=2)
+            pid = int(pidf.read_text())
+            time.sleep(0.5)
+            with self.assertRaises(ProcessLookupError):   # the orphan would keep updating the box
+                os.kill(pid, 0)
+
+    def test_duck_test_node_is_the_one_that_loads_the_native_modules(self):
+        def run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 0 if cmd[0] == "/opt/node24/bin/node" else 1)
+        with mock.patch.object(fr, "_port_pids", return_value=[42]), \
+             mock.patch.object(fr.os, "readlink", return_value="/opt/node24/bin/node"), \
+             mock.patch.object(fr.shutil, "which", return_value="/usr/local/bin/node"), \
+             mock.patch.object(fr.subprocess, "run", side_effect=run):
+            self.assertEqual(fr._cc_node(Path("/cc")), "/opt/node24/bin/node")
+        with mock.patch.object(fr, "_port_pids", return_value=[]), \
+             mock.patch.object(fr.shutil, "which", return_value="/usr/local/bin/node"), \
+             mock.patch.object(fr.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)):
+            self.assertEqual(fr._cc_node(Path("/cc")), "/usr/local/bin/node")
 
 
 class TelegramProbe(unittest.TestCase):
@@ -776,7 +942,7 @@ class WrapperWaves(unittest.TestCase):
         fake = Path(td, "bin")
         fake.mkdir(exist_ok=True)
         (fake / "curl").write_text("#!/bin/sh\necho 200\n")                 # Wave-5 preflight: present
-        (fake / "ssh").write_text(f'#!/bin/sh\necho "$@" >> "{td}/ssh.log"\necho "NONE /x/openclaw-onboarding"\n')
+        (fake / "ssh").write_text(f'#!/bin/sh\necho "$@" >> "{td}/ssh.log"\necho "COPYFAIL test box cannot reach GitHub"\n')
         for f in fake.iterdir():
             f.chmod(0o755)
         env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
@@ -792,9 +958,11 @@ class WrapperWaves(unittest.TestCase):
             self.assertIn("Queuing Client One (Mac, box first-box)", r.stdout)   # the id, once, for the log
             self.assertIn("Running on 1 box(es): Client One (Mac)", r.stdout)
             self.assertIn("Client One (Mac)  [SKIPPED", r.stdout)
+            self.assertIn("fleet-refresh/onboarding", Path(td, "ssh.log").read_text())   # the roll's own copy
             self.assertNotIn("rest-box", r.stdout)
             self.assertRegex(r.stdout, r"CLIENT\s+OUTCOME")
-            self.assertRegex(r.stdout, r"\n Client One \(Mac\)\s+SKIPPED\s+no onboarding clone")
+            self.assertRegex(r.stdout, r"\n Client One \(Mac\)\s+SKIPPED\s+not updated: the roll's onboarding copy "
+                                       r"could not be prepared \(test box cannot reach GitHub\)")
             self.assertEqual(r.stdout.count("first-box"), 1, r.stdout)
             row = json.loads((REPO / ".fleet-refresh-summary.json").read_text())[0]
             self.assertEqual((row["client"], row["label"]), ("Client One", "Client One (Mac)"))
@@ -837,17 +1005,20 @@ class WrapperWaves(unittest.TestCase):
 
     def test_apply_through_ssh_and_docker_exec_quoting(self):
         """Real shells end to end: fake ssh runs its command with sh -c, fake
-        docker runs `bash -lc <script>`. Proves the nested quoting, the clone
-        sync to origin/main, the pre-sync SHA hand-off and the result pickup."""
+        docker runs `bash -lc <script>`. Proves the nested quoting, the roll
+        copy's sync to origin/main, the pre-sync SHA hand-off and the result
+        pickup -- and that a stale, shallow, tag-only client clone (first in the
+        old candidate list) is neither used nor changed."""
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
             wrapper_repo = td / "operator-clone"
             (wrapper_repo / "scripts").mkdir(parents=True)
             (wrapper_repo / "shared-utils").mkdir()
-            (wrapper_repo / "scripts/fleet-refresh.sh").write_text((REPO / "scripts/fleet-refresh.sh").read_text())
+            for rel in ("scripts/fleet-refresh.sh", "scripts/fleet-roll-copy.sh"):
+                (wrapper_repo / rel).write_text((REPO / rel).read_text())
             (wrapper_repo / "shared-utils/fleet_refresh_runner.py").write_text("")
             (wrapper_repo / "cc-compat.json").write_text((REPO / "cc-compat.json").read_text())
-            # the box: a clone of an origin that has moved on
+            # the box: a roll copy of an origin that has moved on
             origin = td / "origin.git"
             origin.mkdir()
             git(origin, "init", "-q", "--bare", "-b", "main")
@@ -860,10 +1031,18 @@ class WrapperWaves(unittest.TestCase):
             git(seed, "remote", "add", "origin", str(origin))
             git(seed, "push", "-q", "origin", "main")
             home = td / "home"
-            box_clone = home / "clawd/openclaw-onboarding"
-            box_clone.parent.mkdir(parents=True)
-            subprocess.run(["git", "clone", "-q", str(origin), str(box_clone)], check=True, env=GIT_ENV)
-            old = git(box_clone, "rev-parse", "HEAD")
+            copy = home / ".openclaw/fleet-refresh/onboarding"
+            copy.parent.mkdir(parents=True)
+            subprocess.run(["git", "clone", "-q", str(origin), str(copy)], check=True, env=GIT_ENV)
+            old = git(copy, "rev-parse", "HEAD")
+            git(seed, "tag", "v1")
+            git(seed, "push", "-q", "origin", "v1")
+            # the client's own stale clone: shallow, fetching one tag only, detached
+            stale = home / ".openclaw/skills/onboarding"
+            subprocess.run(["git", "clone", "-q", "--depth", "1", "--branch", "v1", f"file://{origin}", str(stale)],
+                           check=True, env=GIT_ENV, capture_output=True)
+            git(stale, "config", "remote.origin.fetch", "+refs/tags/v1:refs/tags/v1")
+            stale_state = (git(stale, "rev-parse", "HEAD"), git(stale, "config", "--get-all", "remote.origin.fetch"))
             commit(seed, {"x": "2"}, "two")
             git(seed, "push", "-q", "origin", "main")
             fake = td / "bin"
@@ -878,18 +1057,22 @@ class WrapperWaves(unittest.TestCase):
             (wrapper_repo / "shared-utils/fleet_notify.py").write_text((REPO / "shared-utils/fleet_notify.py").read_text())
             (wrapper_repo / "shared-utils/operator_google.py").write_text(
                 (REPO / "shared-utils/operator_google.py").read_text())
-            env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home)}
+            env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home),
+                   "FLEET_ROLL_REPO_URL": str(origin)}
             r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
                                 "--boxes-file", str(td / "b.json"), "--apply"],
                                capture_output=True, text=True, env=env, timeout=120)
             self.assertIn("UPDATED=1", r.stdout, r.stdout + r.stderr)
+            self.assertIn(f"Client One (Hostinger) — roll copy of onboarding: {copy} (updated)", r.stderr)
             # stub result is result=ok/UPDATED: the pass note names the client (webhook unset here: not sent)
             self.assertIn("pass note: ", r.stdout)
             self.assertIn("✅ Client One (Hostinger) updated and passed", r.stdout)
             row = json.loads((wrapper_repo / ".fleet-refresh-summary.json").read_text())[0]
-            self.assertIn(f"prev={old} args=--box box-1 --shared-utils {box_clone}/shared-utils", row["outcome_detail"])
+            self.assertIn(f"prev={old} args=--box box-1 --shared-utils {copy}/shared-utils", row["outcome_detail"])
             self.assertIn(" --apply", row["outcome_detail"])
-            self.assertEqual(git(box_clone, "rev-parse", "HEAD"), git(seed, "rev-parse", "HEAD"))
+            self.assertEqual(git(copy, "rev-parse", "HEAD"), git(seed, "rev-parse", "HEAD"))
+            self.assertEqual((git(stale, "rev-parse", "HEAD"), git(stale, "config", "--get-all", "remote.origin.fetch")),
+                             stale_state)   # the client's clone: untouched
 
     def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),
@@ -899,7 +1082,7 @@ class WrapperWaves(unittest.TestCase):
         wrapper_repo = td / "operator-clone"
         (wrapper_repo / "scripts").mkdir(parents=True)
         (wrapper_repo / "shared-utils").mkdir()
-        for rel in ("scripts/fleet-refresh.sh", "scripts/make-fleet-boxes-file.py",
+        for rel in ("scripts/fleet-refresh.sh", "scripts/fleet-roll-copy.sh", "scripts/make-fleet-boxes-file.py",
                     "shared-utils/fleet_notify.py", "shared-utils/operator_google.py"):
             (wrapper_repo / rel).write_text((REPO / rel).read_text())
         (wrapper_repo / "shared-utils/fleet_refresh_runner.py").write_text("")
@@ -924,9 +1107,7 @@ class WrapperWaves(unittest.TestCase):
         git(seed, "remote", "add", "origin", str(origin))
         git(seed, "push", "-q", "origin", "main")
         home = td / "home"
-        box_clone = home / "clawd/openclaw-onboarding"
-        box_clone.parent.mkdir(parents=True)
-        subprocess.run(["git", "clone", "-q", str(origin), str(box_clone)], check=True, env=GIT_ENV)
+        home.mkdir()   # no roll copy yet: the wrapper clones it
         fake = td / "bin"
         fake.mkdir()
         log = td / "docker.log"
@@ -946,7 +1127,7 @@ class WrapperWaves(unittest.TestCase):
         Path(td, "b.json").write_text(json.dumps([{"name": "box-1", "ssh_target": "h", "platform": platform,
                                                    "container": "c-1", "wave": "first"}]))
         (td / "docker/proj").mkdir(parents=True)
-        env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home)}
+        env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home), "FLEET_ROLL_REPO_URL": str(origin)}
         r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
                             "--boxes-file", str(td / "b.json"), "--apply"],
                            capture_output=True, text=True, env=env, timeout=180)
@@ -1003,6 +1184,17 @@ class WeeklyFullUpdate(unittest.TestCase):
                                text=True, env={**GIT_ENV, "ONBOARDING_CLONE": str(clone), "HOME": td})
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn(f"ARGS=--local --apply PREV={old} HEAD={new}", r.stdout)
+
+            # Default: the roll's own copy under the OpenClaw root; the box's other clone is left alone.
+            stale = Path(td, ".openclaw/skills/onboarding")
+            subprocess.run(["git", "clone", "-q", str(origin), str(stale)], check=True, env=GIT_ENV)
+            git(stale, "reset", "-q", "--hard", old)
+            r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True, text=True,
+                               env={**GIT_ENV, "HOME": td, "FLEET_ROLL_REPO_URL": str(origin), "PATH": os.environ["PATH"]})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn(f"ARGS=--local --apply PREV= HEAD={new}", r.stdout)
+            self.assertIn(f"onboarding copy {td}/.openclaw/fleet-refresh/onboarding", r.stdout)
+            self.assertEqual(git(stale, "rev-parse", "HEAD"), old)
 
 
 class OperatorAlert(unittest.TestCase):
@@ -1075,6 +1267,25 @@ class OperatorAlert(unittest.TestCase):
                     {"heal": {"needs_attention": True}}):
             self.assertIsNone(fleet_notify.passed_note({**ok, **bad}))
         self.assertEqual(fleet_notify.client_label({"name": "b9", "platform": "mac"}), "UNKNOWN CLIENT (b9) (Mac)")
+
+    def test_telegram_text_survives_the_webhooks_legacy_markdown(self):
+        # A lone "_" made Telegram reject the whole alert (HTTP 500 from the webhook).
+        sent = {}
+
+        class Resp:
+            status = 200
+            def read(self): return b'{"ok": true, "result": {"message_id": 7}}'
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def urlopen(req, timeout):
+            sent["text"] = json.loads(req.data)["text"]
+            return Resp()
+        with mock.patch.object(fleet_notify, "alert_target", return_value=("https://x/alert", "H", "s")), \
+             mock.patch.object(fleet_notify.urllib.request, "urlopen", side_effect=urlopen):
+            ok = fleet_notify.send_telegram("reset refused: scripts/watchdog-cc.sh not_restored *x* [y]")
+        self.assertTrue(ok[0])
+        self.assertEqual(sent["text"], "reset refused: scripts/watchdog-cc.sh not\\_restored \\*x\\* \\[y]")
 
     def test_alert_webhook_is_derived_from_the_gate_credentials(self):
         with mock.patch.dict(os.environ, {"FLEET_STANDING_GATE_URL": "https://n8n.example/webhook/fleet-standing-check",

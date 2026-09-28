@@ -22,10 +22,10 @@ Enables the agent to learn new knowledge in a structured way without bloating co
 - [ ] Confirm no secret placeholder or fake credential was introduced while installing this skill.
 
 ## 5. Functional Checks
-- [ ] Ask: “What is the Teach Yourself Protocol?” Expected answer mentions the three-layer knowledge architecture: core summaries, deep files, and folder structure.
+- [ ] Ask: “What is the Teach Yourself Protocol?” Expected answer mentions the three-layer knowledge architecture: core-file pointers, deep files, and folder structure.
 - [ ] Ask: “Where do full documents go?” Expected answer points to the master files folder, not `AGENTS.md` or `TOOLS.md`.
 - [ ] Give a short “Teach yourself this…” prompt and verify the agent announces TYP activation before doing any learning work.
-- [ ] Verify the agent creates or updates a deep reference file and only adds a lean summary plus file path in core files.
+- [ ] Verify the agent creates or updates a deep reference file and only adds a one-to-two-sentence pointer (what, where, when) in core files.
 - [ ] Verify the agent checks for conflicts or duplicates before creating new knowledge files.
 
 ## 6. QC Score
