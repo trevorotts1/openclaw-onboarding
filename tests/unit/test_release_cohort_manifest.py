@@ -242,6 +242,39 @@ class PromotionConsumer(unittest.TestCase):
         self.assertFalse(record["checked"])
         self.assertEqual(record["reason"], "no_cohort_manifest")
 
+    def test_gate_refuses_a_candidate_the_instance_does_not_describe(self):
+        """A53: the instance describes THIS candidate, not just some pair.
+
+        The self-matching manifest is internally consistent in both
+        directions, so only the candidate binding rejects a different
+        revision of the same release.
+        """
+        with self.assertRaisesRegex(ValueError, "not the pair"):
+            check_release_cohort(handshake_ok=True, repository="onb",
+                                 candidate_sha="f" * 40)
+
+    def test_gate_accepts_the_candidate_the_instance_names(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            check_release_cohort(handshake_ok=True, repository="onb",
+                                 candidate_sha=manifest["onb_sha"]),
+            manifest)
+
+    def test_gate_refuses_an_unbound_candidate_argument(self):
+        """Both arguments bind together; half a binding fails closed."""
+        with self.assertRaisesRegex(ValueError, "both repository and"):
+            check_release_cohort(handshake_ok=True, repository="onb")
+
+    def test_gate_refuses_a_repository_outside_the_pair(self):
+        with self.assertRaisesRegex(ValueError, "not part of the"):
+            check_release_cohort(handshake_ok=True, repository="elsewhere",
+                                 candidate_sha="f" * 40)
+
+    def test_gate_without_a_candidate_argument_keeps_instance_scope(self):
+        """Omitting the binding leaves the historical instance-only check."""
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(check_release_cohort(handshake_ok=True), manifest)
+
 
 if __name__ == "__main__":
     unittest.main()
