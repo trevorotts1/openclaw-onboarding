@@ -201,7 +201,8 @@ def delegate_standard_mode(run_dir: pathlib.Path, tail: list,
 
 
 def delegate_signature_mode(tail: list,
-                            run_dir: "pathlib.Path | None" = None) -> int:
+                            run_dir: "pathlib.Path | None" = None,
+                            next_command_rewrite=None) -> int:
     """Fix 31 (M18 + D1): run the canonical driver for one signature command.
 
     The skill-level signature interview is RETIRED. The department driver
@@ -211,8 +212,17 @@ def delegate_signature_mode(tail: list,
     callers keep working; --plan/--record translate to --sig-plan/--sig-record;
     --selftest and bare --signature delegate verbatim.
 
+    next_command_rewrite: optional callable applied to the "next_command"
+    field of the delegated JSON pointer. The department driver names
+    --sig-next in its pointer, which the skill-level driver does not accept
+    (its --signature --next form translates to --sig-next per Fix 31), so a
+    verbatim pointer would name an unfollowable command. Callers that need a
+    followable pointer pass a rewrite (e.g. --sig-next -> --next).
+
     stdout/stderr are inherited, so the caller sees the canonical driver's own
     JSON verbatim -- no reformatting, no summarising, no swallowed diagnostics.
+    (When next_command_rewrite is given, stdout is captured so the pointer can
+    be rewritten; stderr still streams.)
 
     run_dir may be None for commands that need no workspace (bare --signature
     pointer, --selftest, --sig-plan): a temp dir satisfies the canonical
@@ -229,10 +239,27 @@ def delegate_signature_mode(tail: list,
     except FileNotFoundError as exc:
         print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
         return 3
-    proc = subprocess.run(
-        [sys.executable, str(driver), "--run-dir", str(run_dir)] + list(tail)
-    )
-    rc = proc.returncode
+    cmd = [sys.executable, str(driver), "--run-dir", str(run_dir)] + list(tail)
+    if next_command_rewrite is None:
+        proc = subprocess.run(cmd)
+        rc = proc.returncode
+    else:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        out = proc.stdout or ''
+        payload = None
+        try:
+            payload = json.loads(out)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and isinstance(payload.get('next_command'), str):
+            payload['next_command'] = next_command_rewrite(payload['next_command'])
+            print(json.dumps(payload))
+        else:
+            # Not the expected pointer shape; pass through untouched.
+            sys.stdout.write(out)
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+        rc = proc.returncode
     if cleanup is not None:
         cleanup.cleanup()
     return rc
@@ -2565,9 +2592,15 @@ def main() -> None:
             sys.exit(delegate_signature_mode(
                 ["--signature", "--sig-record", args.record], sp_run_dir))
         # Bare --signature: delegate for the canonical use_turn_gate pointer.
+        # The dept driver names --sig-next, which this driver rejects
+        # (unrecognized arguments). Rewrite to the --signature --next form
+        # this driver accepts and translates per Fix 31, so the emitted
+        # pointer is followable.
         rd = (pathlib.Path(args.run_dir).expanduser().resolve()
               if args.run_dir else None)
-        sys.exit(delegate_signature_mode(["--signature"], rd))
+        sys.exit(delegate_signature_mode(
+            ["--signature"], rd,
+            next_command_rewrite=lambda cmd: cmd.replace('--sig-next', '--next')))
 
     # All other commands require --run-dir
     if not args.run_dir:
