@@ -283,6 +283,13 @@ _pres35_finish_interpreter() {
     return 0
 }
 
+# Fix 3 (PRES-035 regression): the poller must load the env store itself.
+# Without it PRESENTATION_NOTIFY_CMD is empty (every --resume is refused
+# with AF-NOTIFY-UNCONFIGURED) and OPENROUTER_API_KEY is missing for
+# everything the tick spawns. Fail-open: a missing store must not stop
+# the tick.
+load_env_store || true
+
 # Resolve the runs root
 RUNS_ROOT="${PRESENTATION_RUNS_DIR:-${HOME}/.openclaw/workspace/departments/Presentations/runs}"
 
