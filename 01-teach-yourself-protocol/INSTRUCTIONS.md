@@ -14,11 +14,15 @@ Never execute TYP silently. The user must always know when it is running.
 ### 3. Assess Size
 | Content Size | Classification | What to Do |
 |-------------|---------------|------------|
-| 1-10 lines | Small | Core files only |
-| 11-25 lines | Medium | Core files only, be concise |
-| 25-100 lines | Large | Deep file in master folder + core summary |
-| 100+ lines | Very Large | Deep file in master folder + core summary |
-| Multi-topic / API docs | Massive | Folder structure + deep files + core summary |
+| One or two sentences | Small | Core files only |
+| Up to a short paragraph (about five sentences) | Medium | Core files only, be concise |
+| Longer than a short paragraph | Large | Deep file in master folder + core-file pointer |
+| 100+ lines | Very Large | Deep file in master folder + core-file pointer |
+| Multi-topic / API docs | Massive | Folder structure + deep files + core-file pointer |
+
+Always-on rules (safety rules, never-do rules, identity essentials, hard constraints) stay
+inline in the core file at any size, shortened, because the agent only opens a deep file
+when a pointer's WHEN fires.
 
 ### 4. Check for Existing Knowledge
 Search ALL core files and the master files folder BEFORE creating anything new.
@@ -59,34 +63,29 @@ Save COMPLETE, UNABRIDGED content to that path with this header:
 NEVER truncate the deep file. It is the full reference.
 
 **POINTER FORMAT (required in every core file that references a deep file):**
+One line, at most two sentences: WHAT it is, WHERE it lives (full path), WHEN to read it
+(concrete trigger words a user would say).
 ```
-- Full reference: ~/Downloads/openclaw-master-files/<subfolder>/<filename>.md
-- When to go deeper: [specific trigger — e.g., first use, hitting errors, complex task]
+[Topic]: [what it is] lives at ~/Downloads/openclaw-master-files/<subfolder>/<filename>.md. Read it whenever the user mentions [trigger words].
 ```
 
 ### MANDATORY — NO-PASTE RULE
-**Long playbooks, SOPs, API docs, and any document over ~25 lines MUST NEVER be pasted into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder. Add only a hyper-concise summary (10–25 lines max) plus the explicit pointer to the file. Vagueness about storage path or pointer format is what causes bloat — this rule is absolute.
+**Long playbooks, SOPs, API docs, and any block longer than a short paragraph (about five sentences, always-on rules excepted) MUST NEVER be pasted into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder. Add only a one-to-two-sentence pointer (WHAT, WHERE, WHEN) to the file; always-on rules stay inline, shortened. Vagueness about storage path or pointer format is what causes bloat: this rule is absolute.
 
-### 6. Write Core File Summaries (HYPER-CONCISE BLOCK — ENFORCED)
+### 6. Write Core File Pointers (ONE TO TWO SENTENCES, ENFORCED)
 
-Add lightweight summaries (10-25 lines based on priority) to the relevant core file(s).
-The agent decides whether AGENTS.md, TOOLS.md, or both should get the entry — but at
-minimum ONE of them MUST receive it. Every summary block MUST answer all four of these:
+Add a pointer (one line, at most two sentences) to the relevant core file(s).
+The agent decides whether AGENTS.md, TOOLS.md, or both should get the entry, but at
+minimum ONE of them MUST receive it. Every pointer MUST answer all three of these:
 
-1. **WHAT it is** — one sentence description
-2. **WHEN to use it** — the explicit trigger(s) that cause the agent to reach for it
-3. **WHY / what it does** — the outcome or value it delivers
-4. **POINTER REFERENCE** — the EXACT file path to the playbook/deep file so the agent
+1. **WHAT it is**: a few words naming the topic and what it does
+2. **WHERE it lives**: the EXACT file path to the playbook/deep file so the agent
    can find, read, and execute it (full absolute path, no vagueness)
+3. **WHEN to read it**: concrete trigger words a user would say
 
-If any of the four are missing, the block does NOT earn its place in the bootstrap file.
-
-Every summary must also pass the Five Question Test:
-1. What is this? (one sentence)
-2. When do I use it? (triggers)
-3. What do I need to know right now? (key facts)
-4. Where is the full reference? (file path)
-5. When should I go deeper? (scenarios requiring the full doc)
+If any of the three are missing, the pointer does NOT earn its place in the bootstrap file.
+Always-on rules (safety rules, never-do rules, identity essentials, hard constraints) stay
+inline next to the pointer, shortened. Everything situational lives in the deep file.
 
 ### 7. Confirm to User
 Report:
@@ -98,12 +97,12 @@ Report:
 
 ## Priority Tags
 
-| Priority | Tag | Use When | Summary Length |
+| Priority | Tag | Use When | Core File Entry |
 |----------|-----|----------|---------------|
-| CRITICAL | [PRIORITY: CRITICAL] | Daily use, core operations | 20-25 lines |
-| HIGH | [PRIORITY: HIGH] | Weekly use, quality matters | 15-20 lines |
-| STANDARD | [PRIORITY: STANDARD] | Occasional use | 10-15 lines |
-| REFERENCE | [PRIORITY: REFERENCE] | Rare, edge cases | 5-10 lines |
+| CRITICAL | [PRIORITY: CRITICAL] | Daily use, core operations | Pointer (1 to 2 sentences) |
+| HIGH | [PRIORITY: HIGH] | Weekly use, quality matters | Pointer (1 to 2 sentences) |
+| STANDARD | [PRIORITY: STANDARD] | Occasional use | Pointer (1 to 2 sentences) |
+| REFERENCE | [PRIORITY: REFERENCE] | Rare, edge cases | Pointer (1 to 2 sentences) |
 
 ## Staleness Detection
 - Under 30 days: Fresh. Use confidently.
@@ -133,10 +132,10 @@ Report:
 6. Skipping the announcement (user must know TYP is active)
 7. Summarizing the deep file (deep file is COMPLETE, never truncate)
 8. Not checking for existing knowledge (always search first)
-9. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)
-10. Under-summarizing (if the summary is 30+ lines, it is too thick)
+9. Pointer too thin (no exact path, or a vague WHEN the agent will never match)
+10. Pointer too thick (more than two sentences; move the detail into the deep file)
 11. **Storing a playbook in the wrong subfolder** — playbooks/SOPs always go in `playbooks/`, not loosely in the master-files root or in `processes/` by default
-12. **Writing a 4-part pointer block that omits the trigger or exact path** — all four elements (WHAT, WHEN, WHY, POINTER) are required for the block to earn its place
+12. **Writing a pointer that omits the trigger or exact path**: all three elements (WHAT, WHERE, WHEN) are required for the pointer to earn its place
 13. **VPS: writing files outside /data/.openclaw/** — any path not under the bind-mount is wiped on container restart; always verify the storage path before writing
 
 ## Self-Heal Migration (Existing Clients)

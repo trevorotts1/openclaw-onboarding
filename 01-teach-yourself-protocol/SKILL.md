@@ -37,12 +37,12 @@ doing any TYP work. Never run TYP silently.
 
 ## What It Covers
 
-- **Three-Layer Knowledge Architecture** - lightweight summaries in core files (Layer 1),
+- **Three-Layer Knowledge Architecture** - one-to-two-sentence pointers in core files (Layer 1),
   deep reference files in the master files folder (Layer 2), and organized folder
   structures for large topics like APIs (Layer 3)
 - **The Decision Tree** - a step-by-step process: understand the knowledge, assess its
   size, check for conflicts with existing knowledge, create the right files, write
-  lightweight summaries, and confirm to the user
+  core-file pointers, and confirm to the user
 - **Conflict Resolution** - what to do when new knowledge replaces, expands, or
   contradicts something the agent already knows
 - **Priority Tagging** - CRITICAL, HIGH, STANDARD, or REFERENCE, so the agent knows
@@ -66,7 +66,7 @@ Read them in this order:
 3. **INSTRUCTIONS.md** - step-by-step guide for executing TYP
 4. **INSTALL.md** - how to install TYP into a new agent's workspace
 5. **EXAMPLES.md** - worked examples showing TYP in action
-6. **CORE_UPDATES.md** - the lightweight summaries to add to each core workspace file
+6. **CORE_UPDATES.md** - the pointers and short always-on rules to add to each core workspace file
 7. **MIGRATION-TYP.md** - self-heal migration procedure for existing clients with bloat
 8. **teach-yourself-protocol.skill** - the skill definition file
 
@@ -92,12 +92,18 @@ store anything.
 ## Key Things the Agent Needs to Know
 
 1. **Core files stay lightweight.** Never dump full API docs or long SOPs into
-   AGENTS.md, TOOLS.md, or MEMORY.md. Write a 10-25 line summary with a pointer
-   to the deep file where the full content lives.
+   AGENTS.md, TOOLS.md, or MEMORY.md. Write a pointer of one line, at most two
+   sentences, that says WHAT it is, WHERE the deep file lives, and WHEN to read it.
+   Always-on rules (safety rules, never-do rules, identity essentials, hard
+   constraints) stay inline in the core file, shortened. Skill 70 (Lean Core
+   File System, folder 70-lean-core-file-system) owns core-file size and the
+   weekly core-file audit.
 
-2. **The Five Question Test.** A good lightweight summary answers the 5 most common
-   questions about the topic. If a new agent could handle basic tasks from just the
-   summary, it is good enough. If they would be stuck guessing, it is too thin.
+2. **The pointer test.** A good pointer names WHAT it is, gives the exact WHERE
+   (full path), and lists concrete WHEN trigger words a user would say. If the WHEN
+   is vague, the agent never opens the file, so the pointer is too thin. Example:
+   "QuickBooks Online: rules and playbook live at <master-files>/playbooks/quickbooks-online.md.
+   Read it whenever the user mentions QuickBooks, invoices, or bookkeeping."
 
 3. **Deep files go in ~/Downloads/openclaw-master-files/.** This folder (or whatever
    the user has named it) holds the complete, untruncated knowledge organized into
