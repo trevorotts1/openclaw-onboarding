@@ -1,3 +1,17 @@
+## [v25.1.91]  -  2026-09-27  -  Presentations Step 2 lands on main: Kie.ai spend ceilings fail-closed (Fix 10), fresh-intake credit preflight gate (Fix 5), OpenRouter live pricing (Fix 6)
+
+### Why
+This entry documents the Step 2 release (Fixes 10, 5, 6) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.90 -> v25.1.91 via scripts/bump-version.sh (G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 10 (Kie.ai spend ceilings fail-open): Added GovernorDailyCapReached(GovernorTimeout), raised at the daily-cap check in governor.py; both _gov_acquire functions (build_deck.py, kie_tasks.py) re-raise it and re-raise submit-side (poll=False) rate timeouts; fail-soft kept only for governor module absent. Test: test_fix10_daily_cap_failclosed.py.
+- Fix 5 (fresh-intake preflight bypass): presentation-intake-poll.sh runs python3 -m presentation_job.credit_preflight before the --new engine call when RUN_MODE is set; non-zero exit counts the run as refused and the engine never starts. credit_preflight.main returns 0 for the flag-off skipped result. Test: test_fix5_fresh_intake_preflight.py.
+- Fix 6 (OpenRouter pricing): _alias_for_route matches served_ids[provider] == model; OpenRouter routes price from the live https://openrouter.ai/api/v1/models list (cached per run), static catalog as fallback; unpriceable paid phase in ultra blocks before spending (model named), standard/economy keep the warning. Test: test_fix6_openrouter_pricing.py.
+- Version markers rolled v25.1.90 -> v25.1.91 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+New tests added per fix (not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.90 entry below.
+
 ## [v25.1.90]  -  2026-09-27  -  Presentations Step 1 lands on main: checkout SMS consent (D3), poller self-exec guard, env-store restore
 
 ### Why
