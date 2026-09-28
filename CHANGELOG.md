@@ -1,3 +1,8 @@
+## [v25.1.90]  -  2026-09-27  -  Batch train (KEY-001): direct-JEV resolves operator-store key name JEV_TYPESAFE_API_KEY
+
+- KEY-001 (A01, spec 16.2): `credential_resolver.DIRECT_KEYS` and `typesafe_direct.DIRECT_KEY_NAMES` gain `JEV_TYPESAFE_API_KEY` additively and LAST — the operator store's own key name, previously absent from both closed sets, which fell through to OpenRouter when the box carried only that name. Precedence unchanged for every name that resolved before. Runnable probe `scripts/probe/probe-key001-offline.py` committed with raw output; at base the box-as-configured case fails, post-fix it passes with zero OpenRouter selection calls. Folded from branch `jev11/KEY-001-keyname` (be418995).
+- Version markers rolled v25.1.89 -> v25.1.90 by `scripts/bump-version.sh` (15 marker files, one consistent entry). A60 (REP-060) already landed on main via PR #1272 ahead of this train; not re-folded.
+
 ## [v25.1.89]  -  2026-09-27  -  JEV 1.1 batch train lands on main: decision-engine continuation and modes, owner-direct execution policy, A36 selector-gate repair, D12/D28/D34 regressions, skill-version lockstep
 
 ### Why
