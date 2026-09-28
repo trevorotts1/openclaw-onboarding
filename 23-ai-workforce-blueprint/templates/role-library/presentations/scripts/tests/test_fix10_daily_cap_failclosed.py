@@ -46,6 +46,9 @@ def gov_env(tmp_path, monkeypatch):
     governor.set_log_path(str(tmp_path / "governor_log.jsonl"))
     with governor._lock:
         governor._state.clear()
+    # the shared store is a per-process singleton bound to the FIRST test's
+    # tmp_path; drop it so this test's day_count=1 does not leak into the next
+    monkeypatch.setattr(governor._gstore, "_STORE", None)
     # daily_cap=1, generous rate bucket so only the cap can bite
     monkeypatch.setattr(
         governor,
