@@ -1,39 +1,57 @@
-## [v25.1.102]  -  2026-09-28  -  Presentations Step 5 lands on main: signature driver unification (Fix 7), skill-level signature retirement (Fix 31)
+## [v25.1.103]  -  2026-09-28  -  Merge train: #1298 presentations: Step 5 — Fix 7, then Fix 31; #1316 Rewrite SYSTEM-DIAGNOSTIC-CHECKLIST.md — 16-release stale content pass; #1317 docs(batch-merger-proof): isolation proof A (clean); #1318 docs(batch-merger-proof): isolation proof B (clean); #1319 docs(batch-merger-proof): isolation proof C (clean); #1321 fleet-refresh: name every box by its client, not its box id; per-box…
 
-### Why
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1298 — [v25.1.102]  -  2026-09-28  -  Presentations Step 5 lands on main: signature driver unification (Fix 7), skill-level signature retirement (Fix 31)
+
+#### Why
 This entry documents the Step 5 release (Fixes 7, 31) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.100 -> v25.1.102 via scripts/bump-version.sh (v25.1.101 is claimed by open PR #1312; G3: skill content changed under 23-ai-workforce-blueprint/).
 
-### What changed
+#### What changed
 - Fix 7 (signature turn-gate points at the legacy driver): moved signature turn-gate documentation and error messages to the canonical department driver (deck-intake-driver.py with --sig-* flags); the department driver now rejects --signature --next and --signature --answer with non-zero status and names the correct replacement flags; added department-driver --selftest; entry.sh error messages updated (both copies). Test: intake-conversation test gains (H2) dept --selftest.
 - Fix 31 (skill-level signature interview bypasses the canonical driver): skill-level signature mode retired -- it now delegates to the canonical department driver, translating legacy flags (--next/--answer to --sig-next/--sig-answer, --plan/--record to --sig-plan/--sig-record); standard-mode delegation unchanged; --run-dir optional for --selftest. Test: --plan assertion updated to the department-driver shape (frame_question).
 - Step 5 check fixes: bare --signature delegation named an unfollowable --sig-next pointer on the skill-level driver (fixed via an optional next_command_rewrite hook rewriting --sig-next to --next; suite 97/97 PASS); 2 stale content_sha entries from Fix 7 doc changes restamped via the mechanical content-manifest rehash.
 - Version markers rolled v25.1.100 -> v25.1.102 across all markers via scripts/bump-version.sh (G3).
 
-### Tests
+#### Tests
 New/updated tests per the fix orders (dept --selftest (H2), --plan assertion update; not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.100 entry below.
-## [v25.1.102]  -  2026-09-28  -  SYSTEM-DIAGNOSTIC-CHECKLIST.md content rewrite: 16-release stale content pass
 
-### Why
+### #1316 — [v25.1.102]  -  2026-09-28  -  SYSTEM-DIAGNOSTIC-CHECKLIST.md content rewrite: 16-release stale content pass
+
+#### Why
 SYSTEM-DIAGNOSTIC-CHECKLIST.md still described the stack as it worked around v9.6.2 — a fixed 12-tag/6-tag persona taxonomy that no longer exists, a hand-typed "17 departments" floor the repo now computes at runtime (`department-floor.py`), a 4-check Gemini Engine section that predates the sqlite-backed coaching-personas pipeline, an interview model ("2-3 mandatory + up to 7 conditional questions") superseded by the phase-based spec in INSTRUCTIONS.md, symlink guidance for AGENTS.md/TOOLS.md/USER.md that N29 (amended 2026-07-31) reversed to real-file copies, stale script paths (`~/.openclaw/scripts/gemini-indexer.py` instead of the workspace `scripts/` tree), a persona-selector funnel-key example (`after_keyword`/`after_semantic`) that no longer matches the shipped output (`pool`/`category`/`semantic`), and zero coverage of the 2.11-2.15 and X.2-X.14 checks `qc-system-integrity.sh` has grown since. A version-number swap would not have fixed any of this; the checklist needed re-verifying line by line against the current runner script and the skill folders it inspects.
 
-### What changed
+#### What changed
 - SYSTEM-DIAGNOSTIC-CHECKLIST.md: full content rewrite. Every row now either matches an exact check ID in `scripts/qc-system-integrity.sh` (marked **(runner ...)**) or is explicitly marked **(manual)** where the runner does not automate it — the old doc silently mixed the two. Added CHECK 2.11-2.15 (role-library materialization, provenance, IDENTITY.md coverage, legacy-tree detection, exposed-file census) and the CROSS-CUTTING X.2-X.14 table (provider-capability invariants, Ollama platform standard, no-client-names, workspace-department materialization, repo-consistency, GHL MCP supervision x3, platform-facts stamp) that the runner has carried for several releases with no doc coverage. Removed the fixed 12-tag/6-tag domain taxonomy assertion (the vocabulary is now open and book-derived), the hand-typed department-count claims, and the "SYMLINKED, not copied" guidance for dept core files (replaced with the current real-file-copy doctrine, cross-referenced against the runner's own 9.9 check). Corrected the Gemini script paths, the CC health-check paths and ports (gateway `:18789/health`, Command Center `:4000/api/health`, sourced from `shared-utils/fleet_refresh_runner.py`), the persona-selector funnel JSON keys, the GHL MCP quota check's script path and thresholds, and the CHECK 3 persona-blueprint section list (14 sections, current names, per `22-book-to-persona-coaching-leadership-system/CHECKLIST.md`). Added a "Schedule" subsection describing the actual Sunday health gate (`fleet_refresh_runner.py`'s five health probes) in place of the old one-line schedule note.
 - version, install.sh, update-skills.sh, 23-ai-workforce-blueprint/skill-version.txt, 23-ai-workforce-blueprint/templates/role-library/_index.json, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md, cc-compat.json, 23-ai-workforce-blueprint/SKILL.md: v25.1.101 -> v25.1.102 via `scripts/bump-version.sh`.
 
-### Tests
+#### Tests
 `scripts/check-doc-currency-guards.sh` (pass — unaffected by this file, confirms no other doc drifted while this PR was open); `scripts/check-readme-current-release.sh` (pass); `scripts/bump-version.sh --check` (all 10 markers agree at v25.1.102); every file path and script name cited in the rewritten checklist verified to exist on disk before publishing.
-## [v25.1.103]  -  2026-09-28  -  Fleet roll names every box by its client, not its box id; per-box pass note
 
-### Why
+### #1317 — docs(batch-merger-proof): isolation proof A (clean)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1318 — docs(batch-merger-proof): isolation proof B (clean)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1319 — docs(batch-merger-proof): isolation proof C (clean)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1321 — [v25.1.103]  -  2026-09-28  -  Fleet roll names every box by its client, not its box id; per-box pass note
+
+#### Why
 Trevor's standing rule: people are named, never referred to by ids. The fleet roll printed box ids and hostnames in every line, the summary table and the operator alerts, so a person had to translate each one into a client. He also asked to hear the moment each box passes.
 
-### What changed
+#### What changed
 - scripts/make-fleet-boxes-file.py: every box in the private boxes file carries "client", the client's name from the operator's private roster. A trailing business or device note is dropped, and kept only to tell apart two boxes of one client on one platform. "client" is the first column of the private Drive sheet. A box with no roster client is written as "UNKNOWN CLIENT (<box id>)" with a loud warning, so it gets fixed.
 - scripts/fleet-refresh.sh: queue lines, per-box progress, the per-box summary lines and the outcome table name each box "Client Name (Platform)". The box id appears once, on the queue line, to find the box's log. Each box result gets "client" and "label" from the boxes file. The runner on the box does not know whose box it is, and a new runner flag would break boxes still on an older runner in a dry run.
 - shared-utils/fleet_notify.py: roll-back and failure alerts read "<Client> (<Platform>) rolled back: <why>". The new --passed mode sends "✅ <Client> (<Platform>) updated and passed. Onboarding <version>, Command Center <version>" by Telegram only, as each box passes on an operator --apply roll. Email stays for failures and roll-backs.
 - scripts/fleet-boxes.example.json: placeholder "client" on every example box.
 
-### Tests
+#### Tests
 tests/unit/fleet-refresh-roll-safety.test.py (63 pass): client names in the boxes file, the sheet, the queue and summary lines, the outcome table, the result JSON, the alerts and the pass note; the pass note goes by Telegram only and never for a roll-back, a failure or a box that needs attention; the UNKNOWN CLIENT fallback. All fixtures use placeholder names.
 
 ## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
