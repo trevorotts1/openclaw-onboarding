@@ -13,13 +13,21 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from datetime import datetime, timezone
+from shutil import which as shutil_which
 from pathlib import Path
 from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
+# Hermetic: no test may reach the operator's Google account or alert webhook.
+os.environ["FLEET_GOOGLE_SA"] = "/nonexistent/service-account.json"
+for _k in ("FLEET_STANDING_GATE_URL", "FLEET_STANDING_GATE_SECRET", "FLEET_OPERATOR_ALERT_URL"):
+    os.environ.pop(_k, None)
 sys.path.insert(0, str(REPO / "shared-utils"))
 import fleet_refresh_runner as fr  # noqa: E402
+import fleet_notify  # noqa: E402
 
 GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
@@ -124,23 +132,63 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(snap["skills_entries"], [".onboarding-version", "01-skill"])
         self.assertTrue(Path(snap["skills_archive"]).is_file())
 
+    CLEAN = {n: hc("pass") for n in fr.INTEGRITY_CHECKS}
+
+    def gate(self, posts, after=None, integ=None, host_restart=False, pinned="vB"):
+        """Run heal_and_gate with scripted probes. `posts` is the post-update
+        health seen on each loop pass (the last one repeats); fix actions are
+        recorded, not executed."""
+        seq = list(posts)
+        self.actions = []
+
+        def fake_probe(paths, res=None):
+            if res is None:
+                return after if after is not None else health()
+            return seq.pop(0) if len(seq) > 1 else seq[0]
+
+        def fake_action(act, paths, repo_root, res, ctx):
+            self.actions.append(act)
+            if act == "restart-gateway" and not fake_action.mac:
+                return "needs-host"
+            return "ok"
+        fake_action.mac = False
+        integ_seq = list(integ or [self.CLEAN])
+        fake_integ = lambda *a, **k: integ_seq.pop(0) if len(integ_seq) > 1 else integ_seq[0]
+        self.ctx = {"pinned": pinned, "cc_tag": "v0", "force_cc": False, "host_restart": host_restart}
+        with mock.patch.object(fr, "probe_health", side_effect=fake_probe), \
+             mock.patch.object(fr, "probe_integrity", side_effect=fake_integ), \
+             mock.patch.object(fr, "_run_heal_action", side_effect=fake_action):
+            return fr.heal_and_gate(self.box.paths, self.box.onb, self.res, health(), self.ctx)
+
     def test_gate_pass_keeps_the_update(self):
         self.snapshot()
         self.box.apply_release_b()
-        with mock.patch.object(fr, "probe_health", return_value=health()):
-            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vB")
+        self.assertEqual(self.gate([health()]), "done")
         self.assertEqual(self.res.steps["health-gate"], "ok")
         self.assertEqual(self.res.rollback, {})
+        self.assertEqual(self.actions, [])
         self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v2")
         self.assertFalse(self.box.deploy_log.exists())
 
-    def test_gate_fail_rolls_everything_back(self):
+    def test_fix_first_heals_without_rollback(self):
         self.snapshot()
         self.box.apply_release_b()
-        post = health(cc_health="fail")
-        with mock.patch.object(fr, "probe_health", side_effect=[post, health()]):
-            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vB")
+        self.gate([health(cc_health="fail"), health(cc_health="fail"), health()])
+        self.assertEqual(self.res.steps["health-gate"], "ok:healed after 2 fix attempt(s)")
+        self.assertEqual(self.res.rollback, {})
+        self.assertEqual(self.actions, ["rebuild-cc", "reset-session"] * 2)
+        attempts = self.res.heal["attempts"]
+        self.assertEqual([a["n"] for a in attempts], [1, 2])
+        self.assertIn("cc-health", attempts[0]["failing"])
+        self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v2")
+
+    def test_three_failed_fixes_then_everything_rolls_back(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        self.gate([health(cc_health="fail")])
+        self.assertEqual(len(self.res.heal["attempts"]), 3)
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
+        self.assertIn("3 fix attempt(s) failed", self.res.outcome_detail)
         self.assertIn("cc-health", self.res.outcome_detail)
         # onboarding: clone, skill content, added files and stamp all back to A
         self.assertEqual(git(self.box.onb, "rev-parse", "HEAD"), self.box.onb_a)
@@ -153,21 +201,48 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertIn(f"--revision {self.box.cc_a}", self.box.deploy_log.read_text())
         self.assertTrue(self.res.rollback["health_restored"])
 
-    def test_half_applied_step_rolls_back_even_when_health_is_fine(self):
+    def test_half_applied_step_is_retried_then_rolled_back(self):
         self.snapshot()
         self.box.apply_release_b()
         self.res.steps["pull-onboarding"] = "failed:update-skills.sh exited 1"
-        with mock.patch.object(fr, "probe_health", return_value=health()):
-            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vB")
+        self.gate([health()])
+        self.assertEqual(self.actions.count("rerun:pull-onboarding"), 3)
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
-        self.assertIn("pull-onboarding failed", self.res.outcome_detail)
+        self.assertIn("pull-onboarding", self.res.outcome_detail)
         self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v1")
+
+    def test_content_mismatch_reruns_the_updater_then_rolls_back(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        bad = dict(self.CLEAN, **{"sop-library": hc("fail")})
+        self.gate([health()], integ=[bad])
+        self.assertEqual(self.actions.count("rerun:pull-onboarding"), 3)
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
+        self.assertIn("sop-library", self.res.outcome_detail)
+
+    def test_content_mismatch_fixed_by_a_rerun_keeps_the_update(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        bad = dict(self.CLEAN, **{"persona-index": hc("fail")})
+        self.gate([health()], integ=[bad, self.CLEAN])
+        self.assertEqual(self.res.steps["health-gate"], "ok:healed after 1 fix attempt(s)")
+        self.assertEqual(self.res.rollback, {})
+
+    def test_preexisting_content_gap_is_alerted_not_rolled_back(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        gap = dict(self.CLEAN, **{"sop-embeddings": hc("fail")})
+        self.res.health["integrity_baseline"] = gap
+        self.gate([health()], integ=[gap])
+        self.assertEqual(self.res.steps["health-gate"], "ok")
+        self.assertEqual(self.actions, [])
+        self.assertEqual(self.res.rollback, {})
+        self.assertIn("sop-embeddings", self.res.health["content_gaps_preexisting"])
 
     def test_cc_step_failure_with_unchanged_checkout_is_not_rolled_back(self):
         self.snapshot()
         self.res.steps["pull-cc"] = "failed:CC dir not found: /elsewhere"
-        with mock.patch.object(fr, "probe_health", return_value=health()):
-            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vA")
+        self.gate([health()], pinned="vA")
         self.assertEqual(self.res.steps["health-gate"], "ok")
         self.assertEqual(self.res.rollback, {})
 
@@ -175,10 +250,42 @@ class HealthGateAndRollback(unittest.TestCase):
         self.snapshot()
         self.box.apply_release_b()
         self.res.steps["build-cc"] = "failed:atomic-deploy.sh exited 2 (pre-flight/build failed; previous build left serving)"
-        with mock.patch.object(fr, "probe_health", return_value=health()):
-            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vB")
+        self.gate([health()])
+        self.assertIn("rebuild-cc", self.actions)
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
         self.assertEqual(git(self.box.cc, "rev-parse", "HEAD"), self.box.cc_a)
+
+    def test_container_gateway_fix_is_handed_to_the_host_and_resumes(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        with mock.patch.object(fr.sys, "platform", "linux"):
+            r = self.gate([health(gateway_health="fail")], host_restart=True)
+        self.assertEqual(r, "needs-host-restart")
+        self.assertTrue(self.res.heal["pending_host_restart"])
+        self.assertEqual(self.res.heal["attempts"][0]["actions"]["restart-gateway"], "requested from host")
+        # resume from the saved state, as fleet-refresh.sh --continue-heal does
+        res2, base2, ctx2 = fr.load_heal_state(Path(self.res.heal["state_path"]))
+        self.assertEqual(res2.snapshot["cc"]["sha"], self.box.cc_a)
+        self.assertEqual(ctx2["cc_tag"], "v0")
+        self.res = res2
+        self.assertEqual(self.gate([health()], host_restart=True), "done")
+        self.assertEqual(self.res.steps["health-gate"], "ok:healed after 1 fix attempt(s)")
+
+    def test_container_without_host_access_cannot_restart_the_gateway(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        self.gate([health(gateway_process="fail")], host_restart=False)
+        acts = self.res.heal["attempts"][0]["actions"]
+        self.assertIn("no host access", acts["restart-gateway"])
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
+
+    def test_heal_actions_follow_the_failing_checks(self):
+        self.assertEqual(fr.heal_actions({"gateway-health": ""}), ["restart-gateway", "reset-session"])
+        self.assertEqual(fr.heal_actions({"telegram-getme": ""}), ["restart-gateway", "reset-session"])
+        self.assertEqual(fr.heal_actions({"session-reset": ""}), ["reset-session"])
+        self.assertEqual(fr.heal_actions({"role-library": "", "pull-cc": ""}),
+                         ["rerun:pull-onboarding", "rerun:pull-cc", "reset-session"])
+        self.assertEqual(fr.heal_actions({"restart-cc": ""}), ["rerun:restart-cc"])
 
     def test_update_skills_exit_2_is_advisory_not_a_failure(self):
         stamp = self.box.skills / ".onboarding-version"
@@ -194,8 +301,8 @@ class HealthGateAndRollback(unittest.TestCase):
         self.snapshot()
         self.box.apply_release_b()
         bad = health(gateway_health="fail")
-        with mock.patch.object(fr, "probe_health", side_effect=[bad, bad]):
-            fr._health_gate(self.box.paths, self.box.onb, self.res, health(), "vB")
+        with mock.patch.object(fr.sys, "platform", "darwin"):
+            self.gate([bad], after=bad)
         self.assertEqual(self.res.outcome, "FAILED")
         self.assertIn("ROLLBACK INCOMPLETE", self.res.outcome_detail)
         self.assertIn("gateway-health", self.res.outcome_detail)
@@ -220,6 +327,195 @@ class HealthGateAndRollback(unittest.TestCase):
         with mock.patch.object(fr.shutil, "disk_usage", return_value=mock.Mock(free=1)):
             self.assertFalse(fr.take_snapshot(self.box.paths, self.box.onb, self.res))
         self.assertIn("free", self.res.snapshot["error"])
+
+
+class ContentIntegrity(unittest.TestCase):
+    """Each post-update content check, on a fixture box, in both directions."""
+
+    def setUp(self):
+        import sqlite3
+        self.sqlite3 = sqlite3
+        self._td = tempfile.TemporaryDirectory()
+        t = Path(self._td.name)
+        self.skills, self.ws = t / "oc/skills", t / "oc/workspace"
+        (self.skills / "shared-utils").mkdir(parents=True)
+        for rel in ("prebuilt-index", "sop-library", "sop-embed-once"):
+            (self.skills / "shared-utils" / rel).mkdir()
+        (self.ws / "data/coaching-personas").mkdir(parents=True)
+        self.cc = t / "cc"
+        self.cc.mkdir()
+        self.paths = {"root": t / "oc", "skills": self.skills, "workspace": self.ws, "cc_dir": self.cc}
+        env = mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": str(t)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def manifest(self, rel, data):
+        (self.skills / "shared-utils" / rel).write_text(json.dumps(data))
+
+    def db(self, path, sql):
+        con = self.sqlite3.connect(path)
+        con.executescript(sql)
+        con.commit()
+        con.close()
+
+    def test_persona_index_and_embeddings(self):
+        self.manifest("prebuilt-index/INDEX-MANIFEST.json", {"release_tag": "pi-v2", "embedded_persona_count": 3})
+        self.assertEqual(fr.ic_persona_index(self.skills, self.ws)["status"], "fail")
+        (self.ws / "data/coaching-personas/.prebuilt-index-version").write_text("pi-v2\n")
+        self.assertEqual(fr.ic_persona_index(self.skills, self.ws)["status"], "pass")
+        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "fail")   # no DB
+        dbp = self.ws / "data/coaching-personas/gemini-index.sqlite"
+        self.db(dbp, "CREATE TABLE embeddings (id TEXT, persona_id TEXT); INSERT INTO embeddings VALUES ('1','a');")
+        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "fail")
+        # an honest spend-gate deferral receipt accounts for a missing persona
+        rec = self.ws / "data/coaching-personas/personas/p-b"
+        rec.mkdir(parents=True)
+        (rec / "embedding-receipt.json").write_text(json.dumps({"status": "deferred"}))
+        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "fail")   # 1 + 1 < 3
+        self.db(dbp, "INSERT INTO embeddings VALUES ('2','b');")
+        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "pass")   # 2 + 1 >= 3
+
+    def sop_db(self, sops, embedded):
+        dbp = self.cc / "mission-control.db"
+        dbp.unlink(missing_ok=True)
+        rows = ",".join(f"({i})" for i in range(sops))
+        emb = ",".join(f"({i})" for i in range(embedded))
+        self.db(dbp, "CREATE TABLE sops (id INTEGER); CREATE TABLE sop_embeddings (sop_id INTEGER);"
+                     + (f"INSERT INTO sops VALUES {rows};" if sops else "")
+                     + (f"INSERT INTO sop_embeddings VALUES {emb};" if embedded else ""))
+        return dbp
+
+    def test_sop_library_and_embeddings(self):
+        self.manifest("sop-library/SOP-LIBRARY-MANIFEST.json", {"canonical_sop_count": 5})
+        self.manifest("sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json", {"sop_count": 4})
+        self.assertEqual([c["status"] for c in fr.ic_sop(self.paths, self.skills)], ["n/a", "n/a"])  # no CC DB
+        self.sop_db(3, 3)
+        self.assertEqual([c["status"] for c in fr.ic_sop(self.paths, self.skills)], ["fail", "fail"])
+        self.sop_db(5, 3)
+        self.assertEqual([c["status"] for c in fr.ic_sop(self.paths, self.skills)], ["pass", "fail"])
+        self.sop_db(5, 4)
+        self.assertEqual([c["status"] for c in fr.ic_sop(self.paths, self.skills)], ["pass", "pass"])
+
+    @unittest.skipUnless(shutil_which("sqlite3"), "sqlite3 CLI needed to run the update-skills.sh probe")
+    def test_sop_checks_agree_with_update_skills_probe(self):
+        """Parity: the Python port and update-skills.sh's own
+        _sop_library_currency_probe reach the same verdict on the same DB."""
+        src = (REPO / "update-skills.sh").read_text()
+        a = src.index("  _sop_library_currency_probe() {")
+        b = src.index("\n  }\n", a) + 4
+        su = self.skills / "shared-utils"
+        for f in ("resolve_db.py",):
+            (su / f).write_text((REPO / "shared-utils" / f).read_text())
+        self.manifest("sop-library/SOP-LIBRARY-MANIFEST.json", {"canonical_sop_count": 5})
+        self.manifest("sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json", {"sop_count": 4})
+        for sops, emb in ((3, 3), (5, 3), (5, 4)):
+            dbp = self.sop_db(sops, emb)
+            env = {**os.environ, "DASHBOARD_DB_PATH": str(dbp), "SKILLS_DIR": str(self.skills),
+                   "EXTRACTED_DIR": "/nonexistent"}
+            env.pop("FLEET_REFRESH_ROOT")
+            r = subprocess.run(["bash", "-c", src[a:b] + "\n_sop_library_currency_probe"],
+                               capture_output=True, text=True, env=env)
+            with mock.patch.dict(os.environ, {"DASHBOARD_DB_PATH": str(dbp)}):
+                os.environ.pop("FLEET_REFRESH_ROOT")
+                ours = fr.ic_sop(self.paths, self.skills)
+            ours_ok = all(c["status"] == "pass" for c in ours)
+            self.assertEqual(r.returncode == 0, ours_ok, (sops, emb, r.stdout, ours))
+
+    def test_role_library_digest(self):
+        repo = Path(self._td.name) / "clone"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "scripts/skill-content-hash.sh").write_text((REPO / "scripts/skill-content-hash.sh").read_text())
+        lib = self.skills / "23-ai-workforce-blueprint/templates/role-library"
+        lib.mkdir(parents=True)
+        (lib / "role.md").write_text("release text")
+        out = subprocess.run(["bash", str(repo / "scripts/skill-content-hash.sh"), str(self.skills)],
+                             capture_output=True, text=True).stdout
+        digest = next(l.split("|")[1] for l in out.splitlines() if l.startswith("23-"))
+        (self.skills / ".onboarding-content-manifest.json").write_text(json.dumps(
+            {"version": "vB", "skills": {"23-ai-workforce-blueprint": digest}}))
+        self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "pass")
+        self.assertEqual(fr.ic_role_library(self.skills, repo, "vC")["status"], "fail")
+        (lib / "role.md").write_text("edited on the box")
+        self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "fail")
+
+    def test_departments(self):
+        started = time.time() - 5
+        self.assertEqual(fr.ic_departments(self.paths, started)["status"], "n/a")
+        receipt = self.ws / ".dept-intake-refresh-receipt.json"
+        now = datetime.now(timezone.utc).isoformat()
+        receipt.write_text(json.dumps({"ok": False, "apply": True, "at": now,
+                                       "depts": [{"dept": "sales", "status": "verify_failed"}]}))
+        r = fr.ic_departments(self.paths, started)
+        self.assertEqual(r["status"], "fail")
+        self.assertIn("sales", r["detail"])
+        receipt.write_text(json.dumps({"ok": True, "apply": True, "at": now, "depts": []}))
+        self.assertEqual(fr.ic_departments(self.paths, started)["status"], "pass")
+        # a receipt from an older run says nothing about this one
+        self.assertEqual(fr.ic_departments(self.paths, time.time() + 60)["status"], "n/a")
+
+
+class MacGatewayRestart(unittest.TestCase):
+    def run_with(self, kick_rc, stop_rc, loaded=True):
+        with tempfile.TemporaryDirectory() as td:
+            log = Path(td, "calls")
+            f = Path(td, "launchctl")
+            f.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n'
+                         f'case "$1" in print) exit {0 if loaded else 113};; '
+                         f'kickstart) exit {kick_rc};; stop) exit {stop_rc};; esac\n')
+            f.chmod(0o755)
+            agents = Path(td, "Library/LaunchAgents")
+            agents.mkdir(parents=True)
+            (agents / "ai.openclaw.gateway.plist").write_text("<plist/>")
+            with mock.patch.dict(os.environ, {"PATH": f"{td}:{os.environ['PATH']}", "HOME": td}):
+                try:
+                    return fr.restart_gateway_mac(), log.read_text()
+                except RuntimeError as e:
+                    return f"raised: {e}", log.read_text()
+
+    def test_kickstart_then_stop_fallback(self):
+        out, calls = self.run_with(0, 0)
+        self.assertEqual(out, "launchctl kickstart ok")
+        self.assertIn(f"kickstart -k gui/{os.getuid()}/ai.openclaw.gateway", calls)
+        out, calls = self.run_with(125, 0)
+        self.assertIn("launchctl stop ok", out)
+        self.assertIn("stop ai.openclaw.gateway", calls)
+        out, _ = self.run_with(125, 3)
+        self.assertTrue(out.startswith("raised:"))
+        out, calls = self.run_with(0, 0, loaded=False)
+        self.assertIn("bootstrapped booted-out label", out)
+        self.assertIn("bootstrap gui/", calls)
+        self.assertNotIn("bootstrap", self.run_with(0, 0)[1])
+
+
+class HealActionDispatch(unittest.TestCase):
+    def test_gateway_restart_is_launchd_on_a_mac_and_the_host_elsewhere(self):
+        res = fr.BoxResult("t", dry_run=False)
+        with mock.patch.object(fr.sys, "platform", "linux"):
+            self.assertEqual(fr._run_heal_action("restart-gateway", {}, Path("."), res, {}), "needs-host")
+        with mock.patch.object(fr.sys, "platform", "darwin"), \
+             mock.patch.object(fr, "restart_gateway_mac", return_value="launchctl kickstart ok") as rg, \
+             mock.patch.object(fr, "_wait_gateway", return_value=True):
+            out = fr._run_heal_action("restart-gateway", {}, Path("."), res, {})
+        rg.assert_called_once()
+        self.assertEqual(out, "launchctl kickstart ok; gateway healthy")
+
+    def test_rerun_actions_call_the_real_steps(self):
+        res = fr.BoxResult("t", dry_run=False)
+        ctx = {"pinned": "v1", "cc_tag": "v0"}
+        with mock.patch.object(fr, "step_pull_onboarding", return_value="v2") as po, \
+             mock.patch.object(fr, "step_build_cc") as bc, \
+             mock.patch.object(fr, "step_sessions_reset_ceo") as sr, \
+             mock.patch.object(fr, "_resolve_ceo_session_key", return_value="k"):
+            fr._run_heal_action("rerun:pull-onboarding", {}, Path("."), res, ctx)
+            fr._run_heal_action("rebuild-cc", {}, Path("."), res, ctx)
+            fr._run_heal_action("reset-session", {}, Path("."), res, ctx)
+        po.assert_called_once()
+        self.assertEqual(ctx["pinned"], "v2")
+        bc.assert_called_once()
+        sr.assert_called_once()
 
 
 class BuildFailureKeepsOldBuild(unittest.TestCase):
@@ -383,7 +679,8 @@ class BoxesFileGenerator(unittest.TestCase):
     def run_gen(self, td, *extra):
         return subprocess.run([sys.executable, str(self.GEN), "--roster", f"{td}/roster.json",
                                "--registry", f"{td}/registry.json", "--pins", f"{td}/pins.json",
-                               "--out", f"{td}/out/boxes.json", *extra], capture_output=True, text=True)
+                               "--out", f"{td}/out/boxes.json", *extra], capture_output=True, text=True,
+                              env={**os.environ, "HOME": td})
 
     def fixture(self, td):
         roster = {"boxes": {
@@ -556,6 +853,90 @@ class WrapperWaves(unittest.TestCase):
             self.assertIn(" --apply", row["outcome_detail"])
             self.assertEqual(git(box_clone, "rev-parse", "HEAD"), git(seed, "rev-parse", "HEAD"))
 
+    def host_restart_scenario(self, platform, compose_rc=0):
+        """A container box whose runner first asks for a gateway restart (exit 4),
+        then succeeds once resumed. Fake docker records host-side commands."""
+        td = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(td)]))
+        wrapper_repo = td / "operator-clone"
+        (wrapper_repo / "scripts").mkdir(parents=True)
+        (wrapper_repo / "shared-utils").mkdir()
+        for rel in ("scripts/fleet-refresh.sh", "scripts/make-fleet-boxes-file.py",
+                    "shared-utils/fleet_notify.py", "shared-utils/operator_google.py"):
+            (wrapper_repo / rel).write_text((REPO / rel).read_text())
+        (wrapper_repo / "shared-utils/fleet_refresh_runner.py").write_text("")
+        (wrapper_repo / "cc-compat.json").write_text((REPO / "cc-compat.json").read_text())
+        origin = td / "origin.git"
+        origin.mkdir()
+        git(origin, "init", "-q", "--bare", "-b", "main")
+        seed = new_repo(td / "seed")
+        stub = ('import json,sys\n'
+                'a = sys.argv\n'
+                'box = a[a.index("--box")+1]\n'
+                'if "--continue-heal" in a:\n'
+                '    print(json.dumps({"box": box, "result": "ok", "outcome": "UPDATED",\n'
+                '        "outcome_detail": "resumed; host said: " + a[a.index("--host-restart-result")+1]\n'
+                '            + ("" if "--host-restart" in a else " [no host restart offered again]")}))\n'
+                '    sys.exit(0)\n'
+                'assert "--host-restart" in a\n'
+                'print(json.dumps({"box": box, "result": "pending_host_restart", "outcome": "PENDING",\n'
+                '    "heal": {"state_path": "/tmp/heal state.json"}}))\n'
+                'sys.exit(4)\n')
+        commit(seed, {"shared-utils/fleet_refresh_runner.py": stub}, "one")
+        git(seed, "remote", "add", "origin", str(origin))
+        git(seed, "push", "-q", "origin", "main")
+        home = td / "home"
+        box_clone = home / "clawd/openclaw-onboarding"
+        box_clone.parent.mkdir(parents=True)
+        subprocess.run(["git", "clone", "-q", str(origin), str(box_clone)], check=True, env=GIT_ENV)
+        fake = td / "bin"
+        fake.mkdir()
+        log = td / "docker.log"
+        (fake / "curl").write_text("#!/bin/sh\necho 200\n")
+        (fake / "ssh").write_text('#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
+        (fake / "docker").write_text(
+            '#!/bin/bash\n'
+            f'echo "$*" >> "{log}"\n'
+            'case "$1" in\n'
+            '  exec) while [ "$1" != bash ]; do shift; done; exec bash -c "$3" ;;\n'
+            f'  inspect) case "$3" in *working_dir*) echo {td}/docker/proj ;; *service*) echo openclaw ;; *) echo true ;; esac ;;\n'
+            '  restart) exit 0 ;;\n'
+            f'  compose) exit {compose_rc} ;;\n'
+            'esac\n')
+        for f in fake.iterdir():
+            f.chmod(0o755)
+        Path(td, "b.json").write_text(json.dumps([{"name": "box-1", "ssh_target": "h", "platform": platform,
+                                                   "container": "c-1", "wave": "first"}]))
+        (td / "docker/proj").mkdir(parents=True)
+        env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home)}
+        r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
+                            "--boxes-file", str(td / "b.json"), "--apply"],
+                           capture_output=True, text=True, env=env, timeout=180)
+        row = json.loads((wrapper_repo / ".fleet-refresh-summary.json").read_text())[0]
+        return r, row, log.read_text()
+
+    def test_hostinger_gateway_restart_is_compose_up_then_resume(self):
+        r, row, docker = self.host_restart_scenario("hostinger")
+        self.assertEqual(row["outcome"], "UPDATED", r.stdout + r.stderr)
+        self.assertIn("inspect -f {{ index .Config.Labels \"com.docker.compose.project.working_dir\" }} c-1", docker)
+        self.assertIn("compose up -d --force-recreate openclaw", docker)
+        self.assertIn("docker compose up -d --force-recreate openclaw ok", row["outcome_detail"])
+        self.assertNotIn("restart c-1", docker)
+        self.assertIn("--host-restart", docker)
+
+    def test_failed_host_restart_resumes_without_offering_it_again(self):
+        r, row, docker = self.host_restart_scenario("hostinger", compose_rc=1)
+        self.assertEqual(row["outcome"], "UPDATED", r.stdout + r.stderr)
+        self.assertIn("FAILED - the host restart did not complete", row["outcome_detail"])
+        self.assertIn("[no host restart offered again]", row["outcome_detail"])
+
+    def test_contabo_gateway_restart_is_docker_restart_then_resume(self):
+        r, row, docker = self.host_restart_scenario("contabo")
+        self.assertEqual(row["outcome"], "UPDATED", r.stdout + r.stderr)
+        self.assertIn("restart c-1", docker)
+        self.assertIn("docker restart ok", row["outcome_detail"])
+        self.assertNotIn("compose", docker)
+
     def test_bad_wave_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
             r = self.run_wrapper(td, "--wave", "bogus")
@@ -584,6 +965,142 @@ class WeeklyFullUpdate(unittest.TestCase):
                                text=True, env={**GIT_ENV, "ONBOARDING_CLONE": str(clone), "HOME": td})
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn(f"ARGS=--local --apply PREV={old} HEAD={new}", r.stdout)
+
+
+class OperatorAlert(unittest.TestCase):
+    ROWS = [{"box": "box-a", "outcome": "ROLLED_BACK", "outcome_detail": "3 fix attempt(s) failed; cc-health",
+             "heal": {"attempts": [{}, {}, {}]}, "rollback": {"not_restored": "openclaw.json"}},
+            {"box": "box-b", "outcome": "FAILED",
+             "outcome_detail": "token 123456789:AAHfakefakefakefakefakefakefake1234 leaked"},
+            {"box": "box-c", "outcome": "UPDATED"}]
+
+    def test_preexisting_gap_is_alerted_as_needing_attention(self):
+        rows = [{"box": "box-d", "outcome": "UPDATED", "heal": {"needs_attention": True},
+                 "outcome_detail": "NEEDS ATTENTION - content gaps that were already there before this update"}]
+        subject, body = fleet_notify.compose(rows, "t")
+        self.assertIn("1 need attention", subject)
+        self.assertIn("already there before", body)
+
+    def test_email_only_on_the_operator_machine(self):
+        with tempfile.TemporaryDirectory() as td:
+            sa = Path(td, "sa.json"); sa.write_text("{}")
+            with mock.patch.object(fleet_notify.operator_google, "SA_PATH", sa), \
+                 mock.patch.object(fleet_notify.operator_google, "OPERATOR_MARKER", Path(td, "boxes.json")):
+                self.assertFalse(fleet_notify.operator_google.available())   # a client box with an SA file
+                Path(td, "boxes.json").write_text("[]")
+                self.assertTrue(fleet_notify.operator_google.available())
+
+    def test_nothing_to_say_sends_nothing(self):
+        with mock.patch.object(fleet_notify, "send_telegram") as tg:
+            r = fleet_notify.notify([{"box": "x", "outcome": "UPDATED"}], "t")
+        self.assertFalse(r["sent"])
+        tg.assert_not_called()
+
+    def test_note_names_boxes_and_never_carries_a_secret(self):
+        subject, body = fleet_notify.compose(self.ROWS, "operator roll")
+        self.assertIn("1 rolled back, 1 failed", subject)
+        self.assertIn("Box box-a", body)
+        self.assertIn("Fix attempts made before that: 3", body)
+        self.assertIn("Nothing was sent to any client", body)
+        self.assertNotIn("AAHfakefake", body)
+
+    def test_sends_telegram_and_email_to_the_operator_only(self):
+        with mock.patch.object(fleet_notify, "send_telegram", return_value=(True, "ok")) as tg, \
+             mock.patch.object(fleet_notify.operator_google, "available", return_value=True), \
+             mock.patch.object(fleet_notify.operator_google, "send_email", return_value=(True, "ok")) as em:
+            fleet_notify.notify(self.ROWS, "operator roll")
+        tg.assert_called_once()
+        self.assertEqual(em.call_args.kwargs.get("to", fleet_notify.operator_google.OPERATOR_EMAIL),
+                         fleet_notify.operator_google.OPERATOR_EMAIL)
+        self.assertEqual(len(em.call_args.args), 2)   # subject, body -- recipient is the operator default
+
+    def test_box_without_google_account_still_alerts_by_telegram(self):
+        with mock.patch.object(fleet_notify, "send_telegram", return_value=(True, "ok")) as tg:
+            r = fleet_notify.notify(self.ROWS, "a client box (its own update)")
+        tg.assert_called_once()
+        self.assertFalse(r["email"][0])
+
+    def test_alert_webhook_is_derived_from_the_gate_credentials(self):
+        with mock.patch.dict(os.environ, {"FLEET_STANDING_GATE_URL": "https://n8n.example/webhook/fleet-standing-check",
+                                          "FLEET_STANDING_GATE_SECRET": "s"}):
+            url, header, secret = fleet_notify.alert_target()
+        self.assertEqual(url, "https://n8n.example/webhook/fleet-standing-alert")
+        self.assertEqual(header, "X-Fleet-Standing-Secret")
+        with mock.patch.object(fleet_notify, "_openclaw_env", return_value={}):
+            self.assertFalse(fleet_notify.send_telegram("x")[0])   # unconfigured: no send
+
+
+class BoxListDriveBackup(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("mkboxes", REPO / "scripts/make-fleet-boxes-file.py")
+        self.m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.m)
+        self._td = tempfile.TemporaryDirectory()
+        self.m.FLEET_DIR = Path(self._td.name)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_sheet_round_trip_carries_no_secret_values(self):
+        entries = [{"name": "b1", "ssh_target": "root@192.0.2.9", "platform": "hostinger",
+                    "container": "c1", "docker_exec_user": "node", "wave": "first"},
+                   {"name": "b2", "ssh_target": "alias-2", "platform": "mac", "wave": "rest",
+                    "tunnel_host": "b2.example.com", "cf_token_env_vars": "CF_X_ID CF_X_SECRET",
+                    "cf_access_env_prefix": "CF_X", "cf_tunnel_id": "tun-9"}]
+        text = self.m.sheet_rows(entries, {"b1": {"result": "UPDATED", "date": "2026-09-28", "nine99": "n"}})
+        self.assertTrue(text.startswith(",".join(self.m.SHEET_COLUMNS)))
+        self.assertIn("CF_X_ID CF_X_SECRET", text)
+        self.assertIn("UPDATED", text)
+        back = self.m.entries_from_sheet_csv(text)
+        self.assertEqual((back[1]["cf_access_env_prefix"], back[1]["cf_tunnel_id"]), ("CF_X", "tun-9"))
+        self.assertEqual([(e["name"], e["ssh_target"], e["platform"], e["wave"]) for e in back],
+                         [("b1", "root@192.0.2.9", "hostinger", "first"), ("b2", "alias-2", "mac", "rest")])
+        self.assertEqual(back[0]["container"], "c1")
+        self.assertNotIn("cf_access_env_prefix", back[0])
+
+    def test_ssh_route_reads_names_not_values(self):
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td, "ssh")
+            f.write_text("#!/bin/sh\necho 'hostname box.example.com'\n"
+                         "echo 'proxycommand sh -c exec cloudflared access ssh --hostname %h "
+                         "--service-token-id \"$CF_ACCESS_B_SVC_CLIENT_ID\" "
+                         "--service-token-secret \"$CF_ACCESS_B_SVC_CLIENT_SECRET\"'\n")
+            f.chmod(0o755)
+            with mock.patch.dict(os.environ, {"PATH": f"{td}:{os.environ['PATH']}"}):
+                host, names = self.m._ssh_route("alias-b")
+        self.assertEqual(host, "box.example.com")
+        self.assertEqual(names, "CF_ACCESS_B_SVC_CLIENT_ID CF_ACCESS_B_SVC_CLIENT_SECRET")
+
+    def test_record_roll_then_sync(self):
+        summ = Path(self._td.name, "s.json")
+        summ.write_text(json.dumps([
+            {"box": "b1", "outcome": "ROLLED_BACK", "steps": {"update-999": "skip:999 not installed"}},
+            {"box": "b2", "outcome": "UPDATED", "steps": {"update-999": "ok"}, "update_999": {"path": "/x"}},
+            {"box": "local", "outcome": "UPDATED"}]))
+        last = self.m.record_roll(summ)
+        self.assertEqual(last["b1"]["result"], "ROLLED_BACK")
+        self.assertEqual((last["b1"]["nine99"], last["b2"]["nine99"]), ("n", "y"))
+        self.assertNotIn("local", last)
+        self.assertEqual(stat.S_IMODE((self.m.FLEET_DIR / "last-roll.json").stat().st_mode), 0o600)
+        with mock.patch.object(self.m.operator_google, "available", return_value=True), \
+             mock.patch.object(self.m.operator_google, "upsert_sheet", return_value=("sheet-1", "ok")) as up:
+            msg = self.m.sync_sheet([{"name": "b1", "ssh_target": "x", "platform": "hostinger"}])
+        self.assertIn("refreshed", msg)
+        self.assertIn("ROLLED_BACK", up.call_args.args[1])
+        self.assertEqual(json.loads((self.m.FLEET_DIR / "boxes-sheet.json").read_text())["id"], "sheet-1")
+
+    def test_rebuild_from_sheet_when_the_roster_is_gone(self):
+        csv_text = self.m.sheet_rows([{"name": "b1", "ssh_target": "t1", "platform": "contabo",
+                                       "container": "oc-b1", "openclaw_root": "/home/node/.openclaw"}], {})
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(self.m.operator_google, "find_sheet", return_value=("sheet-1", "found")), \
+             mock.patch.object(self.m.operator_google, "export_sheet_csv", return_value=(csv_text, "ok")), \
+             mock.patch.object(sys, "argv", ["x", "--roster", f"{td}/missing.json", "--out", f"{td}/o/boxes.json"]):
+            self.assertEqual(self.m.main(), 0)
+            got = json.loads(Path(td, "o/boxes.json").read_text())
+        self.assertEqual(got[0]["openclaw_root"], "/home/node/.openclaw")
+        self.assertEqual(got[0]["container"], "oc-b1")
 
 
 class SundayCronHeal(unittest.TestCase):

@@ -31,8 +31,13 @@
 #                     bash scripts/fleet-refresh.sh --wave first --apply
 #   3. every other client box: bash scripts/fleet-refresh.sh --wave rest --apply
 #   Each run ends with a one-screen UPDATED / ROLLED_BACK / FAILED / SKIPPED table.
-#   Every box is snapshotted first, health-gated after, and rolled back on any
-#   regression (shared-utils/fleet_refresh_runner.py). Nothing messages a chat.
+#   Every box is snapshotted first, then checked after the update: health
+#   (gateway, Telegram getMe, Command Center, session reset) AND content (persona
+#   index + embeddings, SOP library + embeddings, role library, departments).
+#   A failed check is FIXED first, up to 3 attempts (restart the gateway, re-run
+#   the failed step, rebuild the Command Center); only then is the box rolled
+#   back to its snapshot. Roll-backs and failures alert the OPERATOR (Telegram
+#   via his own agent's bot, plus email on his Mac). No client is ever messaged.
 #
 # BOX MANIFEST FORMAT (--boxes-file):
 #   JSON array of objects:
@@ -54,7 +59,10 @@
 # SAFETY GUARANTEES:
 #   • --dry-run is the default.  --apply must be passed explicitly.
 #   • NEVER issues `openclaw gateway restart` (Mac err 125 → box DOWN).
-#     Only `sessions.reset` is issued (a gateway CALL, not a process restart).
+#     The gateway is restarted ONLY as a fix attempt after a failed health
+#     check: Mac `launchctl kickstart -k` (fallback `launchctl stop`, KeepAlive
+#     restarts it); Hostinger `docker compose up -d --force-recreate <service>`
+#     and Contabo `docker restart <container>`, both run on the HOST by this script.
 #   • Per-box failure is isolated: one box failing never aborts others.
 #   • Aggregate exit: 0=all ok; 2=any partial/failed; 3=any unknown (CI-visible nonzero).
 #   • CC deploy goes through scripts/atomic-deploy.sh ONLY (B.2).
@@ -493,16 +501,63 @@ export FLEET_PREV_ONBOARDING_SHA=\"\$PREV\"
   # A dropped SSH session must not kill the runner half way through an update
   # or a rollback: ignore SIGHUP and write to files on the box, echoing them
   # back at the end. (If the session does drop, the result stays at $O.)
-  local run_script="trap '' HUP
-${prep}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
-python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS > \"\$O\" 2> \"\$E\"
+  # Inside a container the runner cannot restart its own gateway; it asks for
+  # it (exit 4, outcome PENDING) and this wrapper does it on the HOST.
+  local extra=""
+  [ -n "$container" ] && [ $APPLY -eq 1 ] && extra="--host-restart"
+  runner_cmd() {   # $1 = shell prefix, $2 = extra runner flags
+    printf '%s' "trap '' HUP
+${1}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS $2 > \"\$O\" 2> \"\$E\"
 rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
+  }
 
   local rc=0
   # shellcheck disable=SC2086
-  env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$run_script")" \
+  env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$(runner_cmd "$prep" "$extra")")" \
     > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
   finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner"
+
+  # Fix loop, host half: restart the container the way this platform needs,
+  # then let the runner re-check and continue (it caps the attempts at 3).
+  local round
+  for round in 1 2 3; do
+    [ "$rc" -eq 4 ] && [ -n "$container" ] || break
+    local state host_cmd host_out
+    state=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('heal',{}).get('state_path',''))" "$result_file" 2>/dev/null)
+    [ -n "$state" ] || break
+    if [ "$platform" = "contabo" ]; then
+      # Contabo keeps pm2 and the Command Center identity in the container
+      # layer: restart it, never recreate it.
+      host_cmd="docker restart $(sq "$container") >/dev/null && echo 'docker restart ok'"
+    else
+      # Hostinger: 'up -d' (re-reads env), forced so a hung gateway is replaced.
+      host_cmd="d=\$(docker inspect -f '{{ index .Config.Labels \"com.docker.compose.project.working_dir\" }}' $(sq "$container")) && svc=\$(docker inspect -f '{{ index .Config.Labels \"com.docker.compose.service\" }}' $(sq "$container")) && [ -n \"\$d\" ] && cd \"\$d\" && docker compose up -d --force-recreate \"\$svc\" >/dev/null 2>&1 && echo \"docker compose up -d --force-recreate \$svc ok\""
+    fi
+    echo "[fleet-refresh]   $box — fix attempt needs the gateway restarted: $host_cmd" >&2
+    # shellcheck disable=SC2086
+    host_out=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$host_cmd; for i in \$(seq 1 24); do [ \"\$(docker inspect -f '{{.State.Running}}' $(sq "$container") 2>/dev/null)\" = true ] && break; sleep 5; done" 2>>"$RUN_LOG_DIR/${box}.log" | tail -1 | tr -d "'\"") || true
+    # If the host restart failed, resume WITHOUT --host-restart: the runner
+    # records it, carries on with its other fixes, and rolls back if it must.
+    local again="--host-restart"
+    [ -n "$host_out" ] || { again=""; host_out="FAILED - the host restart did not complete"; }
+    rc=0
+    # shellcheck disable=SC2086
+    env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
+      "$(remote "$(runner_cmd "" "$again --continue-heal $(sq "$state") --host-restart-result $(sq "$host_out")")")" \
+      > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
+    finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner (continue-heal)"
+  done
+  if [ "$rc" -eq 4 ]; then   # never leave a box reported as pending
+    python3 - "$result_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d.update(result="failed", outcome="FAILED",
+         outcome_detail="a fix needed the container restarted from the host and that could not be completed; "
+                        "the box was left mid-fix - check it by hand")
+json.dump(d, open(sys.argv[1], "w"))
+PY
+  fi
 }
 
 # Track active jobs
@@ -897,6 +952,20 @@ print(" " + "   ".join(f"{k}={counts.get(k, 0)}" for k in ("UPDATED", "ROLLED_BA
 print("=" * 78)
 PY
 echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
+
+# Roll-back / failure alert to the OPERATOR only (Telegram through his own agent's
+# bot via the operator-alert webhook; email too on his Mac). Never a client.
+if [ $APPLY -eq 1 ]; then
+  _origin="operator roll"
+  [ $LOCAL -eq 1 ] && _origin="$(hostname -s 2>/dev/null || hostname) (its own update)"
+  python3 "$SHARED_UTILS/fleet_notify.py" --summary "$SUMMARY_FILE" --origin "$_origin" 2>&1 \
+    | sed 's/^/[fleet-refresh] operator alert: /' || true
+  # The operator's box list backup: last result per box, refreshed in Drive.
+  if [ $LOCAL -eq 0 ] && [ -n "$BOXES_FILE" ]; then
+    python3 "$REPO_ROOT/scripts/make-fleet-boxes-file.py" --out "$BOXES_FILE" --record-roll "$SUMMARY_FILE" 2>&1 \
+      | sed 's/^/[fleet-refresh] box list: /' || true
+  fi
+fi
 
 if [ $ANY_FAILED -eq 1 ]; then
   echo "[fleet-refresh] RESULT: PARTIAL/FAILED — check errors above"
