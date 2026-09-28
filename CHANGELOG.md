@@ -1,3 +1,28 @@
+## [v25.1.93]  -  2026-09-28  -  Presentations: Docker release-matrix pin to deb13u7, #1273 Fix 3 test fixture, #1277 test-isolation fixes
+
+### Why
+Three fix PRs (#1282, #1283, #1284) each change content under 23-ai-workforce-blueprint/, so each one alone fails G3 (a skill content change needs a skill-version.txt bump), and three separate bumps would collide. This release lands all three with one lockstep bump, cut from current main (v25.1.92, #1286). It supersedes #1287, #1282, #1283 and #1284. #1287 carried the same three fixes as v25.1.93 but conflicted after #1286 merged. It never merged, and no v25.1.93 tag exists.
+
+### What changed
+- #1282 (Docker release-matrix legs): the libreoffice-impress pin moves from 4:25.2.3-2+deb13u6 to 4:25.2.3-2+deb13u7 in release-matrix/Dockerfile.hostinger, release-matrix/Dockerfile.contabo and release-matrix/pins.yaml. The Docker failure came from Debian's trixie-security update to libreoffice 4:25.2.3-2+deb13u7: the unpinned libreoffice-uiconfig-impress dependency moved to deb13u7, so the deb13u6 pin could no longer install. PR #1277 did not cause it.
+- #1283 (#1273 Fix 3 test fixture): tests/test_fix03_env_store_restored.py writes its scratch store inside the client root (tmp_path/home/.openclaw/secrets/.env), so oc_paths no longer rejects it as escaping the client installation. Test-only.
+- #1284 (#1277 test isolation): test_fix10_daily_cap_failclosed.py resets the governor_store._STORE singleton for each test, and test_fix6_openrouter_pricing.py reads rate_source with .get() on the catalog-fallback row. Test-only.
+- Version markers rolled v25.1.92 -> v25.1.93 by `scripts/bump-version.sh` (G3).
+- `release-cohort.json` restamped to onb_version v25.1.93 and onb_sha = the origin/main tip this release was tested on, so `tests/unit/test_release_cohort_manifest.py` stays green after the bump. #1288 fixed the same drift after v25.1.92.
+
+## [v25.1.92]  -  2026-09-28  -  Interview prior-declaration batch (INT-001..INT-005) lands on main; supersedes the unmerged PR #1249
+
+### Why
+PR #1249 carried this batch as "v25.1.85", but it never merged and that version was later used on main by PR #1247. The batch is re-applied onto current main under the next free version. The v25.1.85 tag is unchanged.
+
+### What changed
+- `shared-utils/interview_completion.py` (new): a read-only check that decides whether the owner may be prompted about the interview. It returns COMPLETE (the state says so), DECLARED (the owner recorded a prior completion in the Command Center table `interview_prior_completion_declarations`), INCOMPLETE (proven not done), or UNKNOWN (identity missing, store not pinned, or table not there yet). Only INCOMPLETE allows a prompt. It never writes state, and it never counts as permission to build or to pass QC.
+- `23-ai-workforce-blueprint/scripts/send-interview-link.sh`: refuses (exit 3) on COMPLETE or DECLARED, and stays pending (exit 8) on UNKNOWN. `interview-nudge-cron.sh`: sends no reminder unless the status is INCOMPLETE.
+- `shared-utils/interview_invitation.py`: gates public-origin resolution and re-checks just before enrollment. `shared-utils/nudge-incomplete-interviews.py`: completion is terminal (a stale false can no longer overwrite a completed handoff), and the reminder is skipped on COMPLETE, DECLARED, UNKNOWN or a company slug mismatch.
+- Tests: `tests/unit/interview-completion.test.py` (new). `test_interview_invitation.py` fixtures now pin identity and the database. `interview-launch.test.py` checks that completed state and tenant registry selectors survive a reprovision. `standard-first-cron-awareness.test.sh` nudge fixtures stub the completion reader as INCOMPLETE, so they still reach the paths behind the new gate. `.github/workflows/interview-launch-contract.yml` now runs the new test (the follow-up #1249 left open).
+- Pairs with the Command Center declaration table, which is present at the pinned CC v7.6.68. The CC pin is unchanged.
+- Version markers rolled v25.1.91 -> v25.1.92 by `scripts/bump-version.sh` (G3: skill 23 content changed).
+
 ## [v25.1.91]  -  2026-09-27  -  Presentations Step 2 lands on main: Kie.ai spend ceilings fail-closed (Fix 10), fresh-intake credit preflight gate (Fix 5), OpenRouter live pricing (Fix 6)
 
 ### Why

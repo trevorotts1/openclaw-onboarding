@@ -10,7 +10,7 @@ The fix: the poller calls `load_env_store || true` after log() is defined and
 before RUNS_ROOT=; launcher.main() calls load_into_process() first thing.
 
 This test is hermetic: HOME is redirected into tmp_path and OPENCLAW_SECRETS
-points at a scratch store, so no leg can read this box's real secrets. The
+points at a scratch store inside that HOME's .openclaw root, so no leg can read this box's real secrets. The
 process env carries PRESENTATION_NOTIFY_CMD="" (the empty plist value); the
 scratch store carries the sentinel. It proves, with the REAL code:
   poller:   the shipped script calls the loader at top level between log()
@@ -50,7 +50,9 @@ def _extract_loader(src: str) -> str:
 
 @pytest.fixture()
 def store(tmp_path: Path) -> Path:
-    path = tmp_path / "secrets" / ".env"
+    # Inside the hermetic HOME's client root: oc_paths.secrets_env_candidates
+    # refuses an OPENCLAW_SECRETS that escapes the client install/workspace.
+    path = tmp_path / "home" / ".openclaw" / "secrets" / ".env"
     path.parent.mkdir(parents=True)
     path.write_text(
         "# scratch store\n"
