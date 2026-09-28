@@ -10,7 +10,7 @@ Before you run any commands in this skill:
 1. Open Terminal.
 2. Go into the skill folder:
    ```bash
-   cd ~/.openclaw/skills/video-creator
+   cd ~/.openclaw/skills/25-video-creator
    ```
 3. Discover every Markdown file in this skill folder (including subfolders):
    ```bash
@@ -79,18 +79,23 @@ Conflict rule:
 This skill's scripts use `moviepy.editor` and are written for **MoviePy v1**.
 MoviePy v2 removed `moviepy.editor`, so you must pin MoviePy to v1.
 
+The venv must live OUTSIDE any `~/.openclaw/skills/...` folder — OpenClaw's
+skill discovery scans every skill root, and a multi-hundred-MB venv inside one
+gets walked on every rescan. Use `~/.openclaw/venvs/video-creator` (VPS:
+`/data/.openclaw/venvs/video-creator`).
+
 1. Create a virtual environment (recommended):
    ```bash
-   python3 -m venv venv
+   python3 -m venv "$HOME/.openclaw/venvs/video-creator"
    ```
 2. Activate it:
    - macOS / Linux:
      ```bash
-     source venv/bin/activate
+     source "$HOME/.openclaw/venvs/video-creator/bin/activate"
      ```
    - Windows (PowerShell):
      ```powershell
-     venv\Scripts\Activate.ps1
+     & "$HOME\.openclaw\venvs\video-creator\Scripts\Activate.ps1"
      ```
 3. Upgrade pip:
    ```bash
@@ -114,19 +119,15 @@ MoviePy v2 removed `moviepy.editor`, so you must pin MoviePy to v1.
 2. After install, the skill should exist at:
    - `$HOME/.openclaw/skills/video-creator/`
 
-### Option B (manual): Unzip
+### Option B (manual): Run the wiring installer
 
-1. Create the skills folder if it does not exist:
+1. Make sure the numbered skill source is at `$HOME/.openclaw/skills/25-video-creator`
+   (from the onboarding package).
+2. Run its wiring installer — it copies the runtime files (excluding `SKILL.md`,
+   so the copy never registers as a second skill), builds the venv at
+   `$HOME/.openclaw/venvs/video-creator`, and writes the install stamp:
    ```bash
-   mkdir -p "$HOME/.openclaw/skills"
-   ```
-2. Copy the skill folder from the onboarding package:
-   ```bash
-   cp -r "$(find ~/Downloads -name '25-video-creator' -type d | head -1)" "$HOME/.openclaw/skills/video-creator"
-   ```
-3. Make scripts executable:
-   ```bash
-   chmod +x "$HOME/.openclaw/skills/video-creator/scripts"/*.py
+   bash "$HOME/.openclaw/skills/25-video-creator/wire.sh"
    ```
 
 ---
@@ -162,8 +163,9 @@ You can use this skill without any API keys by using the `mock` or `local` provi
    ```bash
    cd "$HOME/.openclaw/skills/video-creator"
    ```
-2. Run the installation test:
+2. Activate the venv and run the installation test:
    ```bash
+   source "$HOME/.openclaw/venvs/video-creator/bin/activate"
    python3 scripts/test_installation.py
    ```
 
@@ -171,13 +173,9 @@ You can use this skill without any API keys by using the `mock` or `local` provi
 
 ## Uninstall
 
-1. Remove the skill folder:
+1. Remove the skill folder and its venv:
    ```bash
-   rm -rf "$HOME/.openclaw/skills/video-creator"
-   ```
-2. (Optional) Remove the virtual environment you created:
-   ```bash
-   rm -rf venv
+   rm -rf "$HOME/.openclaw/skills/video-creator" "$HOME/.openclaw/venvs/video-creator"
    ```
 ---
 

@@ -226,14 +226,23 @@ register_tool \
 # video-creator (skill 25 — Video Creator). Same drift CLASS as caf, different
 # shape: skill 25 installs by COPYING the whole skill into an UN-numbered
 # ~/.openclaw/skills/video-creator/ (the runtime location named by TOOLS.md /
-# CORE_UPDATES.md / qc-video-creator.sh) plus a local `venv`. The wiring loop
-# only walks numbered dirs ([0-9]*/, update-skills.sh:1617) and re-syncs the
+# CORE_UPDATES.md / qc-video-creator.sh) plus a venv. The wiring loop only
+# walks numbered dirs ([0-9]*/, update-skills.sh:1617) and re-syncs the
 # NUMBERED source, so the un-numbered copy + its venv silently drift. Skill 25's
 # root wire.sh now reconciles them and writes this .installed-from stamp.
 #
-# Probe binary = the copy's OWN venv python (venv/bin/python), CREDS-FREE: skill
-# 25's scripts need no API keys to import their runtime (keys are only read at
-# generation time, and `--provider mock`/`local` need none). Each probe is a
+# The venv lives OUTSIDE every skill root (~/.openclaw/venvs/video-creator, VPS
+# /data/.openclaw/venvs/video-creator) — never inside a skills folder, since
+# OpenClaw's skill discovery walks every skill root and does not skip `venv`.
+# The runtime copy also no longer carries its own SKILL.md (it would register
+# `video-creator` a second time), so nothing under install_dir is a skill.
+#
+# Probe binary = the venv's OWN python, CREDS-FREE: skill 25's scripts need no
+# API keys to import their runtime (keys are only read at generation time, and
+# `--provider mock`/`local` need none). bin_rel is relative to install_dir
+# (~/.openclaw/skills/video-creator), so `../../venvs/video-creator/bin/python`
+# resolves to ~/.openclaw/venvs/video-creator/bin/python without hardcoding
+# $HOME twice or teaching check_tool a second base path. Each probe is a
 # stdlib-style `-c __import__('<mod>')` of a PINNED dependency — written as a
 # single space-free token so the registry's word-split argv passes it intact (a
 # `-c "import x.y"` form would be split on its internal space). `moviepy.editor`
@@ -243,7 +252,7 @@ register_tool \
 register_tool \
   "video-creator" \
   "~/.openclaw/skills/video-creator" \
-  "venv/bin/python" \
+  "../../venvs/video-creator/bin/python" \
   "~/.openclaw/skills/25-video-creator" \
   "skill-version.txt" \
   "-c __import__('moviepy.editor') ; -c __import__('cv2') ; -c __import__('numpy') ; -c __import__('PIL') ; -c __import__('requests')" \

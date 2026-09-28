@@ -12,8 +12,14 @@ Confirm the skill folder and all required files are present.
 ```bash
 SKILL_DIR="$HOME/.openclaw/skills/video-creator"
 
-# Check top-level files
-for f in SKILL.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md; do
+# Check top-level files (SKILL.md lives only in the numbered source; the
+# runtime copy must NOT have one, or OpenClaw registers video-creator twice)
+[ -f "$HOME/.openclaw/skills/25-video-creator/SKILL.md" ] \
+  && echo "PASS: SKILL.md (source)" || echo "FAIL: SKILL.md missing from source"
+[ ! -f "$SKILL_DIR/SKILL.md" ] && [ ! -d "$SKILL_DIR/venv" ] \
+  && echo "PASS: no duplicate skill / no venv inside skill root" \
+  || echo "FAIL: runtime copy has SKILL.md or an in-root venv"
+for f in INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md; do
   [ -f "$SKILL_DIR/$f" ] && echo "PASS: $f" || echo "FAIL: $f missing"
 done
 
@@ -120,7 +126,7 @@ python3 -c "import sys; v=sys.version_info; \
 
 ```bash
 cd "$HOME/.openclaw/skills/video-creator"
-source venv/bin/activate 2>/dev/null || true  # activate venv if present
+source "$HOME/.openclaw/venvs/video-creator/bin/activate" 2>/dev/null || true  # activate venv if present
 
 for pkg in moviepy cv2 requests PIL numpy; do
   python3 -c "import $pkg" 2>/dev/null \
@@ -173,7 +179,7 @@ Run the built-in test script, then a manual mock generation.
 
 ```bash
 cd "$HOME/.openclaw/skills/video-creator"
-source venv/bin/activate 2>/dev/null || true
+source "$HOME/.openclaw/venvs/video-creator/bin/activate" 2>/dev/null || true
 python3 scripts/test_installation.py
 ```
 
@@ -183,7 +189,7 @@ python3 scripts/test_installation.py
 
 ```bash
 cd "$HOME/.openclaw/skills/video-creator"
-source venv/bin/activate 2>/dev/null || true
+source "$HOME/.openclaw/venvs/video-creator/bin/activate" 2>/dev/null || true
 
 mkdir -p output
 
@@ -221,7 +227,8 @@ Verify the agent does NOT exhibit these incorrect behaviors.
 | 3 | **Updating wrong core files** — agent modifies files other than `TOOLS.md` and `MEMORY.md` | Check git diff or file timestamps on other core files; only `TOOLS.md` and `MEMORY.md` should be touched |
 | 4 | **Missing `--provider mock`** — agent tries to call a real API when no key is set | Confirm test run above used `--provider mock` and produced output without API errors |
 | 5 | **Scripts not executable** — agent runs scripts via `python3 scripts/x.py` but scripts are not chmod +x | Covered in Section 2; all scripts must be executable |
-| 6 | **Wrong install path** — skill placed somewhere other than `~/.openclaw/skills/video-creator/` | Confirm: `ls "$HOME/.openclaw/skills/video-creator/SKILL.md"` returns the file |
+| 6 | **Wrong install path** — skill placed somewhere other than `~/.openclaw/skills/video-creator/` | Confirm: `ls "$HOME/.openclaw/skills/video-creator/scripts/text_to_video.py"` returns the file |
+| 7 | **Venv inside a skills folder** — a venv living under any `~/.openclaw/skills/...` path gets walked by every OpenClaw skill rescan | Confirm: `[ ! -d "$HOME/.openclaw/skills/video-creator/venv" ]` and the venv exists at `~/.openclaw/venvs/video-creator` instead |
 
 **Pass criteria:** None of the anti-patterns are present.
 

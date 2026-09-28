@@ -1,3 +1,41 @@
+## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
+
+### Why
+On a live box, `25-video-creator/wire.sh` built its ~215 MB venv at `<VC_DIR>/venv`, inside the
+OpenClaw skill root (`~/.openclaw/skills`, VPS `/data/.openclaw/skills`). OpenClaw's skill discovery
+walks every skill root up to depth 6 on every scan, skipping only dot-prefixed names and
+`node_modules` — never `venv` — so every rescan walked the whole venv, contributing to a gateway that
+wedged and was watchdog-restarted every ~8 minutes. The runtime copy also carried its own `SKILL.md`,
+identical to `25-video-creator/SKILL.md`, so OpenClaw registered `video-creator` twice and logged a
+precedence collision on every scan.
+
+### What changed
+- 25-video-creator/wire.sh (skill v7.0.1): the venv now defaults to
+  `$(dirname "$SKILLS_PARENT")/venvs/video-creator` (Mac `~/.openclaw/venvs/video-creator`, VPS
+  `/data/.openclaw/venvs/video-creator`), outside every skill root, still overridable by `VENV_DIR`.
+  A legacy `<VC_DIR>/venv` is migrated idempotently: moved (not rebuilt) when found alone; when both
+  the legacy and new venv exist, the new one wins if its python can `import moviepy.editor`,
+  otherwise the legacy one replaces it. A relocated venv's stale `bin/activate` is repaired in place
+  (`python -m venv --without-pip`); pip is always invoked as `"$VENV_DIR/bin/python" -m pip`, never
+  bare `pip` or `source activate`. The install-copy step now excludes `SKILL.md`, `venv`, and
+  `.venv`, and removes any stale `<VC_DIR>/SKILL.md` left over from an older install on every pass,
+  so only `25-video-creator` ever registers the `video-creator` skill. wire.sh's fail-soft contract
+  (always exit 0, no `set -e`/`set -u`) is unchanged.
+- scripts/tool-drift-check.sh: the `video-creator` registry entry's probe binary path updated to the
+  new venv location (`../../venvs/video-creator/bin/python`, relative to the install dir).
+- 25-video-creator/INSTALL.md, QC.md, INSTRUCTIONS.md, SKILL.md, CORE_UPDATES.md: every reference to
+  the old in-skill-root venv path and the runtime copy's `SKILL.md` updated to match.
+- 25-video-creator/tests/test_wire_contracts.py (new, 4 tests, hermetic — no network, no pip): the
+  legacy-only, both-present-new-healthy, both-present-new-broken, and no-duplicate-registration /
+  no-copied-venv cases.
+
+### Tests
+`python3 -m pytest 25-video-creator/tests -q`: 97 passed (93 existing + 4 new). `bash -n` clean on
+`wire.sh` and `tool-drift-check.sh`. Manual end-to-end simulation of `wire.sh` (fake skills root,
+throwaway `$HOME`) covering the legacy-only, new-only, and both-present migration cases, run twice to
+confirm the second pass is a no-op; venv ends outside the skills root, `<VC_DIR>/venv` never exists,
+no `SKILL.md` in the runtime copy, exit code 0 in every case.
+
 ## [v25.2.3]  -  2026-09-28  -  Pin Command Center v7.6.74 (zero-downtime update)
 
 ### Why
