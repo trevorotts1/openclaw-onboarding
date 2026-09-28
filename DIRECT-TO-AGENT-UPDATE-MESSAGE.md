@@ -15,7 +15,7 @@
 
 There is an update available for your OpenClaw / BlackCEO system. The latest version is **v25.1.100**.
 
-This release pairs with Command Center v7.6.70. Presentations pipeline hardening, interview reliability (ILJ), provider-routing and Rescue Rangers hardening have landed since v25.0.10, with native Linux and Docker topologies supported on Hostinger and Contabo.
+This release pairs with Command Center v7.6.72. Presentations pipeline hardening, interview reliability (ILJ), provider-routing and Rescue Rangers hardening have landed since v25.0.10, with native Linux and Docker topologies supported on Hostinger and Contabo.
 
 Run exactly this command. Do not read a playbook, do not improvise, do not summarise:
 
