@@ -1212,6 +1212,19 @@ def _run_atomic_deploy(cc_dir: Path, revision: Optional[str] = None) -> subproce
                           env={**os.environ, "CC_APP_DIR": str(cc_dir)})
 
 
+def _served_build_current(cc_dir: Path) -> bool:
+    """The Command Center's own build-inventory.sh --verify (the check cc-start
+    and atomic-deploy use): the served .next was built from this checkout."""
+    inv = cc_dir / "scripts" / "lib" / "build-inventory.sh"
+    if not inv.is_file():
+        return False
+    try:
+        return subprocess.run([_bash4() or "bash", str(inv), "--verify", str(cc_dir)],
+                              capture_output=True, timeout=180).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = False) -> None:
     """
     Step 4: invoke scripts/atomic-deploy.sh from the deployed CC checkout.
@@ -1253,6 +1266,19 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
         check_checkout(cc_dir)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         res.step_fail("build-cc", f"CC compatibility preflight failed: {exc}")
+        return
+
+    # Already serving a build of exactly this checkout (update.sh / the installer
+    # deployed it minutes ago): another full rebuild + restart gains nothing and
+    # risks the Command Center (a spare redeploy failed its health check on a
+    # client Mac and had to roll back).
+    if _served_build_current(cc_dir) and hc_cc_health({"cc_dir": cc_dir}, times=1)["status"] == "pass":
+        _info("  Command Center already serves a build of this checkout -- no rebuild")
+        res.step_ok("build-cc")
+        duck_passed, duck_detail = _run_duck_ci_test(cc_dir, res.box)
+        res.steps["build-cc-duck-test"] = "pass" if duck_passed else f"fail: {duck_detail}"
+        if not duck_passed:
+            res.step_fail("build-cc", f"duck CI test FAILED: {duck_detail}")
         return
 
     # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
@@ -1360,6 +1386,12 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
         check_checkout(cc_dir)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         res.step_fail("restart-cc", f"CC compatibility preflight failed: {exc}")
+        return
+
+    # Serving a build of this checkout and healthy: nothing to restart.
+    if _served_build_current(cc_dir) and hc_cc_health({"cc_dir": cc_dir}, times=1)["status"] == "pass":
+        _info("  Command Center already serves a build of this checkout and is healthy -- no restart")
+        res.step_ok("restart-cc")
         return
 
     # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).

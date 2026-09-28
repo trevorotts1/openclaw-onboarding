@@ -814,6 +814,25 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             self.assertEqual(git(live, "rev-parse", "origin/main"), git(origin, "rev-parse", "HEAD"))
 
 
+class NoSpareRedeploy(unittest.TestCase):
+    def test_a_current_healthy_build_is_not_rebuilt_or_restarted(self):
+        with tempfile.TemporaryDirectory() as td:
+            box = Box(Path(td))
+            import cc_runtime_preflight
+            with mock.patch.object(fr, "wave5_deploy_preflight"), \
+                 mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"), \
+                 mock.patch.object(fr, "_served_build_current", return_value=True), \
+                 mock.patch.object(fr, "hc_cc_health", return_value=hc("pass")), \
+                 mock.patch.object(fr, "_run_duck_ci_test", return_value=(True, "ok")), \
+                 mock.patch.object(fr, "_run_atomic_deploy") as deploy:
+                res = fr.BoxResult("t", dry_run=False)
+                fr.step_build_cc(box.paths, res, dry_run=False)
+                fr.step_restart_cc(box.paths, res, dry_run=False)
+            deploy.assert_not_called()
+            self.assertEqual((res.steps["build-cc"], res.steps["restart-cc"]), ("ok", "ok"))
+
+
 class BillingHoldIsNotAFailure(unittest.TestCase):
     def test_held_update_is_skipped_and_nothing_else_changes(self):
         # update-skills.sh's fleet standing gate exits 0 without stamping when the
