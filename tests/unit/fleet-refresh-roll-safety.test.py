@@ -858,6 +858,24 @@ class BillingHoldIsNotAFailure(unittest.TestCase):
             self.assertIn("ERROR: bootstrap could not source X", res.steps["pull-onboarding"])
 
 
+class UnreadableFoldersAndNoCommandCenter(unittest.TestCase):
+    def test_an_unreadable_folder_fails_by_name_not_a_traceback(self):
+        # macOS refused ~/Downloads to the SSH process: scandir raised EINTR.
+        err = InterruptedError(4, "Interrupted system call", "/Users/x/Downloads/openclaw-master-files")
+        with mock.patch.object(fr, "_load_paths", side_effect=err):
+            res = fr.run_box("t", REPO / "shared-utils", REPO, dry_run=False, verify_only=False,
+                             local=True, force_cc=False, expected_sha=None)
+        self.assertEqual(res.outcome, "FAILED")
+        self.assertIn("/Users/x/Downloads/openclaw-master-files", res.outcome_detail)
+        self.assertIn("Full Disk Access", res.outcome_detail)
+
+    def test_detect_on_a_box_without_a_command_center(self):
+        res = fr.BoxResult("t", dry_run=False)
+        with tempfile.TemporaryDirectory() as td:
+            fr.step_detect({"root": Path(td), "cc_dir": None}, REPO, {}, res)
+        self.assertEqual(res.steps["detect"], "ok")
+
+
 class CommandCenterPm2Preflight(unittest.TestCase):
     """The deploy restarts the Command Center through pm2. A box where that
     cannot work fails up front, by name, with nothing changed -- not half way

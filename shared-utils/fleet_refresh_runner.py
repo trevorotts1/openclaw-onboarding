@@ -863,7 +863,7 @@ def step_detect(paths: dict, repo_root: Path, compat: dict, res: BoxResult) -> N
     # so detect/verify never disagree with the actual roll outcome.
     skills_dir = Path(paths.get("skills") or Path(paths["root"]) / "skills")
     res.onboarding_version = _read_onboarding_version(skills_dir)
-    res.cc_version = _read_cc_version(paths.get("cc_dir", Path("/nonexistent")))
+    res.cc_version = _read_cc_version(paths.get("cc_dir") or Path("/nonexistent"))
     res.step_ok("detect")
     _info(f"  platform: {res.platform}  onboarding: {res.onboarding_version}  CC: {res.cc_version}")
 
@@ -3280,7 +3280,15 @@ def run_box(
     pinned_onboarding_tag = compat.get("onboardingVersion", "unknown")
 
     # Load platform paths
-    paths = _load_paths(shared_utils)
+    try:
+        paths = _load_paths(shared_utils)
+    except OSError as e:
+        # e.g. macOS refusing ~/Downloads to the SSH process ("Interrupted system call").
+        res.result, res.outcome = "failed", "FAILED"
+        res.outcome_detail = (f"cannot read {e.filename or 'the OpenClaw folders'} ({e.strerror}); "
+                              "on a Mac, give sshd-keygen-wrapper Full Disk Access. Nothing was changed.")
+        res.errors.append(res.outcome_detail)
+        return res
 
     lock = None
     if not dry_run and not verify_only:
