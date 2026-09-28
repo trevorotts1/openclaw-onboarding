@@ -13,6 +13,9 @@
 # read, changed or deleted. Only this dedicated directory is ever replaced, and
 # only when it is not a clone of the onboarding repo.
 #
+# Also writes <OpenClaw root>/fleet-refresh/client.json ({"client", "label"})
+# when FLEET_CLIENT_JSON is set, so the box can name its client itself.
+#
 # Prints one line:  COPY <cloned|updated> <previous sha or -> <path>
 #              or:  COPYFAIL <reason>
 # scripts/weekly-full-update.sh (a box's own Sunday update) keeps the same copy
@@ -38,4 +41,9 @@ else
   S=cloned
 fi
 [ -f "$R/shared-utils/fleet_refresh_runner.py" ] || { echo "COPYFAIL $R has no runner"; exit 0; }
+# Who this box belongs to, so the box's own Sunday update names its client
+# ("Client Name (Platform)") instead of its hostname. Set by fleet-refresh.sh.
+if [ -n "${FLEET_CLIENT_JSON:-}" ]; then
+  printf '%s\n' "$FLEET_CLIENT_JSON" > "$B/fleet-refresh/client.json"
+fi
 echo "COPY $S ${PREV:--} $R"

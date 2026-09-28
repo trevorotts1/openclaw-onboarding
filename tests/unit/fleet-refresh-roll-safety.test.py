@@ -748,6 +748,31 @@ class MainSessionKey(unittest.TestCase):
             self.assertIsNone(fr._resolve_ceo_session_key({"root": Path(td)}))
 
 
+class PullCcRunsTheTargetUpdater(unittest.TestCase):
+    """The live checkout's update.sh is the OLD release's: it merged into the
+    live tree before building (a 35-minute outage). pull-cc runs origin/main's."""
+
+    def test_target_updater_runs(self):
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        with tempfile.TemporaryDirectory() as td:
+            origin = new_repo(Path(td, "origin"))
+            marker = Path(td, "ran.txt")
+            upd = '#!/usr/bin/env bash\necho {} > "{}"\ngit fetch -q origin main\ngit merge -q --ff-only origin/main\n'
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                            "update.sh": upd.format("old-live-updater", marker)}, "A")
+            live = Path(td, "live")
+            subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+            commit(origin, {"update.sh": upd.format("target-updater", marker), "new.txt": "x"}, "B")
+            res = fr.BoxResult("t", dry_run=False)
+            import cc_runtime_preflight
+            with mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"):
+                fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(marker.read_text().strip(), "target-updater")
+            self.assertTrue((live / "new.txt").is_file())
+
+
 class CommandCenterOnlyFailureIsExplicit(unittest.TestCase):
     """A Command Center step that failed without changing anything is not
     rolled back (nothing to undo) -- and the result says exactly that."""
@@ -1002,6 +1027,15 @@ class WrapperWaves(unittest.TestCase):
             r = run()
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("UPDATED=1", r.stdout)
+            # The operator's roll left client.json beside the roll copy: the box names its client.
+            cj = Path(td, ".openclaw", "fleet-refresh", "client.json")
+            cj.parent.mkdir(parents=True)
+            cj.write_text(json.dumps({"client": "Client One", "label": "Client One (Mac)"}))
+            r = run()
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertRegex(r.stdout, r"\n Client One \(Mac\)\s+UPDATED")
+            row = json.loads((clone / ".fleet-refresh-summary.json").read_text())[0]
+            self.assertEqual((row["client"], row["label"]), ("Client One", "Client One (Mac)"))
 
     def test_apply_through_ssh_and_docker_exec_quoting(self):
         """Real shells end to end: fake ssh runs its command with sh -c, fake
@@ -1073,6 +1107,8 @@ class WrapperWaves(unittest.TestCase):
             self.assertEqual(git(copy, "rev-parse", "HEAD"), git(seed, "rev-parse", "HEAD"))
             self.assertEqual((git(stale, "rev-parse", "HEAD"), git(stale, "config", "--get-all", "remote.origin.fetch")),
                              stale_state)   # the client's clone: untouched
+            self.assertEqual(json.loads((home / ".openclaw/fleet-refresh/client.json").read_text()),
+                             {"client": "Client One", "label": "Client One (Hostinger)"})   # the box can name itself
 
     def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),

@@ -325,7 +325,21 @@ fi
 # box id <TAB> client <TAB> label, from the private boxes file (none: the id).
 LABELS_FILE="$TMPDIR_RESULTS/labels.tsv"
 : > "$LABELS_FILE"
-if [ -n "$BOXES_FILE" ] && [ -f "$BOXES_FILE" ]; then
+# A box's own --local run names itself from the client.json the operator's
+# roll left beside its roll copy (scripts/fleet-roll-copy.sh).
+if [ $LOCAL -eq 1 ]; then
+  python3 - > "$LABELS_FILE" <<'PY' || true
+import json, os
+from pathlib import Path
+root = os.environ.get("OPENCLAW_ROOT") or ("/data/.openclaw" if Path("/data/.openclaw").is_dir() else str(Path.home() / ".openclaw"))
+try:
+    c = json.loads((Path(root) / "fleet-refresh" / "client.json").read_text())
+    if c.get("client") and c.get("label"):
+        print("\t".join(("local", c["client"], c["label"])))
+except (OSError, ValueError):
+    pass
+PY
+elif [ -n "$BOXES_FILE" ] && [ -f "$BOXES_FILE" ]; then
   python3 - "$BOXES_FILE" "$SHARED_UTILS" > "$LABELS_FILE" <<'PY' || true
 import json, sys
 sys.path.insert(0, sys.argv[2])
@@ -493,7 +507,11 @@ PY
   # detached) are never used, changed or deleted.
   local copied verdict remote_root prev_sha
   # shellcheck disable=SC2086
-  copied=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
+  local client_json
+  client_json=$(awk -F'\t' -v b="$box" '$1 == b && $2 !~ /^UNKNOWN CLIENT/ { printf "{\"client\": \"%s\", \"label\": \"%s\"}", $2, $3; exit }' "$LABELS_FILE")
+  copied=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
+    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json")
+$(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
     2>>"$RUN_LOG_DIR/${box}.log" | grep -E '^(COPY|COPYFAIL) ' | tail -1 | tr -d '\r' || true)
   if [ -z "$copied" ]; then
     finish_result "$box" 255 /dev/null "$result_file" "ssh (roll copy)"
@@ -996,7 +1014,9 @@ echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 # bot via the operator-alert webhook; email too on his Mac). Never a client.
 if [ $APPLY -eq 1 ]; then
   _origin="operator roll"
-  [ $LOCAL -eq 1 ] && _origin="$(hostname -s 2>/dev/null || hostname) (its own update)"
+  _self="$(label_of local)"
+  [ "$_self" = "local" ] && _self="$(hostname -s 2>/dev/null || hostname)"
+  [ $LOCAL -eq 1 ] && _origin="$_self (its own update)"
   python3 "$SHARED_UTILS/fleet_notify.py" --summary "$SUMMARY_FILE" --origin "$_origin" 2>&1 \
     | sed 's/^/[fleet-refresh] operator alert: /' || true
   # The operator's box list backup: last result per box, refreshed in Drive.

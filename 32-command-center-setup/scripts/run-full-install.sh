@@ -1178,6 +1178,25 @@ cc_git_sync_to_default_branch() {
     && git -C "$dir" merge-base --is-ancestor "origin/$branch" HEAD
 }
 
+# cc_zero_downtime_ready <repo_dir> — 0 when this update can leave the LIVE
+# checkout, its node_modules and its build untouched until CC's own update.sh
+# promotes the new release: the fetched origin/main is a fast-forward of a
+# clean tracked tree (no local main of its own), and origin/main's update.sh
+# carries the zero-downtime path. Merging into the live tree and running npm ci
+# there before the build made every restart during the build refuse to start
+# (content guard, exit 78): a client's Command Center was dark for ~35 minutes
+# on 2026-09-28. Anything else takes the merge path (cc_git_sync_to_default_branch).
+cc_zero_downtime_ready() {
+  local dir="$1"
+  git -C "$dir" fetch --quiet origin main >>"$LOG_FILE" 2>&1 || return 1
+  git -C "$dir" merge-base --is-ancestor HEAD origin/main 2>/dev/null || return 1
+  [[ -z "$(git -C "$dir" status --porcelain --untracked-files=no 2>/dev/null)" ]] || return 1
+  if git -C "$dir" show-ref --verify --quiet refs/heads/main; then
+    git -C "$dir" merge-base --is-ancestor refs/heads/main origin/main 2>/dev/null || return 1
+  fi
+  git -C "$dir" show origin/main:update.sh 2>/dev/null | grep -q 'Zero-downtime path'
+}
+
 # cc_route_update_through_canonical_path — the D5 update-only build+restart step.
 # Three tiers, each strictly safer than a bare `npm run build` + `pm2 restart`:
 #   1. $DASHBOARD_DIR/update.sh (freshly pulled — the canonical, fully-owned
@@ -1201,6 +1220,13 @@ cc_route_update_through_canonical_path() {
   local pull_ts build_id_file build_id_mtime health_code tier
   local update_sh="$DASHBOARD_DIR/update.sh"
   local atomic_deploy="$DASHBOARD_DIR/scripts/atomic-deploy.sh"
+  if [[ "${CC_ZERO_DOWNTIME:-0}" == "1" ]]; then
+    # The live tree is still the running release: run the TARGET's updater,
+    # which fetches, builds beside the live release and promotes it.
+    update_sh="$(mktemp "${TMPDIR:-/tmp}/cc-update-target.XXXXXX")"
+    git -C "$DASHBOARD_DIR" show origin/main:update.sh > "$update_sh" 2>>"$LOG_FILE" \
+      || update_sh="$DASHBOARD_DIR/update.sh"
+  fi
   build_id_file="$DASHBOARD_DIR/.next/BUILD_ID"
   pull_ts="$(date +%s)"
 
@@ -1966,13 +1992,18 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # rejection reason, and the --app-dir remedy.
   # Never returns if the resolved directory is not a validated CC checkout.
   cc_assert_update_only_checkout
-  if cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
+  CC_ZERO_DOWNTIME=0
+  if cc_zero_downtime_ready "$DASHBOARD_DIR"; then
+    CC_ZERO_DOWNTIME=1
+    log "INFO" "phase=6: zero-downtime update: the live checkout, node_modules and build stay untouched until CC's update.sh promotes the new release"
+  elif cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
     log "INFO" "phase=6: checkout is on the origin default branch and contains latest origin/main (local commits preserved)"
   else
     fail_install "phase=6: could not converge Command Center checkout onto the latest origin default branch without discarding local work. Existing checkout was not deployed. Resolve the git conflict and re-run."
   fi
   cc_security_preflight --checkout "$DASHBOARD_DIR"
-  cc_install_locked_dependencies
+  # Zero-downtime: the candidate installs its own dependencies beside the live ones.
+  [[ "$CC_ZERO_DOWNTIME" == "1" ]] || cc_install_locked_dependencies
   # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
   # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
   cc_write_env_local

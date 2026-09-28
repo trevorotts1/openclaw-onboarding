@@ -1,3 +1,16 @@
+## [v25.2.2]  -  2026-09-28  -  Zero-downtime Command Center update; a box's own update names its client
+
+### Why
+A client's Command Center was down for about 35 minutes during the 2026-09-28 fleet roll. The update-only installer merged origin/main into the LIVE Command Center checkout and ran `npm ci` in the LIVE directory before building. From then on, every restart during the build was refused by the Command Center's content guard (exit 78). Separately, a box running its own Sunday update named itself by hostname in the operator's alert, not by the client's name.
+
+### What changed
+- 32-command-center-setup/scripts/run-full-install.sh (Skill 32 v13.1.33): when the Command Center update is a clean fast-forward and origin/main's `update.sh` carries the zero-downtime path (blackceo-command-center v7.6.74), `--update-only` neither merges nor runs `npm ci` in the live tree. It runs origin/main's `update.sh`, which builds the new release beside the running one and promotes it. Any other checkout keeps the merge path, unchanged.
+- shared-utils/fleet_refresh_runner.py: pull-cc runs origin/main's `update.sh`, not the live checkout's (the old release's), and allows it the atomic deploy's full time window.
+- scripts/fleet-roll-copy.sh, scripts/fleet-refresh.sh: the operator's roll writes `<OpenClaw root>/fleet-refresh/client.json` beside the roll copy. A box's own `--local` run reads it, so its summary, result and operator alert name the client ("Client Name (Platform)"), not the hostname.
+
+### Tests
+scripts/test-cc-update-only-credential-and-git-sync.sh (22 pass): zero-downtime readiness only fetches, is refused by an old updater, a dirty tree or a local commit, and the update-only phase skips the live merge and live npm ci and runs origin/main's updater. tests/unit/fleet-refresh-roll-safety.test.py (77 pass): pull-cc runs the target updater; the roll writes client.json; a box's own run names its client. tests/unit/cc-runtime-preflight.test.py updated for the gated call site.
+
 ## [v25.2.1]  -  2026-09-28  -  Merge train: #1327 skill31: nightly memory maintenance — prune dead embedding-cache…; #1329 Skill 01: adopt the Lean Core File System (skill 70) pointer standard…; #1331 Skill 70: Lean Core File System; #1332 fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test…; #1334 fleet roll: each box's own Command Center, the roll's own onboarding…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
