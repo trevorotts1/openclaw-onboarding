@@ -64,7 +64,7 @@ are rejected, never written.
 
 ## What is RETIRED and must not be revived
 
-- **The old "Rescue Rangers Relay" webhook path** (`/webhook/rescue-rangers`) is
+- **The old "Rescue Rangers Relay" webhook path** (the pre-RR-01 URL) is
   **retired**. It is inactive; any box env still carrying it is a false-pass trap
   (the canonical intake is `rr-v2-intake`). Do not point new wiring at it.
 - **The Python SQLite ledger** (`rescue_ledger.py` / `rescue_cc_board.py`) is

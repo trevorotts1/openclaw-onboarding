@@ -58,7 +58,7 @@
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v25.2.5"
+BROWSER_MANAGER_VERSION="v25.2.7"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -442,16 +442,23 @@ bm_breaker_check() {
     # Escalate to Rescue Rangers via the n8n webhook — the ONLY path the rescue
     # agent reads. Never use openclaw message send to a Telegram group for escalation:
     # bots cannot read other bots, so that path is silently dropped.
+    # rr-escalate.sh adds the box slug the intake requires and exits non-zero
+    # unless a ticket was minted, so a refusal is logged, never read as sent.
     if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
       local _bm_msg="browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh."
-      local _bm_esc="${_bm_msg//\\/\\\\}"; _bm_esc="${_bm_esc//\"/\\\"}"
-      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-        -H 'Content-Type: application/json' \
-        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-        -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
-        --max-time 15 >/dev/null 2>&1 || true
+      local _bm_rr="" _bm_c _bm_out
+      for _bm_c in "${RR_ESCALATE_BIN:-}" "$(dirname "${BASH_SOURCE[0]}")/../../scripts/rr-escalate.sh" "${OC_ROOT:-$HOME/.openclaw}/scripts/rr-escalate.sh" /data/.openclaw/scripts/rr-escalate.sh; do
+        [ -n "$_bm_c" ] && [ -f "$_bm_c" ] && { _bm_rr="$_bm_c"; break; }
+      done
+      if [ -z "$_bm_rr" ]; then
+        echo "WARN: Rescue Rangers escalation NOT sent: rr-escalate.sh not found" >&2
+      elif _bm_out="$(bash "$_bm_rr" --agent browser_manager --class circuit-breaker --problem "$_bm_msg" 2>&1)"; then
+        echo "Escalated to Rescue Rangers: ${_bm_out//$'\n'/ }" >&2
+      else
+        echo "WARN: Rescue Rangers escalation REJECTED (rc=$?): ${_bm_out//$'\n'/ }" >&2
+      fi
     fi
-    echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed) — durable box-level PARK written; the resume cron will STOP. Escalated to Rescue Rangers. STOP." >&2
+    echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed) — durable box-level PARK written; the resume cron will STOP. Rescue Rangers escalation attempted (see the line above). STOP." >&2
     exit 75
   fi
 }

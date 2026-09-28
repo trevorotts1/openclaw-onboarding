@@ -1,5 +1,22 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.5.3] - 2026-09-28 - a poll that died holding the lock deadlocked the return leg
+
+THE DEFECT. `rescue-poll.sh` read the incumbent lock generation with `sed`, which
+kept the JSON quotes of a string generation (`"4242"`). The supervisor compared
+that to `4242`, refused the takeover as `takeover_generation_mismatch`, and the
+poll exited 0 silently on every fire. The supervisor always records the
+generation as a string, so one poll dying mid-turn blocked the box for good.
+The lock path also logged through `_log` before `_log` was defined.
+
+THE FIX. The generation is parsed with python3 `json` (string or number,
+`observed_generation` then the inspected record), `rescue-supervise.py`
+compares bare values, `_log` / `_json_str` are defined before the lock code,
+and contention is logged as `lock-contended reason=... holder_gen=...` with a
+`rejected/lock-contended.json` marker (cleared on the next successful lock).
+SKILL.md now points senders at `scripts/rr-escalate.sh`: this skill only
+receives. Gate: `tests/rescue/RR-026/test_lock_generation_parse.sh`.
+
 ## [23.5.1] - 2026-09-19 - a receipt revision string could settle an acknowledgement
 
 THE DEFECT. `_receipt_match` required the receipt's operation ID and attempt

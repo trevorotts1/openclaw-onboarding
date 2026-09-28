@@ -67,16 +67,14 @@ check(not value_shapes, "no hex credential/table-ID shapes", str(value_shapes[:3
 wf_ids = re.findall(r"\b[A-Za-z0-9]{14}\b", contract)
 wf_ids = [w for w in wf_ids if w not in ("RESCUE_RANGERS",)]
 check(not wf_ids, "no 14-char n8n workflow IDs", str(wf_ids[:3]))
-# the retired path may appear ONLY within the retired-paths section (the line
-# itself or its immediate continuation, all carrying the retired marking)
+# the retired relay URL path must not be printed at all (a copy-pasteable dead
+# address in a public contract gets re-wired); the section still says the
+# Relay is retired and names the canonical intake instead.
 lines = contract.splitlines()
 retired_lines = [i for i, l in enumerate(lines) if "webhook/rescue-rangers" in l]
-ok_ctx = []
-for i in retired_lines:
-    window = " ".join(lines[max(0, i - 3):i + 3]).lower()
-    ok_ctx.append(("retired" in window or "must not" in window) and "rr-v2-intake" in window)
-check(len(retired_lines) == 1 and all(ok_ctx),
-      "contract names the retired relay path only as retired text", str(retired_lines))
+check(not retired_lines, "contract carries no copy of the retired relay path", str(retired_lines))
+check(any("Relay" in l and "retired" in " ".join(lines[i:i + 2]).lower() for i, l in enumerate(lines))
+      and "rr-v2-intake" in contract, "contract still labels the Relay retired and names rr-v2-intake")
 check("[REDACTED" not in contract and "sk-" not in contract, "no redacted-placeholder or key prefixes")
 
 print("== RR-017: posture manifest ==")

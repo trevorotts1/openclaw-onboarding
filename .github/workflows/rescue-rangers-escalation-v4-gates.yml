@@ -1,0 +1,112 @@
+name: rescue-rangers-escalation-v4-gates
+
+# Rescue Rangers escalation, V4: the one sender (scripts/rr-escalate.sh), the
+# AGENTS.md section stamper (scripts/stamp-rescue-escalation.py, run by
+# apply-fleet-standards.sh 5j and install.sh), the eight maintenance senders,
+# and the receiver lock-generation takeover.
+#
+# A check nothing runs is a comment, so every gate for this change is wired
+# here, plus one mutation drill per core claim: the suite must go RED when the
+# fix is reverted in place.
+#
+# Hermetic: loopback HTTP stubs, temp HOMEs, stub openclaw. No fleet box, no
+# real credential, no network beyond 127.0.0.1.
+#
+# Security note: consumes only repo file content. No GitHub event fields reach
+# any run: block.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/rr-escalate.sh"
+      - "scripts/stamp-rescue-escalation.py"
+      - "scripts/rescue-escalation-section.md.tpl"
+      - "scripts/apply-fleet-standards.sh"
+      - "install.sh"
+      - "65-rescue-receiver/**"
+      - "shared-utils/rescue-supervise.py"
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/**"
+      - "06-ghl-install-pages/tools/browser_manager.sh"
+      - "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"
+      - "scripts/agent-browser-reaper.sh"
+      - "scripts/bootstrap-validate-daily.sh"
+      - "scripts/check-company-root.sh"
+      - "scripts/disk-usage-alert.sh"
+      - "scripts/index-model-drift-check.sh"
+      - "scripts/pre-july14-embedding-migration-check.sh"
+      - "tests/unit/rr-escalate.test.py"
+      - "tests/unit/rr-escalation-wiring.test.py"
+      - "tests/unit/rescue-escalation-*"
+      - "tests/rescue/RR-026/test_lock_generation_parse.sh"
+      - ".github/workflows/rescue-rangers-escalation-v4-gates.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/rr-escalate.sh"
+      - "scripts/stamp-rescue-escalation.py"
+      - "scripts/rescue-escalation-section.md.tpl"
+      - "scripts/apply-fleet-standards.sh"
+      - "install.sh"
+      - "65-rescue-receiver/**"
+      - "shared-utils/rescue-supervise.py"
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/**"
+      - "06-ghl-install-pages/tools/browser_manager.sh"
+      - "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"
+      - "scripts/agent-browser-reaper.sh"
+      - "scripts/bootstrap-validate-daily.sh"
+      - "scripts/check-company-root.sh"
+      - "scripts/disk-usage-alert.sh"
+      - "scripts/index-model-drift-check.sh"
+      - "scripts/pre-july14-embedding-migration-check.sh"
+      - "tests/unit/rr-escalate.test.py"
+      - "tests/unit/rr-escalation-wiring.test.py"
+      - "tests/unit/rescue-escalation-*"
+      - "tests/rescue/RR-026/test_lock_generation_parse.sh"
+      - ".github/workflows/rescue-rangers-escalation-v4-gates.yml"
+
+jobs:
+  rescue-rangers-escalation-v4-gates:
+    name: RR escalation V4 (sender, stamper, senders, lock takeover)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax gates
+        run: |
+          set -euo pipefail
+          bash -n scripts/rr-escalate.sh
+          bash -n scripts/apply-fleet-standards.sh
+          sh -n 65-rescue-receiver/rescue-poll.sh
+          python3 -m py_compile scripts/stamp-rescue-escalation.py shared-utils/rescue-supervise.py
+
+      - name: Gates
+        run: |
+          set -euo pipefail
+          python3 tests/unit/rr-escalate.test.py
+          python3 tests/unit/rescue-escalation-v4-stamp.test.py
+          python3 tests/unit/rr-escalation-wiring.test.py
+          bash tests/unit/rescue-escalation-tpl-duplicate-guard.test.sh
+          bash tests/rescue/RR-026/test_lock_generation_parse.sh
+
+      - name: Anti-vacuity (each reverted fix MUST turn its gate red)
+        run: |
+          set -uo pipefail
+          # mut FILE OLD NEW -- literal replace; a drifted anchor fails loudly
+          mut() { python3 -c 'import sys; p,a,b=sys.argv[1:]; s=open(p).read(); assert a in s, "mutation anchor drifted: "+a; open(p,"w").write(s.replace(a,b,1))' "$@" || exit 1; }
+          red() { if "$@" >/dev/null 2>&1; then echo "VACUOUS: gate stayed green: $*"; exit 1; fi; echo "red as required: $*"; }
+          # 1. a sender that reports success without a ticket id
+          mut scripts/rr-escalate.sh 'if not ticket:' 'if False:'
+          red python3 tests/unit/rr-escalate.test.py
+          git checkout -- scripts/rr-escalate.sh
+          # 2. a stamper that refuses to create a missing section (the old 5j)
+          mut scripts/stamp-rescue-escalation.py '            mode = "insert"' '            print("absent"); return'
+          red python3 tests/unit/rescue-escalation-v4-stamp.test.py
+          git checkout -- scripts/stamp-rescue-escalation.py
+          # 3. the quote-keeping generation parse, with no supervisor-side normalization
+          mut 65-rescue-receiver/rescue-poll.sh '[ -n "$_tl_gen" ] || _tl_gen="null"' '_tl_gen="\"$_tl_gen\""; [ -n "$_tl_gen" ] || _tl_gen="null"'
+          mut shared-utils/rescue-supervise.py '_bare_gen(args.takeover_generation) != _bare_gen(record.get("generation"))' 'str(args.takeover_generation) != str(record.get("generation"))'
+          red bash tests/rescue/RR-026/test_lock_generation_parse.sh
+          git checkout -- 65-rescue-receiver/rescue-poll.sh shared-utils/rescue-supervise.py
+          git diff --exit-code

@@ -238,22 +238,37 @@ echo ""
 echo "--- A5: the alert reaches the OPERATOR webhook and no client channel ---"
 CURLBIN="$SANDBOX/bin-a5"; mkdir -p "$CURLBIN"
 CURL_LOG="$SANDBOX/curl-a5.log"
+# The escalation goes through scripts/rr-escalate.sh, which reads the box slug
+# and secret from the box's own config and POSTs the payload from a file: the
+# shim logs argv AND the posted file, then answers like the RR-01 intake.
 cat > "$CURLBIN/curl" <<SHIM
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$CURL_LOG"
+for a in "\$@"; do case "\$a" in @*) cat "\${a#@}" >> "$CURL_LOG"; printf '\n' >> "$CURL_LOG" ;; esac; done
+printf '%s\n%s' '{"accepted":true,"ticketId":"RR-T-1","status":"admitted"}' 200
 exit 0
 SHIM
 chmod +x "$CURLBIN/curl"
 : > "$CURL_LOG"
+mkdir -p "$SANDBOX/home-a5/.openclaw/secrets"
+printf '%s' '{"env":{"vars":{"FLEET_STANDING_BOX_SLUG":"box-a5-fixture"}}}' > "$SANDBOX/home-a5/.openclaw/openclaw.json"
+printf 'RESCUE_RANGERS_WEBHOOK_SECRET=fixture-secret\n' > "$SANDBOX/home-a5/.openclaw/secrets/.env"
+chmod 600 "$SANDBOX/home-a5/.openclaw/secrets/.env"
 
 set +e
-A5_ERR="$(HOME="$SANDBOX/home-a4" OC_ROOT="$SANDBOX/home-a4/.openclaw" \
-  OC_CONFIG="$SANDBOX/home-a4/.openclaw/openclaw.json" \
+A5_ERR="$(HOME="$SANDBOX/home-a5" OC_ROOT="$SANDBOX/home-a5/.openclaw" \
+  OC_CONFIG="$SANDBOX/home-a5/.openclaw/openclaw.json" \
   OC_WORKSPACES="$WS" VALIDATOR="$STUB_VALIDATOR" \
   RESCUE_RANGERS_WEBHOOK_URL="https://operator.example/rr-hook" \
   PATH="$CURLBIN:$PATH" \
   bash "$VALIDATE" --quiet 2>&1 >/dev/null)"
 set +e
+if grep -q '"boxName": "box-a5-fixture"' "$CURL_LOG" 2>/dev/null \
+   && printf '%s' "$A5_ERR" | grep -q 'ESCALATED to operator.*ticket=RR-T-1'; then
+  pass "A5e: the escalation carries the box slug and is reported sent only with a ticket id"
+else
+  fail "A5e: escalation payload has no boxName, or success was reported without a ticket id"
+fi
 
 if grep -q 'operator.example/rr-hook' "$CURL_LOG" 2>/dev/null; then
   pass "A5a: failure POSTed to the operator (rescue-rangers) webhook"

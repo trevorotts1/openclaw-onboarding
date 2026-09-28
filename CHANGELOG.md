@@ -1,3 +1,72 @@
+## [v25.2.7]  -  2026-09-28  -  Rescue Rangers escalation: one sender (rr-escalate.sh), section stamped into client AGENTS.md, box-carrying maintenance escalations, lock-generation deadlock fixed
+
+### Why
+A client asked its agent to send a problem to Rescue Rangers. The agent emailed it instead and told
+the client it had been sent. Email creates no ticket. Root causes, all verified in this repo:
+1. A client agent loads bootstrap files only from its workspace AGENTS.md, and no client box had the
+   escalation section there. `apply-fleet-standards.sh` section 5j only upgraded an existing section
+   and logged "WIRING GAP" when it was absent; `install.sh` never ran the stamper at all.
+2. There was no send tool: skill 65 only receives, and the section taught a hand-built curl.
+3. Eight maintenance scripts POSTed `{action, client, agent, message}` with no box field (the RR-01
+   intake answers 400 "unresolvable box") and treated any answer as success. The closeout watchdog
+   also sent its Telegram alert from the client's own bot (no `--account`), which is not in the
+   operator chat, so Telegram answered "chat not found".
+4. `rescue-poll.sh` read the lock generation with `sed`, kept the JSON quotes of a string generation,
+   the supervisor refused the takeover as `takeover_generation_mismatch`, and the poll exited 0
+   silently on every fire: one poll dying mid-turn blocked that box's return leg for good.
+5. The retired relay address was still printed in shipped docs and the connection manifest.
+
+### What changed
+- NEW `scripts/rr-escalate.sh`: the one sender. Reads URL, secret and box slug from the env,
+  `openclaw.json` env.vars and the secrets file (parsed, never executed); fills client, agent, box
+  type and OpenClaw version; requires `--problem`; accepts `--tried`, `--person`, `--return-to`,
+  `--agent`, `--client`, `--class`; `--resolve <incident_id>` carries the RR-002 correlation fields;
+  `--selftest` exits 0 only on `test_suppressed`. Prints `ticket=` / `incident_id=`; exits non-zero on
+  missing config (3), refusal or accepted-without-ticket (4) and transport failure (5). The secret is
+  passed to curl on stdin, never on a command line, and never printed.
+- `scripts/rescue-escalation-section.md.tpl` (+ byte-identical role-library copy): V4
+  (`RESCUE_ESCALATION_BOXNAME_V4`). Runs `rr-escalate.sh` instead of a hand-built curl. Rules: sent
+  only with a ticket number; never email Rescue Rangers; never post in its Telegram group; skill 65
+  only receives. Half the size of V3 and fully enclosed by its markers.
+- NEW `scripts/stamp-rescue-escalation.py`, called by `apply-fleet-standards.sh` 5j and by
+  `install.sh`: on a CLIENT box a missing section is INSERTED after the first top-level block (never
+  inside another marker pair or a code fence, far below 150,000 chars) after a timestamped
+  `AGENTS.md.bak-rescue-esc-<ts>` backup; V1-V3 and unmarked sections are upgraded in place (V3 tail
+  consumed); re-run is a byte-identical no-op; writes are atomic under an flock and go through a symlinked
+  AGENTS.md without breaking the link; the operator box
+  (`IS_OPERATOR_BOX`/`OPERATOR_BOX`, or the `N8N_API_KEY` signal 5k uses) is skipped.
+- `install.sh`: ships `rr-escalate.sh`, the stamper and the template to `~/.openclaw/scripts/`, and
+  runs the stamper on the workspace AGENTS.md. (`update-skills.sh` already delivers all of
+  `scripts/`.)
+- The eight senders (`browser_manager.sh`, `closeout-readiness-watchdog.sh`,
+  `agent-browser-reaper.sh`, `bootstrap-validate-daily.sh`, `check-company-root.sh`,
+  `disk-usage-alert.sh`, `index-model-drift-check.sh`, `pre-july14-embedding-migration-check.sh`)
+  call `rr-escalate.sh` and log a WARN with the reason on rejection. Their existing gating
+  (`RESCUE_RANGERS_WEBHOOK_URL` set, per-script opt-in flags) is unchanged. The watchdog Telegram
+  leg sends with `--account operator`, and only when that account has a bot token.
+- `65-rescue-receiver` (skill v23.5.3): lock generation parsed with python3 json (string or number,
+  `observed_generation` fallback); contention logged as `lock-contended reason=... holder_gen=...`
+  with a `rejected/lock-contended.json` marker; `_log` defined before the lock code uses it.
+  `shared-utils/rescue-supervise.py` compares bare generation values. SKILL.md points senders at
+  `rr-escalate.sh`.
+- The retired relay address is removed from the role-library docs and manifest; repo AGENTS.md's
+  escalation section now uses `rr-escalate.sh`.
+
+### Migration notes
+- The next update roll stamps the section into every client box's workspace AGENTS.md (backup
+  written next to it) and upgrades V1-V3 boxes in place. No manual step.
+- A box whose `FLEET_STANDING_BOX_SLUG` is not seeded still gets the section; `rr-escalate.sh`
+  refuses to send until the slug exists and says so, instead of the agent improvising.
+- Risk: LOW-MEDIUM (edits the workspace AGENTS.md on client boxes; backed up, marker-guarded).
+
+### Tests
+New: `tests/unit/rr-escalate.test.py` (loopback intake stub), `tests/unit/rescue-escalation-v4-stamp.test.py`
+(replaces `rescue-escalation-v2-marker-bump.test.sh`), `tests/unit/rr-escalation-wiring.test.py`,
+`tests/rescue/RR-026/test_lock_generation_parse.sh`, wired in
+`.github/workflows/rescue-rangers-escalation-v4-gates.yml`. Updated:
+`rescue-escalation-tpl-duplicate-guard.test.sh`, `rescue-contract-rr017.test.py`,
+`cron-announce-fail-closed.test.sh` (A5 now asserts the box slug and a ticket id).
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why

@@ -332,6 +332,19 @@ self_remove_cron_watchdog() {
   fi
 }
 
+# _operator_tg_account_ready — 0 when openclaw.json configures a bot token for
+# the Telegram `operator` account (the same check heal-config-shapes.py uses to
+# decide an operator route is live). No token = the operator send is skipped.
+_operator_tg_account_ready() {
+  OC_JSON_PATH="${OC_ROOT}/openclaw.json" python3 -c 'import json, os, sys
+try:
+    a = ((json.load(open(os.environ["OC_JSON_PATH"])).get("channels") or {}).get("telegram") or {}).get("accounts") or {}
+    op = a.get("operator") or {}
+    sys.exit(0 if (op.get("botToken") or op.get("tokenFile")) else 1)
+except Exception:
+    sys.exit(1)' 2>/dev/null
+}
+
 # ── escalate_class CLASS REASON IDLE_LABEL ────────────────────────────────────
 # The whole escalation body, factored out of the tail of this script so more than
 # ONE condition can escalate in a single pass. The classification block below is
@@ -368,10 +381,17 @@ escalate_class() {
 
   # ── Telegram operator escalation ───────────────────────────────────────────
   _msg="🚨 ZHC STUCK [${_class}] ${company_name}/${agent_name}: ${_reason}. Idle: ${_idle}. State: ${STATE_FILE}"
-  if [[ -n "${OPERATOR_TELEGRAM_CHAT_ID}" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
-    log "escalating to operator via Telegram (chat=${OPERATOR_TELEGRAM_CHAT_ID})"
+  # Sent from the OPERATOR bot account only. Without --account the send left
+  # from the client's own bot, which is not in the operator chat, so Telegram
+  # answered "chat not found". No operator bot token configured = log and skip.
+  if [[ -n "${OPERATOR_TELEGRAM_CHAT_ID}" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]] \
+     && ! _operator_tg_account_ready; then
+    log "INFO: operator Telegram account has no bot token configured (channels.telegram.accounts.operator) - operator message skipped (state blocker written; Rescue Rangers still fires)"
+  elif [[ -n "${OPERATOR_TELEGRAM_CHAT_ID}" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+    log "escalating to operator via Telegram (chat=${OPERATOR_TELEGRAM_CHAT_ID}, account=operator)"
     openclaw message send \
       --channel telegram \
+      --account operator \
       -t "${OPERATOR_TELEGRAM_CHAT_ID}" \
       -m "${_msg}" >>"${LOG_FILE}" 2>&1 \
       || log "WARN: Telegram escalation failed (non-fatal - state blocker already written)"
@@ -382,17 +402,23 @@ escalate_class() {
   fi
 
   # ── Rescue Rangers n8n webhook ─────────────────────────────────────────────
-  if command -v curl >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
-    _payload=$(_OC_RR_CLIENT="${company_name}" _OC_RR_AGENT="${agent_name}" \
-      _OC_RR_CLASS="${_class}" _OC_RR_MSG="${_reason}" _OC_RR_IDLE="${_idle}" \
-      python3 -c 'import json, os
-print(json.dumps({"action": "escalate", "client": os.environ["_OC_RR_CLIENT"], "agent": os.environ["_OC_RR_AGENT"], "class": os.environ["_OC_RR_CLASS"], "message": os.environ["_OC_RR_MSG"], "idle": os.environ["_OC_RR_IDLE"]}))' 2>/dev/null)
-    log "posting to Rescue Rangers webhook"
-    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-      -H "Content-Type: application/json" \
-      ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-      -d "${_payload}" >>"${LOG_FILE}" 2>&1 \
-      || log "WARN: Rescue Rangers webhook POST failed (non-fatal)"
+  # rr-escalate.sh adds the box slug the intake requires (the old payload had
+  # none, so the intake answered 400) and exits non-zero unless a ticket was
+  # minted, so a refusal is logged as a WARN instead of passing as delivered.
+  if [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+    local _rr_bin="" _rr_c _rr_out
+    for _rr_c in "${RR_ESCALATE_BIN:-}" "${SCRIPT_DIR}/../../scripts/rr-escalate.sh" "${OC_ROOT}/scripts/rr-escalate.sh"; do
+      [[ -n "$_rr_c" && -f "$_rr_c" ]] && { _rr_bin="$_rr_c"; break; }
+    done
+    log "posting to Rescue Rangers (rr-escalate.sh)"
+    if [[ -z "$_rr_bin" ]]; then
+      log "WARN: Rescue Rangers escalation NOT sent: rr-escalate.sh not found (non-fatal)"
+    elif _rr_out="$(bash "$_rr_bin" --client "${company_name}" --agent "${agent_name}" --class "${_class}" \
+          --problem "ZHC STUCK [${_class}] ${_reason} (idle: ${_idle})" 2>&1)"; then
+      log "Rescue Rangers escalation accepted: ${_rr_out//$'\n'/ }"
+    else
+      log "WARN: Rescue Rangers escalation REJECTED (rc=$?, non-fatal): ${_rr_out//$'\n'/ }"
+    fi
   fi
 
   log "watchdog escalation complete: ${_class} for ${company_name}/${agent_name}"
