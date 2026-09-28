@@ -36,7 +36,7 @@ try:
 except ImportError:
     def get_openclaw_paths():  # type: ignore
         raise RuntimeError("detect_platform.py not on sys.path")
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "23-ai-workforce-blueprint" / "scripts"))
 from shared_core_copy import SHARED_CORE_FILES, ensure_core_copy
 
 STANDARD_DEFERRAL = """

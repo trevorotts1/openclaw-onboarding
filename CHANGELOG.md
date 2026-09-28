@@ -17,7 +17,8 @@ Running the Skill 23 build on a client box that already had departments and agen
   stripped fields from entries it did not change.
 
 ### What changed
-- `shared-utils/shared_core_copy.py` (new): `ensure_core_copy()` places a shared core file as a real
+- `23-ai-workforce-blueprint/scripts/shared_core_copy.py` (new; lives in the Skill 23 scripts tree so it
+  travels with every delivered layout, flattened `.scripts` included): `ensure_core_copy()` places a shared core file as a real
   copy. It keeps a real, non-empty file byte-identical, migrates a symlink to a real copy, and is
   fail-open (an unreadable or empty canonical leaves the file as it was). Refreshing an existing
   real file is still the job of `link_shared_core_files()` in `update-skills.sh` / `install.sh`.
@@ -39,6 +40,7 @@ Running the Skill 23 build on a client box that already had departments and agen
   registration under another key, a second-run no-op on an `agents.entries` box, and an end-to-end
   `materialize-dept-agents.sh` run. `test_role_workspace_symlinks.py` was updated to the N29
   contract. Both now run in `skill23-provisioning-tests.yml`.
+- Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
 
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 

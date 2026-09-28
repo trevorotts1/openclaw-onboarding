@@ -410,9 +410,7 @@ See `../governing-personas.md` for the department-level pool.
     # A symlink is rejected by the runtime's workspace-root boundary guard; a
     # real, non-empty file already here is never deleted or overwritten. Role
     # folders carry no AGENTS.md (U053 disposition, create_role_workspaces.py).
-    for _su in (Path(SCRIPT_DIR).parent.parent / "shared-utils",
-                Path(SCRIPT_DIR).parent / "shared-utils"):
-        sys.path.insert(0, str(_su))
+    sys.path.insert(0, SCRIPT_DIR)
     from shared_core_copy import ensure_core_copy
     for fname in ("USER.md", "TOOLS.md"):
         _r = ensure_core_copy(workspace_root / fname, role_dir / fname)
