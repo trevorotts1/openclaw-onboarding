@@ -77,8 +77,8 @@ grep -q 'canonical Command Center update failed' "$RUNNER" \
   && ok "fleet runner preserves main convergence instead of checking out a stale compatibility tag" \
   || bad "fleet runner can still detach/downgrade Command Center after the root update"
 grep -q 'could not converge Command Center checkout onto the latest origin default branch' "$RUN_FULL" \
-  && grep -q 'did not end GREEN on the fresh build' "$RUN_FULL" \
-  && ok "Command Center branch or deploy rollback fails the update loudly" \
+  && grep -q 'the running Command Center is not healthy after the update' "$RUN_FULL" \
+  && ok "Command Center branch failure or an unhealthy running CC fails the update loudly" \
   || bad "Command Center convergence/deploy failures are still advisory"
 
 grep -q 'main/update-skills.sh' "$CRON_SETUP" \
