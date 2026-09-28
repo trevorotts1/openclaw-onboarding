@@ -38,7 +38,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
 3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single gpt-image-2.5 image per slide (plus the off-slide speaker-notes pane and, where required, the PIL-composited logo image baked into the PNG per SOP-IMG-05).
 3a. **Canonical assembler only (AF-CANONICAL-RENDER-BYPASS).** The deck is assembled by the canonical renderer `scripts/build_deck.py` `assemble_pptx()`, invoked ONLY through `scripts/run_signature_deck.py`. That function adds ONLY `add_picture` (full-bleed kie.ai image) + `add_picture` (PIL-baked logo when used) + the off-slide notes pane, and emits ZERO `add_textbox`. You do NOT hand-write or run a parallel per-deck assembler (no `working/phase*_assemble.py`, no improvised renderer). A hand-rolled per-deck assembler/renderer is AF-CANONICAL-RENDER-BYPASS (and AF-RENDERER); a locally fabricated slide canvas (`Image.new(...)` for a 2048×1152 card, or a PowerPoint-drawn typography card) is AF-LOCAL-CANVAS. The python in step 4 is the REFERENCE SPEC of the canonical assembler's image-only behavior, not a license to author a separate assembler. A gate is skippable ONLY via an explicit, LOGGED owner/founder `owner_skip_approval` token in `process_manifest.json`.
 3b. **Workspace discipline (AF-DH1 prevention):** All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembler must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
-4. Write the assembly script at working/scripts/assemble_pptx.py:
+4. Reference only: canonical `build_deck.assemble_pptx()` behaves as follows (do not write this file):
    ```python
    from pptx import Presentation
    from pptx.util import Inches  # Inches ONLY -- no Pt/RGBColor: this assembler
@@ -109,7 +109,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
    prs.save(OUTPUT_FILE)
    print(f"Saved: {OUTPUT_FILE}")
    ```
-5. Run the assembly script: `python3 working/scripts/assemble_pptx.py`.
+5. Run `python3 scripts/run_signature_deck.py …` (P8-ASSEMBLE).
 6. Verify the output file exists at output/[DECK_SLUG].pptx and is non-empty.
 7. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field, AND no slide carries any native on-slide text run (every shape on every slide is a picture; the only text part is the off-slide notes pane). A native on-slide text run is AF-OVERLAY-DELIVERED.
 8. Notify the Director that `output/` files are ready (PPTX + PDF). Do NOT copy any file to ~/Downloads or to `delivery/`; Delivery Concierge SOP 9.0 owns final packaging. Touching the delivery directory from this role is an AF-DH1 trigger.
@@ -126,7 +126,7 @@ Garbled-text remedy (NO native overlay — Decision 5C): if a slide's rendered t
 
 **Deterministic-renderer path (`scripts/build_deck.py`) -- automatic per-slide speaker notes:**
 
-When the deck is assembled via the deterministic fleet renderer `scripts/build_deck.py` (the zero-AI-at-runtime path) rather than a hand-written `assemble_pptx.py`, the renderer injects per-slide speaker notes AUTOMATICALLY -- you do NOT hand-build a `presenter_notes.json` for this path. The behavior is:
+When the deck is assembled via the deterministic fleet renderer `scripts/build_deck.py` (the zero-AI-at-runtime path) the renderer injects per-slide speaker notes AUTOMATICALLY -- you do NOT hand-build a `presenter_notes.json` for this path. The behavior is:
 
 1. **Auto-discovery (non-fatal).** Before assembling, `build_deck.py` searches, in order, for the presenter speech at: `working/presenter-speech/speech.md`, `working/delivery/PRESENTERS-SPEECH.md`, `working/presenter-speech/PRESENTERS-SPEECH.md`, and finally `PRESENTERS-SPEECH.md` in the bundle directory. The FIRST file found wins.
 2. **Phase ordering is tolerated.** The deck render is Phase 4; the presenter speech is a Phase 9 artifact written by the Presenters Speech Writer. So at render time the speech is FREQUENTLY absent. When no speech file is found, the renderer logs a clear "no presenter speech found yet ... rendering WITHOUT per-slide notes (non-fatal)" message and assembles the deck with no notes. **A missing speech NEVER blocks the render.** Per-slide notes are a best-effort enrichment, not a render gate. (The full bundle is still enforced separately by the postflight AF-BUNDLE-COMPLETE gate, which requires the speech artifacts to exist before the run can be reported "done.")

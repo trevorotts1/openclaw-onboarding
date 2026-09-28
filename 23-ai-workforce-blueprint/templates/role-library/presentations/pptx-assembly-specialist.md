@@ -69,7 +69,6 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 4. Weekly Operations
 
-Between runs: maintain the python-pptx assembly script at working/scripts/assemble_pptx.py. Ensure it is idempotent -- running it twice on the same inputs produces the same output.
 
 ---
 
@@ -120,57 +119,39 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 > **Phase-Code Map (per FIX of the short-code reconciliation):** the numeric short codes below resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 69, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9). This role's own phases: assembly `P8-ASSEMBLE` (order 8), PDF export `P8.1-PDF-EXPORT` (8.1), workbook `P8.25-WORKBOOK` (8.25), notes sync `P9.5-NOTES-SYNC` (8.7), upsell HTML `P-U-HTML-SALES`/`P-U-HTML-CHECKOUT`/`P-U-HTML-VSL` (5.2/5.3/5.4); the render this role receives comes from `P4-RENDER` (4.9) and its image QC from `P-IMAGE-QC` (4.95); final aggregation is `P-QC-AGGREGATE` (8.65) and delivery is `P9-DELIVER` (9). The manifest id is the canonical key when reading a manifest row.
 
-### SOP 9.1 -- PPTX Build with Embedded Speaker Notes (manifest id `P8-ASSEMBLE`, order 8)
+### SOP 9.1 -- PPTX Build with Embedded Speaker Notes
 
 **When to run:** Phase 6 -- after delivery_verified: true in media_library.json.
 
 **Inputs:**
 - working/media-library/slide-NN.png (all slides, zero-padded, in order)
 - working/copy/presenter_notes.json
-- working/copy/pptx_text_overlays.json (optional -- but required when any slide's text render failed twice during Phase 5; see strike support below)
 - working/copy/mission_prd.json (slide_count_final, deck_slug)
 
-**Strike-capable overlay support:**
+**NATIVE TEXT/ELEMENT OVERLAYS ARE ELIMINATED (Decision 5C -- AF-OVERLAY-DELIVERED).**
 
-pptx_text_overlays.json entries may contain a `strike: true` property on any run. This is the documented fallback for struck-through prices that failed two render attempts in Phase 4/5 (per SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (PRESENTATION-MASTER-DOCTRINE.md §4)). The assembly script must handle the `strike` property on every run-level entry and apply the correct OOXML attribute to the text run.
+This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json` native-text-overlay subsystem (the overlays dict read, the `add_textbox` loop, strike support, the typography-safe assembler spec, the gradient scrim) is REMOVED.
 
-Each entry in pptx_text_overlays.json follows this schema:
-```json
-{
-  "slide_number": 51,
-  "text": "$2,500",
-  "left": 2.1,
-  "top": 1.8,
-  "width": 3.0,
-  "height": 0.8,
-  "font_name": "Montserrat Black",
-  "font_size_pt": 48,
-  "font_color_hex": "888888",
-  "bold": true,
-  "strike": true
-}
-```
-When `strike: true`: the run's OOXML `<a:rPr>` must include `strike="sngStrike"`. This is set via `run.font._rPr.set("strike", "sngStrike")` in python-pptx (direct XML manipulation, since python-pptx has no high-level strike API as of v1.x).
+**Archival reference -- decommissioned overlay subsystem specification (preserved by U003 rescue):**
 
-When `strike: false` or the property is absent: do not set the strike attribute.
+The eliminated subsystem included: a strike-capable overlay support mechanism with `{"strike": true}` property on any run, requiring OOXML `<a:rPr>` with `strike="sngStrike"` set via `run.font._rPr.set("strike", "sngStrike")` (python-pptx direct XML manipulation); and a Typography-Safe Assembler Spec (former SOP 9.4) with six non-optional rules: (1) autofit banned (`noAutofit`), (2) fixed-box sizing from pptx_text_overlays.json, (3) rendered-text-height measurement with collision assert, (4) bottom-anchoring for price/hook entries, (5) build-time collision assert across all slide overlays, and (6) a bottom-up gradient scrim (rgba 0,0,0,0.65) behind overlay text boxes on photographic backgrounds. The full specification is preserved in the U003 rescue backup archive. Every slide ships as a SINGLE composed gpt-image-2.5 image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
 
-When to write a new pptx_text_overlays.json entry:
-- During Phase 5 QC: if a text element (especially a struck-through old price) fails to render correctly on two consecutive generation attempts, the QC Specialist or Slide Image Creator writes an entry to pptx_text_overlays.json with the text, position, font spec, and `strike: true` (for struck prices). This role reads those entries at assembly time.
-- The Slide Image Creator regenerates the slide WITHOUT the failing text element; this role applies it natively during assembly.
-
-**Typography-safe assembler requirement:**
-
-Every overlay text box added in this SOP must comply with all six rules of SOP 9.4 (Typography-Safe Assembler Spec): (1) no spAutoFit; (2) fixed-box dimensions; (3) rendered-height asserted before insertion; (4) bottom-anchoring for price and hook entries; (5) collision assert after all overlays for a slide are written; (6) bottom-up gradient scrim inserted before the text box on photographic backgrounds. See SOP 9.4 for the full implementation. These rules are not optional. Assembly halts on any assert failure.
+- If a slide's verbatim text garbles, misspells, or duplicates at image QC, the remedy is NEVER a native overlay. The Slide Image Creator RE-PROMPTS and RE-SEEDS the slide (new prompt, new seed) and re-renders. If the garble PERSISTS after the re-prompt/re-seed loop, it ESCALATES TO A HUMAN — it is never papered over with a native text box.
+- The mere PRESENCE of a `pptx_text_overlays.json` file in the run dir at assembly is a hard auto-fail (AF-OVERLAY-DELIVERED). If you find one, HALT, delete it, and route the affected slide back to the re-prompt/re-seed loop.
+- A delivered PPTX whose any slide carries a native (non-notes) on-slide text run instead of a composed image is AF-OVERLAY-DELIVERED. `scripts/build_deck.py` enforces this both at preflight (`_chk_no_overlay`) and at the postflight completeness gate.
+- The LOGO is the ONLY exception, and it is NOT native text: when the model cannot bake the locked logo cleanly after two image-to-image attempts, the real logo IMAGE is composited onto the slide PNG via the PIL image-composite path (SOP-IMG-05) BEFORE assembly — it is baked into the image, not added as a native PPTX element.
 
 **Steps:**
 1. Verify slide count: `ls working/media-library/*.png | wc -l` must equal slide_count_final from mission_prd.json. If it does not, halt and notify the Director.
 2. Verify presenter_notes.json has exactly slide_count_final entries. If fewer entries than slides: flag missing notes to the Director. Do not assemble with missing notes.
-3. Check for pptx_text_overlays.json. If it exists, read it and log how many entries contain `strike: true`. These are struck-price overlays and require special handling.
-4. Write the assembly script at working/scripts/assemble_pptx.py:
+3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single gpt-image-2.5 image per slide (plus the off-slide speaker-notes pane and, where required, the PIL-composited logo image baked into the PNG per SOP-IMG-05).
+3a. **Canonical assembler only (AF-CANONICAL-RENDER-BYPASS).** The deck is assembled by the canonical renderer `scripts/build_deck.py` `assemble_pptx()`, invoked ONLY through `scripts/run_signature_deck.py`. That function adds ONLY `add_picture` (full-bleed kie.ai image) + `add_picture` (PIL-baked logo when used) + the off-slide notes pane, and emits ZERO `add_textbox`. You do NOT hand-write or run a parallel per-deck assembler (no `working/phase*_assemble.py`, no improvised renderer). A hand-rolled per-deck assembler/renderer is AF-CANONICAL-RENDER-BYPASS (and AF-RENDERER); a locally fabricated slide canvas (`Image.new(...)` for a 2048×1152 card, or a PowerPoint-drawn typography card) is AF-LOCAL-CANVAS. The python in step 4 is the REFERENCE SPEC of the canonical assembler's image-only behavior, not a license to author a separate assembler. A gate is skippable ONLY via an explicit, LOGGED owner/founder `owner_skip_approval` token in `process_manifest.json`.
+3b. **Workspace discipline (AF-DH1 prevention):** All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembler must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
+4. Reference only: canonical `build_deck.assemble_pptx()` behaves as follows (do not write this file):
    ```python
    from pptx import Presentation
-   from pptx.util import Inches, Pt
-   from pptx.dml.color import RGBColor
+   from pptx.util import Inches  # Inches ONLY -- no Pt/RGBColor: this assembler
+   # draws ZERO native text, so text-formatting primitives are deliberately absent.
    import json, os, glob, re
 
    # Configuration
@@ -178,7 +159,7 @@ Every overlay text box added in this SOP must comply with all six rules of SOP 9
    SLIDE_HEIGHT_INCHES = 7.5
    MEDIA_DIR = "working/media-library"
    NOTES_FILE = "working/copy/presenter_notes.json"
-   OVERLAYS_FILE = "working/copy/pptx_text_overlays.json"
+   OVERLAYS_FILE = "working/copy/pptx_text_overlays.json"  # ELIMINATED — present == AF-OVERLAY-DELIVERED (halt)
    OUTPUT_FILE = "output/[DECK_SLUG].pptx"
 
    prs = Presentation()
@@ -188,14 +169,15 @@ Every overlay text box added in this SOP must comply with all six rules of SOP 9
    with open(NOTES_FILE) as f:
        notes = {item["slide_number"]: item["presenter_note"] for item in json.load(f)}
 
-   overlays = {}
+   # AF-OVERLAY-DELIVERED: native text overlays are ELIMINATED. The assembler
+   # composites ONLY the single composed gpt-image-2.5 image per slide (all text is
+   # baked into the image by the model) plus the off-slide speaker-notes pane. If a
+   # pptx_text_overlays.json exists, HALT (do not read it) — it is an auto-fail.
    if os.path.exists(OVERLAYS_FILE):
-       with open(OVERLAYS_FILE) as f:
-           for item in json.load(f):
-               sn = item["slide_number"]
-               if sn not in overlays:
-                   overlays[sn] = []
-               overlays[sn].append(item)
+       raise SystemExit(
+           "AF-OVERLAY-DELIVERED: pptx_text_overlays.json is present. The native-text "
+           "overlay path is eliminated (Decision 5C). Delete it and re-prompt/re-seed "
+           "the affected slide; escalate to a human if garble persists.")
 
    blank_layout = prs.slide_layouts[6]  # blank layout
 
@@ -206,38 +188,72 @@ Every overlay text box added in this SOP must comply with all six rules of SOP 9
        slide_number = idx + 1
        slide = prs.slides.add_slide(blank_layout)
 
-       # Full-bleed image
+       # Full-bleed composed image (the ONLY visual on the slide; all text baked in
+       # by gpt-image-2.5, plus the PIL-composited logo image per SOP-IMG-05 when used).
+       # ONLY add_picture is permitted -- there is NO add_textbox / add_shape /
+       # placeholder-text call anywhere in this assembler. Text-on-slide is absent
+       # by construction, not by discipline.
        pic = slide.shapes.add_picture(img_path, Inches(0), Inches(0),
                                       Inches(SLIDE_WIDTH_INCHES), Inches(SLIDE_HEIGHT_INCHES))
 
-       # ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED): the native text/element-overlay
-       # path no longer exists. No add_textbox loop, no strike support. Garbled text is
-       # fixed by the Slide Image Creator's re-prompt/re-seed loop, then human escalation.
-
-       # Speaker notes
+       # Speaker notes (off-slide pane — the ONLY legitimate PPTX text part)
        if slide_number in notes:
            notes_slide = slide.notes_slide
            notes_slide.notes_text_frame.text = notes[slide_number]
 
+   def assert_image_only(prs):
+       # AF-OVERLAY-DELIVERED structural guard. Every on-slide shape must be a
+       # picture; no shape may expose a non-empty on-slide text frame. The off-slide
+       # speaker-notes pane (slide.notes_slide) is NOT a slide shape and is exempt.
+       for i, slide in enumerate(prs.slides, start=1):
+           for shape in slide.shapes:
+               if shape.has_text_frame and shape.text_frame.text.strip():
+                   raise SystemExit(
+                       f"AF-OVERLAY-DELIVERED: slide {i} has a native on-slide text "
+                       f"run. The deck is image-only (text baked into the single "
+                       f"gpt-image-2.5 image). Re-prompt/re-seed the slide; never overlay.")
+
+   assert_image_only(prs)  # structural ban on text-on-slide, enforced in code
    os.makedirs("output", exist_ok=True)
    prs.save(OUTPUT_FILE)
    print(f"Saved: {OUTPUT_FILE}")
    ```
-5. Run the assembly script: `python3 working/scripts/assemble_pptx.py`.
+5. Run `python3 scripts/run_signature_deck.py …` (P8-ASSEMBLE).
 6. Verify the output file exists at output/[DECK_SLUG].pptx and is non-empty.
-7. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field.
-8. For any slide with a `strike: true` overlay entry: open the corresponding slide in the rendered PDF (SOP 9.2) and visually confirm the struck text appears with the strikethrough line.
+7. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field, AND no slide carries any native on-slide text run (every shape on every slide is a picture; the only text part is the off-slide notes pane). A native on-slide text run is AF-OVERLAY-DELIVERED.
+8. Notify the Director that `output/` files are ready (PPTX + PDF). Do NOT copy any file to ~/Downloads or to `delivery/`; Delivery Concierge SOP 9.0 owns final packaging. Touching the delivery directory from this role is an AF-DH1 trigger.
 
 **Outputs:**
-- output/[DECK_SLUG].pptx (the assembled deck, with all native overlays and struck-price overlays applied)
-- pptx_text_overlays.json (written by QC Specialist / Slide Image Creator during Phase 5; read here; this role does not write it, it reads it)
+- output/[DECK_SLUG].pptx (the assembled deck — image-only slides + off-slide speaker notes; NO native text overlays)
+- output/[DECK_SLUG].pdf (the portable-document export, produced in SOP 9.2)
 
-**Hand to:** SOP 9.2 (export the deck to its required portable-document-format file and render QC PNGs), then after Phase 6 QC passes -- hand BOTH the .pptx and the .pdf to Media Librarian / GHL Updater SOP 9.6 (Final Deck Delivery) or ROLE-13 Delivery Concierge if that role exists.
+**Hand to:** SOP 9.2 (render to PDF for QC), then after Phase 6 QC passes -- hand to Delivery Concierge (ROLE-13) who runs SOP 9.0 to package the clean client bundle. Do NOT copy output files to Downloads directly.
 
 **Failure mode:** If any slide image file is missing or corrupt: halt. Do not assemble with a gap. Notify the Director: "Assembly blocked: slide-NN.png is missing or corrupt. Media Librarian must re-verify."
 
-Native text overlay fallback trigger: if two render attempts on any text element both fail Phase 5 image QC (text garbled, struck price not rendered cleanly), the QC Specialist or Slide Image Creator must write the failed element to pptx_text_overlays.json with the correct `strike` flag BEFORE assembly begins. If this role reaches assembly and discovers that a slide's image has a missing text element that is not covered by an overlay entry, halt and notify the Director: the fallback entry was not written.
+Garbled-text remedy (NO native overlay — Decision 5C): if a slide's rendered text garbled or misspelled at Phase 5 image QC, the remedy is the Slide Image Creator's RE-PROMPT / RE-SEED loop (new prompt + new seed, re-render the single composed image), and if the garble PERSISTS, HUMAN ESCALATION. This role NEVER writes or reads a pptx_text_overlays.json and NEVER composites a native text box. If you reach assembly and find a pptx_text_overlays.json present, HALT (AF-OVERLAY-DELIVERED): delete it and route the slide back to the re-prompt/re-seed loop.
 
+**Deterministic-renderer path (`scripts/build_deck.py`) -- automatic per-slide speaker notes:**
+
+When the deck is assembled via the deterministic fleet renderer `scripts/build_deck.py` (the zero-AI-at-runtime path) the renderer injects per-slide speaker notes AUTOMATICALLY -- you do NOT hand-build a `presenter_notes.json` for this path. The behavior is:
+
+1. **Auto-discovery (non-fatal).** Before assembling, `build_deck.py` searches, in order, for the presenter speech at: `working/presenter-speech/speech.md`, `working/delivery/PRESENTERS-SPEECH.md`, `working/presenter-speech/PRESENTERS-SPEECH.md`, and finally `PRESENTERS-SPEECH.md` in the bundle directory. The FIRST file found wins.
+2. **Phase ordering is tolerated.** The deck render is Phase 4; the presenter speech is a Phase 9 artifact written by the Presenters Speech Writer. So at render time the speech is FREQUENTLY absent. When no speech file is found, the renderer logs a clear "no presenter speech found yet ... rendering WITHOUT per-slide notes (non-fatal)" message and assembles the deck with no notes. **A missing speech NEVER blocks the render.** Per-slide notes are a best-effort enrichment, not a render gate. (The full bundle is still enforced separately by the postflight AF-BUNDLE-COMPLETE gate, which requires the speech artifacts to exist before the run can be reported "done.")
+3. **`parse_speech_chunks` -- the two marker forms.** When a speech IS found, `build_deck.parse_speech_chunks(speech_text)` splits it into `{slide_no: spoken_text}`. It recognises BOTH per-slide marker forms, anchored to the start of a line, case-insensitive:
+   - a markdown heading: `## Slide 7` (1-3 leading `#`s -- `# Slide 7` / `### Slide 7` all match), and
+   - an inline marker: `SLIDE 7` (no heading hashes).
+   For each marker, the spoken text is everything from the END of the marker/title line up to the start of the next marker (or end of file), stripped of surrounding whitespace. The marker line itself (including any slide title after the number) is a structural cue and is NOT spoken text -- it is dropped. If the same slide number appears more than once, the LAST occurrence wins.
+4. **Injection.** For every rendered slide whose ordinal has a non-empty parsed chunk, the renderer sets `slide.notes_slide.notes_text_frame.text` to that chunk. A slide with no chunk gets no notes part at all (never an empty injection).
+5. **Mismatch policy (safe in both directions).** Chunk count and slide count need not match. EXTRA chunks (a slide number in the speech that the deck does not contain) are simply skipped -- they match no slide. Deck slides with NO chunk are left with empty/absent notes. A count mismatch is never an error and never halts assembly.
+
+This path is reconciled by `scripts/sync_check.py`: `parse_speech_chunks` is registered in `PIPELINE-MANIFEST.json` under the `P8-ASSEMBLE` phase `emits.checks`, and `sync_check` fails the lockstep gate (drift A8) if that symbol is renamed or removed from `build_deck.py` without updating the manifest.
+
+**REQUIRED -- PER-SLIDE SPEAKER NOTES IN THE NOTES PANE (the self-coaching .pptx; QC enforcement: AF-EMPTY-NOTES-PANE at closeout).**
+
+The shipped `.pptx` must carry, in each slide's NATIVE NOTES pane, that slide's talking points (mirrored from the presenter speech / Presenter Guide), so the FILE ITSELF is self-coaching when opened in PowerPoint. This is in ADDITION to the Presenter Guide PDF. The mechanic is the `slide.notes_slide.notes_text_frame.text` injection above; this rule mandates the OUTCOME.
+
+- **Phase-ordering note (not a render gate).** Because the presenter speech is a later-phase (Phase 9) artifact, the notes pane is FREQUENTLY empty at the Phase-4 render and that is non-fatal at render time (per the auto-discovery rule above). The notes-pane requirement is enforced at CLOSEOUT, after the speech exists: by final delivery, the re-assembled / finalized `.pptx` must have a non-empty notes pane on every audience-facing content slide.
+- **Verify (AF-EMPTY-NOTES-PANE).** At closeout, open the final `.pptx` and confirm every content slide's notes pane is non-empty (read `slide.notes_slide.notes_text_frame.text` per slide; structural/section-divider slides with no spoken line are exempt). A final delivery whose content slides ship with empty notes panes (the speech existed but was never injected) fails AF-EMPTY-NOTES-PANE; re-run the deterministic assembly with the speech present so the notes are injected, then re-verify.
 ---
 
 ### SOP 9.2 -- Export the Deck to Portable-Document Format (System-Wide Delivery Output + Final QC; manifest id `P8.1-PDF-EXPORT`, order 8.1)
