@@ -96,8 +96,8 @@ jobs:
           # mut FILE OLD NEW -- literal replace; a drifted anchor fails loudly
           mut() { python3 -c 'import sys; p,a,b=sys.argv[1:]; s=open(p).read(); assert a in s, "mutation anchor drifted: "+a; open(p,"w").write(s.replace(a,b,1))' "$@" || exit 1; }
           red() { if "$@" >/dev/null 2>&1; then echo "VACUOUS: gate stayed green: $*"; exit 1; fi; echo "red as required: $*"; }
-          # 1. a sender that ignores accepted:false
-          mut scripts/rr-escalate.sh 'if doc.get("accepted") is False:' 'if False:'
+          # 1. a sender that reports success without a ticket id
+          mut scripts/rr-escalate.sh 'if not ticket:' 'if False:'
           red python3 tests/unit/rr-escalate.test.py
           git checkout -- scripts/rr-escalate.sh
           # 2. a stamper that refuses to create a missing section (the old 5j)
