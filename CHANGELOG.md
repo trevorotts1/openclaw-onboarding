@@ -1,3 +1,17 @@
+## [v25.1.95]  -  2026-09-28  -  Presentations Step 4 lands on main: retired text-overlay doctrine (Fix 4), canonical assembler steps (Fix 20), installer-managed watchdog (Fix 49)
+
+### Why
+This entry documents the Step 4 release (Fixes 4, 20, 49) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.94 -> v25.1.95 via scripts/bump-version.sh (G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 4 (retired text-overlay path still taught as live in three role docs): replaced SOP 9.3/9.4 sections, Gate 5, overlay KPI rows and the add_textbox code in pptx-assembly-specialist.md with the SOP file's ELIMINATED text (re-prompt/re-seed, then human escalation, never an overlay); eliminated the pptx_text_overlays.json write/fallback/outputs/handoff in slide-image-creator.md and the overlay reads/asserts in qc-specialist-presentations.md; added the RETIRED appendix the AF-OVERLAY-DELIVERED manifest trigger claims exists; added a pptx_text_overlays pattern to retired-doctrine-patterns.json.
+- Fix 20 (hand-rolled assembler steps in the SOP and role doc): SOP file Step 4 now reads "Reference only: canonical build_deck.assemble_pptx() behaves as follows (do not write this file)"; Step 5 runs scripts/run_signature_deck.py (P8-ASSEMBLE); role doc SOP 9.1 replaced with the SOP file's version; L72 maintenance line deleted; phrase swap to "The canonical assembler (build_deck.assemble_pptx)" in the universal ruleset, department copy and SOP-PITCH-05; ran scripts/hash-universal-sops-manifest.py and re-synced the content manifest.
+- Fix 49 (capacity SOP makes agents install a second, hand-made crontab watchdog): replaced SOP 9.2 steps 1-7 and the Failure mode paragraph in both the SOP file and capacity-reliability-engineer.md with installer-watchdog verification (launchctl list / openclaw cron list; run update-skills.sh if absent; never write or install a per-deck watchdog). Records watchdog: installer-managed in capacity_plan.json.
+- Version markers rolled v25.1.94 -> v25.1.95 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+The fix orders required no new test files for Fixes 4, 20, 49 (only procedural: hash-universal-sops-manifest.py run, done); JSON validated by parse, syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.94 entry below.
+
 ## [v25.1.94]  -  2026-09-28  -  Presentations Step 3 lands on main: attempt-counter reset (Fix 11), engine pid recording (Fix 13), unified lease format (Fix 14)
 
 ### Why
