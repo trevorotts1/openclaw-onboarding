@@ -638,9 +638,20 @@ for slug, workspace_path in sorted(discovered.items()):
             "memorySearch": default_memory_search(),
         }
 
+    existing = by_id.get(roster_key)
+    if existing is None:
+        # Already registered under ANOTHER key that serves this same workspace?
+        # That entry IS this department's registration: never add a duplicate
+        # beside it, and never touch it (its model/name stay the owner's).
+        _ws_real = os.path.realpath(workspace_path)
+        _other = next((k for k, v in by_id.items() if isinstance(v, dict) and v.get("workspace")
+                       and os.path.realpath(os.path.expanduser(v["workspace"])) == _ws_real), None)
+        if _other is not None:
+            print(f"  = kept    {_other:40s} (already serves {workspace_path}; no duplicate {roster_key})")
+            continue
+
     manifest_rows.append((roster_key, name, workspace_path, slug))
 
-    existing = by_id.get(roster_key)
     if existing is None:
         if ROSTER_MODE == "entries":
             roster[roster_key] = desired_entry

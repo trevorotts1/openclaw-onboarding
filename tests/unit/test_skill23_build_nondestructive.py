@@ -168,6 +168,19 @@ class TestAgentRegistration(_Box):
         self._register(cfg, ["marketing", "sales"])
         self.assertEqual(cfg, before, "an already-registered entries box must be a byte-level no-op")
 
+    def test_department_registered_under_another_key_is_left_alone(self):
+        # The box serves departments/marketing from an entry keyed "marketing" with
+        # the owner's own model. The build must not add a second dept-marketing
+        # entry (duplicate registration) carrying a build-resolved model.
+        cfg = {"agents": {"list": [],
+                          "entries": {"marketing": {"workspace": str(self.depts / "marketing"),
+                                                    "model": copy.deepcopy(self.EXPLICIT)}}}}
+        before = copy.deepcopy(cfg)
+        for _ in range(2):
+            self._register(cfg, ["marketing"])
+            self.assertEqual(cfg, before)
+        self.assertFalse(BW._missing_dept_agents(cfg, {"dept-marketing"}))
+
     def test_entries_box_second_run_adds_no_duplicates(self):
         cfg = {"agents": {"entries": {"main": {"workspace": str(self.ws)},
                                       "dept-marketing": {"workspace": str(self.depts / "marketing")}}}}
@@ -180,6 +193,43 @@ class TestAgentRegistration(_Box):
         self.assertEqual(cfg, first, "second build run must be a no-op")
         workspaces = [e.get("workspace") for e in cfg["agents"]["entries"].values()]
         self.assertEqual(len(workspaces), len(set(workspaces)), "duplicate registration of one workspace")
+
+
+class TestMaterializeDeptAgents(unittest.TestCase):
+    """The build's wiring-repair step (Skill 32 materialize-dept-agents.sh) on an entries box."""
+
+    def test_no_duplicate_for_department_registered_under_another_key(self):
+        import json
+        with tempfile.TemporaryDirectory() as h:
+            oc = Path(h) / ".openclaw"
+            ws = oc / "workspace"
+            for d in ("marketing", "sales"):
+                (ws / "departments" / d).mkdir(parents=True)
+                (ws / "departments" / d / "SOUL.md").write_text("soul\n")
+            for f in CORE:
+                (ws / f).write_text(f"canonical {f}\n")
+            (ws / "departments" / "marketing" / "AGENTS.md").write_text("owner agents\n")
+            (ws / ".workforce-build-state.json").write_text('{"interviewComplete": true}')
+            owned = {"workspace": str(ws / "departments" / "marketing"),
+                     "model": {"primary": "ollama/owner-picked:cloud"}}
+            cfg_path = oc / "openclaw.json"
+            cfg_path.write_text(json.dumps({"agents": {"entries": {"main": {"workspace": str(ws)},
+                                                                   "marketing": owned}}}))
+            script = ROOT / "32-command-center-setup" / "scripts" / "materialize-dept-agents.sh"
+            for _ in range(2):
+                r = subprocess.run(["bash", str(script)], capture_output=True, text=True,
+                                   env=dict(os.environ, HOME=h))
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            agents = json.loads(cfg_path.read_text())["agents"]
+            self.assertNotIn("list", agents)
+            self.assertEqual(sorted(agents["entries"]), ["dept-sales", "main", "marketing"])
+            self.assertEqual(agents["entries"]["marketing"], owned)
+            self.assertNotIn("model", agents["entries"]["dept-sales"])
+            self.assertEqual((ws / "departments" / "marketing" / "AGENTS.md").read_text(), "owner agents\n")
+            for f in CORE:
+                p = ws / "departments" / "sales" / f
+                self.assertFalse(p.is_symlink(), f"sales/{f} is a symlink")
+                self.assertEqual(p.read_text(), f"canonical {f}\n")
 
 
 if __name__ == "__main__":

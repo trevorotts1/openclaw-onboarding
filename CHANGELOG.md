@@ -1,3 +1,45 @@
+## [v25.2.6]  -  2026-09-28  -  Skill 23: the build no longer breaks a box that already has departments and agents
+
+### Why
+Running the Skill 23 build on a client box that already had departments and agents broke it:
+- `build-workforce.py` `create_department_workspace()` deleted each department's real `AGENTS.md`,
+  `TOOLS.md` and `USER.md` and replaced them with symlinks to the workspace root. The runtime's
+  workspace-root boundary guard rejects those symlinks and injects a ~107-char stub, so every
+  department agent silently ran with no instructions (N29, amended 2026-07-31).
+- The role-folder writers (`create_role_workspaces.py`, `add-role.sh`,
+  `shared-utils/create-role-workspaces.py`) and Skill 32's `scaffold-agent-files.sh` (run by
+  `materialize-dept-agents.sh`) created the same symlinks, and the role-folder augment pass turned
+  real `TOOLS.md` / `USER.md` files back into symlinks.
+- A department already registered under a key other than `dept-<slug>` got a second registration
+  from both `add_agent_to_config()` and `materialize-dept-agents.sh`, the build's copy carrying a
+  build-resolved model beside the owner's.
+- On an `agents.entries` box, `add_agent_to_config()` dropped the box's own `agents.list` key and
+  stripped fields from entries it did not change.
+
+### What changed
+- `shared-utils/shared_core_copy.py` (new): `ensure_core_copy()` places a shared core file as a real
+  copy. It keeps a real, non-empty file byte-identical, migrates a symlink to a real copy, and is
+  fail-open (an unreadable or empty canonical leaves the file as it was). Refreshing an existing
+  real file is still the job of `link_shared_core_files()` in `update-skills.sh` / `install.sh`.
+- `create_department_workspace()`, `create_role_workspaces.py` (`create_role_workspace()` and
+  `_link_shared_files_only()`), `add-role.sh`, `shared-utils/create-role-workspaces.py` and
+  `32-command-center-setup/scripts/scaffold-agent-files.sh` all write real copies and never symlink.
+  Role folders carry `TOOLS.md` + `USER.md` only, matching the existing U053 disposition, so a new
+  role no longer gets an `AGENTS.md` that the next augment pass deletes.
+- `add_agent_to_config()` and `materialize-dept-agents.sh` treat an agent whose workspace is the
+  department's folder as that department's registration. They add no second entry and leave its
+  model and name alone. The post-build wiring asserts accept it too, so the build does not fall into
+  a materialize "repair" that would add the duplicate.
+- `add_agent_to_config()` on an `agents.entries` box writes unchanged entries back exactly as found
+  and keeps the box's own `agents.list` key. An agent that already exists is never given a model or
+  changed model, and `agents.defaults` is never touched by registration.
+- Tests: `tests/unit/test_skill23_build_nondestructive.py` (new, 10 hermetic tests, 8 of which fail
+  on the previous main) covers real core files kept byte-identical across two build runs, symlinks
+  migrated, role folders, `scaffold-agent-files.sh`, existing models untouched in both schemas,
+  registration under another key, a second-run no-op on an `agents.entries` box, and an end-to-end
+  `materialize-dept-agents.sh` run. `test_role_workspace_symlinks.py` was updated to the N29
+  contract. Both now run in `skill23-provisioning-tests.yml`.
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why

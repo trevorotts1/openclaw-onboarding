@@ -3803,9 +3803,7 @@ def apply_standard_edits(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {a.get("id") for a in _registry_rows(_cfg_chk)
-                               if isinstance(a, dict)}
-            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            _wiring_missing = _missing_dept_agents(_cfg_chk, _expected_dept_agent_ids)
             if not _wiring_missing:
                 print(f"[STANDARD-FIRST WIRING-ASSERT] PASS — all "
                       f"{len(_expected_dept_agent_ids)} dept agents confirmed in "
@@ -3828,10 +3826,7 @@ def apply_standard_edits(config):
                         ).returncode
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
-                            _actual_ids2 = {a.get("id") for a in
-                                            _registry_rows(_cfg_chk2)
-                                            if isinstance(a, dict)}
-                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            _still_missing = _missing_dept_agents(_cfg_chk2, _expected_dept_agent_ids)
                             if not _still_missing:
                                 print("[STANDARD-FIRST WIRING-ASSERT] PASS (after "
                                       "materialize repair)", file=sys.stderr)
@@ -4485,8 +4480,7 @@ def build_from_config(config):
                     if result is False:
                         # False = guard-blocked or not added (not just already-present)
                         # Check if it was already present (idempotent) vs actually failed
-                        existing_ids = [a.get("id") for a in _registry_rows(config_data)]
-                        if f"dept-{dept_id}" not in existing_ids:
+                        if not _registered_dept_agent_id(_registry_rows(config_data), dept_id):
                             registration_failures.append(f"{dept_id}:add_returned_false")
                 except Exception as _reg_e:
                     print(f"[NON-INTERACTIVE ERROR] Registration failed for {dept_id}: {_reg_e}", file=sys.stderr)
@@ -4541,11 +4535,7 @@ def build_from_config(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {
-                a.get("id") for a in _registry_rows(_cfg_chk)
-                if isinstance(a, dict)
-            }
-            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            _wiring_missing = _missing_dept_agents(_cfg_chk, _expected_dept_agent_ids)
             if not _wiring_missing:
                 print(
                     f"[WIRING-ASSERT] PASS — all {len(_expected_dept_agent_ids)} "
@@ -4572,12 +4562,7 @@ def build_from_config(config):
                         ).returncode
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
-                            _actual_ids2 = {
-                                a.get("id")
-                                for a in _registry_rows(_cfg_chk2)
-                                if isinstance(a, dict)
-                            }
-                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            _still_missing = _missing_dept_agents(_cfg_chk2, _expected_dept_agent_ids)
                             if not _still_missing:
                                 print(
                                     f"[WIRING-ASSERT] PASS (after materialize repair) "
@@ -7912,6 +7897,31 @@ def ensure_ceo_foundation_agent(config):
     raise RuntimeError("CEO foundation workspace is not materialized; cannot register fallback")
 
 
+def _registered_dept_agent_id(rows, dept_id):
+    """Id of the agent already serving this department, or None.
+
+    That is dept-<id>, or any agent whose workspace IS this department's folder
+    (a box that registered it under another key). Either one is the department's
+    registration: the build never adds a second entry beside it.
+    """
+    agent_id = f"dept-{dept_id}"
+    rows = [a for a in rows if isinstance(a, dict)]
+    if any(a.get("id") == agent_id for a in rows):
+        return agent_id
+    ws = os.path.realpath(os.path.join(DEPARTMENTS_DIR, dept_id))
+    for a in rows:
+        if a.get("workspace") and os.path.realpath(os.path.expanduser(a["workspace"])) == ws:
+            return a.get("id")
+    return None
+
+
+def _missing_dept_agents(config, expected_ids):
+    """The expected dept-<id> agents with no registration in `config` (by id or workspace)."""
+    rows = _registry_rows(config)
+    return {aid for aid in expected_ids
+            if not _registered_dept_agent_id(rows, aid[len("dept-"):])}
+
+
 def add_agent_to_config(config, dept_id, dept_info):
     """
     Add a department head agent to openclaw.json agents.list.
@@ -7974,6 +7984,12 @@ def add_agent_to_config(config, dept_id, dept_info):
                 existing.pop("skills")  # Retire generated router-only skill suppression.
                 return True
         return False  # Preserve all other installed/owner configuration.
+    _other_id = _registered_dept_agent_id(agents_list, dept_id)
+    if _other_id:
+        # Already registered under another key: never a second entry, never a model.
+        print(f"[CONFIG] {agent_id}: department already registered as '{_other_id}' "
+              f"- left untouched.", file=sys.stderr)
+        return False
 
     # U135 (July 23): Use the canonical model resolution chain instead of any
     # hardcoded model name. resolve_dept_agent_model() drives the capability-class
