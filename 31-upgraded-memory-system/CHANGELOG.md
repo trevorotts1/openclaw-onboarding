@@ -2,6 +2,30 @@
 
 All notable changes to this skill will be documented in this file.
 
+## [8.1.0] - 2026-09-28 - nightly memory maintenance: prune dead embedding-cache rows, report index drift
+
+- **Nothing ever deleted an embedding-cache row.** `memory_embedding_cache` keeps
+  one vector per chunk hash, and the vectors add up fast (about 66 KB each as JSON
+  before 2026.9.6, 24 KB each as binary after). Rows under an old provider key,
+  and rows whose chunk was edited or deleted, stayed forever. One box held 7,133
+  such rows (0.47 GB) across 5 agents. New `scripts/memory-cache-prune.sh` deletes
+  both kinds. It judges each agent against its OWN index stamp and keeps orphans
+  younger than 7 days. It also compacts any agent DB holding 256 MB or more of
+  free pages: the 2026.9.6 schema migration left 2.6 GB of free pages on one box.
+  It uses python3 stdlib only, because the Docker image ships no sqlite3 CLI.
+- **Paused vector search was invisible.** New `scripts/memory-index-check.sh`
+  reports agents whose index stamp drifted from the live embedding identity. It
+  is READ-ONLY: it never reindexes, because the repair re-embeds through the paid
+  provider.
+- **Scheduled on every box.** New `install.sh` registers both as silent
+  `openclaw cron --command` jobs (`memory-index-check` 02:00,
+  `memory-cache-prune` 02:40, `--no-deliver`). It is idempotent by name and
+  honors a tombstone. install.sh calls it on a fresh install, and
+  update-skills.sh runs it through the per-skill wiring loop, on Mac and in
+  Docker alike.
+- Guarded by `tests/unit/memory-cache-prune.test.sh` and
+  `.github/workflows/memory-cache-prune-guard.yml`.
+
 ## [8.0.0] - 2026-07-21 - SK1-31: the activator applies what the skill declares mandatory, writes atomically, and verifies instead of announcing
 
 - **T2-27 — the required Layer-8 settings were never applied.** SKILL.md:14

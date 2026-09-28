@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -284,49 +285,162 @@ def _load_paths(shared_utils: Path) -> dict:
 
         from detect_platform import get_openclaw_paths  # type: ignore
         p = get_openclaw_paths()
-        # Derive CC install dir (skill-32 convention)
-        if p["platform"] == "vps":
-            cc_dir = Path("/data/projects/command-center")
-        else:
-            cc_dir = Path.home() / "projects" / "command-center"
-        p["cc_dir"] = cc_dir
+        p["cc_dir"], p["cc_dir_how"] = find_cc_dir(Path(p["root"]))
         return p
     except SystemExit:
         _err("Cannot detect OpenClaw platform (no /data/.openclaw, ~/.openclaw, ~/clawd).")
         sys.exit(1)
 
 
+# ── Command Center checkout discovery ─────────────────────────────────────────
+#
+# Every box has its OWN Command Center in its own place (a Mac under the
+# client's home, a container's /data volume, ~/.openclaw/command-center on
+# Contabo, ...). This runs ON the box and finds the git checkout of the code
+# that box is actually serving: the process listening on the CC port, then
+# pm2's app, then update-skills.sh's validated candidate list. It only ever
+# READS: a folder that holds the live mission-control.db but is not the code
+# checkout (e.g. ~/projects/command-center on the operator Mac) is simply not
+# chosen -- never moved, cleaned or deleted. The database is located separately
+# through resolve_db.py.
+
+CC_NOT_FOUND = "Command Center not found on this box"
+_CC_PM2_NAMES = ("blackceo-command-center", "mission-control", "command-center")
+# update-skills.sh cc_resolve_existing_dir() / U6d, plus <openclaw root>/command-center
+# (a Contabo container layout).
+_CC_CANDIDATES = ("{home}/projects/command-center", "/data/projects/command-center",
+                  "{home}/projects/blackceo-command-center", "/data/projects/blackceo-command-center",
+                  "{home}/projects/mission-control", "{home}/blackceo-command-center",
+                  "{root}/command-center", "/opt/mission-control", "/app")
+
+
+def cc_is_valid_checkout(d: Path) -> bool:
+    """update-skills.sh's cc_is_valid_checkout: a git checkout of the
+    blackceo-command-center repo that carries a package.json."""
+    if not ((d / ".git").exists() and (d / "package.json").is_file()):
+        return False
+    return "blackceo-command-center" in (_git(d, "remote", "get-url", "origin") or "")
+
+
+def _cc_checkout_of(path: Optional[Path]) -> Optional[Path]:
+    """The checkout containing `path` (a server's cwd can be .next/standalone)."""
+    for d in ([path, *list(path.parents)[:4]] if path else []):
+        if cc_is_valid_checkout(d):
+            return d
+    return None
+
+
+def _run_out(cmd: list[str], timeout: int = 10) -> str:
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _port_pids(port: int) -> list[int]:
+    out = _run_out(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
+    if not out:   # no lsof in most containers: ss names the owning process
+        out = " ".join(re.findall(r"pid=(\d+)", _run_out(["ss", "-ltnpH", f"sport = :{port}"])))
+    pids = [int(x) for x in out.split() if x.isdigit()]
+    return pids or _proc_listen_pids(port)
+
+
+def _proc_listen_pids(port: int) -> list[int]:
+    """Linux without lsof/ss (a slim container): the listening socket's inode
+    from /proc/net/tcp{,6}, then the process holding that inode."""
+    inodes = set()
+    for f in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            for line in Path(f).read_text().splitlines()[1:]:
+                c = line.split()
+                if len(c) > 9 and c[3] == "0A" and int(c[1].rsplit(":", 1)[1], 16) == port:
+                    inodes.add(f"socket:[{c[9]}]")
+        except (OSError, ValueError, IndexError):
+            continue
+    pids = []
+    for fd_dir in Path("/proc").glob("[0-9]*/fd") if inodes else []:
+        try:
+            if any(os.readlink(fd) in inodes for fd in fd_dir.iterdir()):
+                pids.append(int(fd_dir.parent.name))
+        except OSError:
+            continue
+    return pids
+
+
+def _proc_cwd(pid: int) -> Optional[Path]:
+    try:
+        return Path(os.readlink(f"/proc/{pid}/cwd"))
+    except OSError:
+        pass
+    m = re.search(r"^n(/.*)$", _run_out(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"]), re.M)
+    return Path(m.group(1)) if m else None
+
+
+def find_cc_dir(root: Path) -> tuple[Optional[Path], str]:
+    """(code checkout, how it was found) or (None, why not)."""
+    for var in ("CC_APP_DIR", "BLACKCEO_COMMAND_CENTER_ROOT"):
+        v = os.environ.get(var, "").strip()
+        if v:
+            d = Path(v).expanduser()
+            return (d, f"{var}") if cc_is_valid_checkout(d) else (None, f"{var}={v} is not a Command Center checkout")
+    port = int(os.environ.get("CC_PORT") or 4000)
+    for pid in _port_pids(port):
+        d = _cc_checkout_of(_proc_cwd(pid))
+        if d:
+            return d, f"the process serving port {port}"
+    for name in _CC_PM2_NAMES:
+        for pid in _run_out(["pm2", "pid", name]).split():
+            if pid.isdigit() and pid != "0":
+                d = _cc_checkout_of(_proc_cwd(int(pid)))
+                if d:
+                    return d, f"pm2 app {name}"
+    for c in _CC_CANDIDATES:
+        d = Path(c.format(home=Path.home(), root=root))
+        if cc_is_valid_checkout(d):
+            return d, "candidate list"
+    return None, CC_NOT_FOUND
+
+
 # ── Session key resolution ────────────────────────────────────────────────────
+
+_OWNER_DM_RE = re.compile(r"^agent:main:telegram:(?:[^:]+:)?direct:\d+$")
+
+
+def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
+    """(key, updatedAt) of the main agent's sessions. OpenClaw before 2026.8
+    kept them in agents/main/sessions/sessions.json; later releases keep them
+    in the agent's SQLite store, read through `openclaw sessions list`."""
+    legacy = Path(paths["root"]) / "agents" / "main" / "sessions" / "sessions.json"
+    if legacy.is_file():
+        try:
+            data = json.loads(legacy.read_text())
+            return [(k, float(v.get("updatedAt") or 0) if isinstance(v, dict) else 0.0) for k, v in data.items()]
+        except (OSError, ValueError) as e:
+            _warn(f"Could not parse {legacy}: {e}")
+    if os.environ.get("FLEET_REFRESH_ROOT", "").strip():
+        return []   # fixture mode: never the test machine's gateway
+    out = _run_out(["openclaw", "sessions", "list", "--agent", "main", "--json", "--limit", "all"], timeout=90)
+    try:
+        rows = (json.loads(out) or {}).get("sessions") or []
+    except ValueError:
+        return []
+    return [(r["key"], float(r.get("updatedAt") or 0)) for r in rows if isinstance(r, dict) and r.get("key")]
+
 
 def _resolve_ceo_session_key(paths: dict) -> Optional[str]:
     """
-    Resolve the main-agent owner session key from sessions.json.
-    Returns e.g. "agent:main:telegram:direct:1234567890" or None.
-
-    Source of truth: agents/main/sessions/sessions.json
-    (never docker logs or ownerAllowFrom — per memory rules).
+    The main agent's owner-facing session: a Telegram direct session
+    (agent:main:telegram[:<account>]:direct:<id>) or, where DMs collapse into
+    it (session.dmScope "main", the default), agent:main:main. The most
+    recently used one wins. None when neither exists.
+    (Never docker logs or ownerAllowFrom -- per memory rules.)
     """
-    sessions_path = paths["root"] / "agents" / "main" / "sessions" / "sessions.json"
-    if not sessions_path.is_file():
-        _warn(f"sessions.json not found at {sessions_path}")
+    keys = [(k, t) for k, t in _main_session_keys(paths) if _OWNER_DM_RE.match(k) or k == "agent:main:main"]
+    if not keys:
+        _warn("No main-agent owner session (agent:main:telegram:...:direct:<id> or agent:main:main) found")
         return None
-    try:
-        sessions_data = json.loads(sessions_path.read_text())
-        # sessions.json schema: dict keyed by session key strings
-        # We want: agent:main:telegram:direct:<id>
-        direct_sessions = [
-            k for k in sessions_data
-            if k.startswith("agent:main:telegram:direct:")
-        ]
-        if not direct_sessions:
-            _warn("No agent:main:telegram:direct:<id> session found in sessions.json")
-            return None
-        if len(direct_sessions) > 1:
-            _warn(f"Multiple direct sessions found: {direct_sessions} — using first")
-        return direct_sessions[0]
-    except Exception as e:
-        _warn(f"Could not parse sessions.json: {e}")
-        return None
+    return max(keys, key=lambda kt: kt[1])[0]
 
 
 # ── Version helpers ───────────────────────────────────────────────────────────
@@ -710,6 +824,29 @@ def step_pin_resolve(paths: dict, repo_root: Path, compat: dict, res: BoxResult)
     return cc_tag
 
 
+# update-skills.sh walks every skill folder and hashes the content: ~55 min on a
+# Hostinger container. The old 20-minute cap failed healthy updates mid-way.
+UPDATE_SKILLS_TIMEOUT = 5400
+
+
+def _run_tree(cmd: list[str], timeout: int, **kw) -> subprocess.CompletedProcess:
+    """subprocess.run in its own process group; on timeout the whole group is
+    killed (subprocess.run alone kills only the direct child, and an orphaned
+    updater kept changing a box while it was being rolled back)."""
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                          start_new_session=True, **kw) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, 9)
+            except OSError:
+                pass
+            proc.communicate()
+            raise
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: BoxResult, dry_run: bool) -> str:
     """Step 2: run update-skills.sh to sync onboarding skills to the pinned tag.
 
@@ -735,9 +872,9 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
     stamp_file = skills_dir / ".onboarding-version"
 
     try:
-        result = subprocess.run(
+        result = _run_tree(
             ["bash", str(update_skills)],
-            capture_output=True, text=True, timeout=1200,
+            timeout=UPDATE_SKILLS_TIMEOUT,
             # SECURITY/PRIVACY (v20.0.9): the fleet roll is MAINTENANCE — export
             # OPENCLAW_MAINTENANCE_SILENT=1 into the updater's environment so it
             # (and every subprocess it spawns: migrate-existing-workforce.sh and
@@ -774,7 +911,8 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
                 f"expected={pinned_tag!r}: {result.stderr[:200]}"
             )
     except subprocess.TimeoutExpired:
-        res.step_fail("pull-onboarding", "update-skills.sh timed out after 1200s")
+        res.step_fail("pull-onboarding", f"update-skills.sh timed out after {UPDATE_SKILLS_TIMEOUT}s "
+                                         "(it and everything it started were stopped)")
     except Exception as e:
         res.step_fail("pull-onboarding", str(e))
     return pinned_tag
@@ -796,7 +934,10 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         return
 
     cc_dir = paths.get("cc_dir")
-    if not cc_dir or not Path(cc_dir).is_dir():
+    if not cc_dir:   # reported by client name; the box's other steps still run
+        res.step_skip("pull-cc", CC_NOT_FOUND)
+        return
+    if not Path(cc_dir).is_dir():
         res.step_fail("pull-cc", f"CC dir not found: {cc_dir}")
         return
 
@@ -836,10 +977,20 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
                 )
                 return
             update_env = {**os.environ, "CC_APP_DIR": str(cc_dir)}
-            update_result = subprocess.run(
-                ["bash", str(updater)], cwd=str(cc_dir), env=update_env,
-                capture_output=True, text=True, timeout=1200,
-            )
+            # Run origin/main's updater, not the live checkout's: the target's
+            # update.sh builds beside the running release and promotes it
+            # (zero-downtime), so the live tree is never moved before the build.
+            target = subprocess.run(["git", "-C", str(cc_dir), "show", "origin/main:update.sh"],
+                                    capture_output=True, text=True, timeout=30)
+            with tempfile.NamedTemporaryFile("w", suffix="-cc-update.sh", delete=False) as fh:
+                fh.write(target.stdout if target.returncode == 0 and target.stdout else updater.read_text())
+            try:
+                update_result = subprocess.run(
+                    ["bash", fh.name], cwd=str(cc_dir), env=update_env,
+                    capture_output=True, text=True, timeout=ATOMIC_DEPLOY_TIMEOUT + 600,
+                )
+            finally:
+                os.unlink(fh.name)
             if update_result.returncode != 0:
                 detail = (update_result.stdout + update_result.stderr).strip()[-300:]
                 res.step_fail(
@@ -862,6 +1013,37 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         res.step_fail("pull-cc", "git operation timed out")
     except Exception as e:
         res.step_fail("pull-cc", str(e))
+
+
+def _cc_node(cc_dir: Path) -> str:
+    """The node that can load this Command Center's native modules. The PATH
+    node is often the OpenClaw runtime's (a newer ABI): better-sqlite3 built
+    for the Command Center's node then fails to load and the duck test dies in
+    its first setup step on a perfectly healthy box. Prefer the node of the
+    process serving the Command Center, then pm2's, then PATH."""
+    cands = []
+    for pid in _port_pids(int(os.environ.get("CC_PORT") or 4000)):
+        try:
+            cands.append(os.readlink(f"/proc/{pid}/exe"))
+        except OSError:
+            m = re.search(r"^n(/\S*/node)$", _run_out(["lsof", "-a", "-p", str(pid), "-d", "txt", "-Fn"]), re.M)
+            if m:
+                cands.append(m.group(1))
+    for name in _CC_PM2_NAMES:
+        for pid in _run_out(["pm2", "pid", name]).split():
+            try:
+                cands.append(os.readlink(f"/proc/{pid}/exe"))
+            except OSError:
+                pass
+    cands += [shutil.which("node") or "node"]
+    for node in dict.fromkeys(cands):
+        try:
+            if subprocess.run([node, "-e", "require('better-sqlite3')"], cwd=str(cc_dir),
+                              capture_output=True, timeout=30).returncode == 0:
+                return node
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return cands[-1]
 
 
 def _run_duck_ci_test(cc_dir: Path, box: str) -> tuple[bool, str]:
@@ -889,11 +1071,13 @@ def _run_duck_ci_test(cc_dir: Path, box: str) -> tuple[bool, str]:
     if not duck_test.is_file():
         return False, f"duck-test.ts not found at {duck_test} (B.3 preflight should have caught this)"
 
+    node = _cc_node(cc_dir)
     try:
         result = subprocess.run(
-            ["node", "--import", "tsx", "--test", str(duck_test)],
+            [node, "--import", "tsx", "--test", str(duck_test)],
             cwd=str(cc_dir),
             capture_output=True, text=True, timeout=300,
+            env={**os.environ, "PATH": f"{Path(node).parent}{os.pathsep}{os.environ.get('PATH', '')}"},
         )
         detail = (result.stdout + result.stderr).strip()[:200]
         if result.returncode == 0:
@@ -975,7 +1159,10 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
         return
 
     cc_dir = paths.get("cc_dir")
-    if not cc_dir or not Path(cc_dir).is_dir():
+    if not cc_dir:   # reported by client name; the box's other steps still run
+        res.step_skip("build-cc", CC_NOT_FOUND)
+        return
+    if not Path(cc_dir).is_dir():
         res.step_fail("build-cc", f"CC dir not found: {cc_dir}")
         return
 
@@ -1079,7 +1266,10 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
         return
 
     cc_dir = paths.get("cc_dir")
-    if not cc_dir or not Path(cc_dir).is_dir():
+    if not cc_dir:   # reported by client name; the box's other steps still run
+        res.step_skip("restart-cc", CC_NOT_FOUND)
+        return
+    if not Path(cc_dir).is_dir():
         res.step_fail("restart-cc", f"CC dir not found: {cc_dir}")
         return
 
@@ -1163,8 +1353,8 @@ def step_sessions_reset_ceo(
 
     if not ceo_session_key:
         res.step_fail("sessions-reset-CEO",
-            "CEO session key unresolved; cannot reset. "
-            "Ensure sessions.json has an agent:main:telegram:direct:<id> entry.")
+            "CEO session key unresolved; cannot reset "
+            "(no agent:main:telegram:...:direct:<id> or agent:main:main session).")
         return
 
     try:
@@ -2040,6 +2230,9 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
         return
     before = _git(repo, "rev-parse", "HEAD")
     res.update_999["from_sha"] = before
+    if _git(repo, "status", "--porcelain", "--untracked-files=no"):
+        res.step_skip("update-999", "999 has local changes, not updated")   # the owner's work is never overwritten
+        return
     if dry_run:
         res.step_skip("update-999", f"dry-run (999 at {repo})")
         return
@@ -2408,11 +2601,16 @@ def rollback_box(paths: dict, repo_root: Path, res: BoxResult, reasons: list[str
         cc_dir = Path(cc["dir"])
         now = _git(cc_dir, "rev-parse", "HEAD")
         if now != cc["sha"]:
-            # --keep: never discards local uncommitted edits (refuses instead).
-            k = subprocess.run(["git", "-C", str(cc_dir), "reset", "--keep", cc["sha"]],
+            # A modified tracked file (the updater rewrites scripts/watchdog-cc.sh
+            # in place) must never block the rollback: its changes are saved
+            # beside the snapshot first, then the reset is forced.
+            saved = _save_local_changes(cc_dir, Path(snap.get("backup_dir") or cc_dir.parent))
+            if saved:
+                rb["actions"].append(f"Command Center local changes saved to {saved}")
+            k = subprocess.run(["git", "-C", str(cc_dir), "reset", "--hard", "--quiet", cc["sha"]],
                                capture_output=True, text=True, timeout=120)
             if k.returncode != 0:
-                rb["errors"].append(f"Command Center reset to {cc['sha'][:12]} refused: {k.stderr.strip()[:160]}")
+                rb["errors"].append(f"Command Center reset to {cc['sha'][:12]} failed: {k.stderr.strip()[:160]}")
             else:
                 try:
                     d = _run_atomic_deploy(cc_dir, revision=cc["sha"])
@@ -2432,6 +2630,22 @@ def rollback_box(paths: dict, repo_root: Path, res: BoxResult, reasons: list[str
     step_sessions_reset_ceo(_resolve_ceo_session_key(paths), tmp, dry_run=False)
     rb["session_reset"] = tmp.steps.get("sessions-reset-CEO")
     return not rb["errors"]
+
+
+def _save_local_changes(repo: Path, dest_dir: Path) -> Optional[str]:
+    """Copy every modified tracked file of `repo`, plus the diff, into
+    dest_dir/cc-local-changes-<ts>/ . Returns that path, or None when clean."""
+    changed = (_git(repo, "diff", "--name-only", "HEAD") or "").splitlines()
+    if not changed:
+        return None
+    out = dest_dir / f"cc-local-changes-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "changes.diff").write_text((_git(repo, "diff", "HEAD") or "") + "\n")
+    for rel in changed:
+        if (repo / rel).is_file():
+            (out / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(repo / rel, out / rel)
+    return str(out)
 
 
 class _BoxLock:
@@ -3181,9 +3395,15 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
         res.outcome, res.outcome_detail = "SKIPPED", "dry-run" if dry_run else "verify-only"
     elif not res.rollback:
         broken = [s for s in _MUTATING_STEPS if str(res.steps.get(s, "")).startswith("failed")]
-        if broken:   # only [exit-3] (state indeterminate) lands here un-rolled-back
+        if broken:   # un-rolled-back: [exit-3], or a Command Center step that changed nothing
             res.outcome = "FAILED"
-            res.outcome_detail = "; ".join(f"{s}: {res.steps[s][7:120]}" for s in broken)
+            why = "; ".join(f"{s}: {res.steps[s][7:120]}" for s in broken)
+            if "pull-onboarding" not in broken and str(res.steps.get("pull-onboarding", "")).startswith("ok"):
+                cc_health = ((res.health.get("post") or {}).get("cc-health") or {}).get("status")
+                why = (f"onboarding updated to {res.onboarding_version}, Command Center NOT updated "
+                       f"(still v{(res.snapshot.get('cc') or {}).get('version') or res.cc_version}"
+                       f"{', healthy' if cc_health == 'pass' else ''}): {why}")
+            res.outcome_detail = why
         else:
             res.outcome = "UPDATED"
             warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]

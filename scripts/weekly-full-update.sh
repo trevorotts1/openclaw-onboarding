@@ -12,17 +12,18 @@
 #   * the silent Sunday shell cron   (scripts/setup-weekly-update.sh)
 #   * the Sunday agent cron, RULE 9 auto-apply and RULE 10 "install all" (cron-prompt.txt)
 #
-# The clone is found at the same paths fleet-refresh.sh probes over SSH (or
-# ONBOARDING_CLONE), cloned there if absent, and synced to origin/main first.
-# If no clone can be made (no git / no network to GitHub), it falls back to the
-# previous onboarding-only path (update-skills.sh) and says so.
+# It runs from the roll's own copy of the onboarding repo (the same one the
+# operator's roll uses, <OpenClaw root>/fleet-refresh/onboarding), cloned if
+# absent and synced to origin/main first. If no copy can be made (no git / no
+# network to GitHub), it falls back to the previous onboarding-only path
+# (update-skills.sh) and says so.
 #
 # Never restarts the gateway, never sends a chat message.
 # Exit: fleet-refresh.sh's exit code (0 ok, 2 rolled back / partial, 3 unknown).
 # =============================================================================
 set -uo pipefail
 
-REPO_URL="https://github.com/trevorotts1/openclaw-onboarding.git"
+REPO_URL="${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}"
 UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 
 # cron runs with PATH=/usr/bin:/bin; openclaw, node, npm and pm2 live elsewhere.
@@ -36,38 +37,39 @@ export PATH
 
 log() { echo "[weekly-full-update $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-R=""
-for d in "${ONBOARDING_CLONE:-}" "$HOME/.openclaw/skills/onboarding" "$HOME/clawd/openclaw-onboarding" \
-         "$HOME/openclaw-onboarding" "$HOME/.openclaw/onboarding" \
-         /data/clawd/openclaw-onboarding /data/openclaw-onboarding; do
-  if [ -n "$d" ] && [ -f "$d/scripts/fleet-refresh.sh" ] && [ -d "$d/.git" ]; then R="$d"; break; fi
-done
-if [ -z "$R" ]; then
-  if [ -d /data/.openclaw ]; then R=/data/openclaw-onboarding; else R="$HOME/clawd/openclaw-onboarding"; fi
-  if [ -e "$R" ] || ! { mkdir -p "$(dirname "$R")" && git clone -q "$REPO_URL" "$R"; }; then
-    log "WARNING: no usable onboarding clone (could not create $R) — falling back to update-skills.sh only (no 999, no health gate, no rollback)"
-    tmp="$(mktemp "${TMPDIR:-/tmp}/openclaw-update-XXXXXX.sh")"
-    trap 'rm -f "$tmp"' EXIT
-    curl -fsSL --max-time 60 "$UPDATER_URL" -o "$tmp" || { log "ERROR: could not download update-skills.sh"; exit 1; }
-    bash "$tmp"
-    exit $?
-  fi
-  log "cloned onboarding to $R"
-fi
-
-# Never move the clone under a run that is already in progress (e.g. the
+# Never move the copy under a run that is already in progress (e.g. the
 # operator's roll): its lock lives in the OpenClaw root.
 for L in "${OPENCLAW_ROOT:-/nonexistent}" /data/.openclaw "$HOME/.openclaw"; do
   P="$(cat "$L/.fleet-refresh.lock/pid" 2>/dev/null)" && kill -0 "$P" 2>/dev/null && {
     log "another fleet-refresh (pid $P) is running on this box — nothing changed"; exit 0; }
 done
 
-PREV="$(git -C "$R" rev-parse HEAD 2>/dev/null || true)"
-if ! { git -C "$R" fetch -q origin main && git -C "$R" reset -q --hard origin/main; }; then
-  log "ERROR: could not sync $R to origin/main — nothing was changed on this box"
-  exit 1
+# The roll's OWN copy of the onboarding repo, the same one the operator's roll
+# keeps (scripts/fleet-roll-copy.sh, same steps): <OpenClaw root>/fleet-refresh/onboarding,
+# refreshed to origin/main. The box's other clones are never used or changed.
+# ONBOARDING_CLONE, when set, names an explicit clone to run from instead.
+B="${OPENCLAW_ROOT:-}"
+[ -n "$B" ] || { if [ -d /data/.openclaw ]; then B=/data/.openclaw; else B="$HOME/.openclaw"; fi; }
+R="${ONBOARDING_CLONE:-$B/fleet-refresh/onboarding}"
+if [ -z "${ONBOARDING_CLONE:-}" ] && [ -e "$R" ] && [ "$(git -C "$R" remote get-url origin 2>/dev/null)" != "$REPO_URL" ]; then
+  rm -rf "$R"
 fi
-log "onboarding clone $R: ${PREV:0:12} -> $(git -C "$R" rev-parse --short=12 HEAD)"
+PREV="$(git -C "$R" rev-parse HEAD 2>/dev/null || true)"
+if [ -d "$R/.git" ]; then
+  if ! { git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main \
+         && git -C "$R" checkout -q -B main origin/main && git -C "$R" reset -q --hard origin/main; }; then
+    log "ERROR: could not sync $R to origin/main — nothing was changed on this box"
+    exit 1
+  fi
+elif ! { mkdir -p "$(dirname "$R")" && git clone -q --depth 1 --single-branch --branch main "$REPO_URL" "$R"; }; then
+  log "WARNING: no usable onboarding copy (could not create $R) — falling back to update-skills.sh only (no 999, no health gate, no rollback)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/openclaw-update-XXXXXX.sh")"
+  trap 'rm -f "$tmp"' EXIT
+  curl -fsSL --max-time 60 "$UPDATER_URL" -o "$tmp" || { log "ERROR: could not download update-skills.sh"; exit 1; }
+  bash "$tmp"
+  exit $?
+fi
+log "onboarding copy $R: ${PREV:0:12} -> $(git -C "$R" rev-parse --short=12 HEAD)"
 
 export FLEET_PREV_ONBOARDING_SHA="$PREV"   # rollback target for the snapshot
 exec bash "$R/scripts/fleet-refresh.sh" --local --apply

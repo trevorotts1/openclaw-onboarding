@@ -28,7 +28,7 @@ echo "── Section B: 3-layer storage model wired ──"
 warn_only "AGENTS.md references TYP" "grep -qiE 'teach.yourself.protocol|TYP' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
 warn_only "Master-files folder full reference"  "find $HOME/Downloads ~/Downloads 2>/dev/null -maxdepth 4 -name 'teach-yourself-protocol-full.md' | head -1 | grep -q ."
 warn_only "Core .md files exist (AGENTS / TOOLS / MEMORY)" "[ -f \"$WORKSPACE/AGENTS.md\" ] && [ -f \"$WORKSPACE/TOOLS.md\" ] && [ -f \"$WORKSPACE/MEMORY.md\" ]"
-warn_only "AGENTS.md under 50KB (TYP lean-file rule)" "[ \$(stat -f %z \"$WORKSPACE/AGENTS.md\" 2>/dev/null || stat -c %s \"$WORKSPACE/AGENTS.md\" 2>/dev/null || echo 0) -lt 51200 ]"
+warn_only "AGENTS.md at or under 40,000 characters (skill 70 target)" "[ \$(stat -f %z \"$WORKSPACE/AGENTS.md\" 2>/dev/null || stat -c %s \"$WORKSPACE/AGENTS.md\" 2>/dev/null || echo 0) -le 40000 ]"
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 01 QC FAILED"; exit 1; } || { green "Skill 01 QC PASS"; exit 0; }

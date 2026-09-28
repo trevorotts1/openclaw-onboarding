@@ -122,7 +122,8 @@ extract_func() {
 FRAG="$(mktemp)"
 for fn in log cc_env_has_nonempty cc_env_set_if_absent cc_env_get \
           cc_mirror_api_auth_to_agent_secrets cc_resolve_sovereign_model \
-          cc_resolve_judge_model cc_write_env_local cc_git_sync_to_default_branch; do
+          cc_resolve_judge_model cc_write_env_local cc_git_sync_to_default_branch \
+          cc_zero_downtime_ready; do
   body="$(extract_func "$fn" "$INSTALLER")"
   if [ -z "$body" ]; then
     echo "FATAL: could not extract function '$fn' from $INSTALLER (name/shape drift?)"
@@ -465,6 +466,66 @@ printf '%s\n' "$FN_SRC" | grep -Eq 'reset[[:space:]]+--hard'   && { bad "T12: fo
 printf '%s\n' "$FN_SRC" | grep -Eq 'checkout[[:space:]]+-f\b'  && { bad "T12: found 'checkout -f' in cc_git_sync_to_default_branch"; BADHIT=1; }
 printf '%s\n' "$FN_SRC" | grep -Eq 'clean[[:space:]]+-f'       && { bad "T12: found 'clean -f' in cc_git_sync_to_default_branch"; BADHIT=1; }
 [ "$BADHIT" -eq 0 ] && ok "T12: no destructive git verb present in the helper's source"
+
+# ============================================================================
+# PART ZD — zero-downtime update-only (a client's CC was dark ~35 min when the
+# installer merged into the LIVE tree and ran npm ci there before the build)
+# ============================================================================
+zd_fn() {
+  local dir="$1" logf="$2"
+  ( LOG_FILE="$logf"
+    # shellcheck disable=SC1090
+    source "$FRAG"
+    cc_zero_downtime_ready "$dir"
+  )
+}
+# origin/main's update.sh carries (or not) the zero-downtime path marker
+advance_origin_updater() {
+  local seed="$1" marker="$2"
+  printf '#!/usr/bin/env bash\n# %s\n' "$marker" > "$seed/update.sh"
+  git -C "$seed" add update.sh && git -C "$seed" commit --quiet -m "updater: $marker"
+  git -C "$seed" push --quiet origin main
+}
+
+hdr "T13 — clean fast-forward + zero-downtime updater: ready, and the live tree is not moved"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t13"; git clone --quiet "$ORIGIN" "$CO"
+advance_origin_updater "$SEED" "Zero-downtime path"
+BEFORE="$(git_id "$CO")"
+if zd_fn "$CO" "$ROOT/zd.log"; then ok "T13: zero-downtime ready on a clean fast-forward"; else bad "T13: not ready on a clean fast-forward"; fi
+[ "$(git_id "$CO")" = "$BEFORE" ] && [ -z "$(git -C "$CO" status --porcelain)" ] \
+  && ok "T13: the check only fetches — live HEAD and tree unchanged" || bad "T13: the readiness check changed the live checkout"
+rm -rf "$ROOT"
+
+hdr "T14 — not ready when origin/main's updater lacks the zero-downtime path, the tree is dirty, or a local commit exists"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t14"; git clone --quiet "$ORIGIN" "$CO"
+advance_origin_updater "$SEED" "merge path only"
+zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with an updater that has no zero-downtime path" \
+  || ok "T14: an old updater keeps the merge path"
+advance_origin_updater "$SEED" "Zero-downtime path"
+printf 'local edit\n' >> "$CO/main.txt"
+zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with a dirty tracked tree" || ok "T14: a dirty tracked tree keeps the merge path"
+git -C "$CO" checkout --quiet -- main.txt
+git -C "$CO" -c user.email=t@t -c user.name=t commit --quiet --allow-empty -m "box-local commit"
+zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with a local commit" || ok "T14: a local commit keeps the merge path"
+rm -rf "$ROOT"
+
+hdr "T15 — static: when ready, the update-only phase neither merges nor runs npm ci in the live tree, and runs origin/main's updater"
+PHASE="$(awk '/^if \[\[ "\$UPDATE_ONLY" == "true" \]\]; then/{p=1} p{print} p && /cc_route_update_through_canonical_path \|\| \\/{exit}' "$INSTALLER")"
+printf '%s\n' "$PHASE" | grep -q 'if cc_zero_downtime_ready "\$DASHBOARD_DIR"; then' \
+  && printf '%s\n' "$PHASE" | grep -q 'elif cc_git_sync_to_default_branch' \
+  && ok "T15: the live-tree merge runs only when zero-downtime is not ready" \
+  || bad "T15: the live-tree merge is not gated on zero-downtime readiness"
+printf '%s\n' "$PHASE" | grep -qF '[[ "$CC_ZERO_DOWNTIME" == "1" ]] || cc_install_locked_dependencies' \
+  && ok "T15: live npm ci is skipped on the zero-downtime path" || bad "T15: live npm ci still runs on the zero-downtime path"
+ROUTE="$(extract_func cc_route_update_through_canonical_path "$INSTALLER")"
+printf '%s\n' "$ROUTE" | grep -q 'show origin/main:update.sh' \
+  && ok "T15: the zero-downtime path runs origin/main's update.sh" || bad "T15: the live checkout's (old) update.sh would run"
 
 rm -f "$FRAG"
 

@@ -1,3 +1,176 @@
+## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
+
+### Why
+On a live box, `25-video-creator/wire.sh` built its ~215 MB venv at `<VC_DIR>/venv`, inside the
+OpenClaw skill root (`~/.openclaw/skills`, VPS `/data/.openclaw/skills`). OpenClaw's skill discovery
+walks every skill root up to depth 6 on every scan, skipping only dot-prefixed names and
+`node_modules` — never `venv` — so every rescan walked the whole venv, contributing to a gateway that
+wedged and was watchdog-restarted every ~8 minutes. The runtime copy also carried its own `SKILL.md`,
+identical to `25-video-creator/SKILL.md`, so OpenClaw registered `video-creator` twice and logged a
+precedence collision on every scan.
+
+### What changed
+- 25-video-creator/wire.sh (skill v7.0.1): the venv now defaults to
+  `$(dirname "$SKILLS_PARENT")/venvs/video-creator` (Mac `~/.openclaw/venvs/video-creator`, VPS
+  `/data/.openclaw/venvs/video-creator`), outside every skill root, still overridable by `VENV_DIR`.
+  A legacy `<VC_DIR>/venv` is migrated idempotently: moved (not rebuilt) when found alone; when both
+  the legacy and new venv exist, the new one wins if its python can `import moviepy.editor`,
+  otherwise the legacy one replaces it. A relocated venv's stale `bin/activate` is repaired in place
+  (`python -m venv --without-pip`); pip is always invoked as `"$VENV_DIR/bin/python" -m pip`, never
+  bare `pip` or `source activate`. The install-copy step now excludes `SKILL.md`, `venv`, and
+  `.venv`, and removes any stale `<VC_DIR>/SKILL.md` left over from an older install on every pass,
+  so only `25-video-creator` ever registers the `video-creator` skill. wire.sh's fail-soft contract
+  (always exit 0, no `set -e`/`set -u`) is unchanged.
+- scripts/tool-drift-check.sh: the `video-creator` registry entry's probe binary path updated to the
+  new venv location (`../../venvs/video-creator/bin/python`, relative to the install dir).
+- 25-video-creator/INSTALL.md, QC.md, INSTRUCTIONS.md, SKILL.md, CORE_UPDATES.md: every reference to
+  the old in-skill-root venv path and the runtime copy's `SKILL.md` updated to match.
+- 25-video-creator/tests/test_wire_contracts.py (new, 4 tests, hermetic — no network, no pip): the
+  legacy-only, both-present-new-healthy, both-present-new-broken, and no-duplicate-registration /
+  no-copied-venv cases.
+
+### Tests
+`python3 -m pytest 25-video-creator/tests -q`: 97 passed (93 existing + 4 new). `bash -n` clean on
+`wire.sh` and `tool-drift-check.sh`. Manual end-to-end simulation of `wire.sh` (fake skills root,
+throwaway `$HOME`) covering the legacy-only, new-only, and both-present migration cases, run twice to
+confirm the second pass is a no-op; venv ends outside the skills root, `<VC_DIR>/venv` never exists,
+no `SKILL.md` in the runtime copy, exit code 0 in every case.
+
+## [v25.2.3]  -  2026-09-28  -  Pin Command Center v7.6.74 (zero-downtime update)
+
+### Why
+v25.2.2 routes update-only Command Center refreshes through origin/main's `update.sh`. Command Center v7.6.74 is the release whose `update.sh` builds beside the running release and promotes it, and the paired pin should name that release.
+
+### What changed
+- cc-compat.json: `pinnedTag` v7.6.72 -> v7.6.74. `minVersion` is unchanged (v7.4.0); v7.6.74 adds no endpoint and no schema change.
+- README.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, docs/interview-launch-recovery.md: paired Command Center v7.6.74.
+- tests/unit/cc-runtime-preflight.test.py: `CC_PIN` = v7.6.74.
+
+## [v25.2.2]  -  2026-09-28  -  Zero-downtime Command Center update; a box's own update names its client
+
+### Why
+A client's Command Center was down for about 35 minutes during the 2026-09-28 fleet roll. The update-only installer merged origin/main into the LIVE Command Center checkout and ran `npm ci` in the LIVE directory before building. From then on, every restart during the build was refused by the Command Center's content guard (exit 78). Separately, a box running its own Sunday update named itself by hostname in the operator's alert, not by the client's name.
+
+### What changed
+- 32-command-center-setup/scripts/run-full-install.sh (Skill 32 v13.1.33): when the Command Center update is a clean fast-forward and origin/main's `update.sh` carries the zero-downtime path (blackceo-command-center v7.6.74), `--update-only` neither merges nor runs `npm ci` in the live tree. It runs origin/main's `update.sh`, which builds the new release beside the running one and promotes it. Any other checkout keeps the merge path, unchanged.
+- shared-utils/fleet_refresh_runner.py: pull-cc runs origin/main's `update.sh`, not the live checkout's (the old release's), and allows it the atomic deploy's full time window.
+- scripts/fleet-roll-copy.sh, scripts/fleet-refresh.sh: the operator's roll writes `<OpenClaw root>/fleet-refresh/client.json` beside the roll copy. A box's own `--local` run reads it, so its summary, result and operator alert name the client ("Client Name (Platform)"), not the hostname.
+
+### Tests
+scripts/test-cc-update-only-credential-and-git-sync.sh (22 pass): zero-downtime readiness only fetches, is refused by an old updater, a dirty tree or a local commit, and the update-only phase skips the live merge and live npm ci and runs origin/main's updater. tests/unit/fleet-refresh-roll-safety.test.py (77 pass): pull-cc runs the target updater; the roll writes client.json; a box's own run names its client. tests/unit/cc-runtime-preflight.test.py updated for the gated call site.
+
+## [v25.2.1]  -  2026-09-28  -  Merge train: #1327 skill31: nightly memory maintenance — prune dead embedding-cache…; #1329 Skill 01: adopt the Lean Core File System (skill 70) pointer standard…; #1331 Skill 70: Lean Core File System; #1332 fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test…; #1334 fleet roll: each box's own Command Center, the roll's own onboarding…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1327 — [v25.1.105]  -  2026-09-28  -  Skill 31: nightly memory maintenance — prune dead embedding-cache rows, report index drift (never re-embeds)
+
+#### Why
+Nothing ever deleted a `memory_embedding_cache` row. Rows under an old provider key, and rows whose chunk was edited or deleted, stayed in every agent DB forever: one box held 7,133 of them (0.47 GB) across 5 agents. The 2026.9.6 schema migration also left 2.6 GB of free pages behind on that box. And an agent whose index stamp drifted from the live embedding identity lost vector search silently.
+
+#### What changed
+- `31-upgraded-memory-system/scripts/memory-cache-prune.sh` deletes stale-key rows and orphans older than 7 days. It judges each agent by its own index stamp, compacts DBs holding 256 MB or more of free pages when the disk has room, and uses python3 stdlib only.
+- `31-upgraded-memory-system/scripts/memory-index-check.sh` is a READ-ONLY drift report. It never reindexes or re-embeds.
+- `31-upgraded-memory-system/install.sh` schedules both as silent `openclaw cron --command` jobs (`memory-index-check` 02:00, `memory-cache-prune` 02:40, `--no-deliver`). It is idempotent by name and honors tombstones. Root `install.sh` calls it on a fresh install; `update-skills.sh` runs it through the per-skill wiring loop on every roll, on Mac and Docker.
+- Skill 31 is now v8.1.0. Guarded by `tests/unit/memory-cache-prune.test.sh` and `.github/workflows/memory-cache-prune-guard.yml`.
+
+#### Risk
+Low. The prune runs while the gateway is up (SQLite locking and WAL); a busy DB is skipped until the next run. The worst case of an orphan prune is one extra embed call for text restored after 7 days. Nothing re-embeds automatically.
+
+### #1329 — Skill 01: adopt the Lean Core File System (skill 70) pointer standard for core-file entries (v7.0.1)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1331 — [v25.2.0]  -  2026-09-28  -  Skill 70 Lean Core File System: lean core files through pointer references, one playbook per system, weekly cron job
+
+#### Why
+Core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) are sent to the model with every message. They grow without limit, which slows every reply, raises cost, brings compaction sooner, and past the configured limit OpenClaw silently cuts the middle out of the file (verified in the installed OpenClaw 2026.9.4 code: 75 percent head plus 25 percent tail kept; AGENTS.md 45 percent head, a policy digest, 15 percent tail; MEMORY.md loads last and is cut first). Nothing in the fleet kept them lean over time. Skill 01 (Teach Yourself Protocol) covers learning and storage, not ongoing upkeep, and its 10-to-25-line summary size conflicts with a one-line pointer.
+
+#### What changed
+- New standalone skill `70-lean-core-file-system` (Lean Core File System, v1.0.0), not part of skill 01. The technique it uses is called pointer references. Contents: the full playbook (doctrine, pointer format with good and bad examples, earn-your-place rule with always-on rules kept inline, one system one playbook, master index, contradiction handling with dated superseded rules, backup and content-preservation proof, first-run dry-run diff, step-by-step and weekly procedures, test battery, landmines, sourced rationale); `scripts/pointer-audit.sh` (sizes against 40,000, candidate blocks, broken pointers, orphans, duplicates, index consistency, `--backup`, `--prove-moved`, `--dry-run`; exit 0 PASS, 1 FINDINGS, 2 tooling; macOS bash 3.2 and Linux); `scripts/install-weekly-cron.sh` (idempotent weekly OpenClaw cron job `lean-core-file-system-weekly`: isolated session, thinking high, no delivery, primary DeepSeek V4.1 Flash on Ollama Cloud and fallback DeepSeek V4.1 Flash on OpenRouter, both discovered from the box's own model list, refuses with exit 4 rather than guess, checks every flag against `--help`); `wire.sh` (AGENTS.md pointer and MEMORY.md core-files definition, backup first, replace-in-place, idempotent; runs automatically on every update through the existing `wire.sh` hook in `update-skills.sh`); `qc-70-lean-core-file-system.sh` and three fixture batteries.
+- For core-file content only, skill 70 supersedes skill 01's 10-to-25-line summary size and four-part pointer block (skill 70 is the newer rule; the INSTALL.md conflict rule already says the skill governs core-file content). Skill 01's own files are reconciled in the paired pull request #1329; its storage paths are shared unchanged.
+- One pointer standard repo-wide: the Teach Yourself Protocol storage rule in the root `AGENTS.md`, `TOOLS.md` and `USER.md` templates, the core-file rules and quality-control checklist in `Start Here.md`, and the text `scripts/typ-migrate.sh` injects (its AGENTS.md rule block and both migration notices) now all say the same thing: a situational block longer than about five sentences moves to the master files folder and leaves a one-to-two-sentence pointer (WHAT, WHERE, WHEN); always-on rules stay inline, shortened; skill 70 owns core-file size (40,000 characters per file) and the weekly audit. The old "10-25 lines" and "~25 lines" guidance is gone. `typ-migrate.sh` detection (BLOAT_THRESHOLD) and its rule marker are unchanged.
+- `lib-onboarding-state.sh`: `70-lean-core-file-system` gated in Wave 6 (its qc gate needs only bash and python3 and never the gateway, so it cannot wedge the wave).
+- Skill counts: README.md (70 folders, 65 active, new inventory row), Start Here.md (65 active), install.sh (65 active, Wave 6 gates 49 of 65), ONBOARDING-TRIGGERS.md (70 folders, 65 active, Wave 6 roster adds 70).
+- `23-ai-workforce-blueprint/skill-department-map.json`: skill 70 entry (not client facing, owner openclaw-maintenance), so the repo-consistency gate's skill-folder coverage check passes.
+- Version markers rolled v25.1.105 -> v25.2.0 via `scripts/bundle-release-in-branch.sh` (minor: new skill).
+
+#### Migration notes
+- Existing boxes pick the skill up on the next fleet update: the generic `[0-9]*/` copy plus the skill's own `wire.sh`. A box whose configured model list lacks either DeepSeek V4.1 Flash identifier gets the core-file wiring and a named refusal for the cron job (retried each update); nothing substitutes another model.
+- The first weekly run on each box changes no core file; it saves a dry-run diff. Risk: LOW.
+- `agents.defaults.bootstrapMaxChars` and `agents.defaults.bootstrapTotalMaxChars` are never read or written.
+
+#### Tests
+`bash 70-lean-core-file-system/qc-70-lean-core-file-system.sh` (PASS: audit battery, cron installer battery and wire battery, under macOS bash 3.2 and bash 5); `python3 scripts/qc-assert-wave-list-integrity.py` (PASS, 49 entries); `bash scripts/bump-version.sh --check` (all markers agree); `scripts/typ-migrate.sh` run against throwaway fixture workspaces (section bloat, whole-file bloat, missing rule, re-run) with the same exit codes as the previous version.
+
+### #1332 — fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test harness
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1334 — [v25.2.1]  -  2026-09-28  -  Fleet roll: each box's own Command Center, the roll's own onboarding copy, rollback never blocked
+
+#### Why
+The first real fleet rolls failed on three client boxes and the operator's Mac for reasons that had nothing to do with the release. The runner looked for the Command Center at one fixed path, while every box keeps its own elsewhere. The roll ran from whichever old onboarding clone a box had, and one was shallow and tag-only. A modified file blocked a rollback. The main-agent session store moved out of sessions.json. The duck test ran on the wrong Node, and a 20-minute updater cap left an orphaned updater running during a rollback.
+
+#### What changed
+- shared-utils/fleet_refresh_runner.py: the Command Center code checkout is found ON each box: the process serving the Command Center port (lsof, ss, or /proc in a slim container), then pm2's app, then update-skills.sh's validated candidate list plus the OpenClaw root's command-center. A folder that holds the live mission-control.db but not the code is never chosen and never touched; the database is still located through resolve_db.py. When none is found, the Command Center steps are skipped as "Command Center not found on this box" and the other steps still run.
+- shared-utils/fleet_refresh_runner.py: 999-setup with the owner's local changes is SKIPPED ("999 has local changes, not updated"), not failed. The main-agent session key is read through `openclaw sessions list` (sessions.json no longer exists on 2026.8+), and agent:main:main counts as the owner's session. On rollback, modified tracked files in the Command Center checkout are saved beside the snapshot and the reset is then forced. update-skills.sh gets 90 minutes, and on timeout its whole process tree is stopped. The duck test runs with the Node that can load the Command Center's native modules. A Command Center step that failed without changing anything reports "onboarding updated to vX, Command Center NOT updated (still vY, healthy)".
+- shared-utils/fleet_notify.py: the operator alert's Telegram leg failed on any '_' in the text. The webhook's Telegram node sends legacy Markdown, so Telegram answered "can't parse entities" and the webhook returned HTTP 500. The four legacy-Markdown markers are now escaped.
+- scripts/fleet-roll-copy.sh (new), scripts/fleet-refresh.sh, scripts/weekly-full-update.sh: the roll runs from ONE dedicated copy per box, <OpenClaw root>/fleet-refresh/onboarding (inside the container on Docker boxes), refreshed to origin/main every run. The box's own clones are never used, changed or deleted.
+
+#### Tests
+tests/unit/fleet-refresh-roll-safety.test.py (75 pass): code checkout found past a live-DB folder (DB untouched), the serving process wins, a Contabo root Command Center, none found is a named skip; session key from the session store and from legacy sessions.json; 999 local changes skipped; rollback saves a dirty file and forces the reset; the updater timeout kills the whole process tree; the duck-test Node; the explicit Command Center-only failure; the roll copy with a shallow tag-only client clone left untouched; the Sunday update's copy.
+
+## [v25.1.105]  -  2026-09-28  -  Merge train: #1323 docs(batch-merger-proof): remove the scratch proof docs; #1324 Fix qc-system-integrity.sh CHECK 2.3: real-file copies PASS, symlinks…; #1326 fix(PRES-057): reconcile refuses a live cron edit from an ephemeral…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1323 — docs(batch-merger-proof): remove the scratch proof docs
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1324 — [v25.1.104]  -  2026-09-28  -  qc-system-integrity.sh CHECK 2.3 scored the opposite of CHECK 9.9/N29 — fixed
+
+#### Why
+While rewriting SYSTEM-DIAGNOSTIC-CHECKLIST.md (v25.1.102) it surfaced that `scripts/qc-system-integrity.sh`'s own CHECK 2.3 (department AGENTS.md/TOOLS.md/USER.md) directly contradicted CHECK 9.9 in the same script: 2.3 printed a green PASS when those files were SYMLINKED and a yellow WARN ("should be symlinked") when they were real-file copies, while 9.9 hard-fails a symlink and requires a real-file copy. N29 (amended 2026-07-31) made real-file copies canonical — the runtime's workspace-root boundary guard rejects a symlink outright, regardless of target — so 2.3 had been printing a misleading warning on every healthy, N29-compliant box since the boundary guard landed. 2.3's logic was never touched after it was written (PR #1059) and had simply never been updated when N29 was amended.
+
+#### What changed
+- scripts/qc-system-integrity.sh CHECK 2.3: swapped the pass/warn branches so real-file copies (COPIED>0, SYMLINKED=0) now PASS and symlinks (SYMLINKED>0, COPIED=0) now WARN, with corrected messages and remedies pointing at `update-skills.sh`/`install.sh` Step 10a (`link_shared_core_files`) and cross-referencing CHECK 9.9. The mixed-copies-and-symlinks branch is unchanged (still WARN) — nothing else in the file was touched.
+- tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh (new): extracts the real CHECK 2.3 block and the real green/yellow/na helpers from the script and runs them, unmodified, against synthetic department trees — real-file copies only, symlinks only, and mixed — asserting the PASS/WARN counters move the way N29/9.9 require. A mutation-proof step reverts the extracted block to the pre-fix (backwards) condition ordering and proves the test would have failed against the original bug (verified directly against the pre-fix script content, not just the synthetic mutation, before this entry was written).
+- version, install.sh, update-skills.sh, 23-ai-workforce-blueprint/skill-version.txt, 23-ai-workforce-blueprint/templates/role-library/_index.json, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md, cc-compat.json, 23-ai-workforce-blueprint/SKILL.md: v25.1.103 -> v25.1.104 via `scripts/bump-version.sh`; docs/interview-launch-recovery.md's paired-release line hand-fixed to match (check-doc-currency-guards.sh guard #2).
+
+#### Tests
+`bash tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh` (new, 7/7 pass; independently confirmed to fail 3/7 when run against the pre-fix script); `bash -n` on both changed files; `scripts/check-doc-currency-guards.sh` and `scripts/bump-version.sh --check` (both pass at v25.1.104).
+
+### #1326 — fix(PRES-057): reconcile refuses a live cron edit from an ephemeral OPENCLAW_ROOT
+
+(This pull request carried no CHANGELOG entry of its own.)
+## [v25.1.104]  -  2026-09-28  -  Merge train: #1311 fix(shared-utils): fleet_notify.send_telegram returns the delivered…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1311 — [v25.1.101]  -  2026-09-28  -  fleet_notify.send_telegram returns the delivered Telegram message_id
+
+#### Why
+The `fleet-standing-operator-alert` n8n webhook was switched from `responseMode: onReceived`
+(a canned `{"ok": true}`) to `responseMode: lastNode`, so its HTTP response is now the
+Telegram API's own result. That lets a caller prove delivery directly from the response, with
+no n8n execution data needing to be stored — storing it would also retain the shared
+`fleetStandingCheck` header-auth secret in plaintext inside the execution record, which every
+other fleet-standing webhook shares.
+
+#### What changed
+- shared-utils/fleet_notify.py: `send_telegram()` now parses the webhook's response body and
+  returns `(ok, detail, message_id)` instead of `(ok, detail)`. Both existing call sites
+  (`notify()`'s roll alert, and the `--test` path) already store the returned tuple in a
+  dict that gets printed/logged, so the delivered `message_id` now shows up in the roll's
+  result and log automatically — no other call-site changes were needed.
+
+#### Tests
+tests/unit/fleet-refresh-roll-safety.test.py: 60/60 pass unchanged (existing mocks return
+2-tuples for `send_telegram`; nothing indexed past `[0]`/`[1]`, so they are unaffected by the
+added third element). Verified live against the (already-updated) n8n workflow end to end: a
+real webhook call now returns `{"ok": true, "result": {"message_id": ...}}`.
 ## [v25.1.103]  -  2026-09-28  -  Merge train: #1298 presentations: Step 5 — Fix 7, then Fix 31; #1316 Rewrite SYSTEM-DIAGNOSTIC-CHECKLIST.md — 16-release stale content pass; #1317 docs(batch-merger-proof): isolation proof A (clean); #1318 docs(batch-merger-proof): isolation proof B (clean); #1319 docs(batch-merger-proof): isolation proof C (clean); #1321 fleet-refresh: name every box by its client, not its box id; per-box…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -55,7 +228,6 @@ Trevor's standing rule: people are named, never referred to by ids. The fleet ro
 tests/unit/fleet-refresh-roll-safety.test.py (63 pass): client names in the boxes file, the sheet, the queue and summary lines, the outcome table, the result JSON, the alerts and the pass note; the pass note goes by Telegram only and never for a roll-back, a failure or a box that needs attention; the UNKNOWN CLIENT fallback. All fixtures use placeholder names.
 
 ## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
-
 ## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
 
 ### Why

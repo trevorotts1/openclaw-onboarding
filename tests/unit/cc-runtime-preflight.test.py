@@ -31,7 +31,7 @@ from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version
 # endpoints: minVersion had to move WITH pinnedTag because /api/archify-runs is
 # a brand-new endpoint, so an older CC answers 404 (see cc-compat.json notes).
 CC_FLOOR = 'v7.4.0'
-CC_PIN = 'v7.6.72'
+CC_PIN = 'v7.6.74'
 CC_FLOOR_BARE = CC_FLOOR.lstrip('v')
 
 # Every released CC version BELOW the current floor. The boundary is tested
@@ -144,7 +144,10 @@ class Compatibility(unittest.TestCase):
         function=source[source.index('cc_install_locked_dependencies() {'):source.index('# ---- preflight ----')]
         # Exercise the actual shell helper used by both phase-6 branches with a
         # recording npm stub. No package downloads, scripts or real DB calls.
-        self.assertEqual(source.count('  cc_install_locked_dependencies\n'),2)
+        self.assertEqual(source.count('  cc_install_locked_dependencies\n'),1)  # fresh install
+        # update-only: the merge path installs in the live tree; the zero-downtime path
+        # leaves that to the candidate atomic-deploy.sh builds beside the live release
+        self.assertIn('[[ "$CC_ZERO_DOWNTIME" == "1" ]] || cc_install_locked_dependencies\n',source)
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);checkout=root/'checkout';checkout.mkdir();bin_dir=root/'bin';bin_dir.mkdir()
             npm=bin_dir/'npm'

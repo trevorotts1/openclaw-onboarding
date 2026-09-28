@@ -325,7 +325,21 @@ fi
 # box id <TAB> client <TAB> label, from the private boxes file (none: the id).
 LABELS_FILE="$TMPDIR_RESULTS/labels.tsv"
 : > "$LABELS_FILE"
-if [ -n "$BOXES_FILE" ] && [ -f "$BOXES_FILE" ]; then
+# A box's own --local run names itself from the client.json the operator's
+# roll left beside its roll copy (scripts/fleet-roll-copy.sh).
+if [ $LOCAL -eq 1 ]; then
+  python3 - > "$LABELS_FILE" <<'PY' || true
+import json, os
+from pathlib import Path
+root = os.environ.get("OPENCLAW_ROOT") or ("/data/.openclaw" if Path("/data/.openclaw").is_dir() else str(Path.home() / ".openclaw"))
+try:
+    c = json.loads((Path(root) / "fleet-refresh" / "client.json").read_text())
+    if c.get("client") and c.get("label"):
+        print("\t".join(("local", c["client"], c["label"])))
+except (OSError, ValueError):
+    pass
+PY
+elif [ -n "$BOXES_FILE" ] && [ -f "$BOXES_FILE" ]; then
   python3 - "$BOXES_FILE" "$SHARED_UTILS" > "$LABELS_FILE" <<'PY' || true
 import json, sys
 sys.path.insert(0, sys.argv[2])
@@ -486,57 +500,45 @@ PY
     fi
   }
 
-  # ── Detect the on-box onboarding clone location ─────────────────────────────
-  # The clone is NOT at a single fixed path across the fleet: legacy boxes keep it
-  # at ~/.openclaw/skills/onboarding, most at ~/clawd/openclaw-onboarding, a few
-  # at the install.sh CANDIDATES layouts, and containers on the /data volume.
-  # An explicit REMOTE_ONBOARDING_ROOT override still wins (and is verified).
-  local remote_candidates
-  if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
-    remote_candidates="\"${REMOTE_ONBOARDING_ROOT/#\~\//\$HOME/}\""
-  else
-    remote_candidates='"$HOME/.openclaw/skills/onboarding" "$HOME/clawd/openclaw-onboarding" "$HOME/openclaw-onboarding" "$HOME/.openclaw/onboarding" "/data/clawd/openclaw-onboarding" "/data/openclaw-onboarding"'
-  fi
-  local detect_script="for d in $remote_candidates; do
-  [ -f \"\$d/shared-utils/fleet_refresh_runner.py\" ] && { printf 'FOUND %s\\n' \"\$d\"; exit 0; }
-done
-if [ -d /data/.openclaw ]; then printf 'NONE /data/openclaw-onboarding\\n'; else printf 'NONE %s\\n' \"\$HOME/clawd/openclaw-onboarding\"; fi"
-
-  local detected verdict remote_root
+  # ── The roll's own copy of the onboarding repo on the box ─────────────────
+  # scripts/fleet-roll-copy.sh keeps ONE dedicated clone per box (inside the
+  # container on Docker boxes), refreshed to origin/main every run, and the
+  # runner runs from it. Whatever old clones the box has (shallow, tag-only,
+  # detached) are never used, changed or deleted.
+  local copied verdict remote_root prev_sha
   # shellcheck disable=SC2086
-  detected=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$detect_script")" 2>>"$RUN_LOG_DIR/${box}.log" \
-    | grep -E '^(FOUND|NONE) ' | tail -1 | tr -d '\r' || true)
-  verdict="${detected%% *}"
-  remote_root="${detected#* }"
-
-  if [ -z "$detected" ]; then
-    finish_result "$box" 255 /dev/null "$result_file" "ssh (clone detection)"
+  local client_json
+  client_json=$(awk -F'\t' -v b="$box" '$1 == b && $2 !~ /^UNKNOWN CLIENT/ { printf "{\"client\": \"%s\", \"label\": \"%s\"}", $2, $3; exit }' "$LABELS_FILE")
+  copied=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
+    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json")
+$(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
+    2>>"$RUN_LOG_DIR/${box}.log" | grep -E '^(COPY|COPYFAIL) ' | tail -1 | tr -d '\r' || true)
+  if [ -z "$copied" ]; then
+    finish_result "$box" 255 /dev/null "$result_file" "ssh (roll copy)"
     return 2
   fi
-  if [ "$verdict" = "NONE" ] && { [ $APPLY -eq 0 ] || [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; }; then
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"SKIPPED\",\"outcome_detail\":\"no onboarding clone on box (--apply clones it to $remote_root)\",\"errors\":[\"onboarding clone not found on box\"]}" > "$result_file"
+  if [ "${copied%% *}" = "COPYFAIL" ]; then
+    python3 - "$box" "${copied#COPYFAIL }" "$result_file" <<'PY'
+import json, sys
+box, why, out = sys.argv[1:4]
+json.dump({"box": box, "result": "failed", "outcome": "SKIPPED",
+           "outcome_detail": f"not updated: the roll's onboarding copy could not be prepared ({why})",
+           "errors": [why]}, open(out, "w"))
+PY
     return 2
   fi
-  echo "[fleet-refresh]   $(label_of "$box") — onboarding clone: $remote_root${verdict:+ ($verdict)}" >&2
+  read -r _ verdict prev_sha remote_root <<< "$copied"
+  echo "[fleet-refresh]   $(label_of "$box") — roll copy of onboarding: $remote_root ($verdict)" >&2
 
-  # --apply: bring the box's clone (and therefore the runner itself) to
-  # origin/main BEFORE running it, so every box gets this release's
-  # snapshot/health-gate/rollback logic. update-skills.sh hard-syncs the same
-  # clone anyway; the pre-sync SHA is handed to the runner as the rollback
-  # target. Dry-run never touches the clone.
+  # --apply: never start under a fleet-refresh already running on the box.
+  # The copy's previous SHA is the runner's rollback target for it.
   local prep=""
   if [ $APPLY -eq 1 ]; then
     prep="for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do
   P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && {
     echo '{\"box\":\"'$box'\",\"result\":\"skipped\",\"outcome\":\"SKIPPED\",\"outcome_detail\":\"another fleet-refresh is running on this box\"}'; exit 0; }
 done
-R=$(sq "$remote_root")
-if [ ! -d \"\$R/.git\" ] && [ ! -e \"\$R\" ]; then
-  mkdir -p \"\$(dirname \"\$R\")\" && git clone -q https://github.com/trevorotts1/openclaw-onboarding.git \"\$R\" || exit 97
-fi
-PREV=\$(git -C \"\$R\" rev-parse HEAD 2>/dev/null || true)
-if [ -d \"\$R/.git\" ]; then git -C \"\$R\" fetch -q origin main && git -C \"\$R\" reset -q --hard origin/main || exit 98; fi
-export FLEET_PREV_ONBOARDING_SHA=\"\$PREV\"
+export FLEET_PREV_ONBOARDING_SHA=$(sq "${prev_sha#-}")
 "
   fi
   # A dropped SSH session must not kill the runner half way through an update
@@ -1012,7 +1014,9 @@ echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 # bot via the operator-alert webhook; email too on his Mac). Never a client.
 if [ $APPLY -eq 1 ]; then
   _origin="operator roll"
-  [ $LOCAL -eq 1 ] && _origin="$(hostname -s 2>/dev/null || hostname) (its own update)"
+  _self="$(label_of local)"
+  [ "$_self" = "local" ] && _self="$(hostname -s 2>/dev/null || hostname)"
+  [ $LOCAL -eq 1 ] && _origin="$_self (its own update)"
   python3 "$SHARED_UTILS/fleet_notify.py" --summary "$SUMMARY_FILE" --origin "$_origin" 2>&1 \
     | sed 's/^/[fleet-refresh] operator alert: /' || true
   # The operator's box list backup: last result per box, refreshed in Drive.

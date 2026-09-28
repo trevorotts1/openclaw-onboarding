@@ -636,6 +636,30 @@ print(sum(1 for j in jobs if isinstance(j, dict) and j.get("name") == os.environ
     return 0
 }
 
+# _presched_root_is_ephemeral <root> — true when <root> sits under a
+# scratch/temp directory ($TMPDIR, /var/folders (macOS TMPDIR), /tmp,
+# /private/tmp). PRES-057: cron/automations are GLOBAL GATEWAY STATE, keyed
+# by NAME, never scoped to OPENCLAW_ROOT — so a reconcile call built from a
+# throwaway mktemp root does not target a throwaway job, it still finds and
+# edits the REAL production job of the same name. This is exactly how a
+# hand-run reproduction of this file's own reconcile logic (OPENCLAW_ROOT
+# pointed at a mktemp sandbox, but without this file's mock `openclaw` CLI on
+# PATH) corrupted the live "presentation-watchdog" cron on the operator Mac
+# on 2026-09-27: same job id, payload silently rewritten to reference a path
+# that only ever existed under /var/folders.
+_presched_root_is_ephemeral() {
+    case "$1" in
+        /tmp|/tmp/*|/private/tmp|/private/tmp/*|/var/folders/*) return 0 ;;
+    esac
+    [ -n "${TMPDIR:-}" ] || return 1
+    local _t="${TMPDIR%/}"
+    [ -n "$_t" ] || return 1
+    case "$1" in
+        "$_t"|"$_t"/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # _presched_reconcile_cron <name> <expr> <tz> <agent> <prompt> [extra create flags...]
 # Full VPS reconcile for one scheduler. Desired prompt via $5 (also exported
 # as _PRESCHED_DESIRED_PROMPT for the comparator). Sets _PRESCHED_STATUS /
@@ -648,6 +672,17 @@ _presched_reconcile_cron() {
     _PRESCHED_STATUS="MISSING"; _PRESCHED_JOB_ID="-"; _PRESCHED_NEXT_FIRE="expr:$_expr"
     if ! command -v openclaw >/dev/null 2>&1; then
         warn "_presched($_name): openclaw CLI not on PATH — schedule NOT verified (explicit failure, not 'already installed')."
+        return 1
+    fi
+    # PRES-057 guard: refuse to build/edit a LIVE cron payload from an
+    # ephemeral OPENCLAW_ROOT. Bypass ONLY for an isolated test harness that
+    # never talks to the real gateway (its own mock `openclaw` on PATH) —
+    # never set this in a real install/roll/debug session.
+    local _pr_root="${OPENCLAW_ROOT:-${OC_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}}"
+    _pr_root="${_pr_root%/}"
+    if _presched_root_is_ephemeral "$_pr_root" && [ "${_PRESCHED_ALLOW_EPHEMERAL_ROOT:-0}" != "1" ]; then
+        _PRESCHED_STATUS="DEGRADED"
+        warn "_presched($_name): OPENCLAW_ROOT resolves to an ephemeral scratch path ($_pr_root) — refusing to build or edit the LIVE '$_name' cron job from it (PRES-057). Automations are keyed by NAME in the shared gateway, not scoped to OPENCLAW_ROOT: a test/dry-run root here would still overwrite the real production job. Set _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 only inside an isolated test harness with its own mock openclaw CLI."
         return 1
     fi
     if oc_cron_tombstoned "$_name"; then

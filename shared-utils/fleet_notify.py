@@ -97,19 +97,36 @@ def alert_target() -> tuple[str, str, str]:
     return url, get("FLEET_STANDING_GATE_HEADER") or "X-Fleet-Standing-Secret", get("FLEET_STANDING_GATE_SECRET")
 
 
-def send_telegram(text: str) -> tuple[bool, str]:
+def tg_escape(text: str) -> str:
+    """The alert webhook's Telegram node sends with legacy Markdown, so a lone
+    '_' (scripts/watchdog-cc.sh, not_restored, ...) made Telegram reject the
+    whole alert ("can't parse entities") -- only the email arrived. Escape the
+    four legacy-Markdown markers so every alert reads exactly as written."""
+    return re.sub(r"([_*`\[])", r"\\\1", text)
+
+
+def send_telegram(text: str) -> tuple[bool, str, int | None]:
+    """(ok, detail, message_id). The webhook now responds with its last node's
+    output (n8n responseMode=lastNode) -- the Telegram API result itself -- so
+    the delivered message_id is provable from the HTTP response alone, with no
+    execution data stored on the n8n side."""
     url, header, secret = alert_target()
     if not url or not secret:
-        return False, "operator alert webhook not configured on this machine"
-    req = urllib.request.Request(url, data=json.dumps({"text": text[:3900]}).encode(), method="POST",
+        return False, "operator alert webhook not configured on this machine", None
+    req = urllib.request.Request(url, data=json.dumps({"text": tg_escape(text[:3900])[:4090]}).encode(), method="POST",
                                  headers={"Content-Type": "application/json", header: secret})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            return r.status == 200, f"alert webhook HTTP {r.status}"
+            message_id = None
+            try:
+                message_id = (json.loads(r.read()).get("result") or {}).get("message_id")
+            except (ValueError, AttributeError):
+                pass  # response body wasn't the expected Telegram result shape
+            return r.status == 200, f"alert webhook HTTP {r.status}", message_id
     except urllib.error.HTTPError as e:
-        return False, f"alert webhook HTTP {e.code}"
+        return False, f"alert webhook HTTP {e.code}", None
     except Exception as e:  # noqa: BLE001
-        return False, f"alert webhook unreachable ({e.__class__.__name__})"
+        return False, f"alert webhook unreachable ({e.__class__.__name__})", None
 
 
 def compose(rows: list[dict], origin: str) -> tuple[str, str]:

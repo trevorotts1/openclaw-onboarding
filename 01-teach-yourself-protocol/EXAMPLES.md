@@ -9,7 +9,7 @@
 2. Category: API reference. Priority: CRITICAL. Size: Very Large.
 3. Searches core files and master folder - no existing KIE.ai knowledge found
 4. Creates deep file: `[MASTER_FILES_FOLDER]/apis/kie-ai/kie-ai-api-reference.md` (full 176K, untruncated)
-5. Writes 20-line summary in TOOLS.md: auth method, base URL, rate limit, pricing, model list, common pitfalls, file path, "when to go deeper" triggers
+5. Writes a one-to-two-sentence pointer in TOOLS.md: what KIE.ai is, the full file path, and when to read it (trigger words such as "image", "video", "KIE")
 6. Writes memory entry in MEMORY.md: "KIE.ai API learned [date]. Full doc at [path]."
 7. Confirms to user: what was stored, where, which files updated
 
@@ -23,7 +23,7 @@
 1. Announces TYP activation
 2. Category: Preference/rule. Priority: CRITICAL. Size: Small (one rule).
 3. Searches core files - no existing em dash rule found
-4. No deep file needed (under 25 lines)
+4. No deep file needed (one always-on rule stays inline, shortened)
 5. Adds rule directly to AGENTS.md, TOOLS.md, IDENTITY.md
 6. Adds to MEMORY.md with date
 7. Confirms
