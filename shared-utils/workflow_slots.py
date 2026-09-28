@@ -149,10 +149,18 @@ def transition(db, c):
         flagged = list(substitutions) + [
             {k: r[k] for k in ("unit", "role", "route", "served_route", "agent_id")} for r in unverified
             if r["route_binding"] == "unverified_no_binding_record"]
+        # A zero substitution count means nothing on its own: a row bound before
+        # this recording existed has no verdict at all, and cannot be reported as
+        # a clean binding. Counted separately so the zero can never be misread.
+        unrecorded = sum(1 for r in rows if r["agent_id"] is not None and not r["route_binding"])
         alarm = ""
         if flagged:
             alarm = "!!! ROUTE SUBSTITUTION ALERT - " + "; ".join(
                 f"{f['unit']} {f['role']} requested={f['route']} served={f['served_route']}" for f in flagged)
+        if unrecorded:
+            alarm = (f"!! {unrecorded} bound rows have NO route-binding record "
+                     f"(bound before A47 recording); their requested-vs-served route is UNPROVEN, "
+                     f"not clean. " + alarm).strip()
         return {
             "workflows": [dict(r) for r in db.execute("SELECT * FROM workflows ORDER BY opened")],
             "slots": rows,
@@ -160,6 +168,7 @@ def transition(db, c):
             "reserved_or_live": db.execute("SELECT count(*) FROM slots WHERE ended IS NULL").fetchone()[0],
             "route_substitutions": flagged,
             "route_substitution_count": len(flagged),
+            "route_unrecorded_count": unrecorded,
             "route_alarm": alarm,
             "route_evidence": "requested_and_served; served route recorded at binding from the harness binding record"
                               " where present, else explicitly marked unverified",

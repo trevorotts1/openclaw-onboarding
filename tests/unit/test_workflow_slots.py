@@ -208,6 +208,22 @@ class RouteBindingTests(unittest.TestCase):
         self.assertIn('requested=opus-chain served=deepseek-chain', snapshot['route_alarm'])
         self.assertEqual(snapshot['route_substitutions'][0]['agent_id'], 'a-subs')
 
+    def test_zero_substitutions_never_reads_as_clean_when_rows_are_unrecorded(self):
+        # A row bound by an older ledger carries no binding verdict; the report
+        # must say so rather than present a bare zero.
+        row = self.call('reserve', workflow_id='w', reservation_id='a-legacy', role='builder',
+                        route='opus-chain', parent='coordinator', unit='U', lease_seconds=3600)
+        import sqlite3 as _sqlite3
+        db = _sqlite3.connect(self.database, isolation_level=None)
+        db.execute("UPDATE slots SET state='live',agent_id='a-legacy',session_ref='s' WHERE reservation_id='a-legacy'")
+        db.commit()
+        db.close()
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 0)
+        self.assertEqual(snapshot['route_unrecorded_count'], 1)
+        self.assertIn('NO route-binding record', snapshot['route_alarm'])
+        self.assertIn('UNPROVEN', snapshot['route_alarm'])
+
     def test_missing_binding_record_is_unverified_not_a_silent_match(self):
         bound = self.bind('a-norec', served=None)
         self.assertEqual(bound['route_binding'], 'unverified_no_binding_record')
