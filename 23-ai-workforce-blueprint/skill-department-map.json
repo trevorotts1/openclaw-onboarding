@@ -1300,6 +1300,16 @@
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
+  },
+  {
+   "skill": "70",
+   "slug": "lean-core-file-system",
+   "name": "lean-core-file-system",
+   "client_facing": false,
+   "description": "Install-time and weekly upkeep: the Lean Core File System keeps the agent's core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) under 40,000 characters each using pointer references (situational blocks move into one playbook per system; a one-to-two-sentence WHAT, WHERE, WHEN pointer stays behind; always-on rules stay inline). Ships an audit script and a quiet weekly OpenClaw cron job. Runs for the agent itself, not routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
   }
  ]
 }
