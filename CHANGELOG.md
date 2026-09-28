@@ -1,3 +1,17 @@
+## [v25.1.94]  -  2026-09-28  -  Presentations Step 3 lands on main: attempt-counter reset (Fix 11), engine pid recording (Fix 13), unified lease format (Fix 14)
+
+### Why
+This entry documents the Step 3 release (Fixes 11, 13, 14) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.93 -> v25.1.94 via scripts/bump-version.sh (G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 11 (canonical-entry attempt counter never resets): reset .canonical-entry-attempts on engine success (both main and fallback paths); skip the increment when RESUME=1 and state.json exists; both script copies. QC caught an unbound-variable crash under set -u on resume (fixed with _ATTEMPT_FILE="" init); resume test strengthened. Test: test_fix11_attempt_counter_reset.py.
+- Fix 13 (engine never records its own pid): state["engine_pid"]=os.getpid() + store.save(state) inside RunLock after store.load(); poller already-running check uses read_engine_pid with .job.lock fallback; launcher._read_engine_pid gains the same fallback. Integration test added (skipped_running via real RunLock+StateStore path). Test: test_fix13_engine_pid.py.
+- Fix 14 (poller and engine write different lease formats): optional pid= on lease.acquire; poller PYLEASE/PYREL heredocs replaced with python3 -c calls using lease.acquire(pid=$$, holder={"holder":"intake-poll-bridge"}); both actors now write ISO acquired_at + expires_at via the same code path. Test: test_fix14_lease_format.py.
+- Version markers rolled v25.1.93 -> v25.1.94 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+New tests added per fix (not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.93 entry below.
+
 ## [v25.1.93]  -  2026-09-28  -  Presentations: Docker release-matrix pin to deb13u7, #1273 Fix 3 test fixture, #1277 test-isolation fixes
 
 ### Why
