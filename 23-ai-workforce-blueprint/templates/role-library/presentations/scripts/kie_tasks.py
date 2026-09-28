@@ -255,12 +255,23 @@ def _resolve_governor(governor, scripts_dir=None):
 
 
 def _gov_acquire(gov, enabled, *, poll):
+    """FIX 10: daily-cap exhaustion (GovernorDailyCapReached) and submit-side
+    (poll=False) rate timeouts are NEVER fail-soft — they are re-raised so
+    the phase parks instead of spending unthrottled. Only "governor module
+    absent" (the _NoopGovernor twin, whose acquire never raises) proceeds
+    unthrottled."""
     if not enabled:
         return None
     try:
         return gov.acquire(GOVERNOR_PROVIDER, n=1,
                            timeout_s=GOVERNOR_ACQUIRE_TIMEOUT_S, poll=poll)
-    except Exception:  # noqa: BLE001 — never let the limiter block the render
+    except Exception as exc:  # noqa: BLE001 — classified below, never masked blindly
+        daily_cap_cls = getattr(gov, "GovernorDailyCapReached", None)
+        if daily_cap_cls is not None and isinstance(exc, daily_cap_cls):
+            raise
+        timeout_cls = getattr(gov, "GovernorTimeout", None)
+        if not poll and timeout_cls is not None and isinstance(exc, timeout_cls):
+            raise
         return None
 
 

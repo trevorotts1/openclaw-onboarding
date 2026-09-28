@@ -1561,13 +1561,24 @@ _GOV_ACQUIRE_TIMEOUT_S = 90.0
 
 def _gov_acquire(poll: bool = False) -> Optional[object]:
     """Acquire one kie slot from the governor. Returns a lease, or None when
-    the governor is absent OR the wait timed out (fail-soft — log and go)."""
+    the governor is absent (fail-soft — log and go).
+
+    FIX 10: daily-cap exhaustion (GovernorDailyCapReached) and submit-side
+    (poll=False) rate timeouts are NEVER fail-soft — they are re-raised so
+    the phase parks instead of spending unthrottled.
+    """
     if _governor is None:
         return None
     try:
         return _governor.acquire(
             _GOV_PROVIDER, n=1, timeout_s=_GOV_ACQUIRE_TIMEOUT_S, poll=poll)
-    except Exception as exc:  # noqa: BLE001 — never let the limiter block the render
+    except Exception as exc:  # noqa: BLE001 — classified below, never masked blindly
+        daily_cap_cls = getattr(_governor, "GovernorDailyCapReached", None)
+        if daily_cap_cls is not None and isinstance(exc, daily_cap_cls):
+            raise
+        timeout_cls = getattr(_governor, "GovernorTimeout", None)
+        if not poll and timeout_cls is not None and isinstance(exc, timeout_cls):
+            raise
         kind = "poll" if poll else "submit"
         print(f"    [governor] {kind} acquire unavailable ({exc.__class__.__name__}: "
               f"{exc}) — proceeding unthrottled", file=sys.stderr, flush=True)

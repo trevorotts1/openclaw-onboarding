@@ -102,6 +102,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -193,6 +194,12 @@ def _alias_for_route(route: Optional[Dict[str, Any]]) -> Optional[str]:
         if ep == provider or ep.split("-")[0] == provider.split("-")[0]:
             if entry.get("model") == model:
                 return alias
+        # FIX 6: the catalog's served_ids map (provider -> live model id)
+        # also identifies the alias -- e.g. an OpenRouter-served id the
+        # alias's own "model" field doesn't spell.
+        served = entry.get("served_ids")
+        if isinstance(served, dict) and served.get(provider) == model:
+            return alias
     return None
 
 
@@ -213,6 +220,19 @@ def _rate_for(route: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         return {"status": "priced", "shape": "per_call",
                 "per_call_usd": 0.0, "alias": None,
                 "rate_source": "spec: ollama-cloud 0 (monthly pool)"}
+    # FIX 6: OpenRouter prices come from the live model list's `pricing`
+    # field (cached for the run); the static catalog is only the fallback.
+    # This covers every OpenRouter model, including the client-selected one.
+    if provider == "openrouter":
+        live = _openrouter_live_pricing()
+        live_model = str((route or {}).get("model") or "")
+        hit = live.get(live_model)
+        if hit is not None:
+            return {"status": "priced", "shape": "per_million_tokens",
+                    "per_million_tokens_in_usd": hit["in_usd_per_mtok"],
+                    "per_million_tokens_out_usd": hit["out_usd_per_mtok"],
+                    "alias": None,
+                    "rate_source": "openrouter live list"}
     alias = _alias_for_route(route)
     if alias is None or _catalog is None:
         return {"status": CODE_COST_UNKNOWN, "shape": None,
@@ -241,6 +261,65 @@ def _rate_for(route: Optional[Dict[str, Any]]) -> Dict[str, Any]:
                 "alias": alias}
     return {"status": CODE_COST_UNKNOWN, "shape": None, "alias": alias,
             "reason": "priced unit_costs block carries no recognized rate shape"}
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter live pricing (FIX 6: OpenRouter prices at $0)
+# ---------------------------------------------------------------------------
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+OPENROUTER_FETCH_TIMEOUT_S = 10
+
+# The live list, cached for the run: {model_id: {"in_usd_per_mtok": float,
+# "out_usd_per_mtok": float}}. {} means "fetched and failed, or empty" --
+# the static catalog then answers as fallback for the rest of the run.
+_openrouter_pricing_cache: Optional[Dict[str, Dict[str, float]]] = None
+
+
+def _reset_openrouter_pricing_cache() -> None:
+    """Test seam: forget the cached live list so the next lookup refetches."""
+    global _openrouter_pricing_cache
+    _openrouter_pricing_cache = None
+
+
+def _openrouter_live_pricing() -> Dict[str, Dict[str, float]]:
+    """OpenRouter's live model list as {id: per-million-token USD rates}.
+
+    Prices come from each entry's `pricing` field (prompt/completion are USD
+    per token on the wire). Cached for the run. Any fetch or parse failure
+    yields {} so the caller falls back to the static catalog -- never a
+    guess, never an exception.
+    """
+    global _openrouter_pricing_cache
+    if _openrouter_pricing_cache is not None:
+        return _openrouter_pricing_cache
+    table: Dict[str, Dict[str, float]] = {}
+    try:
+        req = urllib.request.Request(
+            OPENROUTER_MODELS_URL,
+            headers={"User-Agent": "presentations-credit-preflight"},
+        )
+        with urllib.request.urlopen(req,
+                                    timeout=OPENROUTER_FETCH_TIMEOUT_S) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        data = payload.get("data") if isinstance(payload, dict) else None
+        for item in data or []:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get("id") or "").strip()
+            pricing = item.get("pricing")
+            if not model_id or not isinstance(pricing, dict):
+                continue
+            try:
+                in_usd = float(pricing.get("prompt")) * 1_000_000
+                out_usd = float(pricing.get("completion")) * 1_000_000
+            except (TypeError, ValueError):
+                continue
+            table[model_id] = {"in_usd_per_mtok": in_usd,
+                               "out_usd_per_mtok": out_usd}
+    except Exception:  # noqa: BLE001 -- fetch/parse failure -> catalog fallback
+        pass
+    _openrouter_pricing_cache = table
+    return table
 
 
 # ---------------------------------------------------------------------------
@@ -469,9 +548,28 @@ def preflight(mode: str, *,
         rate = _rate_for(route)
         if rate.get("status") != "priced":
             alias = rate.get("alias") or _alias_for_route(route) or "?"
+            # FIX 6: an unpriceable phase on a PAID provider stops an ultra
+            # launch BEFORE any spend -- plain message naming the model.
+            # Standard and economy keep the existing warning below.
+            if str(mode or "").strip().lower() == "ultra" \
+                    and provider not in ZERO_COST_PROVIDERS:
+                model_name = str(route.get("model") or "?")
+                blocking.append({
+                    "code": CODE_COST_UNKNOWN, "provider": provider,
+                    "phase_id": phase_id,
+                    "detail": (f"phase {phase_id} on {provider} cannot be "
+                               f"priced: model {model_name!r} has no usable "
+                               f"rate (catalog alias {alias}; "
+                               f"{rate.get('reason') or 'cost_unknown'}) -- "
+                               f"ultra launch refused BEFORE any spend"),
+                })
+                reasons.append(f"{phase_id}: cost_unknown on {provider} -> "
+                               f"BLOCKED (ultra, unpriceable paid route)")
+                continue
             # FIX 13: cost_unknown -> WARN + estimate_source "unpriced",
-            # never a block. The unpriced phase is excluded from the numeric
-            # estimate over priced phases and named here.
+            # never a block (except the FIX 6 ultra rule above). The
+            # unpriced phase is excluded from the numeric estimate over
+            # priced phases and named here.
             warnings.append({
                 "code": CODE_COST_UNKNOWN, "provider": provider,
                 "phase_id": phase_id,
@@ -768,6 +866,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     v = launcher_gate(Path(args.run_dir).expanduser() if args.run_dir
                       else None, args.mode)
     print(json.dumps(v, indent=2, sort_keys=True, default=str))
+    # FIX 5: a disabled preflight never blocks -- the flag-off "skipped"
+    # result exits 0 exactly like a proceed verdict.
+    if v.get("skipped") is not None:
+        return 0
     if args.quiet:
         v = dict(v)
         v["notify"] = []  # nothing is dispatched; the verdict stands
