@@ -103,6 +103,10 @@ def wave5_deploy_preflight() -> None:
     import urllib.request
     import urllib.error
 
+    global _WAVE5_PASSED
+    if _WAVE5_PASSED:   # same check, same run, minutes earlier: re-asking GitHub only adds flake
+        return
+
     _info("Wave-5 deploy preflight: checking B.1 + B.2 + B.3 on origin/main of blackceo-command-center ...")
 
     missing: list[tuple[str, str]] = []
@@ -170,6 +174,10 @@ def wave5_deploy_preflight() -> None:
         sys.exit(1)
 
     _ok("Wave-5 deploy preflight PASSED — B.1 + B.2 + B.3 all present on origin/main.")
+    _WAVE5_PASSED = True
+
+
+_WAVE5_PASSED = False
 
 
 # ── Box result schema ─────────────────────────────────────────────────────────
@@ -188,6 +196,16 @@ class BoxResult:
         self.steps: dict = {}
         self.result: str = "dry-run" if dry_run else "failed"
         self.errors: list[str] = []
+        # Roll-safety record: what the box was before we touched it, what the
+        # health gate saw, and what (if anything) was undone.
+        self.snapshot: dict = {}
+        self.health: dict = {}
+        self.rollback: dict = {}
+        self.update_999: dict = {}
+        # One-word verdict for the fleet summary:
+        # UPDATED | ROLLED_BACK | FAILED | SKIPPED  (+ outcome_detail).
+        self.outcome: str = "SKIPPED" if dry_run else "FAILED"
+        self.outcome_detail: str = "dry-run" if dry_run else ""
 
     def step_ok(self, name: str) -> None:
         self.steps[name] = "ok"
@@ -216,6 +234,12 @@ class BoxResult:
             "errors":              self.errors,
             "onboarding_version":  self.onboarding_version,
             "cc_version":          self.cc_version,
+            "snapshot":            self.snapshot,
+            "health":              self.health,
+            "rollback":            self.rollback,
+            "update_999":          self.update_999,
+            "outcome":             self.outcome,
+            "outcome_detail":      self.outcome_detail,
         }
 
 
@@ -684,7 +708,7 @@ def step_pin_resolve(paths: dict, repo_root: Path, compat: dict, res: BoxResult)
     return cc_tag
 
 
-def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: BoxResult, dry_run: bool) -> None:
+def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: BoxResult, dry_run: bool) -> str:
     """Step 2: run update-skills.sh to sync onboarding skills to the pinned tag.
 
     D1: consumes update-skills.sh's unified stamp-gate contract. That script
@@ -698,12 +722,12 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
     """
     if dry_run:
         res.step_skip("pull-onboarding")
-        return
+        return pinned_tag
 
     update_skills = repo_root / "update-skills.sh"
     if not update_skills.is_file():
         res.step_fail("pull-onboarding", f"update-skills.sh not found at {update_skills}")
-        return
+        return pinned_tag
 
     skills_dir = Path(paths.get("skills") or Path(paths["root"]) / "skills")
     stamp_file = skills_dir / ".onboarding-version"
@@ -722,9 +746,25 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
                  "OPENCLAW_MAINTENANCE_SILENT": "1"},
         )
         post_stamp = stamp_file.read_text().strip() if stamp_file.is_file() else None
+        # update-skills.sh self-syncs THIS clone to origin/main before it runs
+        # (OPENCLAW_UPDATE_AUTO_SYNC=1), so the version it stamps is the one in
+        # the clone's cc-compat.json AFTER the run, not the stale copy loaded
+        # before it. Comparing against the stale copy failed every box whose
+        # clone was behind.
+        try:
+            from cc_compat import load_cc_compat  # type: ignore
+            pinned_tag = load_cc_compat(repo_root).get("onboardingVersion", pinned_tag)
+        except Exception:
+            pass
         if result.returncode == 0 and post_stamp == pinned_tag:
             res.onboarding_version = post_stamp
             res.step_ok("pull-onboarding")
+        elif result.returncode == 2 and post_stamp == pinned_tag:
+            # update-skills.sh exit 2 = skills content current and stamped, some
+            # infrastructure needs attention (advisory, not a half-applied run).
+            res.onboarding_version = post_stamp
+            res.steps["pull-onboarding"] = ("ok:advisory: update-skills.sh exit 2 (content current; "
+                                            f"infrastructure needs attention): {result.stdout[-160:].strip()}")
         else:
             res.step_fail(
                 "pull-onboarding",
@@ -735,6 +775,7 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
         res.step_fail("pull-onboarding", "update-skills.sh timed out after 1200s")
     except Exception as e:
         res.step_fail("pull-onboarding", str(e))
+    return pinned_tag
 
 
 def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_cc: bool = False) -> None:
@@ -863,6 +904,49 @@ def _run_duck_ci_test(cc_dir: Path, box: str) -> tuple[bool, str]:
         return False, f"duck-test.ts failed to launch: {exc}"
 
 
+# atomic-deploy.sh refuses bash < 4 (exit 2) and macOS /bin/bash is 3.2, which
+# is what a non-login SSH PATH resolves. Same resolution as the Command Center's
+# own update.sh.
+_BASH4_CANDIDATES = ("/opt/homebrew/bin/bash", "/usr/local/bin/bash", "bash")
+# atomic-deploy.sh's own health window is up to ~18 min (36 x 30s); a shorter
+# outer timeout would kill it mid-promotion.
+ATOMIC_DEPLOY_TIMEOUT = 1800
+
+
+def _bash4() -> Optional[str]:
+    for cand in _BASH4_CANDIDATES:
+        exe = shutil.which(cand)
+        if not exe:
+            continue
+        try:
+            v = subprocess.run([exe, "-c", 'echo "${BASH_VERSINFO[0]:-0}"'],
+                               capture_output=True, text=True, timeout=10)
+            if int((v.stdout or "0").strip() or 0) >= 4:
+                return exe
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+    return None
+
+
+def _run_atomic_deploy(cc_dir: Path, revision: Optional[str] = None) -> subprocess.CompletedProcess:
+    """Run the Command Center's atomic-deploy.sh against cc_dir.
+
+    Exit contract (from atomic-deploy.sh): 0 green; 1 health failed and the
+    prior build was restored; 2 pre-flight/build failed with the live build
+    untouched (still serving); 3 health indeterminate, not rolled back.
+    """
+    bash = _bash4()
+    if not bash:
+        return subprocess.CompletedProcess([], 2, "", "no bash 4+ found for atomic-deploy.sh "
+                                           f"(tried {', '.join(_BASH4_CANDIDATES)})")
+    cmd = [bash, str(cc_dir / "scripts" / "atomic-deploy.sh"), "--app-dir", str(cc_dir)]
+    if revision:
+        cmd += ["--revision", revision]
+    return subprocess.run(cmd, cwd=str(cc_dir), capture_output=True, text=True,
+                          timeout=ATOMIC_DEPLOY_TIMEOUT,
+                          env={**os.environ, "CC_APP_DIR": str(cc_dir)})
+
+
 def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = False) -> None:
     """
     Step 4: invoke scripts/atomic-deploy.sh from the deployed CC checkout.
@@ -919,11 +1003,7 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
     #   1  → fail this box (step_fail)
     #   3  → transient; caller should retry then mark UNKNOWN (never destructive)
     try:
-        deploy_result = subprocess.run(
-            ["bash", str(atomic_deploy)],
-            cwd=str(cc_dir),
-            capture_output=True, text=True, timeout=600,
-        )
+        deploy_result = _run_atomic_deploy(cc_dir)
         deploy_detail = (deploy_result.stdout + deploy_result.stderr).strip()[:300]
 
         if deploy_result.returncode == 1:
@@ -937,12 +1017,18 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
             res.step_fail("build-cc", f"[exit-3] atomic-deploy.sh transient error: {deploy_detail}")
             return
 
+        if deploy_result.returncode == 2:
+            # Built in a private candidate dir; the live build was never touched.
+            res.step_fail("build-cc", "atomic-deploy.sh exited 2 (pre-flight/build failed; "
+                                      f"previous build left serving): {deploy_detail}")
+            return
+
         if deploy_result.returncode != 0:
             res.step_fail("build-cc", f"atomic-deploy.sh exited {deploy_result.returncode}: {deploy_detail}")
             return
 
     except subprocess.TimeoutExpired:
-        res.step_fail("build-cc", "atomic-deploy.sh timed out after 600s")
+        res.step_fail("build-cc", f"atomic-deploy.sh timed out after {ATOMIC_DEPLOY_TIMEOUT}s")
         return
     except Exception as exc:
         res.step_fail("build-cc", f"atomic-deploy.sh failed to launch: {exc}")
@@ -1017,11 +1103,7 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
 
     # Invoke atomic-deploy.sh synchronously.
     try:
-        restart_result = subprocess.run(
-            ["bash", str(atomic_deploy)],
-            cwd=str(cc_dir),
-            capture_output=True, text=True, timeout=600,
-        )
+        restart_result = _run_atomic_deploy(cc_dir)
         restart_detail = (restart_result.stdout + restart_result.stderr).strip()[:300]
 
         if restart_result.returncode == 1:
@@ -1038,7 +1120,7 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
             return
 
     except subprocess.TimeoutExpired:
-        res.step_fail("restart-cc", "atomic-deploy.sh timed out after 600s")
+        res.step_fail("restart-cc", f"atomic-deploy.sh timed out after {ATOMIC_DEPLOY_TIMEOUT}s")
         return
     except Exception as exc:
         res.step_fail("restart-cc", f"atomic-deploy.sh failed to launch: {exc}")
@@ -1862,6 +1944,534 @@ def step_log(paths: dict, res: BoxResult, dry_run: bool,
     res.step_ok("log")
 
 
+# ── 999-setup refresh (conditional, never a fresh install) ────────────────────
+#
+# 999-setup (github.com/trevorotts1/999-setup) is installed by Claude Code per
+# its AGENT_INSTALL.md: cloned (or archive-extracted as 999-setup-main) into the
+# user's Documents folder, and its bundled skills are LINKED from
+# ~/.claude/skills/<skill> (and ~/.claude-nine/skills when that root exists) back
+# into the checkout. Real boxes do not all follow the doc (the operator Mac keeps
+# it in ~/Downloads), so the checkout is FOUND, never assumed: first by following
+# an installed skill link back to its repo, then by probing known locations.
+_999_SKILL_LINKS = (".claude/skills/nine-router-setup", ".claude-nine/skills/nine-router-setup")
+_999_CANDIDATES = (
+    "Documents/999-setup", "Documents/999-setup-main",
+    "Downloads/999-setup", "Downloads/999-setup-main",
+    "999-setup", "999-setup-main", "Desktop/999-setup",
+    "clawd/999-setup", "projects/999-setup", "Projects/999-setup",
+)
+_999_INSTALLER = ".claude/skills/nine-router-setup/scripts/setup-macos.sh"
+
+# Runs ONLY the installer's own skill-install routine (link_skills_into_root,
+# against the same one-or-two config roots its main() uses). The full
+# orchestrator is deliberately NOT run on a roll: it ends with a live
+# `claude-nine -p` model call (AI tokens) and rewires 9Router providers from the
+# client's API docs.md. The function is loaded from the installer itself (minus
+# its trailing `main "$@"` line) so the link logic is never re-implemented here.
+_999_LINK_SCRIPT = r'''
+set -euo pipefail
+R="$1"; S="$R/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+[ "$(tail -n 1 "$S")" = 'main "$@"' ] || { echo "installer entrypoint changed: last line of $S is not main \"\$@\"" >&2; exit 3; }
+T="$(mktemp)"; trap 'rm -f "$T"' EXIT
+sed '$d' "$S" > "$T"
+. "$T"
+declare -F link_skills_into_root >/dev/null || { echo "installer has no link_skills_into_root" >&2; exit 3; }
+REPO_ROOT="$R"; REPO_SKILL_DIR="$R/.claude/skills/nine-router-setup"
+PRIMARY="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+ROOTS="$PRIMARY"
+if [ -f "$HOME/.claude-nine/settings.json" ] && [ "$HOME/.claude-nine" != "$PRIMARY" ]; then
+  ROOTS="$ROOTS $HOME/.claude-nine"
+fi
+# A bundled skill that is a real directory (not the installer's link) is a
+# hand-managed copy; relinking would swap it out. Leave the links alone then.
+hand=""
+for root in $ROOTS; do
+  while IFS= read -r s; do
+    [ -n "$s" ] && [ -e "$root/skills/$s" ] && [ ! -L "$root/skills/$s" ] && hand="$hand $root/skills/$s"
+  done < <(bundled_skills)
+done
+if [ -n "$hand" ]; then echo "HAND-MANAGED:$hand"; exit 0; fi
+rc=0
+for root in $ROOTS; do link_skills_into_root "$root" || rc=$((rc + $?)); done
+exit "$rc"
+'''
+
+
+def _999_home() -> Path:
+    # Fixture mode resolves inside the fixture, never the test machine's home.
+    fx = os.environ.get("FLEET_REFRESH_ROOT", "").strip()
+    return Path(fx) / "home" if fx else Path.home()
+
+
+def _find_999_checkout() -> Optional[Path]:
+    home = _999_home()
+    seen: list[Path] = []
+    for link in _999_SKILL_LINKS:
+        p = home / link
+        if p.is_symlink():
+            try:
+                seen.append(p.resolve().parents[2])   # <repo>/.claude/skills/<skill>
+            except (OSError, IndexError):
+                pass
+    seen += [home / c for c in _999_CANDIDATES]
+    for cand in seen:
+        # A real checkout carries the repo's own install doc + skill manifest;
+        # an installed skill copy under ~/.claude does not.
+        if all((cand / f).is_file() for f in (_999_INSTALLER, "AGENT_INSTALL.md", "CONTROL/bundled-skills.txt")):
+            return cand
+    return None
+
+
+def step_update_999(res: BoxResult, dry_run: bool) -> None:
+    """Refresh 999-setup ONLY where it is already installed; never install it."""
+    repo = _find_999_checkout()
+    if repo is None:
+        res.step_skip("update-999", "999 not installed")
+        return
+    res.update_999 = {"path": str(repo)}
+    if not (repo / ".git").exists():
+        res.step_skip("update-999", f"999 at {repo} is an archive extract, not a git clone; not refreshed")
+        return
+    origin = _git(repo, "remote", "get-url", "origin") or ""
+    if "trevorotts1/999-setup" not in origin:
+        res.step_skip("update-999", f"{repo} origin is not trevorotts1/999-setup; not touched")
+        return
+    before = _git(repo, "rev-parse", "HEAD")
+    res.update_999["from_sha"] = before
+    if dry_run:
+        res.step_skip("update-999", f"dry-run (999 at {repo})")
+        return
+    pull = subprocess.run(["git", "-C", str(repo), "pull", "--ff-only", "--quiet"],
+                          capture_output=True, text=True, timeout=180)
+    if pull.returncode != 0:
+        res.step_fail("update-999", f"git pull --ff-only failed in {repo}: {(pull.stderr or pull.stdout).strip()[:200]}")
+        return
+    res.update_999["to_sha"] = _git(repo, "rev-parse", "HEAD")
+    bash = _bash4() or "bash"
+    link = subprocess.run([bash, "-c", _999_LINK_SCRIPT, "update-999", str(repo)],
+                          capture_output=True, text=True, timeout=300,
+                          env={**os.environ, "HOME": str(_999_home())})
+    res.update_999["installer"] = (link.stdout + link.stderr).strip()[-400:]
+    if link.returncode != 0:
+        res.step_fail("update-999", f"installer skill step exited {link.returncode}: {link.stderr.strip()[-200:]}")
+        return
+    if "HAND-MANAGED:" in link.stdout:
+        res.steps["update-999"] = ("ok:pulled; skill links left alone (hand-managed copies:"
+                                   + link.stdout.split("HAND-MANAGED:", 1)[1].strip()[:200] + ")")
+        return
+    res.step_ok("update-999")
+
+
+# ── Snapshot / health gate / rollback ─────────────────────────────────────────
+#
+# Before a box is touched we record what it was (onboarding stamp + clone SHA,
+# Command Center SHA/tag, a tarball of the onboarding-managed skill trees) and
+# how healthy it was. After the update a read-only health probe runs; any check
+# that passed before and fails now -- or any failed mutating step -- rolls the
+# box back to the snapshot. The probe never sends a chat turn: Telegram is
+# checked with getMe only (a read), and no agent is prompted.
+
+# Mutating steps whose failure leaves a half-updated box (-> rollback).
+_MUTATING_STEPS = ("pull-onboarding", "pull-cc", "build-cc", "restart-cc")
+# Stamp/state files update-skills.sh writes next to the skill trees.
+_SKILLS_STATE_FILES = (".onboarding-version", ".onboarding-content-manifest.json",
+                       ".installed-versions", ".command-center-state")
+_SNAPSHOT_KEEP = 3
+_GATEWAY_PROC_RE = re.compile(r"openclaw.*gateway")
+
+
+def _git(repo: Path, *args: str) -> Optional[str]:
+    try:
+        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=30)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _skills_dir(paths: dict) -> Path:
+    return Path(paths.get("skills") or Path(paths["root"]) / "skills")
+
+
+def _managed_skill_entries(skills_dir: Path, repo_root: Path) -> list[str]:
+    """Entries of the skills dir that the onboarding repo ships (never the
+    client's own or third-party skills that merely live beside them)."""
+    try:
+        shipped = {p.name for p in repo_root.iterdir() if p.name != ".git"}
+        present = {p.name for p in skills_dir.iterdir()}
+    except OSError:
+        return []
+    return sorted((shipped & present) | (set(_SKILLS_STATE_FILES) & present))
+
+
+def _tree_bytes(base: Path, names: list[str]) -> int:
+    total = 0
+    for n in names:
+        p = base / n
+        if p.is_file():
+            total += p.stat().st_size
+            continue
+        for dirpath, _dirs, files in os.walk(p):
+            for f in files:
+                try:
+                    total += os.lstat(os.path.join(dirpath, f)).st_size
+                except OSError:
+                    pass
+    return total
+
+
+def take_snapshot(paths: dict, repo_root: Path, res: BoxResult) -> bool:
+    """Record the pre-update state. Returns False when no restorable snapshot
+    could be made -- the caller must then NOT update the box."""
+    skills_dir = _skills_dir(paths)
+    cc_dir = Path(paths["cc_dir"]) if paths.get("cc_dir") else None
+    onb_sha = os.environ.get("FLEET_PREV_ONBOARDING_SHA", "").strip() or _git(repo_root, "rev-parse", "HEAD")
+    snap: dict = {
+        "ts": time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+        "onboarding": {
+            "stamp": _read_onboarding_version(skills_dir),
+            "sha": onb_sha,
+            "tag": _git(repo_root, "describe", "--tags", "--abbrev=0", onb_sha or "HEAD"),
+            "repo_root": str(repo_root),
+        },
+        "cc": None,
+    }
+    if cc_dir and (cc_dir / ".git").exists():
+        snap["cc"] = {
+            "dir": str(cc_dir),
+            "sha": _git(cc_dir, "rev-parse", "HEAD"),
+            "tag": _git(cc_dir, "describe", "--tags", "--abbrev=0"),
+            "version": _read_cc_version(cc_dir),
+        }
+    res.snapshot = snap
+
+    entries = _managed_skill_entries(skills_dir, repo_root)
+    backups = Path(paths["root"]) / "backups" / "fleet-refresh"
+    dest = backups / snap["ts"]
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        os.chmod(dest, 0o700)
+        need = _tree_bytes(skills_dir, entries)
+        free = shutil.disk_usage(dest).free
+        if free < 2 * need + 512 * 1024 * 1024:
+            raise OSError(f"only {free // 2**20} MB free, need ~{(2 * need) // 2**20 + 512} MB for the skills snapshot")
+        archive = dest / "skills.tgz"
+        if entries:
+            t = subprocess.run(["tar", "-czf", str(archive), "-C", str(skills_dir), *entries],
+                               capture_output=True, text=True, timeout=900)
+            if t.returncode != 0:
+                raise OSError(f"tar exited {t.returncode}: {t.stderr.strip()[:200]}")
+        oc_json = Path(paths["root"]) / "openclaw.json"
+        if oc_json.is_file():   # kept for a human; never auto-restored under a live gateway
+            shutil.copy2(oc_json, dest / "openclaw.json")
+            os.chmod(dest / "openclaw.json", 0o600)
+    except (OSError, subprocess.SubprocessError) as exc:
+        res.snapshot["error"] = f"skills snapshot failed: {exc}"
+        shutil.rmtree(dest, ignore_errors=True)
+        return False
+    snap["backup_dir"] = str(dest)
+    snap["skills_entries"] = entries
+    snap["skills_archive"] = str(archive) if entries else None
+    # Retention: keep the newest few snapshots only.
+    try:
+        olds = sorted(p for p in backups.iterdir() if p.is_dir())[:-_SNAPSHOT_KEEP]
+        for old in olds:
+            shutil.rmtree(old, ignore_errors=True)
+    except OSError:
+        pass
+    return True
+
+
+# -- health probes (all read-only) --------------------------------------------
+
+def _hc(status: str, detail: str) -> dict:
+    return {"status": status, "detail": detail}
+
+
+def _http_get(url: str, timeout: int = 10) -> tuple[int, str]:
+    import urllib.request
+    import urllib.error
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.status, r.read(4096).decode(errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, ""
+    except Exception as e:  # noqa: BLE001 -- network errors are a probe result
+        return 0, f"{e.__class__.__name__}: {getattr(e, 'reason', e)}"
+
+
+def _read_openclaw_json(paths: dict) -> dict:
+    try:
+        return json.loads((Path(paths["root"]) / "openclaw.json").read_text())
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def hc_gateway_process() -> dict:
+    proc = Path("/proc")
+    if proc.is_dir():
+        me = str(os.getpid())
+        for d in proc.iterdir():
+            if not d.name.isdigit() or d.name == me:
+                continue
+            try:
+                cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+            except OSError:
+                continue
+            if _GATEWAY_PROC_RE.search(cmd) and " call " not in cmd:
+                return _hc("pass", f"gateway process pid {d.name}")
+        return _hc("fail", "no openclaw gateway process in /proc")
+    try:
+        r = subprocess.run(["pgrep", "-f", "openclaw.*gateway"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as e:
+        return _hc("n/a", f"cannot list processes: {e}")
+    if r.returncode == 0:
+        return _hc("pass", f"gateway process pid {r.stdout.split()[0]}")
+    if r.returncode == 1:
+        return _hc("fail", "no openclaw gateway process (pgrep)")
+    return _hc("n/a", f"pgrep exited {r.returncode}")
+
+
+def hc_gateway_health(paths: dict, tries: int = 3, wait: float = 5.0) -> dict:
+    port = (_read_openclaw_json(paths).get("gateway") or {}).get("port") or 18789
+    url = f"http://127.0.0.1:{port}/health"
+    code, body = 0, ""
+    for i in range(tries):
+        code, body = _http_get(url)
+        if code == 200:
+            return _hc("pass", f"{url} 200")
+        if i + 1 < tries:
+            time.sleep(wait)
+    return _hc("fail", f"{url} -> {code or body}")
+
+
+def _telegram_tokens(cfg: dict) -> list[str]:
+    tg = (cfg.get("channels") or {}).get("telegram") or {}
+    if not isinstance(tg, dict) or tg.get("enabled") is False:
+        return []
+    env_vars = (cfg.get("env") or {}).get("vars") or {}
+    raw: list[str] = []
+    if isinstance(tg.get("botToken"), str):
+        raw.append(tg["botToken"])
+    for acc in (tg.get("accounts") or {}).values():
+        if isinstance(acc, dict) and acc.get("enabled") is not False and isinstance(acc.get("botToken"), str):
+            raw.append(acc["botToken"])
+    out: list[str] = []
+    for t in raw:
+        m = re.fullmatch(r"\$\{(\w+)\}", t.strip())
+        if m:
+            t = os.environ.get(m.group(1)) or str(env_vars.get(m.group(1)) or "")
+        t = t.strip()
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
+def hc_telegram_getme(paths: dict, tries: int = 3, wait: float = 5.0) -> dict:
+    """Bot API getMe for every configured bot token. A READ -- never sendMessage.
+    Token values never appear in the result."""
+    tokens = _telegram_tokens(_read_openclaw_json(paths))
+    if not tokens:
+        return _hc("n/a", "no telegram bot token configured")
+    names, bad = [], []
+    for i, tok in enumerate(tokens, 1):
+        code, body = 0, ""
+        for attempt in range(tries):
+            code, body = _http_get(f"https://api.telegram.org/bot{tok}/getMe")
+            if code in (200, 401, 404):
+                break
+            if attempt + 1 < tries:
+                time.sleep(wait)
+        body = body.replace(tok, "<token>")
+        try:
+            me = json.loads(body) if code == 200 else {}
+        except ValueError:
+            me = {}
+        if me.get("ok"):
+            names.append("@" + str((me.get("result") or {}).get("username", f"bot{i}")))
+        else:
+            bad.append(f"token#{i}: HTTP {code}" + ("" if code else f" ({body[:80]})"))
+    if bad:
+        return _hc("fail", "; ".join(bad))
+    return _hc("pass", "getMe ok " + " ".join(names))
+
+
+def hc_cc_health(paths: dict, times: int = 3, wait: float = 2.0) -> dict:
+    cc_dir = paths.get("cc_dir")
+    if not cc_dir or not Path(cc_dir).is_dir():
+        return _hc("n/a", "no Command Center on this box")
+    url = f"http://127.0.0.1:{os.environ.get('CC_PORT') or 4000}/api/health"
+    for i in range(times):
+        code, body = _http_get(url)
+        if code != 200:
+            return _hc("fail", f"{url} attempt {i + 1}/{times} -> {code or body}")
+        if i + 1 < times:
+            time.sleep(wait)
+    return _hc("pass", f"{url} 200 x{times}")
+
+
+def hc_session_reset(res: BoxResult) -> dict:
+    v = str(res.steps.get("sessions-reset-CEO", "not-run"))
+    if v == "ok":
+        return _hc("pass", "sessions.reset ok")
+    if "session key unresolved" in v:
+        return _hc("n/a", "no main-agent Telegram session to reset")
+    if "openclaw not on PATH" in v:   # the probe could not run: undetermined, not a regression
+        return _hc("n/a", "undetermined: openclaw not on PATH")
+    if v.startswith("failed"):
+        return _hc("fail", v[len("failed:"):][:200])
+    return _hc("n/a", v[:80])
+
+
+def probe_health(paths: dict, res: Optional[BoxResult] = None) -> dict:
+    """Platform-aware, read-only box health. `res` given = post-update probe,
+    which also judges the main agent's session reset."""
+    if os.environ.get("FLEET_REFRESH_ROOT", "").strip():
+        # Fixture mode: never probe the live services of the machine running a test.
+        names = ["gateway-process", "gateway-health", "telegram-getme", "cc-health"]
+        return {n: _hc("n/a", "fixture mode") for n in names}
+    checks = {
+        "gateway-process":  hc_gateway_process(),
+        "gateway-health":   hc_gateway_health(paths),
+        "telegram-getme":   hc_telegram_getme(paths),
+        "cc-health":        hc_cc_health(paths),
+    }
+    if res is not None:
+        checks["session-reset"] = hc_session_reset(res)
+    return checks
+
+
+def health_regressions(baseline: dict, post: dict) -> list[str]:
+    """Checks failing now that were NOT already failing before the update.
+    A check that was broken before we arrived is reported, never blamed on
+    (or 'fixed' by rolling back) this update."""
+    return [n for n, c in post.items()
+            if c.get("status") == "fail" and (baseline.get(n) or {}).get("status") != "fail"]
+
+
+def rollback_box(paths: dict, repo_root: Path, res: BoxResult, reasons: list[str]) -> bool:
+    """Restore the snapshot: onboarding clone SHA + skill trees + stamps,
+    Command Center SHA (rebuilt and restarted through atomic-deploy.sh), then
+    reset the main session so it reloads the restored files. Returns True when
+    every restore action succeeded."""
+    snap = res.snapshot
+    rb: dict = {"reasons": reasons, "actions": [], "errors": [],
+                "not_restored": "workspace files update-skills.sh rewrote (AGENTS.md etc.), openclaw.json "
+                                "(pre-update copy kept in backup_dir), cron scripts, 999-setup"}
+    res.rollback = rb
+    _warn(f"  ROLLBACK: {'; '.join(reasons)}")
+
+    # Onboarding clone back to its previous SHA.
+    # (update-skills.sh already hard-syncs this managed clone to origin/main on
+    # every run; this puts it back where the snapshot found it.)
+    onb_sha = snap["onboarding"]["sha"]
+    if onb_sha and _git(repo_root, "rev-parse", "HEAD") != onb_sha:
+        r = subprocess.run(["git", "-C", str(repo_root), "reset", "--hard", "--quiet", onb_sha],
+                           capture_output=True, text=True, timeout=120)
+        (rb["actions"] if r.returncode == 0 else rb["errors"]).append(
+            f"onboarding clone -> {onb_sha[:12]}" + ("" if r.returncode == 0 else f": {r.stderr.strip()[:160]}"))
+
+    # Skill trees: move the current managed entries aside, extract the
+    # snapshot, and only then discard the aside copy (put it back on failure).
+    skills_dir = _skills_dir(paths)
+    entries = snap.get("skills_entries") or []
+    archive = snap.get("skills_archive")
+    if archive:
+        aside = Path(snap["backup_dir"]) / "rolled-forward"
+        try:
+            aside.mkdir(exist_ok=True)
+            moved = []
+            for n in entries:
+                if (skills_dir / n).exists() or (skills_dir / n).is_symlink():
+                    shutil.move(str(skills_dir / n), str(aside / n))
+                    moved.append(n)
+            t = subprocess.run(["tar", "-xzf", archive, "-C", str(skills_dir)],
+                               capture_output=True, text=True, timeout=900)
+            if t.returncode != 0:
+                for n in moved:   # put the rolled-forward trees back as they were
+                    target = skills_dir / n
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target, ignore_errors=True)
+                    elif target.exists() or target.is_symlink():
+                        target.unlink()
+                    shutil.move(str(aside / n), str(target))
+                raise OSError(f"tar -x exited {t.returncode}: {t.stderr.strip()[:160]}")
+            shutil.rmtree(aside, ignore_errors=True)
+            rb["actions"].append(f"skills restored ({len(entries)} entries, stamp {snap['onboarding']['stamp']})")
+        except (OSError, shutil.Error, subprocess.SubprocessError) as exc:
+            rb["errors"].append(f"skills restore failed: {exc}")
+
+    # Command Center back to its previous SHA, rebuilt + restarted atomically.
+    cc = snap.get("cc") or {}
+    if cc.get("sha"):
+        cc_dir = Path(cc["dir"])
+        now = _git(cc_dir, "rev-parse", "HEAD")
+        if now != cc["sha"]:
+            # --keep: never discards local uncommitted edits (refuses instead).
+            k = subprocess.run(["git", "-C", str(cc_dir), "reset", "--keep", cc["sha"]],
+                               capture_output=True, text=True, timeout=120)
+            if k.returncode != 0:
+                rb["errors"].append(f"Command Center reset to {cc['sha'][:12]} refused: {k.stderr.strip()[:160]}")
+            else:
+                try:
+                    d = _run_atomic_deploy(cc_dir, revision=cc["sha"])
+                    if d.returncode == 0:
+                        rb["actions"].append(f"Command Center -> {cc.get('tag') or cc['sha'][:12]} rebuilt + restarted")
+                    else:
+                        rb["errors"].append(f"Command Center rebuild at {cc['sha'][:12]} exited {d.returncode}: "
+                                            f"{(d.stdout + d.stderr).strip()[-200:]}")
+                except subprocess.TimeoutExpired:
+                    rb["errors"].append(f"Command Center rebuild timed out after {ATOMIC_DEPLOY_TIMEOUT}s")
+        else:
+            rb["actions"].append("Command Center unchanged (same SHA); no rebuild")
+
+    # Reload the restored files into the main agent (a gateway CALL, never a
+    # gateway restart).
+    tmp = BoxResult(res.box, dry_run=False)
+    step_sessions_reset_ceo(_resolve_ceo_session_key(paths), tmp, dry_run=False)
+    rb["session_reset"] = tmp.steps.get("sessions-reset-CEO")
+    return not rb["errors"]
+
+
+class _BoxLock:
+    """One fleet-refresh per box at a time (the operator roll and the box's own
+    Sunday run must never interleave)."""
+
+    def __init__(self, root: Path):
+        self.path = Path(root) / ".fleet-refresh.lock"
+        self.held = False
+
+    def acquire(self) -> Optional[str]:
+        for _ in range(2):
+            try:
+                self.path.mkdir()
+                (self.path / "pid").write_text(str(os.getpid()))
+                self.held = True
+                return None
+            except FileExistsError:
+                try:
+                    age = time.time() - self.path.stat().st_mtime
+                    try:
+                        pid = int((self.path / "pid").read_text().strip())
+                    except (OSError, ValueError):
+                        if age < 60:   # the other run is between mkdir and writing its pid
+                            return "another fleet-refresh is starting on this box"
+                        raise
+                    os.kill(pid, 0)
+                    if age < 4 * 3600:
+                        return f"another fleet-refresh (pid {pid}) is running on this box"
+                except (OSError, ValueError):
+                    pass
+                shutil.rmtree(self.path, ignore_errors=True)   # stale
+            except OSError as e:
+                return f"cannot create lock {self.path}: {e}"
+        return f"cannot acquire {self.path}"
+
+    def release(self) -> None:
+        if self.held:
+            shutil.rmtree(self.path, ignore_errors=True)
+            self.held = False
+
+
 # ── Main per-box run ──────────────────────────────────────────────────────────
 
 def run_box(
@@ -1901,6 +2511,25 @@ def run_box(
     # Load platform paths
     paths = _load_paths(shared_utils)
 
+    lock = None
+    if not dry_run and not verify_only:
+        lock = _BoxLock(paths["root"])
+        busy = lock.acquire()
+        if busy:
+            res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", busy
+            return res
+    try:
+        return _run_box_body(res, compat, pinned_onboarding_tag, paths, shared_utils,
+                             repo_root, dry_run, verify_only, local, force_cc)
+    finally:
+        if lock:
+            lock.release()
+
+
+def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths: dict,
+                  shared_utils: Path, repo_root: Path, dry_run: bool, verify_only: bool,
+                  local: bool, force_cc: bool) -> BoxResult:
+
     # Step 0: detect
     try:
         step_detect(paths, repo_root, compat, res)
@@ -1915,12 +2544,41 @@ def run_box(
         res.step_fail("pin-resolve", str(e))
         cc_tag = compat["commandCenter"].get("pinnedTag", "unknown")
 
+    # Baseline health: read-only, so it runs in every mode (a dry-run shows the
+    # box's health before anyone decides to roll it).
+    baseline = probe_health(paths)
+    res.health = {"baseline": baseline,
+                  "preexisting_failures": [n for n, c in baseline.items() if c["status"] == "fail"]}
+
     if not verify_only:
+        # The Wave-5 gate would otherwise sys.exit() from inside build-cc, AFTER
+        # onboarding was already applied (a half-updated box, no result JSON).
+        # Check it before the first change instead: blocked = box untouched.
+        if not dry_run:
+            try:
+                wave5_deploy_preflight()
+            except SystemExit:
+                res.result, res.outcome = "skipped", "SKIPPED"
+                res.outcome_detail = "not updated: Wave-5 Command Center preflight blocked (GitHub API unreachable or files missing)"
+                return res
+
+        # Snapshot BEFORE the first change. No restorable snapshot = no update.
+        if not dry_run and not take_snapshot(paths, repo_root, res):
+            res.result, res.outcome = "skipped", "SKIPPED"
+            res.outcome_detail = f"not updated: {res.snapshot.get('error')}"
+            return res
+
         # Step 2: pull-onboarding
         try:
-            step_pull_onboarding(paths, repo_root, pinned_onboarding_tag, res, dry_run)
+            pinned_onboarding_tag = step_pull_onboarding(paths, repo_root, pinned_onboarding_tag, res, dry_run)
         except Exception as e:
             res.step_fail("pull-onboarding", str(e))
+
+        # Step 2b: 999-setup, only where it is already installed
+        try:
+            step_update_999(res, dry_run)
+        except Exception as e:
+            res.step_fail("update-999", str(e))
 
         # Step 3: pull-cc
         try:
@@ -1932,6 +2590,8 @@ def run_box(
         if "failed" not in str(res.steps.get("pull-cc", "")):
             try:
                 step_build_cc(paths, res, dry_run, local)
+            except SystemExit:
+                res.step_fail("build-cc", "Wave-5 preflight blocked the Command Center deploy")
             except Exception as e:
                 res.step_fail("build-cc", str(e))
 
@@ -1939,6 +2599,8 @@ def run_box(
         if "failed" not in str(res.steps.get("build-cc", "")):
             try:
                 step_restart_cc(paths, res, dry_run)
+            except SystemExit:
+                res.step_fail("restart-cc", "Wave-5 preflight blocked the Command Center restart")
             except Exception as e:
                 res.step_fail("restart-cc", str(e))
 
@@ -1948,6 +2610,10 @@ def run_box(
             step_sessions_reset_ceo(ceo_session_key, res, dry_run)
         except Exception as e:
             res.step_fail("sessions-reset-CEO", str(e))
+
+        # Step 6b: health gate -> rollback on any regression or half-applied step
+        if not dry_run:
+            pinned_onboarding_tag = _health_gate(paths, repo_root, res, baseline, pinned_onboarding_tag)
     else:
         ceo_session_key = _resolve_ceo_session_key(paths)
         for step in ["pull-onboarding", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"]:
@@ -2011,6 +2677,8 @@ def run_box(
     has_failures = any("failed" in str(v) for v in res.steps.values())
     if dry_run:
         res.result = "dry-run"
+    elif res.rollback:
+        res.result = "rolled_back" if res.outcome == "ROLLED_BACK" else "failed"
     elif has_failures:
         total_steps = len(res.steps)
         failed_steps = sum(1 for v in res.steps.values() if "failed" in str(v))
@@ -2018,7 +2686,73 @@ def run_box(
     else:
         res.result = "ok"
 
+    if dry_run or verify_only:
+        res.outcome, res.outcome_detail = "SKIPPED", "dry-run" if dry_run else "verify-only"
+    elif not res.rollback:
+        broken = [s for s in _MUTATING_STEPS if str(res.steps.get(s, "")).startswith("failed")]
+        if broken:   # only [exit-3] (state indeterminate) lands here un-rolled-back
+            res.outcome = "FAILED"
+            res.outcome_detail = "; ".join(f"{s}: {res.steps[s][7:120]}" for s in broken)
+        else:
+            res.outcome = "UPDATED"
+            warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]
+            pre = res.health.get("preexisting_failures") or []
+            res.outcome_detail = "; ".join(filter(None, [
+                f"checks failing: {', '.join(warn)}" if warn else "",
+                f"already unhealthy before update: {', '.join(pre)}" if pre else "",
+            ]))
+
     return res
+
+
+def _health_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict,
+                 pinned_onboarding_tag: str) -> str:
+    """Post-update health gate. Rolls the box back to its snapshot when a check
+    that passed before now fails, or a mutating step failed part-way. Returns
+    the onboarding version the box should now be judged against."""
+    if "timed out" in str(res.steps.get("sessions-reset-CEO", "")):   # one retry before judging
+        step_sessions_reset_ceo(_resolve_ceo_session_key(paths), res, dry_run=False)
+    post = probe_health(paths, res)
+    res.health["post"] = post
+    regressed = health_regressions(baseline, post)
+    reasons = [f"{n}: {post[n]['detail']}" for n in regressed]
+    # A failed step means a half-applied box -- except a Command Center step
+    # that failed while the checkout never moved (nothing of it was changed;
+    # e.g. no Command Center at this box's path).
+    snap_cc = (res.snapshot.get("cc") or {}).get("sha")
+    cc_moved = bool(snap_cc) and _git(Path(res.snapshot["cc"]["dir"]), "rev-parse", "HEAD") != snap_cc
+    for step in _MUTATING_STEPS:
+        v = str(res.steps.get(step, ""))
+        if not v.startswith("failed") or "[exit-3]" in v:
+            continue
+        if step != "pull-onboarding" and not cc_moved:
+            continue
+        reasons.append(f"{step} failed")
+    res.health["regressions"] = regressed
+    if not reasons:
+        res.step_ok("health-gate")
+        return pinned_onboarding_tag
+
+    res.steps["health-gate"] = "failed:" + "; ".join(reasons)[:300]
+    restored = rollback_box(paths, repo_root, res, reasons)
+    after = probe_health(paths)
+    res.health["after_rollback"] = after
+    still = health_regressions(baseline, after)
+    res.rollback["health_restored"] = not still
+    if restored and not still:
+        res.steps["rollback"] = "ok"
+        res.outcome, res.outcome_detail = "ROLLED_BACK", "; ".join(reasons)[:300]
+    else:
+        why = res.rollback["errors"] + [f"still failing: {n}" for n in still]
+        res.steps["rollback"] = "failed:" + "; ".join(why)[:300]
+        res.outcome = "FAILED"
+        res.outcome_detail = f"ROLLBACK INCOMPLETE ({'; '.join(why)[:200]}) after: {'; '.join(reasons)[:200]}"
+    _err(f"  {res.outcome}: {res.outcome_detail}")
+    try:
+        from cc_compat import load_cc_compat  # type: ignore
+        return load_cc_compat(repo_root).get("onboardingVersion", pinned_onboarding_tag)
+    except Exception:
+        return pinned_onboarding_tag
 
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
@@ -2069,6 +2803,8 @@ def main() -> None:
     #    then marks box UNKNOWN on repeated failure; NEVER destructive
     if result.result in ("ok", "dry-run"):
         sys.exit(0)
+    elif result.result in ("rolled_back", "skipped"):
+        sys.exit(2)
     elif result.result == "partial":
         # Check if any step failed with the [exit-3] transient marker.
         transient = any(

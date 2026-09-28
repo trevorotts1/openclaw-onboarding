@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.1.96"
+ONBOARDING_VERSION="v25.1.97"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1961,7 +1961,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.1.96 - safe_json_edit
+# v25.1.97 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3858,6 +3858,11 @@ registry_parity_gate() {
 # ----------------------------------------------------------
 CANONICAL_UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"
+# Since the fleet-refresh roll-safety release the weekly cron runs the SAME
+# full path as the operator's roll (onboarding + 999 + Command Center + health
+# gate + rollback) via scripts/weekly-full-update.sh, which itself runs this
+# updater. Both older URLs are repointed there.
+WEEKLY_FULL_UPDATE_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
 
 heal_one_weekly_cron_updater() {
   local cron_script="$1"
@@ -3865,12 +3870,17 @@ heal_one_weekly_cron_updater() {
   # Never CREATE the cron script here -- only repair one already on disk.
   [ -f "$cron_script" ] || return 0
 
-  if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null; then
-    echo "  [cron-heal] OK -- already points at the root updater: $cron_script"
+  if grep -q "$WEEKLY_FULL_UPDATE_URL" "$cron_script" 2>/dev/null; then
+    echo "  [cron-heal] OK -- already runs the full weekly update: $cron_script"
+    return 0
+  fi
+  if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null \
+     && ! grep -q "$CANONICAL_UPDATER_URL" "$cron_script" 2>/dev/null; then
+    echo "  [cron-heal] OK -- custom updater URL, left alone: $cron_script"
     return 0
   fi
 
-  echo "  [cron-heal] LEGACY updater URL detected in $cron_script"
+  echo "  [cron-heal] onboarding-only updater URL detected in $cron_script"
 
   local backup="${cron_script}.bak.$(date +%Y%m%d-%H%M%S)"
   # Disk pre-check before the copy: a cron script is tiny, but a box with no
@@ -3899,13 +3909,14 @@ heal_one_weekly_cron_updater() {
   # backup-suffix argument, so write to a temp file and copy it back instead of
   # using sed -i at all. `cat > "$cron_script"` (not mv) preserves the original
   # inode, owner and 0700 mode -- an mv would install the temp file's 0600.
-  if sed "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" "$cron_script" > "$tmp" 2>/dev/null \
+  if sed -e "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" \
+         -e "s|${CANONICAL_UPDATER_URL}|${WEEKLY_FULL_UPDATE_URL}|g" "$cron_script" > "$tmp" 2>/dev/null \
      && [ -s "$tmp" ] \
-     && grep -q "$CANONICAL_UPDATER_URL" "$tmp" \
+     && grep -q "$WEEKLY_FULL_UPDATE_URL" "$tmp" \
      && ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$tmp"; then
     cat "$tmp" > "$cron_script"
     rm -f "$tmp"
-    echo "  [cron-heal] REPOINTED legacy -> root updater"
+    echo "  [cron-heal] REPOINTED -> full weekly update (scripts/weekly-full-update.sh)"
     echo "               script: $cron_script"
     echo "               backup: $backup"
   else
