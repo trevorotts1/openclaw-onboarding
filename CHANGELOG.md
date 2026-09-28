@@ -1,3 +1,27 @@
+## [v25.2.8]  -  2026-09-28  -  Fleet roll: one commit per roll, true check results, clear preflights
+
+### Why
+The 2026-09-28 30-box roll reported false failures on most boxes and rolled back boxes that were fine:
+- embedding-health read `agents.defaults.memorySearch`; current OpenClaw keeps it at `memory.search`.
+- sessions-reset-CEO looked only for an agent named `main`; many boxes' owner agent has another id.
+- advisories (update-skills.sh exit 2) were listed under "checks failing"; a billing-held update was a failure.
+- a PR merged mid-roll reached every box that cloned or self-synced after it: boxes pulled v25.2.5 on a
+  v25.2.3 roll, failed the role-library gate and were rolled back.
+- a Command Center clone whose refspec names one tag never moved `origin/main`, so pull-cc refused it.
+- a Mac refusing ~/Downloads to SSH crashed the runner with a traceback; detect failed on boxes with no
+  Command Center.
+
+### What changed
+- `shared-utils/embedding_health.py`: reads `memory.search`, falls back to the old key.
+- `shared-utils/fleet_refresh_runner.py`: owner session resolved from the Telegram-bound agent; advisories
+  reported separately; billing hold is SKIPPED; the updater's own output kept on failure; explicit fetch
+  refspec in pull-cc; Command Center pm2 preflight; no spare rebuild when the served build is already
+  current; unreadable folders named with the Full Disk Access fix; detect tolerates no Command Center;
+  update-skills.sh never self-syncs the roll's copy to main.
+- `scripts/fleet-refresh.sh` + `scripts/fleet-roll-copy.sh`: main resolved once per roll; every box's roll
+  copy is held at that commit.
+- `32-command-center-setup/scripts/run-full-install.sh`, `update-skills.sh`: explicit fetch refspecs.
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why
