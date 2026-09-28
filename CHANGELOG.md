@@ -22,6 +22,19 @@ While rewriting SYSTEM-DIAGNOSTIC-CHECKLIST.md (v25.1.102) it surfaced that `scr
 ### #1326 — fix(PRES-057): reconcile refuses a live cron edit from an ephemeral OPENCLAW_ROOT
 
 (This pull request carried no CHANGELOG entry of its own.)
+## [v25.1.105]  -  2026-09-28  -  Skill 31: nightly memory maintenance — prune dead embedding-cache rows, report index drift (never re-embeds)
+
+### Why
+Nothing ever deleted a `memory_embedding_cache` row. Rows under an old provider key, and rows whose chunk was edited or deleted, stayed in every agent DB forever: one box held 7,133 of them (0.47 GB) across 5 agents. The 2026.9.6 schema migration also left 2.6 GB of free pages behind on that box. And an agent whose index stamp drifted from the live embedding identity lost vector search silently.
+
+### What changed
+- `31-upgraded-memory-system/scripts/memory-cache-prune.sh` deletes stale-key rows and orphans older than 7 days. It judges each agent by its own index stamp, compacts DBs holding 256 MB or more of free pages when the disk has room, and uses python3 stdlib only.
+- `31-upgraded-memory-system/scripts/memory-index-check.sh` is a READ-ONLY drift report. It never reindexes or re-embeds.
+- `31-upgraded-memory-system/install.sh` schedules both as silent `openclaw cron --command` jobs (`memory-index-check` 02:00, `memory-cache-prune` 02:40, `--no-deliver`). It is idempotent by name and honors tombstones. Root `install.sh` calls it on a fresh install; `update-skills.sh` runs it through the per-skill wiring loop on every roll, on Mac and Docker.
+- Skill 31 is now v8.1.0. Guarded by `tests/unit/memory-cache-prune.test.sh` and `.github/workflows/memory-cache-prune-guard.yml`.
+
+### Risk
+Low. The prune runs while the gateway is up (SQLite locking and WAL); a busy DB is skipped until the next run. The worst case of an orphan prune is one extra embed call for text restored after 7 days. Nothing re-embeds automatically.
 
 ## [v25.1.104]  -  2026-09-28  -  Merge train: #1311 fix(shared-utils): fleet_notify.send_telegram returns the delivered…
 

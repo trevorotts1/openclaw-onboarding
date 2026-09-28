@@ -562,6 +562,17 @@ rm -rf ~/.cache/google embedding 2/
 
 ---
 
+## Nightly Memory Maintenance (installed automatically)
+
+`install.sh` in this skill folder schedules two silent shell-command crons. They are no agent turn and cost no tokens. It runs on every fresh install and on every update. It never re-embeds anything.
+
+| Cron | Schedule | Script | What it does |
+|---|---|---|---|
+| `memory-index-check` | 02:00 daily | `scripts/memory-index-check.sh` | READ-ONLY. Lists agents whose index stamp drifted from the live embedding identity, meaning their vector search is paused. The cron run shows as failed when drift exists. The repair re-embeds through the paid provider, so it stays an operator step: `openclaw memory index --agent <id> --force`. |
+| `memory-cache-prune` | 02:40 daily | `scripts/memory-cache-prune.sh` | Deletes embedding-cache rows no index can use any more: rows under an old provider key, and rows whose chunk is gone and that are more than 7 days old. It also compacts any agent DB holding 256 MB or more of free pages, which schema migrations leave behind. |
+
+Report what the prune would do without writing anything: `bash scripts/memory-cache-prune.sh --dry-run`. Results are recorded in `<state>/logs/memory-cache-prune.jsonl` and `memory-index-check.jsonl`. To stop a job from being re-added, tombstone it from the onboarding checkout root: `bash scripts/tombstone-cron.sh <name>`.
+
 ## Post-Installation Verification
 
 After all layers are installed, run these checks:

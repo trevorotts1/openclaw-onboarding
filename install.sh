@@ -9533,6 +9533,19 @@ else
     note "activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)."
 fi
 
+# ----------------------------------------------------------
+# Memory maintenance (Skill 31): nightly embedding-cache prune + a READ-ONLY
+# index drift check, as silent `openclaw cron --command` jobs (no agent turn,
+# never re-embeds). The SAME installer update-skills.sh runs on every roll via
+# the per-skill wiring loop. Best-effort — never aborts the install.
+# ----------------------------------------------------------
+_MEM_MAINT="$SKILLS_DIR/31-upgraded-memory-system/install.sh"
+if [ -f "$_MEM_MAINT" ]; then
+    bash "$_MEM_MAINT" 2>&1 | tee -a "$LOG_FILE" | tail -3 || true
+else
+    note "Skill 31 install.sh not in bundle — memory maintenance crons skipped (older bundle)."
+fi
+
 fire_install_kickoff_triplet
 
 # ----------------------------------------------------------
