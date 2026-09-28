@@ -29,8 +29,14 @@ DRIVE = "https://www.googleapis.com/auth/drive"
 GMAIL_SEND = "https://www.googleapis.com/auth/gmail.send"
 
 
+# The operator's Mac is the one machine holding the private fleet boxes file
+# (scripts/make-fleet-boxes-file.py). A client box can have a service-account
+# file at the same path; it must never be used to mail as the operator.
+OPERATOR_MARKER = Path(os.environ.get("FLEET_BOXES_FILE", "~/.openclaw/fleet/boxes.json")).expanduser()
+
+
 def available() -> bool:
-    return SA_PATH.is_file()
+    return SA_PATH.is_file() and OPERATOR_MARKER.is_file()
 
 
 def _session(scope: str):

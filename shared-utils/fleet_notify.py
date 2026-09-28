@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-fleet_notify.py — tell the OPERATOR when a fleet roll rolled a box back or
-failed it. Never a client: nothing here can address a client chat.
+fleet_notify.py — tell the OPERATOR when a fleet roll rolled a box back, failed
+it, or left content gaps that were already there. Never a client: nothing here
+can address a client chat.
 
   python3 fleet_notify.py --summary .fleet-refresh-summary.json [--dry-run]
   python3 fleet_notify.py --test            # one labelled test note, operator only
@@ -16,8 +17,8 @@ Channels:
             (Not the Rescue Rangers intake: that one routes to coaching the
             client's own agent or a remediation turn on the box -- AI tokens,
             and a path that can reach the client.)
-  Email     only where the operator's Google service account exists (his Mac):
-            Gmail send, as and to the operator.
+  Email     only on the operator's Mac (his Google service account AND the
+            private fleet boxes file present): Gmail send, as and to the operator.
 
 Exit 0 always unless arguments are bad; what was sent is printed.
 """
@@ -38,6 +39,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import operator_google  # noqa: E402
 
 NOTIFY_OUTCOMES = ("ROLLED_BACK", "FAILED")
+
+
+def _wants_alert(r: dict) -> bool:
+    return r.get("outcome") in NOTIFY_OUTCOMES or bool((r.get("heal") or {}).get("needs_attention"))
+
+
 _SECRETISH = [re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{25,}\b"),   # bot tokens
               re.compile(r"\b[A-Fa-f0-9]{32,}\b"),              # hex secrets / long SHAs
               re.compile(r"\b[A-Za-z0-9_-]{40,}\b")]            # other long opaque strings
@@ -88,13 +95,15 @@ def send_telegram(text: str) -> tuple[bool, str]:
 
 def compose(rows: list[dict], origin: str) -> tuple[str, str]:
     stamp = time.strftime("%Y-%m-%d %H:%M %Z")
-    bad = [r for r in rows if r.get("outcome") in NOTIFY_OUTCOMES]
+    bad = [r for r in rows if _wants_alert(r)]
     subject = (f"Fleet update: {sum(r.get('outcome') == 'ROLLED_BACK' for r in bad)} rolled back, "
-               f"{sum(r.get('outcome') == 'FAILED' for r in bad)} failed ({origin})")
+               f"{sum(r.get('outcome') == 'FAILED' for r in bad)} failed, "
+               f"{sum(r.get('outcome') == 'UPDATED' for r in bad)} need attention ({origin})")
     lines = [f"Fleet update report from {origin}, {stamp}.", ""]
     for r in bad:
-        what = ("was put back to how it was before the update (rolled back)"
-                if r["outcome"] == "ROLLED_BACK" else "FAILED and needs a person")
+        what = {"ROLLED_BACK": "was put back to how it was before the update (rolled back)",
+                "FAILED": "FAILED and needs a person"}.get(
+                    r["outcome"], "updated, but has content gaps that were already there before")
         tries = len((r.get("heal") or {}).get("attempts") or [])
         lines.append(f"- Box {r.get('box')}: {what}.")
         if tries:
@@ -108,8 +117,8 @@ def compose(rows: list[dict], origin: str) -> tuple[str, str]:
 
 
 def notify(rows: list[dict], origin: str, dry_run: bool = False) -> dict:
-    if not any(r.get("outcome") in NOTIFY_OUTCOMES for r in rows):
-        return {"sent": False, "reason": "nothing rolled back or failed"}
+    if not any(_wants_alert(r) for r in rows):
+        return {"sent": False, "reason": "nothing rolled back, failed or needing attention"}
     subject, body = compose(rows, origin)
     out = {"subject": subject}
     if dry_run:

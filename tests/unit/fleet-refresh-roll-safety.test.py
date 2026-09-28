@@ -228,6 +228,17 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(self.res.steps["health-gate"], "ok:healed after 1 fix attempt(s)")
         self.assertEqual(self.res.rollback, {})
 
+    def test_preexisting_content_gap_is_alerted_not_rolled_back(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        gap = dict(self.CLEAN, **{"sop-embeddings": hc("fail")})
+        self.res.health["integrity_baseline"] = gap
+        self.gate([health()], integ=[gap])
+        self.assertEqual(self.res.steps["health-gate"], "ok")
+        self.assertEqual(self.actions, [])
+        self.assertEqual(self.res.rollback, {})
+        self.assertIn("sop-embeddings", self.res.health["content_gaps_preexisting"])
+
     def test_cc_step_failure_with_unchanged_checkout_is_not_rolled_back(self):
         self.snapshot()
         self.res.steps["pull-cc"] = "failed:CC dir not found: /elsewhere"
@@ -351,7 +362,7 @@ class ContentIntegrity(unittest.TestCase):
         con.close()
 
     def test_persona_index_and_embeddings(self):
-        self.manifest("prebuilt-index/INDEX-MANIFEST.json", {"release_tag": "pi-v2", "embedded_persona_count": 2})
+        self.manifest("prebuilt-index/INDEX-MANIFEST.json", {"release_tag": "pi-v2", "embedded_persona_count": 3})
         self.assertEqual(fr.ic_persona_index(self.skills, self.ws)["status"], "fail")
         (self.ws / "data/coaching-personas/.prebuilt-index-version").write_text("pi-v2\n")
         self.assertEqual(fr.ic_persona_index(self.skills, self.ws)["status"], "pass")
@@ -359,8 +370,13 @@ class ContentIntegrity(unittest.TestCase):
         dbp = self.ws / "data/coaching-personas/gemini-index.sqlite"
         self.db(dbp, "CREATE TABLE embeddings (id TEXT, persona_id TEXT); INSERT INTO embeddings VALUES ('1','a');")
         self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "fail")
-        self.db(dbp, "INSERT INTO embeddings VALUES ('2','b'),('3','c');")
-        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "pass")
+        # an honest spend-gate deferral receipt accounts for a missing persona
+        rec = self.ws / "data/coaching-personas/personas/p-b"
+        rec.mkdir(parents=True)
+        (rec / "embedding-receipt.json").write_text(json.dumps({"status": "deferred"}))
+        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "fail")   # 1 + 1 < 3
+        self.db(dbp, "INSERT INTO embeddings VALUES ('2','b');")
+        self.assertEqual(fr.ic_persona_embeddings(self.skills, self.ws)["status"], "pass")   # 2 + 1 >= 3
 
     def sop_db(self, sops, embedded):
         dbp = self.cc / "mission-control.db"
@@ -837,7 +853,7 @@ class WrapperWaves(unittest.TestCase):
             self.assertIn(" --apply", row["outcome_detail"])
             self.assertEqual(git(box_clone, "rev-parse", "HEAD"), git(seed, "rev-parse", "HEAD"))
 
-    def host_restart_scenario(self, platform):
+    def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),
         then succeeds once resumed. Fake docker records host-side commands."""
         td = Path(tempfile.mkdtemp())
@@ -859,7 +875,8 @@ class WrapperWaves(unittest.TestCase):
                 'box = a[a.index("--box")+1]\n'
                 'if "--continue-heal" in a:\n'
                 '    print(json.dumps({"box": box, "result": "ok", "outcome": "UPDATED",\n'
-                '        "outcome_detail": "resumed; host said: " + a[a.index("--host-restart-result")+1]}))\n'
+                '        "outcome_detail": "resumed; host said: " + a[a.index("--host-restart-result")+1]\n'
+                '            + ("" if "--host-restart" in a else " [no host restart offered again]")}))\n'
                 '    sys.exit(0)\n'
                 'assert "--host-restart" in a\n'
                 'print(json.dumps({"box": box, "result": "pending_host_restart", "outcome": "PENDING",\n'
@@ -884,7 +901,7 @@ class WrapperWaves(unittest.TestCase):
             '  exec) while [ "$1" != bash ]; do shift; done; exec bash -c "$3" ;;\n'
             f'  inspect) case "$3" in *working_dir*) echo {td}/docker/proj ;; *service*) echo openclaw ;; *) echo true ;; esac ;;\n'
             '  restart) exit 0 ;;\n'
-            '  compose) exit 0 ;;\n'
+            f'  compose) exit {compose_rc} ;;\n'
             'esac\n')
         for f in fake.iterdir():
             f.chmod(0o755)
@@ -906,6 +923,12 @@ class WrapperWaves(unittest.TestCase):
         self.assertIn("docker compose up -d --force-recreate openclaw ok", row["outcome_detail"])
         self.assertNotIn("restart c-1", docker)
         self.assertIn("--host-restart", docker)
+
+    def test_failed_host_restart_resumes_without_offering_it_again(self):
+        r, row, docker = self.host_restart_scenario("hostinger", compose_rc=1)
+        self.assertEqual(row["outcome"], "UPDATED", r.stdout + r.stderr)
+        self.assertIn("FAILED - the host restart did not complete", row["outcome_detail"])
+        self.assertIn("[no host restart offered again]", row["outcome_detail"])
 
     def test_contabo_gateway_restart_is_docker_restart_then_resume(self):
         r, row, docker = self.host_restart_scenario("contabo")
@@ -950,6 +973,22 @@ class OperatorAlert(unittest.TestCase):
             {"box": "box-b", "outcome": "FAILED",
              "outcome_detail": "token 123456789:AAHfakefakefakefakefakefakefake1234 leaked"},
             {"box": "box-c", "outcome": "UPDATED"}]
+
+    def test_preexisting_gap_is_alerted_as_needing_attention(self):
+        rows = [{"box": "box-d", "outcome": "UPDATED", "heal": {"needs_attention": True},
+                 "outcome_detail": "NEEDS ATTENTION - content gaps that were already there before this update"}]
+        subject, body = fleet_notify.compose(rows, "t")
+        self.assertIn("1 need attention", subject)
+        self.assertIn("already there before", body)
+
+    def test_email_only_on_the_operator_machine(self):
+        with tempfile.TemporaryDirectory() as td:
+            sa = Path(td, "sa.json"); sa.write_text("{}")
+            with mock.patch.object(fleet_notify.operator_google, "SA_PATH", sa), \
+                 mock.patch.object(fleet_notify.operator_google, "OPERATOR_MARKER", Path(td, "boxes.json")):
+                self.assertFalse(fleet_notify.operator_google.available())   # a client box with an SA file
+                Path(td, "boxes.json").write_text("[]")
+                self.assertTrue(fleet_notify.operator_google.available())
 
     def test_nothing_to_say_sends_nothing(self):
         with mock.patch.object(fleet_notify, "send_telegram") as tg:
@@ -1007,15 +1046,18 @@ class BoxListDriveBackup(unittest.TestCase):
         entries = [{"name": "b1", "ssh_target": "root@192.0.2.9", "platform": "hostinger",
                     "container": "c1", "docker_exec_user": "node", "wave": "first"},
                    {"name": "b2", "ssh_target": "alias-2", "platform": "mac", "wave": "rest",
-                    "tunnel_host": "b2.example.com", "cf_token_env_vars": "CF_X_ID CF_X_SECRET"}]
+                    "tunnel_host": "b2.example.com", "cf_token_env_vars": "CF_X_ID CF_X_SECRET",
+                    "cf_access_env_prefix": "CF_X", "cf_tunnel_id": "tun-9"}]
         text = self.m.sheet_rows(entries, {"b1": {"result": "UPDATED", "date": "2026-09-28", "nine99": "n"}})
         self.assertTrue(text.startswith(",".join(self.m.SHEET_COLUMNS)))
         self.assertIn("CF_X_ID CF_X_SECRET", text)
         self.assertIn("UPDATED", text)
         back = self.m.entries_from_sheet_csv(text)
+        self.assertEqual((back[1]["cf_access_env_prefix"], back[1]["cf_tunnel_id"]), ("CF_X", "tun-9"))
         self.assertEqual([(e["name"], e["ssh_target"], e["platform"], e["wave"]) for e in back],
                          [("b1", "root@192.0.2.9", "hostinger", "first"), ("b2", "alias-2", "mac", "rest")])
         self.assertEqual(back[0]["container"], "c1")
+        self.assertNotIn("cf_access_env_prefix", back[0])
 
     def test_ssh_route_reads_names_not_values(self):
         with tempfile.TemporaryDirectory() as td:

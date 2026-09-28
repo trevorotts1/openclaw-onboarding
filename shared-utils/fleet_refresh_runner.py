@@ -2564,9 +2564,14 @@ def ic_persona_embeddings(skills_dir: Path, workspace: Path) -> dict:
     have = _sqlite_ro(db, "SELECT COUNT(DISTINCT persona_id) FROM embeddings")
     if have is None:
         return _hc("n/a", "persona embeddings database unreadable")
-    if have >= int(want):
-        return _hc("pass", f"{have} personas embedded (manifest {want})")
-    return _hc("fail", f"only {have} personas embedded, manifest says {want}")
+    try:   # an honest embedding-receipt.json deferral (spend gate / no key) is not a gap
+        from persona_embedding_drift_probe import _deferred_slugs  # type: ignore
+        deferred = len(_deferred_slugs(workspace / "data/coaching-personas/personas"))
+    except Exception:
+        deferred = 0
+    if have + deferred >= int(want):
+        return _hc("pass", f"{have} personas embedded, {deferred} deferred (manifest {want})")
+    return _hc("fail", f"only {have} personas embedded ({deferred} deferred), manifest says {want}")
 
 
 def ic_sop(paths: dict, skills_dir: Path) -> tuple[dict, dict]:
@@ -2713,6 +2718,18 @@ def _wait_gateway(paths: dict, seconds: int = 90) -> bool:
     return False
 
 
+def _wait_cc(paths: dict, seconds: int) -> Optional[bool]:
+    """None when there is no Command Center; else whether /api/health answered."""
+    if hc_cc_health(paths, times=1)["status"] == "n/a":
+        return None
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if hc_cc_health(paths, times=1)["status"] == "pass":
+            return True
+        time.sleep(10)
+    return False
+
+
 def restart_gateway_mac() -> str:
     """launchd kickstart, the same way platform/mac/service-selfheal/
     gateway-health-watchdog.sh heals it: a booted-out label (a stalled upgrade
@@ -2739,9 +2756,20 @@ def restart_gateway_mac() -> str:
 
 
 def gate_problems(res: BoxResult, baseline: dict, post: dict, integrity: dict) -> dict:
-    """name -> detail for everything the gate will not accept."""
+    """name -> detail for everything the gate will not accept. A content check
+    that was already failing before the update is a pre-existing gap: recorded
+    in res.health["content_gaps_preexisting"] and alerted, not gated."""
     probs = {n: post[n]["detail"] for n in health_regressions(baseline, post)}
-    probs.update({n: c["detail"] for n, c in integrity.items() if c["status"] == "fail"})
+    before = res.health.get("integrity_baseline") or {}
+    pre = {}
+    for n, c in integrity.items():
+        if c["status"] != "fail":
+            continue
+        if (before.get(n) or {}).get("status") == "fail":
+            pre[n] = c["detail"]
+        else:
+            probs[n] = c["detail"]
+    res.health["content_gaps_preexisting"] = pre
     snap_cc = (res.snapshot.get("cc") or {}).get("sha")
     cc_moved = bool(snap_cc) and _git(Path(res.snapshot["cc"]["dir"]), "rev-parse", "HEAD") != snap_cc
     for step in _MUTATING_STEPS:
@@ -2955,8 +2983,12 @@ def _continue_heal(state: Path, host_result: str, compat: dict, paths: dict,
     heal.pop("pending_host_restart", None)
     last = (heal.get("attempts") or [{}])[-1]
     ok = _wait_gateway(paths, 120)
+    # The Command Center comes back after the gateway (pm2 resurrect waits ~45s
+    # on Hostinger); judging it any sooner burns a fix attempt on a healthy box.
+    cc_ok = _wait_cc(paths, 240)
     last.setdefault("actions", {})["restart-gateway"] = (
-        f"host: {host_result or 'done'}; gateway {'healthy' if ok else 'NOT healthy after 120s'}")
+        f"host: {host_result or 'done'}; gateway {'healthy' if ok else 'NOT healthy after 120s'}"
+        + ("" if cc_ok is None else f"; Command Center {'healthy' if cc_ok else 'NOT healthy after 240s'}"))
     if heal_and_gate(paths, repo_root, res, baseline, ctx) == "needs-host-restart":
         return _pending(res)
     return _finish_run(res, compat, ctx["pinned"], paths, shared_utils, repo_root,
@@ -2993,8 +3025,10 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
     res.health = {"baseline": baseline,
                   "preexisting_failures": [n for n, c in baseline.items() if c["status"] == "fail"]}
     res.heal = {"run_start": time.time()}
-    if dry_run or verify_only:   # read-only preview of the installed content's integrity
-        res.health["integrity_now"] = probe_integrity(paths, repo_root, 0, res.onboarding_version)
+    # The installed content's integrity BEFORE the update (against the manifests
+    # it was installed from). A gap that was already there is reported and
+    # alerted, never blamed on -- or rolled back by -- this update.
+    res.health["integrity_baseline"] = probe_integrity(paths, repo_root, 0, res.onboarding_version)
 
     if not verify_only:
         # The Wave-5 gate would otherwise sys.exit() from inside build-cc, AFTER
@@ -3155,7 +3189,12 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
             warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]
             pre = res.health.get("preexisting_failures") or []
             healed = len(res.heal.get("attempts") or [])
+            gaps = res.health.get("content_gaps_preexisting") or {}
+            if gaps:
+                res.heal["needs_attention"] = True
             res.outcome_detail = "; ".join(filter(None, [
+                f"NEEDS ATTENTION - content gaps that were already there before this update: "
+                + "; ".join(f"{k}: {v}" for k, v in gaps.items()) if gaps else "",
                 f"fixed after {healed} attempt(s)" if healed else "",
                 f"checks failing: {', '.join(warn)}" if warn else "",
                 f"already unhealthy before update: {', '.join(pre)}" if pre else "",

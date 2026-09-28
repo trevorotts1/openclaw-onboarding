@@ -537,13 +537,27 @@ rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
     echo "[fleet-refresh]   $box — fix attempt needs the gateway restarted: $host_cmd" >&2
     # shellcheck disable=SC2086
     host_out=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$host_cmd; for i in \$(seq 1 24); do [ \"\$(docker inspect -f '{{.State.Running}}' $(sq "$container") 2>/dev/null)\" = true ] && break; sleep 5; done" 2>>"$RUN_LOG_DIR/${box}.log" | tail -1 | tr -d "'\"") || true
+    # If the host restart failed, resume WITHOUT --host-restart: the runner
+    # records it, carries on with its other fixes, and rolls back if it must.
+    local again="--host-restart"
+    [ -n "$host_out" ] || { again=""; host_out="FAILED - the host restart did not complete"; }
     rc=0
     # shellcheck disable=SC2086
     env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
-      "$(remote "$(runner_cmd "" "--host-restart --continue-heal $(sq "$state") --host-restart-result $(sq "${host_out:-no output}")")")" \
+      "$(remote "$(runner_cmd "" "$again --continue-heal $(sq "$state") --host-restart-result $(sq "$host_out")")")" \
       > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
     finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner (continue-heal)"
   done
+  if [ "$rc" -eq 4 ]; then   # never leave a box reported as pending
+    python3 - "$result_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d.update(result="failed", outcome="FAILED",
+         outcome_detail="a fix needed the container restarted from the host and that could not be completed; "
+                        "the box was left mid-fix - check it by hand")
+json.dump(d, open(sys.argv[1], "w"))
+PY
+  fi
 }
 
 # Track active jobs

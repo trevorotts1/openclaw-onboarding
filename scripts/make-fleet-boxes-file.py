@@ -62,8 +62,8 @@ HOME = Path.home()
 PLATFORMS = ("mac", "hostinger", "contabo")
 SHEET_NAME = "OpenClaw fleet box list (private backup)"
 SHEET_COLUMNS = ("name", "platform", "wave", "ssh_target", "container", "docker_exec_user",
-                 "openclaw_root", "tunnel_host", "cf_token_env_vars", "999_present",
-                 "last_roll_result", "last_roll_date")
+                 "openclaw_root", "tunnel_host", "cf_tunnel_id", "cf_access_env_prefix",
+                 "cf_token_env_vars", "999_present", "last_roll_result", "last_roll_date")
 FLEET_DIR = HOME / ".openclaw/fleet"
 
 
@@ -164,8 +164,8 @@ def sheet_rows(entries: list[dict], last: dict) -> str:
         run = last.get(e["name"]) or {}
         w.writerow([e.get("name", ""), e.get("platform", ""), e.get("wave", ""), e.get("ssh_target", ""),
                     e.get("container", ""), e.get("docker_exec_user", ""), e.get("openclaw_root", ""),
-                    tunnel, cf or e.get("cf_access_env_prefix", ""), run.get("nine99", "?"),
-                    run.get("result", ""), run.get("date", "")])
+                    tunnel, e.get("cf_tunnel_id", ""), e.get("cf_access_env_prefix", ""), cf,
+                    run.get("nine99", "?"), run.get("result", ""), run.get("date", "")])
     return buf.getvalue()
 
 
@@ -175,7 +175,7 @@ def entries_from_sheet_csv(text: str) -> list[dict]:
         if not row.get("name") or not row.get("ssh_target"):
             continue
         e = {k: row[k] for k in ("name", "ssh_target", "platform") if row.get(k)}
-        for k in ("container", "docker_exec_user", "openclaw_root"):
+        for k in ("container", "docker_exec_user", "openclaw_root", "cf_tunnel_id", "cf_access_env_prefix"):
             if row.get(k):
                 e[k] = row[k]
         e["wave"] = row.get("wave") or "rest"
