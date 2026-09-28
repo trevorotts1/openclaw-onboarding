@@ -1,0 +1,7 @@
+Weekly Pointer References maintenance (skill 70). This is an unattended scheduled run: nobody is watching, so do the work, do not ask questions in this session.
+
+Read the playbook at {{PLAYBOOK}} and follow its section "Weekly run procedure" step by step, exactly as written. The audit script is {{AUDIT}}. Write this run's report into {{REPORTS_DIR}}.
+
+Hard limits for this run: never delete anything, only move; back up before any edit; prove every moved paragraph with the audit script before removing it from a core file; keep always-on rules (safety rules, never-do rules, identity essentials, hard constraints) inline; never touch agents.defaults.bootstrapMaxChars or agents.defaults.bootstrapTotalMaxChars in any way; never change any model, provider, credential or cron setting.
+
+Send the owner a message only when the playbook's "When a human decision is needed" list applies, as one short plain-English message. Otherwise send nothing and finish with NO_REPLY.

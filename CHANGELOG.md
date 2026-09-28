@@ -1,3 +1,23 @@
+## [v25.2.0]  -  2026-09-28  -  Skill 70 Pointer References: lean core files, one playbook per system, weekly cron job
+
+### Why
+Core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) are sent to the model with every message. They grow without limit, which slows every reply, raises cost, brings compaction sooner, and past the configured limit OpenClaw silently cuts the middle out of the file (verified in the installed OpenClaw 2026.9.6 code: 75 percent head plus 25 percent tail kept; AGENTS.md 45 percent head, a policy digest, 15 percent tail; MEMORY.md loads last and is cut first). Nothing in the fleet kept them lean over time. Skill 01 (Teach Yourself Protocol) covers learning and storage, not ongoing upkeep, and its 10-to-25-line summary size conflicts with a one-line pointer.
+
+### What changed
+- New standalone skill `70-pointer-references` (v1.0.0), not part of skill 01: the full playbook (doctrine, pointer format with good and bad examples, earn-your-place rule with always-on rules kept inline, one system one playbook, master index, contradiction handling with dated superseded rules, backup and content-preservation proof, first-run dry-run diff, step-by-step and weekly procedures, test battery, landmines, sourced rationale); `scripts/pointer-audit.sh` (sizes against 40,000, candidate blocks, broken pointers, orphans, duplicates, index consistency, `--backup`, `--prove-moved`, `--dry-run`; exit 0 PASS, 1 FINDINGS, 2 tooling; macOS bash 3.2 and Linux); `scripts/install-weekly-cron.sh` (idempotent weekly OpenClaw cron job `pointer-references-weekly`: isolated session, thinking high, no delivery, primary DeepSeek V4.1 Flash on Ollama Cloud and fallback DeepSeek V4.1 Flash on OpenRouter, both discovered from the box's own model list, refuses with exit 4 rather than guess, checks every flag against `--help`); `wire.sh` (AGENTS.md pointer and MEMORY.md core-files definition, backup first, replace-in-place, idempotent; runs automatically on every update through the existing `wire.sh` hook in `update-skills.sh`); `qc-70-pointer-references.sh` and three fixture batteries.
+- For core-file content only, skill 70 supersedes skill 01's 10-to-25-line summary size and four-part pointer block (skill 70 is the newer rule; the INSTALL.md conflict rule already says the skill governs core-file content). Skill 01's files are untouched; its storage paths are shared unchanged.
+- `lib-onboarding-state.sh`: `70-pointer-references` gated in Wave 6 (its qc gate needs only bash and python3 and never the gateway, so it cannot wedge the wave).
+- Skill counts: README.md (70 folders, 65 active, new inventory row), Start Here.md (65 active), install.sh (65 active, Wave 6 gates 49 of 65).
+- Version markers rolled v25.1.105 -> v25.2.0 via `scripts/bundle-release-in-branch.sh` (minor: new skill).
+
+### Migration notes
+- Existing boxes pick the skill up on the next fleet update: the generic `[0-9]*/` copy plus the skill's own `wire.sh`. A box whose configured model list lacks either DeepSeek V4.1 Flash identifier gets the core-file wiring and a named refusal for the cron job (retried each update); nothing substitutes another model.
+- The first weekly run on each box changes no core file; it saves a dry-run diff. Risk: LOW.
+- `agents.defaults.bootstrapMaxChars` and `agents.defaults.bootstrapTotalMaxChars` are never read or written.
+
+### Tests
+`bash 70-pointer-references/qc-70-pointer-references.sh` (PASS: audit battery 20/20, cron installer battery 33/33, wire battery 19/19, all under macOS bash 3.2 and bash 5); `python3 scripts/qc-assert-wave-list-integrity.py` (PASS, 49 entries); `bash scripts/bump-version.sh --check` (all markers agree).
+
 ## [v25.1.105]  -  2026-09-28  -  Merge train: #1323 docs(batch-merger-proof): remove the scratch proof docs; #1324 Fix qc-system-integrity.sh CHECK 2.3: real-file copies PASS, symlinks…; #1326 fix(PRES-057): reconcile refuses a live cron edit from an ephemeral…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
