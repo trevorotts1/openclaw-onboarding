@@ -1,7 +1,7 @@
 {
-  "onb_sha": "7f531b89ae7e7df439f3f63bb1c5ba8ec29b80b9",
+  "onb_sha": "b59d17614d1ef1c36f04a57cd89fffa4b9e8bf0a",
   "cc_sha": "b1e357986cd24d59d1960b741c91085bf9c00d8f",
-  "onb_version": "v25.1.90",
+  "onb_version": "v25.1.92",
   "cc_version": "v7.6.68",
   "contract": "1.1.0",
   "notes": "Release-cohort manifest instance (spec 14.8/17.4): the tested ONB and Command Center SHAs/versions this release is bound to. onb_sha/cc_sha are the origin/main tips the release was tested at; onb_version is this repo's /version, cc_version is the pinned Command Center version (cc-compat.json commandCenter.pinnedTag, == CC /version); contract is the shared decision bridge schema version (shared-utils/decision-engine.py BRIDGE_SCHEMA_VERSION, == CC contract.ts DECISION_SCHEMA_VERSION). Read and validated by shared-utils/decision_engine_train/train.py::_load_cohort_manifest via shared-utils/decision_engine/modes/cohort.py::validate_cohort; promote() refuses a pair that does not match this exact tested pair."
