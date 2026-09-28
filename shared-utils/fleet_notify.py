@@ -5,7 +5,12 @@ it, or left content gaps that were already there. Never a client: nothing here
 can address a client chat.
 
   python3 fleet_notify.py --summary .fleet-refresh-summary.json [--dry-run]
+  python3 fleet_notify.py --passed RESULT.json   # "<Client> (<Platform>) updated and passed"
   python3 fleet_notify.py --test            # one labelled test note, operator only
+
+Every box is named by its CLIENT ("Client Name (Platform)"), never a box id:
+fleet-refresh.sh stamps "client" and "label" into each box result from the
+private fleet boxes file (the box itself does not know whose it is).
 
 Channels:
   Telegram  the fleet-standing-operator-alert n8n webhook, a plain relay that
@@ -39,6 +44,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import operator_google  # noqa: E402
 
 NOTIFY_OUTCOMES = ("ROLLED_BACK", "FAILED")
+PLATFORM_NAMES = {"mac": "Mac", "hostinger": "Hostinger", "contabo": "Contabo"}
+
+
+def client_label(entry: dict) -> str:
+    """'Client Name (Platform)' for a boxes-file entry. A box with no client
+    name says so loudly instead of falling back to its id."""
+    client = entry.get("client") or f"UNKNOWN CLIENT ({entry.get('name') or entry.get('box') or '?'})"
+    plat = str(entry.get("platform") or "")
+    return f"{client} ({PLATFORM_NAMES.get(plat, plat.title())})" if plat else client
+
+
+def label(r: dict) -> str:
+    """How a box result is named to a person: its client label, else its box id."""
+    return r.get("label") or r.get("client") or f"box {r.get('box')}"
 
 
 def _wants_alert(r: dict) -> bool:
@@ -101,19 +120,39 @@ def compose(rows: list[dict], origin: str) -> tuple[str, str]:
                f"{sum(r.get('outcome') == 'UPDATED' for r in bad)} need attention ({origin})")
     lines = [f"Fleet update report from {origin}, {stamp}.", ""]
     for r in bad:
-        what = {"ROLLED_BACK": "was put back to how it was before the update (rolled back)",
+        what = {"ROLLED_BACK": "rolled back (put back to how it was before the update)",
                 "FAILED": "FAILED and needs a person"}.get(
                     r["outcome"], "updated, but has content gaps that were already there before")
         tries = len((r.get("heal") or {}).get("attempts") or [])
-        lines.append(f"- Box {r.get('box')}: {what}.")
+        lines.append(f"- {label(r)} {what}: {r.get('outcome_detail') or '; '.join(r.get('errors') or [])}")
         if tries:
             lines.append(f"  Fix attempts made before that: {tries}.")
-        lines.append(f"  Why: {r.get('outcome_detail') or '; '.join(r.get('errors') or [])}")
         if r.get("rollback", {}).get("not_restored"):
             lines.append(f"  Not undone by the rollback: {r['rollback']['not_restored']}.")
     ok = sum(1 for r in rows if r.get("outcome") == "UPDATED")
     lines += ["", f"Updated fine: {ok}. Nothing was sent to any client."]
     return subject, scrub("\n".join(lines))
+
+
+def _ver(v) -> str:
+    v = str(v or "unknown")
+    return v if v == "unknown" or v.startswith("v") else f"v{v}"
+
+
+def passed_note(r: dict) -> str | None:
+    """The per-box pass message, or None when this result is not a clean pass."""
+    if r.get("outcome") != "UPDATED" or r.get("result") != "ok" or (r.get("heal") or {}).get("needs_attention"):
+        return None
+    return (f"\u2705 {label(r)} updated and passed. Onboarding {_ver(r.get('onboarding_version'))}, "
+            f"Command Center {_ver(r.get('cc_version'))}")
+
+
+def notify_passed(r: dict, dry_run: bool = False) -> dict:
+    """Telegram only: a pass is good news, email is kept for failures and rollbacks."""
+    text = passed_note(r)
+    if not text:
+        return {"sent": False, "reason": f"{label(r)} did not pass cleanly"}
+    return {"text": text} if dry_run else {"text": text, "telegram": send_telegram(scrub(text))}
 
 
 def notify(rows: list[dict], origin: str, dry_run: bool = False) -> dict:
@@ -133,6 +172,7 @@ def notify(rows: list[dict], origin: str, dry_run: bool = False) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--summary", help="fleet-refresh summary JSON (a list of box results)")
+    ap.add_argument("--passed", metavar="RESULT", help="one box's result JSON: send the pass note if it passed")
     ap.add_argument("--origin", default=socket.gethostname().split(".")[0])
     ap.add_argument("--dry-run", action="store_true", help="print the note, send nothing")
     ap.add_argument("--test", action="store_true", help="send one labelled test note to the operator")
@@ -145,8 +185,16 @@ def main() -> int:
                if operator_google.available() else (False, "no operator Google account here")}
         print(json.dumps(res))
         return 0
+    if a.passed:
+        try:
+            r = json.loads(Path(a.passed).read_text())
+        except (OSError, ValueError) as e:
+            print(json.dumps({"sent": False, "reason": f"result unreadable: {e}"}))
+            return 0
+        print(json.dumps(notify_passed(r, a.dry_run), default=str, ensure_ascii=False))
+        return 0
     if not a.summary:
-        ap.error("--summary or --test is required")
+        ap.error("--summary, --passed or --test is required")
     try:
         rows = json.loads(Path(a.summary).read_text())
     except (OSError, ValueError) as e:

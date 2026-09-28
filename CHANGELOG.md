@@ -22,6 +22,19 @@ SYSTEM-DIAGNOSTIC-CHECKLIST.md still described the stack as it worked around v9.
 
 ### Tests
 `scripts/check-doc-currency-guards.sh` (pass — unaffected by this file, confirms no other doc drifted while this PR was open); `scripts/check-readme-current-release.sh` (pass); `scripts/bump-version.sh --check` (all 10 markers agree at v25.1.102); every file path and script name cited in the rewritten checklist verified to exist on disk before publishing.
+## [v25.1.103]  -  2026-09-28  -  Fleet roll names every box by its client, not its box id; per-box pass note
+
+### Why
+Trevor's standing rule: people are named, never referred to by ids. The fleet roll printed box ids and hostnames in every line, the summary table and the operator alerts, so a person had to translate each one into a client. He also asked to hear the moment each box passes.
+
+### What changed
+- scripts/make-fleet-boxes-file.py: every box in the private boxes file carries "client", the client's name from the operator's private roster. A trailing business or device note is dropped, and kept only to tell apart two boxes of one client on one platform. "client" is the first column of the private Drive sheet. A box with no roster client is written as "UNKNOWN CLIENT (<box id>)" with a loud warning, so it gets fixed.
+- scripts/fleet-refresh.sh: queue lines, per-box progress, the per-box summary lines and the outcome table name each box "Client Name (Platform)". The box id appears once, on the queue line, to find the box's log. Each box result gets "client" and "label" from the boxes file. The runner on the box does not know whose box it is, and a new runner flag would break boxes still on an older runner in a dry run.
+- shared-utils/fleet_notify.py: roll-back and failure alerts read "<Client> (<Platform>) rolled back: <why>". The new --passed mode sends "✅ <Client> (<Platform>) updated and passed. Onboarding <version>, Command Center <version>" by Telegram only, as each box passes on an operator --apply roll. Email stays for failures and roll-backs.
+- scripts/fleet-boxes.example.json: placeholder "client" on every example box.
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py (63 pass): client names in the boxes file, the sheet, the queue and summary lines, the outcome table, the result JSON, the alerts and the pass note; the pass note goes by Telegram only and never for a roll-back, a failure or a box that needs attention; the UNKNOWN CLIENT fallback. All fixtures use placeholder names.
 
 ## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
 

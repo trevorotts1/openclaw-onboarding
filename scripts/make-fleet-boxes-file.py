@@ -5,7 +5,7 @@ make-fleet-boxes-file.py — build the --boxes-file that scripts/fleet-refresh.s
 The fleet's box list lives OUTSIDE this (public) repo, on the operator's machine:
 
     --roster    canonical membership + platform     (default ~/clawd/accounts/fleet-roster.json)
-                boxes.<name>.{provider, kind, registry_id}
+                boxes.<name>.{client, provider, kind, registry_id}
     --registry  how to reach each box               (default ~/clawd/fleet-prover/box-registry.json)
                 boxes.<id>.{ssh_target | ssh_alias, container, tunnel_id, svc_env_prefix}
     --pins      optional per-box OpenClaw root pins (default ~/clawd/fleet-prover/fleet-roster.json)
@@ -14,6 +14,12 @@ The fleet's box list lives OUTSIDE this (public) repo, on the operator's machine
 It writes a JSON array (see scripts/fleet-boxes.example.json for the shape) to
 --out (default ~/.openclaw/fleet/boxes.json), mode 600. The output holds client
 names and hostnames, so it is refused anywhere inside a git work tree.
+
+Every box carries "client": the person's name from the roster (a trailing
+"(business / device note)" is dropped, and kept only when one client has two
+boxes on the same platform). The roll names boxes as "Client Name (Platform)",
+never by id. A box with no roster client is written as "UNKNOWN CLIENT (<id>)"
+and warned about loudly, so it gets fixed.
 
 The operator box (provider "operator" / kind "local") is left out: it is rolled
 with `fleet-refresh.sh --local --apply` from its own clone.
@@ -27,7 +33,7 @@ other client box in wave "rest". Roll the first three, check them, then the rest
 
 Drive backup (if this Mac dies): every run also refreshes a PRIVATE Google Sheet
 in the operator's Drive ("OpenClaw fleet box list (private backup)"), one row per
-box: name, platform, wave, ssh target, container, exec user, OpenClaw root, tunnel
+box: client, name, platform, wave, ssh target, container, exec user, OpenClaw root, tunnel
 host, the NAMES of the Cloudflare token env vars, 999 present, last roll result
 and date. Env-var NAMES only -- never a secret value. Written through the
 operator's Google service account (operator_google.py), never the gws CLI.
@@ -53,15 +59,17 @@ import re
 import subprocess
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared-utils"))
 import operator_google  # noqa: E402
+from fleet_notify import client_label  # noqa: E402
 
 HOME = Path.home()
 PLATFORMS = ("mac", "hostinger", "contabo")
 SHEET_NAME = "OpenClaw fleet box list (private backup)"
-SHEET_COLUMNS = ("name", "platform", "wave", "ssh_target", "container", "docker_exec_user",
+SHEET_COLUMNS = ("client", "name", "platform", "wave", "ssh_target", "container", "docker_exec_user",
                  "openclaw_root", "tunnel_host", "cf_tunnel_id", "cf_access_env_prefix",
                  "cf_token_env_vars", "999_present", "last_roll_result", "last_roll_date")
 FLEET_DIR = HOME / ".openclaw/fleet"
@@ -79,8 +87,25 @@ def _load_boxes(path: Path, required: bool = True) -> dict:
     return boxes
 
 
+def _split_client(raw: str) -> tuple[str, str]:
+    """'Jane Doe (Acme -- Contabo)' -> ('Jane Doe', 'Acme -- Contabo')."""
+    m = re.match(r"^(.*?)\s*\((.*)\)\s*$", raw or "")
+    return (m.group(1).strip(), m.group(2).strip()) if m else ((raw or "").strip(), "")
+
+
+def _client_names(roster: dict) -> dict[str, str]:
+    """box name -> the client's person name; the roster note is kept only to tell
+    apart two boxes of one client on one platform ('Jane Doe, Mac mini')."""
+    split = {n: (*_split_client(str(b.get("client") or "")), str(b.get("provider") or "").lower())
+             for n, b in roster.items()}
+    count = Counter((person, plat) for person, _, plat in split.values())
+    return {n: f"{person}, {note}" if person and note and count[(person, plat)] > 1 else person
+            for n, (person, note, plat) in split.items()}
+
+
 def build(roster: dict, registry: dict, pins: dict, first: list[str]) -> tuple[list[dict], list[str], list[str]]:
     entries, skipped, unroutable = [], [], []
+    clients = _client_names(roster)
     for name in sorted(roster):
         box = roster[name]
         provider = str(box.get("provider") or "").lower()
@@ -90,13 +115,15 @@ def build(roster: dict, registry: dict, pins: dict, first: list[str]) -> tuple[l
         if provider not in PLATFORMS:
             skipped.append(f"{name} (unknown provider {provider!r})")
             continue
+        client = clients.get(name) or f"UNKNOWN CLIENT ({name})"
         rid = box.get("registry_id") or name
         reg = registry.get(rid) or {}
         target = reg.get("ssh_target") or reg.get("ssh_alias")
         if not target:
-            unroutable.append(f"{name} (registry id {rid!r} has no ssh_target/ssh_alias)")
+            unroutable.append(f"{client_label({'client': client, 'platform': provider})} "
+                              f"(box {name}: registry id {rid!r} has no ssh_target/ssh_alias)")
             continue
-        entry = {"name": name, "ssh_target": target, "platform": provider}
+        entry = {"client": client, "name": name, "ssh_target": target, "platform": provider}
         if reg.get("container"):
             entry["container"] = reg["container"]
             entry["docker_exec_user"] = reg.get("docker_exec_user") or "node"
@@ -162,8 +189,8 @@ def sheet_rows(entries: list[dict], last: dict) -> str:
         if e.get("platform") == "mac" and not (tunnel or cf):
             tunnel, cf = _ssh_route(e["ssh_target"])
         run = last.get(e["name"]) or {}
-        w.writerow([e.get("name", ""), e.get("platform", ""), e.get("wave", ""), e.get("ssh_target", ""),
-                    e.get("container", ""), e.get("docker_exec_user", ""), e.get("openclaw_root", ""),
+        w.writerow([e.get("client", ""), e.get("name", ""), e.get("platform", ""), e.get("wave", ""),
+                    e.get("ssh_target", ""), e.get("container", ""), e.get("docker_exec_user", ""), e.get("openclaw_root", ""),
                     tunnel, e.get("cf_tunnel_id", ""), e.get("cf_access_env_prefix", ""), cf,
                     run.get("nine99", "?"), run.get("result", ""), run.get("date", "")])
     return buf.getvalue()
@@ -174,7 +201,7 @@ def entries_from_sheet_csv(text: str) -> list[dict]:
     for row in csv.DictReader(io.StringIO(text)):
         if not row.get("name") or not row.get("ssh_target"):
             continue
-        e = {k: row[k] for k in ("name", "ssh_target", "platform") if row.get(k)}
+        e = {k: row[k] for k in ("client", "name", "ssh_target", "platform") if row.get(k)}
         for k in ("container", "docker_exec_user", "openclaw_root", "cf_tunnel_id", "cf_access_env_prefix"):
             if row.get(k):
                 e[k] = row[k]
@@ -270,13 +297,19 @@ def main() -> int:
             args.first,
         )
 
+    for e in entries:
+        if not e.get("client") or e["client"].startswith("UNKNOWN CLIENT"):
+            e["client"] = e.get("client") or f"UNKNOWN CLIENT ({e['name']})"
+            print(f"  WARNING: NO CLIENT NAME for box {e['name']} -- it will show as {e['client']!r} in every "
+                  "roll line and alert. Add 'client' to it in the fleet roster.", file=sys.stderr)
+
     _write_private(out, json.dumps(entries, indent=2) + "\n")
 
     by = {p: sum(1 for e in entries if e["platform"] == p) for p in PLATFORMS}
     print(f"wrote {len(entries)} boxes to {out} (mode 600): "
           + ", ".join(f"{p}={n}" for p, n in by.items()))
     print("first wave (rolled before everyone else): "
-          + ", ".join(f"{e['name']} ({e['platform']})" for e in entries if e["wave"] == "first"))
+          + ", ".join(client_label(e) for e in entries if e["wave"] == "first"))
     for s in skipped:
         print(f"  not in file: {s}")
     for u in unroutable:
