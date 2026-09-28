@@ -450,18 +450,24 @@ def _owner_agent_ids(paths: dict) -> list[str]:
     """The agent the owner talks to: the one the owner's own (default-account)
     Telegram bot is bound to -- many client boxes have no agent named "main" at
     all, their CEO is e.g. dept-master-orchestrator -- then "main"."""
-    ids = []
+    direct, catch_all = [], []
     try:
         cfg = json.loads((Path(paths["root"]) / "openclaw.json").read_text())
         for b in cfg.get("bindings") or []:
             m = (b.get("match") or {}) if isinstance(b, dict) else {}
             # the owner's own bot: the default account ("*"/"default"/unset); a
             # binding for a named extra bot (rescue, operator...) is not the owner's
-            if m.get("channel") == "telegram" and m.get("accountId") in (None, "*", "default") and b.get("agentId"):
-                ids.append(b["agentId"])
+            if m.get("channel") != "telegram" or m.get("accountId") not in (None, "*", "default") \
+                    or not b.get("agentId"):
+                continue
+            kind = (m.get("peer") or {}).get("kind")
+            if kind == "direct":          # the owner's DM, bound explicitly
+                direct.append(b["agentId"])
+            elif kind is None:            # every chat of the bot (group bindings are not the owner)
+                catch_all.append(b["agentId"])
     except (OSError, ValueError, KeyError):
         pass
-    return list(dict.fromkeys(ids + ["main"]))
+    return list(dict.fromkeys(direct + catch_all + ["main"]))
 
 
 def _agent_session_keys(paths: dict, agent: str) -> list[tuple[str, float]]:
@@ -888,6 +894,9 @@ def step_pin_resolve(paths: dict, repo_root: Path, compat: dict, res: BoxResult)
 # update-skills.sh walks every skill folder and hashes the content: ~55 min on a
 # Hostinger container. The old 20-minute cap failed healthy updates mid-way.
 UPDATE_SKILLS_TIMEOUT = 5400
+# update-skills.sh's fleet standing gate: "Update held -- account not current".
+UPDATE_HELD_MARK = "Update held -- account not current"
+UPDATE_HELD = "update held -- account not current on payments (fleet standing gate); nothing changed"
 
 
 def _run_tree(cmd: list[str], timeout: int, **kw) -> subprocess.CompletedProcess:
@@ -956,7 +965,11 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             pinned_tag = load_cc_compat(repo_root).get("onboardingVersion", pinned_tag)
         except Exception:
             pass
-        if result.returncode == 0 and post_stamp == pinned_tag:
+        if result.returncode == 0 and UPDATE_HELD_MARK in result.stdout:
+            # The fleet standing gate held this box (account not current on
+            # payments): nothing was changed, by design. Not a failure to fix.
+            res.step_skip("pull-onboarding", UPDATE_HELD)
+        elif result.returncode == 0 and post_stamp == pinned_tag:
             res.onboarding_version = post_stamp
             res.step_ok("pull-onboarding")
         elif result.returncode == 2 and post_stamp == pinned_tag:
@@ -969,7 +982,7 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             res.step_fail(
                 "pull-onboarding",
                 f"update-skills.sh exited {result.returncode}; stamp={post_stamp!r} "
-                f"expected={pinned_tag!r}: {result.stderr[:200]}"
+                f"expected={pinned_tag!r}: {(result.stderr.strip() or result.stdout.strip())[-300:]}"
             )
     except subprocess.TimeoutExpired:
         res.step_fail("pull-onboarding", f"update-skills.sh timed out after {UPDATE_SKILLS_TIMEOUT}s "
@@ -3333,6 +3346,13 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             pinned_onboarding_tag = step_pull_onboarding(paths, repo_root, pinned_onboarding_tag, res, dry_run)
         except Exception as e:
             res.step_fail("pull-onboarding", str(e))
+
+        # Held by the fleet standing gate (account not current): nothing else changes.
+        if res.steps.get("pull-onboarding") == f"skip:{UPDATE_HELD}":
+            for step in ("update-999", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
+                res.step_skip(step, "update held")
+            res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", UPDATE_HELD
+            return res
 
         # Step 2b: 999-setup, only where it is already installed
         try:

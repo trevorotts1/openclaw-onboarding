@@ -749,6 +749,7 @@ class MainSessionKey(unittest.TestCase):
              mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}):
             Path(td, "openclaw.json").write_text(json.dumps(
                 {"bindings": [{"agentId": "rescue-bot", "match": {"channel": "telegram", "accountId": "rescue"}},
+                              {"agentId": "dept-sales", "match": {"channel": "telegram", "peer": {"kind": "group", "id": "-1"}}},
                               {"agentId": "dept-master-orchestrator", "match": {"channel": "telegram", "accountId": "*"}}]}))
             self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}), "agent:dept-master-orchestrator:main")
             self.assertEqual(calls[0], "dept-master-orchestrator")
@@ -811,6 +812,31 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
                 fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
             self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
             self.assertEqual(git(live, "rev-parse", "origin/main"), git(origin, "rev-parse", "HEAD"))
+
+
+class BillingHoldIsNotAFailure(unittest.TestCase):
+    def test_held_update_is_skipped_and_nothing_else_changes(self):
+        # update-skills.sh's fleet standing gate exits 0 without stamping when the
+        # account is not current; that was retried 3 times then rolled back.
+        with tempfile.TemporaryDirectory() as td:
+            box = Box(Path(td))
+            Path(box.onb, "update-skills.sh").write_text("#!/bin/sh\n")
+            held = subprocess.CompletedProcess([], 0, "  Update held -- account not current on payments.\n", "")
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(fr, "_run_tree", return_value=held):
+                fr.step_pull_onboarding(box.paths, box.onb, "vB", res, dry_run=False)
+            self.assertEqual(res.steps["pull-onboarding"], f"skip:{fr.UPDATE_HELD}")
+            self.assertNotIn("failed", str(res.steps))
+
+    def test_a_real_failure_keeps_the_updaters_own_words(self):
+        with tempfile.TemporaryDirectory() as td:
+            box = Box(Path(td))
+            Path(box.onb, "update-skills.sh").write_text("#!/bin/sh\n")
+            bad = subprocess.CompletedProcess([], 1, "lots of output\nERROR: bootstrap could not source X\n", "")
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(fr, "_run_tree", return_value=bad):
+                fr.step_pull_onboarding(box.paths, box.onb, "vB", res, dry_run=False)
+            self.assertIn("ERROR: bootstrap could not source X", res.steps["pull-onboarding"])
 
 
 class CommandCenterPm2Preflight(unittest.TestCase):
