@@ -11,6 +11,7 @@ This entry documents the Step 5 release (Fixes 7, 31) cut by the auto-tag workfl
 
 ### Tests
 New/updated tests per the fix orders (dept --selftest (H2), --plan assertion update; not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.100 entry below.
+## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
 
 ## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
 

@@ -159,7 +159,7 @@ Make sure `GOOGLE_API_KEY` is set and `google-genai` is installed. The script no
 A: Google Embedding 2 is a local SQLite tool that breaks on Linux VPS containers, only supports text, and requires manual maintenance. Gemini Embedding 2 is a managed API with multimodal support (text, images, audio, video), better search quality, and zero local maintenance.
 
 **Q: Will this cost money?**
-A: Google AI Studio has a generous free tier. Indexing 40 personas and running occasional searches is well within free limits. Check https://ai.google.dev/pricing for current rates.
+A: Google AI Studio has a generous free tier. Indexing 99 personas and running occasional searches is well within free limits. Check https://ai.google.dev/pricing for current rates.
 
 **Q: Do I need to rebuild my personas?**
 A: No. The persona blueprint files are unchanged. Only the search/retrieval engine changed. Your content is preserved.
