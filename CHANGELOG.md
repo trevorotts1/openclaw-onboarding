@@ -55,6 +55,28 @@ Trevor's standing rule: people are named, never referred to by ids. The fleet ro
 tests/unit/fleet-refresh-roll-safety.test.py (63 pass): client names in the boxes file, the sheet, the queue and summary lines, the outcome table, the result JSON, the alerts and the pass note; the pass note goes by Telegram only and never for a roll-back, a failure or a box that needs attention; the UNKNOWN CLIENT fallback. All fixtures use placeholder names.
 
 ## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
+## [v25.1.101]  -  2026-09-28  -  fleet_notify.send_telegram returns the delivered Telegram message_id
+
+### Why
+The `fleet-standing-operator-alert` n8n webhook was switched from `responseMode: onReceived`
+(a canned `{"ok": true}`) to `responseMode: lastNode`, so its HTTP response is now the
+Telegram API's own result. That lets a caller prove delivery directly from the response, with
+no n8n execution data needing to be stored — storing it would also retain the shared
+`fleetStandingCheck` header-auth secret in plaintext inside the execution record, which every
+other fleet-standing webhook shares.
+
+### What changed
+- shared-utils/fleet_notify.py: `send_telegram()` now parses the webhook's response body and
+  returns `(ok, detail, message_id)` instead of `(ok, detail)`. Both existing call sites
+  (`notify()`'s roll alert, and the `--test` path) already store the returned tuple in a
+  dict that gets printed/logged, so the delivered `message_id` now shows up in the roll's
+  result and log automatically — no other call-site changes were needed.
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py: 60/60 pass unchanged (existing mocks return
+2-tuples for `send_telegram`; nothing indexed past `[0]`/`[1]`, so they are unaffected by the
+added third element). Verified live against the (already-updated) n8n workflow end to end: a
+real webhook call now returns `{"ok": true, "result": {"message_id": ...}}`.
 
 ## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
 
