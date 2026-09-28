@@ -7,14 +7,17 @@ temporary git fixtures only.
 """
 
 from .train import (
+    COHORT_MANIFEST_RELPATH,
     INDEPENDENT_ROUTE,
     MANIFEST_SCHEMA,
     OUTCOMES,
     TRAIN_ROUTE,
     WINDOW_SECONDS,
+    _load_cohort_manifest,
     acquire_lease,
     amend,
     attach_integration_qc,
+    check_release_cohort,
     collect_all,
     compose_batch,
     enqueue,
@@ -43,7 +46,9 @@ __all__ = [
     "acquire_lease",
     "amend",
     "attach_integration_qc",
+    "check_release_cohort",
     "collect_all",
+    "COHORT_MANIFEST_RELPATH",
     "compose_batch",
     "freeze",
     "isolate_failure",

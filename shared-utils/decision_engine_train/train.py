@@ -13,6 +13,10 @@ import os
 import tempfile
 from pathlib import Path
 
+# Release-cohort manifest instance (spec 14.8/17.4): ties the tested ONB + CC
+# SHAs/versions for one release. Root-relative so the path is repo-agnostic.
+COHORT_MANIFEST_RELPATH = "release-cohort.json"
+
 WINDOW_SECONDS = 900
 TRAIN_ROUTE = "haiku-chain"
 INDEPENDENT_ROUTE = "sonnet-chain"
@@ -355,6 +359,69 @@ def _load_cohort():
     spec.loader.exec_module(module)
     return module
 
+def _load_cohort_manifest(repo_root=None):
+    """Read + validate the release-cohort manifest INSTANCE (14.8/17.4).
+
+    The committed instance lives at ``<repo_root>/release-cohort.json``
+    (COHORT_MANIFEST_RELPATH). ``repo_root`` defaults to this file's
+    repo root, the same convention
+    ``shared-utils/cc_compat.py::load_cc_compat`` uses for cc-compat.json.
+
+    Returns the manifest dict, already accepted by the REAL D34
+    validator, or None when no instance is committed. Raises ValueError
+    when one exists but the validator rejects it: a malformed cross-repo
+    pairing fails closed, it is never silently ignored.
+    """
+    root = Path(repo_root) if repo_root is not None else (
+        Path(__file__).resolve().parents[2])
+    path = root / COHORT_MANIFEST_RELPATH
+    if not path.is_file():
+        return None
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("cohort manifest unreadable at %s: %s"
+                         % (path, exc))
+    ok, errors = _load_cohort().validate_cohort(manifest)
+    if not ok:
+        raise ValueError("cohort manifest invalid at %s: %s"
+                         % (path, "; ".join(errors)))
+    return manifest
+
+def check_release_cohort(repo_root=None, pairing=None, handshake_ok=False):
+    """Load the committed instance and fail closed unless it proves the pair.
+
+    Returns the manifest dict for ``promote(cohort=...)``. Raises when an
+    instance is committed but does not validate, or when its exact tested
+    pair is not the pair being released — a release can never ride on an
+    untested or half-promoted pairing (14.8/A53). Returns None when no
+    instance is committed, so the caller's absence recording is unchanged.
+
+    ``handshake_ok`` is the caller's observed result of the live
+    capability/version handshake (bridge ``--capability`` against the CC
+    probe); it is deliberately NOT a manifest field, and it defaults to
+    False so an unproven handshake fails closed rather than activating.
+    """
+    cm = _load_cohort()
+    cohort = _load_cohort_manifest(repo_root)
+    if cohort is None:
+        return None
+    ok, errors = cm.validate_cohort(cohort)
+    if not ok:
+        raise ValueError("cohort manifest invalid: %s" % "; ".join(errors))
+    if pairing is None:
+        pairing = cm.PAIR_NEW_NEW
+    tested = cohort.get("tested_pairs") or [
+        (cohort["onb_sha"], cohort["cc_sha"])]
+    verdict = cm.evaluate_pairing(
+        pairing=pairing, onb_sha=cohort["onb_sha"], cc_sha=cohort["cc_sha"],
+        tested_pairs=tested, handshake_ok=bool(handshake_ok))
+    if verdict["behavior"] != cm.BEHAVIOR_FULL_CONTRACT:
+        raise ValueError(
+            "half-promoted pair must not activate: %s (pairing=%s, onb=%s, "
+            "cc=%s)" % (verdict["reason"], pairing, cohort["onb_sha"],
+                        cohort["cc_sha"]))
+    return cohort
 
 def promote(state, repository, batch_id, final_main_sha, force_push=False,
             cohort=None, pairing=None, handshake_ok=False):
@@ -373,6 +440,11 @@ def promote(state, repository, batch_id, final_main_sha, force_push=False,
     with the truthful capability state recorded. When omitted, the
     manifest records ``cohort.checked = False`` so the absence of
     cross-repo evidence is visible rather than silent.
+
+    The committed release-cohort manifest INSTANCE
+    (``<repo root>/release-cohort.json``) is enforced separately by
+    :func:`check_release_cohort`, which binds a release to the tested
+    ONB+CC pair the instance names (14.8/17.4).
     """
     if force_push:
         raise ValueError("force-push is never permitted")
