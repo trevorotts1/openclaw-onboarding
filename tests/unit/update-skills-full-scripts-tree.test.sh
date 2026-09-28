@@ -97,6 +97,25 @@ else
   bad "perms degrade wrongly printed FATAL"
 fi
 
+# One destination FILE owned by another user (a root-owned mc-route.sh left by a
+# root `docker exec`) inside a writable scripts/ dir. The node user can neither
+# open it for writing nor chmod it, but may unlink it. Reproduced without root:
+# a read-only file plus a no-op chmod so the self-heal cannot rescue it.
+FOREIGN_DST="$WORK/foreign-box/scripts"
+mkdir -p "$FOREIGN_DST"
+printf 'stale foreign-owned copy\n' > "$FOREIGN_DST/root-tool.sh"
+command chmod 444 "$FOREIGN_DST/root-tool.sh"
+(
+  chmod() { :; }
+  deliver_canonical_scripts_tree "$SRC" "$FOREIGN_DST"
+) > "$WORK/foreign.out" 2>&1
+_foreign_rc=$?
+if [ "$_foreign_rc" -eq 0 ] && cmp -s "$SRC/root-tool.sh" "$FOREIGN_DST/root-tool.sh"; then
+  ok "an unwritable file in a writable scripts/ dir is replaced, not a FATAL"
+else
+  bad "an unwritable file in a writable scripts/ dir returned rc=$_foreign_rc (expected 0 + canonical bytes)"
+fi
+
 # The caller must treat rc 2 as a non-fatal DEFERRED delivery (proceed to the
 # stamp), and reserve the exit-1 abort for a real fatal (rc 1).
 if grep -q 'OC_SCRIPTS_DELIVERY_DEFERRED' "$UPDATE_SH" \
