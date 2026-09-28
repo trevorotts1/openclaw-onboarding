@@ -1,5 +1,32 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.0.1] - 2026-09-28 — fix: venv out of the skill root + no duplicate SKILL.md registration
+
+### Fixed (root cause — OpenClaw's skill scanner walked the runtime copy's venv on every rescan)
+- **`wire.sh`'s venv now lives OUTSIDE every skill root.** It previously built its ~215 MB venv at
+  `<VC_DIR>/venv`, inside `~/.openclaw/skills/` (VPS: `/data/.openclaw/skills/`). OpenClaw's skill
+  discovery walks every skill root up to depth 6 on every rescan, skipping only dot-prefixed names
+  and `node_modules` — never `venv` — so that tree got walked on every scan. The venv now defaults to
+  `$(dirname "$SKILLS_PARENT")/venvs/video-creator` (Mac `~/.openclaw/venvs/video-creator`, VPS
+  `/data/.openclaw/venvs/video-creator`), still overridable by `VENV_DIR`.
+- **Idempotent migration, not a rebuild.** A legacy `<VC_DIR>/venv` is `mv`'d to the new location
+  (fast, no reinstall); if both exist, the new one wins when its python can `import moviepy.editor`,
+  otherwise the legacy one replaces it. A venv relocated by `mv` (by this fix, or already moved by
+  hand before it existed) keeps a stale `bin/activate`/`bin/pip` pointing at the old path — wire.sh
+  now repairs `bin/activate` in place with `python -m venv --without-pip` and always invokes pip as
+  `"$VENV_DIR/bin/python" -m pip`, never bare `pip` or `source activate`.
+- **No more duplicate `video-creator` skill registration.** The runtime copy carried its own
+  `SKILL.md`, identical to this skill's, so OpenClaw registered `video-creator` twice and logged a
+  precedence collision on every scan. The copy step now excludes `SKILL.md`, `venv`, and `.venv`; any
+  stale `<VC_DIR>/SKILL.md` from an older install is removed on every pass.
+- **Docs and the drift-check registry updated to match:** `INSTALL.md`, `QC.md`, `INSTRUCTIONS.md`,
+  `SKILL.md`, `CORE_UPDATES.md`, and `scripts/tool-drift-check.sh`'s `video-creator` probe path.
+
+### Added
+- `tests/test_wire_contracts.py` — hermetic (no network, no pip) coverage of the migration: legacy
+  venv only, both present with a healthy new one, both present with a broken new one, and proof the
+  runtime copy gets neither a `SKILL.md` nor a copied venv.
+
 ## [7.0.0] - 2026-07-21 — feat: document Agnes Video 2.0 as an optional alternative generator
 
 ### Added

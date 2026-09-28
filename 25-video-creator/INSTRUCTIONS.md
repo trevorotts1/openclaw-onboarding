@@ -32,11 +32,13 @@ pip install moviepy opencv-python requests pillow
 The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
 ```
 
-Or manually:
+Or manually, once the numbered skill source is at `$HOME/.openclaw/skills/25-video-creator`:
 ```bash
-unzip video-creator.skill -d $HOME/.openclaw/skills/
-chmod +x $HOME/.openclaw/skills/video-creator/scripts/*.py
+bash $HOME/.openclaw/skills/25-video-creator/wire.sh
 ```
+This copies the runtime files (excluding `SKILL.md`, so the copy never
+registers as a second skill), builds the venv at
+`$HOME/.openclaw/venvs/video-creator`, and makes the scripts executable.
 
 ### Step 3: Configure AI Providers
 ```bash
@@ -128,7 +130,7 @@ When `--output` is omitted, text-to-video writes a prompt/timestamp filename in 
 Apply the core file updates from `CORE_UPDATES.md`.
 ## Video Creator Skill
 - Installed at: ~/.openclaw/skills/video-creator/
-- Full reference: ~/.openclaw/skills/video-creator/SKILL.md
+- Full reference: ~/.openclaw/skills/25-video-creator/SKILL.md
 ```
 
 ---
