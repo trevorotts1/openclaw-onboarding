@@ -202,6 +202,7 @@ class BoxResult:
         self.health: dict = {}
         self.rollback: dict = {}
         self.update_999: dict = {}
+        self.heal: dict = {}
         # One-word verdict for the fleet summary:
         # UPDATED | ROLLED_BACK | FAILED | SKIPPED  (+ outcome_detail).
         self.outcome: str = "SKIPPED" if dry_run else "FAILED"
@@ -238,6 +239,7 @@ class BoxResult:
             "health":              self.health,
             "rollback":            self.rollback,
             "update_999":          self.update_999,
+            "heal":                self.heal,
             "outcome":             self.outcome,
             "outcome_detail":      self.outcome_detail,
         }
@@ -2472,6 +2474,445 @@ class _BoxLock:
             self.held = False
 
 
+# ── Content integrity (post-update) ───────────────────────────────────────────
+#
+# "Updated" must mean the box HAS the release content, not that a script exited
+# 0. Each check compares what is installed against the release manifest the
+# update just delivered, using the SAME signals update-skills.sh's own gates
+# use:
+#   persona-index      .prebuilt-index-version sentinel == INDEX-MANIFEST release_tag
+#                      (U6b's D3 completion re-assertion / _persona_index_currency_probe)
+#   persona-embeddings COUNT(DISTINCT persona_id) in gemini-index.sqlite >= the
+#                      manifest's embedded_persona_count
+#   sop-library        `sops` rows >= SOP-LIBRARY-MANIFEST canonical_sop_count   } _sop_library_currency_probe,
+#   sop-embeddings     sops WITH an embedding >= SOP-EMBEDDINGS-MANIFEST sop_count} same DB (resolve_db) and queries
+#   role-library       scripts/skill-content-hash.sh digest of the installed
+#                      23-ai-workforce-blueprint (which carries templates/role-library)
+#                      == the digest update-skills.sh recorded from the release source
+#   departments        refresh-dept-intake.py's own post-write verification receipt
+#                      from THIS run, and role folders present for every declared
+#                      department (the ROLE-FLOOR measure)
+# The two SOP checks are a Python port of _sop_library_currency_probe (that
+# bash function needs the sqlite3 CLI, which the Docker images do not ship);
+# tests/unit/fleet-refresh-roll-safety.test.py holds the parity test.
+# Everything here is read-only. "n/a" = not applicable / not measurable here,
+# never a pass by assumption and never a failure by assumption.
+
+INTEGRITY_CHECKS = ("persona-index", "persona-embeddings", "sop-library",
+                    "sop-embeddings", "role-library", "departments")
+
+
+def _json_file(p: Path) -> Optional[dict]:
+    try:
+        d = json.loads(Path(p).read_text())
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _sqlite_ro(db: Path, sql: str) -> Optional[int]:
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+        try:
+            return int(con.execute(sql).fetchone()[0])
+        finally:
+            con.close()
+    except (sqlite3.Error, TypeError, ValueError):
+        return None
+
+
+def _dashboard_db(paths: dict, skills_dir: Path) -> Optional[Path]:
+    if os.environ.get("FLEET_REFRESH_ROOT", "").strip():   # fixture: never the test machine's DB
+        cand = Path(paths.get("cc_dir") or "/nonexistent") / "mission-control.db"
+        return cand if cand.is_file() else None
+    for su in (skills_dir / "shared-utils", Path(__file__).resolve().parent):
+        try:
+            sys.path.insert(0, str(su))
+            from resolve_db import find_dashboard_db, is_db_found  # type: ignore
+            p = find_dashboard_db()
+            return Path(p) if is_db_found(p) else None
+        except Exception:
+            continue
+        finally:
+            sys.path.remove(str(su))
+    return None
+
+
+def ic_persona_index(skills_dir: Path, workspace: Path) -> dict:
+    man = _json_file(skills_dir / "shared-utils/prebuilt-index/INDEX-MANIFEST.json")
+    tag = (man or {}).get("release_tag")
+    if not tag:
+        return _hc("n/a", "no persona INDEX-MANIFEST release_tag on this box")
+    try:
+        sentinel = (workspace / "data/coaching-personas/.prebuilt-index-version").read_text().strip()
+    except OSError:
+        sentinel = ""
+    if sentinel == tag:
+        return _hc("pass", f"sentinel == release_tag ({tag})")
+    return _hc("fail", f"persona index sentinel {sentinel or '<missing>'} != release_tag {tag}")
+
+
+def ic_persona_embeddings(skills_dir: Path, workspace: Path) -> dict:
+    man = _json_file(skills_dir / "shared-utils/prebuilt-index/INDEX-MANIFEST.json") or {}
+    want = man.get("embedded_persona_count") or man.get("persona_count")
+    if not want:
+        return _hc("n/a", "manifest carries no persona count")
+    db = workspace / "data/coaching-personas/gemini-index.sqlite"
+    if not db.is_file():
+        return _hc("fail", f"persona embeddings database missing ({db.name})")
+    have = _sqlite_ro(db, "SELECT COUNT(DISTINCT persona_id) FROM embeddings")
+    if have is None:
+        return _hc("n/a", "persona embeddings database unreadable")
+    try:   # an honest embedding-receipt.json deferral (spend gate / no key) is not a gap
+        from persona_embedding_drift_probe import _deferred_slugs  # type: ignore
+        deferred = len(_deferred_slugs(workspace / "data/coaching-personas/personas"))
+    except Exception:
+        deferred = 0
+    if have + deferred >= int(want):
+        return _hc("pass", f"{have} personas embedded, {deferred} deferred (manifest {want})")
+    return _hc("fail", f"only {have} personas embedded ({deferred} deferred), manifest says {want}")
+
+
+def ic_sop(paths: dict, skills_dir: Path) -> tuple[dict, dict]:
+    db = _dashboard_db(paths, skills_dir)
+    if db is None:
+        na = _hc("n/a", "no Command Center database on this box")
+        return na, na
+    lib = _json_file(skills_dir / "shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json") or {}
+    canon = int(lib.get("canonical_sop_count") or 0)
+    rows = _sqlite_ro(db, "SELECT COUNT(*) FROM sops")
+    if not canon or rows is None:
+        lib_hc = _hc("n/a", "SOP library manifest or sops table unreadable")
+    elif rows >= canon:
+        lib_hc = _hc("pass", f"{rows}/{canon} SOPs")
+    else:
+        lib_hc = _hc("fail", f"SOP library has {rows} of {canon} SOPs")
+    emb = _json_file(skills_dir / "shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json") or {}
+    want = int(emb.get("sop_count") or 0)
+    has_table = _sqlite_ro(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings'")
+    if not want or has_table is None:
+        emb_hc = _hc("n/a", "SOP embeddings manifest or database unreadable")
+    else:
+        # COVERAGE, not raw rows -- an all-orphan embeddings table is not "current".
+        cov = _sqlite_ro(db, "SELECT COUNT(*) FROM sops s WHERE EXISTS "
+                             "(SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)") if has_table else 0
+        if cov is None:
+            emb_hc = _hc("n/a", "SOP embeddings coverage unreadable")
+        elif cov >= want:
+            emb_hc = _hc("pass", f"{cov} SOPs embedded (manifest {want})")
+        else:
+            emb_hc = _hc("fail", f"only {cov} SOPs embedded, manifest says {want}")
+    return lib_hc, emb_hc
+
+
+def ic_role_library(skills_dir: Path, repo_root: Path, want_version: str) -> dict:
+    man = _json_file(skills_dir / ".onboarding-content-manifest.json")
+    rec = ((man or {}).get("skills") or {}).get("23-ai-workforce-blueprint")
+    if not rec:
+        return _hc("n/a", "no recorded release digest for the role library")
+    if want_version and man.get("version") != want_version:
+        return _hc("fail", f"content manifest is for {man.get('version')}, not {want_version}")
+    hasher = repo_root / "scripts/skill-content-hash.sh"
+    if not hasher.is_file():
+        return _hc("n/a", "skill-content-hash.sh not in this clone")
+    try:
+        r = subprocess.run(["bash", str(hasher), str(skills_dir)], capture_output=True, text=True, timeout=900)
+    except (OSError, subprocess.SubprocessError) as e:
+        return _hc("n/a", f"content hash could not run: {e}")
+    got = next((ln.split("|", 1)[1] for ln in r.stdout.splitlines()
+                if ln.startswith("23-ai-workforce-blueprint|")), None)
+    if r.returncode != 0 or got is None:
+        return _hc("n/a", f"content hash exited {r.returncode}")
+    if got == rec:
+        return _hc("pass", "installed role library matches the release digest")
+    return _hc("fail", "installed role library differs from the release (skill 23 digest mismatch)")
+
+
+def ic_departments(paths: dict, since: float) -> dict:
+    workspace = Path(paths.get("workspace") or "/nonexistent")
+    notes = []
+    rc = _json_file(workspace / ".dept-intake-refresh-receipt.json")
+    if rc and rc.get("apply"):
+        try:
+            from datetime import datetime
+            at = datetime.fromisoformat(str(rc.get("at")).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            at = 0
+        if at >= since:
+            if not rc.get("ok"):
+                bad = [d.get("dept") for d in rc.get("depts") or [] if d.get("status") != "ok"
+                       and d.get("status") != "skipped_not_materialized"]
+                return _hc("fail", f"department intake files not current: {', '.join(map(str, bad))[:160]}")
+            notes.append("intake files verified")
+    pp = _resolve_provisioning_paths(paths)
+    depts = _prov_read_json(pp.get("departments_json"))
+    if isinstance(depts, dict):
+        try:
+            depts = normalize_departments(depts, path=pp.get("departments_json"))
+        except MalformedDepartmentsError:
+            depts = None
+    declared = len(depts) if isinstance(depts, list) else 0
+    if declared:
+        ws = _resolve_departments_workspace(paths, pp)
+        roles = _count_role_artifacts(ws)[1] if ws else 0
+        if not roles:
+            return _hc("fail", f"{declared} departments declared but no role folders on disk")
+        notes.append(f"{declared} departments, {roles} role artifacts")
+    if not notes:
+        return _hc("n/a", "no departments materialized and no intake receipt from this run")
+    return _hc("pass", "; ".join(notes))
+
+
+def probe_integrity(paths: dict, repo_root: Path, since: float, want_version: str) -> dict:
+    skills_dir = _skills_dir(paths)
+    workspace = Path(paths.get("workspace") or "/nonexistent")
+    sop_lib, sop_emb = ic_sop(paths, skills_dir)
+    return {
+        "persona-index":      ic_persona_index(skills_dir, workspace),
+        "persona-embeddings": ic_persona_embeddings(skills_dir, workspace),
+        "sop-library":        sop_lib,
+        "sop-embeddings":     sop_emb,
+        "role-library":       ic_role_library(skills_dir, repo_root, want_version),
+        "departments":        ic_departments(paths, since),
+    }
+
+
+# ── Fix first, then roll back ─────────────────────────────────────────────────
+#
+# A failed post-update check is first FIXED, up to HEAL_ATTEMPTS times. Each
+# attempt picks its actions from what is failing right now:
+#   gateway-process / gateway-health / telegram-getme -> restart the gateway
+#       Mac: launchctl kickstart -k (fallback: launchctl stop; KeepAlive restarts it)
+#       Hostinger: docker compose up -d --force-recreate   } run on the HOST by
+#       Contabo:   docker restart <container>              } fleet-refresh.sh
+#   a failed update step                -> run that step again
+#   cc-health                           -> rebuild + restart the Command Center
+#   any content-integrity mismatch      -> run update-skills.sh again
+#   session-reset                       -> reset the main session again
+# then everything is re-checked. Only when every attempt fails is the box rolled
+# back to its snapshot. Every attempt is recorded in res.heal["attempts"].
+
+HEAL_ATTEMPTS = 3
+GATEWAY_CHECKS = ("gateway-process", "gateway-health", "telegram-getme")
+_GATEWAY_LABEL = "ai.openclaw.gateway"
+_HEAL_ORDER = ("rerun:pull-onboarding", "rerun:pull-cc", "rebuild-cc", "rerun:restart-cc",
+               "restart-gateway", "reset-session")
+
+
+def _in_container() -> bool:
+    if Path("/.dockerenv").exists():
+        return True
+    try:
+        return any(k in Path("/proc/1/cgroup").read_text() for k in ("docker", "containerd", "kubepods"))
+    except OSError:
+        return False
+
+
+def _wait_gateway(paths: dict, seconds: int = 90) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if hc_gateway_health(paths, tries=1)["status"] == "pass":
+            return True
+        time.sleep(5)
+    return False
+
+
+def _wait_cc(paths: dict, seconds: int) -> Optional[bool]:
+    """None when there is no Command Center; else whether /api/health answered."""
+    if hc_cc_health(paths, times=1)["status"] == "n/a":
+        return None
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if hc_cc_health(paths, times=1)["status"] == "pass":
+            return True
+        time.sleep(10)
+    return False
+
+
+def restart_gateway_mac() -> str:
+    """launchd kickstart, the same way platform/mac/service-selfheal/
+    gateway-health-watchdog.sh heals it: a booted-out label (a stalled upgrade
+    leaves it that way; kickstart then does nothing) is bootstrapped from its
+    plist first. Some Macs answer 125/126 ('Domain does not support specified
+    action') over SSH, so fall back to stop and let KeepAlive restart it."""
+    uid = os.getuid()
+    target = f"gui/{uid}/{_GATEWAY_LABEL}"
+    plist = Path.home() / "Library/LaunchAgents" / f"{_GATEWAY_LABEL}.plist"
+    note = ""
+    if subprocess.run(["launchctl", "print", target], capture_output=True, timeout=30).returncode != 0 \
+            and plist.is_file():
+        b = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist)],
+                           capture_output=True, text=True, timeout=60)
+        note = f"bootstrapped booted-out label (exit {b.returncode}); "
+    k = subprocess.run(["launchctl", "kickstart", "-k", target],
+                       capture_output=True, text=True, timeout=60)
+    if k.returncode == 0:
+        return note + "launchctl kickstart ok"
+    s = subprocess.run(["launchctl", "stop", _GATEWAY_LABEL], capture_output=True, text=True, timeout=60)
+    if s.returncode == 0:
+        return note + f"kickstart exited {k.returncode}; launchctl stop ok (KeepAlive restarts it)"
+    raise RuntimeError(f"kickstart exited {k.returncode}, stop exited {s.returncode}: {s.stderr.strip()[:120]}")
+
+
+def gate_problems(res: BoxResult, baseline: dict, post: dict, integrity: dict) -> dict:
+    """name -> detail for everything the gate will not accept. A content check
+    that was already failing before the update is a pre-existing gap: recorded
+    in res.health["content_gaps_preexisting"] and alerted, not gated."""
+    probs = {n: post[n]["detail"] for n in health_regressions(baseline, post)}
+    before = res.health.get("integrity_baseline") or {}
+    pre = {}
+    for n, c in integrity.items():
+        if c["status"] != "fail":
+            continue
+        if (before.get(n) or {}).get("status") == "fail":
+            pre[n] = c["detail"]
+        else:
+            probs[n] = c["detail"]
+    res.health["content_gaps_preexisting"] = pre
+    snap_cc = (res.snapshot.get("cc") or {}).get("sha")
+    cc_moved = bool(snap_cc) and _git(Path(res.snapshot["cc"]["dir"]), "rev-parse", "HEAD") != snap_cc
+    for step in _MUTATING_STEPS:
+        v = str(res.steps.get(step, ""))
+        if not v.startswith("failed") or "[exit-3]" in v:
+            continue
+        if step != "pull-onboarding" and not cc_moved:
+            continue   # a Command Center step failed while nothing of it changed
+        probs[step] = v[len("failed:"):][:200]
+    return probs
+
+
+def heal_actions(probs: dict) -> list[str]:
+    acts = set()
+    for name in probs:
+        if name in GATEWAY_CHECKS:
+            acts.add("restart-gateway")
+        elif name == "cc-health":
+            acts.add("rebuild-cc")
+        elif name == "session-reset":
+            acts.add("reset-session")
+        elif name in INTEGRITY_CHECKS:
+            acts.add("rerun:pull-onboarding")
+        elif name in ("build-cc",):
+            acts.add("rebuild-cc")
+        elif name in _MUTATING_STEPS:
+            acts.add(f"rerun:{name}")
+    if acts & {"restart-gateway", "rebuild-cc", "rerun:pull-onboarding"}:
+        acts.add("reset-session")   # reload whatever changed into the main agent
+    return [a for a in _HEAL_ORDER if a in acts]
+
+
+def _run_heal_action(act: str, paths: dict, repo_root: Path, res: BoxResult, ctx: dict) -> str:
+    if act == "rerun:pull-onboarding":
+        ctx["pinned"] = step_pull_onboarding(paths, repo_root, ctx["pinned"], res, dry_run=False)
+        return res.steps.get("pull-onboarding", "?")
+    if act == "rerun:pull-cc":
+        step_pull_cc(paths, ctx["cc_tag"], res, dry_run=False, force_cc=ctx.get("force_cc", False))
+        return res.steps.get("pull-cc", "?")
+    if act in ("rebuild-cc", "rerun:restart-cc"):
+        step = "build-cc" if act == "rebuild-cc" else "restart-cc"
+        try:
+            (step_build_cc if step == "build-cc" else step_restart_cc)(paths, res, False)
+        except SystemExit:
+            res.step_fail(step, "Wave-5 preflight blocked the Command Center deploy")
+        return res.steps.get(step, "?")
+    if act == "restart-gateway":
+        if sys.platform == "darwin":
+            out = restart_gateway_mac()
+            return out + ("; gateway healthy" if _wait_gateway(paths) else "; gateway NOT healthy after 90s")
+        return "needs-host"   # a container's gateway can only be restarted from the host
+    if act == "reset-session":
+        step_sessions_reset_ceo(_resolve_ceo_session_key(paths), res, dry_run=False)
+        return res.steps.get("sessions-reset-CEO", "?")
+    return "unknown action"
+
+
+def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, ctx: dict) -> str:
+    """Returns "done" (gate settled: healthy, healed, rolled back or failed) or
+    "needs-host-restart" (state saved; fleet-refresh.sh restarts the container
+    and resumes with --continue-heal)."""
+    heal = res.heal
+    attempts = heal.setdefault("attempts", [])
+    while True:
+        post = probe_health(paths, res)
+        integ = probe_integrity(paths, repo_root, heal.get("run_start", 0), ctx["pinned"])
+        res.health["post"], res.health["integrity"] = post, integ
+        probs = gate_problems(res, baseline, post, integ)
+        res.health["regressions"] = sorted(probs)
+        if not probs:
+            res.step_ok("health-gate")
+            if attempts:
+                heal["healed"] = True
+                res.steps["health-gate"] = f"ok:healed after {len(attempts)} fix attempt(s)"
+            return "done"
+        if len(attempts) >= HEAL_ATTEMPTS:
+            break
+        attempt = {"n": len(attempts) + 1, "failing": dict(probs), "actions": {}}
+        attempts.append(attempt)
+        _warn(f"  FIX ATTEMPT {attempt['n']}/{HEAL_ATTEMPTS}: {', '.join(sorted(probs))}")
+        for act in heal_actions(probs):
+            try:
+                out = _run_heal_action(act, paths, repo_root, res, ctx)
+            except Exception as e:   # an attempt that errors is still an attempt
+                out = f"error: {e}"
+            if out == "needs-host":
+                if ctx.get("host_restart"):
+                    attempt["actions"][act] = "requested from host"
+                    heal["pending_host_restart"] = True
+                    save_heal_state(res, baseline, ctx)
+                    return "needs-host-restart"
+                out = "skipped: running inside the container with no host access"
+            attempt["actions"][act] = str(out)[:240]
+
+    # Every fix attempt failed.
+    reasons = [f"{n}: {d}" for n, d in sorted(probs.items())]
+    res.steps["health-gate"] = "failed:" + "; ".join(reasons)[:300]
+    restored = rollback_box(paths, repo_root, res, reasons)
+    after = probe_health(paths)
+    res.health["after_rollback"] = after
+    still = health_regressions(baseline, after)
+    res.rollback["health_restored"] = not still
+    tried = f"{len(attempts)} fix attempt(s) failed"
+    if restored and not still:
+        res.steps["rollback"] = "ok"
+        res.outcome = "ROLLED_BACK"
+        res.outcome_detail = f"{tried}; rolled back. Failing: {'; '.join(reasons)}"[:400]
+    else:
+        why = res.rollback["errors"] + [f"still failing: {n}" for n in still]
+        res.steps["rollback"] = "failed:" + "; ".join(why)[:300]
+        res.outcome = "FAILED"
+        res.outcome_detail = (f"{tried}; ROLLBACK INCOMPLETE ({'; '.join(why)[:200]}) "
+                              f"after: {'; '.join(reasons)[:200]}")
+    _err(f"  {res.outcome}: {res.outcome_detail}")
+    try:
+        from cc_compat import load_cc_compat  # type: ignore
+        ctx["pinned"] = load_cc_compat(repo_root).get("onboardingVersion", ctx["pinned"])
+    except Exception:
+        pass
+    return "done"
+
+
+def _heal_state_path(res: BoxResult) -> Path:
+    return Path(res.snapshot.get("backup_dir") or "/tmp") / "heal-state.json"
+
+
+def save_heal_state(res: BoxResult, baseline: dict, ctx: dict) -> None:
+    p = _heal_state_path(res)
+    res.heal["state_path"] = str(p)
+    p.write_text(json.dumps({"res": res.to_dict(), "baseline": baseline, "ctx": ctx}, default=str))
+    os.chmod(p, 0o600)
+
+
+def load_heal_state(path: Path) -> tuple[BoxResult, dict, dict]:
+    st = json.loads(Path(path).read_text())
+    d = st["res"]
+    res = BoxResult(d["box"], dry_run=False)
+    for k, v in d.items():
+        if hasattr(res, k) and k not in ("box", "dry_run"):
+            setattr(res, k, v)
+    return res, st["baseline"], st["ctx"]
+
+
 # ── Main per-box run ──────────────────────────────────────────────────────────
 
 def run_box(
@@ -2483,14 +2924,19 @@ def run_box(
     local: bool,
     force_cc: bool,
     expected_sha: Optional[str],
+    host_restart: bool = False,
+    continue_heal: Optional[Path] = None,
+    host_restart_result: str = "",
 ) -> BoxResult:
     """
     Execute all 8 steps for a single box.  Returns a BoxResult regardless of
     per-step failures (failure isolation).
 
-    SAFETY: this function NEVER calls `openclaw gateway restart` — only
-    `sessions.reset` (step 6).  Calling gateway restart over SSH on a Mac
-    causes LaunchAgent err 125 and brings the box down.
+    SAFETY: this function NEVER calls `openclaw gateway restart` (over SSH on
+    a Mac that fails with LaunchAgent err 125 and brings the box down). The
+    gateway is restarted only as a fix attempt after a failed health check,
+    through launchd on a Mac (restart_gateway_mac) or from the host for a
+    container (fleet-refresh.sh, via --host-restart / --continue-heal).
     """
     res = BoxResult(box=box, dry_run=dry_run)
     res.merged_sha = expected_sha
@@ -2519,16 +2965,45 @@ def run_box(
             res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", busy
             return res
     try:
+        if continue_heal:
+            return _continue_heal(Path(continue_heal), host_restart_result, compat, paths,
+                                  shared_utils, repo_root)
         return _run_box_body(res, compat, pinned_onboarding_tag, paths, shared_utils,
-                             repo_root, dry_run, verify_only, local, force_cc)
+                             repo_root, dry_run, verify_only, local, force_cc, host_restart)
     finally:
         if lock:
             lock.release()
 
 
+def _continue_heal(state: Path, host_result: str, compat: dict, paths: dict,
+                   shared_utils: Path, repo_root: Path) -> BoxResult:
+    """Resume after fleet-refresh.sh restarted this box's container from the host."""
+    res, baseline, ctx = load_heal_state(state)
+    heal = res.heal
+    heal.pop("pending_host_restart", None)
+    last = (heal.get("attempts") or [{}])[-1]
+    ok = _wait_gateway(paths, 120)
+    # The Command Center comes back after the gateway (pm2 resurrect waits ~45s
+    # on Hostinger); judging it any sooner burns a fix attempt on a healthy box.
+    cc_ok = _wait_cc(paths, 240)
+    last.setdefault("actions", {})["restart-gateway"] = (
+        f"host: {host_result or 'done'}; gateway {'healthy' if ok else 'NOT healthy after 120s'}"
+        + ("" if cc_ok is None else f"; Command Center {'healthy' if cc_ok else 'NOT healthy after 240s'}"))
+    if heal_and_gate(paths, repo_root, res, baseline, ctx) == "needs-host-restart":
+        return _pending(res)
+    return _finish_run(res, compat, ctx["pinned"], paths, shared_utils, repo_root,
+                       False, False, ctx["cc_tag"], _resolve_ceo_session_key(paths))
+
+
+def _pending(res: BoxResult) -> BoxResult:
+    res.result, res.outcome = "pending_host_restart", "PENDING"
+    res.outcome_detail = "container gateway restart requested from the host"
+    return res
+
+
 def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths: dict,
                   shared_utils: Path, repo_root: Path, dry_run: bool, verify_only: bool,
-                  local: bool, force_cc: bool) -> BoxResult:
+                  local: bool, force_cc: bool, host_restart: bool = False) -> BoxResult:
 
     # Step 0: detect
     try:
@@ -2549,6 +3024,11 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
     baseline = probe_health(paths)
     res.health = {"baseline": baseline,
                   "preexisting_failures": [n for n, c in baseline.items() if c["status"] == "fail"]}
+    res.heal = {"run_start": time.time()}
+    # The installed content's integrity BEFORE the update (against the manifests
+    # it was installed from). A gap that was already there is reported and
+    # alerted, never blamed on -- or rolled back by -- this update.
+    res.health["integrity_baseline"] = probe_integrity(paths, repo_root, 0, res.onboarding_version)
 
     if not verify_only:
         # The Wave-5 gate would otherwise sys.exit() from inside build-cc, AFTER
@@ -2611,14 +3091,25 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
         except Exception as e:
             res.step_fail("sessions-reset-CEO", str(e))
 
-        # Step 6b: health gate -> rollback on any regression or half-applied step
+        # Step 6b: health + content gate -> fix up to 3 times -> roll back
         if not dry_run:
-            pinned_onboarding_tag = _health_gate(paths, repo_root, res, baseline, pinned_onboarding_tag)
+            ctx = {"pinned": pinned_onboarding_tag, "cc_tag": cc_tag, "force_cc": force_cc,
+                   "host_restart": host_restart}
+            if heal_and_gate(paths, repo_root, res, baseline, ctx) == "needs-host-restart":
+                return _pending(res)
+            pinned_onboarding_tag = ctx["pinned"]
     else:
         ceo_session_key = _resolve_ceo_session_key(paths)
         for step in ["pull-onboarding", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"]:
             res.step_skip(step, "verify-only")
 
+    return _finish_run(res, compat, pinned_onboarding_tag, paths, shared_utils, repo_root,
+                       dry_run, verify_only, cc_tag, ceo_session_key)
+
+
+def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths: dict,
+                shared_utils: Path, repo_root: Path, dry_run: bool, verify_only: bool,
+                cc_tag: str, ceo_session_key: Optional[str]) -> BoxResult:
     # Step 7: verify (always runs — reports current state in dry-run mode)
     try:
         _check_deployed(paths, compat, pinned_onboarding_tag, res)
@@ -2697,62 +3188,19 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             res.outcome = "UPDATED"
             warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]
             pre = res.health.get("preexisting_failures") or []
+            healed = len(res.heal.get("attempts") or [])
+            gaps = res.health.get("content_gaps_preexisting") or {}
+            if gaps:
+                res.heal["needs_attention"] = True
             res.outcome_detail = "; ".join(filter(None, [
+                f"NEEDS ATTENTION - content gaps that were already there before this update: "
+                + "; ".join(f"{k}: {v}" for k, v in gaps.items()) if gaps else "",
+                f"fixed after {healed} attempt(s)" if healed else "",
                 f"checks failing: {', '.join(warn)}" if warn else "",
                 f"already unhealthy before update: {', '.join(pre)}" if pre else "",
             ]))
 
     return res
-
-
-def _health_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict,
-                 pinned_onboarding_tag: str) -> str:
-    """Post-update health gate. Rolls the box back to its snapshot when a check
-    that passed before now fails, or a mutating step failed part-way. Returns
-    the onboarding version the box should now be judged against."""
-    if "timed out" in str(res.steps.get("sessions-reset-CEO", "")):   # one retry before judging
-        step_sessions_reset_ceo(_resolve_ceo_session_key(paths), res, dry_run=False)
-    post = probe_health(paths, res)
-    res.health["post"] = post
-    regressed = health_regressions(baseline, post)
-    reasons = [f"{n}: {post[n]['detail']}" for n in regressed]
-    # A failed step means a half-applied box -- except a Command Center step
-    # that failed while the checkout never moved (nothing of it was changed;
-    # e.g. no Command Center at this box's path).
-    snap_cc = (res.snapshot.get("cc") or {}).get("sha")
-    cc_moved = bool(snap_cc) and _git(Path(res.snapshot["cc"]["dir"]), "rev-parse", "HEAD") != snap_cc
-    for step in _MUTATING_STEPS:
-        v = str(res.steps.get(step, ""))
-        if not v.startswith("failed") or "[exit-3]" in v:
-            continue
-        if step != "pull-onboarding" and not cc_moved:
-            continue
-        reasons.append(f"{step} failed")
-    res.health["regressions"] = regressed
-    if not reasons:
-        res.step_ok("health-gate")
-        return pinned_onboarding_tag
-
-    res.steps["health-gate"] = "failed:" + "; ".join(reasons)[:300]
-    restored = rollback_box(paths, repo_root, res, reasons)
-    after = probe_health(paths)
-    res.health["after_rollback"] = after
-    still = health_regressions(baseline, after)
-    res.rollback["health_restored"] = not still
-    if restored and not still:
-        res.steps["rollback"] = "ok"
-        res.outcome, res.outcome_detail = "ROLLED_BACK", "; ".join(reasons)[:300]
-    else:
-        why = res.rollback["errors"] + [f"still failing: {n}" for n in still]
-        res.steps["rollback"] = "failed:" + "; ".join(why)[:300]
-        res.outcome = "FAILED"
-        res.outcome_detail = f"ROLLBACK INCOMPLETE ({'; '.join(why)[:200]}) after: {'; '.join(reasons)[:200]}"
-    _err(f"  {res.outcome}: {res.outcome_detail}")
-    try:
-        from cc_compat import load_cc_compat  # type: ignore
-        return load_cc_compat(repo_root).get("onboardingVersion", pinned_onboarding_tag)
-    except Exception:
-        return pinned_onboarding_tag
 
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
@@ -2769,6 +3217,11 @@ def main() -> None:
     parser.add_argument("--local",          action="store_true", help="Local mode (no SSH, sync build)")
     parser.add_argument("--force-cc",       action="store_true", help="Stash CC dirty tree instead of aborting")
     parser.add_argument("--expected-sha",   default=None,    help="Expected onboarding main SHA (informational)")
+    parser.add_argument("--host-restart",   action="store_true",
+                        help="fleet-refresh.sh can restart this box's container from the host")
+    parser.add_argument("--continue-heal",  default=None, metavar="STATE",
+                        help="resume the fix loop after a host-side container restart")
+    parser.add_argument("--host-restart-result", default="", help="what the host restart did")
     args = parser.parse_args()
 
     shared_utils = Path(args.shared_utils).resolve()
@@ -2790,6 +3243,9 @@ def main() -> None:
         local=args.local,
         force_cc=args.force_cc,
         expected_sha=args.expected_sha,
+        host_restart=args.host_restart,
+        continue_heal=Path(args.continue_heal) if args.continue_heal else None,
+        host_restart_result=args.host_restart_result,
     )
 
     # Emit JSON to stdout
@@ -2803,6 +3259,8 @@ def main() -> None:
     #    then marks box UNKNOWN on repeated failure; NEVER destructive
     if result.result in ("ok", "dry-run"):
         sys.exit(0)
+    elif result.result == "pending_host_restart":
+        sys.exit(4)
     elif result.result in ("rolled_back", "skipped"):
         sys.exit(2)
     elif result.result == "partial":
