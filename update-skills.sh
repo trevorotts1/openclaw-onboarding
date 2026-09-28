@@ -6047,6 +6047,34 @@ print(state + " " + str(len(headers)))
     fi
   fi
 
+  # >>> DECISION-MODE-PRESERVE-BEGIN  (A62 clause 4)
+  # A62: "Explicit modes survive install/update." The store is
+  # $OC_CONFIG/decision-engine-mode.conf (one word: auto|shadow|legacy|off).
+  # NOTHING on this path writes it — the wholesale config/ delivery above
+  # carries only the repo's own files, and this step never touches the store.
+  # That absence IS the preservation guarantee: there is no release-default
+  # write for an explicit value to lose to. What was missing is the RECEIPT.
+  # This runs AFTER the shared-utils refresh closes, so the receipt describes
+  # the tree that actually landed on the box, and it asks the SAME authority
+  # the decision core uses (decision_engine.modes) instead of re-implementing
+  # the merge. An explicit off/legacy/shadow is named, and a CORRUPT value is
+  # never rewritten and never silently absorbed by the release default.
+  # NON-FATAL (rc 1 is a WARN): a mode-store typo must not withhold the version
+  # stamp for a whole box. An unprovable receipt (rc 2) is also never a pass.
+  if [ -f "$EXTRACTED_DIR/scripts/decision-engine-mode.py" ]; then
+    _DEM_RC=0
+    python3 "$EXTRACTED_DIR/scripts/decision-engine-mode.py" \
+        --shared-utils "$SKILLS_DIR/shared-utils" \
+        --oc-config "$OC_CONFIG" --assert-preserved || _DEM_RC=$?
+    case "$_DEM_RC" in
+      0) : ;;
+      1) echo "  ✗ decision-engine mode store is CORRUPT — see the ACTION above. No file was written; the box keeps running the stored value until it is fixed." >&2 ;;
+      *) echo "  ⚠ decision-engine mode receipt could not be produced (rc=$_DEM_RC) — the canonical modes module was not loadable from $SKILLS_DIR/shared-utils. An UNPROVEN receipt is not a pass." >&2 ;;
+    esac
+    unset _DEM_RC
+  fi
+  # <<< DECISION-MODE-PRESERVE-END
+
   # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).
   # Neither install nor update copied this before; Skills 47/48 wiring FAILed
   # with a FATAL looking for funnel/presentation/video/ad SOPs.
