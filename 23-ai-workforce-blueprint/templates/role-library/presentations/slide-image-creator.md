@@ -160,7 +160,7 @@ Review the master SOP for any updates to the 15-element spec or the image model.
 - 45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md (read -- the negative-prompt system this role wires into SOP 9.8: the universal baseline avoid-list, the inline-conversion mechanism, the positive-twin rule, the no-contradiction audit)
 - sops/SOP-IMG-01-KIE-CALL-MECHANICS.md (read -- the three Kie.ai modes; the logo-on-slides image-to-image directive lives here)
 - sops/SOP-DESIGN-04-LOGO-CONSISTENCY.md (read -- one locked logo asset, composited image-to-image, never redrawn)
-- working/checkpoints/pptx_text_overlays.json (write -- struck/replacement text entries when the two-failed-attempts native-text fallback fires on ANY critical text element; strike:true for struck prices)
+- ~~working/checkpoints/pptx_text_overlays.json (write)~~ -- ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED). The native-text fallback no longer exists; garbled text is fixed by re-prompt/re-seed, then human escalation.
 
 ---
 
@@ -553,13 +553,13 @@ Rules:
 4. Verify: the struck price on this slide matches the PREVIOUS drop price (or ANCHOR_PRICE for Drop 1) in price_ladder.json exactly.
 5. Verify: the new (unhurt) price on this slide matches price_ladder.json for this drop number exactly.
 6. Write steps 2-3 into element 7 (OBJECT PLACEMENT) and element 3 (HEADLINE VERBATIM) of the prompt, overriding the standard placement for price-drop slides.
-7. **Two-failed-attempts native-text fallback (generalized from PRICE text to ALL critical text -- the forensic Dimension-F fix, "native-text fallback only triggered for price text").** The native-text fallback is NOT scoped to price text only. It applies to EVERY critical verbatim string -- every headline, sub-headline, supporting line, kicker label, price, struck price, and any logo wordmark -- whenever that string garbles, misspells, or duplicates twice at image QC (the "hclarity" / "IDEHNOTTY DEVELOPMENT" defect class). After TWO failed render attempts on any such text element, trigger the native PPTX text overlay fallback: regenerate the slide WITHOUT the failing text element (the spelling-lock from element 3 having failed twice on the model), and record the exact intended string in working/checkpoints/pptx_text_overlays.json so the PPTX Assembly Specialist composites it as a native text box at Phase 6, where spelling is guaranteed. For a struck price, set `"strike": true` on the entry. Example entries: `{ "slide": "slide-65", "text": "$1,000", "strike": true, "color": "[BRAND_ACCENT]", "note": "old price, strike line failed render x2" }` and `{ "slide": "slide-23", "text": "There is a difference between parenting through control and parenting through clarity", "strike": false, "note": "headline garbled to 'hclarity' x2; native text overlay" }`. This is the documented fallback for ANY slide whose verbatim text fails twice on render (SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (PRESENTATION-MASTER-DOCTRINE.md §4) and 10.1; SOP-DESIGN-04 step 2 extends the same fallback to the logo).
+7. **Two-failed-attempts native-text fallback -- ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED).** The native PPTX text overlay fallback no longer exists. When a critical verbatim string garbles, misspells, or duplicates at image QC: re-prompt / re-seed (new prompt + new seed, re-render the composed image). If it persists after re-render attempts, HUMAN ESCALATION. A native text overlay is never the remedy. Do not write `pptx_text_overlays.json`; its presence is a hard auto-fail (AF-OVERLAY-DELIVERED).
 
 **Outputs:**
 - Price-drop slide prompts with the price-tag motif, the drawn-line strike, and new-price formatting instructions
-- working/checkpoints/pptx_text_overlays.json entries (with `strike:true` for struck prices) when the two-failed-attempts fallback is triggered
+- ~~working/checkpoints/pptx_text_overlays.json entries~~ -- ELIMINATED (Decision 5C). No overlay entries are written.
 
-**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (for any pptx_text_overlays.json fallback entries)
+**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (receives the composed slide images -- the native-text overlay fallback is ELIMINATED, Decision 5C, AF-OVERLAY-DELIVERED; never write `pptx_text_overlays.json`)
 
 **Failure mode:** If a price-drop slide's copy in slides_copy.md shows a price that does not match price_ladder.json, halt and flag to the Director: "Price discrepancy on slide N -- slides_copy.md shows $X but price_ladder.json shows $Y. Offer Price Strategist must resolve before prompt can be written."
 
@@ -820,7 +820,7 @@ The four write-time controls that pre-empt the forensic defects. Every prompt mu
 ### You hand work off to:
 - QC Specialist -- Presentations (Phase 3 prompt QC)
 - After Phase 3 passes: Slide Submitter (Phase 4 generation) receives the prompts directory
-- PPTX Assembly Specialist -- receives working/checkpoints/pptx_text_overlays.json entries (with strike:true for struck prices) whenever the two-failed-attempts native-text fallback is triggered on any text element (SOP 9.5 step 7, master SOP 7.4 and 10.1)
+- PPTX Assembly Specialist -- receives the composed slide images. (The former pptx_text_overlays.json handoff is ELIMINATED -- Decision 5C, AF-OVERLAY-DELIVERED.)
 
 ---
 
