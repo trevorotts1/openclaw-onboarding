@@ -953,10 +953,11 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             # executes ON the target box, so the var reaches the remote updater.
             env={**os.environ, "OPENCLAW_UPDATE_AUTO_SYNC": "1",
                  "OPENCLAW_MAINTENANCE_SILENT": "1",
-                 # The roll copy (fleet-roll-copy.sh) is held at the roll's commit;
-                 # self-syncing it to main mid-roll mixed releases across boxes.
-                 **({"OPENCLAW_UPDATE_SKIP_SELF_SYNC": "1"}
-                    if Path(repo_root).resolve().parent.name == "fleet-refresh" else {})},
+                 # The runner's clone is already where the roll wants it: the roll copy
+                 # held at the roll's commit, or the operator's own clone (--local).
+                 # Self-syncing it to main mid-roll mixed releases across boxes, and
+                 # on the operator box reset the clone the roll itself runs from.
+                 "OPENCLAW_UPDATE_SKIP_SELF_SYNC": "1"},
         )
         post_stamp = stamp_file.read_text().strip() if stamp_file.is_file() else None
         # update-skills.sh self-syncs THIS clone to origin/main before it runs

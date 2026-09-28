@@ -882,9 +882,15 @@ class RollHoldsOneCommit(unittest.TestCase):
                 self.assertTrue(r.stdout.startswith("COPY "), r.stdout + r.stderr)
                 self.assertEqual(git(home / ".openclaw/fleet-refresh/onboarding", "rev-parse", "HEAD"), roll_sha)
 
-    def test_runner_keeps_update_skills_off_main_in_the_roll_copy(self):
+    def test_runner_never_lets_update_skills_resync_its_clone(self):
+        # The roll copy, and the operator's own clone on a --local run (a reset to
+        # origin/main there moved the clone the roll itself was running from).
+        for sub in (("fleet-refresh", "onboarding"), ("clawd", "openclaw-onboarding")):
+            self._update_skills_env_skips_self_sync(*sub)
+
+    def _update_skills_env_skips_self_sync(self, *sub):
         with tempfile.TemporaryDirectory() as td:
-            copy = Path(td, "fleet-refresh", "onboarding")
+            copy = Path(td, *sub)
             copy.mkdir(parents=True)
             (copy / "update-skills.sh").write_text("")
             with mock.patch.object(fr, "_run_tree",
