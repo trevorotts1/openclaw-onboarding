@@ -17,6 +17,12 @@ from pathlib import Path
 # SHAs/versions for one release. Root-relative so the path is repo-agnostic.
 COHORT_MANIFEST_RELPATH = "release-cohort.json"
 
+# Which candidate SHA of the manifest describes each train repository. The
+# manifest carries one onb_sha and one cc_sha; a promotion in a given repo must
+# be the SHA the manifest names for THAT repo, or the manifest does not describe
+# the candidate (A53).
+COHORT_CANDIDATE_SHA_KEY = {"onb": "onb_sha", "cc": "cc_sha"}
+
 WINDOW_SECONDS = 900
 TRAIN_ROUTE = "haiku-chain"
 INDEPENDENT_ROUTE = "sonnet-chain"
@@ -388,19 +394,29 @@ def _load_cohort_manifest(repo_root=None):
                          % (path, "; ".join(errors)))
     return manifest
 
-def check_release_cohort(repo_root=None, pairing=None, handshake_ok=False):
+def check_release_cohort(repo_root=None, pairing=None, handshake_ok=False,
+                         repository=None, candidate_sha=None):
     """Load the committed instance and fail closed unless it proves the pair.
 
     Returns the manifest dict for ``promote(cohort=...)``. Raises when an
-    instance is committed but does not validate, or when its exact tested
-    pair is not the pair being released — a release can never ride on an
-    untested or half-promoted pairing (14.8/A53). Returns None when no
-    instance is committed, so the caller's absence recording is unchanged.
+    instance is committed but does not validate, when its exact tested
+    pair is not the pair being released, or when ``candidate_sha`` is not
+    the SHA the instance names for ``repository`` — a release can never
+    ride on an untested, half-promoted, or different-revision pairing
+    (14.8/A53). Returns None when no instance is committed, so the
+    caller's absence recording is unchanged.
 
     ``handshake_ok`` is the caller's observed result of the live
     capability/version handshake (bridge ``--capability`` against the CC
     probe); it is deliberately NOT a manifest field, and it defaults to
     False so an unproven handshake fails closed rather than activating.
+
+    ``repository``/``candidate_sha`` bind the check to the exact candidate
+    being released. The instance describes ONE candidate per repository;
+    when the caller names the candidate it is about to activate, that
+    candidate must be the one the instance describes (exact equality, per
+    this module's no-fuzzy-match rule). Omitting both keeps the historical
+    instance-only scope; naming one without the other raises.
     """
     cm = _load_cohort()
     cohort = _load_cohort_manifest(repo_root)
@@ -421,7 +437,84 @@ def check_release_cohort(repo_root=None, pairing=None, handshake_ok=False):
             "half-promoted pair must not activate: %s (pairing=%s, onb=%s, "
             "cc=%s)" % (verdict["reason"], pairing, cohort["onb_sha"],
                         cohort["cc_sha"]))
+    _require_exact_candidate(cohort, repository, candidate_sha)
     return cohort
+
+
+def _require_exact_candidate(cohort, repository, candidate_sha):
+    """Refuse a candidate the release-cohort instance does not describe.
+
+    Exact string equality against the SHA the instance names for
+    ``repository``; a different revision of the same release is still a
+    different candidate (A53). Both arguments must be given together, and
+    ``repository`` must map to one of the pair — an unknown repository
+    cannot be governed by the instance, so it fails closed rather than
+    being waved through.
+    """
+    if repository is None and candidate_sha is None:
+        return
+    if repository is None or candidate_sha is None:
+        raise ValueError(
+            "cohort candidate binding requires both repository and "
+            "candidate_sha (got repository=%r, candidate_sha=%r)"
+            % (repository, candidate_sha))
+    key = COHORT_CANDIDATE_SHA_KEY.get(str(repository))
+    if key is None:
+        raise ValueError(
+            "repository %r is not part of the release-cohort pair (expected "
+            "one of %r)" % (repository, sorted(COHORT_CANDIDATE_SHA_KEY)))
+    described = cohort[key]
+    if str(candidate_sha) != described:
+        raise ValueError(
+            "candidate %s is not the pair the release-cohort instance "
+            "describes: instance %s=%s, candidate=%s"
+            % (candidate_sha, key, described, candidate_sha))
+
+
+def _candidate_is_bound(repository, candidate_sha):
+    """True when the candidate is one the release-cohort instance can name.
+
+    Binding applies only to a release-cohort repository (``onb``/``cc``)
+    activating an exact 40-hex git SHA. A synthetic candidate identifier —
+    fixture SHAs like ``int-1``, which no committed instance can describe —
+    or a non-cohort lane has no instance that could govern it, so the
+    caller's absence recording is kept rather than a binding that would be
+    false for every fixture. COHORT_CANDIDATE_SHA_KEY is the single source
+    for which repositories are governed.
+    """
+    if str(repository) not in COHORT_CANDIDATE_SHA_KEY:
+        return False
+    return _load_cohort().is_hex_sha(str(candidate_sha))
+
+
+def _verified_cohort_record(cm, pairing, handshake_ok, onb_sha, cc_sha,
+                            tested):
+    """Run the REAL D34 pairing evaluation and build the record it earns.
+
+    Refuses a half-promoted new+new pair — a pair not exactly tested, or
+    whose capability/version handshake was not observed to pass — so a
+    refused pair never reaches the record or the activation below
+    (14.8/A53). Every other pairing keeps its truthful capability state.
+    """
+    verdict = cm.evaluate_pairing(
+        pairing=pairing, onb_sha=onb_sha, cc_sha=cc_sha,
+        tested_pairs=tested, handshake_ok=bool(handshake_ok))
+    if verdict["behavior"] != cm.BEHAVIOR_FULL_CONTRACT and pairing == cm.PAIR_NEW_NEW:
+        raise ValueError(
+            "half-promoted pair must not activate: %s (pairing=%s, "
+            "onb=%s, cc=%s)"
+            % (verdict["reason"], pairing, onb_sha, cc_sha))
+    return {
+        "checked": True,
+        "pairing": pairing,
+        "behavior": verdict["behavior"],
+        "capability": verdict["capability"],
+        "reason": verdict["reason"],
+        "exact_match": verdict["exact_match"],
+        "onb_sha": onb_sha,
+        "cc_sha": cc_sha,
+    }
+
 
 def promote(state, repository, batch_id, final_main_sha, force_push=False,
             cohort=None, pairing=None, handshake_ok=False):
@@ -441,10 +534,36 @@ def promote(state, repository, batch_id, final_main_sha, force_push=False,
     manifest records ``cohort.checked = False`` so the absence of
     cross-repo evidence is visible rather than silent.
 
-    The committed release-cohort manifest INSTANCE
-    (``<repo root>/release-cohort.json``) is enforced separately by
-    :func:`check_release_cohort`, which binds a release to the tested
-    ONB+CC pair the instance names (14.8/17.4).
+    This function consults :func:`check_release_cohort` itself when no
+    ``cohort`` is passed (A53), so the cross-repo pair check GOVERNS
+    activation rather than merely being available to a caller that
+    chooses to consult it. The exact candidate
+    identity here is ``manifest["integration_sha"]`` — the SHA both
+    ``test_results`` and ``integration_qc`` are already required to be for.
+    For a train lane that is a release-cohort repository key (``onb``/``cc``)
+    with a 40-hex candidate, the committed instance must name that exact
+    SHA; a different revision of the same release is a different candidate
+    and cannot activate.
+
+    The PASSED ``cohort`` selects how the instance is consulted, because
+    the two cases carry different authority:
+
+    * ``cohort`` supplied — the caller's manifest is authoritative for
+      itself (every existing caller passes a manifest that describes the
+      tree it is promoting), so it is validated with the REAL D34
+      validator and the candidate binding is applied against IT. The
+      committed instance is not consulted: one candidate may be released
+      against several tested pairs.
+    * ``cohort`` omitted — the committed instance is the only cross-repo
+      evidence, so it is ADOPTED when it names the candidate (the record
+      becomes that instance's pair, ``checked = True``) and the promotion
+      is REFUSED when it does not. When the lane is not a cohort
+      repository key (or the candidate is not a git SHA, as in the
+      synthetic-identifier fixtures), the absence is recorded truthfully
+      (``checked = False``) rather than activated on.
+
+    Activation never happens on a refusal: the state mutation below is
+    reached only when a gate accepted the pair (14.8/17.4/A53).
     """
     if force_push:
         raise ValueError("force-push is never permitted")
@@ -455,6 +574,10 @@ def promote(state, repository, batch_id, final_main_sha, force_push=False,
     ok, reason = verify_manifest(manifest)
     if not ok:
         raise ValueError("unpromotable batch: %s" % reason)
+    # The candidate this promotion activates. test_results and integration_qc
+    # are required below to be for this exact SHA, so it — not batch_id or
+    # final_main_sha — is what the release-cohort binding must name (A53).
+    integration_sha = manifest.get("integration_sha")
     qc = manifest.get("integration_qc") or {}
     if qc.get("verdict") != "PASS" or qc.get("reviewer_route") != INDEPENDENT_ROUTE:
         raise ValueError("promotion requires independent %s approval" % INDEPENDENT_ROUTE)
@@ -470,29 +593,23 @@ def promote(state, repository, batch_id, final_main_sha, force_push=False,
         ok, errors = cm.validate_cohort(cohort)
         if not ok:
             raise ValueError("cohort manifest invalid: %s" % "; ".join(errors))
+        if _candidate_is_bound(repository, integration_sha):
+            _require_exact_candidate(cohort, repository, integration_sha)
         tested = cohort.get("tested_pairs")
         if not tested:
             tested = [(cohort["onb_sha"], cohort["cc_sha"])]
-        verdict = cm.evaluate_pairing(
-            pairing=pairing, onb_sha=cohort["onb_sha"],
-            cc_sha=cohort["cc_sha"], tested_pairs=tested,
-            handshake_ok=bool(handshake_ok))
-        if verdict["behavior"] != cm.BEHAVIOR_FULL_CONTRACT and pairing == cm.PAIR_NEW_NEW:
-            raise ValueError(
-                "half-promoted pair must not activate: %s (pairing=%s, "
-                "onb=%s, cc=%s)"
-                % (verdict["reason"], pairing, cohort["onb_sha"],
-                   cohort["cc_sha"]))
-        cohort_record = {
-            "checked": True,
-            "pairing": pairing,
-            "behavior": verdict["behavior"],
-            "capability": verdict["capability"],
-            "reason": verdict["reason"],
-            "exact_match": verdict["exact_match"],
-            "onb_sha": cohort["onb_sha"],
-            "cc_sha": cohort["cc_sha"],
-        }
+        cohort_record = _verified_cohort_record(
+            cm, pairing, handshake_ok, cohort["onb_sha"], cohort["cc_sha"],
+            tested)
+    elif _candidate_is_bound(repository, integration_sha):
+        instance = check_release_cohort(
+            repo_root=None, pairing=pairing, handshake_ok=bool(handshake_ok),
+            repository=repository, candidate_sha=integration_sha)
+        cm = _load_cohort()
+        cohort_record = _verified_cohort_record(
+            cm, pairing, handshake_ok, instance["onb_sha"],
+            instance["cc_sha"], instance.get("tested_pairs") or [
+                (instance["onb_sha"], instance["cc_sha"])])
 
     manifest = copy.deepcopy(manifest)
     manifest["promotion"] = {"final_main_sha": final_main_sha, "forced": False,

@@ -242,6 +242,104 @@ class PromotionConsumer(unittest.TestCase):
         self.assertFalse(record["checked"])
         self.assertEqual(record["reason"], "no_cohort_manifest")
 
+    def test_gate_refuses_a_candidate_the_instance_does_not_describe(self):
+        """A53: the instance describes THIS candidate, not just some pair.
+
+        The self-matching manifest is internally consistent in both
+        directions, so only the candidate binding rejects a different
+        revision of the same release.
+        """
+        with self.assertRaisesRegex(ValueError, "not the pair"):
+            check_release_cohort(handshake_ok=True, repository="onb",
+                                 candidate_sha="f" * 40)
+
+    def test_gate_accepts_the_candidate_the_instance_names(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            check_release_cohort(handshake_ok=True, repository="onb",
+                                 candidate_sha=manifest["onb_sha"]),
+            manifest)
+
+    def test_gate_refuses_an_unbound_candidate_argument(self):
+        """Both arguments bind together; half a binding fails closed."""
+        with self.assertRaisesRegex(ValueError, "both repository and"):
+            check_release_cohort(handshake_ok=True, repository="onb")
+
+    def test_gate_refuses_a_repository_outside_the_pair(self):
+        with self.assertRaisesRegex(ValueError, "not part of the"):
+            check_release_cohort(handshake_ok=True, repository="elsewhere",
+                                 candidate_sha="f" * 40)
+
+    def test_gate_without_a_candidate_argument_keeps_instance_scope(self):
+        """Omitting the binding leaves the historical instance-only check."""
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(check_release_cohort(handshake_ok=True), manifest)
+
+
+class PromotionCandidateBinding(unittest.TestCase):
+    """A53: the gate GOVERNS activation through promote(), not only in isolation.
+
+    Every test above proves check_release_cohort() in isolation. These prove
+    the wiring: promote() itself refuses, and the state is left unactivated.
+    """
+
+    def _promotable_for(self, integration_sha):
+        """An eligible batch whose candidate is exactly ``integration_sha``."""
+        state = new_state()
+        enqueue(state, "onb", "D01", integration_sha,
+                _receipt(integration_sha))
+        batch_id = tick(state, "onb", 900, owner="t:onb")["batch_id"]
+        record_tests(state, "onb", batch_id, integration_sha,
+                     _passing_results())
+        attach_integration_qc(state, "onb", batch_id, "sonnet-qc-1",
+                              INDEPENDENT_ROUTE, "PASS")
+        return state, batch_id
+
+    def test_promote_refuses_a_candidate_the_committed_instance_does_not_describe(self):
+        """A different revision of the same release is a different candidate."""
+        instance = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        other = "f" * 40
+        self.assertNotEqual(other, instance["onb_sha"])
+        state, batch_id = self._promotable_for(other)
+        with self.assertRaisesRegex(ValueError, "not the pair"):
+            promote(state, "onb", batch_id, "main-2",
+                    cohort=check_release_cohort(handshake_ok=True),
+                    pairing="new_new", handshake_ok=True)
+        self.assertIsNone(state["batches"]["onb/%s" % batch_id].get("promotion"))
+        self.assertNotEqual(state["windows"]["onb"]["last_outcome"], "promoted")
+
+    def test_promote_adopts_the_committed_instance_for_the_named_candidate(self):
+        instance = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        state, batch_id = self._promotable_for(instance["onb_sha"])
+        record = promote(state, "onb", batch_id, "main-2",
+                         cohort=check_release_cohort(handshake_ok=True),
+                         pairing="new_new",
+                         handshake_ok=True)["promotion"]["cohort"]
+        self.assertTrue(record["checked"])
+        self.assertEqual(record["behavior"], "full_contract")
+        self.assertEqual(record["onb_sha"], instance["onb_sha"])
+
+    def test_promote_without_cohort_still_refuses_a_non_named_candidate(self):
+        """Adopt-or-refuse, adopt arm: no cohort passed, instance is consulted."""
+        instance = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        other = "f" * 40
+        self.assertNotEqual(other, instance["onb_sha"])
+        state, batch_id = self._promotable_for(other)
+        with self.assertRaisesRegex(ValueError, "not the pair"):
+            promote(state, "onb", batch_id, "main-2",
+                    pairing="new_new", handshake_ok=True)
+        self.assertIsNone(state["batches"]["onb/%s" % batch_id].get("promotion"))
+
+    def test_promote_without_cohort_adopts_the_named_candidate(self):
+        """Control for the arm above: the named candidate still activates."""
+        instance = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        state, batch_id = self._promotable_for(instance["onb_sha"])
+        record = promote(state, "onb", batch_id, "main-2",
+                         pairing="new_new",
+                         handshake_ok=True)["promotion"]["cohort"]
+        self.assertTrue(record["checked"])
+        self.assertEqual(record["onb_sha"], instance["onb_sha"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,12 @@ from contextlib import closing
 from pathlib import Path
 
 ROUTES = {"builder": "opus-chain", "reviewer": "sonnet-chain", "merge_operator": "haiku-chain"}
+# The harness writes agent-<agent_id>.meta.json (model= the route the agent
+# ACTUALLY ran on) under these roots, at:
+#   <root>/<slug>/<session>/subagents/workflows/<session_ref-prefix>/agent-<agent_id>.meta.json
+# The ledger itself sees only the REQUESTED route, so binding is the one moment
+# both facts exist. Recursion is bounded because session_ref-prefix is known.
+META_ROOTS = (Path.home() / ".claude/projects", Path.home() / ".claude-nine/projects")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS coordinator (id INTEGER PRIMARY KEY CHECK(id=1), identity TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS workflows (
@@ -38,7 +44,8 @@ CREATE TABLE IF NOT EXISTS slots (
  role TEXT NOT NULL, route TEXT NOT NULL, parent TEXT NOT NULL, unit TEXT NOT NULL,
  fence TEXT NOT NULL, state TEXT NOT NULL, reserved REAL NOT NULL,
  expires REAL NOT NULL, started REAL, ended REAL, session_ref TEXT UNIQUE,
- terminal_evidence TEXT, agent_id TEXT UNIQUE, renewed REAL
+ terminal_evidence TEXT, agent_id TEXT UNIQUE, renewed REAL,
+ served_route TEXT, route_binding TEXT, route_checked REAL
 );
 """
 
@@ -47,6 +54,33 @@ def text(value, name):
     if not isinstance(value, str) or not value.strip() or len(value) > 1024:
         raise ValueError("invalid " + name)
     return value
+
+
+def _meta_index():
+    """agent_id -> meta.json path, for every harness-written binding record on this box."""
+    index = {}
+    for root in META_ROOTS:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("agent-*.meta.json"):
+            index[path.name[len("agent-"):-len(".meta.json")]] = path
+    return index
+
+
+def served_route(agent_id):
+    """The route the agent ACTUALLY ran on, read from the harness-written binding record.
+
+    Returns the model name, or None when no record on this box names that agent --
+    so a substitution can never be manufactured from an absent file.
+    """
+    path = _meta_index().get(agent_id)
+    if path is None:
+        return None
+    try:
+        model = json.loads(path.read_text()).get("model")
+    except (OSError, ValueError):
+        return None
+    return model if isinstance(model, str) and model.strip() else None
 
 
 def execute(database, command):
@@ -80,6 +114,12 @@ def execute(database, command):
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         db.executescript(SCHEMA)
+        # A47: ledgers created before route recording exist on disk; add the
+        # columns additively so their bound rows survive untouched.
+        existing = {r[1] for r in db.execute("PRAGMA table_info(slots)")}
+        for column, kind in (("served_route", "TEXT"), ("route_binding", "TEXT"), ("route_checked", "REAL")):
+            if column not in existing:
+                db.execute(f"ALTER TABLE slots ADD COLUMN {column} {kind}")
         db.execute("BEGIN IMMEDIATE")
         try:
             result = transition(db, command)
@@ -101,12 +141,37 @@ def transition(db, c):
     if action == "init":
         return {"coordinator": owner[0]}
     if action == "snapshot":
+        substitutions = [dict(r) for r in db.execute(
+            "SELECT unit, role, route, served_route, agent_id FROM slots "
+            "WHERE route_binding = 'substitution' ORDER BY reserved")]
+        rows = [dict(r) for r in db.execute("SELECT * FROM slots ORDER BY reserved")]
+        unverified = [r for r in rows if r["agent_id"] is not None and r["route_binding"] != "match"]
+        flagged = list(substitutions) + [
+            {k: r[k] for k in ("unit", "role", "route", "served_route", "agent_id")} for r in unverified
+            if r["route_binding"] == "unverified_no_binding_record"]
+        # A zero substitution count means nothing on its own: a row bound before
+        # this recording existed has no verdict at all, and cannot be reported as
+        # a clean binding. Counted separately so the zero can never be misread.
+        unrecorded = sum(1 for r in rows if r["agent_id"] is not None and not r["route_binding"])
+        alarm = ""
+        if flagged:
+            alarm = "!!! ROUTE SUBSTITUTION ALERT - " + "; ".join(
+                f"{f['unit']} {f['role']} requested={f['route']} served={f['served_route']}" for f in flagged)
+        if unrecorded:
+            alarm = (f"!! {unrecorded} bound rows have NO route-binding record "
+                     f"(bound before A47 recording); their requested-vs-served route is UNPROVEN, "
+                     f"not clean. " + alarm).strip()
         return {
             "workflows": [dict(r) for r in db.execute("SELECT * FROM workflows ORDER BY opened")],
-            "slots": [dict(r) for r in db.execute("SELECT * FROM slots ORDER BY reserved")],
+            "slots": rows,
             "active_workflows": db.execute("SELECT count(*) FROM workflows WHERE closed IS NULL").fetchone()[0],
             "reserved_or_live": db.execute("SELECT count(*) FROM slots WHERE ended IS NULL").fetchone()[0],
-            "route_evidence": "requested_only; verify served route from harness/router receipts",
+            "route_substitutions": flagged,
+            "route_substitution_count": len(flagged),
+            "route_unrecorded_count": unrecorded,
+            "route_alarm": alarm,
+            "route_evidence": "requested_and_served; served route recorded at binding from the harness binding record"
+                              " where present, else explicitly marked unverified",
             "native_visibility": "UNVERIFIED",
         }
     if action == "open":
@@ -139,7 +204,8 @@ def transition(db, c):
             raise ValueError("global agent limit")
         if db.execute("SELECT count(*) FROM slots WHERE workflow_id=? AND ended IS NULL", (c["workflow_id"],)).fetchone()[0] >= 10:
             raise ValueError("workflow agent limit")
-        db.execute("INSERT INTO slots VALUES(?,?,?,?,?,?,?,'reserved',?,?,NULL,NULL,NULL,NULL,NULL,NULL)",
+        db.execute("INSERT INTO slots(reservation_id,workflow_id,role,route,parent,unit,fence,state,reserved,expires)"
+                   " VALUES(?,?,?,?,?,?,?,'reserved',?,?)",
                    (c["reservation_id"], c["workflow_id"], c["role"], c["route"], c["parent"], c["unit"], uuid.uuid4().hex, now, now + seconds))
     else:
         row = db.execute("SELECT * FROM slots WHERE reservation_id=?", (c["reservation_id"],)).fetchone()
@@ -150,7 +216,20 @@ def transition(db, c):
         if action == "start":
             if row["state"] != "reserved":
                 raise ValueError("agent already started")
-            db.execute("UPDATE slots SET state='live',started=?,session_ref=?,agent_id=? WHERE reservation_id=?", (now, c["session_ref"], c["agent_id"], c["reservation_id"]))
+            served = served_route(c["agent_id"])
+            if served is None:
+                binding = "unverified_no_binding_record"
+            elif served == row["route"]:
+                binding = "match"
+            else:
+                binding = "substitution"
+            db.execute("UPDATE slots SET state='live',started=?,session_ref=?,agent_id=?,served_route=?,route_binding=?,route_checked=? WHERE reservation_id=?",
+                       (now, c["session_ref"], c["agent_id"], served, binding, now, c["reservation_id"]))
+            if binding == "substitution":
+                # Trevor's A47 order: a substitution must not be silent, so it is
+                # stated in the command's own result, not merely stored.
+                print(f"ROUTE SUBSTITUTION: unit={row['unit']} role={row['role']} "
+                      f"requested={row['route']} served={served} agent_id={c['agent_id']}", file=sys.stderr)
         elif action == "renew":
             db.execute("UPDATE slots SET expires=?,renewed=? WHERE reservation_id=?", (max(row["expires"], now + c["lease_seconds"]), now, c["reservation_id"]))
         elif action == "release":

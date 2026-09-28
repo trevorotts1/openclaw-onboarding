@@ -12,6 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'shared-utils'))
+import workflow_slots
 from workflow_slots import execute
 
 
@@ -163,6 +164,73 @@ class SlotTests(unittest.TestCase):
             out = subprocess.run(argv, input=payload, text=True, capture_output=True, timeout=10)
             self.assertEqual(out.returncode, code, out.stderr)
             self.assertEqual(json.loads(out.stdout)['ok'], code == 0)
+
+
+class RouteBindingTests(unittest.TestCase):
+    """A47: a substitution is recorded at binding and surfaced, never silent."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.database = str(Path(self.temp.name) / 'slots.sqlite')
+        execute(self.database, dict(action='init', coordinator='coordinator'))
+        self.call('open', workflow_id='w')
+
+    def call(self, action, **kwargs):
+        return execute(self.database, dict(action=action, coordinator='coordinator', **kwargs))
+
+    def bind(self, agent, role='builder', route='opus-chain', unit='U', served='opus-chain'):
+        row = self.call('reserve', workflow_id='w', reservation_id=agent, role=role, route=route,
+                        parent='coordinator', unit=unit, lease_seconds=3600)
+        original = workflow_slots.served_route
+        workflow_slots.served_route = lambda aid: served
+        try:
+            return self.call('start', reservation_id=agent, fence=row['fence'],
+                             session_ref='session-' + agent, agent_id=agent)
+        finally:
+            workflow_slots.served_route = original
+
+    def test_match_records_and_raises_no_alarm(self):
+        bound = self.bind('a-match', served='opus-chain')
+        self.assertEqual(bound['route_binding'], 'match')
+        self.assertEqual(bound['served_route'], 'opus-chain')
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 0)
+        self.assertEqual(snapshot['route_alarm'], '')
+
+    def test_substitution_records_and_alarms(self):
+        bound = self.bind('a-subs', served='deepseek-chain')
+        self.assertEqual(bound['route_binding'], 'substitution')
+        self.assertEqual(bound['served_route'], 'deepseek-chain')
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 1)
+        self.assertIn('ROUTE SUBSTITUTION ALERT', snapshot['route_alarm'])
+        self.assertIn('requested=opus-chain served=deepseek-chain', snapshot['route_alarm'])
+        self.assertEqual(snapshot['route_substitutions'][0]['agent_id'], 'a-subs')
+
+    def test_zero_substitutions_never_reads_as_clean_when_rows_are_unrecorded(self):
+        # A row bound by an older ledger carries no binding verdict; the report
+        # must say so rather than present a bare zero.
+        row = self.call('reserve', workflow_id='w', reservation_id='a-legacy', role='builder',
+                        route='opus-chain', parent='coordinator', unit='U', lease_seconds=3600)
+        import sqlite3 as _sqlite3
+        db = _sqlite3.connect(self.database, isolation_level=None)
+        db.execute("UPDATE slots SET state='live',agent_id='a-legacy',session_ref='s' WHERE reservation_id='a-legacy'")
+        db.commit()
+        db.close()
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 0)
+        self.assertEqual(snapshot['route_unrecorded_count'], 1)
+        self.assertIn('NO route-binding record', snapshot['route_alarm'])
+        self.assertIn('UNPROVEN', snapshot['route_alarm'])
+
+    def test_missing_binding_record_is_unverified_not_a_silent_match(self):
+        bound = self.bind('a-norec', served=None)
+        self.assertEqual(bound['route_binding'], 'unverified_no_binding_record')
+        self.assertIsNone(bound['served_route'])
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 1)
+        self.assertIn('ROUTE SUBSTITUTION ALERT', snapshot['route_alarm'])
 
 
 if __name__ == '__main__':
