@@ -1,3 +1,19 @@
+## [v25.1.98]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health, Command Center pin v7.6.71
+
+### Why
+`check-credential.sh` rejected known-good secrets whenever a provider was referenced under an alternate name (xiaomi vs mimo, 9router's several spellings), and its SecretRef handling did not cover the dict-with-apiKey shape. Separately, the skill-32 daily-update path derived `commandCenterStatus` from a throwaway rebuild instead of asking the running Command Center whether it was actually healthy and current. Version markers rolled v25.1.97 -> v25.1.98 via scripts/bump-version.sh (G3: skill content changed under 32-command-center-setup/).
+
+### What changed
+- shared-utils/secret_names.json: added credential key aliases so xiaomi/mimo and the several 9router spellings resolve to the same secret.
+- shared-utils/check-credential.sh: agnes/xiaomi/moonshot/9router alias maps; a hermetic `OC_CONFIG_FILE`-scoped self-test; SecretRef dict `apiKey` handling so a `{apiKey: ...}` shaped ref is read correctly instead of failing closed.
+- 32-command-center-setup/scripts/run-full-install.sh: the daily-update `commandCenterStatus` now comes from the live Command Center's `/api/health` returning 200 with migrations current, not from a spare rebuild that could pass while the running instance was actually unhealthy or behind.
+- tests/unit/check-credential-aliases-secretref.test.sh: chmod 600 the temp secrets/.env fixture so the test does not leave a world-readable secrets file behind.
+- cc-compat.json: Command Center pinnedTag v7.6.70 -> v7.6.71 (CC release v7.6.71, PR trevorotts1/blackceo-command-center#451, vendors fonts locally). The fleet-roll tooling PR (#1297, CC pin v7.6.70) is already merged into main, so this release advances the pin per the standing correctness rule: `resolve_cc_tag` returns `pinnedTag` unconditionally, so leaving the stale v7.6.70 pin would make fleet-refresh check out the older CC on the next roll. minVersion stays UNCHANGED (v7.4.0, permissive); v7.6.71 >= minVersion and maxVersion is null, so the schema contract holds.
+- 32-command-center-setup/skill-version.txt: v13.1.31 -> v13.1.32 (G3: run-full-install.sh content changed).
+
+### Tests
+tests/unit/check-credential-aliases-secretref.test.sh (hermetic self-test, alias maps, SecretRef dict apiKey, chmod 600 fixture); tests/unit/cc-status-from-live-health.test.sh; tests/probe/test-cc-route-update-canonical-path.sh; tests/unit/full-update-path-contract.test.sh. CI: 62 pass, 2 skipped (main-only), G3 now green with the 32-command-center-setup/skill-version.txt bump.
+
 ## [v25.1.97]  -  2026-09-28  -  Fleet roll safety: 999-setup refresh, post-update health gate with automatic rollback, waves, boxes-file generator, Sunday = operator roll, Command Center pin v7.6.70
 
 ### Why
