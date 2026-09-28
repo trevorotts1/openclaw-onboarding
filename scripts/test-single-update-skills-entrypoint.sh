@@ -128,6 +128,7 @@ ALLOWLIST=(
   "tests/test-ungated-claim-points.sh"                            # comment, substring-filtered from a write-site scan
   "tests/unit/cron-owner-chat-guard.test.sh"                      # test assertions against the shim
   "tests/unit/full-update-path-contract.test.sh"                  # negative-assertion tests
+  "tests/unit/fleet-refresh-roll-safety.test.py"                 # asserts the cron heal repoints the legacy URL away
   "update-skills.sh"                                              # root script's own self-heal + LEGACY_UPDATER_PATH_FRAGMENT
 )
 

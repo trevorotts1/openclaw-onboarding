@@ -85,6 +85,10 @@ _SERVICE_TO_CANONICAL: Dict[str, str] = {
     "brave": "BRAVE_SEARCH_API_KEY",
     "ollama": "OLLAMA_CLOUD_API_KEY",
     "agnes": "AGNES_API_KEY",
+    "xiaomi": "XIAOMI_API_KEY",
+    "mimo": "MIMO_API_KEY",
+    "9router": "NINEROUTER_API_KEY",
+    "ninerouter": "NINEROUTER_API_KEY",
     "moonshotcloud": "MOONSHOT_API_KEY",
     "convertflow": "GOHIGHLEVEL_API_KEY",
     "convertandflow": "GOHIGHLEVEL_API_KEY",
@@ -111,20 +115,22 @@ def _build_service_aliases() -> Dict[str, List[str]]:
                 # and "ollamacloudapikey" both hit the family).
                 aliases[name.lower()] = list(family)
                 aliases[name.lower().replace("-", "").replace("_", "")] = list(family)
-            head = _SERVICE_TO_CANONICAL_INVERSE.get(canonical)
-            if head:
-                aliases.setdefault(head, list(family))
     # Service shorthands whose canon family could not be found keep the
     # fallback list so nothing that resolved before stops resolving.
     for service, fallback in _FALLBACK_SERVICE_ALIASES.items():
         aliases.setdefault(service, fallback)
         aliases.setdefault(
             service.replace("-", "").replace("_", ""), fallback)
+    # Shorthands with no fallback entry (xiaomi, mimo, 9router, ninerouter,
+    # convertflow, ...) expand to their canon family. Runs after the fallback
+    # loop so every shorthand that already resolved keeps its exact list.
+    if _CANON_AVAILABLE:
+        canon = _canon_load()
+        for service, canonical in _SERVICE_TO_CANONICAL.items():
+            if canonical in canon:
+                aliases.setdefault(service, list(canon[canonical]))
     return aliases
 
-
-# Service shorthand -> canonical head (inverted once for the builder).
-_SERVICE_TO_CANONICAL_INVERSE: Dict[str, str] = dict(_SERVICE_TO_CANONICAL)
 
 SERVICE_ALIASES: Dict[str, List[str]] = _build_service_aliases()
 

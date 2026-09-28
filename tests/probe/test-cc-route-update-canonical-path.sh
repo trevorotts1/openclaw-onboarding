@@ -53,6 +53,10 @@ _extract() {
   awk '/^_cc_resolve_bash4\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$SRC"
   echo ""
   awk '/^cc_route_update_through_canonical_path\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$SRC"
+  echo ""
+  awk '/^cc_live_health_ok\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$SRC"
+  echo ""
+  awk '/^cc_served_build_current\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$SRC"
 } > "$UNIT"
 
 if ! bash -n "$UNIT"; then
@@ -108,9 +112,11 @@ EOF
   chmod +x "$bindir/pm2"
   cat > "$bindir/curl" <<EOF
 #!/usr/bin/env bash
-# emulate: curl -fsS -o /dev/null -w '%{http_code}' <url>
-printf '%s' "$health_code"
-[ "$health_code" = "200" ] && exit 0 || exit 22
+# emulate: curl -fsS -o /dev/null -w '%{http_code}' <url>  (fresh-build probe)
+case " \$* " in *" -w "*) printf '%s' "$health_code"; [ "$health_code" = "200" ] && exit 0 || exit 22 ;; esac
+# emulate: curl -fsS <url>/api/health  (live-health body: status ok, no pending migrations)
+[ "$health_code" = "200" ] || exit 22
+printf '%s' '{"status":"ok","migrations":{"pending":[],"gap":0}}'
 EOF
   chmod +x "$bindir/curl"
   cat > "$bindir/npm" <<'EOF'
@@ -253,6 +259,9 @@ fi
 # update did NOT take effect — exactly the P1-07 fix-loop judge's finding #1.
 # The fixed final assertion requires BUILD_ID_mtime > pull_ts AND health==200
 # for verified=true, so this must stamp false and return 1. ─────────────────
+# CRF-003: the RUNNING CC is healthy with migrations current, so the rebuild
+# outcome no longer fails the install (rc 0) — but with no build-inventory
+# proof that the served build is current, verified=false is still stamped.
 _section "Scenario C — tier 1, healthy on the PRIOR build (rolled back) must NOT stamp verified=true"
 BOXC="$SANDBOX/boxC"; _new_sandbox_box "$BOXC"
 SANDBOX_STATE_CALLS="$BOXC/state-calls.log"
@@ -284,10 +293,10 @@ source "$UNIT"
 PATH="$BOXC/bin:$PATH" cc_route_update_through_canonical_path
 RC=$?
 
-if [ "$RC" -ne 0 ]; then
-  _pass "scenario C: function correctly reports non-zero — healthy-on-the-prior-build is not a fresh, verified update"
+if [ "$RC" -eq 0 ]; then
+  _pass "scenario C: function returns 0 — the running CC is healthy, so a rebuild that did not land is a warning, not commandCenterStatus=failed"
 else
-  _fail "scenario C: function reported success (rc=0) despite BUILD_ID not postdating the pull — the update did NOT take effect and this must not read as green"
+  _fail "scenario C: function returned rc=$RC although the running CC is healthy with migrations current — a failed rebuild alone must not fail the install"
 fi
 
 if [ "$(cat "$DASHBOARD_DIR/.next/BUILD_ID" 2>/dev/null)" = "PRIOR_BUILD_ID_UNTOUCHED" ]; then
@@ -302,7 +311,7 @@ else
   _fail "scenario C: state_set stamped verified=true (or was not called) on a box healthy-but-NOT-updated — this is exactly the bug the fix-loop judge found: $(cat "$SANDBOX_STATE_CALLS" 2>/dev/null)"
 fi
 
-if grep -q "GREEN on the PRIOR build (rolled back), the update did NOT take effect" "$LOG_FILE" 2>/dev/null; then
+if grep -q "served build could not be verified against the current checkout" "$LOG_FILE" 2>/dev/null; then
   _pass "scenario C: log line honestly distinguishes 'healthy on the old build' from 'update took effect'"
 else
   _fail "scenario C: expected log line distinguishing rolled-back-but-healthy from a genuine fresh-verified update was not found: $(cat "$LOG_FILE" 2>/dev/null)"

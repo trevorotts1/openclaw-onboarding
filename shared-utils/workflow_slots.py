@@ -3,10 +3,13 @@
 
 Usage: python3 workflow_slots.py /absolute/run/slots.sqlite < command.json
 Commands: init(coordinator), open(workflow_id), reserve(workflow_id,
-reservation_id, role, route, parent, unit, lease_seconds), start(reservation_id,
+reservation_id, role[, route], parent, unit, lease_seconds), start(reservation_id,
 fence, agent_id, session_ref), renew(reservation_id, fence, lease_seconds),
 check(reservation_id, fence), release(reservation_id, fence, evidence),
 close(workflow_id), snapshot(). All commands carry `action` and `coordinator`.
+There is NO route allowlist: any non-empty route string is accepted and served.
+Omitting `route` falls back to the role's chain in ROUTES (the default, not a
+permitted set). Requested-vs-served is recorded at binding and never hidden.
 Initialize once with trusted root identity; only that coordinator may mutate.
 Reservation IDs exist before launch; actual agent/session IDs bind after spawn.
 
@@ -27,6 +30,8 @@ import uuid
 from contextlib import closing
 from pathlib import Path
 
+# Default chain per role. NOT a permitted set: any route the caller names is
+# accepted (A47), so a route outside this map can never be blocked.
 ROUTES = {"builder": "opus-chain", "reviewer": "sonnet-chain", "merge_operator": "haiku-chain"}
 # The harness writes agent-<agent_id>.meta.json (model= the route the agent
 # ACTUALLY ran on) under these roots, at:
@@ -90,7 +95,7 @@ def execute(database, command):
     action = command.get("action")
     fields = {
         "init": set(), "open": {"workflow_id"}, "close": {"workflow_id"},
-        "reserve": {"workflow_id", "reservation_id", "role", "route", "parent", "unit", "lease_seconds"},
+        "reserve": {"workflow_id", "reservation_id", "role", "parent", "unit", "lease_seconds"},
         "start": {"reservation_id", "fence", "agent_id", "session_ref"},
         "renew": {"reservation_id", "fence", "lease_seconds"},
         "check": {"reservation_id", "fence"},
@@ -98,10 +103,15 @@ def execute(database, command):
     }
     if not isinstance(action, str) or action not in fields:
         raise ValueError("unknown action")
-    if set(command) != fields[action] | {"action", "coordinator"}:
+    # `route` is optional on reserve: absent means the role default (A47).
+    optional = {"route"} if action == "reserve" else set()
+    base = fields[action] | {"action", "coordinator"}
+    if frozenset(command) not in (frozenset(base), frozenset(base | optional)):
         raise ValueError("missing or unknown command fields")
     for key in (fields[action] | {"coordinator"}) - {"lease_seconds", "evidence"}:
         text(command[key], key)
+    if command.get("route") is not None:
+        text(command["route"], "route")
     if "lease_seconds" in command:
         seconds = command["lease_seconds"]
         if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or not 0 < seconds <= 86400:
@@ -191,8 +201,11 @@ def transition(db, c):
             raise ValueError("workflow not active")
         return {"workflow_id": c["workflow_id"], "closed": now}
     if action == "reserve":
-        if ROUTES.get(c["role"]) != c["route"]:
-            raise ValueError("role/route mismatch")
+        # A47: route is whatever the caller asked for. Only a MISSING route on a
+        # role with no default is an error; no route string is ever rejected.
+        route = c.get("route") or ROUTES.get(c["role"])
+        if route is None:
+            raise ValueError("route required: role has no default route")
         seconds = c["lease_seconds"]
         if c["parent"] != owner[0]:
             raise ValueError("nested reservation prohibited")
@@ -206,7 +219,7 @@ def transition(db, c):
             raise ValueError("workflow agent limit")
         db.execute("INSERT INTO slots(reservation_id,workflow_id,role,route,parent,unit,fence,state,reserved,expires)"
                    " VALUES(?,?,?,?,?,?,?,'reserved',?,?)",
-                   (c["reservation_id"], c["workflow_id"], c["role"], c["route"], c["parent"], c["unit"], uuid.uuid4().hex, now, now + seconds))
+                   (c["reservation_id"], c["workflow_id"], c["role"], route, c["parent"], c["unit"], uuid.uuid4().hex, now, now + seconds))
     else:
         row = db.execute("SELECT * FROM slots WHERE reservation_id=?", (c["reservation_id"],)).fetchone()
         if row is None or row["fence"] != c["fence"] or row["ended"] is not None:

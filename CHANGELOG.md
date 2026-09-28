@@ -1,3 +1,62 @@
+## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
+
+### Why
+`check-credential.sh` rejected known-good secrets whenever a provider was referenced under an alternate name (xiaomi vs mimo, 9router's several spellings), and its SecretRef handling did not cover the dict-with-apiKey shape. Separately, the skill-32 daily-update path derived `commandCenterStatus` from a throwaway rebuild instead of asking the running Command Center whether it was actually healthy and current. Version markers rolled v25.1.99 -> v25.1.100 via scripts/bump-version.sh (v25.1.98 and v25.1.99 were claimed by open PR #1296's obsolete pin commits and PR #1306 respectively; no Command Center pin change — main already pins v7.6.72).
+
+### What changed
+- shared-utils/secret_names.json: added credential key aliases so xiaomi/mimo and the several 9router spellings resolve to the same secret.
+- shared-utils/check-credential.sh: agnes/xiaomi/moonshot/9router alias maps; a hermetic `OC_CONFIG_FILE`-scoped self-test; SecretRef dict `apiKey` handling so a `{apiKey: ...}` shaped ref is read correctly instead of failing closed.
+- shared-utils/key_resolver.py: alias resolution support for the new key names.
+- 32-command-center-setup/scripts/run-full-install.sh: the daily-update `commandCenterStatus` now comes from the live Command Center's `/api/health` returning 200 with migrations current, not from a spare rebuild that could pass while the running instance was actually unhealthy or behind.
+- tests/unit/check-credential-aliases-secretref.test.sh: chmod 600 the temp secrets/.env fixture so the test does not leave a world-readable secrets file behind.
+- 32-command-center-setup/skill-version.txt: v13.1.31 -> v13.1.32 (G3: run-full-install.sh content changed).
+
+### Tests
+tests/unit/check-credential-aliases-secretref.test.sh (hermetic self-test, alias maps, SecretRef dict apiKey, chmod 600 fixture); tests/unit/cc-status-from-live-health.test.sh; tests/probe/test-cc-route-update-canonical-path.sh; tests/unit/full-update-path-contract.test.sh.
+
+## [v25.1.99]  -  2026-09-28  -  Fleet roll: fix first then roll back, content integrity checks, operator alerts, Drive backup of the box list, Command Center pin v7.6.72
+
+### Why
+Trevor's scope for the fleet roll: a failed check after an update must be FIXED before anything is undone, the box must be proven to hold the release's content (not just to have exited 0), he must hear about every roll-back or failure without a client ever hearing, and the private box list must survive the loss of his Mac. Version markers rolled v25.1.97 -> v25.1.99 via scripts/bump-version.sh (v25.1.98 is claimed by open PR #1296).
+
+### What changed
+- shared-utils/fleet_refresh_runner.py: after the update, failing checks get up to 3 fix attempts chosen by what is failing (restart the gateway; re-run the failed step; rebuild and restart the Command Center; re-run update-skills.sh for a content gap; reset the main session), with every attempt recorded in the per-box result, before the existing roll-back to the snapshot. Gateway restart: Mac `launchctl kickstart -k` (a booted-out label is bootstrapped from its plist first, as the gateway watchdog does; exit 125/126 falls back to `launchctl stop`); Hostinger `docker compose up -d --force-recreate <service>` and Contabo `docker restart <container>`, run on the host by fleet-refresh.sh (runner exits 4 and is resumed with --continue-heal; a failed host restart resumes without it, and no box is ever left pending).
+- Content integrity gate (same signals as update-skills.sh's own probes): persona index sentinel == manifest release_tag; persona embeddings vs the manifest count (honest deferral receipts count); SOP library rows vs the canonical count; SOP embeddings coverage vs the embeddings manifest; the installed skill-23 digest (role library) vs the digest update-skills.sh recorded from the release; the department intake receipt from this run and role folders for every declared department. A gap that was already there before the update is reported and alerted but never rolled back.
+- shared-utils/fleet_notify.py + shared-utils/operator_google.py: on ROLLED_BACK, FAILED or a pre-existing content gap, the operator (only) gets a Telegram note through his own agent's bot via the fleet-standing-operator-alert webhook (reachable from client boxes with the credentials they already carry, so a box's own Sunday update alerts too) and, on his Mac, an email sent through his Google service account. Never the gws CLI; never a client chat; secrets scrubbed.
+- scripts/make-fleet-boxes-file.py: refreshes a private Google Sheet backup of the box list on every run (env-var names only), records each roll's result, date and 999 presence (--record-roll, called by fleet-refresh.sh after every --apply), and rebuilds boxes.json from the sheet with --from-sheet or automatically when the local roster is missing.
+- cc-compat.json: Command Center pinnedTag v7.6.70 -> v7.6.72 (newest tag at release time).
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py: 60 tests (fix-first healing, 3-attempt cap then roll-back, content gaps, pre-existing gaps not rolled back, container host-restart hand-off and resume for Hostinger and Contabo end to end through fake ssh/docker, failed host restart, Mac launchd restart incl. booted-out label, each content check both ways, parity of the SOP checks with update-skills.sh's own probe, operator alerts and operator-only email, Drive sheet round trip and rebuild). scripts/test-fleet-refresh.sh 40/40.
+
+## [v25.1.97]  -  2026-09-28  -  Fleet roll safety: 999-setup refresh, post-update health gate with automatic rollback, waves, boxes-file generator, Sunday = operator roll, Command Center pin v7.6.70
+
+### Why
+A fleet roll must spend no AI tokens and prove every client box is still up afterwards. fleet-refresh.sh could deploy but could not tell whether it broke a box, could not undo it, and the box's own Sunday update ran a different (onboarding-only) path. Version markers rolled v25.1.96 -> v25.1.97 via scripts/bump-version.sh.
+
+### What changed
+- shared-utils/fleet_refresh_runner.py: before any change, snapshots the box (onboarding stamp + clone SHA/tag, Command Center SHA/tag/version, a tarball of only the onboarding-managed skill trees, a copy of openclaw.json) and its health. After the update a read-only, platform-aware health gate runs: gateway process, gateway /health, Telegram Bot API getMe (a read, never sendMessage), Command Center /api/health three times, and the main-agent session reset. A check that passed before and fails after, or a half-applied onboarding step (or Command Center step whose checkout moved), rolls the box back to the snapshot (clone, skill trees, stamp, Command Center rebuilt and restarted at its previous SHA through atomic-deploy.sh), re-checks health, and records ROLLED_BACK with the failing check named. No restorable snapshot means no update. Each box reports UPDATED / ROLLED_BACK / FAILED / SKIPPED. A per-box lock keeps the operator roll and the Sunday run from interleaving.
+- New step update-999: where 999-setup is already cloned it is fast-forwarded and its installer's own skill-link routine is re-run; hand-managed skill copies are left alone; absent = "999 not installed" (never installed fresh). The full 999 orchestrator is not run because it ends with a live model call.
+- atomic-deploy.sh is now run with bash 4+ (macOS /bin/bash is 3.2 and made it exit 2), --app-dir, and an outer timeout above its own 18-minute health window. atomic-deploy.sh already builds in a private candidate directory, so a failed build leaves the previous build serving (exit 2); build-cc says so.
+- update-skills.sh exit 2 (content current, infrastructure advisory) is no longer a failed step; the pinned onboarding version is re-read after the updater self-syncs the clone; the Wave-5 preflight is checked before the first change instead of mid-deploy.
+- scripts/fleet-refresh.sh: --wave first|rest (the first wave is one client box per platform, rolled and checked before every other client box); runs inside the client container (docker exec) or a Mac login shell; syncs the box's clone to origin/main before the runner on --apply (dry-run never touches it); survives a dropped SSH session; keeps runner logs in ~/.openclaw/fleet/runs/; one-screen outcome table; refuses --local --apply from a dirty or non-main checkout. Fixed: the fleet summary JSON was always empty, and every --apply run crashed in the retirement heredoc (a backticked gh) before reporting its exit code.
+- scripts/make-fleet-boxes-file.py: builds the --boxes-file from the operator's roster and box registry, outside any git tree, mode 600, putting one client box per platform (one Mac, one Hostinger, one Contabo) in the first wave. scripts/fleet-boxes.example.json holds placeholders only. Run outputs that carry box names are now gitignored.
+- Sunday path: scripts/weekly-full-update.sh runs fleet-refresh.sh --local --apply from the box's clone; setup-weekly-update.sh, cron-prompt.txt RULE 9 auto-apply and RULE 10(a), and update-skills.sh's cron heal (for boxes already installed) all point at it. RULE 9's low/medium-risk auto-apply semantics are unchanged.
+- cc-compat.json: Command Center pinnedTag v7.6.68 -> v7.6.70.
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py (31 tests, wired into qc-static): snapshot, gate pass, gate fail -> full rollback, half-applied step -> rollback, Command Center step failure without a checkout move -> no rollback, rollback that does not restore health -> FAILED, pre-existing failures not blamed, update-skills exit 2 advisory, build exit 2 = old build serving, 999 present / absent / archive extract / hand-managed / found via skill link / dry-run, Telegram getMe only with the token never reported, box lock, boxes-file generator with a fixture roster, waves and the outcome table through fake ssh/docker, the --local --apply checkout guard, weekly-full-update.sh, and the Sunday cron heal. scripts/test-fleet-refresh.sh 40/40, fleet-refresh-cc-main-convergence and cc-runtime-preflight pass.
+
+## [v25.1.96]  -  2026-09-28  -  Batch auto-merge: A47 accepts any route, ACC-052 batch docs, README current-release refresh
+
+### Why
+The batch auto-merge (PR #1305) rolled the version markers v25.1.95 -> v25.1.96 and was tagged without a CHANGELOG header; the G2 gate requires one for every v11+ annotated tag. This entry records what that release contains (from its commits).
+
+### What changed
+- fix(A47): accept any route (no allowlist, never block) while keeping requested-vs-served recording.
+- docs(jev11): ACC-052 batch tick state machine, daemon skip and fail-open rationale, batch-train label governs enrollment, daemon required contexts.
+- readme: refresh the current-release section and guard against future drift (scripts/check-readme-current-release.sh + its test).
+
 ## [v25.1.95]  -  2026-09-28  -  Presentations Step 4 lands on main: retired text-overlay doctrine (Fix 4), canonical assembler steps (Fix 20), installer-managed watchdog (Fix 49)
 
 ### Why

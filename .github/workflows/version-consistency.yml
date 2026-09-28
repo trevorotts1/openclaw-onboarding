@@ -90,6 +90,10 @@ jobs:
             exit 1
           fi
 
+      - name: "README current-release freshness (scripts/check-readme-current-release.sh)"
+        shell: bash
+        run: bash scripts/check-readme-current-release.sh
+
   # ── PRD 2.2 Guard G1: version file changed → annotated tag must exist ──────
   # On push to main: if /version changed vs the previous commit, the new
   # version string must already be present as an annotated git tag.

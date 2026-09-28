@@ -1795,6 +1795,14 @@ jobs:
         run: |
           bash scripts/test-fleet-refresh.sh
 
+      # Roll safety: 999-setup refresh (present/absent), snapshot, post-update
+      # health gate, automatic rollback, box lock, boxes-file generator, waves,
+      # and the Sunday path running the same full roll.
+      - name: "fleet-refresh roll safety (999 / health gate / rollback / boxes file / waves)"
+        shell: bash
+        run: |
+          python3 tests/unit/fleet-refresh-roll-safety.test.py
+
       # PRD 1.11 / AF4: retirement-clock trigger contract.
       # Proves that the fleet-refresh.sh retirement trigger is wired correctly:
       #   (a) dry-run is inert (does NOT write the loaded-state manifest)
