@@ -5,14 +5,15 @@
 #
 # What it does:
 # - Installs a cron job that runs every Sunday at 3:00 AM
-# - The cron job downloads the LATEST update-skills.sh from GitHub
+# - The cron job downloads the LATEST scripts/weekly-full-update.sh from GitHub
 #   (version-proof: always runs the newest script, never a stale local copy)
-# - That root updater runs the same complete, content-aware update as a manual
-#   invocation: onboarding content, SOPs, runtime branding/departments, scripts,
-#   provisioning gates, and the Command Center rebuild/health assertion
+# - That runs `scripts/fleet-refresh.sh --local --apply` from the box's
+#   onboarding clone -- the SAME steps as the operator's fleet roll: onboarding
+#   (update-skills.sh), 999-setup if installed, Command Center pull/build/restart,
+#   a snapshot before, a health gate after, and automatic rollback on regression
 # - It does not restart the OpenClaw gateway or auto-notify a client chat
 
-REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
+REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
 
 # ----------------------------------------------------------------------------
@@ -73,17 +74,17 @@ cat > "$RESTART_SCRIPT" << 'RESTART_EOF'
 #!/bin/bash
 # Run the update script — fetch to temp file first so partial downloads do not
 # execute half a script (the classic curl|bash truncation hazard).
-UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
+UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
 _UPDATE_TMP="$(mktemp /tmp/openclaw-update-XXXXXX.sh)"
 trap 'rm -f "$_UPDATE_TMP"' EXIT
 if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.openclaw/skills/.update-log"; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: failed to download update-skills.sh — skipping update" >> "$HOME/.openclaw/skills/.update-log"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: failed to download weekly-full-update.sh — skipping update" >> "$HOME/.openclaw/skills/.update-log"
   exit 1
 fi
 bash "$_UPDATE_TMP" >> "$HOME/.openclaw/skills/.update-log" 2>&1
 _UPDATE_RC=$?
 if [ "$_UPDATE_RC" -ne 0 ]; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: complete fleet update failed (exit $_UPDATE_RC) — inspect this log; success was not stamped" >> "$HOME/.openclaw/skills/.update-log"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: complete fleet update failed or was rolled back (exit $_UPDATE_RC) — inspect this log and ~/.openclaw/fleet/runs/" >> "$HOME/.openclaw/skills/.update-log"
   exit "$_UPDATE_RC"
 fi
 
@@ -526,14 +527,15 @@ echo "       NOTE: 'openclaw doctor --fix' does NOT perform this migration."
 echo "    2. Updates OpenClaw CLI (npm update -g openclaw) unless step 1 already did"
 echo "    3. Logs the new version"
 echo ""
-echo "  Sunday 3:00 AM:"
-echo "    1. Downloads the latest update script from GitHub"
-echo "    2. Verifies installed content, not just the version stamp"
-echo "    3. If drift exists, updates onboarding + SOPs + scripts + runtime config"
-echo "    4. Updates, rebuilds, restarts, and health-checks Command Center"
-echo "    5. Runs completeness gates before stamping success"
-echo "    6. Exits nonzero and logs an ERROR if any complete-update stage fails"
-echo "    7. Does not restart the gateway or auto-notify a client chat"
+echo "  Sunday 3:00 AM (same steps as the operator's fleet roll):"
+echo "    1. Downloads the latest weekly-full-update.sh from GitHub"
+echo "    2. Syncs this box's onboarding clone and runs fleet-refresh.sh --local --apply"
+echo "    3. Snapshots onboarding + Command Center + health before changing anything"
+echo "    4. Updates onboarding + SOPs + scripts + runtime config (update-skills.sh)"
+echo "    5. Refreshes 999-setup only if it is already installed"
+echo "    6. Updates, rebuilds, restarts, and health-checks Command Center"
+echo "    7. Health-gates the box and rolls back to the snapshot on any regression"
+echo "    8. Does not restart the gateway or auto-notify a client chat"
 echo ""
 echo "To force a manual check now:"
 echo "  curl -fsSL $REPO_RAW | bash"

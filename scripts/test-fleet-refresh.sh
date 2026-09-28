@@ -450,7 +450,7 @@ PM2_CALLED=$(grep -c "pm2" "$CALLS6" 2>/dev/null || echo 0)
 
 # Result should be ok, partial, or dry-run (not crashed)
 R6_VAL=$(echo "$R6" | python3 -c "import json,sys; print(json.load(sys.stdin).get('result','?'))" 2>/dev/null)
-[[ "$R6_VAL" =~ ^(ok|partial|failed|dry-run)$ ]] \
+[[ "$R6_VAL" =~ ^(ok|partial|failed|dry-run|rolled_back)$ ]] \
   && pass "Apply mode: runner emitted valid JSON result ($R6_VAL)" \
   || fail "Apply mode: invalid result: $R6_VAL"
 

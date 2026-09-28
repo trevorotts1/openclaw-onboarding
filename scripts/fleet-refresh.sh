@@ -21,7 +21,17 @@
 #   bash scripts/fleet-refresh.sh --max-parallel N   # concurrency cap (default 8)
 #   bash scripts/fleet-refresh.sh --force-cc         # stash CC dirty tree instead of aborting
 #   bash scripts/fleet-refresh.sh --expected-sha <s> # inform verifier of expected onboarding SHA
+#   bash scripts/fleet-refresh.sh --wave canary|rest # only the boxes-file entries in that wave
+#                                                    # (implies --boxes-file ~/.openclaw/fleet/boxes.json)
 #   bash scripts/fleet-refresh.sh --help
+#
+# ROLL ORDER (see scripts/make-fleet-boxes-file.py):
+#   1. operator box:  bash scripts/fleet-refresh.sh --local --apply
+#   2. canary wave:   bash scripts/fleet-refresh.sh --wave canary --apply
+#   3. everyone else: bash scripts/fleet-refresh.sh --wave rest --apply
+#   Each run ends with a one-screen UPDATED / ROLLED_BACK / FAILED / SKIPPED table.
+#   Every box is snapshotted first, health-gated after, and rolled back on any
+#   regression (shared-utils/fleet_refresh_runner.py). Nothing messages a chat.
 #
 # BOX MANIFEST FORMAT (--boxes-file):
 #   JSON array of objects:
@@ -31,7 +41,11 @@
 #       "ssh_target": "clientuser@<host>",
 #       "cf_tunnel_id": "bfbd47ae...",
 #       "cf_access_env_prefix": "CF_ACCESS_CLIENT",
-#       "platform": "mac"
+#       "platform": "mac",               # mac | hostinger | contabo
+#       "container": "<name>",           # optional: run inside it via docker exec
+#       "docker_exec_user": "node",      # optional (default node)
+#       "openclaw_root": "/path",        # optional: exported as OPENCLAW_ROOT
+#       "wave": "canary"                 # optional: canary | rest (default rest)
 #     },
 #     ...
 #   ]
@@ -70,6 +84,7 @@ FORCE_CC=0
 MAX_PARALLEL=8
 EXPECTED_SHA=""
 BOXES_FILE=""
+WAVE=""
 declare -a BOX_NAMES=()
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
@@ -84,8 +99,9 @@ while [[ $# -gt 0 ]]; do
     --boxes-file)   BOXES_FILE="$2"; shift 2 ;;
     --max-parallel) MAX_PARALLEL="$2"; shift 2 ;;
     --expected-sha) EXPECTED_SHA="$2"; shift 2 ;;
+    --wave)         WAVE="$2"; shift 2 ;;
     --help|-h)
-      grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//' | head -60
+      grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//' | head -80
       exit 0
       ;;
     *)
@@ -95,6 +111,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$WAVE" in
+  ""|canary|rest) ;;
+  *) echo "FATAL: --wave must be canary or rest (got: $WAVE)" >&2; exit 1 ;;
+esac
+if [ -n "$WAVE" ] && [ -z "$BOXES_FILE" ]; then
+  BOXES_FILE="$HOME/.openclaw/fleet/boxes.json"
+fi
 
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 if [ ! -f "$RUNNER" ]; then
@@ -233,6 +257,9 @@ RUNNER_FLAGS=""
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RESULTS"' EXIT
+# Per-box runner logs (stderr) are kept after the run for post-mortems.
+RUN_LOG_DIR="$HOME/.openclaw/fleet/runs/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$RUN_LOG_DIR" 2>/dev/null && chmod 700 "$HOME/.openclaw/fleet" "$RUN_LOG_DIR" 2>/dev/null || RUN_LOG_DIR="$TMPDIR_RESULTS"
 
 # If --local, run once against this machine with no SSH
 if [ $LOCAL -eq 1 ]; then
@@ -240,27 +267,34 @@ if [ $LOCAL -eq 1 ]; then
   BOX_NAMES=("local")
 fi
 
-# If --boxes-file, load it
+# If --boxes-file, load it (optionally filtered to one --wave)
 declare -a BOX_ENTRIES=()
-if [ -n "$BOXES_FILE" ]; then
+if [ -n "$BOXES_FILE" ] && [ $LOCAL -eq 0 ]; then
   if [ ! -f "$BOXES_FILE" ]; then
     echo "FATAL: --boxes-file not found: $BOXES_FILE" >&2
+    [ -n "$WAVE" ] && echo "       Generate it with: python3 $REPO_ROOT/scripts/make-fleet-boxes-file.py" >&2
     exit 1
   fi
-  # Extract box names from the JSON manifest
   while IFS= read -r name; do
-    BOX_ENTRIES+=("$name")
-  done < <(python3 -c "
+    [ -n "$name" ] && BOX_ENTRIES+=("$name")
+  done < <(python3 - "$BOXES_FILE" "$WAVE" <<'PY'
 import json, sys
-entries = json.load(open('$BOXES_FILE'))
+entries = json.load(open(sys.argv[1]))
+wave = sys.argv[2]
 for e in entries:
-    print(e.get('name',''))
-" 2>/dev/null)
+    if not e.get('name'):
+        continue
+    w = e.get('wave') or 'rest'
+    if wave and w != wave:
+        continue
+    print(e['name'])
+PY
+)
   if [ ${#BOX_ENTRIES[@]} -eq 0 ]; then
-    echo "FATAL: boxes-file has no valid entries" >&2
+    echo "FATAL: boxes-file has no valid entries${WAVE:+ in wave '$WAVE'}" >&2
     exit 1
   fi
-  echo "[fleet-refresh] Loaded ${#BOX_ENTRIES[@]} boxes from $BOXES_FILE"
+  echo "[fleet-refresh] Loaded ${#BOX_ENTRIES[@]} boxes from $BOXES_FILE${WAVE:+ (wave: $WAVE)}"
 fi
 
 # If specific boxes named, use those
@@ -284,67 +318,86 @@ fi
 
 echo "[fleet-refresh] Running on ${#FINAL_BOXES[@]} box(es): ${FINAL_BOXES[*]}"
 echo "[fleet-refresh] max-parallel: $MAX_PARALLEL"
+echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 echo ""
 
-# ── Fan-out: run each box in parallel (bounded by MAX_PARALLEL) ───────────────
+# The runner prints exactly one JSON object as its LAST stdout line; a login
+# shell on the box may print banners before it. Keep only that line, or wrap
+# the failure as a result object so every box always has one.
+finish_result() {
+  local box="$1" rc="$2" raw="$3" result_file="$4" prefix="$5"
+  if python3 - "$raw" "$result_file" <<'PY'
+import json, sys
+lines = [l for l in open(sys.argv[1], errors="replace").read().splitlines() if l.strip()]
+for line in reversed(lines):
+    try:
+        obj = json.loads(line)
+    except ValueError:
+        continue
+    if isinstance(obj, dict) and "box" in obj:
+        json.dump(obj, open(sys.argv[2], "w"))
+        sys.exit(0)
+sys.exit(1)
+PY
+  then
+    return 0
+  fi
+  local msg
+  msg="$( { tail -3 "$raw"; tail -3 "$RUN_LOG_DIR/${box}.log" 2>/dev/null; } | tr '\n"\\' '   ' | cut -c1-300)"
+  python3 - "$box" "$rc" "$prefix" "$msg" "$result_file" <<'PY'
+import json, sys
+box, rc, prefix, msg, out = sys.argv[1:6]
+json.dump({"box": box, "result": "failed", "outcome": "FAILED",
+           "outcome_detail": f"{prefix} exited {rc}: {msg}",
+           "errors": [f"{prefix} exited {rc}: {msg}"]}, open(out, "w"))
+PY
+}
+
 run_box_local() {
   local box="$1"
-  local result_file="$TMPDIR_RESULTS/${box}.json"
-
+  local raw="$TMPDIR_RESULTS/${box}.out"
+  local rc=0
+  # shellcheck disable=SC2086
   python3 "$RUNNER" \
     --box "$box" \
     --shared-utils "$SHARED_UTILS" \
     --repo-root "$REPO_ROOT" \
     $RUNNER_FLAGS \
-    > "$result_file" 2>&1
-  local rc=$?
-
-  # If exit code is 1 or 2 and the result file is not JSON, wrap it
-  if [ $rc -ne 0 ] && ! python3 -c "import json; json.load(open('$result_file'))" 2>/dev/null; then
-    local msg
-    msg=$(cat "$result_file" 2>/dev/null | head -5)
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"runner exited $rc: $msg\"]}" > "$result_file"
-  fi
-  return $rc
+    > "$raw" 2> "$RUN_LOG_DIR/${box}.log" || rc=$?
+  finish_result "$box" "$rc" "$raw" "$TMPDIR_RESULTS/${box}.json" "runner"
 }
+
+# Single-quote a string for a remote POSIX shell.
+sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 run_box_ssh() {
   local box="$1"
-  local box_config="$2"
+  local raw="$TMPDIR_RESULTS/${box}.out"
   local result_file="$TMPDIR_RESULTS/${box}.json"
 
-  # Extract SSH target from the boxes-file config
-  local ssh_target
-  ssh_target=$(python3 -c "
-import json
-entries = json.load(open('$BOXES_FILE'))
-for e in entries:
-    if e.get('name') == '$box':
-        print(e.get('ssh_target',''))
+  # One lookup for every field this box needs (tab-separated, empty = unset).
+  local fields ssh_target container exec_user oc_root platform cf_prefix
+  fields=$(python3 - "$BOXES_FILE" "$box" <<'PY'
+import json, sys
+for e in json.load(open(sys.argv[1])):
+    if e.get('name') == sys.argv[2]:
+        print('\t'.join(str(e.get(k) or '-') for k in
+              ('ssh_target', 'container', 'docker_exec_user', 'openclaw_root', 'platform', 'cf_access_env_prefix')))
         break
-")
-  if [ -z "$ssh_target" ]; then
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"ssh_target not found in boxes-file\"]}" > "$result_file"
+PY
+)
+  IFS=$'\t' read -r ssh_target container exec_user oc_root platform cf_prefix <<< "$fields" || true
+  [ "$container" = "-" ] && container=""
+  [ "$exec_user" = "-" ] && exec_user="node"
+  [ "$oc_root" = "-" ] && oc_root=""
+  [ "$cf_prefix" = "-" ] && cf_prefix=""
+  if [ -z "$ssh_target" ] || [ "$ssh_target" = "-" ]; then
+    echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"FAILED\",\"outcome_detail\":\"ssh_target not found in boxes-file\",\"errors\":[\"ssh_target not found in boxes-file\"]}" > "$result_file"
     return 2
   fi
 
-  # Remote clone-path resolution happens AFTER the SSH env (CF Access) is set up,
-  # so the detection probe reuses the same connection options.  See the
-  # detect-remote-onboarding-root block below (right before the runner invocation).
-
-  # CF Access tunnel support
-  local cf_prefix
-  cf_prefix=$(python3 -c "
-import json
-entries = json.load(open('$BOXES_FILE'))
-for e in entries:
-    if e.get('name') == '$box':
-        print(e.get('cf_access_env_prefix',''))
-        break
-" 2>/dev/null)
-
   # SSH with CF Access service token if available
-  local ssh_opts="-o StrictHostKeyChecking=no -o ConnectTimeout=30"
+  local ssh_opts="-o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=30"
   local ssh_extra_env=""
   if [ -n "$cf_prefix" ]; then
     local client_id_var="${cf_prefix}_SVC_CLIENT_ID"
@@ -354,69 +407,78 @@ for e in entries:
     fi
   fi
 
+  # Where the command runs: inside the client's container (Hostinger /
+  # Contabo), or in a login shell on the box (Mac: launchd PATH is not the
+  # login PATH, and openclaw / pm2 / node live on the login PATH).
+  remote() {
+    local cmd="$1"
+    if [ -n "$container" ]; then
+      local envs=""
+      [ -n "$oc_root" ] && envs="-e OPENCLAW_ROOT=$(sq "$oc_root")"
+      printf 'docker exec -u %s %s %s bash -lc %s' "$(sq "$exec_user")" "$envs" "$(sq "$container")" "$(sq "$cmd")"
+    elif [ "$platform" = "mac" ]; then
+      printf 'zsh -lc %s' "$(sq "$cmd")"
+    else
+      printf 'bash -lc %s' "$(sq "$cmd")"
+    fi
+  }
+
   # ── Detect the on-box onboarding clone location ─────────────────────────────
   # The clone is NOT at a single fixed path across the fleet: legacy boxes keep it
-  # at ~/.openclaw/skills/onboarding, but the majority now live at
-  # ~/clawd/openclaw-onboarding (and a few at the install.sh CANDIDATES layouts).
-  # Probe the known candidates ON THE REMOTE BOX and use whichever actually holds
-  # shared-utils/fleet_refresh_runner.py.  An explicit REMOTE_ONBOARDING_ROOT
-  # override still wins (and is verified) so operators can force a path.
-  #
-  # The detection runs in a single SSH round-trip; the remote snippet prints the
-  # resolved clone root to stdout, or nothing if no candidate is valid.
-  local remote_root remote_su remote_runner
+  # at ~/.openclaw/skills/onboarding, most at ~/clawd/openclaw-onboarding, a few
+  # at the install.sh CANDIDATES layouts, and containers on the /data volume.
+  # An explicit REMOTE_ONBOARDING_ROOT override still wins (and is verified).
   local remote_candidates
   if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
-    # Operator-forced path: still verify it carries the runner before using it.
-    # Normalize a leading '~/' to '$HOME/' so the remote shell expands it.
-    local forced="${REMOTE_ONBOARDING_ROOT/#\~\//\$HOME/}"
-    remote_candidates="\"$forced\""
+    remote_candidates="\"${REMOTE_ONBOARDING_ROOT/#\~\//\$HOME/}\""
   else
-    # Probe order: legacy default first (backward-compatible), then the layout
-    # the majority of the fleet actually uses, then the install.sh CANDIDATES.
-    remote_candidates='"$HOME/.openclaw/skills/onboarding" "$HOME/clawd/openclaw-onboarding" "$HOME/openclaw-onboarding" "$HOME/.openclaw/onboarding"'
+    remote_candidates='"$HOME/.openclaw/skills/onboarding" "$HOME/clawd/openclaw-onboarding" "$HOME/openclaw-onboarding" "$HOME/.openclaw/onboarding" "/data/clawd/openclaw-onboarding" "/data/openclaw-onboarding"'
   fi
-  # Remote snippet: walk the candidates, print the first that carries the runner.
   local detect_script="for d in $remote_candidates; do
-  [ -f \"\$d/shared-utils/fleet_refresh_runner.py\" ] && { printf '%s\\n' \"\$d\"; exit 0; }
-done; exit 0"
+  [ -f \"\$d/shared-utils/fleet_refresh_runner.py\" ] && { printf 'FOUND %s\\n' \"\$d\"; exit 0; }
+done
+if [ -d /data/.openclaw ]; then printf 'NONE /data/openclaw-onboarding\\n'; else printf 'NONE %s\\n' \"\$HOME/clawd/openclaw-onboarding\"; fi"
 
+  local detected verdict remote_root
   # shellcheck disable=SC2086
-  remote_root=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$detect_script" 2>/dev/null \
-    | head -1 | tr -d '\r')
+  detected=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$detect_script")" 2>>"$RUN_LOG_DIR/${box}.log" \
+    | grep -E '^(FOUND|NONE) ' | tail -1 | tr -d '\r' || true)
+  verdict="${detected%% *}"
+  remote_root="${detected#* }"
 
-  if [ -z "$remote_root" ]; then
-    local probed
-    if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
-      probed="REMOTE_ONBOARDING_ROOT=$REMOTE_ONBOARDING_ROOT"
-    else
-      probed="~/.openclaw/skills/onboarding, ~/clawd/openclaw-onboarding, ~/openclaw-onboarding, ~/.openclaw/onboarding"
-    fi
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"onboarding clone not found on box: no candidate dir contains shared-utils/fleet_refresh_runner.py (probed: $probed). Clone trevorotts1/openclaw-onboarding to one of those paths, or set REMOTE_ONBOARDING_ROOT to its location, then retry.\"]}" > "$result_file"
+  if [ -z "$detected" ]; then
+    finish_result "$box" 255 /dev/null "$result_file" "ssh (clone detection)"
     return 2
   fi
-
-  # Resolve the runner + shared-utils relative to the detected clone root.
-  remote_su="$remote_root/shared-utils"
-  remote_runner="$remote_su/fleet_refresh_runner.py"
-  echo "[fleet-refresh]   $box — using onboarding clone: $remote_root" >&2
-
-  # shellcheck disable=SC2086
-  env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
-    "python3 $remote_runner \
-      --box $box \
-      --shared-utils $remote_su \
-      --repo-root $remote_root \
-      $RUNNER_FLAGS" \
-    > "$result_file" 2>&1
-  local rc=$?
-
-  if [ $rc -ne 0 ] && ! python3 -c "import json; json.load(open('$result_file'))" 2>/dev/null; then
-    local msg
-    msg=$(cat "$result_file" 2>/dev/null | head -3)
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"SSH/runner exited $rc: $msg\"]}" > "$result_file"
+  if [ "$verdict" = "NONE" ] && { [ $APPLY -eq 0 ] || [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; }; then
+    echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"SKIPPED\",\"outcome_detail\":\"no onboarding clone on box (--apply clones it to $remote_root)\",\"errors\":[\"onboarding clone not found on box\"]}" > "$result_file"
+    return 2
   fi
-  return $rc
+  echo "[fleet-refresh]   $box — onboarding clone: $remote_root${verdict:+ ($verdict)}" >&2
+
+  # --apply: bring the box's clone (and therefore the runner itself) to
+  # origin/main BEFORE running it, so every box gets this release's
+  # snapshot/health-gate/rollback logic. update-skills.sh hard-syncs the same
+  # clone anyway; the pre-sync SHA is handed to the runner as the rollback
+  # target. Dry-run never touches the clone.
+  local prep=""
+  if [ $APPLY -eq 1 ]; then
+    prep="R=$(sq "$remote_root")
+if [ ! -d \"\$R/.git\" ] && [ ! -e \"\$R\" ]; then
+  mkdir -p \"\$(dirname \"\$R\")\" && git clone -q https://github.com/trevorotts1/openclaw-onboarding.git \"\$R\" || exit 97
+fi
+PREV=\$(git -C \"\$R\" rev-parse HEAD 2>/dev/null || true)
+if [ -d \"\$R/.git\" ]; then git -C \"\$R\" fetch -q origin main && git -C \"\$R\" reset -q --hard origin/main || exit 98; fi
+export FLEET_PREV_ONBOARDING_SHA=\"\$PREV\"
+"
+  fi
+  local run_script="${prep}python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS"
+
+  local rc=0
+  # shellcheck disable=SC2086
+  env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$run_script")" \
+    > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
+  finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner"
 }
 
 # Track active jobs
@@ -444,7 +506,7 @@ run_with_concurrency() {
   if [ $LOCAL -eq 1 ] || [ "$box" = "local" ] || [ -z "$BOXES_FILE" ]; then
     run_box_local "$box" &
   else
-    run_box_ssh "$box" "$BOXES_FILE" &
+    run_box_ssh "$box" &
   fi
   PIDS+=($!)
   PID_BOXES+=("$box")
@@ -475,8 +537,7 @@ for box in "${FINAL_BOXES[@]}"; do
   result_file="$TMPDIR_RESULTS/${box}.json"
   if [ ! -f "$result_file" ]; then
     echo "[fleet-refresh]   $box — FATAL: no result file"
-    ANY_FAILED=1
-    continue
+    echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"FAILED\",\"outcome_detail\":\"no result file\"}" > "$result_file"
   fi
 
   box_result=$(cat "$result_file")
@@ -544,16 +605,19 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
     *)       icon="✗"; ANY_FAILED=1; ALL_OK=0 ;;
   esac
 
-  echo "[fleet-refresh]   $icon  $box  [result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
+  outcome_val=$(echo "$box_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('outcome','?'))" 2>/dev/null || echo "?")
+  echo "[fleet-refresh]   $icon  $box  [$outcome_val  result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
   [ -n "$errors" ] && echo "[fleet-refresh]        ERRORS: $errors"
 
   # Accumulate into fleet summary JSON
-  ALL_RESULTS=$(echo "$ALL_RESULTS" | python3 -c "
+  # (Parsed as JSON, not pasted into Python source: a result's true/false/null
+  # made the old paste a NameError, so the summary was always empty.)
+  ALL_RESULTS=$(python3 -c "
 import json,sys
-arr = json.load(sys.stdin)
-arr.append($box_result)
+arr = json.loads(sys.argv[1])
+arr.append(json.load(open(sys.argv[2])))
 print(json.dumps(arr))
-" 2>/dev/null || echo "$ALL_RESULTS")
+" "$ALL_RESULTS" "$result_file" 2>/dev/null || echo "$ALL_RESULTS")
 done
 
 echo "[fleet-refresh] ═══════════════════════════════════════════"
@@ -775,6 +839,37 @@ except Exception as e:
 
 PYEOF
 fi
+
+# ── One-screen verdict per box ───────────────────────────────────────────────
+python3 - "$SUMMARY_FILE" <<'PY' || true
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1]))
+except Exception:
+    rows = []
+order = {"FAILED": 0, "ROLLED_BACK": 1, "SKIPPED": 2, "UPDATED": 3}
+def outcome(r):
+    o = r.get("outcome")
+    if o in order:
+        return o
+    return {"ok": "UPDATED", "dry-run": "SKIPPED", "rolled_back": "ROLLED_BACK"}.get(r.get("result"), "FAILED")
+rows = sorted(rows, key=lambda r: (order[outcome(r)], str(r.get("box"))))
+w = max([len(str(r.get("box", ""))) for r in rows] + [3])
+print("")
+print("=" * 78)
+print(f" {'BOX':<{w}}  {'OUTCOME':<11}  DETAIL")
+print("-" * 78)
+for r in rows:
+    detail = r.get("outcome_detail") or "; ".join(r.get("errors") or [])[:140]
+    print(f" {str(r.get('box')):<{w}}  {outcome(r):<11}  {detail[:140]}")
+counts = {}
+for r in rows:
+    counts[outcome(r)] = counts.get(outcome(r), 0) + 1
+print("-" * 78)
+print(" " + "   ".join(f"{k}={counts.get(k, 0)}" for k in ("UPDATED", "ROLLED_BACK", "FAILED", "SKIPPED")))
+print("=" * 78)
+PY
+echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 
 if [ $ANY_FAILED -eq 1 ]; then
   echo "[fleet-refresh] RESULT: PARTIAL/FAILED — check errors above"
