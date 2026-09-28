@@ -148,18 +148,23 @@ fi
 check "2.2" "Each dept has a director subfolder (00-*/)" \
   "[ -d \"$COMPANY_DIR/departments\" ] && [ \$(find \"$COMPANY_DIR/departments\" -maxdepth 2 -type d -name '00-*' | wc -l) -gt 0 ]" \
   "Re-run build-workforce.py; create_role_workspace() failed"
-# 2.3 — symlink check
+# 2.3 — symlink check (N29 amended 2026-07-31: real-file copies are canonical;
+# a symlink is rejected by the runtime's workspace-root boundary guard — see
+# CHECK 9.9, the hard-fail/authoritative version of this same rule. Before this
+# fix, 2.3 scored the opposite of 9.9: it passed on symlinks and warned on the
+# real-file copies 9.9 requires, so a healthy N29-compliant box printed a
+# misleading "should be symlinked" warning on every run.)
 if [ -d "$COMPANY_DIR/departments" ]; then
   COPIED=$(find "$COMPANY_DIR/departments" -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   SYMLINKED=$(find "$COMPANY_DIR/departments" -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$COPIED" = "0" ] && [ "$SYMLINKED" -gt 0 ]; then
-    green "  ✓ 2.3  AGENTS/TOOLS/USER.md SYMLINKED ($SYMLINKED) — none copied"; PASS=$((PASS+1))
-  elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
-    yellow "  ⚠ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (warn-mode — Rule 3.5)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Files copied instead of symlinked ($COPIED)|Re-run build-workforce.py")
+  if [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
+    green "  ✓ 2.3  AGENTS/TOOLS/USER.md are real-file copies ($COPIED) — none symlinked (N29)"; PASS=$((PASS+1))
+  elif [ "$SYMLINKED" -gt 0 ] && [ "$COPIED" = "0" ]; then
+    yellow "  ⚠ 2.3  AGENTS/TOOLS/USER.md SYMLINKED ($SYMLINKED) — should be real-file copies per N29; the runtime rejects a symlink here (see CHECK 9.9) (warn-mode — Rule 3.5)"; WARN=$((WARN+1))
+    WARNINGS+=("2.3|Files symlinked instead of real-file copies ($SYMLINKED)|Re-run update-skills.sh or install.sh Step 10a (link_shared_core_files) to materialize real-file copies")
   elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" -gt 0 ]; then
     yellow "  ⚠ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected — warn-mode, Rule 3.5)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Mixed symlinks and copies ($COPIED copies, $SYMLINKED symlinks)|Delete the copies, re-run build")
+    WARNINGS+=("2.3|Mixed symlinks and copies ($COPIED copies, $SYMLINKED symlinks)|Remove the symlinked instances; re-run update-skills.sh or install.sh Step 10a to materialize real-file copies for all")
   else
     na "2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"
   fi
