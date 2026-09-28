@@ -538,92 +538,47 @@ LEASE_TTL_S="${PRESENTATION_INTAKE_LEASE_TTL:-900}"
 # shell ($$) for the whole dispatch window -- not to the heredoc python, which
 # exits the moment lease_write returns (a lease pinned to that pid is takeover
 # bait for every later acquire; see lease_write above).
-LEASE_OWNER_PID=$$
 
 # lease_write <run_dir> -- atomically write working/.lease.json naming this
 # bridge as holder. Returns 0 when written, 1 when refused (live foreign
 # holder), so the caller must re-check rather than dispatch.
 lease_write() {
+    # FIX 14: use the shared presentation_job.lease module so the poller
+    # writes the SAME format as the engine (ISO acquired_at + expires_at).
+    # The old PYLEASE heredoc wrote epoch acquired_at with no expires_at,
+    # which the engine treated as expired (and vice versa).
     # FIX 61 pid-lifecycle: record the POLLER SHELL's pid ($$), not the
-    # transient heredoc python's. The python that writes the lease exits the
+    # transient python3's. The python that writes the lease exits the
     # instant lease_write returns; a lease carrying ITS pid makes every later
-    # lease_acquire see a dead holder and take over -- the lease could never
+    # liveness check see a dead holder and take over -- the lease could never
     # actually refuse a live overlapping dispatch, the exact race this fix
     # exists to stop. The shell (this script) stays alive for the whole
     # dispatch window (acquire -> spawn engine -> release), so its pid is the
     # real liveness anchor. lease_release (below) removes the lease by holder
     # name on every exit path, so no path leaks a lease pinned to a dead pid.
-    python3 - "$1" "$LEASE_HOLDER" "$LEASE_TTL_S" "${LEASE_OWNER_PID}" <<'PYLEASE' 2>/dev/null
-import json, os, socket, sys, tempfile, time
+    python3 -c '
+from presentation_job import lease
 from pathlib import Path
-
+import json, sys
 run_dir = Path(sys.argv[1])
-holder = sys.argv[2]
-ttl_s = int(sys.argv[3])
-owner_pid = int(sys.argv[4]) if len(sys.argv) > 4 and str(sys.argv[4]).isdigit() else os.getpid()
-lease_path = run_dir / "working" / ".lease.json"
-
-def read_lease():
-    try:
-        return json.loads(lease_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-def pid_alive(pid):
-    if not isinstance(pid, int) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
-
-existing = read_lease()
-if existing is not None:
-    # Any lease with a LIVE holder and an unexpired ttl refuses us -- the
-    # holder's NAME does not matter (intake-poll-bridge vs canonical-entry
-    # vs a second poll tick of the SAME bridge: a second tick is still a
-    # live actor, and two dispatchers into one .job.lock is the exact race
-    # this lease exists to stop). A dead holder pid (a crashed actor) or an
-    # expired ttl is a stale lease -- takeover. A lease we cannot parse is
-    # stale by definition.
-    acq = existing.get("acquired_at")
-    expired = True
-    if isinstance(acq, (int, float)):
-        expired = (time.time() - acq) > ttl_s
-    held_alive = pid_alive(existing.get("pid"))
-    if held_alive and not expired:
-        print(json.dumps({"acquired": False,
-                          "reason": "held by live holder",
-                          "holder": existing.get("holder"),
-                          "pid": existing.get("pid")}))
-        sys.exit(1)
-
-payload = {
-    "holder": holder,
-    "pid": owner_pid,
-    "host": socket.gethostname(),
-    "acquired_at": time.time(),
-    "ttl_s": ttl_s,
-    "run_dir": str(run_dir),
+ttl_s = float(sys.argv[2])
+owner_pid = int(sys.argv[3])
+# Takeover detection: was there a lease file before we acquired?
+had_lease = lease.lease_path(run_dir).is_file()
+l = lease.acquire(run_dir, holder={"holder": "intake-poll-bridge"},
+                  pid=owner_pid, ttl_s=ttl_s)
+if l is None:
+    existing = lease.read(run_dir) or {}
+    print(json.dumps({"acquired": False,
+                      "reason": "held by live holder",
+                      "holder": existing.get("holder"),
+                      "pid": existing.get("pid")}))
+    sys.exit(1)
+print(json.dumps({"acquired": True, "holder": "intake-poll-bridge",
+                  "pid": owner_pid, "takeover": had_lease}))
+' "$1" "$LEASE_TTL_S" "$$" 2>/dev/null
 }
-lease_path.parent.mkdir(parents=True, exist_ok=True)
-# Atomic replace: a concurrent reader either sees the old lease or this one,
-# never a half-written file.
-fd, tmp = tempfile.mkstemp(dir=str(lease_path.parent), prefix=".lease-", suffix=".tmp")
-with os.fdopen(fd, "w", encoding="utf-8") as fh:
-    fh.write(json.dumps(payload, indent=2))
-    fh.flush()
-    os.fsync(fh.fileno())
-os.replace(tmp, lease_path)
-print(json.dumps({"acquired": True, "holder": holder, "pid": owner_pid,
-                  "takeover": existing is not None}))
-PYLEASE
-}
+
 
 # lease_takeover_count <lease_out_json> -- increment LEASE_TAKEOVERS when the
 # acquire output reports a takeover. MUST be called IN THE MAIN SHELL (the
@@ -648,23 +603,25 @@ lease_acquire() {
 # Never fights a successor: if the holder name differs (takeover happened),
 # the file stays.
 lease_release() {
-    python3 - "$1" "$LEASE_HOLDER" <<'PYREL' 2>/dev/null
-import json, sys
+    # FIX 14: use the shared lease module for release. Removes the lease
+    # iff this holder (intake-poll-bridge) still owns it. Never fights a
+    # successor: if the holder name differs (takeover happened), the file stays.
+    python3 -c '
+from presentation_job import lease
 from pathlib import Path
+import sys
 run_dir = Path(sys.argv[1])
-holder = sys.argv[2]
-lease_path = run_dir / "working" / ".lease.json"
-try:
-    d = json.loads(lease_path.read_text(encoding="utf-8"))
-except (OSError, ValueError):
+doc = lease.read(run_dir)
+if doc is None:
     sys.exit(0)
-if d.get("holder") == holder:
+if doc.get("holder") == "intake-poll-bridge":
     try:
-        lease_path.unlink()
+        lease.lease_path(run_dir).unlink()
     except OSError:
         pass
-PYREL
+' "$1" 2>/dev/null
 }
+
 
 # ---------------------------------------------------------------------------
 # F3 -- A LAUNCH IS A RUNNING ENGINE, NOT A SUCCESSFUL SPAWN.
@@ -1027,14 +984,9 @@ except Exception:
         fi
 
         # Check if already running (PID exists + alive)
-        PID=$(python3 -c "
-import json, sys
-try:
-    s = json.load(open('$STATE_JSON'))
-    print(s.get('engine_pid',''))
-except Exception:
-    print('')
-" 2>/dev/null)
+        # FIX 13: use read_engine_pid (state.json, .engine.pid, .job.lock)
+        # so directly-run engines are seen, not just launcher-spawned ones.
+        PID=$(read_engine_pid "$run_dir")
         if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
             # Already running
             SKIPPED_RUNNING=$((SKIPPED_RUNNING + 1))
