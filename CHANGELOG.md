@@ -1,3 +1,17 @@
+## [v25.1.102]  -  2026-09-28  -  Presentations Step 5 lands on main: signature driver unification (Fix 7), skill-level signature retirement (Fix 31)
+
+### Why
+This entry documents the Step 5 release (Fixes 7, 31) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.100 -> v25.1.102 via scripts/bump-version.sh (v25.1.101 is claimed by open PR #1312; G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 7 (signature turn-gate points at the legacy driver): moved signature turn-gate documentation and error messages to the canonical department driver (deck-intake-driver.py with --sig-* flags); the department driver now rejects --signature --next and --signature --answer with non-zero status and names the correct replacement flags; added department-driver --selftest; entry.sh error messages updated (both copies). Test: intake-conversation test gains (H2) dept --selftest.
+- Fix 31 (skill-level signature interview bypasses the canonical driver): skill-level signature mode retired -- it now delegates to the canonical department driver, translating legacy flags (--next/--answer to --sig-next/--sig-answer, --plan/--record to --sig-plan/--sig-record); standard-mode delegation unchanged; --run-dir optional for --selftest. Test: --plan assertion updated to the department-driver shape (frame_question).
+- Step 5 check fixes: bare --signature delegation named an unfollowable --sig-next pointer on the skill-level driver (fixed via an optional next_command_rewrite hook rewriting --sig-next to --next; suite 97/97 PASS); 2 stale content_sha entries from Fix 7 doc changes restamped via the mechanical content-manifest rehash.
+- Version markers rolled v25.1.100 -> v25.1.102 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+New/updated tests per the fix orders (dept --selftest (H2), --plan assertion update; not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.100 entry below.
+
 ## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
 
 ### Why
