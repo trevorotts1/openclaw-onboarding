@@ -27,15 +27,21 @@ call path (comms_audience_trigger.build_comms_trigger), not caller-supplied.
 
 Run: python3 -m pytest tests/unit/test_a36_gate_wiring.py -q
 """
+import atexit
 import importlib.util
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+
+# Every temp file/dir this test makes lands in one sandbox, removed at exit (pass or fail).
+tempfile.tempdir = tempfile.mkdtemp(prefix="onb-test-")
+atexit.register(shutil.rmtree, tempfile.tempdir, True)
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 _COMMIT = _REPO / "shared-utils" / "decision_engine" / "commit"

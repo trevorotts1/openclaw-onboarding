@@ -36,14 +36,20 @@ NOT asserted here, and deliberately so: nothing in this file claims anything
 about any live box. It proves the shipped source behaves correctly.
 """
 
+import atexit
 import datetime as _dt
 import importlib.util
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
+
+# Every temp file/dir this test makes lands in one sandbox, removed at exit (pass or fail).
+tempfile.tempdir = tempfile.mkdtemp(prefix="onb-test-")
+atexit.register(shutil.rmtree, tempfile.tempdir, True)
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT = os.path.join(REPO, "58-podcast-production-engine", "scripts",
