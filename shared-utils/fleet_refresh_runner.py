@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -976,10 +977,20 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
                 )
                 return
             update_env = {**os.environ, "CC_APP_DIR": str(cc_dir)}
-            update_result = subprocess.run(
-                ["bash", str(updater)], cwd=str(cc_dir), env=update_env,
-                capture_output=True, text=True, timeout=1200,
-            )
+            # Run origin/main's updater, not the live checkout's: the target's
+            # update.sh builds beside the running release and promotes it
+            # (zero-downtime), so the live tree is never moved before the build.
+            target = subprocess.run(["git", "-C", str(cc_dir), "show", "origin/main:update.sh"],
+                                    capture_output=True, text=True, timeout=30)
+            with tempfile.NamedTemporaryFile("w", suffix="-cc-update.sh", delete=False) as fh:
+                fh.write(target.stdout if target.returncode == 0 and target.stdout else updater.read_text())
+            try:
+                update_result = subprocess.run(
+                    ["bash", fh.name], cwd=str(cc_dir), env=update_env,
+                    capture_output=True, text=True, timeout=ATOMIC_DEPLOY_TIMEOUT + 600,
+                )
+            finally:
+                os.unlink(fh.name)
             if update_result.returncode != 0:
                 detail = (update_result.stdout + update_result.stderr).strip()[-300:]
                 res.step_fail(
