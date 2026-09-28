@@ -38,9 +38,11 @@ Scripts live in `scripts/`.
 ## Quick start
 
 1. Install dependencies (see `INSTALL.md`).
-2. Go into the skill folder:
+2. Go into the skill folder and activate its venv (the venv lives outside the
+   skill folder — VPS: `/data/.openclaw/venvs/video-creator`):
    ```bash
    cd "$HOME/.openclaw/skills/video-creator"
+   source "$HOME/.openclaw/venvs/video-creator/bin/activate"
    ```
 3. Generate a test video without any API keys:
    ```bash
