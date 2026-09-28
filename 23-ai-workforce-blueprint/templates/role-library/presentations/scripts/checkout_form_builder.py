@@ -596,11 +596,85 @@ def build_form_schema(*, offer: dict, intent: str, deck_slug: str) -> List[dict]
     return fields
 
 
+# --- Fix 1 (D3): SMS consent wording -------------------------------------------
+# GHL's kept "Terms & Conditions" element carries two SMS consent checkboxes
+# (transactional + marketing). The DEFAULT TEMPLATE below is used when the
+# intake carries no confirmed business name. Trevor's lawyer reviews this
+# template once before fleet-wide rollout (see PR description).
+# Truth gate AF-FORM-INTAKE-TRUTHGATE (SOP-FORM-01-INTAKE.md:37-41): GHL's two
+# seeded placeholders ([BUSINESS NAME] / [USE_CASE_FROM_CAMPAIGN_-
+# DESCRIPTION]) are NEVER shipped -- the wording always comes from confirmed
+# intake values or this template. Both boxes are unchecked by default and
+# OPTIONAL; consent is never a condition of purchase (TCPA), so neither box
+# may be required to submit or to buy.
+_CONSENT_DEFAULT_WHO = "this business"
+
+
+def resolve_consent_copy(intake: dict, brief: dict) -> dict:
+    """Resolve the two SMS consent checkbox wordings for the checkout form.
+
+    Returns {"element", "source", "boxes": [...]}. Each box carries its kind,
+    label, text, default_unchecked=True and required=False. Never returns
+    GHL's seeded placeholders.
+    """
+    business = ""
+    for src in (intake or {}, brief or {}):
+        if not isinstance(src, dict):
+            continue
+        for key in ("company", "COMPANY", "client_name", "business_name",
+                    "name"):
+            v = src.get(key)
+            if isinstance(v, str) and v.strip():
+                business = v.strip()
+                break
+        if business:
+            break
+    source = "intake" if business else "default_template"
+    who = business or _CONSENT_DEFAULT_WHO
+    return {
+        "element": "Terms & Conditions",
+        "source": source,
+        "boxes": [
+            {
+                "kind": "transactional_sms",
+                "label": "Order and delivery updates by text message",
+                "text": (
+                    f"Yes, {who} may send me transactional text messages "
+                    "about my order and delivery updates. Message frequency "
+                    "varies. Message and data rates may apply. Reply STOP "
+                    "to opt out, HELP for help. See our Privacy Policy and "
+                    "Terms of Service."
+                ),
+                "default_unchecked": True,
+                "required": False,
+            },
+            {
+                "kind": "marketing_sms",
+                "label": "Marketing text messages",
+                "text": (
+                    f"Yes, {who} may send me marketing text messages about "
+                    "offers and updates. Message frequency varies. Message "
+                    "and data rates may apply. Reply STOP to opt out, HELP "
+                    "for help. Consent is not a condition of purchase. See "
+                    "our Privacy Policy and Terms of Service."
+                ),
+                "default_unchecked": True,
+                "required": False,
+            },
+        ],
+    }
+
+
 def build_skill44_contract(*, offer: dict, intent: str, scope: dict,
-                           fields: List[dict]) -> dict:
+                           fields: List[dict],
+                           consent: Optional[dict] = None) -> dict:
     """Skill 44 FORM-object contract (same shape family as vsl-gate-form-spec):
     live form + live custom fields + Form-Submitted -> Add-Contact-Tag
     workflow (DRAFT only). IDs are filled at execution; None until then."""
+    if consent is None:
+        # Fix 1 (D3): every contract carries the consent wording; callers
+        # without intake values get the default template (lawyer-reviewed).
+        consent = resolve_consent_copy({}, {})
     slug = _slug(scope["deck_slug"])
     custom_fields = []
     for f in fields:
@@ -635,11 +709,19 @@ def build_skill44_contract(*, offer: dict, intent: str, scope: dict,
             "name": f"ZHC {scope['deck_slug']} Checkout",
             "start_from": "scratch",
             "default_fields_keep": [],
+            # Fix 1 (D3): "Terms & Conditions" is KEPT, never deleted. It is
+            # GHL's own element carrying the two SMS consent checkboxes
+            # (transactional + marketing). Both are unchecked by default and
+            # optional; buying never requires either one (TCPA).
             "default_fields_delete": ["First Name", "Last Name", "Email",
-                                      "Phone", "Terms & Conditions"],
+                                      "Phone"],
             "fields": fields,
             "form_id": None,
             "action": None,
+            # Fix 1 (D3): wording for the kept "Terms & Conditions" element's
+            # two SMS consent boxes (transactional + marketing), each
+            # unchecked by default and optional, never required.
+            "consent": consent,
         },
         "dependency_plan": {
             "owner_skill": "44-convert-and-flow-operator",
@@ -1369,8 +1451,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     fields = build_form_schema(offer=offer, intent=intent,
                                deck_slug=scope["deck_slug"])
+    consent = resolve_consent_copy(intake, brief)
     contract44 = build_skill44_contract(offer=offer, intent=intent,
-                                        scope=scope, fields=fields)
+                                        scope=scope, fields=fields,
+                                        consent=consent)
     task06 = build_skill06_task(offer=offer, intent=intent,
                                 scope=scope, fields=fields)
 

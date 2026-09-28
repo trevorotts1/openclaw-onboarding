@@ -1941,6 +1941,11 @@ def dispatch_resume(run_dir: str, background: bool = True,
 # CLI entry point -- for shell-script callers (poll.sh, canonical entry)
 # ---------------------------------------------------------------------------
 def main(argv: Optional[list] = None) -> int:
+    # Fix 3 (PRES-035 regression): load the box env store into THIS process
+    # before anything else, so PRESENTATION_NOTIFY_CMD / OPENROUTER_API_KEY
+    # are present for everything the launcher spawns.
+    from .env_store import load_into_process
+    load_into_process()
     import argparse
     p = argparse.ArgumentParser(
         prog="launcher.py",
