@@ -629,6 +629,38 @@ print('%d' % len(raw.strip()))
 check_intake_trace "$RUN_DIR"
 
 # ===========================================================================
+# ===========================================================================
+# GATE 0c — DRIFT GATES (FIX 113, warning-only per D6)
+# ===========================================================================
+# Runs the presentations drift gates BEFORE the build starts. Per D6, drift is
+# a WARNING, never a build-stopper:
+#   - Drift found: log LOUDLY (operator channel, never client-facing), build continues.
+#   - Gate script missing or unrunnable: log an ERROR (still operator channel),
+#     build STILL continues — a missing gate must not brick a render.
+# The _ENGINE_RC reset below ensures a GATE 0c warning never leaks into the
+# engine's exit-code accounting.
+note "GATE 0c — DRIFT GATES (FIX 113; warning-only, build continues on drift)"
+_GATE0C_SCRIPT="$SELF_DIR/presentations-drift-gates.sh"
+_ENGINE_RC=0
+if [ ! -f "$_GATE0C_SCRIPT" ]; then
+  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
+elif [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
+  note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
+else
+  _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
+  _GATE0C_RC=$?
+  if [ "$_GATE0C_RC" -ne 0 ]; then
+    note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
+    note "GATE 0c drift detail (operator channel, never client-facing):"
+    echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+  else
+    note "GATE 0c PASSED (no drift)"
+  fi
+  unset _GATE0C_OUT _GATE0C_RC
+fi
+_ENGINE_RC=0
+unset _GATE0C_SCRIPT
+
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"

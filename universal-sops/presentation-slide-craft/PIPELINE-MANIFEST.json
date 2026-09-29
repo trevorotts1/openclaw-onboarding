@@ -2186,7 +2186,7 @@
       "code": "AF-P1",
       "stage": "Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "rich prompt missing, under the reconciled 9,000-char floor (PROMPT_CHAR_FLOOR), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_rich_prompts"
@@ -2195,7 +2195,7 @@
       "code": "AF-P2",
       "stage": "Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "composed prompt over the 18000 ceiling",
       "enforced_by": "build_deck",
       "py_symbol": "PROMPT_CHAR_CEILING"
@@ -2204,7 +2204,7 @@
       "code": "AF-R3",
       "stage": "Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "hardcoded demographic default in the slide spec (60/30/10 landmine)",
       "enforced_by": "build_deck",
       "py_symbol": "FORBIDDEN_DEMOGRAPHIC_DEFAULTS"
@@ -2213,7 +2213,7 @@
       "code": "AF-RESEARCH-GATE",
       "stage": "1Q",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "research_complete not true",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_research_brief"
@@ -2244,7 +2244,7 @@
       "code": "AF-BUNDLE-COMPLETE",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "postflight completeness gate — one or more required deliverables missing or below size threshold",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
@@ -2253,7 +2253,7 @@
       "code": "AF-BUNDLE-INCOMPLETE",
       "stage": "Postflight/Bundle",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "full 9-deliverable bundle gate (fix_bundle_complete.py, FIX-8) — one or more of the nine operator build deliverables (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md, audio_mp3, infographic_png, teleprompter_html) is absent or empty in the bundle dir. Fail-closed: a partial bundle can never be reported 'done'. On pass writes bundle_complete.json.",
       "enforced_by": "fix_bundle_complete",
       "py_symbol": null,
@@ -2308,7 +2308,7 @@
       "code": "AF-SPEECH-SHORT",
       "stage": "9",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "presenter speech word count below target_talk_minutes x 120 wpm floor",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_speech_length"
@@ -2326,7 +2326,7 @@
       "code": "AF-DELIVER",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "delivery interlock — the six-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
       "enforced_by": "closeout_gate",
       "py_symbol": null
@@ -2335,7 +2335,7 @@
       "code": "AF-DH1",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "delivery human-handoff gate not satisfied",
       "enforced_by": "closeout_gate",
       "py_symbol": null
@@ -2344,7 +2344,7 @@
       "code": "AF-DELIVERY-COMPLETE",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "six-file bundle / infographic / GHL upload incomplete",
       "enforced_by": "closeout_gate",
       "py_symbol": null
@@ -3718,7 +3718,7 @@
       "code": "AF-PHASE-REPORT-MISSING",
       "stage": "Process",
       "level": "phase",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "a phase is attested without confirmed AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records (gateway_msg_id present) for it",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3727,7 +3727,7 @@
       "code": "AF-PHASE-REPORT-START",
       "stage": "Process",
       "level": "phase",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "phase dispatched without a client start-report emitted via openclaw message send",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3736,7 +3736,7 @@
       "code": "AF-PHASE-REPORT-DONE",
       "stage": "Process",
       "level": "phase",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "phase substance-validated but no client done-report emitted",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3745,7 +3745,7 @@
       "code": "AF-PROCESS-INTEGRITY",
       "stage": "Delivery",
       "level": "deck",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "prove-deck.py: a declared step was skipped, ran out of order, was unvalidated, or unreported",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3997,7 +3997,7 @@
       "code": "AF-KIE-AUTH",
       "stage": "Phase-0",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "Decision 3C companion. The kie.ai key could not be verified BEFORE render (HTTP 401/403 on the credit or auth preflight, or the preflight could not verify the key). HARD-ABORTS before any slide is dispatched — an unauthenticated key is a PERMANENT auth failure, never a transient condition to back off and re-submit (retrying an identical 401 request is a token furnace).",
       "enforced_by": "build_deck",
       "py_symbol": "_preflight_kie_auth",
@@ -4009,7 +4009,7 @@
       "code": "AF-FORGED-APPROVAL",
       "stage": "1Q/QC",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "A phase-skip approval record in working/checkpoints/phase_skip_approvals.json references an owner_msg_id that does NOT resolve to a real owner message in the Command Center task_activities store, or lacks the required owner_action == 'approved_skip'. A forged/self-issued skip is refused (PermissionError) and the phase stays pending — a phase can never be skipped on an approval that is not a real owner message.",
       "enforced_by": "build_deck",
       "py_symbol": "check_phase_preconditions",
@@ -4099,7 +4099,7 @@
       "code": "AF-IMAGE-GROUNDING-PARK",
       "stage": "Image-QC/closeout",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "the image-grounding-steward verdict is missing or failing at closeout: working/qc/image_qc_report.json carries NO image_grounding sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, or its reviewed_by is a builder/self identity — the run PARKS for human vision review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_image_grounding at P-IMAGE-QC) as a closeout gate so an un-parked deck proves its grounding verdict exists; the companion scene-grounding/anchor-parity findings ride the same verifier as AF-IMAGE-GROUNDING. Defers (pass) only when the run has no prompts/anchors to judge and no report at all — at closeout, after render+assembly, the park is binding.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_image_grounding_verdict"
@@ -4108,7 +4108,7 @@
       "code": "AF-CASTING-PARK",
       "stage": "Prompt-QC/closeout",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "the representation-casting-director verdict is missing or failing at closeout: working/qc/prompt_qc_report.json carries NO representation_casting sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, its reviewed_by is a builder/self identity, or the verifier's cast-parity checks fail (an invented demographic default, or a declared representation_mix no people-bearing prompt honors — the verifier's own AF-CASTING / AF-CASTING-MIX-PARITY findings) — the run PARKS for human review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_representation_casting at P-PROMPT-QC) as a closeout gate. Defers (pass) only when the client declined representation_mix capture and no forbidden default is present.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
@@ -4117,7 +4117,7 @@
       "code": "AF-IMAGE-GROUNDING",
       "stage": "Image-QC/Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "a people/scene-bearing render prompt carries NO client-specific research anchor (research_map.json assigns no anchored item to the slide, or the assigned anchor token appears in neither the prompt nor the render copy — observed-render parity fails), or the prompt/copy contains an invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS). Generic scenes are ungrounded; pure abstract/typography slides are exempt. Emitted by the image-grounding-steward sub-verifier at P-IMAGE-QC.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_image_grounding_verdict"
@@ -4126,7 +4126,7 @@
       "code": "AF-CASTING",
       "stage": "Prompt-QC/P-IMAGE-QC",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "a people-bearing prompt carries an invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS) instead of cast targets drawn from intake.json's captured representation_mix, or the representation_casting sub-verdict in prompt_qc_report.json marks pass!=true / names no reviewed_by / names a builder-self identity. Emitted by the representation-casting-director sub-verifier at P-PROMPT-QC; P-IMAGE-QC performs the observed-render parity half.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
@@ -4135,7 +4135,7 @@
       "code": "AF-CASTING-MIX-PARITY",
       "stage": "Prompt-QC",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "the representation mix declares cast targets but NO people-bearing prompt names any declared cast target — the prompt-level casting does not reflect the client's captured mix. Emitted by the representation-casting-director sub-verifier (phase_verifiers._verify_representation_casting) at P-PROMPT-QC.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
