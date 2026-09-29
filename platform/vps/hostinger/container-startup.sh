@@ -15,9 +15,21 @@
 #      lacks it), it is started from its own ecosystem file and the list saved;
 #   3. ends by exec'ing the image's own server (Hostinger's gateway wrapper).
 # Never touches, restarts or signals the gateway.
+#
+# pm2 runs as node, NEVER root, with a node-owned PM2_HOME (2026-09-29): a pm2
+# daemon at /data/.pm2 running as root ran the Command Center as root, its
+# python skill calls left root-owned __pycache__ in the skills tree, and the
+# next update refused and rolled the box back. Started as root, this script
+# hands PM2_HOME to node and re-runs itself as node.
 set -u
 
 DATA="${OPENCLAW_DATA:-/data}"
+export PM2_HOME="${PM2_HOME:-$DATA/.pm2}"
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p "$PM2_HOME" 2>/dev/null || true
+  chown -R node:node "$PM2_HOME" 2>/dev/null || true
+  exec runuser -u node -- env HOME="$DATA" PATH="$PATH" PM2_HOME="$PM2_HOME" OPENCLAW_DATA="$DATA" bash "$0"
+fi
 export PATH="$DATA/.npm-global/bin:$DATA/linuxbrew/.linuxbrew/bin:$PATH"
 export NODE_PATH="$DATA/.npm-global/lib/node_modules"
 LOGS="$DATA/.openclaw/logs"

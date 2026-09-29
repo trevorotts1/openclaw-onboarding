@@ -1038,10 +1038,22 @@ _OCWP_REPORT_CAP=10
 # Never aborts: this function exists to PREVENT an abort, so it must not
 # become one. Paths containing a newline are not representable here and are
 # out of scope; no skill tree in this repo has ever contained one.
+#
+# PYTHON BYTECODE CACHES ARE SELF-HEALED, NOT BLOCKS (2026-09-29, a Hostinger
+# box whose pm2 ran as root: its Command Center ran python skills as root and
+# every update after that refused on root-owned __pycache__). An unremovable
+# __pycache__ directory is counted in _OCWP_BYTECODE_LIST / _OCWP_BYTECODE_COUNT
+# instead. The removal then deletes everything around it and leaves the cache
+# in place: python checks each .pyc against its source's mtime and size and
+# never imports a .pyc whose source is gone, so a stale cache is inert. The
+# node user cannot chown or delete a root-owned directory, so leaving it is
+# the only self-heal that does not need root.
 _ocwp_scan_removable() {
   local _dir="${1:-}" _d="" _uid=""
   _OCWP_BLOCKED_LIST=""
   _OCWP_BLOCKED_COUNT=0
+  _OCWP_BYTECODE_LIST=""
+  _OCWP_BYTECODE_COUNT=0
   { [ -n "$_dir" ] && [ -d "$_dir" ]; } || return 0
   # uid 0 bypasses every DAC check and can unlink regardless of owner, so an
   # ownership mismatch is NOT a block for root. Reporting one would refuse a
@@ -1053,6 +1065,13 @@ _ocwp_scan_removable() {
   while IFS= read -r _d; do
     [ -n "$_d" ] || continue
     if ! _ocwp_can_write "$_d"; then
+      case "$_d" in
+        */__pycache__ | */__pycache__/*)
+          _OCWP_BYTECODE_COUNT=$((_OCWP_BYTECODE_COUNT + 1))
+          _OCWP_BYTECODE_LIST="${_OCWP_BYTECODE_LIST}${_d}
+"
+          continue ;;
+      esac
       _OCWP_BLOCKED_COUNT=$((_OCWP_BLOCKED_COUNT + 1))
       if [ "$_OCWP_BLOCKED_COUNT" -le "$_OCWP_REPORT_CAP" ]; then
         _OCWP_BLOCKED_LIST="${_OCWP_BLOCKED_LIST}${_d}
@@ -1131,6 +1150,15 @@ oc_remove_tree_guarded() {
   fi
 
   if rm -rf "$_dir" 2>/dev/null; then
+    return 0
+  fi
+
+  # What rm could not delete is only python bytecode caches this user cannot
+  # remove, plus the directories that hold them. Self-healed: the copy that
+  # follows merges into that skeleton (see _ocwp_scan_removable).
+  if [ "${_OCWP_BYTECODE_COUNT:-0}" -gt 0 ] && _ocwp_scan_removable "$_dir" \
+     && [ -z "$(find "$_dir" ! -type d ! -path '*/__pycache__/*' 2>/dev/null | head -1)" ]; then
+    echo "  SELF-HEALED: left $_OCWP_BYTECODE_COUNT python bytecode cache dir(s) in $_dir that $(id -un 2>/dev/null || echo this user) cannot remove (owned by $(_ocwp_owner "$(printf '%s' "$_OCWP_BYTECODE_LIST" | head -1)")); python ignores a stale cache"
     return 0
   fi
 
@@ -1311,11 +1339,13 @@ oc_assert_write_preflight() {
   # files. Prove removability HERE, up front, so a box that cannot be updated
   # says so before the first skill is touched. shared-utils/ and
   # universal-sops/ are included because the same removal path covers them.
-  local _tree="" _tblocked=0 _tfirst=""
+  local _tree="" _tblocked=0 _tfirst="" _tbytecode=0
   if [ -n "${SKILLS_DIR:-}" ] && [ -d "$SKILLS_DIR" ]; then
     while IFS= read -r _tree; do
       [ -n "$_tree" ] || continue
-      if ! _ocwp_scan_removable "$_tree"; then
+      if _ocwp_scan_removable "$_tree"; then
+        _tbytecode=$((_tbytecode + _OCWP_BYTECODE_COUNT))
+      else
         _tblocked=$((_tblocked + 1))
         if [ "$_tblocked" -le "$_OCWP_REPORT_CAP" ]; then
           _tfirst="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
@@ -1328,6 +1358,9 @@ $(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
 EOF
     if [ "$_tblocked" -gt "$_OCWP_REPORT_CAP" ]; then
       echo "    ... and $((_tblocked - _OCWP_REPORT_CAP)) more blocked skill tree(s) (report capped at $_OCWP_REPORT_CAP)" >&2
+    fi
+    if [ "$_tbytecode" -gt 0 ]; then
+      echo "  [write-preflight] SELF-HEAL: $_tbytecode python bytecode cache dir(s) under $SKILLS_DIR are not removable by $_OCWP_ME (python ran as another user). Not a block: the update leaves them in place and python ignores a stale cache."
     fi
     if [ "$_tblocked" -gt 0 ]; then
       _blocked=$((_blocked + _tblocked))

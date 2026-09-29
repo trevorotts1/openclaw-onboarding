@@ -28,6 +28,13 @@ export MASTER_FILES_DIR="${MASTER_FILES_DIR:-$OC/openclaw-master-files}"
 LOGS="$OC/logs"
 mkdir -p "$LOGS" "$PM2_HOME" 2>/dev/null || true
 
+# A login shell (the fleet roll's `docker exec ... bash -l`) takes PATH from
+# /etc/profile, which drops the npm-global bin, so pm2 is "not found" unless
+# ~/.profile puts it back. HOME is ephemeral: write it on every start.
+PROFILE_PATH_LINE="export PATH=\"$OC/npm-global/bin:\$PATH\"  # openclaw npm-global"
+grep -qxF "$PROFILE_PATH_LINE" "$HOME/.profile" 2>/dev/null \
+  || printf '%s\n' "$PROFILE_PATH_LINE" >> "$HOME/.profile" 2>/dev/null || true
+
 # A real folder already at $HOME/.pm2 (a stray daemon's home) is moved aside,
 # never deleted, then replaced by the link.
 if [ ! -L "$HOME/.pm2" ]; then

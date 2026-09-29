@@ -1114,6 +1114,33 @@ class ContaboStartupTemplate(unittest.TestCase):
                 time.sleep(0.1)
             self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
 
+    def test_writes_the_npm_global_path_into_profile_once(self):
+        # /etc/profile resets PATH in the roll's login shell; a box whose
+        # ~/.profile lacked the npm-global line failed its Command Center
+        # update with "pm2 is not" found.
+        with tempfile.TemporaryDirectory() as td:
+            home, oc, bin_ = Path(td, "home"), Path(td, "oc"), Path(td, "bin")
+            home.mkdir()
+            (home / ".profile").write_text("# the image's own profile\n")
+            (oc / "npm-global/bin").mkdir(parents=True)
+            (oc / "npm-global/bin/pm2").write_text("#!/bin/sh\n")
+            bin_.mkdir()
+            (bin_ / "node").write_text("#!/bin/sh\n")
+            for f in (bin_ / "node", oc / "npm-global/bin/pm2"):
+                f.chmod(0o755)
+            env = {"HOME": str(home), "OPENCLAW_ROOT": str(oc), "PATH": f"{bin_}:/usr/bin:/bin",
+                   "PM2_RESURRECT_DELAY": "0"}
+            for _ in range(2):
+                r = subprocess.run(["bash", str(REPO / "platform/vps/contabo/container-startup.sh")],
+                                   env=env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            profile = (home / ".profile").read_text()
+            self.assertTrue(profile.startswith("# the image's own profile\n"), profile)   # the image's lines kept
+            self.assertEqual(profile.count("npm-global/bin"), 1, profile)
+            login = subprocess.run(["bash", "-c", '. "$HOME/.profile"; command -v pm2'], capture_output=True,
+                                   text=True, env={"HOME": str(home), "PATH": "/usr/bin:/bin"}, timeout=30)
+            self.assertEqual(login.stdout.strip(), str(oc / "npm-global/bin/pm2"), login.stderr)
+
 
 class HostingerStartupTemplate(unittest.TestCase):
     """A recreated Hostinger container came back with an empty pm2: the Command
@@ -1153,6 +1180,41 @@ class HostingerStartupTemplate(unittest.TestCase):
                 time.sleep(0.1)
             self.assertEqual([c for c in calls if c], ["resurrect", "describe blackceo-command-center",
                                                        "start ecosystem.config.cjs", "save"])
+
+    def test_started_as_root_pm2_runs_as_node_with_a_node_owned_pm2_home(self):
+        # A root pm2 daemon at /data/.pm2 ran the Command Center as root; its
+        # python left root-owned __pycache__ in the skills and the next update
+        # rolled the box back. Fake id/chown/runuser stand in for root.
+        with tempfile.TemporaryDirectory() as td:
+            data = Path(td, "data")
+            (data / "projects/command-center").mkdir(parents=True)
+            (data / "projects/command-center/ecosystem.config.cjs").write_text("")
+            bin_ = self.fake_bin(td)
+            (bin_ / "pm2").write_text(f'#!/bin/sh\necho "$@ uid=$(id -u) home=$PM2_HOME" >> {td}/pm2-calls\n'
+                                      '[ "$1" = describe ] && exit 1\nexit 0\n')
+            (bin_ / "id").write_text('#!/bin/sh\n[ -n "$AS_NODE" ] && echo 1000 || echo 0\n')
+            (bin_ / "chown").write_text(f'#!/bin/sh\necho "$@" >> {td}/chown-calls\n')
+            (bin_ / "runuser").write_text(f'#!/bin/sh\necho "$@" >> {td}/runuser-calls\n'
+                                          'shift 3\nAS_NODE=1 exec "$@"\n')
+            for f in bin_.iterdir():
+                f.chmod(0o755)
+            env = {"HOME": "/root", "OPENCLAW_DATA": str(data), "PATH": f"{bin_}:/usr/bin:/bin",
+                   "PM2_RESURRECT_DELAY": "0"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/container-startup.sh")],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(Path(td, "chown-calls").read_text().split(), ["-R", "node:node", str(data / ".pm2")])
+            self.assertTrue(Path(td, "runuser-calls").read_text().startswith(f"-u node -- env HOME={data} "))
+            self.assertEqual(Path(td, "node-args").read_text().split(), ["server.mjs"])
+            calls = []
+            for _ in range(50):
+                calls = Path(td, "pm2-calls").read_text().splitlines() if Path(td, "pm2-calls").exists() else []
+                if any(c.startswith("save") for c in calls):
+                    break
+                time.sleep(0.1)
+            self.assertEqual(len(calls), 4, calls)
+            for c in calls:
+                self.assertTrue(c.endswith(f" uid=1000 home={data}/.pm2"), c)   # every pm2 call: node, /data/.pm2
 
     def install(self, td, compose, *args):
         proj = Path(td, "openclaw-x")
@@ -1821,7 +1883,7 @@ class WrapperWaves(unittest.TestCase):
             row = json.loads((clone / ".fleet-refresh-summary.json").read_text())[0]
             self.assertEqual((row["client"], row["label"]), ("Client One", "Client One (Mac)"))
 
-    def test_apply_through_ssh_and_docker_exec_quoting(self, ssh_stub=None):
+    def test_apply_through_ssh_and_docker_exec_quoting(self, ssh_stub=None, docker_stub=None):
         """Real shells end to end: fake ssh runs its command with sh -c, fake
         docker runs `bash -lc <script>`. Proves the nested quoting, the roll
         copy's sync to origin/main, the pre-sync SHA hand-off and the result
@@ -1841,11 +1903,12 @@ class WrapperWaves(unittest.TestCase):
             origin.mkdir()
             git(origin, "init", "-q", "--bare", "-b", "main")
             seed = new_repo(td / "seed")
-            stub = ('import json,os,sys\n'
+            stub = ('import json,os,shutil,sys\n'
                     'print("banner from a login shell")\n'
                     'print("runner log line on the box", file=sys.stderr)\n'
                     'print(json.dumps({"box": sys.argv[sys.argv.index("--box")+1], "result": "ok", "outcome": "UPDATED",\n'
-                    '  "outcome_detail": "prev=" + os.environ.get("FLEET_PREV_ONBOARDING_SHA", "") + " args=" + " ".join(sys.argv[1:])}))\n')
+                    '  "outcome_detail": "prev=" + os.environ.get("FLEET_PREV_ONBOARDING_SHA", "") + " args=" + " ".join(sys.argv[1:])\n'
+                    '    + " pm2=" + str(shutil.which("pm2"))}))\n')
             commit(seed, {"shared-utils/fleet_refresh_runner.py": stub}, "one")
             git(seed, "remote", "add", "origin", str(origin))
             git(seed, "push", "-q", "origin", "main")
@@ -1868,9 +1931,13 @@ class WrapperWaves(unittest.TestCase):
             fake.mkdir()
             (fake / "curl").write_text("#!/bin/sh\necho 200\n")
             (fake / "ssh").write_text(ssh_stub or '#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
-            (fake / "docker").write_text('#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\nexec bash -c "$3"\n')
+            (fake / "docker").write_text(docker_stub or '#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\nexec bash -c "$3"\n')
             for f in fake.iterdir():
                 f.chmod(0o755)
+            npm_bin = home / ".openclaw/npm-global/bin"   # where Contabo's pm2 lives
+            npm_bin.mkdir(parents=True)
+            (npm_bin / "pm2").write_text("#!/bin/sh\n")
+            (npm_bin / "pm2").chmod(0o755)
             Path(td, "b.json").write_text(json.dumps([{"client": "Client One", "name": "box-1", "ssh_target": "h",
                                                        "platform": "hostinger", "container": "c-1", "wave": "first"}]))
             (wrapper_repo / "shared-utils/fleet_notify.py").write_text((REPO / "shared-utils/fleet_notify.py").read_text())
@@ -1896,6 +1963,17 @@ class WrapperWaves(unittest.TestCase):
                              {"client": "Client One", "label": "Client One (Hostinger)"})   # the box can name itself
             row["_box_log"] = "".join(f.read_text() for f in (home / ".openclaw/fleet/runs").glob("*/box-1.log"))
             return row
+
+    def test_container_exec_puts_npm_global_on_path_without_a_login_profile(self):
+        # A container login shell's /etc/profile resets PATH; pm2 lives in the
+        # npm-global bin and came back only when ~/.profile re-added it. One
+        # Contabo box lacked that block and its Command Center update failed
+        # with "pm2 is not" found. The fake docker here resets PATH the same way.
+        reset = ('#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\n'
+                 'exec env PATH=/usr/bin:/bin bash -c "$3"\n')
+        row = self.test_apply_through_ssh_and_docker_exec_quoting(docker_stub=reset)
+        self.assertEqual(row["outcome"], "UPDATED", row)
+        self.assertRegex(row["outcome_detail"], r"pm2=\S*/home/\.openclaw/npm-global/bin/pm2")
 
     def test_a_dropped_ssh_session_reads_the_boxs_own_result(self):
         # The runner ignores SIGHUP and finishes on the box; the roll reported

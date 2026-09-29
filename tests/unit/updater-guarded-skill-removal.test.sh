@@ -37,6 +37,8 @@
 #      nothing.
 #   7. update-skills.sh carries no bare skill-tree `rm -rf` any more, and
 #      exports PYTHONDONTWRITEBYTECODE before it runs any python.
+#   8. An unremovable __pycache__ is self-healed, not refused: the removal
+#      deletes everything around it and the pre-flight passes.
 #
 # METHOD. Nothing is reimplemented. The shell block is EXTRACTED VERBATIM from
 # update-skills.sh between the same markers PR 1187 established; if a marker
@@ -204,8 +206,9 @@ else
   chmod -R u+rwX "$WORK/repro" 2>/dev/null
 
   hdr "(4) the scan catches it, and the guard refuses with the tree UNTOUCHED"
+  # A NON-bytecode directory: an unremovable __pycache__ is self-healed, see (6).
   BLK="$WORK/blocked/23-fixture"; make_skill "$BLK"
-  chmod 0555 "$BLK/scripts/__pycache__"
+  chmod 0555 "$BLK/references"
   BLK_N="$(count_files "$BLK")"
   if _ocwp_scan_removable "$BLK"; then
     bad "(4) the scan must report the tree as NOT removable"
@@ -213,8 +216,8 @@ else
     ok "(4) the scan reports the tree as NOT removable (count=$_OCWP_BLOCKED_COUNT)"
   fi
   case "$_OCWP_BLOCKED_LIST" in
-    *"$BLK/scripts/__pycache__"*) ok "(4) the scan names the exact blocking directory" ;;
-    *) bad "(4) the scan must name $BLK/scripts/__pycache__ (got: $_OCWP_BLOCKED_LIST)" ;;
+    *"$BLK/references"*) ok "(4) the scan names the exact blocking directory" ;;
+    *) bad "(4) the scan must name $BLK/references (got: $_OCWP_BLOCKED_LIST)" ;;
   esac
 
   ( oc_remove_tree_guarded "$BLK" "skill" ) > "$WORK/blk.out" 2>&1; BLK_RC=$?
@@ -234,7 +237,7 @@ else
   else
     bad "(4) exactly ONE PERMISSION BLOCK line (got $(grep -cF 'PERMISSION BLOCK:' "$WORK/blk.out"))"
   fi
-  if grep -qF "PERMISSION BLOCK: $BLK/scripts/__pycache__ is owned by " "$WORK/blk.out" \
+  if grep -qF "PERMISSION BLOCK: $BLK/references is owned by " "$WORK/blk.out" \
      && grep -qF "but the updater runs as $_OCWP_ME" "$WORK/blk.out" \
      && grep -qF "chown -R $_OCWP_RUN_OWNER $BLK" "$WORK/blk.out"; then
     ok "(4) the line carries path + owner + running user + a recursive chown remedy"
@@ -293,7 +296,7 @@ else
 
   # --- and now the blocked box.
   PF_BAD="$WORK/home-bad"; make_home "$PF_BAD"
-  chmod 0555 "$PF_BAD/.openclaw/skills/23-fixture/scripts/__pycache__"
+  chmod 0555 "$PF_BAD/.openclaw/skills/23-fixture/references"
   PF_N="$(count_files "$PF_BAD/.openclaw/skills/23-fixture")"
   run_preflight "$PF_BAD"; PF_BAD_RC=$?
   PF_AFTER="$(count_files "$PF_BAD/.openclaw/skills/23-fixture")"
@@ -307,7 +310,7 @@ else
   else
     bad "(5) the pre-flight must not touch the tree ($PF_N -> $PF_AFTER)"
   fi
-  if grep -qF "PERMISSION BLOCK: $PF_BAD/.openclaw/skills/23-fixture/scripts/__pycache__" "$WORK/pf.out"; then
+  if grep -qF "PERMISSION BLOCK: $PF_BAD/.openclaw/skills/23-fixture/references" "$WORK/pf.out"; then
     ok "(5) it names the exact blocking directory, up front"
   else
     bad "(5) it must name the blocking directory (got: $(cat "$WORK/pf.out"))"
@@ -328,6 +331,47 @@ else
     bad "(5) the report must be capped at 10 lines"
   fi
   chmod -R u+rwX "$WORK/home-bad" 2>/dev/null
+
+  hdr "(6) an unremovable __pycache__ is SELF-HEALED, never a refusal"
+  # 2026-09-29: pm2 ran as root on a Hostinger box, the Command Center ran
+  # python skills as root, and every later update refused on the root-owned
+  # __pycache__ it left. The same 0555 shape stands in for root ownership.
+  PY="$WORK/pyc/23-fixture"; make_skill "$PY"
+  chmod 0555 "$PY/scripts/__pycache__"
+  if _ocwp_scan_removable "$PY" && [ "$_OCWP_BYTECODE_COUNT" -eq 1 ]; then
+    ok "(6) the scan passes and counts the cache as bytecode, not a block"
+  else
+    bad "(6) the scan must pass with one bytecode cache (blocked=$_OCWP_BLOCKED_COUNT bytecode=${_OCWP_BYTECODE_COUNT:-unset})"
+  fi
+  ( oc_remove_tree_guarded "$PY" "skill" ) > "$WORK/py.out" 2>&1; PY_RC=$?
+  LEFT="$(find "$PY" ! -type d | sed "s|^$PY/||" | sort | tr '\n' ' ')"
+  if [ "$PY_RC" -eq 0 ] && [ "$LEFT" = "scripts/__pycache__/tool.cpython-311.pyc " ]; then
+    ok "(6) the removal returns 0 and leaves ONLY the cache behind"
+  else
+    bad "(6) removal must return 0 leaving only the cache (rc=$PY_RC left=$LEFT out: $(cat "$WORK/py.out"))"
+  fi
+  if grep -qF "SELF-HEALED: left 1 python bytecode cache dir(s) in $PY" "$WORK/py.out"; then
+    ok "(6) it says what it left and why"
+  else
+    bad "(6) it must print the SELF-HEALED line (got: $(cat "$WORK/py.out"))"
+  fi
+  SRC="$WORK/pyc-src/23-fixture"; make_skill "$SRC"; rm -rf "$SRC/scripts/__pycache__"
+  printf 'x = 2\n' > "$SRC/scripts/tool.py"
+  if cp -r "$SRC" "$WORK/pyc/" 2>/dev/null && [ "$(cat "$PY/scripts/tool.py")" = "x = 2" ] && [ -f "$PY/SKILL.md" ]; then
+    ok "(6) the release copy merges into what is left"
+  else
+    bad "(6) the release copy must merge into what is left"
+  fi
+  PF_PY="$WORK/home-pyc"; make_home "$PF_PY"
+  chmod 0555 "$PF_PY/.openclaw/skills/23-fixture/scripts/__pycache__"
+  run_preflight "$PF_PY"; PF_PY_RC=$?
+  if [ "$PF_PY_RC" -eq 0 ] && grep -qF 'SELF-HEAL: 1 python bytecode cache dir(s)' "$WORK/pf.out" \
+     && ! grep -qF 'PERMISSION BLOCK' "$WORK/pf.out"; then
+    ok "(6) the pre-flight passes, with a SELF-HEAL line and no PERMISSION BLOCK"
+  else
+    bad "(6) the pre-flight must pass on a bytecode-only block (rc=$PF_PY_RC, out: $(cat "$WORK/pf.out"))"
+  fi
+  chmod -R u+rwX "$WORK/pyc" "$WORK/home-pyc" 2>/dev/null
 fi
 
 printf '\nRESULT: PASS=%s FAIL=%s SKIP=%s\n' "$PASS" "$FAIL" "$SKIP"
