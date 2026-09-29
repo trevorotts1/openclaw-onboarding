@@ -1,3 +1,5 @@
+## [v25.2.8]  -  2026-09-29  -  Skill 23: PENDING role how-tos are queued for SOP authoring and have a scripted fill runner
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why
