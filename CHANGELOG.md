@@ -1,30 +1,18 @@
-## [v25.2.6]  -  2026-09-28  -  Merge train: #1339 No full copies of the skills folder or onboarding repo in backups;…; #1341 fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+## [v25.2.9]  -  2026-09-28  -  Merge train: #1328 presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE…; #1343 fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD;…; #1344 fix(skill23): build is non-destructive on a box with existing…; #1347 fix(skill23): one company-root resolution order + durable owner-sends…; #1348 fix(skill23): PENDING role how-tos are queued for SOP authoring +…; #1349 fix(skill23): role folders use canonical library slugs and meet the…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
 
-### #1339 — [v25.2.4]  -  2026-09-28  -  No full copies of the skills folder or the onboarding repo in backups; updates keep a no-copy rollback
-
-#### Why
-Every update wrote a full `skills-backup-<ts>` copy of the skills folder (hundreds of MB) into `~/Downloads/openclaw-backups` (`/data/Downloads/openclaw-backups` on a VPS), and the Back Yourself Up full backup copied the whole skills folder into every backup. Agents following skill 02 also put the skills folder and onboarding clones into backup jobs they set up themselves, nightly ones included. All of it is re-installable from this repo: a fleet-wide cleanup on 2026-09-28 removed 314 such copies (about 63 GB).
-
-#### What changed
-- `scripts/skills-rollback.sh` (new): `snapshot` records the previous commit (content manifest `src_git_sha`, else the version tag) plus a patch of the box's own changes to the repo-owned folders (edits, deletions, extra files; caches such as node_modules and __pycache__ left out). The patch is made by staging the installed files over that commit in a temporary git index, so nothing is copied. `restore <dir>` checks the commit back out, re-applies the patch, removes repo-owned folders the update added, and restores the version stamp and manifest.
-- `update-skills.sh` (NO-SKILLS-BACKUP-COPY-V1): records the no-copy rollback in `skills-rollback-<ts>` (a few KB; retention as before). Only a box with no recorded commit (exit 3: fresh or pre-manifest install) or a failed record falls back to the old one-time full copy, so an update is never left without a way back.
-- Skill 02 (Back Yourself Up) v7.1.0: `scripts/full-backup.sh` records the installed version and copies only custom skills (folders the manifest does not list); with no manifest the whole folder is still copied. The projects copy skips an `openclaw-onboarding/` clone. The protocol docs tell agents to leave the skills folder and every onboarding clone out of any backup job, nightly ones included. The `.skill` bundle is rebuilt.
-- `ONBOARDING-TRIGGERS.md`: the update output now shows the rollback line.
-
-#### Not changed
-The fleet roll runner is untouched: the current roll keeps one persistent clone per box (`scripts/fleet-roll-copy.sh`), and no code in this repo creates `roll-XXXXXX` temp clones, `skills.bak-*`, `skills-pre-v*` or `onboarding.bak-*` copies any more; those on boxes were left by older code.
-
-#### Tests
-`tests/unit/skills-rollback-no-copy.test.sh` (13 pass): the snapshot holds no directories and a few KB; the patch carries edits, deletions and extra files but no caches; after an update, restore returns the previous commit's files plus local changes, removes the added folder, keeps a custom skill and restores stamp + manifest; a box with no commit exits 3 and writes nothing; a version-tag-only box resolves; the updater's normal path copies nothing. Control: a real full copy fails the no-copy predicate. `tests/unit/full-backup-no-repo-skills-copy.test.sh` (6 pass, with a no-manifest control). `backup-retention` 40/40, `full-backup-prune-after-verify` 12/12. Guarded by `.github/workflows/no-backup-copies-guard.yml`.
-
-### #1341 — fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+### #1328 — presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE from intake ledger RUN_MODE)
 
 (This pull request carried no CHANGELOG entry of its own.)
-## [v25.2.6]  -  2026-09-28  -  Skill 23: the build no longer breaks a box that already has departments and agents
 
-### Why
+### #1343 — fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD; foreign-owned file in scripts/)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1344 — [v25.2.6]  -  2026-09-28  -  Skill 23: the build no longer breaks a box that already has departments and agents
+
+#### Why
 Running the Skill 23 build on a client box that already had departments and agents broke it:
 - `build-workforce.py` `create_department_workspace()` deleted each department's real `AGENTS.md`,
   `TOOLS.md` and `USER.md` and replaced them with symlinks to the workspace root. The runtime's
@@ -40,7 +28,7 @@ Running the Skill 23 build on a client box that already had departments and agen
 - On an `agents.entries` box, `add_agent_to_config()` dropped the box's own `agents.list` key and
   stripped fields from entries it did not change.
 
-### What changed
+#### What changed
 - `23-ai-workforce-blueprint/scripts/shared_core_copy.py` (new; lives in the Skill 23 scripts tree so it
   travels with every delivered layout, flattened `.scripts` included): `ensure_core_copy()` places a shared core file as a real
   copy. It keeps a real, non-empty file byte-identical, migrates a symlink to a real copy, and is
@@ -95,9 +83,10 @@ Running the Skill 23 build on a client box that already had departments and agen
   `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
   control proving the validator rejects the old key.
 - Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
-## [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order (build state first); durable owner-sends hold; board lanes under one company
 
-### Why
+### #1347 — [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order (build state first); durable owner-sends hold; board lanes under one company
+
+#### Why
 The build writes the company where `resolve_company_paths()` puts it and records that as
 `companyRoot` in `.workforce-build-state.json`. The readers each guessed a location of their own,
 so on some layouts the build never completed.
@@ -116,7 +105,7 @@ so on some layouts the build never completed.
   zero-human-company tree, where `materialize-dept-agents.sh` registers the department agents, the
   gate audited floor-fill stubs instead of the workforce the agents run.
 
-### What changed
+#### What changed
 - `shared-utils/detect_platform.py` and `23-ai-workforce-blueprint/lib/detect_platform.py` now
   share one resolver, byte-identical and pinned by a test: `build_state_company()`,
   `known_company_roots()` and `resolve_active_company_dir()`. The order is:
@@ -144,7 +133,7 @@ so on some layouts the build never completed.
   - `test-gate-company-dir-resolution.sh` T2 and `qc-departments-tree-resolution.test.sh` S7/S8 now
     encode the corrected template rule. They run in `qc-departments-tree-guard.yml`.
 
-### Owner-sends hold (ships with the resolver: a newly-passing gate must not message owners)
+#### Owner-sends hold (ships with the resolver: a newly-passing gate must not message owners)
 Once the gate measures the real build tree, boxes that used to fail against a stub tree pass at the
 next roll. Without a hold, that pass fires the Presentations welcome, and the closeout can reach the
 celebration. Both are unrequested owner messages.
@@ -169,7 +158,7 @@ celebration. Both are unrequested owner messages.
 - `verify-library-gate.sh` fires the welcome only on a FULL pass (`GATE_RC=0`). A ZHE failure (rc 9)
   used to leave every status "done" and still fire it.
 
-### Command Center URL, board company, openclaw.json validity
+#### Command Center URL, board company, openclaw.json validity
 - `interview-launch.py initialize` seeds `commandCenterUrl` from the slug default on EVERY
   initialize, not only a fresh one. `run-full-install.sh` phase 6h also seeds it when it is absent.
   Before this, an existing box exported an empty `CC_TUNNEL_EXPECTED_HOST` and `create-tunnel.sh`
@@ -224,9 +213,10 @@ celebration. Both are unrequested owner messages.
     and runs `openclaw config validate` when the CLI is present.
   - The new tests run in `owner-sends-hold-guard.yml` (new).
 - Skill 37 bumped to v13.1.5.
-## [v25.2.8]  -  2026-09-29  -  Skill 23: PENDING role how-tos are queued for SOP authoring and have a scripted fill runner
 
-### Why
+### #1348 — [v25.2.8]  -  2026-09-29  -  Skill 23: PENDING role how-tos are queued for SOP authoring and have a scripted fill runner
+
+#### Why
 - Vertical-pack departments whose roles arrived as PENDING `how-to.md` stubs have no numbered
   `0N-*.md` SOP stubs, so `build-workforce.py` wrote `sop_files=[]` for them in the research
   manifest. `populate-sops-from-manifest.py dept_already_authored()` read an empty list as "already
@@ -237,7 +227,7 @@ celebration. Both are unrequested owner messages.
   each carrying a one-shot "copy the nearest template and token-fill it" instruction. No script ran
   that instruction, so nothing ever picked the list up.
 
-### What changed
+#### What changed
 - `populate-sops-from-manifest.py` scans each department at run time for PENDING or stub role
   `how-to.md` files and adds them as SOP targets. This covers manifests already on disk, and such a
   department is queued, not skipped. New flags: `--dept` (repeatable or comma-separated; an unknown
@@ -258,9 +248,10 @@ celebration. Both are unrequested owner messages.
   picked up.
 - Tests: `tests/unit/test_pending_sops_runner.py` (3 tests, all fail on the previous main), run by
   `pending-sops-runner-guard.yml` (new).
-## [v25.2.9]  -  2026-09-29  -  Skill 23: role folders use canonical library slugs and meet the role-library floor; reconcile-role-floor.py repairs existing trees
 
-### Why
+### #1349 — [v25.2.9]  -  2026-09-29  -  Skill 23: role folders use canonical library slugs and meet the role-library floor; reconcile-role-floor.py repairs existing trees
+
+#### Why
 A client's interview build fell below the department floor that the fleet prover enforces, and
 there were two causes in the build's legacy lane (`build-workforce.py` `create_role_workspace()`):
 
@@ -273,7 +264,7 @@ there were two causes in the build's legacy lane (`build-workforce.py` `create_r
   the healer, the devil's advocate and the SOP writer. For example, CRM got 9 role folders against
   the library's 12.
 
-### What changed
+#### What changed
 - `build-workforce.py` passes the parsed roster through `library_floor_roles()` before building:
   - A role with no explicit slug takes its role-library slug. The lookup is the existing
     `create_role_workspaces.library_lookup()` normalizer, which already drops employment tags and
@@ -322,6 +313,30 @@ there were two causes in the build's legacy lane (`build-workforce.py` `create_r
 - Merge after #1344. On main, the engine still symlinks `AGENTS.md`, `TOOLS.md` and `USER.md` into
   new role folders; #1344 makes them real copies.
 
+## [v25.2.6]  -  2026-09-28  -  Merge train: #1339 No full copies of the skills folder or onboarding repo in backups;…; #1341 fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1339 — [v25.2.4]  -  2026-09-28  -  No full copies of the skills folder or the onboarding repo in backups; updates keep a no-copy rollback
+
+#### Why
+Every update wrote a full `skills-backup-<ts>` copy of the skills folder (hundreds of MB) into `~/Downloads/openclaw-backups` (`/data/Downloads/openclaw-backups` on a VPS), and the Back Yourself Up full backup copied the whole skills folder into every backup. Agents following skill 02 also put the skills folder and onboarding clones into backup jobs they set up themselves, nightly ones included. All of it is re-installable from this repo: a fleet-wide cleanup on 2026-09-28 removed 314 such copies (about 63 GB).
+
+#### What changed
+- `scripts/skills-rollback.sh` (new): `snapshot` records the previous commit (content manifest `src_git_sha`, else the version tag) plus a patch of the box's own changes to the repo-owned folders (edits, deletions, extra files; caches such as node_modules and __pycache__ left out). The patch is made by staging the installed files over that commit in a temporary git index, so nothing is copied. `restore <dir>` checks the commit back out, re-applies the patch, removes repo-owned folders the update added, and restores the version stamp and manifest.
+- `update-skills.sh` (NO-SKILLS-BACKUP-COPY-V1): records the no-copy rollback in `skills-rollback-<ts>` (a few KB; retention as before). Only a box with no recorded commit (exit 3: fresh or pre-manifest install) or a failed record falls back to the old one-time full copy, so an update is never left without a way back.
+- Skill 02 (Back Yourself Up) v7.1.0: `scripts/full-backup.sh` records the installed version and copies only custom skills (folders the manifest does not list); with no manifest the whole folder is still copied. The projects copy skips an `openclaw-onboarding/` clone. The protocol docs tell agents to leave the skills folder and every onboarding clone out of any backup job, nightly ones included. The `.skill` bundle is rebuilt.
+- `ONBOARDING-TRIGGERS.md`: the update output now shows the rollback line.
+
+#### Not changed
+The fleet roll runner is untouched: the current roll keeps one persistent clone per box (`scripts/fleet-roll-copy.sh`), and no code in this repo creates `roll-XXXXXX` temp clones, `skills.bak-*`, `skills-pre-v*` or `onboarding.bak-*` copies any more; those on boxes were left by older code.
+
+#### Tests
+`tests/unit/skills-rollback-no-copy.test.sh` (13 pass): the snapshot holds no directories and a few KB; the patch carries edits, deletions and extra files but no caches; after an update, restore returns the previous commit's files plus local changes, removes the added folder, keeps a custom skill and restores stamp + manifest; a box with no commit exits 3 and writes nothing; a version-tag-only box resolves; the updater's normal path copies nothing. Control: a real full copy fails the no-copy predicate. `tests/unit/full-backup-no-repo-skills-copy.test.sh` (6 pass, with a no-manifest control). `backup-retention` 40/40, `full-backup-prune-after-verify` 12/12. Guarded by `.github/workflows/no-backup-copies-guard.yml`.
+
+### #1341 — fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+
+(This pull request carried no CHANGELOG entry of its own.)
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why
