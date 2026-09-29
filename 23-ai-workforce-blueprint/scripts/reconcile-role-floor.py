@@ -18,6 +18,12 @@ devil's advocate, no SOP writer). This repairs such a tree in place:
   3. With --add-floor-departments, also fill the standard-floor departments the
      tree lacks (department-floor.py: mandatory + universal primaries, minus the
      owner's declines). Library departments outside that floor are never added.
+     With --add-library-departments, fill to the PROVER's floor instead: every
+     role-library department (_index.json, which the prover's floor manifest is
+     generated from), under its exact library name, minus the owner's declines.
+     In both modes floor-fill's industry gate still refuses an absent vertical
+     the box never declared (listings), and a department whose alias is already
+     on disk (billing-finance for billing) is reported, never duplicated.
 
 Dry run by default. --apply renames and fills. Idempotent: a second run finds
 nothing to rename and nothing missing.
@@ -25,6 +31,7 @@ nothing to rename and nothing missing.
 Usage:
   python3 reconcile-role-floor.py --departments <company>/departments
   python3 reconcile-role-floor.py --departments <company>/departments --add-floor-departments --apply
+  python3 reconcile-role-floor.py --departments <company>/departments --add-library-departments --apply
 Exit codes: 0 clean/applied, 2 dry-run changes pending, 3 floor-fill left gaps, 1 error.
 """
 import argparse
@@ -87,18 +94,42 @@ def plan_renames(dept_dir, lib, cfg):
     return renames, conflicts
 
 
-def floor_departments(departments):
+def _department_floor():
     spec = importlib.util.spec_from_file_location("department_floor", SCRIPT_DIR / "department-floor.py")
     df = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(df)
-    v = df.evaluate_floor(departments_dir=departments)
+    return df
+
+
+def floor_departments(departments):
+    v = _department_floor().evaluate_floor(departments_dir=departments)
     return sorted(set(v.get("missing_mandatory", [])) | set(v.get("missing_universal_primary", [])))
+
+
+def library_departments(departments, aliased):
+    """Every role-library department the tree lacks under its library name, minus
+    the owner's declines. An alias already on disk goes to `aliased`, not the result."""
+    df = _department_floor()
+    nm = df.load_naming_map()
+    canon = lambda d: df.canonical_slug_for(d, nm) or d  # noqa: E731
+    declined = df.declined_set(df.load_build_state())  # normalized ids
+    on_disk = {canon(p.name): p.name for p in departments.iterdir() if p.is_dir()}
+    out = []
+    for dept in sorted(json.loads(INDEX.read_text()).get("departments", {})):
+        if (departments / dept).is_dir() or {df._norm(dept), df._norm(canon(dept))} & declined:
+            continue
+        if canon(dept) in on_disk:
+            aliased[dept] = on_disk[canon(dept)]
+            continue
+        out.append(dept)
+    return out
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--departments", required=True, help="the company's departments/ directory")
     ap.add_argument("--add-floor-departments", action="store_true")
+    ap.add_argument("--add-library-departments", action="store_true")
     ap.add_argument("--apply", action="store_true")
     a = ap.parse_args(argv)
     departments = Path(a.departments).expanduser().resolve()
@@ -125,10 +156,17 @@ def main(argv=None):
         missing = [s for s in lib if key(s) not in present]
         if missing:
             gap[dept_dir.name] = {"kind": "roster", "missing_roles": missing}
-    if a.add_floor_departments:
-        for dept in floor_departments(departments):
-            if crw.resolve_dept_dir(departments, dept) is None and library_roles(dept):
-                gap[dept] = {"kind": "roster", "missing_roles": library_roles(dept)}
+    aliased = {}
+    extra = []
+    if a.add_library_departments:
+        extra = library_departments(departments, aliased)
+    elif a.add_floor_departments:
+        extra = [d for d in floor_departments(departments) if crw.resolve_dept_dir(departments, d) is None]
+    for dept in extra:
+        if library_roles(dept):
+            gap[dept] = {"kind": "roster", "missing_roles": library_roles(dept)}
+    if aliased:
+        report["alias_present_not_added"] = aliased
     report["gap"] = {d: len(v["missing_roles"]) for d, v in gap.items()}
     print(json.dumps(report, indent=1))
 

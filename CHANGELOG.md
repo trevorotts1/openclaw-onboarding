@@ -32,6 +32,17 @@ there were two causes in the build's legacy lane (`build-workforce.py` `create_r
      The floor is `department-floor.py`: mandatory departments plus universal primaries, minus the
      owner's declines. Library departments outside that floor are never added.
 
+  4. With `--add-library-departments`, it fills to the prover's floor instead: every role-library
+     department in `_index.json` (which the prover's floor manifest is generated from), under its
+     exact library name, with every library role. The prover counts a department only by its
+     exact name.
+
+  In both department modes:
+  - the owner's provenance-gated declines are honored;
+  - floor-fill's industry gate still refuses an absent vertical the box never declared (`listings`);
+  - a department whose alias is already on disk (`legal` for `legal-compliance`) is reported under
+    `alias_present_not_added` and is not duplicated.
+
   A folder is not renamed, and is reported instead, when a folder for the same library role already
   exists or when `openclaw.json` references its path. The script is a dry run by default and is
   idempotent. It was not run on any box.
@@ -43,7 +54,10 @@ there were two causes in the build's legacy lane (`build-workforce.py` `create_r
     folders with written how-tos and none of the library-only roles, plus a conflicting pair. It
     checks that the dry run changes nothing and that `--apply` renames the folders, keeps the how-to
     bytes and fills the floor. It also checks that a second `--apply` is a no-op, and that floor
-    departments never include a library department outside the standard floor.
+    departments never include a library department outside the standard floor. A fourth test runs
+    `--add-library-departments` and checks that every `_index.json` department reaches full role
+    coverage, except an owner decline, an alias already on disk and the gated `listings`, and that
+    a second run is a no-op.
   - Both run in `skill23-role-floor-guard.yml` (new).
 - Merge after #1344. On main, the engine still symlinks `AGENTS.md`, `TOOLS.md` and `USER.md` into
   new role folders; #1344 makes them real copies.

@@ -116,5 +116,35 @@ class TestReconcileRoleFloor(unittest.TestCase):
         self.assertFalse(set(gap) & set(OTHER_CLIENT), gap)
 
 
+    def test_library_mode_reaches_prover_floor_with_declines_aliases_and_industry_gate(self):
+        """--add-library-departments fills to the prover's floor: every _index.json
+        department under its exact library name with every library role, except an
+        owner decline, a department whose alias is on disk, and an undeclared vertical."""
+        ws = Path(os.environ["HOME"]) / ".openclaw" / "workspace"
+        ws.mkdir(parents=True)
+        (ws / ".workforce-build-state.json").write_text(json.dumps({"declinedDepartments": [
+            {"id": "podcast", "decidedBy": "owner", "decidedAt": "2026-09-01T00:00:00Z"}]}))
+        (self.depts / "legal" / "01-general-counsel").mkdir(parents=True)  # alias of legal-compliance
+        rc, out = self.run_it("--add-library-departments", "--apply")
+        self.assertIn(rc, (0,), out)
+        skip = {"podcast", "legal-compliance", "listings"}
+        for dept, spec in INDEX["departments"].items():
+            if dept in skip:
+                continue
+            with self.subTest(dept=dept):
+                d = self.depts / dept
+                self.assertTrue(d.is_dir(), f"{dept} not created")
+                have = {key(p.name) for p in d.iterdir() if p.is_dir()}
+                self.assertEqual({key(r) for r in spec["roles"]} - have, set())
+        self.assertFalse((self.depts / "podcast").exists(), "owner-declined department was added")
+        self.assertFalse((self.depts / "legal-compliance").exists(), "alias on disk was duplicated")
+        self.assertIn('"legal-compliance": "legal"', out)
+        self.assertFalse((self.depts / "listings").exists(), "industry gate: undeclared vertical added")
+        after = snapshot(self.depts)
+        rc, out = self.run_it("--add-library-departments", "--apply")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(snapshot(self.depts), after, "second --apply must change nothing")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
