@@ -8,12 +8,26 @@
 # task to ANY department without self-executing.
 #
 #   USAGE:  mc-route.sh <department_slug> <title> [description...]
+#           mc-route.sh auto "<owner message verbatim>"
 #
 #     <department_slug>   target workspace/department (e.g. presentations,
 #                         general-task, social-media, video). REQUIRED.
 #     <title>             short task title (truncated to 120 chars). REQUIRED.
 #     [description...]    the rest of the args are joined with single spaces
 #                         into the task description (owner message, verbatim).
+#
+#   AUTO MODE (JEV live routing): `mc-route.sh auto "<owner message verbatim>"`
+#     joins every arg after 'auto' with single spaces into MESSAGE (verbatim; an
+#     empty MESSAGE goes through the same usage escalation as a missing slug/title)
+#     and posts it alone ({message}, no title/description/department_slug) to the
+#     CC ingest raw door, which classifies it and either answers it or creates and
+#     routes exactly one card. Reuses the identical signing/secret/retry path below.
+#     stdout contract for the caller (the CEO agent):
+#       JEV_ANSWER_DIRECTLY intent=<intent>          — a question; answer it, create nothing.
+#       ROUTED workspace=<ws> department=<d> resolved_by=<r>   — one card now exists.
+#     HTTP 403 {error:control_probe_never_creates} also prints
+#     `JEV_ANSWER_DIRECTLY intent=unresolved` (exit 0); every other non-2xx escalates,
+#     exactly like slug mode.
 #
 # WHY (identical to route-presentation.sh): the Command Center ships FAIL-CLOSED.
 # Middleware 503s external ingest when WEBHOOK_SECRET is unset, and 401s when
@@ -61,14 +75,24 @@ PYTHON="${WORKFORCE_PYTHON:-python3}"
 REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}"
 REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}"
 
-DEPARTMENT_SLUG="${1:-}"
-TITLE="${2:-}"
-# The rest of the args (3..N) form the description, joined with single spaces.
-if [ "$#" -gt 2 ]; then
-  shift 2
-  DESCRIPTION="$*"
+ROUTE_MODE="slug"
+DEPARTMENT_SLUG=""
+TITLE=""
+DESCRIPTION=""
+MESSAGE=""
+if [ "${1:-}" = "auto" ]; then
+  ROUTE_MODE="auto"
+  shift
+  # The rest of the args (1..N) form the owner message, joined with single spaces.
+  MESSAGE="$*"
 else
-  DESCRIPTION=""
+  DEPARTMENT_SLUG="${1:-}"
+  TITLE="${2:-}"
+  # The rest of the args (3..N) form the description, joined with single spaces.
+  if [ "$#" -gt 2 ]; then
+    shift 2
+    DESCRIPTION="$*"
+  fi
 fi
 
 _escalate() {
@@ -77,8 +101,12 @@ _escalate() {
   exit 1
 }
 
-[ -n "$DEPARTMENT_SLUG" ] || _escalate "empty department_slug argument (usage: mc-route.sh <department_slug> <title> [description...])"
-[ -n "$TITLE" ]          || _escalate "empty title argument (usage: mc-route.sh <department_slug> <title> [description...])"
+if [ "$ROUTE_MODE" = "auto" ]; then
+  [ -n "$MESSAGE" ] || _escalate 'empty message argument (usage: mc-route.sh auto "<owner message verbatim>")'
+else
+  [ -n "$DEPARTMENT_SLUG" ] || _escalate "empty department_slug argument (usage: mc-route.sh <department_slug> <title> [description...])"
+  [ -n "$TITLE" ]          || _escalate "empty title argument (usage: mc-route.sh <department_slug> <title> [description...])"
+fi
 
 for _numeric in "$MAX_RETRIES" "$CONNECT_TIMEOUT" "$REQUEST_TIMEOUT" "$TOTAL_TIMEOUT"; do
   case "$_numeric" in ''|*[!0-9]*) _escalate 'timeout/retry settings must be integer seconds' ;; esac
@@ -148,10 +176,38 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route.XXXXXX")" || _escalate "mktemp failed"
 HEADER_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-headers.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE" "$HEADER_FILE"' EXIT
-if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
-     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
-     "$PYTHON" - >"$BODY_FILE" <<'PYBODY'
+if [ "$ROUTE_MODE" = "auto" ]; then
+  _BODY_BUILD_OK=0
+  MESSAGE="$MESSAGE" SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+    REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+    "$PYTHON" - >"$BODY_FILE" <<'PYBODY_AUTO' && _BODY_BUILD_OK=1
+import json, os, sys, uuid
+operation = os.environ.get('MC_ROUTE_EVENT_ID') or os.environ.get('MC_ROUTE_OPERATION_ID') or str(uuid.uuid4())
+payload = {
+    'idempotency_key': operation,
+    'external_session_id': os.environ.get('MC_ROUTE_EXTERNAL_SESSION_ID', ''),
+    "message": os.environ.get("MESSAGE", ""),
+    "source": os.environ.get("SOURCE", "telegram"),
+    "priority": os.environ.get("PRIORITY", "medium"),
+}
+company = os.environ.get('MC_ROUTE_COMPANY_ID', '').strip()
+if company:
+    payload['company_id'] = company
+# P1-04 trust engine: pass the originating client chat id through so the Command
+# Center captures it and reports acknowledge/progress/done back to the client.
+# Only added when present — an operator/internal route omits it entirely.
+_rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+if _rcid:
+    payload["requester_chat_id"] = _rcid
+    payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
+sys.stdout.write(json.dumps(payload, separators=(",", ":")))
+PYBODY_AUTO
+  [ "$_BODY_BUILD_OK" -eq 1 ] || _escalate "could not build request body"
+else
+  if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
+       SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+       REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+       "$PYTHON" - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys, uuid
 operation = os.environ.get('MC_ROUTE_EVENT_ID') or os.environ.get('MC_ROUTE_OPERATION_ID') or str(uuid.uuid4())
 payload = {
@@ -175,8 +231,9 @@ if _rcid:
     payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY
-then
-  _escalate "could not build request body"
+  then
+    _escalate "could not build request body"
+  fi
 fi
 
 # ── Sign the RAW body: HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex (openssl) ─────
@@ -244,13 +301,46 @@ PYRETRY
   sleep "$delay"
 done
 
-echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (department=$DEPARTMENT_SLUG)"
+if [ "$ROUTE_MODE" = "auto" ]; then
+  echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (mode=auto)"
+else
+  echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (department=$DEPARTMENT_SLUG)"
+fi
 [ -n "$resp_body" ] && printf '%s\n' "$resp_body"
 
 [ "$curl_rc" -eq 0 ] || _escalate "transport failed (curl=$curl_rc) after bounded retry budget"
 
 case "$http_code" in
   2[0-9][0-9])
+    if [ "$ROUTE_MODE" = "auto" ]; then
+      # Raw-door response: {created:false,intent:...} means JEV answered without a
+      # card; anything else with a 2xx is a created/auto-routed card. Never print
+      # ESCALATE here — a 2xx ingest always succeeded at the transport layer.
+      _AUTO_FIELDS="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+created = d.get("created")
+print("false" if created is False else "true")
+for key in ("intent", "workspace_id", "resolved_department", "resolved_by"):
+    v = d.get(key)
+    print("" if v is None else str(v))' 2>/dev/null || true)"
+      _AUTO_CREATED="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '1p')"
+      _AUTO_INTENT="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '2p')"
+      _AUTO_WORKSPACE="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '3p')"
+      _AUTO_DEPARTMENT="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '4p')"
+      _AUTO_RESOLVED_BY="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '5p')"
+      if [ "$_AUTO_CREATED" = "false" ]; then
+        echo "JEV_ANSWER_DIRECTLY intent=${_AUTO_INTENT:-unresolved}"
+      else
+        echo "ROUTED workspace=$_AUTO_WORKSPACE department=$_AUTO_DEPARTMENT resolved_by=$_AUTO_RESOLVED_BY"
+      fi
+      exit 0
+    fi
     # Workspace-mismatch guard: warn if the card did NOT land on the requested
     # department workspace (mirrors route-presentation.sh's presentations check,
     # generalized to the department_slug argument).
@@ -262,10 +352,48 @@ try:
 except Exception:
     sys.stdout.write("")' 2>/dev/null || true)"
     if [ -n "$WS" ] && [ "$WS" != "$DEPARTMENT_SLUG" ]; then
-      echo "mc-route: WARNING — task landed on workspace '$WS', NOT '$DEPARTMENT_SLUG'." >&2
-      echo "ESCALATE_TO_OPERATOR: the '$DEPARTMENT_SLUG' department may be absent on this box. The CEO must tell the owner it is escalating to the operator instead of proceeding or self-intaking." >&2
+      RESOLVED_BY="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("resolved_by", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+      # Landing on the General Task catch-all is not a blocker: never warn/escalate
+      # when the mismatch IS the documented catch-all fallback.
+      _GENERAL_TASK_LANDING=0
+      case "$RESOLVED_BY" in
+        unrecognized-slug-\>general|general-task-fallback|auto-route:general-task-fallback)
+          _GENERAL_TASK_LANDING=1
+          ;;
+      esac
+      case "$WS" in
+        general-task|dept-general-task) _GENERAL_TASK_LANDING=1 ;;
+      esac
+      if [ "$_GENERAL_TASK_LANDING" -eq 1 ]; then
+        echo "mc-route: INFO — landed on General Task (catch-all); not a blocker."
+      else
+        echo "mc-route: WARNING — task landed on workspace '$WS', NOT '$DEPARTMENT_SLUG'." >&2
+        echo "ESCALATE_TO_OPERATOR: the '$DEPARTMENT_SLUG' department may be absent on this box. The CEO must tell the owner it is escalating to the operator instead of proceeding or self-intaking." >&2
+      fi
     fi
     exit 0
+    ;;
+  403)
+    if [ "$ROUTE_MODE" = "auto" ]; then
+      _AUTO_ERROR="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("error", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+      if [ "$_AUTO_ERROR" = "control_probe_never_creates" ]; then
+        echo "JEV_ANSWER_DIRECTLY intent=unresolved"
+        exit 0
+      fi
+    fi
+    _escalate "ingest POST returned HTTP ${http_code:-<none>} after ${attempt} retr(y|ies)"
     ;;
   *)
     _escalate "ingest POST returned HTTP ${http_code:-<none>} after ${attempt} retr(y|ies)"

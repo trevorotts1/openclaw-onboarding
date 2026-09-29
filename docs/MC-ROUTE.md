@@ -35,7 +35,38 @@ Exit `0` on a 2xx ingest; non-zero on failure. On non-zero the helper prints an
 `ESCALATE_TO_OPERATOR:` line — the CEO must tell the owner it is escalating (never
 self-intake, never ask intake questions, never retry forever). On a 2xx whose
 `workspace_id` != the requested `department_slug`, it warns + emits an
-`ESCALATE_TO_OPERATOR:` line (the department may be absent on this box).
+`ESCALATE_TO_OPERATOR:` line (the department may be absent on this box) — unless
+the mismatch IS the documented General Task catch-all (`workspace_id` is
+`general-task`/`dept-general-task`, or `resolved_by` is
+`unrecognized-slug->general`, `general-task-fallback` or
+`auto-route:general-task-fallback`), which prints an `INFO` line instead and is
+never a blocker.
+
+## Auto mode (JEV live routing)
+
+```
+mc-route.sh auto "<owner message verbatim>"
+```
+
+Every arg after `auto` is joined with single spaces into the owner's message
+(verbatim; an empty message hits the same usage escalation as a missing
+`department_slug`/`title`). The message alone (`{message}`, no title,
+description or `department_slug`) is posted to the same signed CC ingest
+endpoint via the identical signing/secret/retry path as slug mode — JEV
+classifies it and Command Center either answers it or creates and routes
+exactly one card. The CEO's `NEW INTAKE` policy calls this for every new owner
+message instead of deciding a department itself.
+
+stdout contract for the caller:
+
+| CC response | stdout | exit |
+|---|---|---|
+| 2xx, `created: false` | `JEV_ANSWER_DIRECTLY intent=<intent>` | `0` |
+| 2xx, a card was created | `ROUTED workspace=<ws> department=<d> resolved_by=<r>` | `0` |
+| `403 {"error":"control_probe_never_creates"}` | `JEV_ANSWER_DIRECTLY intent=unresolved` | `0` |
+| anything else | `ESCALATE_TO_OPERATOR:` (same as slug mode) | `1` |
+
+`ESCALATE_TO_OPERATOR` is never printed for a 2xx response in auto mode.
 
 ## Why signed (fail-closed Command Center)
 

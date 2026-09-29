@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'shared-utils'))
 from ceo_execution_policy import POLICY, block, upgrade, registry_rows
 
+V3_MARKER = '<!-- CEO_EXECUTION_POLICY_V3 -->'
+V3_END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V3 -->'
+
 class PolicyTests(unittest.TestCase):
     def test_legacy_upgrade_preserves_owner_bytes(self):
         for kind in ('CEO_ORCHESTRATOR_RULE', 'CEO_ROUTING_NO_LOOPHOLES'):
@@ -126,6 +129,55 @@ process.stdout.write(JSON.stringify(out));})();'''
             self.assertIn('alone is NOT authorization', text)
             self.assertIn('do NOT POST ingest again', text)
             self.assertNotIn('ASK instead', text)
+
+    def test_policy_documents_mc_route_auto_intake(self):
+        # JGT103: NEW INTAKE hands each new owner message to the decision engine via
+        # mc-route.sh auto, which prints JEV_ANSWER_DIRECTLY or ROUTED.
+        self.assertIn('mc-route.sh auto', POLICY)
+        self.assertIn('JEV_ANSWER_DIRECTLY', POLICY)
+
+    def test_every_grep_listed_v3_carrier_contains_exact_policy(self):
+        # The same discovery command JGT103 uses to find every byte-identical V3
+        # carrier. A new carrier that shows up here must render canonical POLICY
+        # exactly, or this test names it and fails. The heading is split so this
+        # test file's own source (which names the heading) is not itself a hit.
+        heading = 'Task intake and assigned execution' + ' (V3)'
+        out = subprocess.run(
+            ['grep', '-rl', '--binary-files=without-match', heading,
+             '--exclude-dir=.git', '--exclude-dir=__pycache__', '--exclude-dir=node_modules', '.'],
+            cwd=ROOT, capture_output=True, text=True, check=True,
+        ).stdout
+        carriers = sorted(
+            line for line in out.splitlines()
+            if line and Path(line).suffix in ('.py', '.js', '.md')
+        )
+        self.assertGreaterEqual(len(carriers), 4, f"expected at least 4 V3 carriers, found {carriers}")
+        for rel in carriers:
+            path = ROOT / rel
+            with self.subTest(path=rel):
+                if path.suffix == '.py':
+                    tree = ast.parse(path.read_text())
+                    value = next(
+                        n.value.value for n in tree.body
+                        if isinstance(n, ast.Assign) and n.targets[0].id == 'POLICY'
+                    )
+                    self.assertEqual(value, POLICY)
+                elif path.suffix == '.js':
+                    script = (
+                        "const {default:plugin}=await import(process.argv[1]); let hook;"
+                        "plugin({on:(name,fn)=>{if(name==='before_prompt_build')hook=fn;}});"
+                        "(async()=>{const r=await hook({prompt:'probe'},{agentId:'ceo'});"
+                        "process.stdout.write(r.prependSystemContext);})();"
+                    )
+                    text = subprocess.check_output(
+                        ['node', '--input-type=module', '-e', script, str(path)], text=True)
+                    self.assertEqual(text, POLICY)
+                else:
+                    text = path.read_text()
+                    self.assertIn(V3_MARKER, text)
+                    start = text.index(V3_MARKER) + len(V3_MARKER) + 1
+                    region = text[start:text.index(V3_END_MARKER)]
+                    self.assertEqual(region, POLICY)
 
     def test_both_installed_stampers_use_canonical_upgrade(self):
         for name in ('apply-routing-fix.sh', 'apply-fleet-standards.sh'):
