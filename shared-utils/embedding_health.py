@@ -19,6 +19,14 @@ For EACH index three legs are checked:
       provider.  Mismatch -> FLAG RE-INDEX (not a pass).
   (c) The configured generative provider is NEVER assumed to embed.
 
+LOCAL OLLAMA MODE (explicit per-box opt-in, free): a persona index whose rows
+are stamped provider='ollama' (embedding_engine.py --reembed-local), or a CC
+SOP store carrying the `sop_embeddings_local_provider` marker (the CC's
+SOP_EMBEDDING_PROVIDER=ollama backfill), is checked against its OWN contract:
+leg-a smoke-embeds against the LOOPBACK Ollama (OLLAMA_EMBED_URL, default
+http://127.0.0.1:11434) with the stamped model and dims. Ollama Cloud still
+never embeds: a non-loopback URL fails leg-a/leg-c.
+
 Failures are LOUD and name both the index and the specific failed leg.
 
 Also verifies that the memorySearch fallback config (PRD item 2.6) is present
@@ -387,6 +395,46 @@ def _attempt_smoke_embed(provider: str, openclaw_json: dict) -> tuple[bool, str]
     return False, f"Provider '{provider}' not supported for smoke embed in this check"
 
 
+def _smoke_embed_ollama_local(url: str, model: str, dims: int) -> tuple[bool, str]:
+    """Smoke embed via a local Ollama server (local opt-in mode only)."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"{url}/api/embed",
+            data=json.dumps({"model": model, "input": "embedding health smoke test"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            vals = json.loads(resp.read())["embeddings"][0]
+        if len(vals) == int(dims):
+            return True, f"local ollama/{model} smoke OK: {len(vals)}-dim vector"
+        return False, f"local ollama/{model} smoke: {len(vals)}-dim vector, expected {dims}"
+    except Exception as exc:
+        return False, f"local ollama/{model} smoke FAILED: {exc.__class__.__name__}: {exc}"
+
+
+def _apply_local_smoke(res: dict, lbl: str, model: str, dims: int) -> None:
+    """Legs a+c for a store in local Ollama mode: only a LOOPBACK Ollama counts."""
+    from urllib.parse import urlparse
+    url = os.environ.get("OLLAMA_EMBED_URL", "http://127.0.0.1:11434").rstrip("/")
+    if (urlparse(url).hostname or "") not in ("127.0.0.1", "localhost", "::1"):
+        res["leg_c_generative_not_embedding"] = False
+        msg = (f"{lbl} leg-a FAIL: local-mode Ollama URL {url} is not loopback — "
+               f"Ollama Cloud CANNOT embed (hard rule B.6)")
+        res["errors"].append(msg)
+        _err(msg)
+        return
+    res["leg_a_provider_capable"] = True
+    ok, detail = _smoke_embed_ollama_local(url, model, dims)
+    res["leg_a_smoke"] = ok
+    if ok:
+        _ok(f"{lbl} leg-a smoke: {detail}")
+    else:
+        msg = f"{lbl} leg-a FAIL smoke: {detail}"
+        res["errors"].append(msg)
+        _err(msg)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Index stamp readers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -628,6 +676,24 @@ def _read_cc_sop_row_counts(
     return None
 
 
+def _read_cc_local_marker(cc_dir: Optional[Path], openclaw_json: Optional[dict] = None) -> Optional[tuple]:
+    """(provider, model, dims) from the CC's sop_embeddings_local_provider marker, else None."""
+    for db_file in _cc_sop_db_candidates(cc_dir, None, openclaw_json):
+        if not db_file.is_file():
+            continue
+        try:
+            con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=5)
+            try:
+                return con.execute(
+                    "SELECT provider, model, dims FROM sop_embeddings_local_provider WHERE id=1"
+                ).fetchone()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            return None
+    return None
+
+
 def _read_cc_sop_stamp(
     cc_dir: Path,
     db_path_override: Optional[str] = None,
@@ -827,6 +893,27 @@ def check_persona_gemini_index(
     res = _make_index_result(f"persona_gemini ({GEMINI_EMBED_MODEL} @{GEMINI_EMBED_DIMS})")
     LBL = "Index 2 (persona_gemini)"
 
+    # ── Local Ollama mode (explicit opt-in: every row stamped provider='ollama') ──
+    stamp = _read_gemini_index_stamp(openclaw_root)
+    if stamp and (stamp.get("provider") or "").lower() == "ollama":
+        model, dim = stamp.get("model") or "", int(stamp.get("dim") or 0)
+        res["name"] = f"persona_gemini (local ollama {model} @{dim})"
+        _apply_local_smoke(res, LBL, model, dim)
+        fake_rows = int(stamp.get("fake_or_wrong_dim_rows", 0) or 0)
+        res["leg_b_stamp_match"] = fake_rows == 0 and bool(model) and dim > 0
+        res["leg_b_detail"] = f"local mode: stamped=ollama/{model}/{dim} fake_or_wrong_dim_rows={fake_rows}"
+        if res["leg_b_stamp_match"]:
+            _ok(f"{LBL} leg-b stamp: {res['leg_b_detail']}")
+        else:
+            res["needs_reindex"] = True
+            msg = f"{LBL} leg-b FLAG RE-INDEX: {res['leg_b_detail']} — re-run embedding_engine.py --reembed-local"
+            res["errors"].append(msg)
+            _err(msg)
+        res["pass"] = (res["leg_a_provider_capable"] and res["leg_a_smoke"] is True
+                       and res["leg_b_stamp_match"] and res["leg_c_generative_not_embedding"]
+                       and not res["needs_reindex"])
+        return res
+
     google_key = _get_api_key("GOOGLE_API_KEY", openclaw_json) or _get_api_key("GEMINI_API_KEY", openclaw_json)
 
     # ── Leg (a) ────────────────────────────────────────────────────────────────
@@ -987,7 +1074,10 @@ def check_cc_sop_index(
     openrouter_key = _get_api_key("OPENROUTER_API_KEY", openclaw_json)
 
     capable_provider: Optional[str] = None
-    if google_key:
+    local = _read_cc_local_marker(cc_dir, openclaw_json)
+    if local:
+        capable_provider = "ollama"  # explicit local opt-in beats any key present
+    elif google_key:
         capable_provider = "google"
     elif openai_key:
         capable_provider = "openai"
@@ -995,7 +1085,10 @@ def check_cc_sop_index(
         capable_provider = "openrouter"
 
     # ── Leg (a) ────────────────────────────────────────────────────────────────
-    if not capable_provider:
+    if local:
+        res["name"] = f"cc_sop (mission-control.db, local ollama {local[1]} @{local[2]})"
+        _apply_local_smoke(res, LBL, local[1], local[2])
+    elif not capable_provider:
         msg = (
             f"{LBL} leg-a FAIL: no embedding-capable key present. "
             f"Need GOOGLE_API_KEY/GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY. "
@@ -1079,6 +1172,8 @@ def check_cc_sop_index(
         active_model_hint = GEMINI_EMBED_MODEL
     elif capable_provider == "openai":
         active_model_hint = OPENAI_EMBED_MODEL
+    elif local:
+        active_model_hint = local[1]
     counts = _read_cc_sop_row_counts(cc_dir, openclaw_json=openclaw_json, active_model=active_model_hint)
     if counts is not None:
         sops_total = counts["sops_total"]

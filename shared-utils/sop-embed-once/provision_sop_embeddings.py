@@ -22,6 +22,12 @@ CONTRACT (mirrors the persona pipeline):
     the CC app (backfill-sop-embeddings.ts) can detect "the shared library is
     already covered" and refuse a wasteful full re-embed (step 3).
 
+LOCAL-MODE GUARD: a box opted into free local Ollama SOP embeddings (the CC's
+SOP_EMBEDDING_PROVIDER=ollama + backfill-sop-embeddings.ts, which stamps the
+`sop_embeddings_local_provider` marker table) holds vectors in a DIFFERENT
+space than the Gemini asset. Importing the asset there would overwrite them
+with vectors the box cannot query, so this SKIPs such a box outright.
+
 PROVISION_DRY_RUN=1 (env) prints the gate decision and returns BEFORE any
 network I/O — mirrors provision-persona-index.sh's PROVISION_DRY_RUN gate,
 used by tests/unit/provision-sop-embeddings-idempotency.test.sh.
@@ -107,6 +113,20 @@ def _current_marker(db_path: str) -> Optional[dict]:
         return None
 
 
+def _local_provider_marker(db_path: str) -> Optional[tuple]:
+    """(provider, model, dims) when the CC opted this box into local embeddings, else None."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            return conn.execute(
+                "SELECT provider, model, dims FROM sop_embeddings_local_provider WHERE id=1"
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+
+
 def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional[bool] = None) -> dict:
     """Idempotently import the shipped sop_embeddings asset into db_path.
 
@@ -144,6 +164,15 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
 
     if not os.path.isfile(db_path):
         return {"status": "WARN", "reason": f"target DB not found: {db_path} — install/ingest the SOP library first"}
+
+    local = _local_provider_marker(db_path)
+    if local:
+        return {
+            "status": "SKIP",
+            "reason": f"box is in local embedding mode ({local[0]}/{local[1]} @{local[2]}, "
+                      "sop_embeddings_local_provider marker) — the Gemini asset would overwrite "
+                      "vectors this box queries with its local model; not importing",
+        }
 
     # ── Idempotency gate ──────────────────────────────────────────────────────
     marker = _current_marker(db_path)
