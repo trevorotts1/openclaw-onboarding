@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -1499,6 +1500,35 @@ class WrapperWaves(unittest.TestCase):
             self.assertIn("UNKNOWN CLIENT (rest-box) (Hostinger)", r.stdout)   # no client: said loudly
             self.assertNotIn("first-box", r.stdout)
             self.assertIn("docker exec -u 'node'  'ctr' bash -lc", Path(td, "ssh.log").read_text())
+
+    def test_parallel_rolls_each_read_their_own_summary(self):
+        # Per-box rolls run in parallel from one clone. With one shared summary
+        # file a FAILED roll printed another roll's "UPDATED=1 FAILED=0" table
+        # and its operator alert read "nothing failed" and sent nothing.
+        with tempfile.TemporaryDirectory() as td:
+            fake = Path(td, "bin"); fake.mkdir()
+            (fake / "curl").write_text("#!/bin/sh\necho 200\n")
+            (fake / "ssh").write_text("#!/bin/sh\nsleep 1\necho \"COPYFAIL test box cannot reach GitHub\"\n")
+            for f in fake.iterdir():
+                f.chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
+            runs = []
+            for client in ("Client One", "Client Two"):
+                bf = Path(td, client.replace(" ", "") + ".json")
+                bf.write_text(json.dumps([{"client": client, "name": client.lower().replace(" ", "-"),
+                                           "ssh_target": "x", "platform": "mac"}]))
+                runs.append((client, subprocess.Popen(
+                    ["bash", str(REPO / "scripts" / "fleet-refresh.sh"), "--boxes-file", str(bf)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)))
+            outs = {c: p.communicate(timeout=120)[0] for c, p in runs}
+            paths = {c: re.search(r"Fleet summary written to: (\S+)", o).group(1) for c, o in outs.items()}
+            self.assertNotEqual(paths["Client One"], paths["Client Two"], "one shared summary file")
+            for client, other in (("Client One", "Client Two"), ("Client Two", "Client One")):
+                rows = json.loads(Path(paths[client]).read_text())
+                self.assertEqual([r["client"] for r in rows], [client])
+                table = outs[client].split("CLIENT")[-1]
+                self.assertIn(client, table)
+                self.assertNotIn(other, table)
 
     def test_local_apply_refuses_a_dev_checkout(self):
         # A throwaway clone whose runner is a stub: nothing real can be applied.

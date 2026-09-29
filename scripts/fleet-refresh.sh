@@ -294,7 +294,8 @@ fi
 TMPDIR_RESULTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RESULTS"' EXIT
 # Per-box runner logs (stderr) are kept after the run for post-mortems.
-RUN_LOG_DIR="$HOME/.openclaw/fleet/runs/$(date -u +%Y%m%dT%H%M%SZ)"
+# One directory per run (the pid keeps two rolls started in the same second apart).
+RUN_LOG_DIR="$HOME/.openclaw/fleet/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "$RUN_LOG_DIR" 2>/dev/null && chmod 700 "$HOME/.openclaw/fleet" "$RUN_LOG_DIR" 2>/dev/null || RUN_LOG_DIR="$TMPDIR_RESULTS"
 
 # If --local, run once against this machine with no SSH
@@ -798,13 +799,19 @@ done
 
 echo "[fleet-refresh] ═══════════════════════════════════════════"
 
-# Write fleet summary
-SUMMARY_FILE="$REPO_ROOT/.fleet-refresh-summary.json"
+# Write fleet summary. THIS run's file: per-box rolls run in parallel from one
+# clone, and a shared file let one roll print another's table and send (or
+# skip) the operator alert on another roll's results. The table, the alert and
+# the box-list backup below read only this file. $REPO_ROOT/.fleet-refresh-summary.json
+# is kept as a "latest run" copy for people; nothing in the roll reads it.
+SUMMARY_FILE="$RUN_LOG_DIR/summary.json"
 echo "$ALL_RESULTS" | python3 -c "
 import json,sys
 arr = json.load(sys.stdin)
 print(json.dumps(arr, indent=2))
 " > "$SUMMARY_FILE" 2>/dev/null || true
+cp "$SUMMARY_FILE" "$REPO_ROOT/.fleet-refresh-summary.json.$$" 2>/dev/null \
+  && mv -f "$REPO_ROOT/.fleet-refresh-summary.json.$$" "$REPO_ROOT/.fleet-refresh-summary.json" 2>/dev/null || true
 echo "[fleet-refresh] Fleet summary written to: $SUMMARY_FILE"
 
 # ── Retirement trigger check (APPLY mode only — never dry-run) ────────────────
@@ -831,6 +838,17 @@ import json, os, sys, subprocess, time
 from pathlib import Path
 
 loaded_state_file = Path("$LOADED_STATE_FILE")
+
+# The manifest accumulates across runs (it answers "is EVERY box loaded?"), so
+# it stays one file; parallel rolls take turns (read-merge-write under a lock,
+# replaced atomically) instead of overwriting each other's boxes.
+import fcntl
+_lock = open(str(loaded_state_file) + ".lock", "w")
+fcntl.flock(_lock, fcntl.LOCK_EX)
+def _write_state(st):
+    tmp = loaded_state_file.with_name(loaded_state_file.name + f".{os.getpid()}")
+    tmp.write_text(json.dumps(st, indent=2))
+    os.replace(tmp, loaded_state_file)
 all_results_json  = """$ALL_RESULTS"""
 apply             = True
 dry_run           = False
@@ -876,7 +894,7 @@ for box_result in results:
 
 # Persist updated state to the manifest (APPLY only — dry-run never reaches here).
 try:
-    loaded_state_file.write_text(json.dumps(state, indent=2))
+    _write_state(state)
     print(f"[fleet-refresh] Retirement manifest updated: {loaded_state_file}")
 except Exception as e:
     print(f"[fleet-refresh] WARNING: could not write loaded-state manifest: {e}", file=sys.stderr)
@@ -1012,7 +1030,7 @@ else:
 # Mark retirement_triggered=True in the manifest so we never duplicate.
 state["retirement_triggered"] = True
 try:
-    loaded_state_file.write_text(json.dumps(state, indent=2))
+    _write_state(state)
 except Exception as e:
     print(f"[fleet-refresh] WARNING: could not persist retirement_triggered flag: {e}", file=sys.stderr)
 
