@@ -80,6 +80,31 @@ jobs:
           python3 "$SYNC_CHECK"
           echo "sync_check: presentations lockstep PASSED — renderer, ruleset, manifest, roles, and SOPs are in sync."
 
+      - name: SOP-SLIDE-00 mirror body-compare (Fix 25 — generated mirror must match canonical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANONICAL="universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md"
+          MIRROR="23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md"
+          for f in "$CANONICAL" "$MIRROR"; do
+            if [ ! -f "$f" ]; then
+              echo "FATAL: ruleset file not found at $f" >&2
+              exit 2
+            fi
+          done
+          # The dept mirror is the canonical text plus its 10-line header
+          # (lines 1-4 match the canonical; lines 5-10 are the 6-line dept
+          # header). Compare bodies only: mirror from line 11, canonical
+          # from line 6. Any drift fails the gate.
+          tail -n +6 "$CANONICAL" > /tmp/canonical-body.txt
+          tail -n +11 "$MIRROR" > /tmp/mirror-body.txt
+          if ! diff /tmp/canonical-body.txt /tmp/mirror-body.txt > /tmp/ruleset-body.diff; then
+            echo "FATAL: SOP-SLIDE-00 mirror body has drifted from the canonical ruleset:" >&2
+            head -40 /tmp/ruleset-body.diff >&2
+            exit 1
+          fi
+          echo "SOP-SLIDE-00 mirror body matches the canonical ruleset."
+
       - name: test_preflight.py — process-gate unit tests (exit 0 required)
         shell: bash
         run: |
