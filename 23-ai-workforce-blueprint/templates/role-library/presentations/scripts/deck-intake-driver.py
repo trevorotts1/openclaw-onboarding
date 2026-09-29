@@ -1761,13 +1761,15 @@ def cmd_answer(args) -> int:
                                    session_hint=str(run_dir.name))
             if rc != 0:
                 return rc
+            # FIX 16: CLIENT RUN MODE (FIX 11) is recorded FIRST, so the
+            # declared mode is always recorded even when the model plan is
+            # refused. Previously _record_run_mode ran after
+            # _record_client_model_plan, and a refused model plan dropped
+            # the declared ultra on a box with no provider profile.
+            _record_run_mode(qdef, derived, entries)
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
-            # CLIENT RUN MODE (FIX 11) rides this same turn. Recorded only
-            # AFTER the model plan above was accepted, so a refused answer
-            # never half-lands a run mode either.
-            _record_run_mode(qdef, derived, entries)
 
         # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
         # is required + block_gate and therefore asked on EVERY deck (unlike
