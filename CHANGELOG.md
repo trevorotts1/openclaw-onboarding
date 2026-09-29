@@ -1,3 +1,15 @@
+## [v25.2.13]  -  2026-09-29  -  A roll deploys the pinned Command Center release, never main; pin Command Center v7.6.83
+
+### Why
+The wrapper exported Command Center main at roll start as the deploy target, so cc-compat.json's pinnedTag was only a label: a roll on 2026-09-29 deployed v7.6.78 to a client box minutes after it merged, while the pin said v7.6.77.
+
+### What changed
+- `scripts/fleet-refresh.sh` no longer pins Command Center main (and clears an inherited `CC_UPDATE_TARGET`).
+- `shared-utils/fleet_refresh_runner.py`: before anything changes on a box, the runner reads pinnedTag from cc-compat.json at the roll's commit (`git show FLEET_ROLL_SHA:cc-compat.json` in the roll copy), resolves that tag's commit in the box's Command Center checkout and exports it as `CC_UPDATE_TARGET` (read by update-skills' Command Center refresh and by pull-cc). Unresolvable = the box is SKIPPED with nothing changed. pull-cc never falls back to origin/main.
+- Skill 32 (v13.1.38) `--update-only`: resolves the same pin from `<skills>/cc-compat.json` when run outside a roll (fails the refresh, deploying nothing, when it cannot); both its zero-downtime and merge paths deploy the pin; a checkout already at or past the pin is left as it is.
+- `update-skills.sh` refreshes `<skills>/cc-compat.json` from the release it installs (it was never refreshed: one box still carried July's).
+- Pins Command Center v7.6.83 (tenant-wall health probe fix v7.6.81, rollback receipt before the restored release starts v7.6.82, Command Center missing from pm2 is RED and started by the watchdog v7.6.83).
+
 ## [v25.2.12]  -  2026-09-29  -  Merge train: #1357 fix(verify-routing): G1 counts the ROLE_DISCIPLINE_V1 marker, not…; #1358 fix(skill23): record-vertical-pack.py operator declaration + pack…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
