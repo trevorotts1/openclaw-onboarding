@@ -2263,27 +2263,33 @@ def _load_sp_spec() -> Dict[str, Any]:
         SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "intake" / "sp-8-questions.json",
         Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "intake" / "sp-8-questions.json",
     ]
+    # FIX 19: also honor the deployment env roots — the canonical driver runs from
+    # repo checkouts and skill installs the three hard-coded spots never cover.
+    _skills_dir = (os.environ.get("OC_SKILLS_DIR") or "").strip()
+    _oc_root = (os.environ.get("OPENCLAW_ROOT") or "").strip()
+    if _skills_dir:
+        cands.append(Path(_skills_dir) / "51-signature-presentation" / "intake" / "sp-8-questions.json")
+    if _oc_root:
+        cands.append(Path(_oc_root) / "51-signature-presentation" / "intake" / "sp-8-questions.json")
     for cand in cands:
         if cand.is_file():
             with open(cand, "r", encoding="utf-8") as fh:
                 SP_EIGHT_QUESTIONS_SPEC = json.load(fh)
             return SP_EIGHT_QUESTIONS_SPEC
-    # Fallback: embedded minimal spec
-    SP_EIGHT_QUESTIONS_SPEC = {
-        "questions": [
-            {"id": "sp_q1", "order": 0, "prompt": "What is the OFFER this signature talk sells?",
-             "kind": "text", "required": True},
-            {"id": "sp_q2", "order": 1, "prompt": "Who is the ONE ideal client?",
-             "kind": "text", "required": True},
-            {"id": "sp_q3", "order": 2, "prompt": "What is their #1 PROBLEM right now?",
-             "kind": "text", "required": True},
-        ],
-        "frame_question": {
-            "id": "signature_frame", "prompt": "Choose a Signature frame: The Rulebook / The Vault / The Quest / The Original.",
-            "kind": "enum", "allowed_values": ["rulebook", "vault", "quest", "original"],
-        },
-    }
-    return SP_EIGHT_QUESTIONS_SPEC
+    # FIX 19: fail closed. The old embedded fallback silently ran an invented
+    # 3-question bank (sp_q1..sp_q3) with exit 0 — an interview the Sacred 8
+    # Questions spec never authorized. There is no embedded fallback anymore:
+    # a missing spec is a fatal configuration error.
+    print(
+        "FATAL [FIX 19]: sp-8-questions.json not found in any known location "
+        "(checked: " + ", ".join(str(c) for c in cands) + "). "
+        "Set OC_SKILLS_DIR or OPENCLAW_ROOT to the skills/deploy root, or run "
+        "from a repo checkout containing "
+        "51-signature-presentation/intake/sp-8-questions.json. "
+        "The driver refuses to invent a question bank.",
+        file=sys.stderr,
+    )
+    sys.exit(3)
 
 
 def cmd_signature(args) -> int:
