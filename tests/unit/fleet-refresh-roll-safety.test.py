@@ -1171,6 +1171,44 @@ class CeoSessionResetOncePerRoll(unittest.TestCase):
         self.assertNotIn("step_sessions_reset_ceo", body)
 
 
+class ChecksAfterARollbackRunTheRollsCode(unittest.TestCase):
+    """rollback_box resets the runner's own clone to the pre-roll commit; the
+    checks that follow imported their modules lazily and ran the old release's
+    code (a v25.2.3 embedding check failed a box the rolled check passes)."""
+
+    def test_a_rewound_clone_does_not_change_the_checks(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            clone = tmp / "shared-utils"
+            shutil.copytree(REPO / "shared-utils", clone)
+            probe = (
+                "import sys; sys.path.insert(0, sys.argv[1]); import fleet_refresh_runner\n"
+                "open(sys.argv[1] + '/embedding_health.py', 'w').write('OLD_RELEASE = True\\n')\n"
+                "from embedding_health import run_embedding_health\n"
+                "print('roll code')\n"
+            )
+            r = subprocess.run([sys.executable, "-c", probe, str(clone)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.stdout.strip(), "roll code", r.stderr[-400:])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class DeployedCommandCenterVersionIsReadAfterTheUpdate(unittest.TestCase):
+    """Pass notes said "Command Center v7.6.63" on boxes the roll had moved to v7.6.77."""
+
+    def test_the_version_on_disk_now_is_reported(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "package.json").write_text(json.dumps({"name": "blackceo-command-center", "version": "7.6.77"}))
+            res = fr.BoxResult("t-box", False)
+            res.cc_version, res.onboarding_version = "7.6.63", "v25.2.11"
+            compat = json.loads((REPO / "cc-compat.json").read_text())
+            fr._check_deployed({"cc_dir": tmp}, compat, "v25.2.11", res)
+            self.assertEqual(res.deployed["cc"], "7.6.77")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class GatewayAppliedTheFinalConfig(unittest.TestCase):
     """Three openclaw.json writes in 32 s superseded a reload: the file carried an
     env var the live gateway never ran with, silently, for hours."""
@@ -1245,6 +1283,33 @@ class RollHoldsOneCommit(unittest.TestCase):
                 fr.step_pull_onboarding({"root": Path(td), "skills": Path(td, "skills")}, copy, "v1",
                                         fr.BoxResult("t", dry_run=False), dry_run=False)
             self.assertEqual(run.call_args.kwargs["env"].get("OPENCLAW_UPDATE_SKIP_SELF_SYNC"), "1")
+
+
+class UpdateSkillsExit8IsLaunchPendingNotAFailure(unittest.TestCase):
+    """update-skills.sh exits 8 when content is current and stamped but the
+    interview launch is pending. The runner failed the step and rolled a box
+    back from a correct v25.2.12 to v25.1.81."""
+
+    def run_it(self, stamp):
+        with tempfile.TemporaryDirectory() as td:
+            skills = Path(td, "skills"); skills.mkdir()
+            (skills / ".onboarding-version").write_text(stamp + "\n")
+            copy = Path(td, "onb"); copy.mkdir()
+            (copy / "update-skills.sh").write_text("")
+            res = fr.BoxResult("t", dry_run=False)
+            done = subprocess.CompletedProcess([], 8, "", "PENDING: skills content is current; interview launch prerequisites remain unresolved")
+            with mock.patch.object(fr, "_run_tree", return_value=done):
+                fr.step_pull_onboarding({"root": Path(td), "skills": skills}, copy, "v25.2.12", res, dry_run=False)
+            return res
+
+    def test_a_matching_stamp_is_an_advisory(self):
+        res = self.run_it("v25.2.12")
+        self.assertTrue(res.steps["pull-onboarding"].startswith("ok:advisory: update-skills.sh exit 8"), res.steps)
+        self.assertEqual(res.onboarding_version, "v25.2.12")
+
+    def test_a_mismatched_stamp_still_fails(self):
+        res = self.run_it("v25.1.81")
+        self.assertTrue(res.steps["pull-onboarding"].startswith("failed:"), res.steps)
 
 
 class UnreadableFoldersAndNoCommandCenter(unittest.TestCase):
