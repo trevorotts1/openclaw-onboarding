@@ -1263,6 +1263,10 @@ cc_route_update_through_canonical_path() {
   local pull_ts build_id_file build_id_mtime health_code tier
   local update_sh="$DASHBOARD_DIR/update.sh"
   local atomic_deploy="$DASHBOARD_DIR/scripts/atomic-deploy.sh"
+  if [[ "${CC_AT_PIN:-0}" == "1" ]]; then
+    log "INFO" "phase=6 (update-only): no Command Center deploy: the checkout already contains the pinned release"
+    return 0
+  fi
   if [[ "${CC_ZERO_DOWNTIME:-0}" == "1" ]]; then
     # The live tree is still the running release: run the TARGET's updater,
     # which fetches, builds beside the live release and promotes it.
@@ -2084,12 +2088,8 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # `npm run build` + bare `pm2 restart` with no rollback. This is the
   # Kanban-dead fix (BUILD-05) AND the "broken build shipped anyway" gap —
   # a pull-without-a-verified-rebuild is now structurally impossible.
-  if [[ "$CC_AT_PIN" == "1" ]]; then
-    log "INFO" "phase=6 (update-only): no Command Center deploy: already at or past the pinned release"
-  else
-    cc_route_update_through_canonical_path || \
-      fail_install "phase=6 (update-only): the running Command Center is not healthy after the update (/api/health not 200/ok, or migrations pending). See the post-update assertion and $LOG_FILE."
-  fi
+  cc_route_update_through_canonical_path || \
+    fail_install "phase=6 (update-only): the running Command Center is not healthy after the update (/api/health not 200/ok, or migrations pending). See the post-update assertion and $LOG_FILE."
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
