@@ -1,3 +1,12 @@
+## [v25.2.15]  -  2026-09-29  -  No head agent or departments/ folder for the Command Center's 'default' lane
+
+### Why
+seed-dashboard-content.py seeded a head agent ("General Lead") for the Command Center's own placeholder 'default' workspace, and scaffold-agent-files.sh then created ~/.openclaw/workspace/departments/default, a department folder no client chose, which fails the ZERO HUMAN EXPERIENCE gate.
+
+### What changed
+- `seed-dashboard-content.py` (Skill 32 v13.1.39): a structural workspace (`default`) gets no head agent, no starter task and no scaffold call.
+- `scaffold-agent-files.sh`: never scaffolds a structural workspace as a department (prints SKIP, exits 0). An existing departments/default is not removed.
+
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
