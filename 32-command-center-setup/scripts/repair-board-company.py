@@ -21,15 +21,26 @@ Repairs the two faults that leave a client's lanes unreachable:
      workspace id and its slug (a CEO lane with id master-orchestrator and slug
      ceo is the ceo department), never on the raw id.
 
-Dry run by default: prints the plan, changes nothing. --apply makes a SQLite
-backup of the DB (<db>.bak-repair-board-company-<ts>) first, then commits A+B
-in one transaction, then runs C. Idempotent: a second --apply finds nothing to do.
+Dry run by default: prints the plan, changes nothing. --apply first writes a
+ROW-LEVEL backup (<db>.repair-board-company-<ts>.rows.json: every row A+B will
+change, with its old company_id, plus every companies row A deletes) -- not a
+copy of the whole database, which runs to hundreds of MB -- then commits A+B in
+one transaction, then runs C (additive: it only inserts missing lanes).
+--restore <rows.json> puts A+B back. Idempotent: a second --apply finds nothing
+to do.
 
 Refuses B when the board holds any OTHER real company (a shared board): moving
 'default' lanes there would be a cross-tenant change.
 
+--chosen-only narrows the department set to the client's CHOSEN list
+(departments.json) and moves only those 'default' lanes -- never a system or
+engine queue the client did not choose (anthology, rescue-rangers), and never a
+lane another company already has rows in. That scope is safe with other company
+rows on the board, so B runs there too.
+
 Usage:
-  repair-board-company.py [--db PATH] [--company-id UUID] [--apply]
+  repair-board-company.py [--db PATH] [--company-id UUID] [--chosen-only] [--apply]
+  repair-board-company.py [--db PATH] --restore <db>.repair-board-company-<ts>.rows.json
   (--company-id defaults to MC_COMPANY_ID, then the build state's companyId)
 """
 import argparse
@@ -123,7 +134,7 @@ def covered(cur, company_id, canon):
     return have - {""}
 
 
-def plan(cur, company_id, dept_ids, canon=lambda x: x):
+def plan(cur, company_id, dept_ids, canon=lambda x: x, chosen_only=False):
     row = cur.execute("SELECT id, name, slug FROM companies WHERE id=?", (company_id,)).fetchone()
     if not row:
         raise SystemExit(f"canonical company {company_id!r} has no companies row; refusing")
@@ -134,34 +145,86 @@ def plan(cur, company_id, dept_ids, canon=lambda x: x):
         same = norm(cslug) == norm(slug) or (norm(cname) and norm(cname) == norm(name))
         (dups if same else others).append((cid, cname, cslug))
     engine = set()
-    if cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_workspace_bootstrap'").fetchone():
+    if not chosen_only and cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_workspace_bootstrap'").fetchone():
         engine = {r[0] for r in cur.execute("SELECT workspace_id FROM engine_workspace_bootstrap")}
     lanes = [r[0] for r in cur.execute("SELECT id, slug FROM workspaces WHERE company_id='default'")
              if canon(r[0]) in dept_ids or canon(r[1] or "") in dept_ids or r[0] in engine]
+    if chosen_only:
+        # A lane some other company already works in is theirs too: leave it.
+        lanes = [w for w in lanes if not _used_by_others(cur, w, company_id)]
     return {"company": {"id": company_id, "name": name, "slug": slug},
             "duplicates": dups, "other_companies": others, "default_lanes": sorted(lanes)}
 
 
-def apply_ab(cur, company_id, p):
-    tables = [r[0] for r in cur.execute(
+def _tables(cur):
+    return [r[0] for r in cur.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'companies'")]
-    moved = 0
+
+
+def _used_by_others(cur, workspace_id, company_id):
+    for t in _tables(cur):
+        cols = columns(cur, t)
+        if "company_id" in cols and "workspace_id" in cols and cur.execute(
+                f'SELECT 1 FROM "{t}" WHERE workspace_id=? AND company_id NOT IN (?, \'default\') LIMIT 1',
+                (workspace_id, company_id)).fetchone():
+            return True
+    return False
+
+
+def changes(cur, p):
+    """(table, WHERE clause, params) for every row set A+B moves to the client."""
+    out = []
+    tables = _tables(cur)
     for dup_id, _, _ in p["duplicates"]:
-        for t in tables:
-            if "company_id" in columns(cur, t):
-                moved += cur.execute(f'UPDATE "{t}" SET company_id=? WHERE company_id=?', (company_id, dup_id)).rowcount
-        cur.execute("DELETE FROM companies WHERE id=?", (dup_id,))
+        out += [(t, "company_id=?", (dup_id,)) for t in tables if "company_id" in columns(cur, t)]
     if p["default_lanes"]:
         marks = ",".join("?" * len(p["default_lanes"]))
         for t in tables:
             cols = columns(cur, t)
             if t == "workspaces":
-                moved += cur.execute(f"UPDATE workspaces SET company_id=? WHERE company_id='default' AND id IN ({marks})",
-                                     (company_id, *p["default_lanes"])).rowcount
+                out.append((t, f"company_id='default' AND id IN ({marks})", tuple(p["default_lanes"])))
             elif "company_id" in cols and "workspace_id" in cols:
-                moved += cur.execute(f"UPDATE \"{t}\" SET company_id=? WHERE company_id='default' AND workspace_id IN ({marks})",
-                                     (company_id, *p["default_lanes"])).rowcount
+                out.append((t, f"company_id='default' AND workspace_id IN ({marks})", tuple(p["default_lanes"])))
+    return out
+
+
+def row_backup(cur, p):
+    """Every row A+B changes, as it is NOW: {updates: [[table, rowid, company_id]],
+    deleted_companies: [row dicts]}. Raises on a table without a rowid."""
+    updates = []
+    for t, where, params in changes(cur, p):
+        updates += [[t, rid, cid] for rid, cid in
+                    cur.execute(f'SELECT rowid, company_id FROM "{t}" WHERE {where}', params)]
+    cols = columns(cur, "companies")
+    deleted = [dict(zip(cols, cur.execute("SELECT * FROM companies WHERE id=?", (d[0],)).fetchone()))
+               for d in p["duplicates"]]
+    return {"updates": updates, "deleted_companies": deleted}
+
+
+def apply_ab(cur, company_id, p):
+    moved = sum(cur.execute(f'UPDATE "{t}" SET company_id=? WHERE {where}', (company_id, *params)).rowcount
+                for t, where, params in changes(cur, p))
+    for dup_id, _, _ in p["duplicates"]:
+        cur.execute("DELETE FROM companies WHERE id=?", (dup_id,))
     return moved
+
+
+def restore(db, backup_path):
+    b = json.loads(Path(backup_path).read_text())
+    conn = sqlite3.connect(db)
+    try:
+        cur = conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+        for row in b["deleted_companies"]:
+            cur.execute(f'INSERT OR IGNORE INTO companies ({",".join(row)}) VALUES ({",".join("?" * len(row))})',
+                        tuple(row.values()))
+        for t, rid, cid in b["updates"]:
+            cur.execute(f'UPDATE "{t}" SET company_id=? WHERE rowid=?', (cid, rid))
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"Restored {len(b['updates'])} row(s) and {len(b['deleted_companies'])} company row(s) from {backup_path}")
+    return 0
 
 
 def main(argv=None):
@@ -169,9 +232,17 @@ def main(argv=None):
     ap.add_argument("--db")
     ap.add_argument("--company-id")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--chosen-only", action="store_true",
+                    help="move/seed only the client's chosen departments (departments.json)")
+    ap.add_argument("--restore", metavar="ROWS_JSON", help="undo an --apply from its row backup")
     a = ap.parse_args(argv)
     seeder = _seeder()
     db = a.db or seeder.find_db()
+    if a.restore:
+        if not db or not Path(db).is_file():
+            print("ERROR: mission-control.db not found (pass --db)", file=sys.stderr)
+            return 2
+        return restore(db, a.restore)
     company_id = canonical_company_id(a.company_id)
     if not db or not Path(db).is_file():
         print("ERROR: mission-control.db not found (pass --db)", file=sys.stderr)
@@ -180,17 +251,23 @@ def main(argv=None):
         print("ERROR: no canonical company id (pass --company-id or set MC_COMPANY_ID)", file=sys.stderr)
         return 2
     canon = seeder._canonical_dept_slug
-    departments = department_set(seeder, build_state())
+    if a.chosen_only:
+        departments = list(seeder._normalize_departments(seeder.find_departments_config()[0]) or [])
+        if not departments:
+            print("ERROR: --chosen-only needs the client's departments.json; none found", file=sys.stderr)
+            return 2
+    else:
+        departments = department_set(seeder, build_state())
     dept_ids = {canon(d.get("id", "")) for d in departments} - {""}
 
     conn = sqlite3.connect(db)
     try:
         cur = conn.cursor()
-        p = plan(cur, company_id, dept_ids, canon)
+        p = plan(cur, company_id, dept_ids, canon, a.chosen_only)
         p["missing_lanes"] = sorted(dept_ids - covered(cur, company_id, canon))
         p["canonical_slug_module"] = "shared-utils/canonical_slug.py" if seeder._HAS_CANONICAL_SLUG else "INLINE FALLBACK"
         print(json.dumps(p, indent=2))
-        if p["default_lanes"] and p["other_companies"]:
+        if p["default_lanes"] and p["other_companies"] and not a.chosen_only:
             print("REFUSING step B: this board holds other companies "
                   f"{[c[0] for c in p['other_companies']]}; moving 'default' lanes would cross tenants.",
                   file=sys.stderr)
@@ -202,11 +279,10 @@ def main(argv=None):
             print("Nothing to repair.")
             return 0
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        backup = f"{db}.bak-repair-board-company-{ts}"
-        with sqlite3.connect(backup) as dst:
-            conn.backup(dst)
-        print(f"Backup: {backup}")
+        backup = f"{db}.repair-board-company-{ts}.rows.json"
         cur.execute("BEGIN IMMEDIATE")
+        Path(backup).write_text(json.dumps(row_backup(cur, p), indent=1))
+        print(f"Row backup: {backup}  (undo: --restore {backup})")
         moved = apply_ab(cur, company_id, p)
         conn.commit()
         print(f"Moved {moved} row(s) to company {company_id}; removed {len(p['duplicates'])} duplicate company row(s).")
