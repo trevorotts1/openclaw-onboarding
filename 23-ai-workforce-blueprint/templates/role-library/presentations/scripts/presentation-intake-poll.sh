@@ -118,6 +118,7 @@ _resolve_scripts_dir() {
 }
 SCRIPTS_DIR="$(_resolve_scripts_dir)" || { log "cannot resolve scripts dir"; exit 2; }
 LOG_FILE="${HOME}/Library/Logs/openclaw/presentation-intake-poll.log"
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
 
 # F3 -- ONE LINE PER LINE. This used to be `| tee -a "$LOG_FILE"`, which
 # writes the line to $LOG_FILE *and* to stdout. Under launchd that is a

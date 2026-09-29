@@ -1056,7 +1056,7 @@ install_intake_poll_schedule() {
             CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
         local _poll_command
-        printf -v _poll_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q PRESENTATION_RUNS_DIR=%q bash %q' "$_poll_root" "$_poll_workspace" "$_poll_workspace" "$_poll_runs_dir" "$POLL_SRC"
+        printf -v _poll_command 'env OPENCLAW_ROOT=%q OPENCLAW_WORKSPACE_PATH=%q OPENCLAW_WORKSPACE_ROOT=%q PRESENTATION_RUNS_DIR=%q PRESENTATION_NOTIFY_CMD=%q PRESENTATION_PIPELINE_INTERPRETER=%q bash %q' "$_poll_root" "$_poll_workspace" "$_poll_workspace" "$_poll_runs_dir" "${PRESENTATION_NOTIFY_CMD:-}" "${PRESENTATION_PIPELINE_INTERPRETER:-}" "$POLL_SRC"
         local POLL_PROMPT="[PRESENTATION-INTAKE-POLL] Run the intake-completion poll: $_poll_command . This is an idempotent maintenance scan; it dispatches the deck engine for any intake whose interview completed but whose engine never launched (FIX 61 dispatch lease held during dispatch)."
         local _poll_path="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
         if ! _presched_reconcile_cron "$_PRESCHED_POLL_NAME" "$_PRESCHED_POLL_EXPR" "$_PRESCHED_TZ" "$CHANNEL_AGENT" "$POLL_PROMPT" --light-context; then
