@@ -31,7 +31,7 @@ from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version
 # endpoints: minVersion had to move WITH pinnedTag because /api/archify-runs is
 # a brand-new endpoint, so an older CC answers 404 (see cc-compat.json notes).
 CC_FLOOR = 'v7.4.0'
-CC_PIN = 'v7.6.74'
+CC_PIN = 'v7.6.76'
 CC_FLOOR_BARE = CC_FLOOR.lstrip('v')
 
 # Every released CC version BELOW the current floor. The boundary is tested
@@ -183,7 +183,8 @@ class Compatibility(unittest.TestCase):
                 run.assert_not_called()
                 self.assertNotEqual(result.steps.get('pull-cc'),'ok')
             result=runner.BoxResult('fixture',dry_run=False)
-            with patch.object(guard,'check_node'),patch.object(runner.subprocess,'run',side_effect=[
+            # (the pm2 preflight is covered in fleet-refresh-roll-safety; here the box is pm2-managed)
+            with patch.object(guard,'check_node'),patch.object(runner,'cc_pm2_problem',return_value=None),patch.object(runner.subprocess,'run',side_effect=[
                 subprocess.CompletedProcess([],0,''),
                 subprocess.CompletedProcess([],0,'{"version":"7.0.0"}')
             ]) as run:

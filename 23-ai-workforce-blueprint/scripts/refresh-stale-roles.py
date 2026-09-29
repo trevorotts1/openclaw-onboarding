@@ -691,11 +691,15 @@ def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: di
     if not sop_restamps and not dept_restamps and not role_restamps:
         return True
     state_path = workspace / ".workforce-build-state.json"
+    if not state_path.is_file():
+        # No build has run here (the interview may not even be done): there is no
+        # recorded provenance to correct, and creating a roles-only state file
+        # made the interview closeout/resume/nudge crons see a "build" that
+        # never happened.
+        print(f"  refresh-stale-roles: no {state_path.name} on this box -- provenance restamp skipped")
+        return True
     try:
-        if state_path.is_file():
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        else:
-            state = {}
+        state = json.loads(state_path.read_text(encoding="utf-8"))
         if not isinstance(state, dict):
             state = {}
         ap = state.get("artifactProvenance")

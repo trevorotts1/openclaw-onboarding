@@ -40,6 +40,11 @@ else
     || { echo "COPYFAIL could not clone the onboarding repo to $R"; exit 0; }
   S=cloned
 fi
+if [ -n "${FLEET_ROLL_SHA:-}" ] && [ "$(git -C "$R" rev-parse HEAD)" != "$FLEET_ROLL_SHA" ]; then
+  git -C "$R" fetch -q --depth 1 origin "$FLEET_ROLL_SHA" >&2 \
+    && git -C "$R" checkout -q -B main "$FLEET_ROLL_SHA" >&2 \
+    || { echo "COPYFAIL could not check out the roll's commit $FLEET_ROLL_SHA in $R"; exit 0; }
+fi
 [ -f "$R/shared-utils/fleet_refresh_runner.py" ] || { echo "COPYFAIL $R has no runner"; exit 0; }
 # Who this box belongs to, so the box's own Sunday update names its client
 # ("Client Name (Platform)") instead of its hostname. Set by fleet-refresh.sh.

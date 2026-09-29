@@ -449,6 +449,12 @@ class ContentIntegrity(unittest.TestCase):
             {"version": "vB", "skills": {"23-ai-workforce-blueprint": digest}}))
         self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "pass")
         self.assertEqual(fr.ic_role_library(self.skills, repo, "vC")["status"], "fail")
+        # prove-zhe.py's run receipt, written into the skill dir after the update:
+        # run output, not a change to the library (rolled two boxes back).
+        rec = self.skills / "23-ai-workforce-blueprint/scripts/receipts"
+        rec.mkdir(parents=True)
+        (rec / "LOCAL-2026-09-28T205230.json").write_text("{}")
+        self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "pass")
         (lib / "role.md").write_text("edited on the box")
         self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "fail")
 
@@ -735,6 +741,25 @@ class MainSessionKey(unittest.TestCase):
                 self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}),
                                  "agent:main:telegram:operator:direct:111")
 
+    def test_owner_agent_is_the_telegram_bound_agent(self):
+        # Many client boxes have no agent named "main": the CEO is the agent the
+        # Telegram channel is bound to (e.g. dept-master-orchestrator).
+        calls = []
+
+        def run_out(cmd, timeout=10):
+            calls.append(cmd[cmd.index("--agent") + 1])
+            rows = {"dept-master-orchestrator": [{"key": "agent:dept-master-orchestrator:main", "updatedAt": 5},
+                                                 {"key": "agent:dept-master-orchestrator:cron:x", "updatedAt": 9}]}
+            return json.dumps({"sessions": rows.get(cmd[cmd.index("--agent") + 1], [])})
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(fr, "_run_out", side_effect=run_out), \
+             mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}):
+            Path(td, "openclaw.json").write_text(json.dumps(
+                {"bindings": [{"agentId": "rescue-bot", "match": {"channel": "telegram", "accountId": "rescue"}},
+                              {"agentId": "dept-sales", "match": {"channel": "telegram", "peer": {"kind": "group", "id": "-1"}}},
+                              {"agentId": "dept-master-orchestrator", "match": {"channel": "telegram", "accountId": "*"}}]}))
+            self.assertEqual(fr._resolve_ceo_session_key({"root": Path(td)}), "agent:dept-master-orchestrator:main")
+            self.assertEqual(calls[0], "dept-master-orchestrator")
+
     def test_legacy_sessions_json_still_works(self):
         with tempfile.TemporaryDirectory() as td:
             f = Path(td, "agents", "main", "sessions", "sessions.json")
@@ -772,6 +797,314 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             self.assertEqual(marker.read_text().strip(), "target-updater")
             self.assertTrue((live / "new.txt").is_file())
 
+    def test_pull_cc_deploys_the_rolls_commit_not_a_later_main(self):
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        with tempfile.TemporaryDirectory() as td:
+            origin = new_repo(Path(td, "origin"))
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}), "update.sh": "exit 0\n"}, "old")
+            live = Path(td, "live")
+            subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                            "update.sh": 'git merge -q --ff-only "${CC_UPDATE_TARGET:-origin/main}"\n'}, "roll")
+            roll = git(origin, "rev-parse", "HEAD")
+            commit(origin, {"later.txt": "merged mid-roll"}, "later")
+            res = fr.BoxResult("t", dry_run=False)
+            import cc_runtime_preflight
+            with mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"), \
+                 mock.patch.dict(os.environ, {"CC_UPDATE_TARGET": roll}):
+                fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(git(live, "rev-parse", "HEAD"), roll)
+
+    def test_a_tag_only_clone_still_sees_the_latest_main(self):
+        # A client Command Center cloned with a single-tag refspec: a bare
+        # `git fetch origin main` never moves origin/main, and the floor check then
+        # read an ancient package.json (6.0.89) and refused the update.
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        with tempfile.TemporaryDirectory() as td:
+            origin = new_repo(Path(td, "origin"))
+            commit(origin, {"package.json": json.dumps({"version": "6.0.89"}), "update.sh": "exit 0\n"}, "old")
+            git(origin, "tag", "v6.0.89")
+            live = Path(td, "live")
+            subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+            git(live, "config", "remote.origin.fetch", "+refs/tags/v6.0.89:refs/tags/v6.0.89")
+            commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                            "update.sh": "git merge -q --ff-only origin/main\n"}, "new")
+            res = fr.BoxResult("t", dry_run=False)
+            import cc_runtime_preflight
+            with mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"):
+                fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(git(live, "rev-parse", "origin/main"), git(origin, "rev-parse", "HEAD"))
+
+
+class NoSpareRedeploy(unittest.TestCase):
+    def test_a_current_healthy_build_is_not_rebuilt_or_restarted(self):
+        with tempfile.TemporaryDirectory() as td:
+            box = Box(Path(td))
+            import cc_runtime_preflight
+            with mock.patch.object(fr, "wave5_deploy_preflight"), \
+                 mock.patch.object(cc_runtime_preflight, "check_node"), \
+                 mock.patch.object(cc_runtime_preflight, "check_checkout"), \
+                 mock.patch.object(fr, "_served_build_current", return_value=True), \
+                 mock.patch.object(fr, "hc_cc_health", return_value=hc("pass")), \
+                 mock.patch.object(fr, "_run_duck_ci_test", return_value=(True, "ok")), \
+                 mock.patch.object(fr, "_run_atomic_deploy") as deploy:
+                res = fr.BoxResult("t", dry_run=False)
+                fr.step_build_cc(box.paths, res, dry_run=False)
+                fr.step_restart_cc(box.paths, res, dry_run=False)
+            deploy.assert_not_called()
+            self.assertEqual((res.steps["build-cc"], res.steps["restart-cc"]), ("ok", "ok"))
+
+
+class BillingHoldIsNotAFailure(unittest.TestCase):
+    def test_held_update_is_skipped_and_nothing_else_changes(self):
+        # update-skills.sh's fleet standing gate exits 0 without stamping when the
+        # account is not current; that was retried 3 times then rolled back.
+        with tempfile.TemporaryDirectory() as td:
+            box = Box(Path(td))
+            Path(box.onb, "update-skills.sh").write_text("#!/bin/sh\n")
+            held = subprocess.CompletedProcess([], 0, "  Update held -- account not current on payments.\n", "")
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(fr, "_run_tree", return_value=held):
+                fr.step_pull_onboarding(box.paths, box.onb, "vB", res, dry_run=False)
+            self.assertEqual(res.steps["pull-onboarding"], f"skip:{fr.UPDATE_HELD}")
+            self.assertNotIn("failed", str(res.steps))
+
+    def test_a_real_failure_keeps_the_updaters_own_words(self):
+        with tempfile.TemporaryDirectory() as td:
+            box = Box(Path(td))
+            Path(box.onb, "update-skills.sh").write_text("#!/bin/sh\n")
+            bad = subprocess.CompletedProcess([], 1, "lots of output\nERROR: bootstrap could not source X\n", "")
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(fr, "_run_tree", return_value=bad):
+                fr.step_pull_onboarding(box.paths, box.onb, "vB", res, dry_run=False)
+            self.assertIn("ERROR: bootstrap could not source X", res.steps["pull-onboarding"])
+
+
+class ProvisioningPathsPreferTheRealCompanyDir(unittest.TestCase):
+    def test_zhc_slug_dir_wins_over_a_missing_flat_departments_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            ws = Path(td, "workspace")
+            slug = ws / "zero-human-company" / "some-company"
+            slug.mkdir(parents=True)
+            (slug / "departments.json").write_text("[]")
+            (slug / "company-config.json").write_text("{}")
+            got = fr._resolve_provisioning_paths({
+                "workspace": ws, "company_root": Path(td, "master-files", "zero-human-company"),
+                "company_dir": None, "departments_json": ws / "departments.json",
+                "company_config": ws / "company-config.json"})
+            self.assertEqual(got["departments_json"], slug / "departments.json")
+            self.assertEqual(got["zhc_company_config"], slug / "company-config.json")
+
+    def test_get_openclaw_paths_finds_a_workspace_zhc_company(self):
+        # persona-selector and every other get_openclaw_paths() reader had the same
+        # flat-path assumption for company-config.json.
+        with tempfile.TemporaryDirectory() as td:
+            slug = Path(td, ".openclaw", "workspace", "zero-human-company", "some-company")
+            slug.mkdir(parents=True)
+            (slug / "company-config.json").write_text("{}")
+            out = subprocess.run(
+                [sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import detect_platform as d; "
+                 "p = d.get_openclaw_paths(); print(p['company_config']); print(p['departments_json'])",
+                 str(REPO / "shared-utils")],
+                capture_output=True, text=True, env={**os.environ, "HOME": td, "OPENCLAW_PLATFORM": "",
+                                                     "MASTER_FILES_DIR": "", "OPENCLAW_COMPANY_SLUG": ""})
+            self.assertEqual(out.stdout.split(), [str(slug / "company-config.json"), str(slug / "departments.json")],
+                             out.stderr)
+
+    def test_build_state_found_in_the_owner_agents_own_workspace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nova = root / "workspace-nova"
+            nova.mkdir()
+            (nova / ".workforce-build-state.json").write_text("{}")
+            (root / "openclaw.json").write_text(json.dumps({
+                "bindings": [{"agentId": "thea", "match": {"channel": "telegram", "accountId": "default"}}],
+                "agents": {"entries": {"thea": {"workspace": str(nova)}}}}))
+            got = fr._resolve_provisioning_paths({"root": root, "workspace": root / "workspace", "company_dir": None})
+            self.assertEqual(got["build_state"], nova / ".workforce-build-state.json")
+
+    def test_an_existing_flat_file_still_wins(self):
+        with tempfile.TemporaryDirectory() as td:
+            ws = Path(td, "workspace")
+            ws.mkdir()
+            (ws / "departments.json").write_text("[]")
+            got = fr._resolve_provisioning_paths({"workspace": ws, "company_dir": None,
+                                                 "departments_json": ws / "departments.json"})
+            self.assertEqual(got["departments_json"], ws / "departments.json")
+
+
+class RefreshStaleRolesNeverInventsABuild(unittest.TestCase):
+    """On a box with no interview, the roll's role refresh created a roles-only
+    .workforce-build-state.json the interview crons then read as a build."""
+
+    def load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "refresh_stale_roles", REPO / "23-ai-workforce-blueprint/scripts/refresh-stale-roles.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_no_state_file_is_not_created(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as td:
+            self.assertTrue(mod._apply_state_restamps(Path(td), {}, {}, {"d/r": {"source_content_sha": "x"}}))
+            self.assertFalse(Path(td, ".workforce-build-state.json").exists())
+
+    def test_an_existing_state_file_is_still_restamped(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td, ".workforce-build-state.json")
+            f.write_text(json.dumps({"interviewComplete": True}))
+            self.assertTrue(mod._apply_state_restamps(Path(td), {}, {}, {"d/r": {"source_content_sha": "x"}}))
+            d = json.loads(f.read_text())
+            self.assertTrue(d["interviewComplete"])
+            self.assertEqual(d["artifactProvenance"]["roles"]["d/r"]["source_content_sha"], "x")
+
+
+class ContaboStartupTemplate(unittest.TestCase):
+    """Hostinger parity: a shell without PM2_HOME must reach the one pm2 daemon."""
+
+    def test_links_home_pm2_moves_a_stray_aside_and_execs_the_gateway(self):
+        with tempfile.TemporaryDirectory() as td:
+            home, oc, bin_ = Path(td, "home"), Path(td, "oc"), Path(td, "bin")
+            (home / ".pm2").mkdir(parents=True)
+            (home / ".pm2" / "dump.pm2").write_text("stray")
+            bin_.mkdir()
+            (bin_ / "node").write_text(f'#!/bin/sh\necho "$@" > {td}/node-args\n')
+            (bin_ / "pm2").write_text(f'#!/bin/sh\necho "$@ $PM2_HOME" >> {td}/pm2-calls\n')
+            for f in bin_.iterdir():
+                f.chmod(0o755)
+            env = {"HOME": str(home), "OPENCLAW_ROOT": str(oc), "PATH": f"{bin_}:/usr/bin:/bin",
+                   "PM2_RESURRECT_DELAY": "0"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/contabo/container-startup.sh")],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(os.readlink(home / ".pm2"), str(oc / ".pm2"))
+            strays = [p for p in home.iterdir() if p.name.startswith(".pm2.stray-")]
+            self.assertEqual([(p / "dump.pm2").read_text() for p in strays], ["stray"])
+            self.assertEqual(Path(td, "node-args").read_text().split(), ["openclaw.mjs", "gateway"])
+            for _ in range(50):
+                if Path(td, "pm2-calls").exists():
+                    break
+                time.sleep(0.1)
+            self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
+
+
+class LoadWarning(unittest.TestCase):
+    def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
+        for load, expect in ((25.0, True), (3.0, False)):
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(fr.os, "getloadavg", return_value=(load, 0, 0)), \
+                 mock.patch.object(fr.os, "cpu_count", return_value=10):
+                fr.load_warning(res)
+            self.assertEqual("load" in res.steps, expect)
+            if expect:
+                self.assertTrue(res.steps["load"].startswith("ok:advisory: load 25.0 on 10 cores"))
+
+
+class RollHoldsOneCommit(unittest.TestCase):
+    """A PR merged mid-roll reached the boxes that started (or self-synced) after
+    it: two boxes pulled v25.2.5 on a v25.2.3 roll and were rolled back."""
+
+    def test_roll_copy_stays_on_the_rolls_commit_after_main_moves(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin = Path(td, "origin.git")
+            origin.mkdir()
+            git(origin, "init", "-q", "--bare", "-b", "main")
+            seed = new_repo(Path(td, "seed"))
+            commit(seed, {"shared-utils/fleet_refresh_runner.py": ""}, "roll")
+            roll_sha = git(seed, "rev-parse", "HEAD")
+            git(seed, "remote", "add", "origin", str(origin))
+            git(seed, "push", "-q", "origin", "main")
+            commit(seed, {"x": "merged mid-roll"}, "later")
+            git(seed, "push", "-q", "origin", "main")
+            home = Path(td, "home")
+            env = {**GIT_ENV, "HOME": str(home), "FLEET_ROLL_REPO_URL": str(origin), "FLEET_ROLL_SHA": roll_sha}
+            for _ in ("cloned", "updated"):
+                r = subprocess.run(["bash", str(REPO / "scripts/fleet-roll-copy.sh")],
+                                   capture_output=True, text=True, env=env, timeout=60)
+                self.assertTrue(r.stdout.startswith("COPY "), r.stdout + r.stderr)
+                self.assertEqual(git(home / ".openclaw/fleet-refresh/onboarding", "rev-parse", "HEAD"), roll_sha)
+
+    def test_runner_never_lets_update_skills_resync_its_clone(self):
+        # The roll copy, and the operator's own clone on a --local run (a reset to
+        # origin/main there moved the clone the roll itself was running from).
+        for sub in (("fleet-refresh", "onboarding"), ("clawd", "openclaw-onboarding")):
+            self._update_skills_env_skips_self_sync(*sub)
+
+    def _update_skills_env_skips_self_sync(self, *sub):
+        with tempfile.TemporaryDirectory() as td:
+            copy = Path(td, *sub)
+            copy.mkdir(parents=True)
+            (copy / "update-skills.sh").write_text("")
+            with mock.patch.object(fr, "_run_tree",
+                                   return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+                fr.step_pull_onboarding({"root": Path(td), "skills": Path(td, "skills")}, copy, "v1",
+                                        fr.BoxResult("t", dry_run=False), dry_run=False)
+            self.assertEqual(run.call_args.kwargs["env"].get("OPENCLAW_UPDATE_SKIP_SELF_SYNC"), "1")
+
+
+class UnreadableFoldersAndNoCommandCenter(unittest.TestCase):
+    def test_an_unreadable_folder_fails_by_name_not_a_traceback(self):
+        # macOS refused ~/Downloads to the SSH process: scandir raised EINTR.
+        err = InterruptedError(4, "Interrupted system call", "/Users/x/Downloads/openclaw-master-files")
+        with mock.patch.object(fr, "_load_paths", side_effect=err):
+            res = fr.run_box("t", REPO / "shared-utils", REPO, dry_run=False, verify_only=False,
+                             local=True, force_cc=False, expected_sha=None)
+        self.assertEqual(res.outcome, "FAILED")
+        self.assertIn("/Users/x/Downloads/openclaw-master-files", res.outcome_detail)
+        self.assertIn("Full Disk Access", res.outcome_detail)
+
+    def test_detect_on_a_box_without_a_command_center(self):
+        res = fr.BoxResult("t", dry_run=False)
+        with tempfile.TemporaryDirectory() as td:
+            fr.step_detect({"root": Path(td), "cc_dir": None}, REPO, {}, res)
+        self.assertEqual(res.steps["detect"], "ok")
+
+
+class CommandCenterPm2Preflight(unittest.TestCase):
+    """The deploy restarts the Command Center through pm2. A box where that
+    cannot work fails up front, by name, with nothing changed -- not half way
+    through the deploy ("Required dependency missing: pm2")."""
+
+    def problem(self, managed, which="/usr/local/bin/pm2", pids="", alive=True, god=""):
+        with mock.patch.object(fr, "cc_pm2_managed", return_value=managed), \
+             mock.patch.object(fr, "_cc_pm2_ancestor", return_value=god), \
+             mock.patch.object(fr.shutil, "which", return_value=which), \
+             mock.patch.object(fr, "_pm2_home_daemon_alive", return_value=alive), \
+             mock.patch.object(fr, "_run_out", return_value=pids):
+            return fr.cc_pm2_problem()
+
+    def test_each_way_pm2_cannot_restart_it(self):
+        self.assertIsNone(self.problem(None))                          # nothing serving: the deploy starts it
+        self.assertIn("not under pm2", self.problem(False))
+        self.assertIn("not on this shell's PATH", self.problem(True, which=None))
+        self.assertIn("PM2_HOME", self.problem(True, pids="0\n"))     # a stray empty PM2_HOME
+        self.assertIsNone(self.problem(True, pids="4242\n"))
+        self.assertIn("PM2_HOME", self.problem(True, pids="4242\n", alive=False))   # never spawn a daemon to ask
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"PM2_HOME": f"{td}/stray"}):
+            split = self.problem(True, pids="4242\n", god=f"PM2 v7.0.4: God Daemon ({td}/.pm2)")
+            self.assertIn("split PM2_HOME", split)
+            os.symlink(f"{td}/.pm2", f"{td}/stray")          # the Contabo fix: $HOME/.pm2 -> PM2_HOME
+            self.assertIsNone(self.problem(True, pids="4242\n", god=f"PM2 v7.0.4: God Daemon ({td}/.pm2)"))
+
+    def test_pull_cc_refuses_before_changing_anything(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"FLEET_REFRESH_ROOT": ""}), \
+             mock.patch.object(fr, "cc_pm2_problem", return_value="Command Center not under pm2: x"), \
+             mock.patch.object(fr.subprocess, "run") as run:
+            import cc_runtime_preflight
+            res = fr.BoxResult("t", dry_run=False)
+            with mock.patch.object(cc_runtime_preflight, "check_node"):
+                fr.step_pull_cc({"cc_dir": Path(td)}, "v1", res, dry_run=False)
+        run.assert_not_called()
+        self.assertEqual(res.steps["pull-cc"], "failed:Command Center not under pm2: x. Nothing was changed.")
+
 
 class CommandCenterOnlyFailureIsExplicit(unittest.TestCase):
     """A Command Center step that failed without changing anything is not
@@ -795,6 +1128,32 @@ class CommandCenterOnlyFailureIsExplicit(unittest.TestCase):
         self.assertTrue(res.outcome_detail.startswith(
             "onboarding updated to v25.1.105, Command Center NOT updated (still v7.6.71, healthy): pull-cc:"),
             res.outcome_detail)
+
+
+class CurrentOpenClawConfigShapes(unittest.TestCase):
+    def test_memory_search_is_read_from_memory_search(self):
+        import embedding_health as eh
+        cur = {"memory": {"search": {"provider": "gemini", "fallback": "openai"}}}
+        self.assertEqual((eh._resolve_memory_search_provider(cur), eh._resolve_memory_search_fallback(cur)),
+                         ("gemini", "openai"))
+        old = {"agents": {"defaults": {"memorySearch": {"provider": "openai", "fallback": "none"}}}}
+        self.assertEqual(eh._resolve_memory_search_provider(old), "openai")
+        self.assertIsNone(eh._resolve_memory_search_provider({}))
+
+    def test_an_advisory_is_not_a_failing_check(self):
+        res = fr.BoxResult("t", dry_run=False)
+        res.steps.update({"pull-onboarding": "ok:advisory: update-skills.sh exit 2 (content current)",
+                          "embedding-health": "failed:no key"})
+        quiet = [mock.patch.object(fr, n) for n in (
+            "_check_deployed", "_verify_loaded", "step_embedding_health", "step_persona_embedding_drift",
+            "step_persona_grounding_health", "step_provisioning_completeness", "step_log")]
+        for q in quiet:
+            q.start()
+            self.addCleanup(q.stop)
+        fr._finish_run(res, {}, "v1", {}, Path("."), Path("."), False, False, "v7", None)
+        self.assertIn("checks failing: embedding-health", res.outcome_detail)
+        self.assertIn("succeeded with advisories: pull-onboarding", res.outcome_detail)
+        self.assertNotIn("checks failing: pull-onboarding", res.outcome_detail)
 
 
 class UpdaterTimeoutAndDuckNode(unittest.TestCase):
@@ -1037,7 +1396,7 @@ class WrapperWaves(unittest.TestCase):
             row = json.loads((clone / ".fleet-refresh-summary.json").read_text())[0]
             self.assertEqual((row["client"], row["label"]), ("Client One", "Client One (Mac)"))
 
-    def test_apply_through_ssh_and_docker_exec_quoting(self):
+    def test_apply_through_ssh_and_docker_exec_quoting(self, ssh_stub=None):
         """Real shells end to end: fake ssh runs its command with sh -c, fake
         docker runs `bash -lc <script>`. Proves the nested quoting, the roll
         copy's sync to origin/main, the pre-sync SHA hand-off and the result
@@ -1082,7 +1441,7 @@ class WrapperWaves(unittest.TestCase):
             fake = td / "bin"
             fake.mkdir()
             (fake / "curl").write_text("#!/bin/sh\necho 200\n")
-            (fake / "ssh").write_text('#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
+            (fake / "ssh").write_text(ssh_stub or '#!/bin/sh\nfor a; do last="$a"; done\nexec sh -c "$last"\n')
             (fake / "docker").write_text('#!/bin/bash\nwhile [ "$1" != bash ]; do shift; done\nexec bash -c "$3"\n')
             for f in fake.iterdir():
                 f.chmod(0o755)
@@ -1109,6 +1468,17 @@ class WrapperWaves(unittest.TestCase):
                              stale_state)   # the client's clone: untouched
             self.assertEqual(json.loads((home / ".openclaw/fleet-refresh/client.json").read_text()),
                              {"client": "Client One", "label": "Client One (Hostinger)"})   # the box can name itself
+            return row
+
+    def test_a_dropped_ssh_session_reads_the_boxs_own_result(self):
+        # The runner ignores SIGHUP and finishes on the box; the roll reported
+        # three boxes that updated fine as FAILED ("ssh/runner exited 255").
+        drop = ('#!/bin/sh\nfor a; do last="$a"; done\n'
+                'case "$last" in *--shared-utils*) sh -c "$last" >/dev/null 2>&1; exit 255;; esac\n'
+                'exec sh -c "$last"\n')
+        row = self.test_apply_through_ssh_and_docker_exec_quoting(ssh_stub=drop)
+        self.assertEqual(row["outcome"], "UPDATED")
+        self.assertIn("read back from the box after the SSH session dropped", row["outcome_detail"])
 
     def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),
@@ -1395,6 +1765,18 @@ class BoxListDriveBackup(unittest.TestCase):
         self.assertIn("refreshed", msg)
         self.assertIn("ROLLED_BACK", up.call_args.args[1])
         self.assertEqual(json.loads((self.m.FLEET_DIR / "boxes-sheet.json").read_text())["id"], "sheet-1")
+
+    def test_a_subset_roll_publishes_the_whole_fleet_to_the_sheet(self):
+        master = [{"name": f"b{i}", "ssh_target": "x", "platform": "mac"} for i in range(36)]
+        (self.m.FLEET_DIR / "boxes.json").write_text(json.dumps(master))
+        subset = Path(self._td.name, "boxes-roll-one.json")
+        subset.write_text(json.dumps(master[:1]))
+        summ = Path(self._td.name, "s1.json")
+        summ.write_text(json.dumps([{"box": "b0", "outcome": "UPDATED"}]))
+        with mock.patch.object(self.m, "sync_sheet", return_value="refreshed") as sync, \
+             mock.patch.object(sys, "argv", ["x", "--out", str(subset), "--record-roll", str(summ)]):
+            self.assertEqual(self.m.main(), 0)
+        self.assertEqual(len(sync.call_args.args[0]), 36)
 
     def test_rebuild_from_sheet_when_the_roster_is_gone(self):
         csv_text = self.m.sheet_rows([{"name": "b1", "ssh_target": "t1", "platform": "contabo",
