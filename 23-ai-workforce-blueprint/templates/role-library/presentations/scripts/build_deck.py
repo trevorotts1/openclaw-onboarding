@@ -10882,7 +10882,12 @@ def find_run_dir(explicit: Optional[str], slides_path: Path, out_path: Path) -> 
 #   OC_DECK_ENTRY_NONCE. The renderer admits the run ONLY when the exported nonce
 #   matches that run-scoped file (constant-time compare); the entry script consumes
 #   (deletes) the file after the run so a stale env value cannot be replayed.
-# A model that merely READ the shipped source cannot conjure a valid value.
+# SECURITY DOCTRINE (FIX 18): the nonce blocks blind direct calls - no invocation
+#   admits a run without first passing through presentation-canonical-entry.sh. It
+#   is NOT tamper-proof against a same-user agent: anything running as the same
+#   OS user can read the exported OC_DECK_ENTRY_NONCE or the 0600 checkpoint file
+#   and replay them. Treat the nonce as front-door spend discipline, not a
+#   security boundary.
 # ===========================================================================
 ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
 
