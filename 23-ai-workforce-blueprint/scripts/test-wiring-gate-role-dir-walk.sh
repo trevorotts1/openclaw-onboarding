@@ -227,6 +227,29 @@ gate_says "SKIP (not roles" "skipped runtime dirs are reported, not silently dro
 gate_says "memory" "memory/ named in the skip line"
 gate_says "conversational-logs" "conversational-logs/ named in the skip line"
 
+# --- A2: presentations runtime dirs (intake/ runs/ fish-audio/) -------------------
+# Seen on a client box: refresh-dept-intake.py creates presentations/intake/, the
+# deck launcher writes presentations/runs/, and the Fish Audio tag library lives in
+# presentations/fish-audio/. None is a role; each has no how-to.md.
+echo ""
+echo "[A2] MATERIALIZED must ignore presentations intake/ runs/ fish-audio/"
+reset_fixture
+healthy_dept presentations
+add_runtime_dirs presentations
+mkdir -p "$DEPTS/presentations/intake" "$DEPTS/presentations/runs/deck-1" \
+         "$DEPTS/presentations/fish-audio"
+printf '{}\n' > "$DEPTS/presentations/intake/deck-intake-questions.json"
+printf '# tags\n' > "$DEPTS/presentations/fish-audio/FISH-AUDIO-TAGS-MASTER.md"
+run_gate presentations
+expect_rc "presentations with intake/ runs/ fish-audio/ passes" 0
+gate_says "Role dirs found: 2" "intake/ runs/ fish-audio/ are not counted as roles"
+
+echo ""
+echo "[A2-neg] the same dept with a real role missing its how-to.md must STILL fail rc=2"
+mkdir -p "$DEPTS/presentations/02-deck-designer"
+run_gate presentations
+expect_rc "a real role without how-to.md still fails beside the runtime dirs" 2
+
 # --- A anti-regression: real roles must still be gated ------------------------
 echo ""
 echo "[A-neg] a real role with a thin how-to.md must STILL fail rc=2"

@@ -6,6 +6,15 @@ Role-library template copies nobody chose (client-experience-booking, founding-m
 ### What changed
 - `prove-zhe.py`: the required departments are the client's departments.json plus the standard floor (minus provenanced declines), not a folder scan. Other folders are reported as `stray_template_folders` / receipt warnings, never failed, never deleted. An alias folder (legal-compliance) is checked against its canonical agent and lane. rescue-rangers (operator-only) is exempt from the client agent requirement as well as the lane.
 - `prove-board-join.py`: a role-library template tree that is not a floor department and is neither chosen nor on the board is a WARN (`stray_template_departments`), not AF-BOARD-JOIN-DRIFT. A chosen department with no column, an un-chosen floor tree, and a stray with a board column still drift.
+## [v25.2.15]  -  2026-09-29  -  Wiring gate: presentations intake/ runs/ fish-audio/ are runtime dirs, not roles
+
+### Why
+verify-wiring.sh walked every department subdirectory not named in NON_ROLE_DIR_NAMES as a role. presentations/intake (created by refresh-dept-intake.py), runs (the deck launcher's run dirs) and fish-audio (the Fish Audio tag library) have no how-to.md, so the department failed materialization on client boxes.
+
+### What changed
+- `verify-wiring.sh` NON_ROLE_DIR_NAMES adds intake, runs, fish-audio, intake-miniapp, release-matrix and contract (exact names; a real role folder is still checked, and a real role missing its how-to.md still fails).
+- `create_role_workspaces.py` SKIP_NAMES carries the same names, so no stub how-to.md is written into them.
+- `test-wiring-gate-role-dir-walk.sh` gains the case and now runs in CI.
 
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
