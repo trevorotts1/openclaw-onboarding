@@ -1,3 +1,14 @@
+## [v25.2.13]  -  2026-09-29  -  Pin Command Center v7.6.80
+
+### Why
+The whole-fleet roll waits on the Command Center releases after v7.6.77: an operator's own box (its owner IS an operator) messaged nobody under v7.6.77, and the tracked `ecosystem.cc-prod.config.cjs` hardcoded the operator-owner flag into every client checkout.
+
+### What changed
+- `cc-compat.json` pinnedTag v7.6.77 -> v7.6.80 (README, DIRECT, docs pairing, Skill 32 v13.1.38). v7.6.80 carries:
+  - v7.6.78: the scorer overflows only onto a model the box can place (in `modelPolicy.allow`, provider configured); a refused placement cools that model down for 30 minutes.
+  - v7.6.79: `install-watchdog-cc.sh --container NAME` schedules a container's watchdog from the host crontab; the deploy sees it through the watchdog's heartbeat.
+  - v7.6.80: on a box marked operator-owned, the owner's own recorded operator id resolves as the owner; the tracked pm2 template no longer sets `CC_OPERATOR_IS_OWNER`.
+
 ## [v25.2.11]  -  2026-09-29  -  Roll follow-ups: one CEO session reset per roll, bounded fix attempts, prove-zhe receipts out of the skill tree, config applied; pin Command Center v7.6.77
 
 ### Why
