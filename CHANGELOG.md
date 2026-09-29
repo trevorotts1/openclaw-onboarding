@@ -1,11 +1,19 @@
-## [v25.2.12]  -  2026-09-29  -  Skill 23: record-vertical-pack.py, an operator-directed vertical declaration the phase 3b guard accepts and prints
+## [v25.2.12]  -  2026-09-29  -  Merge train: #1357 fix(verify-routing): G1 counts the ROLE_DISCIPLINE_V1 marker, not…; #1358 fix(skill23): record-vertical-pack.py operator declaration + pack…
 
-### Why
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1357 — fix(verify-routing): G1 counts the ROLE_DISCIPLINE_V1 marker, not pointer mentions
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1358 — [v25.2.12]  -  2026-09-29  -  Skill 23: record-vertical-pack.py, an operator-directed vertical declaration the phase 3b guard accepts and prints
+
+#### Why
 A box built before build-state carried a `verticalPacks` record fails the phase 3b vertical-derivation guard
 closed on departments its owner wants, blocking every Command Center refresh. The only writer of that record
 ran inside a build, so there was no supported way to record the owner's decision.
 
-### What changed
+#### What changed
 - `23-ai-workforce-blueprint/scripts/record-vertical-pack.py` (new): merges one `verticalPacks.detectedPacks`
   entry with `source: "operator-directive"`, `by`, `at`, `reason`; the pack must exist in the naming map; every
   other key is kept; the state is backed up beside itself and written atomically; re-recording is a no-op.
