@@ -1785,6 +1785,7 @@ class WrapperWaves(unittest.TestCase):
             seed = new_repo(td / "seed")
             stub = ('import json,os,sys\n'
                     'print("banner from a login shell")\n'
+                    'print("runner log line on the box", file=sys.stderr)\n'
                     'print(json.dumps({"box": sys.argv[sys.argv.index("--box")+1], "result": "ok", "outcome": "UPDATED",\n'
                     '  "outcome_detail": "prev=" + os.environ.get("FLEET_PREV_ONBOARDING_SHA", "") + " args=" + " ".join(sys.argv[1:])}))\n')
             commit(seed, {"shared-utils/fleet_refresh_runner.py": stub}, "one")
@@ -1835,6 +1836,7 @@ class WrapperWaves(unittest.TestCase):
                              stale_state)   # the client's clone: untouched
             self.assertEqual(json.loads((home / ".openclaw/fleet-refresh/client.json").read_text()),
                              {"client": "Client One", "label": "Client One (Hostinger)"})   # the box can name itself
+            row["_box_log"] = "".join(f.read_text() for f in (home / ".openclaw/fleet/runs").glob("*/box-1.log"))
             return row
 
     def test_a_dropped_ssh_session_reads_the_boxs_own_result(self):
@@ -1846,6 +1848,9 @@ class WrapperWaves(unittest.TestCase):
         row = self.test_apply_through_ssh_and_docker_exec_quoting(ssh_stub=drop)
         self.assertEqual(row["outcome"], "UPDATED")
         self.assertIn("read back from the box after the SSH session dropped", row["outcome_detail"])
+        # ...and the box's runner log, which never came back over the dropped
+        # session, is fetched into this run's local box log (it was 0 bytes).
+        self.assertIn("runner log line on the box", row["_box_log"])
 
     def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),
