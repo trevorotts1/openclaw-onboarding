@@ -37,6 +37,7 @@ on:
       - update-skills.sh
       - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
       - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      - tests/unit/fleet-standards-skill-workshop-mode.test.sh
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
   pull_request:
     paths:
@@ -45,6 +46,7 @@ on:
       - update-skills.sh
       - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
       - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      - tests/unit/fleet-standards-skill-workshop-mode.test.sh
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
 
 jobs:
@@ -69,6 +71,9 @@ jobs:
         run: |
           chmod +x tests/unit/fleet-standards-legacy-exec-mode.test.sh
           bash tests/unit/fleet-standards-legacy-exec-mode.test.sh
+
+      - name: Fleet standards seeds Skill Workshop mode=propose only when unset
+        run: bash tests/unit/fleet-standards-skill-workshop-mode.test.sh
 
       - name: Both scripts parse
         run: |
