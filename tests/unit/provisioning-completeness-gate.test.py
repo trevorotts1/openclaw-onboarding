@@ -249,6 +249,20 @@ class ProvisioningCompletenessGate(unittest.TestCase):
                 self.assertFalse(out["checks"]["DEPARTMENTS"]["ok"])
                 self.assertIn("DEPARTMENTS", out["failed"])
 
+    def test_c2_missing_departments_mid_interview_is_na(self):
+        # A client still in the interview has no departments.json yet: the build
+        # writes it afterwards. That is not a provisioning defect.
+        (self.company_dir / "departments.json").unlink()
+        state = self.workspace / ".workforce-build-state.json"
+        for status, want_ok in (("INTERVIEW_IN_PROGRESS", True), ("BUILD_COMPLETE", False)):
+            with self.subTest(status=status):
+                state.write_text(json.dumps({"status": status}))
+                res = self._seed_good_result()
+                _, after, out, _ = self._measure(f"c2: {status}", res, False)
+                self.assertEqual(out["checks"]["DEPARTMENTS"]["ok"], want_ok, out["checks"]["DEPARTMENTS"])
+                if want_ok:
+                    self.assertIn("n/a: interview not complete", out["checks"]["DEPARTMENTS"]["detail"])
+
     def test_d_empty_personas_fails(self):
         self._clear_personas()
         res = self._seed_good_result()

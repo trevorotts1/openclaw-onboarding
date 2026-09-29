@@ -2271,7 +2271,12 @@ def step_provisioning_completeness(
         except MalformedDepartmentsError as _dept_exc:
             print(f"  [departments.json] MALFORMED: {_dept_exc}", file=sys.stderr)
             depts = None  # stays non-list -> this gate fails it, exactly as before
-    if not isinstance(depts, list):
+    _bs = _prov_read_json(pp.get("build_state"))
+    if not isinstance(depts, list) and isinstance(_bs, dict) and _bs.get("status") == "INTERVIEW_IN_PROGRESS":
+        # The build writes departments.json after the interview; mid-interview
+        # its absence is the expected state, not a provisioning defect.
+        checks.append(("DEPARTMENTS", True, "n/a: interview not complete"))
+    elif not isinstance(depts, list):
         checks.append(("DEPARTMENTS", False,
                        f"departments.json missing/not-a-list ({pp.get('departments_json')})"))
     elif len(depts) == 0:
