@@ -341,16 +341,17 @@ def matched_vertical_pack_departments(nm, core_answers):
         if not isinstance(pack, dict):
             continue
         hit = False
+        variants = pack.get("auto_add_keyword_variants") or {}
         for kw in pack.get("auto_add_keywords", []) or []:
             k = str(kw).strip().lower()
             if not k:
                 continue
-            if " " in k:
-                if k in haystack:
+            # The keyword or one of its listed inflected forms ("coaching" for "coach").
+            for form in [k] + [str(v).strip().lower() for v in variants.get(kw) or [] if str(v).strip()]:
+                if (form in haystack) if " " in form else re.search(r"\b" + re.escape(form) + r"\b", haystack):
                     hit = True
                     break
-            elif re.search(r"\b" + re.escape(k) + r"\b", haystack):
-                hit = True
+            if hit:
                 break
         if not hit:
             continue

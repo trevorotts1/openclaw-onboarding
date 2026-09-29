@@ -1803,6 +1803,11 @@ jobs:
         run: |
           python3 tests/unit/fleet-refresh-roll-safety.test.py
 
+      - name: "verify-routing G1 counts the ROLE_DISCIPLINE_V1 marker, not pointer mentions"
+        shell: bash
+        run: |
+          bash tests/unit/verify-routing-g1-marker-count.test.sh
+
       # PRD 1.11 / AF4: retirement-clock trigger contract.
       # Proves that the fleet-refresh.sh retirement trigger is wired correctly:
       #   (a) dry-run is inert (does NOT write the loaded-state manifest)

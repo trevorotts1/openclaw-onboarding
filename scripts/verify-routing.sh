@@ -177,7 +177,12 @@ if [ ! -f "$AGENTS_FILE" ]; then
   _fail "G1: AGENTS.md not found at $AGENTS_FILE"
   FAILURES=$((FAILURES + 1))
 else
-  RD_COUNT=$(grep -c "ROLE_DISCIPLINE_V1" "$AGENTS_FILE" 2>/dev/null || echo "0")
+  # Count the block MARKER, not every mention: a Lean Core pointer line
+  # ("**Full text:** ... §ROLE_DISCIPLINE_V1") names it too and read as a
+  # duplicate. (grep -c prints 0 AND exits 1 on no match: `|| true`, never
+  # `|| echo 0`, which made the count "0<newline>0".)
+  RD_COUNT=$(grep -cF "<!-- ROLE_DISCIPLINE_V1 -->" "$AGENTS_FILE" 2>/dev/null || true)
+  RD_COUNT=${RD_COUNT:-0}
   if [ "$RD_COUNT" -eq 1 ]; then
     _pass "G1: ROLE_DISCIPLINE_V1 present in $AGENTS_FILE (count=$RD_COUNT)"
   elif [ "$RD_COUNT" -eq 0 ]; then
