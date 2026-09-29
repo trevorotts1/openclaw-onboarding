@@ -1329,14 +1329,12 @@ err = open(os.path.join(log_dir, 'engine-stderr.log'), 'a')
 proc = subprocess.Popen(argv, cwd='$SCRIPTS_DIR', stdout=out, stderr=err,
                         start_new_session=True, close_fds=True)
 print(f' {proc.pid}', end='')
-# Write the PID to state.json so the watchdog can monitor it
-import json
-sp = os.path.join('$run_dir', 'state.json')
-if os.path.isfile(sp):
-    state = json.load(open(sp))
-    state['engine_pid'] = proc.pid
-    json.dump(state, open(sp + '.tmp', 'w'), indent=2)
-    os.replace(sp + '.tmp', sp)
+# Write the PID so the watchdog can monitor it (Fix 34: locked merge via
+# launcher._write_engine_pid — the unlocked read-modify-write raced the
+# watchdog's own state.json updates)
+sys.path.insert(0, '$SCRIPTS_DIR')
+from presentation_job.launcher import _write_engine_pid
+_write_engine_pid('$run_dir', proc.pid)
 " 2>&1 | while IFS= read -r line; do
                 log "  [run] $line"
             done
