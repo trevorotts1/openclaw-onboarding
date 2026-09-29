@@ -4586,6 +4586,21 @@ main() {
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
 
+  # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
+  # (skills.workshop.autonomous.mode=propose when unset/auto; explicit propose/off kept).
+  # Runs HERE — right after scripts/ is delivered and BEFORE the content-recheck
+  # `exit 0` — so it runs on EVERY roll, including content-current re-rolls that
+  # never reach the steps near the end of this file. Hot reload, backup only on
+  # write, ADVISORY-only on any failure: it can never fail this update. Its
+  # "burn-guard:" line is lifted into the fleet summary by fleet_refresh_runner.py.
+  _BURN_GUARD="$_OC_SCRIPTS_DEST/ensure-burn-guard.sh"
+  [ -f "$_BURN_GUARD" ] || _BURN_GUARD="$ONBOARDING_DIR/scripts/ensure-burn-guard.sh"
+  if [ -f "$_BURN_GUARD" ]; then
+    bash "$_BURN_GUARD" 2>>"$LOG_FILE" || true
+  else
+    echo "burn-guard: ADVISORY ensure-burn-guard.sh not in bundle — skipped"
+  fi
+
   # DELIVER THE CANONICAL LIBRARY BESIDE THE SCRIPTS TREE.
   #
   # deliver_canonical_scripts_tree above copies repo scripts/ to
@@ -10033,6 +10048,7 @@ PYEOF
   else
     echo "  ℹ openclaw CLI not on PATH — skipping loopDetection enablement (update continues)."
   fi
+
 
   # ----------------------------------------------------------
   # FLEET MEMORY STANDARDIZATION (v21.2.0) — kills the dark-memory default
