@@ -380,6 +380,9 @@ def insert_agents_and_tasks(db, info, starter_tasks=True):
                 ),
                 "status": "backlog",
                 "priority": "medium",
+                # A placeholder, not work: never auto-dispatched (the intake
+                # sweep ran these right after install and paged the owner).
+                "dispatch_hold": 1,
                 "assigned_agent_id": ag_id,
                 "created_by_agent_id": ag_id,
                 "created_at": now,

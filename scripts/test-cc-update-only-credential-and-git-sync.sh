@@ -190,6 +190,21 @@ fi
 rm -rf "$BOX"
 
 # T2 — FIXED cc_write_env_local, UPDATE_ONLY=true, secrets/.env ABSENT
+hdr "T17 — .env.local carries the owner's explicit record, never a guess"
+BOX="$(make_box)"
+printf 'OPENCLAW_OWNER_CHAT_ID=1000000042\n' > "$BOX/oc-root/secrets/.env"
+run_write_env_local "$BOX" "true"
+grep -qxE "OPENCLAW_OWNER_CHAT_ID=('|\")?1000000042('|\")?" "$BOX/dashboard/.env.local" \
+  && ok "T17: OPENCLAW_OWNER_CHAT_ID copied from secrets/.env into .env.local" \
+  || bad "T17: OPENCLAW_OWNER_CHAT_ID not written ($(cat "$BOX/dashboard/.env.local" | tr '\n' ';'))"
+rm -rf "$BOX"
+BOX="$(make_box)"
+run_write_env_local "$BOX" "true"
+grep -q 'OPENCLAW_OWNER_CHAT_ID' "$BOX/dashboard/.env.local" \
+  && bad "T17: an owner id was written with no owner record on the box" \
+  || ok "T17: no owner record -> no OPENCLAW_OWNER_CHAT_ID written"
+rm -rf "$BOX"
+
 hdr "T2 — fixed: --update-only + absent agent secrets -> NO mutation"
 BOX="$(make_box)"
 printf 'MC_API_TOKEN=tok-value\nWEBHOOK_SECRET=whs-value\n' > "$BOX/dashboard/.env.local"
