@@ -416,7 +416,7 @@ export const INTAKE_CONTRACT = {
         default: "",
         allowed_values: ["ultra", "standard", "economy"],
         value_labels: {
-          "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+          "ultra": "Ultra: the strongest models you choose, up to 16x faster",
           "standard": "Standard — the department default",
           "economy": "Economy — leaner and cheaper"
         }

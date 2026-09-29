@@ -350,7 +350,7 @@
         label: "Run mode",
         default: "",
         required: false, storeOn: "pre_presentation_capture.RUN_MODE",
-        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
+        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra: the strongest models you choose, up to 16x faster", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
       { id: "deepseek_variant", order: 11.6, kind: "enum",
         prompt: "Which DeepSeek variant for the heavy writing?",
         help: "Flash is fast and cheap; Pro is the strongest.",
