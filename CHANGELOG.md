@@ -1,5 +1,38 @@
 ## [v25.2.8]  -  2026-09-29  -  Skill 23: PENDING role how-tos are queued for SOP authoring and have a scripted fill runner
 
+### Why
+- Vertical-pack departments whose roles arrived as PENDING `how-to.md` stubs have no numbered
+  `0N-*.md` SOP stubs, so `build-workforce.py` wrote `sop_files=[]` for them in the research
+  manifest. `populate-sops-from-manifest.py dept_already_authored()` read an empty list as "already
+  authored", and its CLI had no `--dept` or `--force`, so those departments (for example a
+  real-estate pack's lead-generation, showings, closing-coordinator and local-market-intelligence)
+  could never be queued.
+- `PENDING-SOPS.md` lists every role whose `how-to.md` is a PENDING stub (hundreds on some boxes),
+  each carrying a one-shot "copy the nearest template and token-fill it" instruction. No script ran
+  that instruction, so nothing ever picked the list up.
+
+### What changed
+- `populate-sops-from-manifest.py` scans each department at run time for PENDING or stub role
+  `how-to.md` files and adds them as SOP targets. This covers manifests already on disk, and such a
+  department is queued, not skipped. New flags: `--dept` (repeatable or comma-separated; an unknown
+  id exits 1) and `--force` (re-queue departments whose SOPs look authored; the boundary gate still
+  applies).
+- `fill-pending-howtos.py` (new) is the `PENDING-SOPS.md` runner. It is deterministic (no model
+  call) and a dry run by default; `--apply` does the writes.
+  - Match order: an exact library match, then the nearest template in the same library department
+    (title similarity >= 0.6), then the nearest across the library, only above a strict 0.85. A
+    loose cross-department match (for example "Buyer Agent" to a QC agent) would plant the wrong
+    SOPs.
+  - It token-fills with `create_role_workspaces.fill_tokens`, enforces the same 3072-byte floor,
+    and stamps workforce-provenance.
+  - It writes only a `how-to.md` that is still PENDING, and it is idempotent. Roles with no
+    comparable template stay PENDING for authoring (populate-sops now queues them). Exit 3 means
+    some roles are still pending.
+- `resume-workforce-build.sh` runs the fill runner on the library-resume path, so the list is
+  picked up.
+- Tests: `tests/unit/test_pending_sops_runner.py` (3 tests, all fail on the previous main), run by
+  `pending-sops-runner-guard.yml` (new).
+
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why
