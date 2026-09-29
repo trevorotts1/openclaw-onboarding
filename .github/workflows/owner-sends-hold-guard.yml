@@ -24,6 +24,8 @@ on:
       - "32-command-center-setup/scripts/repair-board-company.py"
       - "tests/unit/test_owner_sends_hold.py"
       - "tests/unit/test_board_company_repair.py"
+      - "tests/unit/test_no_department_for_default_lane.py"
+      - "32-command-center-setup/scripts/scaffold-agent-files.sh"
       - "32-command-center-setup/scripts/run-full-install.sh"
       - "tests/unit/test_starter_tasks_gate.sh"
       - ".github/workflows/owner-sends-hold-guard.yml"
@@ -43,6 +45,8 @@ on:
       - "32-command-center-setup/scripts/repair-board-company.py"
       - "tests/unit/test_owner_sends_hold.py"
       - "tests/unit/test_board_company_repair.py"
+      - "tests/unit/test_no_department_for_default_lane.py"
+      - "32-command-center-setup/scripts/scaffold-agent-files.sh"
       - "32-command-center-setup/scripts/run-full-install.sh"
       - "tests/unit/test_starter_tasks_gate.sh"
       - ".github/workflows/owner-sends-hold-guard.yml"
@@ -64,5 +68,7 @@ jobs:
         run: python3 tests/unit/test_owner_sends_hold.py
       - name: Board company (duplicate row, default queue, repair command)
         run: python3 tests/unit/test_board_company_repair.py
+      - name: Structural 'default' lane gets no head agent and no departments/default
+        run: python3 tests/unit/test_no_department_for_default_lane.py
       - name: Starter tasks only after closeout, never on an update roll
         run: bash tests/unit/test_starter_tasks_gate.sh
