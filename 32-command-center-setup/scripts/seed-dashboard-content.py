@@ -37,7 +37,7 @@ STARTER TASKS — `--no-starter-tasks` / SEED_STARTER_TASKS=0
   --no-starter-tasks in --update-only mode. Companies and dept-head agent rows are
   still ensured either way: those are idempotent identity/runtime rows, not content.
 """
-import argparse, sqlite3, json, os, sys, secrets, subprocess
+import argparse, sqlite3, json, os, re, sys, secrets, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -199,12 +199,31 @@ def find_company_config():
             pass
 
     if not info["slug"] and info["name"]:
-        info["slug"] = info["name"].lower().replace(" ", "-").replace(",", "")[:40]
+        # Same slug rule as seed-workspaces.py. The old raw lower()+replace kept
+        # punctuation ("Acme Rocket!" -> "acme rocket!"), which matched no existing
+        # company row and inserted a second, duplicate company.
+        info["slug"] = re.sub(r"[^a-z0-9]+", "-", info["name"].lower()).strip("-")[:40]
     if not info["name"]:
         info["name"] = "Client"
         info["slug"] = info["slug"] or "client"
 
     return info
+
+
+def canonical_company_id():
+    """MC_COMPANY_ID, else the build state's companyId, else None."""
+    env = os.environ.get("MC_COMPANY_ID", "").strip()
+    if env:
+        return env
+    for p in (Path("/data/.openclaw/workspace/.workforce-build-state.json"),
+              Path.home() / ".openclaw/workspace/.workforce-build-state.json"):
+        try:
+            cid = json.loads(p.read_text()).get("companyId")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(cid, str) and cid.strip() and cid != "default":
+            return cid.strip()
+    return None
 
 
 def insert_company(db, info):
@@ -213,9 +232,24 @@ def insert_company(db, info):
         print("WARN: companies table missing — skipping company insert", file=sys.stderr)
         return None
 
-    # Prefer the slug as the primary key if the schema uses slug-as-id
+    # One company row per companyId. The canonical id (MC_COMPANY_ID, else the
+    # build state's companyId) wins; an existing row for it is UPDATED in place,
+    # never replaced and never duplicated under a second slug.
+    canonical_id = canonical_company_id()
+    if canonical_id and db.execute("SELECT 1 FROM companies WHERE id = ?", (canonical_id,)).fetchone():
+        sets = {"owner_name": info["owner_name"], "industry": info["industry"],
+                "primary_color": info["primary"], "secondary_color": info["accent"],
+                "accent_color": info["accent"], "brand_primary": info["primary"],
+                "brand_accent": info["accent"],
+                "updated_at": datetime.now(timezone.utc).isoformat()}
+        sets = {k: v for k, v in sets.items() if k in co_cols and v not in ("", None)}
+        if sets:
+            db.execute("UPDATE companies SET " + ", ".join(f"{k} = ?" for k in sets) + " WHERE id = ?",
+                       [*sets.values(), canonical_id])
+        print(f"  companies: kept canonical id={canonical_id} (updated in place, no second row)")
+        return canonical_id
     existing = db.execute("SELECT id FROM companies WHERE slug = ? LIMIT 1", (info["slug"],)).fetchone()
-    company_id = existing[0] if existing else secrets.token_hex(8)
+    company_id = existing[0] if existing else (canonical_id or secrets.token_hex(8))
 
     data = {
         "id": company_id,

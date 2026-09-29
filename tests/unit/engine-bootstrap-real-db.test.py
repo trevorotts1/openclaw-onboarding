@@ -67,21 +67,37 @@ class EngineFoundation(unittest.TestCase):
             self.assertTrue(all(r[0]==self.uuid and json.loads(r[1])['workspace']['company_id']=='default' for r in receipts))
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
-    def test_active_default_queue_refuses_and_rolls_back_all_rows(self):
+    # A CC system queue under the CC's own 'default' company that is NOT an
+    # adoptable placeholder (real work, customized, unrecorded, runtime-bound) is
+    # left EXACTLY as it is -- and the client's own departments are still seeded.
+    # It used to roll back the whole seed, so a client's custom departments never
+    # got a board. Reassigning such a queue is repair-board-company.py --apply only.
+    def queue_rows(self, ws):
+        with sqlite3.connect(self.db) as db:
+            return (db.execute('SELECT * FROM workspaces WHERE id=?', (ws,)).fetchall(),
+                    db.execute('SELECT * FROM agents WHERE workspace_id=? ORDER BY id', (ws,)).fetchall(),
+                    db.execute('SELECT * FROM tasks WHERE workspace_id=? ORDER BY id', (ws,)).fetchall(),
+                    db.execute('SELECT * FROM engine_workspace_bootstrap WHERE workspace_id=?', (ws,)).fetchall())
+
+    def assert_left_alone_and_client_seeded(self, ws):
+        before = self.queue_rows(ws)
+        self.seed()
+        self.seed()
+        self.assertEqual(before, self.queue_rows(ws), ws + ' must be left exactly as it was')
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT company_id FROM workspaces WHERE id=?", (ws,)).fetchone(), ('default',))
+            owned = {r[0] for r in db.execute('SELECT id FROM workspaces WHERE company_id=?', (self.uuid,))}
+        self.assertTrue({'presentations', 'marketing'} <= owned, owned)
+
+    def test_active_default_queue_left_alone_rest_seeded(self):
         with sqlite3.connect(self.db) as db:
             db.execute("INSERT INTO tasks (id,title,workspace_id) VALUES ('real-work','Existing work','anthology')")
-        before = {t:self.rows(t) for t in ('companies','workspaces','agents','tasks','engine_workspace_bootstrap')}
-        with self.assertRaisesRegex(ValueError, 'active/custom system queue'):
-            self.seed()
-        for table, rows in before.items():
-            self.assertEqual(rows, self.rows(table), table)
+        self.assert_left_alone_and_client_seeded('anthology')
 
-    def test_custom_default_queue_refuses_without_changes(self):
+    def test_custom_default_queue_left_alone_rest_seeded(self):
         with sqlite3.connect(self.db) as db:
             db.execute("UPDATE workspaces SET name='Existing system queue' WHERE id='podcast'")
-        before = self.rows('workspaces')
-        with self.assertRaises(ValueError): self.seed()
-        self.assertEqual(before,self.rows('workspaces'))
+        self.assert_left_alone_and_client_seeded('podcast')
 
     def test_foreign_company_refuses_without_changes(self):
         with sqlite3.connect(self.db) as db:
@@ -91,25 +107,19 @@ class EngineFoundation(unittest.TestCase):
         with self.assertRaises(ValueError): self.seed()
         self.assertEqual(before,self.rows('workspaces'))
 
-    def test_customized_seeded_agent_refuses_without_changes(self):
+    def test_customized_seeded_agent_left_alone_rest_seeded(self):
         with sqlite3.connect(self.db) as db:
             db.execute("UPDATE agents SET name='Another team editor' WHERE id='podcast-editor'")
-        before = self.rows('agents')
-        with self.assertRaises(ValueError): self.seed()
-        self.assertEqual(before,self.rows('agents'))
+        self.assert_left_alone_and_client_seeded('podcast')
 
-    def test_unrecorded_engine_refuses_without_changes(self):
+    def test_unrecorded_engine_left_alone_rest_seeded(self):
         with sqlite3.connect(self.db) as db:
             db.execute("DELETE FROM engine_workspace_bootstrap WHERE workspace_id='podcast'")
-        before = self.rows('workspaces')
-        with self.assertRaises(ValueError): self.seed()
-        self.assertEqual(before,self.rows('workspaces'))
+        self.assert_left_alone_and_client_seeded('podcast')
 
-    def test_runtime_bound_agent_refuses_without_changes(self):
+    def test_runtime_bound_agent_left_alone_rest_seeded(self):
         with sqlite3.connect(self.db) as db:
             db.execute("UPDATE agents SET openclaw_agent_id='already-live' WHERE id='podcast-editor'")
-        before = self.rows('agents')
-        with self.assertRaises(ValueError): self.seed()
-        self.assertEqual(before,self.rows('agents'))
+        self.assert_left_alone_and_client_seeded('podcast')
 
 if __name__ == '__main__': unittest.main()

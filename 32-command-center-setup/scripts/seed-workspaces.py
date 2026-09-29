@@ -28,6 +28,13 @@ from pathlib import Path
 # PRD 1.5: import the canonical dept slug normaliser.
 _SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
 sys.path.insert(0, str(_SHARED_UTILS))
+# A copy run from outside the skills tree (e.g. an operator's /tmp copy) still
+# resolves the box's INSTALLED shared-utils, so canonical_slug's alias map
+# (ceo -> master-orchestrator ...) is never silently replaced by the inline slugger.
+for _su in (Path.home() / ".openclaw" / "skills" / "shared-utils",
+            Path("/data/.openclaw/skills/shared-utils")):
+    if _su.is_dir() and str(_su) not in sys.path:
+        sys.path.append(str(_su))
 try:
     from resolve_db import find_dashboard_db as _shared_find_dashboard_db  # type: ignore
     _HAS_SHARED_RESOLVER = True
@@ -799,6 +806,17 @@ def _seed_transaction(conn, departments, company_info):
             # UUID must be supplied by the canonical launch context. A company
             # name or slug guessed by discovery is not adoption authorization.
             if not requested_id or not _adopt_unused_engine_bootstrap(cur, dept_id, company_id):
+                if all(row[0] == 'default' for row in owner):
+                    # A Command Center system/engine queue (podcast, anthology)
+                    # seeded under the CC's own 'default' company that is not an
+                    # adoptable placeholder. Leave it exactly as it is and seed the
+                    # REST: one such queue used to roll back the whole seed, so the
+                    # client's custom departments never got a board. Reassigning it
+                    # is the explicit repair-board-company.py --apply, never this.
+                    print(f"  SKIPPED (CC system queue under 'default', not adoptable): {dept_id} "
+                          f"-- see repair-board-company.py")
+                    skipped += 1
+                    continue
                 conn.rollback()
                 conn.close()
                 raise ValueError(f'department {dept_id} belongs to a different company or an active/custom system queue; refusing shared-client mutation. Resume the supported installer; do not rewrite company IDs.')

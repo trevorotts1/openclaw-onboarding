@@ -427,7 +427,7 @@ elif [[ -n "$OC_CONFIG" && -f "$OC_CONFIG" ]]; then
 import json, os, shutil, sys, datetime
 config_path, targets, company_dir, company_id = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3], sys.argv[4]
 from pathlib import Path
-from workforce_state import read, commit
+from workforce_state import read, lock, atomic_write
 norm = lambda s: "".join(c for c in str(s).lower() if c.isalnum())
 keys = {norm(f"dept-{t}") for t in targets} | {norm(t) for t in targets}
 try:
@@ -471,7 +471,14 @@ if entries is not None:
     agents_cfg["entries"] = {k: v for k, v in entries.items() if id(v) not in removed_keys}
 if agents is not None:
     agents_cfg["list"] = [r for r in agents if id(r) not in removed_keys]
-commit(config_path, cfg)
+# NOT workforce_state.commit(): that is the BUILD-STATE writer and stamps a root
+# "stateRevision", which openclaw.json's schema rejects (config validate fails,
+# the gateway will not restart). Same lock, compare-and-swap, plain atomic write.
+with lock(config_path):
+    if read(config_path) != cfg.base:
+        print("[retire-confirmed-decline] step 1 FAILED: openclaw.json changed during retirement; re-run", file=sys.stderr)
+        sys.exit(1)
+    atomic_write(config_path, dict(cfg))
 print(f"[retire-confirmed-decline] step 1: deregistered {removed} from the agent roster (backup: {bak})", file=sys.stderr)
 PY
   then

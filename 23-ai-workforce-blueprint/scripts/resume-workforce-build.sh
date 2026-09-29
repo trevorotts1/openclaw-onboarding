@@ -1365,6 +1365,12 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
       break
     fi
   done
+  # Owner-sends hold: never launch the owner-facing closeout while held.
+  _osh_out="$(python3 "$SCRIPT_DIR/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
+  if [[ "$_osh_rc" -ne 1 ]]; then
+    log "HOP-4: OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- run-closeout.sh NOT launched."
+    _CLOSEOUT_SCRIPT=""
+  fi
   if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
     log "HOP-4 (v12.6.0): in-process exec of run-closeout.sh (PRIMARY -- deterministic, no Telegram required)"
     # Fire detached so this cron returns immediately; run-closeout.sh runs in background.

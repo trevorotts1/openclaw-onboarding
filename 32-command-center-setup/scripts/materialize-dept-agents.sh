@@ -199,6 +199,26 @@ fi
 # the canonical copy.
 DEPT_SCAN_ROOTS=()
 
+# Root 0: the build state's own companyRoot -- the build knows where it wrote
+# (build-workforce.py resolve_company_paths records it). Covers layouts the
+# fixed roots below do not, e.g. <workspace>/zero-human-company on a Contabo
+# /home/node box. Skipped when it names a different company than the slug.
+if [[ -f "$_MATERIALIZE_STATE_FILE" ]]; then
+  _state_company_root="$(python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(sys.argv[1])).get("companyRoot") or ""
+except (OSError, ValueError, AttributeError):
+    r = ""
+sys.stdout.write(r if isinstance(r, str) and os.path.isabs(r) else "")
+' "$_MATERIALIZE_STATE_FILE" 2>/dev/null || true)"
+  if [[ -n "$_state_company_root" && -d "$_state_company_root/departments" ]] && \
+     [[ -z "$_MATERIALIZE_COMPANY_SLUG" || "$(basename "$_state_company_root")" == "$_MATERIALIZE_COMPANY_SLUG" ]]; then
+    DEPT_SCAN_ROOTS+=("$_state_company_root/departments")
+    echo "[materialize-dept-agents] including build-state companyRoot dept path: $_state_company_root/departments"
+  fi
+fi
+
 # Expand the canonical master-files ZHC tree (root 1) FIRST — it is the most
 # authoritative source and must win any slug collision under setdefault().
 # Scoped to THIS BOX'S OWN company (_MATERIALIZE_COMPANY_SLUG, resolved
@@ -207,7 +227,8 @@ DEPT_SCAN_ROOTS=()
 # the box's own slug could not be resolved (already warned above).
 for _mf_root in \
     "$HOME/Downloads/openclaw-master-files/zero-human-company" \
-    "/data/openclaw-master-files/zero-human-company"; do
+    "/data/openclaw-master-files/zero-human-company" \
+    "$OC_ROOT/workspace/zero-human-company"; do
   [[ -d "$_mf_root" ]] || continue
   if [[ -n "$_MATERIALIZE_COMPANY_SLUG" ]]; then
     _dept_d="$_mf_root/$_MATERIALIZE_COMPANY_SLUG/departments"

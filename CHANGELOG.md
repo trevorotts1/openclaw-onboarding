@@ -95,6 +95,135 @@ Running the Skill 23 build on a client box that already had departments and agen
   `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
   control proving the validator rejects the old key.
 - Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
+## [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order (build state first); durable owner-sends hold; board lanes under one company
+
+### Why
+The build writes the company where `resolve_company_paths()` puts it and records that as
+`companyRoot` in `.workforce-build-state.json`. The readers each guessed a location of their own,
+so on some layouts the build never completed.
+
+- **Mac.** The Skill 23 `lib/detect_platform.py` answered `~/clawd/zero-human-company`
+  (or `<workspace>/zero-human-company`) while the build wrote
+  `~/Downloads/openclaw-master-files/zero-human-company/<slug>`. `_qc_company_info.py` also
+  rejected every path under `openclaw-master-files` as a "template", including the build's own
+  company. qc-completeness audited a stale tree, `completionVerification` stayed pending, and
+  `buildCompletedAt` was never written.
+- **Contabo `/home/node`.** The shared resolver looked only in `/data/openclaw-master-files/zero-human-company`,
+  which is empty there. The workforce lives in `<workspace>/zero-human-company/<slug>`, so
+  `company_dir` was `None` and the reconcile and DEPARTMENTS checks failed.
+- **Floor-fill stubs audited instead of the build.** The QC checker's first choice was the live
+  `<workspace>/departments` tree, and floor-fill wrote there too. On a box whose build wrote the
+  zero-human-company tree, where `materialize-dept-agents.sh` registers the department agents, the
+  gate audited floor-fill stubs instead of the workforce the agents run.
+
+### What changed
+- `shared-utils/detect_platform.py` and `23-ai-workforce-blueprint/lib/detect_platform.py` now
+  share one resolver, byte-identical and pinned by a test: `build_state_company()`,
+  `known_company_roots()` and `resolve_active_company_dir()`. The order is:
+  1. the build state's `companyRoot`, unless `$OPENCLAW_COMPANY_SLUG` names another company;
+  2. the explicit slug, then the build state's `companySlug`;
+  3. the single company in the first layout that holds one: master-files, then
+     `<workspace>/zero-human-company`, then the legacy clawd tree.
+
+  `company_root`, the write target, is unchanged.
+- `_qc_paths.departments_root_for()` (new) and `live_departments_dir()` put the build state's
+  `companyRoot/departments` first, then `<workspace>/departments`. The QC checker,
+  `department-floor.py`, `detect-stale-artifacts.py`, `floor-fill-driver.py` (default, or with the
+  new `--workspace-root` option) and `migrate-existing-workforce.sh` all use it, so the checker and
+  the repairer measure the same tree.
+- `_qc_company_info.py` `_is_template_path()` no longer rejects
+  `openclaw-master-files/zero-human-company/<slug>`, where the build writes every company. All other
+  `openclaw-master-files` content is still treated as a template and rejected.
+- `materialize-dept-agents.sh` scans the build state's `companyRoot/departments` first, and also
+  `$OC_ROOT/workspace/zero-human-company`. Skill 32 bumped to v13.1.35.
+- Tests:
+  - `tests/unit/test_company_root_resolution.py` (new, 9 tests; 8 fail on the previous main).
+    Layouts covered: Mac with `~/clawd` plus master-files, Mac master-files only, Hostinger `/data`,
+    Contabo `/home/node`, and the build tree against floor-fill stubs. It also checks that a genuine
+    template dir is still rejected and that both resolver copies are identical.
+  - `test-gate-company-dir-resolution.sh` T2 and `qc-departments-tree-resolution.test.sh` S7/S8 now
+    encode the corrected template rule. They run in `qc-departments-tree-guard.yml`.
+
+### Owner-sends hold (ships with the resolver: a newly-passing gate must not message owners)
+Once the gate measures the real build tree, boxes that used to fail against a stub tree pass at the
+next roll. Without a hold, that pass fires the Presentations welcome, and the closeout can reach the
+celebration. Both are unrequested owner messages.
+- `shared-utils/owner_sends_hold.py` (new) stores an OPT-IN hold in `.workforce-build-state.json`:
+  only an explicit `ownerSendsHold: true` holds; absent or anything else changes nothing. No box is
+  ever held by default. The protection against a gate that newly passes is the full-gate-pass rule
+  below, plus this hold wherever the operator sets it.
+
+  `check` exits 1 only when sends are clear. Anything else counts as HELD: python or the helper
+  missing, or unreadable state. `hold` and `release` are the only writers. Once set, the hold is
+  durable and nothing auto-clears it; the stall-fingerprint reset in `resume-closeout-cron.sh`
+  touches only its own `closeoutResumePaused` keys.
+- The hold is checked in:
+  - `send-presentation-dept-welcome.sh` (`--force` does not bypass it);
+  - `send-telegram-celebration.sh` (the sink);
+  - `run-closeout.sh`, before `TELEGRAM`: it records `closeoutOwnerSendsHeld` and exits 0;
+  - `resume-closeout-cron.sh`, before any dispatch;
+  - `resume-workforce-build.sh` HOP-4, before launching `run-closeout.sh`.
+
+  A hold logs, sends nothing and exits 0. Set or clear it with
+  `python3 <skills>/shared-utils/owner_sends_hold.py hold|release <state-file>`.
+- `verify-library-gate.sh` fires the welcome only on a FULL pass (`GATE_RC=0`). A ZHE failure (rc 9)
+  used to leave every status "done" and still fire it.
+
+### Command Center URL, board company, openclaw.json validity
+- `interview-launch.py initialize` seeds `commandCenterUrl` from the slug default on EVERY
+  initialize, not only a fresh one. `run-full-install.sh` phase 6h also seeds it when it is absent.
+  Before this, an existing box exported an empty `CC_TUNNEL_EXPECTED_HOST` and `create-tunnel.sh`
+  aborted before its POST.
+- `seed-dashboard-content.py` derives a company slug with the same rule as `seed-workspaces.py`
+  ("Acme Rocket!" becomes `acme-rocket`, not `acme rocket!`). The canonical company id
+  (`MC_COMPANY_ID`, else the build state's `companyId`) is updated in place, and a second company
+  row is never inserted.
+- `seed-workspaces.py` skips a Command Center system queue under the CC's `default` company that
+  cannot be adopted, and leaves it exactly as it is. It still seeds the client's own departments;
+  that queue used to roll back the whole seed, so custom departments never got a board. A queue
+  owned by another real company still refuses the seed. `engine-bootstrap-real-db.test.py` is
+  updated to this contract.
+- `repair-board-company.py` (new; Skill 32) is a dry run by default. `--apply` first backs up the
+  DB, then:
+  1. merges a duplicate company row into the canonical one, moving every row that references it;
+  2. on a single-company board only, moves the client's `default` lanes (its departments and
+     recorded engine queues) to its company;
+  3. seeds the missing lanes.
+
+  The department set is the union of `departments.json`, the build state's `departments[]` and the
+  department folders under the build's `companyRoot`, which is the tree the zero-human check audits.
+  A dry run on a client board showed four on-disk departments that `departments.json` did not list,
+  so `departments.json` alone under-reported them. Lanes are matched on the canonical slug of both
+  the workspace id and its slug, so a CEO lane with id `master-orchestrator` and slug `ceo` counts as
+  the `ceo` department. It is not reported missing and no second CEO lane is seeded. Only the
+  missing departments go to the seeder. The dry run names the `canonical_slug` module it loaded.
+  `seed-workspaces.py` now also finds the installed `shared-utils`
+  (`~/.openclaw/skills/shared-utils`, `/data/.openclaw/skills/shared-utils`) when it runs from a
+  copy outside the skill tree, instead of falling back to the inline slugger.
+
+  It is idempotent. It was not run on any box.
+- Phase 6e of `run-full-install.sh` seeds the "Welcome to <department>" starter tasks only on a
+  full install whose build has closed out (`closeoutStatus == done`). The Command Center's intake
+  sweep auto-dispatches every seeded card and the notifier messages the owner, so a card seeded
+  before closeout was an owner message nobody asked for. Update-only rolls
+  (`update-skills.sh` -> `run-full-install.sh --update-only`) already passed `--no-starter-tasks`,
+  and still do. The gate matters on the bootstrap path, where `update-skills.sh` runs a full
+  install on a box that has no Command Center yet.
+- `retire-confirmed-decline.sh` no longer writes openclaw.json through the build-state writer,
+  which stamped a root `stateRevision` that `openclaw config validate` rejects.
+- Tests:
+  - `tests/unit/test_owner_sends_hold.py` (11 tests; 6 fail on main).
+  - `tests/unit/test_board_company_repair.py` (8 tests; all fail on main). This includes a
+    field-shaped fixture: a duplicate company, podcast and anthology under `default`, the CEO lane
+    under another id, and four departments only on disk. After `--apply`, every department has
+    exactly one lane under the company, and a second `--apply` changes nothing.
+  - `tests/unit/test_starter_tasks_gate.sh` (new, 4 cases) runs the real `starter_tasks_allowed()`
+    extracted from `run-full-install.sh`. It fails on main, where the gate is absent.
+  - `interview-launch.test.py` gains a URL-seeding test.
+  - `retire-decline-separate-workspace.test.py` now asserts that openclaw.json gains no root keys,
+    and runs `openclaw config validate` when the CLI is present.
+  - The new tests run in `owner-sends-hold-guard.yml` (new).
+- Skill 37 bumped to v13.1.5.
 
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 

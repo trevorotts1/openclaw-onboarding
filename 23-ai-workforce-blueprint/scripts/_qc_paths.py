@@ -30,15 +30,42 @@ Deliberately dependency-free (stdlib only) and side-effect-free on import, so it
 is safe to import from a gate and testable without a real /data volume.
 """
 
+import json
+import os
 from pathlib import Path
 
-__all__ = ["live_departments_dir", "looks_like_departments_dir"]
+__all__ = ["live_departments_dir", "departments_root_for", "platform_workspace",
+           "looks_like_departments_dir"]
+
+
+def departments_root_for(workspace):
+    """The departments tree for the workspace `workspace`.
+
+    The build state's own companyRoot comes first: build-workforce.py records
+    where it wrote (resolve_company_paths -> companyRoot), materialize-dept-
+    agents.sh registers the department agents on that tree, so it is the tree
+    the agents actually run. Only when the build state names no existing
+    <companyRoot>/departments does <workspace>/departments apply.
+    $WORKFORCE_BUILD_STATE_FILE overrides the state location, as in the build.
+    """
+    workspace = Path(workspace)
+    state_file = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip() \
+        or str(workspace / ".workforce-build-state.json")
+    try:
+        root = json.loads(Path(state_file).read_text(encoding="utf-8")).get("companyRoot")
+    except (OSError, ValueError, AttributeError):
+        root = None
+    if isinstance(root, str) and os.path.isabs(root) and (Path(root) / "departments").is_dir():
+        return Path(root) / "departments"
+    return workspace / "departments"
 
 
 def live_departments_dir(data_openclaw=Path("/data/.openclaw"), home=None):
-    """Return the departments tree the repair pipeline actually maintains.
+    """Return the departments tree the build wrote and the repair pipeline maintains.
 
-    The precedence is byte-identical to floor-fill-driver.py:170-171 and
+    departments_root_for() decides WITHIN the workspace: the build state's own
+    companyRoot/departments first, else <workspace>/departments. Which workspace
+    follows the rule below, byte-identical to floor-fill-driver.py:170-171 and
     migrate-existing-workforce.sh:138-139 — the PRESENCE of /data/.openclaw
     decides — so the checker and the repairer can never disagree about which
     tree is live:
@@ -62,13 +89,15 @@ def live_departments_dir(data_openclaw=Path("/data/.openclaw"), home=None):
     through to the older zero-human-company layouts rather than be told its
     workforce is missing.
     """
+    return departments_root_for(platform_workspace(data_openclaw, home))
+
+
+def platform_workspace(data_openclaw=Path("/data/.openclaw"), home=None):
+    """The OpenClaw workspace (build state + shared core files): the rule above."""
     data_openclaw = Path(data_openclaw)
     if data_openclaw.is_dir():
-        workspace = data_openclaw / "workspace"
-    else:
-        workspace = Path(home) if home is not None else Path.home()
-        workspace = workspace / ".openclaw" / "workspace"
-    return workspace / "departments"
+        return data_openclaw / "workspace"
+    return (Path(home) if home is not None else Path.home()) / ".openclaw" / "workspace"
 
 
 def looks_like_departments_dir(p):

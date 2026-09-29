@@ -106,6 +106,18 @@ if [[ ! -f "$STATE_FILE" ]]; then
   exit 9
 fi
 
+# ---- owner-sends hold (durable; --force does NOT bypass it) -------------------
+# shared-utils/owner_sends_hold.py: exit 1 = clear. Anything else (held, python or
+# the helper missing, unreadable state) = HELD: log, send nothing, exit 0.
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  _OSH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/owner_sends_hold.py"
+  _osh_out="$(python3 "$_OSH" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
+  if [[ "$_osh_rc" -ne 1 ]]; then
+    echo "[send-presentation-dept-welcome] OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- nothing sent."
+    exit 0
+  fi
+fi
+
 # ---- idempotency check -------------------------------------------------------
 if [[ "$FORCE" -eq 0 ]]; then
   ALREADY_SENT=$(jq -r '
