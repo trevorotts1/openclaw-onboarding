@@ -435,16 +435,7 @@ NEVER fabricate a grounded-content description.
 
 **Steps:**
 1. Hand the locked brief.json to the Director of Presentations (the dept's leadership/head role)
-   using this dispatch contract:
-   ```
-   [OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-     --parent-role brainstorming-buddy-presentations \
-     --specialist-type director-of-presentations \
-     --problem-statement "Build the presentation per the locked brief at <brief.json path>" \
-     --persona (selected per task by persona-selector) \
-     --persona-version 1.0
-     --persona — \
-   ```
+
 2. The Director ingests brief.json as the seed for its OWN intake SOP (it confirms and
    extends, never re-asks what the brief already answers). When the brief carries
    TARGET_WPM, it maps to intake `target_wpm` (ruling 9.3: the captured value, not a
@@ -610,11 +601,6 @@ The one supported case:
 |---|---|---|---|
 | Deep Research Specialist -- Presentations | The owner asks "what do others in my space do?" mid-brainstorm and a quick benchmark would sharpen the brief | Pull 3 to 5 reference examples of comparable presentations for inspiration | 15 to 30 min |
 | Devil's Advocate -- Presentations | The locked idea rests on one big unproven assumption | Surface the single riskiest assumption before the build burns budget | 10 min |
-
-### How to spawn
-Use the standard dispatch contract (SOP 9.4 dispatch-sub-specialist.py form). The
-sub-specialist inherits the current persona, returns its finding to this role, and this
-role folds it into the brief before lock.
 
 ### Owner-discoverable sub-specialists (promotion rule)
 If a brainstorm repeatedly needs the same kind of helper (>10 times in 30 days), flag it

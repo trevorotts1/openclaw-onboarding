@@ -145,11 +145,6 @@ Box env requirements (sourced from `~/.openclaw/secrets/.env`):
 - `MISSION_CONTROL_URL` / `COMMAND_CENTER_URL` — CC board base URL (cc_board).
 - `WEBHOOK_SECRET` / `CC_WEBHOOK_SECRET` — HMAC signing for cc_board.
 
-Suggested cron (every 5 min):
-```
-*/5 * * * * /bin/bash $HOME/<bridge-dir>/poll.sh >> $HOME/<bridge-dir>/logs/poll.log 2>&1
-```
-
 The Worker's `/api/dept-start` fallback is only used when the box is not in
 the loop — the box-side `poll` is the primary path (it reaches the local CC
 board directly).

@@ -157,7 +157,7 @@ logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-meth
 as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
 `deck_type == "signature_presentation"`.
 
-## Integration surface (wired by `wire-signature-presentation.sh`)
+## Integration surface
 
 - `PIPELINE-MANIFEST.json` — three SP phases + `AF-SP-*` autofail rows + a manifest_version bump.
 - `build_deck.py` — three ≤6-line thin `_chk_sp_*` wrappers appended to `PREFLIGHT_REQUIRED`,

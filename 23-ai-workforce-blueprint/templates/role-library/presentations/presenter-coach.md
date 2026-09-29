@@ -564,16 +564,6 @@ This role is the final specialist in the pipeline. It hands off to:
 1. **ROLE-13 (Delivery Concierge)** -- receives working/presenter-coach/rehearsal_gate.json as the delivery confirmation that the deck is cleared for the live room. The gate record closes the run; the Concierge uses it for the last-mile delivery and the live -> record -> live cadence (SOP 9.5).
 2. **Director of Presentations** -- receives completion notification and gate status via openclaw message send.
 
-The Director of Presentations is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type presenter-coach \
-  --problem-statement "<deck slug, owner name, PPTX delivery location, DURATION_MIN>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1.0
-  --persona — \
-```
+The Director of Presentations is the spawn authority for this role.
 
 *End of presenter-coach.md. All 19 sections present and filled.*
