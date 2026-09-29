@@ -2,6 +2,19 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [v25.2.16] - 2026-09-29 - SOP-00 NEW INTAKE goes through the decision engine (mc-route.sh auto)
+
+`SOP-00-Owner-Task-Routing.md` carries the CEO_EXECUTION_POLICY_V3 mirror, so its
+NEW INTAKE bullet changes with the canonical policy in
+`shared-utils/ceo_execution_policy.py`: each new owner message goes once through
+`mc-route.sh auto "<owner message verbatim>"`; `JEV_ANSWER_DIRECTLY` means answer
+and create nothing, `ROUTED` means one card exists in the department the decision
+engine chose (General Task when nothing fits). If the helper fails or the engine is
+off, the old path applies (answer questions, route work with
+`department_slug: "general-task"`). The NO UNIVERSAL DECISION-CALL clause is
+unchanged. `tests/unit/test_ceo_execution_policy.py` checks every V3 carrier is
+identical to the canonical policy.
+
 ## [Unreleased] - 2026-09-21 - fix(departments): a department's own slug beats the map key it is filed under
 
 A client artifact keys its department map `<name>-dept` while each entry names
