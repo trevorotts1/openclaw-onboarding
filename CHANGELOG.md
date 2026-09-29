@@ -32,6 +32,9 @@ The 2026-09-28 30-box roll reported false failures on most boxes and rolled back
   not exist (`detect_platform.py` gains it as a read-only company root, so persona-selector sees it too), and
   the build state from the owner agent's own workspace when only that one has it.
 - `refresh-stale-roles.py` never creates a roles-only `.workforce-build-state.json` on a box with no build.
+- `scripts/skill-content-hash.sh` excludes `23-ai-workforce-blueprint/scripts/receipts/` (prove-zhe.py's run
+  receipts, written inside the skill dir after an update). They failed the roll's role-library digest and
+  rolled back boxes that had updated fine; with the exclusion a live box's installed digest equals the release's.
 - The Drive box-list backup always publishes the whole fleet (`~/.openclaw/fleet/boxes.json`), never the
   subset a roll ran on.
 - Contabo: `platform/vps/contabo/` ships the container startup script and compose settings that make pm2 work

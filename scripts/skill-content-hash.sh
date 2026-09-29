@@ -184,6 +184,11 @@ _should_exclude() {
     # copies are already covered by */working/*). Every real role/SOP/persona/
     # template .md under Skill 23 remains hashed, so tamper-detection is unchanged.
     */23-ai-workforce-blueprint/persona-selection-log.md) return 0 ;;
+    # prove-zhe.py writes its run receipts (receipts/<box>-<ts>.json) next to
+    # itself, inside the hashed skill dir. They are run output, absent from the
+    # source tree: hashing them made every box that ran the prover after an
+    # update fail the fleet roll's role-library digest and get rolled back.
+    */23-ai-workforce-blueprint/scripts/receipts/*) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__

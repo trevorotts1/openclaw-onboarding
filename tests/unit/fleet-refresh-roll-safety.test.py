@@ -449,6 +449,12 @@ class ContentIntegrity(unittest.TestCase):
             {"version": "vB", "skills": {"23-ai-workforce-blueprint": digest}}))
         self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "pass")
         self.assertEqual(fr.ic_role_library(self.skills, repo, "vC")["status"], "fail")
+        # prove-zhe.py's run receipt, written into the skill dir after the update:
+        # run output, not a change to the library (rolled two boxes back).
+        rec = self.skills / "23-ai-workforce-blueprint/scripts/receipts"
+        rec.mkdir(parents=True)
+        (rec / "LOCAL-2026-09-28T205230.json").write_text("{}")
+        self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "pass")
         (lib / "role.md").write_text("edited on the box")
         self.assertEqual(fr.ic_role_library(self.skills, repo, "vB")["status"], "fail")
 
