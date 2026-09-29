@@ -27,6 +27,15 @@ WHAT IT PROVES (all offline, deterministic, no network call):
      shallow-search lie. A credential is referenced by LABEL and reported SET or
      NOT SET only; no value and no fingerprint is ever printed.
 
+     PRECEDENCE (Fix 30 — the env-shadow bug). The runtime reads the NEW names
+     first: token CC_API_TOKEN then MC_API_TOKEN; URL COMMAND_CENTER_URL then
+     MISSION_CONTROL_URL. The probe resolves each chain in order and reports
+     which variable WON (report["winners"]). If BOTH token variables exist with
+     different values, the legacy name is silently ignored at runtime while every
+     operator mental model still points at it — that emits AF-AGENT-ENV-SHADOWED
+     (exit 2). The same value in both names is harmless duplication, not
+     shadowing.
+
   2. MANAGED-KEY LOCKSTEP. The two labels must ALSO be members of
      OPENCLAW_SERVICE_MANAGED_ENV_KEYS — the regeneration allow-list the gateway
      env is rebuilt from. A token that exists in a store today but was never added
@@ -46,8 +55,9 @@ EXIT CODES:
    0  both labels resolve AND both are in OPENCLAW_SERVICE_MANAGED_ENV_KEYS
       (an idempotent re-run of a clean box is the same 0)
    2  a required label is missing (AF-AGENT-ENV-MISSING), or a required label is
-      present but NOT in the managed-keys list (AF-AGENT-ENV-UNMANAGED), or a bad
-      invocation / validation refusal
+      present but NOT in the managed-keys list (AF-AGENT-ENV-UNMANAGED), or both
+      token variables are set with different values (AF-AGENT-ENV-SHADOWED),
+      or a bad invocation / validation refusal
    3  dependency unavailable (reserved; this probe is pure standard library)
    1  unexpected error
 
@@ -79,7 +89,19 @@ EXIT_ERR = 1
 EXIT_MISSING = 2
 EXIT_DEP = 3
 
-# The two labels FIX-14 wires into the gateway env (Error 8 / D-8).
+# Runtime precedence chains (Fix 30 — the env-shadow bug). The NEW CC_* names are
+# what the current runtime reads first; the MC_* names are the legacy fallback.
+# The probe resolves each chain in order and REPORTS which variable won, so a
+# box carrying both names can never silently use the wrong one.
+TOKEN_CHAIN = ("CC_API_TOKEN", "MC_API_TOKEN")
+URL_CHAIN = ("COMMAND_CENTER_URL", "MISSION_CONTROL_URL")
+CHAINS = (
+    ("token", TOKEN_CHAIN),
+    ("url", URL_CHAIN),
+)
+
+# The legacy labels, kept for report back-compat ("required_labels") and for
+# callers that iterate the old pair.
 REQUIRED_LABELS = (
     "MC_API_TOKEN",
     "MISSION_CONTROL_URL",
@@ -195,43 +217,76 @@ def probe(
 
     Injectable environ / stores make it self-testable (pass store_paths=[] so a
     synthetic environ never reads a real box's stores). The report carries
-    SET/NOT-SET presence + source labels only; never a value."""
+    SET/NOT-SET presence + source labels only; never a value. Each precedence
+    chain resolves in order (CC_* before MC_*) and report["winners"] names the
+    variable that won each slot; both token names set with different values
+    emits AF-AGENT-ENV-SHADOWED."""
     environ = os.environ if environ is None else environ
     sources, checked = build_sources(environ, store_paths, extra_stores)
 
+    # Resolve EVERY candidate label individually (presence per label; the report
+    # carries SET/NOT-SET + source only, never a value). Values are held in a
+    # local dict for the shadow comparison and never enter the report.
     resolutions = {}
-    missing = []
-    for label in REQUIRED_LABELS:
-        val, src, present = _resolve_label(label, sources)
-        resolutions[label] = {
-            "label": label,
-            "present": present,
-            "source": src if present else None,
-            "presence": _mask(val),
-        }
-        if not present:
-            missing.append(label)
+    values = {}
+    for _slot, chain in CHAINS:
+        for label in chain:
+            val, rsrc, present = _resolve_label(label, sources)
+            resolutions[label] = {
+                "label": label,
+                "present": present,
+                "source": rsrc if present else None,
+                "presence": _mask(val),
+            }
+            if present:
+                values[label] = val
 
-    # Managed-keys lockstep: every required label must ALSO be in the
+    # Slot winners (Fix 30 precedence): the first present label in each chain.
+    # This is the variable the runtime actually reads.
+    winners = {}
+    missing = []
+    for slot, chain in CHAINS:
+        winner = next((l for l in chain if resolutions[l]["present"]), None)
+        winners[slot] = winner
+        if winner is None:
+            # Name every candidate so the operator sees the full chain that
+            # failed to resolve.
+            missing.extend(chain)
+
+    # Managed-keys lockstep: the WINNING label of each slot must ALSO be in the
     # OPENCLAW_SERVICE_MANAGED_ENV_KEYS regeneration allow-list, so a
-    # regeneration never drops it. Resolve the managed list live-process-first
-    # (it is itself a store-visible label), then split.
+    # regeneration never drops the variable the runtime actually reads. Resolve
+    # the managed list live-process-first (it is itself a store-visible label),
+    # then split.
     managed_val, managed_src, managed_present = _resolve_label(
         MANAGED_KEYS_LABEL, sources
     )
     managed_list = _split_managed(managed_val or "")
-    unmanaged = []
-    for label in REQUIRED_LABELS:
-        if label not in managed_list:
-            unmanaged.append(label)
+    unmanaged = [w for w in winners.values()
+                 if w is not None and w not in managed_list]
 
-    # Exit precedence: missing (exit 2) > unmanaged (exit 2) > ok (0).
+    # Env-shadow (Fix 30): BOTH token variables exist with DIFFERENT values.
+    # The legacy MC_API_TOKEN is then silently ignored at runtime (CC_API_TOKEN
+    # wins the chain) while every operator mental model still points at the
+    # legacy name — the exact silent-env confusion class this probe guards.
+    # The same value in both names is harmless duplication, not shadowing.
+    shadowed = []
+    if (resolutions["CC_API_TOKEN"]["present"]
+            and resolutions["MC_API_TOKEN"]["present"]
+            and values["CC_API_TOKEN"] != values["MC_API_TOKEN"]):
+        shadowed = list(TOKEN_CHAIN)
+
+    # Exit precedence: missing (exit 2) > unmanaged (exit 2) >
+    # shadowed (exit 2) > ok (0).
     if missing:
         exit_code = EXIT_MISSING
         verdict = "AF-AGENT-ENV-MISSING"
     elif unmanaged:
         exit_code = EXIT_MISSING
         verdict = "AF-AGENT-ENV-UNMANAGED"
+    elif shadowed:
+        exit_code = EXIT_MISSING
+        verdict = "AF-AGENT-ENV-SHADOWED"
     else:
         exit_code = EXIT_OK
         verdict = "PASS"
@@ -247,9 +302,12 @@ def probe(
         },
         "managed_keys": sorted(managed_list),
         "required_labels": list(REQUIRED_LABELS),
+        "chains": {slot: list(chain) for slot, chain in CHAINS},
+        "winners": winners,
         "resolutions": resolutions,
         "missing": missing,
         "unmanaged": unmanaged,
+        "shadowed": shadowed,
         "verdict": verdict,
         "exit_code": exit_code,
     }
@@ -262,8 +320,20 @@ def render_human(report: dict) -> str:
     lines.append("  stores checked (live process env first): %s"
                  % "; ".join(report["stores_checked"]))
     for label, r in report["resolutions"].items():
-        src = (" via %s in %s" % (r["label"], r["source"])) if r["present"] else ""
-        lines.append("  - %-20s %s%s" % (label, r["presence"], src))
+        rsrc = (" via %s in %s" % (r["label"], r["source"])) if r["present"] else ""
+        lines.append("  - %-20s %s%s" % (label, r["presence"], rsrc))
+    for slot, chain in (("token", TOKEN_CHAIN), ("url", URL_CHAIN)):
+        winner = report["winners"][slot]
+        if winner:
+            lines.append("  winner[%-5s]: %s  (precedence %s)"
+                         % (slot, winner, " > ".join(chain)))
+        else:
+            lines.append("  winner[%-5s]: NONE  (chain %s all absent)"
+                         % (slot, " > ".join(chain)))
+    if report.get("shadowed"):
+        lines.append("    ! SHADOWED: both token variables are set with DIFFERENT values "
+                     "(AF-AGENT-ENV-SHADOWED) — the runtime reads CC_API_TOKEN and "
+                     "silently ignores MC_API_TOKEN")
     mkl = report["managed_keys_label"]
     lines.append("  %s: %s (%d label(s) in the managed list, source=%s)"
                  % (MANAGED_KEYS_LABEL,
