@@ -1442,7 +1442,8 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
 
     provisioned = bj.read_provisioned(departments_dir, df)
     key = bj.make_keyer(df, canonical_dept_slug)
-    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key)
+    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key,
+                      bj.stray_template_keys(df, key))
     ok = verdict.get("rc") == bj.RC_OK
     return {
         "pass": ok,
@@ -1452,6 +1453,8 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
         "chosen_source": chosen_source,
         "counts": verdict.get("counts"),
         "drift_classes": verdict.get("drift_classes"),
+        "stray_template_departments": [
+            e["department"] for e in verdict.get("stray_template_departments") or []],
         "detail": (
             "board join holds: chosen == provisioned == displayed" if ok
             else "board join DRIFT: " + ", ".join(verdict.get("drift_classes") or ["unknown"])
