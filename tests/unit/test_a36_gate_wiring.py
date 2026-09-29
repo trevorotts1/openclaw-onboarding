@@ -136,6 +136,13 @@ class RealDbSingleWriterCasTests(unittest.TestCase):
         decision_revisions.decision_id``. Post-fix it is the typed
         ObsoleteRevisionError the module contract documents, and the loser
         writes NOTHING (no torn chain, no clobbered head).
+
+        The rendezvous sits INSIDE the compute call (after redispatch has read
+        head=1, before either INSERT), so both racers always CAS from the same
+        basis. A start-line barrier is not enough: under load one thread could
+        finish its whole redispatch before the other read the head, and that
+        second caller then (correctly) recommitted rev 3 from rev 2 -- a
+        sequential write, not a race, and a spurious "2 winners" failure.
         """
         dispatch.redispatch(self.con, "t-race", _scope(), _compute, "seed", {})
         self.con.commit()
@@ -143,12 +150,16 @@ class RealDbSingleWriterCasTests(unittest.TestCase):
         out = {}
         barrier = threading.Barrier(2)
 
+        def overlapped_compute(base, scope):
+            barrier.wait(timeout=15)  # both have read head=1; neither wrote
+            return _compute(base, scope)
+
         def race(key, tag):
             con = _wal_conn(self.db)
             try:
-                barrier.wait(timeout=15)
                 out[key] = dispatch.redispatch(
-                    con, "t-race", _scope(title=tag), _compute, tag, {})
+                    con, "t-race", _scope(title=tag), overlapped_compute,
+                    tag, {})
                 con.commit()
             except Exception as exc:  # noqa: BLE001 -- asserted below
                 out[key] = exc
@@ -174,6 +185,9 @@ class RealDbSingleWriterCasTests(unittest.TestCase):
         hist = dispatch.revision_history(self.con, "t-race")
         self.assertEqual([r["revision"] for r in hist], [1, 2],
                          "the loser must leave the chain untouched")
+        winner_tag = {"a": "B", "b": "C"}[winners[0]]
+        self.assertEqual(hist[1]["reason"], winner_tag,
+                         "rev 2 must be the winner's write, not the loser's")
 
     def test_all_four_kinds_gate_against_the_file_backed_chain(self):
         dispatch.redispatch(self.con, "t-kinds", _scope(), _compute, "one", {})

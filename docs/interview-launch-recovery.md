@@ -2,7 +2,7 @@
 
 First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
-Paired releases: onboarding v25.2.16 / Command Center v7.6.88. Skill 32 v13.1.39, Skill 37 v13.1.4 and Skill 05 v7.0.1. The decision engine now decides new owner intake live through `mc-route.sh auto` (see docs/MC-ROUTE.md); turn it off with `echo off > ~/.openclaw/decision-engine-mode.conf` (no restart), and delete the file or write `auto` to turn it back on.
+Paired releases: onboarding v25.2.17 / Command Center v7.6.89. Skill 32 v13.1.39, Skill 37 v13.1.4 and Skill 05 v7.0.1. The decision engine now decides new owner intake live through `mc-route.sh auto` (see docs/MC-ROUTE.md); turn it off with `echo off > ~/.openclaw/decision-engine-mode.conf` (no restart), and delete the file or write `auto` to turn it back on.
 
 ## Expected order
 

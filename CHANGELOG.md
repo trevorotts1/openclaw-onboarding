@@ -1,3 +1,15 @@
+## [v25.2.17]  -  2026-09-29  -  JEV classifier never drops a task and routes invoices to billing; A36 race test deterministic; v* tag off main fails loudly; CC pin v7.6.89
+
+### Why
+The v25.2.16 decision engine (JEV) could answer a message that also asked for work (an unknown verb such as refund or reconcile fell to "question"), let a throwaway lead ("Quick question.") turn a task into a question, and missed billing for "invoice" because the catalog says "Invoices". The A36 real-database race test flaked under load (a test ordering fault, not a lost update). And a v25.2.16 tag was once pushed onto an unmerged commit with nothing to catch it.
+
+### What changed
+- `shared-utils/decision-engine.py` (JGT-201): the intent heuristic now sorts every clause as question, filler, neutral or action after stripping leading filler; anything not provably a question or filler is action, so a task is never dropped to an answer. "Can/could/would/will you <verb>" is action unless the verb is explain/tell/describe/clarify. Fixtures still win. Light stemming lets "invoice" meet "Invoices", so "Send the invoice to the client" routes to billing-finance. `tests/unit/test_jev_live_decision.py` covers every QC case plus 18 adversarial cases.
+- `tests/unit/test_a36_gate_wiring.py` (JGT-205): the rendezvous moved inside `recompute_fn`, after the head read and before the insert, so both racers always compete from revision 1; it also asserts revision 2 is the winner's write.
+- `scripts/check-tag-on-main.sh <tag>` plus `.github/workflows/tag-on-main-guard.yml` (JGT-203): every pushed v* tag must peel to a commit on origin/main, or the workflow fails. Test: `tests/unit/check-tag-on-main.test.sh`.
+- cc-compat.json pinnedTag v7.6.88 -> v7.6.89 (Command Center migration 167 moves agents mis-filed into General Task back to their live same-company department; the route scorer no longer calls an open but unplaceable fallback "blocked"), with the README banner, DIRECT-TO-AGENT "pairs with", docs/interview-launch-recovery.md "Paired releases" and cc-runtime-preflight CC_PIN. release-cohort.json is bound to onboarding main b1a8836e and the peeled v7.6.89 commit d30574ab.
+- `scripts/bump-version.sh` v25.2.17 (10 markers; Skill 23 and Skill 06 skill-version.txt in lockstep).
+
 ## [v25.2.16]  -  2026-09-29  -  Merge train: #1395 release v25.2.16: JEV decides live; pin Command Center v7.6.88…; #1396 fix(fleet-roll): container PATH without a login profile; Hostinger…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
