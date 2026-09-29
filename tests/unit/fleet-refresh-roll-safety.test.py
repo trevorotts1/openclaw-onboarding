@@ -1114,6 +1114,80 @@ class ContaboStartupTemplate(unittest.TestCase):
             self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
 
 
+class HostingerStartupTemplate(unittest.TestCase):
+    """A recreated Hostinger container came back with an empty pm2: the Command
+    Center and the GHL MCP server stayed down until someone ran pm2 resurrect."""
+
+    COMPOSE = ("services:\n  openclaw:\n    image: ghcr.io/hostinger/hvps-openclaw:latest\n"
+               "    hostname: openclaw-x\n    restart: unless-stopped\n    volumes:\n      - ./data:/data\n")
+
+    def fake_bin(self, td, docker=True):
+        bin_ = Path(td, "bin")
+        bin_.mkdir()
+        (bin_ / "node").write_text(f'#!/bin/sh\necho "$@" > {td}/node-args\n')
+        (bin_ / "pm2").write_text(f'#!/bin/sh\necho "$@" >> {td}/pm2-calls\n[ "$1" = describe ] && exit 1\nexit 0\n')
+        if docker:
+            (bin_ / "docker").write_text("#!/bin/sh\nexit 0\n")
+        for f in bin_.iterdir():
+            f.chmod(0o755)
+        return bin_
+
+    def test_startup_resurrects_then_starts_a_missing_command_center_and_execs_the_server(self):
+        with tempfile.TemporaryDirectory() as td:
+            data = Path(td, "data")
+            (data / "projects/command-center").mkdir(parents=True)
+            (data / "projects/command-center/ecosystem.config.cjs").write_text("")
+            bin_ = self.fake_bin(td)
+            env = {"HOME": str(data), "OPENCLAW_DATA": str(data), "PATH": f"{bin_}:/usr/bin:/bin",
+                   "PM2_RESURRECT_DELAY": "0"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/container-startup.sh")],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(Path(td, "node-args").read_text().split(), ["server.mjs"])
+            calls = []
+            for _ in range(50):
+                calls = Path(td, "pm2-calls").read_text().split("\n") if Path(td, "pm2-calls").exists() else []
+                if "save" in calls:
+                    break
+                time.sleep(0.1)
+            self.assertEqual([c for c in calls if c], ["resurrect", "describe blackceo-command-center",
+                                                       "start ecosystem.config.cjs", "save"])
+
+    def install(self, td, compose, *args):
+        proj = Path(td, "openclaw-x")
+        proj.mkdir(exist_ok=True)
+        (proj / "docker-compose.yml").write_text(compose)
+        bin_ = self.fake_bin(td) if not Path(td, "bin").exists() else Path(td, "bin")
+        env = {**os.environ, "PATH": f"{bin_}:/usr/bin:/bin"}
+        return proj, subprocess.run(["bash", str(REPO / "platform/vps/hostinger/install-startup-hook.sh"), str(proj), *args],
+                                    env=env, capture_output=True, text=True, timeout=30)
+
+    def test_host_installer_adds_the_command_once_with_a_backup(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, r = self.install(td, self.COMPOSE, "--check")
+            self.assertEqual(r.returncode, 1, r.stdout)          # control: an unhooked box is reported
+            proj, r = self.install(td, self.COMPOSE)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = (proj / "docker-compose.yml").read_text()
+            self.assertIn('    image: ghcr.io/hostinger/hvps-openclaw:latest\n'
+                          '    command: ["bash", "/data/.openclaw/scripts/container-startup.sh"]\n', text)
+            self.assertTrue((proj / "data/.openclaw/scripts/container-startup.sh").is_file())
+            self.assertEqual([b.read_text() for b in proj.glob("docker-compose.yml.bak-startup-hook-*")], [self.COMPOSE])
+            env = {**os.environ, "PATH": f"{Path(td, 'bin')}:/usr/bin:/bin"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/install-startup-hook.sh"), str(proj)],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual((proj / "docker-compose.yml").read_text().count("command:"), 1)
+
+    def test_an_existing_resurrect_command_is_left_alone_and_another_command_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            hooked = self.COMPOSE + '    command: ["sh", "-c", "(sleep 45 && pm2 resurrect) & exec node server.mjs"]\n'
+            proj, r = self.install(td, hooked)
+            self.assertEqual((r.returncode, (proj / "docker-compose.yml").read_text()), (0, hooked))
+            other = self.COMPOSE + '    command: ["node", "server.mjs"]\n'
+            proj, r = self.install(td, other)
+            self.assertEqual((r.returncode, (proj / "docker-compose.yml").read_text()), (1, other))
+
+
 class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
     def test_receipts_go_to_the_state_dir_and_old_ones_move_out(self):
         import importlib.util
