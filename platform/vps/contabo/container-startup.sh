@@ -20,6 +20,11 @@ set -u
 OC="${OPENCLAW_ROOT:-$HOME/.openclaw}"
 export PATH="$OC/npm-global/bin:$PATH"
 export PM2_HOME="${PM2_HOME:-$OC/.pm2}"
+# Master files (company folders, playbooks) on the volume, never in the
+# temporary $HOME/Downloads that a recreate wipes. For the gateway's own
+# processes; shared-utils/detect_platform.py resolves the same path for the
+# others, and compose can set it too (see README.md).
+export MASTER_FILES_DIR="${MASTER_FILES_DIR:-$OC/openclaw-master-files}"
 LOGS="$OC/logs"
 mkdir -p "$LOGS" "$PM2_HOME" 2>/dev/null || true
 

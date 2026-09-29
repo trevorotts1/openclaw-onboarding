@@ -1189,6 +1189,41 @@ class HostingerStartupTemplate(unittest.TestCase):
             self.assertEqual((r.returncode, (proj / "docker-compose.yml").read_text()), (1, other))
 
 
+class MasterFilesStayOnTheContainerVolume(unittest.TestCase):
+    """Contabo: HOME is the container's temporary layer and only ~/.openclaw is a
+    volume. Master files defaulted to ~/Downloads, so a recreate deleted a
+    client's whole company folder (departments.json, research manifest)."""
+
+    def paths(self, volume_mounted):
+        import detect_platform as dp
+        with tempfile.TemporaryDirectory() as home:
+            (Path(home) / ".openclaw" / "workspace").mkdir(parents=True)
+            root = Path(home) / ".openclaw"
+            env = {k: v for k, v in os.environ.items() if k not in ("MASTER_FILES_DIR", "OPENCLAW_PLATFORM")}
+            env["HOME"] = home
+            with mock.patch.dict(os.environ, env, clear=True), \
+                 mock.patch.object(dp, "DATA_ROOT", Path(home) / "no-data"), \
+                 mock.patch.object(dp.os.path, "ismount", side_effect=lambda p: volume_mounted and Path(p) == root):
+                got = dp.get_openclaw_paths()
+                roots = dp.known_company_roots(got["platform"], got["workspace"])
+            return Path(home), got, roots
+
+    def test_a_container_volume_holds_master_files(self):
+        home, got, roots = self.paths(volume_mounted=True)
+        self.assertEqual(got["master_files"], home / ".openclaw" / "openclaw-master-files")
+        self.assertEqual(got["company_root"], home / ".openclaw" / "openclaw-master-files" / "zero-human-company")
+        self.assertEqual(roots[0], home / ".openclaw" / "openclaw-master-files" / "zero-human-company")
+
+    def test_a_mac_keeps_downloads(self):   # control: no volume mount
+        home, got, roots = self.paths(volume_mounted=False)
+        self.assertEqual(got["master_files"], home / "Downloads" / "openclaw-master-files")
+        self.assertEqual(roots[0], home / "Downloads" / "openclaw-master-files" / "zero-human-company")
+
+    def test_the_contabo_startup_exports_it(self):
+        text = (REPO / "platform/vps/contabo/container-startup.sh").read_text()
+        self.assertIn('export MASTER_FILES_DIR="${MASTER_FILES_DIR:-$OC/openclaw-master-files}"', text)
+
+
 class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
     def test_receipts_go_to_the_state_dir_and_old_ones_move_out(self):
         import importlib.util

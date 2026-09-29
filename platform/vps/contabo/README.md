@@ -15,7 +15,12 @@ three things.
          PATH: /home/node/.openclaw/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
          PM2_HOME: /home/node/.openclaw/.pm2
          NPM_CONFIG_PREFIX: /home/node/.openclaw/npm-global
+         MASTER_FILES_DIR: /home/node/.openclaw/openclaw-master-files
    ```
+
+   `MASTER_FILES_DIR` keeps company folders and playbooks on the volume. `$HOME/Downloads`
+   is the container's temporary layer: a recreate deletes it (one client lost a whole
+   company folder that way).
 
    Keep `/home/node/.openclaw/bin` OFF this PATH: it can hold a non-executable uv `env`
    file that shadows `/usr/bin/env`.
