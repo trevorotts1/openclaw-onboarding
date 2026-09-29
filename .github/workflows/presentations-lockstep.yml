@@ -44,6 +44,8 @@ on:
       - "universal-sops/presentation-slide-craft/*.json"
       # Skill 51 (Signature Presentation) self-verification gate
       - "51-signature-presentation/**"
+      # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate
+      - "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
 jobs:
   presentations-lockstep:
     name: Presentations SOP/manifest/code lockstep (sync_check)

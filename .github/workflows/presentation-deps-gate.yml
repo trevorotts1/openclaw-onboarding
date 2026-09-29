@@ -15,6 +15,8 @@ on:
       - 23-ai-workforce-blueprint/scripts/qc-completeness.sh
       - tests/unit/presentation-deps-gate.test.sh
       - .github/workflows/presentation-deps-gate.yml
+      # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate
+      - "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
   pull_request:
     paths:
       - install.sh
@@ -22,6 +24,8 @@ on:
       - tests/unit/presentation-deps-gate.test.sh
       - .github/workflows/presentation-deps-gate.yml
 
+      # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate
+      - "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
 jobs:
   presentation-deps-gate:
     name: Presentation-deps install + QC hard-fail guard
