@@ -6,7 +6,9 @@ name: prove-zhe guard (live CC DB + agents.entries roster)
 #   * a 0-byte decoy mission-control.db shadowing the running CC's real DB;
 #   * reading only agents.list[] when the roster lives in agents.entries;
 #   * matching dept folders to board lanes literally (legal-compliance vs "legal");
-#   * holding the operator-side rescue-rangers dept to a client board lane.
+#   * holding the operator-side rescue-rangers dept to a client board lane;
+#   * requiring an agent + lane for every folder, including role-library template
+#     copies the client never chose (the requirement is departments.json + floor).
 # tests/unit/test_prove_zhe_cc_db_and_agents_entries.py pins all four; the
 # prover's own selftests pin the STANDARD_READY and web-parity verdicts.
 #
