@@ -459,7 +459,7 @@ curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/mai
 - `📂 Skills directory: /Users/[you]/.openclaw/skills` (or `~/Downloads/openclaw-master-files/`)
 - `Current version: vX.Y.Z` / `Latest version: v9.1.x`
 - `Downloading latest skills from GitHub...`
-- `Creating backup: ~/Downloads/openclaw-backups/skills-backup-YYYYMMDD-HHMMSS` — your old skills get backed up before any change
+- `rollback recorded (no copy of the skills folder): commit <sha>, local changes <N> bytes -> ~/Downloads/openclaw-backups/skills-rollback-YYYYMMDD-HHMMSS` — the way back from this update: the previous commit plus a small patch of your own changes, restored with `bash scripts/skills-rollback.sh restore <that folder>` (a box with no recorded commit yet gets a one-time full `skills-backup-YYYYMMDD-HHMMSS` instead)
 - For each skill being installed: either `Updated: NN-skill-name` (replaced in place) or `🆕 NEW SKILL DETECTED: NN-skill-name` followed by activation instructions for your agent
 - At the end: `Skills updated successfully!` + UPDATE PENDING flag written + Telegram status line + backup ASCII box
 
@@ -596,7 +596,7 @@ curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/mai
 ### What you'll see
 
 - `📂 Skills directory: /data/.openclaw/skills` (or `/data/Downloads/openclaw-master-files/`)
-- Backup created at `~/openclaw-backups/skills-backup-YYYYMMDD-HHMMSS` (note: VPS backups go to home, not Downloads)
+- Rollback recorded at `/data/Downloads/openclaw-backups/skills-rollback-YYYYMMDD-HHMMSS` (the previous commit + a patch of local changes; no copy of the skills folder)
 - Skill copy loop
 - UPDATE PENDING flag + Telegram + backup ASCII box at the end
 

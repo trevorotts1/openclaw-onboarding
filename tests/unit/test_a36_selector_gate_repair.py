@@ -15,14 +15,20 @@ during the selector run, and assert the refusal.
 
 Run: python3 -m pytest tests/unit/test_a36_selector_gate_repair.py -q
 """
+import atexit
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# Every temp file/dir this test makes lands in one sandbox, removed at exit (pass or fail).
+tempfile.tempdir = tempfile.mkdtemp(prefix="onb-test-")
+atexit.register(shutil.rmtree, tempfile.tempdir, True)
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 _COMMIT = _REPO / "shared-utils" / "decision_engine" / "commit"
