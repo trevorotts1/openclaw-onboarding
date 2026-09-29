@@ -6429,6 +6429,74 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     return header + out
 
 
+def _library_role_entries(dept_id):
+    """The role library's roles for a department, one per canonical slug."""
+    index = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "templates", "role-library", "_index.json")
+    try:
+        with open(index) as f:
+            roles = json.load(f).get("roles", [])
+    except (OSError, ValueError):
+        return []
+    dept = _crw_normalize_dept(dept_id) if _LIBRARY_FILL_AVAILABLE else dept_id
+    out = {}
+    for e in roles:
+        if (e.get("dept") or "").lower() == dept and e.get("slug"):
+            out.setdefault(e["slug"], e)
+    return list(out.values())
+
+
+def _role_key(name, dept_id):
+    """Canonical library slug for a role name or folder name, prover-normalized."""
+    bare = re.sub(r"^\d+[-_]", "", str(name or ""))
+    if _LIBRARY_FILL_AVAILABLE:
+        _, entry = _crw_library_lookup(bare, dept_id)
+        if entry and entry.get("slug"):
+            bare = entry["slug"]
+    return re.sub(r"-{2,}", "-", _engine_slugify(bare))
+
+
+def library_floor_roles(dept_id, roles, dept_dir=None):
+    """Role folders carry the role library's canonical slug, and every library
+    role of the department is built.
+
+    The suggested-roles headers carry employment tags and no **Slug:** line
+    ("### 1. Director of CRM (full-time-permanent)"), so the raw name became the
+    folder ("01-director-of-crm-full-time-permanent") and the floor prover never
+    matched it. Roles the roster does not list (healer, devil's advocate, SOP
+    writer) were never built. A role (or folder already on disk) that resolves to
+    a library slug counts as present, so nothing is built twice.
+    """
+    have = set()
+    for r in roles:
+        if not (r.get("slug") or "").strip() and _LIBRARY_FILL_AVAILABLE:
+            _, entry = _crw_library_lookup(r["name"], dept_id)
+            if entry and entry.get("slug"):
+                r["slug"] = entry["slug"]
+        have.add(_role_key(r.get("slug") or r["name"], dept_id))
+    if dept_dir and os.path.isdir(dept_dir):
+        have |= {_role_key(n, dept_id) for n in os.listdir(dept_dir)
+                 if os.path.isdir(os.path.join(dept_dir, n))}
+    nums = []
+    for r in roles:
+        try:
+            if int(r.get("number") or 0) < 99:
+                nums.append(int(r.get("number") or 0))
+        except (TypeError, ValueError):
+            pass
+    nxt = max(nums, default=0) + 1
+    for e in sorted(_library_role_entries(dept_id), key=lambda e: e["slug"]):
+        if _role_key(e["slug"], dept_id) in have:
+            continue
+        title = e.get("title") or ""
+        roles.append({"number": nxt, "name": title if title and "{{" not in title else e["slug"].replace("-", " ").title(),
+                      "slug": e["slug"], "description": "", "sops": [], "persona_traits": "",
+                      "is_qc": e["slug"].startswith("qc")})
+        have.add(_role_key(e["slug"], dept_id))
+        nxt += 1
+    return roles
+
+
 def create_role_workspace(dept_id, dept_info, interview_answers):
     """
     Create role subfolders inside a department workspace.
@@ -6453,8 +6521,8 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         print(f"[ROLE-WORKSPACE WARNING] Department directory does not exist: {dept_dir}", file=sys.stderr)
         return []
 
-    # Parse the suggested-roles file
-    roles = parse_suggested_roles(dept_id)
+    # Parse the suggested-roles file, then align it to the role library's floor.
+    roles = library_floor_roles(dept_id, parse_suggested_roles(dept_id), dept_dir)
     if not roles:
         print(f"[ROLE-WORKSPACE] No roles found for {dept_id}, skipping role workspace creation."
               f" If roles are expected, check suggested-roles/{DEPT_TO_SUGGESTED_ROLES.get(dept_id, 'unknown')}",
