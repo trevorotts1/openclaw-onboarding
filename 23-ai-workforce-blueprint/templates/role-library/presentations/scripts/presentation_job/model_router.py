@@ -153,6 +153,7 @@ ROUTER_CATALOG_ALIAS: Dict[str, str] = {
     "deepseek-flash": "text.fast",
     "gpt-image-2": "image.t2i",
     "gpt-image-2-5": "image.t2i",
+    "glm-ocr": "vision.ocr",
 }
 
 
@@ -787,18 +788,15 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 #        wider than the suggestion proposed (every width, not just the
 #        fan-out QC phases). F15's honesty -- the plan reporting the width
 #        that will actually be applied -- is untouched and must stay.
-#        CONSEQUENCE: ultra and standard are byte-identical in width again.
-#        That is NOT re-fixed here by re-narrowing standard; the two honest
-#        fixes (raise ultra, or let the operator set both) are the operator's
-#        call and remain open. Every record instead says the axis is COSMETIC
-#        -- see _mode_axis_differentiates() and _cosmetic_axis_notice().
+#        FIX 61.5: ultra is 400, standard is 25 -- the axis is REAL, not
+#        cosmetic. Unmeasured clients get their mode's ceiling.
 
 MODE_FLAG_ENV = "PRESENTATION_MODES"
 MODE_FLAG_DEFAULT = "1"
 
 #: The operator ceiling -- a HUMAN-ratified constant, never provider-advertised.
 #: This is ULTRA's share, and the absolute maximum ANY mode may reach.
-ULTRA_OPERATOR_CEILING = 100
+ULTRA_OPERATOR_CEILING = 400
 
 #: STANDARD's share of the operator ceiling.
 #:
@@ -834,7 +832,7 @@ ULTRA_OPERATOR_CEILING = 100
 #: the launcher banner print carries the word COSMETIC. A switch that does
 #: nothing may exist here only for as long as every record admits that it
 #: does nothing.
-STANDARD_MODE_CEILING = 100
+STANDARD_MODE_CEILING = 25
 
 #: FIX 16 -- the per-mode share of the operator ceiling, one table, read by
 #: mode_operator_ceiling() and through it by mode_ceiling() -> capped_width().
@@ -850,7 +848,8 @@ STANDARD_MODE_CEILING = 100
 MODE_OPERATOR_CEILING: Dict[str, int] = {
     "ultra": ULTRA_OPERATOR_CEILING,
     "standard": STANDARD_MODE_CEILING,
-    "economy": ULTRA_OPERATOR_CEILING,
+    # FIX 61.5: economy stays exactly as it is today (100), not ultra's 400.
+    "economy": 100,
 }
 
 #: capacity.DEFAULT_CONSERVATIVE -- the floor CAPACITY (not this module) drops
@@ -1079,11 +1078,11 @@ def _cosmetic_axis_notice() -> str:
     verbatim and `.mode-plan.json` already records, so no caller had to
     change. F15's rule, applied to F16's undo: a record that cannot state a
     difference must not imply one."""
-    return (f" MODE WIDTH AXIS IS COSMETIC: ultra and standard are both held "
-            f"to {ULTRA_OPERATOR_CEILING} (ULTRA_OPERATOR_CEILING "
-            f"{ULTRA_OPERATOR_CEILING}, STANDARD_MODE_CEILING "
-            f"{STANDARD_MODE_CEILING}), so declaring a mode changes NO width "
-            f"anywhere in the engine. U3 restored standard to the operator's "
+    return (f" MODE WIDTH AXIS: ultra runs at {ULTRA_OPERATOR_CEILING}, "
+            f"standard at {STANDARD_MODE_CEILING} "
+            f"(ULTRA_OPERATOR_CEILING {ULTRA_OPERATOR_CEILING}, "
+            f"STANDARD_MODE_CEILING {STANDARD_MODE_CEILING}), so declaring a "
+            f"mode changes the width. FIX 61 made the axis real. "
             f"{STANDARD_MODE_CEILING} after it was narrowed to 25 without "
             f"his approval; making ultra mean something again is an OPERATOR "
             f"decision -- raise ultra above {ULTRA_OPERATOR_CEILING}, or set "
@@ -1121,8 +1120,9 @@ def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
     rather than implying a mode was bought. See _unmeasured_notice()."""
     m = normalize_mode(mode)
     if measured is None:
-        return ULTRA_OPERATOR_CEILING, False
-    return (MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING),
+        # FIX 61.5: unmeasured clients get the MODE's ceiling, not 400.
+        return MODE_OPERATOR_CEILING.get(m, STANDARD_MODE_CEILING), False
+    return (MODE_OPERATOR_CEILING.get(m, STANDARD_MODE_CEILING),
             _mode_axis_differentiates())
 
 
@@ -1336,7 +1336,8 @@ def mode_ceiling(mode: str, *,
         if not axis_in_force:
             reason += "." + _cosmetic_axis_notice()
     else:
-        ceiling = operator
+        # FIX 61.5: unmeasured -> the mode's ceiling, not 400.
+        ceiling = mode_op
         reason = _unmeasured_notice(m)
     return {"mode": m, "ceiling": int(ceiling), "measured_ceiling": measured,
             "operator_ceiling": operator,
@@ -1376,7 +1377,7 @@ def capped_width(width: Any, mode: str, *,
     ceil_block = (decision or {}).get("mode_ceiling") \
         or mode_ceiling(m, profile=profile, provider=provider)
     limits: List[Tuple[str, int]] = [
-        ("mode ceiling", int(ceil_block.get("ceiling") or ULTRA_OPERATOR_CEILING))]
+        ("mode ceiling", int(ceil_block.get("ceiling") or MODE_OPERATOR_CEILING.get(m, STANDARD_MODE_CEILING)))]
     if m == "economy":
         conc = (decision or {}).get("mode_concurrency") \
             or mode_concurrency(m, profile=profile)
@@ -2054,9 +2055,29 @@ def resolve_route(phase_id: str, *,
             alias_def = {k: v for k, v in cand.items() if k != "alias"}
         else:
             alias_def = resolve_alias(alias)
+        # FIX 61.1: Ultra never uses Ollama. Substitute the OpenRouter served id.
+        _ultra_or_model = None
+        if mode == "ultra" and alias_def and _norm_provider(alias_def.get("provider")) == "ollama-cloud":
+            _ultra_or_model = (alias_def.get("served_ids") or {}).get("openrouter")
+            if not _ultra_or_model:
+                _oc_model = alias_def.get("model")
+                for _a, _d in ROUTER_CATALOG.items():
+                    if (_d.get("served_ids") or {}).get("ollama-cloud") == _oc_model:
+                        _ultra_or_model = (_d.get("served_ids") or {}).get("openrouter")
+                        break
+            if _ultra_or_model:
+                alias_def = {**alias_def, "provider": "openrouter",
+                             "model": _ultra_or_model,
+                             "served_ids": {"openrouter": _ultra_or_model}}
         row: Dict[str, Any] = {"alias": alias, **alias_def}
         if not alias_def:
             row.update({"eligible": False, "reason": "alias unknown to the catalog"})
+            candidates.append(row)
+            continue
+        if mode == "ultra" and _norm_provider(alias_def.get("provider")) == "ollama-cloud":
+            _m = alias_def.get("model")
+            row.update({"eligible": False,
+                        "reason": "ultra: no OpenRouter served id for " + str(_m)})
             candidates.append(row)
             continue
         ok, why = _eligible(providers, alias_def)

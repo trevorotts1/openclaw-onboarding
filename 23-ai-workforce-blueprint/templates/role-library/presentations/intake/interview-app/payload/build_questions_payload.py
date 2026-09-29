@@ -58,6 +58,11 @@ DEFAULT_CURATED = [
     "run_mode",                   # FIX 11 run mode (projected from the bank's
                                    # resource_plan.run_mode subfield) -- the
                                    # hosted app's only way to reach Ultra
+    # FIX 62: Ollama Cloud plan choice
+    "ollama_plan",
+    # FIX 61.2: client model picks (projected from bank subfields, like run_mode)
+    "deepseek_variant",
+    "openrouter_model",
     "client_notes",               # extras
 ]
 
@@ -89,7 +94,7 @@ RUN_MODE_APP_COPY = {
     # location presentation-intake-poll.sh's read_run_mode() already reads.
     "storeOn": "pre_presentation_capture.RUN_MODE",
     "value_labels": {
-        "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+        "ultra": "Ultra: the strongest models you choose, up to 16x faster",
         "standard": "Standard — the department default",
         "economy": "Economy — leaner and cheaper",
     },
@@ -100,6 +105,58 @@ RUN_MODE_APP_COPY = {
 #: Where the run-mode vocabulary comes from, stated once.
 RUN_MODE_BANK_QUESTION = "resource_plan"
 RUN_MODE_BANK_SUBFIELD = "run_mode"
+
+#: FIX 62: App-facing copy for the Ollama Cloud plan choice.
+OLLAMA_PLAN_APP_COPY = {
+    "id": "ollama_plan",
+    "section": "deck-intake",
+    "order": 11.55,
+    "prompt": "Are you on the Ollama Cloud $20/month or $100/month plan?",
+    "help": ("The $20 plan runs 3 at once; the $100 plan runs 8 at once. "
+             "Shown only when Ollama Cloud is selected."),
+    "kind": "text",
+    "storeOn": "pre_presentation_capture.OLLAMA_PLAN",
+    "value_labels": {
+        "$20/month": "$20/month — 3 at once",
+        "$100/month": "$100/month — 8 at once",
+    },
+    "required": False,
+    "block_gate": False,
+}
+
+#: FIX 61.2: App-facing copy for the DeepSeek variant pick (projected from
+#: the bank's resource_plan.deepseek_variant subfield, like run_mode).
+DEEPSEEK_VARIANT_APP_COPY = {
+    "id": "deepseek_variant",
+    "section": "deck-intake",
+    "order": 11.6,
+    "prompt": "Which DeepSeek variant for the heavy writing — Flash or Pro?",
+    "help": ("Flash is fast and cheap; Pro is the strongest. "
+             "This sets your workhorse model."),
+    "kind": "text",
+    "storeOn": "pre_presentation_capture.DEEPSEEK_VARIANT",
+    "value_labels": {
+        "flash": "Flash — fast and cheap",
+        "pro": "Pro — strongest",
+    },
+    "required": False,
+    "block_gate": False,
+}
+
+#: FIX 61.2: App-facing copy for the OpenRouter model pick (projected from
+#: the bank's resource_plan.openrouter_model subfield, like run_mode).
+OPENROUTER_MODEL_APP_COPY = {
+    "id": "openrouter_model",
+    "section": "deck-intake",
+    "order": 11.7,
+    "prompt": "Which OpenRouter model should Ultra use? (e.g. z-ai/glm-5.3-flash)",
+    "help": ("In Ultra mode this model replaces any Ollama-routed step. "
+             "Free text — paste any OpenRouter model id."),
+    "kind": "text",
+    "storeOn": "pre_presentation_capture.OPENROUTER_MODEL",
+    "required": False,
+    "block_gate": False,
+}
 
 #: Used ONLY when the canonical bank is unreachable (the standalone app
 #: checkout). A mirror, and test_payload.py fails if it drifts from the bank.
@@ -166,6 +223,25 @@ APP_ONLY_QUESTIONS = {
 }
 
 
+
+def _project_subfield_question(pool: list, app_copy: dict, subfield: str) -> dict:
+    """Project a bank resource_plan SUBFIELD into a standalone app question.
+
+    FIX 61.2: generic version of _project_run_mode_question for the model-pick
+    subfields (deepseek_variant, openrouter_model). The vocabulary comes from
+    the bank subfield; only the client-facing copy is the app's.
+    """
+    q = dict(app_copy)
+    ann = {}
+    for row in pool:
+        if row.get("id") == "resource_plan":
+            ann = (row.get("subfields") or {}).get(subfield) or {}
+            break
+    if ann.get("enum"):
+        q["allowed_values"] = [str(v).strip().lower() for v in ann["enum"]]
+        q["default"] = ann.get("default", "")
+    return q
+
 def _project_question(q: dict) -> dict:
     out = {}
     for k in _PASSTHROUGH:
@@ -227,6 +303,13 @@ def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
     rm_id = RUN_MODE_APP_COPY["id"]
     if rm_id in curated_ids and rm_id not in by_id:
         by_id[rm_id] = _project_run_mode_question(specs.get("questions", []))
+    # FIX 61.2: project the model-pick subfields, same pattern as run_mode.
+    for _copy, _sub in ((DEEPSEEK_VARIANT_APP_COPY, "deepseek_variant"),
+                        (OPENROUTER_MODEL_APP_COPY, "openrouter_model")):
+        _id = _copy["id"]
+        if _id in curated_ids and _id not in by_id:
+            by_id[_id] = _project_subfield_question(
+                specs.get("questions", []), _copy, _sub)
     missing = [i for i in curated_ids if i not in by_id]
     if missing:
         raise ValueError(f"curated ids not found in canonical JSONs: {missing}")

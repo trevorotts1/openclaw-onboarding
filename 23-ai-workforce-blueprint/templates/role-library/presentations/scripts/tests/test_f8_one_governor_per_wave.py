@@ -7,7 +7,7 @@ keeps its token bucket, in-flight counter, rolling-10s event list and the
 does NOT inherit it -- every child re-imported governor with an EMPTY bucket.
 
 Consequence: `max_inflight`, the 10 s window ceiling and the 429 penalty bound one
-CHILD, never the wave.  At 100 workers against deepseek (`burst: 20`) that is up to
+CHILD, never the wave.  At 100 workers against deepseek (`burst: 400`, FIX 61.6 D4) that is up to
 2,000 admissions per 10 s at one account bucket, and a 429 seen by one child never
 slowed its 99 peers -- the account bucket is over-subscribed, and the leases are
 not actually shared.

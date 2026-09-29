@@ -325,6 +325,37 @@ def _openrouter_live_pricing() -> Dict[str, Dict[str, float]]:
 # ---------------------------------------------------------------------------
 # Expected calls (FIX 5 measured history, else the plan's own counts)
 # ---------------------------------------------------------------------------
+
+def check_openrouter_model(model_id: str) -> tuple:
+    """Validate an OpenRouter model id against the live list.
+
+    FIX 61.3: In ultra, an unknown or retired OpenRouter model must stop the
+    run BEFORE any spend. Checks the model id against the live OpenRouter
+    list, including its expiration_date. Returns (ok: bool, reason: str).
+    Refusal message names the model plainly.
+    """
+    if not model_id or not str(model_id).strip():
+        return True, ""  # no model declared: nothing to check
+    mid = str(model_id).strip()
+    live = _openrouter_live_pricing()
+    if mid not in live:
+        return False, (
+            f"ultra: OpenRouter model {mid!r} is unknown (not on the live "
+            f"OpenRouter model list) -- ultra launch refused BEFORE any spend"
+        )
+    exp = live[mid].get("expiration_date")
+    if exp:
+        try:
+            from datetime import datetime, timezone
+            exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if exp_dt < now:
+                return False, "ultra: OpenRouter model " + repr(mid) + " is retired"
+        except (ValueError, TypeError):
+            pass
+    return True, 
+
+
 def read_measured_calls(run_dir: Optional[Path]) -> Dict[str, int]:
     """Per-phase call counts from the LAST completed run's FIX 5 telemetry.
 

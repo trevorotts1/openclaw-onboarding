@@ -242,7 +242,7 @@ def test_deepseek_and_the_defaults_row_are_untouched():
     read that returns the pre-existing numbers proves the loader is fine and
     that only the openrouter row moved."""
     assert governor.provider_config("deepseek-direct")["max_inflight"] == 400
-    assert governor.provider_config("deepseek-direct")["rps"] == 5.0
+    assert governor.provider_config("deepseek-direct")["rps"] == 100  # FIX 61.6 D4
     assert governor._DEFAULTS["max_inflight"] == 50
     assert governor.provider_config("kie")["max_inflight"] == 100
 

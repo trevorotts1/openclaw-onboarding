@@ -227,6 +227,51 @@
       ]
     },
     {
+      "id": "ollama_plan",
+      "canonical_path": "pre_presentation_capture.OLLAMA_PLAN",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": [
+        "$20/month",
+        "$100/month"
+      ],
+      "legacy_aliases": [
+        "OLLAMA_PLAN",
+        "ollama_plan"
+      ]
+    },
+    {
+      "id": "deepseek_variant",
+      "canonical_path": "pre_presentation_capture.DEEPSEEK_VARIANT",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": [
+        "flash",
+        "pro"
+      ],
+      "legacy_aliases": [
+        "DEEPSEEK_VARIANT",
+        "deepseek_variant"
+      ]
+    },
+    {
+      "id": "openrouter_model",
+      "canonical_path": "pre_presentation_capture.OPENROUTER_MODEL",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": null,
+      "legacy_aliases": [
+        "OPENROUTER_MODEL",
+        "openrouter_model"
+      ]
+    },
+    {
       "id": "client_notes",
       "canonical_path": "deck_brief.CLIENT_NOTES",
       "section": "deck_brief",

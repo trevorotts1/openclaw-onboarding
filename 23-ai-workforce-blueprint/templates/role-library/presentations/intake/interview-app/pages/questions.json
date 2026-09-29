@@ -5,7 +5,7 @@
   "question_set": "standard",
   "source": "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate. (deployed-r2/public/index.html is PRES-005-owned and server-driven — not regenerated.)",
   "contract_version": 2,
-  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 18.",
+  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 21.",
   "questions": [
     {
       "id": "presentation_type",
@@ -241,10 +241,59 @@
         "economy"
       ],
       "value_labels": {
-        "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+        "ultra": "Ultra: the strongest models you choose, up to 16x faster",
         "standard": "Standard — the department default",
         "economy": "Economy — leaner and cheaper"
       }
+    },
+    {
+      "id": "ollama_plan",
+      "order": 11.55,
+      "kind": "enum",
+      "prompt": "Are you on the Ollama Cloud $20/month or $100/month plan?",
+      "help": "The $20 plan runs 3 at once; the $100 plan runs 8 at once.",
+      "label": "Ollama Cloud plan",
+      "required": false,
+      "storeOn": "pre_presentation_capture.OLLAMA_PLAN",
+      "default": "",
+      "allowed_values": [
+        "$20/month",
+        "$100/month"
+      ],
+      "value_labels": {
+        "$20/month": "$20/month — 3 at once",
+        "$100/month": "$100/month — 8 at once"
+      }
+    },
+    {
+      "id": "deepseek_variant",
+      "order": 11.6,
+      "kind": "enum",
+      "prompt": "Which DeepSeek variant for the heavy writing?",
+      "help": "Flash is fast and cheap; Pro is the strongest.",
+      "label": "DeepSeek variant",
+      "required": false,
+      "storeOn": "pre_presentation_capture.DEEPSEEK_VARIANT",
+      "default": "",
+      "allowed_values": [
+        "flash",
+        "pro"
+      ],
+      "value_labels": {
+        "flash": "Flash — fast and cheap",
+        "pro": "Pro — strongest"
+      }
+    },
+    {
+      "id": "openrouter_model",
+      "order": 11.7,
+      "kind": "text",
+      "prompt": "Which OpenRouter model should Ultra use? (e.g. z-ai/glm-5.3-flash)",
+      "help": "In Ultra mode this model replaces any Ollama-routed step.",
+      "label": "OpenRouter model",
+      "required": false,
+      "storeOn": "pre_presentation_capture.OPENROUTER_MODEL",
+      "default": ""
     },
     {
       "id": "client_notes",

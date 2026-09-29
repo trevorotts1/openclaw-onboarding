@@ -1371,7 +1371,8 @@ def acquire(
             if st.day != today:
                 st.day = today
                 st.day_count = 0
-            daily_ok = cfg["daily_cap"] <= 0 or st.day_count + n <= cfg["daily_cap"]
+            # FIX 61.6: polls do not count toward the daily cap.
+            daily_ok = poll or cfg["daily_cap"] <= 0 or st.day_count + n <= cfg["daily_cap"]
             if not daily_ok:
                 raise GovernorDailyCapReached(
                     f"governor: daily_cap {cfg['daily_cap']} reached for {provider}"
@@ -1403,7 +1404,9 @@ def acquire(
                 if not poll_ok:
                     st.tokens -= n
                 st.inflight += n
-                st.day_count += n
+                # FIX 61.6: polls do not consume daily cap.
+                if not poll:
+                    st.day_count += n
                 st.max_inflight_seen = max(st.max_inflight_seen, st.inflight)
                 # poll admissions bypassing the rate bucket are logged as
                 # their own event kind so they never consume the 10 s window

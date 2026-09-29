@@ -3968,7 +3968,10 @@ def _unbounded_width(mode: str,
     if ceiling >= 1:
         return ceiling
     try:
-        return int(_model_router.ULTRA_OPERATOR_CEILING)
+        # FIX 61.5: mode-specific fallback, not always 400.
+        _m = _model_router.normalize_mode(mode)
+        return int(_model_router.MODE_OPERATOR_CEILING.get(
+            _m, _model_router.STANDARD_MODE_CEILING))
     except Exception:  # noqa: BLE001 -- router present but shape unexpected
         return None
 
@@ -4563,11 +4566,25 @@ def _stamp_admission_fold(stamp, *, phase_id: str,
                               stamp.get("capacity_raw_available")))
     except Exception:  # noqa: BLE001
         _unbounded = False
+    # FIX 61.5: pass the mode's ceiling, not the measured width.
+    _mode_ceil = None
+    try:
+        from presentation_job import model_router as _mr
+    except ImportError:
+        try:
+            import model_router as _mr  # type: ignore[no-redef]
+        except ImportError:
+            _mr = None
+    if _mr is not None:
+        try:
+            _mode_ceil = int(_mr.mode_ceiling(mode)["ceiling"])
+        except Exception:
+            _mode_ceil = None
     adm = _adm.effective_width(
         width,
         provider=provider,
         ready_work=None,  # the caller (fanout) bounds by the ready unit count
-        mode_ceiling=width if _unbounded else None,
+        mode_ceiling=_mode_ceil,
         account_ceiling=account_ceiling,
         work_class=work_class,
     )
