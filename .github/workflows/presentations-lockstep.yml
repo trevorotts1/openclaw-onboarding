@@ -42,6 +42,13 @@ on:
       # Universal-SOPs cluster also ships the manifest/ruleset (kept in sync with above)
       - "universal-sops/presentation-slide-craft/*.md"
       - "universal-sops/presentation-slide-craft/*.json"
+      # Universal presentation design-system + image-library clusters (Fix 27:
+      # the residual lint now scans these; a drift here must fire the gate)
+      - "universal-sops/presentation-design-system/**"
+      - "universal-sops/presentation-image-library/**"
+      # Universal doctrine roots (Fix 27: scanned by the residual lint)
+      - "universal-sops/PRESENTATION-MASTER-DOCTRINE.md"
+      - "universal-sops/CLIENT-WEBINAR-DECK-SOP.md"
       # Skill 51 (Signature Presentation) self-verification gate
       - "51-signature-presentation/**"
       # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate

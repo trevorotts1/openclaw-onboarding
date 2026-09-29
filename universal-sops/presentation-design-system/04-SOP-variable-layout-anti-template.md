@@ -2,7 +2,7 @@
 
 **Cluster:** Design System (density-floor overhaul)
 **Owner roles:** Typography Architect (builds the LAYOUT MAP, SOP 9.2) + Slide Image Creator (renders the assigned archetype + position). Enforced by: QC Specialist (Phase 3 prompt QC, Phase 5 image QC, Phase 6 final deck QC).
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2 the five archetypes)
+**Master authority:** universal-sops/PRESENTATION-MASTER-DOCTRINE.md crosswalk — §7.2: the five archetypes A1–A5 live in this file (`SOP-DESIGN-03`) + `brand-steward` SOP [univ design-system]
 **Version:** 1.0
 
 > A premium deck rotates image position (left, right, top, bottom, full-bleed) and varies word placement across the deck so it reads as one cohesive piece, not a cookie-cutter chassis. The reference failure case's later revision rotated image position (real improvement) but the word block stayed the identical five-part vertical stack (kicker caps, headline, subhead, footer hook, italic caption) on nearly every slide: a rigid recurring chassis. This SOP makes layout variety an enforceable gate, not a hope.
@@ -71,5 +71,5 @@ The check runs on the LAYOUT MAP at Phase 1.5 (Typography Architect self-audit) 
 ## 6. Research Base
 
 - The gold-standard reference proof: the five-archetype system + rotated image position + rotated word placement is the empirical model for cohesive-but-varied.
-- Master SOP Section 7.2 (the five proven archetypes and the rule that rotating five strong layouts beats inventing a new layout per slide).
+- Crosswalk §7.2: the five proven archetypes (this file, `SOP-DESIGN-03`) and the rule that rotating five strong layouts beats inventing a new layout per slide.
 - The reference-case forensic Dimension F (the rigid word-block chassis is the named defect this SOP prevents).
