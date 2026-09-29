@@ -2,7 +2,7 @@
 
 First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
-Paired releases: onboarding v25.2.10 / Command Center v7.6.76. Skill 32 v13.1.36, Skill 37 v13.1.4 and Skill 05 v7.0.1.
+Paired releases: onboarding v25.2.11 / Command Center v7.6.77. Skill 32 v13.1.37, Skill 37 v13.1.4 and Skill 05 v7.0.1.
 
 ## Expected order
 
