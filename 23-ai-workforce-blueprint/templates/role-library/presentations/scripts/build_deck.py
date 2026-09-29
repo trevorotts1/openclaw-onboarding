@@ -1127,10 +1127,48 @@ DELIVERABLES_REQUIRED = [
 # API key
 # ---------------------------------------------------------------------------
 
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 21: a placeholder KIE_API_KEY is rejected by every reader — it must
+    never be sent to Kie.ai. Uses the shared-utils/secret_helper canon when
+    reachable; otherwise the same minimal inline gate kie_generate.py carries
+    (FIX 67)."""
+    try:
+        import importlib.util as _ilu
+        here = Path(__file__).resolve().parent
+        repo_root = None
+        for anc in here.parents:
+            if (anc / "shared-utils" / "secret_helper.py").is_file():
+                repo_root = anc
+                break
+        if repo_root is not None:
+            _p = repo_root / "shared-utils" / "secret_helper.py"
+            _spec = _ilu.spec_from_file_location("secret_helper_s51", str(_p))
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            return bool(_mod.is_placeholder(value))
+    except Exception:  # noqa: BLE001 -- broken helper degrades to the inline gate
+        pass
+    if not value:
+        return True
+    low = str(value).strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def load_api_key() -> str:
-    key = os.environ.get("KIE_API_KEY", "").strip()
-    if key:
-        return key.strip("'\"")
+    key = os.environ.get("KIE_API_KEY", "").strip().strip("'\"")
+    if key and not _is_placeholder_value(key):
+        return key
     for path in SECRETS_CANDIDATES:
         p = Path(path)
         if not p.exists():
@@ -1139,9 +1177,9 @@ def load_api_key() -> str:
             line = line.strip()
             if line.startswith("KIE_API_KEY="):
                 value = line[len("KIE_API_KEY="):].strip().strip("'\"")
-                if value:
+                if value and not _is_placeholder_value(value):
                     return value
-    print("FATAL: KIE_API_KEY not found in env or any of:", file=sys.stderr)
+    print("FATAL: KIE_API_KEY not found (or is a placeholder) in env or any of:", file=sys.stderr)
     for path in SECRETS_CANDIDATES:
         print("   ", path, file=sys.stderr)
     sys.exit(2)

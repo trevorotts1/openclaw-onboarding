@@ -858,12 +858,89 @@ if cfg_path and Path(cfg_path).exists():
     except Exception:
         pass
 
+def _load_dotenv(path: str) -> dict:
+    """Parse a KEY=VALUE .env file into a dict; missing/unreadable file -> {}."""
+    vals = {}
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            if k:
+                vals[k] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return vals
+
+
+# FIX 21: the client secret stores resolve_value falls back to. The old first
+# attempt turned `env.vars.X` into `ENV_VARS_X`, a name that never exists — the
+# env fallback was dead. Now: os.environ["X"] (the last path segment), then
+# ~/.openclaw/secrets/.env and ~/.openclaw/.env, matching the stores the engine
+# itself reads (check_agent_env.DEFAULT_STORES).
+_FIX21_STORES = (
+    os.path.expanduser("~/.openclaw/secrets/.env"),
+    os.path.expanduser("~/.openclaw/.env"),
+)
+_FIX21_DOTENV = {}
+for _store in _FIX21_STORES:
+    _FIX21_DOTENV.update(_load_dotenv(_store))
+
+
+def _is_placeholder_inline(value) -> bool:
+    """FIX 21: True when the value is a placeholder/empty/trivially
+    low-information. Uses shared-utils/secret_helper.is_placeholder when the
+    helper is reachable from the manifest path; otherwise the same minimal
+    inline gate kie_generate.py carries (FIX 67)."""
+    try:
+        import importlib.util as _ilu
+        repo_root = None
+        for anc in (Path(manifest_path).resolve(),
+                    *Path(manifest_path).resolve().parents):
+            if (anc / "shared-utils" / "secret_helper.py").is_file():
+                repo_root = anc
+                break
+        if repo_root is not None:
+            _p = repo_root / "shared-utils" / "secret_helper.py"
+            _spec = _ilu.spec_from_file_location("secret_helper_s51", str(_p))
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            return bool(_mod.is_placeholder(value))
+    except Exception:  # noqa: BLE001 -- broken helper degrades to the inline gate
+        pass
+    if not value:
+        return True
+    low = str(value).strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def resolve_value(key_path: str) -> str:
-    """Resolve a dot-path against cfg, or as an env var, or return ''."""
-    # Try env var first
-    env_val = os.environ.get(key_path.replace(".", "_").upper(), "")
-    if env_val:
-        return env_val
+    """Resolve a dot-path against cfg, or as an env var / secret store, or ''.
+
+    Placeholder values are treated as unresolved at every layer."""
+    leaf = (key_path or "").split(".")[-1].strip()
+    if leaf:
+        for name in (leaf, leaf.upper()):
+            env_val = os.environ.get(name, "")
+            if env_val and not _is_placeholder_inline(env_val):
+                return env_val
+        for name in (leaf, leaf.upper()):
+            store_val = _FIX21_DOTENV.get(name, "")
+            if store_val and not _is_placeholder_inline(store_val):
+                return store_val
     # Try dot-path in cfg
     parts = key_path.split(".")
     node = cfg
@@ -873,7 +950,7 @@ def resolve_value(key_path: str) -> str:
         else:
             node = None
             break
-    if isinstance(node, str) and node.strip():
+    if isinstance(node, str) and node.strip() and not _is_placeholder_inline(node):
         return node
     if isinstance(node, (int, float, bool)):
         return str(node)
