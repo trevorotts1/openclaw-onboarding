@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.2.13"
+ONBOARDING_VERSION="v25.2.14"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -9508,6 +9508,15 @@ if [ -f "$_ENSURE_HB" ]; then
     bash "$_ENSURE_HB" 2>&1 | tee -a "$LOG_FILE" | tail -5
 else
     note "ensure-heartbeat-defaults.sh not in bundle — skipping (set manually: openclaw config set agents.defaults.heartbeat.every 6h)"
+fi
+
+# BURN GUARD (same script update-skills.sh runs every roll): weekly system-owned
+# skill-collection-review crons OFF on a fresh box. Advisory-only, never fatal.
+_BURN_GUARD="$ONBOARDING_DIR/scripts/ensure-burn-guard.sh"
+if [ -f "$_BURN_GUARD" ]; then
+    bash "$_BURN_GUARD" 2>>"$LOG_FILE" | tee -a "$LOG_FILE" || true
+else
+    note "burn-guard: ADVISORY ensure-burn-guard.sh not in bundle — skipped"
 fi
 
 # ----------------------------------------------------------
