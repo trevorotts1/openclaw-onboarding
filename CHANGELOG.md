@@ -1,3 +1,12 @@
+## [v25.2.15]  -  2026-09-29  -  Command Center seed keeps the build's company slug; board repair can move only the chosen lanes
+
+### Why
+seed-workspaces.py derived the company slug from COMPANY_NAME whenever it was set, so a build with companySlug "temple-mother-earth" seeded a second company "temple-mother-earth-ecosystem" and refused on master-orchestrator every roll. repair-board-company.py moved every 'default' lane as one set (engine queues with the client's podcast), refused whenever another company row existed, and copied the whole database (864 MB on one box) before every apply.
+
+### What changed
+- `seed-workspaces.py` (Skill 32 v13.1.39): an explicit COMPANY_SLUG wins; the name only fills the display name.
+- `repair-board-company.py`: new `--chosen-only` moves and seeds only the departments in departments.json, never an unchosen engine/system queue and never a lane another company has rows in, so it runs with other company rows present. `--apply` writes a row-level backup (`<db>.repair-board-company-<ts>.rows.json`); `--restore` undoes it.
+
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
