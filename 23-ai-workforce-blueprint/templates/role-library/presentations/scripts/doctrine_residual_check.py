@@ -49,6 +49,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent          # .../presentations/scripts
 PRES_DIR = HERE.parent                            # .../presentations
 REGISTRY = PRES_DIR / "retired-doctrine-patterns.json"
+REPO_ROOT = PRES_DIR.parent.parent.parent.parent  # 23-ai-workforce-blueprint/...
+UNIV_SOPS = REPO_ROOT / "universal-sops"
+# FIX 27: the old PRES_DIR-only glob skipped universal-sops entirely. Also scan
+# the presentation clusters plus the two doctrine roots.
+UNIV_SCOPES = (
+    "presentation-slide-craft/**/*.md",
+    "presentation-design-system/**/*.md",
+    "presentation-image-library/**/*.md",
+    "PRESENTATION-MASTER-DOCTRINE.md",
+    "CLIENT-WEBINAR-DECK-SOP.md",
+)
 
 
 def _fatal(msg):
@@ -99,7 +110,10 @@ def run_check(reg):
         except re.error as exc:
             _fatal(f"pattern {pid!r} has an invalid regex: {exc}")
 
-        for fpath in sorted(PRES_DIR.glob(scope)):
+        scan_targets = list(PRES_DIR.glob(scope))
+        for uscope in UNIV_SCOPES:
+            scan_targets.extend(UNIV_SOPS.glob(uscope))
+        for fpath in sorted(set(scan_targets)):
             if not fpath.is_file():
                 continue
             scanned_files += 1

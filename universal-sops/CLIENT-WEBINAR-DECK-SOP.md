@@ -207,7 +207,7 @@ source material  ──▶  STEP 1: builder writes slides.json
                               ▼
                  STEP 2: builder runs  python3 scripts/build_deck.py slides.json out.pptx
                               │   (the script does ALL of this — the builder does none of it:)
-                              │     • mechanically composes the KIE prompt per slide
+                              │     • renders the authored rich KIE prompt per slide
                               │       (scene + verbatim copy + logo + layout + English pin)
                               │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-text-to-image, 16:9, 2K)
                               │     • GET  /api/v1/jobs/recordInfo?taskId=…  until state=success
@@ -279,7 +279,8 @@ Rules:
 - `layout` — optional placement hint. Omit for the script's safe default.
 
 The builder does **NOT** write KIE prompts, pick a model, set aspect ratio/resolution, or
-call any API. The script composes the prompt mechanically from `slides.json` and pins
+call any API. The script renders the authored rich prompt from `slides.json`
+(scene + verbatim copy + logo + layout + English pin) and pins
 `gpt-image-2-5-sunburst-text-to-image` / 16:9 / 2K / English-Latin-only itself.
 
 **Control.** Confirm `slides.json` is a single valid JSON array, ordinals are unique and

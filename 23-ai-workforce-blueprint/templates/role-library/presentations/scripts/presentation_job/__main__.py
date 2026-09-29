@@ -323,84 +323,87 @@ def cmd_repin(args, scripts_dir: Path) -> int:
     stranded. Repin is explicit operator action, never a silent fallback.
     """
     run_dir = args.run_dir.expanduser().resolve()
-    store = StateStore(run_dir)
-    if not store.exists():
-        die(EXIT_USAGE, f"no job state in {run_dir} — nothing to repin (run --new first)")
-    state = store.load()
-    old_sha = str(state.get("manifest_sha256") or "")
-    old_ver = state.get("manifest_version")
+    # Fix 33: repin load/modify/saves state.json outside the engine RunLock,
+    # racing the runner watchdog. Hold the run lock for the whole repin.
+    with RunLock(run_dir):
+        store = StateStore(run_dir)
+        if not store.exists():
+            die(EXIT_USAGE, f"no job state in {run_dir} — nothing to repin (run --new first)")
+        state = store.load()
+        old_sha = str(state.get("manifest_sha256") or "")
+        old_ver = state.get("manifest_version")
 
-    manifest_path = Path(state.get("manifest_path") or
-                         resolve_manifest(args.manifest, run_dir, scripts_dir))
-    # --manifest explicitly overrides the pinned path; otherwise repin in place.
-    if args.manifest:
-        manifest_path = Path(args.manifest).expanduser().resolve()
+        manifest_path = Path(state.get("manifest_path") or
+                             resolve_manifest(args.manifest, run_dir, scripts_dir))
+        # --manifest explicitly overrides the pinned path; otherwise repin in place.
+        if args.manifest:
+            manifest_path = Path(args.manifest).expanduser().resolve()
+            if not manifest_path.is_file():
+                die(EXIT_USAGE, f"--manifest {manifest_path} does not exist")
         if not manifest_path.is_file():
-            die(EXIT_USAGE, f"--manifest {manifest_path} does not exist")
-    if not manifest_path.is_file():
-        die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {manifest_path} is gone; "
-                                    "pass --manifest to repin against a copy")
+            die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {manifest_path} is gone; "
+                                        "pass --manifest to repin against a copy")
 
-    new_manifest = Manifest(manifest_path)
-    new_sha = new_manifest.sha256
-    if old_sha and old_sha == new_sha:
-        print(f"repin: manifest unchanged (sha {new_sha[:12]}); nothing to do")
-        return EXIT_OK
+        new_manifest = Manifest(manifest_path)
+        new_sha = new_manifest.sha256
+        if old_sha and old_sha == new_sha:
+            print(f"repin: manifest unchanged (sha {new_sha[:12]}); nothing to do")
+            return EXIT_OK
 
-    # Phase-id diff: OLD side from the state's own phase rows (the run's real
-    # progress, not the old manifest, which may no longer be readable), NEW
-    # side from the manifest just loaded.
-    old_ids = {ps.get("id") for ps in state.get("phases", []) if ps.get("id")}
-    new_ids = {p.id for p in new_manifest.phases}
-    removed = sorted(old_ids - new_ids)
-    added = sorted(new_ids - old_ids)
+        # Phase-id diff: OLD side from the state's own phase rows (the run's real
+        # progress, not the old manifest, which may no longer be readable), NEW
+        # side from the manifest just loaded.
+        old_ids = {ps.get("id") for ps in state.get("phases", []) if ps.get("id")}
+        new_ids = {p.id for p in new_manifest.phases}
+        removed = sorted(old_ids - new_ids)
+        added = sorted(new_ids - old_ids)
 
-    changed = 0
-    for ps in state.get("phases", []):
-        if ps.get("id") in removed and ps.get("status") != "obsolete":
-            ps["status"] = "obsolete"
-            ps["obsolete_reason"] = "removed from manifest at repin (FIX 20)"
+        changed = 0
+        for ps in state.get("phases", []):
+            if ps.get("id") in removed and ps.get("status") != "obsolete":
+                ps["status"] = "obsolete"
+                ps["obsolete_reason"] = "removed from manifest at repin (FIX 20)"
+                changed += 1
+        for pid in added:
+            state.setdefault("phases", []).append(
+                {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
+                 "attempts": 0, "heal_events": [], "attested_at": None,
+                 "repin_added": True})
             changed += 1
-    for pid in added:
-        state.setdefault("phases", []).append(
-            {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
-             "attempts": 0, "heal_events": [], "attested_at": None,
-             "repin_added": True})
-        changed += 1
 
-    # Record BOTH shas: manifest_sha256_prev keeps the old pin discoverable,
-    # manifest.repin history rows name old and new together, and the live pin
-    # moves forward so verify_pin() lets --resume through.
-    state["manifest_sha256_prev"] = old_sha
-    state["manifest_version_prev"] = old_ver
-    state["manifest_sha256"] = new_sha
-    state["manifest_version"] = new_manifest.version
-    state["manifest_path"] = str(manifest_path)
-    hist = state.setdefault("manifest_repin_history", [])
-    hist.append({
-        "at": utcnow(),
-        "old_sha256": old_sha,
-        "new_sha256": new_sha,
-        "old_manifest_version": old_ver,
-        "new_manifest_version": new_manifest.version,
-        "phases_removed": removed,
-        "phases_added": added,
-    })
-    # An obsolete phase can never satisfy close()'s attestation walk, so the
-    # terminal/blocked state from the old plan must reset — --resume already
-    # clears "blocked"; mark the plan-version bump so the operator sees why.
-    state["repin_applied"] = True
-    store.save(state)
+        # Record BOTH shas: manifest_sha256_prev keeps the old pin discoverable,
+        # manifest.repin history rows name old and new together, and the live pin
+        # moves forward so verify_pin() lets --resume through.
+        state["manifest_sha256_prev"] = old_sha
+        state["manifest_version_prev"] = old_ver
+        state["manifest_sha256"] = new_sha
+        state["manifest_version"] = new_manifest.version
+        state["manifest_path"] = str(manifest_path)
+        hist = state.setdefault("manifest_repin_history", [])
+        hist.append({
+            "at": utcnow(),
+            "old_sha256": old_sha,
+            "new_sha256": new_sha,
+            "old_manifest_version": old_ver,
+            "new_manifest_version": new_manifest.version,
+            "phases_removed": removed,
+            "phases_added": added,
+        })
+        # An obsolete phase can never satisfy close()'s attestation walk, so the
+        # terminal/blocked state from the old plan must reset — --resume already
+        # clears "blocked"; mark the plan-version bump so the operator sees why.
+        state["repin_applied"] = True
+        store.save(state)
 
-    print(f"repin: manifest v{old_ver} @ {old_sha[:12] if old_sha else '?'} "
-          f"-> v{new_manifest.version} @ {new_sha[:12]}")
-    print(f"  removed phases marked obsolete: {len(removed)}"
-          + (f" {removed}" if removed else ""))
-    print(f"  new phases added pending:       {len(added)}"
-          + (f" {added}" if added else ""))
-    print("  resume with: presentation_job.py --resume --run-dir "
-          f"{run_dir}")
-    return EXIT_OK
+        print(f"repin: manifest v{old_ver} @ {old_sha[:12] if old_sha else '?'} "
+              f"-> v{new_manifest.version} @ {new_sha[:12]}")
+        print(f"  removed phases marked obsolete: {len(removed)}"
+              + (f" {removed}" if removed else ""))
+        print(f"  new phases added pending:       {len(added)}"
+              + (f" {added}" if added else ""))
+        print("  resume with: presentation_job.py --resume --run-dir "
+              f"{run_dir}")
+        return EXIT_OK
 
 
 
@@ -1124,7 +1127,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_sweep_undeliverable(args)
     # FIX 20: repin BEFORE the RunLock block — that block verify_pin()s against
     # state's pinned sha and would die(7) on exactly the mismatch repin exists
-    # to cure. cmd_repin does its own state load/save under its own reads.
+    # to cure. cmd_repin takes its own RunLock for its state load/save (Fix 33).
     if args.repin:
         return cmd_repin(args, scripts_dir)
     # PD-TEST-132 Gap 2: like repin, this mutates state under its own load/save and

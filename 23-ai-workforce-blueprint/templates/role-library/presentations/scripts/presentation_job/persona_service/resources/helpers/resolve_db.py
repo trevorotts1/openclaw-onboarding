@@ -43,13 +43,7 @@ from pathlib import Path
 #   /data/mission-control  pre-v10 VPS path
 #   ~/projects/mission-control  pre-v10 Mac path
 #   ~/blackceo-command-center  earliest Dev path (Trevor's own box)
-_CANDIDATE_BUILDERS = [
-    # 1 — env-var override (checked dynamically so hot-reload works)
-    lambda: Path(os.environ["DASHBOARD_DB_PATH"]) if "DASHBOARD_DB_PATH" in os.environ else None,
-    # 2 — DATABASE_PATH: the app's own resolution key (src/lib/db/index.ts).
-    #     DATA-08 decoy-DB fix — honored before any install-layout candidate so a
-    #     standalone script always opens the SAME file the app writes/reads.
-    lambda: Path(os.environ["DATABASE_PATH"]) if "DATABASE_PATH" in os.environ else None,
+_LAYOUT_CANDIDATES = [
     # 3 — Mac operator/live path  (~/data/mission-control.db)
     #     DATA-08: this is what the running Command Center server actually opens
     #     on an operator Mac (ecosystem.config.cjs resolves DB_PATH to
@@ -74,23 +68,91 @@ _CANDIDATE_BUILDERS = [
     lambda: Path.home() / "blackceo-command-center" / "mission-control.db",
 ]
 
+# The Command Center app dirs whose .env.local may name DATABASE_PATH explicitly
+# (the app reads it before its cwd default -- src/lib/db/index.ts).
+_CC_APP_DIRS = (lambda: Path.home() / "projects" / "command-center",
+                lambda: Path("/data/projects/command-center"))
+
+
+def _env_local_db(app_dir: Path) -> "Path | None":
+    """DATABASE_PATH from <app_dir>/.env.local, or None when not set there.
+    "~" is expanded BEFORE the join: a "~/..." value is home-relative."""
+    try:
+        lines = (app_dir / ".env.local").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    value = ""
+    for line in lines:
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if line.startswith("DATABASE_PATH="):
+            value = line.split("=", 1)[1].strip().strip("'\"")
+    return app_dir / os.path.expanduser(value) if value else None
+
+
+def _has_workspaces_table(p: Path) -> bool:
+    import sqlite3
+    try:
+        con = sqlite3.connect(p.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                               "AND name='workspaces'").fetchone() is not None
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return False
+
+
+def resolve_cc_db(skipped: "list | None" = None) -> Path:
+    """The mission-control.db the running Command Center uses, or Path("").
+
+    Order: $DASHBOARD_DB_PATH, $DATABASE_PATH, a CC app dir's .env.local
+    DATABASE_PATH, then the install-layout candidates. An EXPLICIT path that
+    exists is taken as-is, even at 0 bytes: it is the file the app opens (a
+    fresh DB the seeder is about to migrate), and answering with any other file
+    is the DATA-08 app/scripts mismatch. A LAYOUT candidate is never taken at 0
+    bytes (a stray `touch` or a failed open there shadowed the live board) and
+    only with a `workspaces` table; if none has one, the first non-empty layout
+    candidate is returned (a CC that has not migrated yet). Read-only: never
+    creates a DB. `skipped`, when given, collects "<path>: <why>" for every
+    candidate passed over.
+    """
+    notes = skipped if skipped is not None else []
+    explicit = [os.environ.get(k, "").strip() for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH")]
+    explicit = [Path(os.path.expanduser(v)) for v in explicit if v]
+    explicit += [p for p in (_env_local_db(d()) for d in _CC_APP_DIRS) if p]
+    fallback = None
+    seen = set()
+    for authoritative, cands in ((True, explicit), (False, [b() for b in _LAYOUT_CANDIDATES])):
+        for p in cands:
+            key = os.path.realpath(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                size = p.stat().st_size
+            except OSError:
+                continue
+            if not p.is_file():
+                continue
+            if authoritative:
+                return p
+            if size == 0:
+                notes.append(f"{p}: 0-byte")
+                continue
+            if _has_workspaces_table(p):
+                return p
+            notes.append(f"{p}: no workspaces table")
+            fallback = fallback or p
+    return fallback or Path("")
+
 
 def find_dashboard_db() -> Path:
     """
-    Locate mission-control.db using the canonical candidate list.
-
-    Checks (in order):
-      1. $DASHBOARD_DB_PATH env var (operator / Command Center override)
-      2. $DATABASE_PATH env var (the app's own resolution key — DATA-08)
-      3. ~/projects/command-center/mission-control.db   (Mac default)
-      4. /data/projects/command-center/mission-control.db  (VPS default)
-      5. /opt/mission-control/mission-control.db
-      6. /app/mission-control.db
-      7. /data/mission-control/mission-control.db       (legacy VPS)
-      8. ~/projects/mission-control/mission-control.db  (legacy Mac)
-      9. ~/blackceo-command-center/mission-control.db   (legacy dev)
-
-    Returns the first existing Path.
+    Locate mission-control.db -- see resolve_cc_db() for the order and the
+    decoy rules (0-byte files skipped; layout candidates need a `workspaces`
+    table).
 
     When the DB is not found, returns Path("") — the same sentinel value
     the legacy local implementations returned.  IMPORTANT: on some systems
@@ -98,13 +160,7 @@ def find_dashboard_db() -> Path:
     Always guard with:  if not db_path or str(db_path) == "":
     OR use the provided helper is_db_found(db_path).
     """
-    for builder in _CANDIDATE_BUILDERS:
-        candidate = builder()
-        if candidate is None:
-            continue
-        if candidate.exists():
-            return candidate
-    return Path("")
+    return resolve_cc_db()
 
 
 def is_db_found(db_path: "Path | None") -> bool:
@@ -203,7 +259,16 @@ if __name__ == "__main__":
                     help="exit non-zero if the scripts' resolved DB != the app's DB")
     ap.add_argument("--app-db", default=None,
                     help="the app's resolved DB path (defaults to $DATABASE_PATH / cwd)")
+    ap.add_argument("--path", action="store_true",
+                    help="print ONLY the resolved path (for shell callers); exit 1 if none")
     args = ap.parse_args()
+
+    if args.path:
+        db = find_dashboard_db()
+        if is_db_found(db):
+            print(db)
+            sys.exit(0)
+        sys.exit(1)
 
     if args.verify_parity:
         ok, detail = verify_db_path_parity(args.app_db)

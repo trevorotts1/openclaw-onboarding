@@ -2811,7 +2811,18 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
                 slide.notes_slide.notes_text_frame.text = spoken
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    prs.save(str(out_path))
+    # FIX 22: atomic save - a failed prs.save() must never leave a partial
+    # .pptx at the final path. Write to a sibling tmp file, then os.replace.
+    tmp = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+    try:
+        prs.save(str(tmp))
+        os.replace(tmp, out_path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -2879,9 +2890,17 @@ def notes_sync_pass(bundle_pptx: Path, run_dir: Path, bundle_dir: Path) -> dict:
             slide.notes_slide.notes_text_frame.text = spoken
             slides_with_notes += 1
 
+    # FIX 22: atomic save - a failed prs.save() must never leave a partial
+    # .pptx at the final path. Write to a sibling tmp file, then os.replace.
+    tmp = bundle_pptx.with_name(f".{bundle_pptx.name}.{os.getpid()}.tmp")
     try:
-        prs.save(str(bundle_pptx))
+        prs.save(str(tmp))
+        os.replace(tmp, bundle_pptx)
     except Exception as exc:  # noqa: BLE001
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
         return {"status": "error", "slides_total": slides_total,
                 "slides_with_notes": slides_with_notes, "speech_source": None,
                 "reason": f"could not save {bundle_pptx} after notes injection: {exc}"}
@@ -7963,8 +7982,9 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
       * a direct kie.ai task submission — createTask / recordInfo / api.kie.ai outside
         build_deck.py (a per-deck renderer) -> AF-CANONICAL-RENDER-BYPASS.
 
-    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS) and anything under a
-    scripts/ or virtual-env directory are exempt. Returns "" when the run dir carries
+    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS), anything inside the
+    canonical scripts dir (by resolved path), and virtual-env directories are
+    exempt. Returns "" when the run dir carries
     no hand-rolled renderer. A failure may be waived ONLY by a logged
     owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS)."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
@@ -7976,7 +7996,11 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
         return ""
 
     _SKIP_DIR_SEGS = {".venv", "venv", "site-packages", "__pycache__", ".git",
-                      "node_modules", ".mypy_cache", ".pytest_cache", "scripts"}
+                      "node_modules", ".mypy_cache", ".pytest_cache"}
+    # FIX 28: the old "scripts" blanket skip hid hand-rolled assemblers under
+    # working/scripts/. Skip only the canonical scripts dir, by resolved path
+    # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
+    _canonical_scripts_dir = Path(__file__).resolve().parent
     offenders = []
     try:
         candidates = sorted(run_dir.rglob("*.py"))
@@ -7987,6 +8011,15 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             continue
         if _SKIP_DIR_SEGS & set(py.parts):
             continue
+        try:
+            _rp = py.resolve()
+        except OSError:
+            _rp = py
+        try:
+            _rp.relative_to(_canonical_scripts_dir)
+            continue  # inside the canonical scripts home — exempt
+        except ValueError:
+            pass
         try:
             text = py.read_text(errors="replace")
         except OSError:
@@ -13101,7 +13134,8 @@ def main():
     # wave no longer overwrite each other's nonce. This SUPERSEDES the
     # retired OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which
     # shipped in box-visible comments and were therefore forgeable by any model that
-    # read the repo — setting either of those names is now DENIED. Module imports and
+    # read the repo — setting either of those names is now ignored: the handshake
+    # checks only OC_DECK_ENTRY_NONCE. Module imports and
     # unit-test paths that call build_deck functions directly are unaffected — this
     # guard fires only when main() is reached via the CLI (`python3 build_deck.py ...`).
     # References: AF-CANONICAL-RENDER-BYPASS, shared CONTRACT.md §FRONT-DOOR MARKER.

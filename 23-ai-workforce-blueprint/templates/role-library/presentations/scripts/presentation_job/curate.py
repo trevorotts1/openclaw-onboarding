@@ -680,7 +680,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # frozen at --new time, before deck_slug is written into working/copy/intake.json
     # by the engine's intake phase.  A missing deck_slug in state.json caused
     # _fuzzy_locate to pick the wrong file (WORKBOOK-FILLABLE.pdf, 10.7 MB) when the
-    # correct source file (e.g. spaulding-45min-FINAL.pdf) was present and named.
+    # correct source file (e.g. client-45min-FINAL.pdf) was present and named.
     deck_slug = args.deck_slug
     if deck_slug is None:
         deck_slug = _resolve_deck_slug(run_dir)

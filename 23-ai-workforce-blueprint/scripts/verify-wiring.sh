@@ -1067,7 +1067,7 @@ PYEOF
   #      scripts dir (the ONE sanctioned build entry point; U025 retired
   #      deck-build-guard.sh and relocated its intake-ledger check into the door).
   #   2. run_signature_deck.py + build_deck.py each contain the front-door
-  #      marker guard (grep for OC_DECK_CANONICAL_ENTRY).
+  #      front-door guard (grep for _verify_entry_nonce()).
   # Fail the dept check if any assertion is missing (fail-closed, not advisory).
   # --------------------------------------------------------------------------
   if [[ "$DEPT_SLUG" == "presentations" ]]; then
@@ -1108,23 +1108,23 @@ PYEOF
       fi
     fi
 
-    # (e2) run_signature_deck.py and build_deck.py contain OC_DECK_CANONICAL_ENTRY
+    # (e2) run_signature_deck.py and build_deck.py wire the _verify_entry_nonce front-door guard
     if [[ -n "$_PRES_SCRIPTS" ]]; then
       for _runner_file in "run_signature_deck.py" "build_deck.py"; do
         _runner_path="$_PRES_SCRIPTS/$_runner_file"
         if [[ ! -f "$_runner_path" ]]; then
           echo "  [PRESENTATIONS]  WARN: $_runner_file not found at $_runner_path (skipping marker check)" >&2
-        elif grep -q "OC_DECK_CANONICAL_ENTRY" "$_runner_path" 2>/dev/null; then
-          echo "  [PRESENTATIONS]  OK:   $_runner_file contains OC_DECK_CANONICAL_ENTRY front-door marker guard"
+        elif grep -q "_verify_entry_nonce(" "$_runner_path" 2>/dev/null; then
+          echo "  [PRESENTATIONS]  OK:   $_runner_file wires the _verify_entry_nonce front-door entry guard"
         else
-          echo "  [PRESENTATIONS]  FAIL: $_runner_file does NOT contain OC_DECK_CANONICAL_ENTRY — direct python3 invocations will not be blocked by the front-door marker guard." >&2
+          echo "  [PRESENTATIONS]  FAIL: $_runner_file does NOT contain _verify_entry_nonce — direct python3 invocations will not be blocked by the front-door entry guard." >&2
           PRES_FAIL=1
-          FAIL_CONNECTION+=("$DEPT_SLUG:${_runner_file}-missing-marker-guard")
-          DEPT_WIRING_FAIL_REASONS+=("presentations:${_runner_file}-missing-OC_DECK_CANONICAL_ENTRY")
+          FAIL_CONNECTION+=("$DEPT_SLUG:${_runner_file}-missing-entry-guard")
+          DEPT_WIRING_FAIL_REASONS+=("presentations:${_runner_file}-missing-_verify_entry_nonce")
         fi
       done
     else
-      echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found (checked $PRES_SCRIPTS_DEPLOYED and $PRES_SCRIPTS_TEMPLATE) — skipping OC_DECK_CANONICAL_ENTRY marker checks" >&2
+      echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found (checked $PRES_SCRIPTS_DEPLOYED and $PRES_SCRIPTS_TEMPLATE) — skipping _verify_entry_nonce front-door guard checks" >&2
     fi
 
     # (e3) PROCESS-INTEGRITY lockstep suite scripts present

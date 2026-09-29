@@ -79,7 +79,8 @@ def test_fallback_installs_absolute_shim_and_tick_finishes(tmp_path):
         + res.stderr
     )
 
-    shims = list((runs / "working").glob(".interp-shim-*/python3"))
+    # Fix 36: the shim is the stable .interp-shim/python3, not per-PID.
+    shims = list((runs / "working").glob(".interp-shim/python3"))
     assert len(shims) == 1, f"expected exactly one shim, found: {shims}"
     content = shims[0].read_text()
     lines = content.splitlines()
