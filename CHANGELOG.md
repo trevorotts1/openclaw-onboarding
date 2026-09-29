@@ -23,6 +23,14 @@ seed-workspaces.py derived the company slug from COMPANY_NAME whenever it was se
 ### What changed
 - `seed-workspaces.py` (Skill 32 v13.1.39): an explicit COMPANY_SLUG wins; the name only fills the display name.
 - `repair-board-company.py`: new `--chosen-only` moves and seeds only the departments in departments.json, never an unchosen engine/system queue and never a lane another company has rows in, so it runs with other company rows present. `--apply` writes a row-level backup (`<db>.repair-board-company-<ts>.rows.json`); `--restore` undoes it.
+## [v25.2.15]  -  2026-09-29  -  No head agent or departments/ folder for the Command Center's 'default' lane
+
+### Why
+seed-dashboard-content.py seeded a head agent ("General Lead") for the Command Center's own placeholder 'default' workspace, and scaffold-agent-files.sh then created ~/.openclaw/workspace/departments/default, a department folder no client chose, which fails the ZERO HUMAN EXPERIENCE gate.
+
+### What changed
+- `seed-dashboard-content.py` (Skill 32 v13.1.39): a structural workspace (`default`) gets no head agent, no starter task and no scaffold call.
+- `scaffold-agent-files.sh`: never scaffolds a structural workspace as a department (prints SKIP, exits 0). An existing departments/default is not removed.
 
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
