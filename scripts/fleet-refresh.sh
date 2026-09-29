@@ -282,13 +282,12 @@ RUNNER_FLAGS=""
 # the boxes that happen to start (or self-sync) after it.
 ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
 [ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
-# Same for the Command Center: pull-cc and update.sh deploy this commit, not a
-# main that moved after the roll started.
-ROLL_CC_SHA=$(git ls-remote "${FLEET_ROLL_CC_REPO_URL:-https://github.com/trevorotts1/blackceo-command-center.git}" refs/heads/main 2>/dev/null | cut -f1)
-if [ -n "$ROLL_CC_SHA" ]; then
-  export CC_UPDATE_TARGET="$ROLL_CC_SHA"
-  echo "[fleet-refresh] Rolling Command Center main at ${ROLL_CC_SHA:0:12}"
-fi
+# The Command Center is NOT rolled from main: each box deploys the release
+# cc-compat.json pins at ROLL_SHA (the runner reads it from the roll copy and
+# fails that box closed when it cannot resolve it). An inherited value from the
+# operator's shell must not override that.
+unset CC_UPDATE_TARGET
+echo "[fleet-refresh] Command Center: the release pinned in cc-compat.json at ${ROLL_SHA:0:12}"
 
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"

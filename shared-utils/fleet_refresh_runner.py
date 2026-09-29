@@ -1053,16 +1053,40 @@ def load_warning(res: BoxResult) -> None:
         res.steps["load"] = f"ok:advisory: {msg}"
 
 
-def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_cc: bool = False) -> None:
-    """Step 3: converge the Command Center checkout to latest origin/main.
+def _pinned_cc_target(cc_dir: Path, tag: str) -> str:
+    """The commit of the Command Center release onboarding pins (cc-compat.json
+    pinnedTag). Raises when it cannot be resolved: a roll never falls back to
+    main (that is how an unplanned v7.6.78 reached a client box)."""
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag or ""):
+        raise ValueError(f"no pinned Command Center release (pinnedTag={tag!r})")
+    subprocess.run(["git", "-C", str(cc_dir), "fetch", "-q", "origin", f"+refs/tags/{tag}:refs/tags/{tag}"],
+                   check=True, capture_output=True, timeout=60)
+    return subprocess.run(["git", "-C", str(cc_dir), "rev-parse", f"{tag}^{{commit}}"],
+                          check=True, capture_output=True, text=True, timeout=10).stdout.strip()
 
-    The compatibility tag remains an input to the minimum-version contract, but
-    it is not a deployment target. Checking out that historical tag here used to
-    undo the root updater's successful main refresh and leave every fleet roll
-    detached on stale code. The Command Center's own update.sh is the canonical
-    state-preserving branch/build/health path, so invoke it only when the root
-    updater has not already completed convergence, then independently assert the
-    post-condition.
+
+def _roll_pinned_tag(repo_root: Path, cc_tag: str) -> str:
+    """pinnedTag as the roll's own commit carries it (FLEET_ROLL_SHA, which the
+    roll copy has fetched), else the resolved cc_tag outside a roll."""
+    sha = os.environ.get("FLEET_ROLL_SHA", "").strip()
+    if not sha:
+        return cc_tag
+    r = subprocess.run(["git", "-C", str(repo_root), "show", f"{sha}:cc-compat.json"],
+                       capture_output=True, text=True, timeout=15)
+    if r.returncode != 0:
+        raise ValueError(f"cc-compat.json is not readable at the roll's commit {sha[:12]}")
+    return str((json.loads(r.stdout).get("commandCenter") or {}).get("pinnedTag") or "")
+
+
+def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_cc: bool = False) -> None:
+    """Step 3: converge the Command Center checkout to the pinned release.
+
+    The target is the commit of cc-compat.json's pinnedTag (CC_UPDATE_TARGET,
+    resolved once per box before anything changes). Never origin/main: when the
+    pin cannot be resolved the step fails and nothing is changed. The Command
+    Center's own update.sh is the canonical state-preserving branch/build/health
+    path, so invoke it only when the checkout does not already contain the
+    target, then independently assert the post-condition.
     """
     if dry_run:
         res.step_skip("pull-cc")
@@ -1093,7 +1117,14 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         # CC_UPDATE_TARGET: the roll's Command Center commit, resolved once by
         # fleet-refresh.sh, so a merge landing mid-roll never reaches the boxes
         # that update after it. Exported, so update.sh honours it too.
-        target_ref = os.environ.get("CC_UPDATE_TARGET", "").strip() or "origin/main"
+        target_ref = os.environ.get("CC_UPDATE_TARGET", "").strip()
+        if not target_ref:
+            try:
+                target_ref = _pinned_cc_target(Path(cc_dir), cc_tag)
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                res.step_fail("pull-cc", f"the pinned Command Center release {cc_tag} could not be resolved "
+                                         f"({exc}); a roll never falls back to main. Nothing was changed.")
+                return
         target = subprocess.run(
             ["git", "-C", str(cc_dir), "show", f"{target_ref}:package.json"],
             check=True, capture_output=True, text=True, timeout=10,
@@ -1121,7 +1152,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
                     f"Command Center checkout is not current on main and canonical updater is missing: {updater}",
                 )
                 return
-            update_env = {**os.environ, "CC_APP_DIR": str(cc_dir)}
+            update_env = {**os.environ, "CC_APP_DIR": str(cc_dir), "CC_UPDATE_TARGET": target_ref}
             # Run origin/main's updater, not the live checkout's: the target's
             # update.sh builds beside the running release and promotes it
             # (zero-downtime), so the live tree is never moved before the build.
@@ -1147,7 +1178,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         if not current_on_main():
             res.step_fail(
                 "pull-cc",
-                f"post-update assertion failed: checkout is not main with latest origin/main (compatibility tag {cc_tag} is not a deploy target)",
+                f"post-update assertion failed: checkout is not main containing the pinned release {cc_tag}",
             )
             return
         check_checkout(Path(cc_dir))
@@ -3564,6 +3595,20 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
     except Exception as e:
         res.step_fail("pin-resolve", str(e))
         cc_tag = compat["commandCenter"].get("pinnedTag", "unknown")
+
+    # The Command Center target is the pinned release, resolved before anything
+    # changes (update-skills' Command Center refresh and pull-cc both read
+    # CC_UPDATE_TARGET). Unresolvable = this box is not updated at all.
+    if not dry_run and not verify_only and paths.get("cc_dir") and Path(paths["cc_dir"]).is_dir():
+        try:
+            pin = _roll_pinned_tag(repo_root, cc_tag)
+            os.environ["CC_UPDATE_TARGET"] = _pinned_cc_target(Path(paths["cc_dir"]), pin)
+            _info(f"  Command Center target: {pin} ({os.environ['CC_UPDATE_TARGET'][:12]})")
+        except (ValueError, OSError, subprocess.SubprocessError) as e:
+            res.result, res.outcome = "skipped", "SKIPPED"
+            res.outcome_detail = (f"not updated: the pinned Command Center release could not be resolved ({e}); "
+                                  "nothing was changed")
+            return res
 
     # Baseline health: read-only, so it runs in every mode (a dry-run shows the
     # box's health before anyone decides to roll it).
