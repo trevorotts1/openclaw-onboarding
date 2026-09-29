@@ -5,7 +5,7 @@ Presentations department (audio-demonstration-specialist, SOP 9.2 / 9.3).
 
 WHY THIS EXISTS
 ---------------
-The original Corey run synthesized only a 7-section "KEY BEATS" sizzle demo
+The original 2026-06 client run synthesized only a 7-section "KEY BEATS" sizzle demo
 (~4 min) instead of the whole 62-slide speech (~25.6 min). There was no
 committed script that walked the ENTIRE speech, and no gate that caught the
 audio being far shorter than the written script. This script fixes both:
