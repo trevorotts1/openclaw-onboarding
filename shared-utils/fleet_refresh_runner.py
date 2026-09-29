@@ -3274,10 +3274,21 @@ def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, 
             return "done"
         if len(attempts) >= HEAL_ATTEMPTS:
             break
+        acts = heal_actions(probs)
+        prev = attempts[-1] if attempts else None
+        if prev and prev["failing"] == probs:
+            # The last attempt changed nothing. A full update-skills pass
+            # (20-55 min) that already finished ok will not either: do not
+            # repeat it; stop when nothing else is left to try.
+            acts = [a for a in acts
+                    if not (a == "rerun:pull-onboarding" and str(prev["actions"].get(a, "")).startswith("ok"))]
+            if not acts:
+                _warn("  the last fix attempt changed nothing and nothing else is left to try")
+                break
         attempt = {"n": len(attempts) + 1, "failing": dict(probs), "actions": {}}
         attempts.append(attempt)
         _warn(f"  FIX ATTEMPT {attempt['n']}/{HEAL_ATTEMPTS}: {', '.join(sorted(probs))}")
-        for act in heal_actions(probs):
+        for act in acts:
             try:
                 out = _run_heal_action(act, paths, repo_root, res, ctx)
             except Exception as e:   # an attempt that errors is still an attempt

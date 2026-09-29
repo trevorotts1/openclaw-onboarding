@@ -151,6 +151,8 @@ class HealthGateAndRollback(unittest.TestCase):
             self.actions.append(act)
             if act == "restart-gateway" and not fake_action.mac:
                 return "needs-host"
+            if act.startswith("rerun:"):      # like the real one: the step's own result
+                return res.steps.get(act.split(":", 1)[1], "ok")
             return "ok"
         fake_action.mac = False
         integ_seq = list(integ or [self.CLEAN])
@@ -170,6 +172,17 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(self.actions, [])
         self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v2")
         self.assertFalse(self.box.deploy_log.exists())
+
+    def test_an_unchanged_integrity_failure_is_not_re_synced_again(self):
+        # A role-library mismatch that a finished update-skills pass did not fix
+        # will not be fixed by a second or third 20-55 minute pass.
+        self.snapshot()
+        self.box.apply_release_b()
+        bad = dict(self.CLEAN, **{"role-library": hc("fail")})
+        self.gate([health()], integ=[bad])
+        self.assertEqual(self.actions, ["rerun:pull-onboarding"])
+        self.assertEqual(len(self.res.heal["attempts"]), 1)
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
 
     def test_fix_first_heals_without_rollback(self):
         self.snapshot()
@@ -227,7 +240,8 @@ class HealthGateAndRollback(unittest.TestCase):
         self.box.apply_release_b()
         bad = dict(self.CLEAN, **{"sop-library": hc("fail")})
         self.gate([health()], integ=[bad])
-        self.assertEqual(self.actions.count("rerun:pull-onboarding"), 3)
+        # one full re-sync; an unchanged failure after it is not re-synced again
+        self.assertEqual(self.actions.count("rerun:pull-onboarding"), 1)
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
         self.assertIn("sop-library", self.res.outcome_detail)
 
