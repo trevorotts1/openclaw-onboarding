@@ -1043,6 +1043,16 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
                                             f"infrastructure needs attention): {result.stdout[-160:].strip()}")
             _warn("  step pull-onboarding: ok (advisory) -- update-skills.sh exit 2: content current, "
                   "infrastructure needs attention")
+        elif result.returncode == 8 and post_stamp == pinned_tag:
+            # update-skills.sh exit 8 = skills content current and stamped; the
+            # client's interview launch prerequisites are still pending. Rolling
+            # a box back for that undid a correct update (and there is nothing
+            # the rollback could fix).
+            res.onboarding_version = post_stamp
+            res.steps["pull-onboarding"] = ("ok:advisory: update-skills.sh exit 8 (content current; "
+                                            f"interview launch pending): {result.stderr[-160:].strip()}")
+            _warn("  step pull-onboarding: ok (advisory) -- update-skills.sh exit 8: content current, "
+                  "interview launch pending")
         else:
             res.step_fail(
                 "pull-onboarding",
