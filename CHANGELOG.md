@@ -1,3 +1,12 @@
+## [v25.2.15]  -  2026-09-29  -  Stray role-library template department folders WARN, never block (prove-zhe, prove-board-join)
+
+### Why
+Role-library template copies nobody chose (client-experience-booking, founding-member-concierge, launch-operations, product-production, rescue-rangers) sit under departments/ on most client boxes. prove-zhe (phase 7z) required a dept agent and a board lane for every folder, and prove-board-join scored their trees as drift, so prebuild exited 7 and update-skills exited 8. No supported path seeds a lane or an agent for a folder the client never chose.
+
+### What changed
+- `prove-zhe.py`: the required departments are the client's departments.json plus the standard floor (minus provenanced declines), not a folder scan. Other folders are reported as `stray_template_folders` / receipt warnings, never failed, never deleted. An alias folder (legal-compliance) is checked against its canonical agent and lane. rescue-rangers (operator-only) is exempt from the client agent requirement as well as the lane.
+- `prove-board-join.py`: a role-library template tree that is not a floor department and is neither chosen nor on the board is a WARN (`stray_template_departments`), not AF-BOARD-JOIN-DRIFT. A chosen department with no column, an un-chosen floor tree, and a stray with a board column still drift.
+
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

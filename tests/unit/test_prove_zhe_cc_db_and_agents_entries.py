@@ -9,6 +9,10 @@ Four false FAILs seen at phase 7z on an OpenClaw 2026.9.x Mac box:
   * the lane check matched folder slugs literally, so folder legal-compliance
     missed its canonical board lane "legal";
   * rescue-rangers (operator-side board) was held to a client board lane.
+
+And a fifth: the required departments came from a folder scan, so role-library
+template copies nobody chose (founding-member-concierge, launch-operations, ...)
+were held to an agent + lane that no supported path can ever create.
 """
 import importlib.util
 import json
@@ -133,7 +137,7 @@ def test_alias_folder_matches_its_canonical_lane(pz, tmp_path):
     assert r["dept_lanes_missing"] == ["sales"]
 
 
-def test_rescue_rangers_exempt_from_client_lane_only(pz, tmp_path):
+def test_rescue_rangers_exempt_from_client_lane_and_agent(pz, tmp_path):
     # Operator-side escalation dept: no client board lane required...
     root = _oc_root(tmp_path, {"entries": {"dept-marketing": {}}},
                     depts=("marketing", "rescue-rangers"))
@@ -141,9 +145,11 @@ def test_rescue_rangers_exempt_from_client_lane_only(pz, tmp_path):
              lanes=("marketing",))
     fs = pz.LocalFS(root)
     assert pz.check_command_center(fs, root, ["marketing", "rescue-rangers"])["pass"]
-    # ...but it is still held to agent registration.
+    # ...and no client agent either: materialize-dept-agents.sh registers only against
+    # a live lane, so an agent-without-lane requirement could never be met.
     r = pz.check_depts_registered(fs, root, pz.load_openclaw_config(fs, root))
-    assert r["files_without_agent"] == ["rescue-rangers"]
+    assert r["pass"], r["detail"]
+    assert r["operator_board_exempt"] == ["rescue-rangers"]
 
 
 # --- "~" is expanded for every DB source ------------------------------------
@@ -179,3 +185,117 @@ def test_tilde_env_local_database_path_is_expanded(pz, tmp_path):
     r = pz.check_command_center(pz.LocalFS(root), root, ["marketing", "sales"])
     assert r["pass"], r["detail"]
     assert r["db_path"] == live
+
+
+# --- required departments = departments.json + the standard floor ------------
+# A client Mac carried six role-library template copies under departments/ that
+# are in neither its departments.json nor the floor. The folder scan demanded a
+# dept-<folder> agent and a board lane for each; nothing seeds either.
+
+STRAY = ("client-experience-booking", "founding-member-concierge", "launch-operations",
+         "product-production", "rescue-rangers")
+
+
+def _floor(pz):
+    df = pz._load_floor_module()
+    nm = df.load_naming_map()
+    return df.mandatory_ids(nm) + df.universal_primary_vertical_departments(nm)
+
+
+def _full_box(pz, tmp_path, chosen=(), extra_dirs=(), skip_agents=(), skip_lanes=()):
+    """An interview-complete box whose chosen + floor departments all have a folder,
+    a dept-<slug> agent and a board lane, except for the ones named in skip_*."""
+    depts = list(dict.fromkeys(list(_floor(pz)) + list(chosen)))
+    agents = {"entries": {f"dept-{d}": {} for d in depts if d not in skip_agents}}
+    root = _oc_root(tmp_path, agents, depts=tuple(depts) + tuple(extra_dirs))
+    ws = os.path.join(root, "workspace")
+    with open(os.path.join(ws, "departments.json"), "w") as f:
+        json.dump([{"id": f"dept-{d}", "slug": d} for d in chosen or depts], f)
+    with open(os.path.join(ws, ".workforce-build-state.json"), "w") as f:
+        json.dump({"interviewComplete": True}, f)
+    _real_db(str(tmp_path / "home" / "projects" / "command-center" / "mission-control.db"),
+             lanes=[d for d in depts if d not in skip_lanes])
+    return root
+
+
+def _prove(pz, root):
+    r = pz.prove("LOCAL", "", pz.LocalFS(root))
+    return r, r["checks"]["floor_depts_registered_as_agents"], r["checks"]["command_center_board"]
+
+
+def test_stray_template_folders_warn_not_fail(pz, tmp_path):
+    root = _full_box(pz, tmp_path, extra_dirs=STRAY)
+    r, a, c = _prove(pz, root)
+    assert a["pass"], a["detail"]
+    assert c["pass"], c["detail"]
+    assert a["required_source"] == "departments.json"
+    assert a["stray_template_folders"] == sorted(STRAY)
+    assert "stray template folder" in r["warnings"][0]
+    for d in STRAY:
+        assert os.path.isdir(os.path.join(root, "workspace", "departments", d))  # never deleted
+
+
+def test_chosen_dept_missing_its_lane_still_fails(pz, tmp_path):
+    root = _full_box(pz, tmp_path, chosen=_floor(pz) + ["listings"], skip_lanes=("listings",))
+    _, a, c = _prove(pz, root)
+    assert a["pass"], a["detail"]
+    assert not c["pass"]
+    assert c["dept_lanes_missing"] == ["listings"]
+
+
+def test_chosen_dept_missing_its_agent_still_fails(pz, tmp_path):
+    root = _full_box(pz, tmp_path, chosen=_floor(pz) + ["listings"], skip_agents=("listings",))
+    _, a, _ = _prove(pz, root)
+    assert not a["pass"]
+    assert a["files_without_agent"] == ["listings"]
+
+
+def test_floor_dept_left_out_of_departments_json_is_still_required(pz, tmp_path):
+    chosen = [d for d in _floor(pz) if d != "sales"]
+    root = _full_box(pz, tmp_path, chosen=chosen, skip_agents=("sales",), skip_lanes=("sales",))
+    _, a, c = _prove(pz, root)
+    assert a["files_without_agent"] == ["sales"]
+    assert c["dept_lanes_missing"] == ["sales"]
+
+
+def test_legal_compliance_alias_checks_the_canonical_agent(pz, tmp_path):
+    # Folder legal-compliance beside legal: lane "legal", agent dept-legal. Both checks
+    # judge the SAME canonical department; no dept-legal-compliance is demanded.
+    root = _full_box(pz, tmp_path, extra_dirs=("legal-compliance",))
+    _, a, c = _prove(pz, root)
+    assert a["pass"], a["detail"]
+    assert c["pass"], c["detail"]
+    assert "legal-compliance" not in a["stray_template_folders"]
+
+
+def test_legal_compliance_alias_without_canonical_agent_fails(pz, tmp_path):
+    root = _full_box(pz, tmp_path, extra_dirs=("legal-compliance",), skip_agents=("legal",))
+    _, a, _ = _prove(pz, root)
+    assert not a["pass"]
+    assert a["files_without_agent"] == ["legal"]
+
+
+def test_variant_spelling_agent_and_lane_satisfy_the_floor_dept(pz, tmp_path):
+    # billing-finance chosen and built under its variant "finance": agent dept-finance,
+    # lane "finance". The floor dept is met under the spelling it was built as.
+    chosen = ["finance" if d == "billing-finance" else d for d in _floor(pz)]
+    root = _full_box(pz, tmp_path, chosen=chosen, skip_agents=("billing-finance",),
+                     skip_lanes=("billing-finance",))
+    _, a, c = _prove(pz, root)
+    assert a["pass"], a["detail"]
+    assert c["pass"], c["detail"]
+
+
+def test_rescue_rangers_folder_is_stray_not_required(pz, tmp_path):
+    root = _full_box(pz, tmp_path, extra_dirs=("rescue-rangers",))
+    _, a, c = _prove(pz, root)
+    assert a["pass"] and c["pass"]
+    assert a["stray_template_folders"] == ["rescue-rangers"]
+
+
+def test_no_chosen_list_keeps_every_folder_required(pz, tmp_path):
+    root = _full_box(pz, tmp_path, extra_dirs=("launch-operations",))
+    os.remove(os.path.join(root, "workspace", "departments.json"))
+    _, a, _ = _prove(pz, root)
+    assert a["required_source"] == "folder-scan (no chosen list)"
+    assert a["files_without_agent"] == ["launch-operations"]

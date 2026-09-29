@@ -10,7 +10,9 @@ pattern on ~/clawd/fleet-prover/prove-floor.py (which this file does NOT edit).
 It proves, with receipts, the four ZHE wrappings the spec/plan name (spec §1 steps 4–7):
   (a) FLOOR DEPARTMENTS present AND registered as agents — built-as-files AND
       registered-as-agents in openclaw.json agents.entries / agents.list[] (not just
-      folders on disk).
+      folders on disk). REQUIRED = the client's departments.json + the standard floor
+      (minus provenanced declines), not a folder scan; a folder outside that set is a
+      WARN ("stray template folder"), never a FAIL, and is never deleted.
   (b) PERSONAS CANONICAL — the full canonical persona roster (count DERIVED from the
       persona-categories.json index, not a fixed literal) + canonical persona-categories.json
       + a section-tagged coaching-personas index (gemini-index.sqlite, ~4413 rows,
@@ -624,6 +626,60 @@ def discover_departments(fs, oc_root):
     return found
 
 
+def required_departments(fs, oc_root, ws, state, folders):
+    """The departments this box is REQUIRED to have an agent + board lane for:
+    the client's chosen list (<company>/departments.json, else build-state
+    chosenDepartments.slugs) PLUS the standard floor (mandatory + universal-primary,
+    minus provenanced owner declines — department-floor.py's own rules).
+
+    A folder scan is NOT the requirement: role-library template copies
+    (founding-member-concierge, launch-operations, ...) land under departments/
+    without ever being chosen, the lane seeders build lanes only from
+    departments.json, and materialize-dept-agents.sh registers an agent only for
+    an active lane — so nothing supported could ever satisfy a stray folder.
+
+    Returns (required, source, stray): required maps the canonical label to every
+    spelling it may appear under (folder names + canonicalized chosen/floor slugs);
+    stray lists folders outside the requirement (reported, never failed, never
+    deleted). No chosen list at all (a pre-artifact build) => every folder stays
+    required, exactly the old behaviour. A missing sibling module => the same."""
+    df, bj = _load_floor_module(), _load_board_join_module()
+    if df is None or bj is None:
+        return {s: {s} for s in folders}, "folder-scan (floor/board-join module unavailable)", []
+    canon = bj._load_canonical_slug()
+    key = bj.make_keyer(df, canon)
+
+    company_dir, _ = _resolve_company_dirs(fs, ws, oc_root)
+    chosen = check_standard_ready_chosen_artifact(fs, company_dir, None).get("chosen") or []
+    source = "departments.json"
+    if not chosen:
+        rec = ((state.get("canonicalReconciliation") or {}).get("chosenDepartments") or {})
+        chosen = [s for s in (rec.get("slugs") or []) if isinstance(s, str) and s]
+        source = "build-state chosenDepartments"
+    if not chosen:
+        return {s: {s} for s in folders}, "folder-scan (no chosen list)", []
+
+    nm = df.load_naming_map()
+    declined = df.declined_set(state)
+    floor = [c for c in df.mandatory_ids(nm) + df.universal_primary_vertical_departments(nm)
+             if df._norm(c) not in declined]
+
+    required = {}
+    for raw in list(chosen) + floor:
+        k = key(raw)
+        if k:
+            required.setdefault(canon(k) or k, set()).add(canon(raw) or raw)
+    label_of = {key(lbl): lbl for lbl in required}
+    stray = []
+    for name in sorted(folders):
+        lbl = label_of.get(key(name))
+        if lbl is None:
+            stray.append(name)
+        else:
+            required[lbl].add(name)
+    return required, source, stray
+
+
 # ---------------------------------------------------------------------------
 # CHECK (a): floor departments present AND registered as agents (not just files)
 # ---------------------------------------------------------------------------
@@ -645,29 +701,40 @@ def registered_agent_ids(cfg):
     return ids
 
 
-def check_depts_registered(fs, oc_root, cfg):
+def check_depts_registered(fs, oc_root, cfg, required=None):
+    """`required` is required_departments()'s label -> spellings map; None holds
+    every discovered folder (the pre-requirement behaviour)."""
     depts = discover_departments(fs, oc_root)
-    agent_ids = registered_agent_ids(cfg)
-    # materialize-dept-agents.sh registers each dept as agent id "dept-<slug>".
-    registered, unregistered = [], []
-    for slug in sorted(depts):
-        if f"dept-{slug}" in agent_ids:
-            registered.append(slug)
-        else:
-            unregistered.append(slug)
+    if required is None:
+        required = {s: {s} for s in depts}
+    agent_ids = {a.lower() for a in registered_agent_ids(cfg)}
+    canon = _canonical_dept_slug_fn()
+    # materialize-dept-agents.sh registers each dept as agent id "dept-<slug>". An
+    # alias folder (legal-compliance) is satisfied by its canonical agent (dept-legal):
+    # the lane is canonical, and materialize only registers against a live lane.
+    registered, unregistered, exempt = [], [], []
+    for slug in sorted(required):
+        if slug in OPERATOR_BOARD_DEPTS:
+            exempt.append(slug)
+            continue
+        names = {slug} | set(required[slug])
+        ids = {f"dept-{n}".lower() for n in names} | {f"dept-{canon(n)}" for n in names}
+        (registered if ids & agent_ids else unregistered).append(slug)
     present = len(depts) > 0
     return {
         "pass": bool(present and not unregistered),
         "departments_present": sorted(depts.keys()),
         "depts_present_count": len(depts),
+        "required_departments": sorted(required),
         "registered_as_agents": registered,
         "files_without_agent": unregistered,
+        "operator_board_exempt": exempt,
         "agents_list_count": len(agent_ids),
         "detail": (
             "no department folders present (ZHE step 2/4 did not build)" if not present
-            else (f"{len(unregistered)} dept folder(s) not registered as agents "
-                  f"(built-as-files only): {', '.join(unregistered)}" if unregistered
-                  else f"all {len(depts)} departments built AND registered as agents")
+            else (f"{len(unregistered)} required dept(s) not registered as agents: "
+                  f"{', '.join(unregistered)}" if unregistered
+                  else f"all {len(registered)} required departments registered as agents")
         ),
     }
 
@@ -836,11 +903,14 @@ print(json.dumps(r))
 _CC_APP_DIRS = ("~/projects/command-center", "/data/projects/command-center")
 
 # Departments whose board is the OPERATOR's Command Center, not the client's: they are
-# exempt from the client board-lane requirement ONLY (still discovered, still held to
-# agent registration). rescue-rangers is the fleet escalation department — its tickets
-# are boarded on the operator's CC by the operator receiver/poller
-# (role-library/rescue-rangers/scripts/rescue_cc_board.py), it is never in a client's
-# chosen departments.json, and seed-workspaces.py never gives it a client lane.
+# exempt from BOTH the client board-lane and the client dept-agent requirement.
+# rescue-rangers is the operator-only fleet escalation department — its tickets are
+# boarded on the operator's CC by the operator receiver/poller
+# (role-library/rescue-rangers/scripts/rescue_cc_board.py), its brain runs on the
+# operator Mac, it is never in a client's chosen departments.json, and
+# seed-workspaces.py never gives it a client lane. materialize-dept-agents.sh registers
+# an agent only for a live lane, so demanding its agent while exempting its lane was a
+# requirement nothing could ever satisfy.
 OPERATOR_BOARD_DEPTS = {"rescue-rangers"}
 
 
@@ -879,7 +949,7 @@ def _canonical_dept_slug_fn():
         return lambda s: s
 
 
-def check_command_center(fs, oc_root, dept_slugs):
+def check_command_center(fs, oc_root, dept_slugs, aliases=None):
     cc = resolve_cc_db(fs, oc_root)
     db_path = cc.get("db")
     if not db_path:
@@ -896,13 +966,15 @@ def check_command_center(fs, oc_root, dept_slugs):
     lane_blob = cc.get("lane_blob", []) or []
     # dept lanes present: each discovered dept slug appears in some workspaces row,
     # as-is or under its canonical slug (the seeder writes workspaces.slug through
-    # canonical_dept_slug, e.g. folder legal-compliance -> lane "legal").
+    # canonical_dept_slug, e.g. folder legal-compliance -> lane "legal"), or under any
+    # spelling in `aliases` (required_departments(): folder names + chosen slugs).
     canon = _canonical_dept_slug_fn()
     lanes_missing = []
     for slug in sorted(dept_slugs):
         if slug in OPERATOR_BOARD_DEPTS:
             continue
-        needles = {slug.lower(), (canon(slug) or slug).lower()}
+        needles = {n for s in {slug} | set((aliases or {}).get(slug, ()))
+                   for n in (s.lower(), (canon(s) or s).lower())}
         if not any(n in blob for n in needles for blob in lane_blob):
             lanes_missing.append(slug)
     has_ws_table = "workspaces" in tables
@@ -1266,6 +1338,7 @@ def check_standard_ready_chosen_artifact(fs, company_dir, departments_dir):
         "artifact_present": True,
         "artifact_path": artifact,
         "chosen_count": len(slugs),
+        "chosen": slugs,
         "detail": (
             f"chosen artifact present ({len(slugs)} departments)" if ok
             else "departments.json present but lists no departments"
@@ -1369,7 +1442,8 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
 
     provisioned = bj.read_provisioned(departments_dir, df)
     key = bj.make_keyer(df, canonical_dept_slug)
-    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key)
+    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key,
+                      bj.stray_template_keys(df, key))
     ok = verdict.get("rc") == bj.RC_OK
     return {
         "pass": ok,
@@ -1379,6 +1453,8 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
         "chosen_source": chosen_source,
         "counts": verdict.get("counts"),
         "drift_classes": verdict.get("drift_classes"),
+        "stray_template_departments": [
+            e["department"] for e in verdict.get("stray_template_departments") or []],
         "detail": (
             "board join holds: chosen == provisioned == displayed" if ok
             else "board join DRIFT: " + ", ".join(verdict.get("drift_classes") or ["unknown"])
@@ -1706,11 +1782,23 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
         return receipt
 
     # ----- THE FOUR ZHE WRAPPINGS -----
-    a = check_depts_registered(fs, oc_root, cfg)
+    folders = discover_departments(fs, oc_root)
+    required, required_source, stray = required_departments(fs, oc_root, ws, state, folders)
+    a = check_depts_registered(fs, oc_root, cfg, required)
+    a["required_source"] = required_source
+    a["stray_template_folders"] = stray
     dept_slugs = a["departments_present"]
     receipt["checks"]["floor_depts_registered_as_agents"] = a
     receipt["checks"]["personas_canonical"] = check_personas_canonical(fs, ws)
-    receipt["checks"]["command_center_board"] = check_command_center(fs, oc_root, dept_slugs)
+    receipt["checks"]["command_center_board"] = check_command_center(
+        fs, oc_root, sorted(required), required)
+    if stray:
+        # Folders nobody chose (role-library template copies): no agent or lane can be
+        # seeded for them, so they WARN — never FAIL, and never deleted.
+        receipt["warnings"] = [
+            f"{len(stray)} stray template folder(s) under departments/, not in "
+            f"{required_source} or the standard floor (no agent/lane required): "
+            + ", ".join(stray)]
     receipt["checks"]["agents_md_doctrine"] = check_agents_md_doctrine(fs, ws, oc_root)
     # Bulletproofing (c): expected-set equality (over- AND under-provision fail).
     receipt["checks"]["provisioning_receipt_equality"] = check_provisioning_receipt(
@@ -1749,6 +1837,8 @@ def print_summary(r):
         return
     for name, c in r["checks"].items():
         print(f"  [{'PASS' if c['pass'] else 'FAIL'}] {name}: {c.get('detail', '')}")
+    for w in r.get("warnings", []):
+        print(f"  [WARN] {w}")
     for name, sub in r.get("subprovers", {}).items():
         print(f"  [{sub['status'].upper()}] subprover {name}")
     print(f"OVERALL: {'PASS' if r['overall_pass'] else 'FAIL'}")
