@@ -12,6 +12,11 @@ name: embedding-integrity-guard
 #       overridden $HOME without OPENCLAW_SANDBOX=1
 #     - detect_platform gemini_index == embedding_engine.DB_PATH (one DB path)
 #
+#     - the local Ollama opt-in (tests/unit/embedding-ollama-local-mode.test.py):
+#       --verify stays gemini/3072 by default, --verify-provider ollama holds a
+#       re-embedded index to 768, and neither provisioning path overwrites a
+#       box in local mode
+#
 #   Job 2 (universal-sops): scripts/hash-universal-sops-manifest.py --check —
 #     any edit under universal-sops/ without a manifest re-stamp fails.
 #
@@ -45,6 +50,8 @@ on:
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
+      - tests/unit/embedding-ollama-local-mode.test.py
+      - shared-utils/provision-persona-index.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
       - tests/unit/orphan-process-prevention.test.sh
@@ -86,6 +93,8 @@ on:
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
+      - tests/unit/embedding-ollama-local-mode.test.py
+      - shared-utils/provision-persona-index.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
       - tests/unit/orphan-process-prevention.test.sh
@@ -129,6 +138,11 @@ jobs:
         run: |
           chmod +x tests/unit/embedding-hard-gate.test.sh
           bash tests/unit/embedding-hard-gate.test.sh
+
+      - name: Local Ollama opt-in mode (EMBED-3 per provider, reembed-local, provisioning guards, health)
+        run: |
+          python3 -m pip install --quiet numpy
+          python3 tests/unit/embedding-ollama-local-mode.test.py -v
 
       - name: Section-tagger / indexer agreement (existing invariant)
         run: |

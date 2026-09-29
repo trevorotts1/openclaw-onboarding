@@ -345,6 +345,26 @@ except Exception:
 
     mkdir -p "$COACHING_DB_DIR"
 
+    # ── LOCAL-MODE GUARD ─────────────────────────────────────────────────────
+    # A box opted into free local Ollama embeddings (embedding_engine.py
+    # --reembed-local) carries provider='ollama' rows. The prebuilt asset is
+    # Gemini: downloading it would replace vectors this box queries locally with
+    # ones it cannot use. KEEP the index. Ceiling: personas added by a newer
+    # asset do not reach this box until an operator moves the index aside,
+    # re-provisions, and re-runs --reembed-local.
+    if [ -f "$COACHING_DB" ]; then
+        local _PIDX_LOCAL
+        _PIDX_LOCAL="$(python3 -c 'import sqlite3,sys
+try:
+    c=sqlite3.connect(sys.argv[1]); print(c.execute("SELECT COUNT(*) FROM embeddings WHERE provider = \"ollama\"").fetchone()[0]); c.close()
+except Exception:
+    print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
+        if [ "${_PIDX_LOCAL:-0}" -gt 0 ] 2>/dev/null; then
+            _pidx_skip_warn "persona index is in local Ollama mode ($_PIDX_LOCAL provider=ollama rows) — KEEPING it; the Gemini prebuilt asset (release=$_PIDX_TAG) is not installed over it. To take personas from a newer asset: move gemini-index.sqlite aside, re-provision, then run python3 shared-utils/embedding_engine.py --reembed-local"
+            return 0
+        fi
+    fi
+
     # ── Canonical idempotency gate ───────────────────────────────────────────
     local _COLS_OK=1 _CHUNK_OK=0 _DIR_OK=0 _SENT_OK=0 _COVERAGE_OK=0
     local _INSTALLED_CHUNKS="n/a" _INSTALLED_TAG="" _PERSONA_DIR_COUNT=0

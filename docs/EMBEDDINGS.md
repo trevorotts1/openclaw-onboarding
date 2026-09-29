@@ -59,7 +59,9 @@ instead of re-embedded on every dispatch. See
    `provider='fake' model='deterministic-hash-768' dim=768`.
    Machine check: `python3 shared-utils/embedding_engine.py --verify [--db X]`
    → rc 0 pass / rc 4 fail (every row must be gemini/3072 with blob length
-   dim*4).
+   dim*4). The ONE other contract is the explicit local Ollama opt-in (see
+   "Local Ollama mode" below): `--verify --verify-provider ollama` holds such an
+   index to `ollama/nomic-embed-text` @ 768. It is never selected automatically.
 4. **Converge-aware chunk indexer (EMBED-4).** The canonical index is
    section-level. `cmd_index` (chunk indexer) skips any file whose md5 already
    exists as a section row — no accidental full re-embed, no mixed units.
@@ -275,6 +277,40 @@ This corpus is deliberately NOT persisted to `mission-control.db` — it is a
 per-process cache, cheap to rebuild on restart, and never shipped as a
 GitHub Release asset (department configs are per-client, not a shared
 library).
+
+## Local Ollama mode (explicit per-box opt-in, corpora 1–2 and 5)
+
+For a box whose Gemini key cannot pay (e.g. HTTP 402), both searches can run on
+the box's own local Ollama (`nomic-embed-text` @ 768, free, no key). Nothing
+selects it automatically. A box stays on Gemini until an operator switches it:
+
+- **CC SOP index (corpus 5)**: in the Command Center's `.env.local` set
+  `SOP_EMBEDDING_PROVIDER=ollama` (optionally `SOP_EMBEDDING_OLLAMA_URL`,
+  `SOP_EMBEDDING_MODEL`, `SOP_EMBEDDING_DIMS`), restart the CC, then run
+  `tsx scripts/backfill-sop-embeddings.ts --batch-size=10`. The backfill stamps the
+  `sop_embeddings_local_provider` marker table before it writes a row.
+  `provision_sop_embeddings.py` SKIPs any DB carrying that marker, so the Sunday
+  update never re-imports the Gemini asset over local vectors.
+- **Persona index (corpora 1–2)**: `python3 shared-utils/embedding_engine.py
+  --reembed-local [--batch-size N --pause S]` re-embeds every existing row in
+  place (ids and section metadata kept), stamped `provider='ollama'`. It is
+  resumable and ends with the ollama `--verify`. `search()` then embeds queries
+  with the same local model (`OLLAMA_EMBED_URL`, default
+  `http://127.0.0.1:11434`). If Ollama is down, it falls back to keyword.
+  `provision-persona-index.sh` keeps an index that has `provider='ollama'` rows
+  and never installs the Gemini asset over it.
+- **Health**: `embedding_health.py` checks a local-mode store against its own
+  model and dims, with a smoke embed to the loopback Ollama. A non-loopback URL
+  fails, because Ollama Cloud never embeds (B.6).
+- **Known limits**: personas added by a newer prebuilt asset do not reach a
+  local-mode box until an operator moves the index aside, re-provisions, and
+  re-runs `--reembed-local`. The selector's in-process Layer-5
+  (`semantic_task_fit.py`) stays Gemini-only and uses keyword overlap on such
+  a box. Stage C still ranks through `search()`. The CC's department routing and
+  skill matching stay on keyword in local mode.
+- **Leaving local mode**: drop the CC marker table, set
+  `SOP_EMBEDDING_PROVIDER=google`, and re-provision. For personas, move
+  `gemini-index.sqlite` aside and re-provision.
 
 ## Runtime decision-engine retrieval (JEV 1.1, Python, this repo)
 
