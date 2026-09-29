@@ -230,10 +230,10 @@ else
   ok "company dir with no departments/ rejected (resolved '${DD6:-<none>}')"
 fi
 
-echo "=== S7: a company entry symlinked into the Downloads template tree ==="
+echo "=== S7: a company entry symlinked into the shipped template tree ==="
 H7="$TMP/s7"
 mkdir -p "$H7/.openclaw"                       # platform marker, NO workspace tree
-TPL="$H7/Downloads/openclaw-master-files/zero-human-company/acme"
+TPL="$H7/Downloads/openclaw-master-files/23-ai-workforce-blueprint/templates/acme"
 make_floor_tree "$TPL/departments"
 mkdir -p "$H7/clawd/zero-human-company"
 ln -s "$TPL" "$H7/clawd/zero-human-company/acme"
@@ -243,6 +243,23 @@ case "$DD7" in
   *openclaw-master-files*) bad "resolved INTO the shipped template tree: $DD7" ;;
   *)                       ok "template tree not audited (resolved '${DD7:-<none>}')" ;;
 esac
+
+echo "=== S8: a company entry symlinked to the BUILD location is audited ==="
+# openclaw-master-files/zero-human-company/<co> is where build-workforce.py
+# writes (PRD 1.9); a legacy ~/clawd entry linking there is the real workforce.
+H8="$TMP/s8"
+mkdir -p "$H8/.openclaw"
+BUILT="$H8/Downloads/openclaw-master-files/zero-human-company/acme"
+make_floor_tree "$BUILT/departments"
+mkdir -p "$H8/clawd/zero-human-company"
+ln -s "$BUILT" "$H8/clawd/zero-human-company/acme"
+DD8="$(resolve_dd "$H8")"
+echo "  resolved: ${DD8:-<none>}"
+if [ "$DD8" = "$(cd "$BUILT/departments" && pwd -P)" ]; then
+  ok "the build's own company tree is audited"
+else
+  bad "the build's own company tree was not audited (resolved '${DD8:-<none>}')"
+fi
 
 echo
 echo "passed=$PASSED failed=$FAILED"

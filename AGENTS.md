@@ -465,11 +465,10 @@ Enforced by `scripts/qc-assert-ollama-provider-platform.sh` (single source of tr
 
 - Ollama Cloud may be over-capacity for a specific model — fallback to OpenRouter keeps the agent alive
 - A bare string on an agent that serves a client's Telegram messages → total silence on Ollama outage
-- The subagents block already uses the object form (`canonical_subagents` in `build-workforce.py`) — the top-level model must match
 
 ### Enforcement
 
-- `build-workforce.py add_agent_to_config()` MUST produce the object form (N31 fix applied v11.1.0)
+- `build-workforce.py add_agent_to_config()` writes NO `model` (and no `subagents.model`) on a new agent — it inherits `agents.defaults`, the owner's chain (v25.2.6). Anything that does write a model MUST use the object form
 - `scripts/qc-system-integrity.sh` model-object check validates every entry in `agents.list[]`
 - Any PR that writes bare-string model fields to `openclaw.json` is blocked
 

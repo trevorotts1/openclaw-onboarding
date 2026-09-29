@@ -115,6 +115,7 @@ _BW_SHARED_UTILS = os.path.join(
 )
 sys.path.insert(0, os.path.normpath(_BW_SHARED_UTILS))
 from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy, registry_rows as _registry_rows
+from shared_core_copy import ensure_core_copy
 try:
     from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
     _HAS_CANONICAL_SLUG = True
@@ -3802,9 +3803,7 @@ def apply_standard_edits(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {a.get("id") for a in _registry_rows(_cfg_chk)
-                               if isinstance(a, dict)}
-            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            _wiring_missing = _missing_dept_agents(_cfg_chk, _expected_dept_agent_ids)
             if not _wiring_missing:
                 print(f"[STANDARD-FIRST WIRING-ASSERT] PASS — all "
                       f"{len(_expected_dept_agent_ids)} dept agents confirmed in "
@@ -3827,10 +3826,7 @@ def apply_standard_edits(config):
                         ).returncode
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
-                            _actual_ids2 = {a.get("id") for a in
-                                            _registry_rows(_cfg_chk2)
-                                            if isinstance(a, dict)}
-                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            _still_missing = _missing_dept_agents(_cfg_chk2, _expected_dept_agent_ids)
                             if not _still_missing:
                                 print("[STANDARD-FIRST WIRING-ASSERT] PASS (after "
                                       "materialize repair)", file=sys.stderr)
@@ -4460,20 +4456,13 @@ def build_from_config(config):
             # via explicit tools.allow on each generation dept agent (see
             # add_agent_to_config below).
             #
-            # GOAL-4 D4 (4B+4C) — NO-REFUSAL TOOL BASELINE at build origin.
-            # Mirrors apply-fleet-standards.sh: agents.defaults.tools.allow=["*"]
-            # so a freshly-built box is BORN with departments + sub-agents able to
-            # run exec / file ops / web / MCP / Kie HTTP without ever refusing a
-            # job. This is the VALID defaults-level key (allow) — NOT the poison
-            # key (exec). Under RESTRICT-ONLY precedence the CEO/main per-agent
-            # deny (set in add_agent_to_config) STILL wins, so the wildcard does
-            # NOT re-open the CEO. Idempotent: only fills the key if absent so a
-            # client customization is never clobbered.
-            _defaults = config_data.setdefault("agents", {}).setdefault("defaults", {})
-            _defaults_tools = _defaults.setdefault("tools", {})
-            if "allow" not in _defaults_tools:
-                _defaults_tools["allow"] = ["*"]
-                print("[NON-INTERACTIVE] no-refusal baseline: agents.defaults.tools.allow=['*'] (GOAL-4 D4)", file=sys.stderr)
+            # agents.defaults is NEVER written by the build. The GOAL-4 D4
+            # no-refusal baseline used to be written here as
+            # agents.defaults.tools.allow=["*"]; OpenClaw >= 2026.6.8 rejects ANY
+            # agents.defaults.tools key ("agents.defaults: Unrecognized key
+            # \"tools\""), so the next gateway restart fails. The baseline is
+            # owned by scripts/apply-fleet-standards.sh, which writes the
+            # schema-valid form for the box's own OpenClaw version.
 
             registration_failures = []
             if any(os.path.isfile(os.path.join(DEPARTMENTS_DIR, d, "SOUL.md")) for d in ("master-orchestrator", "ceo")):
@@ -4484,8 +4473,7 @@ def build_from_config(config):
                     if result is False:
                         # False = guard-blocked or not added (not just already-present)
                         # Check if it was already present (idempotent) vs actually failed
-                        existing_ids = [a.get("id") for a in _registry_rows(config_data)]
-                        if f"dept-{dept_id}" not in existing_ids:
+                        if not _registered_dept_agent_id(_registry_rows(config_data), dept_id):
                             registration_failures.append(f"{dept_id}:add_returned_false")
                 except Exception as _reg_e:
                     print(f"[NON-INTERACTIVE ERROR] Registration failed for {dept_id}: {_reg_e}", file=sys.stderr)
@@ -4540,11 +4528,7 @@ def build_from_config(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {
-                a.get("id") for a in _registry_rows(_cfg_chk)
-                if isinstance(a, dict)
-            }
-            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            _wiring_missing = _missing_dept_agents(_cfg_chk, _expected_dept_agent_ids)
             if not _wiring_missing:
                 print(
                     f"[WIRING-ASSERT] PASS — all {len(_expected_dept_agent_ids)} "
@@ -4571,12 +4555,7 @@ def build_from_config(config):
                         ).returncode
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
-                            _actual_ids2 = {
-                                a.get("id")
-                                for a in _registry_rows(_cfg_chk2)
-                                if isinstance(a, dict)
-                            }
-                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            _still_missing = _missing_dept_agents(_cfg_chk2, _expected_dept_agent_ids)
                             if not _still_missing:
                                 print(
                                     f"[WIRING-ASSERT] PASS (after materialize repair) "
@@ -4664,7 +4643,7 @@ def build_from_config(config):
 
     # v10.5.1: Run v2.1 post-build augmentation - adds IDENTITY.md, SOUL.md,
     # MEMORY.md, HEARTBEAT.md, how-to.md (universal 18-section template), and
-    # AGENTS/TOOLS/USER symlinks to every role folder created above. Master
+    # AGENTS/TOOLS/USER real-file copies to every role folder created above. Master
     # Orchestrator (CEO) gets the CEO variant of the deferral clause. Idempotent.
     #
     # v10.15.4: Stream stdout/stderr live (no capture_output). Record return
@@ -5363,38 +5342,15 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(da_sop_path, 'w') as f:
             f.write(da_sop_content)
 
-    # v9.6.1: SHARED files (AGENTS.md / TOOLS.md / USER.md) are SYMLINKED,
-    # not copied. Every dept director, specialist, and sub-agent reads the
-    # SAME master file at ~/clawd/. When any agent writes to its AGENTS.md,
-    # TOOLS.md, or USER.md, the write lands in the universal file and ALL
-    # other agents pick it up on next read.
-    #
-    # Reason: prior `shutil.copy2()` was creating per-dept duplicates that
-    # diverged from the master over time, defeating the purpose of a shared
-    # operating playbook (AGENTS.md), shared tool registry (TOOLS.md), and
-    # shared owner profile (USER.md).
+    # SHARED files (AGENTS.md / TOOLS.md / USER.md) are REAL-FILE COPIES of the
+    # workspace root's canonical (N29, amended 2026-07-31). A symlink here is
+    # rejected by the runtime's workspace-root boundary guard and the dept agent
+    # silently runs on a ~107-char stub. An existing real, non-empty file is
+    # NEVER deleted or overwritten -- the updater's link_shared_core_files()
+    # refreshes it with backup + content preservation on every roll.
     for filename in INHERITED_FILES:
-        src = os.path.join(WORKSPACE_ROOT, filename)
-        dst = os.path.join(dept_dir, filename)
-        if not os.path.isfile(src):
-            continue
-        # If a stale copy or wrong symlink exists, remove it before re-linking
-        if os.path.lexists(dst):
-            # Already a correct symlink pointing to the master? Skip.
-            if os.path.islink(dst) and os.readlink(dst) == src:
-                continue
-            try:
-                os.remove(dst)
-            except OSError as e:
-                print(f"[INHERITED-FILES WARN] Could not replace {dst}: {e}", file=sys.stderr)
-                continue
-        try:
-            os.symlink(src, dst)
-        except OSError as e:
-            # Fallback to copy only if symlink unsupported (rare - Windows w/o admin)
-            print(f"[INHERITED-FILES WARN] symlink failed for {filename}: {e}; falling back to copy",
-                  file=sys.stderr)
-            shutil.copy2(src, dst)
+        ensure_core_copy(os.path.join(WORKSPACE_ROOT, filename),
+                         os.path.join(dept_dir, filename))
 
     # G5: detect CEO dept - canonical orchestrator rule is PREPENDED to its
     # MEMORY.md / SOUL.md / IDENTITY.md (NOT to AGENTS.md/TOOLS.md which are
@@ -5421,7 +5377,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
     # v10.13.23 - Create IDENTITY.md for the dept head (Trevor's agent-file
     # architecture). Per the spec: every top-level agent gets its own
     # IDENTITY/SOUL/MEMORY/HEARTBEAT; the SHARED files (USER/AGENTS/TOOLS)
-    # stay symlinked at the workspace root. Sub-agents (role folders inside
+    # are real-file copies of the workspace root (N29). Sub-agents (role folders inside
     # this dept) get their IDENTITY.md via post-build-role-workspaces.py.
     identity_path = os.path.join(dept_dir, "IDENTITY.md")
     if not os.path.isfile(identity_path):
@@ -5577,7 +5533,7 @@ def generate_identity_md(dept_id, dept_info, interview_answers):
 
     Trevor's agent-file architecture (v10.13.23): every top-level agent has
     its own IDENTITY/SOUL/MEMORY/HEARTBEAT. Sub-agents inherit. SHARED files
-    (USER/AGENTS/TOOLS) live at the workspace root and are symlinked.
+    (USER/AGENTS/TOOLS) are real-file copies of the workspace root (N29).
 
     Kept intentionally lightweight - the agent fills in its persona name and
     voice during the first conversation with the owner.
@@ -5633,9 +5589,9 @@ department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 - I back up the local OpenClaw config before any change.
 - I follow the Teach Yourself Protocol (TYP) for substantial new knowledge.
 - I investigate root cause before fixing. I never claim done without verifying.
-- I use the symlinked TOOLS.md to know what tools are available.
-- I use the symlinked AGENTS.md to know how to behave and who to escalate to.
-- I use the symlinked USER.md to know who I work for and how they communicate.
+- I use the shared TOOLS.md to know what tools are available.
+- I use the shared AGENTS.md to know how to behave and who to escalate to.
+- I use the shared USER.md to know who I work for and how they communicate.
 {production_tools_note}
 ## Persona Governance
 
@@ -6429,6 +6385,74 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     return header + out
 
 
+def _library_role_entries(dept_id):
+    """The role library's roles for a department, one per canonical slug."""
+    index = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "templates", "role-library", "_index.json")
+    try:
+        with open(index) as f:
+            roles = json.load(f).get("roles", [])
+    except (OSError, ValueError):
+        return []
+    dept = _crw_normalize_dept(dept_id) if _LIBRARY_FILL_AVAILABLE else dept_id
+    out = {}
+    for e in roles:
+        if (e.get("dept") or "").lower() == dept and e.get("slug"):
+            out.setdefault(e["slug"], e)
+    return list(out.values())
+
+
+def _role_key(name, dept_id):
+    """Canonical library slug for a role name or folder name, prover-normalized."""
+    bare = re.sub(r"^\d+[-_]", "", str(name or ""))
+    if _LIBRARY_FILL_AVAILABLE:
+        _, entry = _crw_library_lookup(bare, dept_id)
+        if entry and entry.get("slug"):
+            bare = entry["slug"]
+    return re.sub(r"-{2,}", "-", _engine_slugify(bare))
+
+
+def library_floor_roles(dept_id, roles, dept_dir=None):
+    """Role folders carry the role library's canonical slug, and every library
+    role of the department is built.
+
+    The suggested-roles headers carry employment tags and no **Slug:** line
+    ("### 1. Director of CRM (full-time-permanent)"), so the raw name became the
+    folder ("01-director-of-crm-full-time-permanent") and the floor prover never
+    matched it. Roles the roster does not list (healer, devil's advocate, SOP
+    writer) were never built. A role (or folder already on disk) that resolves to
+    a library slug counts as present, so nothing is built twice.
+    """
+    have = set()
+    for r in roles:
+        if not (r.get("slug") or "").strip() and _LIBRARY_FILL_AVAILABLE:
+            _, entry = _crw_library_lookup(r["name"], dept_id)
+            if entry and entry.get("slug"):
+                r["slug"] = entry["slug"]
+        have.add(_role_key(r.get("slug") or r["name"], dept_id))
+    if dept_dir and os.path.isdir(dept_dir):
+        have |= {_role_key(n, dept_id) for n in os.listdir(dept_dir)
+                 if os.path.isdir(os.path.join(dept_dir, n))}
+    nums = []
+    for r in roles:
+        try:
+            if int(r.get("number") or 0) < 99:
+                nums.append(int(r.get("number") or 0))
+        except (TypeError, ValueError):
+            pass
+    nxt = max(nums, default=0) + 1
+    for e in sorted(_library_role_entries(dept_id), key=lambda e: e["slug"]):
+        if _role_key(e["slug"], dept_id) in have:
+            continue
+        title = e.get("title") or ""
+        roles.append({"number": nxt, "name": title if title and "{{" not in title else e["slug"].replace("-", " ").title(),
+                      "slug": e["slug"], "description": "", "sops": [], "persona_traits": "",
+                      "is_qc": e["slug"].startswith("qc")})
+        have.add(_role_key(e["slug"], dept_id))
+        nxt += 1
+    return roles
+
+
 def create_role_workspace(dept_id, dept_info, interview_answers):
     """
     Create role subfolders inside a department workspace.
@@ -6453,8 +6477,8 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         print(f"[ROLE-WORKSPACE WARNING] Department directory does not exist: {dept_dir}", file=sys.stderr)
         return []
 
-    # Parse the suggested-roles file
-    roles = parse_suggested_roles(dept_id)
+    # Parse the suggested-roles file, then align it to the role library's floor.
+    roles = library_floor_roles(dept_id, parse_suggested_roles(dept_id), dept_dir)
     if not roles:
         print(f"[ROLE-WORKSPACE] No roles found for {dept_id}, skipping role workspace creation."
               f" If roles are expected, check suggested-roles/{DEPT_TO_SUGGESTED_ROLES.get(dept_id, 'unknown')}",
@@ -6477,7 +6501,7 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         # no-slug fallback), so the folder name is byte-identical to the role-library
         # .md filename and the floor-manifest slug. It also writes the unique
         # IDENTITY/SOUL/MEMORY/HEARTBEAT files, the SOP/00-INDEX.md, and the shared
-        # AGENTS/TOOLS/USER symlinks. build-workforce then writes its EXTRA artifacts
+        # AGENTS/TOOLS/USER real-file copies. build-workforce then writes its EXTRA artifacts
         # (how-to.md from the role-library, 00-START-HERE.md, governing-personas.md,
         # and SOP stubs) INTO the engine-created role_path. role_dir/folder_name are
         # derived FROM the engine result so the two paths can never drift again.
@@ -6498,7 +6522,7 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         if _ENGINE_ROLE_WRITER_AVAILABLE:
             try:
                 _engine_path = _crw_create_role_workspace(
-                    dept_dir, role['name'], (COMPANY_DIR or WORKSPACE_ROOT),
+                    dept_dir, role['name'], WORKSPACE_ROOT,
                     role_metadata=_role_metadata)
                 role_dir = str(_engine_path)
                 folder_name = os.path.basename(role_dir)
@@ -7934,6 +7958,31 @@ def ensure_ceo_foundation_agent(config):
     raise RuntimeError("CEO foundation workspace is not materialized; cannot register fallback")
 
 
+def _registered_dept_agent_id(rows, dept_id):
+    """Id of the agent already serving this department, or None.
+
+    That is dept-<id>, or any agent whose workspace IS this department's folder
+    (a box that registered it under another key). Either one is the department's
+    registration: the build never adds a second entry beside it.
+    """
+    agent_id = f"dept-{dept_id}"
+    rows = [a for a in rows if isinstance(a, dict)]
+    if any(a.get("id") == agent_id for a in rows):
+        return agent_id
+    ws = os.path.realpath(os.path.join(DEPARTMENTS_DIR, dept_id))
+    for a in rows:
+        if a.get("workspace") and os.path.realpath(os.path.expanduser(a["workspace"])) == ws:
+            return a.get("id")
+    return None
+
+
+def _missing_dept_agents(config, expected_ids):
+    """The expected dept-<id> agents with no registration in `config` (by id or workspace)."""
+    rows = _registry_rows(config)
+    return {aid for aid in expected_ids
+            if not _registered_dept_agent_id(rows, aid[len("dept-"):])}
+
+
 def add_agent_to_config(config, dept_id, dept_info):
     """
     Add a department head agent to openclaw.json agents.list.
@@ -7966,8 +8015,21 @@ def add_agent_to_config(config, dept_id, dept_info):
         for entry in normalized["agents"].pop("list"):
             entry = dict(entry)
             rid = entry.pop("id")
-            entries[rid] = entry
+            orig = config["agents"]["entries"].get(rid)
+            # An entry the registration did not change is written back as found.
+            unchanged = isinstance(orig, dict) and dict(orig, id=rid) == dict(entry, id=rid)
+            entries[rid] = orig if unchanged else entry
         normalized["agents"]["entries"] = entries
+        if (changed and len(entries) > 1 and "ownership" not in normalized["agents"]
+                and not any(isinstance(e, dict) and e.get("default") is True for e in entries.values())):
+            # The schema rejects a multi-agent entries roster with neither
+            # ownership="explicit" nor one default=true marker. Set it only when
+            # THIS write made the roster multi-agent; an existing value is kept.
+            # Same rule as materialize-dept-agents.sh.
+            normalized["agents"]["ownership"] = "explicit"
+        if "list" in config["agents"]:
+            # The box's own (empty) legacy key is left exactly as found.
+            normalized["agents"]["list"] = config["agents"]["list"]
         config.clear()
         config.update(normalized)
         return changed
@@ -7990,26 +8052,23 @@ def add_agent_to_config(config, dept_id, dept_info):
                 existing.pop("skills")  # Retire generated router-only skill suppression.
                 return True
         return False  # Preserve all other installed/owner configuration.
+    _other_id = _registered_dept_agent_id(agents_list, dept_id)
+    if _other_id:
+        # Already registered under another key: never a second entry, never a model.
+        print(f"[CONFIG] {agent_id}: department already registered as '{_other_id}' "
+              f"- left untouched.", file=sys.stderr)
+        return False
 
-    # U135 (July 23): Use the canonical model resolution chain instead of any
-    # hardcoded model name. resolve_dept_agent_model() drives the capability-class
-    # cascade, which selects from the box's AVAILABLE models (never a fixed id).
-    # If select_model.py is unreachable at install time, fall back to a
-    # safe default that Anthropic-strips and matches the July 23 fleet config.
+    # MODEL: a NEW agent gets NO "model" key -- it inherits agents.defaults, the
+    # model the box owner already chose. The build never writes model ids into
+    # openclaw.json: build-picked ids were not on client allowlists, and a bare
+    # "ollama/..." id hits the provider-namespace trap on boxes that register the
+    # provider as "ollama-cloud" (silent until the agent launches). N31 (object
+    # form) still binds anyone who DOES write a model; the build no longer does.
     #
-    # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
-    # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
-    # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
-    #
-    # MSF (v12.x): the dept-head model now comes from the capability-class layer.
-    # resolve_dept_agent_model() (a) honors any Layer-0 explicit pin on a seed
-    # entry, (b) infers the dept's DOMINANT capability class and resolves a
-    # concrete model from the box's AVAILABLE models via resolve_role_model(),
-    # and (c) falls straight through to the legacy _resolve_dept_default_model()
-    # cascade when model_selector is unavailable / no class model resolves.
-    # GENERATION roles never pull a dept HEAD off an LLM (the head is a router),
-    # and the per-role GENERATION gate inside resolve_role_model keeps individual
-    # generation roles off LLMs.
+    # resolve_dept_agent_model() below feeds ONLY the Command Center Layer-1
+    # dept-default artifact (dept-default-models.json -> agent_settings rows),
+    # never the openclaw.json entry.
     _seed_entry = next(
         (a for a in agents_list if isinstance(a, dict) and a.get("id") == agent_id),
         None,
@@ -8029,14 +8088,6 @@ def add_agent_to_config(config, dept_id, dept_info):
     # Record the dept default so the CC seeding step can write the
     # agent_settings (role_id IS NULL, setting_type='model') row (PLAN.md §3.2).
     _record_dept_default(dept_id, _dept_default, _primary)
-    model = {
-        "primary": _primary,
-        "fallbacks": [
-            "openrouter/moonshotai/kimi-k2.6",
-            "ollama/deepseek-v4-pro:cloud",
-            "openrouter/deepseek/deepseek-v4-pro",
-        ],
-    }
     workspace = os.path.join(DEPARTMENTS_DIR, dept_id)
     agent_dir = _agent_dir_for(agent_id)
 
@@ -8056,17 +8107,8 @@ def add_agent_to_config(config, dept_id, dept_info):
 
     # BUG 4 FIX: schema-valid subagents block ONLY. The strict 2026.5.22
     # AgentEntrySchema permits exactly { allowAgents, model } under subagents.
-    canonical_subagents = {
-        "allowAgents": ["*"],
-        "model": {
-            "fallbacks": [
-                "ollama/kimi-k2.6:cloud",
-                "openrouter/moonshot/kimi-k2.6",
-                "ollama/deepseek-v4-pro:cloud",
-                "openrouter/deepseek/deepseek-v4-pro",
-            ]
-        },
-    }
+    # No subagents.model either: sub-agents inherit the box's own model chain.
+    canonical_subagents = {"allowAgents": ["*"]}
 
     # CEO / Master Orchestrator agent - pure router, NEVER executes production work.
     # Setting skills:[] blocks ALL installed OpenClaw skills for this agent so it
@@ -8212,7 +8254,6 @@ def add_agent_to_config(config, dept_id, dept_info):
         "workspace": workspace,
         # BUG 2 FIX: unique per-agent agentDir derived from the unique id.
         "agentDir": agent_dir,
-        "model": model,
         "subagents": canonical_subagents,
     }
     if is_ceo_agent:

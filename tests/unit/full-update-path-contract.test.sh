@@ -112,6 +112,20 @@ grep -q 'install-service-remediate.sh' "$UPDATE_SH" \
   && ok "the roll converges the Mac service self-heal and reports a greppable state" \
   || bad "the roll never converges install-service-remediate.sh"
 
+# A Command Center checkout with no refs/remotes/origin/HEAD made the default-
+# branch lookup fail under pipefail and set -e killed the updater: exit 1, no
+# output, after the stamp. Run the updater's own line against such a checkout.
+CC_DEFAULT_LINE="$(grep -m1 '^ *_CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref' "$UPDATE_SH")"
+NO_ORIGIN_HEAD="$(mktemp -d "${TMPDIR:-/tmp}/no-origin-head.XXXXXX")"
+git init -q "$NO_ORIGIN_HEAD"
+if [ -n "$CC_DEFAULT_LINE" ] \
+   && [ "$(_CC_DIR="$NO_ORIGIN_HEAD" bash -c "set -euo pipefail; $CC_DEFAULT_LINE; echo \"\${_CC_DEFAULT:-main}\"" 2>/dev/null)" = "main" ]; then
+  ok "CC default-branch lookup survives a checkout without origin/HEAD"
+else
+  bad "CC default-branch lookup aborts the updater when origin/HEAD is missing"
+fi
+rm -rf "$NO_ORIGIN_HEAD"
+
 for suite in \
   tests/unit/sop-library-update-path-ingest.test.sh \
   tests/unit/update-command-center-runtime-config.test.sh \

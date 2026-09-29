@@ -279,8 +279,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gap-file", required=True)
     ap.add_argument("--workspace", default=None,
-                    help="departments/ directory (default: platform-appropriate "
-                         "~/.openclaw/workspace/departments or /data/.openclaw/...).")
+                    help="departments/ directory (default: the build state's "
+                         "companyRoot/departments, else the platform workspace "
+                         "departments/ -- _qc_paths.live_departments_dir()).")
+    ap.add_argument("--workspace-root", default=None,
+                    help="OpenClaw workspace holding the build state and shared core "
+                         "files; the departments tree is resolved from its build state "
+                         "(ignored when --workspace is given).")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--build-state-file", default=None,
                     help="explicit .workforce-build-state.json for the INDUSTRY GATE's "
@@ -297,12 +302,14 @@ def main():
 
     if args.workspace:
         ws = Path(args.workspace)
+        workspace_root = ws.parent  # .../workspace
     else:
-        # platform-appropriate default departments dir
-        vps = Path("/data/.openclaw/workspace/departments")
-        ws = vps if Path("/data/.openclaw").is_dir() else (Path.home() / ".openclaw/workspace/departments")
-
-    workspace_root = ws.parent  # .../workspace
+        # The build state's own companyRoot/departments first, else
+        # <workspace>/departments -- the SAME rule the QC checker uses. The
+        # workspace (build state + shared core files) stays the OpenClaw one.
+        from _qc_paths import departments_root_for, platform_workspace
+        workspace_root = Path(args.workspace_root) if args.workspace_root else platform_workspace()
+        ws = departments_root_for(workspace_root)
     try:
         with open(args.gap_file, encoding="utf-8") as f:
             gaps = json.load(f)

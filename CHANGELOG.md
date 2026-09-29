@@ -1,3 +1,318 @@
+## [v25.2.9]  -  2026-09-28  -  Merge train: #1328 presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE…; #1343 fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD;…; #1344 fix(skill23): build is non-destructive on a box with existing…; #1347 fix(skill23): one company-root resolution order + durable owner-sends…; #1348 fix(skill23): PENDING role how-tos are queued for SOP authoring +…; #1349 fix(skill23): role folders use canonical library slugs and meet the…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1328 — presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE from intake ledger RUN_MODE)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1343 — fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD; foreign-owned file in scripts/)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1344 — [v25.2.6]  -  2026-09-28  -  Skill 23: the build no longer breaks a box that already has departments and agents
+
+#### Why
+Running the Skill 23 build on a client box that already had departments and agents broke it:
+- `build-workforce.py` `create_department_workspace()` deleted each department's real `AGENTS.md`,
+  `TOOLS.md` and `USER.md` and replaced them with symlinks to the workspace root. The runtime's
+  workspace-root boundary guard rejects those symlinks and injects a ~107-char stub, so every
+  department agent silently ran with no instructions (N29, amended 2026-07-31).
+- The role-folder writers (`create_role_workspaces.py`, `add-role.sh`,
+  `shared-utils/create-role-workspaces.py`) and Skill 32's `scaffold-agent-files.sh` (run by
+  `materialize-dept-agents.sh`) created the same symlinks, and the role-folder augment pass turned
+  real `TOOLS.md` / `USER.md` files back into symlinks.
+- A department already registered under a key other than `dept-<slug>` got a second registration
+  from both `add_agent_to_config()` and `materialize-dept-agents.sh`, the build's copy carrying a
+  build-resolved model beside the owner's.
+- On an `agents.entries` box, `add_agent_to_config()` dropped the box's own `agents.list` key and
+  stripped fields from entries it did not change.
+
+#### What changed
+- `23-ai-workforce-blueprint/scripts/shared_core_copy.py` (new; lives in the Skill 23 scripts tree so it
+  travels with every delivered layout, flattened `.scripts` included): `ensure_core_copy()` places a shared core file as a real
+  copy. It keeps a real, non-empty file byte-identical, migrates a symlink to a real copy, and is
+  fail-open (an unreadable or empty canonical leaves the file as it was). Refreshing an existing
+  real file is still the job of `link_shared_core_files()` in `update-skills.sh` / `install.sh`.
+- `create_department_workspace()`, `create_role_workspaces.py` (`create_role_workspace()` and
+  `_link_shared_files_only()`), `add-role.sh`, `shared-utils/create-role-workspaces.py` and
+  `32-command-center-setup/scripts/scaffold-agent-files.sh` all write real copies and never symlink.
+  Role folders carry `TOOLS.md` + `USER.md` only, matching the existing U053 disposition, so a new
+  role no longer gets an `AGENTS.md` that the next augment pass deletes.
+- `add_agent_to_config()` and `materialize-dept-agents.sh` treat an agent whose workspace is the
+  department's folder as that department's registration. They add no second entry and leave its
+  model and name alone. The post-build wiring asserts accept it too, so the build does not fall into
+  a materialize "repair" that would add the duplicate.
+- `add_agent_to_config()` on an `agents.entries` box writes unchanged entries back exactly as found
+  and keeps the box's own `agents.list` key. An agent that already exists is never given a model or
+  changed model, and `agents.defaults` is never touched by registration.
+- Tests: `tests/unit/test_skill23_build_nondestructive.py` (new, 13 hermetic tests, 11 of which fail
+  on the previous main) covers real core files kept byte-identical across two build runs, symlinks
+  migrated, role folders, `scaffold-agent-files.sh`, existing models untouched in both schemas,
+  registration under another key, a second-run no-op on an `agents.entries` box, and an end-to-end
+  `materialize-dept-agents.sh` run. `test_role_workspace_symlinks.py` was updated to the N29
+  contract. Both now run in `skill23-provisioning-tests.yml`.
+- A NEW department agent gets no `model` key and no `subagents.model`: it inherits `agents.defaults`.
+  The build used to write a resolved primary plus hardcoded fallbacks
+  (`openrouter/moonshotai/kimi-k2.6`, `ollama/deepseek-v4-pro:cloud`,
+  `openrouter/deepseek/deepseek-v4-pro`). Those were not on client allowlists, and a bare `ollama/`
+  id hits the provider-namespace trap on boxes that register the provider as `ollama-cloud`.
+  `resolve_dept_agent_model()` now feeds only the Command Center `dept-default-models.json` artifact.
+- The non-interactive build no longer writes `agents.defaults.tools.allow=["*"]`. OpenClaw 2026.6.8
+  and later rejects any `agents.defaults.tools` key (`agents.defaults: Unrecognized key "tools"`),
+  so the next gateway restart failed. `scripts/apply-fleet-standards.sh` still owns that baseline
+  in its schema-valid form.
+- When registration turns a single-agent `agents.entries` roster into a multi-agent one,
+  `add_agent_to_config()` sets `agents.ownership="explicit"` (only if absent and no entry is marked
+  `default`). Without it the config fails validation. This is the same rule
+  `materialize-dept-agents.sh` already applies.
+- The build hands `create_role_workspace()` the workspace root, not the company root, so role
+  folders copy the canonical `TOOLS.md` / `USER.md`. Previously they got dangling symlinks into the
+  company tree.
+- `materialize-dept-agents.sh` no longer re-points an agent whose current workspace still exists.
+  It scans the master-files company tree first, as the most authoritative root. A rebuild that
+  wrote a second, sparse company tree there moved every department agent into it, and a workforce
+  that had passed its audit came back with a failed zero-human check. An existing agent now keeps
+  its workspace, and the scaffold manifest follows it. Only an entry whose workspace is gone is
+  re-pointed.
+- `tests/unit/test_skill23_build_nondestructive.py` now has 14 tests (12 fail on the previous
+  main). The new materialize test sets up a complete live tree plus a sparse rebuild tree. It
+  asserts the live agents stay put, and its control asserts that an entry with a deleted
+  workspace is re-pointed. The other additions are: new agents carry no model and `agents.defaults` is unchanged; a source guard
+  that the build never writes into `agents.defaults`; and the post-build config passes the real
+  `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
+  control proving the validator rejects the old key.
+- Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
+
+### #1347 — [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order (build state first); durable owner-sends hold; board lanes under one company
+
+#### Why
+The build writes the company where `resolve_company_paths()` puts it and records that as
+`companyRoot` in `.workforce-build-state.json`. The readers each guessed a location of their own,
+so on some layouts the build never completed.
+
+- **Mac.** The Skill 23 `lib/detect_platform.py` answered `~/clawd/zero-human-company`
+  (or `<workspace>/zero-human-company`) while the build wrote
+  `~/Downloads/openclaw-master-files/zero-human-company/<slug>`. `_qc_company_info.py` also
+  rejected every path under `openclaw-master-files` as a "template", including the build's own
+  company. qc-completeness audited a stale tree, `completionVerification` stayed pending, and
+  `buildCompletedAt` was never written.
+- **Contabo `/home/node`.** The shared resolver looked only in `/data/openclaw-master-files/zero-human-company`,
+  which is empty there. The workforce lives in `<workspace>/zero-human-company/<slug>`, so
+  `company_dir` was `None` and the reconcile and DEPARTMENTS checks failed.
+- **Floor-fill stubs audited instead of the build.** The QC checker's first choice was the live
+  `<workspace>/departments` tree, and floor-fill wrote there too. On a box whose build wrote the
+  zero-human-company tree, where `materialize-dept-agents.sh` registers the department agents, the
+  gate audited floor-fill stubs instead of the workforce the agents run.
+
+#### What changed
+- `shared-utils/detect_platform.py` and `23-ai-workforce-blueprint/lib/detect_platform.py` now
+  share one resolver, byte-identical and pinned by a test: `build_state_company()`,
+  `known_company_roots()` and `resolve_active_company_dir()`. The order is:
+  1. the build state's `companyRoot`, unless `$OPENCLAW_COMPANY_SLUG` names another company;
+  2. the explicit slug, then the build state's `companySlug`;
+  3. the single company in the first layout that holds one: master-files, then
+     `<workspace>/zero-human-company`, then the legacy clawd tree.
+
+  `company_root`, the write target, is unchanged.
+- `_qc_paths.departments_root_for()` (new) and `live_departments_dir()` put the build state's
+  `companyRoot/departments` first, then `<workspace>/departments`. The QC checker,
+  `department-floor.py`, `detect-stale-artifacts.py`, `floor-fill-driver.py` (default, or with the
+  new `--workspace-root` option) and `migrate-existing-workforce.sh` all use it, so the checker and
+  the repairer measure the same tree.
+- `_qc_company_info.py` `_is_template_path()` no longer rejects
+  `openclaw-master-files/zero-human-company/<slug>`, where the build writes every company. All other
+  `openclaw-master-files` content is still treated as a template and rejected.
+- `materialize-dept-agents.sh` scans the build state's `companyRoot/departments` first, and also
+  `$OC_ROOT/workspace/zero-human-company`. Skill 32 bumped to v13.1.35.
+- Tests:
+  - `tests/unit/test_company_root_resolution.py` (new, 9 tests; 8 fail on the previous main).
+    Layouts covered: Mac with `~/clawd` plus master-files, Mac master-files only, Hostinger `/data`,
+    Contabo `/home/node`, and the build tree against floor-fill stubs. It also checks that a genuine
+    template dir is still rejected and that both resolver copies are identical.
+  - `test-gate-company-dir-resolution.sh` T2 and `qc-departments-tree-resolution.test.sh` S7/S8 now
+    encode the corrected template rule. They run in `qc-departments-tree-guard.yml`.
+
+#### Owner-sends hold (ships with the resolver: a newly-passing gate must not message owners)
+Once the gate measures the real build tree, boxes that used to fail against a stub tree pass at the
+next roll. Without a hold, that pass fires the Presentations welcome, and the closeout can reach the
+celebration. Both are unrequested owner messages.
+- `shared-utils/owner_sends_hold.py` (new) stores an OPT-IN hold in `.workforce-build-state.json`:
+  only an explicit `ownerSendsHold: true` holds; absent or anything else changes nothing. No box is
+  ever held by default. The protection against a gate that newly passes is the full-gate-pass rule
+  below, plus this hold wherever the operator sets it.
+
+  `check` exits 1 only when sends are clear. Anything else counts as HELD: python or the helper
+  missing, or unreadable state. `hold` and `release` are the only writers. Once set, the hold is
+  durable and nothing auto-clears it; the stall-fingerprint reset in `resume-closeout-cron.sh`
+  touches only its own `closeoutResumePaused` keys.
+- The hold is checked in:
+  - `send-presentation-dept-welcome.sh` (`--force` does not bypass it);
+  - `send-telegram-celebration.sh` (the sink);
+  - `run-closeout.sh`, before `TELEGRAM`: it records `closeoutOwnerSendsHeld` and exits 0;
+  - `resume-closeout-cron.sh`, before any dispatch;
+  - `resume-workforce-build.sh` HOP-4, before launching `run-closeout.sh`.
+
+  A hold logs, sends nothing and exits 0. Set or clear it with
+  `python3 <skills>/shared-utils/owner_sends_hold.py hold|release <state-file>`.
+- `verify-library-gate.sh` fires the welcome only on a FULL pass (`GATE_RC=0`). A ZHE failure (rc 9)
+  used to leave every status "done" and still fire it.
+
+#### Command Center URL, board company, openclaw.json validity
+- `interview-launch.py initialize` seeds `commandCenterUrl` from the slug default on EVERY
+  initialize, not only a fresh one. `run-full-install.sh` phase 6h also seeds it when it is absent.
+  Before this, an existing box exported an empty `CC_TUNNEL_EXPECTED_HOST` and `create-tunnel.sh`
+  aborted before its POST.
+- `seed-dashboard-content.py` derives a company slug with the same rule as `seed-workspaces.py`
+  ("Acme Rocket!" becomes `acme-rocket`, not `acme rocket!`). The canonical company id
+  (`MC_COMPANY_ID`, else the build state's `companyId`) is updated in place, and a second company
+  row is never inserted.
+- `seed-workspaces.py` skips a Command Center system queue under the CC's `default` company that
+  cannot be adopted, and leaves it exactly as it is. It still seeds the client's own departments;
+  that queue used to roll back the whole seed, so custom departments never got a board. A queue
+  owned by another real company still refuses the seed. `engine-bootstrap-real-db.test.py` is
+  updated to this contract.
+- `repair-board-company.py` (new; Skill 32) is a dry run by default. `--apply` first backs up the
+  DB, then:
+  1. merges a duplicate company row into the canonical one, moving every row that references it;
+  2. on a single-company board only, moves the client's `default` lanes (its departments and
+     recorded engine queues) to its company;
+  3. seeds the missing lanes.
+
+  The department set is the union of `departments.json`, the build state's `departments[]` and the
+  department folders under the build's `companyRoot`, which is the tree the zero-human check audits.
+  A dry run on a client board showed four on-disk departments that `departments.json` did not list,
+  so `departments.json` alone under-reported them. Lanes are matched on the canonical slug of both
+  the workspace id and its slug, so a CEO lane with id `master-orchestrator` and slug `ceo` counts as
+  the `ceo` department. It is not reported missing and no second CEO lane is seeded. Only the
+  missing departments go to the seeder. The dry run names the `canonical_slug` module it loaded.
+  `seed-workspaces.py` now also finds the installed `shared-utils`
+  (`~/.openclaw/skills/shared-utils`, `/data/.openclaw/skills/shared-utils`) when it runs from a
+  copy outside the skill tree, instead of falling back to the inline slugger.
+
+  It is idempotent. It was not run on any box.
+- Phase 6e of `run-full-install.sh` seeds the "Welcome to <department>" starter tasks only on a
+  full install whose build has closed out (`closeoutStatus == done`). The Command Center's intake
+  sweep auto-dispatches every seeded card and the notifier messages the owner, so a card seeded
+  before closeout was an owner message nobody asked for. Update-only rolls
+  (`update-skills.sh` -> `run-full-install.sh --update-only`) already passed `--no-starter-tasks`,
+  and still do. The gate matters on the bootstrap path, where `update-skills.sh` runs a full
+  install on a box that has no Command Center yet.
+- `retire-confirmed-decline.sh` no longer writes openclaw.json through the build-state writer,
+  which stamped a root `stateRevision` that `openclaw config validate` rejects.
+- Tests:
+  - `tests/unit/test_owner_sends_hold.py` (11 tests; 6 fail on main).
+  - `tests/unit/test_board_company_repair.py` (8 tests; all fail on main). This includes a
+    field-shaped fixture: a duplicate company, podcast and anthology under `default`, the CEO lane
+    under another id, and four departments only on disk. After `--apply`, every department has
+    exactly one lane under the company, and a second `--apply` changes nothing.
+  - `tests/unit/test_starter_tasks_gate.sh` (new, 4 cases) runs the real `starter_tasks_allowed()`
+    extracted from `run-full-install.sh`. It fails on main, where the gate is absent.
+  - `interview-launch.test.py` gains a URL-seeding test.
+  - `retire-decline-separate-workspace.test.py` now asserts that openclaw.json gains no root keys,
+    and runs `openclaw config validate` when the CLI is present.
+  - The new tests run in `owner-sends-hold-guard.yml` (new).
+- Skill 37 bumped to v13.1.5.
+
+### #1348 — [v25.2.8]  -  2026-09-29  -  Skill 23: PENDING role how-tos are queued for SOP authoring and have a scripted fill runner
+
+#### Why
+- Vertical-pack departments whose roles arrived as PENDING `how-to.md` stubs have no numbered
+  `0N-*.md` SOP stubs, so `build-workforce.py` wrote `sop_files=[]` for them in the research
+  manifest. `populate-sops-from-manifest.py dept_already_authored()` read an empty list as "already
+  authored", and its CLI had no `--dept` or `--force`, so those departments (for example a
+  real-estate pack's lead-generation, showings, closing-coordinator and local-market-intelligence)
+  could never be queued.
+- `PENDING-SOPS.md` lists every role whose `how-to.md` is a PENDING stub (hundreds on some boxes),
+  each carrying a one-shot "copy the nearest template and token-fill it" instruction. No script ran
+  that instruction, so nothing ever picked the list up.
+
+#### What changed
+- `populate-sops-from-manifest.py` scans each department at run time for PENDING or stub role
+  `how-to.md` files and adds them as SOP targets. This covers manifests already on disk, and such a
+  department is queued, not skipped. New flags: `--dept` (repeatable or comma-separated; an unknown
+  id exits 1) and `--force` (re-queue departments whose SOPs look authored; the boundary gate still
+  applies).
+- `fill-pending-howtos.py` (new) is the `PENDING-SOPS.md` runner. It is deterministic (no model
+  call) and a dry run by default; `--apply` does the writes.
+  - Match order: an exact library match, then the nearest template in the same library department
+    (title similarity >= 0.6), then the nearest across the library, only above a strict 0.85. A
+    loose cross-department match (for example "Buyer Agent" to a QC agent) would plant the wrong
+    SOPs.
+  - It token-fills with `create_role_workspaces.fill_tokens`, enforces the same 3072-byte floor,
+    and stamps workforce-provenance.
+  - It writes only a `how-to.md` that is still PENDING, and it is idempotent. Roles with no
+    comparable template stay PENDING for authoring (populate-sops now queues them). Exit 3 means
+    some roles are still pending.
+- `resume-workforce-build.sh` runs the fill runner on the library-resume path, so the list is
+  picked up.
+- Tests: `tests/unit/test_pending_sops_runner.py` (3 tests, all fail on the previous main), run by
+  `pending-sops-runner-guard.yml` (new).
+
+### #1349 — [v25.2.9]  -  2026-09-29  -  Skill 23: role folders use canonical library slugs and meet the role-library floor; reconcile-role-floor.py repairs existing trees
+
+#### Why
+A client's interview build fell below the department floor that the fleet prover enforces, and
+there were two causes in the build's legacy lane (`build-workforce.py` `create_role_workspace()`):
+
+- **Role folders named from the roster headers.** The suggested-roles headers carry employment tags
+  and have no `**Slug:**` line, for example `### 1. Director of CRM (full-time-permanent)`. The raw
+  name became the folder: `01-director-of-crm-full-time-permanent`,
+  `09-deep-research-role-crm-on-call`. The prover matches role-library slugs (`director-of-crm`), so
+  none of those roles counted.
+- **Only roster roles were built.** Library roles that the roster does not list were never created:
+  the healer, the devil's advocate and the SOP writer. For example, CRM got 9 role folders against
+  the library's 12.
+
+#### What changed
+- `build-workforce.py` passes the parsed roster through `library_floor_roles()` before building:
+  - A role with no explicit slug takes its role-library slug. The lookup is the existing
+    `create_role_workspaces.library_lookup()` normalizer, which already drops employment tags and
+    "flagship" decorations.
+  - Every library role of the department that is not yet present is appended, numbered after the
+    roster.
+  - A role or folder already on disk that resolves to a library slug counts as present, so a second
+    build adds nothing.
+- `reconcile-role-floor.py` (new) brings an existing tree up to the floor in place:
+  1. It renames every role folder that resolves to a library slug but is not named with it. The
+     rename moves the whole folder, so every written how-to and SOP is kept byte-for-byte.
+  2. It fills the library roles that are still missing through `floor-fill-driver.py`, the existing
+     fill-missing-only materializer. That driver uses library content, never overwrites, and keeps
+     its industry gate.
+  3. With `--add-floor-departments`, it also fills the standard-floor departments the tree lacks.
+     The floor is `department-floor.py`: mandatory departments plus universal primaries, minus the
+     owner's declines. Library departments outside that floor are never added.
+
+  4. With `--add-library-departments`, it fills to the prover's floor instead: every role-library
+     department in `_index.json` (which the prover's floor manifest is generated from), under its
+     exact library name, with every library role. The prover counts a department only by its
+     exact name.
+
+  In both department modes:
+  - the owner's provenance-gated declines are honored;
+  - floor-fill's industry gate still refuses an absent vertical the box never declared (`listings`);
+  - a department whose alias is already on disk (`legal` for `legal-compliance`) is reported under
+    `alias_present_not_added` and is not duplicated.
+
+  A folder is not renamed, and is reported instead, when a folder for the same library role already
+  exists or when `openclaw.json` references its path. The script is a dry run by default and is
+  idempotent. It was not run on any box.
+- Tests:
+  - `tests/unit/test_build_library_role_floor.py` builds crm, sales and marketing. It checks that
+    there are no suffixed folders, that every library role is present with one folder per role, and
+    that a second build is a no-op. On main it fails and reproduces the nine suffixed crm folders.
+  - `tests/unit/test_reconcile_role_floor.py` uses a field-shaped crm tree: the nine suffixed
+    folders with written how-tos and none of the library-only roles, plus a conflicting pair. It
+    checks that the dry run changes nothing and that `--apply` renames the folders, keeps the how-to
+    bytes and fills the floor. It also checks that a second `--apply` is a no-op, and that floor
+    departments never include a library department outside the standard floor. A fourth test runs
+    `--add-library-departments` and checks that every `_index.json` department reaches full role
+    coverage, except an owner decline, an alias already on disk and the gated `listings`, and that
+    a second run is a no-op.
+  - Both run in `skill23-role-floor-guard.yml` (new).
+- Merge after #1344. On main, the engine still symlinks `AGENTS.md`, `TOOLS.md` and `USER.md` into
+  new role folders; #1344 makes them real copies.
+
 ## [v25.2.6]  -  2026-09-28  -  Merge train: #1339 No full copies of the skills folder or onboarding repo in backups;…; #1341 fix(tests): eight unit tests stop leaking temp files into $TMPDIR
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -22,7 +337,6 @@ The fleet roll runner is untouched: the current roll keeps one persistent clone 
 ### #1341 — fix(tests): eight unit tests stop leaking temp files into $TMPDIR
 
 (This pull request carried no CHANGELOG entry of its own.)
-
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
 ### Why

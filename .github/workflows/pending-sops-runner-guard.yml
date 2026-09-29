@@ -1,0 +1,41 @@
+name: PENDING SOPs runner guard
+
+# A department whose roles are PENDING how-to.md stubs (sop_files=[] in the
+# research manifest) must be queued for SOP authoring, never read as "already
+# authored"; and PENDING-SOPS.md has a scripted runner (fill-pending-howtos.py)
+# that token-fills the nearest comparable role-library template, leaves the rest
+# PENDING, and never touches a filled how-to.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py"
+      - "23-ai-workforce-blueprint/scripts/fill-pending-howtos.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      - "tests/unit/test_pending_sops_runner.py"
+      - ".github/workflows/pending-sops-runner-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py"
+      - "23-ai-workforce-blueprint/scripts/fill-pending-howtos.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      - "tests/unit/test_pending_sops_runner.py"
+      - ".github/workflows/pending-sops-runner-guard.yml"
+
+jobs:
+  pending-sops-runner-guard:
+    name: PENDING how-tos are queued and filled, never skipped
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: PENDING SOPs runner
+        run: python3 tests/unit/test_pending_sops_runner.py

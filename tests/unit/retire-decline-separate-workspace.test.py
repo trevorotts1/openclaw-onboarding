@@ -16,6 +16,7 @@ runner), --skip-cc.
 """
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -74,6 +75,20 @@ class RetireSeparateWorkspace(unittest.TestCase):
         self.assertEqual(sorted(agents["entries"]), ["dept-marketing", "main"])
         # untouched neighbour
         self.assertTrue((self.company / "departments" / "marketing").is_dir())
+        # openclaw.json stays schema-valid: the retirement must not stamp the
+        # build-state "stateRevision" into it (root key rejected by the schema).
+        cfg = json.loads(self.cfg.read_text())
+        self.assertEqual(sorted(cfg), ["agents"], "retirement added root keys to openclaw.json")
+        oc = shutil.which("openclaw")
+        if oc:
+            (self.home / "val").mkdir()
+            v = subprocess.run([oc, "config", "validate", "--json"], capture_output=True, text=True, timeout=120,
+                               env={**env, "HOME": str(self.home / "val"),
+                                    "OPENCLAW_CONFIG_PATH": str(self.cfg),
+                                    "OPENCLAW_STATE_DIR": str(self.home / ".openclaw")})
+            out = json.loads(v.stdout[v.stdout.index("{"):])
+            self.assertEqual(Path(out["path"]).resolve(), self.cfg.resolve())
+            self.assertNotIn("stateRevision", json.dumps(out.get("issues", [])), out)
 
 
 if __name__ == "__main__":

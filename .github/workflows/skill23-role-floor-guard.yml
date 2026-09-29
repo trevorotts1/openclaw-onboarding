@@ -1,0 +1,48 @@
+name: Skill 23 role floor guard
+
+# The interview build's role folders must carry the role library's canonical
+# slugs and cover every library role of the department (the floor the prover
+# enforces), and reconcile-role-floor.py must bring an existing below-floor tree
+# up to it without losing a written how-to or adding another client's lanes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/build-workforce.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - "23-ai-workforce-blueprint/scripts/reconcile-role-floor.py"
+      - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/suggested-roles/**"
+      - "23-ai-workforce-blueprint/templates/role-library/_index.json"
+      - "tests/unit/test_build_library_role_floor.py"
+      - "tests/unit/test_reconcile_role_floor.py"
+      - ".github/workflows/skill23-role-floor-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/build-workforce.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - "23-ai-workforce-blueprint/scripts/reconcile-role-floor.py"
+      - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/suggested-roles/**"
+      - "23-ai-workforce-blueprint/templates/role-library/_index.json"
+      - "tests/unit/test_build_library_role_floor.py"
+      - "tests/unit/test_reconcile_role_floor.py"
+      - ".github/workflows/skill23-role-floor-guard.yml"
+
+jobs:
+  role-floor:
+    name: Build meets the role-library floor; reconcile repairs a below-floor tree
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build role folders (canonical slugs, full library floor, idempotent)
+        run: python3 tests/unit/test_build_library_role_floor.py
+      - name: reconcile-role-floor.py (rename keeps how-tos, fills floor, no other client's lanes)
+        run: python3 tests/unit/test_reconcile_role_floor.py

@@ -6,7 +6,7 @@ Two operations:
 
 1. `create_role_workspace(dept_path, role_name, workspace_root, role_metadata)`
    — Creates a NEW role folder with v2.1 files (IDENTITY.md, SOUL.md, MEMORY.md,
-   HEARTBEAT.md, how-to.md stub) + symlinks (AGENTS.md, TOOLS.md, USER.md).
+   HEARTBEAT.md, how-to.md stub) + real-file copies (AGENTS.md, TOOLS.md, USER.md, N29).
 
 2. `augment_role_folder(role_path, workspace_root, role_metadata)`
    — Adds v2.1 files to an EXISTING role folder (e.g. one created by the
@@ -17,8 +17,9 @@ Two operations:
 Master Orchestrator role uses the CEO variant of the Persona Governance Override
 clause; all other roles use the standard clause.
 
-Symlinks resolve AGENTS.md / TOOLS.md / USER.md to the company workspace root so
-edits propagate across every agent in the company.
+AGENTS.md / TOOLS.md / USER.md are real-file copies of the company workspace root
+(N29 -- the runtime rejects out-of-workspace symlinks); the updater's
+link_shared_core_files() keeps them in step with the canonical.
 """
 import argparse
 import json
@@ -35,6 +36,8 @@ try:
 except ImportError:
     def get_openclaw_paths():  # type: ignore
         raise RuntimeError("detect_platform.py not on sys.path")
+sys.path.insert(0, str(Path(__file__).parent.parent / "23-ai-workforce-blueprint" / "scripts"))
+from shared_core_copy import SHARED_CORE_FILES, ensure_core_copy
 
 STANDARD_DEFERRAL = """
 ## Persona Governance Framework
@@ -209,21 +212,12 @@ def _write_unique_files(role_path: Path, role_name: str, dept_name: str, is_ceo:
     return written, skipped
 
 def _create_symlinks(role_path: Path, workspace_root: Path):
-    """Create AGENTS.md / TOOLS.md / USER.md symlinks. Replaces broken symlinks."""
-    for shared in ["AGENTS.md", "TOOLS.md", "USER.md"]:
-        link_path = role_path / shared
-        target = workspace_root / shared
-        try:
-            if link_path.is_symlink() or link_path.exists():
-                link_path.unlink()
-            link_path.symlink_to(target)
-        except OSError as e:
-            print(f"  WARN: symlink {shared} in {role_path}: {e}", file=sys.stderr)
-            # Last-resort: write a stub note rather than fail
-            link_path.write_text(
-                f"# {shared} — see workspace root\n\n"
-                f"This file should be a symlink to {target}.\n"
-            )
+    """Place AGENTS.md / TOOLS.md / USER.md as real-file copies (N29; name kept for callers).
+
+    A symlink is migrated to a real copy; a real, non-empty file is never touched.
+    """
+    for shared in SHARED_CORE_FILES:
+        ensure_core_copy(workspace_root / shared, role_path / shared)
 
 def create_role_workspace(dept_path: Path, role_name: str, workspace_root: Path,
                            role_metadata: dict = None) -> Path:

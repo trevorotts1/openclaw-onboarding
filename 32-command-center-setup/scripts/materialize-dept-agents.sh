@@ -199,6 +199,26 @@ fi
 # the canonical copy.
 DEPT_SCAN_ROOTS=()
 
+# Root 0: the build state's own companyRoot -- the build knows where it wrote
+# (build-workforce.py resolve_company_paths records it). Covers layouts the
+# fixed roots below do not, e.g. <workspace>/zero-human-company on a Contabo
+# /home/node box. Skipped when it names a different company than the slug.
+if [[ -f "$_MATERIALIZE_STATE_FILE" ]]; then
+  _state_company_root="$(python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(sys.argv[1])).get("companyRoot") or ""
+except (OSError, ValueError, AttributeError):
+    r = ""
+sys.stdout.write(r if isinstance(r, str) and os.path.isabs(r) else "")
+' "$_MATERIALIZE_STATE_FILE" 2>/dev/null || true)"
+  if [[ -n "$_state_company_root" && -d "$_state_company_root/departments" ]] && \
+     [[ -z "$_MATERIALIZE_COMPANY_SLUG" || "$(basename "$_state_company_root")" == "$_MATERIALIZE_COMPANY_SLUG" ]]; then
+    DEPT_SCAN_ROOTS+=("$_state_company_root/departments")
+    echo "[materialize-dept-agents] including build-state companyRoot dept path: $_state_company_root/departments"
+  fi
+fi
+
 # Expand the canonical master-files ZHC tree (root 1) FIRST — it is the most
 # authoritative source and must win any slug collision under setdefault().
 # Scoped to THIS BOX'S OWN company (_MATERIALIZE_COMPANY_SLUG, resolved
@@ -207,7 +227,8 @@ DEPT_SCAN_ROOTS=()
 # the box's own slug could not be resolved (already warned above).
 for _mf_root in \
     "$HOME/Downloads/openclaw-master-files/zero-human-company" \
-    "/data/openclaw-master-files/zero-human-company"; do
+    "/data/openclaw-master-files/zero-human-company" \
+    "$OC_ROOT/workspace/zero-human-company"; do
   [[ -d "$_mf_root" ]] || continue
   if [[ -n "$_MATERIALIZE_COMPANY_SLUG" ]]; then
     _dept_d="$_mf_root/$_MATERIALIZE_COMPANY_SLUG/departments"
@@ -638,9 +659,30 @@ for slug, workspace_path in sorted(discovered.items()):
             "memorySearch": default_memory_search(),
         }
 
+    existing = by_id.get(roster_key)
+    if existing is None:
+        # Already registered under ANOTHER key that serves this same workspace?
+        # That entry IS this department's registration: never add a duplicate
+        # beside it, and never touch it (its model/name stay the owner's).
+        _ws_real = os.path.realpath(workspace_path)
+        _other = next((k for k, v in by_id.items() if isinstance(v, dict) and v.get("workspace")
+                       and os.path.realpath(os.path.expanduser(v["workspace"])) == _ws_real), None)
+        if _other is not None:
+            print(f"  = kept    {_other:40s} (already serves {workspace_path}; no duplicate {roster_key})")
+            continue
+
+    else:
+        # An agent already running from a workspace that still exists stays there.
+        # A rebuild that wrote a second, sparse company tree (scanned first as the
+        # most authoritative root) re-pointed every department agent to it and the
+        # workforce lost its SOPs. Only an entry whose workspace is gone moves.
+        _cur_ws = existing.get("workspace")
+        if _cur_ws and _cur_ws != workspace_path and os.path.isdir(os.path.expanduser(_cur_ws)):
+            print(f"  = kept    {roster_key:40s} (runs from {_cur_ws}; not re-pointed to {workspace_path})")
+            workspace_path = _cur_ws
+
     manifest_rows.append((roster_key, name, workspace_path, slug))
 
-    existing = by_id.get(roster_key)
     if existing is None:
         if ROSTER_MODE == "entries":
             roster[roster_key] = desired_entry
@@ -809,10 +851,10 @@ if [[ $RC -ne 0 ]]; then
   exit $RC
 fi
 
-# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + symlinks ───
+# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + shared copies ─
 # Trevor's agent-file architecture (v10.14.29):
-#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (one copy at
-#     $OC_ROOT/workspace/, each dept-head agent symlinks to them)
+#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (canonical at
+#     $OC_ROOT/workspace/, each dept-head agent holds a REAL-FILE copy -- N29)
 #   - PER-AGENT (each agent has its own): IDENTITY.md, SOUL.md, MEMORY.md,
 #     HEARTBEAT.md (in the agent's workspace folder)
 #   - Sub-agents (role folders inside a dept) are EXCLUDED — they have their

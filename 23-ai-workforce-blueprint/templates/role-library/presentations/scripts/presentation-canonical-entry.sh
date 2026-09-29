@@ -678,6 +678,104 @@ _pres35_resolve_entry_interpreter() {
     return 0
 }
 _pres35_resolve_entry_interpreter || exit 2
+# read_run_mode <run_dir> prints the declared mode, or NOTHING AT ALL.
+# Absence is absence: the launcher's own default (model_router.DEFAULT_MODE,
+# "standard") then applies. It never guesses ultra -- nothing silently
+# launches at the operator ceiling.
+#
+# The vocabulary is NOT duplicated here: it is read from
+# presentation_job.model_router, the single authority active_mode() itself
+# uses. A tree where that import fails prints nothing and SAYS SO on stderr;
+# an unvalidatable declaration is dropped, never guessed. stderr is
+# deliberately NOT sent to /dev/null (unlike the lease helpers above): a
+# helper that dies inside this heredoc must be loud, not silent.
+# ---------------------------------------------------------------------------
+read_run_mode() {
+    python3 - "$1" "$SCRIPTS_DIR" <<'PYMODE'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+scripts_dir = sys.argv[2]
+
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+try:
+    from presentation_job.model_router import MODES, normalize_mode
+except Exception as exc:  # noqa: BLE001 -- a partial deploy must be LOUD
+    print(f"[run-mode] could not import presentation_job.model_router from "
+          f"{scripts_dir} ({exc.__class__.__name__}: {exc}) -- a declared run "
+          f"mode cannot be validated against the one authority, so NONE is "
+          f"passed and the launcher default (standard) applies. Fix the "
+          f"deploy.", file=sys.stderr)
+    raise SystemExit(0)
+
+
+def normalised(raw):
+    """One candidate -> a legal mode, or None (with a loud line for garbage)."""
+    text = str(raw or "").strip().strip("'\"").strip(";,.").strip()
+    if not text:
+        return None
+    try:
+        return normalize_mode(text)
+    except ValueError:
+        print(f"[run-mode] the intake declared {text!r}, which is not one of "
+              f"{'|'.join(MODES)} -- ignoring it and letting the launcher "
+              f"default (standard) apply. A run mode is never guessed.",
+              file=sys.stderr)
+        return None
+
+
+def load(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def entry_value(entries, key):
+    val = entries.get(key)
+    if isinstance(val, dict):
+        return val.get("value", val.get("normalized"))
+    return val
+
+
+candidates = []
+
+# 1) the intake ledger -- where deck-intake-driver._record_run_mode writes it.
+entries = load(run_dir / "working" / "interview" / "intake_ledger.json").get("entries")
+if isinstance(entries, dict):
+    for key in ("RUN_MODE", "run_mode"):
+        candidates.append(entry_value(entries, key))
+    # ... and the structured parent record, when the turn stored the dict form.
+    parent = entries.get("resource_plan")
+    if isinstance(parent, dict) and isinstance(parent.get("value"), dict):
+        candidates.append(parent["value"].get("run_mode"))
+
+# 2) intake.json, for a client whose declaration arrived through a bridge that
+#    writes the run directory's intake rather than the ledger.
+intake = load(run_dir / "working" / "copy" / "intake.json")
+for key in ("RUN_MODE", "run_mode"):
+    candidates.append(intake.get(key))
+capture = intake.get("pre_presentation_capture")
+if isinstance(capture, dict):
+    candidates.append(capture.get("RUN_MODE"))
+
+seen = set()
+for candidate in candidates:
+    text = str(candidate or "").strip()
+    if not text or text.lower() in seen:
+        continue
+    seen.add(text.lower())
+    mode = normalised(candidate)
+    if mode:
+        print(mode)
+        break
+PYMODE
+}
+
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
         if [ -f "$_TEST_CONTEXT_MARKER" ]; then
@@ -1187,6 +1285,17 @@ run_signature_deck.py. Re-sync the Presentations department."
 presentation_type: $_RESOLVE_OUT"
     fi
     note "$_RESOLVE_OUT"
+
+    # FIX 8: the chat path never read the run mode, so the engine silently
+    # fell back to standard even when the intake declared ultra. Read
+    # RUN_MODE from the intake ledger (same read pattern as
+    # presentation-intake-poll.sh read_run_mode) and export it as
+    # PRESENTATION_MODE -- the documented env seam for non-launcher callers
+    # (model_router.active_mode). No --mode flag: this script is deliberately
+    # not a run-mode door.
+    RUN_MODE="$(read_run_mode "$RUN_DIR")"
+    export PRESENTATION_MODE="$RUN_MODE"
+    if [ -n "$RUN_MODE" ]; then note "run mode from intake ledger: $RUN_MODE"; else note "no run mode declared in intake; engine default (standard) applies"; fi
 
     # Step 2: Create the engine job (state.json).
     # This is idempotent -- if state.json already exists, the engine refuses to overwrite.

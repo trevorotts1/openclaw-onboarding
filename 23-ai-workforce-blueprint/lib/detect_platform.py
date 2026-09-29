@@ -13,7 +13,12 @@ Returns a dict with all standard paths. Raises SystemExit with a clear error
 if no platform can be detected.
 """
 
+import os
 from pathlib import Path
+
+# The VPS / container data volume. A module constant only so tests can point
+# it at a fixture; production code never reassigns it.
+DATA_ROOT = Path("/data")
 
 
 def get_openclaw_paths() -> dict:
@@ -32,7 +37,7 @@ def get_openclaw_paths() -> dict:
         memory_md, agents_md, tools_md, heartbeat_md
     """
     import os
-    vps_root = Path("/data/.openclaw")
+    vps_root = DATA_ROOT / ".openclaw"
     mac_new = Path.home() / ".openclaw"
     mac_legacy = Path.home() / "clawd"
 
@@ -122,7 +127,11 @@ def get_openclaw_paths() -> dict:
     gemini_index = coaching_personas / "gemini-index.sqlite"
     legacy_gemini_index = workspace / "data" / "gemini-index.sqlite"  # detect-only; NEVER write
 
-    company_dir = resolve_active_company_dir(company_root, extra_roots=legacy_company_roots)
+    # company_dir: the SAME order as shared-utils/detect_platform.py (build state
+    # first, then the canonical master-files tree, then the other layouts).
+    # This copy's own company_root is kept as one more candidate, last.
+    _known = known_company_roots(platform, workspace) + legacy_company_roots + [company_root]
+    company_dir = resolve_active_company_dir(_known[0], extra_roots=_known[1:], workspace=workspace)
     persona_categories = resolve_persona_categories(workspace, root, coaching_personas)
 
     return {
@@ -181,42 +190,103 @@ def resolve_persona_categories(workspace: Path, root: Path, coaching_personas: P
     return candidates[0]  # canonical-but-missing path (warns elsewhere)
 
 
-def resolve_active_company_dir(company_root: Path, extra_roots=None):
+# ── COMPANY-DIR RESOLUTION (one order, byte-identical in shared-utils/ and
+# 23-ai-workforce-blueprint/lib/ copies of this module; a test pins that) ──
+
+def build_state_company(workspace=None):
+    """(companyRoot, companySlug) recorded in .workforce-build-state.json.
+
+    The build knows where it wrote: resolve_company_paths() in build-workforce.py
+    records companyRoot + companySlug on every run. companyRoot is returned only
+    when it is an absolute, existing directory; either value may be None.
     """
-    Resolve the active per-company ZHC folder.
+    import json
+    cands = [os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()]
+    if workspace:
+        cands.append(str(Path(workspace) / ".workforce-build-state.json"))
+    cands += [str(DATA_ROOT / ".openclaw" / "workspace" / ".workforce-build-state.json"),
+              str(Path.home() / ".openclaw" / "workspace" / ".workforce-build-state.json")]
+    for cand in cands:
+        if not cand:
+            continue
+        try:
+            state = json.loads(Path(cand).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(state, dict):
+            continue
+        root = state.get("companyRoot")
+        root = Path(root) if isinstance(root, str) and os.path.isabs(root) and os.path.isdir(root) else None
+        slug = state.get("companySlug") or state.get("clientSlug")
+        return root, (slug if isinstance(slug, str) and slug else None)
+    return None, None
 
-    Scans the canonical company_root FIRST, then any legacy roots in extra_roots
-    (read-only resolution fallback — used on VPS boxes whose real workforce still
-    lives at /data/clawd/zero-human-company/<slug>/). The canonical root is always
-    preferred; a legacy root is only used when the canonical root holds no company.
-    Nothing is moved or migrated — this picks the root that ACTUALLY contains the
-    client's company dir so the gate/updater audit the real tree, not an empty stub.
 
-    Per-root resolution order:
-        1. $OPENCLAW_COMPANY_SLUG env var → <root>/<slug>/
-        2. Single subdir under <root> → that one
-        3. Most-recently-modified subdir under <root>
-        4. None (no company built yet under that root)
+def known_company_roots(platform, workspace):
+    """Every layout a company tree can live in on this platform, canonical first.
 
+      1. <master-files>/zero-human-company  where build-workforce.py writes
+         (Mac ~/Downloads/openclaw-master-files, VPS /data/openclaw-master-files,
+         $MASTER_FILES_DIR when set)
+      2. <workspace>/zero-human-company      Contabo /home/node and older VPS builds
+      3. legacy clawd tree                   ~/clawd (Mac) or /data/clawd (VPS)
+    """
+    mf = os.environ.get("MASTER_FILES_DIR", "").strip()
+    if mf:
+        master = Path(mf)
+    elif platform == "vps":
+        master = DATA_ROOT / "openclaw-master-files"
+    else:
+        master = Path.home() / "Downloads" / "openclaw-master-files"
+    legacy = DATA_ROOT / "clawd" if platform == "vps" else Path.home() / "clawd"
+    roots = []
+    for r in (master / "zero-human-company", Path(workspace) / "zero-human-company",
+              legacy / "zero-human-company"):
+        if r not in roots:
+            roots.append(r)
+    return roots
+
+
+def resolve_active_company_dir(company_root: Path, extra_roots=None, workspace=None):
+    """
+    Resolve the active per-company ZHC folder. Nothing is moved or written.
+
+    Order:
+        0. The build state's own companyRoot (the build knows where it wrote),
+           unless $OPENCLAW_COMPANY_SLUG names a different company.
+        1. $OPENCLAW_COMPANY_SLUG -> <root>/<slug>/ in the first root that has
+           it; an explicit company never falls back to another tenant. Then the
+           build state's companySlug the same way (a hint: falls through).
+        2. No slug: the single company in the first root that holds any.
+           Several companies there require an explicit identity -> None.
+
+    Roots are company_root first, then extra_roots (known_company_roots()).
     Returns Path or None.
     """
-    import os
     roots = [company_root]
     for r in (extra_roots or []):
         if r not in roots:
             roots.append(r)
 
-    # Pass 1: if an explicit slug is requested, prefer whichever root actually
-    # HAS that slug (canonical first) before any mtime-based guessing.
-    slug = os.environ.get("OPENCLAW_COMPANY_SLUG")
-    if slug:
+    state_root, state_slug = build_state_company(workspace)
+    env_slug = os.environ.get("OPENCLAW_COMPANY_SLUG")
+    if state_root is not None and (not env_slug or state_root.name == env_slug):
+        return state_root
+
+    for slug in (env_slug, state_slug):
+        if not slug:
+            continue
+        if Path(slug).name != slug or slug in ('.', '..'):
+            if slug == env_slug:
+                return None
+            continue
         for root in roots:
             candidate = root / slug
             if candidate.is_dir():
                 return candidate
+        if slug == env_slug:
+            return None  # An explicit company must never fall back to another tenant.
 
-    # Pass 2: no slug match — pick the active company from the first root that
-    # holds one (canonical preferred; legacy roots only as a fallback).
     for root in roots:
         if not root.exists():
             continue
@@ -225,7 +295,7 @@ def resolve_active_company_dir(company_root: Path, extra_roots=None):
             continue
         if len(subdirs) == 1:
             return subdirs[0]
-        return max(subdirs, key=lambda p: p.stat().st_mtime)
+        return None  # Multiple companies require an explicit identity.
     return None
 
 
