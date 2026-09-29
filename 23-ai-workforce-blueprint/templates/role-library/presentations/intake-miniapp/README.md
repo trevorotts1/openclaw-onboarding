@@ -45,10 +45,14 @@ check was relocated from the retired `deck-build-guard.sh`, U025).
 | `worker/wrangler.toml` | Worker + D1 + route config — **domain placeholders, see DEPLOY.md** |
 | `pages/index.html` | The one-question-per-screen UI (single static file, theme-aware) |
 | `payload/build_questions_payload.py` | Generates `questions_payload` FROM the canonical intake JSONs |
-| `bridge/intake_bridge.py` | Box-side: `mint` a session, `sync` answers into the driver |
+| `bridge/intake_bridge.py` | Box-side: `mint` a session, `sync` answers into the driver | **DEPRECATED** — session commands now live on the live interview-app bridge (`intake/interview-app/bridge/intake_bridge.py`): `new` / `resume` / `list` |
 | `test/` | Offline gates: `node --test` (worker) + `unittest` (payload, bridge) |
 
 ## Flow
+
+> **DEPRECATED.** This flow used the deprecated miniapp bridge's `mint`. New work uses the LIVE interview-app bridge
+> (`intake/interview-app/bridge/intake_bridge.py`): `new` opens a fresh session per deck request (fresh
+> `presentation_id`), `resume` re-mints an expired link, `list` lists sessions.
 
 ```
 Buddy/Director opens a run

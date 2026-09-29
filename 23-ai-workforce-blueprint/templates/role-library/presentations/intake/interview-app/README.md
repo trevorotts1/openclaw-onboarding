@@ -65,6 +65,42 @@ No shortcuts: the deck can only build through
 `presentation-canonical-entry.sh`'s governed gates (GATE 0 intake ledger, GATE 0b
 intake trace, GATE 1 deps, GATE 2 bypass-scan, GATE 3 version/hash pin).
 
+## Box-side session commands (Fix 63)
+
+`bridge/intake_bridge.py` also opens and manages hosted interview sessions
+(`INTAKE_ADMIN_TOKEN` must be in the box env):
+
+- `new` — start a session for a NEW deck request. Generates a fresh
+  `presentation_id` (uuid4, never reused), builds the questions payload from
+  the canonical JSONs, mints the session, creates an empty run dir named
+  after the presentation_id, and prints the client's interview link. If the
+  worker reports `reused: true` it is treated as an error — a fresh id is
+  generated and mint is retried (max 3 attempts).
+- `resume` — re-mint an expired/lost interview link for an existing session
+  (`POST /api/sessions/renew`); prints the renewed link.
+- `list` — list sessions: `GET /api/intake/list` (tenant-scoped) plus local
+  run dirs; prints title, presentation_id, status.
+- `mint` — low-level hosted-session mint (moved from the deprecated miniapp
+  bridge; the duplicate `--company-id` argument bug is repaired).
+
+```bash
+python3 bridge/intake_bridge.py new \
+  --worker-url "https://presentation-interview.<FLEET_DOMAIN>" \
+  --company-id <company> --installation-id <installation> \
+  --title "Q4 Product Launch"
+
+python3 bridge/intake_bridge.py resume \
+  --worker-url "https://presentation-interview.<FLEET_DOMAIN>" \
+  --presentation-id <presentation-id>
+
+python3 bridge/intake_bridge.py list \
+  --worker-url "https://presentation-interview.<FLEET_DOMAIN>" \
+  --company-id <company>
+```
+
+Rule: every new deck request = `intake_bridge.py new`. Never reuse an old
+`presentation_id` — the app itself never creates sessions.
+
 ## Box-side intake poll cron
 
 The box discovers finished intakes by polling the Worker's

@@ -12,6 +12,8 @@
 #        npx wrangler pages deploy ../pages --project-name presentation-intake
 #      (or enable Workers Static Assets and serve the UI from [assets] directly)
 #   6. Verify:  curl https://<host>/healthz
+#
+# DO NOT DEPLOY while deployed-r2 owns the host. Its /api/* route would take over the live API.
 
 name               = "presentation-interview"
 main               = "src/index.js"

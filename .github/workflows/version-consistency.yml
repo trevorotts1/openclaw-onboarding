@@ -106,6 +106,30 @@ jobs:
         shell: bash
         run: bash tests/unit/check-doc-currency-guards.test.sh
 
+      - name: "Fix 9: exactly one presentation-intake wrangler.toml (deployed-r2) - no name collision"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -- Fix 9 (wrangler name collision) --------------------------------
+          # The intake-miniapp worker wrangler.toml used to claim
+          # name = "presentation-intake" too; a deploy from that quarantined
+          # template would hijack the live /api/* route owned by the
+          # deployed-r2 worker. This gate fails the build unless exactly one
+          # wrangler.toml under .../presentations/ carries
+          # name = "presentation-intake", and it is the deployed-r2 one.
+          PRES_DIR="23-ai-workforce-blueprint/templates/role-library/presentations"
+          EXPECTED="$PRES_DIR/intake/interview-app/deployed-r2/wrangler.toml"
+          MATCHES=$(grep -rl '^name[[:space:]]*=[[:space:]]*"presentation-intake"' "$PRES_DIR" --include=wrangler.toml 2>/dev/null || true)
+          COUNT=$(printf '%s\n' "$MATCHES" | grep -c .)
+          if [ "$COUNT" -ne 1 ] || [ "$MATCHES" != "$EXPECTED" ]; then
+            echo "FAIL: wrangler name collision - expected exactly one wrangler.toml with"
+            echo "  name = \"presentation-intake\" at $EXPECTED; found:"
+            printf '  - %s\n' "${MATCHES:-<none>}"
+            exit 1
+          fi
+          echo "OK: exactly one name = \"presentation-intake\" wrangler.toml: $EXPECTED"
+
   # ── PRD 2.2 Guard G1: version file changed → annotated tag must exist ──────
   # On push to main: if /version changed vs the previous commit, the new
   # version string must already be present as an annotated git tag.

@@ -69,6 +69,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -1142,6 +1143,321 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
 
 
 
+# ---- subcommand: mint (Fix 63: moved from the deprecated intake-miniapp ------
+#      bridge; --company-id duplicate-argument bug repaired — only the
+#      required=True instance is kept)
+
+def _mint_session(worker_url: str, *, token: str, run_id: str, box_id: str,
+                  company_id: str, installation_id: str, presentation_id: str,
+                  questions_payload: dict, confirm_code: bool = False,
+                  recipient_chat_id: str | None = None,
+                  ttl_days: float | None = None) -> tuple[int, dict]:
+    """POST /api/sessions — the single mint call both `mint` and `new` use.
+
+    Returns (rc, response dict). rc 0 means the worker minted a session; the
+    dict carries the machine-usable bits (token / session_id / capability_url
+    plus `reused: true` when the worker matched an existing open session).
+    Never echoes the admin token.
+    """
+    body = {
+        # PRES-009: the caller's --run-id is DISPLAY-ONLY. The worker mints the
+        # durable company/installation/presentation/run tuple server-side; the
+        # tenant ids name WHO and WHICH deck this intake feeds and are required.
+        "run_id": run_id,
+        "box_id": box_id,
+        "company_id": company_id,
+        "installation_id": installation_id,
+        "presentation_id": presentation_id,
+        "questions_payload": questions_payload,
+        "want_confirm_code": bool(confirm_code),
+    }
+    if recipient_chat_id:
+        body["recipient_chat_id"] = recipient_chat_id
+    if ttl_days:
+        body["ttl_days"] = ttl_days
+    status, resp = _http("POST", worker_url.rstrip("/") + "/api/sessions",
+                         token=token, body=body)
+    if status not in (200, 201):
+        return 3, {"error": f"mint failed (HTTP {status}): {resp.get('error')}"}
+    out = {
+        "token": resp.get("token"),
+        "session_id": resp.get("session_id"),
+        "capability_url": resp.get("capability_url"),
+        "reused": resp.get("reused", False),
+        "run_id": resp.get("run_id"),
+        "intake_session_id": resp.get("intake_session_id"),
+        "company_id": resp.get("company_id"),
+        "installation_id": resp.get("installation_id"),
+        "presentation_id": resp.get("presentation_id"),
+    }
+    if resp.get("confirm_code"):
+        out["confirm_code"] = resp["confirm_code"]  # box speaks this in chat if used
+    return 0, out
+
+
+def cmd_mint(args) -> int:
+    """Open a hosted intake session and print the capability link."""
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    payload = json.loads(pathlib.Path(args.questions).read_text(encoding="utf-8"))
+    rc, out = _mint_session(
+        args.worker_url, token=admin, run_id=args.run_id, box_id=args.box_id,
+        company_id=args.company_id, installation_id=args.installation_id,
+        presentation_id=args.presentation_id, questions_payload=payload,
+        confirm_code=args.confirm_code, recipient_chat_id=args.recipient_chat_id,
+        ttl_days=args.ttl_days)
+    if rc != 0:
+        print(f"error: {out['error']}", file=sys.stderr)
+        return rc
+    print(json.dumps(out, indent=2))
+    return 0
+
+
+# ---- subcommand: new (Fix 63) ------------------------------------------------
+
+def _runs_root(cli_value: str) -> pathlib.Path:
+    """Root directory for per-presentation run dirs.
+
+    Resolution: --runs-dir CLI flag, then PRESENTATIONS_RUNS_DIR env, then a
+    `runs` directory beside the interview-app root (relative to this bridge).
+    """
+    if cli_value:
+        return pathlib.Path(cli_value).expanduser()
+    env = os.environ.get("PRESENTATIONS_RUNS_DIR", "").strip()
+    if env:
+        return pathlib.Path(env).expanduser()
+    return HERE.parent.parent / "runs"
+
+
+def _build_questions_payload(presentation_id: str) -> dict:
+    """Build the questions payload via the interview-app payload builder.
+
+    Runs payload/build_questions_payload.py (sibling of the bridge dir) as a
+    subprocess writing to a temp file, reads the JSON back, and removes the
+    temp file. Raises RuntimeError on failure.
+    """
+    builder = HERE.parent / "payload" / "build_questions_payload.py"
+    if not builder.is_file():
+        raise RuntimeError(f"questions payload builder not found: {builder}")
+    fd, tmp_name = tempfile.mkstemp(prefix="questions_payload_", suffix=".json")
+    os.close(fd)
+    tmp = pathlib.Path(tmp_name)
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(builder), "--run-id", presentation_id,
+             "--out", str(tmp)],
+            capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"build_questions_payload.py failed (rc {proc.returncode}): "
+                f"{(proc.stderr or proc.stdout).strip()[:300]}")
+        return json.loads(tmp.read_text(encoding="utf-8"))
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _write_session_record(run_dir: pathlib.Path, record: dict) -> None:
+    (run_dir / "session.json").write_text(
+        json.dumps(record, indent=2), encoding="utf-8")
+
+
+def _read_session_record(runs_root: pathlib.Path, presentation_id: str) -> dict:
+    rec_path = runs_root / presentation_id / "session.json"
+    if not rec_path.is_file():
+        raise RuntimeError(
+            f"no session record at {rec_path} — was this session created by "
+            f"`intake_bridge.py new`?")
+    return json.loads(rec_path.read_text(encoding="utf-8"))
+
+
+def cmd_new(args) -> int:
+    """Fix 63: start a NEW interview session for a fresh deck request.
+
+    Generates a fresh presentation_id (uuid4, never reused), builds the
+    questions payload from the canonical JSONs, mints the hosted session,
+    creates an empty run directory named after the presentation_id, stores
+    session.json inside it (so `resume` can resolve the worker session id),
+    and prints the client's interview link.
+
+    If the worker reports `reused: true`, that is an error: a brand-new deck
+    request must never inherit an old session. A new presentation_id is
+    generated and mint is retried (max 3 attempts).
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    runs_root = _runs_root(args.runs_dir)
+    try:
+        runs_root.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"error: cannot create runs root {runs_root}: {e}", file=sys.stderr)
+        return 2
+    box_id = os.environ.get("INTAKE_BOX_ID", "").strip() or "fleet-box"
+    for attempt in range(1, 4):
+        presentation_id = str(uuid.uuid4())
+        try:
+            payload = _build_questions_payload(presentation_id)
+        except RuntimeError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        rc, out = _mint_session(
+            args.worker_url, token=admin, run_id=args.title, box_id=box_id,
+            company_id=args.company_id, installation_id=args.installation_id,
+            presentation_id=presentation_id, questions_payload=payload,
+            recipient_chat_id=args.recipient_chat_id)
+        if rc != 0:
+            print(f"error: {out['error']}", file=sys.stderr)
+            return rc
+        if out.get("reused"):
+            print(f"warning: attempt {attempt}: worker reused an existing session "
+                  f"for presentation_id {presentation_id}; generating a fresh id "
+                  f"and retrying", file=sys.stderr)
+            continue
+        run_dir = runs_root / presentation_id
+        try:
+            run_dir.mkdir(parents=False, exist_ok=False)
+        except FileExistsError:
+            print(f"error: run dir already exists: {run_dir}", file=sys.stderr)
+            return 6
+        except OSError as e:
+            print(f"error: cannot create run dir {run_dir}: {e}", file=sys.stderr)
+            return 6
+        record = {
+            "presentation_id": presentation_id,
+            "session_id": out.get("session_id"),
+            "intake_session_id": out.get("intake_session_id"),
+            "token": out.get("token"),
+            "capability_url": out.get("capability_url"),
+            "title": args.title,
+            "company_id": args.company_id,
+            "installation_id": args.installation_id,
+            "created_at": int(time.time()),
+        }
+        _write_session_record(run_dir, record)
+        print(f"Interview link: {out.get('capability_url') or ''}")
+        print(f"presentation_id: {presentation_id}")
+        print(f"session_id: {out.get('session_id')}")
+        print(f"run_dir: {run_dir}")
+        print(f"title: {args.title}")
+        return 0
+    print("error: mint kept reusing an existing session after 3 attempts",
+          file=sys.stderr)
+    return 3
+
+
+# ---- subcommand: resume (Fix 63) ----------------------------------------------
+
+def cmd_resume(args) -> int:
+    """Fix 63: re-mint an expired/lost interview link for an existing session.
+
+    The CLI takes --presentation-id (the run-dir key created by `new`). The
+    worker's /api/sessions/renew accepts session_id or run_id (not
+    presentation_id), so the session.json written by `new` is read to resolve
+    the worker's session id. Prints the renewed interview link and stores the
+    new token back into session.json.
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    runs_root = _runs_root(args.runs_dir)
+    try:
+        record = _read_session_record(runs_root, args.presentation_id)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    session_id = record.get("session_id") or ""
+    if not session_id:
+        print("error: session.json has no session_id; cannot resume",
+              file=sys.stderr)
+        return 2
+    status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/sessions/renew",
+                         token=admin, body={"session_id": session_id})
+    if status not in (200, 201):
+        print(f"error: resume failed (HTTP {status}): {resp.get('error')}",
+              file=sys.stderr)
+        return 3
+    if resp.get("token"):
+        record["token"] = resp["token"]
+    if resp.get("capability_url"):
+        record["capability_url"] = resp["capability_url"]
+    try:
+        _write_session_record(runs_root / args.presentation_id, record)
+    except OSError as e:
+        print(f"warning: could not update session.json: {e}", file=sys.stderr)
+    print(f"Renewed interview link: {resp.get('capability_url') or ''}")
+    print(f"presentation_id: {args.presentation_id}")
+    print(f"session_id: {resp.get('session_id') or session_id}")
+    return 0
+
+
+# ---- subcommand: list (Fix 63) ------------------------------------------------
+
+def cmd_list(args) -> int:
+    """Fix 63: list interview sessions — worker intakes plus local run dirs.
+
+    Calls GET /api/intake/list (tenant-scoped by --company-id /
+    --installation-id, like poll) for finished intakes, then walks the local
+    runs root (the same resolution `new` uses). For each local session.json
+    prints title, presentation_id, and status (finished when the worker
+    reports the session finished, otherwise open).
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    url = args.worker_url.rstrip("/") + "/api/intake/list"
+    scope = _scoped_query(args)
+    if scope:
+        url += "?" + scope.lstrip("?&")
+    http_status, resp = _http("GET", url, token=admin)
+    finished: set = set()
+    if http_status == 200:
+        for item in resp.get("intakes", []) or []:
+            sid = item.get("session_id")
+            if sid:
+                finished.add(sid)
+    else:
+        print(f"warning: /api/intake/list failed (HTTP {http_status}): "
+              f"{resp.get('error')}; showing local run dirs only",
+              file=sys.stderr)
+    runs_root = _runs_root(args.runs_dir)
+    rows = []
+    if runs_root.is_dir():
+        for child in sorted(runs_root.iterdir()):
+            rec_path = child / "session.json"
+            if not child.is_dir() or not rec_path.is_file():
+                continue
+            try:
+                record = json.loads(rec_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            rows.append({
+                "title": record.get("title") or "(untitled)",
+                "presentation_id": record.get("presentation_id") or child.name,
+                "status": ("finished" if record.get("session_id") in finished
+                           else "open"),
+            })
+    if not rows:
+        print(f"(no local interview sessions under {runs_root})")
+        return 0
+    print(f"{'title':<40} {'presentation_id':<38} status")
+    for row in rows:
+        print(f"{str(row['title'])[:40]:<40} {row['presentation_id']:<38} "
+              f"{row['status']}")
+    return 0
+
+
 def cmd_operator_contract(args) -> int:
     """Drive a server-validated local operator contract through the normal bridge."""
     contract_path = pathlib.Path(args.contract_file).expanduser().resolve()
@@ -1652,6 +1968,38 @@ def main(argv=None) -> int:
                    help="bounded list pages per poll (PRES-023 pagination; default 10)")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_poll, per_session_dirs=True)
+
+    m = sub.add_parser("mint", help="open a hosted intake session and print the capability link")
+    m.add_argument("--worker-url", required=True)
+    m.add_argument("--run-id", required=True, help="DISPLAY-ONLY human run name; the worker mints the durable run id")
+    m.add_argument("--box-id", required=True)
+    m.add_argument("--company-id", required=True, help="PRES-009: tenant company id (opaque, 3-64 chars)")
+    m.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id (opaque, 3-64 chars)")
+    m.add_argument("--presentation-id", required=True, help="PRES-009: deck/presentation id (opaque, 3-64 chars)")
+    m.add_argument("--questions", required=True, help="path to a questions_payload.json (from build_questions_payload.py)")
+    m.add_argument("--confirm-code", action="store_true", help="mint a 6-digit high-trust code")
+    m.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
+    m.add_argument("--ttl-days", type=float, default=None)
+    m.set_defaults(func=cmd_mint)
+    n = sub.add_parser("new", help="Fix 63: start a NEW interview session for a fresh deck request (fresh presentation_id)")
+    n.add_argument("--worker-url", required=True)
+    n.add_argument("--company-id", required=True, help="PRES-009: tenant company id")
+    n.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id")
+    n.add_argument("--title", required=True, help="deck name (display-only; stored as the session display name)")
+    n.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
+    n.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (default: PRESENTATIONS_RUNS_DIR env, else <interview-app>/runs)")
+    n.set_defaults(func=cmd_new)
+    r = sub.add_parser("resume", help="Fix 63: re-mint an expired/lost interview link for an existing session")
+    r.add_argument("--worker-url", required=True)
+    r.add_argument("--presentation-id", required=True, help="the presentation id from `new` (run dir holds the worker session id)")
+    r.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (same resolution as `new`)")
+    r.set_defaults(func=cmd_resume)
+    l = sub.add_parser("list", help="Fix 63: list interview sessions (worker intakes + local run dirs)")
+    l.add_argument("--worker-url", required=True)
+    l.add_argument("--company-id", required=True, help="PRES-009: tenant company id")
+    l.add_argument("--installation-id", default="", help="PRES-009: fleet installation id (INTAKE_INSTALLATION_ID env fallback)")
+    l.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (same resolution as `new`)")
+    l.set_defaults(func=cmd_list)
     args = ap.parse_args(argv)
     return args.func(args)
 
