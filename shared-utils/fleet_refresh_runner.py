@@ -377,6 +377,75 @@ def _proc_cwd(pid: int) -> Optional[Path]:
     return Path(m.group(1)) if m else None
 
 
+def _cc_pm2_ancestor() -> Optional[str]:
+    """Command line of the pm2 process among the ancestors of whatever serves
+    the Command Center port; "" when it is not under pm2, None when nothing
+    serves the port."""
+    pids = _port_pids(int(os.environ.get("CC_PORT") or 4000))
+    if not pids:
+        return None
+    for pid in pids:
+        cur = str(pid)
+        for _ in range(8):
+            out = _run_out(["ps", "-o", "ppid=,command=", "-p", cur]).strip()
+            if not out:
+                break
+            ppid, _, cmd = out.partition(" ")
+            if re.search(r"\bPM2\b|pm2", cmd):
+                return cmd.strip()
+            cur = ppid.strip()
+            if cur in ("", "0", "1"):
+                break
+    return ""
+
+
+def cc_pm2_managed() -> Optional[bool]:
+    """Whether the process serving the Command Center port runs under pm2 (a
+    pm2 daemon among its ancestors). None when nothing serves the port.
+    atomic-deploy.sh / update.sh restart the app through pm2: a Command Center
+    started some other way cannot be deployed, and used to fail half way through
+    the deploy ("Required dependency missing: pm2") instead of up front."""
+    cmd = _cc_pm2_ancestor()
+    return None if cmd is None else bool(cmd)
+
+
+def _pm2_home_daemon_alive() -> bool:
+    """Whether this shell's PM2_HOME has a running daemon. Checked from its pid
+    file: any pm2 command against an empty home would itself spawn the stray
+    second daemon this preflight exists to catch."""
+    home = Path(os.environ.get("PM2_HOME") or Path.home() / ".pm2")
+    try:
+        os.kill(int((home / "pm2.pid").read_text().strip()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def cc_pm2_problem() -> Optional[str]:
+    """Why the deploy could not restart this box's Command Center through pm2,
+    or None. Checked before anything changes, instead of failing mid-deploy."""
+    managed = cc_pm2_managed()
+    if managed is None:
+        return None   # nothing serves the port: the deploy starts it
+    if managed is False:
+        return ("Command Center not under pm2: the process serving its port was not started by pm2, "
+                "and the deploy restarts it through pm2")
+    if not shutil.which("pm2"):
+        return ("Command Center runs under pm2, but pm2 is not on this shell's PATH "
+                "(the deploy could not restart it)")
+    # The daemon that runs the Command Center names its home: "God Daemon (<home>)".
+    here = Path(os.environ.get("PM2_HOME") or Path.home() / ".pm2")
+    m = re.search(r"God Daemon \((.+)\)", _cc_pm2_ancestor() or "")
+    if m and Path(m.group(1)).resolve() != here.resolve():
+        return (f"Command Center runs under the pm2 daemon of {m.group(1)}, but this shell's PM2_HOME is "
+                f"{here} (a split PM2_HOME: the deploy would restart nothing)")
+    if not _pm2_home_daemon_alive() or not any(
+            p.isdigit() and p != "0" for n in _CC_PM2_NAMES for p in _run_out(["pm2", "pid", n]).split()):
+        return ("Command Center runs under pm2, but this shell's pm2 (PM2_HOME) does not list it "
+                f"as any of {', '.join(_CC_PM2_NAMES)} (the deploy could not restart it)")
+    return None
+
+
 def find_cc_dir(root: Path) -> tuple[Optional[Path], str]:
     """(code checkout, how it was found) or (None, why not)."""
     for var in ("CC_APP_DIR", "BLACKCEO_COMMAND_CENTER_ROOT"):
@@ -404,14 +473,50 @@ def find_cc_dir(root: Path) -> tuple[Optional[Path], str]:
 
 # ── Session key resolution ────────────────────────────────────────────────────
 
-_OWNER_DM_RE = re.compile(r"^agent:main:telegram:(?:[^:]+:)?direct:\d+$")
+def _owner_agent_ids(paths: dict) -> list[str]:
+    """The agent the owner talks to: the one the owner's own (default-account)
+    Telegram bot is bound to -- many client boxes have no agent named "main" at
+    all, their CEO is e.g. dept-master-orchestrator -- then "main"."""
+    direct, catch_all = [], []
+    try:
+        cfg = json.loads((Path(paths["root"]) / "openclaw.json").read_text())
+        for b in cfg.get("bindings") or []:
+            m = (b.get("match") or {}) if isinstance(b, dict) else {}
+            # the owner's own bot: the default account ("*"/"default"/unset); a
+            # binding for a named extra bot (rescue, operator...) is not the owner's
+            if m.get("channel") != "telegram" or m.get("accountId") not in (None, "*", "default") \
+                    or not b.get("agentId"):
+                continue
+            kind = (m.get("peer") or {}).get("kind")
+            if kind == "direct":          # the owner's DM, bound explicitly
+                direct.append(b["agentId"])
+            elif kind is None:            # every chat of the bot (group bindings are not the owner)
+                catch_all.append(b["agentId"])
+    except (OSError, ValueError, KeyError):
+        pass
+    return list(dict.fromkeys(direct + catch_all + ["main"]))
 
 
-def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
-    """(key, updatedAt) of the main agent's sessions. OpenClaw before 2026.8
-    kept them in agents/main/sessions/sessions.json; later releases keep them
-    in the agent's SQLite store, read through `openclaw sessions list`."""
-    legacy = Path(paths["root"]) / "agents" / "main" / "sessions" / "sessions.json"
+def _owner_workspace(paths: dict) -> Optional[Path]:
+    """The owner agent's own workspace when its config names one (e.g.
+    ~/.openclaw/workspace-nova), else None."""
+    try:
+        agents = json.loads((Path(paths["root"]) / "openclaw.json").read_text()).get("agents") or {}
+        entries = agents.get("entries") or {a.get("id"): a for a in agents.get("list") or [] if isinstance(a, dict)}
+        for agent in _owner_agent_ids(paths):
+            ws = (entries.get(agent) or {}).get("workspace")
+            if ws:
+                return Path(os.path.expanduser(ws))
+    except (OSError, ValueError, KeyError, AttributeError):
+        pass
+    return None
+
+
+def _agent_session_keys(paths: dict, agent: str) -> list[tuple[str, float]]:
+    """(key, updatedAt) of one agent's sessions. OpenClaw before 2026.8 kept
+    them in agents/<id>/sessions/sessions.json; later releases keep them in the
+    agent's SQLite store, read through `openclaw sessions list`."""
+    legacy = Path(paths["root"]) / "agents" / agent / "sessions" / "sessions.json"
     if legacy.is_file():
         try:
             data = json.loads(legacy.read_text())
@@ -420,7 +525,7 @@ def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
             _warn(f"Could not parse {legacy}: {e}")
     if os.environ.get("FLEET_REFRESH_ROOT", "").strip():
         return []   # fixture mode: never the test machine's gateway
-    out = _run_out(["openclaw", "sessions", "list", "--agent", "main", "--json", "--limit", "all"], timeout=90)
+    out = _run_out(["openclaw", "sessions", "list", "--agent", agent, "--json", "--limit", "all"], timeout=90)
     try:
         rows = (json.loads(out) or {}).get("sessions") or []
     except ValueError:
@@ -430,17 +535,21 @@ def _main_session_keys(paths: dict) -> list[tuple[str, float]]:
 
 def _resolve_ceo_session_key(paths: dict) -> Optional[str]:
     """
-    The main agent's owner-facing session: a Telegram direct session
-    (agent:main:telegram[:<account>]:direct:<id>) or, where DMs collapse into
-    it (session.dmScope "main", the default), agent:main:main. The most
-    recently used one wins. None when neither exists.
+    The owner agent's owner-facing session: a Telegram direct session
+    (agent:<id>:telegram[:<account>]:direct:<n>) or, where DMs collapse into it
+    (session.dmScope "main", the default), agent:<id>:main. The owner agent is
+    the Telegram-bound agent, else "main"; the most recently used session wins.
+    None when neither exists.
     (Never docker logs or ownerAllowFrom -- per memory rules.)
     """
-    keys = [(k, t) for k, t in _main_session_keys(paths) if _OWNER_DM_RE.match(k) or k == "agent:main:main"]
-    if not keys:
-        _warn("No main-agent owner session (agent:main:telegram:...:direct:<id> or agent:main:main) found")
-        return None
-    return max(keys, key=lambda kt: kt[1])[0]
+    for agent in _owner_agent_ids(paths):
+        dm = re.compile(rf"^agent:{re.escape(agent)}:telegram:(?:[^:]+:)?direct:\d+$")
+        keys = [(k, t) for k, t in _agent_session_keys(paths, agent) if dm.match(k) or k == f"agent:{agent}:main"]
+        if keys:
+            return max(keys, key=lambda kt: kt[1])[0]
+    _warn(f"No owner session (agent:<id>:telegram:...:direct:<n> or agent:<id>:main) found for agents "
+          f"{', '.join(_owner_agent_ids(paths))}")
+    return None
 
 
 # ── Version helpers ───────────────────────────────────────────────────────────
@@ -796,7 +905,7 @@ def step_detect(paths: dict, repo_root: Path, compat: dict, res: BoxResult) -> N
     # so detect/verify never disagree with the actual roll outcome.
     skills_dir = Path(paths.get("skills") or Path(paths["root"]) / "skills")
     res.onboarding_version = _read_onboarding_version(skills_dir)
-    res.cc_version = _read_cc_version(paths.get("cc_dir", Path("/nonexistent")))
+    res.cc_version = _read_cc_version(paths.get("cc_dir") or Path("/nonexistent"))
     res.step_ok("detect")
     _info(f"  platform: {res.platform}  onboarding: {res.onboarding_version}  CC: {res.cc_version}")
 
@@ -827,6 +936,9 @@ def step_pin_resolve(paths: dict, repo_root: Path, compat: dict, res: BoxResult)
 # update-skills.sh walks every skill folder and hashes the content: ~55 min on a
 # Hostinger container. The old 20-minute cap failed healthy updates mid-way.
 UPDATE_SKILLS_TIMEOUT = 5400
+# update-skills.sh's fleet standing gate: "Update held -- account not current".
+UPDATE_HELD_MARK = "Update held -- account not current"
+UPDATE_HELD = "update held -- account not current on payments (fleet standing gate); nothing changed"
 
 
 def _run_tree(cmd: list[str], timeout: int, **kw) -> subprocess.CompletedProcess:
@@ -882,7 +994,12 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             # client chat, independent of the box's chat/account config. This runner
             # executes ON the target box, so the var reaches the remote updater.
             env={**os.environ, "OPENCLAW_UPDATE_AUTO_SYNC": "1",
-                 "OPENCLAW_MAINTENANCE_SILENT": "1"},
+                 "OPENCLAW_MAINTENANCE_SILENT": "1",
+                 # The runner's clone is already where the roll wants it: the roll copy
+                 # held at the roll's commit, or the operator's own clone (--local).
+                 # Self-syncing it to main mid-roll mixed releases across boxes, and
+                 # on the operator box reset the clone the roll itself runs from.
+                 "OPENCLAW_UPDATE_SKIP_SELF_SYNC": "1"},
         )
         post_stamp = stamp_file.read_text().strip() if stamp_file.is_file() else None
         # update-skills.sh self-syncs THIS clone to origin/main before it runs
@@ -895,7 +1012,11 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             pinned_tag = load_cc_compat(repo_root).get("onboardingVersion", pinned_tag)
         except Exception:
             pass
-        if result.returncode == 0 and post_stamp == pinned_tag:
+        if result.returncode == 0 and UPDATE_HELD_MARK in result.stdout:
+            # The fleet standing gate held this box (account not current on
+            # payments): nothing was changed, by design. Not a failure to fix.
+            res.step_skip("pull-onboarding", UPDATE_HELD)
+        elif result.returncode == 0 and post_stamp == pinned_tag:
             res.onboarding_version = post_stamp
             res.step_ok("pull-onboarding")
         elif result.returncode == 2 and post_stamp == pinned_tag:
@@ -908,7 +1029,7 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             res.step_fail(
                 "pull-onboarding",
                 f"update-skills.sh exited {result.returncode}; stamp={post_stamp!r} "
-                f"expected={pinned_tag!r}: {result.stderr[:200]}"
+                f"expected={pinned_tag!r}: {(result.stderr.strip() or result.stdout.strip())[-300:]}"
             )
     except subprocess.TimeoutExpired:
         res.step_fail("pull-onboarding", f"update-skills.sh timed out after {UPDATE_SKILLS_TIMEOUT}s "
@@ -916,6 +1037,18 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
     except Exception as e:
         res.step_fail("pull-onboarding", str(e))
     return pinned_tag
+
+
+def load_warning(res: BoxResult) -> None:
+    """A box whose CPU is saturated (a days-old agent-browser Chrome at ~940%
+    on a 10-core Mac) cannot answer the deploy's health check in time; say so
+    before the deploy rather than after the outage."""
+    load, cores = os.getloadavg()[0], os.cpu_count() or 1
+    if load > 2 * cores:
+        msg = (f"load {load:.1f} on {cores} cores is over 2x: the Command Center deploy's health check may "
+               "time out; look for a runaway process (e.g. a days-old agent-browser Chrome) first")
+        _warn(f"  {msg}")
+        res.steps["load"] = f"ok:advisory: {msg}"
 
 
 def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_cc: bool = False) -> None:
@@ -940,17 +1073,27 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
     if not Path(cc_dir).is_dir():
         res.step_fail("pull-cc", f"CC dir not found: {cc_dir}")
         return
-
     try:
         from cc_runtime_preflight import check_node, assert_cc_package, check_checkout
         check_node()
+        why = None if os.environ.get("FLEET_REFRESH_ROOT", "").strip() else cc_pm2_problem()
+        if why:
+            res.step_fail("pull-cc", f"{why}. Nothing was changed.")
+            return
+        load_warning(res)
         subprocess.run(
-            ["git", "-C", str(cc_dir), "fetch", "origin", "main"],
+            # Explicit refspec: a clone whose configured refspec names only a tag
+            # (seen on client boxes) leaves origin/main stale on a bare `fetch origin main`.
+            ["git", "-C", str(cc_dir), "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main"],
             check=True, capture_output=True, timeout=60,
         )
 
+        # CC_UPDATE_TARGET: the roll's Command Center commit, resolved once by
+        # fleet-refresh.sh, so a merge landing mid-roll never reaches the boxes
+        # that update after it. Exported, so update.sh honours it too.
+        target_ref = os.environ.get("CC_UPDATE_TARGET", "").strip() or "origin/main"
         target = subprocess.run(
-            ["git", "-C", str(cc_dir), "show", "origin/main:package.json"],
+            ["git", "-C", str(cc_dir), "show", f"{target_ref}:package.json"],
             check=True, capture_output=True, text=True, timeout=10,
         )
         assert_cc_package(json.loads(target.stdout))
@@ -963,7 +1106,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
             if branch.returncode != 0 or branch.stdout.strip() != "main":
                 return False
             ancestry = subprocess.run(
-                ["git", "-C", str(cc_dir), "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+                ["git", "-C", str(cc_dir), "merge-base", "--is-ancestor", target_ref, "HEAD"],
                 capture_output=True, timeout=10,
             )
             return ancestry.returncode == 0
@@ -980,7 +1123,7 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
             # Run origin/main's updater, not the live checkout's: the target's
             # update.sh builds beside the running release and promotes it
             # (zero-downtime), so the live tree is never moved before the build.
-            target = subprocess.run(["git", "-C", str(cc_dir), "show", "origin/main:update.sh"],
+            target = subprocess.run(["git", "-C", str(cc_dir), "show", f"{target_ref}:update.sh"],
                                     capture_output=True, text=True, timeout=30)
             with tempfile.NamedTemporaryFile("w", suffix="-cc-update.sh", delete=False) as fh:
                 fh.write(target.stdout if target.returncode == 0 and target.stdout else updater.read_text())
@@ -1133,6 +1276,19 @@ def _run_atomic_deploy(cc_dir: Path, revision: Optional[str] = None) -> subproce
                           env={**os.environ, "CC_APP_DIR": str(cc_dir)})
 
 
+def _served_build_current(cc_dir: Path) -> bool:
+    """The Command Center's own build-inventory.sh --verify (the check cc-start
+    and atomic-deploy use): the served .next was built from this checkout."""
+    inv = cc_dir / "scripts" / "lib" / "build-inventory.sh"
+    if not inv.is_file():
+        return False
+    try:
+        return subprocess.run([_bash4() or "bash", str(inv), "--verify", str(cc_dir)],
+                              capture_output=True, timeout=180).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = False) -> None:
     """
     Step 4: invoke scripts/atomic-deploy.sh from the deployed CC checkout.
@@ -1174,6 +1330,19 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
         check_checkout(cc_dir)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         res.step_fail("build-cc", f"CC compatibility preflight failed: {exc}")
+        return
+
+    # Already serving a build of exactly this checkout (update.sh / the installer
+    # deployed it minutes ago): another full rebuild + restart gains nothing and
+    # risks the Command Center (a spare redeploy failed its health check on a
+    # client Mac and had to roll back).
+    if _served_build_current(cc_dir) and hc_cc_health({"cc_dir": cc_dir}, times=1)["status"] == "pass":
+        _info("  Command Center already serves a build of this checkout -- no rebuild")
+        res.step_ok("build-cc")
+        duck_passed, duck_detail = _run_duck_ci_test(cc_dir, res.box)
+        res.steps["build-cc-duck-test"] = "pass" if duck_passed else f"fail: {duck_detail}"
+        if not duck_passed:
+            res.step_fail("build-cc", f"duck CI test FAILED: {duck_detail}")
         return
 
     # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
@@ -1283,6 +1452,12 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
         res.step_fail("restart-cc", f"CC compatibility preflight failed: {exc}")
         return
 
+    # Serving a build of this checkout and healthy: nothing to restart.
+    if _served_build_current(cc_dir) and hc_cc_health({"cc_dir": cc_dir}, times=1)["status"] == "pass":
+        _info("  Command Center already serves a build of this checkout and is healthy -- no restart")
+        res.step_ok("restart-cc")
+        return
+
     # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
     atomic_deploy = cc_dir / "scripts" / "atomic-deploy.sh"
     if not atomic_deploy.is_file():
@@ -1354,7 +1529,7 @@ def step_sessions_reset_ceo(
     if not ceo_session_key:
         res.step_fail("sessions-reset-CEO",
             "CEO session key unresolved; cannot reset "
-            "(no agent:main:telegram:...:direct:<id> or agent:main:main session).")
+            "(no owner session on the Telegram-bound agent or main).")
         return
 
     try:
@@ -1796,6 +1971,16 @@ def _prov_read_json(path) -> Optional[Any]:
     return None
 
 
+def _existing_or_owner(paths: dict, p: Path) -> Path:
+    """p, or the same file in the owner agent's own workspace when only that one
+    exists (a box whose CEO agent runs from workspace-nova, not workspace)."""
+    if p.exists() or "root" not in paths:
+        return p
+    ows = _owner_workspace(paths)
+    alt = (ows / p.name) if ows else None
+    return alt if alt and alt.exists() else p
+
+
 def _resolve_provisioning_paths(paths: dict) -> dict:
     """
     Resolve the on-box provisioning artifacts the completeness gate reads.
@@ -1815,28 +2000,37 @@ def _resolve_provisioning_paths(paths: dict) -> dict:
     # company_dir: the active <slug>/ under company_root. Prefer an explicit key;
     # else pick the first child dir that actually carries a company-config.json or
     # departments.json (mirrors resolve_active_company_dir's "real workforce" pick).
+    # A box can keep its workforce under workspace/zero-human-company/<slug>/
+    # while get_openclaw_paths() points at a flat workspace/departments.json
+    # that does not exist (DEPARTMENTS then failed falsely on a box with 30).
+    # Prefer a <slug>/ that carries both files, then one carrying either.
     company_dir = paths.get("company_dir")
     if company_dir:
         company_dir = Path(company_dir)
     else:
         company_dir = None
-        try:
-            if company_root.is_dir():
-                for child in sorted(company_root.iterdir()):
-                    if child.is_dir() and (
-                        (child / "company-config.json").is_file()
-                        or (child / "departments.json").is_file()
-                    ):
-                        company_dir = child
-                        break
-        except OSError:
-            company_dir = None
+        children = []
+        for root in dict.fromkeys((company_root, workspace / "zero-human-company")):
+            try:
+                if root.is_dir():
+                    children += [c for c in sorted(root.iterdir()) if c.is_dir()]
+            except OSError:
+                pass
+        def has(c, n):
+            return (c / n).is_file()
+        for need in (2, 1):
+            company_dir = next((c for c in children
+                                if has(c, "company-config.json") + has(c, "departments.json") >= need), None)
+            if company_dir:
+                break
 
     def _pick(key: str, rel: str) -> Path:
         v = paths.get(key)
-        if v:
+        if v and Path(v).exists():
             return Path(v)
-        return (company_dir / rel) if company_dir else (workspace / rel)
+        if company_dir:
+            return company_dir / rel
+        return Path(v) if v else (workspace / rel)
 
     coaching_personas = Path(
         paths.get("coaching_personas") or (workspace / "data" / "coaching-personas")
@@ -1850,7 +2044,8 @@ def _resolve_provisioning_paths(paths: dict) -> dict:
         "zhc_company_config": _pick("company_config", "company-config.json"),
         "coaching_personas":  coaching_personas,
         "personas_dir":       coaching_personas / "personas",
-        "build_state":        Path(paths.get("build_state") or (workspace / ".workforce-build-state.json")),
+        "build_state":        _existing_or_owner(paths, Path(paths.get("build_state")
+                                                         or (workspace / ".workforce-build-state.json"))),
         "cc_dir":             cc_dir,
         "cc_company_config":  (cc_dir / "config" / "company-config.json") if cc_dir else None,
         "cc_logo_config":     (cc_dir / "public" / "logo-config.json") if cc_dir else None,
@@ -3169,7 +3364,15 @@ def run_box(
     pinned_onboarding_tag = compat.get("onboardingVersion", "unknown")
 
     # Load platform paths
-    paths = _load_paths(shared_utils)
+    try:
+        paths = _load_paths(shared_utils)
+    except OSError as e:
+        # e.g. macOS refusing ~/Downloads to the SSH process ("Interrupted system call").
+        res.result, res.outcome = "failed", "FAILED"
+        res.outcome_detail = (f"cannot read {e.filename or 'the OpenClaw folders'} ({e.strerror}); "
+                              "on a Mac, give sshd-keygen-wrapper Full Disk Access. Nothing was changed.")
+        res.errors.append(res.outcome_detail)
+        return res
 
     lock = None
     if not dry_run and not verify_only:
@@ -3267,6 +3470,13 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             pinned_onboarding_tag = step_pull_onboarding(paths, repo_root, pinned_onboarding_tag, res, dry_run)
         except Exception as e:
             res.step_fail("pull-onboarding", str(e))
+
+        # Held by the fleet standing gate (account not current): nothing else changes.
+        if res.steps.get("pull-onboarding") == f"skip:{UPDATE_HELD}":
+            for step in ("update-999", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
+                res.step_skip(step, "update held")
+            res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", UPDATE_HELD
+            return res
 
         # Step 2b: 999-setup, only where it is already installed
         try:
@@ -3406,7 +3616,10 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
             res.outcome_detail = why
         else:
             res.outcome = "UPDATED"
-            warn = [k for k, v in res.steps.items() if str(v).startswith(("failed", "ok:advisory"))]
+            warn = [k for k, v in res.steps.items() if str(v).startswith("failed")]
+            # ok:advisory = the step succeeded with a note (e.g. update-skills.sh exit 2:
+            # content current and stamped). It is not a failing check.
+            advisory = [k for k, v in res.steps.items() if str(v).startswith("ok:advisory")]
             pre = res.health.get("preexisting_failures") or []
             healed = len(res.heal.get("attempts") or [])
             gaps = res.health.get("content_gaps_preexisting") or {}
@@ -3417,6 +3630,7 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
                 + "; ".join(f"{k}: {v}" for k, v in gaps.items()) if gaps else "",
                 f"fixed after {healed} attempt(s)" if healed else "",
                 f"checks failing: {', '.join(warn)}" if warn else "",
+                f"succeeded with advisories: {', '.join(advisory)}" if advisory else "",
                 f"already unhealthy before update: {', '.join(pre)}" if pre else "",
             ]))
 

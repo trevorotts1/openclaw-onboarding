@@ -1,3 +1,46 @@
+## [v25.2.10]  -  2026-09-28  -  Fleet roll: one commit per roll, true check results, clear preflights
+
+### Why
+The 2026-09-28 30-box roll reported false failures on most boxes and rolled back boxes that were fine:
+- embedding-health read `agents.defaults.memorySearch`; current OpenClaw keeps it at `memory.search`.
+- sessions-reset-CEO looked only for an agent named `main`; many boxes' owner agent has another id.
+- advisories (update-skills.sh exit 2) were listed under "checks failing"; a billing-held update was a failure.
+- a PR merged mid-roll reached every box that cloned or self-synced after it: boxes pulled v25.2.5 on a
+  v25.2.3 roll, failed the role-library gate and were rolled back.
+- a Command Center clone whose refspec names one tag never moved `origin/main`, so pull-cc refused it.
+- a Mac refusing ~/Downloads to SSH crashed the runner with a traceback; detect failed on boxes with no
+  Command Center.
+
+### What changed
+- `shared-utils/embedding_health.py`: reads `memory.search`, falls back to the old key.
+- `shared-utils/fleet_refresh_runner.py`: owner session resolved from the Telegram-bound agent; advisories
+  reported separately; billing hold is SKIPPED; the updater's own output kept on failure; explicit fetch
+  refspec in pull-cc; Command Center pm2 preflight; no spare rebuild when the served build is already
+  current; unreadable folders named with the Full Disk Access fix; detect tolerates no Command Center;
+  update-skills.sh never self-syncs the roll's copy to main.
+- `scripts/fleet-refresh.sh` + `scripts/fleet-roll-copy.sh`: main resolved once per roll; every box's roll
+  copy is held at that commit.
+- `32-command-center-setup/scripts/run-full-install.sh`, `update-skills.sh`: explicit fetch refspecs.
+- The roll's Command Center commit is also resolved once per roll and exported as `CC_UPDATE_TARGET`:
+  pull-cc and the Command Center's update.sh (v7.6.76+) deploy it, not a main that moved mid-roll.
+- update-skills.sh never self-syncs the runner's clone, including the operator's own clone on a `--local`
+  run (a reset to origin/main there moved the clone the roll itself ran from).
+- A dropped SSH session (exit 255) waits for the runner on the box and reads its own result, instead of
+  reporting a box that updated fine as FAILED.
+- A warning before a Command Center deploy when the load is over twice the cores.
+- Provisioning checks read the workforce from `workspace/zero-human-company/<slug>/` when the flat paths do
+  not exist, and the build state from the owner agent's own workspace when only that one has it.
+- `refresh-stale-roles.py` never creates a roles-only `.workforce-build-state.json` on a box with no build.
+- `scripts/skill-content-hash.sh` excludes `23-ai-workforce-blueprint/scripts/receipts/` (prove-zhe.py's run
+  receipts, written inside the skill dir after an update). They failed the roll's role-library digest and
+  rolled back boxes that had updated fine; with the exclusion a live box's installed digest equals the release's.
+- The Drive box-list backup always publishes the whole fleet (`~/.openclaw/fleet/boxes.json`), never the
+  subset a roll ran on.
+- Contabo: `platform/vps/contabo/` ships the container startup script and compose settings that make pm2 work
+  the Hostinger way; the pm2 preflight also catches a split PM2_HOME without spawning a daemon.
+- Pins Command Center v7.6.76 (deploy gate on build/serve rows only, rollback verify through the startup
+  grace, non-blocking deep health, `CC_UPDATE_TARGET`).
+
 ## [v25.2.9]  -  2026-09-28  -  Merge train: #1328 presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE…; #1343 fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD;…; #1344 fix(skill23): build is non-destructive on a box with existing…; #1347 fix(skill23): one company-root resolution order + durable owner-sends…; #1348 fix(skill23): PENDING role how-tos are queued for SOP authoring +…; #1349 fix(skill23): role folders use canonical library slugs and meet the…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

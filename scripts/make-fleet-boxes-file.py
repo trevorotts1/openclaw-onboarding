@@ -272,8 +272,14 @@ def main() -> int:
 
     if args.record_roll:
         record_roll(Path(args.record_roll))
-        entries = _read_json(out, [])
-        print(sync_sheet(entries) if entries and not args.no_sheet else "roll recorded")
+        # The sheet backs up the WHOLE fleet: always publish the master list,
+        # never the --boxes-file subset a roll ran on (a one-box roll replaced
+        # the 36-box backup with one row).
+        entries = _read_json(FLEET_DIR / "boxes.json", [])
+        if not entries:
+            print(f"roll recorded; sheet NOT refreshed: master box list {FLEET_DIR / 'boxes.json'} missing or empty")
+        else:
+            print(sync_sheet(entries) if not args.no_sheet else "roll recorded")
         return 0
 
     skipped, unroutable = [], []

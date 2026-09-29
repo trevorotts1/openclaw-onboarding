@@ -278,6 +278,18 @@ RUNNER_FLAGS=""
 [ $FORCE_CC -eq 1 ]    && RUNNER_FLAGS="$RUNNER_FLAGS --force-cc"
 [ -n "$EXPECTED_SHA" ] && RUNNER_FLAGS="$RUNNER_FLAGS --expected-sha $EXPECTED_SHA"
 
+# One commit for the whole roll: a PR merged while the roll runs must not reach
+# the boxes that happen to start (or self-sync) after it.
+ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
+[ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
+# Same for the Command Center: pull-cc and update.sh deploy this commit, not a
+# main that moved after the roll started.
+ROLL_CC_SHA=$(git ls-remote "${FLEET_ROLL_CC_REPO_URL:-https://github.com/trevorotts1/blackceo-command-center.git}" refs/heads/main 2>/dev/null | cut -f1)
+if [ -n "$ROLL_CC_SHA" ]; then
+  export CC_UPDATE_TARGET="$ROLL_CC_SHA"
+  echo "[fleet-refresh] Rolling Command Center main at ${ROLL_CC_SHA:0:12}"
+fi
+
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RESULTS"' EXIT
@@ -510,7 +522,7 @@ PY
   local client_json
   client_json=$(awk -F'\t' -v b="$box" '$1 == b && $2 !~ /^UNKNOWN CLIENT/ { printf "{\"client\": \"%s\", \"label\": \"%s\"}", $2, $3; exit }' "$LABELS_FILE")
   copied=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
-    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json")
+    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json") FLEET_ROLL_SHA=$(sq "$ROLL_SHA")
 $(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
     2>>"$RUN_LOG_DIR/${box}.log" | grep -E '^(COPY|COPYFAIL) ' | tail -1 | tr -d '\r' || true)
   if [ -z "$copied" ]; then
@@ -550,7 +562,9 @@ export FLEET_PREV_ONBOARDING_SHA=$(sq "${prev_sha#-}")
   [ -n "$container" ] && [ $APPLY -eq 1 ] && extra="--host-restart"
   runner_cmd() {   # $1 = shell prefix, $2 = extra runner flags
     printf '%s' "trap '' HUP
-${1}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+${1}${CC_UPDATE_TARGET:+export CC_UPDATE_TARGET=$CC_UPDATE_TARGET
+}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+rm -f \"\$O\"
 python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS $2 > \"\$O\" 2> \"\$E\"
 rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
   }
@@ -560,6 +574,33 @@ rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
   env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$(runner_cmd "$prep" "$extra")")" \
     > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
   finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner"
+
+  # A dropped SSH session (exit 255) does not stop the runner: it ignores
+  # SIGHUP and writes its result on the box. Wait for it there and read that
+  # result, instead of reporting a box that updated fine as FAILED.
+  if [ "$rc" -eq 255 ]; then
+    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
+    local try back_rc=255
+    for try in 1 2 3; do
+      back_rc=0
+      # shellcheck disable=SC2086
+      env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$waitcmd")" \
+        > "$raw.back" 2>> "$RUN_LOG_DIR/${box}.log" || back_rc=$?
+      [ "$back_rc" -ne 255 ] && break
+      sleep 30
+    done
+    if [ "$back_rc" -ne 255 ] && grep -q '"box"' "$raw.back" 2>/dev/null; then
+      cp "$raw.back" "$raw"
+      finish_result "$box" 0 "$raw" "$result_file" "ssh/runner (read back)"
+      rc=$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["outcome_detail"] = (d.get("outcome_detail") or "") + " (read back from the box after the SSH session dropped)"
+json.dump(d, open(sys.argv[1], "w"))
+print(4 if d.get("outcome") == "PENDING" else 0)
+' "$result_file")
+    fi
+  fi
 
   # Fix loop, host half: restart the container the way this platform needs,
   # then let the runner re-check and continue (it caps the attempts at 3).
