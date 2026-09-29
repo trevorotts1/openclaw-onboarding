@@ -1,9 +1,13 @@
-## [v25.2.16]  -  2026-09-29  -  JEV decides live (bridge intent + route, general-task fallback); mc-route.sh auto intake; General Task landing no longer escalates; CEO policy V3 NEW INTAKE uses JEV; p209 probe; release-cohort rolled by bump-version.sh; CC pin v7.6.88
+## [v25.2.16]  -  2026-09-29  -  Merge train: #1395 release v25.2.16: JEV decides live; pin Command Center v7.6.88…; #1396 fix(fleet-roll): container PATH without a login profile; Hostinger…
 
-### Why
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1395 — [v25.2.16]  -  2026-09-29  -  JEV decides live (bridge intent + route, general-task fallback); mc-route.sh auto intake; General Task landing no longer escalates; CEO policy V3 NEW INTAKE uses JEV; p209 probe; release-cohort rolled by bump-version.sh; CC pin v7.6.88
+
+#### Why
 The decision engine (JEV) only recommended a role and never decided anything live: every owner message was sorted by prose in the CEO policy, so questions became cards and work landed in whatever department the agent guessed. A card that correctly fell to the General Task catch-all printed ESCALATE_TO_OPERATOR. release-cohort.json had been stuck at v25.1.94 / v7.6.68 since nothing rolled it on a bump, which failed test_release_cohort_manifest.py and blocked JEV promotion.
 
-### What changed
+#### What changed
 - `shared-utils/decision-engine.py` (JGT101): `--evaluate` adds `intent` (the 7 Command Center intents; exact fixture, normalized fixture, then a stdlib heuristic that returns task_request for anything it cannot place, so work is never dropped), `intentSource` and `route` {action answer/route/none, department, confidence, fallback, catalog}. Departments rank against the caller's catalog or the standard floor; nothing fits -> `general-task` with fallback=true. Schema stays 1.1.0, additive only; roleId stays none_suitable and no forbidden assignment key is emitted. A task clause followed by a question stays task_request.
 - `scripts/mc-route.sh auto "<owner message verbatim>"` (JGT103, see docs/MC-ROUTE.md): posts {message} to the signed ingest door and prints `JEV_ANSWER_DIRECTLY intent=<x>` (answer, no card) or `ROUTED workspace=.. department=..` (one card). A card landing on General Task prints INFO, not ESCALATE_TO_OPERATOR; ->ceo, ->unrouted and no-workspace outcomes still escalate. The MC_ROUTE_SH heredocs in apply-fleet-standards.sh and apply-routing-fix.sh are re-stamped so a roll ships the same helper (byte-identity guard: tests/unit/mc-route-heredoc-sync.test.sh).
 - CEO_EXECUTION_POLICY_V3 NEW INTAKE bullet hands each new owner message to `mc-route.sh auto`, with the old fallback when the helper fails or JEV is off; identical in shared-utils/ceo_execution_policy.py, AGENTS.md, SOP-00-Owner-Task-Routing.md and the ceo-routing-doctrine plugin. The NO UNIVERSAL DECISION-CALL clause is byte-for-byte unchanged.
@@ -11,6 +15,10 @@ The decision engine (JEV) only recommended a role and never decided anything liv
 - `scripts/roll-release-cohort.py` (JGT102): rolls release-cohort.json onb_version/cc_version (and the SHAs when given); `bump-version.sh` calls it on every bump and in `--check`.
 - cc-compat.json pinnedTag v7.6.87 -> v7.6.88 (the Command Center side: routeTaskDecision takes JEV's department, the ingest raw door takes JEV's intent, migration 166 adds the general-task workspace). release-cohort.json is bound to onboarding main 209208696 and the peeled v7.6.88 commit.
 - Kill switch (default on): `echo off > ~/.openclaw/decision-engine-mode.conf` turns JEV off with no restart; delete the file or write `auto` to turn it back on. Nothing writes this file and updates keep it.
+
+### #1396 — fix(fleet-roll): container PATH without a login profile; Hostinger pm2 as node; bytecode caches self-heal
+
+(This pull request carried no CHANGELOG entry of its own.)
 
 ## [v25.2.15]  -  2026-09-29  -  Merge train: #1368 fix(prove-zhe, prove-board-join): stray role-library template dept…; #1373 fix(wiring-gate): presentations intake/ runs/ fish-audio/ are runtime…; #1374 fix(cc-seed): explicit COMPANY_SLUG wins; repair-board-company…; #1376 fix(cc-seed): no head agent or departments/ folder for the structural…; #1378 fix(workforce-completion): artifact digest skips department runtime…; #1384 feat(embeddings): free local Ollama persona index +…
 
