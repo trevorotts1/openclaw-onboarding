@@ -177,7 +177,7 @@ class HealthGateAndRollback(unittest.TestCase):
         self.gate([health(cc_health="fail"), health(cc_health="fail"), health()])
         self.assertEqual(self.res.steps["health-gate"], "ok:healed after 2 fix attempt(s)")
         self.assertEqual(self.res.rollback, {})
-        self.assertEqual(self.actions, ["rebuild-cc", "reset-session"] * 2)
+        self.assertEqual(self.actions, ["rebuild-cc"] * 2)
         attempts = self.res.heal["attempts"]
         self.assertEqual([a["n"] for a in attempts], [1, 2])
         self.assertIn("cc-health", attempts[0]["failing"])
@@ -291,11 +291,13 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
 
     def test_heal_actions_follow_the_failing_checks(self):
-        self.assertEqual(fr.heal_actions({"gateway-health": ""}), ["restart-gateway", "reset-session"])
-        self.assertEqual(fr.heal_actions({"telegram-getme": ""}), ["restart-gateway", "reset-session"])
-        self.assertEqual(fr.heal_actions({"session-reset": ""}), ["reset-session"])
+        # No fix attempt resets the owner's session: that wiped one owner's live
+        # chat 10 times in 3.5 hours. The one reset runs after the gate.
+        self.assertEqual(fr.heal_actions({"gateway-health": ""}), ["restart-gateway"])
+        self.assertEqual(fr.heal_actions({"telegram-getme": ""}), ["restart-gateway"])
+        self.assertEqual(fr.heal_actions({"session-reset": ""}), [])
         self.assertEqual(fr.heal_actions({"role-library": "", "pull-cc": ""}),
-                         ["rerun:pull-onboarding", "rerun:pull-cc", "reset-session"])
+                         ["rerun:pull-onboarding", "rerun:pull-cc"])
         self.assertEqual(fr.heal_actions({"restart-cc": ""}), ["rerun:restart-cc"])
 
     def test_update_skills_exit_2_is_advisory_not_a_failure(self):
@@ -528,11 +530,11 @@ class HealActionDispatch(unittest.TestCase):
              mock.patch.object(fr, "_resolve_ceo_session_key", return_value="k"):
             fr._run_heal_action("rerun:pull-onboarding", {}, Path("."), res, ctx)
             fr._run_heal_action("rebuild-cc", {}, Path("."), res, ctx)
-            fr._run_heal_action("reset-session", {}, Path("."), res, ctx)
+            self.assertEqual(fr._run_heal_action("reset-session", {}, Path("."), res, ctx), "unknown action")
         po.assert_called_once()
         self.assertEqual(ctx["pinned"], "v2")
         bc.assert_called_once()
-        sr.assert_called_once()
+        sr.assert_not_called()   # a fix attempt never resets the owner's session
 
 
 class BuildFailureKeepsOldBuild(unittest.TestCase):
@@ -1014,6 +1016,42 @@ class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in state.iterdir()),
                              ["LOCAL-2026-09-28T205230+0000.json", "LOCAL-old.json"])
             self.assertFalse(legacy.exists(), "nothing left inside the hashed skill tree")
+
+
+class CeoSessionResetOncePerRoll(unittest.TestCase):
+    def test_no_owner_session_yet_is_ok_not_a_failure(self):
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_sessions_reset_ceo(None, res, dry_run=False)
+        self.assertTrue(res.steps["sessions-reset-CEO"].startswith("ok:no owner session yet"))
+        self.assertEqual(fr.hc_session_reset(res)["status"], "pass")
+
+    def test_once_per_roll_and_never_twice_within_the_interval(self):
+        with tempfile.TemporaryDirectory() as td:
+            paths = {"root": Path(td)}
+            calls = []
+
+            def reset(key, res, dry_run):
+                calls.append(key)
+                res.step_ok("sessions-reset-CEO")
+            with mock.patch.object(fr, "_resolve_ceo_session_key", return_value="agent:ceo:main"), \
+                 mock.patch.object(fr, "step_sessions_reset_ceo", side_effect=reset):
+                res = fr.BoxResult("t", dry_run=False)
+                fr.reset_ceo_once(paths, res, False)
+                fr.reset_ceo_once(paths, res, False)          # the same roll: no second reset
+                self.assertEqual(calls, ["agent:ceo:main"])
+                again = fr.BoxResult("t", dry_run=False)       # a re-roll minutes later
+                fr.reset_ceo_once(paths, again, False)
+                self.assertEqual(calls, ["agent:ceo:main"])
+                self.assertIn("reset 0 min ago", again.steps["sessions-reset-CEO"])
+                marker = Path(td, "fleet-refresh/.ceo-session-reset.json")
+                marker.write_text(json.dumps({"agent:ceo:main": time.time() - fr.RESET_MIN_INTERVAL - 1}))
+                fr.reset_ceo_once(paths, fr.BoxResult("t", dry_run=False), False)
+                self.assertEqual(calls, ["agent:ceo:main"] * 2)
+
+    def test_rollback_does_not_reset_the_session(self):
+        src = (REPO / "shared-utils/fleet_refresh_runner.py").read_text()
+        body = src[src.index("def rollback_box("):src.index("def _save_local_changes(")]
+        self.assertNotIn("step_sessions_reset_ceo", body)
 
 
 class LoadWarning(unittest.TestCase):
