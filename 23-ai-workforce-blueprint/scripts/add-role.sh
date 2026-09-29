@@ -13,7 +13,7 @@
 #   3. Writes IDENTITY.md, SOUL.md, MEMORY.md, how-to.md (stub) for the new role
 #   4. Inserts an agent row into the CC mission-control.db for the role
 #      (specialist_type='specialist', status='standby')
-#   5. Inherits (symlinks) USER.md, AGENTS.md, TOOLS.md from workspace root
+#   5. Places USER.md, TOOLS.md as real-file copies of the workspace root (N29)
 #   6. Creates a placeholder persona governance file for the role
 #   7. Touches .persona-index-stale so persona-selector-v2.py rebuilds its cache
 #
@@ -307,7 +307,7 @@ else:
 - Read `how-to.md` FIRST before executing any task.
 - Follow the matching SOP in `SOP/00-INDEX.md` for this task.
 - If no SOP covers the task, escalate to the department head (do not guess).
-- Use the symlinked TOOLS.md, AGENTS.md, USER.md to know tools, behavior, and owner.
+- Use the shared TOOLS.md and USER.md to know tools and owner.
 
 ## Operating Protocol — Read the SOP Before You Work (binding)
 
@@ -406,24 +406,15 @@ See `../governing-personas.md` for the department-level pool.
     pg_path.write_text(pg_content, encoding="utf-8")
     print(f"  + governing-personas.md  {pg_path}")
 
-    # ── 6. Symlink shared files (USER.md, AGENTS.md, TOOLS.md) ───────────────
-    for fname in ("USER.md", "AGENTS.md", "TOOLS.md"):
-        src = workspace_root / fname
-        dst = role_dir / fname
-        if not src.is_file():
-            print(f"  [symlink] {fname} not found at {src}, skipping")
-            continue
-        if dst.is_symlink() and dst.resolve() == src.resolve():
-            continue  # already correct
-        if dst.exists() or dst.is_symlink():
-            dst.unlink()
-        try:
-            dst.symlink_to(src)
-            print(f"  ~ symlink        {fname} → {src}")
-        except OSError as e:
-            import shutil
-            shutil.copy2(str(src), str(dst))
-            print(f"  ~ copy (symlink fallback) {fname}")
+    # ── 6. Shared files (USER.md, TOOLS.md): real-file copies (N29) ──────────
+    # A symlink is rejected by the runtime's workspace-root boundary guard; a
+    # real, non-empty file already here is never deleted or overwritten. Role
+    # folders carry no AGENTS.md (U053 disposition, create_role_workspaces.py).
+    sys.path.insert(0, SCRIPT_DIR)
+    from shared_core_copy import ensure_core_copy
+    for fname in ("USER.md", "TOOLS.md"):
+        _r = ensure_core_copy(workspace_root / fname, role_dir / fname)
+        print(f"  ~ {_r:7s}        {fname}")
 
 # ─── 7. Insert agent row in CC DB ────────────────────────────────────────────
 agent_status = "skipped_no_db"

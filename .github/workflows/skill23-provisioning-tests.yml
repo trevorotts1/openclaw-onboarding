@@ -135,11 +135,19 @@ on:
     branches: [main]
     paths:
       - "23-ai-workforce-blueprint/**"
+      - "shared-utils/create-role-workspaces.py"
+      - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "32-command-center-setup/scripts/scaffold-agent-files.sh"
+      - "tests/unit/test_skill23_build_nondestructive.py"
       - ".github/workflows/skill23-provisioning-tests.yml"
   pull_request:
     branches: [main]
     paths:
       - "23-ai-workforce-blueprint/**"
+      - "shared-utils/create-role-workspaces.py"
+      - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "32-command-center-setup/scripts/scaffold-agent-files.sh"
+      - "tests/unit/test_skill23_build_nondestructive.py"
       - ".github/workflows/skill23-provisioning-tests.yml"
 
 jobs:
@@ -201,3 +209,25 @@ jobs:
             echo "ONE OR MORE SKILL-23 PROVISIONING SUITES FAILED" >&2
           fi
           exit "$rc"
+
+      # Non-destructive build on a box that already has departments + agents:
+      # real core files kept byte-identical (never symlinked, N29), existing
+      # agents' models untouched, agents.entries boxes never get a duplicate.
+      - name: Set up Node (for the pinned OpenClaw schema validator)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # The post-build openclaw.json is checked by the real `openclaw config
+      # validate`, pinned to a fleet release (--ignore-scripts: only the CLI's
+      # schema validator is used; nothing is started).
+      - name: Install OpenClaw CLI (config validate only)
+        run: npm install -g --no-audit --no-fund --ignore-scripts openclaw@2026.9.4
+
+      - name: Non-destructive build on an existing box
+        env:
+          REQUIRE_OPENCLAW_VALIDATE: "1"
+        run: |
+          openclaw --version
+          python3 tests/unit/test_skill23_build_nondestructive.py
+          (cd 23-ai-workforce-blueprint/scripts && python3 test_role_workspace_symlinks.py)

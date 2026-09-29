@@ -2,7 +2,8 @@
 # scaffold-agent-files.sh — write per-agent core files for a single top-level agent.
 #
 # Trevor's agent-file architecture (locked 2026-05-24):
-#   - SHARED files (one copy at workspace root, every agent symlinks to them):
+#   - SHARED files (canonical at workspace root, every agent holds a REAL-FILE
+#     COPY -- N29; a symlink is rejected by the runtime boundary guard):
 #       USER.md, AGENTS.md, TOOLS.md
 #   - PER-AGENT files (one copy per agent, in its workspace folder):
 #       IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md
@@ -14,10 +15,9 @@
 #   1. Create the agent's workspace folder if it doesn't exist
 #   2. Write IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md as lightweight stubs
 #      if they don't already exist (idempotent — never overwrites curated content)
-#   3. Create/refresh symlinks for USER.md, AGENTS.md, TOOLS.md pointing at the
-#      shared workspace root. If a file (not a symlink) already exists with the
-#      same name, leave it alone and log a warning — operator decides whether
-#      to convert it.
+#   3. Place USER.md, AGENTS.md, TOOLS.md as real-file copies of the shared
+#      workspace root. A real, non-empty file already there is left alone; a
+#      symlink is migrated to a real copy.
 #   4. Verify the shared files exist at the workspace root. Warn loudly if not.
 #
 # This script is meant to be invoked from:
@@ -57,8 +57,8 @@
 #   - Re-running with the same args is a no-op (prints "= already exists")
 #   - Never overwrites a per-agent file that has content the operator/agent
 #     may have edited
-#   - Symlinks: if the symlink already points at the right target, no change.
-#     If a regular file exists with that name, leave it and warn.
+#   - Shared files: a real, non-empty file is never touched; only missing,
+#     empty or symlinked ones are (re)copied.
 
 set -euo pipefail
 
@@ -231,7 +231,7 @@ fi
 # ─── Verify shared root exists ───────────────────────────────────────────────
 if [[ ! -d "$SHARED_ROOT" ]]; then
   echo "[scaffold-agent-files] WARN: shared root $SHARED_ROOT does not exist" >&2
-  echo "[scaffold-agent-files] WARN: USER.md / AGENTS.md / TOOLS.md symlinks will dangle" >&2
+  echo "[scaffold-agent-files] WARN: USER.md / AGENTS.md / TOOLS.md cannot be copied until it exists" >&2
 fi
 
 # ─── Helper: write a file only if it doesn't exist (or --force) ─────────────
@@ -273,9 +273,9 @@ department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 - I back up \`${OC_ROOT}/openclaw.json\` before any config change.
 - I follow the Teach Yourself Protocol (TYP) for substantial new knowledge.
 - I investigate root cause before fixing. I never claim done without verifying.
-- I use the symlinked TOOLS.md to know what tools are available.
-- I use the symlinked AGENTS.md to know how to behave and who to escalate to.
-- I use the symlinked USER.md to know who I work for and how they communicate.
+- I use the shared TOOLS.md to know what tools are available.
+- I use the shared AGENTS.md to know how to behave and who to escalate to.
+- I use the shared USER.md to know who I work for and how they communicate.
 
 ## Persona Governance
 
@@ -332,7 +332,7 @@ a standard high enough to deserve the trust of the human owner.
 
 ## Voice
 
-Mirror the owner's communication style (see symlinked USER.md > Behavioral
+Mirror the owner's communication style (see shared USER.md > Behavioral
 Identity Profile). Plain, direct, no jargon unless the task domain requires it.
 
 ## Values
@@ -361,7 +361,7 @@ Dept: ${DEPARTMENT}
 ## On startup
 
 1. Read SOUL.md for the department mission
-2. Read inherited AGENTS.md, TOOLS.md, USER.md (via symlinks)
+2. Read inherited AGENTS.md, TOOLS.md, USER.md (shared copies)
 3. Check for assigned persona (if any)
 4. Read latest entries in MEMORY.md
 
@@ -378,48 +378,32 @@ write_if_missing "$WORKSPACE_DIR/SOUL.md"      "$SOUL_CONTENT"
 write_if_missing "$WORKSPACE_DIR/MEMORY.md"    "$MEMORY_CONTENT"
 write_if_missing "$WORKSPACE_DIR/HEARTBEAT.md" "$HEARTBEAT_CONTENT"
 
-# ─── Symlink shared files ───────────────────────────────────────────────────
-# We compute the relative path from the agent's workspace to the shared root so
-# symlinks remain valid if the install is mounted at a different prefix.
-relpath() {
-  python3 -c "import os, sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))" "$1" "$2"
-}
-
+# ─── Shared files: real-file copies (N29, amended 2026-07-31) ───────────────
+# NOT symlinks: the runtime's workspace-root boundary guard rejects a symlink
+# that resolves outside the agent's own workspace and injects a ~107-char stub,
+# so the agent silently runs with no instructions. A real, non-empty file is
+# NEVER deleted or overwritten here -- update-skills.sh link_shared_core_files()
+# refreshes it with backup + content preservation on every roll. A symlink is
+# migrated to a real copy. A missing/empty canonical leaves the file as-is.
 for shared in USER.md AGENTS.md TOOLS.md; do
-  link_path="$WORKSPACE_DIR/$shared"
-  target_path="$SHARED_ROOT/$shared"
+  dest="$WORKSPACE_DIR/$shared"
+  src="$SHARED_ROOT/$shared"
 
-  # Verify the target exists (warn if not — symlinks would dangle but we still create them
-  # so the architecture is in place when the shared file lands)
-  if [[ ! -f "$target_path" ]]; then
-    echo "  ! WARN: shared $shared not found at $target_path — symlink will dangle until shared file is created"
-  fi
-
-  rel_target=$(relpath "$target_path" "$(dirname "$link_path")")
-
-  if [[ -L "$link_path" ]]; then
-    # Already a symlink — check it points where we want
-    current_target=$(readlink "$link_path")
-    if [[ "$current_target" == "$rel_target" || "$current_target" == "$target_path" ]]; then
-      echo "  = symlink already correct: $shared → $current_target"
-      continue
-    fi
-    # Stale symlink — replace
-    rm "$link_path"
-    ln -s "$rel_target" "$link_path"
-    echo "  ~ replaced stale symlink: $shared → $rel_target"
+  if [[ ! -L "$dest" && -f "$dest" && -s "$dest" ]]; then
+    echo "  = kept real file: $shared"
     continue
   fi
-
-  if [[ -e "$link_path" ]]; then
-    # Regular file with this name — DON'T overwrite. Operator decides.
-    echo "  ! WARN: $shared exists as a regular file (not symlink) at $link_path — leaving as-is" >&2
-    echo "  !       to convert: rm '$link_path' && ln -s '$rel_target' '$link_path'" >&2
+  if [[ ! -s "$src" ]]; then
+    echo "  ! WARN: shared $shared missing or empty at $src -- left $dest as-is" >&2
     continue
   fi
-
-  ln -s "$rel_target" "$link_path"
-  echo "  + symlinked: $shared → $rel_target"
+  tmp="$WORKSPACE_DIR/.$shared.tmp-core-$$"
+  if cp "$src" "$tmp" && mv -f "$tmp" "$dest"; then
+    echo "  + copied: $shared (real file, N29)"
+  else
+    rm -f "$tmp"
+    echo "  ! WARN: could not copy $shared into $WORKSPACE_DIR" >&2
+  fi
 done
 
 echo "[scaffold-agent-files] done: $AGENT_SLUG"

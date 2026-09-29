@@ -21,9 +21,9 @@ Per-role workspace layout:
     ├── MEMORY.md           (unique, starts empty)
     ├── HEARTBEAT.md        (unique)
     ├── how-to.md           (from library if available, else stub)
-    ├── AGENTS.md → workspace_root/AGENTS.md   (symlink)
-    ├── TOOLS.md  → workspace_root/TOOLS.md    (symlink)
-    └── USER.md   → workspace_root/USER.md     (symlink)
+    ├── TOOLS.md            (real-file copy of workspace_root/TOOLS.md, N29)
+    └── USER.md             (real-file copy of workspace_root/USER.md, N29)
+    (no AGENTS.md in role folders -- U053 disposition)
 
 For master-orchestrator, SOUL.md and IDENTITY.md use the CEO variant of the
 deferral clause (mission/owner override persona on conflict).
@@ -175,6 +175,7 @@ Before dispatching ANY task, in this order:
 """
 
 from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy
+from shared_core_copy import ensure_core_copy
 CEO_OPERATING_PROTOCOL = _ceo_policy_block()
 
 # ─── STUB GENERATORS (used as fallback when library has no match) ────────────
@@ -1457,21 +1458,9 @@ When a new SOP is added, append a line to the table below.
             encoding="utf-8",
         )
 
-    # Symlinks for shared files
-    for shared in ["AGENTS.md", "TOOLS.md", "USER.md"]:
-        link_path = role_path / shared
-        target = Path(workspace_root) / shared
-        try:
-            if link_path.exists() or link_path.is_symlink():
-                link_path.unlink()
-            link_path.symlink_to(target)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared} in {role_path}: {e}",
-                  file=sys.stderr)
-            link_path.write_text(
-                f"# {shared} — see workspace root\n\n"
-                f"Symlink to {target} failed. Re-run create_role_workspaces.py "
-                f"with appropriate permissions.\n")
+    # Shared files: real-file copies (N29), same set and same rule as the augment
+    # path below -- role folders carry TOOLS.md + USER.md, never AGENTS.md (U053).
+    _link_shared_files_only(role_path, workspace_root)
 
     return role_path
 
@@ -1618,11 +1607,16 @@ def _unify_backup(path):
 
 def _link_shared_files_only(role_path, workspace_root):
     """
-    U054: link shared files in a container that is correctly excluded from
-    role augmentation (SKIP_NAMES — sops/, roles/, scripts/) but may still
-    hold stale regular copies of TOOLS.md/USER.md.  Never writes stubs or
+    Place TOOLS.md / USER.md in a role folder or a SKIP_NAMES container as
+    REAL-FILE copies of the workspace root (N29). A symlink -- rejected by the
+    runtime's workspace-root boundary guard -- is migrated to a real copy; a
+    real, non-empty file is never deleted or overwritten (the updater's
+    link_shared_core_files() refreshes it with backup). Never writes stubs or
     touches AGENTS.md (AGENTS.md is deleted by the caller per U053's
     disposition).
+
+    Keys kept for callers: "symlinked" lists files newly placed (now copies),
+    "converted" lists symlinks migrated to real copies.
     """
     role_path = Path(role_path)
     workspace_root = Path(workspace_root)
@@ -1630,29 +1624,11 @@ def _link_shared_files_only(role_path, workspace_root):
     converted = []
     for shared in V21_SYMLINKS:
         link_path = role_path / shared
-        target = workspace_root / shared
-        if link_path.is_symlink():
-            if link_path.resolve() == target.resolve():
-                continue                      # already correct
-            link_path.unlink()                # wrong target: relink
-        elif link_path.exists():
-            # Only back up content the symlink target does not already hold.
-            try:
-                if target.is_file() and filecmp.cmp(str(link_path), str(target),
-                                                    shallow=False):
-                    link_path.unlink()
-                else:
-                    _unify_backup(link_path)
-            except OSError as e:
-                print(f"  WARN: could not back up {shared} before converting: {e}",
-                      file=sys.stderr)
-                continue
-            converted.append(shared)
-        try:
-            link_path.symlink_to(target)
+        was_link = link_path.is_symlink()
+        if ensure_core_copy(workspace_root / shared, link_path) == "copied":
             symlinked.append(shared)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
+            if was_link:
+                converted.append(shared)
     return {"symlinked": symlinked, "converted": converted}
 
 def _is_sops_library_dir(path):

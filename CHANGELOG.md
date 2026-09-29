@@ -22,6 +22,79 @@ The fleet roll runner is untouched: the current roll keeps one persistent clone 
 ### #1341 — fix(tests): eight unit tests stop leaking temp files into $TMPDIR
 
 (This pull request carried no CHANGELOG entry of its own.)
+## [v25.2.6]  -  2026-09-28  -  Skill 23: the build no longer breaks a box that already has departments and agents
+
+### Why
+Running the Skill 23 build on a client box that already had departments and agents broke it:
+- `build-workforce.py` `create_department_workspace()` deleted each department's real `AGENTS.md`,
+  `TOOLS.md` and `USER.md` and replaced them with symlinks to the workspace root. The runtime's
+  workspace-root boundary guard rejects those symlinks and injects a ~107-char stub, so every
+  department agent silently ran with no instructions (N29, amended 2026-07-31).
+- The role-folder writers (`create_role_workspaces.py`, `add-role.sh`,
+  `shared-utils/create-role-workspaces.py`) and Skill 32's `scaffold-agent-files.sh` (run by
+  `materialize-dept-agents.sh`) created the same symlinks, and the role-folder augment pass turned
+  real `TOOLS.md` / `USER.md` files back into symlinks.
+- A department already registered under a key other than `dept-<slug>` got a second registration
+  from both `add_agent_to_config()` and `materialize-dept-agents.sh`, the build's copy carrying a
+  build-resolved model beside the owner's.
+- On an `agents.entries` box, `add_agent_to_config()` dropped the box's own `agents.list` key and
+  stripped fields from entries it did not change.
+
+### What changed
+- `23-ai-workforce-blueprint/scripts/shared_core_copy.py` (new; lives in the Skill 23 scripts tree so it
+  travels with every delivered layout, flattened `.scripts` included): `ensure_core_copy()` places a shared core file as a real
+  copy. It keeps a real, non-empty file byte-identical, migrates a symlink to a real copy, and is
+  fail-open (an unreadable or empty canonical leaves the file as it was). Refreshing an existing
+  real file is still the job of `link_shared_core_files()` in `update-skills.sh` / `install.sh`.
+- `create_department_workspace()`, `create_role_workspaces.py` (`create_role_workspace()` and
+  `_link_shared_files_only()`), `add-role.sh`, `shared-utils/create-role-workspaces.py` and
+  `32-command-center-setup/scripts/scaffold-agent-files.sh` all write real copies and never symlink.
+  Role folders carry `TOOLS.md` + `USER.md` only, matching the existing U053 disposition, so a new
+  role no longer gets an `AGENTS.md` that the next augment pass deletes.
+- `add_agent_to_config()` and `materialize-dept-agents.sh` treat an agent whose workspace is the
+  department's folder as that department's registration. They add no second entry and leave its
+  model and name alone. The post-build wiring asserts accept it too, so the build does not fall into
+  a materialize "repair" that would add the duplicate.
+- `add_agent_to_config()` on an `agents.entries` box writes unchanged entries back exactly as found
+  and keeps the box's own `agents.list` key. An agent that already exists is never given a model or
+  changed model, and `agents.defaults` is never touched by registration.
+- Tests: `tests/unit/test_skill23_build_nondestructive.py` (new, 13 hermetic tests, 11 of which fail
+  on the previous main) covers real core files kept byte-identical across two build runs, symlinks
+  migrated, role folders, `scaffold-agent-files.sh`, existing models untouched in both schemas,
+  registration under another key, a second-run no-op on an `agents.entries` box, and an end-to-end
+  `materialize-dept-agents.sh` run. `test_role_workspace_symlinks.py` was updated to the N29
+  contract. Both now run in `skill23-provisioning-tests.yml`.
+- A NEW department agent gets no `model` key and no `subagents.model`: it inherits `agents.defaults`.
+  The build used to write a resolved primary plus hardcoded fallbacks
+  (`openrouter/moonshotai/kimi-k2.6`, `ollama/deepseek-v4-pro:cloud`,
+  `openrouter/deepseek/deepseek-v4-pro`). Those were not on client allowlists, and a bare `ollama/`
+  id hits the provider-namespace trap on boxes that register the provider as `ollama-cloud`.
+  `resolve_dept_agent_model()` now feeds only the Command Center `dept-default-models.json` artifact.
+- The non-interactive build no longer writes `agents.defaults.tools.allow=["*"]`. OpenClaw 2026.6.8
+  and later rejects any `agents.defaults.tools` key (`agents.defaults: Unrecognized key "tools"`),
+  so the next gateway restart failed. `scripts/apply-fleet-standards.sh` still owns that baseline
+  in its schema-valid form.
+- When registration turns a single-agent `agents.entries` roster into a multi-agent one,
+  `add_agent_to_config()` sets `agents.ownership="explicit"` (only if absent and no entry is marked
+  `default`). Without it the config fails validation. This is the same rule
+  `materialize-dept-agents.sh` already applies.
+- The build hands `create_role_workspace()` the workspace root, not the company root, so role
+  folders copy the canonical `TOOLS.md` / `USER.md`. Previously they got dangling symlinks into the
+  company tree.
+- `materialize-dept-agents.sh` no longer re-points an agent whose current workspace still exists.
+  It scans the master-files company tree first, as the most authoritative root. A rebuild that
+  wrote a second, sparse company tree there moved every department agent into it, and a workforce
+  that had passed its audit came back with a failed zero-human check. An existing agent now keeps
+  its workspace, and the scaffold manifest follows it. Only an entry whose workspace is gone is
+  re-pointed.
+- `tests/unit/test_skill23_build_nondestructive.py` now has 14 tests (12 fail on the previous
+  main). The new materialize test sets up a complete live tree plus a sparse rebuild tree. It
+  asserts the live agents stay put, and its control asserts that an entry with a deleted
+  workspace is re-pointed. The other additions are: new agents carry no model and `agents.defaults` is unchanged; a source guard
+  that the build never writes into `agents.defaults`; and the post-build config passes the real
+  `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
+  control proving the validator rejects the old key.
+- Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
 
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
