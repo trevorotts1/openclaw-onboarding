@@ -250,15 +250,16 @@ def declared_packs_from_core_answers(core_answers, nm):
         if not isinstance(pack, dict):
             continue
         hits = []
+        variants = pack.get("auto_add_keyword_variants") or {}
         for kw in pack.get("auto_add_keywords", []) or []:
             k = str(kw).strip().lower()
             if not k:
                 continue
-            if " " in k:
-                if k in haystack:
+            # The keyword or one of its listed inflected forms ("coaching" for "coach").
+            for form in [k] + [str(v).strip().lower() for v in variants.get(kw) or [] if str(v).strip()]:
+                if (form in haystack) if " " in form else re.search(r"\b" + re.escape(form) + r"\b", haystack):
                     hits.append(kw)
-            elif re.search(r"\b" + re.escape(k) + r"\b", haystack):
-                hits.append(kw)
+                    break
         if hits:
             declared[pack_id] = hits
     return declared
@@ -282,8 +283,25 @@ def declared_packs_from_build_state(build_state):
     out = {}
     for entry in detected:
         if isinstance(entry, dict) and entry.get("pack"):
+            if entry.get("source") == "operator-directive" and not all(
+                    str(entry.get(k) or "").strip() for k in OPERATOR_PROVENANCE_KEYS):
+                continue   # an operator declaration counts only with who / when / why
             out[entry["pack"]] = entry.get("matchedKeywords", [])
     return out, "build-state.verticalPacks.detectedPacks"
+
+
+# An operator-directed declaration (record-vertical-pack.py) must say who made
+# it, when, and why; one missing any of these declares nothing.
+OPERATOR_PROVENANCE_KEYS = ("by", "at", "reason")
+
+
+def operator_declarations(build_state):
+    """The detectedPacks entries recorded by an operator directive (not derived
+    from the interview), so every run can print them."""
+    vp = (build_state or {}).get("verticalPacks")
+    detected = vp.get("detectedPacks") if isinstance(vp, dict) else None
+    return [e for e in (detected if isinstance(detected, list) else [])
+            if isinstance(e, dict) and e.get("source") == "operator-directive"]
 
 
 def _slug_norm(s):
@@ -625,6 +643,17 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
             "MISSING and must be restored; it is not a pass."
         )
 
+    operator = operator_declarations(build_state or {}) if declared_from_state is not None else []
+    for e in operator:
+        if e.get("pack") in declared:
+            warnings.append(
+                f"OPERATOR_DECLARATION: pack '{e['pack']}' was declared by operator directive, not "
+                f"derived from the interview -- by {e['by']} on {e['at']}: {e['reason']}")
+        else:
+            warnings.append(
+                f"OPERATOR_DECLARATION_IGNORED: a detectedPacks entry for '{e.get('pack')}' has "
+                f"source operator-directive but no complete by/at/reason -- it declares nothing")
+
     provisioned = provisioned_vertical_departments(dd, dept_idx)
     violations = []
     grandfathered = []
@@ -678,6 +707,7 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
         "departmentsDir": str(dd),
         "declaredSource": declared_source,
         "declaredVerticals": [{"pack": k, "matchedKeywords": v} for k, v in sorted(declared.items())],
+        "operatorDeclarations": operator,
         "provisionedVerticalDepartments": provisioned,
         "violations": violations,
         "grandfatheredDepartments": grandfathered,
