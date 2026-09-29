@@ -8,8 +8,8 @@ restate any of the numbers below. If a number ever needs to change, it changes i
 
 Every claim below was verified against the code in this worktree on 2026-08-19 (**Unit COUNTS-R2,
 RUN 2** — Wave C raised the manifest's declared phase count since RUN 1's draft of this document), not
-copied from prose, and not copied from `CONTROL/MASTER-WORK-ORDER-20260818.md` or
-`CONTROL/FABLE-TRUTH.md`. The declared phase count is **never restated as a bare literal in this
+copied from prose (the `CONTROL/` work-order documents named in earlier
+drafts are not in this repo). The declared phase count is **never restated as a bare literal in this
 document's prose** — it is read mechanically from `len(phases[])` in `PIPELINE-MANIFEST.json` (the
 generated line in §2.40 quotes the live count and names its source; GATE 4 of
 `scripts/ci/presentations-drift-gates.sh` fails CI if that line drifts from the manifest). Where a
@@ -403,15 +403,14 @@ phase could previously run before intake ever completed.
 ## 3. VERIFICATION METHOD
 
 Every number in this document was checked directly against the code in this worktree on 2026-08-19
-(Unit COUNTS-R2, RUN 2), not taken on the authority of `CONTROL/FABLE-TRUTH.md`,
-`CONTROL/MASTER-WORK-ORDER-20260818.md`, or any prose document — including this unit's own dispatch
+(Unit COUNTS-R2, RUN 2), not taken on the authority of any prose document — including this unit's own dispatch
 brief, which explicitly instructed "whatever the code says is the truth." Method used per number: load
 the JSON/Python source, execute or grep the actual defining symbol, and, for every executed-count cell
 in §2's matrix, cross-check TWO independent computations (a standalone re-implementation of the filter
 logic against the raw manifest, AND a direct call into the real `run_signature_deck._client_visible_phases()`
 against real `intake.json` fixtures) rather than trusting either alone.
 
-**Where this document disagrees with `CONTROL/MASTER-WORK-ORDER-20260818.md` / `FABLE-TRUTH.md`:**
+**Where this document disagrees with the (not-in-repo) CONTROL work-order documents:**
 those documents predate Wave C and describe the pre-Wave-C world (the 36-phase era, upsell branch 0%
 wired) — not a disagreement, a timeline difference. Where this document disagrees with the RUN 2
 dispatch brief's own prose: **none found** — the brief's instruction to "derive mechanically, don't copy

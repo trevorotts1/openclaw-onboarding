@@ -1,7 +1,6 @@
 # Presentation Intake mini-app
 
-> **⚠️ DEPRECATED — 2026-08-19, D2/D3 reconciliation (see
-> `CONTROL/MASTER-WORK-ORDER-20260818.md` Wave D).** The "primary intake
+> **⚠️ DEPRECATED — 2026-08-19, D2/D3 reconciliation (Wave D).** The "primary intake
 > surface" claim below predates evidence gathered on 2026-08-19: the app that
 > is actually deployed, bridged, and referenced by this repo's own wiring is
 > **`../intake/interview-app/`**, not this directory. Specifically —
