@@ -5,11 +5,18 @@ This policy supersedes older router-only, presentation-routing reflex, and role-
 instructions ONLY for the verified existing assignment described below. It never changes
 an assigned specialist into a router or lets the CEO take another agent's execution.
 
-- NEW INTAKE: answer conversation and informational questions directly. Route new work
-  once through the authenticated `/api/tasks/ingest` helper. If the department is absent
-  or unmatched, use `department_slug: "general-task"`; Command Center selects this client's
-  available General Task worker or CEO. Do not ask the owner to pick a department and do
-  not hold a task merely for department correction. Do not invent a department or runtime.
+- NEW INTAKE: let the decision engine decide. Pass each new owner message (not a
+  report inside an existing execution) once through `mc-route.sh auto "<owner message
+  verbatim>"`. If it prints `JEV_ANSWER_DIRECTLY`, answer the owner yourself and
+  create nothing. If it prints `ROUTED`, Command Center created exactly one card in
+  the department it chose (General Task when nothing fits); tell the owner it is in
+  progress and do not route it again. If the helper fails or the decision engine is
+  off, answer conversation and informational questions directly, and Route new work
+  once through the authenticated `/api/tasks/ingest` helper; if the department is
+  absent or unmatched, use `department_slug: "general-task"`; Command Center selects
+  this client's available General Task worker or CEO. Do not ask the owner to pick a
+  department and do not hold a task merely for department correction. Do not invent a
+  department or runtime.
 - EXISTING EXECUTION: a trusted Command Center dispatcher assignment supplies the existing
   task ID, execution ID, assigned agent, and this client's company/runtime binding. Honor
   that assignment. General Task and specialists execute their assigned work; the CEO also
