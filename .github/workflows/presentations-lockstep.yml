@@ -23,38 +23,27 @@ on:
   pull_request:
     branches: [main]
     paths:
-      # Canonical renderer — any checker add/rename/delete changes the lockstep
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
-      # Process-gate unit tests — run alongside sync_check so a gate regression fails CI
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight.py"
+      # Presentation engine scripts -- the WHOLE scripts dir, not a hand-kept
+      # file list. Any checker add/rename/delete changes the lockstep surface.
+      # (Fix 51: the old per-file list missed sync_check.py, run_signature_deck.py,
+      # CANONICAL-RENDERER-PIN.sha256, runner_gate_integrity_check.py, prove-deck.py,
+      # cc_board.py, STANDARD-presenter-speech-layout.pdf, presenters_speech_pdf.py.)
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/**"
+      # This workflow itself -- a paths change that does not trigger the job is silent
+      - ".github/workflows/presentations-lockstep.yml"
       # Manifest (phases / autofails / roles / deliverables_required)
       - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
-      # Section-5 AF registry — adding a row here without updating the manifest breaks sync
+      # Section-5 AF registry -- adding a row here without updating the manifest breaks sync
       - "universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md"
-      # Presentation role-library files — adding/removing a role changes the roster
+      # Presentation role-library files -- adding/removing a role changes the roster
       - "23-ai-workforce-blueprint/templates/role-library/presentations/*.md"
-      # Presentation SOP files — adding/removing an SOP changes the SOP file set
+      # Presentation SOP files -- adding/removing an SOP changes the SOP file set
       - "23-ai-workforce-blueprint/templates/role-library/presentations/sops/*.md"
       # Universal-SOPs cluster also ships the manifest/ruleset (kept in sync with above)
       - "universal-sops/presentation-slide-craft/*.md"
       - "universal-sops/presentation-slide-craft/*.json"
-      # Guard A — declared==enforced==tested gate-integrity check
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/gate_integrity_check.py"
-      # Guard B (purity) — the RunFacts-pure AST lint reads this source directly
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/runfacts.py"
-      # Guard B — retired-doctrine residual lint + its pattern registry
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/doctrine_residual_check.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/retired-doctrine-patterns.json"
-      # Shared image-prompt gate — the ONE gate every image-API path imports + its prover
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prove_pres_prompt_floor.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py"
       # Skill 51 (Signature Presentation) self-verification gate
       - "51-signature-presentation/**"
-      # Board tests -- contract-CC integration unit tests (U004)
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_cc_board.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_cc_contract.py"
-
 jobs:
   presentations-lockstep:
     name: Presentations SOP/manifest/code lockstep (sync_check)
