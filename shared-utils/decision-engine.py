@@ -108,25 +108,19 @@ _GREETING_PHRASES = frozenset(
     }
 )
 
-# Words that lead a clause but are never themselves an imperative task verb
-# (pronouns/articles, wh-words, aux-words, and the answer-lead verbs), used
-# only to decide whether a clause OPENS with a task instruction (rule b).
-_NON_TASK_LEAD_WORDS = frozenset(
-    {
-        "i", "you", "he", "she", "it", "we", "they",
-        "the", "a", "an", "this", "that", "these", "those",
-        "what", "why", "how", "when", "where", "who", "which",
-        "is", "are", "does", "do", "did", "should", "will", "would", "has", "have",
-        "can", "could",
-        "explain", "tell", "describe", "clarify",
-        "thanks", "thank", "hi", "hello", "hey", "ok", "okay", "good", "great",
-        "cool", "got",
-    }
+# Explicit imperative task verbs. A clause OPENS with a task instruction
+# (rule b) only when its lead word is one of these -- a whitelist, not "any
+# word that isn't on a non-task list" (that inverted check is what let a
+# throwaway lead like "quick"/"hmm"/"ok" masquerade as a task verb).
+_TASK_VERBS = frozenset(
+    "fix build create make draft write send schedule update add remove "
+    "book call email post publish design research prepare review file pay "
+    "invoice order deploy launch plan organize clean move change cancel".split()
 )
 
 _QUOTE_SPAN_RE = re.compile(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”")
 _TRAILING_PUNCT_RE = re.compile(r"[.!?,]+$")
-_CLAUSE_SPLIT_RE = re.compile(r"(?<=[.!;])\s+")
+_CLAUSE_SPLIT_RE = re.compile(r"(?<=[.!?;])\s+")
 _WH_LEAD_RE = re.compile(r"^(what|why|how|when|where|who|which)\b")
 _EXPLAIN_LEAD_RE = re.compile(r"^(explain|tell me|describe|clarify)\b")
 _CAN_COULD_WOULD_EXPLAIN_RE = re.compile(
@@ -162,40 +156,49 @@ def _heuristic_intent(text: str) -> str:
     if has_explain_why and _has_task_clause(stripped):
         return "mixed_answer_and_task"
 
-    # c) wh-lead / explain-lead / can-you-explain / aux-lead-ending-in-? ->
-    # answer_only. Checked per clause so a quote-stripped remark like
-    # "the client wrote, ; what does that mean?" still matches on its
-    # trailing question clause -- but only when no EARLIER clause already
-    # opened with a task instruction ("Fix the checkout bug. Who broke
-    # it?" is a task followed by a question, not a question: a task is
-    # never answered-and-forgotten, spec C4).
+    # c/d) scan EVERY clause (split on '.', '!', '?', ';') for a task
+    # instruction and for a wh-lead / explain-lead / can-you-explain /
+    # aux-lead-ending-in-? question, regardless of which comes first --
+    # "Who broke it? Fix the checkout bug." and "Fix the checkout bug. Who
+    # broke it?" both carry a task clause, so neither drops the task (spec
+    # C4: a task is never answered-and-forgotten). Any task clause anywhere
+    # makes the message a task; a question clause alongside it makes that
+    # task 'mixed' rather than pure. A message with no task clause and no
+    # question clause defaults to task_request (spec C2: work is never
+    # silently dropped).
     saw_task_clause = False
+    saw_question_clause = False
     for clause in _CLAUSE_SPLIT_RE.split(stripped):
         clause = clause.strip()
         if not clause:
             continue
-        if not saw_task_clause and (
+        if (
             _WH_LEAD_RE.match(clause)
             or _EXPLAIN_LEAD_RE.match(clause)
             or _CAN_COULD_WOULD_EXPLAIN_RE.match(clause)
             or _AUX_LEAD_QUESTION_RE.match(clause)
         ):
-            return "answer_only"
+            saw_question_clause = True
         if _has_task_clause(clause):
             saw_task_clause = True
 
-    # d) anything else -> task_request (work is never silently dropped).
+    if saw_task_clause:
+        return "mixed_answer_and_task" if saw_question_clause else "task_request"
+    if saw_question_clause:
+        return "answer_only"
     return "task_request"
 
 
 def _has_task_clause(normalized: str) -> bool:
     if re.search(r"\bplease\b", normalized):
         return True
+    if normalized.startswith("set up "):
+        return True
     lead = _LEAD_VERB_RE.match(normalized)
-    if lead and lead.group(1) not in _NON_TASK_LEAD_WORDS:
+    if lead and lead.group(1) in _TASK_VERBS:
         return True
     you_verb = _YOU_VERB_RE.match(normalized)
-    if you_verb and you_verb.group(2) not in ("explain", "tell", "describe", "clarify"):
+    if you_verb and you_verb.group(2) in _TASK_VERBS:
         return True
     return False
 
@@ -252,6 +255,39 @@ def _standard_floor_catalog() -> list[dict]:
     return entries
 
 
+def _domain_boosted_suitability(
+    query_tokens: list[str], catalog_entries: list[dict], suitability: dict[str, float]
+) -> dict[str, float]:
+    """Boost a department whose OWN vocabulary contains a rare query token.
+
+    ``_lexical_rank``'s score is overlap / len(query tokens), so one strong
+    domain keyword ("invoice") drowns in an otherwise generic query ("send
+    ... to the client") and never clears ROUTE_THRESHOLD. Here each query
+    token is weighted by 1/df (df = how many catalog entries' vocabulary
+    contain it), so a token that names exactly one department's domain
+    counts for far more than a token every department shares (or none do --
+    a token in no entry's vocabulary carries no signal and is dropped, so
+    nonsense queries still fall through to general-task).
+    ponytail: document-frequency-over-catalog is the ceiling, not semantic
+    similarity -- the upgrade path is embeddings, not a bigger weight table.
+    """
+    vocab_by_slug = {
+        e["slug"]: set(re.findall(r"[a-z0-9]+", e["text"].lower())) for e in catalog_entries
+    }
+    domain_tokens = {t for t in query_tokens if any(t in v for v in vocab_by_slug.values())}
+    if not domain_tokens:
+        return suitability
+    weights = {t: 1.0 / sum(1 for v in vocab_by_slug.values() if t in v) for t in domain_tokens}
+    total_weight = sum(weights.values())
+    boosted = dict(suitability)
+    for slug, vocab in vocab_by_slug.items():
+        matched_weight = sum(w for t, w in weights.items() if t in vocab)
+        if matched_weight <= 0:
+            continue
+        boosted[slug] = max(boosted.get(slug, 0.0), matched_weight / total_weight)
+    return boosted
+
+
 def _resolve_route_department(
     task: str, department_requested: str | None, catalog_entries: list[dict]
 ) -> tuple[str, float, bool]:
@@ -272,6 +308,7 @@ def _resolve_route_department(
             query,
         )["ranking"]
         suitability = {r["id"]: r["score"] for r in ranking}
+        suitability = _domain_boosted_suitability(query.split(), catalog_entries, suitability)
         pick = _profiles.resolve_department_selection(suitability, threshold=ROUTE_THRESHOLD)
         if pick == _NONE_SUITABLE:
             top_score = ranking[0]["score"] if ranking else 0.0
