@@ -163,6 +163,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 3. Create the working directory tree per PIPELINE-MANIFEST.json produces_artifact paths + director-of-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) BEFORE any other action.
 4. Run Step 0.5 capacity probe. Record the results in capacity_plan.json. If budget will be exceeded, escalate to the operator before proceeding.
 5. Receive the locked working/copy/deck_brief.json from the Brainstorming Buddy (ROLE-17) and run SOP 9.1 Brief Ingest and Validation.
+6. Interview sessions (live interview-app bridge): every new deck request = `intake_bridge.py new` — it mints a fresh `presentation_id` per request. Never reuse an old `presentation_id`; use `resume` to re-mint a lost/expired link and `list` to enumerate sessions.
 
 ### Mid-Run
 

@@ -68,6 +68,8 @@ paths, with an SPA fallback so `/s/<token>` serves `index.html`.
 # generate the payload from the canonical JSONs
 python3 payload/build_questions_payload.py --set standard --run-id RUN123 --out /tmp/payload.json
 
+# DEPRECATED: this mint flow is superseded by the LIVE interview-app bridge
+# (intake/interview-app/bridge/intake_bridge.py) — use `new` / `resume` / `list`.
 # mint a session (INTAKE_ADMIN_TOKEN must be in the box env)
 python3 bridge/intake_bridge.py mint \
   --worker-url https://intake.<FLEET_DOMAIN> \
