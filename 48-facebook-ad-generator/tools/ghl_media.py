@@ -56,6 +56,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -163,6 +164,7 @@ def _send_with_retry(
     *,
     attempts: int = 3,
     backoff: float = 0.5,
+    retry_unsafe: bool = True,
 ) -> Any:
     """Call ``opener(req, timeout)`` with a bounded retry on TRANSIENT failures only.
 
@@ -182,11 +184,16 @@ def _send_with_retry(
         except urllib.error.HTTPError as exc:
             # HTTPError is a URLError subclass: only the transient status set is retried;
             # a real 4xx propagates immediately (no double-upload on a rejected request).
+            if not retry_unsafe and exc.code != 429:
+                raise
             if exc.code not in _RETRY_HTTP_CODES:
                 raise
             last_exc = exc
         except (urllib.error.URLError, OSError) as exc:
             # Transport-level transient (DNS / connection reset / socket timeout).
+            # Fix 32: with retry_unsafe=False a timeout is re-raised immediately.
+            if not retry_unsafe and isinstance(exc, socket.timeout):
+                raise
             last_exc = exc
         if n < attempts:
             time.sleep(backoff * (2 ** (n - 1)))
@@ -403,7 +410,7 @@ def upload_media(
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
     try:
-        resp = _send_with_retry(req, timeout, _opener)
+        resp = _send_with_retry(req, timeout, _opener, retry_unsafe=False)
         code = resp.getcode()
         raw = resp.read()
         if isinstance(raw, bytes):
