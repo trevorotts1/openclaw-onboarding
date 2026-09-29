@@ -539,16 +539,7 @@ On a compressed deck there are fewer archetypes, so the rotation budget is tight
 2. **QC Specialist -- Presentations (ROLE-09)** -- uses the spec as the reference for design-craft auto-fails.
 3. **Director of Presentations (ROLE-01)** -- spawn authority; receives delivery confirmation.
 
-The Director of Presentations is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type typography-architect \
-  --problem-statement "<deck slug, owner name, arc_allocation path, style_block path>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1
-```
+The Director of Presentations is the spawn authority for this role.
 
 *End of typography-architect.md. All 19 sections present and filled.*
 1. Master SOP version increments (especially the canonical hierarchy stack region or the image-position / TEXT_ANCHOR variety criterion).

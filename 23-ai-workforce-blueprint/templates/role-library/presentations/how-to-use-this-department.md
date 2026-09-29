@@ -2,7 +2,7 @@
 
 **Department:** Presentations
 **Department head:** Director of Presentations
-**Folder:** `departments/presentations/`
+**Folder:** `departments/Presentations/`
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 

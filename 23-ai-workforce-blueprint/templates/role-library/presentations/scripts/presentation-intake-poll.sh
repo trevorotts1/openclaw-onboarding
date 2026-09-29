@@ -60,6 +60,39 @@ esac
 export PATH
 
 PROG="presentation-intake-poll.sh"
+# FIX 39: LOG_FILE + log() live here, ABOVE their first use — the
+# _resolve_scripts_dir call below invokes log on failure, and it used
+# to run before either was defined.
+LOG_FILE="${HOME}/Library/Logs/openclaw/presentation-intake-poll.log"
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
+
+# F3 -- ONE LINE PER LINE. This used to be `| tee -a "$LOG_FILE"`, which
+# writes the line to $LOG_FILE *and* to stdout. Under launchd that is a
+# DOUBLE WRITE, because presentation-intake-poll.plist.template sets BOTH
+#   <key>StandardOutPath</key><string><LOG_PATH></string>
+#   <key>StandardErrorPath</key><string><LOG_PATH></string>
+# and install.sh renders <LOG_PATH> as
+#   $HOME/Library/Logs/openclaw/presentation-intake-poll.log
+# -- byte-for-byte the same path as $LOG_FILE above. So every logged line
+# landed in that file twice: once from tee's own append, once from launchd
+# copying our stdout into the same file.
+#
+# WHY IT MATTERS BEYOND TIDINESS: the log is EVIDENCE, and a doubled log
+# doubles every measurement taken from it. The 2026-09-06 outage was counted
+# from this file as 5,948 consecutive AF-NOTIFY-UNCONFIGURED refusals; the
+# true figure was ~2,978 -- the same outage, inflated 2x by this line. A
+# count read off a doubled log is not a small error, it is a wrong number
+# reported with full confidence.
+#
+# `>>` (append) is the fix: the line reaches $LOG_FILE exactly once, from
+# exactly one writer, and launchd's StandardOutPath copy is empty rather
+# than a duplicate. Nothing else in this script writes to stdout on the
+# happy path, so the plist needs no change and no existing log is rotated
+# or rewritten. An interactive run reads the log the same way launchd does:
+#   tail -f ~/Library/Logs/openclaw/presentation-intake-poll.log
+log() {
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [$PROG] $*" >> "$LOG_FILE"
+}
 
 # ---------------------------------------------------------------------------
 # PRES-035 — ONE pipeline interpreter for this whole tick.
@@ -74,9 +107,9 @@ PROG="presentation-intake-poll.sh"
 # behave differently from an interactive run with nothing in the log.
 #
 # Order matters: defined BEFORE _resolve_scripts_dir (helpers below need
-# it), but the LOG_FILE-twins note above still holds — log() is defined
-# further down, so this block reports through its own tick-header lines
-# once log() exists, and stays silent before that.
+# it); log() is defined above (FIX 39 — moved up from below the
+# _resolve_scripts_dir call), so this block's tick-header lines log
+# normally, and the LOG_FILE-twins note above still holds.
 #
 # Precedence: the SCHEDULE's explicit pin wins (rendered by
 # lib-presentation-schedules.sh, validated before render); a NON-BLANK
@@ -117,36 +150,6 @@ _resolve_scripts_dir() {
     return 1
 }
 SCRIPTS_DIR="$(_resolve_scripts_dir)" || { log "cannot resolve scripts dir"; exit 2; }
-LOG_FILE="${HOME}/Library/Logs/openclaw/presentation-intake-poll.log"
-mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
-
-# F3 -- ONE LINE PER LINE. This used to be `| tee -a "$LOG_FILE"`, which
-# writes the line to $LOG_FILE *and* to stdout. Under launchd that is a
-# DOUBLE WRITE, because presentation-intake-poll.plist.template sets BOTH
-#   <key>StandardOutPath</key><string><LOG_PATH></string>
-#   <key>StandardErrorPath</key><string><LOG_PATH></string>
-# and install.sh renders <LOG_PATH> as
-#   $HOME/Library/Logs/openclaw/presentation-intake-poll.log
-# -- byte-for-byte the same path as $LOG_FILE above. So every logged line
-# landed in that file twice: once from tee's own append, once from launchd
-# copying our stdout into the same file.
-#
-# WHY IT MATTERS BEYOND TIDINESS: the log is EVIDENCE, and a doubled log
-# doubles every measurement taken from it. The 2026-09-06 outage was counted
-# from this file as 5,948 consecutive AF-NOTIFY-UNCONFIGURED refusals; the
-# true figure was ~2,978 -- the same outage, inflated 2x by this line. A
-# count read off a doubled log is not a small error, it is a wrong number
-# reported with full confidence.
-#
-# `>>` (append) is the fix: the line reaches $LOG_FILE exactly once, from
-# exactly one writer, and launchd's StandardOutPath copy is empty rather
-# than a duplicate. Nothing else in this script writes to stdout on the
-# happy path, so the plist needs no change and no existing log is rotated
-# or rewritten. An interactive run reads the log the same way launchd does:
-#   tail -f ~/Library/Logs/openclaw/presentation-intake-poll.log
-log() {
-    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') [$PROG] $*" >> "$LOG_FILE"
-}
 
 # ---------------------------------------------------------------------------
 # ENV STORE -- launchd/cron hands this script essentially NO environment.

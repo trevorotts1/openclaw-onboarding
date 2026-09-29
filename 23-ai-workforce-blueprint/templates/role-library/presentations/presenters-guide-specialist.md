@@ -540,16 +540,7 @@ Group slide blocks under section banners and add a one-page section summary at t
 2. **Director of Presentations (ROLE-01)** -- spawn authority; receives completion.
 3. **Presenter's Speech Writer (ROLE-20) and Presenter Coach (ROLE-14)** -- share the source notes; the Guide (points) complements the Speech and talk track (words).
 
-The Director of Presentations is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type presenters-guide-specialist \
-  --problem-statement "<deck slug, owner name, slides_copy path, delivery destination>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1
-```
+The Director of Presentations is the spawn authority for this role.
 
 *End of presenters-guide-specialist.md. All 19 sections present and filled.*
 1. Master SOP version increments (close, delivery, or presenter-prep regions).

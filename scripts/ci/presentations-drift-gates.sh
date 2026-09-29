@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# FIX 45: CI COPY of presentations-drift-gates.sh (scripts/ci/) -- the two same-named canonical-entry copies (Fix 53) live at 23-ai-workforce-blueprint/scripts/ and 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/. Do not rename any of them.
 # scripts/ci/presentations-drift-gates.sh
 #
 # Four CI drift gates for the presentation pipeline. The first three were added

@@ -10,12 +10,6 @@
       "required": true
     },
     {
-      "name": "kie-images-per-batch",
-      "description": "Kie.ai image batch size (images per 10-second window). Governs rate limiting for the Slide Submitter role.",
-      "cfg_key": "env.vars.KIE_IMAGES_PER_BATCH",
-      "required": false
-    },
-    {
       "name": "ghl-api-key",
       "description": "GoHighLevel LOCATION Private Integration Token (PIT) used by the Media Librarian + Delivery Concierge to upload slide PNGs and the final deliverables to the GHL media library via POST services.leadconnectorhq.com/medias/upload-file. MUST be the LOCATION token, NOT an agency token (the agency PIT returns 401 for media ops). The upload tool (ghl_media.py) reads GOHIGHLEVEL_API_KEY first, then the legacy alias GHL_API_KEY; verify-wiring accepts either.",
       "cfg_key": "env.vars.GOHIGHLEVEL_API_KEY",
@@ -39,12 +33,6 @@
       "cfg_key": "commandCenter.departmentsJsonPath",
       "assert_contains_dept": true,
       "required": true
-    },
-    {
-      "name": "delivery-destination-drive",
-      "description": "Google Drive folder ID where the Delivery Concierge deposits the final PPTX/PDF deliverable.",
-      "cfg_key": "env.vars.GOOGLE_DRIVE_DELIVERY_FOLDER_ID",
-      "required": false
     },
     {
       "name": "command-center-api",

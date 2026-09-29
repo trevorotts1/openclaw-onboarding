@@ -598,16 +598,7 @@ When the brief sets WANT_AUDIO_DEMO, your finished speech is the source script f
 3. **Presenter Coach (ROLE-14)** -- uses the script as the basis for the timed talk track and rehearsal gate.
 4. **Director of Presentations (ROLE-01)** -- spawn authority; completion.
 
-The Director of Presentations is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type presenters-speech-writer \
-  --problem-statement "<deck slug, owner name, slides_copy path, DURATION_MIN, voice tools available>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1
-```
+The Director of Presentations is the spawn authority for this role.
 
 *End of presenters-speech-writer.md. All 19 sections present and filled.*
 1. Master SOP version increments (close, hook doctrine, slide-is-not-the-script).

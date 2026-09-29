@@ -492,6 +492,11 @@ def _upload_one_with_retries(local_path: str, location_id: str, name: str, pit: 
                 raise
             if attempt >= max_attempts:
                 raise
+            # FIX 46 (V3): exponential backoff before each retry, capped at
+            # 30s -- the old code retried with no delay. Local import matches
+            # this file's convention; the Kie waits elsewhere are untouched.
+            import time as _t46
+            _t46.sleep(min(30, 2 ** attempt))
     assert last is not None
     raise last
 

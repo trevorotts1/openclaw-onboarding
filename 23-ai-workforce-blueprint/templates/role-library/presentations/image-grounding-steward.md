@@ -448,12 +448,6 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 7. A Devil's Advocate challenge specific to this role (imagery grounding, pain visibility, generic-but-plausible) is accepted 3 or more times in 90 days.
 8. The owner or Director explicitly requests a revision.
 
-When triggered, the Director runs:
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/revise-how-to.py --role image-grounding-steward
-```
-which spawns a sub-agent to update this file with the relevant changes.
-
 ---
 
 ## 19. Sub-Specialists and Department Context
