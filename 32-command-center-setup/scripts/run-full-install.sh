@@ -994,6 +994,30 @@ cc_write_env_local() {
   fi
   log "INFO" "cc-env: OPENCLAW_PLATFORM ${plat_status}"
 
+  # ---- (7) OPENCLAW_OWNER_CHAT_ID — the owner's own record, never allowFrom order ----
+  # The Command Center resolves the owner ONLY from an explicit record (it once
+  # guessed allowFrom[0] and sent a client's stop-cards to her spouse). Carry
+  # the box's record into .env.local: the env, openclaw.json env.vars,
+  # secrets/.env, then the build state's ownerChat. No record -> nothing written.
+  local own_status own_id
+  own_id="${OPENCLAW_OWNER_CHAT_ID:-}"
+  if [[ -z "$own_id" && -f "$OC_CONFIG" ]] && command -v jq >/dev/null 2>&1; then
+    own_id="$(jq -r '.env.vars.OPENCLAW_OWNER_CHAT_ID // empty' "$OC_CONFIG" 2>/dev/null)"
+  fi
+  [[ -z "$own_id" ]] && own_id="$(cc_env_get "$OC_ROOT/secrets/.env" OPENCLAW_OWNER_CHAT_ID 2>/dev/null || true)"
+  if [[ -z "$own_id" && -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    own_id="$(jq -r '.ownerChat // empty | select(. != 0 and . != "0") | tostring' "$STATE_FILE" 2>/dev/null)"
+  fi
+  [[ "$own_id" =~ ^-?[0-9]{6,20}$ ]] || own_id=""
+  if cc_env_has_nonempty "$envf" OPENCLAW_OWNER_CHAT_ID; then
+    own_status="preserved(existing)"
+  elif [[ -n "$own_id" ]] && cc_env_set_if_absent "$envf" OPENCLAW_OWNER_CHAT_ID "$own_id" >/dev/null; then
+    own_status="set(from-owner-record)"
+  else
+    own_status="skipped(no-owner-record)"
+  fi
+  log "INFO" "cc-env: OPENCLAW_OWNER_CHAT_ID ${own_status}"
+
   chmod 600 "$envf" 2>/dev/null || true
   [[ -f "$STATE_FILE" ]] && state_set '.commandCenterEnvLocalProvisioned = true' 2>/dev/null || true
   return 0
