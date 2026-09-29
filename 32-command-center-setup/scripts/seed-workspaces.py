@@ -515,6 +515,14 @@ def find_company_info(parent_folder_name=None):
     if not info["name"]:
         info["name"] = "My Company"
 
+    # An explicit $COMPANY_SLUG (run-full-install passes the build-state
+    # companySlug) is the company's identity; the name only fills the display
+    # name. Deriving the slug from $COMPANY_NAME seeded "acme-ecosystem" for
+    # COMPANY_SLUG=acme, COMPANY_NAME="Acme Ecosystem" -- a second company.
+    explicit_slug = os.environ.get("COMPANY_SLUG", "").strip()
+    if explicit_slug:
+        info["slug"] = explicit_slug
+
     if not info["slug"]:
         info["slug"] = re.sub(r'[^a-z0-9]+', '-', info["name"].lower()).strip('-') or "my-company"
 
