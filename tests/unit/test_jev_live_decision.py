@@ -189,6 +189,20 @@ class NonFixtureIntentClassification(unittest.TestCase):
             "mixed_answer_and_task",
         )
 
+    def test_task_clause_followed_by_question_is_still_task_request(self):
+        """QC break-it defect: a leading task clause followed by a later
+        question clause must not be reclassified as answer_only -- an
+        earlier task clause wins, so the owner's instruction still gets
+        routed (contract C2/C4: work is never dropped or answered-and-
+        forgotten)."""
+        for message in (
+            "Fix the checkout bug. Who broke it?",
+            "Build the landing page. What do you think?",
+        ):
+            response = self._assert_intent(message, "task_request")
+            route = response["route"]
+            self.assertEqual(route["action"], "route", msg=message)
+
 
 class QuestionsAnswerNoDepartment(unittest.TestCase):
     """4. Questions give action 'answer' and department None."""

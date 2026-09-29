@@ -165,18 +165,24 @@ def _heuristic_intent(text: str) -> str:
     # c) wh-lead / explain-lead / can-you-explain / aux-lead-ending-in-? ->
     # answer_only. Checked per clause so a quote-stripped remark like
     # "the client wrote, ; what does that mean?" still matches on its
-    # trailing question clause.
+    # trailing question clause -- but only when no EARLIER clause already
+    # opened with a task instruction ("Fix the checkout bug. Who broke
+    # it?" is a task followed by a question, not a question: a task is
+    # never answered-and-forgotten, spec C4).
+    saw_task_clause = False
     for clause in _CLAUSE_SPLIT_RE.split(stripped):
         clause = clause.strip()
         if not clause:
             continue
-        if (
+        if not saw_task_clause and (
             _WH_LEAD_RE.match(clause)
             or _EXPLAIN_LEAD_RE.match(clause)
             or _CAN_COULD_WOULD_EXPLAIN_RE.match(clause)
             or _AUX_LEAD_QUESTION_RE.match(clause)
         ):
             return "answer_only"
+        if _has_task_clause(clause):
+            saw_task_clause = True
 
     # d) anything else -> task_request (work is never silently dropped).
     return "task_request"
