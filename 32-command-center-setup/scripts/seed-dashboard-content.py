@@ -51,6 +51,14 @@ except ImportError:
     _HAS_SHARED_RESOLVER = False
 
 
+# Structural Command Center workspaces: the CC's own placeholder lane ("default",
+# shown as "General") is not a department. Seeding a "General Lead" for it made
+# scaffold-agent-files.sh create departments/default, a department folder no
+# client ever chose. Keep in sync with STRUCTURAL_WORKSPACES in
+# scaffold-agent-files.sh.
+STRUCTURAL_WORKSPACES = {"default"}
+
+
 def scaffold_agent_files(agent_slug, agent_name, department):
     """Invoke scaffold-agent-files.sh for a dept-head agent.
 
@@ -317,6 +325,8 @@ def insert_agents_and_tasks(db, info, starter_tasks=True):
         ws_id = ws_dict.get("id")
         ws_slug = ws_dict.get("slug") or ws_dict.get("name", "").lower().replace(" ", "-")
         ws_name = ws_dict.get("name", ws_slug)
+        if {str(ws_id).lower(), str(ws_slug).lower()} & STRUCTURAL_WORKSPACES:
+            continue  # no head agent, no starter task, no department folder
 
         # Skip if this workspace already has agents (idempotency guard)
         existing_agents = db.execute(

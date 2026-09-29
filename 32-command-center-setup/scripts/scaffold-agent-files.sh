@@ -98,6 +98,16 @@ fi
 # Default department to agent-slug
 [[ -z "$DEPARTMENT" ]] && DEPARTMENT="$AGENT_SLUG"
 
+# Structural Command Center workspaces are not departments: never scaffold a
+# departments/<name> folder for one (departments/default fails the ZHE gate).
+# Keep in sync with STRUCTURAL_WORKSPACES in seed-dashboard-content.py.
+STRUCTURAL_WORKSPACES=" default "
+_dept_lc="$(printf '%s' "$DEPARTMENT" | tr '[:upper:]' '[:lower:]')"
+if [[ "$STRUCTURAL_WORKSPACES" == *" $_dept_lc "* ]]; then
+  echo "[scaffold-agent-files] SKIP: '$DEPARTMENT' is a structural Command Center workspace, not a department -- no folder created"
+  exit 0
+fi
+
 # ─── Platform detection ──────────────────────────────────────────────────────
 if [[ -d /data/.openclaw ]]; then
   OC_ROOT="/data/.openclaw"

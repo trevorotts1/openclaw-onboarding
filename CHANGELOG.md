@@ -1,3 +1,57 @@
+## [v25.2.15]  -  2026-09-29  -  Merge train: #1368 fix(prove-zhe, prove-board-join): stray role-library template dept…; #1373 fix(wiring-gate): presentations intake/ runs/ fish-audio/ are runtime…; #1374 fix(cc-seed): explicit COMPANY_SLUG wins; repair-board-company…; #1376 fix(cc-seed): no head agent or departments/ folder for the structural…; #1378 fix(workforce-completion): artifact digest skips department runtime…; #1384 feat(embeddings): free local Ollama persona index +…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1368 — [v25.2.15]  -  2026-09-29  -  Stray role-library template department folders WARN, never block (prove-zhe, prove-board-join)
+
+#### Why
+Role-library template copies nobody chose (client-experience-booking, founding-member-concierge, launch-operations, product-production, rescue-rangers) sit under departments/ on most client boxes. prove-zhe (phase 7z) required a dept agent and a board lane for every folder, and prove-board-join scored their trees as drift, so prebuild exited 7 and update-skills exited 8. No supported path seeds a lane or an agent for a folder the client never chose.
+
+#### What changed
+- `prove-zhe.py`: the required departments are the client's departments.json plus the standard floor (minus provenanced declines), not a folder scan. Other folders are reported as `stray_template_folders` / receipt warnings, never failed, never deleted. An alias folder (legal-compliance) is checked against its canonical agent and lane. rescue-rangers (operator-only) is exempt from the client agent requirement as well as the lane.
+- `prove-board-join.py`: a role-library template tree that is not a floor department and is neither chosen nor on the board is a WARN (`stray_template_departments`), not AF-BOARD-JOIN-DRIFT. A chosen department with no column, an un-chosen floor tree, and a stray with a board column still drift.
+
+### #1373 — [v25.2.15]  -  2026-09-29  -  Wiring gate: presentations intake/ runs/ fish-audio/ are runtime dirs, not roles
+
+#### Why
+verify-wiring.sh walked every department subdirectory not named in NON_ROLE_DIR_NAMES as a role. presentations/intake (created by refresh-dept-intake.py), runs (the deck launcher's run dirs) and fish-audio (the Fish Audio tag library) have no how-to.md, so the department failed materialization on client boxes.
+
+#### What changed
+- `verify-wiring.sh` NON_ROLE_DIR_NAMES adds intake, runs, fish-audio, intake-miniapp, release-matrix and contract (exact names; a real role folder is still checked, and a real role missing its how-to.md still fails).
+- `create_role_workspaces.py` SKIP_NAMES carries the same names, so no stub how-to.md is written into them.
+- `test-wiring-gate-role-dir-walk.sh` gains the case and now runs in CI.
+
+### #1374 — [v25.2.15]  -  2026-09-29  -  Command Center seed keeps the build's company slug; board repair can move only the chosen lanes
+
+#### Why
+seed-workspaces.py derived the company slug from COMPANY_NAME whenever it was set, so a build with companySlug "temple-mother-earth" seeded a second company "temple-mother-earth-ecosystem" and refused on master-orchestrator every roll. repair-board-company.py moved every 'default' lane as one set (engine queues with the client's podcast), refused whenever another company row existed, and copied the whole database (864 MB on one box) before every apply.
+
+#### What changed
+- `seed-workspaces.py` (Skill 32 v13.1.39): an explicit COMPANY_SLUG wins; the name only fills the display name.
+- `repair-board-company.py`: new `--chosen-only` moves and seeds only the departments in departments.json, never an unchosen engine/system queue and never a lane another company has rows in, so it runs with other company rows present. `--apply` writes a row-level backup (`<db>.repair-board-company-<ts>.rows.json`); `--restore` undoes it.
+
+### #1376 — [v25.2.15]  -  2026-09-29  -  No head agent or departments/ folder for the Command Center's 'default' lane
+
+#### Why
+seed-dashboard-content.py seeded a head agent ("General Lead") for the Command Center's own placeholder 'default' workspace, and scaffold-agent-files.sh then created ~/.openclaw/workspace/departments/default, a department folder no client chose, which fails the ZERO HUMAN EXPERIENCE gate.
+
+#### What changed
+- `seed-dashboard-content.py` (Skill 32 v13.1.39): a structural workspace (`default`) gets no head agent, no starter task and no scaffold call.
+- `scaffold-agent-files.sh`: never scaffolds a structural workspace as a department (prints SKIP, exits 0). An existing departments/default is not removed.
+
+### #1378 — [v25.2.15]  -  2026-09-29  -  Workforce completion digest ignores department runtime dirs
+
+#### Why
+The artifact digest hashed every .md/.json under the departments tree, including presentations/runs/*.json, which the presentations scheduler rewrites every few minutes. Minutes after finalize, evaluate() reported changed-or-missing-artifacts and finalize_closeout failed.
+
+#### What changed
+- `workforce_completion.py`: files under `<dept>/{memory,conversational-logs,logs,artifacts,runs,scripts,intake,intake-miniapp,fish-audio,release-matrix,contract}/` are not hashed; content folders (sops, roles, devils-advocate, templates, assets) still are.
+- The digest is versioned (`digestVersion: 2`). Evidence recorded earlier is re-checked with the old algorithm, so no verified build flips on update; a build picks up v2 at its next `workforce_completion.py <state> --refresh`.
+
+### #1384 — feat(embeddings): free local Ollama persona index + provisioning/health support (explicit per-box opt-in)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

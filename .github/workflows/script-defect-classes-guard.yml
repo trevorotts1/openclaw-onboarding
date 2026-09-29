@@ -74,6 +74,7 @@ on:
       - "32-command-center-setup/scripts/register-routing-dept.py"
       - "32-command-center-setup/scripts/add-department.sh"
       - "23-ai-workforce-blueprint/scripts/verify-wiring.sh"
+      - "23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh"
       - "58-podcast-production-engine/scripts/install-podcast-department.sh"
       - "tests/unit/agents-entries-remaining-readers.test.py"
       - "tests/unit/cc-db-decoy-resolver.test.py"
@@ -136,6 +137,7 @@ on:
       - "32-command-center-setup/scripts/register-routing-dept.py"
       - "32-command-center-setup/scripts/add-department.sh"
       - "23-ai-workforce-blueprint/scripts/verify-wiring.sh"
+      - "23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh"
       - "58-podcast-production-engine/scripts/install-podcast-department.sh"
       - "tests/unit/agents-entries-remaining-readers.test.py"
       - "tests/unit/cc-db-decoy-resolver.test.py"
@@ -186,6 +188,9 @@ jobs:
 
       - name: G — platform detection parity
         run: bash tests/unit/platform-detection-parity.test.sh
+
+      - name: H — wiring gate skips department runtime dirs, still gates real roles
+        run: bash 23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh
 
   bash32-parse:
     # macOS ships bash 3.2 at /bin/bash, and every Mac in the fleet runs these

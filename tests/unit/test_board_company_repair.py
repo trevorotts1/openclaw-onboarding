@@ -8,8 +8,11 @@
     no longer aborts the whole seed -- the client's custom lanes are seeded.
   * repair-board-company.py: dry run changes nothing; --apply merges the
     duplicate company, moves the client's 'default' lanes, seeds missing lanes,
-    backs the DB up first, and is idempotent; a shared (multi-company) board
-    refuses the lane move.
+    writes a row-level backup first (--restore undoes it), and is idempotent; a
+    shared (multi-company) board refuses the lane move; --chosen-only moves only
+    the chosen departments' 'default' lanes, even with another company row.
+  * seed-workspaces.py find_company_info(): an explicit COMPANY_SLUG wins over a
+    slug derived from COMPANY_NAME.
 
 Run: python3 tests/unit/test_board_company_repair.py
 """
@@ -127,7 +130,7 @@ class TestRepairCommand(_Board):
         self.assertEqual(self.q("SELECT company_id FROM tasks WHERE id='ep-1'"), [(UUID,)])
         owned = {r[0] for r in self.q("SELECT id FROM workspaces WHERE company_id=?", UUID)}
         self.assertEqual(owned, {"marketing", "podcast", "client-experience-booking", "launch-operations"})
-        self.assertTrue(list(self.root.glob("mission-control.db.bak-repair-board-company-*")))
+        self.assertTrue(list(self.root.glob("mission-control.db.repair-board-company-*.rows.json")))
         after = self.db.read_bytes()
         self.assertEqual(self.repair("--apply"), 0)
         self.assertEqual(after, self.db.read_bytes(), "second --apply must be a no-op")
@@ -191,6 +194,79 @@ class TestRepairCoversTheWholeCompany(_Board):
         after = self.db.read_bytes()
         self.assertEqual(self.repair("--apply"), 0)
         self.assertEqual(after, self.db.read_bytes(), "second --apply must be a no-op")
+
+
+class TestChosenOnly(_Board):
+    """Field shape: podcast (chosen) and anthology (engine queue, not chosen) both
+    sit under 'default', and a second company row exists on the board."""
+
+    def setUp(self):
+        super().setUp()
+        (self.company / "departments.json").write_text(json.dumps([
+            {"id": "marketing", "name": "Marketing"}, {"id": "podcast", "name": "Podcast"}]))
+        self.q("INSERT INTO workspaces (id, name, slug, company_id) VALUES ('anthology', 'Anthology', 'anthology', 'default')")
+        self.q("INSERT INTO engine_workspace_bootstrap (workspace_id, original_workspace_json) VALUES ('anthology', '{}')")
+        self.q("INSERT INTO tasks VALUES ('book-1', 'Book 1', 'anthology', 'default')")
+        self.q("INSERT INTO companies (id, name, slug) VALUES ('stray-co', 'Acme Rocket Ecosystem', 'acme-rocket-ecosystem')")
+
+    def repair(self, *args):
+        return _load("repair_chosen_test", "repair-board-company.py").main(["--db", str(self.db), *args])
+
+    def test_only_the_chosen_lane_moves(self):
+        self.assertEqual(self.repair("--chosen-only", "--apply"), 0)
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='podcast'"), [(UUID,)])
+        self.assertEqual(self.q("SELECT company_id FROM tasks WHERE id='ep-1'"), [(UUID,)])
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='anthology'"), [("default",)])
+        self.assertEqual(self.q("SELECT company_id FROM tasks WHERE id='book-1'"), [("default",)])
+        # only chosen departments are seeded: no lanes for unchosen folders/state entries
+        self.assertEqual({r[0] for r in self.q("SELECT id FROM workspaces WHERE company_id=?", UUID)},
+                         {"marketing", "podcast"})
+
+    def test_without_chosen_only_the_shared_board_still_refuses(self):
+        self.assertEqual(self.repair("--apply"), 0)
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='podcast'"), [("default",)])
+
+    def test_lane_another_company_works_in_is_left_alone(self):
+        self.q("INSERT INTO tasks VALUES ('ep-x', 'Theirs', 'podcast', 'stray-co')")
+        self.assertEqual(self.repair("--chosen-only", "--apply"), 0)
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='podcast'"), [("default",)])
+
+    def test_row_backup_restores_every_moved_row(self):
+        before = self.q("SELECT 'c', id, name, slug FROM companies UNION ALL SELECT 'w', id, company_id, '' FROM workspaces "
+                        "UNION ALL SELECT 't', id, company_id, '' FROM tasks UNION ALL SELECT 'a', id, company_id, '' FROM agents")
+        self.q("DELETE FROM companies WHERE id='stray-co'")  # let A (dup merge) and B both run
+        before = [r for r in before if r[1] != "stray-co"]
+        self.assertEqual(self.repair("--chosen-only", "--apply"), 0)
+        [backup] = self.root.glob("mission-control.db.repair-board-company-*.rows.json")
+        self.assertLess(backup.stat().st_size, self.db.stat().st_size)
+        self.assertEqual(self.repair("--restore", str(backup)), 0)
+        self.q("DELETE FROM workspaces WHERE company_id=? AND id NOT IN ('marketing', 'podcast')", UUID)  # C is additive
+        after = self.q("SELECT 'c', id, name, slug FROM companies UNION ALL SELECT 'w', id, company_id, '' FROM workspaces "
+                       "UNION ALL SELECT 't', id, company_id, '' FROM tasks UNION ALL SELECT 'a', id, company_id, '' FROM agents")
+        self.assertEqual(sorted(before), sorted(after))
+
+
+class TestSeedSlug(unittest.TestCase):
+    def setUp(self):
+        self._t = tempfile.TemporaryDirectory()
+        self.home = self._t.name
+        (Path(self.home) / ".openclaw").mkdir()   # a Mac-layout box, no company on disk
+        self.addCleanup(self._t.cleanup)
+
+    def test_explicit_company_slug_wins_over_the_name(self):
+        sw = _load("sw_slug_test", "seed-workspaces.py")
+        with mock.patch.dict(
+                os.environ, {"HOME": self.home, "COMPANY_SLUG": "x", "COMPANY_NAME": "X Ecosystem",
+                             "ZERO_HUMAN_COMPANY_DIR": ""}):
+            info = sw.find_company_info(None)
+        self.assertEqual((info["slug"], info["name"]), ("x", "X Ecosystem"))
+
+    def test_name_still_derives_the_slug_when_none_is_given(self):
+        sw = _load("sw_slug_test2", "seed-workspaces.py")
+        with mock.patch.dict(
+                os.environ, {"HOME": self.home, "COMPANY_SLUG": "", "COMPANY_NAME": "X Ecosystem",
+                             "ZERO_HUMAN_COMPANY_DIR": ""}):
+            self.assertEqual(sw.find_company_info(None)["slug"], "x-ecosystem")
 
 
 if __name__ == "__main__":

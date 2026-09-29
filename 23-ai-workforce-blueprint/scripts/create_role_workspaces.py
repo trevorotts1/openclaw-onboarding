@@ -1676,7 +1676,8 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     SKIP_NAMES = {"memory", "devils-advocate", "_archive", "_index",
                   "_compliance_audit", "_pending_rewrite", "_stage1_drafts",
                   "sops", "scripts", "roles", "_drafts", "artifacts",
-                  "templates", "assets"}
+                  "templates", "assets", "intake", "runs", "fish-audio",
+                  "intake-miniapp", "release-matrix", "contract"}
 
     results = []
     for entry in sorted(dept_path.iterdir()):
