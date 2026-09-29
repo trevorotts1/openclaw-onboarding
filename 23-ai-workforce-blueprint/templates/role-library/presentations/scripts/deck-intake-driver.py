@@ -2263,6 +2263,18 @@ def _load_sp_spec() -> Dict[str, Any]:
         SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "intake" / "sp-8-questions.json",
         Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "intake" / "sp-8-questions.json",
     ]
+    # FIX 19 repair: this mirror lives at
+    # 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/,
+    # so the hard-coded spots never cover a plain repo checkout, where skill 51
+    # sits at the REPO ROOT (51-signature-presentation/intake/...). Walk up from
+    # this script and check each ancestor for the spec. Bounded so a missing
+    # spec still fails fast.
+    _d = SCRIPTS_DIR.resolve()
+    for _ in range(10):
+        _cand = _d / "51-signature-presentation" / "intake" / "sp-8-questions.json"
+        if _cand not in cands:
+            cands.append(_cand)
+        _d = _d.parent
     # FIX 19: also honor the deployment env roots — the canonical driver runs from
     # repo checkouts and skill installs the three hard-coded spots never cover.
     _skills_dir = (os.environ.get("OC_SKILLS_DIR") or "").strip()
