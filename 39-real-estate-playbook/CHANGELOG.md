@@ -1,5 +1,21 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [2.1.0] - 2026-09-29 - fix: RE crons hunted for a path that was never filled in, and kept firing on non-RE boxes
+
+- **Real path at registration.** Both cron messages carried the literal `<MASTER_FILES_DIR>`
+  placeholder, which nothing substituted, so every daily run searched the box and the CRM for
+  it (measured: 27 LLM calls / 62 tool calls / 1.5M tokens per anniversary run on a non-RE box).
+  `07-register-crons.sh` now resolves the directory from the same source of truth as
+  `lib-re-events.sh`, writes it into the message, repairs an already-registered placeholder
+  copy in place (same id), and registers nothing when the directory cannot be resolved.
+- **Retire on non-RE boxes.** Crons registered before the industry gate existed (2026-07-11)
+  kept firing on boxes whose build state has no real-estate industryPack. When the gate fails,
+  `07` now DISABLES any enabled RE cron (never deletes; re-enable with
+  `openclaw cron edit <id> --enable`), and `wire.sh` runs `07` on its gate-skip path so the
+  retirement happens on every roll.
+- Test: `tests/unit/skill39-cron-path-and-retire.test.sh` (8 checks incl. anti-vacuity against
+  the pre-fix registrar); the fake CLI learned `cron edit --disable/--enable/--message`.
+
 ## [2.0.0] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
 
 `scripts/qc-no-personal-data.sh` exited 1 whenever the client roster was absent. The roster

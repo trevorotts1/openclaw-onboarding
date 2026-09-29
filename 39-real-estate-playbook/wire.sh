@@ -64,6 +64,9 @@ if [ -f "$_GATE_SCRIPT" ]; then
   echo "$_GATE_OUT" | while IFS= read -r _line; do echo "$P     $_line"; done
   if [ "$_GATE_RC" -eq 2 ]; then
     echo "$P SKIP Skill 39 — box industry is not real estate; not wiring RE vertical (industry gate exit 2, hard stop)."
+    # 07 re-checks the gate itself and, on a non-RE box, only DISABLES RE crons that
+    # were registered before the gate existed. It never registers anything here.
+    run_step 07-register-crons.sh
     echo "$P re-wire complete: SKIPPED (industry gate)."
     exit 0
   fi
