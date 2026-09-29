@@ -184,7 +184,7 @@ class Compatibility(unittest.TestCase):
                 self.assertNotEqual(result.steps.get('pull-cc'),'ok')
             result=runner.BoxResult('fixture',dry_run=False)
             # (the pm2 preflight is covered in fleet-refresh-roll-safety; here the box is pm2-managed)
-            with patch.object(guard,'check_node'),patch.object(runner,'cc_pm2_problem',return_value=None),patch.object(runner.subprocess,'run',side_effect=[
+            with patch.dict(os.environ,{'CC_UPDATE_TARGET':'0'*40}),patch.object(guard,'check_node'),patch.object(runner,'cc_pm2_problem',return_value=None),patch.object(runner.subprocess,'run',side_effect=[
                 subprocess.CompletedProcess([],0,''),
                 subprocess.CompletedProcess([],0,'{"version":"7.0.0"}')
             ]) as run:

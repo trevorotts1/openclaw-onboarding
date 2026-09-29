@@ -851,6 +851,7 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             live = Path(td, "live")
             subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
             commit(origin, {"update.sh": upd.format("target-updater", marker), "new.txt": "x"}, "B")
+            git(origin, "tag", paired)
             res = fr.BoxResult("t", dry_run=False)
             import cc_runtime_preflight
             with mock.patch.object(cc_runtime_preflight, "check_node"), \
@@ -880,6 +881,60 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
             self.assertEqual(git(live, "rev-parse", "HEAD"), roll)
 
+    def _pin_fixture(self, td, tag_it=True):
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        origin = new_repo(Path(td, "origin"))
+        commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}), "update.sh": "exit 0\n"}, "old")
+        live = Path(td, "live")
+        subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+        commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                        "update.sh": 'git merge -q --ff-only "${CC_UPDATE_TARGET:-origin/main}"\n'}, "pinned")
+        pinned = git(origin, "rev-parse", "HEAD")
+        if tag_it:
+            git(origin, "tag", paired)
+        commit(origin, {"after-the-pin.txt": "main moved on"}, "later")
+        return paired, live, pinned
+
+    def _pull(self, live, paired):
+        res = fr.BoxResult("t", dry_run=False)
+        import cc_runtime_preflight
+        env = {k: v for k, v in os.environ.items() if k != "CC_UPDATE_TARGET"}
+        with mock.patch.object(cc_runtime_preflight, "check_node"), \
+             mock.patch.object(cc_runtime_preflight, "check_checkout"), \
+             mock.patch.dict(os.environ, env, clear=True):
+            fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+        return res
+
+    def test_the_pinned_release_is_deployed_even_when_main_is_ahead(self):
+        # Rolling main is how an unplanned v7.6.78 reached a client box.
+        with tempfile.TemporaryDirectory() as td:
+            paired, live, pinned = self._pin_fixture(td)
+            res = self._pull(live, paired)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(git(live, "rev-parse", "HEAD"), pinned)
+            self.assertFalse((live / "after-the-pin.txt").exists())
+
+    def test_an_unresolvable_pin_fails_closed_and_never_deploys_main(self):
+        with tempfile.TemporaryDirectory() as td:
+            paired, live, _ = self._pin_fixture(td, tag_it=False)
+            before = git(live, "rev-parse", "HEAD")
+            res = self._pull(live, paired)
+            self.assertTrue(res.steps["pull-cc"].startswith("failed:"), res.steps)
+            self.assertIn("never falls back to main", res.steps["pull-cc"])
+            self.assertEqual(git(live, "rev-parse", "HEAD"), before)
+
+    def test_the_pin_is_read_from_the_rolls_commit(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = new_repo(Path(td, "onb"))
+            commit(repo, {"cc-compat.json": json.dumps({"commandCenter": {"pinnedTag": "v7.6.83"}})}, "roll")
+            sha = git(repo, "rev-parse", "HEAD")
+            (repo / "cc-compat.json").write_text(json.dumps({"commandCenter": {"pinnedTag": "v0.0.1"}}))
+            with mock.patch.dict(os.environ, {"FLEET_ROLL_SHA": sha}):
+                self.assertEqual(fr._roll_pinned_tag(repo, "v0.0.1"), "v7.6.83")
+            with mock.patch.dict(os.environ, {"FLEET_ROLL_SHA": "0" * 40}):
+                with self.assertRaises(ValueError):
+                    fr._roll_pinned_tag(repo, "v7.6.83")
+
     def test_a_tag_only_clone_still_sees_the_latest_main(self):
         # A client Command Center cloned with a single-tag refspec: a bare
         # `git fetch origin main` never moves origin/main, and the floor check then
@@ -894,6 +949,7 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             git(live, "config", "remote.origin.fetch", "+refs/tags/v6.0.89:refs/tags/v6.0.89")
             commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
                             "update.sh": "git merge -q --ff-only origin/main\n"}, "new")
+            git(origin, "tag", paired)
             res = fr.BoxResult("t", dry_run=False)
             import cc_runtime_preflight
             with mock.patch.object(cc_runtime_preflight, "check_node"), \
