@@ -22,6 +22,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 _HERE = Path(__file__).parent
 _REPO = _HERE.parent.parent
 _BRIDGE = _REPO / "shared-utils" / "decision-engine.py"
@@ -251,11 +253,9 @@ class NonFixtureIntentClassification(unittest.TestCase):
         """JGT-201 landmine 2: a filler lead clause ('Quick question.',
         'Hmm.') is not an imperative task verb and must not manufacture a
         task clause that promotes a pure question into task_request ->
-        general-task. _has_task_clause now requires an explicit imperative
-        task verb (fix/build/create/... whitelist) rather than 'any lead
-        word that isn't on a non-task list', so a filler lead is simply not
-        a task clause and the message is classified by its real question
-        clause alone."""
+        general-task. Leading filler is stripped from every clause and a
+        clause that is only filler is FILLER, so the message is classified
+        by its real question clause alone."""
         for message in (
             "Quick question. What does our Marketing department do?",
             "Hmm. What does marketing do?",
@@ -548,6 +548,116 @@ class RouteShapeSanity(unittest.TestCase):
             self.assertIn(route["catalog"], ("request", "standard-floor", "empty"))
             self.assertIn(response["intentSource"], ("fixture", "heuristic"))
 
+
+
+# --- JGT-201 repair: inverted-heuristic action matrix (pytest-parametrized) ---
+# (message, expected route.action, expected department or None=any).
+# Every row of the QC verdict (FAIL 1/2/3 lists + its OK list + the matrix
+# rows it re-checked) runs on the STANDARD-FLOOR catalog; a real task is
+# never dropped to 'answer' and a pure question never becomes a card.
+_QC_VERDICT_MATRIX = [
+    # FAIL 1: stemming -- 'invoice' must meet the floor's 'Invoices'.
+    ("Send the invoice to the client", "route", "billing-finance"),
+    ("Pay the contractor invoice", "route", "billing-finance"),
+    # FAIL 2: task verbs outside the old whitelist, next to a question.
+    ("Refund the customer. Why did they complain?", "route", None),
+    ("Hire a new closer for the sales team. Who should we look at?", "route", None),
+    ("Is the invoice paid? Chase it if not.", "route", None),
+    ("Translate the brochure into Spanish. What font should it use?", "route", None),
+    ("What happened with the Smith account? Refund them today.", "route", None),
+    ("Why is the site down? Restart the server.", "route", None),
+    ("Who is our best customer? Thank them with a gift card.", "route", None),
+    # FAIL 3: comma-joined / bare throwaway lead on a pure question.
+    ("Just curious, why do we use GHL?", "answer", None),
+    ("So what does the Healer department do?", "answer", None),
+    ("Honestly, what is a funnel?", "answer", None),
+    # QC OK list (polite requests are tasks; small talk is answered).
+    ("Can you refund the Smith order?", "route", None),
+    ("Could you pull the Q3 sales numbers?", "route", None),
+    ("Hey, can you get the newsletter out today?", "route", None),
+    ("How are you doing?", "answer", None),
+    # Original matrix rows the QC re-checked.
+    ("Who broke it? Fix the checkout bug.", "route", None),
+    ("Fix the checkout bug. Who broke it?", "route", None),
+    ("Quick question. What does our Marketing department do?", "answer", None),
+    ("Hmm. What does marketing do?", "answer", None),
+    ("What does our Marketing department do?", "answer", None),
+    ("hello", "answer", None),
+    ("Please fix the checkout bug", "route", None),
+    ("Zorblax the quintessential frobnicator", "route", "general-task"),
+    ("The client wrote, 'you do it'; what does that mean?", "answer", None),
+    ("Can you build the page?", "route", None),
+]
+
+# JGT-201 repair: builder's own adversarial rows.
+_ADVERSARIAL_MATRIX = [
+    ("Quick question: is the webinar still on Friday?", "answer", None),
+    ("Btw, how much did we spend on ads last month?", "answer", None),
+    ("Hmm, ok so who owns the CRM?", "answer", None),
+    ("hey, how are you doing?", "answer", None),
+    ("Could you explain how the refund policy works?", "answer", None),
+    ("Reconcile the March bank statement.", "route", None),
+    ("Onboard the new client, Acme Corp.", "route", None),
+    ("Audit our Facebook ad spend", "route", None),
+    ("Chase the unpaid invoices from last quarter", "route", "billing-finance"),
+    ("Restart the gateway", "route", None),
+    ("Thank the Johnson family for their referral.", "route", None),
+    ("Do a competitor analysis for our new product", "route", None),
+    ("Explain the new pricing, then update the pricing page.", "route", None),
+    ("Update the pricing page. Also, what changed in the plan?", "route", None),
+    ("Would you mind sending the proposal to Dana?", "route", None),
+    ("Honestly, can you translate the landing page into French?", "route", None),
+    ("Thanks! Can you also book a flight to Denver?", "route", None),
+    ("Hire a VA. Onboard them next week.", "route", None),
+]
+
+
+@pytest.mark.parametrize(
+    "message,action,department", _QC_VERDICT_MATRIX + _ADVERSARIAL_MATRIX
+)
+def test_action_matrix_standard_floor(message, action, department):
+    route = _evaluate(taskDescription=message)["route"]
+    assert route["action"] == action, (message, route)
+    if action == "answer":
+        assert route["department"] is None, (message, route)
+    if department is not None:
+        assert route["department"] == department, (message, route)
+        assert route["fallback"] is (department == "general-task"), (message, route)
+
+
+_BILLING_REQUEST_CATALOG = [
+    {"slug": "marketing", "name": "Marketing", "keywords": ["campaign", "ad", "promotion"]},
+    {"slug": "billing-finance", "name": "Billing & Finance", "keywords": ["invoices", "payment"]},
+    {"slug": "general-task", "name": "General Task"},
+]
+
+
+@pytest.mark.parametrize(
+    "message", ["Send the invoice to the client", "Pay the contractor invoice"]
+)
+def test_invoice_routes_billing_on_request_catalog(message):
+    """Stemming on the request catalog too: keyword 'invoices' meets 'invoice'."""
+    route = _evaluate(taskDescription=message, departments=_BILLING_REQUEST_CATALOG)["route"]
+    assert (route["action"], route["department"], route["fallback"], route["catalog"]) == (
+        "route", "billing-finance", False, "request"
+    ), route
+
+
+@pytest.mark.parametrize(
+    "message,intent",
+    [
+        ("Why is the site down? Restart the server.", "mixed_answer_and_task"),
+        ("Restart the server. Why is the site down?", "mixed_answer_and_task"),
+        ("Just curious, why do we use GHL?", "answer_only"),
+        ("Can you refund the Smith order?", "task_request"),
+        ("Can you tell me why the site is down?", "answer_only"),
+        ("Thanks so much!", "social_conversation"),
+        ("Explain the options. Do not build anything yet.", "answer_only"),
+        ("Don't forget to send the invoice", "task_request"),
+    ],
+)
+def test_heuristic_intent_inversion(message, intent):
+    assert _load_heuristic_module()._heuristic_intent(message) == intent
 
 if __name__ == "__main__":
     unittest.main()
