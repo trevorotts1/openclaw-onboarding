@@ -1068,6 +1068,28 @@ class CeoSessionResetOncePerRoll(unittest.TestCase):
         self.assertNotIn("step_sessions_reset_ceo", body)
 
 
+class GatewayAppliedTheFinalConfig(unittest.TestCase):
+    """Three openclaw.json writes in 32 s superseded a reload: the file carried an
+    env var the live gateway never ran with, silently, for hours."""
+
+    def check(self, answers, wait=0.0):
+        seq = list(answers)
+        with mock.patch.object(fr, "_run_out", side_effect=lambda *a, **k: seq.pop(0) if len(seq) > 1 else seq[0]), \
+             mock.patch.object(fr.time, "sleep"):
+            return fr.hc_config_applied({}, wait=wait)["status"]
+
+    def test_verdicts(self):
+        same = json.dumps({"payload": {"configRevisionHash": "h1", "appliedConfigHash": "h1", "env": {"vars": {"K": "secret"}}}})
+        stale = json.dumps({"payload": {"configRevisionHash": "h2", "appliedConfigHash": "h1"}})
+        self.assertEqual(self.check([same]), "pass")
+        self.assertEqual(self.check([stale]), "fail")
+        self.assertEqual(self.check([stale, same], wait=30), "pass")     # a reload in flight lands
+        self.assertEqual(self.check([""]), "n/a")                          # older gateway: undetermined
+
+    def test_a_stale_config_is_healed_with_a_gateway_restart(self):
+        self.assertEqual(fr.heal_actions({"config-applied": ""}), ["restart-gateway"])
+
+
 class LoadWarning(unittest.TestCase):
     def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
         for load, expect in ((25.0, True), (3.0, False)):

@@ -2662,6 +2662,39 @@ def hc_gateway_health(paths: dict, tries: int = 3, wait: float = 5.0) -> dict:
     return _hc("fail", f"{url} -> {code or body}")
 
 
+def _config_hashes() -> Optional[tuple[str, str]]:
+    """(config file revision, config the running gateway applied) from the
+    gateway's own config.get, or None when it cannot tell. Reads only those two
+    fields: the payload is never printed or kept."""
+    out = _run_out(["openclaw", "gateway", "call", "config.get", "--json"], timeout=30)
+    try:
+        d = json.loads(out)
+    except ValueError:
+        return None
+    d = d.get("payload") or d.get("result") or d if isinstance(d, dict) else {}
+    a, b = d.get("configRevisionHash"), d.get("appliedConfigHash")
+    return (a, b) if a and b else None
+
+
+def hc_config_applied(paths: dict, wait: float = 60.0) -> dict:
+    """Whether the running gateway applied the config file as it stands now.
+    Back-to-back openclaw.json writes during an update can supersede a reload
+    ("GatewayConfigReloadSupersededError"): the file then says one thing and the
+    live gateway runs another until some later restart. A reload in flight gets
+    `wait` seconds to land."""
+    deadline = time.time() + wait
+    while True:
+        h = _config_hashes()
+        if h is None:
+            return _hc("n/a", "gateway does not report its applied config (older gateway or unreachable)")
+        if h[0] == h[1]:
+            return _hc("pass", "the running gateway applied the current config")
+        if time.time() >= deadline:
+            return _hc("fail", "config on disk is not what the running gateway applied (a reload was "
+                               "superseded or deferred); the gateway needs a restart")
+        time.sleep(5)
+
+
 def _telegram_tokens(cfg: dict) -> list[str]:
     tg = (cfg.get("channels") or {}).get("telegram") or {}
     if not isinstance(tg, dict) or tg.get("enabled") is False:
@@ -2752,6 +2785,7 @@ def probe_health(paths: dict, res: Optional[BoxResult] = None) -> dict:
         "gateway-health":   hc_gateway_health(paths),
         "telegram-getme":   hc_telegram_getme(paths),
         "cc-health":        hc_cc_health(paths),
+        "config-applied":   hc_config_applied(paths, wait=60.0 if res is not None else 0.0),
     }
     if res is not None:
         checks["session-reset"] = hc_session_reset(res)
@@ -3128,7 +3162,7 @@ def probe_integrity(paths: dict, repo_root: Path, since: float, want_version: st
 # back to its snapshot. Every attempt is recorded in res.heal["attempts"].
 
 HEAL_ATTEMPTS = 3
-GATEWAY_CHECKS = ("gateway-process", "gateway-health", "telegram-getme")
+GATEWAY_CHECKS = ("gateway-process", "gateway-health", "telegram-getme", "config-applied")
 _GATEWAY_LABEL = "ai.openclaw.gateway"
 _HEAL_ORDER = ("rerun:pull-onboarding", "rerun:pull-cc", "rebuild-cc", "rerun:restart-cc",
                "restart-gateway")
