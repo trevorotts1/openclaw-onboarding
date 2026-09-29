@@ -52,6 +52,7 @@ ULTRA_MODE = "ultra"
 
 #: APPLICATION ceiling on simultaneous worker EXECUTIONS in Ultra mode
 #: (product policy — NOT the implementation-swarm limit).
+#: FIX 48: per-department on purpose -- the presentations department's model_router.py uses ULTRA_OPERATOR_CEILING = 400.
 ULTRA_APP_CEILING = 50
 
 #: Conservative default concurrent-claim ceiling for a provider whose quota is
