@@ -170,6 +170,36 @@ def _execution_entry(entries: dict, *keys: str) -> Optional[str]:
     return None
 
 
+def _profile_workhorse_slot() -> Optional[str]:
+    """Return the resource profile's declared workhorse slot as model@provider.
+
+    FIX 41 helper. An unreadable or absent profile (new client, or the
+    PRESENTATION_RESOURCE_PROFILE=0 rollback) yields None -- the consistency
+    check is then vacuous, never an error. Mirrors the slot-shape handling in
+    deck-intake-driver.py's load_preferences().
+    """
+    try:
+        from presentation_job import resource_profile as _rp
+    except Exception:  # noqa: BLE001 -- partial deploy must not break intake
+        return None
+    try:
+        prof = _rp.load_profile()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(prof, dict):
+        return None
+    try:
+        plan = _rp.model_plan(profile=prof) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    spec = plan.get("workhorse")
+    if isinstance(spec, dict) and spec.get("model") and spec.get("provider"):
+        return f"{spec['model']}@{spec['provider']}"
+    if isinstance(spec, str) and spec.strip():
+        return spec.strip()
+    return None
+
+
 def _resolve_execution_selection(entries: dict) -> dict:
     """Project validated run execution selections into engine intake.
 
@@ -177,6 +207,13 @@ def _resolve_execution_selection(entries: dict) -> dict:
     is never parsed here. Missing selections remain absent so launcher defaults
     keep their documented behavior. Present-but-invalid selections fail before
     a launch can silently fall back to another mode or model.
+
+    FIX 41: workhorse_model is NOT projected (M17 -- nothing downstream reads
+    selection["workhorse_model"], so the projection was dead). A validated
+    workhorse declaration is instead checked for consistency against the
+    resource profile's workhorse slot; a disagreement raises
+    UnknownExecutionSelection rather than launching under a model the client
+    did not declare. With no profile slot on file the check is vacuous.
     """
     selection: dict = {}
     raw_mode = _execution_entry(entries, "RUN_MODE", "run_mode")
@@ -193,7 +230,15 @@ def _resolve_execution_selection(entries: dict) -> dict:
         if not _MODEL_SPEC_RE.fullmatch(workhorse):
             raise UnknownExecutionSelection(
                 f"validated workhorse_model {raw_workhorse!r} is not a model@provider selection")
-        selection["workhorse_model"] = workhorse
+        # FIX 41 (M17): the workhorse_model projection was dead -- nothing
+        # downstream reads it -- so it is not projected. The validated
+        # declaration is checked for consistency against the profile's
+        # workhorse slot instead; a mismatch fails loudly here.
+        profile_workhorse = _profile_workhorse_slot()
+        if profile_workhorse is not None and profile_workhorse != workhorse:
+            raise UnknownExecutionSelection(
+                f"validated workhorse_model {workhorse!r} disagrees with the "
+                f"resource profile's workhorse slot {profile_workhorse!r}")
     return selection
 
 
@@ -562,8 +607,10 @@ def resolve(ledger_path: Path, source: str,
 
     # PD-TEST-035: execution selections are typed children of resource_plan,
     # not resource-plan prose. Carry only validated aliases so the launcher
-    # can enforce the client-declared mode and the engine can retain the
-    # selected workhorse as immutable run provenance.
+    # can enforce the client-declared mode. FIX 41: the validated workhorse
+    # declaration is consistency-checked against the profile's workhorse slot
+    # inside _resolve_execution_selection -- it is not projected (the old
+    # projection was dead, M17).
     intake.update(_resolve_execution_selection(entries))
 
     # FIX 36(3): intake depth (QUICK|IN-DEPTH) — resolved explicitly, never
