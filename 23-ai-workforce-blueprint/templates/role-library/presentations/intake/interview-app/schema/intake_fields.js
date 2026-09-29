@@ -423,6 +423,34 @@ export const INTAKE_CONTRACT = {
       }
     },
     {
+      // FIX 62: Ollama Cloud plan choice ($20/month = 3 at once, $100/month = 8).
+      // Shown only when Ollama Cloud is selected (frontend handles the conditional).
+      id: "ollama_plan",
+      canonical_path: "pre_presentation_capture.OLLAMA_PLAN",
+      section: "pre_presentation_capture",
+      kind: "enum",
+      required: false,
+      block_gate: false,
+      allowed_values: ["$20/month", "$100/month"],
+      legacy_aliases: ["OLLAMA_PLAN", "ollama_plan"],
+      question: {
+        id: "ollama_plan",
+        order: 11.55,
+        kind: "enum",
+        prompt: "Are you on the Ollama Cloud $20/month or $100/month plan?",
+        help: "The $20 plan runs 3 at once; the $100 plan runs 8 at once.",
+        label: "Ollama Cloud plan",
+        required: false,
+        storeOn: "pre_presentation_capture.OLLAMA_PLAN",
+        default: "",
+        allowed_values: ["$20/month", "$100/month"],
+        value_labels: {
+          "$20/month": "$20/month — 3 at once",
+          "$100/month": "$100/month — 8 at once"
+        }
+      }
+    },
+    {
       id: "deepseek_variant",
       canonical_path: "pre_presentation_capture.DEEPSEEK_VARIANT",
       section: "pre_presentation_capture",

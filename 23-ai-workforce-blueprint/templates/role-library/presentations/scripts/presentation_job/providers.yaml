@@ -149,7 +149,8 @@ agnes:
   # ~5 sustained text units (Starter) / ~25 (Plus) -> rps kept conservative,
   # in-flight capped at the Plus sustained row; daily_cap 4000 images.
   rps: 0.5
-  burst: 10
+  # FIX 62: burst 25 so a 25-agent wave starts at once; max_inflight 25 stays.
+  burst: 25
   max_inflight: 25
   daily_cap: 4000
   poll_counts_toward_rps: true

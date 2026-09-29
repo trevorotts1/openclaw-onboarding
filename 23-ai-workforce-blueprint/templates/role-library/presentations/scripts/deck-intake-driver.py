@@ -609,7 +609,20 @@ def cmd_next(args) -> int:
         (entries.get(k) or {}).get("value")
         for k in ("RUN_MODE", "DEEPSEEK_VARIANT", "OPENROUTER_MODEL")
     )
-    if _locked_next and "resource_plan" not in entries and _mode_fields_answered:
+    # FIX 62: also ask if Ollama Cloud is in use and plan_tier is empty.
+    # The client must pick $20/month or $100/month (3 vs 8 at once).
+    _ollama_needs_plan = False
+    try:
+        _providers = (_prof_next.get("providers") or {}) if isinstance(_prof_next, dict) else {}
+        _ollama = _providers.get("ollama-cloud") or {}
+        if _ollama:
+            _tier = _ollama.get("plan_tier")
+            if not _tier:
+                _ollama_needs_plan = True
+    except Exception:
+        pass
+    _can_skip = _mode_fields_answered and not _ollama_needs_plan
+    if _locked_next and "resource_plan" not in entries and _can_skip:
         now_iso = datetime.now(timezone.utc).isoformat()
         entries["resource_plan"] = {
             "value": "locked (ask-once)", "validated": True,

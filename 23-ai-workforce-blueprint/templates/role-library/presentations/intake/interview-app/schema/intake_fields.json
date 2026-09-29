@@ -227,6 +227,22 @@
       ]
     },
     {
+      "id": "ollama_plan",
+      "canonical_path": "pre_presentation_capture.OLLAMA_PLAN",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": false,
+      "block_gate": false,
+      "allowed_values": [
+        "$20/month",
+        "$100/month"
+      ],
+      "legacy_aliases": [
+        "OLLAMA_PLAN",
+        "ollama_plan"
+      ]
+    },
+    {
       "id": "deepseek_variant",
       "canonical_path": "pre_presentation_capture.DEEPSEEK_VARIANT",
       "section": "pre_presentation_capture",

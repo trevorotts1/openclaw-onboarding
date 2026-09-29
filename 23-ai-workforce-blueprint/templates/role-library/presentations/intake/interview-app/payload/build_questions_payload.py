@@ -58,6 +58,8 @@ DEFAULT_CURATED = [
     "run_mode",                   # FIX 11 run mode (projected from the bank's
                                    # resource_plan.run_mode subfield) -- the
                                    # hosted app's only way to reach Ultra
+    # FIX 62: Ollama Cloud plan choice
+    "ollama_plan",
     # FIX 61.2: client model picks (projected from bank subfields, like run_mode)
     "deepseek_variant",
     "openrouter_model",
@@ -103,6 +105,24 @@ RUN_MODE_APP_COPY = {
 #: Where the run-mode vocabulary comes from, stated once.
 RUN_MODE_BANK_QUESTION = "resource_plan"
 RUN_MODE_BANK_SUBFIELD = "run_mode"
+
+#: FIX 62: App-facing copy for the Ollama Cloud plan choice.
+OLLAMA_PLAN_APP_COPY = {
+    "id": "ollama_plan",
+    "section": "deck-intake",
+    "order": 11.55,
+    "prompt": "Are you on the Ollama Cloud $20/month or $100/month plan?",
+    "help": ("The $20 plan runs 3 at once; the $100 plan runs 8 at once. "
+             "Shown only when Ollama Cloud is selected."),
+    "kind": "text",
+    "storeOn": "pre_presentation_capture.OLLAMA_PLAN",
+    "value_labels": {
+        "$20/month": "$20/month — 3 at once",
+        "$100/month": "$100/month — 8 at once",
+    },
+    "required": False,
+    "block_gate": False,
+}
 
 #: FIX 61.2: App-facing copy for the DeepSeek variant pick (projected from
 #: the bank's resource_plan.deepseek_variant subfield, like run_mode).
