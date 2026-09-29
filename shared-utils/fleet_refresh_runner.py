@@ -43,6 +43,18 @@ from departments_payload import (  # noqa: E402  (same-dir shared helper)
     normalize_departments,
 )
 
+# The checks a roll reports run AFTER a rollback, and rollback_box resets this
+# very clone to the box's pre-roll commit. Imported lazily, they then ran the
+# old release's code (a v25.2.3 embedding check failed a box whose config the
+# rolled check reads fine). Load them now, from the roll's own tree; the later
+# `from X import` calls reuse these modules.
+for _check_module in ("embedding_health", "persona_embedding_drift_probe",
+                      "persona_grounding_health_probe", "cc_compat", "cc_runtime_preflight", "resolve_db"):
+    try:
+        __import__(_check_module)
+    except Exception:  # a missing checker is reported by its own step
+        pass
+
 # The exact token run_box's verdict test keys on — see _scrub_gating_token().
 _GATING_TOKEN_RE = re.compile("failed", re.IGNORECASE)
 
@@ -589,6 +601,10 @@ def _check_deployed(
     from cc_compat import assert_min_version  # type: ignore
 
     onboarding_ok = (res.onboarding_version == pinned_onboarding_tag)
+    # Read now, not the step_detect value: that one predates the update, so pass
+    # notes reported the pre-roll Command Center version on updated boxes.
+    if paths.get("cc_dir"):
+        res.cc_version = _read_cc_version(Path(paths["cc_dir"]))
     cc_ver = res.cc_version
 
     cc_ok = True
