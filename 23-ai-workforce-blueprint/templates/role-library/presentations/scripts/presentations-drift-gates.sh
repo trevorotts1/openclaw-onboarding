@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# FIX 45: CANONICAL-ENTRY COPY of presentations-drift-gates.sh -- called by name by presentation-canonical-entry.sh (Fix 53); the twin copy at the other 23-ai-workforce-blueprint presentations/scripts/ path must stay byte-identical to this one (Fix 52); the third same-named copy is the CI one at scripts/ci/. Do not rename any of them.
 # presentations-drift-gates.sh — FIX 113: REPO / DEPARTMENT / PROVENANCE-STAMP
 # three-way drift gate, run at the canonical entry BEFORE every build.
 #
