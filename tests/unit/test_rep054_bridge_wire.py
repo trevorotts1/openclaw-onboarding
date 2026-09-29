@@ -125,6 +125,27 @@ class EvaluateWire(unittest.TestCase):
         self.assertIsInstance(response.get("evaluatedAt"), str)
         # assertAssignmentReadOnly over the parsed payload.
         _assert_no_forbidden_keys(response)
+        # JGT101: additive live intent + route fields.
+        self.assertIn(
+            response.get("intent"),
+            (
+                "answer_only",
+                "social_conversation",
+                "task_request",
+                "mixed_answer_and_task",
+                "existing_task_control",
+                "clarification_response",
+                "unresolved",
+            ),
+        )
+        self.assertIn(response.get("intentSource"), ("fixture", "heuristic"))
+        route = response.get("route")
+        self.assertIsInstance(route, dict)
+        self.assertIn(route.get("action"), ("answer", "route", "none"))
+        self.assertIsInstance(route.get("department"), (str, type(None)))
+        self.assertIsInstance(route.get("confidence"), (int, float))
+        self.assertIsInstance(route.get("fallback"), bool)
+        self.assertIn(route.get("catalog"), ("request", "standard-floor", "empty"))
 
     def test_revision_echo_verbatim_not_normalized(self):
         odd = "  cfgrev  with spaces  "

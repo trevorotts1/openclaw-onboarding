@@ -499,11 +499,18 @@ PY
   # Where the command runs: inside the client's container (Hostinger /
   # Contabo), or in a login shell on the box (Mac: launchd PATH is not the
   # login PATH, and openclaw / pm2 / node live on the login PATH).
+  # In a container the login shell's /etc/profile RESETS PATH, and the npm
+  # global bin (pm2, openclaw) comes back only if ~/.profile re-adds it. A
+  # Contabo box without that block failed its Command Center update with "pm2
+  # is not" found. So the exec sets it itself: Contabo's npm-global under the
+  # OpenClaw root, Hostinger's under HOME (/data).
   remote() {
     local cmd="$1"
     if [ -n "$container" ]; then
       local envs=""
       [ -n "$oc_root" ] && envs="-e OPENCLAW_ROOT=$(sq "$oc_root")"
+      cmd='export PATH="${OPENCLAW_ROOT:-$HOME/.openclaw}/npm-global/bin:$HOME/.npm-global/bin:$PATH"'"
+$cmd"
       printf 'docker exec -u %s %s %s bash -lc %s' "$(sq "$exec_user")" "$envs" "$(sq "$container")" "$(sq "$cmd")"
     elif [ "$platform" = "mac" ]; then
       printf 'zsh -lc %s' "$(sq "$cmd")"
