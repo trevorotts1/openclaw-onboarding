@@ -250,15 +250,16 @@ def declared_packs_from_core_answers(core_answers, nm):
         if not isinstance(pack, dict):
             continue
         hits = []
+        variants = pack.get("auto_add_keyword_variants") or {}
         for kw in pack.get("auto_add_keywords", []) or []:
             k = str(kw).strip().lower()
             if not k:
                 continue
-            if " " in k:
-                if k in haystack:
+            # The keyword or one of its listed inflected forms ("coaching" for "coach").
+            for form in [k] + [str(v).strip().lower() for v in variants.get(kw) or [] if str(v).strip()]:
+                if (form in haystack) if " " in form else re.search(r"\b" + re.escape(form) + r"\b", haystack):
                     hits.append(kw)
-            elif re.search(r"\b" + re.escape(k) + r"\b", haystack):
-                hits.append(kw)
+                    break
         if hits:
             declared[pack_id] = hits
     return declared

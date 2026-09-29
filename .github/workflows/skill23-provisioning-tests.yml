@@ -181,6 +181,7 @@ jobs:
             test-chosen-departments-artifact.sh
             test-vertical-derivation-guard.sh
             test-record-vertical-pack.sh
+            test-pack-keyword-variants.sh
             test-u109-floor-wipe-regression.sh
             test-u110-optout-caller-wiring.sh
             test-reconcile-orphan-library-files.sh

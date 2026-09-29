@@ -265,6 +265,11 @@
         "workshop",
         "transformation"
       ],
+      "auto_add_keyword_variants": {
+        "_doc": "Inflected forms that count as the keyword itself (each a whole-word match). Explicit per keyword, never a stem: 'coaching' is the business, 'stagecoach' is not.",
+        "coach": ["coaches", "coaching", "coached"],
+        "consultant": ["consult", "consults", "consulted", "consultants", "consulting"]
+      },
       "auto_add_departments": [
         {
           "id": "presentations",

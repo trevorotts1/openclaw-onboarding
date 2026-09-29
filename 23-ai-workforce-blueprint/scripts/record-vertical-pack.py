@@ -36,8 +36,15 @@ HERE = Path(__file__).resolve().parent
 
 
 def _guard():
-    spec = importlib.util.spec_from_file_location("vertical_derivation_guard",
-                                                  HERE / "vertical-derivation-guard.py")
+    # Beside this script, else the box's installed Skill 23 (a copy run from
+    # outside the skills tree still validates against the box's naming map).
+    path = next((p for p in (HERE / "vertical-derivation-guard.py",
+                             Path("/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py"),
+                             Path.home() / ".openclaw/skills/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py")
+                 if p.is_file()), None)
+    if path is None:
+        raise ValueError("vertical-derivation-guard.py not found beside this script or in the installed Skill 23")
+    spec = importlib.util.spec_from_file_location("vertical_derivation_guard", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

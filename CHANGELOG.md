@@ -11,7 +11,14 @@ ran inside a build, so there was no supported way to record the owner's decision
   other key is kept; the state is backed up beside itself and written atomically; re-recording is a no-op.
 - `vertical-derivation-guard.py`: an operator-directive entry counts only with `by`, `at` and `reason`, and each
   is printed on every run (warning + receipt `operatorDeclarations`). There is still no flag that disables it.
-- `test-record-vertical-pack.sh` (new, in skill23-provisioning-tests).
+- Pack keywords match their listed inflected forms: `department-naming-map.json` personal-pro-dev carries
+  `auto_add_keyword_variants` (coach: coaches/coaching/coached; consultant: consult/consults/consulted/
+  consultants/consulting), read by all three keyword matchers (build-workforce `_detect_vertical_packs`,
+  department-floor `matched_vertical_pack_departments`, the guard's `declared_packs_from_core_answers`).
+  Explicit forms, never a stem: "stagecoach", "coachella", "consultative" still match nothing. A coaching
+  business described as "financial coaching and consulting" was declared no pack at all.
+- `record-vertical-pack.py` run from outside the skills tree validates against the box's installed guard.
+- `test-record-vertical-pack.sh`, `test-pack-keyword-variants.sh` (new, in skill23-provisioning-tests).
 
 ## [v25.2.11]  -  2026-09-29  -  Roll follow-ups: one CEO session reset per roll, bounded fix attempts, prove-zhe receipts out of the skill tree, config applied; pin Command Center v7.6.77
 
