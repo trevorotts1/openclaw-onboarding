@@ -1099,7 +1099,7 @@ def _run_wave(wave_slides: List[Dict[str, Any]], cfg: Dict[str, Any],
     # report_429 penalty in module-level state, which a spawn child does NOT
     # inherit: each child re-imported governor with an empty bucket, so
     # max_inflight, the rolling 10 s window ceiling and the 429 halving bound
-    # ONE child instead of the wave. At 100 workers with deepseek burst 20 that
+    # ONE child instead of the wave. At 100 workers with deepseek burst 400 (FIX 61.6 D4) that
     # is up to 2,000 admissions per 10 s against a single account bucket, and a
     # 429 seen by one child never slowed its 99 peers.
     # Threads run _run_one in THIS process, so every unit of the wave shares
