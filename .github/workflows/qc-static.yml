@@ -2326,11 +2326,14 @@ jobs:
               "shared-utils/key_resolver.py",
               "shared-utils/api_key_utils.py",
               "shared-utils/llm_score.py",
-              # PRES-053 packaged persona closure: byte-identical vendored
-              # copies of shared-utils/llm_score.py and
+              # PRES-053 packaged persona closure: vendored copies of
+              # shared-utils/llm_score.py and
               # 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
               # (same ~/clawd legacy loops; retire in lockstep with the
-              # canonicals after fleet migration).
+              # canonicals after fleet migration). Byte-identicality is
+              # enforced by the vendored-blob compare step in
+              # presentations-lockstep.yml (Fix 29); embedding_engine.py is a
+              # deliberate re-export shim and is excluded.
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py",
           }
@@ -2449,11 +2452,14 @@ jobs:
               "shared-utils/key_resolver.py",
               "shared-utils/api_key_utils.py",
               "shared-utils/llm_score.py",
-              # PRES-053 packaged persona closure: byte-identical vendored
-              # copies of shared-utils/llm_score.py and
+              # PRES-053 packaged persona closure: vendored copies of
+              # shared-utils/llm_score.py and
               # 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
               # (same ~/clawd legacy loops; retire in lockstep with the
-              # canonicals after fleet migration).
+              # canonicals after fleet migration). Byte-identicality is
+              # enforced by the vendored-blob compare step in
+              # presentations-lockstep.yml (Fix 29); embedding_engine.py is a
+              # deliberate re-export shim and is excluded.
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py",
           }

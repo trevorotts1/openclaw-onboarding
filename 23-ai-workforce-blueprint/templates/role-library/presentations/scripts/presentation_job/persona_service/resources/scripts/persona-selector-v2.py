@@ -400,7 +400,17 @@ STAGE_D_LLM_FINALIST_CAP = max(1, int(os.environ.get("STAGE_D_LLM_FINALIST_CAP",
 #
 # PERSONA_SCORE_WORKERS=1 is the escape hatch: it takes the literal sequential
 # path with NO thread created at all, byte-identical to the pre-fix loop.
-PERSONA_SCORE_WORKERS = max(1, int(os.environ.get("PERSONA_SCORE_WORKERS", "6")))
+#
+# Default 3, not 6. Ollama Cloud's concurrency limit is ACCOUNT-WIDE (10) and
+# the operator's standing ceiling is 8, shared by every running agent on every
+# box — not a per-process budget. A 6-wide scoring burst therefore queues
+# behind whatever agents are already live and step 1 of the chain times out:
+# measured on a client Mac, 0 of 3 scoring calls were served by
+# ollama-cloud/minimax-m3 and all fell through to OpenRouter/Agnes at 4-20s.
+# Three is wide enough to hide the per-call latency without spending the
+# fleet's shared concurrency. Raise it per-run with the env var when the
+# account is known to be idle.
+PERSONA_SCORE_WORKERS = max(1, int(os.environ.get("PERSONA_SCORE_WORKERS", "3")))
 
 # ─── PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel) ─────────────────────
 # Stage A: governing-personas.md → candidate pool (or all personas fallback)

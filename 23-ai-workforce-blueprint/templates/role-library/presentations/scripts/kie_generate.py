@@ -569,6 +569,49 @@ def _guardrail_scan_prompts(slides: list) -> None:
                 sys.exit(2)
 
 
+# ---------------------------------------------------------------------------
+# FIX 18 — front-door nonce gate. kie_generate.py spends real KIE.ai credits, so
+# it must be admitted only through presentation-canonical-entry.sh (the canonical
+# entry chain), never by blind direct invocation. The nonce blocks blind direct
+# calls; it is NOT tamper-proof against a same-user agent (anything running as
+# the same OS user can read the exported OC_DECK_ENTRY_NONCE / the 0600
+# checkpoint file and replay them), so this is front-door spend discipline, not
+# a security boundary. The nonce check is the single source of truth
+# (build_deck._verify_entry_nonce).
+# ---------------------------------------------------------------------------
+def _run_dir_from_renders(renders_dir: Path) -> Optional[Path]:
+    """Walk up from renders_dir to the run root (the dir holding working/checkpoints)."""
+    for cand in (renders_dir.resolve(), *renders_dir.resolve().parents):
+        if (cand / "working" / "checkpoints").is_dir():
+            return cand
+    return None
+
+
+def _require_entry_nonce(renders_dir: Path) -> None:
+    """Fail closed (exit 2) unless the front-door nonce verifies for this run."""
+    try:
+        import build_deck as _build_deck
+    except ImportError:  # noqa: BLE001 - without build_deck the gate cannot verify
+        print(
+            "FATAL: kie_generate.py must run beside build_deck.py - the front-door "
+            "nonce gate is unavailable. Direct invocation is denied.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    run_dir = _run_dir_from_renders(renders_dir)
+    if run_dir is None or not _build_deck._verify_entry_nonce(run_dir):
+        print(
+            "FATAL: kie_generate.py must be invoked via "
+            "presentation-canonical-entry.sh - the per-run front-door nonce "
+            "(OC_DECK_ENTRY_NONCE) is missing or does not match "
+            "<run-dir>/working/checkpoints/.canonical-entry-nonce (or the per-phase "
+            ".nonce-<id> file). Direct invocation is denied (front-door "
+            "enforcement).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
 def main():
 
     if len(sys.argv) != 3:
@@ -586,6 +629,8 @@ def main():
         sys.exit(2)
 
     renders_dir.mkdir(parents=True, exist_ok=True)
+
+    _require_entry_nonce(renders_dir)
 
     api_key = _load_api_key()
     slides  = json.loads(prompts_path.read_text())

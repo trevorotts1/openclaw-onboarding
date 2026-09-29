@@ -103,17 +103,21 @@ so they are tracked here.
 
 #### PRES-053 packaged persona closure (byte-identical vendored copies)
 
-PRES-053 vendors byte-identical copies of `shared-utils/llm_score.py` and
+PRES-053 vendors copies of `shared-utils/llm_score.py` and
 `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` into the packaged
 `persona_service/resources/` tree so the presentation PersonaService loads its
 persona closure by explicit resource-root path. The vendored copies carry the
 same `~/clawd` legacy loops as their canonicals and MUST be retired in
 lockstep with them (re-vendor or delete together) after fleet migration.
+Byte-identicality is ENFORCED, not asserted: the vendored-blob compare step in
+`presentations-lockstep.yml` fails the build on any drift (Fix 29 re-vendored
+both copies; `embedding_engine.py` is a deliberate re-export shim and is
+excluded from the compare).
 
 | File | Local loop location | Status |
 |------|---------------------|--------|
 | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/llm_score.py` | candidate lists with `Path.home() / "clawd" / "data" / ...` and `Path.home() / "clawd" / "coaching-personas" / ...` items (byte-identical to `shared-utils/llm_score.py`) | TRACKED — retire in lockstep with `shared-utils/llm_score.py` |
-| `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py` | single-path list `[Path.home() / "clawd" / "skills" / ..., ...]` (byte-identical to `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`) | TRACKED — retire in lockstep with `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` |
+| `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/scripts/persona-selector-v2.py` | single-path list `[Path.home() / "clawd" / "skills" / ..., ...]` (byte-identical to `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`, enforced by the vendored-blob compare step in `presentations-lockstep.yml`) | TRACKED — retire in lockstep with `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` |
 
 ---
 

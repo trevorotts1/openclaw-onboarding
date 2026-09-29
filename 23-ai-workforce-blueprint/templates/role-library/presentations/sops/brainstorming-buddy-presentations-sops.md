@@ -277,15 +277,7 @@ NEVER fabricate a grounded-content description.
 
 **Steps:**
 1. Hand the locked brief.json to the Director of Presentations (the dept's leadership/head role)
-   using this dispatch contract:
-   ```
-   [OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-     --parent-role brainstorming-buddy-presentations \
-     --specialist-type director-of-presentations \
-     --problem-statement "Build the presentation per the locked brief at <brief.json path>" \
-     --persona {{ASSIGNED_PERSONA}} \
-     --persona-version {{ASSIGNED_PERSONA_VERSION}}
-   ```
+
 2. The Director ingests brief.json as the seed for its OWN intake SOP (it confirms and
    extends, never re-asks what the brief already answers).
 3. The Director then dispatches this department's BUILD SPECIALISTS in pipeline order:

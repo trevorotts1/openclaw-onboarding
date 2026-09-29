@@ -1,7 +1,7 @@
 # SOP-SLIDE-02: AUDIENCE-FACING ONLY
 
 **Cluster:** Slide-Craft Rules
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 15 "the slide is not the script", Section 4.3 itself as internal build doctrine)
+**Master authority:** universal-sops/PRESENTATION-MASTER-DOCTRINE.md crosswalk — "the slide is not the script" doctrine (Section 4.3 legacy rule 15) resolves to the `SOP-PITCH-*` + `SOP-PROCLAMATION-01` cluster and `devils-advocate-presentations` SOP 9.1 (the operational home of the Kill List) **[dept]**
 **Owning role at write time:** Slide Copywriter (the AUDIENCE-vs-SAY tagging pass)
 **Owning role at render time:** Slide Image Creator (renders only audience copy; never invents captions, never composites build tokens)
 **Routing targets:** spoken content -> Presenter's Speech; working notes -> Presenter's Guide

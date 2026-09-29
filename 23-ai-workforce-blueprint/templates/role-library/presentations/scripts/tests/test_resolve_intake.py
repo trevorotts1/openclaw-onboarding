@@ -166,7 +166,10 @@ class TestExecutionSelection:
         _write_intake_copy(rd, {"requester_chat_id": "42"})
         resolved = ri.resolve(rd / "working/interview/intake_ledger.json", "test")
         assert resolved["run_mode"] == "ultra"
-        assert resolved["workhorse_model"] == "deepseek-flash@deepseek-direct"
+        # FIX 41: workhorse_model is no longer projected (dead projection,
+        # M17). With no profile workhorse slot on file the consistency check
+        # is vacuous, so the validated declaration passes without a raise.
+        assert "workhorse_model" not in resolved
 
     def test_structured_deliverable_lists_drop_only_merged_separator(self):
         rd = _run_dir()

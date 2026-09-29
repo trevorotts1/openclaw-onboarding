@@ -1,12 +1,12 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-29T09:14:44Z",
+  "generated_at": "2026-09-29T15:03:52Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "6771a636558e685aa7634d7c7ef6d3df0b9a4d9429ba1cacc6ba634210b04e84",
-      "bytes": 32047
+      "sha256": "b9e94a26cd2855d8a0c0bfd8f74aa470858b52a7465d0d7c63417f6a921711f6",
+      "bytes": 32101
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
       "sha256": "ca4816bd32ebc441a3b2cfbc431f4a735ff1d9ffc7dfa9efdcde705a966acc35",
@@ -257,20 +257,20 @@
       "bytes": 15337
     },
     "presentation-design-system/02-SOP-creative-typography-guide.md": {
-      "sha256": "d16f6b7ca918e67648dd230416950b1dd27a2a9a93fb1f790829c52245e6a270",
-      "bytes": 8266
+      "sha256": "c7757c7b1a403f0c6fd56d7a66cbe3cd3d181ad721c7d85f9c538a95adf3b4d5",
+      "bytes": 8677
     },
     "presentation-design-system/03-SOP-pure-typography-hook-slides.md": {
-      "sha256": "834c569be7312cd2a7b0e1dc5aa998803229b7ca6ad10cb927050ea5f00d9c6d",
-      "bytes": 7991
+      "sha256": "59a36f7d2feb46e790984965338a046a1debd92a19572ed207cebc04ffa67f96",
+      "bytes": 8374
     },
     "presentation-design-system/04-SOP-variable-layout-anti-template.md": {
-      "sha256": "dba7e9e52dfdf1403b086bba3d74212f4bbb5bcfd4b5bf9a53e2d55e2d6da965",
-      "bytes": 6807
+      "sha256": "8d3e5ac83b06a59361a7f19c03df032038acb6104233fd6d5bebd436d23f9542",
+      "bytes": 6927
     },
     "presentation-design-system/05-SOP-logo-consistency.md": {
-      "sha256": "a75f2a1c292d9273ab3b9a3852545a6221a174df82496882eaa2d3a2d874ab6f",
-      "bytes": 9888
+      "sha256": "f84085aaabdc8faf230c05cb2f90f0b285b9e8bd6a9271e1474c0e64f7c4a56c",
+      "bytes": 10153
     },
     "presentation-design-system/README.md": {
       "sha256": "329c2aec2e6c1c076f17c535faea4e69c77799ce69c260a3ae0dd6d8e4302525",
@@ -317,20 +317,20 @@
       "bytes": 19647
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
-      "sha256": "57982a7d91db1fb24200f2cb2ddbfda4a76553a47d0bab734a47d636167ae560",
-      "bytes": 9607
+      "sha256": "6803532f25db7b19b7c8e2bacb0d9b3e5923aaf3cd9a9a8c8c2e4bba827109ae",
+      "bytes": 9769
     },
     "presentation-slide-craft/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md": {
-      "sha256": "423dd9b8ea69a09fe08754f281b02d6f30dc7c13adc2cc9187a3d52e35df7030",
-      "bytes": 11749
+      "sha256": "8d39ba588e09b21bbae50b622a7831f8b75ad3f24b7de5d8a7f146c7d721736d",
+      "bytes": 11894
     },
     "presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md": {
-      "sha256": "edae9c49ddb8e6a71d73f351a416ae186272e1a4d4ab423c1bb91bc37ae4be7a",
-      "bytes": 13641
+      "sha256": "9ecd71a694736d4efabd61503712117a6e8db100cd93d77d93b1e1c57f2ea9b3",
+      "bytes": 13957
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
-      "sha256": "f9b1ecc6ab0323e3506f1ae20a24cc338e15af005a7f2bff635b5c8cc1ac6128",
-      "bytes": 11567
+      "sha256": "25966a5240c7fa71a5f760f16a09f07fe6cd490e3c378b6d8bb2ae4874488770",
+      "bytes": 11790
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
       "sha256": "7877eebd50d55a2823b6d24ff5c511242a234b64d66e3fbb32a3cc5ed551c349",

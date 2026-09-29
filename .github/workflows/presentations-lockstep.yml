@@ -42,6 +42,13 @@ on:
       # Universal-SOPs cluster also ships the manifest/ruleset (kept in sync with above)
       - "universal-sops/presentation-slide-craft/*.md"
       - "universal-sops/presentation-slide-craft/*.json"
+      # Universal presentation design-system + image-library clusters (Fix 27:
+      # the residual lint now scans these; a drift here must fire the gate)
+      - "universal-sops/presentation-design-system/**"
+      - "universal-sops/presentation-image-library/**"
+      # Universal doctrine roots (Fix 27: scanned by the residual lint)
+      - "universal-sops/PRESENTATION-MASTER-DOCTRINE.md"
+      - "universal-sops/CLIENT-WEBINAR-DECK-SOP.md"
       # Skill 51 (Signature Presentation) self-verification gate
       - "51-signature-presentation/**"
       # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate
@@ -79,6 +86,31 @@ jobs:
           # Exit 2 = sync_check could not run (missing input — also a hard fail).
           python3 "$SYNC_CHECK"
           echo "sync_check: presentations lockstep PASSED — renderer, ruleset, manifest, roles, and SOPs are in sync."
+
+      - name: SOP-SLIDE-00 mirror body-compare (Fix 25 — generated mirror must match canonical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANONICAL="universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md"
+          MIRROR="23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md"
+          for f in "$CANONICAL" "$MIRROR"; do
+            if [ ! -f "$f" ]; then
+              echo "FATAL: ruleset file not found at $f" >&2
+              exit 2
+            fi
+          done
+          # The dept mirror is the canonical text plus its 10-line header
+          # (lines 1-4 match the canonical; lines 5-10 are the 6-line dept
+          # header). Compare bodies only: mirror from line 11, canonical
+          # from line 6. Any drift fails the gate.
+          tail -n +6 "$CANONICAL" > /tmp/canonical-body.txt
+          tail -n +11 "$MIRROR" > /tmp/mirror-body.txt
+          if ! diff /tmp/canonical-body.txt /tmp/mirror-body.txt > /tmp/ruleset-body.diff; then
+            echo "FATAL: SOP-SLIDE-00 mirror body has drifted from the canonical ruleset:" >&2
+            head -40 /tmp/ruleset-body.diff >&2
+            exit 1
+          fi
+          echo "SOP-SLIDE-00 mirror body matches the canonical ruleset."
 
       - name: test_preflight.py — process-gate unit tests (exit 0 required)
         shell: bash
@@ -294,3 +326,26 @@ jobs:
           # Must roll after U004 so boxes that have not taken it yet don't go red.
           bash "$VERIFY_SH"
           echo "verify.sh: Skill 51 self-verification PASSED."
+
+      - name: vendored-blob compare — persona_service vendored copies must match canonicals (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RES="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources"
+          # Fix 29: the PRES-053 packaged persona closure must be byte-identical
+          # to its canonicals. embedding_engine.py is a DELIBERATE shim
+          # (re-exports the canonical engine; see its docstring) and is
+          # excluded from this compare by design.
+          fail=0
+          while IFS='|' read -r canon vend; do
+            if ! cmp -s "$canon" "$vend"; then
+              echo "DRIFT: $vend differs from $canon — re-vendor with cp" >&2
+              fail=1
+            fi
+          done <<PAIRS
+          shared-utils/resolve_db.py|${RES}/helpers/resolve_db.py
+          shared-utils/llm_score.py|${RES}/helpers/llm_score.py
+          23-ai-workforce-blueprint/scripts/persona-selector-v2.py|${RES}/scripts/persona-selector-v2.py
+          PAIRS
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "vendored-blob compare PASSED: 3 vendored copies byte-identical to canonicals (embedding_engine.py shim excluded)."
