@@ -9510,6 +9510,15 @@ else
     note "ensure-heartbeat-defaults.sh not in bundle — skipping (set manually: openclaw config set agents.defaults.heartbeat.every 6h)"
 fi
 
+# BURN GUARD (same script update-skills.sh runs every roll): weekly system-owned
+# skill-collection-review crons OFF on a fresh box. Advisory-only, never fatal.
+_BURN_GUARD="$ONBOARDING_DIR/scripts/ensure-burn-guard.sh"
+if [ -f "$_BURN_GUARD" ]; then
+    bash "$_BURN_GUARD" 2>>"$LOG_FILE" | tee -a "$LOG_FILE" || true
+else
+    note "burn-guard: ADVISORY ensure-burn-guard.sh not in bundle — skipped"
+fi
+
 # ----------------------------------------------------------
 # Loop / furnace protection activation (Skill 60 EWS + Skill 61 Loop Protection).
 # GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2, §2.3 item 2. Runs the shared
