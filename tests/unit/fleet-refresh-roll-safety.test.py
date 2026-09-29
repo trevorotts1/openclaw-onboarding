@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -851,6 +852,7 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             live = Path(td, "live")
             subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
             commit(origin, {"update.sh": upd.format("target-updater", marker), "new.txt": "x"}, "B")
+            git(origin, "tag", paired)
             res = fr.BoxResult("t", dry_run=False)
             import cc_runtime_preflight
             with mock.patch.object(cc_runtime_preflight, "check_node"), \
@@ -880,6 +882,60 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
             self.assertEqual(git(live, "rev-parse", "HEAD"), roll)
 
+    def _pin_fixture(self, td, tag_it=True):
+        paired = json.loads((REPO / "cc-compat.json").read_text())["commandCenter"]["pinnedTag"]
+        origin = new_repo(Path(td, "origin"))
+        commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}), "update.sh": "exit 0\n"}, "old")
+        live = Path(td, "live")
+        subprocess.run(["git", "clone", "-q", str(origin), str(live)], check=True, env=GIT_ENV)
+        commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
+                        "update.sh": 'git merge -q --ff-only "${CC_UPDATE_TARGET:-origin/main}"\n'}, "pinned")
+        pinned = git(origin, "rev-parse", "HEAD")
+        if tag_it:
+            git(origin, "tag", paired)
+        commit(origin, {"after-the-pin.txt": "main moved on"}, "later")
+        return paired, live, pinned
+
+    def _pull(self, live, paired):
+        res = fr.BoxResult("t", dry_run=False)
+        import cc_runtime_preflight
+        env = {k: v for k, v in os.environ.items() if k != "CC_UPDATE_TARGET"}
+        with mock.patch.object(cc_runtime_preflight, "check_node"), \
+             mock.patch.object(cc_runtime_preflight, "check_checkout"), \
+             mock.patch.dict(os.environ, env, clear=True):
+            fr.step_pull_cc({"cc_dir": live}, paired, res, dry_run=False)
+        return res
+
+    def test_the_pinned_release_is_deployed_even_when_main_is_ahead(self):
+        # Rolling main is how an unplanned v7.6.78 reached a client box.
+        with tempfile.TemporaryDirectory() as td:
+            paired, live, pinned = self._pin_fixture(td)
+            res = self._pull(live, paired)
+            self.assertEqual(res.steps["pull-cc"], "ok", res.errors)
+            self.assertEqual(git(live, "rev-parse", "HEAD"), pinned)
+            self.assertFalse((live / "after-the-pin.txt").exists())
+
+    def test_an_unresolvable_pin_fails_closed_and_never_deploys_main(self):
+        with tempfile.TemporaryDirectory() as td:
+            paired, live, _ = self._pin_fixture(td, tag_it=False)
+            before = git(live, "rev-parse", "HEAD")
+            res = self._pull(live, paired)
+            self.assertTrue(res.steps["pull-cc"].startswith("failed:"), res.steps)
+            self.assertIn("never falls back to main", res.steps["pull-cc"])
+            self.assertEqual(git(live, "rev-parse", "HEAD"), before)
+
+    def test_the_pin_is_read_from_the_rolls_commit(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = new_repo(Path(td, "onb"))
+            commit(repo, {"cc-compat.json": json.dumps({"commandCenter": {"pinnedTag": "v7.6.83"}})}, "roll")
+            sha = git(repo, "rev-parse", "HEAD")
+            (repo / "cc-compat.json").write_text(json.dumps({"commandCenter": {"pinnedTag": "v0.0.1"}}))
+            with mock.patch.dict(os.environ, {"FLEET_ROLL_SHA": sha}):
+                self.assertEqual(fr._roll_pinned_tag(repo, "v0.0.1"), "v7.6.83")
+            with mock.patch.dict(os.environ, {"FLEET_ROLL_SHA": "0" * 40}):
+                with self.assertRaises(ValueError):
+                    fr._roll_pinned_tag(repo, "v7.6.83")
+
     def test_a_tag_only_clone_still_sees_the_latest_main(self):
         # A client Command Center cloned with a single-tag refspec: a bare
         # `git fetch origin main` never moves origin/main, and the floor check then
@@ -894,6 +950,7 @@ class PullCcRunsTheTargetUpdater(unittest.TestCase):
             git(live, "config", "remote.origin.fetch", "+refs/tags/v6.0.89:refs/tags/v6.0.89")
             commit(origin, {"package.json": json.dumps({"version": paired.lstrip("v")}),
                             "update.sh": "git merge -q --ff-only origin/main\n"}, "new")
+            git(origin, "tag", paired)
             res = fr.BoxResult("t", dry_run=False)
             import cc_runtime_preflight
             with mock.patch.object(cc_runtime_preflight, "check_node"), \
@@ -1058,6 +1115,80 @@ class ContaboStartupTemplate(unittest.TestCase):
             self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
 
 
+class HostingerStartupTemplate(unittest.TestCase):
+    """A recreated Hostinger container came back with an empty pm2: the Command
+    Center and the GHL MCP server stayed down until someone ran pm2 resurrect."""
+
+    COMPOSE = ("services:\n  openclaw:\n    image: ghcr.io/hostinger/hvps-openclaw:latest\n"
+               "    hostname: openclaw-x\n    restart: unless-stopped\n    volumes:\n      - ./data:/data\n")
+
+    def fake_bin(self, td, docker=True):
+        bin_ = Path(td, "bin")
+        bin_.mkdir()
+        (bin_ / "node").write_text(f'#!/bin/sh\necho "$@" > {td}/node-args\n')
+        (bin_ / "pm2").write_text(f'#!/bin/sh\necho "$@" >> {td}/pm2-calls\n[ "$1" = describe ] && exit 1\nexit 0\n')
+        if docker:
+            (bin_ / "docker").write_text("#!/bin/sh\nexit 0\n")
+        for f in bin_.iterdir():
+            f.chmod(0o755)
+        return bin_
+
+    def test_startup_resurrects_then_starts_a_missing_command_center_and_execs_the_server(self):
+        with tempfile.TemporaryDirectory() as td:
+            data = Path(td, "data")
+            (data / "projects/command-center").mkdir(parents=True)
+            (data / "projects/command-center/ecosystem.config.cjs").write_text("")
+            bin_ = self.fake_bin(td)
+            env = {"HOME": str(data), "OPENCLAW_DATA": str(data), "PATH": f"{bin_}:/usr/bin:/bin",
+                   "PM2_RESURRECT_DELAY": "0"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/container-startup.sh")],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(Path(td, "node-args").read_text().split(), ["server.mjs"])
+            calls = []
+            for _ in range(50):
+                calls = Path(td, "pm2-calls").read_text().split("\n") if Path(td, "pm2-calls").exists() else []
+                if "save" in calls:
+                    break
+                time.sleep(0.1)
+            self.assertEqual([c for c in calls if c], ["resurrect", "describe blackceo-command-center",
+                                                       "start ecosystem.config.cjs", "save"])
+
+    def install(self, td, compose, *args):
+        proj = Path(td, "openclaw-x")
+        proj.mkdir(exist_ok=True)
+        (proj / "docker-compose.yml").write_text(compose)
+        bin_ = self.fake_bin(td) if not Path(td, "bin").exists() else Path(td, "bin")
+        env = {**os.environ, "PATH": f"{bin_}:/usr/bin:/bin"}
+        return proj, subprocess.run(["bash", str(REPO / "platform/vps/hostinger/install-startup-hook.sh"), str(proj), *args],
+                                    env=env, capture_output=True, text=True, timeout=30)
+
+    def test_host_installer_adds_the_command_once_with_a_backup(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj, r = self.install(td, self.COMPOSE, "--check")
+            self.assertEqual(r.returncode, 1, r.stdout)          # control: an unhooked box is reported
+            proj, r = self.install(td, self.COMPOSE)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = (proj / "docker-compose.yml").read_text()
+            self.assertIn('    image: ghcr.io/hostinger/hvps-openclaw:latest\n'
+                          '    command: ["bash", "/data/.openclaw/scripts/container-startup.sh"]\n', text)
+            self.assertTrue((proj / "data/.openclaw/scripts/container-startup.sh").is_file())
+            self.assertEqual([b.read_text() for b in proj.glob("docker-compose.yml.bak-startup-hook-*")], [self.COMPOSE])
+            env = {**os.environ, "PATH": f"{Path(td, 'bin')}:/usr/bin:/bin"}
+            r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/install-startup-hook.sh"), str(proj)],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual((proj / "docker-compose.yml").read_text().count("command:"), 1)
+
+    def test_an_existing_resurrect_command_is_left_alone_and_another_command_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            hooked = self.COMPOSE + '    command: ["sh", "-c", "(sleep 45 && pm2 resurrect) & exec node server.mjs"]\n'
+            proj, r = self.install(td, hooked)
+            self.assertEqual((r.returncode, (proj / "docker-compose.yml").read_text()), (0, hooked))
+            other = self.COMPOSE + '    command: ["node", "server.mjs"]\n'
+            proj, r = self.install(td, other)
+            self.assertEqual((r.returncode, (proj / "docker-compose.yml").read_text()), (1, other))
+
+
 class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
     def test_receipts_go_to_the_state_dir_and_old_ones_move_out(self):
         import importlib.util
@@ -1113,6 +1244,44 @@ class CeoSessionResetOncePerRoll(unittest.TestCase):
         src = (REPO / "shared-utils/fleet_refresh_runner.py").read_text()
         body = src[src.index("def rollback_box("):src.index("def _save_local_changes(")]
         self.assertNotIn("step_sessions_reset_ceo", body)
+
+
+class ChecksAfterARollbackRunTheRollsCode(unittest.TestCase):
+    """rollback_box resets the runner's own clone to the pre-roll commit; the
+    checks that follow imported their modules lazily and ran the old release's
+    code (a v25.2.3 embedding check failed a box the rolled check passes)."""
+
+    def test_a_rewound_clone_does_not_change_the_checks(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            clone = tmp / "shared-utils"
+            shutil.copytree(REPO / "shared-utils", clone)
+            probe = (
+                "import sys; sys.path.insert(0, sys.argv[1]); import fleet_refresh_runner\n"
+                "open(sys.argv[1] + '/embedding_health.py', 'w').write('OLD_RELEASE = True\\n')\n"
+                "from embedding_health import run_embedding_health\n"
+                "print('roll code')\n"
+            )
+            r = subprocess.run([sys.executable, "-c", probe, str(clone)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.stdout.strip(), "roll code", r.stderr[-400:])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class DeployedCommandCenterVersionIsReadAfterTheUpdate(unittest.TestCase):
+    """Pass notes said "Command Center v7.6.63" on boxes the roll had moved to v7.6.77."""
+
+    def test_the_version_on_disk_now_is_reported(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "package.json").write_text(json.dumps({"name": "blackceo-command-center", "version": "7.6.77"}))
+            res = fr.BoxResult("t-box", False)
+            res.cc_version, res.onboarding_version = "7.6.63", "v25.2.11"
+            compat = json.loads((REPO / "cc-compat.json").read_text())
+            fr._check_deployed({"cc_dir": tmp}, compat, "v25.2.11", res)
+            self.assertEqual(res.deployed["cc"], "7.6.77")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class GatewayAppliedTheFinalConfig(unittest.TestCase):
@@ -1189,6 +1358,33 @@ class RollHoldsOneCommit(unittest.TestCase):
                 fr.step_pull_onboarding({"root": Path(td), "skills": Path(td, "skills")}, copy, "v1",
                                         fr.BoxResult("t", dry_run=False), dry_run=False)
             self.assertEqual(run.call_args.kwargs["env"].get("OPENCLAW_UPDATE_SKIP_SELF_SYNC"), "1")
+
+
+class UpdateSkillsExit8IsLaunchPendingNotAFailure(unittest.TestCase):
+    """update-skills.sh exits 8 when content is current and stamped but the
+    interview launch is pending. The runner failed the step and rolled a box
+    back from a correct v25.2.12 to v25.1.81."""
+
+    def run_it(self, stamp):
+        with tempfile.TemporaryDirectory() as td:
+            skills = Path(td, "skills"); skills.mkdir()
+            (skills / ".onboarding-version").write_text(stamp + "\n")
+            copy = Path(td, "onb"); copy.mkdir()
+            (copy / "update-skills.sh").write_text("")
+            res = fr.BoxResult("t", dry_run=False)
+            done = subprocess.CompletedProcess([], 8, "", "PENDING: skills content is current; interview launch prerequisites remain unresolved")
+            with mock.patch.object(fr, "_run_tree", return_value=done):
+                fr.step_pull_onboarding({"root": Path(td), "skills": skills}, copy, "v25.2.12", res, dry_run=False)
+            return res
+
+    def test_a_matching_stamp_is_an_advisory(self):
+        res = self.run_it("v25.2.12")
+        self.assertTrue(res.steps["pull-onboarding"].startswith("ok:advisory: update-skills.sh exit 8"), res.steps)
+        self.assertEqual(res.onboarding_version, "v25.2.12")
+
+    def test_a_mismatched_stamp_still_fails(self):
+        res = self.run_it("v25.1.81")
+        self.assertTrue(res.steps["pull-onboarding"].startswith("failed:"), res.steps)
 
 
 class UnreadableFoldersAndNoCommandCenter(unittest.TestCase):
@@ -1500,6 +1696,35 @@ class WrapperWaves(unittest.TestCase):
             self.assertNotIn("first-box", r.stdout)
             self.assertIn("docker exec -u 'node'  'ctr' bash -lc", Path(td, "ssh.log").read_text())
 
+    def test_parallel_rolls_each_read_their_own_summary(self):
+        # Per-box rolls run in parallel from one clone. With one shared summary
+        # file a FAILED roll printed another roll's "UPDATED=1 FAILED=0" table
+        # and its operator alert read "nothing failed" and sent nothing.
+        with tempfile.TemporaryDirectory() as td:
+            fake = Path(td, "bin"); fake.mkdir()
+            (fake / "curl").write_text("#!/bin/sh\necho 200\n")
+            (fake / "ssh").write_text("#!/bin/sh\nsleep 1\necho \"COPYFAIL test box cannot reach GitHub\"\n")
+            for f in fake.iterdir():
+                f.chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
+            runs = []
+            for client in ("Client One", "Client Two"):
+                bf = Path(td, client.replace(" ", "") + ".json")
+                bf.write_text(json.dumps([{"client": client, "name": client.lower().replace(" ", "-"),
+                                           "ssh_target": "x", "platform": "mac"}]))
+                runs.append((client, subprocess.Popen(
+                    ["bash", str(REPO / "scripts" / "fleet-refresh.sh"), "--boxes-file", str(bf)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)))
+            outs = {c: p.communicate(timeout=120)[0] for c, p in runs}
+            paths = {c: re.search(r"Fleet summary written to: (\S+)", o).group(1) for c, o in outs.items()}
+            self.assertNotEqual(paths["Client One"], paths["Client Two"], "one shared summary file")
+            for client, other in (("Client One", "Client Two"), ("Client Two", "Client One")):
+                rows = json.loads(Path(paths[client]).read_text())
+                self.assertEqual([r["client"] for r in rows], [client])
+                table = outs[client].split("CLIENT")[-1]
+                self.assertIn(client, table)
+                self.assertNotIn(other, table)
+
     def test_local_apply_refuses_a_dev_checkout(self):
         # A throwaway clone whose runner is a stub: nothing real can be applied.
         with tempfile.TemporaryDirectory() as td:
@@ -1560,6 +1785,7 @@ class WrapperWaves(unittest.TestCase):
             seed = new_repo(td / "seed")
             stub = ('import json,os,sys\n'
                     'print("banner from a login shell")\n'
+                    'print("runner log line on the box", file=sys.stderr)\n'
                     'print(json.dumps({"box": sys.argv[sys.argv.index("--box")+1], "result": "ok", "outcome": "UPDATED",\n'
                     '  "outcome_detail": "prev=" + os.environ.get("FLEET_PREV_ONBOARDING_SHA", "") + " args=" + " ".join(sys.argv[1:])}))\n')
             commit(seed, {"shared-utils/fleet_refresh_runner.py": stub}, "one")
@@ -1610,6 +1836,7 @@ class WrapperWaves(unittest.TestCase):
                              stale_state)   # the client's clone: untouched
             self.assertEqual(json.loads((home / ".openclaw/fleet-refresh/client.json").read_text()),
                              {"client": "Client One", "label": "Client One (Hostinger)"})   # the box can name itself
+            row["_box_log"] = "".join(f.read_text() for f in (home / ".openclaw/fleet/runs").glob("*/box-1.log"))
             return row
 
     def test_a_dropped_ssh_session_reads_the_boxs_own_result(self):
@@ -1621,6 +1848,9 @@ class WrapperWaves(unittest.TestCase):
         row = self.test_apply_through_ssh_and_docker_exec_quoting(ssh_stub=drop)
         self.assertEqual(row["outcome"], "UPDATED")
         self.assertIn("read back from the box after the SSH session dropped", row["outcome_detail"])
+        # ...and the box's runner log, which never came back over the dropped
+        # session, is fetched into this run's local box log (it was 0 bytes).
+        self.assertIn("runner log line on the box", row["_box_log"])
 
     def host_restart_scenario(self, platform, compose_rc=0):
         """A container box whose runner first asks for a gateway restart (exit 4),

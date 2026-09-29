@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.2.12"
+ONBOARDING_VERSION="v25.2.13"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1963,7 +1963,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.2.12 - safe_json_edit
+# v25.2.13 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9085,6 +9085,16 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     else
       echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
     fi
+  fi
+
+  # cc-compat.json: the Command Center release this onboarding pins. Skill 32's
+  # update-only refresh (below, after $EXTRACTED_DIR is gone) deploys exactly
+  # that release, reading $SKILLS_DIR/cc-compat.json; a copy left from an older
+  # release would pin an old Command Center.
+  if [ -f "$EXTRACTED_DIR/cc-compat.json" ] && cp -f "$EXTRACTED_DIR/cc-compat.json" "$SKILLS_DIR/cc-compat.json" 2>/dev/null; then
+    echo "  ✓ cc-compat.json refreshed in $SKILLS_DIR"
+  else
+    echo "  ✗ cc-compat.json not refreshed in $SKILLS_DIR — the Command Center refresh will refuse an unresolvable pin" >&2
   fi
 
   # ---- BEGIN gateway-watchdog converge ----

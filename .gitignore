@@ -95,4 +95,6 @@ client-roster.txt
 # fleet-refresh run outputs carry box names; never commit them
 .fleet-refresh-summary.json
 .fleet-loaded-state.json
+.fleet-loaded-state.json.*
+.fleet-refresh-summary.json.*
 .fleet-retirement-triggered

@@ -1178,8 +1178,9 @@ cc_git_sync_to_default_branch() {
   git -C "$dir" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" >>"$LOG_FILE" 2>&1 || return 1
 
   current="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  local tgt="${CC_UPDATE_TARGET:-origin/$branch}"
   if ! git -C "$dir" -c user.name="Command Center Updater" -c user.email="updater@localhost" \
-      merge --no-edit "origin/$branch" >>"$LOG_FILE" 2>&1; then
+      merge --no-edit "$tgt" >>"$LOG_FILE" 2>&1; then
     git -C "$dir" merge --abort >/dev/null 2>&1 || true
     return 1
   fi
@@ -1200,7 +1201,7 @@ cc_git_sync_to_default_branch() {
   fi
 
   [[ "$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" == "$branch" ]] \
-    && git -C "$dir" merge-base --is-ancestor "origin/$branch" HEAD
+    && git -C "$dir" merge-base --is-ancestor "$tgt" HEAD
 }
 
 # cc_zero_downtime_ready <repo_dir> — 0 when this update can leave the LIVE
@@ -1212,14 +1213,31 @@ cc_git_sync_to_default_branch() {
 # (content guard, exit 78): a client's Command Center was dark for ~35 minutes
 # on 2026-09-28. Anything else takes the merge path (cc_git_sync_to_default_branch).
 cc_zero_downtime_ready() {
-  local dir="$1"
+  local dir="$1" tgt="${CC_UPDATE_TARGET:-origin/main}"
   git -C "$dir" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main >>"$LOG_FILE" 2>&1 || return 1
-  git -C "$dir" merge-base --is-ancestor HEAD origin/main 2>/dev/null || return 1
+  git -C "$dir" merge-base --is-ancestor HEAD "$tgt" 2>/dev/null || return 1
   [[ -z "$(git -C "$dir" status --porcelain --untracked-files=no 2>/dev/null)" ]] || return 1
   if git -C "$dir" show-ref --verify --quiet refs/heads/main; then
-    git -C "$dir" merge-base --is-ancestor refs/heads/main origin/main 2>/dev/null || return 1
+    git -C "$dir" merge-base --is-ancestor refs/heads/main "$tgt" 2>/dev/null || return 1
   fi
-  git -C "$dir" show origin/main:update.sh 2>/dev/null | grep -q 'Zero-downtime path'
+  git -C "$dir" show "$tgt:update.sh" 2>/dev/null | grep -q 'Zero-downtime path'
+}
+
+# The Command Center release this onboarding pins: cc-compat.json pinnedTag,
+# resolved to its commit and exported as CC_UPDATE_TARGET, the variable the
+# Command Center's own update.sh deploys. A fleet roll resolves it before this
+# runs (and exports it); a standalone update resolves it here. Unresolvable =
+# nothing is deployed: an update never falls back to origin/main.
+cc_resolve_pinned_target() {
+  [[ -n "${CC_UPDATE_TARGET:-}" ]] && return 0
+  local compat tag sha
+  compat="$(cd "$SKILL_DIR/.." 2>/dev/null && pwd)/cc-compat.json"
+  tag="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("commandCenter") or {}).get("pinnedTag") or "")' "$compat" 2>/dev/null)"
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  git -C "$DASHBOARD_DIR" fetch --quiet origin "+refs/tags/$tag:refs/tags/$tag" >>"$LOG_FILE" 2>&1 || return 1
+  sha="$(git -C "$DASHBOARD_DIR" rev-parse "$tag^{commit}" 2>/dev/null)" || return 1
+  export CC_UPDATE_TARGET="$sha"
+  log "INFO" "phase=6: Command Center target is the pinned release $tag (${sha:0:12})"
 }
 
 # cc_route_update_through_canonical_path — the D5 update-only build+restart step.
@@ -1245,11 +1263,15 @@ cc_route_update_through_canonical_path() {
   local pull_ts build_id_file build_id_mtime health_code tier
   local update_sh="$DASHBOARD_DIR/update.sh"
   local atomic_deploy="$DASHBOARD_DIR/scripts/atomic-deploy.sh"
+  if [[ "${CC_AT_PIN:-0}" == "1" ]]; then
+    log "INFO" "phase=6 (update-only): no Command Center deploy: the checkout already contains the pinned release"
+    return 0
+  fi
   if [[ "${CC_ZERO_DOWNTIME:-0}" == "1" ]]; then
     # The live tree is still the running release: run the TARGET's updater,
     # which fetches, builds beside the live release and promotes it.
     update_sh="$(mktemp "${TMPDIR:-/tmp}/cc-update-target.XXXXXX")"
-    git -C "$DASHBOARD_DIR" show origin/main:update.sh > "$update_sh" 2>>"$LOG_FILE" \
+    git -C "$DASHBOARD_DIR" show "${CC_UPDATE_TARGET:-origin/main}:update.sh" > "$update_sh" 2>>"$LOG_FILE" \
       || update_sh="$DASHBOARD_DIR/update.sh"
   fi
   build_id_file="$DASHBOARD_DIR/.next/BUILD_ID"
@@ -2017,8 +2039,14 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # rejection reason, and the --app-dir remedy.
   # Never returns if the resolved directory is not a validated CC checkout.
   cc_assert_update_only_checkout
+  cc_resolve_pinned_target \
+    || fail_install "phase=6 (update-only): the pinned Command Center release (cc-compat.json pinnedTag) could not be resolved in $DASHBOARD_DIR. Nothing was deployed; an update never falls back to origin/main."
   CC_ZERO_DOWNTIME=0
-  if cc_zero_downtime_ready "$DASHBOARD_DIR"; then
+  CC_AT_PIN=0
+  if git -C "$DASHBOARD_DIR" merge-base --is-ancestor "$CC_UPDATE_TARGET" HEAD 2>/dev/null; then
+    CC_AT_PIN=1
+    log "INFO" "phase=6: the checkout already contains the pinned release; the Command Center code is not changed"
+  elif cc_zero_downtime_ready "$DASHBOARD_DIR"; then
     CC_ZERO_DOWNTIME=1
     log "INFO" "phase=6: zero-downtime update: the live checkout, node_modules and build stay untouched until CC's update.sh promotes the new release"
   elif cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then

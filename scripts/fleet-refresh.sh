@@ -282,19 +282,19 @@ RUNNER_FLAGS=""
 # the boxes that happen to start (or self-sync) after it.
 ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
 [ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
-# Same for the Command Center: pull-cc and update.sh deploy this commit, not a
-# main that moved after the roll started.
-ROLL_CC_SHA=$(git ls-remote "${FLEET_ROLL_CC_REPO_URL:-https://github.com/trevorotts1/blackceo-command-center.git}" refs/heads/main 2>/dev/null | cut -f1)
-if [ -n "$ROLL_CC_SHA" ]; then
-  export CC_UPDATE_TARGET="$ROLL_CC_SHA"
-  echo "[fleet-refresh] Rolling Command Center main at ${ROLL_CC_SHA:0:12}"
-fi
+# The Command Center is NOT rolled from main: each box deploys the release
+# cc-compat.json pins at ROLL_SHA (the runner reads it from the roll copy and
+# fails that box closed when it cannot resolve it). An inherited value from the
+# operator's shell must not override that.
+unset CC_UPDATE_TARGET
+echo "[fleet-refresh] Command Center: the release pinned in cc-compat.json at ${ROLL_SHA:0:12}"
 
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RESULTS"' EXIT
 # Per-box runner logs (stderr) are kept after the run for post-mortems.
-RUN_LOG_DIR="$HOME/.openclaw/fleet/runs/$(date -u +%Y%m%dT%H%M%SZ)"
+# One directory per run (the pid keeps two rolls started in the same second apart).
+RUN_LOG_DIR="$HOME/.openclaw/fleet/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "$RUN_LOG_DIR" 2>/dev/null && chmod 700 "$HOME/.openclaw/fleet" "$RUN_LOG_DIR" 2>/dev/null || RUN_LOG_DIR="$TMPDIR_RESULTS"
 
 # If --local, run once against this machine with no SSH
@@ -579,7 +579,9 @@ rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
   # SIGHUP and writes its result on the box. Wait for it there and read that
   # result, instead of reporting a box that updated fine as FAILED.
   if [ "$rc" -eq 255 ]; then
-    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
+    # The runner's own log ($E on the box) never arrived either: the session
+    # dropped before the final cat. Bring it back into this run's box log.
+    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; echo '---- runner log fetched from the box (the SSH session dropped) ----' >&2; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.log\" >&2 2>/dev/null; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
     local try back_rc=255
     for try in 1 2 3; do
       back_rc=0
@@ -798,13 +800,19 @@ done
 
 echo "[fleet-refresh] ═══════════════════════════════════════════"
 
-# Write fleet summary
-SUMMARY_FILE="$REPO_ROOT/.fleet-refresh-summary.json"
+# Write fleet summary. THIS run's file: per-box rolls run in parallel from one
+# clone, and a shared file let one roll print another's table and send (or
+# skip) the operator alert on another roll's results. The table, the alert and
+# the box-list backup below read only this file. $REPO_ROOT/.fleet-refresh-summary.json
+# is kept as a "latest run" copy for people; nothing in the roll reads it.
+SUMMARY_FILE="$RUN_LOG_DIR/summary.json"
 echo "$ALL_RESULTS" | python3 -c "
 import json,sys
 arr = json.load(sys.stdin)
 print(json.dumps(arr, indent=2))
 " > "$SUMMARY_FILE" 2>/dev/null || true
+cp "$SUMMARY_FILE" "$REPO_ROOT/.fleet-refresh-summary.json.$$" 2>/dev/null \
+  && mv -f "$REPO_ROOT/.fleet-refresh-summary.json.$$" "$REPO_ROOT/.fleet-refresh-summary.json" 2>/dev/null || true
 echo "[fleet-refresh] Fleet summary written to: $SUMMARY_FILE"
 
 # ── Retirement trigger check (APPLY mode only — never dry-run) ────────────────
@@ -831,6 +839,17 @@ import json, os, sys, subprocess, time
 from pathlib import Path
 
 loaded_state_file = Path("$LOADED_STATE_FILE")
+
+# The manifest accumulates across runs (it answers "is EVERY box loaded?"), so
+# it stays one file; parallel rolls take turns (read-merge-write under a lock,
+# replaced atomically) instead of overwriting each other's boxes.
+import fcntl
+_lock = open(str(loaded_state_file) + ".lock", "w")
+fcntl.flock(_lock, fcntl.LOCK_EX)
+def _write_state(st):
+    tmp = loaded_state_file.with_name(loaded_state_file.name + f".{os.getpid()}")
+    tmp.write_text(json.dumps(st, indent=2))
+    os.replace(tmp, loaded_state_file)
 all_results_json  = """$ALL_RESULTS"""
 apply             = True
 dry_run           = False
@@ -876,7 +895,7 @@ for box_result in results:
 
 # Persist updated state to the manifest (APPLY only — dry-run never reaches here).
 try:
-    loaded_state_file.write_text(json.dumps(state, indent=2))
+    _write_state(state)
     print(f"[fleet-refresh] Retirement manifest updated: {loaded_state_file}")
 except Exception as e:
     print(f"[fleet-refresh] WARNING: could not write loaded-state manifest: {e}", file=sys.stderr)
@@ -1012,7 +1031,7 @@ else:
 # Mark retirement_triggered=True in the manifest so we never duplicate.
 state["retirement_triggered"] = True
 try:
-    loaded_state_file.write_text(json.dumps(state, indent=2))
+    _write_state(state)
 except Exception as e:
     print(f"[fleet-refresh] WARNING: could not persist retirement_triggered flag: {e}", file=sys.stderr)
 

@@ -42,6 +42,9 @@ echo ""
 # Sandbox helpers
 # ---------------------------------------------------------------------------
 SANDBOX="$(mktemp -d)"
+# 07-register-crons.sh substitutes the resolved MASTER_FILES_DIR into its messages and
+# registers nothing when it cannot resolve one — give every run a real one.
+export MASTER_FILES_DIR="$SANDBOX/master-files"; mkdir -p "$MASTER_FILES_DIR"
 cleanup() { rm -rf "$SANDBOX" 2>/dev/null || true; }
 trap cleanup EXIT
 case "$SANDBOX" in
