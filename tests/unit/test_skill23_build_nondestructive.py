@@ -293,5 +293,42 @@ class TestMaterializeDeptAgents(unittest.TestCase):
                 self.assertEqual(p.read_text(), f"canonical {f}\n")
 
 
+    def test_existing_agent_is_not_repointed_to_a_new_sparse_tree(self):
+        """A rebuild wrote a second, sparse company tree under master-files. Agents
+        already running from the complete tree must stay there; only an entry whose
+        workspace is gone may be re-pointed."""
+        import json
+        with tempfile.TemporaryDirectory() as h:
+            h = os.path.realpath(h)
+            oc = Path(h) / ".openclaw"
+            ws = oc / "workspace"
+            live = ws / "departments"
+            for d in ("marketing", "sales"):
+                (live / d).mkdir(parents=True)
+                (live / d / "SOUL.md").write_text("complete\n")
+            for f in CORE:
+                (ws / f).write_text(f"canonical {f}\n")
+            sparse = Path(h) / "Downloads" / "openclaw-master-files" / "zero-human-company" / "acme" / "departments"
+            for d in ("marketing", "sales", "support"):
+                (sparse / d).mkdir(parents=True)
+            (ws / ".workforce-build-state.json").write_text(json.dumps(
+                {"interviewComplete": True, "companyRoot": str(sparse.parent), "companySlug": "acme"}))
+            gone = str(Path(h) / "deleted" / "support")
+            cfg_path = oc / "openclaw.json"
+            cfg_path.write_text(json.dumps({"agents": {"entries": {
+                "main": {"workspace": str(ws)},
+                "dept-marketing": {"name": "Marketing", "workspace": str(live / "marketing")},
+                "dept-sales": {"name": "Sales", "workspace": str(live / "sales")},
+                "dept-support": {"name": "Support", "workspace": gone}}}}))
+            script = ROOT / "32-command-center-setup" / "scripts" / "materialize-dept-agents.sh"
+            r = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=dict(os.environ, HOME=h))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            entries = json.loads(cfg_path.read_text())["agents"]["entries"]
+            self.assertEqual(entries["dept-marketing"]["workspace"], str(live / "marketing"), r.stdout)
+            self.assertEqual(entries["dept-sales"]["workspace"], str(live / "sales"), r.stdout)
+            # Control: the script did scan the sparse tree, and a dead workspace IS re-pointed.
+            self.assertEqual(entries["dept-support"]["workspace"], str(sparse / "support"), r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

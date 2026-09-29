@@ -57,8 +57,16 @@ Running the Skill 23 build on a client box that already had departments and agen
 - The build hands `create_role_workspace()` the workspace root, not the company root, so role
   folders copy the canonical `TOOLS.md` / `USER.md`. Previously they got dangling symlinks into the
   company tree.
-- `tests/unit/test_skill23_build_nondestructive.py` now has 13 tests (11 fail on the previous
-  main). They add: new agents carry no model and `agents.defaults` is unchanged; a source guard
+- `materialize-dept-agents.sh` no longer re-points an agent whose current workspace still exists.
+  It scans the master-files company tree first, as the most authoritative root. A rebuild that
+  wrote a second, sparse company tree there moved every department agent into it, and a workforce
+  that had passed its audit came back with a failed zero-human check. An existing agent now keeps
+  its workspace, and the scaffold manifest follows it. Only an entry whose workspace is gone is
+  re-pointed.
+- `tests/unit/test_skill23_build_nondestructive.py` now has 14 tests (12 fail on the previous
+  main). The new materialize test sets up a complete live tree plus a sparse rebuild tree. It
+  asserts the live agents stay put, and its control asserts that an entry with a deleted
+  workspace is re-pointed. The other additions are: new agents carry no model and `agents.defaults` is unchanged; a source guard
   that the build never writes into `agents.defaults`; and the post-build config passes the real
   `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
   control proving the validator rejects the old key.

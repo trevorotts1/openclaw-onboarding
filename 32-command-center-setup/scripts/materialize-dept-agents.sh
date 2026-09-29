@@ -650,6 +650,16 @@ for slug, workspace_path in sorted(discovered.items()):
             print(f"  = kept    {_other:40s} (already serves {workspace_path}; no duplicate {roster_key})")
             continue
 
+    else:
+        # An agent already running from a workspace that still exists stays there.
+        # A rebuild that wrote a second, sparse company tree (scanned first as the
+        # most authoritative root) re-pointed every department agent to it and the
+        # workforce lost its SOPs. Only an entry whose workspace is gone moves.
+        _cur_ws = existing.get("workspace")
+        if _cur_ws and _cur_ws != workspace_path and os.path.isdir(os.path.expanduser(_cur_ws)):
+            print(f"  = kept    {roster_key:40s} (runs from {_cur_ws}; not re-pointed to {workspace_path})")
+            workspace_path = _cur_ws
+
     manifest_rows.append((roster_key, name, workspace_path, slug))
 
     if existing is None:
