@@ -139,5 +139,59 @@ class TestRepairCommand(_Board):
         self.assertEqual(self.q("SELECT company_id FROM tasks WHERE id='ep-1'"), [("default",)])
 
 
+class TestRepairCoversTheWholeCompany(_Board):
+    """Field shape: departments.json lists only some departments, four more exist
+    only on disk under the build's companyRoot and in the build state, the CEO
+    lane lives under id master-orchestrator with slug ceo, podcast and anthology
+    sit under 'default', and a duplicate punctuated company row exists."""
+
+    ON_DISK_ONLY = ["client-experience-booking", "founding-member-concierge",
+                    "launch-operations", "product-production"]
+
+    def setUp(self):
+        super().setUp()
+        (self.company / "departments.json").write_text(json.dumps([
+            {"id": "ceo", "name": "CEO"}, {"id": "marketing", "name": "Marketing"},
+            {"id": "podcast", "name": "Podcast"}, {"id": "anthology", "name": "Anthology"}]))
+        for slug in ["ceo", "marketing", "podcast", "anthology", *self.ON_DISK_ONLY]:
+            (self.company / "departments" / slug).mkdir(parents=True)
+        ws = self.root / ".openclaw" / "workspace"
+        ws.mkdir(parents=True)
+        (ws / ".workforce-build-state.json").write_text(json.dumps({
+            "companyRoot": str(self.company), "companySlug": "acme-rocket",
+            "departments": [{"slug": s} for s in ["ceo", "marketing", "founding-member-concierge"]]}))
+        self.q(f"INSERT INTO workspaces (id, name, slug, company_id) VALUES "
+               f"('master-orchestrator', 'CEO', 'ceo', '{UUID}')")
+        self.q("INSERT INTO workspaces (id, name, slug, company_id) VALUES ('anthology', 'Anthology', 'anthology', 'default')")
+        self.q("INSERT INTO engine_workspace_bootstrap (workspace_id, original_workspace_json) VALUES ('anthology', '{}')")
+
+    def repair(self, *args):
+        return _load("repair_cover_test", "repair-board-company.py").main(["--db", str(self.db), *args])
+
+    def test_dry_run_reports_on_disk_lanes_and_not_the_ceo(self):
+        import contextlib, io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.repair(), 0)
+        plan = json.loads(out.getvalue().split("\nDRY RUN")[0])
+        self.assertEqual(plan["missing_lanes"], sorted(self.ON_DISK_ONLY))
+        self.assertEqual(plan["default_lanes"], ["anthology", "podcast"])
+        self.assertEqual(plan["canonical_slug_module"], "shared-utils/canonical_slug.py")
+
+    def test_apply_leaves_full_coverage_and_no_duplicate_lanes(self):
+        self.assertEqual(self.repair("--apply"), 0)
+        self.assertEqual(self.q("SELECT id FROM companies ORDER BY id"), sorted([("default",), (UUID,)]))
+        rows = self.q("SELECT id, slug FROM workspaces WHERE company_id=?", UUID)
+        slugs = [r[1] for r in rows]
+        self.assertEqual(len(slugs), len(set(slugs)), rows)
+        want = {"ceo", "marketing", "podcast", "anthology", *self.ON_DISK_ONLY}
+        self.assertEqual(set(slugs), want)
+        self.assertEqual(self.q("SELECT id FROM workspaces WHERE slug='ceo'"), [("master-orchestrator",)])
+        self.assertEqual(self.q("SELECT count(*) FROM workspaces WHERE company_id='default'"), [(0,)])
+        after = self.db.read_bytes()
+        self.assertEqual(self.repair("--apply"), 0)
+        self.assertEqual(after, self.db.read_bytes(), "second --apply must be a no-op")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

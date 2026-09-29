@@ -93,12 +93,35 @@ celebration. Both are unrequested owner messages.
      recorded engine queues) to its company;
   3. seeds the missing lanes.
 
+  The department set is the union of `departments.json`, the build state's `departments[]` and the
+  department folders under the build's `companyRoot`, which is the tree the zero-human check audits.
+  A dry run on a client board showed four on-disk departments that `departments.json` did not list,
+  so `departments.json` alone under-reported them. Lanes are matched on the canonical slug of both
+  the workspace id and its slug, so a CEO lane with id `master-orchestrator` and slug `ceo` counts as
+  the `ceo` department. It is not reported missing and no second CEO lane is seeded. Only the
+  missing departments go to the seeder. The dry run names the `canonical_slug` module it loaded.
+  `seed-workspaces.py` now also finds the installed `shared-utils`
+  (`~/.openclaw/skills/shared-utils`, `/data/.openclaw/skills/shared-utils`) when it runs from a
+  copy outside the skill tree, instead of falling back to the inline slugger.
+
   It is idempotent. It was not run on any box.
+- Phase 6e of `run-full-install.sh` seeds the "Welcome to <department>" starter tasks only on a
+  full install whose build has closed out (`closeoutStatus == done`). The Command Center's intake
+  sweep auto-dispatches every seeded card and the notifier messages the owner, so a card seeded
+  before closeout was an owner message nobody asked for. Update-only rolls
+  (`update-skills.sh` -> `run-full-install.sh --update-only`) already passed `--no-starter-tasks`,
+  and still do. The gate matters on the bootstrap path, where `update-skills.sh` runs a full
+  install on a box that has no Command Center yet.
 - `retire-confirmed-decline.sh` no longer writes openclaw.json through the build-state writer,
   which stamped a root `stateRevision` that `openclaw config validate` rejects.
 - Tests:
   - `tests/unit/test_owner_sends_hold.py` (11 tests; 6 fail on main).
-  - `tests/unit/test_board_company_repair.py` (6 tests; all fail on main).
+  - `tests/unit/test_board_company_repair.py` (8 tests; all fail on main). This includes a
+    field-shaped fixture: a duplicate company, podcast and anthology under `default`, the CEO lane
+    under another id, and four departments only on disk. After `--apply`, every department has
+    exactly one lane under the company, and a second `--apply` changes nothing.
+  - `tests/unit/test_starter_tasks_gate.sh` (new, 4 cases) runs the real `starter_tasks_allowed()`
+    extracted from `run-full-install.sh`. It fails on main, where the gate is absent.
   - `interview-launch.test.py` gains a URL-seeding test.
   - `retire-decline-separate-workspace.test.py` now asserts that openclaw.json gains no root keys,
     and runs `openclaw config validate` when the CLI is present.

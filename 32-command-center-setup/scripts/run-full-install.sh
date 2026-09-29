@@ -2638,14 +2638,25 @@ fi
 log "INFO" "phase=6e seed-dashboard-content: starting"
 SEED_DASH="$SKILL_DIR/scripts/seed-dashboard-content.py"
 SEED_DASH_ARGS=()
-if [[ "$UPDATE_ONLY" == "true" ]]; then
+# >>> STARTER-TASKS-GATE-BEGIN (extracted by tests/unit/test_starter_tasks_gate.sh)
+# starter_tasks_allowed: "Welcome to <dept>" cards are seeded ONLY on a full
+# install whose workforce build has CLOSED OUT (closeoutStatus done). The
+# Command Center's intake sweep auto-dispatches every seeded card, and the
+# notifier then messages the owner's chat -- before closeout that is an
+# unrequested owner message. Update-only rolls never seed them (a live backlog).
+starter_tasks_allowed() {
+  [[ "$UPDATE_ONLY" == "true" ]] && return 1
+  [[ "$(state_get '.closeoutStatus' 2>/dev/null)" == "done" ]]
+}
+# <<< STARTER-TASKS-GATE-END
+if ! starter_tasks_allowed; then
   SEED_DASH_ARGS+=(--no-starter-tasks)
-  log "INFO" "phase=6e seed-dashboard-content: starter tasks SKIPPED -- update-only roll (companies + head agents still ensured; no welcome cards into a live backlog)"
+  log "INFO" "phase=6e seed-dashboard-content: starter tasks SKIPPED -- update-only roll or build not closed out (companies + head agents still ensured; no auto-dispatching welcome cards before closeout)"
 fi
 if [[ -f "$SEED_DASH" ]] && command -v python3 >/dev/null 2>&1; then
   if COMPANY_NAME="${COMPANY_NAME:-}" python3 "$SEED_DASH" ${SEED_DASH_ARGS+"${SEED_DASH_ARGS[@]}"} >>"$LOG_FILE" 2>&1; then
-    if [[ "$UPDATE_ONLY" == "true" ]]; then
-      log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents ensured (starter tasks skipped: update-only)"
+    if ! starter_tasks_allowed; then
+      log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents ensured (starter tasks skipped: update-only or not closed out)"
     else
       log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents + starter tasks seeded (Kanban non-empty)"
     fi

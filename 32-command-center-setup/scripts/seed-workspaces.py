@@ -28,6 +28,13 @@ from pathlib import Path
 # PRD 1.5: import the canonical dept slug normaliser.
 _SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
 sys.path.insert(0, str(_SHARED_UTILS))
+# A copy run from outside the skills tree (e.g. an operator's /tmp copy) still
+# resolves the box's INSTALLED shared-utils, so canonical_slug's alias map
+# (ceo -> master-orchestrator ...) is never silently replaced by the inline slugger.
+for _su in (Path.home() / ".openclaw" / "skills" / "shared-utils",
+            Path("/data/.openclaw/skills/shared-utils")):
+    if _su.is_dir() and str(_su) not in sys.path:
+        sys.path.append(str(_su))
 try:
     from resolve_db import find_dashboard_db as _shared_find_dashboard_db  # type: ignore
     _HAS_SHARED_RESOLVER = True

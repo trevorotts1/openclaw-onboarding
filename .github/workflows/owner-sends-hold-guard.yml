@@ -24,6 +24,8 @@ on:
       - "32-command-center-setup/scripts/repair-board-company.py"
       - "tests/unit/test_owner_sends_hold.py"
       - "tests/unit/test_board_company_repair.py"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "tests/unit/test_starter_tasks_gate.sh"
       - ".github/workflows/owner-sends-hold-guard.yml"
   pull_request:
     branches: [main]
@@ -41,6 +43,8 @@ on:
       - "32-command-center-setup/scripts/repair-board-company.py"
       - "tests/unit/test_owner_sends_hold.py"
       - "tests/unit/test_board_company_repair.py"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "tests/unit/test_starter_tasks_gate.sh"
       - ".github/workflows/owner-sends-hold-guard.yml"
 
 jobs:
@@ -60,3 +64,5 @@ jobs:
         run: python3 tests/unit/test_owner_sends_hold.py
       - name: Board company (duplicate row, default queue, repair command)
         run: python3 tests/unit/test_board_company_repair.py
+      - name: Starter tasks only after closeout, never on an update roll
+        run: bash tests/unit/test_starter_tasks_gate.sh

@@ -13,7 +13,13 @@ Repairs the two faults that leave a client's lanes unreachable:
      a recorded engine queue is moved to the client's company (the workspace row
      and every row that carries both its workspace_id and company_id).
   C. MISSING LANES: seeds the client's departments that have no lane yet
-     (seed-workspaces.py, same rules as the installer).
+     (seed-workspaces.py, same rules as the installer). The department set is
+     the UNION of departments.json, the build state's departments[] and the
+     department folders on disk under the build's companyRoot -- the tree the
+     zero-human check audits. departments.json alone missed departments added
+     after it was written. Lanes are matched on the CANONICAL slug of both the
+     workspace id and its slug (a CEO lane with id master-orchestrator and slug
+     ceo is the ceo department), never on the raw id.
 
 Dry run by default: prints the plan, changes nothing. --apply makes a SQLite
 backup of the DB (<db>.bak-repair-board-company-<ts>) first, then commits A+B
@@ -70,7 +76,54 @@ def columns(cur, table):
     return [r[1] for r in cur.execute(f'PRAGMA table_info("{table}")')]
 
 
-def plan(cur, company_id, dept_ids):
+def build_state():
+    for p in (Path("/data/.openclaw/workspace/.workforce-build-state.json"),
+              Path.home() / ".openclaw/workspace/.workforce-build-state.json"):
+        try:
+            s = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(s, dict):
+            return s
+    return {}
+
+
+def department_set(seeder, state):
+    """Every department this client has: departments.json + build state + disk."""
+    departments, _ = seeder.find_departments_config()
+    if not departments:
+        departments, _ = seeder.scan_skill23_workspaces()
+    out = list(seeder._normalize_departments(departments) or [])
+    seen = {seeder._canonical_dept_slug(d.get("id", "")) for d in out}
+
+    def add(raw, name=None):
+        slug = seeder._canonical_dept_slug(str(raw or ""))
+        if slug and slug not in seen:
+            seen.add(slug)
+            out.append({"id": slug, "name": name or slug.replace("-", " ").title(), "emoji": "\U0001F4C1"})
+
+    for d in state.get("departments") or []:
+        if isinstance(d, dict):
+            add(d.get("slug") or d.get("dept_id") or d.get("id"), d.get("name"))
+    root = state.get("companyRoot") or os.environ.get("ZERO_HUMAN_COMPANY_DIR")
+    ddir = Path(root) / "departments" if root else None
+    if ddir and ddir.is_dir():
+        for p in sorted(ddir.iterdir()):
+            if p.is_dir() and not p.name.startswith((".", "_")):
+                add(p.name)
+    return out
+
+
+def covered(cur, company_id, canon):
+    """Canonical slugs that already have a lane (id OR slug) under the client or 'default'."""
+    have = set()
+    for wid, wslug in cur.execute("SELECT id, slug FROM workspaces WHERE company_id IN (?, 'default')",
+                                  (company_id,)):
+        have |= {canon(wid or ""), canon(wslug or "")}
+    return have - {""}
+
+
+def plan(cur, company_id, dept_ids, canon=lambda x: x):
     row = cur.execute("SELECT id, name, slug FROM companies WHERE id=?", (company_id,)).fetchone()
     if not row:
         raise SystemExit(f"canonical company {company_id!r} has no companies row; refusing")
@@ -83,8 +136,8 @@ def plan(cur, company_id, dept_ids):
     engine = set()
     if cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_workspace_bootstrap'").fetchone():
         engine = {r[0] for r in cur.execute("SELECT workspace_id FROM engine_workspace_bootstrap")}
-    lanes = [r[0] for r in cur.execute("SELECT id FROM workspaces WHERE company_id='default'")
-             if r[0] in dept_ids or r[0] in engine]
+    lanes = [r[0] for r in cur.execute("SELECT id, slug FROM workspaces WHERE company_id='default'")
+             if canon(r[0]) in dept_ids or canon(r[1] or "") in dept_ids or r[0] in engine]
     return {"company": {"id": company_id, "name": name, "slug": slug},
             "duplicates": dups, "other_companies": others, "default_lanes": sorted(lanes)}
 
@@ -126,18 +179,16 @@ def main(argv=None):
     if not company_id or company_id == "default":
         print("ERROR: no canonical company id (pass --company-id or set MC_COMPANY_ID)", file=sys.stderr)
         return 2
-    departments, _ = seeder.find_departments_config()
-    if not departments:
-        departments, _ = seeder.scan_skill23_workspaces()
-    departments = seeder._normalize_departments(departments) or []
-    dept_ids = {seeder._canonical_dept_slug(d.get("id", "")) for d in departments} - {""}
+    canon = seeder._canonical_dept_slug
+    departments = department_set(seeder, build_state())
+    dept_ids = {canon(d.get("id", "")) for d in departments} - {""}
 
     conn = sqlite3.connect(db)
     try:
         cur = conn.cursor()
-        p = plan(cur, company_id, dept_ids)
-        existing = {r[0] for r in cur.execute("SELECT id FROM workspaces WHERE company_id IN (?, 'default')", (company_id,))}
-        p["missing_lanes"] = sorted(dept_ids - existing)
+        p = plan(cur, company_id, dept_ids, canon)
+        p["missing_lanes"] = sorted(dept_ids - covered(cur, company_id, canon))
+        p["canonical_slug_module"] = "shared-utils/canonical_slug.py" if seeder._HAS_CANONICAL_SLUG else "INLINE FALLBACK"
         print(json.dumps(p, indent=2))
         if p["default_lanes"] and p["other_companies"]:
             print("REFUSING step B: this board holds other companies "
@@ -165,7 +216,8 @@ def main(argv=None):
         comp = p["company"]
         info = seeder.find_company_info(None)
         info.update(companyId=company_id, name=comp["name"], slug=comp["slug"])
-        seeder.seed(db, departments, info)
+        missing = set(p["missing_lanes"])
+        seeder.seed(db, [d for d in departments if canon(d.get("id", "")) in missing], info)
     return 0
 
 
