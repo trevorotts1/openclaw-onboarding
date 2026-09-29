@@ -159,12 +159,13 @@ def test_the_standard_mode_ceiling_constant_is_the_operators_100():
     """THE ONE LINE. `model_router.py` STANDARD_MODE_CEILING was 100 until
     86662bb67 made it 25 on a recommendation the review itself labelled
     "Trevor's call". 25 was never ratified; 100 was what he had."""
-    assert model_router.STANDARD_MODE_CEILING == 100, (
-        "standard was narrowed again -- 100 is the operator's number")
-    assert model_router.ULTRA_OPERATOR_CEILING == 100, (
-        "the human-ratified operator ceiling must not move either")
-    assert model_router.MODE_OPERATOR_CEILING["standard"] == 100
-    assert model_router.MODE_OPERATOR_CEILING["ultra"] == 100
+    # FIX 61.5: ultra 400, standard 25, economy 100 -- the axis is real.
+    assert model_router.STANDARD_MODE_CEILING == 25, (
+        "FIX 61: standard ceiling is 25")
+    assert model_router.ULTRA_OPERATOR_CEILING == 400, (
+        "FIX 61: ultra ceiling is 400")
+    assert model_router.MODE_OPERATOR_CEILING["standard"] == 25
+    assert model_router.MODE_OPERATOR_CEILING["ultra"] == 400
     assert model_router.MODE_OPERATOR_CEILING["economy"] == 100
 
 

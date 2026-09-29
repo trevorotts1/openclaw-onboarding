@@ -423,6 +423,54 @@ export const INTAKE_CONTRACT = {
       }
     },
     {
+      id: "deepseek_variant",
+      canonical_path: "pre_presentation_capture.DEEPSEEK_VARIANT",
+      section: "pre_presentation_capture",
+      kind: "enum",
+      required: false,
+      block_gate: false,
+      allowed_values: ["flash", "pro"],
+      legacy_aliases: ["DEEPSEEK_VARIANT", "deepseek_variant"],
+      question: {
+        // FIX 61.2 — the client's DeepSeek variant pick.
+        id: "deepseek_variant",
+        order: 11.6,
+        kind: "enum",
+        prompt: "Which DeepSeek variant for the heavy writing?",
+        help: "Flash is fast and cheap; Pro is the strongest.",
+        label: "DeepSeek variant",
+        required: false,
+        storeOn: "pre_presentation_capture.DEEPSEEK_VARIANT",
+        default: "",
+        allowed_values: ["flash", "pro"],
+        value_labels: {
+          "flash": "Flash — fast and cheap",
+          "pro": "Pro — strongest"
+        }
+      }
+    },
+    {
+      id: "openrouter_model",
+      canonical_path: "pre_presentation_capture.OPENROUTER_MODEL",
+      section: "pre_presentation_capture",
+      kind: "text",
+      required: false,
+      block_gate: false,
+      legacy_aliases: ["OPENROUTER_MODEL", "openrouter_model"],
+      question: {
+        // FIX 61.2 — the client's OpenRouter model pick (free text).
+        id: "openrouter_model",
+        order: 11.7,
+        kind: "text",
+        prompt: "Which OpenRouter model should Ultra use? (e.g. z-ai/glm-5.3-flash)",
+        help: "In Ultra mode this model replaces any Ollama-routed step.",
+        label: "OpenRouter model",
+        required: false,
+        storeOn: "pre_presentation_capture.OPENROUTER_MODEL",
+        default: ""
+      }
+    },
+    {
       id: "client_notes",
       canonical_path: "deck_brief.CLIENT_NOTES",
       section: "deck_brief",

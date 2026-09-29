@@ -222,14 +222,28 @@ def resolve_base_url() -> str:
     return url.rstrip("/") + "/chat/completions"
 
 
-def resolve_api_key() -> str:
-    """Bearer key from env: Ollama Cloud primary, OpenRouter fallback (generic
-    SPEECH_LLM_API_KEY / OPENAI_API_KEY overrides at the ends). NEVER ANTHROPIC_API_KEY."""
-    for name in ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
+def resolve_api_key(url: str = "") -> str:
+    """Bearer token from env, paired with the provider's URL.
+
+    FIX 61.1: never send an OpenRouter key to the ollama.com URL. Each key is
+    paired with its own provider's endpoint. Generic overrides (SPEECH_LLM_API_KEY,
+    OPENAI_API_KEY) still win. NEVER ANTHROPIC_API_KEY.
+    """
+    url = url or resolve_base_url()
+    url_l = url.lower()
+    if "openrouter.ai" in url_l:
+        names = ("SPEECH_LLM_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
+    elif "ollama.com" in url_l:
+        names = ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENAI_API_KEY")
+    else:
+        names = ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
+    for name in names:
         v = os.environ.get(name, "").strip()
         if v:
             return v
     return ""
+
+
 
 
 #: PD-TEST-196: the documented OpenRouter fallback endpoint. `resolve_base_url()`
@@ -266,6 +280,10 @@ def resolve_candidates() -> list:
     try:
         primary_url, primary_key = resolve_base_url(), resolve_api_key()
     except Exception:  # noqa: BLE001 -- resolution must never break resolution
+        primary_url, primary_key = "", ""
+    # FIX 61.1: Ultra never uses Ollama. Drop the ollama.com primary; the
+    # OpenRouter fallback candidate below becomes the effective primary.
+    if os.environ.get("PRESENTATION_MODE") == "ultra" and "ollama.com" in primary_url.lower():
         primary_url, primary_key = "", ""
     if primary_key:
         # None == "use the caller's model"; the primary is the endpoint the
@@ -1357,7 +1375,10 @@ def main():
         sys.exit(0 if all_pass else 1)
 
     # Real run
-    api_key = resolve_api_key()
+    if os.environ.get("PRESENTATION_MODE") == "ultra":
+        api_key = resolve_api_key("https://openrouter.ai/api/v1/chat/completions")
+    else:
+        api_key = resolve_api_key()
     if not api_key:
         sys.exit(
             "FAIL: no LLM API key set. Set OLLAMA_API_KEY (Ollama Cloud, default endpoint) "

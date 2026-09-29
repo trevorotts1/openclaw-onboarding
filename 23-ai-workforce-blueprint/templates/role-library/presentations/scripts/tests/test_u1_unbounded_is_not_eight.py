@@ -172,7 +172,7 @@ def test_the_premise_holds():
         "openrouter left NO_CAP_PROVIDERS; this file no longer reproduces U1 "
         f"-- NO_CAP_PROVIDERS = {set(capacity.NO_CAP_PROVIDERS)!r}")
     assert dispatcher.DEFAULT_MAX_WORKERS == 8
-    assert model_router.ULTRA_OPERATOR_CEILING == 100
+    assert model_router.ULTRA_OPERATOR_CEILING == 400
     assert model_router.ULTRA_OPERATOR_CEILING != dispatcher.DEFAULT_MAX_WORKERS, (
         "the ultra ceiling and the worker default are the same number; every "
         "assertion below would be untestable")

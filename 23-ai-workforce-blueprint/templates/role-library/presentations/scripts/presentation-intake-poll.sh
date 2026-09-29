@@ -1233,8 +1233,48 @@ except Exception:
         # credit_preflight gate never ran for it. When RUN_MODE is set, run
         # the preflight here; a non-zero exit refuses the run and the engine
         # is never started. Do NOT re-route --new through the launcher.
-        # (Fix 61 step 4 later adds the ultra-only checks at this same spot.)
+        # FIX 61.4: ultra-only checks at this same spot. In ultra, refuse
+        # non-mechanical phases with no route, and validate the declared
+        # OpenRouter model against the live list -- BEFORE any spend.
         PREFLIGHT_RC=0
+        if [ "${RUN_MODE:-}" = "ultra" ]; then
+            ULTRA_CHECK_RC=0
+            ( cd "$SCRIPTS_DIR" && python3 -c "
+import sys
+sys.path.insert(0, '.')
+from presentation_job import model_router as router
+from presentation_job import resource_profile as rp
+from presentation_job import credit_preflight as cp
+profile = rp.load_profile()
+plan = router.model_plan(profile) or {}
+# Check OpenRouter model
+or_model = plan.get('openrouter_model')
+if or_model:
+    ok, reason = cp.check_openrouter_model(str(or_model))
+    if not ok:
+        print(f'MODEL PLAN REFUSED: {reason}', file=sys.stderr)
+        sys.exit(3)
+# Check non-mechanical phases have routes
+for phase_id, cap in router.PHASE_CAPABILITY.items():
+    if cap == 'mechanical':
+        continue
+    try:
+        decision = router.resolve_route(phase_id, profile=profile, mode='ultra')
+    except Exception:
+        continue
+    if decision.get('route') is None:
+        print(f'MODEL PLAN REFUSED: ultra: phase {phase_id!r} has no eligible route -- ultra launch refused BEFORE any spend', file=sys.stderr)
+        sys.exit(3)
+" ) 2>&1 | while IFS= read -r line; do
+                log "  [ultra-check] $line"
+            done
+            ULTRA_CHECK_RC=${PIPESTATUS[0]}
+            if [ "$ULTRA_CHECK_RC" -ne 0 ]; then
+                log "  NOT LAUNCHED: ultra checks refused $run_dir (rc $ULTRA_CHECK_RC) -- engine not started. Counted as REFUSED, never as a launch."
+                REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
+                PREFLIGHT_RC=$ULTRA_CHECK_RC
+            fi
+        fi
         if [ -n "${RUN_MODE:-}" ]; then
             ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.credit_preflight \
                 --run-dir "$run_dir" --mode "$RUN_MODE" ) 2>&1 | while IFS= read -r line; do

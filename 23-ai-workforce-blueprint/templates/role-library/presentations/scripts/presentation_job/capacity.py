@@ -906,6 +906,47 @@ def _extract_model_ids(payload: bytes) -> Tuple[list, Optional[str]]:
             ids.append(item)
     return ids, None
 
+
+def _extract_model_pricing(payload: bytes) -> dict:
+    """Pull {model_id: pricing} out of a GET /models body.
+
+    FIX 61.3: sibling of _extract_model_ids that keeps the pricing blob.
+    OpenRouter's pricing.prompt / pricing.completion are dollars PER TOKEN
+    as strings; multiplied by 1,000,000 for per-million. The endpoint is
+    public; no key is needed. Returns {} on any parse failure.
+    """
+    try:
+        parsed = json.loads(payload.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        return {}
+    if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
+        items = parsed["data"]
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
+        return {}
+    out = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        mid = item.get("id")
+        if not isinstance(mid, str):
+            continue
+        pricing = item.get("pricing") or {}
+        try:
+            prompt_per_m = float(pricing.get("prompt") or 0) * 1_000_000
+            completion_per_m = float(pricing.get("completion") or 0) * 1_000_000
+        except (ValueError, TypeError):
+            continue
+        out[mid] = {
+            "prompt_per_million": prompt_per_m,
+            "completion_per_million": completion_per_m,
+        }
+        # Keep the raw expiration for the retired-model check.
+        if item.get("expiration_date"):
+            out[mid]["expiration_date"] = item["expiration_date"]
+    return out
+
 def _read_secret_value(env_key: str) -> Optional[str]:
     """Resolve a credential for `probe_one_provider`, in order:
 
@@ -1034,6 +1075,8 @@ def probe_one_provider(provider: str,
             result["models_error"] = error
         else:
             result["models"] = sorted(ids)
+            # FIX 61.3: keep the pricing table for the credit preflight.
+            result["model_pricing"] = _extract_model_pricing(body)
             result["ok"] = True
     elif status == 401 or status == 403:
         result["models_error"] = ("key present but rejected by provider "

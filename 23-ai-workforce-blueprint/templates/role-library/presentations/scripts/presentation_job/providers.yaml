@@ -24,24 +24,23 @@ defaults:
   poll_counts_toward_rps: true
 
 kie:
-  # Part 7: 20 new tasks per 10 s -> 2 submits/s; ~100+ running -> 100 in
-  # flight; poll GETs counted in the same window; 429 dropped not queued.
-  rps: 2.0
-  burst: 20
+  # FIX 61.6: 20 new tasks per 15 s -> 1.33 submits/s; ~100+ running -> 100
+  # in flight; poll GETs do NOT count toward rps (they skip the rate window);
+  # 429 dropped not queued.
+  rps: 1.33
+  burst: 13
   max_inflight: 100
   daily_cap: 5000
-  # polls count toward the rate bucket (Part 7: poll GETs counted in the
-  # same 10 s window as submits)
-  poll_counts_toward_rps: true
+  # FIX 61.6: polls do NOT count toward the rate bucket -- "is it done yet?"
+  # checks skip the rate window entirely.
+  poll_counts_toward_rps: false
 
 deepseek:
   # Part 7: DeepSeek direct, account-wide concurrency: Pro 500, Flash 2500.
-  # rps is the acquisition limiter: the pro tier supports 400 text units and
-  # flash 2000; the per-model split lives in model_catalog/route stamps, the
-  # governor holds the shared account bucket at the pro-safe number and the
-  # dispatcher's own per-model caps stay under it.
-  rps: 5.0
-  burst: 20
+  # declared from published limit: https://api-docs.deepseek.com/quick_start/rate_limit (Flash 2500 / V4-Pro 500 concurrent per account)
+  # FIX 61.6 (D4): rps 100, burst 400, max_inflight 400.
+  rps: 100
+  burst: 400
   max_inflight: 400
   daily_cap: 0
   poll_counts_toward_rps: true
@@ -92,7 +91,8 @@ openrouter:
   # for report_429 rows in the governor ledger.
   rps: 10.0
   burst: 100
-  max_inflight: 100
+  # FIX 61.5: raised to 400 so ultra's 400 ceiling is reachable.
+  max_inflight: 400
   daily_cap: 0
   poll_counts_toward_rps: true
 

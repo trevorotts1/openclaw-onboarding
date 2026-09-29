@@ -1191,6 +1191,38 @@ def model_plan_gate(run_path: Path, mode: Optional[str] = None) -> Optional[int]
     except Exception:  # noqa: BLE001 -- an unreadable store is not a plan
         return None
     plan = _router.model_plan(profile)
+    # FIX 61.4: Ultra checks run BEFORE the early exit. In ultra, every
+    # non-mechanical phase must have a route, and the OpenRouter model (if
+    # declared) must be on the live list. This stops a fake-ultra run that
+    # declares nothing and silently gets standard.
+    _mode_norm = str(mode or "").strip().lower()
+    if _mode_norm == "ultra":
+        try:
+            from . import credit_preflight as _cp
+        except ImportError:
+            import credit_preflight as _cp  # type: ignore[no-redef]
+        # Check the declared OpenRouter model against the live list.
+        _or_model = (plan or {}).get("openrouter_model") if isinstance(plan, dict) else None
+        if _or_model:
+            _ok, _reason = _cp.check_openrouter_model(str(_or_model))
+            if not _ok:
+                print(f"MODEL PLAN REFUSED: {_reason}", file=sys.stderr)
+                return 3  # DISPATCH_MODEL_PLAN_REFUSED
+        # Refuse non-mechanical phases with no route.
+        for _phase_id, _cap in _router.PHASE_CAPABILITY.items():
+            if _cap == "mechanical":
+                continue
+            try:
+                _decision = _router.resolve_route(_phase_id, profile=profile,
+                                                   mode="ultra")
+            except Exception:
+                continue  # router error is not a verdict here
+            if _decision.get("route") is None:
+                print(f"MODEL PLAN REFUSED: ultra: phase {_phase_id!r} "
+                      f"(capability {_cap!r}) has no eligible route -- "
+                      f"ultra launch refused BEFORE any spend",
+                      file=sys.stderr)
+                return 3  # DISPATCH_MODEL_PLAN_REFUSED
     if not plan:
         # No client declaration: this gate does not exist for this run. No
         # sidecar, no banner, no refusal -- byte-for-byte the pre-fix launch.
