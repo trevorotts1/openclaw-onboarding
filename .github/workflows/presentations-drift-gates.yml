@@ -156,6 +156,8 @@ on:
       # This workflow file
       - ".github/workflows/presentations-drift-gates.yml"
 
+      # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate
+      - "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
 jobs:
   presentations-drift-gates:
     name: drift-gates + Skill-51 verify.sh (${{ matrix.platform }})
