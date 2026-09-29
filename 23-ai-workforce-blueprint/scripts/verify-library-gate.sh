@@ -574,7 +574,7 @@ echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP
 
 # ==============================================================================
 # AUTO-SEND: Presentations Department Welcome (v10.18.0)
-# When every gate passes, fire the one-time Presentations dept welcome to the
+# When the WHOLE gate passes (rc 0), fire the one-time Presentations dept welcome to the
 # owner via Telegram. The send script is idempotent (presentationDeptWelcomeSent
 # in state file) -- safe to call on every gate pass. A send failure is logged
 # as a WARNING and does NOT alter the gate exit code.
@@ -583,7 +583,10 @@ echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP
 # Canonical template: templates/role-library/presentations/
 #   first-time-onboarding-presentations.md Section 20.
 # ==============================================================================
-if [ "$BOUNDARY_STATUS" = "done" ] && [ "$TRIO_STATUS" = "done" ] && \
+# Fires ONLY on a FULL gate pass (GATE_RC=0). The four statuses alone are not
+# enough: a ZHE failure (rc 9) left them all "done" and still fired the welcome.
+# The send script also honors the durable owner-sends hold.
+if [ "$GATE_RC" = "0" ] && [ "$BOUNDARY_STATUS" = "done" ] && [ "$TRIO_STATUS" = "done" ] && \
    [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
   _WELCOME_SCRIPT="$SCRIPT_DIR/send-presentation-dept-welcome.sh"
   if [ -f "$_WELCOME_SCRIPT" ]; then

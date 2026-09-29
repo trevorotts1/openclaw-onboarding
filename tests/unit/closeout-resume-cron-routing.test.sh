@@ -80,6 +80,10 @@ _mkbox() {
   local shared="$h/.openclaw/skills/23-ai-workforce-blueprint/scripts"
   mkdir -p "$shared"
   cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$shared/"
+  # The owner-sends hold helper ships in <skills>/shared-utils (a missing helper
+  # means HELD, fail-closed).
+  mkdir -p "$h/.openclaw/skills/shared-utils"
+  cp "$REPO_ROOT/shared-utils/owner_sends_hold.py" "$h/.openclaw/skills/shared-utils/"
   # STUB run-closeout.sh: records that it fired; never runs the real closeout.
   cat > "$skill/run-closeout.sh" <<STUBEOF
 #!/usr/bin/env bash

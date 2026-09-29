@@ -2178,6 +2178,13 @@ else
       # reconcile via the authenticated readiness probe; never blindly re-POST.
       state_set '.commandCenterPhase6hStatus = "requested"'
       export CC_TUNNEL_IDEMPOTENCY_KEY="$(state_get '.installationId')-command-center"
+      # commandCenterUrl absent (a state initialized before it was seeded on every
+      # path): seed the same slug default interview-launch.py uses, so the tunnel
+      # host is never empty (create-tunnel.sh aborts on an empty one, pre-POST).
+      if [[ -z "$(state_get '.commandCenterUrl')" ]] && [[ "$CLIENT_SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+        state_set ".commandCenterUrl = (.commandCenterUrl // \"https://${CLIENT_SLUG}.zerohumanworkforce.com\")"
+        log "INFO" "phase=6h: commandCenterUrl was absent -- seeded the slug default https://${CLIENT_SLUG}.zerohumanworkforce.com"
+      fi
       export CC_TUNNEL_EXPECTED_HOST="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.urlsplit(sys.argv[1]).hostname or "")' "$(state_get '.commandCenterUrl')")"
       if ! OPENCLAW_ROOT="$OC_ROOT" bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
         log "WARN" "phase=6h: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"

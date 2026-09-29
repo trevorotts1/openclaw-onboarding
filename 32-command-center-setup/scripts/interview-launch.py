@@ -58,8 +58,10 @@ def initialize(path, slug, name, email, env):
         # Configured public URL wins (CC_PUBLIC_URL operator override, then the
         # tunnel-ingress canonical MC_TENANT_PUBLIC_URL); the slug default is a
         # candidate only, never a verified receipt (provision/invite enforce that).
-        if fresh:
-            s.setdefault('commandCenterUrl', public_origin((env.get('CC_PUBLIC_URL') or '').strip() or env.get('MC_TENANT_PUBLIC_URL') or 'https://'+slug+'.zerohumanworkforce.com'))
+        # Seeded on EVERY initialize, not only a fresh one: an existing box with no
+        # commandCenterUrl otherwise exports an empty CC_TUNNEL_EXPECTED_HOST and
+        # create-tunnel.sh aborts before its POST. setdefault never overwrites.
+        s.setdefault('commandCenterUrl', public_origin((env.get('CC_PUBLIC_URL') or '').strip() or env.get('MC_TENANT_PUBLIC_URL') or 'https://'+slug+'.zerohumanworkforce.com'))
         lane = env.get('ONBOARDING_LANE') or ('standard-first' if fresh else None)
         if lane and lane not in ('standard-first', 'legacy'): raise ValueError('ONBOARDING_LANE must be standard-first or legacy')
         if lane and s.get('buildType') and s['buildType'] != lane:

@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Board lanes land under the client's ONE company.
+
+  * seed-dashboard-content.py: a company name with punctuation ("Acme Rocket!")
+    no longer creates a second company row; the canonical companyId wins and is
+    updated in place.
+  * seed-workspaces.py: a CC system queue under 'default' that cannot be adopted
+    no longer aborts the whole seed -- the client's custom lanes are seeded.
+  * repair-board-company.py: dry run changes nothing; --apply merges the
+    duplicate company, moves the client's 'default' lanes, seeds missing lanes,
+    backs the DB up first, and is idempotent; a shared (multi-company) board
+    refuses the lane move.
+
+Run: python3 tests/unit/test_board_company_repair.py
+"""
+import importlib.util
+import json
+import os
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[2]
+S32 = ROOT / "32-command-center-setup" / "scripts"
+UUID = "0f0e0d0c-0b0a-4908-8706-050403020100"
+
+
+def _load(name, file):
+    spec = importlib.util.spec_from_file_location(name, str(S32 / file))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _Board(unittest.TestCase):
+    def setUp(self):
+        self._t = tempfile.TemporaryDirectory()
+        self.root = Path(self._t.name)
+        self.db = self.root / "mission-control.db"
+        self.company = self.root / "company"
+        self.company.mkdir()
+        (self.company / "departments.json").write_text(json.dumps([
+            {"id": "marketing", "name": "Marketing"},
+            {"id": "client-experience-booking", "name": "Client Experience Booking"},
+            {"id": "launch-operations", "name": "Launch Operations"},
+            {"id": "podcast", "name": "Podcast"}]))
+        (self.company / "company-config.json").write_text(json.dumps(
+            {"name": "Acme Rocket", "slug": "acme-rocket", "companyId": UUID}))
+        with sqlite3.connect(self.db) as db:
+            db.executescript(f"""
+                CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL,
+                                        industry TEXT, config TEXT DEFAULT '{{}}');
+                CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL,
+                                         description TEXT, icon TEXT, company_id TEXT DEFAULT 'default');
+                CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT, workspace_id TEXT, company_id TEXT);
+                CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT, workspace_id TEXT, company_id TEXT);
+                CREATE TABLE engine_workspace_bootstrap (workspace_id TEXT PRIMARY KEY,
+                    original_workspace_json TEXT, adopted_company_id TEXT,
+                    adoption_backup_json TEXT, adopted_at TEXT);
+                INSERT INTO companies (id, name, slug) VALUES ('default', 'Default', 'default');
+                INSERT INTO companies (id, name, slug) VALUES ('{UUID}', 'Acme Rocket', 'acme-rocket');
+                INSERT INTO companies (id, name, slug) VALUES ('dup0001', 'Acme Rocket!', 'acme rocket!');
+                INSERT INTO agents VALUES ('dept-head-x', 'Head', 'marketing', 'dup0001');
+                INSERT INTO workspaces (id, name, slug, company_id) VALUES ('marketing', 'Marketing', 'marketing', '{UUID}');
+                INSERT INTO workspaces (id, name, slug, company_id) VALUES ('podcast', 'Podcast', 'podcast', 'default');
+                INSERT INTO engine_workspace_bootstrap (workspace_id, original_workspace_json)
+                    VALUES ('podcast', '{{}}');
+                INSERT INTO tasks VALUES ('ep-1', 'Episode 1', 'podcast', 'default');
+            """)
+        self.env = mock.patch.dict(os.environ, {"HOME": str(self.root), "ZERO_HUMAN_COMPANY_DIR": str(self.company),
+                                                "MC_COMPANY_ID": UUID, "COMPANY_SLUG": "acme-rocket"})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self._t.cleanup()
+
+    def q(self, sql, *args):
+        with sqlite3.connect(self.db) as db:
+            return db.execute(sql, args).fetchall()
+
+
+class TestSeedDashboardCompanyRow(_Board):
+    def test_punctuated_name_never_creates_a_second_company(self):
+        sd = _load("sd_company_test", "seed-dashboard-content.py")
+        self.q("DELETE FROM companies WHERE id='dup0001'")
+        for env in ({"MC_COMPANY_ID": UUID}, {"MC_COMPANY_ID": ""}):  # by companyId, then by slug
+            with mock.patch.dict(os.environ, {"COMPANY_NAME": "Acme Rocket!", **env}):
+                info = sd.find_company_config()
+                with sqlite3.connect(self.db) as db:
+                    self.assertEqual(sd.insert_company(db, info), UUID)
+                    db.commit()
+            self.assertEqual(self.q("SELECT id FROM companies WHERE id != 'default'"), [(UUID,)])
+
+    def test_slug_rule_strips_punctuation(self):
+        src = (S32 / "seed-dashboard-content.py").read_text()
+        self.assertNotIn('.lower().replace(" ", "-").replace(",", "")', src)
+
+
+class TestSeedWorkspacesDoesNotAbort(_Board):
+    def test_default_owned_queue_left_alone_custom_lanes_seeded(self):
+        sw = _load("sw_seed_test", "seed-workspaces.py")
+        deps, _ = sw.find_departments_config()
+        sw.seed(self.db, deps, {"companyId": UUID, "name": "Acme Rocket", "slug": "acme-rocket", "industry": "",
+                                "brand_primary": "#1", "brand_accent": "#2", "brand_text": "#3"})
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='podcast'"), [("default",)])
+        owned = {r[0] for r in self.q("SELECT id FROM workspaces WHERE company_id=?", UUID)}
+        self.assertTrue({"client-experience-booking", "launch-operations"} <= owned, owned)
+
+
+class TestRepairCommand(_Board):
+    def repair(self, *args):
+        return _load("repair_test", "repair-board-company.py").main(["--db", str(self.db), *args])
+
+    def test_dry_run_changes_nothing(self):
+        before = self.db.read_bytes()
+        self.assertEqual(self.repair(), 0)
+        self.assertEqual(before, self.db.read_bytes())
+
+    def test_apply_merges_moves_seeds_and_is_idempotent(self):
+        self.assertEqual(self.repair("--apply"), 0)
+        self.assertEqual(self.q("SELECT id FROM companies ORDER BY id"), sorted([("default",), (UUID,)]))
+        self.assertEqual(self.q("SELECT company_id FROM agents WHERE id='dept-head-x'"), [(UUID,)])
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='podcast'"), [(UUID,)])
+        self.assertEqual(self.q("SELECT company_id FROM tasks WHERE id='ep-1'"), [(UUID,)])
+        owned = {r[0] for r in self.q("SELECT id FROM workspaces WHERE company_id=?", UUID)}
+        self.assertEqual(owned, {"marketing", "podcast", "client-experience-booking", "launch-operations"})
+        self.assertTrue(list(self.root.glob("mission-control.db.bak-repair-board-company-*")))
+        after = self.db.read_bytes()
+        self.assertEqual(self.repair("--apply"), 0)
+        self.assertEqual(after, self.db.read_bytes(), "second --apply must be a no-op")
+
+    def test_shared_board_refuses_the_lane_move(self):
+        self.q("INSERT INTO companies (id, name, slug) VALUES ('other-client', 'Other', 'other')")
+        self.assertEqual(self.repair("--apply"), 0)
+        self.assertEqual(self.q("SELECT company_id FROM workspaces WHERE id='podcast'"), [("default",)])
+        self.assertEqual(self.q("SELECT company_id FROM tasks WHERE id='ep-1'"), [("default",)])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

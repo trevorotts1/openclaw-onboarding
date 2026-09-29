@@ -29,6 +29,13 @@ class Launch(unittest.TestCase):
     def test_legacy_not_converted(self):
         self.state.parent.mkdir();self.state.write_text(json.dumps({'companySlug':'client-a','companyId':'legacy-id','buildType':'legacy','interviewComplete':False,'interviewProgress':{'saved':'answer'}}))
         self.initialize();s=json.loads(self.state.read_text());self.assertEqual(s['buildType'],'legacy');self.assertNotIn('operatorConsent',s);self.assertEqual(s['interviewProgress'],{'saved':'answer'})
+    def test_existing_state_gets_command_center_url(self):
+        # A box initialized before the URL was seeded on every path: the tunnel
+        # host must never be empty (create-tunnel.sh aborts pre-POST on it).
+        self.state.parent.mkdir();self.state.write_text(json.dumps({'companySlug':'client-a','companyId':'legacy-id','buildType':'legacy','interviewComplete':False}))
+        self.initialize();self.assertEqual(json.loads(self.state.read_text())['commandCenterUrl'],'https://client-a.zerohumanworkforce.com')
+        s=json.loads(self.state.read_text());s['commandCenterUrl']='https://custom.example.test';self.state.write_text(json.dumps(s))
+        self.initialize();self.assertEqual(json.loads(self.state.read_text())['commandCenterUrl'],'https://custom.example.test')
     def test_real_db_and_environment_binding(self):
         self.initialize();(self.app/'.env.local').write_text('MC_API_TOKEN=fixture-token\n')
         m.provision(self.state,self.app,self.root,{})

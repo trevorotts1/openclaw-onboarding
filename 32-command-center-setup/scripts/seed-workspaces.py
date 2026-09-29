@@ -799,6 +799,17 @@ def _seed_transaction(conn, departments, company_info):
             # UUID must be supplied by the canonical launch context. A company
             # name or slug guessed by discovery is not adoption authorization.
             if not requested_id or not _adopt_unused_engine_bootstrap(cur, dept_id, company_id):
+                if all(row[0] == 'default' for row in owner):
+                    # A Command Center system/engine queue (podcast, anthology)
+                    # seeded under the CC's own 'default' company that is not an
+                    # adoptable placeholder. Leave it exactly as it is and seed the
+                    # REST: one such queue used to roll back the whole seed, so the
+                    # client's custom departments never got a board. Reassigning it
+                    # is the explicit repair-board-company.py --apply, never this.
+                    print(f"  SKIPPED (CC system queue under 'default', not adoptable): {dept_id} "
+                          f"-- see repair-board-company.py")
+                    skipped += 1
+                    continue
                 conn.rollback()
                 conn.close()
                 raise ValueError(f'department {dept_id} belongs to a different company or an active/custom system queue; refusing shared-client mutation. Resume the supported installer; do not rewrite company IDs.')

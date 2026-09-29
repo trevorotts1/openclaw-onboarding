@@ -1,4 +1,4 @@
-## [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order, build state first, so builds complete on every layout
+## [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order (build state first); durable owner-sends hold; board lanes under one company
 
 ### Why
 The build writes the company where `resolve_company_paths()` puts it and records that as
@@ -46,6 +46,65 @@ so on some layouts the build never completed.
     template dir is still rejected and that both resolver copies are identical.
   - `test-gate-company-dir-resolution.sh` T2 and `qc-departments-tree-resolution.test.sh` S7/S8 now
     encode the corrected template rule. They run in `qc-departments-tree-guard.yml`.
+
+### Owner-sends hold (ships with the resolver: a newly-passing gate must not message owners)
+Once the gate measures the real build tree, boxes that used to fail against a stub tree pass at the
+next roll. Without a hold, that pass fires the Presentations welcome, and the closeout can reach the
+celebration. Both are unrequested owner messages.
+- `shared-utils/owner_sends_hold.py` (new) stores the hold in `.workforce-build-state.json`:
+  - `ownerSendsHold: true` means held;
+  - `false` means released;
+  - absent means held only when `ownerConsent.source == "operator-directive"` (an operator-built
+    workforce), otherwise unchanged.
+
+  `check` exits 1 only when sends are clear. Anything else counts as HELD: python or the helper
+  missing, or unreadable state. `hold` and `release` are the only writers, and nothing ever
+  auto-clears the hold. The stall-fingerprint reset in `resume-closeout-cron.sh` touches only its
+  own `closeoutResumePaused` keys.
+- The hold is checked in:
+  - `send-presentation-dept-welcome.sh` (`--force` does not bypass it);
+  - `send-telegram-celebration.sh` (the sink);
+  - `run-closeout.sh`, before `TELEGRAM`: it records `closeoutOwnerSendsHeld` and exits 0;
+  - `resume-closeout-cron.sh`, before any dispatch;
+  - `resume-workforce-build.sh` HOP-4, before launching `run-closeout.sh`.
+
+  A hold logs, sends nothing and exits 0. To release:
+  `python3 <skills>/shared-utils/owner_sends_hold.py release <state-file>`.
+- `verify-library-gate.sh` fires the welcome only on a FULL pass (`GATE_RC=0`). A ZHE failure (rc 9)
+  used to leave every status "done" and still fire it.
+
+### Command Center URL, board company, openclaw.json validity
+- `interview-launch.py initialize` seeds `commandCenterUrl` from the slug default on EVERY
+  initialize, not only a fresh one. `run-full-install.sh` phase 6h also seeds it when it is absent.
+  Before this, an existing box exported an empty `CC_TUNNEL_EXPECTED_HOST` and `create-tunnel.sh`
+  aborted before its POST.
+- `seed-dashboard-content.py` derives a company slug with the same rule as `seed-workspaces.py`
+  ("Acme Rocket!" becomes `acme-rocket`, not `acme rocket!`). The canonical company id
+  (`MC_COMPANY_ID`, else the build state's `companyId`) is updated in place, and a second company
+  row is never inserted.
+- `seed-workspaces.py` skips a Command Center system queue under the CC's `default` company that
+  cannot be adopted, and leaves it exactly as it is. It still seeds the client's own departments;
+  that queue used to roll back the whole seed, so custom departments never got a board. A queue
+  owned by another real company still refuses the seed. `engine-bootstrap-real-db.test.py` is
+  updated to this contract.
+- `repair-board-company.py` (new; Skill 32) is a dry run by default. `--apply` first backs up the
+  DB, then:
+  1. merges a duplicate company row into the canonical one, moving every row that references it;
+  2. on a single-company board only, moves the client's `default` lanes (its departments and
+     recorded engine queues) to its company;
+  3. seeds the missing lanes.
+
+  It is idempotent. It was not run on any box.
+- `retire-confirmed-decline.sh` no longer writes openclaw.json through the build-state writer,
+  which stamped a root `stateRevision` that `openclaw config validate` rejects.
+- Tests:
+  - `tests/unit/test_owner_sends_hold.py` (11 tests; 6 fail on main).
+  - `tests/unit/test_board_company_repair.py` (6 tests; all fail on main).
+  - `interview-launch.test.py` gains a URL-seeding test.
+  - `retire-decline-separate-workspace.test.py` now asserts that openclaw.json gains no root keys,
+    and runs `openclaw config validate` when the CLI is present.
+  - The new tests run in `owner-sends-hold-guard.yml` (new).
+- Skill 37 bumped to v13.1.5.
 
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
