@@ -116,7 +116,7 @@ STANDARD_READY fixture modes (verification gate for the third verdict):
                                            write the same fixture shapes under DIR (for
                                            downstream gates that want a fixture to prove).
 
-Receipt: receipts/<box>-<UTCiso>.json   — {box, overall_pass, exempt, checks:{...}, ts, ...}
+Receipt: <openclaw root>/state/zhe-receipts/<box>-<UTCiso>.json   — {box, overall_pass, exempt, checks:{...}, ts, ...}
   standard-prebuilt boxes additionally carry {standard_ready: true, verdict: "standard-ready"}
 Exit code: 0 iff overall_pass (or exempt) is true, else 1; 2 on bad invocation.
 """
@@ -124,7 +124,33 @@ import json, os, sys, datetime, subprocess, shlex, re, base64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(HERE, "box-registry.json")
-RECEIPTS_DIR = os.path.join(HERE, "receipts")
+# Receipts once lived in HERE/receipts, inside the hashed skill tree: every run
+# after an update changed the skill's content digest and the fleet roll rolled
+# the box back ("skill 23 digest mismatch"). They are run output, so they live
+# in the box's state dir; old ones are moved out on the next write.
+LEGACY_RECEIPTS_DIR = os.path.join(HERE, "receipts")
+
+
+def receipts_dir():
+    d = os.environ.get("ZHE_RECEIPTS_DIR", "").strip()
+    if d:
+        return d
+    root = os.environ.get("OPENCLAW_ROOT", "").strip() or (
+        "/data/.openclaw" if os.path.isdir("/data/.openclaw") else os.path.expanduser("~/.openclaw"))
+    return os.path.join(root, "state", "zhe-receipts")
+
+
+def _move_legacy_receipts(out):
+    import shutil
+    if not os.path.isdir(LEGACY_RECEIPTS_DIR):
+        return
+    for name in os.listdir(LEGACY_RECEIPTS_DIR):
+        if name.endswith(".json"):
+            shutil.move(os.path.join(LEGACY_RECEIPTS_DIR, name), os.path.join(out, name))
+    try:
+        os.rmdir(LEGACY_RECEIPTS_DIR)
+    except OSError:
+        pass   # something else is in there: leave it
 
 PROVER_VERSION = "1.1"
 
@@ -1729,9 +1755,11 @@ def print_summary(r):
 
 
 def write_receipt(r):
-    os.makedirs(RECEIPTS_DIR, exist_ok=True)
+    out = receipts_dir()
+    os.makedirs(out, exist_ok=True)
+    _move_legacy_receipts(out)
     safe = r["ts"].replace(":", "").replace("+00:00", "Z")
-    path = os.path.join(RECEIPTS_DIR, f"{r['box']}-{safe}.json")
+    path = os.path.join(out, f"{r['box']}-{safe}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(r, f, indent=2, ensure_ascii=False)
     return path

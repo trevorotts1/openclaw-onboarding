@@ -995,6 +995,27 @@ class ContaboStartupTemplate(unittest.TestCase):
             self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
 
 
+class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
+    def test_receipts_go_to_the_state_dir_and_old_ones_move_out(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "prove_zhe", REPO / "23-ai-workforce-blueprint/scripts/prove-zhe.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as td:
+            legacy = Path(td, "skills/23-ai-workforce-blueprint/scripts/receipts")
+            legacy.mkdir(parents=True)
+            (legacy / "LOCAL-old.json").write_text("{}")
+            mod.LEGACY_RECEIPTS_DIR = str(legacy)
+            with mock.patch.dict(os.environ, {"OPENCLAW_ROOT": td, "ZHE_RECEIPTS_DIR": ""}):
+                path = mod.write_receipt({"box": "LOCAL", "ts": "2026-09-28T20:52:30+00:00"})
+            state = Path(td, "state/zhe-receipts")
+            self.assertEqual(Path(path).parent, state)
+            self.assertEqual(sorted(p.name for p in state.iterdir()),
+                             ["LOCAL-2026-09-28T205230+0000.json", "LOCAL-old.json"])
+            self.assertFalse(legacy.exists(), "nothing left inside the hashed skill tree")
+
+
 class LoadWarning(unittest.TestCase):
     def test_warns_over_twice_the_cores_and_stays_quiet_below(self):
         for load, expect in ((25.0, True), (3.0, False)):
