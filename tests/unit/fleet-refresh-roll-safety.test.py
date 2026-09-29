@@ -7,6 +7,8 @@ probes that would touch live services are replaced with fakes. Run:
 
     python3 tests/unit/fleet-refresh-roll-safety.test.py
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -135,7 +137,7 @@ class HealthGateAndRollback(unittest.TestCase):
 
     CLEAN = {n: hc("pass") for n in fr.INTEGRITY_CHECKS}
 
-    def gate(self, posts, after=None, integ=None, host_restart=False, pinned="vB"):
+    def gate(self, posts, after=None, integ=None, host_restart=False, pinned="vB", baseline=None):
         """Run heal_and_gate with scripted probes. `posts` is the post-update
         health seen on each loop pass (the last one repeats); fix actions are
         recorded, not executed."""
@@ -161,7 +163,7 @@ class HealthGateAndRollback(unittest.TestCase):
         with mock.patch.object(fr, "probe_health", side_effect=fake_probe), \
              mock.patch.object(fr, "probe_integrity", side_effect=fake_integ), \
              mock.patch.object(fr, "_run_heal_action", side_effect=fake_action):
-            return fr.heal_and_gate(self.box.paths, self.box.onb, self.res, health(), self.ctx)
+            return fr.heal_and_gate(self.box.paths, self.box.onb, self.res, baseline or health(), self.ctx)
 
     def test_gate_pass_keeps_the_update(self):
         self.snapshot()
@@ -183,6 +185,47 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(self.actions, ["rerun:pull-onboarding"])
         self.assertEqual(len(self.res.heal["attempts"]), 1)
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
+
+    def test_fix_attempts_are_budgeted_per_roll_not_per_pass(self):
+        # One box re-entered the same 1/3 -> 3/3 cycle three times in two hours.
+        self.snapshot()
+        self.box.apply_release_b()
+        self.gate([health(cc_health="fail")])
+        self.assertEqual(len(self.res.heal["attempts"]), 3)
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
+        # the same release rolled again: no fresh three attempts for the same check
+        self.res = fr.BoxResult("t", dry_run=False)
+        self.snapshot()
+        self.box.apply_release_b()
+        self.gate([health(cc_health="fail")])
+        self.assertEqual(self.actions, [])
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
+        self.assertIn("already used", self.res.outcome_detail)
+        # a new release gets a fresh budget, and a pass clears it
+        self.res = fr.BoxResult("t", dry_run=False)
+        self.snapshot()
+        self.gate([health(cc_health="fail"), health()], pinned="vC")
+        self.assertEqual(self.res.steps["health-gate"], "ok:healed after 1 fix attempt(s)")
+        self.assertFalse((self.box.root / "fleet-refresh" / "heal-budget.json").exists())
+
+    def test_a_config_backlog_from_before_the_update_is_still_applied(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        stale = health(config_applied="fail")
+        with mock.patch.object(fr.sys, "platform", "darwin"):
+            self.gate([stale, health()], baseline=stale)
+        self.assertEqual(self.actions, ["restart-gateway"])
+        self.assertEqual(self.res.steps["health-gate"], "ok:healed after 1 fix attempt(s)")
+
+    def test_a_config_still_unapplied_after_its_restart_is_reported_never_rolled_back(self):
+        self.snapshot()
+        self.box.apply_release_b()
+        with mock.patch.object(fr.sys, "platform", "darwin"):
+            self.gate([health(config_applied="fail")])
+        self.assertEqual(self.actions, ["restart-gateway"])   # one restart per roll, not three
+        self.assertEqual(self.res.rollback, {})
+        self.assertEqual(self.res.heal["config_pending"], "fake fail")
+        self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v2")
 
     def test_fix_first_heals_without_rollback(self):
         self.snapshot()
@@ -318,8 +361,12 @@ class HealthGateAndRollback(unittest.TestCase):
         stamp = self.box.skills / ".onboarding-version"
         pinned = json.loads((self.box.onb / "cc-compat.json").read_text())["onboardingVersion"]
         (self.box.onb / "update-skills.sh").write_text(f'#!/usr/bin/env bash\necho {pinned} > "{stamp}"\nexit 2\n')
-        fr.step_pull_onboarding(self.box.paths, self.box.onb, pinned, self.res, dry_run=False)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            fr.step_pull_onboarding(self.box.paths, self.box.onb, pinned, self.res, dry_run=False)
         self.assertTrue(self.res.steps["pull-onboarding"].startswith("ok:advisory"), self.res.steps["pull-onboarding"])
+        # the per-box log says so (three boxes' logs had no pull-onboarding line at all)
+        self.assertIn("step pull-onboarding: ok (advisory)", err.getvalue())
         (self.box.onb / "update-skills.sh").write_text('#!/usr/bin/env bash\nexit 1\n')
         fr.step_pull_onboarding(self.box.paths, self.box.onb, pinned, self.res, dry_run=False)
         self.assertTrue(self.res.steps["pull-onboarding"].startswith("failed"))

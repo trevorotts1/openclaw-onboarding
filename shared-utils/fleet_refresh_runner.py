@@ -1025,6 +1025,8 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             res.onboarding_version = post_stamp
             res.steps["pull-onboarding"] = ("ok:advisory: update-skills.sh exit 2 (content current; "
                                             f"infrastructure needs attention): {result.stdout[-160:].strip()}")
+            _warn("  step pull-onboarding: ok (advisory) -- update-skills.sh exit 2: content current, "
+                  "infrastructure needs attention")
         else:
             res.step_fail(
                 "pull-onboarding",
@@ -3162,10 +3164,49 @@ def probe_integrity(paths: dict, repo_root: Path, since: float, want_version: st
 # back to its snapshot. Every attempt is recorded in res.heal["attempts"].
 
 HEAL_ATTEMPTS = 3
+# Fix attempts are budgeted per check per ROLL, not per pass: the counts live in
+# <root>/fleet-refresh/heal-budget.json, keyed by the release being rolled and
+# forgotten after HEAL_BUDGET_TTL or once the gate passes. A rerun of the same
+# roll no longer starts again at 1/3 -- one box re-entered the same 3-attempt
+# role-library cycle three times in two hours. config-applied gets ONE gateway
+# restart per roll (a restart applies any config); if the gateway still runs an
+# older config after it, the box is reported, never rolled back for that.
+HEAL_BUDGET_TTL = 24 * 3600
 GATEWAY_CHECKS = ("gateway-process", "gateway-health", "telegram-getme", "config-applied")
 _GATEWAY_LABEL = "ai.openclaw.gateway"
 _HEAL_ORDER = ("rerun:pull-onboarding", "rerun:pull-cc", "rebuild-cc", "rerun:restart-cc",
                "restart-gateway")
+
+
+def _heal_cap(name: str) -> int:
+    return 1 if name == "config-applied" else HEAL_ATTEMPTS
+
+
+def _heal_budget_file(paths: dict) -> Path:
+    return Path(paths["root"]) / "fleet-refresh" / "heal-budget.json"
+
+
+def _load_heal_budget(paths: dict, release: str) -> dict:
+    try:
+        b = json.loads(_heal_budget_file(paths).read_text())
+    except (OSError, ValueError):
+        b = {}
+    if not isinstance(b, dict) or b.get("release") != release \
+            or time.time() - float(b.get("started") or 0) > HEAL_BUDGET_TTL:
+        b = {"release": release, "started": time.time(), "checks": {}}
+    return b
+
+
+def _save_heal_budget(paths: dict, budget: Optional[dict]) -> None:
+    f = _heal_budget_file(paths)
+    try:
+        if budget is None:
+            f.unlink(missing_ok=True)
+        else:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(budget))
+    except OSError as e:
+        _warn(f"  could not record the fix budget in {f}: {e}")
 
 
 def _in_container() -> bool:
@@ -3228,6 +3269,11 @@ def gate_problems(res: BoxResult, baseline: dict, post: dict, integrity: dict) -
     that was already failing before the update is a pre-existing gap: recorded
     in res.health["content_gaps_preexisting"] and alerted, not gated."""
     probs = {n: post[n]["detail"] for n in health_regressions(baseline, post)}
+    cfg = post.get("config-applied") or {}
+    if cfg.get("status") == "fail":
+        # Whatever the baseline said: a roll ends on the config it wrote. (A
+        # backlog that was already pending before the update is applied too.)
+        probs["config-applied"] = cfg["detail"]
     before = res.health.get("integrity_baseline") or {}
     pre = {}
     for n, c in integrity.items():
@@ -3294,21 +3340,31 @@ def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, 
     and resumes with --continue-heal)."""
     heal = res.heal
     attempts = heal.setdefault("attempts", [])
+    budget = _load_heal_budget(paths, str(ctx.get("release") or ctx["pinned"]))
+    used = budget["checks"]
     while True:
         post = probe_health(paths, res)
         integ = probe_integrity(paths, repo_root, heal.get("run_start", 0), ctx["pinned"])
         res.health["post"], res.health["integrity"] = post, integ
         probs = gate_problems(res, baseline, post, integ)
+        if "config-applied" in probs and used.get("config-applied", 0) >= _heal_cap("config-applied"):
+            heal["config_pending"] = probs.pop("config-applied")
         res.health["regressions"] = sorted(probs)
         if not probs:
             res.step_ok("health-gate")
             if attempts:
                 heal["healed"] = True
                 res.steps["health-gate"] = f"ok:healed after {len(attempts)} fix attempt(s)"
+            _save_heal_budget(paths, None)
             return "done"
+        fixable = {n: d for n, d in probs.items() if used.get(n, 0) < _heal_cap(n)}
+        if not fixable:
+            heal["budget_spent"] = {n: used.get(n, 0) for n in sorted(probs)}
+            _warn(f"  no fix attempts left in this roll for: {', '.join(sorted(probs))}")
+            break
         if len(attempts) >= HEAL_ATTEMPTS:
             break
-        acts = heal_actions(probs)
+        acts = heal_actions(fixable)
         prev = attempts[-1] if attempts else None
         if prev and prev["failing"] == probs:
             # The last attempt changed nothing. A full update-skills pass
@@ -3319,9 +3375,14 @@ def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, 
             if not acts:
                 _warn("  the last fix attempt changed nothing and nothing else is left to try")
                 break
-        attempt = {"n": len(attempts) + 1, "failing": dict(probs), "actions": {}}
+        attempt = {"n": len(attempts) + 1, "failing": dict(probs), "fixing": sorted(fixable), "actions": {}}
         attempts.append(attempt)
-        _warn(f"  FIX ATTEMPT {attempt['n']}/{HEAL_ATTEMPTS}: {', '.join(sorted(probs))}")
+        for n in fixable:
+            used[n] = used.get(n, 0) + 1
+        _save_heal_budget(paths, budget)
+        _warn(f"  FIX ATTEMPT {attempt['n']}/{HEAL_ATTEMPTS}: {', '.join(sorted(fixable))}"
+              + (f" (no attempts left in this roll for: {', '.join(sorted(set(probs) - set(fixable)))})"
+                 if set(probs) - set(fixable) else ""))
         for act in acts:
             try:
                 out = _run_heal_action(act, paths, repo_root, res, ctx)
@@ -3344,7 +3405,8 @@ def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, 
     res.health["after_rollback"] = after
     still = health_regressions(baseline, after)
     res.rollback["health_restored"] = not still
-    tried = f"{len(attempts)} fix attempt(s) failed"
+    tried = f"{len(attempts)} fix attempt(s) failed" + (
+        "; this roll's fix attempts for it were already used" if heal.get("budget_spent") else "")
     if restored and not still:
         res.steps["rollback"] = "ok"
         res.outcome = "ROLLED_BACK"
@@ -3578,7 +3640,8 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
         # Step 6: health + content gate -> fix up to 3 times -> roll back
         if not dry_run:
             ctx = {"pinned": pinned_onboarding_tag, "cc_tag": cc_tag, "force_cc": force_cc,
-                   "host_restart": host_restart}
+                   "host_restart": host_restart,
+                   "release": compat.get("onboardingVersion") or pinned_onboarding_tag}
             if heal_and_gate(paths, repo_root, res, baseline, ctx) == "needs-host-restart":
                 return _pending(res)
             pinned_onboarding_tag = ctx["pinned"]
@@ -3690,11 +3753,14 @@ def _finish_run(res: BoxResult, compat: dict, pinned_onboarding_tag: str, paths:
             pre = res.health.get("preexisting_failures") or []
             healed = len(res.heal.get("attempts") or [])
             gaps = res.health.get("content_gaps_preexisting") or {}
-            if gaps:
+            cfg = res.heal.get("config_pending")
+            if gaps or cfg:
                 res.heal["needs_attention"] = True
             res.outcome_detail = "; ".join(filter(None, [
                 f"NEEDS ATTENTION - content gaps that were already there before this update: "
                 + "; ".join(f"{k}: {v}" for k, v in gaps.items()) if gaps else "",
+                f"NEEDS ATTENTION - the gateway still runs an older config after its restart: {cfg}"
+                if cfg else "",
                 f"fixed after {healed} attempt(s)" if healed else "",
                 f"checks failing: {', '.join(warn)}" if warn else "",
                 f"succeeded with advisories: {', '.join(advisory)}" if advisory else "",
