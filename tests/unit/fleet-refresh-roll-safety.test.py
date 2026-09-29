@@ -151,6 +151,8 @@ class HealthGateAndRollback(unittest.TestCase):
             self.actions.append(act)
             if act == "restart-gateway" and not fake_action.mac:
                 return "needs-host"
+            if act.startswith("rerun:"):      # like the real one: the step's own result
+                return res.steps.get(act.split(":", 1)[1], "ok")
             return "ok"
         fake_action.mac = False
         integ_seq = list(integ or [self.CLEAN])
@@ -171,13 +173,24 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual((self.box.skills / "01-skill" / "SKILL.md").read_text(), "v2")
         self.assertFalse(self.box.deploy_log.exists())
 
+    def test_an_unchanged_integrity_failure_is_not_re_synced_again(self):
+        # A role-library mismatch that a finished update-skills pass did not fix
+        # will not be fixed by a second or third 20-55 minute pass.
+        self.snapshot()
+        self.box.apply_release_b()
+        bad = dict(self.CLEAN, **{"role-library": hc("fail")})
+        self.gate([health()], integ=[bad])
+        self.assertEqual(self.actions, ["rerun:pull-onboarding"])
+        self.assertEqual(len(self.res.heal["attempts"]), 1)
+        self.assertEqual(self.res.outcome, "ROLLED_BACK")
+
     def test_fix_first_heals_without_rollback(self):
         self.snapshot()
         self.box.apply_release_b()
         self.gate([health(cc_health="fail"), health(cc_health="fail"), health()])
         self.assertEqual(self.res.steps["health-gate"], "ok:healed after 2 fix attempt(s)")
         self.assertEqual(self.res.rollback, {})
-        self.assertEqual(self.actions, ["rebuild-cc", "reset-session"] * 2)
+        self.assertEqual(self.actions, ["rebuild-cc"] * 2)
         attempts = self.res.heal["attempts"]
         self.assertEqual([a["n"] for a in attempts], [1, 2])
         self.assertIn("cc-health", attempts[0]["failing"])
@@ -227,7 +240,8 @@ class HealthGateAndRollback(unittest.TestCase):
         self.box.apply_release_b()
         bad = dict(self.CLEAN, **{"sop-library": hc("fail")})
         self.gate([health()], integ=[bad])
-        self.assertEqual(self.actions.count("rerun:pull-onboarding"), 3)
+        # one full re-sync; an unchanged failure after it is not re-synced again
+        self.assertEqual(self.actions.count("rerun:pull-onboarding"), 1)
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
         self.assertIn("sop-library", self.res.outcome_detail)
 
@@ -291,11 +305,13 @@ class HealthGateAndRollback(unittest.TestCase):
         self.assertEqual(self.res.outcome, "ROLLED_BACK")
 
     def test_heal_actions_follow_the_failing_checks(self):
-        self.assertEqual(fr.heal_actions({"gateway-health": ""}), ["restart-gateway", "reset-session"])
-        self.assertEqual(fr.heal_actions({"telegram-getme": ""}), ["restart-gateway", "reset-session"])
-        self.assertEqual(fr.heal_actions({"session-reset": ""}), ["reset-session"])
+        # No fix attempt resets the owner's session: that wiped one owner's live
+        # chat 10 times in 3.5 hours. The one reset runs after the gate.
+        self.assertEqual(fr.heal_actions({"gateway-health": ""}), ["restart-gateway"])
+        self.assertEqual(fr.heal_actions({"telegram-getme": ""}), ["restart-gateway"])
+        self.assertEqual(fr.heal_actions({"session-reset": ""}), [])
         self.assertEqual(fr.heal_actions({"role-library": "", "pull-cc": ""}),
-                         ["rerun:pull-onboarding", "rerun:pull-cc", "reset-session"])
+                         ["rerun:pull-onboarding", "rerun:pull-cc"])
         self.assertEqual(fr.heal_actions({"restart-cc": ""}), ["rerun:restart-cc"])
 
     def test_update_skills_exit_2_is_advisory_not_a_failure(self):
@@ -528,11 +544,11 @@ class HealActionDispatch(unittest.TestCase):
              mock.patch.object(fr, "_resolve_ceo_session_key", return_value="k"):
             fr._run_heal_action("rerun:pull-onboarding", {}, Path("."), res, ctx)
             fr._run_heal_action("rebuild-cc", {}, Path("."), res, ctx)
-            fr._run_heal_action("reset-session", {}, Path("."), res, ctx)
+            self.assertEqual(fr._run_heal_action("reset-session", {}, Path("."), res, ctx), "unknown action")
         po.assert_called_once()
         self.assertEqual(ctx["pinned"], "v2")
         bc.assert_called_once()
-        sr.assert_called_once()
+        sr.assert_not_called()   # a fix attempt never resets the owner's session
 
 
 class BuildFailureKeepsOldBuild(unittest.TestCase):
@@ -993,6 +1009,85 @@ class ContaboStartupTemplate(unittest.TestCase):
                     break
                 time.sleep(0.1)
             self.assertEqual(Path(td, "pm2-calls").read_text().split(), ["resurrect", str(oc / ".pm2")])
+
+
+class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
+    def test_receipts_go_to_the_state_dir_and_old_ones_move_out(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "prove_zhe", REPO / "23-ai-workforce-blueprint/scripts/prove-zhe.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as td:
+            legacy = Path(td, "skills/23-ai-workforce-blueprint/scripts/receipts")
+            legacy.mkdir(parents=True)
+            (legacy / "LOCAL-old.json").write_text("{}")
+            mod.LEGACY_RECEIPTS_DIR = str(legacy)
+            with mock.patch.dict(os.environ, {"OPENCLAW_ROOT": td, "ZHE_RECEIPTS_DIR": ""}):
+                path = mod.write_receipt({"box": "LOCAL", "ts": "2026-09-28T20:52:30+00:00"})
+            state = Path(td, "state/zhe-receipts")
+            self.assertEqual(Path(path).parent, state)
+            self.assertEqual(sorted(p.name for p in state.iterdir()),
+                             ["LOCAL-2026-09-28T205230+0000.json", "LOCAL-old.json"])
+            self.assertFalse(legacy.exists(), "nothing left inside the hashed skill tree")
+
+
+class CeoSessionResetOncePerRoll(unittest.TestCase):
+    def test_no_owner_session_yet_is_ok_not_a_failure(self):
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_sessions_reset_ceo(None, res, dry_run=False)
+        self.assertTrue(res.steps["sessions-reset-CEO"].startswith("ok:no owner session yet"))
+        self.assertEqual(fr.hc_session_reset(res)["status"], "pass")
+
+    def test_once_per_roll_and_never_twice_within_the_interval(self):
+        with tempfile.TemporaryDirectory() as td:
+            paths = {"root": Path(td)}
+            calls = []
+
+            def reset(key, res, dry_run):
+                calls.append(key)
+                res.step_ok("sessions-reset-CEO")
+            with mock.patch.object(fr, "_resolve_ceo_session_key", return_value="agent:ceo:main"), \
+                 mock.patch.object(fr, "step_sessions_reset_ceo", side_effect=reset):
+                res = fr.BoxResult("t", dry_run=False)
+                fr.reset_ceo_once(paths, res, False)
+                fr.reset_ceo_once(paths, res, False)          # the same roll: no second reset
+                self.assertEqual(calls, ["agent:ceo:main"])
+                again = fr.BoxResult("t", dry_run=False)       # a re-roll minutes later
+                fr.reset_ceo_once(paths, again, False)
+                self.assertEqual(calls, ["agent:ceo:main"])
+                self.assertIn("reset 0 min ago", again.steps["sessions-reset-CEO"])
+                marker = Path(td, "fleet-refresh/.ceo-session-reset.json")
+                marker.write_text(json.dumps({"agent:ceo:main": time.time() - fr.RESET_MIN_INTERVAL - 1}))
+                fr.reset_ceo_once(paths, fr.BoxResult("t", dry_run=False), False)
+                self.assertEqual(calls, ["agent:ceo:main"] * 2)
+
+    def test_rollback_does_not_reset_the_session(self):
+        src = (REPO / "shared-utils/fleet_refresh_runner.py").read_text()
+        body = src[src.index("def rollback_box("):src.index("def _save_local_changes(")]
+        self.assertNotIn("step_sessions_reset_ceo", body)
+
+
+class GatewayAppliedTheFinalConfig(unittest.TestCase):
+    """Three openclaw.json writes in 32 s superseded a reload: the file carried an
+    env var the live gateway never ran with, silently, for hours."""
+
+    def check(self, answers, wait=0.0):
+        seq = list(answers)
+        with mock.patch.object(fr, "_run_out", side_effect=lambda *a, **k: seq.pop(0) if len(seq) > 1 else seq[0]), \
+             mock.patch.object(fr.time, "sleep"):
+            return fr.hc_config_applied({}, wait=wait)["status"]
+
+    def test_verdicts(self):
+        same = json.dumps({"payload": {"configRevisionHash": "h1", "appliedConfigHash": "h1", "env": {"vars": {"K": "secret"}}}})
+        stale = json.dumps({"payload": {"configRevisionHash": "h2", "appliedConfigHash": "h1"}})
+        self.assertEqual(self.check([same]), "pass")
+        self.assertEqual(self.check([stale]), "fail")
+        self.assertEqual(self.check([stale, same], wait=30), "pass")     # a reload in flight lands
+        self.assertEqual(self.check([""]), "n/a")                          # older gateway: undetermined
+
+    def test_a_stale_config_is_healed_with_a_gateway_restart(self):
+        self.assertEqual(fr.heal_actions({"config-applied": ""}), ["restart-gateway"])
 
 
 class LoadWarning(unittest.TestCase):

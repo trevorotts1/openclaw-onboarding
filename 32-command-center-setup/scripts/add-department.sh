@@ -441,6 +441,8 @@ def main():
             ),
             "status": "backlog",
             "priority": "medium",
+            # A placeholder, not work: never auto-dispatched (see seed-dashboard-content.py).
+            "dispatch_hold": 1,
             "assigned_agent_id": head_agent_id,
             "created_by_agent_id": head_agent_id,
             "created_at": NOW,

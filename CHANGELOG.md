@@ -1,3 +1,31 @@
+## [v25.2.11]  -  2026-09-29  -  Roll follow-ups: one CEO session reset per roll, bounded fix attempts, prove-zhe receipts out of the skill tree, config applied; pin Command Center v7.6.77
+
+### Why
+From the 2026-09-28 re-rolls:
+- One owner's live Telegram chat was reset 10 times in 3.5 hours: the CEO session reset ran before the gate,
+  again in every fix attempt and again on rollback.
+- Each fix attempt reran a whole update-skills.sh pass (20-55 min) even when the last one had changed nothing.
+- prove-zhe.py (run by the Command Center refresh's zhe-gate AFTER update-skills recorded the release digest)
+  wrote its receipts inside skills/23-ai-workforce-blueprint: every box that had no older receipt failed the
+  role-library check and was rolled back (6 of 6 re-rolled boxes).
+- Three openclaw.json writes in 32 s superseded a gateway reload: the file held config the live gateway never ran.
+- A client's Command Center sent stop-cards to the first id in allowFrom (the owner's spouse), for installer-seeded
+  "Welcome to <Dept>" cards the intake sweep dispatched right after install.
+
+### What changed
+- `shared-utils/fleet_refresh_runner.py`: `reset_ceo_once` resets the CEO session once per roll, after the gate
+  settles, never within 30 minutes of the last reset of that session; no fix attempt and no rollback resets it; a
+  box with no owner session yet is ok. A fix attempt that changed nothing does not repeat a finished
+  update-skills pass. The gate checks the running gateway applied the config on disk (`config.get`
+  configRevisionHash == appliedConfigHash, 60 s for a reload in flight); a mismatch is healed with the platform's
+  supported gateway restart.
+- `scripts/fleet-config-applied.py`: read-only fleet check of the same (prints APPLIED / PENDING / UNDETERMINED).
+- `23-ai-workforce-blueprint/scripts/prove-zhe.py`: receipts go to `<openclaw root>/state/zhe-receipts`; old ones
+  move out of the skill tree on the next write.
+- Skill 32: `.env.local` carries `OPENCLAW_OWNER_CHAT_ID` from the box's own owner record; seeded starter cards
+  (seed-dashboard-content.py, add-department.sh) are inserted with `dispatch_hold = 1`.
+- Pins Command Center v7.6.77 (explicit owner record, owner-sends hold, silent seeded starters, operator webhook).
+
 ## [v25.2.10]  -  2026-09-28  -  Fleet roll: one commit per roll, true check results, clear preflights
 
 ### Why

@@ -1496,6 +1496,35 @@ def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
     res.step_ok("restart-cc")
 
 
+# Each reset wipes the owner's live Telegram conversation. It used to run before
+# the health gate, again inside every fix attempt and again on rollback: one
+# owner's chat was reset 10 times in 3.5 hours. Now: once per roll, after the
+# gate has settled, and never within RESET_MIN_INTERVAL of the last one.
+RESET_MIN_INTERVAL = 30 * 60
+
+
+def reset_ceo_once(paths: dict, res: BoxResult, dry_run: bool) -> None:
+    if "sessions-reset-CEO" in res.steps:
+        return   # already decided this run
+    key = _resolve_ceo_session_key(paths)
+    marker = Path(paths["root"]) / "fleet-refresh" / ".ceo-session-reset.json"
+    try:
+        last = json.loads(marker.read_text())
+    except (OSError, ValueError):
+        last = {}
+    if key and not dry_run and time.time() - float(last.get(key) or 0) < RESET_MIN_INTERVAL:
+        mins = int((time.time() - float(last[key])) // 60)
+        res.steps["sessions-reset-CEO"] = f"ok:skipped -- this session was reset {mins} min ago"
+        return
+    step_sessions_reset_ceo(key, res, dry_run)
+    if key and res.steps.get("sessions-reset-CEO") == "ok":
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(json.dumps({**last, key: time.time()}))
+        except OSError:
+            pass
+
+
 def step_sessions_reset_ceo(
     ceo_session_key: Optional[str],
     res: BoxResult,
@@ -1527,9 +1556,8 @@ def step_sessions_reset_ceo(
     _info("  Issuing sessions.reset (gateway call — NOT gateway restart)")
 
     if not ceo_session_key:
-        res.step_fail("sessions-reset-CEO",
-            "CEO session key unresolved; cannot reset "
-            "(no owner session on the Telegram-bound agent or main).")
+        res.steps["sessions-reset-CEO"] = ("ok:no owner session yet on the Telegram-bound agent or main "
+                                          "-- nothing stale to reset")
         return
 
     try:
@@ -2634,6 +2662,39 @@ def hc_gateway_health(paths: dict, tries: int = 3, wait: float = 5.0) -> dict:
     return _hc("fail", f"{url} -> {code or body}")
 
 
+def _config_hashes() -> Optional[tuple[str, str]]:
+    """(config file revision, config the running gateway applied) from the
+    gateway's own config.get, or None when it cannot tell. Reads only those two
+    fields: the payload is never printed or kept."""
+    out = _run_out(["openclaw", "gateway", "call", "config.get", "--json"], timeout=30)
+    try:
+        d = json.loads(out)
+    except ValueError:
+        return None
+    d = d.get("payload") or d.get("result") or d if isinstance(d, dict) else {}
+    a, b = d.get("configRevisionHash"), d.get("appliedConfigHash")
+    return (a, b) if a and b else None
+
+
+def hc_config_applied(paths: dict, wait: float = 60.0) -> dict:
+    """Whether the running gateway applied the config file as it stands now.
+    Back-to-back openclaw.json writes during an update can supersede a reload
+    ("GatewayConfigReloadSupersededError"): the file then says one thing and the
+    live gateway runs another until some later restart. A reload in flight gets
+    `wait` seconds to land."""
+    deadline = time.time() + wait
+    while True:
+        h = _config_hashes()
+        if h is None:
+            return _hc("n/a", "gateway does not report its applied config (older gateway or unreachable)")
+        if h[0] == h[1]:
+            return _hc("pass", "the running gateway applied the current config")
+        if time.time() >= deadline:
+            return _hc("fail", "config on disk is not what the running gateway applied (a reload was "
+                               "superseded or deferred); the gateway needs a restart")
+        time.sleep(5)
+
+
 def _telegram_tokens(cfg: dict) -> list[str]:
     tg = (cfg.get("channels") or {}).get("telegram") or {}
     if not isinstance(tg, dict) or tg.get("enabled") is False:
@@ -2701,8 +2762,8 @@ def hc_cc_health(paths: dict, times: int = 3, wait: float = 2.0) -> dict:
 
 def hc_session_reset(res: BoxResult) -> dict:
     v = str(res.steps.get("sessions-reset-CEO", "not-run"))
-    if v == "ok":
-        return _hc("pass", "sessions.reset ok")
+    if v.startswith("ok"):
+        return _hc("pass", v if v != "ok" else "sessions.reset ok")
     if "session key unresolved" in v:
         return _hc("n/a", "no main-agent Telegram session to reset")
     if "openclaw not on PATH" in v:   # the probe could not run: undetermined, not a regression
@@ -2724,6 +2785,7 @@ def probe_health(paths: dict, res: Optional[BoxResult] = None) -> dict:
         "gateway-health":   hc_gateway_health(paths),
         "telegram-getme":   hc_telegram_getme(paths),
         "cc-health":        hc_cc_health(paths),
+        "config-applied":   hc_config_applied(paths, wait=60.0 if res is not None else 0.0),
     }
     if res is not None:
         checks["session-reset"] = hc_session_reset(res)
@@ -2819,11 +2881,8 @@ def rollback_box(paths: dict, repo_root: Path, res: BoxResult, reasons: list[str
         else:
             rb["actions"].append("Command Center unchanged (same SHA); no rebuild")
 
-    # Reload the restored files into the main agent (a gateway CALL, never a
-    # gateway restart).
-    tmp = BoxResult(res.box, dry_run=False)
-    step_sessions_reset_ceo(_resolve_ceo_session_key(paths), tmp, dry_run=False)
-    rb["session_reset"] = tmp.steps.get("sessions-reset-CEO")
+    # The one CEO session reset of the roll runs after the gate (reset_ceo_once),
+    # so it reloads the restored files too.
     return not rb["errors"]
 
 
@@ -3103,10 +3162,10 @@ def probe_integrity(paths: dict, repo_root: Path, since: float, want_version: st
 # back to its snapshot. Every attempt is recorded in res.heal["attempts"].
 
 HEAL_ATTEMPTS = 3
-GATEWAY_CHECKS = ("gateway-process", "gateway-health", "telegram-getme")
+GATEWAY_CHECKS = ("gateway-process", "gateway-health", "telegram-getme", "config-applied")
 _GATEWAY_LABEL = "ai.openclaw.gateway"
 _HEAL_ORDER = ("rerun:pull-onboarding", "rerun:pull-cc", "rebuild-cc", "rerun:restart-cc",
-               "restart-gateway", "reset-session")
+               "restart-gateway")
 
 
 def _in_container() -> bool:
@@ -3198,16 +3257,12 @@ def heal_actions(probs: dict) -> list[str]:
             acts.add("restart-gateway")
         elif name == "cc-health":
             acts.add("rebuild-cc")
-        elif name == "session-reset":
-            acts.add("reset-session")
         elif name in INTEGRITY_CHECKS:
             acts.add("rerun:pull-onboarding")
         elif name in ("build-cc",):
             acts.add("rebuild-cc")
         elif name in _MUTATING_STEPS:
             acts.add(f"rerun:{name}")
-    if acts & {"restart-gateway", "rebuild-cc", "rerun:pull-onboarding"}:
-        acts.add("reset-session")   # reload whatever changed into the main agent
     return [a for a in _HEAL_ORDER if a in acts]
 
 
@@ -3230,9 +3285,6 @@ def _run_heal_action(act: str, paths: dict, repo_root: Path, res: BoxResult, ctx
             out = restart_gateway_mac()
             return out + ("; gateway healthy" if _wait_gateway(paths) else "; gateway NOT healthy after 90s")
         return "needs-host"   # a container's gateway can only be restarted from the host
-    if act == "reset-session":
-        step_sessions_reset_ceo(_resolve_ceo_session_key(paths), res, dry_run=False)
-        return res.steps.get("sessions-reset-CEO", "?")
     return "unknown action"
 
 
@@ -3256,10 +3308,21 @@ def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, 
             return "done"
         if len(attempts) >= HEAL_ATTEMPTS:
             break
+        acts = heal_actions(probs)
+        prev = attempts[-1] if attempts else None
+        if prev and prev["failing"] == probs:
+            # The last attempt changed nothing. A full update-skills pass
+            # (20-55 min) that already finished ok will not either: do not
+            # repeat it; stop when nothing else is left to try.
+            acts = [a for a in acts
+                    if not (a == "rerun:pull-onboarding" and str(prev["actions"].get(a, "")).startswith("ok"))]
+            if not acts:
+                _warn("  the last fix attempt changed nothing and nothing else is left to try")
+                break
         attempt = {"n": len(attempts) + 1, "failing": dict(probs), "actions": {}}
         attempts.append(attempt)
         _warn(f"  FIX ATTEMPT {attempt['n']}/{HEAL_ATTEMPTS}: {', '.join(sorted(probs))}")
-        for act in heal_actions(probs):
+        for act in acts:
             try:
                 out = _run_heal_action(act, paths, repo_root, res, ctx)
             except Exception as e:   # an attempt that errors is still an attempt
@@ -3408,6 +3471,10 @@ def _continue_heal(state: Path, host_result: str, compat: dict, paths: dict,
         + ("" if cc_ok is None else f"; Command Center {'healthy' if cc_ok else 'NOT healthy after 240s'}"))
     if heal_and_gate(paths, repo_root, res, baseline, ctx) == "needs-host-restart":
         return _pending(res)
+    try:
+        reset_ceo_once(paths, res, False)
+    except Exception as e:
+        res.step_fail("sessions-reset-CEO", str(e))
     return _finish_run(res, compat, ctx["pinned"], paths, shared_utils, repo_root,
                        False, False, ctx["cc_tag"], _resolve_ceo_session_key(paths))
 
@@ -3508,20 +3575,20 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             except Exception as e:
                 res.step_fail("restart-cc", str(e))
 
-        # Step 6: sessions-reset-CEO
-        ceo_session_key = _resolve_ceo_session_key(paths)
-        try:
-            step_sessions_reset_ceo(ceo_session_key, res, dry_run)
-        except Exception as e:
-            res.step_fail("sessions-reset-CEO", str(e))
-
-        # Step 6b: health + content gate -> fix up to 3 times -> roll back
+        # Step 6: health + content gate -> fix up to 3 times -> roll back
         if not dry_run:
             ctx = {"pinned": pinned_onboarding_tag, "cc_tag": cc_tag, "force_cc": force_cc,
                    "host_restart": host_restart}
             if heal_and_gate(paths, repo_root, res, baseline, ctx) == "needs-host-restart":
                 return _pending(res)
             pinned_onboarding_tag = ctx["pinned"]
+
+        # Step 6b: reset the CEO session ONCE, on the files the box ends up with.
+        try:
+            reset_ceo_once(paths, res, dry_run)
+        except Exception as e:
+            res.step_fail("sessions-reset-CEO", str(e))
+        ceo_session_key = _resolve_ceo_session_key(paths)
     else:
         ceo_session_key = _resolve_ceo_session_key(paths)
         for step in ["pull-onboarding", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"]:
