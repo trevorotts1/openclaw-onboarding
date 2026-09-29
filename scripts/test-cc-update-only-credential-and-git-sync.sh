@@ -515,6 +515,20 @@ git -C "$CO" -c user.email=t@t -c user.name=t commit --quiet --allow-empty -m "b
 zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with a local commit" || ok "T14: a local commit keeps the merge path"
 rm -rf "$ROOT"
 
+hdr "T16 — a tag-only clone (configured refspec names one tag) still sees the latest origin/main"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t16"; git clone --quiet "$ORIGIN" "$CO"
+git -C "$CO" config remote.origin.fetch "+refs/tags/v1.0.0:refs/tags/v1.0.0"
+advance_origin_updater "$SEED" "Zero-downtime path"
+if zd_fn "$CO" "$ROOT/zd.log" && [ "$(git -C "$CO" rev-parse origin/main)" = "$(git -C "$SEED" rev-parse HEAD)" ]; then
+  ok "T16: origin/main advanced despite the tag-only refspec"
+else
+  bad "T16: origin/main stayed stale on a tag-only clone"
+fi
+rm -rf "$ROOT"
+
 hdr "T15 — static: when ready, the update-only phase neither merges nor runs npm ci in the live tree, and runs origin/main's updater"
 PHASE="$(awk '/^if \[\[ "\$UPDATE_ONLY" == "true" \]\]; then/{p=1} p{print} p && /cc_route_update_through_canonical_path \|\| \\/{exit}' "$INSTALLER")"
 printf '%s\n' "$PHASE" | grep -q 'if cc_zero_downtime_ready "\$DASHBOARD_DIR"; then' \
