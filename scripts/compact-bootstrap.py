@@ -472,17 +472,22 @@ def parse(text):
             headings.append((i, len(h.group(1)), h.group(2).strip()))
 
     marker_idx = [i for i, _, _ in markers]
+    # MARKER_RE labels "<!-- BEGIN X -->" as "BEGIN X" but "<!-- END X -->" as
+    # "X", so pairs are matched on the label with any BEGIN prefix stripped. The
+    # BEGIN label is kept for classification (the SCRIPT_OWNED patterns key on
+    # it). A matched pair's span runs through its END line.
     spans, opened = [], {}
     for i, is_end, label in markers:
+        key = re.sub(r'^BEGIN\s+', '', label)
         if is_end:
-            if label in opened:
-                start = opened.pop(label)
-                if any_match(SCRIPT_OWNED_BLOCK_MARKERS, label):
-                    spans.append((start, i, label))
+            if key in opened:
+                start, begin_label = opened.pop(key)
+                if any_match(SCRIPT_OWNED_BLOCK_MARKERS, begin_label):
+                    spans.append((start, i, begin_label))
         else:
-            opened[label] = i
+            opened[key] = (i, label)
 
-    for label, start in sorted(opened.items(), key=lambda kv: kv[1]):
+    for label, start in sorted(((lb, st) for st, lb in opened.values()), key=lambda kv: kv[1]):
         if any_match(NEUTRAL_MARKERS, label) or any_match(SENTINEL_MARKERS, label):
             continue
         if not any_match(SCRIPT_OWNED_BLOCK_MARKERS, label):
