@@ -737,16 +737,5 @@ This role orchestrates ALL 12 presentations department specialists. Direct repor
 10. Deep Research Specialist -- Presentations
 11. Devil's Advocate -- Presentations
 
-### Spawn Mechanism
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type <role-slug> \
-  --problem-statement "<specific description>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1.0
-  --persona — \
-```
-
 *End of how-to.md. All sections present and filled (Section 1A Identity & Credentialing added in v2.0 -- the canonical "rich role = superpowers" credentialing standard: named identity, 40+ years of embodied experience, certifications, belief system, non-negotiables tied to live AF codes, mission, and KPIs).*
 *End of how-to.md. All 19 sections present and filled.*

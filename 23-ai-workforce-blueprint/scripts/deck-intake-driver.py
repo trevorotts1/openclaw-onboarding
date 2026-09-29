@@ -2080,9 +2080,16 @@ def _sp_finalize(run_dir: pathlib.Path, spec: dict, ledger: dict) -> dict:
     rc, prover_out = _run_sp_prover(out_path)
     passed = rc == 0
     if passed:
-        ledger["status"] = "complete"
-        ledger["completed_at"] = _now()
-        ledger["complete"] = True
+        # FIX 37: never mark the signature intake complete while provenance
+        # warnings are still open (record unstamped) -- hold at
+        # pending_confirmation until those warnings are cleared.
+        if provenance is None:
+            ledger["status"] = "pending_confirmation"
+            ledger["complete"] = False
+        else:
+            ledger["status"] = "complete"
+            ledger["completed_at"] = _now()
+            ledger["complete"] = True
     save_ledger(run_dir, ledger, SP_LEDGER_REL)
     return {
         "status": "signature_intake_verified" if passed else "signature_intake_rejected",

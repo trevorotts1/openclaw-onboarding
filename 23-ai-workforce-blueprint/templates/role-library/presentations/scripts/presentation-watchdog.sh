@@ -50,17 +50,48 @@ if [ -n "$_PRES35_PIN" ]; then
     export PRESENTATION_PIPELINE_INTERPRETER
     _PRES35_VER="$("$_PRES35_PIN" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
     echo "[interp] pipeline interpreter: $_PRES35_PIN (Python $_PRES35_VER)" >> "${LOG}" 2>&1
-    _PRES35_SHIM="${TMPDIR:-/tmp}/pres35-interp-shim-$$"
-    if mkdir -p "$_PRES35_SHIM" 2>/dev/null \
-        && printf '#!/bin/sh\nexec "%s" "$@"\n' "$_PRES35_PIN" > "$_PRES35_SHIM/python3" 2>/dev/null \
-        && chmod +x "$_PRES35_SHIM/python3" 2>/dev/null; then
-        PATH="$_PRES35_SHIM:$PATH"
-        export PATH
-        echo "[interp] shim installed: python3 -> $_PRES35_PIN" >> "${LOG}" 2>&1
+    # FIX 36: ONE STABLE shim dir shared across ticks -- never per-PID, and
+    # never deleted at tick exit. Installed atomically (temp file + mv -f) so
+    # a concurrent tick can never exec a half-written python3.
+    _PRES35_SHIM="${TMPDIR:-/tmp}/.interp-shim"
+    if mkdir -p "$_PRES35_SHIM" 2>/dev/null; then
+        _PRES35_TMP="$_PRES35_SHIM/.python3.tmp.$$"
+        if printf '#!/bin/sh\nexec "%s" "$@"\n' "$_PRES35_PIN" > "$_PRES35_TMP" 2>/dev/null \
+            && chmod +x "$_PRES35_TMP" 2>/dev/null \
+            && mv -f "$_PRES35_TMP" "$_PRES35_SHIM/python3" 2>/dev/null; then
+            PATH="$_PRES35_SHIM:$PATH"
+            export PATH
+            echo "[interp] shim installed: python3 -> $_PRES35_PIN" >> "${LOG}" 2>&1
+        else
+            rm -f "$_PRES35_TMP" 2>/dev/null
+            echo "WARNING: [interp] shim install failed — bare python3 resolves via PATH (tick continues, pin exported)" >> "${LOG}" 2>&1
+        fi
+        unset _PRES35_TMP
     else
-        echo "WARNING: [interp] shim install failed — bare python3 resolves via PATH (tick continues, pin exported)" >> "${LOG}" 2>&1
+        echo "WARNING: [interp] shim dir unwritable — bare python3 resolves via PATH (tick continues, pin exported)" >> "${LOG}" 2>&1
     fi
-    unset _PRES35_SHIM
+    # FIX 36: bounded cleanup of legacy per-PID shim dirs. This script's own
+    # legacy pattern was pres35-interp-shim-<pid>; the poller also used this
+    # shared TMPDIR base with .interp-shim-<pid>. Bounded: the base dir must
+    # be non-empty, the globs are anchored to the exact legacy patterns (they
+    # never match the stable .interp-shim itself -- no trailing dash), and at
+    # most 200 dirs are reaped per tick. The stable shim is never deleted.
+    _PRES36_BASE="${TMPDIR:-/tmp}"
+    if [ -n "$_PRES36_BASE" ] && [ -d "$_PRES36_BASE" ]; then
+        _PRES36_N=0
+        for _PRES36_D in "$_PRES36_BASE"/.interp-shim-[0-9]* "$_PRES36_BASE"/pres35-interp-shim-[0-9]*; do
+            [ -e "$_PRES36_D" ] || continue
+            [ -d "$_PRES36_D" ] || continue
+            [ "$_PRES36_N" -ge 200 ] && break
+            rm -rf "$_PRES36_D" 2>/dev/null && _PRES36_N=$((_PRES36_N + 1))
+        done
+        unset _PRES36_D
+        if [ "$_PRES36_N" -gt 0 ]; then
+            echo "[interp] cleaned $_PRES36_N legacy per-PID shim dir(s)" >> "${LOG}" 2>&1
+        fi
+        unset _PRES36_N
+    fi
+    unset _PRES36_BASE _PRES35_SHIM
     # Scheduler readiness receipt: actual sys.executable/version + required
     # import proof vs the rendered pin; mismatch degrades with bounded
     # remediation instead of reusing stale proof.

@@ -4,7 +4,7 @@
 live at the presentation-interview public endpoint today.** It was landed here
 by copying (byte-identical, verified by `diff`) from the working copy at
 `~/Downloads/GAUNTLET-LOOP-WORK/LOOP2B-INTERVIEW-APP/deploy/`, per Wave D /
-Unit D2 of `CONTROL/MASTER-WORK-ORDER-20260818.md`: "GitHub is source of
+Unit D2: "GitHub is source of
 truth. Live-ahead code gets merged INTO git, never the reverse."
 
 **Confirmed live at time of write:** a read-only `GET /healthz` on 2026-08-19

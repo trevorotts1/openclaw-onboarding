@@ -466,6 +466,7 @@ def test_vps_cron_command_binds_selected_runs_and_literal_source_path(tmp_path):
         'env', 'OPENCLAW_ROOT=' + str(home / '.openclaw'),
         'OPENCLAW_WORKSPACE_PATH=' + str(workspace), 'OPENCLAW_WORKSPACE_ROOT=' + str(workspace),
         'PRESENTATION_RUNS_DIR=' + str(workspace / 'departments/Presentations/runs'),
+        'PRESENTATION_NOTIFY_CMD=', 'PRESENTATION_PIPELINE_INTERPRETER=',
         'bash', str(dept / 'presentation-intake-poll.sh'),
     ]
     assert not _rendered_plist(home).exists()

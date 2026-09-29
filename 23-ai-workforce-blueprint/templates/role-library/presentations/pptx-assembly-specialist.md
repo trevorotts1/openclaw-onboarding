@@ -56,14 +56,13 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 1. Confirm media_library.json shows `delivery_verified: true`. Do not begin assembly if delivery is not verified.
 2. Confirm working/copy/presenter_notes.json exists and has one entry per slide.
-3. Confirm no `pptx_text_overlays.json` exists anywhere in the run dir (working/copy/, working/checkpoints/, or the run root) -- its presence is a hard auto-fail (AF-OVERLAY-DELIVERED, Decision 5C).
+3. **HALT on AF-OVERLAY-DELIVERED:** if `pptx_text_overlays.json` exists anywhere in the run dir (working/copy/, working/checkpoints/, or the run root), STOP -- do not assemble. Its presence is a hard auto-fail (AF-OVERLAY-DELIVERED, Decision 5C). Escalate to the Director.
 4. **Workspace discipline (AF-DH1 prevention):** Confirm the assembly script is at `working/scripts/assemble_pptx.py`. It MUST write the PPTX to `output/[DECK_SLUG].pptx` and the portable-document export to `output/[DECK_SLUG].pdf`. ALL intermediate files (prompts, renders, QC logs, manifests, scripts) stay under `working/`. The assembly script must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- this is the documented root cause of the forensic reference deck's dev-artifact leak. If the script writes to any path outside `working/` and `output/`, stop and fix the script before running.
-4. Run the assembly script (SOP 9.1).
-5. Export the deck to its portable-document-format file AND the per-page PNGs for QC (SOP 9.2). The portable-document export is a required delivery output, not just a QC artifact; it ships alongside the PowerPoint file.
+5. Run the assembly script (SOP 9.1).
+6. Export the deck to its portable-document-format file AND the per-page PNGs for QC (SOP 9.2). The portable-document export is a required delivery output, not just a QC artifact; it ships alongside the PowerPoint file.
 7. Run the assembly quality gate: both the `.pptx` and the `.pdf` exist at `output/`, are non-empty, and have matching page counts (Gate 6).
-7. Hand off to QC Specialist for Phase 6 QC.
-9. After QC passes: notify the Director that `output/[DECK_SLUG].pptx` and `output/[DECK_SLUG].pdf` are ready for the Delivery Concierge. Do NOT copy files to the client's Downloads folder at this step -- the Delivery Concierge's SOP 9.0 (Package Assembly and Hygiene Sweep) owns the final packaging.
-8. After QC passes: deliver the final PPTX AND its portable-document export to the client.
+8. Hand off to QC Specialist for Phase 6 QC.
+9. After QC passes: notify the Director that `output/[DECK_SLUG].pptx` and `output/[DECK_SLUG].pdf` are ready for the Delivery Concierge. Do NOT copy files to the client's Downloads folder at this step -- the Delivery Concierge's SOP 9.0 (Package Assembly and Hygiene Sweep) owns the final packaging. (FIX 44: the old delivery step is deleted -- delivery belongs to the Delivery Concierge, not this role.)
 
 ---
 

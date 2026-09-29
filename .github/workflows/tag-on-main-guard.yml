@@ -1,0 +1,53 @@
+name: Tag on main guard
+
+# Fails loudly on EVERY push of a tag matching v* whose commit is not on
+# origin/main.
+#
+# THE LANDMINE THIS CLOSES
+# -------------------------
+# scripts/push-version-tag.sh already refuses to publish an orphaned tag --
+# but only when a push runs THROUGH it. On 2026-09-29 a different lane pushed
+# annotated tag v25.2.16 straight (bypassing the wrapper) onto 3aa92592, an
+# unmerged draft-PR commit. The real v25.2.16 release on main could not take
+# its own name until the wrong tag was manually deleted and retagged by the
+# operator.
+#
+# This workflow is the backstop for every OTHER way a tag can reach the
+# remote: it runs on the push itself and fails loudly with the exact fix
+# commands (see scripts/check-tag-on-main.sh), so the mistake is caught
+# within seconds instead of at the next release attempt. It never moves or
+# deletes the tag -- rewriting a published tag is shared history other
+# programs may depend on, so that stays an operator decision.
+#
+# ALERT WEBHOOK — none wired. The repo has no existing GitHub Actions
+# alert-webhook secret or step pattern to reuse (only local/n8n webhook
+# config, unrelated to CI); a workflow run failing red on the tag push is
+# itself the loud signal. Add a step here if/when such a CI pattern exists.
+#
+# TRIGGER — tags only, never branches.
+# `on.push.tags` matches only a tag ref push; an ordinary branch push
+# (including to main) is a different ref namespace and never matches, so
+# this workflow never runs on branch pushes.
+#
+# Security note: consumes only repo content and git metadata from a tag push
+# (no untrusted PR title/body/issue text) -- no injection surface.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  check-tag-on-main:
+    name: Verify the pushed tag's commit is on origin/main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure origin/main is present
+        run: git fetch --quiet origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Verify tag-on-main
+        run: scripts/check-tag-on-main.sh "${GITHUB_REF_NAME}" --main-ref origin/main

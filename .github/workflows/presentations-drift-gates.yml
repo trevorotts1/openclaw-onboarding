@@ -195,6 +195,64 @@ jobs:
           chmod +x scripts/ci/presentations-drift-gates.sh
           bash scripts/ci/presentations-drift-gates.sh
 
+      - name: Fix-50 client-name denylist lint -- roster-fed, SKIP when roster absent (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fix 50: no real fleet-client name may appear in the fleet-wide shipped
+          # presentations files. The denylist is built at RUNTIME from the fleet
+          # roster -- never from a committed list of names. Resolution order
+          # mirrors shared-utils/resolve-client-chat-id.sh:
+          #   1. $OPENCLAW_FLEET_ROSTER (env override)
+          #   2. $HOME/clawd/fleet-prover/fleet-roster.json (operator-box default)
+          #   3. /data/clawd/fleet-prover/fleet-roster.json (container default)
+          # GitHub runners never carry the roster, so this step SKIPS there and
+          # enforces on hosts where the roster exists.
+          ROSTER=""
+          if [[ -n "${OPENCLAW_FLEET_ROSTER:-}" && -f "${OPENCLAW_FLEET_ROSTER}" ]]; then
+            ROSTER="${OPENCLAW_FLEET_ROSTER}"
+          elif [[ -f "${HOME:-/root}/clawd/fleet-prover/fleet-roster.json" ]]; then
+            ROSTER="${HOME:-/root}/clawd/fleet-prover/fleet-roster.json"
+          elif [[ -f "/data/clawd/fleet-prover/fleet-roster.json" ]]; then
+            ROSTER="/data/clawd/fleet-prover/fleet-roster.json"
+          fi
+          if [[ -z "$ROSTER" ]]; then
+            echo "client-name lint: SKIP -- no fleet roster found (needs OPENCLAW_FLEET_ROSTER or the operator roster path)."
+            exit 0
+          fi
+          PATTERNS="$(mktemp)"
+          trap 'rm -f "$PATTERNS"' EXIT
+          python3 -c '
+          import json, sys
+          roster_path, out_path = sys.argv[1], sys.argv[2]
+          with open(roster_path, encoding="utf-8") as fh:
+              data = json.load(fh)
+          boxes = data.get("boxes", {})
+          if not isinstance(boxes, dict):
+              boxes = {}
+          names = set()
+          for entry in boxes.values():
+              if not isinstance(entry, dict):
+                  continue
+              name = str(entry.get("client", "") or "").strip()
+              if name:
+                  names.add(name)
+          with open(out_path, "w", encoding="utf-8") as fh:
+              for name in sorted(names):
+                  fh.write(name + "\n")
+          print("client-name lint: %d roster client name(s) loaded from %s" % (len(names), roster_path))
+          ' "$ROSTER" "$PATTERNS"
+          if [[ ! -s "$PATTERNS" ]]; then
+            echo "client-name lint: SKIP -- roster at $ROSTER carries no client names."
+            exit 0
+          fi
+          SCAN_ROOT="23-ai-workforce-blueprint/templates/role-library/presentations"
+          if grep -rInF -f "$PATTERNS" --exclude-dir=.git "$SCAN_ROOT"; then
+            echo "client-name lint: FAIL -- roster client name(s) appear in shipped presentations files (matches above)." >&2
+            exit 1
+          fi
+          echo "client-name lint: PASS -- no roster client name found under $SCAN_ROOT."
+
       - name: 51-signature-presentation/verify.sh — Skill 51 self-verification (exit 0 required)
         shell: bash
         run: |

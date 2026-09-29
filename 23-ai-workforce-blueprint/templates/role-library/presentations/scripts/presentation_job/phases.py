@@ -2612,7 +2612,7 @@ class Engine:
         # D2 (canary DEFECT D2): resolve relative scripts/xxxx.py paths against
         # the actual scripts directory (parent of the presentation_job package).
         # Without this, subprocess.run(cwd=run_dir) interprets "scripts/pdf_export.py"
-        # relative to /tmp/canary-spaulding-.../ where no scripts/ subdirectory exists,
+        # relative to /tmp/canary-client-.../ where no scripts/ subdirectory exists,
         # causing "can't open file" and a hard BLOCKED after 3 retries.
         scripts_dir = Path(__file__).resolve().parent.parent
         return [str(scripts_dir / tok[len('scripts/'):])

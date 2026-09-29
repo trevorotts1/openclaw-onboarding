@@ -382,7 +382,7 @@ The Deep Research Specialist's grounded findings reach the copy, but the imagery
 **Tier 1 — Always consult first (authoritative for this role):**
 
 - **Master SOP CLIENT-WEBINAR-DECK-SOP.md (v2.3)** -- SOP-PITCH-02-VALUE-STACK-AND-PROMISES (proof) + SOP-SLIDE-00 AF ruleset + devils-advocate-presentations SOP 9.1 (PRESENTATION-MASTER-DOCTRINE.md §4) (no fabrication), SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11 (World Engine), SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar (emotional job of the image). The constitution for grounding setting and proof; you extend it to the client's specific content.
-- **The proven exemplar deck (Lyric's "Enrollment On Autopilot").** Study how each image is welded to the message and carries an emotional job; never copy its content.
+- **The reference exemplar deck.** Study how each image is welded to the message and carries an emotional job; never copy its content.
 - **Governing intelligence GP-16 (imagery carries the show; make the pain visible).** Trevor's belief that strong imagery can carry a faceless webinar and that pain must be felt.
 
 **Tier 2 — Operational references:**
@@ -447,12 +447,6 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 6. The Deep Research Specialist's research format changes such that research-to-image flow must be re-wired.
 7. A Devil's Advocate challenge specific to this role (imagery grounding, pain visibility, generic-but-plausible) is accepted 3 or more times in 90 days.
 8. The owner or Director explicitly requests a revision.
-
-When triggered, the Director runs:
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/revise-how-to.py --role image-grounding-steward
-```
-which spawns a sub-agent to update this file with the relevant changes.
 
 ---
 

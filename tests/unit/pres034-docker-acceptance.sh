@@ -201,7 +201,6 @@ run_leg() {
       export OPENCLAW_WORKSPACE_ROOT="/opt/fix/ws"
       export PRESENTATIONS_SCRIPTS_SRC="/opt/fix/ws/departments/Presentations/scripts"
       export PATH="/opt/fix:/usr/local/bin:/usr/bin:/bin"
-      mkdir -p "$HOME/Library/Logs/openclaw" "$HOME/Library/LaunchAgents"
       source lib-presentation-schedules.sh
       echo "=== [R1] install_presentation_schedules (fresh store) ==="
       install_presentation_schedules || { echo "R1 FAILED"; exit 1; }

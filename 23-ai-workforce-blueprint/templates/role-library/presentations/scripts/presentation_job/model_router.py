@@ -796,6 +796,7 @@ MODE_FLAG_DEFAULT = "1"
 
 #: The operator ceiling -- a HUMAN-ratified constant, never provider-advertised.
 #: This is ULTRA's share, and the absolute maximum ANY mode may reach.
+#: FIX 48: per-department on purpose -- the social department's shared-utils/social_execution_policy.py uses ULTRA_APP_CEILING = 50.
 ULTRA_OPERATOR_CEILING = 400
 
 #: STANDARD's share of the operator ceiling.

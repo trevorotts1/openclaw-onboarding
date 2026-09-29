@@ -71,50 +71,6 @@
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
-    },
-    {
-      "file": "SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md",
-      "dept": "presentations",
-      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md",
-      "universal_sops_path": "universal-sops/presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md",
-      "role_library_sha256": "6803532f25db7b19b7c8e2bacb0d9b3e5923aaf3cd9a9a8c8c2e4bba827109ae",
-      "universal_sops_sha256": "57982a7d91db1fb24200f2cb2ddbfda4a76553a47d0bab734a47d636167ae560",
-      "canonical_side": "role-library",
-      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
-      "recorded_at": "2026-09-05"
-    },
-    {
-      "file": "SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md",
-      "dept": "presentations",
-      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md",
-      "universal_sops_path": "universal-sops/presentation-slide-craft/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md",
-      "role_library_sha256": "8d39ba588e09b21bbae50b622a7831f8b75ad3f24b7de5d8a7f146c7d721736d",
-      "universal_sops_sha256": "423dd9b8ea69a09fe08754f281b02d6f30dc7c13adc2cc9187a3d52e35df7030",
-      "canonical_side": "role-library",
-      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
-      "recorded_at": "2026-09-05"
-    },
-    {
-      "file": "SOP-SLIDE-03-HOOK-DOCTRINE.md",
-      "dept": "presentations",
-      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-03-HOOK-DOCTRINE.md",
-      "universal_sops_path": "universal-sops/presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md",
-      "role_library_sha256": "9ecd71a694736d4efabd61503712117a6e8db100cd93d77d93b1e1c57f2ea9b3",
-      "universal_sops_sha256": "edae9c49ddb8e6a71d73f351a416ae186272e1a4d4ab423c1bb91bc37ae4be7a",
-      "canonical_side": "role-library",
-      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
-      "recorded_at": "2026-09-05"
-    },
-    {
-      "file": "SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md",
-      "dept": "presentations",
-      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md",
-      "universal_sops_path": "universal-sops/presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md",
-      "role_library_sha256": "25966a5240c7fa71a5f760f16a09f07fe6cd490e3c378b6d8bb2ae4874488770",
-      "universal_sops_sha256": "f9b1ecc6ab0323e3506f1ae20a24cc338e15af005a7f2bff635b5c8cc1ac6128",
-      "canonical_side": "role-library",
-      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
-      "recorded_at": "2026-09-05"
     }
   ]
 }

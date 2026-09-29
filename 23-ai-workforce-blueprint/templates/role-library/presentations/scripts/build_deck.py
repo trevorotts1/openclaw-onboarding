@@ -1127,10 +1127,48 @@ DELIVERABLES_REQUIRED = [
 # API key
 # ---------------------------------------------------------------------------
 
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 21: a placeholder KIE_API_KEY is rejected by every reader — it must
+    never be sent to Kie.ai. Uses the shared-utils/secret_helper canon when
+    reachable; otherwise the same minimal inline gate kie_generate.py carries
+    (FIX 67)."""
+    try:
+        import importlib.util as _ilu
+        here = Path(__file__).resolve().parent
+        repo_root = None
+        for anc in here.parents:
+            if (anc / "shared-utils" / "secret_helper.py").is_file():
+                repo_root = anc
+                break
+        if repo_root is not None:
+            _p = repo_root / "shared-utils" / "secret_helper.py"
+            _spec = _ilu.spec_from_file_location("secret_helper_s51", str(_p))
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            return bool(_mod.is_placeholder(value))
+    except Exception:  # noqa: BLE001 -- broken helper degrades to the inline gate
+        pass
+    if not value:
+        return True
+    low = str(value).strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def load_api_key() -> str:
-    key = os.environ.get("KIE_API_KEY", "").strip()
-    if key:
-        return key.strip("'\"")
+    key = os.environ.get("KIE_API_KEY", "").strip().strip("'\"")
+    if key and not _is_placeholder_value(key):
+        return key
     for path in SECRETS_CANDIDATES:
         p = Path(path)
         if not p.exists():
@@ -1139,9 +1177,9 @@ def load_api_key() -> str:
             line = line.strip()
             if line.startswith("KIE_API_KEY="):
                 value = line[len("KIE_API_KEY="):].strip().strip("'\"")
-                if value:
+                if value and not _is_placeholder_value(value):
                     return value
-    print("FATAL: KIE_API_KEY not found in env or any of:", file=sys.stderr)
+    print("FATAL: KIE_API_KEY not found (or is a placeholder) in env or any of:", file=sys.stderr)
     for path in SECRETS_CANDIDATES:
         print("   ", path, file=sys.stderr)
     sys.exit(2)
@@ -2773,7 +2811,18 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
                 slide.notes_slide.notes_text_frame.text = spoken
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    prs.save(str(out_path))
+    # FIX 22: atomic save - a failed prs.save() must never leave a partial
+    # .pptx at the final path. Write to a sibling tmp file, then os.replace.
+    tmp = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+    try:
+        prs.save(str(tmp))
+        os.replace(tmp, out_path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -2841,9 +2890,17 @@ def notes_sync_pass(bundle_pptx: Path, run_dir: Path, bundle_dir: Path) -> dict:
             slide.notes_slide.notes_text_frame.text = spoken
             slides_with_notes += 1
 
+    # FIX 22: atomic save - a failed prs.save() must never leave a partial
+    # .pptx at the final path. Write to a sibling tmp file, then os.replace.
+    tmp = bundle_pptx.with_name(f".{bundle_pptx.name}.{os.getpid()}.tmp")
     try:
-        prs.save(str(bundle_pptx))
+        prs.save(str(tmp))
+        os.replace(tmp, bundle_pptx)
     except Exception as exc:  # noqa: BLE001
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
         return {"status": "error", "slides_total": slides_total,
                 "slides_with_notes": slides_with_notes, "speech_source": None,
                 "reason": f"could not save {bundle_pptx} after notes injection: {exc}"}
@@ -7925,8 +7982,9 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
       * a direct kie.ai task submission — createTask / recordInfo / api.kie.ai outside
         build_deck.py (a per-deck renderer) -> AF-CANONICAL-RENDER-BYPASS.
 
-    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS) and anything under a
-    scripts/ or virtual-env directory are exempt. Returns "" when the run dir carries
+    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS), anything inside the
+    canonical scripts dir (by resolved path), and virtual-env directories are
+    exempt. Returns "" when the run dir carries
     no hand-rolled renderer. A failure may be waived ONLY by a logged
     owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS)."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
@@ -7938,7 +7996,11 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
         return ""
 
     _SKIP_DIR_SEGS = {".venv", "venv", "site-packages", "__pycache__", ".git",
-                      "node_modules", ".mypy_cache", ".pytest_cache", "scripts"}
+                      "node_modules", ".mypy_cache", ".pytest_cache"}
+    # FIX 28: the old "scripts" blanket skip hid hand-rolled assemblers under
+    # working/scripts/. Skip only the canonical scripts dir, by resolved path
+    # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
+    _canonical_scripts_dir = Path(__file__).resolve().parent
     offenders = []
     try:
         candidates = sorted(run_dir.rglob("*.py"))
@@ -7949,6 +8011,15 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             continue
         if _SKIP_DIR_SEGS & set(py.parts):
             continue
+        try:
+            _rp = py.resolve()
+        except OSError:
+            _rp = py
+        try:
+            _rp.relative_to(_canonical_scripts_dir)
+            continue  # inside the canonical scripts home — exempt
+        except ValueError:
+            pass
         try:
             text = py.read_text(errors="replace")
         except OSError:
@@ -10882,7 +10953,12 @@ def find_run_dir(explicit: Optional[str], slides_path: Path, out_path: Path) -> 
 #   OC_DECK_ENTRY_NONCE. The renderer admits the run ONLY when the exported nonce
 #   matches that run-scoped file (constant-time compare); the entry script consumes
 #   (deletes) the file after the run so a stale env value cannot be replayed.
-# A model that merely READ the shipped source cannot conjure a valid value.
+# SECURITY DOCTRINE (FIX 18): the nonce blocks blind direct calls - no invocation
+#   admits a run without first passing through presentation-canonical-entry.sh. It
+#   is NOT tamper-proof against a same-user agent: anything running as the same
+#   OS user can read the exported OC_DECK_ENTRY_NONCE or the 0600 checkpoint file
+#   and replay them. Treat the nonce as front-door spend discipline, not a
+#   security boundary.
 # ===========================================================================
 ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
 
@@ -13058,7 +13134,8 @@ def main():
     # wave no longer overwrite each other's nonce. This SUPERSEDES the
     # retired OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which
     # shipped in box-visible comments and were therefore forgeable by any model that
-    # read the repo — setting either of those names is now DENIED. Module imports and
+    # read the repo — setting either of those names is now ignored: the handshake
+    # checks only OC_DECK_ENTRY_NONCE. Module imports and
     # unit-test paths that call build_deck functions directly are unaffected — this
     # guard fires only when main() is reached via the CLI (`python3 build_deck.py ...`).
     # References: AF-CANONICAL-RENDER-BYPASS, shared CONTRACT.md §FRONT-DOOR MARKER.

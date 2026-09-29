@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
-version: v2.1.3
+version: v2.1.4
 ---
 
 # Signature Presentation (Skill 51)
@@ -157,7 +157,7 @@ logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-meth
 as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
 `deck_type == "signature_presentation"`.
 
-## Integration surface (wired by `wire-signature-presentation.sh`)
+## Integration surface
 
 - `PIPELINE-MANIFEST.json` — three SP phases + `AF-SP-*` autofail rows + a manifest_version bump.
 - `build_deck.py` — three ≤6-line thin `_chk_sp_*` wrappers appended to `PREFLIGHT_REQUIRED`,

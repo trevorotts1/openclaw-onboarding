@@ -1,7 +1,7 @@
 # SOP-SLIDE-04: DECK DENSITY AND PACING
 
 **Cluster:** Slide-Craft Rules
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4 Slide Math, Section 4.2 the proven flow, Section 5.5 the price sequence)
+**Master authority:** universal-sops/PRESENTATION-MASTER-DOCTRINE.md crosswalk — offer/pitch mechanics (Section 4 legacy "Slide Math") live in the `SOP-PITCH-01..06` cluster; the proven 7-section flow (Section 4.2) in `SOP-STORY-01` + `SOP-PRIORITY-02`; the price sequence (Section 5.5) in `SOP-PITCH-01-SLOW-DROP-PROCESS` + `offer-price-strategist` SOP 9.x **[dept]**
 **Owning role at write time:** Director of Presentations (arc_allocation.json minimum-count enforcement)
 **Enforced at the gate by:** QC Specialist - Presentations (the AF-DENSITY battery = manifest codes AF-DEN-1..8, below)
 **Gold-standard numbers:** the proven 75-slide reference run: ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75 — **note: 2 post-FINAL slides, which is BELOW the 4-to-7 floor this document sets in item 7 and in DEN-7. The reference deck is authoritative on ladder spacing and Wall-of-Wins placement; it is NOT authoritative on re-pitch length, and an enforcer built to DEN-7 will correctly flag it. Do not widen DEN-7 to accommodate this line.**

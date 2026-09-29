@@ -350,15 +350,6 @@ Provide the pause-point list and accept a flat read; the demo still gives the ow
 3. **Presenter's Speech Writer (ROLE-20)** -- up-chain collaborator for tier fallback (SOP 9.3 guidance), not the synthesis owner.
 4. **Director of Presentations (ROLE-01)** -- spawn authority; completion.
 
-The Director of Presentations is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type fish-audio-expression-specialist \
-  --problem-statement "<deck slug, owner name, PRESENTERS-SPEECH.md path, target TTS tier, TONE>" \
-  --persona {{ASSIGNED_PERSONA}} \
-  --persona-version {{ASSIGNED_PERSONA_VERSION}}
-```
+The Director of Presentations is the spawn authority for this role.
 
 *End of fish-audio-expression-specialist.md. All 19 sections present and filled.*
