@@ -114,7 +114,8 @@ jobs:
           FAILED=""
           for t in pipeline-cron-idempotency cron-tombstone-durability \
                    closeout-resume-cron-routing weekly-cron-message-refresh \
-                   standard-first-cron-awareness workforce-resume-cheap-command-mode; do
+                   standard-first-cron-awareness workforce-resume-cheap-command-mode \
+                   real-estate-industry-gate skill39-cron-path-and-retire; do
             if ! bash "tests/unit/$t.test.sh" >/tmp/"$t".log 2>&1; then
               FAILED="$FAILED $t"
               echo "--- $t ---"; tail -20 /tmp/"$t".log

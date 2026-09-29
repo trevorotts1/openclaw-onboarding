@@ -195,7 +195,7 @@ def cmd_cron_list(rest):
 
 
 def cmd_cron_edit(rest):
-    """`cron edit <id> [--no-deliver] [--command <c>] [--cron <expr>]`.
+    """`cron edit <id> [--no-deliver] [--command <c>] [--cron <expr>] [--message <m>] [--disable|--enable]`.
 
     Only the dimensions the reconcile pass actually edits are applied. An id
     that matches nothing is an error (rc 1) — the real CLI fails too, and a
@@ -228,6 +228,15 @@ def cmd_cron_edit(rest):
             target["cron"] = flags[i + 1]
             target["schedule"] = {"expr": flags[i + 1]}
             i += 2
+        elif a == "--message":
+            target["message"] = flags[i + 1]
+            i += 2
+        elif a in ("--disable", "--enable"):
+            # Mirrors the real CLI: a disabled job reads back enabled:false and is
+            # hidden from the default `cron list --json`.
+            target["enabled"] = a == "--enable"
+            target["hidden"] = a == "--disable"
+            i += 1
         else:
             i += 1
     save_jobs(jobs)
