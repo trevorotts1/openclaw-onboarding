@@ -3986,10 +3986,13 @@ deliver_canonical_scripts_tree() {
       return 2
     fi
   fi
-  if ! cp -Rp "$src_root/." "$dest_root/" 2>/dev/null; then
+  # -f: a single file owned by another user (e.g. a root-owned mc-route.sh left
+  # by a root docker exec) cannot be opened for writing, but the writable dest
+  # dir lets cp unlink and recreate it. Without -f that one file was a FATAL.
+  if ! cp -Rpf "$src_root/." "$dest_root/" 2>/dev/null; then
     # Best-effort self-heal (only succeeds if we own the tree), then retry.
     chmod -R u+rwx "$dest_root" 2>/dev/null || true
-    if ! cp -Rp "$src_root/." "$dest_root/" 2>/dev/null; then
+    if ! cp -Rpf "$src_root/." "$dest_root/" 2>/dev/null; then
       if [ ! -w "$dest_root" ]; then
         _scripts_perms_degrade
         return 2
@@ -10717,7 +10720,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
           "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
         _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-        _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+        # `|| true`: a checkout with no refs/remotes/origin/HEAD (never cloned
+        # with it) fails this pipeline under pipefail, and set -e then aborted
+        # the whole updater here -- exit 1, no message, AFTER the stamp.
+        _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)"
         [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
         if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
            || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
