@@ -326,3 +326,26 @@ jobs:
           # Must roll after U004 so boxes that have not taken it yet don't go red.
           bash "$VERIFY_SH"
           echo "verify.sh: Skill 51 self-verification PASSED."
+
+      - name: vendored-blob compare — persona_service vendored copies must match canonicals (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RES="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources"
+          # Fix 29: the PRES-053 packaged persona closure must be byte-identical
+          # to its canonicals. embedding_engine.py is a DELIBERATE shim
+          # (re-exports the canonical engine; see its docstring) and is
+          # excluded from this compare by design.
+          fail=0
+          while IFS='|' read -r canon vend; do
+            if ! cmp -s "$canon" "$vend"; then
+              echo "DRIFT: $vend differs from $canon — re-vendor with cp" >&2
+              fail=1
+            fi
+          done <<PAIRS
+          shared-utils/resolve_db.py|${RES}/helpers/resolve_db.py
+          shared-utils/llm_score.py|${RES}/helpers/llm_score.py
+          23-ai-workforce-blueprint/scripts/persona-selector-v2.py|${RES}/scripts/persona-selector-v2.py
+          PAIRS
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "vendored-blob compare PASSED: 3 vendored copies byte-identical to canonicals (embedding_engine.py shim excluded)."
