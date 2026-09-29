@@ -638,6 +638,35 @@ while i < len(lines):
             continue
     i += 1
 
+# --- heal ORPHANED END-only stanzas ------------------------------------------
+# A stanza whose BEGIN line was lost (body + `<!-- END SKILL38: X -->` only) is
+# invisible to the pairing above, so the fresh stanza used to be appended next
+# to it: a duplicate on every run, and AGENTS.md over its budget. Every stanza
+# this script writes is ONE `## ` heading plus its body, so the orphan runs from
+# the nearest `## ` heading above the END line, never crossing another marker --
+# and only when that heading IS this stanza's heading, so an owner section that
+# happens to sit above a stray END line is never taken. Otherwise only the END
+# line itself is removed.
+MARKER_LINE_RE = re.compile(r"^[ \t]*<!--.*-->[ \t]*$")
+HEADING_OF = {n: b.split("\n", 1)[0].strip() for (n, b) in stanzas}
+paired_ends = {e for (_, e, _) in blocks}
+orphans = 0
+for k, ln in enumerate(lines):
+    me = END_RE.match(ln)
+    if not me or k in paired_ends:
+        continue
+    start = k
+    for h in range(k - 1, -1, -1):
+        if MARKER_LINE_RE.match(lines[h]):
+            break
+        if lines[h].startswith("## "):
+            if lines[h].strip() == HEADING_OF.get(me.group(1)):
+                start = h
+            break
+    blocks.append((start, k, me.group(1)))
+    orphans += 1
+blocks.sort()
+
 
 def render(drop_indices):
     """Rebuild the file with the given block indices removed, plus the fresh stanzas."""
@@ -703,6 +732,7 @@ with open(report_path, "w", encoding="utf-8") as fh:
     fh.write("BLOCKS_REMAINING=%d\n" % (len(blocks) - len(dropped)))
     fh.write("RETIRED_MARKERS=%d\n" % len(retired))
     fh.write("LEGACY_STUBS=%d\n" % len(legacy_stub))
+    fh.write("ORPHANS_HEALED=%d\n" % orphans)
     fh.write("STANZAS_WRITTEN=%d\n" % len(stanzas))
     fh.write("VAULTED_SIZE=%d\n" % vaulted_size)
     fh.write("WATCHER_FLOOR=%d\n" % threshold)
@@ -721,7 +751,7 @@ cp -p "$AGENTS_MD" "$BAK"
 cat "$TMP_NEW" > "$AGENTS_MD"
 AFTER_CHARS=$(wc -c < "$AGENTS_MD" | tr -d ' ')
 
-echo "[05-update-agents-md] AGENTS.md updated (${MODE}): removed ${BLOCKS_REMOVED}/${BLOCKS_TOTAL} prior skill-38 block(s) (${RETIRED_MARKERS} retired marker(s), ${LEGACY_STUBS} legacy generic-installer stub(s)); wrote ${STANZAS_WRITTEN} pointer stanza(s)"
+echo "[05-update-agents-md] AGENTS.md updated (${MODE}): removed ${BLOCKS_REMOVED}/${BLOCKS_TOTAL} prior skill-38 block(s) (${RETIRED_MARKERS} retired marker(s), ${LEGACY_STUBS} legacy generic-installer stub(s), ${ORPHANS_HEALED} orphaned END-only stanza(s)); wrote ${STANZAS_WRITTEN} pointer stanza(s)"
 echo "[05-update-agents-md]   chars ${BEFORE_CHARS} -> ${AFTER_CHARS} (delta $((AFTER_CHARS - BEFORE_CHARS)))"
 if [ "$MODE" = "staged" ]; then
   echo "[05-update-agents-md]   STAGED: a core-file watcher vault was detected (vaulted ${VAULTED_SIZE} bytes, floor ${WATCHER_FLOOR})."

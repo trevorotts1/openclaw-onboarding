@@ -43,6 +43,8 @@ on:
       - install.sh
       - tests/unit/compact-bootstrap.test.sh
       - tests/unit/bootstrap-pointerize.test.sh
+      - tests/unit/test_bootstrap_marker_pairs.py
+      - 38-conversational-ai-system/scripts/05-update-agents-md.sh
       - .github/workflows/lean-bootstrap-guard.yml
   pull_request:
     paths:
@@ -59,6 +61,8 @@ on:
       - install.sh
       - tests/unit/compact-bootstrap.test.sh
       - tests/unit/bootstrap-pointerize.test.sh
+      - tests/unit/test_bootstrap_marker_pairs.py
+      - 38-conversational-ai-system/scripts/05-update-agents-md.sh
       - .github/workflows/lean-bootstrap-guard.yml
   workflow_dispatch:
 
@@ -84,6 +88,9 @@ jobs:
         run: |
           chmod +x tests/unit/bootstrap-pointerize.test.sh
           bash tests/unit/bootstrap-pointerize.test.sh
+
+      - name: BEGIN/END marker pairs match; Skill 38 heals orphaned END-only stanzas
+        run: python3 tests/unit/test_bootstrap_marker_pairs.py
 
       - name: Scheduled jobs are COMMAND kind and name no model
         # Both crons must stay zero-token. An agent-kind maintenance cron burns
