@@ -123,7 +123,7 @@ FRAG="$(mktemp)"
 for fn in log cc_env_has_nonempty cc_env_set_if_absent cc_env_get \
           cc_mirror_api_auth_to_agent_secrets cc_resolve_sovereign_model \
           cc_resolve_judge_model cc_write_env_local cc_git_sync_to_default_branch \
-          cc_zero_downtime_ready; do
+          cc_zero_downtime_ready cc_resolve_pinned_target; do
   body="$(extract_func "$fn" "$INSTALLER")"
   if [ -z "$body" ]; then
     echo "FATAL: could not extract function '$fn' from $INSTALLER (name/shape drift?)"
@@ -546,15 +546,41 @@ rm -rf "$ROOT"
 
 hdr "T15 — static: when ready, the update-only phase neither merges nor runs npm ci in the live tree, and runs origin/main's updater"
 PHASE="$(awk '/^if \[\[ "\$UPDATE_ONLY" == "true" \]\]; then/{p=1} p{print} p && /cc_route_update_through_canonical_path \|\| \\/{exit}' "$INSTALLER")"
-printf '%s\n' "$PHASE" | grep -q 'if cc_zero_downtime_ready "\$DASHBOARD_DIR"; then' \
+printf '%s\n' "$PHASE" | grep -q 'elif cc_zero_downtime_ready "\$DASHBOARD_DIR"; then' \
   && printf '%s\n' "$PHASE" | grep -q 'elif cc_git_sync_to_default_branch' \
   && ok "T15: the live-tree merge runs only when zero-downtime is not ready" \
   || bad "T15: the live-tree merge is not gated on zero-downtime readiness"
 printf '%s\n' "$PHASE" | grep -qF '[[ "$CC_ZERO_DOWNTIME" == "1" ]] || cc_install_locked_dependencies' \
   && ok "T15: live npm ci is skipped on the zero-downtime path" || bad "T15: live npm ci still runs on the zero-downtime path"
 ROUTE="$(extract_func cc_route_update_through_canonical_path "$INSTALLER")"
-printf '%s\n' "$ROUTE" | grep -q 'show origin/main:update.sh' \
-  && ok "T15: the zero-downtime path runs origin/main's update.sh" || bad "T15: the live checkout's (old) update.sh would run"
+printf '%s\n' "$ROUTE" | grep -qF 'show "${CC_UPDATE_TARGET:-origin/main}:update.sh"' \
+  && ok "T15: the zero-downtime path runs the pinned release's update.sh" || bad "T15: the live checkout's (old) update.sh would run"
+
+hdr "T18 — the pinned Command Center release is deployed even when origin/main is ahead; no pin = nothing deployed"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t18"; git clone --quiet "$ORIGIN" "$CO"
+PIN="$(git -C "$SEED" rev-parse v1.0.0)"
+advance_origin_nonconflicting "$SEED"
+mkdir -p "$ROOT/skills/32-command-center-setup"
+printf '{"commandCenter":{"pinnedTag":"v1.0.0"}}\n' > "$ROOT/skills/cc-compat.json"
+PINNED="$( LOG_FILE="$ROOT/t18.log"; source "$FRAG"; log() { :; }
+  unset CC_UPDATE_TARGET; SKILL_DIR="$ROOT/skills/32-command-center-setup"; DASHBOARD_DIR="$CO"
+  cc_resolve_pinned_target && printf '%s' "$CC_UPDATE_TARGET" )"
+[ "$PINNED" = "$PIN" ] && ok "T18: CC_UPDATE_TARGET is the pinned tag's commit" || bad "T18: resolved '$PINNED', want $PIN"
+CC_UPDATE_TARGET="$PIN" sync_fn "$CO" "$ROOT/t18.log"
+[ "$(git_id "$CO")" = "$PIN" ] && ok "T18: the checkout lands on the pin, not the newer origin/main" \
+  || bad "T18: checkout at $(git_id "$CO"), origin/main is $(git -C "$SEED" rev-parse HEAD)"
+printf '{"commandCenter":{"pinnedTag":"v9.9.9"}}\n' > "$ROOT/skills/cc-compat.json"
+if ( LOG_FILE="$ROOT/t18.log"; source "$FRAG"; log() { :; }
+     unset CC_UPDATE_TARGET; SKILL_DIR="$ROOT/skills/32-command-center-setup"; DASHBOARD_DIR="$CO"
+     cc_resolve_pinned_target ); then
+  bad "T18: an unresolvable pin was accepted"
+else
+  ok "T18: an unresolvable pin fails (the caller deploys nothing)"
+fi
+rm -rf "$ROOT"
 
 rm -f "$FRAG"
 

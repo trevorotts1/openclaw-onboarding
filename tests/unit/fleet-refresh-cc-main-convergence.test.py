@@ -74,6 +74,7 @@ class FleetRefreshCCMainConvergence(unittest.TestCase):
             (origin / "latest-main.txt").write_text("latest\n")
             git(origin, "add", "latest-main.txt")
             git(origin, "commit", "-qm", "latest main")
+            git(origin, "tag", paired_tag)  # the pinned release is the commit a roll deploys
 
             result = runner.BoxResult("fixture-box", dry_run=False)
             sys.path.insert(0, str(REPO_ROOT / "shared-utils"))
