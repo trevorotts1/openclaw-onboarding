@@ -1,3 +1,12 @@
+## [v25.2.15]  -  2026-09-29  -  Workforce completion digest ignores department runtime dirs
+
+### Why
+The artifact digest hashed every .md/.json under the departments tree, including presentations/runs/*.json, which the presentations scheduler rewrites every few minutes. Minutes after finalize, evaluate() reported changed-or-missing-artifacts and finalize_closeout failed.
+
+### What changed
+- `workforce_completion.py`: files under `<dept>/{memory,conversational-logs,logs,artifacts,runs,scripts,intake,intake-miniapp,fish-audio,release-matrix,contract}/` are not hashed; content folders (sops, roles, devils-advocate, templates, assets) still are.
+- The digest is versioned (`digestVersion: 2`). Evidence recorded earlier is re-checked with the old algorithm, so no verified build flips on update; a build picks up v2 at its next `workforce_completion.py <state> --refresh`.
+
 ## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
