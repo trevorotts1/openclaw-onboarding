@@ -300,7 +300,13 @@ if not tpl.is_file():
     fails.append("(1) plist template missing: " + str(tpl))
 if not poll.is_file():
     fails.append("(1) poll script missing: " + str(poll))
-inst = repo / "install.sh"
+# install.sh lives at the REPO ROOT — five levels above the scripts dir
+# (scripts -> presentations -> role-library -> templates -> 23-ai-workforce-
+# blueprint -> repo root). The original `repo / "install.sh"` looked inside the
+# scripts dir itself, found no file, and read "" — clauses (2)-(5) then fired on
+# every tree forever (the gate could only ever FAIL, never pass, hiding real
+# drift behind permanent noise). Measured 2026-09-04 on PR-fix/fix61.
+inst = repo / "../../../../.." / "install.sh"
 inst_text = inst.read_text(encoding="utf-8", errors="replace") if inst.is_file() else ""
 if "install_intake_poll_schedule()" not in inst_text:
     fails.append("(2) install.sh does not define install_intake_poll_schedule() -- the scheduled path has no installer")
@@ -373,8 +379,8 @@ print(f"  OK: department manifest content matches the repo copy (manifest_versio
 sys.exit(0)
 PYMANIFEST
 
-if [ "$DRIFT" -ne 0 ]; then
-    echo "[$PROG] FAILED: repo/department/provenance drift (see DRIFT lines above). The sanctioned repair is the reinstall/update roll — refresh-dept-scripts.py re-mirrors the department from the repo and restamps MANIFEST-SOURCE.txt (FIX 113)." >&2
+if [ "$DRIFT" -ne 0 ] || [ "${FAILED:-0}" -ne 0 ]; then
+    echo "[$PROG] FAILED: drift or gate failure detected (DRIFT=$DRIFT FAILED=${FAILED:-0}; see DRIFT/GATE8_FAIL lines above). The sanctioned repair is the reinstall/update roll — refresh-dept-scripts.py re-mirrors the department from the repo and restamps MANIFEST-SOURCE.txt (FIX 113)." >&2
     exit 11
 fi
 echo "  GATE-D PASSED: department copy == repo copy; provenance stamp current."
