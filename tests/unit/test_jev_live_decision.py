@@ -22,6 +22,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 _HERE = Path(__file__).parent
 _REPO = _HERE.parent.parent
 _BRIDGE = _REPO / "shared-utils" / "decision-engine.py"
@@ -183,6 +185,18 @@ class NonFixtureIntentClassification(unittest.TestCase):
         self._assert_intent("thanks!", "social_conversation", source="fixture")
         self._assert_intent("Hi", "social_conversation", source="heuristic")
 
+    def test_quoted_instruction_inside_a_question_stays_answer_only(self):
+        """JGT-201 regression pin: an existing released-pack fixture (also
+        exercised via _load_all_fixtures, pinned here directly and against
+        the bare heuristic since this exact string is itself a fixture and
+        would otherwise short-circuit via fixture_lookup before reaching
+        _heuristic_intent). A quoted instruction inside a trailing question
+        ('you do it' quoted) must not be read as a live task clause -- the
+        message is still a pure question."""
+        message = "The client wrote, 'you do it'; what does that mean?"
+        module = _load_heuristic_module()
+        self.assertEqual(module._heuristic_intent(message), "answer_only")
+
     def test_mixed_answer_and_task(self):
         self._assert_intent(
             "Draft the newsletter and explain why you picked the subject line",
@@ -194,14 +208,64 @@ class NonFixtureIntentClassification(unittest.TestCase):
         question clause must not be reclassified as answer_only -- an
         earlier task clause wins, so the owner's instruction still gets
         routed (contract C2/C4: work is never dropped or answered-and-
-        forgotten)."""
+        forgotten). Every clause is scanned (not just the leading one), so a
+        task clause paired with a question clause anywhere in the message is
+        'mixed_answer_and_task' -- still a task, still routed, never
+        answer_only; JGT-201 explicitly leaves either task label acceptable
+        ('stays task') as long as it is not dropped to a pure answer."""
         for message in (
             "Fix the checkout bug. Who broke it?",
             "Build the landing page. What do you think?",
         ):
-            response = self._assert_intent(message, "task_request")
+            response = _evaluate(taskDescription=message)
+            self.assertIn(
+                response.get("intent"),
+                ("task_request", "mixed_answer_and_task"),
+                msg=message,
+            )
             route = response["route"]
             self.assertEqual(route["action"], "route", msg=message)
+
+    def test_question_then_task_is_not_dropped_to_answer_only(self):
+        """JGT-201 landmine 1: a question FOLLOWED BY a task must not drop
+        the task -- 'Who broke it? Fix the checkout bug.' used to match the
+        leading wh-question clause and return answer_only/action answer
+        before the later task clause was ever checked. Clauses are now
+        split on '?' too, and every clause is scanned before deciding, so a
+        task clause anywhere makes the message a task (mixed when a
+        question clause is also present, spec C4: a task is never dropped
+        or answered-and-forgotten)."""
+        for message in (
+            "Who broke it? Fix the checkout bug.",
+            "What do you think? Build the landing page.",
+        ):
+            response = _evaluate(taskDescription=message)
+            self.assertIn(
+                response.get("intent"),
+                ("task_request", "mixed_answer_and_task"),
+                msg=message,
+            )
+            route = response["route"]
+            self.assertEqual(route["action"], "route", msg=message)
+            self.assertNotEqual(route["action"], "answer", msg=message)
+
+    def test_throwaway_lead_does_not_turn_a_pure_question_into_a_task(self):
+        """JGT-201 landmine 2: a filler lead clause ('Quick question.',
+        'Hmm.') is not an imperative task verb and must not manufacture a
+        task clause that promotes a pure question into task_request ->
+        general-task. Leading filler is stripped from every clause and a
+        clause that is only filler is FILLER, so the message is classified
+        by its real question clause alone."""
+        for message in (
+            "Quick question. What does our Marketing department do?",
+            "Hmm. What does marketing do?",
+            "Hey. Why did the campaign underperform?",
+            "So. How many leads did we get last week?",
+        ):
+            response = self._assert_intent(message, "answer_only")
+            route = response["route"]
+            self.assertEqual(route["action"], "answer", msg=message)
+            self.assertIsNone(route["department"], msg=message)
 
 
 class QuestionsAnswerNoDepartment(unittest.TestCase):
@@ -261,19 +325,20 @@ class RequestDepartmentsCatalog(unittest.TestCase):
     still excluded from ranking (it is never a candidate handed to
     fallback.select -- the exclusion applies to BOTH catalog sources).
 
-    NOTE on the contract's worked example: the JGT101 contract's illustrative
-    text says this exact message+catalog should land on 'billing-finance'.
-    Verified against the actual (and correctly, spec-literally implemented)
-    decision_engine.fallback._lexical_rank + profiles.resolve_department_selection
-    pipeline: the stopword-filtered query is {'send','invoice','client'} (3
-    tokens); 'billing-finance' overlaps on exactly one token ('invoice'), for
-    a score of 1/3 = 0.3333..., which is BELOW the mandated ROUTE_THRESHOLD
-    of 0.34. So this message lexically falls one word short of the
-    threshold, and correctly falls back to general-task. This is a real,
-    verified numeric property of the exact stopword list + exact
-    ROUTE_THRESHOLD the contract pins -- not a bridge bug -- and is worth
-    flagging back to whoever tunes ROUTE_THRESHOLD. What IS verified and
-    asserted here, byte-for-byte per the contract: catalog == 'request', and
+    NOTE on the contract's worked example, UPDATED for JGT-201 landmine 3:
+    the raw stopword-filtered query is {'send','invoice','client'} (3
+    tokens); 'billing-finance' overlaps on exactly one token ('invoice'),
+    for a RAW score of 1/3 = 0.3333..., which sits BELOW the mandated
+    ROUTE_THRESHOLD of 0.34 -- routing was dropping an obvious billing/
+    finance fit to general-task over one word. JGT-201 fixes the scoring:
+    _domain_boosted_suitability additionally scores each department against
+    ITS OWN vocabulary, weighting rare/discriminative query tokens (like
+    'invoice', which names only one department here) far above tokens no
+    department's vocabulary contains ('send', 'client'). That boosted score
+    (1.0 here: the one domain token is a perfect hit) now clears
+    ROUTE_THRESHOLD, so this message deterministically lands on
+    'billing-finance' -- matching the contract's original worked example.
+    Also asserted, byte-for-byte per the contract: catalog == 'request', and
     'general-task' NEVER appears in the ranking candidates (proven via the
     monkeypatch below), regardless of which department the ranking picks.
     """
@@ -296,13 +361,52 @@ class RequestDepartmentsCatalog(unittest.TestCase):
         route = response["route"]
         self.assertEqual(route["action"], "route")
         self.assertEqual(route["catalog"], "request")
-        # general-task is excluded from ranking: whichever department wins,
-        # it is either a real ranked candidate (marketing/billing-finance)
-        # or the synthetic fallback -- both are legitimate, general-task
-        # itself was never scored by fallback.select.
-        self.assertIn(route["department"], ("billing-finance", "marketing", "general-task"))
-        if not route["fallback"]:
-            self.assertNotEqual(route["department"], "general-task")
+        # JGT-201 landmine 3: a strong single domain keyword ('invoice')
+        # now deterministically wins over the generic rest of the query --
+        # this must never fall back to general-task.
+        self.assertEqual(route["department"], "billing-finance")
+        self.assertFalse(route["fallback"])
+
+    def test_strong_domain_keyword_beats_generic_query_words(self):
+        """JGT-201 landmine 3: one rare domain keyword against a
+        department's own vocabulary must route there even when it is a
+        minority of the (stopword-filtered) query tokens, for several
+        domain examples -- not just 'invoice'."""
+        departments = [
+            {"slug": "billing-finance", "name": "Billing & Finance", "keywords": ["payroll"]},
+            {"slug": "legal", "name": "Legal", "keywords": ["contract", "lawsuit"]},
+            {"slug": "marketing", "name": "Marketing", "keywords": ["campaign"]},
+            {"slug": "general-task", "name": "General Task"},
+        ]
+        cases = [
+            ("Please run this month's payroll for the whole team", "billing-finance"),
+            ("Can you review the new vendor contract for us?", "legal"),
+            ("Send over that lawsuit paperwork to the client", "legal"),
+            ("Set up the new ad campaign for next quarter", "marketing"),
+        ]
+        for message, expected_department in cases:
+            response = _evaluate(taskDescription=message, departments=departments)
+            route = response["route"]
+            self.assertEqual(route["action"], "route", msg=message)
+            self.assertEqual(route["department"], expected_department, msg=message)
+            self.assertFalse(route["fallback"], msg=message)
+
+    def test_nonsense_still_falls_back_to_general_task(self):
+        """JGT-201 landmine 3 guardrail: the domain-keyword boost must never
+        manufacture a match out of nothing -- a message with no token in any
+        department's vocabulary still falls back to general-task."""
+        departments = [
+            {"slug": "billing-finance", "name": "Billing & Finance", "keywords": ["invoice"]},
+            {"slug": "legal", "name": "Legal", "keywords": ["contract"]},
+        ]
+        response = _evaluate(
+            taskDescription="Zorblax the quintessential frobnicator",
+            departments=departments,
+        )
+        route = response["route"]
+        self.assertEqual(route["action"], "route")
+        self.assertEqual(route["department"], "general-task")
+        self.assertTrue(route["fallback"])
 
     def test_general_task_excluded_even_with_perfect_keyword_match(self):
         """Decisive exclusion proof: if general-task were NOT excluded from
@@ -444,6 +548,116 @@ class RouteShapeSanity(unittest.TestCase):
             self.assertIn(route["catalog"], ("request", "standard-floor", "empty"))
             self.assertIn(response["intentSource"], ("fixture", "heuristic"))
 
+
+
+# --- JGT-201 repair: inverted-heuristic action matrix (pytest-parametrized) ---
+# (message, expected route.action, expected department or None=any).
+# Every row of the QC verdict (FAIL 1/2/3 lists + its OK list + the matrix
+# rows it re-checked) runs on the STANDARD-FLOOR catalog; a real task is
+# never dropped to 'answer' and a pure question never becomes a card.
+_QC_VERDICT_MATRIX = [
+    # FAIL 1: stemming -- 'invoice' must meet the floor's 'Invoices'.
+    ("Send the invoice to the client", "route", "billing-finance"),
+    ("Pay the contractor invoice", "route", "billing-finance"),
+    # FAIL 2: task verbs outside the old whitelist, next to a question.
+    ("Refund the customer. Why did they complain?", "route", None),
+    ("Hire a new closer for the sales team. Who should we look at?", "route", None),
+    ("Is the invoice paid? Chase it if not.", "route", None),
+    ("Translate the brochure into Spanish. What font should it use?", "route", None),
+    ("What happened with the Smith account? Refund them today.", "route", None),
+    ("Why is the site down? Restart the server.", "route", None),
+    ("Who is our best customer? Thank them with a gift card.", "route", None),
+    # FAIL 3: comma-joined / bare throwaway lead on a pure question.
+    ("Just curious, why do we use GHL?", "answer", None),
+    ("So what does the Healer department do?", "answer", None),
+    ("Honestly, what is a funnel?", "answer", None),
+    # QC OK list (polite requests are tasks; small talk is answered).
+    ("Can you refund the Smith order?", "route", None),
+    ("Could you pull the Q3 sales numbers?", "route", None),
+    ("Hey, can you get the newsletter out today?", "route", None),
+    ("How are you doing?", "answer", None),
+    # Original matrix rows the QC re-checked.
+    ("Who broke it? Fix the checkout bug.", "route", None),
+    ("Fix the checkout bug. Who broke it?", "route", None),
+    ("Quick question. What does our Marketing department do?", "answer", None),
+    ("Hmm. What does marketing do?", "answer", None),
+    ("What does our Marketing department do?", "answer", None),
+    ("hello", "answer", None),
+    ("Please fix the checkout bug", "route", None),
+    ("Zorblax the quintessential frobnicator", "route", "general-task"),
+    ("The client wrote, 'you do it'; what does that mean?", "answer", None),
+    ("Can you build the page?", "route", None),
+]
+
+# JGT-201 repair: builder's own adversarial rows.
+_ADVERSARIAL_MATRIX = [
+    ("Quick question: is the webinar still on Friday?", "answer", None),
+    ("Btw, how much did we spend on ads last month?", "answer", None),
+    ("Hmm, ok so who owns the CRM?", "answer", None),
+    ("hey, how are you doing?", "answer", None),
+    ("Could you explain how the refund policy works?", "answer", None),
+    ("Reconcile the March bank statement.", "route", None),
+    ("Onboard the new client, Acme Corp.", "route", None),
+    ("Audit our Facebook ad spend", "route", None),
+    ("Chase the unpaid invoices from last quarter", "route", "billing-finance"),
+    ("Restart the gateway", "route", None),
+    ("Thank the Johnson family for their referral.", "route", None),
+    ("Do a competitor analysis for our new product", "route", None),
+    ("Explain the new pricing, then update the pricing page.", "route", None),
+    ("Update the pricing page. Also, what changed in the plan?", "route", None),
+    ("Would you mind sending the proposal to Dana?", "route", None),
+    ("Honestly, can you translate the landing page into French?", "route", None),
+    ("Thanks! Can you also book a flight to Denver?", "route", None),
+    ("Hire a VA. Onboard them next week.", "route", None),
+]
+
+
+@pytest.mark.parametrize(
+    "message,action,department", _QC_VERDICT_MATRIX + _ADVERSARIAL_MATRIX
+)
+def test_action_matrix_standard_floor(message, action, department):
+    route = _evaluate(taskDescription=message)["route"]
+    assert route["action"] == action, (message, route)
+    if action == "answer":
+        assert route["department"] is None, (message, route)
+    if department is not None:
+        assert route["department"] == department, (message, route)
+        assert route["fallback"] is (department == "general-task"), (message, route)
+
+
+_BILLING_REQUEST_CATALOG = [
+    {"slug": "marketing", "name": "Marketing", "keywords": ["campaign", "ad", "promotion"]},
+    {"slug": "billing-finance", "name": "Billing & Finance", "keywords": ["invoices", "payment"]},
+    {"slug": "general-task", "name": "General Task"},
+]
+
+
+@pytest.mark.parametrize(
+    "message", ["Send the invoice to the client", "Pay the contractor invoice"]
+)
+def test_invoice_routes_billing_on_request_catalog(message):
+    """Stemming on the request catalog too: keyword 'invoices' meets 'invoice'."""
+    route = _evaluate(taskDescription=message, departments=_BILLING_REQUEST_CATALOG)["route"]
+    assert (route["action"], route["department"], route["fallback"], route["catalog"]) == (
+        "route", "billing-finance", False, "request"
+    ), route
+
+
+@pytest.mark.parametrize(
+    "message,intent",
+    [
+        ("Why is the site down? Restart the server.", "mixed_answer_and_task"),
+        ("Restart the server. Why is the site down?", "mixed_answer_and_task"),
+        ("Just curious, why do we use GHL?", "answer_only"),
+        ("Can you refund the Smith order?", "task_request"),
+        ("Can you tell me why the site is down?", "answer_only"),
+        ("Thanks so much!", "social_conversation"),
+        ("Explain the options. Do not build anything yet.", "answer_only"),
+        ("Don't forget to send the invoice", "task_request"),
+    ],
+)
+def test_heuristic_intent_inversion(message, intent):
+    assert _load_heuristic_module()._heuristic_intent(message) == intent
 
 if __name__ == "__main__":
     unittest.main()

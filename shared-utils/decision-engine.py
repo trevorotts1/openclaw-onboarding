@@ -100,104 +100,108 @@ _ROUTE_STOPWORDS = frozenset(
     "up so just need want".split()
 )
 
-_GREETING_PHRASES = frozenset(
+# Whole-clause social phrases: a clause that is ONLY one of these (after
+# leading filler is stripped) is FILLER. "thank them with a gift card" is
+# not "thank you", so it is not in here.
+_SOCIAL_PHRASES = frozenset(
     {
-        "thanks", "thank you", "thx", "ty", "hi", "hello", "hey",
+        "thanks", "thank you", "thanks so much", "thank you so much", "thanks a lot",
+        "thx", "ty", "much appreciated", "appreciate it", "cheers",
+        "hi", "hello", "hey", "hi there", "hello there", "hey there",
         "good morning", "good afternoon", "good evening",
-        "ok", "okay", "got it", "great", "cool",
+        "ok", "okay", "got it", "great", "cool", "sounds good", "perfect", "awesome", "nice",
     }
 )
 
-# Words that lead a clause but are never themselves an imperative task verb
-# (pronouns/articles, wh-words, aux-words, and the answer-lead verbs), used
-# only to decide whether a clause OPENS with a task instruction (rule b).
-_NON_TASK_LEAD_WORDS = frozenset(
-    {
-        "i", "you", "he", "she", "it", "we", "they",
-        "the", "a", "an", "this", "that", "these", "those",
-        "what", "why", "how", "when", "where", "who", "which",
-        "is", "are", "does", "do", "did", "should", "will", "would", "has", "have",
-        "can", "could",
-        "explain", "tell", "describe", "clarify",
-        "thanks", "thank", "hi", "hello", "hey", "ok", "okay", "good", "great",
-        "cool", "got",
-    }
+# (a) Throwaway lead phrases stripped from the front of every clause, even
+# when comma/colon/period-joined ("Just curious, why ...", "So what ...").
+_FILLER_LEAD_RE = re.compile(
+    r"^(?:just curious|quick question|quick q|real quick|one thing|one more thing|"
+    r"question|honestly|by the way|btw|i was wondering|i wonder|curious|"
+    r"so|hmm+|um+|uh+|well|ok|okay|alright|hey|hi|hello|please)"
+    r"(?:\s*[,.:;!\-—]+\s*|\s+|$)"
 )
-
 _QUOTE_SPAN_RE = re.compile(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”")
-_TRAILING_PUNCT_RE = re.compile(r"[.!?,]+$")
-_CLAUSE_SPLIT_RE = re.compile(r"(?<=[.!;])\s+")
-_WH_LEAD_RE = re.compile(r"^(what|why|how|when|where|who|which)\b")
-_EXPLAIN_LEAD_RE = re.compile(r"^(explain|tell me|describe|clarify)\b")
-_CAN_COULD_WOULD_EXPLAIN_RE = re.compile(
-    r"^(can|could|would)\s+you\s+(explain|tell|describe|clarify)\b"
+_EDGE_PUNCT_RE = re.compile(r"^[\s,.:;!?\-]+|[\s,.:;!?\-]+$")
+# (b) clause boundaries: after . ! ? ; (terminal punctuation stays on the
+# clause), on newlines, and on a sequencing ", then" / "and then"
+# ("Explain the pricing, then update the page" carries a task).
+_CLAUSE_SPLIT_RE = re.compile(r"(?<=[.!?;])\s+|\s*\n+\s*|,\s*(?:and\s+)?then\s+|\s+and\s+then\s+")
+_ANSWER_VERBS = ("explain", "tell", "describe", "clarify")
+# (d) polite request: "can/could/would/will you <verb>" is ACTION unless the
+# verb is an answer verb (explain/tell/describe/clarify).
+_POLITE_REQUEST_RE = re.compile(
+    r"^(?:can|could|would|will)\s+(?:you|we|someone|somebody)\s+"
+    r"(?:please\s+|kindly\s+|possibly\s+|just\s+|quickly\s+)?([a-z']+)"
 )
-_AUX_LEAD_QUESTION_RE = re.compile(
-    r"^(is|are|does|do|did|should|will|would|has|have|can i|could i)\b.*\?\s*$"
+_WH_LEAD_RE = re.compile(r"^(?:what|why|how|when|where|who|whom|whose|which)\b")
+_EXPLAIN_LEAD_RE = re.compile(r"^(?:explain|tell me|describe|clarify)\b")
+# is/are/does/... are never imperatives; do/have/has can be ("Do a
+# competitor analysis", "Have Jordan do it"), so they lead a question only
+# when a subject pronoun follows.
+_AUX_LEAD_RE = re.compile(
+    r"^(?:is|are|was|were|does|did|can|could|would|will|should|shall|may|might|"
+    r"(?:do|have|has)\s+(?:i|you|we|they|he|she|it)\b)\b"
 )
-_LEAD_VERB_RE = re.compile(r"^([a-z']+)")
-_YOU_VERB_RE = re.compile(r"^(can|could|would|will)\s+you\s+([a-z']+)")
+# Neutral clauses: a negative constraint ("Do not build anything yet.") or
+# reported speech whose quote was stripped ("The client wrote, ;"). They
+# are neither a question nor an action on their own.
+_CONSTRAINT_RE = re.compile(r"^(?:do not|don't|dont)\s+(?!forget\b|miss\b|skip\b|let\b)")
+_REPORTED_SPEECH_RE = re.compile(
+    r"\b(?:wrote|said|says|asked|asks|writes|replied|texted|emailed|mentioned|told me)$"
+)
+_EXPLAIN_WHY_RE = re.compile(r"\b(?:explain why|tell me why|and explain)\b")
+
+
+def _strip_filler(clause: str) -> str:
+    prev = None
+    while prev != clause:
+        prev = clause
+        clause = _FILLER_LEAD_RE.sub("", clause, count=1)
+    return clause
+
+
+def _classify_clause(clause: str) -> str:
+    """One clause -> 'question' | 'filler' | 'neutral' | 'action'."""
+    body = _strip_filler(clause.strip())
+    bare = _EDGE_PUNCT_RE.sub("", body)
+    if not bare or bare in _SOCIAL_PHRASES:
+        return "filler"
+    polite = _POLITE_REQUEST_RE.match(bare)
+    if polite:
+        return "question" if polite.group(1) in _ANSWER_VERBS else "action"
+    if (
+        body.rstrip().endswith("?")
+        or _WH_LEAD_RE.match(bare)
+        or _EXPLAIN_LEAD_RE.match(bare)
+        or _AUX_LEAD_RE.match(bare)
+    ):
+        return "question"
+    if _CONSTRAINT_RE.match(bare) or _REPORTED_SPEECH_RE.search(bare):
+        return "neutral"
+    return "action"
 
 
 def _heuristic_intent(text: str) -> str:
     """Stdlib lexical fallback intent classifier (never returns 'unresolved').
 
-    Runs on a lowered copy of ``text`` with quoted spans ('..', "..", curly
-    quotes) removed, so a quoted instruction inside a question ("what does
-    'do it' mean?") never contaminates the lead-pattern check below.
+    INVERSION: a clause is ACTION unless it is provably a QUESTION or FILLER,
+    so an unknown verb ("refund", "chase", "reconcile") is never dropped to
+    an answer (contract C2/C4: unsure means task). Quoted spans are removed
+    first so a quoted instruction inside a question ("what does 'do it'
+    mean?") is not read as a live instruction.
     """
-    lowered = text.lower()
-    stripped = _QUOTE_SPAN_RE.sub(" ", lowered)
-    stripped = " ".join(stripped.split())
-
-    # a) the whole message is a greeting or thanks.
-    bare = _TRAILING_PUNCT_RE.sub("", stripped).strip()
-    if bare in _GREETING_PHRASES:
+    stripped = _QUOTE_SPAN_RE.sub(" ", text.lower())
+    kinds = [_classify_clause(c) for c in _CLAUSE_SPLIT_RE.split(stripped) if c.strip()]
+    if "action" in kinds:
+        if "question" in kinds or _EXPLAIN_WHY_RE.search(stripped):
+            return "mixed_answer_and_task"
+        return "task_request"
+    if "question" in kinds:
+        return "answer_only"
+    if kinds and all(k == "filler" for k in kinds):
         return "social_conversation"
-
-    # b) a task clause plus an "explain why" style ask -> mixed.
-    has_explain_why = (
-        "explain why" in stripped or "tell me why" in stripped or "and explain" in stripped
-    )
-    if has_explain_why and _has_task_clause(stripped):
-        return "mixed_answer_and_task"
-
-    # c) wh-lead / explain-lead / can-you-explain / aux-lead-ending-in-? ->
-    # answer_only. Checked per clause so a quote-stripped remark like
-    # "the client wrote, ; what does that mean?" still matches on its
-    # trailing question clause -- but only when no EARLIER clause already
-    # opened with a task instruction ("Fix the checkout bug. Who broke
-    # it?" is a task followed by a question, not a question: a task is
-    # never answered-and-forgotten, spec C4).
-    saw_task_clause = False
-    for clause in _CLAUSE_SPLIT_RE.split(stripped):
-        clause = clause.strip()
-        if not clause:
-            continue
-        if not saw_task_clause and (
-            _WH_LEAD_RE.match(clause)
-            or _EXPLAIN_LEAD_RE.match(clause)
-            or _CAN_COULD_WOULD_EXPLAIN_RE.match(clause)
-            or _AUX_LEAD_QUESTION_RE.match(clause)
-        ):
-            return "answer_only"
-        if _has_task_clause(clause):
-            saw_task_clause = True
-
-    # d) anything else -> task_request (work is never silently dropped).
     return "task_request"
-
-
-def _has_task_clause(normalized: str) -> bool:
-    if re.search(r"\bplease\b", normalized):
-        return True
-    lead = _LEAD_VERB_RE.match(normalized)
-    if lead and lead.group(1) not in _NON_TASK_LEAD_WORDS:
-        return True
-    you_verb = _YOU_VERB_RE.match(normalized)
-    if you_verb and you_verb.group(2) not in ("explain", "tell", "describe", "clarify"):
-        return True
-    return False
 
 
 _TRAILING_SENTENCE_PUNCT_RE = re.compile(r"[.!?]+$")
@@ -209,9 +213,32 @@ def _normalize_for_fixture_match(text: str) -> str:
     return _TRAILING_SENTENCE_PUNCT_RE.sub("", norm)
 
 
+def _stem(token: str) -> str:
+    """Light stemmer so 'invoice'/'invoices'/'invoicing' share one token.
+    ponytail: suffix stripping, not Porter -- add a real stemmer only if a
+    mismatch shows up in live routing."""
+    if len(token) > 4 and token.endswith("ies"):
+        token = token[:-3] + "y"
+    elif len(token) > 5 and token.endswith("ing"):
+        token = token[:-3]
+    elif len(token) > 4 and token.endswith("ed"):
+        token = token[:-2]
+    elif len(token) > 2 and token.endswith("s") and not token.endswith("ss"):
+        token = token[:-1]
+    if len(token) > 3 and token.endswith("e"):
+        token = token[:-1]
+    if len(token) > 3 and token[-1] == token[-2] and token[-1] not in "ls":
+        token = token[:-1]
+    return token
+
+
+def _stem_text(text: str) -> str:
+    return " ".join(_stem(t) for t in re.findall(r"[a-z0-9]+", text.lower()))
+
+
 def _route_query(task: str) -> str:
     tokens = [t for t in re.findall(r"[a-z0-9]+", task.lower()) if t not in _ROUTE_STOPWORDS]
-    return " ".join(tokens)
+    return " ".join(_stem(t) for t in tokens)
 
 
 def _standard_floor_catalog() -> list[dict]:
@@ -252,6 +279,39 @@ def _standard_floor_catalog() -> list[dict]:
     return entries
 
 
+def _domain_boosted_suitability(
+    query_tokens: list[str], catalog_entries: list[dict], suitability: dict[str, float]
+) -> dict[str, float]:
+    """Boost a department whose OWN vocabulary contains a rare query token.
+
+    ``_lexical_rank``'s score is overlap / len(query tokens), so one strong
+    domain keyword ("invoice") drowns in an otherwise generic query ("send
+    ... to the client") and never clears ROUTE_THRESHOLD. Here each query
+    token is weighted by 1/df (df = how many catalog entries' vocabulary
+    contain it), so a token that names exactly one department's domain
+    counts for far more than a token every department shares (or none do --
+    a token in no entry's vocabulary carries no signal and is dropped, so
+    nonsense queries still fall through to general-task).
+    ponytail: document-frequency-over-catalog is the ceiling, not semantic
+    similarity -- the upgrade path is embeddings, not a bigger weight table.
+    """
+    vocab_by_slug = {
+        e["slug"]: set(re.findall(r"[a-z0-9]+", e["text"].lower())) for e in catalog_entries
+    }
+    domain_tokens = {t for t in query_tokens if any(t in v for v in vocab_by_slug.values())}
+    if not domain_tokens:
+        return suitability
+    weights = {t: 1.0 / sum(1 for v in vocab_by_slug.values() if t in v) for t in domain_tokens}
+    total_weight = sum(weights.values())
+    boosted = dict(suitability)
+    for slug, vocab in vocab_by_slug.items():
+        matched_weight = sum(w for t, w in weights.items() if t in vocab)
+        if matched_weight <= 0:
+            continue
+        boosted[slug] = max(boosted.get(slug, 0.0), matched_weight / total_weight)
+    return boosted
+
+
 def _resolve_route_department(
     task: str, department_requested: str | None, catalog_entries: list[dict]
 ) -> tuple[str, float, bool]:
@@ -267,11 +327,13 @@ def _resolve_route_department(
         query = _route_query(task)
         if not query:
             return "general-task", 0.0, True
+        catalog_entries = [{"slug": e["slug"], "text": _stem_text(e["text"])} for e in catalog_entries]
         ranking = _fallback.select(
             [{"id": e["slug"], "text": e["text"], "topics": []} for e in catalog_entries],
             query,
         )["ranking"]
         suitability = {r["id"]: r["score"] for r in ranking}
+        suitability = _domain_boosted_suitability(query.split(), catalog_entries, suitability)
         pick = _profiles.resolve_department_selection(suitability, threshold=ROUTE_THRESHOLD)
         if pick == _NONE_SUITABLE:
             top_score = ranking[0]["score"] if ranking else 0.0
