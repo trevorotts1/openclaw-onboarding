@@ -579,7 +579,9 @@ rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
   # SIGHUP and writes its result on the box. Wait for it there and read that
   # result, instead of reporting a box that updated fine as FAILED.
   if [ "$rc" -eq 255 ]; then
-    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
+    # The runner's own log ($E on the box) never arrived either: the session
+    # dropped before the final cat. Bring it back into this run's box log.
+    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; echo '---- runner log fetched from the box (the SSH session dropped) ----' >&2; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.log\" >&2 2>/dev/null; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
     local try back_rc=255
     for try in 1 2 3; do
       back_rc=0
