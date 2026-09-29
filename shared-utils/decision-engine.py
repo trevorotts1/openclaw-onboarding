@@ -110,7 +110,18 @@ _SOCIAL_PHRASES = frozenset(
         "hi", "hello", "hey", "hi there", "hello there", "hey there",
         "good morning", "good afternoon", "good evening",
         "ok", "okay", "got it", "great", "cool", "sounds good", "perfect", "awesome", "nice",
+        "no worries", "no problem", "all good", "love it", "that works", "works for me",
+        "thanks again", "thank you again", "appreciate you", "great job", "good job",
+        "well done", "nice work", "great work", "amazing", "wonderful", "fantastic",
+        "see you tomorrow", "talk soon", "talk later", "have a good one", "have a great day",
     }
+)
+# JGT-301: social closers shaped "that's perfect" / "this is really helpful".
+_SOCIAL_CLOSER_RE = re.compile(
+    r"^(?:that'?s|that is|this is|it'?s|it is|looks|sounds|you'?re|you are)\s+"
+    r"(?:(?:so|really|just|very|absolutely|super|all)\s+)?"
+    r"(?:perfect|great|awesome|amazing|fantastic|wonderful|excellent|good|fine|"
+    r"helpful|brilliant|lovely|beautiful|exactly right|the best|a lifesaver)$"
 )
 
 # (a) Throwaway lead phrases stripped from the front of every clause, even
@@ -118,10 +129,15 @@ _SOCIAL_PHRASES = frozenset(
 _FILLER_LEAD_RE = re.compile(
     r"^(?:just curious|quick question|quick q|real quick|one thing|one more thing|"
     r"question|honestly|by the way|btw|i was wondering|i wonder|curious|"
-    r"so|hmm+|um+|uh+|well|ok|okay|alright|hey|hi|hello|please)"
+    r"so|hmm+|um+|uh+|well|ok|okay|alright|hey|hi|hello|please|also|anyway|actually|oh)"
     r"(?:\s*[,.:;!\-—]+\s*|\s+|$)"
 )
-_QUOTE_SPAN_RE = re.compile(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”")
+# JGT-301: a single-quote span opens and closes at a word edge, so the
+# apostrophes in "what's ... it's" are not read as a quote (that ate the task
+# between them); an inner "don't" apostrophe stays inside the span.
+_QUOTE_SPAN_RE = re.compile(
+    r"(?<![a-z0-9])'(?:[^']|'(?=[a-z]))*'(?![a-z0-9])|\"[^\"]*\"|‘[^’]*’|“[^”]*”"
+)
 _EDGE_PUNCT_RE = re.compile(r"^[\s,.:;!?\-]+|[\s,.:;!?\-]+$")
 # (b) clause boundaries: after . ! ? ; (terminal punctuation stays on the
 # clause), on newlines, and on a sequencing ", then" / "and then"
@@ -132,9 +148,14 @@ _ANSWER_VERBS = ("explain", "tell", "describe", "clarify")
 # verb is an answer verb (explain/tell/describe/clarify).
 _POLITE_REQUEST_RE = re.compile(
     r"^(?:can|could|would|will)\s+(?:you|we|someone|somebody)\s+"
-    r"(?:please\s+|kindly\s+|possibly\s+|just\s+|quickly\s+)?([a-z']+)"
+    r"(?:please\s+|kindly\s+|possibly\s+|just\s+|quickly\s+|also\s+)?([a-z']+)"
 )
-_WH_LEAD_RE = re.compile(r"^(?:what|why|how|when|where|who|whom|whose|which)\b")
+# 'when you get a chance' / 'when the invoice arrives' is a subordinate
+# lead, not a question: 'when' leads a question only when no subject follows.
+_WH_LEAD_RE = re.compile(
+    r"^(?:what|why|how|where|who|whom|whose|which|"
+    r"when(?!\s+(?:i|you|we|they|he|she|it|the|a|an|my|our|your|this|that|everyone)\b))\b"
+)
 _EXPLAIN_LEAD_RE = re.compile(r"^(?:explain|tell me|describe|clarify)\b")
 # is/are/does/... are never imperatives; do/have/has can be ("Do a
 # competitor analysis", "Have Jordan do it"), so they lead a question only
@@ -152,6 +173,51 @@ _REPORTED_SPEECH_RE = re.compile(
 )
 _EXPLAIN_WHY_RE = re.compile(r"\b(?:explain why|tell me why|and explain)\b")
 
+# --- JGT-301: soft segment boundaries inside one sentence ---
+# A comma, or a bare and/but/also/then, starts a NEW segment only when the
+# text after it starts a clause (see _starts_segment); otherwise it is a noun
+# list ('red, blue and green') and stays one segment.
+_SOFT_BOUNDARY_RE = re.compile(
+    r",\s*(?:(?:and|but|also|so|or)\s+)?(?:then\s+)?|\s+(?:and|but|also)\s+(?:then\s+)?|\s+then\s+"
+)
+# Conditional/subordinate lead: attaches to its neighbour, never an ACTION alone.
+_CONDITIONAL_LEAD_RE = re.compile(
+    r"^(?:if|unless|once|whenever|when|as soon as|in case|assuming|provided)\b"
+)
+# ponytail: a verb lexicon, not a POS tagger. A listed verb followed by one
+# more non-conjunction word starts a segment; a noun that is also a verb
+# ('email draft') can over-split into an extra card, the lesser harm (the
+# BIAS rule). Upgrade path is a real tagger, not a longer list.
+_ACTION_VERBS = frozenset(
+    """add adjust approve archive arrange ask assign audit book bring build buy call
+    cancel change chase check clean clear close collect confirm contact copy create
+    delete deploy design do draft drop edit email enable disable export file fill find
+    finish fix follow forward get give go handle help hire import install invite invoice
+    let lock look make merge message migrate move notify onboard open order organize pay
+    ping plan post prepare print publish pull push put raise reach rebook reconcile
+    record refund reject remind remove rename renew reorder repair reply reschedule
+    reset resend respond restart restore revert review revoke roll run save schedule
+    send set share ship sign start stop submit switch take text translate unlock update
+    upgrade upload verify write""".split()
+)
+_STRUCTURAL_VERB_RE = re.compile(
+    r"^(?!(?:the|a|an|my|our|your|his|her|their|its|this|that|these|those|all|any|some|"
+    r"every|each|no|i|you|we|they|he|she|it|and|or|of|in|on|at|for|with|to|from|by)\b)"
+    r"[a-z]+(?:\s+(?:back|up|out|off|over|down|in|on|through|forward|along|around|away|ahead))?"
+    r"\s+(?:the|a|an|my|our|your|his|her|their|its|this|that|these|those|it|them|him|me|us|"
+    r"everyone|everybody|everything)\b"
+)
+# 'how do I reset my password and change my email?' -- the tail shares the
+# head's question frame, so action verbs do not split it off.
+_SHARED_FRAME_RE = re.compile(
+    r"^(?:(?:how|what|where|which|when)\s+to|(?:how|what|why|where|when|which|who)\b"
+    r"(?:\s+[a-z']+){0,2}?\s+(?:do|does|did|can|could|should|would|will|shall|may|might|must)"
+    r"\s+(?:i|we|you|they|he|she|one|someone))\b"
+)
+
+
+_POLITE_HEAD_RE = re.compile(r"^(?:can|could|would|will)\s+(?:you|we|someone|somebody)(?:\s+please)?$")
+
 
 def _strip_filler(clause: str) -> str:
     prev = None
@@ -161,17 +227,64 @@ def _strip_filler(clause: str) -> str:
     return clause
 
 
-def _classify_clause(clause: str) -> str:
-    """One clause -> 'question' | 'filler' | 'neutral' | 'action'."""
+def _is_social(bare: str) -> bool:
+    return bare in _SOCIAL_PHRASES or bool(_SOCIAL_CLOSER_RE.match(bare))
+
+
+def _starts_segment(tail: str, shared_frame: bool) -> bool:
+    """Does the text after a soft boundary start a new clause?"""
+    bare = _EDGE_PUNCT_RE.sub("", tail)
+    if not bare:
+        return False
+    if (
+        _is_social(re.split(r"\s*[,.!?;]", bare, maxsplit=1)[0])
+        or _WH_LEAD_RE.match(bare)
+        or _AUX_LEAD_RE.match(bare)
+        or _CONDITIONAL_LEAD_RE.match(bare)
+        or re.match(r"(?:please|don't|do not|let's)\b", bare)
+    ):
+        return True
+    if shared_frame:
+        return False
+    words = bare.split()
+    if words[0] in _ACTION_VERBS and len(words) > 1 and words[1] not in ("and", "or"):
+        return True
+    return bool(_STRUCTURAL_VERB_RE.match(bare))
+
+
+def _segments(sentence: str) -> list[str]:
+    """Split one sentence on soft boundaries that start a new clause."""
+    head = _EDGE_PUNCT_RE.sub("", _strip_filler(sentence.strip()))
+    shared_frame = sentence.rstrip().endswith("?") and bool(_SHARED_FRAME_RE.match(head))
+    out, start = [], 0
+    for m in _SOFT_BOUNDARY_RE.finditer(sentence):
+        if _POLITE_HEAD_RE.match(_strip_filler(sentence[start:m.start()].strip())):
+            continue  # 'can you also rebook ...' is one polite request
+        if _starts_segment(sentence[m.end():], shared_frame):
+            out.append(sentence[start:m.start()])
+            start = m.end()
+    out.append(sentence[start:])
+    return [s for s in out if s.strip()]
+
+
+def _classify_clause(clause: str, *, continuation: bool = False, grouped: bool = False) -> str:
+    """One segment -> 'question' | 'filler' | 'neutral' | 'action'.
+
+    continuation: split off a sentence after a soft boundary, so the
+    sentence's trailing '?' is not its own (BIAS: '... and roll back if it
+    broke anything?' is an ACTION). grouped: it has sibling segments, so a
+    conditional lead ('if you have time') attaches to them."""
     body = _strip_filler(clause.strip())
     bare = _EDGE_PUNCT_RE.sub("", body)
-    if not bare or bare in _SOCIAL_PHRASES:
+    if not bare or _is_social(bare) or _is_social(_EDGE_PUNCT_RE.sub("", clause)):
         return "filler"
+    if grouped and _CONDITIONAL_LEAD_RE.match(bare) and not _WH_LEAD_RE.match(bare):
+        return "neutral"
     polite = _POLITE_REQUEST_RE.match(bare)
     if polite:
         return "question" if polite.group(1) in _ANSWER_VERBS else "action"
     if (
-        body.rstrip().endswith("?")
+        (not continuation and body.rstrip().endswith("?"))
         or _WH_LEAD_RE.match(bare)
         or _EXPLAIN_LEAD_RE.match(bare)
         or _AUX_LEAD_RE.match(bare)
@@ -192,7 +305,13 @@ def _heuristic_intent(text: str) -> str:
     mean?") is not read as a live instruction.
     """
     stripped = _QUOTE_SPAN_RE.sub(" ", text.lower())
-    kinds = [_classify_clause(c) for c in _CLAUSE_SPLIT_RE.split(stripped) if c.strip()]
+    kinds = []
+    for sentence in _CLAUSE_SPLIT_RE.split(stripped):
+        segs = _segments(sentence) if sentence.strip() else []
+        kinds += [
+            _classify_clause(s, continuation=i > 0, grouped=len(segs) > 1)
+            for i, s in enumerate(segs)
+        ]
     if "action" in kinds:
         if "question" in kinds or _EXPLAIN_WHY_RE.search(stripped):
             return "mixed_answer_and_task"

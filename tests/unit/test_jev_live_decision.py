@@ -659,5 +659,75 @@ def test_invoice_routes_billing_on_request_catalog(message):
 def test_heuristic_intent_inversion(message, intent):
     assert _load_heuristic_module()._heuristic_intent(message) == intent
 
+
+# --- JGT-301: comma-/and-joined run-ons (final QC of v25.2.17) ---
+# The three QC holes, end to end through the CLI bridge: a real TASK is never
+# dropped, and a pure social closer never becomes a card.
+_JGT301_QC_HOLES = [
+    ("What time works, reset the client's password.", "mixed_answer_and_task", "route"),
+    (
+        "Do you know if the deploy finished, and roll back if it broke anything?",
+        "mixed_answer_and_task",
+        "route",
+    ),
+    ("Thanks so much, that's perfect.", "social_conversation", "answer"),
+]
+
+
+@pytest.mark.parametrize("message,intent,action", _JGT301_QC_HOLES)
+def test_jgt301_qc_holes_end_to_end(message, intent, action):
+    response = _evaluate(taskDescription=message)
+    assert (response["intent"], response["intentSource"], response["route"]["action"]) == (
+        intent, "heuristic", action
+    ), (message, response)
+
+
+# 25+ new adversarial rows: question+task joined by a comma or 'and' in both
+# orders, social closers, conditional leads, noun lists, polite requests.
+_JGT301_ADVERSARIAL = [
+    # comma-joined, both orders
+    ("How many leads came in, send me the list.", "mixed_answer_and_task"),
+    ("Reset the client's password, what time works for the call?", "mixed_answer_and_task"),
+    ("Is the invoice paid, and chase it if not?", "mixed_answer_and_task"),
+    ("Where are we on the launch, also update the pricing page.", "mixed_answer_and_task"),
+    ("What happened to the deploy, check the logs?", "mixed_answer_and_task"),
+    # 'and'/'but'-joined, both orders (contractions are not quote marks)
+    ("What's the status on the report and send it to Dana when it's ready.", "mixed_answer_and_task"),
+    ("Send the report to Dana and what's the ETA on the next one?", "mixed_answer_and_task"),
+    ("Did the backup run and restart the gateway if it didn't?", "mixed_answer_and_task"),
+    ("Who owns the CRM but cancel the old subscription anyway.", "mixed_answer_and_task"),
+    # social closers
+    ("Perfect, thanks!", "social_conversation"),
+    ("Sounds good, thank you so much.", "social_conversation"),
+    ("Got it, no worries.", "social_conversation"),
+    ("Great, that's really helpful, thanks again!", "social_conversation"),
+    ("Awesome, you're the best.", "social_conversation"),
+    ("Hey there, good morning!", "social_conversation"),
+    # conditional / subordinate leads attach to their neighbour
+    ("If you have time, reconcile the March statement.", "task_request"),
+    ("When you get a chance, send the proposal to Dana.", "task_request"),
+    ("When you get a chance, what's the status of the audit?", "answer_only"),
+    ("If it broke anything, roll it back.", "task_request"),
+    ("When is the webinar, and if it's Friday, book the room.", "mixed_answer_and_task"),
+    # noun lists with commas are not actions; a shared 'how do I' frame is one question
+    ("What's the difference between red, blue and green?", "answer_only"),
+    ("Which of sales, marketing and the ops team owns onboarding?", "answer_only"),
+    ("How were Q1, Q2 and Q3 revenue?", "answer_only"),
+    ("How do I reset my password and change my email?", "answer_only"),
+    ("Order paper, pens and staples for the office.", "task_request"),
+    # polite requests
+    ("Hey, could you please pull the Q3 numbers, thanks!", "task_request"),
+    ("Thanks, can you also rebook the flight?", "task_request"),
+    ("Would you mind checking the logs, and what time is the standup?", "mixed_answer_and_task"),
+    ("What time works, and could you explain the refund policy?", "answer_only"),
+    # a quoted instruction with an inner apostrophe is still stripped
+    ("The client wrote, 'you don't get it'; what does that mean?", "answer_only"),
+]
+
+
+@pytest.mark.parametrize("message,intent", _JGT301_ADVERSARIAL)
+def test_jgt301_adversarial_heuristic(message, intent):
+    assert _load_heuristic_module()._heuristic_intent(message) == intent
+
 if __name__ == "__main__":
     unittest.main()
