@@ -150,6 +150,19 @@ def _memory_search_cfg(openclaw_json: dict) -> dict:
         return {}
 
 
+def _memory_search_is_ollama_cloud(provider: str, openclaw_json: dict) -> bool:
+    """Ollama Cloud as the MEMORY-SEARCH provider. An ollama memory search with
+    its own remote.baseUrl embeds there: a local Ollama (127.0.0.1:11434) is not
+    Cloud, even when the chat provider models.providers.ollama is ollama.com.
+    Judging it by the chat provider failed every box on local embeddings."""
+    if (provider or "").lower().strip() == "ollama":
+        remote = (_memory_search_cfg(openclaw_json).get("remote") or {})
+        base = str(remote.get("baseUrl") or "").strip() if isinstance(remote, dict) else ""
+        if base:
+            return "ollama.com" in base.lower()
+    return _provider_is_ollama_cloud(provider, openclaw_json)
+
+
 def _resolve_memory_search_provider(openclaw_json: dict) -> Optional[str]:
     """Return the memory-search provider (memory.search / agents.defaults.memorySearch)."""
     return _memory_search_cfg(openclaw_json).get("provider")
@@ -736,7 +749,7 @@ def check_memory_search_index(
         msg = f"{LBL} leg-a FAIL: no memory.search.provider configured in openclaw.json"
         res["errors"].append(msg)
         _err(msg)
-    elif _provider_is_ollama_cloud(mem_provider, openclaw_json):
+    elif _memory_search_is_ollama_cloud(mem_provider, openclaw_json):
         msg = (
             f"{LBL} leg-a FAIL: memorySearch.provider='{mem_provider}' is Ollama Cloud — "
             f"NEVER embedding-capable (hard rule B.6). "
@@ -794,7 +807,9 @@ def check_memory_search_index(
 
     # ── Leg (c) ────────────────────────────────────────────────────────────────
     if generative_provider and _provider_is_ollama_cloud(generative_provider, openclaw_json):
-        if mem_provider == generative_provider:
+        # Same provider NAME is not the same endpoint: an ollama memory search
+        # with a local remote.baseUrl does not embed on Ollama Cloud.
+        if mem_provider == generative_provider and _memory_search_is_ollama_cloud(mem_provider, openclaw_json):
             msg = (
                 f"{LBL} leg-c FAIL: generative provider '{generative_provider}' is "
                 f"Ollama Cloud and is configured as the embedding provider — HARD VIOLATION."
