@@ -679,9 +679,11 @@ def test_the_bank_still_carries_exactly_twenty_three_turns():
     turns = [q for q in bank["questions"] if q.get("kind") == "merged"]
     assert len(turns) == 23, [q["id"] for q in turns]
     rp = [q for q in bank["questions"] if q["id"] == "resource_plan"][0]
+    # FIX 61.2: deepseek_variant and openrouter_model join as subfields 7-8.
     assert set(rp["subfields"]) == {"resource_plan", "workhorse_model",
                                     "reasoning_model", "qc_model",
-                                    "thinking_mode", "run_mode"}
+                                    "thinking_mode", "run_mode",
+                                    "deepseek_variant", "openrouter_model"}
     assert "model@provider" in rp["prompt"]
     assert "API key" in rp["prompt"] and "endpoint" in rp["prompt"]
 

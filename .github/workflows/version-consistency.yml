@@ -480,6 +480,15 @@ jobs:
               continue
             fi
 
+            # Skip 23-ai-workforce-blueprint: it's the blueprint container, not an
+            # independently-versioned skill. Its version tracks the main repo
+            # version via the standard version markers (bump-version.sh --check).
+            # G3 false-positives on it because the directory name matches the
+            # skill pattern but it's versioned with the repo, not separately.
+            if [[ "$SKILL_DIR" == "23-ai-workforce-blueprint" ]]; then
+              continue
+            fi
+
             # The changed file itself must not be skill-version.txt
             # (that would be the bump itself — not a violation).
             BASENAME=$(basename "$f")

@@ -334,7 +334,7 @@ def test_governor_says_nothing_for_a_provider_that_has_a_row(monkeypatch, tmp_pa
     governor.set_log_path(str(log))
     governor.reload_config()
     try:
-        assert governor.provider_config("kie")["rps"] == 2.0
+        assert governor.provider_config("kie")["rps"] == 1.33
         assert governor.provider_config("deepseek-direct")["max_inflight"] == 400
     finally:
         governor.set_log_path("")

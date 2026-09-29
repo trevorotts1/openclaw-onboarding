@@ -513,6 +513,11 @@ _RESOURCE_PLAN_CONFIG_FIELDS = (
      "thinking mode (max/high/medium/low/off)"),
     ("run_mode", "pre_presentation_capture.RUN_MODE",
      "run mode (ultra/standard/economy)"),
+    # FIX 61.2: client model picks.
+    ("deepseek_variant", "pre_presentation_capture.DEEPSEEK_VARIANT",
+     "DeepSeek variant (flash/pro)"),
+    ("openrouter_model", "pre_presentation_capture.OPENROUTER_MODEL",
+     "OpenRouter model (free text)"),
 )
 
 #: Where pending providers are read from, BEFORE the empty-tier return —

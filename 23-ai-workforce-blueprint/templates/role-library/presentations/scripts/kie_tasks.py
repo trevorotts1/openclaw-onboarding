@@ -178,7 +178,8 @@ GOVERNOR_ACQUIRE_TIMEOUT_S = 90.0
 # this way; the lifecycle keeps the bound so an N-slide deck never fires N
 # back-to-back POSTs. Pure wave spacing — no governor needed.
 SUBMIT_WAVE_CAP = 20
-SUBMIT_WAVE_WINDOW_S = 10.0
+# FIX 61.6: 15s window (was 10s) to match kie rps 1.33.
+SUBMIT_WAVE_WINDOW_S = 15.0
 
 
 def _import_governor(scripts_dir=None):

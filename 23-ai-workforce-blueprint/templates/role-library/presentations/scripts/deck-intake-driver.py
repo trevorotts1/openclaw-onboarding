@@ -603,7 +603,26 @@ def cmd_next(args) -> int:
                         and not _rp_next.pending_questions(profile=_prof_next))
     except Exception:
         _locked_next = False
-    if _locked_next and "resource_plan" not in entries:
+    # FIX 61.2: locked clients skip resource_plan -- UNLESS the mode/model
+    # picks were never answered. Then ask the models and mode part anyway.
+    _mode_fields_answered = any(
+        (entries.get(k) or {}).get("value")
+        for k in ("RUN_MODE", "DEEPSEEK_VARIANT", "OPENROUTER_MODEL")
+    )
+    # FIX 62: also ask if Ollama Cloud is in use and plan_tier is empty.
+    # The client must pick $20/month or $100/month (3 vs 8 at once).
+    _ollama_needs_plan = False
+    try:
+        _providers = (_prof_next.get("providers") or {}) if isinstance(_prof_next, dict) else {}
+        _ollama = _providers.get("ollama-cloud") or {}
+        if _ollama:
+            _tier = _ollama.get("plan_tier")
+            if not _tier:
+                _ollama_needs_plan = True
+    except Exception:
+        pass
+    _can_skip = _mode_fields_answered and not _ollama_needs_plan
+    if _locked_next and "resource_plan" not in entries and _can_skip:
         now_iso = datetime.now(timezone.utc).isoformat()
         entries["resource_plan"] = {
             "value": "locked (ask-once)", "validated": True,
@@ -1403,7 +1422,14 @@ def _record_client_model_plan(derived: Dict[str, Any],
     picks = {slot: _clean(derived.get(sub))
              for sub, slot, _key in _MODEL_PLAN_SUBFIELDS}
     thinking = _clean(derived.get(_THINKING_SUBFIELD[0])).lower()
-    if not any(picks.values()) and not thinking:
+    # FIX 61.2: client picks the DeepSeek variant (flash|pro) and OpenRouter model.
+    deepseek_variant = _clean(derived.get("deepseek_variant")).lower()
+    openrouter_model = _clean(derived.get("openrouter_model"))
+    if deepseek_variant == "flash":
+        picks["workhorse"] = "deepseek-flash@deepseek-direct"
+    elif deepseek_variant == "pro":
+        picks["workhorse"] = "deepseek-v4-pro@deepseek-direct"
+    if not any(picks.values()) and not thinking and not openrouter_model:
         return 0  # every slot omitted: the department defaults stand
 
     # Mirror the answers onto their storeOn ledger keys (see the note above:
@@ -1414,6 +1440,15 @@ def _record_client_model_plan(derived: Dict[str, Any],
         entries[key] = {"value": value, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
                         "normalized": value, "answer": value}
+    # FIX 61.2: mirror the new fields to their storeOn ledger keys.
+    if deepseek_variant:
+        entries["DEEPSEEK_VARIANT"] = {"value": deepseek_variant, "validated": True,
+                        "source": "deck-intake-driver", "answered_at": now_iso,
+                        "normalized": deepseek_variant, "answer": deepseek_variant}
+    if openrouter_model:
+        entries["OPENROUTER_MODEL"] = {"value": openrouter_model, "validated": True,
+                        "source": "deck-intake-driver", "answered_at": now_iso,
+                        "normalized": openrouter_model, "answer": openrouter_model}
     entries[_THINKING_SUBFIELD[1]] = {
         "value": thinking, "validated": True, "source": "deck-intake-driver",
         "answered_at": now_iso, "normalized": thinking, "answer": thinking}
@@ -1424,6 +1459,9 @@ def _record_client_model_plan(derived: Dict[str, Any],
     plan: Dict[str, Any] = {slot: (picks[slot] or None)
                             for _sub, slot, _key in _MODEL_PLAN_SUBFIELDS}
     plan["thinking"] = thinking or None
+    # FIX 61.2: openrouter_model rides the plan; ultra uses it to replace Ollama steps.
+    if openrouter_model:
+        plan["openrouter_model"] = openrouter_model
     try:
         rp.record_model_plan(plan, source="interview")
     except ValueError as exc:
@@ -1736,13 +1774,15 @@ def cmd_answer(args) -> int:
                                    session_hint=str(run_dir.name))
             if rc != 0:
                 return rc
+            # FIX 16: CLIENT RUN MODE (FIX 11) is recorded FIRST, so the
+            # declared mode is always recorded even when the model plan is
+            # refused. Previously _record_run_mode ran after
+            # _record_client_model_plan, and a refused model plan dropped
+            # the declared ultra on a box with no provider profile.
+            _record_run_mode(qdef, derived, entries)
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
-            # CLIENT RUN MODE (FIX 11) rides this same turn. Recorded only
-            # AFTER the model plan above was accepted, so a refused answer
-            # never half-lands a run mode either.
-            _record_run_mode(qdef, derived, entries)
 
         # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
         # is required + block_gate and therefore asked on EVERY deck (unlike
