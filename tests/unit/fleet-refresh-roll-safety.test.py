@@ -1224,6 +1224,29 @@ class MasterFilesStayOnTheContainerVolume(unittest.TestCase):
         self.assertIn('export MASTER_FILES_DIR="${MASTER_FILES_DIR:-$OC/openclaw-master-files}"', text)
 
 
+class LocalOllamaEmbeddingsAreNotOllamaCloud(unittest.TestCase):
+    """Boxes embedding with a LOCAL Ollama (memory.search.remote.baseUrl on
+    127.0.0.1) and chatting through Ollama Cloud failed embedding-health: the
+    check judged the embedder by the chat provider's ollama.com baseUrl."""
+
+    def index1(self, embed_base):
+        import embedding_health as eh
+        cfg = {"models": {"providers": {"ollama": {"baseUrl": "https://ollama.com"}}},
+               "memory": {"search": {"provider": "ollama", "model": "nomic-embed-text",
+                                     "remote": {"baseUrl": embed_base}}}}
+        with tempfile.TemporaryDirectory() as td, contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()):
+            return eh.check_memory_search_index(Path(td), cfg, "ollama")
+
+    def test_local_ollama_embeddings_pass_with_a_cloud_chat_provider(self):
+        res = self.index1("http://127.0.0.1:11434")
+        self.assertFalse([e for e in res["errors"] if "Ollama Cloud" in e], res["errors"])
+
+    def test_cloud_ollama_embeddings_still_fail(self):   # control
+        res = self.index1("https://ollama.com")
+        self.assertTrue([e for e in res["errors"] if "Ollama Cloud" in e], res["errors"])
+
+
 class ProveZheReceiptsLiveOutsideTheSkillTree(unittest.TestCase):
     def test_receipts_go_to_the_state_dir_and_old_ones_move_out(self):
         import importlib.util
