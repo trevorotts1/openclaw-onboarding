@@ -267,12 +267,41 @@ _pres35_finish_interpreter() {
     # The shim: every bare `python3` below resolves to the pin. Kept under
     # the run's own working dir (never /tmp-shared): one tick's shim can
     # never redirect another run's python.
-    _PRES35_SHIM="$RUNS_ROOT/working/.interp-shim-$$"
+    #
+    # FIX 36: ONE STABLE shim dir shared across ticks -- never per-PID, and
+    # never deleted at tick exit. Installed atomically (temp file + mv -f)
+    # so a concurrent tick can never exec a half-written python3. Legacy
+    # per-PID dirs (.interp-shim-<pid>) are reaped by the bounded cleanup
+    # below.
+    _PRES35_SHIM="$RUNS_ROOT/working/.interp-shim"
     if mkdir -p "$_PRES35_SHIM" 2>/dev/null; then
-        printf '#!/bin/sh\nexec "%s" "$@"\n' "$_resolved" > "$_PRES35_SHIM/python3" 2>/dev/null             && chmod +x "$_PRES35_SHIM/python3" 2>/dev/null             && PATH="$_PRES35_SHIM:$PATH" && export PATH             && log "  [interp] shim installed: python3 -> $PRESENTATION_PY"             || log "  [interp] WARNING: shim install failed — bare python3 below resolves via PATH (tick continues, pin exported)"
+        _PRES35_TMP="$_PRES35_SHIM/.python3.tmp.$$"
+        printf '#!/bin/sh\nexec "%s" "$@"\n' "$_resolved" > "$_PRES35_TMP" 2>/dev/null             && chmod +x "$_PRES35_TMP" 2>/dev/null             && mv -f "$_PRES35_TMP" "$_PRES35_SHIM/python3" 2>/dev/null             && PATH="$_PRES35_SHIM:$PATH" && export PATH             && log "  [interp] shim installed: python3 -> $PRESENTATION_PY"             || { rm -f "$_PRES35_TMP" 2>/dev/null; log "  [interp] WARNING: shim install failed — bare python3 below resolves via PATH (tick continues, pin exported)"; }
+        unset _PRES35_TMP
     else
         log "  [interp] WARNING: shim dir unwritable — bare python3 below resolves via PATH (tick continues, pin exported)"
     fi
+    # FIX 36: bounded cleanup of legacy per-PID shim dirs (.interp-shim-<pid>),
+    # superseded by the stable shim above. Bounded three ways: the base dir
+    # must be non-empty, the glob is anchored to the exact legacy pattern
+    # (it never matches the stable .interp-shim itself -- no trailing dash),
+    # and at most 200 dirs are reaped per tick.
+    _PRES36_BASE="$RUNS_ROOT/working"
+    if [ -n "$_PRES36_BASE" ] && [ -d "$_PRES36_BASE" ]; then
+        _PRES36_N=0
+        for _PRES36_D in "$_PRES36_BASE"/.interp-shim-[0-9]*; do
+            [ -e "$_PRES36_D" ] || continue
+            [ -d "$_PRES36_D" ] || continue
+            [ "$_PRES36_N" -ge 200 ] && break
+            rm -rf "$_PRES36_D" 2>/dev/null && _PRES36_N=$((_PRES36_N + 1))
+        done
+        unset _PRES36_D
+        if [ "$_PRES36_N" -gt 0 ]; then
+            log "  [interp] cleaned $_PRES36_N legacy per-PID shim dir(s)"
+        fi
+        unset _PRES36_N
+    fi
+    unset _PRES36_BASE
     # Scheduler readiness receipt: actual sys.executable/version + required
     # import proof, compared against the rendered pin; mismatch degrades
     # with bounded remediation instead of reusing stale proof.
