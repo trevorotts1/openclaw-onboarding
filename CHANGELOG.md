@@ -258,6 +258,69 @@ celebration. Both are unrequested owner messages.
   picked up.
 - Tests: `tests/unit/test_pending_sops_runner.py` (3 tests, all fail on the previous main), run by
   `pending-sops-runner-guard.yml` (new).
+## [v25.2.9]  -  2026-09-29  -  Skill 23: role folders use canonical library slugs and meet the role-library floor; reconcile-role-floor.py repairs existing trees
+
+### Why
+A client's interview build fell below the department floor that the fleet prover enforces, and
+there were two causes in the build's legacy lane (`build-workforce.py` `create_role_workspace()`):
+
+- **Role folders named from the roster headers.** The suggested-roles headers carry employment tags
+  and have no `**Slug:**` line, for example `### 1. Director of CRM (full-time-permanent)`. The raw
+  name became the folder: `01-director-of-crm-full-time-permanent`,
+  `09-deep-research-role-crm-on-call`. The prover matches role-library slugs (`director-of-crm`), so
+  none of those roles counted.
+- **Only roster roles were built.** Library roles that the roster does not list were never created:
+  the healer, the devil's advocate and the SOP writer. For example, CRM got 9 role folders against
+  the library's 12.
+
+### What changed
+- `build-workforce.py` passes the parsed roster through `library_floor_roles()` before building:
+  - A role with no explicit slug takes its role-library slug. The lookup is the existing
+    `create_role_workspaces.library_lookup()` normalizer, which already drops employment tags and
+    "flagship" decorations.
+  - Every library role of the department that is not yet present is appended, numbered after the
+    roster.
+  - A role or folder already on disk that resolves to a library slug counts as present, so a second
+    build adds nothing.
+- `reconcile-role-floor.py` (new) brings an existing tree up to the floor in place:
+  1. It renames every role folder that resolves to a library slug but is not named with it. The
+     rename moves the whole folder, so every written how-to and SOP is kept byte-for-byte.
+  2. It fills the library roles that are still missing through `floor-fill-driver.py`, the existing
+     fill-missing-only materializer. That driver uses library content, never overwrites, and keeps
+     its industry gate.
+  3. With `--add-floor-departments`, it also fills the standard-floor departments the tree lacks.
+     The floor is `department-floor.py`: mandatory departments plus universal primaries, minus the
+     owner's declines. Library departments outside that floor are never added.
+
+  4. With `--add-library-departments`, it fills to the prover's floor instead: every role-library
+     department in `_index.json` (which the prover's floor manifest is generated from), under its
+     exact library name, with every library role. The prover counts a department only by its
+     exact name.
+
+  In both department modes:
+  - the owner's provenance-gated declines are honored;
+  - floor-fill's industry gate still refuses an absent vertical the box never declared (`listings`);
+  - a department whose alias is already on disk (`legal` for `legal-compliance`) is reported under
+    `alias_present_not_added` and is not duplicated.
+
+  A folder is not renamed, and is reported instead, when a folder for the same library role already
+  exists or when `openclaw.json` references its path. The script is a dry run by default and is
+  idempotent. It was not run on any box.
+- Tests:
+  - `tests/unit/test_build_library_role_floor.py` builds crm, sales and marketing. It checks that
+    there are no suffixed folders, that every library role is present with one folder per role, and
+    that a second build is a no-op. On main it fails and reproduces the nine suffixed crm folders.
+  - `tests/unit/test_reconcile_role_floor.py` uses a field-shaped crm tree: the nine suffixed
+    folders with written how-tos and none of the library-only roles, plus a conflicting pair. It
+    checks that the dry run changes nothing and that `--apply` renames the folders, keeps the how-to
+    bytes and fills the floor. It also checks that a second `--apply` is a no-op, and that floor
+    departments never include a library department outside the standard floor. A fourth test runs
+    `--add-library-departments` and checks that every `_index.json` department reaches full role
+    coverage, except an owner decline, an alias already on disk and the gated `listings`, and that
+    a second run is a no-op.
+  - Both run in `skill23-role-floor-guard.yml` (new).
+- Merge after #1344. On main, the engine still symlinks `AGENTS.md`, `TOOLS.md` and `USER.md` into
+  new role folders; #1344 makes them real copies.
 
 ## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
 
