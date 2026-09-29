@@ -437,6 +437,15 @@ STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 #                      in its own shape by qc-completeness.sh.
 #   conversational-logs/  per-contact conversation memory (Skill 38).
 #   artifacts/ templates/ assets/ logs/  dept-level output/input containers.
+#   intake/            refresh-dept-intake.py mkdirs it in every dept whose library
+#                      entry ships one (today: presentations) and mirrors the intake
+#                      question bank into it; deck-intake-driver.py reads it.
+#   runs/              presentation_job/launcher.py resolve_runs_root(): per-deck run
+#                      dirs, <dept>/scripts/../runs.
+#   fish-audio/        presentations' Fish Audio tag library, read at
+#                      <dept>/fish-audio by scripts/speech_fish_tag.py.
+#   intake-miniapp/ release-matrix/  presentations library siblings of scripts/.
+#   contract/          rescue-rangers library contract dir.
 #
 # WHY THIS IS A FIX AND NOT A LOOSENING: before this, the walker below treated
 # EVERY subdirectory as a role and failed any without a >=3KB how-to.md. Because
@@ -455,6 +464,7 @@ STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 NON_ROLE_DIR_NAMES=(
   "memory" "devils-advocate" "scripts" "sops" "_sops" "roles"
   "conversational-logs" "artifacts" "templates" "assets" "logs"
+  "intake" "runs" "fish-audio" "intake-miniapp" "release-matrix" "contract"
 )
 
 # is_non_role_dir <path> — 0 (true) when the directory is NOT a role folder.
