@@ -7944,8 +7944,9 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
       * a direct kie.ai task submission — createTask / recordInfo / api.kie.ai outside
         build_deck.py (a per-deck renderer) -> AF-CANONICAL-RENDER-BYPASS.
 
-    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS) and anything under a
-    scripts/ or virtual-env directory are exempt. Returns "" when the run dir carries
+    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS), anything inside the
+    canonical scripts dir (by resolved path), and virtual-env directories are
+    exempt. Returns "" when the run dir carries
     no hand-rolled renderer. A failure may be waived ONLY by a logged
     owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS)."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
@@ -7957,7 +7958,11 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
         return ""
 
     _SKIP_DIR_SEGS = {".venv", "venv", "site-packages", "__pycache__", ".git",
-                      "node_modules", ".mypy_cache", ".pytest_cache", "scripts"}
+                      "node_modules", ".mypy_cache", ".pytest_cache"}
+    # FIX 28: the old "scripts" blanket skip hid hand-rolled assemblers under
+    # working/scripts/. Skip only the canonical scripts dir, by resolved path
+    # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
+    _canonical_scripts_dir = Path(__file__).resolve().parent
     offenders = []
     try:
         candidates = sorted(run_dir.rglob("*.py"))
@@ -7968,6 +7973,15 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             continue
         if _SKIP_DIR_SEGS & set(py.parts):
             continue
+        try:
+            _rp = py.resolve()
+        except OSError:
+            _rp = py
+        try:
+            _rp.relative_to(_canonical_scripts_dir)
+            continue  # inside the canonical scripts home — exempt
+        except ValueError:
+            pass
         try:
             text = py.read_text(errors="replace")
         except OSError:
