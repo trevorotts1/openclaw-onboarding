@@ -13077,7 +13077,8 @@ def main():
     # wave no longer overwrite each other's nonce. This SUPERSEDES the
     # retired OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which
     # shipped in box-visible comments and were therefore forgeable by any model that
-    # read the repo — setting either of those names is now DENIED. Module imports and
+    # read the repo — setting either of those names is now ignored: the handshake
+    # checks only OC_DECK_ENTRY_NONCE. Module imports and
     # unit-test paths that call build_deck functions directly are unaffected — this
     # guard fires only when main() is reached via the CLI (`python3 build_deck.py ...`).
     # References: AF-CANONICAL-RENDER-BYPASS, shared CONTRACT.md §FRONT-DOOR MARKER.
