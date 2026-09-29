@@ -51,16 +51,15 @@ so on some layouts the build never completed.
 Once the gate measures the real build tree, boxes that used to fail against a stub tree pass at the
 next roll. Without a hold, that pass fires the Presentations welcome, and the closeout can reach the
 celebration. Both are unrequested owner messages.
-- `shared-utils/owner_sends_hold.py` (new) stores the hold in `.workforce-build-state.json`:
-  - `ownerSendsHold: true` means held;
-  - `false` means released;
-  - absent means held only when `ownerConsent.source == "operator-directive"` (an operator-built
-    workforce), otherwise unchanged.
+- `shared-utils/owner_sends_hold.py` (new) stores an OPT-IN hold in `.workforce-build-state.json`:
+  only an explicit `ownerSendsHold: true` holds; absent or anything else changes nothing. No box is
+  ever held by default. The protection against a gate that newly passes is the full-gate-pass rule
+  below, plus this hold wherever the operator sets it.
 
   `check` exits 1 only when sends are clear. Anything else counts as HELD: python or the helper
-  missing, or unreadable state. `hold` and `release` are the only writers, and nothing ever
-  auto-clears the hold. The stall-fingerprint reset in `resume-closeout-cron.sh` touches only its
-  own `closeoutResumePaused` keys.
+  missing, or unreadable state. `hold` and `release` are the only writers. Once set, the hold is
+  durable and nothing auto-clears it; the stall-fingerprint reset in `resume-closeout-cron.sh`
+  touches only its own `closeoutResumePaused` keys.
 - The hold is checked in:
   - `send-presentation-dept-welcome.sh` (`--force` does not bypass it);
   - `send-telegram-celebration.sh` (the sink);
@@ -68,8 +67,8 @@ celebration. Both are unrequested owner messages.
   - `resume-closeout-cron.sh`, before any dispatch;
   - `resume-workforce-build.sh` HOP-4, before launching `run-closeout.sh`.
 
-  A hold logs, sends nothing and exits 0. To release:
-  `python3 <skills>/shared-utils/owner_sends_hold.py release <state-file>`.
+  A hold logs, sends nothing and exits 0. Set or clear it with
+  `python3 <skills>/shared-utils/owner_sends_hold.py hold|release <state-file>`.
 - `verify-library-gate.sh` fires the welcome only on a FULL pass (`GATE_RC=0`). A ZHE failure (rc 9)
   used to leave every status "done" and still fire it.
 

@@ -3,12 +3,9 @@
 client OWNER (the Skill 23 Presentations welcome and the Skill 37 closeout
 celebration), on every path that reaches them.
 
-Stored in .workforce-build-state.json:
+Stored in .workforce-build-state.json (OPT-IN -- never on by default):
   ownerSendsHold: true    HELD
-  ownerSendsHold: false   released (explicitly)
-  absent                  HELD when ownerConsent.source == "operator-directive"
-                          (an operator-built workforce: the owner has not been
-                          told yet); otherwise clear (unchanged behaviour).
+  anything else / absent  clear (unchanged behaviour)
 
 Nothing in the build, the resume crons or the closeout ever writes this key;
 only `hold` and `release` below do. It never auto-clears.
@@ -28,21 +25,13 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-OPERATOR_BUILT_SOURCE = "operator-directive"
-
 
 def hold_reason(state):
-    """Why sends are held, or None when they may go out."""
-    flag = state.get("ownerSendsHold")
-    if flag is True:
+    """Why sends are held, or None when they may go out. Opt-in: only an
+    explicit ownerSendsHold=true holds."""
+    if state.get("ownerSendsHold") is True:
         return "ownerSendsHold=true" + (f" ({state['ownerSendsHoldReason']})"
                                         if state.get("ownerSendsHoldReason") else "")
-    if flag is False:
-        return None
-    consent = state.get("ownerConsent")
-    if isinstance(consent, dict) and consent.get("source") == OPERATOR_BUILT_SOURCE:
-        return ("operator-built workforce (ownerConsent.source=operator-directive) "
-                "held by default; release with owner_sends_hold.py release")
     return None
 
 

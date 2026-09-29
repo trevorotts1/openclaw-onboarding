@@ -2,8 +2,8 @@
 """The owner-sends hold stops every automatic owner message, on every path.
 
 Proves, with a stub `openclaw` that records every send:
-  * owner_sends_hold.py: absent -> clear, operator-directive consent -> held,
-    explicit true/false, hold/release, unreadable state -> held
+  * owner_sends_hold.py: OPT-IN -- absent (any consent source) -> clear,
+    explicit true -> held, hold/release, unreadable state -> held
   * the Presentations welcome sends nothing while held (--force included), and
     still sends when clear (control: the stub does record sends)
   * verify-library-gate.sh fires the welcome ONLY on a full pass: a failing gate
@@ -83,9 +83,9 @@ class TestHelper(_Box):
         self.write(ready_state())
         self.assertEqual(self.check(), 1, "absent flag, owner consent: clear (unchanged)")
         self.write(ready_state(ownerConsent={"source": "operator-directive"}))
-        self.assertEqual(self.check(), 0, "operator-built workforce: held by default")
-        self.write(ready_state(ownerConsent={"source": "operator-directive"}, ownerSendsHold=False))
-        self.assertEqual(self.check(), 1, "explicit release wins")
+        self.assertEqual(self.check(), 1, "opt-in only: no default hold for any consent source")
+        self.write(ready_state(ownerSendsHold=False))
+        self.assertEqual(self.check(), 1)
         self.write(ready_state(ownerSendsHold=True))
         self.assertEqual(self.check(), 0)
         self.state.write_text("{not json")
@@ -196,7 +196,7 @@ class TestResolverFixSendsNothingWhileHeld(_Box):
             (build / "departments" / d).mkdir(parents=True)
             (self.ws / "departments" / d).mkdir(parents=True, exist_ok=True)
         self.write(ready_state(companyRoot=str(build), companySlug="fixture-co",
-                               ownerConsent={"source": "operator-directive"}))
+                               ownerSendsHold=True))  # set explicitly, as the operator does
         sys.path.insert(0, str(S23))
         from _qc_paths import departments_root_for  # noqa: E402
         self.assertEqual(departments_root_for(self.ws), build / "departments")
