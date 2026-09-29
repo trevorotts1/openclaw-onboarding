@@ -28,13 +28,29 @@ def require_build_identity(state):
     if not has_build_identity(state):
         raise UnownedBuildState('No client build identity exists; complete onboarding intake before build/closeout verification')
 
-def artifact_digest(root):
+# Department subdirectories that are RUNTIME or TOOLING, not build artifacts:
+# written after finalize by the workforce itself (presentations/runs/*.json is
+# rewritten every few minutes by the scheduler; memory/, conversational-logs/,
+# logs/ and artifacts/ by normal work) or re-synced by every update roll
+# (scripts/, intake/, fish-audio/, ...). Hashing them made evaluate() report
+# changed-or-missing-artifacts minutes after finalize. These are the runtime
+# names in verify-wiring.sh NON_ROLE_DIR_NAMES; its content containers (sops/,
+# roles/, devils-advocate/, templates/, assets/) stay in the digest.
+DEPT_RUNTIME_DIRS=frozenset({'memory','conversational-logs','logs','artifacts','runs','scripts',
+                             'intake','intake-miniapp','fish-audio','release-matrix','contract'})
+# v1 hashed every .md/.json under the tree. Evidence recorded without a
+# digestVersion is re-checked with v1, so no already-verified build flips on update.
+DIGEST_VERSION=2
+
+def artifact_digest(root,version=DIGEST_VERSION):
     if not root or not Path(root).is_dir():
         return None
     digest=hashlib.sha256(); count=0
     for path in sorted(Path(root).rglob('*')):
         if path.is_file() and not path.is_symlink() and path.suffix in ('.md','.json'):
-            digest.update(str(path.relative_to(root)).encode());digest.update(path.read_bytes());count+=1
+            rel=path.relative_to(root)
+            if version>=2 and len(rel.parts)>2 and rel.parts[1].lower() in DEPT_RUNTIME_DIRS:continue
+            digest.update(str(rel).encode());digest.update(path.read_bytes());count+=1
     return digest.hexdigest() if count else None
 
 def input_digest(state):
@@ -56,7 +72,7 @@ def evaluate(state):
     if state.get('buildType')=='standard-first' and state.get('confirmationsComplete') is not True:missing.append('confirmations')
     evidence=state.get('buildArtifactVerification') or {}
     if evidence.get('inputDigest')!=input_digest(state):missing.append('changed-inputs')
-    try:current=artifact_digest(evidence.get('root'))
+    try:current=artifact_digest(evidence.get('root'),evidence.get('digestVersion',1))
     except OSError:current=None
     if not current or current!=evidence.get('digest'):missing.append('changed-or-missing-artifacts')
     return missing
@@ -70,7 +86,7 @@ def finalize(path,check_results=None,artifact_root=None):
             for name,rc in check_results.items():
                 checks[name]={'status':'pass' if rc==0 else 'failed','returnCode':rc,'checkedAt':now,'buildId':state['buildId']}
             root=artifact_root or (state.get('buildArtifactVerification') or {}).get('root')
-            state['buildArtifactVerification']={'root':str(root) if root else None,'digest':artifact_digest(root),'inputDigest':input_digest(state)}
+            state['buildArtifactVerification']={'root':str(root) if root else None,'digest':artifact_digest(root),'digestVersion':DIGEST_VERSION,'inputDigest':input_digest(state)}
         missing=evaluate(state)
         state['completionVerification']={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
                                          'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
