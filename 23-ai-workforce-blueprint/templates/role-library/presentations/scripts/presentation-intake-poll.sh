@@ -337,13 +337,16 @@ _pres35_finish_interpreter || { log "scan aborted: no validated pipeline interpr
 # every scan no matter what was skipped. That is the same defect (a counter
 # that cannot be right) in a quieter place, so they are wired to their real
 # `continue` sites below. SKIPPED_TERMINAL and RUN_DIRS_SEEN are added so the
-# accounting TALLIES: seen == launched + refused + every skip.
+# accounting TALLIES: seen == launched + refused + every skip. SKIPPED_CRASH_REFUSED
+# (Fix 35) is the crash-decider's equivalent of SKIPPED_TERMINAL: a crashed run
+# this tick left dead by `auto_resume --crash`.
 # ---------------------------------------------------------------------------
 NEW_LAUNCHES=0
 REFUSED_DISPATCH=0
 SKIPPED_RUNNING=0
 SKIPPED_NO_INTAKE=0
 SKIPPED_TERMINAL=0
+SKIPPED_CRASH_REFUSED=0
 SKIPPED_LEASE_HELD=0
 # F4: a run dir whose intake ledger ALREADY refused to resolve, with that
 # ledger byte-for-byte unchanged since the refusal. Its own counter, because
@@ -804,8 +807,8 @@ ledger_sha256() {
     case "$out" in ''|*[!0-9a-f]*) out="" ;; esac
     printf '%s' "$out"
 }
-# auto_resume_refund <run_dir> <was_auto> <why> -- F1. Give back the attempt
-# just charged, because no engine started.
+# auto_resume_refund <run_dir> <was_auto> <why> [crash_mode] -- F1. Give back
+# the attempt just charged, because no engine started.
 #
 # presentation_job.auto_resume allows at most three automatic resumes per run
 # per rolling day and records the attempt BEFORE the dispatch (the engine
@@ -825,14 +828,22 @@ ledger_sha256() {
 #
 # $2 is the "did WE auto-resume this tick?" flag. A human-initiated resume, or
 # a run that was never BLOCKED, has no attempt to give back and this is a
-# no-op for it. Reads $SCRIPTS_DIR and calls log(), both of which every
-# harness that executes the walk body already declares.
+# no-op for it. $4 is "1" when the attempt being refunded was charged by a
+# CRASH resume (Fix 35) rather than a BLOCKED one -- the refund must come out
+# of the same ledger the attempt went into (state["auto_resume_crash"], via
+# --crash), or the crash cap would stay charged for an engine that never
+# started. Reads $SCRIPTS_DIR and calls log(), both of which every harness
+# that executes the walk body already declares.
 auto_resume_refund() {
-    local run_dir="$1" was_auto="$2" why="$3"
+    local run_dir="$1" was_auto="$2" why="$3" crash_mode="${4:-0}"
     if [ "$was_auto" != "1" ]; then
         return 0
     fi
-    ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --run-dir "$run_dir" --refund "$why" 2>&1 ) | while IFS= read -r refund_line; do
+    local crash_args=()
+    if [ "$crash_mode" = "1" ]; then
+        crash_args=(--crash)
+    fi
+    ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume "${crash_args[@]}" --run-dir "$run_dir" --refund "$why" 2>&1 ) | while IFS= read -r refund_line; do
         if [ -n "$refund_line" ]; then log "  $refund_line"; fi
     done
     return 0
@@ -1045,6 +1056,7 @@ except Exception:
         # Declared on every iteration, BEFORE the branch that may set it, so
         # `set -u` has it on every path where no auto-resume happened.
         AUTO_RESUMED=0
+        AUTO_RESUME_CRASH=0
         if [ "$TERMINAL" = "BLOCKED" ]; then
             AUTO_RESUME_OUT="$( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --run-dir "$run_dir" 2>&1 )"
             AUTO_RESUME_RC=$?
@@ -1061,6 +1073,35 @@ except Exception:
             fi
             AUTO_RESUMED=1
             log "  parked run AUTHORISED for automatic resume -- dispatching through the same launcher line every resume uses"
+        else
+            # FIX 35 -- engine-dead, NONTERMINAL resumes go through
+            # `auto_resume --crash` under their OWN crash cap
+            # (AUTO_RESUME_CRASH_CAP per rolling day, in the separate ledger
+            # state["auto_resume_crash"]), never the BLOCKED park budget
+            # above. DONE and ABANDONED were skipped further up and BLOCKED
+            # is the branch above, so reaching this else means exactly the
+            # crash shape. Before this fix this shape reached the launcher
+            # dispatch below with AUTO_RESUMED=0 and NO bound at all: a run
+            # whose engine died on startup was re-forked on EVERY poller
+            # tick, forever. The exit-code contract is the same as the
+            # BLOCKED branch: 0 = authorised (and recorded), anything else
+            # = left dead.
+            AUTO_RESUME_OUT="$( cd "$SCRIPTS_DIR" && python3 -m presentation_job.auto_resume --crash --run-dir "$run_dir" 2>&1 )"
+            AUTO_RESUME_RC=$?
+            printf '%s\n' "$AUTO_RESUME_OUT" | while IFS= read -r auto_resume_line; do
+                if [ -n "$auto_resume_line" ]; then log "  $auto_resume_line"; fi
+            done
+            if [ "$AUTO_RESUME_RC" -ne 0 ]; then
+                log "  crashed run LEFT DEAD (auto-resume --crash exit $AUTO_RESUME_RC) -- see the reason above. Counted as a crash-decider refusal, never as a dispatch failure: nothing went wrong this tick."
+                SKIPPED_CRASH_REFUSED=$((SKIPPED_CRASH_REFUSED + 1))
+                if [ "$LEASE_ENABLED" = "1" ]; then
+                    lease_release "$run_dir"
+                fi
+                continue
+            fi
+            AUTO_RESUMED=1
+            AUTO_RESUME_CRASH=1
+            log "  crashed run AUTHORISED for automatic resume under the crash cap -- dispatching through the same launcher line every resume uses"
         fi
         #
         # F03: launcher.py is a member of the presentation_job PACKAGE and
@@ -1114,12 +1155,12 @@ except Exception:
                 log "  NOT LAUNCHED: the launcher exited 0 but no engine is RUNNING for $run_dir after ${LAUNCH_VERIFY_S}s -- $VERIFY_WHY. A spawn that dies is not a launch. Counted as REFUSED, never as a launch."
                 engine_stderr_tail "$run_dir"
                 REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
-                auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher exited 0 but no engine was running: $VERIFY_WHY"
+                auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher exited 0 but no engine was running: $VERIFY_WHY" "$AUTO_RESUME_CRASH"
             fi
         else
             REFUSED_DISPATCH=$((REFUSED_DISPATCH + 1))
             log "  NOT LAUNCHED: the launcher refused this resume dispatch (exit $DISPATCH_RC) -- see the launcher lines above for the reason. Counted as REFUSED, never as a launch."
-            auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher refused the dispatch (exit $DISPATCH_RC)"
+            auto_resume_refund "$run_dir" "$AUTO_RESUMED" "the launcher refused the dispatch (exit $DISPATCH_RC)" "$AUTO_RESUME_CRASH"
         fi
         # FIX 61: the dispatch window is over -- the engine now holds .job.lock.
         if [ "$LEASE_ENABLED" = "1" ]; then
@@ -1389,7 +1430,7 @@ mkdir -p "$TELEMETRY_DIR"
 # consumer comparing today's numbers with last week's is comparing a proof
 # with a claim. F4 adds `skipped_refused_sticky`, which keeps the tally
 # closed: seen == launched + refused + every skipped_* count.
-printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"refused":%d,"skipped_running":%d,"skipped_no_intake":%d,"skipped_terminal":%d,"skipped_lease_held":%d,"skipped_refused_sticky":%d,"lease_takeovers":%d,"run_dirs_seen":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$REFUSED_DISPATCH" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE" "$SKIPPED_TERMINAL" "$SKIPPED_LEASE_HELD" "$SKIPPED_REFUSED_STICKY" "$LEASE_TAKEOVERS" "$RUN_DIRS_SEEN"     >> "$TELEMETRY_DIR/events.jsonl"
+printf '{"event":"poller_scan","generated_at":"%s","new_launches":%d,"refused":%d,"skipped_running":%d,"skipped_no_intake":%d,"skipped_terminal":%d,"skipped_crash_refused":%d,"skipped_lease_held":%d,"skipped_refused_sticky":%d,"lease_takeovers":%d,"run_dirs_seen":%d}\n'     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$NEW_LAUNCHES" "$REFUSED_DISPATCH" "$SKIPPED_RUNNING" "$SKIPPED_NO_INTAKE" "$SKIPPED_TERMINAL" "$SKIPPED_CRASH_REFUSED" "$SKIPPED_LEASE_HELD" "$SKIPPED_REFUSED_STICKY" "$LEASE_TAKEOVERS" "$RUN_DIRS_SEEN"     >> "$TELEMETRY_DIR/events.jsonl"
 
-log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH refused ($SKIPPED_RUNNING skipped already-running, $SKIPPED_NO_INTAKE skipped no-completed-intake, $SKIPPED_TERMINAL skipped terminal, $SKIPPED_LEASE_HELD skipped on lease, $SKIPPED_REFUSED_STICKY skipped on an unchanged refused ledger, $LEASE_TAKEOVERS lease takeovers, $RUN_DIRS_SEEN run dirs seen)"
+log "scan complete: $NEW_LAUNCHES launched, $REFUSED_DISPATCH refused ($SKIPPED_RUNNING skipped already-running, $SKIPPED_NO_INTAKE skipped no-completed-intake, $SKIPPED_TERMINAL skipped terminal, $SKIPPED_CRASH_REFUSED skipped on crash-decider refusal, $SKIPPED_LEASE_HELD skipped on lease, $SKIPPED_REFUSED_STICKY skipped on an unchanged refused ledger, $LEASE_TAKEOVERS lease takeovers, $RUN_DIRS_SEEN run dirs seen)"
 exit 0
