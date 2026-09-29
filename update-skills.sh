@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.2.13"
+ONBOARDING_VERSION="v25.2.14"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1963,7 +1963,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.2.13 - safe_json_edit
+# v25.2.14 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4585,6 +4585,21 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+
+  # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
+  # (skills.workshop.autonomous.mode=propose when unset/auto; explicit propose/off kept).
+  # Runs HERE — right after scripts/ is delivered and BEFORE the content-recheck
+  # `exit 0` — so it runs on EVERY roll, including content-current re-rolls that
+  # never reach the steps near the end of this file. Hot reload, backup only on
+  # write, ADVISORY-only on any failure: it can never fail this update. Its
+  # "burn-guard:" line is lifted into the fleet summary by fleet_refresh_runner.py.
+  _BURN_GUARD="$_OC_SCRIPTS_DEST/ensure-burn-guard.sh"
+  [ -f "$_BURN_GUARD" ] || _BURN_GUARD="$ONBOARDING_DIR/scripts/ensure-burn-guard.sh"
+  if [ -f "$_BURN_GUARD" ]; then
+    bash "$_BURN_GUARD" 2>>"$LOG_FILE" || true
+  else
+    echo "burn-guard: ADVISORY ensure-burn-guard.sh not in bundle — skipped"
+  fi
 
   # DELIVER THE CANONICAL LIBRARY BESIDE THE SCRIPTS TREE.
   #
@@ -10033,6 +10048,7 @@ PYEOF
   else
     echo "  ℹ openclaw CLI not on PATH — skipping loopDetection enablement (update continues)."
   fi
+
 
   # ----------------------------------------------------------
   # FLEET MEMORY STANDARDIZATION (v21.2.0) — kills the dark-memory default

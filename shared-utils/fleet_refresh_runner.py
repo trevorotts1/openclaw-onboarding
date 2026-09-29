@@ -975,6 +975,17 @@ def _run_tree(cmd: list[str], timeout: int, **kw) -> subprocess.CompletedProcess
     return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
+def _burn_guard_step(stdout: str) -> str:
+    """Lift update-skills.sh's "burn-guard: ..." line (scripts/ensure-burn-guard.sh)
+    into the fleet summary. Advisory-only by construction: it never says "failed",
+    so it can never flip a box's result or trigger a rollback."""
+    lines = [l.strip() for l in (stdout or "").splitlines() if l.strip().startswith("burn-guard:")]
+    if not lines:
+        return "n/a: no burn-guard line in update-skills.sh output (older bundle?)"
+    line = lines[-1][len("burn-guard:"):].strip()
+    return ("ok:advisory: " if "ADVISORY" in line else "ok: ") + line[:200]
+
+
 def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: BoxResult, dry_run: bool) -> str:
     """Step 2: run update-skills.sh to sync onboarding skills to the pinned tag.
 
@@ -1018,6 +1029,7 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
                  "OPENCLAW_UPDATE_SKIP_SELF_SYNC": "1"},
         )
         post_stamp = stamp_file.read_text().strip() if stamp_file.is_file() else None
+        res.steps["burn-guard"] = _burn_guard_step(result.stdout)
         # update-skills.sh self-syncs THIS clone to origin/main before it runs
         # (OPENCLAW_UPDATE_AUTO_SYNC=1), so the version it stamps is the one in
         # the clone's cc-compat.json AFTER the run, not the stale copy loaded

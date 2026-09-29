@@ -132,17 +132,6 @@ else
 fi
 export FLEET_WRITE_DEFAULTS_TOOLS="$WRITE_DEFAULTS_TOOLS"
 
-# ─── 1b-SW. Skill Workshop mode: seed only where this build's schema knows the key ──
-# The live CLI answers "Config path is valid but unset" only when the running
-# schema has skills.workshop.autonomous.mode AND nobody has set it. That is the
-# one case Section 2 seeds "propose" (see _seed_skill_workshop_mode). An older
-# build (unknown key) or an operator's explicit auto/propose/off is never touched.
-FLEET_SEED_SKILL_WORKSHOP_MODE=0
-if command -v openclaw >/dev/null 2>&1 \
-   && openclaw config get skills.workshop.autonomous.mode 2>&1 | grep -q 'valid but unset'; then
-  FLEET_SEED_SKILL_WORKSHOP_MODE=1
-fi
-export FLEET_SEED_SKILL_WORKSHOP_MODE="${FLEET_SEED_SKILL_WORKSHOP_MODE_OVERRIDE:-$FLEET_SEED_SKILL_WORKSHOP_MODE}"
 
 # ─── 1c. Enumerate BUNDLED plugin IDs for plugins.allow (dynamic, box-specific) ──
 # SECURITY: the repo never set plugins.allow, so every box inherits the gateway's
@@ -901,38 +890,6 @@ _healed_keys = _heal_peragent_routing_keys(cfg)
 if _healed_keys:
     print("[apply-fleet-standards] v16.1.3 self-heal: removed schema-invalid per-agent routing keys + ensured on ROOT tools: " + ", ".join(_healed_keys))
 
-# >>> SKILL-WORKSHOP-MODE (tests/unit/fleet-standards-skill-workshop-mode.test.sh extracts this block)
-# OpenClaw 2026.9.x defaults skills.workshop.autonomous.mode to "auto", and in auto
-# the gateway projects one SYSTEM-OWNED weekly agentTurn cron per agent
-# (skill-collection-review-<agent>, src/cron/skill-collection-review-monitor.ts):
-# exec/read/write tools, no turn cap. Measured 2026-09-29: one run = 127 LLM calls /
-# 30M tokens; >=374M tokens/week fleet-wide with no owner activity behind it.
-# `openclaw cron edit --disable` is REFUSED for system-owned jobs and the reconciler
-# re-projects them on every reload, so this key is the only supported switch: any
-# value but "auto" projects every review job enabled:false (kept, not deleted) and
-# the run path skips them. "propose" still lets owner-driven work leave pending
-# skill proposals. Seeded only when the Section 1b-SW probe proved the key is valid
-# on this build and unset — an explicit operator value always wins.
-def _seed_skill_workshop_mode(_cfg, _seed):
-    if not _seed:
-        return False
-    _sk = _cfg.get("skills")
-    if _sk is None:
-        _sk = _cfg["skills"] = {}
-    if not isinstance(_sk, dict):
-        return False
-    _ws = _sk.setdefault("workshop", {})
-    if not isinstance(_ws, dict):
-        return False
-    _au = _ws.setdefault("autonomous", {})
-    if not isinstance(_au, dict) or "mode" in _au:
-        return False
-    _au["mode"] = "propose"
-    return True
-
-if _seed_skill_workshop_mode(cfg, os.environ.get("FLEET_SEED_SKILL_WORKSHOP_MODE") == "1"):
-    print("[apply-fleet-standards] skills.workshop.autonomous.mode seeded 'propose' — weekly skill-collection-review crons now disabled")
-# <<< SKILL-WORKSHOP-MODE
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
 

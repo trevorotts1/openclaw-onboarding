@@ -21,6 +21,17 @@ from pathlib import Path
 DATA_ROOT = Path("/data")
 
 
+def _home_master_files(root: Path) -> Path:
+    """~/Downloads/openclaw-master-files -- except in a container whose only
+    persistent storage is the ~/.openclaw volume (Contabo: HOME is the image's
+    temporary layer, so ~/Downloads is wiped by every recreate; one client's
+    whole company folder was lost that way). There it lives on the volume."""
+    downloads = Path.home() / "Downloads"
+    if os.path.ismount(root) and not os.path.ismount(downloads):
+        return root / "openclaw-master-files"
+    return downloads / "openclaw-master-files"
+
+
 def get_openclaw_paths() -> dict:
     """
     Detect the OpenClaw platform and return all standard paths.
@@ -237,7 +248,7 @@ def known_company_roots(platform, workspace):
     elif platform == "vps":
         master = DATA_ROOT / "openclaw-master-files"
     else:
-        master = Path.home() / "Downloads" / "openclaw-master-files"
+        master = _home_master_files(Path.home() / ".openclaw")
     legacy = DATA_ROOT / "clawd" if platform == "vps" else Path.home() / "clawd"
     roots = []
     for r in (master / "zero-human-company", Path(workspace) / "zero-human-company",

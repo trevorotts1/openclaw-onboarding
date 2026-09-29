@@ -1,3 +1,21 @@
+## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1367 — [v25.2.14]  -  2026-09-29  -  Contabo: master files (company folders) live on the container volume
+
+#### Why
+On Contabo, HOME (`/home/node`) is the container's temporary layer; only `~/.openclaw` is a volume. With no `/data/.openclaw`, `detect_platform` took the Mac branch and put master files in `~/Downloads/openclaw-master-files`, where the workforce build writes the company folder. A container recreate deleted one client's whole company folder (`departments.json`, the org-design research manifest).
+
+#### What changed
+- `shared-utils/detect_platform.py` (and the Skill 23 copy, verbatim): when `~/.openclaw` is a mount point and `~/Downloads` is not, master files are `~/.openclaw/openclaw-master-files`; `known_company_roots` follows. A Mac (nothing mounted) is unchanged; `MASTER_FILES_DIR` still overrides.
+- `platform/vps/contabo/container-startup.sh` exports `MASTER_FILES_DIR` onto the volume; the Contabo README's compose `environment:` carries it.
+- No existing folder is moved.
+
+### #1375 — feat(burn-guard): keep OpenClaw's weekly skill-collection-review crons off on every install and roll
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v25.2.13]  -  2026-09-29  -  Merge train: #1360 release v25.2.13: a roll deploys the pinned Command Center release…; #1361 fix(skill39): real master-files path in RE cron messages; retire RE…; #1363 fix(fleet-refresh): update-skills exit 8 is launch-pending, not a…; #1364 fix(hostinger): a recreated container resurrects pm2 and starts a…; #1366 fix(fleet-refresh): provisioning DEPARTMENTS is n/a while the client…; #1369 fix(fleet-refresh): each roll reads its own summary (parallel rolls…; #1371 fix(fleet-refresh): a dropped SSH session still brings the box's…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
