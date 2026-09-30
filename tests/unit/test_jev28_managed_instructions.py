@@ -30,8 +30,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'shared-utils'))
 from ceo_execution_policy import POLICY, upgrade  # noqa: E402
 
-MARKER = '<!-- CEO_EXECUTION_POLICY_V4_2 -->'
-END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V4_2 -->'
+MARKER = '<!-- CEO_EXECUTION_POLICY_V4_3 -->'
+END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V4_3 -->'
 
 # The exact sentences s5.4 mandates (paraphrased into policy voice). Kept as
 # separate assertions so a partial revert names the missing clause.

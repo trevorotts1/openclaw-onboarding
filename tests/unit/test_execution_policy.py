@@ -179,7 +179,7 @@ class GeneratorTemplateTests(unittest.TestCase):
         legacy = ('Owner head\n<!-- CEO_ORCHESTRATOR_RULE_V1 -->\nold\n---\n'
                   'Owner tail with spaces.  \n')
         out = cep.upgrade(legacy)
-        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V4_2 -->', out)
+        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V4_3 -->', out)
         self.assertTrue(out.startswith('Owner head\n'))
         self.assertTrue(out.rstrip().endswith('Owner tail with spaces.'))
         self.assertEqual(cep.upgrade(out), out)

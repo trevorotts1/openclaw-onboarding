@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'shared-utils'))
 from ceo_execution_policy import POLICY, block, upgrade, registry_rows
 
-POLICY_MARKER = '<!-- CEO_EXECUTION_POLICY_V4_2 -->'
-POLICY_END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V4_2 -->'
+POLICY_MARKER = '<!-- CEO_EXECUTION_POLICY_V4_3 -->'
+POLICY_END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V4_3 -->'
 FROZEN_CORPUS = ROOT / 'tests/acceptance/intake/corpus_frozen.json'
 
 
@@ -149,7 +149,7 @@ process.stdout.write(JSON.stringify(out));})();'''
             self.assertIn('do NOT POST ingest again', text)
             self.assertNotIn('ASK instead', text)
 
-    def test_v4_2_intake_names_exact_commands_and_forbids_probing(self):
+    def test_v4_3_intake_names_exact_commands_and_forbids_probing(self):
         # JEV-602: the V4 rule named no command for existing work, so every model
         # invented `mc-route.sh status|stop <task>` (a new card on a real box),
         # and deepseek ran `env | sort` / printed mc-route.sh to decide.
@@ -161,8 +161,8 @@ process.stdout.write(JSON.stringify(out));})();'''
         ):
             self.assertIn(command, POLICY)
         for sentence in (
-            'Never inspect the machine to decide (no env, no printing scripts or config, '
-            'no ls); decide from the message and the conversation.',
+            'For deciding and routing, the ONLY command you run is mc-route.sh. Never run ls, '
+            'find, grep, cat, env or any other command to decide or route.',
             'Exactly one task call per distinct job; a restatement of the same job is not '
             'a second job',
             'if the owner asks about work already underway, make one call:',
@@ -178,18 +178,21 @@ process.stdout.write(JSON.stringify(out));})();'''
         self.assertNotIn('JEV_ANSWER_DIRECTLY', POLICY)
         self.assertNotIn('act on that task instead of making a new one', POLICY)
         self.assertIn('NO UNIVERSAL DECISION-CALL RULE', POLICY)
-        self.assertIn('## Task intake and assigned execution' + ' (V4.2)', POLICY)
-        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V4_2 -->', block())
-        self.assertIn('<!-- CEO_EXECUTION_POLICY_V4_2 -->', block('CEO_EXECUTION_POLICY'))
+        self.assertIn('## Task intake and assigned execution' + ' (V4.3)', POLICY)
+        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V4_3 -->', block())
+        self.assertIn('<!-- CEO_EXECUTION_POLICY_V4_3 -->', block('CEO_EXECUTION_POLICY'))
 
-    def test_v4_2_required_clauses(self):
-        # JEV-701: Trevor's rulings A-D on the JEV-692 round-2 failure classes,
-        # plus the clauses V4.2 must keep.
+    def test_v4_3_required_clauses(self):
+        # JEV-701: Trevor's rulings A-D on the JEV-692 round-2 failure classes;
+        # JEV-802: the JEV-792 round-3 classes F and G and the command-safety
+        # clause; plus the clauses V4.3 must keep.
         for sentence in (
-            # A: a change request tries update; NOT_FOUND means new work.
+            # A + F: a change request tries update; only an update NOT_FOUND is new work.
             'A change request ("change X to Y", "move X to Z") tries existing update first.',
-            'If existing update/status/cancel prints NOT_FOUND, the work is new: run task.',
-            'A task is never dropped because no card was found.',
+            'Only existing update that prints NOT_FOUND means new work -> run task.',
+            'If existing status or existing cancel prints NOT_FOUND, tell the owner nothing '
+            'matching is on the board; do not create a card.',
+            'A change request is never dropped because no card was found.',
             # B: only an explicit do-it-yourself means no card.
             'Asking you to take ownership, own it, handle it, take it on or drive it to done '
             'is NEW WORK: one task call.',
@@ -198,21 +201,31 @@ process.stdout.write(JSON.stringify(out));})();'''
             # C: approving or sending existing work updates that card.
             'Approving or releasing work that already exists ("send the draft you already made") '
             'is existing update on that card, not a new card.',
-            # D: a lookup question is answered, never carded.
-            'A question that needs a lookup (a calendar, a document, a figure) is still a '
-            'question: look it up with your own tools, never by inspecting the machine, and '
-            'answer, or say you could not find it. No card.',
+            # D + G: a question is answered from what the CEO has, never carded.
+            'For a question, answer from the conversation and what you know; if the answer '
+            'depends on the board, use `mc-route.sh existing status`; otherwise say what '
+            'you\'d need.',
+            'A question that needs a calendar, a document or a figure is still a question. No card.',
+            # Safety: mc-route.sh is the only command for deciding and routing.
+            'For deciding and routing, the ONLY command you run is mc-route.sh.',
+            'Never run ls, find, grep, cat, env or any other command to decide or route.',
             # Kept clauses.
             'Reply to the owner in English only.',
-            'Never inspect the machine to decide',
             'Never tell the owner work is being done unless the task call printed ROUTED.',
             'Exactly one task call per distinct job',
             'NO UNIVERSAL DECISION-CALL RULE',
         ):
             with self.subTest(sentence=sentence):
                 self.assertIn(sentence, POLICY)
+        # F: V4.2 sent a status/cancel NOT_FOUND to task. G: "your own tools" was
+        # only the shell in intake, so glm searched the disk.
+        for gone in ('update/status/cancel prints NOT_FOUND', 'the work is new: run task',
+                     'A task is never dropped', 'look it up', 'your own tools',
+                     'Never inspect the machine'):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, POLICY)
 
-    def test_v4_2_worked_examples_cover_acceptance_failure_classes(self):
+    def test_v4_3_worked_examples_cover_acceptance_failure_classes(self):
         # One example per failure class the JEV-592 and JEV-692 reports found.
         numbered = _worked_examples()
         self.assertTrue(12 <= len(numbered) <= 18, len(numbered))
@@ -221,6 +234,8 @@ process.stdout.write(JSON.stringify(out));})();'''
             ('"Could you put together a packing checklist', 'one task call'),
             ('"Out of curiosity, how many clients do we have in Texas?"', 'answer it, no call'),
             ('"Did the invoice go out?"', 'mc-route.sh existing status'),
+            ('"Did the invoice go out?"', 'if that prints NOT_FOUND, tell the owner nothing '
+             'matching is on the board, no card'),
             ('"Is the vendor contract review wrapped up?"', 'mc-route.sh existing status'),
             ('"Brb", "gimme a minute" or "appreciate it"', 'nothing: no call'),
             ('"Reorder printer toner and schedule the carpet cleaning for Monday"', 'two task calls'),
@@ -233,8 +248,12 @@ process.stdout.write(JSON.stringify(out));})();'''
             ('"Push the podcast recording to Friday afternoon"', 'mc-route.sh existing update'),
             ('"Push the podcast recording to Friday afternoon"', 'if that prints NOT_FOUND, run task'),
             ('"Go ahead and publish the blog draft you showed me"', 'mc-route.sh existing update'),
-            ('"What\'s on the agenda for Thursday\'s staff meeting?"', 'look it up and answer, no card'),
+            ('"What\'s on the agenda for Thursday\'s staff meeting?"',
+             'answer from the conversation if it is there; otherwise say you\'d need the agenda. '
+             'No command, no card.'),
             ('"Cancel the brochure reprint job."', 'mc-route.sh existing cancel'),
+            ('"Cancel the brochure reprint job."', 'if that prints NOT_FOUND, tell the owner '
+             'nothing matching is on the board, no card'),
         ):
             with self.subTest(message=message):
                 line = next(l for l in numbered if message in l)
@@ -264,9 +283,9 @@ process.stdout.write(JSON.stringify(out));})();'''
             with self.subTest(example=line[:50]):
                 self.assertLessEqual(score, 0.6, f'{item_id}: {line}')
 
-    def test_v4_and_v4_1_blocks_upgrade_in_place_to_v4_2(self):
+    def test_v4_to_v4_2_blocks_upgrade_in_place_to_v4_3(self):
         for kind in ('CEO_ORCHESTRATOR_RULE', 'CEO_EXECUTION_POLICY'):
-            for version in ('V4', 'V4_1'):
+            for version in ('V4', 'V4_1', 'V4_2'):
                 with self.subTest(kind=kind, version=version):
                     old = (f'Owner head\n<!-- {kind}_{version} -->\nold body\n'
                            f'<!-- END {kind}_{version} -->\n---\nOwner tail  \n')
@@ -275,7 +294,7 @@ process.stdout.write(JSON.stringify(out));})();'''
 
     def test_fleet_runner_loaded_marker_tracks_current_policy_marker(self):
         # Landmine 8: the runner's loaded check must look for the marker block()
-        # stamps today (V4.2), accept V4.1/V4/V3 only for the transition, never V2.
+        # stamps today (V4.3), accept V4.2/V4.1/V4/V3 only for the transition, never V2.
         src = (ROOT / 'shared-utils/fleet_refresh_runner.py').read_text()
         consts = {}
         for node in ast.parse(src).body:
@@ -286,16 +305,17 @@ process.stdout.write(JSON.stringify(out));})();'''
         self.assertIn(f'<!-- {current} -->', block())
         names = [current if isinstance(e, ast.Name) else ast.literal_eval(e)
                  for e in consts['LOADED_MARKERS'].elts]
-        self.assertEqual(names, ['CEO_ORCHESTRATOR_RULE_V4_2', 'CEO_ORCHESTRATOR_RULE_V4_1',
+        self.assertEqual(names, ['CEO_ORCHESTRATOR_RULE_V4_3', 'CEO_ORCHESTRATOR_RULE_V4_2',
+                                 'CEO_ORCHESTRATOR_RULE_V4_1',
                                  'CEO_ORCHESTRATOR_RULE_V4', 'CEO_ORCHESTRATOR_RULE_V3'])
         self.assertNotIn('CEO_ORCHESTRATOR_RULE_V2', src)
 
-    def test_every_grep_listed_v4_2_carrier_contains_exact_policy(self):
+    def test_every_grep_listed_v4_3_carrier_contains_exact_policy(self):
         # The same discovery command JGT103 uses to find every byte-identical
         # carrier. A new carrier that shows up here must render canonical POLICY
         # exactly, or this test names it and fails. The heading is split so this
         # test file's own source (which names the heading) is not itself a hit.
-        heading = 'Task intake and assigned execution' + ' (V4.2)'
+        heading = 'Task intake and assigned execution' + ' (V4.3)'
         out = subprocess.run(
             ['grep', '-rl', '--binary-files=without-match', heading,
              '--exclude-dir=.git', '--exclude-dir=__pycache__', '--exclude-dir=node_modules', '.'],
@@ -311,9 +331,9 @@ process.stdout.write(JSON.stringify(out));})();'''
             './extensions/ceo-routing-doctrine/dist/index.js',
             './shared-utils/ceo_execution_policy.py',
         ])
-        # No carrier may be left on an old V3, V4 or V4.1 heading (a missed copy
-        # ships a mismatched pair on the next fleet roll).
-        for old in (' (V3)', ' (V4)', ' (V4.1)'):
+        # No carrier may be left on an old V3, V4, V4.1 or V4.2 heading (a missed
+        # copy ships a mismatched pair on the next fleet roll).
+        for old in (' (V3)', ' (V4)', ' (V4.1)', ' (V4.2)'):
             stale = subprocess.run(
                 ['grep', '-rl', '--binary-files=without-match',
                  'Task intake and assigned execution' + old,
