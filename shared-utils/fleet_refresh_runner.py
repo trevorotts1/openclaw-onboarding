@@ -631,16 +631,39 @@ def _check_deployed(
 
 # ── Loaded verifier ───────────────────────────────────────────────────────────
 
-# The CURRENT CEO policy marker (shared-utils/ceo_execution_policy.py block()),
-# plus V4.2, V4.1, V4 and V3 accepted during the transition to V4.3. V2 and older mean
-# the box never received the current policy and must NOT count as loaded.
+# The CURRENT CEO policy marker (shared-utils/ceo_execution_policy.py block()).
+# v25.2.22 fix 3 (review of v25.2.21): the V4.2/V4.1/V4/V3 transition
+# acceptances are removed — a box left on a bare _V4 or _V3 marker must NOT
+# report loaded. The verdict is exact-marker AND per-artifact (see
+# _verify_loaded): AGENTS.md and the plugin dist must carry the policy too.
 LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V4_3"
-LOADED_MARKERS = (LOADED_MARKER, "CEO_ORCHESTRATOR_RULE_V4_2", "CEO_ORCHESTRATOR_RULE_V4_1",
-                  "CEO_ORCHESTRATOR_RULE_V4", "CEO_ORCHESTRATOR_RULE_V3")
+LOADED_MARKERS = (LOADED_MARKER,)
+AGENTS_LOADED_MARKER = "CEO_ROUTING_NO_LOOPHOLES_V4_3"
+PLUGIN_LOADED_MARKER = "(V4.3)"
 
 
 def _has_loaded_marker(text) -> bool:
     return any(m in str(text) for m in LOADED_MARKERS)
+
+
+def _file_has_marker(path, marker: str) -> bool:
+    try:
+        return marker in Path(path).read_text(errors="replace")
+    except Exception:
+        return False
+
+
+def _loaded_artifact_paths(paths: dict) -> dict:
+    """The two artifact files the loaded verdict additionally requires.
+
+    Workspace AGENTS.md and the installed plugin dist, both resolved from the
+    same paths dict the rest of the runner uses (fixture tests redirect these
+    roots via FLEET_REFRESH_ROOT)."""
+    return {
+        "agents_md": Path(paths["workspace"]) / "AGENTS.md",
+        "plugin": Path(paths["root"]) / "extensions" / "ceo-routing-doctrine" / "dist" / "index.js",
+    }
+
 
 def _verify_loaded(
     paths: dict,
@@ -653,6 +676,11 @@ def _verify_loaded(
 
     Primary path: query the gateway's systemPromptReport for the live injected
     prompt and grep for the current CEO policy marker (LOADED_MARKERS).
+    Exact-marker + per-artifact (v25.2.22 fix 3): SOUL.md must carry
+    CEO_ORCHESTRATOR_RULE_V4_3 (live prompt or disk proxy), workspace AGENTS.md
+    must carry CEO_ROUTING_NO_LOOPHOLES_V4_3 and the installed plugin dist must
+    carry the (V4.3) heading. A box left on a bare V4/V3 marker reports
+    loaded=False.
 
     Fallback (proxy): if no systemPromptReport RPC exists on this gateway
     version, fall back to:
@@ -684,6 +712,19 @@ def _verify_loaded(
         _info("Falling back to disk+session proxy for loaded verification")
         marker_present, confidence = _proxy_verify_loaded(paths, shared_utils, ceo_session_key)
         method_used = method_used or "proxy"
+    # ── Exact-marker artifact checks (v25.2.22 fix 3) ─────────────────────────
+    # The loaded verdict requires the current policy in EVERY carrier on this
+    # box, not only the injected SOUL.md text: the workspace AGENTS.md must
+    # carry CEO_ROUTING_NO_LOOPHOLES_V4_3 and the installed plugin dist must
+    # carry the (V4.3) heading. A box left on a bare V4/V3 marker is NOT loaded.
+    artifacts = {"soul_md": marker_present}
+    _art_paths = _loaded_artifact_paths(paths)
+    artifacts["agents_md"] = _file_has_marker(_art_paths["agents_md"], AGENTS_LOADED_MARKER)
+    artifacts["plugin"] = _file_has_marker(_art_paths["plugin"], PLUGIN_LOADED_MARKER)
+    for _name, _ok in artifacts.items():
+        if not _ok:
+            _warn(f"  loaded check: {_name} does not carry the current policy marker")
+    marker_present = all(artifacts.values())
 
     # ── Board state ──────────────────────────────────────────────────────────
     cc_healthy = _check_cc_health(paths)
@@ -697,6 +738,7 @@ def _verify_loaded(
         "method":            method_used,
         "marker":            LOADED_MARKER,
         "present":           marker_present,
+        "artifacts":         artifacts,
         "loaded_confidence": confidence,
         "ceo_session_key":   ceo_session_key or "unresolved",
     }
@@ -705,7 +747,7 @@ def _verify_loaded(
         _ok(f"  loaded marker present (confidence={confidence}, method={method_used})")
     else:
         _warn(f"  loaded marker NOT present (confidence={confidence}, method={method_used})")
-        _warn("  The CEO PRIME DIRECTIVE is not in the live system prompt.")
+        _warn("  The current CEO policy is not confirmed across SOUL.md, AGENTS.md and the plugin.")
         _warn("  Run fleet-refresh.sh --apply to deploy and reset the session.")
 
 

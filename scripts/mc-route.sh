@@ -23,15 +23,22 @@
 #     department, so `mc-route.sh status <task>` made a General Task card.
 #
 #   EXISTING MODE (work already on the board; NEVER creates a card):
-#     finds ONE task in this company by exact id, exact title, or best word match
-#     on the title (GET /api/tasks, then GET /api/tasks/<id> for an archived id).
+#     finds ONE task in this company by exact id, exact title, or a WHOLE-WORD
+#     match at 1.0 on the title -- never a raw substring and never a partial
+#     score (GET /api/tasks, then GET /api/tasks/<id> for an archived id).
 #       status  read-only (GETs only). Prints
 #               STATUS id=<id> status=<s> department=<d> updated=<t> cancelled=<yes|no> title="<title>"
 #       update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...
 #       cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board,
 #               never dispatched again, row kept) + an owner note -> CANCELLED id=...
+#     Same-title cards are ONE job carded twice, not ambiguity: the newest is
+#     acted on, and cancel archives every one of them.
+#     FAIL-CLOSED (JEV-802): if the task list or the department list cannot be
+#     read, or comes back empty, or the matcher itself fails, this exits 1 with
+#     FAILED + ESCALATE_TO_OPERATOR -- never NOT_FOUND. NOT_FOUND is only ever
+#     said of a list that loaded successfully and genuinely holds no match.
 #     No match -> `mc-route: NOT_FOUND ...` (update: new work, run `task`; status or
-#     cancel: tell the owner, NO card), several equal matches ->
+#     cancel: tell the owner, NO card), several differently-titled matches ->
 #     `mc-route: AMBIGUOUS ...` with the candidates; both exit 3 and change nothing.
 #     MC_ROUTE_API_BASE overrides the Command Center base URL (default: the ingest
 #     URL without /api/tasks/ingest).
@@ -128,24 +135,28 @@ DEPARTMENT_SLUG=""
 TITLE=""
 DESCRIPTION=""
 MESSAGE=""
-if [ "${1:-}" = "task" ]; then
+# JEV-804: the command word is case-insensitive -- TASK, Task, Existing, Status
+# all work. Only the command word is folded; a department slug and a task title
+# are passed through exactly as the owner wrote them.
+_CMD="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+if [ "$_CMD" = "task" ]; then
   ROUTE_MODE="task"
   shift
   TITLE="${1:-}"
   [ "$#" -gt 0 ] && shift
-  # The rest of the args form the owner's exact words, joined with single spaces.
+  # rest args form owner's exact words, joined single spaces.
   DESCRIPTION="$*"
-  # Lean to a card: fill whichever half is missing from the other.
+  # Lean to card: fill whichever half missing from other.
   [ -n "$TITLE" ] || TITLE="$DESCRIPTION"
   [ -n "$DESCRIPTION" ] || DESCRIPTION="$TITLE"
-elif [ "${1:-}" = "auto" ]; then
+elif [ "$_CMD" = "auto" ]; then
   ROUTE_MODE="auto"
   shift
-  # The rest of the args (1..N) form the owner message, joined with single spaces.
+  # rest args (1..N) form owner message, joined single spaces.
   MESSAGE="$*"
-elif [ "${1:-}" = "existing" ]; then
+elif [ "$_CMD" = "existing" ]; then
   ROUTE_MODE="existing"
-  EXISTING_ACTION="${2:-}"
+  EXISTING_ACTION="$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')"
   EXISTING_REF="${3:-}"
   shift; [ "$#" -gt 0 ] && shift; [ "$#" -gt 0 ] && shift
   EXISTING_NOTE="$*"
@@ -193,7 +204,7 @@ elif [ "$ROUTE_MODE" = "existing" ]; then
   [ -n "$EXISTING_REF" ] || _refuse "'existing $EXISTING_ACTION' needs the task title or id."
   [ "$EXISTING_ACTION" != "update" ] || [ -n "$EXISTING_NOTE" ] || _refuse "'existing update' needs the owner's note."
 else
-  case "$DEPARTMENT_SLUG" in -h|--help|help) _usage; exit 0 ;; esac
+  case "$(printf '%s' "$DEPARTMENT_SLUG" | tr '[:upper:]' '[:lower:]')" in -h|--help|help) _usage; exit 0 ;; esac
   [ -n "$DEPARTMENT_SLUG" ] || _refuse "no command given."
   # Words models used for existing work (JEV-592 acceptance run): refuse them
   # before any network call and point at `existing`.
@@ -294,28 +305,77 @@ _load_departments() {  # this company's board departments -> $WS_FILE, or escala
   _api GET /api/workspaces
   case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not read the department list (GET /api/workspaces HTTP $API_CODE); nothing was created or changed" ;; esac
   printf '%s' "$API_OUT" >"$WS_FILE"
+  # JEV-802 (class F, fail-closed): an unreadable or EMPTY department list is not
+  # a board without departments. Escalate here, so no later lookup can read it as
+  # "no matching department" and report a miss it never proved.
+  "$PYTHON" - "$WS_FILE" <<'PYWS' || _escalate "the department list from Command Center was unreadable or empty; nothing was created or changed"
+import json, sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8", errors="replace") as fh:
+        d = json.load(fh)
+except Exception:
+    sys.exit(9)
+if isinstance(d, dict):
+    d = d.get("workspaces") if isinstance(d.get("workspaces"), list) else ([d] if d.get("id") else [])
+if not isinstance(d, list) or not [x for x in d if isinstance(x, dict)]:
+    sys.exit(9)
+PYWS
 }
 
 if [ "$ROUTE_MODE" = "existing" ]; then
   _load_departments
-  _api GET "/api/tasks?limit=500"
+  # JEV-803: includeArchived=true — a cancelled or done card IS the honest answer
+  # to a status or cancel question. Without it the archived row vanishes from the
+  # list and the caller wrongly reports NOT_FOUND for work that really exists.
+  _TASKS_MAX=500
+  _api GET "/api/tasks?limit=$_TASKS_MAX&includeArchived=true"
   case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not read the task list (GET /api/tasks HTTP $API_CODE); nothing was changed" ;; esac
   printf '%s' "$API_OUT" >"$TASKS_FILE"
+  # JEV-803: at the limit, "nothing matching is on the board" is a claim about a
+  # page, not about the board. Say so rather than imply the whole board was read.
+  _TASKS_ROWS="$("$PYTHON" -c 'import json,sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8", errors="replace") as fh:
+        d = json.load(fh)
+except Exception:
+    sys.exit(4)
+if isinstance(d, dict):
+    d = d.get("tasks") if isinstance(d.get("tasks"), list) else ([d] if d.get("id") else [])
+rows = [x for x in d if isinstance(x, dict)] if isinstance(d, list) else []
+print(len(rows))' "$TASKS_FILE")" \
+    || _escalate "the task list from Command Center was unreadable; nothing was created or changed"
+  if [ "${_TASKS_ROWS:-0}" -ge "$_TASKS_MAX" ]; then
+    echo "mc-route: NOTE — the board returned $_TASKS_ROWS cards, the $_TASKS_MAX-card page limit, so only the most recent page was covered. If the owner's card is not here it may be on an older page: say the list may be incomplete rather than that the work does not exist." >&2
+  fi
   _find_task() {  # prints FOUND + 6 fields, AMBIGUOUS + candidates, or NONE
     "$PYTHON" - "$EXISTING_REF" "$WS_FILE" "$TASKS_FILE" <<'PYFIND'
 import json, re, sys
 ref, ws_path, tasks_path = sys.argv[1], sys.argv[2], sys.argv[3]
 def load(path):
+    # JEV-802 (class F, fail-closed): an unreadable file, a payload with no rows,
+    # or a row with no id is a broken read -- exit 4 so the caller escalates.
+    # It must never come back as an empty list, because empty reads as "NONE"
+    # and NONE reads as "the owner's work does not exist".
     try:
-        d = json.load(open(path))
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            d = json.load(fh)
     except Exception:
-        return []
+        sys.exit(4)
     if isinstance(d, dict):
         d = d.get("tasks") if isinstance(d.get("tasks"), list) else ([d] if d.get("id") else [])
-    return [x for x in d if isinstance(x, dict)] if isinstance(d, list) else []
-ws = {str(w.get("id")): str(w.get("slug") or w.get("id")) for w in load(ws_path) if w.get("id")}
+    if not isinstance(d, list) or not [x for x in d if isinstance(x, dict)]:
+        sys.exit(4)
+    return [x for x in d if isinstance(x, dict)]
+ws_rows = load(ws_path)
+ws = {str(w.get("id")): str(w.get("slug") or w.get("id")) for w in ws_rows if w.get("id")}
 # This company only: tasks on one of its departments (or not yet on any).
-tasks = [t for t in load(tasks_path) if t.get("id") and (not t.get("workspace_id") or str(t["workspace_id"]) in ws)]
+tasks = []
+for t in load(tasks_path):
+    if not t.get("id"):
+        sys.exit(4)
+    if t.get("workspace_id") and str(t["workspace_id"]) not in ws:
+        continue
+    tasks.append(t)
 STOP = {"the", "and", "for", "that", "this", "task", "card", "job", "with", "from", "our", "your", "about", "please", "one"}
 def words(s):
     return {w for w in re.findall(r"[a-z0-9]+", str(s or "").lower()) if len(w) > 2 and w not in STOP}
@@ -324,23 +384,34 @@ def title(t):
 key = ref.strip().lower()
 pick = [t for t in tasks if str(t["id"]).lower() == key] or [t for t in tasks if title(t).lower() == key]
 if not pick:
-    want, scored = words(key), []
-    for t in tasks:
-        tl = title(t).lower()
-        score = 1.0 if key and key in tl else (len(want & words(tl)) / len(want) if want else 0.0)
-        if score >= 0.5:
-            scored.append((score, t))
-    if scored:
-        best = max(s for s, _ in scored)
-        pick = [t for s, t in scored if s == best]
-        if len({title(t).lower() for t in pick}) == 1:
-            pick = pick[:1]  # same title twice (a double card): the newest one
+    # JEV-802: exact id, exact title, or a WHOLE-WORD match at 1.0 -- nothing else.
+    # No raw substring ("art" must not hit "cart") and no partial score ("invoice
+    # draft" must not half-hit "invoice" alone). A task matches only when every
+    # word of the reference appears in its title as a whole word.
+    want = words(key)
+    if want:
+        pick = [t for t in tasks if want <= words(title(t))]
+if pick:
+    # Same-title cards are ONE job carded twice (a double card), not ambiguity:
+    # newest first so the live card is the one acted on. Cancel archives them all.
+    pick.sort(key=lambda t: str(t.get("updated_at") or ""), reverse=True)
 if len(pick) == 1:
     t = pick[0]
     print("FOUND")
     for v in (t["id"], t.get("status"), ws.get(str(t.get("workspace_id")), t.get("workspace_id") or "none"),
               t.get("updated_at"), "yes" if t.get("archived_at") else "no", title(t).replace('"', "'")):
         print("" if v is None else " ".join(str(v).split()))
+elif pick and len({title(t).lower() for t in pick}) == 1:
+    t = pick[0]
+    print("FOUND")
+    for v in (t["id"], t.get("status"), ws.get(str(t.get("workspace_id")), t.get("workspace_id") or "none"),
+              t.get("updated_at"), "yes" if t.get("archived_at") else "no", title(t).replace('"', "'")):
+        print("" if v is None else " ".join(str(v).split()))
+    # Everything below the 7 fields: the same-title duplicates, tab-separated
+    # id / already-cancelled / title. Cancel archives every one of them.
+    for d in pick[1:]:
+        print("\t".join([str(d["id"]), "yes" if d.get("archived_at") else "no",
+                         title(d).replace("\t", " ").replace('"', "'")]))
 elif pick:
     print("AMBIGUOUS")
     for t in pick[:5]:
@@ -349,13 +420,24 @@ else:
     print("NONE")
 PYFIND
   }
-  FOUND="$(_find_task)"
+  _FIND_RC=0
+  FOUND="$(_find_task)" || _FIND_RC=$?
+  # JEV-802 (class F, fail-closed): the matcher could not read the board it was
+  # given. That is not "no matching card" -- never let it reach the NOT_FOUND text.
+  [ "$_FIND_RC" -eq 0 ] || _escalate "the task list from Command Center could not be read or matched, so no card could be identified; nothing was created or changed"
   if [ "$(printf '%s\n' "$FOUND" | sed -n '1p')" = "NONE" ]; then
     case "$EXISTING_REF" in
       *[[:space:]]*|'') ;;
       *)  # an id the open list does not hold (e.g. already cancelled): read it directly
         _api GET "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$EXISTING_REF")"
-        case "$API_CODE" in 2[0-9][0-9]) printf '%s' "$API_OUT" >"$TASKS_FILE"; FOUND="$(_find_task)" ;; esac
+        case "$API_CODE" in
+          2[0-9][0-9]) printf '%s' "$API_OUT" >"$TASKS_FILE"
+            _FIND_RC=0
+            FOUND="$(_find_task)" || _FIND_RC=$?
+            [ "$_FIND_RC" -eq 0 ] || _escalate "the task record read for \"$EXISTING_REF\" was unreadable, so it could not be matched; nothing was created or changed" ;;
+          404) ;;  # the board answered: no such id (the honest NONE)
+          *) _escalate "could not read task \"$EXISTING_REF\" (GET /api/tasks HTTP $API_CODE); nothing was created or changed" ;;
+        esac
         ;;
     esac
   fi
@@ -405,6 +487,21 @@ PYFIND
       _note "Cancelled by the owner.${EXISTING_NOTE:+ $EXISTING_NOTE}"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) echo "mc-route: WARNING — task $_T_ID is cancelled but the cancel note was not saved (HTTP $API_CODE)." >&2 ;; esac
       echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\""
+      # JEV-802: same-title duplicates are the same job carded twice. Cancelling
+      # the job cancels all of them, or the survivors keep the work alive on the
+      # board after the owner was told it was cancelled.
+      printf '%s\n' "$FOUND" | sed -n '8,$p' | while IFS="$(printf '\t')" read -r _DID _DCANCELLED _DTITLE; do
+        [ -n "$_DID" ] || continue
+        if [ "$_DCANCELLED" = "yes" ]; then
+          echo "CANCELLED id=$_DID title=\"$_DTITLE\" (it was already cancelled)"
+          continue
+        fi
+        _api POST "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$_DID")/archive"
+        case "$API_CODE" in
+          2[0-9][0-9]) echo "CANCELLED id=$_DID title=\"$_DTITLE\" (duplicate of the same job)" ;;
+          *) echo "mc-route: WARNING — duplicate card $_DID of the same job was NOT cancelled (HTTP $API_CODE); the owner should be told." >&2 ;;
+        esac
+      done
       ;;
   esac
   exit 0

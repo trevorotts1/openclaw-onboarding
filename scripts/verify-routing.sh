@@ -3,8 +3,9 @@
 #
 # Checks:
 #   G1  ROLE_DISCIPLINE_V1 marker present in the resolved AGENTS.md (exactly once)
-#   G2  CEO_ROUTING_NO_LOOPHOLES_V1 marker present in the resolved AGENTS.md
-#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4, V3 during transition) present in the resolved SOUL.md
+#   G2  CEO_ROUTING_NO_LOOPHOLES_V4_3 marker present in the resolved AGENTS.md
+#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4_3) present in the resolved SOUL.md
+#   G3b (V4.3) heading present in the installed ceo-routing-doctrine plugin dist
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
 #       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
@@ -194,23 +195,37 @@ else
   fi
 fi
 
-# ─── G2: CEO_ROUTING_NO_LOOPHOLES (V1 or V2) in AGENTS.md ─────────────────────
-# Version-agnostic: P1-04 bumped the marker to V2 (adds the trust-engine chat-id
-# rule); either the migrated V2 or a not-yet-migrated V1 block satisfies the gate.
-_info "G2: checking CEO_ROUTING_NO_LOOPHOLES (V1 or V2) in $AGENTS_FILE"
-if [ -f "$AGENTS_FILE" ] && grep -qE "CEO_ROUTING_NO_LOOPHOLES_V[0-9]+" "$AGENTS_FILE" 2>/dev/null; then
-  _pass "G2: CEO_ROUTING_NO_LOOPHOLES present in $AGENTS_FILE"
+# ─── G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 in AGENTS.md ──────────────────────────
+# Exact marker (v25.2.22 fix 3): the version-agnostic V[0-9]+ pattern accepted a
+# box left on V1/V2/V4. Only the current V4_3 marker passes; a bare _V4 or older
+# marker means the box missed the roll — run the stamper.
+_info "G2: checking CEO_ROUTING_NO_LOOPHOLES_V4_3 in $AGENTS_FILE"
+if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V4_3" "$AGENTS_FILE" 2>/dev/null; then
+  _pass "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 present in $AGENTS_FILE"
 else
-  _fail "G2: CEO_ROUTING_NO_LOOPHOLES MISSING from $AGENTS_FILE — run apply-routing-fix.sh"
+  _fail "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 MISSING from $AGENTS_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
   FAILURES=$((FAILURES + 1))
 fi
 
 # ─── G3: PRIME DIRECTIVE in SOUL.md ──────────────────────────────────────────
-_info "G3: checking CEO_ORCHESTRATOR_RULE_V4 (or V3 during transition) in $SOUL_FILE"
-if [ -f "$SOUL_FILE" ] && grep -qE "CEO_ORCHESTRATOR_RULE_V[34]" "$SOUL_FILE" 2>/dev/null; then
+# Exact marker (v25.2.22 fix 3): a box left on V4 or V3 must fail.
+_info "G3: checking CEO_ORCHESTRATOR_RULE_V4_3 in $SOUL_FILE"
+if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V4_3" "$SOUL_FILE" 2>/dev/null; then
   _pass "G3: CEO_ORCHESTRATOR_RULE (PRIME DIRECTIVE) present in $SOUL_FILE"
 else
-  _fail "G3: CEO_ORCHESTRATOR_RULE_V4 MISSING from $SOUL_FILE — run apply-routing-fix.sh"
+  _fail "G3: CEO_ORCHESTRATOR_RULE_V4_3 MISSING from $SOUL_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
+  FAILURES=$((FAILURES + 1))
+fi
+
+# ─── G3b: plugin routing doctrine heading ───────────────────────────────────
+# v25.2.22 fix 3: the installed plugin dist must be on the (V4.3) heading too,
+# else it keeps prepending an old preamble even when SOUL.md/AGENTS.md are current.
+PLUGIN_DIST="$OC_ROOT/extensions/ceo-routing-doctrine/dist/index.js"
+_info "G3b: checking (V4.3) heading in $PLUGIN_DIST"
+if [ -f "$PLUGIN_DIST" ] && grep -qF "(V4.3)" "$PLUGIN_DIST" 2>/dev/null; then
+  _pass "G3b: (V4.3) heading present in $PLUGIN_DIST"
+else
+  _fail "G3b: (V4.3) heading MISSING from $PLUGIN_DIST — reinstall the plugin (install.sh / update-skills.sh)"
   FAILURES=$((FAILURES + 1))
 fi
 

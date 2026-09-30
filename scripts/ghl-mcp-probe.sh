@@ -181,8 +181,20 @@ done
 say() { [ "$QUIET" = "1" ] || printf '%s\n' "$*"; }
 report() {
   local state="$1"; shift
-  say "STATUS: ghl-mcp-probe=${state} $*"
-  printf '%s STATUS: ghl-mcp-probe=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$*" >> "$LOG_DIR/probe.log" 2>/dev/null || true
+  local _crf
+  # JEV-127: count ONLY genuine failure records. The old pattern
+  # ('card-route-failure') also matched report()'s own STATUS lines
+  # ('card-route-failures=N'), so the counter counted itself (0, 1, 2, ...).
+  _crf=$(grep -c 'card-route-failure target=' "$LOG_DIR/probe.log" 2>/dev/null)
+  case "$_crf" in ''|*[!0-9]*) _crf=0 ;; esac
+  if [ "$_crf" -gt 0 ] 2>/dev/null; then
+    say "STATUS: ghl-mcp-probe=${state} $* card-route-failures=${_crf}"
+    printf '%s STATUS: ghl-mcp-probe=%s %s card-route-failures=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$*" "$_crf" >> "$LOG_DIR/probe.log" 2>/dev/null || true
+  else
+    # Zero failures: byte-identical to HEAD (no count suffix at all).
+    say "STATUS: ghl-mcp-probe=${state} $*"
+    printf '%s STATUS: ghl-mcp-probe=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$*" >> "$LOG_DIR/probe.log" 2>/dev/null || true
+  fi
 }
 
 # ── Operator off-switch (v25.1.10) ───────────────────────────────────────────
@@ -215,15 +227,32 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 0
 fi
 
-# ── Operator alert (fail-soft, operator-only, never a client channel) ────────
-# Uses the repo's own signed Command Center ingest helper when it is present.
-# No Telegram, no client messaging, and never fails the probe.
+# JEV-118: a failed card route must leave a DURABLE trace. say() is silenced
+# under --quiet and the sole quiet caller (ghl-mcp-autostart.sh) discards both
+# streams, so a WARNING via say() alone vanished while the streak file still
+# recorded escalated=1 and suppressed every later attempt. warn_no_card says it
+# AND appends it to $LOG_DIR/probe.log, which no QUIET flag and no caller
+# redirection can discard. Happy-path verdicts already log via report(); only
+# failures gain a line here, and only in this same file.
+warn_no_card() {
+  local msg="$1" target="${2:-unknown}"
+  # Unconditional stderr: say() prints nothing under --quiet, and this warning
+  # must survive it. The probe.log append below survives even discarded streams.
+  printf '%s\n' "$1" >&2
+  printf '%s card-route-failure target=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$target" "$msg" >> "$LOG_DIR/probe.log" 2>/dev/null || true
+}
 alert_operator() {
   local title="$1" body="$2" route=""
   # v25.1.10 test hook: the unit test used to reach the REAL ingest helper and
   # file genuine cards on the operator's board. Never set this on a box.
+  # JEV-802: `task` mode, not a department slug. A slug call needs the target
+  # department to exist on the board; the operator alert must land whether or not
+  # it does. `task` lets Command Center pick (General Task when nothing fits).
   if [ -n "${GHL_MCP_PROBE_ROUTE_CMD:-}" ]; then
-    "$GHL_MCP_PROBE_ROUTE_CMD" general-task "$title" "$body" >/dev/null 2>&1 || true
+    # operator/internal alert route — empty requester envelope by design (mc-route.sh:127-131).
+    MC_ROUTE_REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}" MC_ROUTE_REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}" \
+      "$GHL_MCP_PROBE_ROUTE_CMD" task "$title" "$body" >/dev/null 2>&1 \
+      || warn_no_card " [ghl-mcp-probe] WARNING — the operator alert card was NOT created (route hook failed): $title" "${GHL_MCP_PROBE_ROUTE_CMD:-unset}"
     return 0
   fi
   for c in "$SELF_DIR/mc-route.sh" \
@@ -232,8 +261,18 @@ alert_operator() {
            "/data/.openclaw/onboarding/scripts/mc-route.sh"; do
     [ -x "$c" ] && { route="$c"; break; }
   done
-  [ -n "$route" ] || return 0
-  bash "$route" general-task "$title" "$body" >/dev/null 2>&1 || true
+  # Never drop the alert silently: if no router is present the operator is told on
+  # stderr AND in the durable probe log (JEV-118: stderr alone vanishes under
+  # --quiet with both streams discarded), so a missing helper cannot look like
+  # "nothing to report".
+  if [ -z "$route" ]; then
+    warn_no_card " [ghl-mcp-probe] WARNING — no mc-route.sh helper found, so the operator alert card was NOT created: $title" "none-found:${SELF_DIR}/mc-route.sh,$HOME/.openclaw/onboarding/scripts/mc-route.sh,$HOME/.openclaw/skills/scripts/mc-route.sh,/data/.openclaw/onboarding/scripts/mc-route.sh" >&2
+    return 0
+  fi
+  # operator/internal alert route — empty requester envelope by design (mc-route.sh:127-131).
+  MC_ROUTE_REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}" MC_ROUTE_REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}" \
+    bash "$route" task "$title" "$body" >/dev/null 2>&1 \
+    || warn_no_card " [ghl-mcp-probe] WARNING — the operator alert card was NOT created (mc-route.sh failed): $title" "$route" >&2
 }
 
 # ── R13: ALERT ROUTING — card by default, Rangers only on a sustained outage ──
