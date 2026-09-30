@@ -365,7 +365,7 @@ PYFIND
       printf '%s\n' "$FOUND" | sed '1d'
       exit 3 ;;
     *)
-      echo "mc-route: NOT_FOUND — no task on this board matches \"$EXISTING_REF\". Nothing was created or changed. Ask the owner which task they mean; do not make a new card for it."
+      echo "mc-route: NOT_FOUND: no matching existing card. If this is work to do, run: mc-route.sh task \"<short title>\" \"<owner's exact words>\" (nothing was created or changed for \"$EXISTING_REF\")"
       exit 3 ;;
   esac
   _T_ID="$(printf '%s\n' "$FOUND" | sed -n '2p')"
