@@ -13,6 +13,8 @@ and remove `exec` from the CEO allow-set (retire the interim)."_
 
 ```
 mc-route.sh <department_slug> <title> [description...]
+mc-route.sh task "<short title>" "<owner's exact words>"
+mc-route.sh auto "<owner message verbatim>"
 ```
 
 - `<department_slug>` — target workspace/department (e.g. `presentations`,
@@ -67,6 +69,48 @@ stdout contract for the caller:
 | anything else | `ESCALATE_TO_OPERATOR:` (same as slug mode) | `1` |
 
 `ESCALATE_TO_OPERATOR` is never printed for a 2xx response in auto mode.
+
+## Task mode (the CEO decides; Command Center only picks the department)
+
+```
+mc-route.sh task "<short title>" "<owner's exact words>"
+```
+
+Use this when the CEO AI has decided the owner asked for work. A question or
+small talk gets an answer and no call at all.
+
+- **One call = one card.** If one message holds two jobs, call it twice with two
+  titles and the same owner words. Each call makes its own card.
+- **No department is sent.** The helper posts a typed card (`title`, `description`
+  = the owner's exact words, no `department_slug`, no `message`). Command Center
+  picks the department with its own picker, and General Task is the fallback. A
+  typed card is never re-classified, so Command Center cannot overrule a task
+  call and turn it into "answer".
+- **Leans to a card.** A missing title uses the owner words, and missing owner
+  words use the title. Only a call with both empty fails.
+- **Retry-safe.** The operation key comes from company, source, requester chat,
+  title and owner words. It is reused for 60 seconds after the last identical
+  call, so a retry makes no second card. Command Center dedupes on that key.
+  Window files live in `MC_ROUTE_STATE_DIR` (default
+  `${TMPDIR:-/tmp}/mc-route-task-<uid>`) and are pruned after an hour. When
+  `MC_ROUTE_EVENT_ID` or `MC_ROUTE_OPERATION_ID` is set, that stable event
+  replaces the 60-second window. Two jobs from one event still get two keys.
+
+stdout contract:
+
+| CC response | output | exit |
+|---|---|---|
+| 2xx with a `task_id` (new or deduped) | `ROUTED workspace=<ws> department=<d> resolved_by=<r>` | `0` |
+| 2xx with a `task_id` but no workspace, or `resolved_by` ending `->ceo` / `->unrouted` | the `ROUTED` line, plus a `WARNING` and `ESCALATE_TO_OPERATOR:` on stderr (the card exists, so don't call again) | `0` |
+| 2xx with no `task_id` | `mc-route: FAILED — ...` and `ESCALATE_TO_OPERATOR:` | `1` |
+| transport failure or any non-2xx | `mc-route: FAILED — ...` and `ESCALATE_TO_OPERATOR:` | `1` |
+
+`department` is CC's `resolved_department` when it sends one. Otherwise it is
+the department named in `resolved_by=auto-route:<dept>`
+(`general-task-fallback` is shown as `general-task`), and failing that the
+workspace.
+
+`auto` mode keeps working unchanged for boxes whose CEO rule still calls it.
 
 ## Why signed (fail-closed Command Center)
 
