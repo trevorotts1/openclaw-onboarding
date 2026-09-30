@@ -99,8 +99,8 @@
     }
    ],
    "message": "You do it.",
-   "expected": "task",
-   "jobs": 1,
+   "expected": "existing_task",
+   "jobs": 0,
    "acceptable": [],
    "label_a": {
     "expected": "task",
@@ -110,7 +110,15 @@
     "expected": "task",
     "jobs": 1
    },
-   "disagree": false
+   "disagree": false,
+   "human_label": {
+    "expected": "existing_task",
+    "jobs": 0,
+    "by": "Trevor",
+    "date": "2026-09-30",
+    "source": "JEV-702 ruling B (only an explicit 'do it yourself / personally / don't delegate' means no card), approved",
+    "why": "Ruling B: the owner answers the pending 'who handles it?' question with an explicit 'You do it.', so the CEO does the work itself and makes no card, the same as frozen JEV29-0006."
+   }
   },
   {
    "id": "JEV29-0008",
@@ -3764,8 +3772,8 @@
     }
    ],
    "message": "Yuo do it, dont delegtae",
-   "expected": "task",
-   "jobs": 1,
+   "expected": "existing_task",
+   "jobs": 0,
    "acceptable": [],
    "label_a": {
     "expected": "task",
@@ -3775,7 +3783,15 @@
     "expected": "task",
     "jobs": 1
    },
-   "disagree": false
+   "disagree": false,
+   "human_label": {
+    "expected": "existing_task",
+    "jobs": 0,
+    "by": "Trevor",
+    "date": "2026-09-30",
+    "source": "JEV-702 ruling B (only an explicit 'do it yourself / personally / don't delegate' means no card), approved",
+    "why": "Ruling B: 'Yuo do it, dont delegtae' is an explicit 'do it yourself, don't delegate' (misspelled), so the CEO does the work itself and makes no card, the same as frozen JEV29-0006."
+   }
   },
   {
    "id": "JEV29-0251",
