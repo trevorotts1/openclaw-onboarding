@@ -632,10 +632,10 @@ def _check_deployed(
 # ── Loaded verifier ───────────────────────────────────────────────────────────
 
 # The CURRENT CEO policy marker (shared-utils/ceo_execution_policy.py block()),
-# plus V3 accepted during the V3->V4 transition. V2 and older mean the box never
-# received the current policy and must NOT count as loaded.
-LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V4"
-LOADED_MARKERS = (LOADED_MARKER, "CEO_ORCHESTRATOR_RULE_V3")
+# plus V4 and V3 accepted during the V3/V4 -> V4.1 transition. V2 and older mean
+# the box never received the current policy and must NOT count as loaded.
+LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V4_1"
+LOADED_MARKERS = (LOADED_MARKER, "CEO_ORCHESTRATOR_RULE_V4", "CEO_ORCHESTRATOR_RULE_V3")
 
 
 def _has_loaded_marker(text) -> bool:
