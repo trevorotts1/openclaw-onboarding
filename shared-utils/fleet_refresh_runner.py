@@ -631,8 +631,15 @@ def _check_deployed(
 
 # ── Loaded verifier ───────────────────────────────────────────────────────────
 
-LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V2"
-LOADED_MARKER_COMMENT = "<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
+# The CURRENT CEO policy marker (shared-utils/ceo_execution_policy.py block()),
+# plus V3 accepted during the V3->V4 transition. V2 and older mean the box never
+# received the current policy and must NOT count as loaded.
+LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V4"
+LOADED_MARKERS = (LOADED_MARKER, "CEO_ORCHESTRATOR_RULE_V3")
+
+
+def _has_loaded_marker(text) -> bool:
+    return any(m in str(text) for m in LOADED_MARKERS)
 
 def _verify_loaded(
     paths: dict,
@@ -644,7 +651,7 @@ def _verify_loaded(
     Step 7: The loaded-marker verifier.
 
     Primary path: query the gateway's systemPromptReport for the live injected
-    prompt and grep for the CEO_ORCHESTRATOR_RULE_V2 marker.
+    prompt and grep for the current CEO policy marker (LOADED_MARKERS).
 
     Fallback (proxy): if no systemPromptReport RPC exists on this gateway
     version, fall back to:
@@ -769,7 +776,7 @@ def _discover_system_prompt_method() -> Optional[str]:
 def _query_gateway_prompt(session_key: str, method: str) -> tuple[bool, Optional[str]]:
     """
     Call `openclaw gateway call <method> --params {"key": <session_key>}` and
-    grep the response for the CEO_ORCHESTRATOR_RULE_V2 marker.
+    grep the response for the current CEO policy marker (LOADED_MARKERS).
 
     Returns (marker_present: bool, method_used: str | None).
     """
@@ -802,7 +809,7 @@ def _query_gateway_prompt(session_key: str, method: str) -> tuple[bool, Optional
         except Exception:
             pass  # Use raw text
 
-        present = LOADED_MARKER in str(prompt_text)
+        present = _has_loaded_marker(prompt_text)
         return present, method
 
     except subprocess.TimeoutExpired:
@@ -843,7 +850,7 @@ def _proxy_verify_loaded(
     disk_ok = False
     if soul_md.is_file():
         content = soul_md.read_text(errors="replace")
-        disk_ok = LOADED_MARKER in content
+        disk_ok = _has_loaded_marker(content)
         if disk_ok:
             _ok(f"  Proxy Layer-3: marker found in {soul_md}")
         else:

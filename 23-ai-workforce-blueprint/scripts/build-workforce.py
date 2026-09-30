@@ -5479,7 +5479,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 # Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
 # before prepending - re-running the build never duplicates the block.
 
-CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V3 -->"
+CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V4 -->"
 CEO_ORCHESTRATOR_V1_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
 CEO_ORCHESTRATOR_RULE = _ceo_policy_block()
 
